@@ -29,6 +29,7 @@ import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
 import type { FillData, OrderSnapshot } from '../../src/OrderState';
+import { replay } from '../helpers';
 
 // ──────────────── Фикстуры ────────────────
 
@@ -398,7 +399,7 @@ describe('Сценарий: fromEvents replay', () => {
       price: Price.of(new Decimal('0.60')),
     };
 
-    const order = Order.fromEvents([
+    const order = replay([
       {
         type: 'ORDER_CREATED',
         orderId: ORDER_ID,
@@ -420,7 +421,7 @@ describe('Сценарий: fromEvents replay', () => {
   it('воспроизводит отклонение из событий', () => {
     const ts = Timestamp.now();
 
-    const order = Order.fromEvents([
+    const order = replay([
       {
         type: 'ORDER_CREATED',
         orderId: ORDER_ID,

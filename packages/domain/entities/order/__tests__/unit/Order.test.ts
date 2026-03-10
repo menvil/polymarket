@@ -16,6 +16,7 @@ import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import type { FillData, FillState, OrderState } from '../../src/OrderState';
+import { replay } from '../helpers';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -318,7 +319,7 @@ describe('Order', () => {
   describe('fromEvents()', () => {
     it('должен воспроизвести заявку из событий', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         {
           type: 'ORDER_CREATED',
           orderId: ORDER_ID,
@@ -335,14 +336,19 @@ describe('Order', () => {
       expect(order.id).toBe(ORDER_ID);
     });
 
-    it('должен бросить ошибку для пустого массива событий', () => {
-      expect(() => Order.fromEvents([])).toThrow();
+    it('должен вернуть Err для пустого массива событий', () => {
+      const result = Order.fromEvents([]);
+      expect(result.ok).toBe(false);
     });
 
-    it('должен бросить ошибку если первое событие не ORDER_CREATED', () => {
-      expect(() => Order.fromEvents([
+    it('должен вернуть Err если первое событие не ORDER_CREATED', () => {
+      const result = Order.fromEvents([
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-      ])).toThrow('First event must be ORDER_CREATED');
+      ]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('First event must be ORDER_CREATED');
+      }
     });
 
     it('должен воспроизвести полный жизненный цикл с ORDER_FILLED', () => {
@@ -356,7 +362,7 @@ describe('Order', () => {
         price: Price.of(new Decimal('0.65')),
       };
 
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -379,7 +385,7 @@ describe('Order', () => {
       };
       const remainingSize = Quantity.of(new Decimal('70'));
 
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -401,7 +407,7 @@ describe('Order', () => {
         price: Price.of(new Decimal('0.65')),
       };
 
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -421,7 +427,7 @@ describe('Order', () => {
 
     it('должен игнорировать ORDER_ACCEPTED если статус уже не PENDING', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -432,7 +438,7 @@ describe('Order', () => {
 
     it('должен игнорировать ORDER_REJECTED если статус уже не PENDING', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID }, // уже OPEN
@@ -443,7 +449,7 @@ describe('Order', () => {
 
     it('должен игнорировать ORDER_CANCELLED если статус не OPEN/PARTIALLY_FILLED', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         // PENDING — не является fillable, ORDER_CANCELLED должен быть проигнорирован
@@ -454,7 +460,7 @@ describe('Order', () => {
 
     it('должен игнорировать ORDER_EXPIRED если статус терминальный', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Invalid' }, // REJECTED — терминальный
@@ -466,7 +472,7 @@ describe('Order', () => {
     it('должен игнорировать событие с чужим orderId', () => {
       const FOREIGN_ID = asOrderId('order-foreign')!;
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: FOREIGN_ID }, // чужой orderId — должен быть проигнорирован
@@ -482,7 +488,7 @@ describe('Order', () => {
         size: Quantity.of(new Decimal('50')), // только половина заявки
         price: Price.of(new Decimal('0.65')),
       };
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -510,7 +516,7 @@ describe('Order', () => {
         filledSize: Quantity.of(new Decimal('30')),
         remainingSize: Quantity.of(new Decimal('70')),
       };
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
@@ -523,7 +529,7 @@ describe('Order', () => {
 
     it('fromEvents() не должен эмитировать события', () => {
       const ts = Timestamp.now();
-      const order = Order.fromEvents([
+      const order = replay([
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },

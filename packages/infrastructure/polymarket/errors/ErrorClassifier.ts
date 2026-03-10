@@ -11,11 +11,14 @@
  * - Reference equality: classify(x) twice returns SAME object
  * - Zero memory leak: Cache size capped at maxCacheSize
  *
- * Caching strategy:
- * - Key: hash(type + first 100 chars of message)
- * - Value: classified OrderError
- * - LRU eviction: oldest entries deleted when cache full
- * - No TTL: cache persists for session lifetime
+ * Стратегия кэширования:
+ * - Ключ: тип + первые 100 символов сообщения
+ * - Значение: классифицированная OrderError
+ * - LRU вытеснение: старейшие записи удаляются при переполнении
+ * - Двойное кэширование при смене типа: оба ключа (входной и результата) всегда ссылаются
+ *   на ОДИН и тот же канонический объект и обновляются вместе при cache hit и cache miss —
+ *   гарантирует classify(classify(x)) === classify(x) (ссылочное равенство)
+ * - Без TTL: кэш живёт на протяжении сессии
  *
  * @example
  * ```typescript
@@ -180,6 +183,14 @@ export class ErrorClassifier {
       this.cache.delete(cacheKey);
       this.cache.set(cacheKey, cached);
 
+      // Обновляем alias resultKey (если есть) — оба ключа должны стареть вместе.
+      // Без этого alias evict-ится раньше, что приводит к созданию дубликата объекта при следующем промахе.
+      const resultKey = this.makeCacheKey(cached);
+      if (resultKey !== cacheKey && this.cache.has(resultKey)) {
+        this.cache.delete(resultKey);
+        this.cache.set(resultKey, cached);
+      }
+
       this.logger.trace('[ErrorClassifier] Cache hit (moved to end)', { cacheKey });
       return cached; // Та же ссылка!
     }
@@ -202,9 +213,19 @@ export class ErrorClassifier {
       result = { type: 'UNKNOWN', message, recoverable: false };
     }
 
-    // 5. LRU вытеснение ПЕРЕД добавлением (ГАРАНТИЯ: первый = старейший)
+    const resultKey = this.makeCacheKey(result);
+
+    // Если resultKey уже существует в кэше — переиспользуем тот же канонический объект.
+    // Это предотвращает создание дублирующих экземпляров для одной и той же классификации.
+    if (resultKey !== cacheKey) {
+      const existingCanonical = this.cache.get(resultKey);
+      if (existingCanonical) {
+        result = existingCanonical;
+      }
+    }
+
+    // 5. LRU вытеснение ПЕРЕД добавлением cacheKey (ГАРАНТИЯ: первый = старейший)
     if (this.cache.size >= this.maxCacheSize) {
-      // ГАРАНТИЯ: Первая запись — старейшая (Map сохраняет порядок вставки)
       const firstKey = this.cache.keys().next().value as string;
       this.cache.delete(firstKey);
 
@@ -214,11 +235,25 @@ export class ErrorClassifier {
       });
     }
 
-    // 6. Кэшируем результат
+    // 6. Кэшируем под cacheKey
     this.cache.set(cacheKey, result);
+
+    // 7. Кэшируем/освежаем alias resultKey (если ключи разные).
+    //    delete+set перемещает запись в конец Map (LRU refresh) независимо от того,
+    //    существовала ли она раньше. Вытеснение только если запись новая.
+    if (resultKey !== cacheKey) {
+      const resultKeyIsNew = !this.cache.has(resultKey);
+      if (resultKeyIsNew && this.cache.size >= this.maxCacheSize) {
+        const firstKey = this.cache.keys().next().value as string;
+        this.cache.delete(firstKey);
+      }
+      this.cache.delete(resultKey);
+      this.cache.set(resultKey, result);
+    }
 
     this.logger.trace('[ErrorClassifier] Cached classification', {
       cacheKey,
+      resultKey,
       originalType: error.type,
       classifiedType: result.type,
       cacheSize: this.cache.size,
@@ -240,6 +275,7 @@ export class ErrorClassifier {
    * - Code contains "network" → NETWORK_ERROR
    * - Code contains "rate" → RATE_LIMITED
    * - Code contains "auth" → AUTH_FAILED
+   * - Code matches /5\d{2}/ (5xx HTTP) → SERVER_ERROR
    * - Otherwise → UNKNOWN
    */
   private classifyStructured(structured: StructuredError): OrderError {
@@ -304,7 +340,10 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('5') || structured.message.toLowerCase().includes('server error')) {
+    // Проверяем только точные трёхзначные HTTP 5xx коды (500–599), чтобы не ловить подстроки вроде "E1500"
+    const codeNum = parseInt(code, 10);
+    const is5xx = code.length === 3 && codeNum >= 500 && codeNum <= 599;
+    if (is5xx || structured.message.toLowerCase().includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,
@@ -343,12 +382,16 @@ export class ErrorClassifier {
    * @returns Cache key
    *
    * @remarks
-   * Key = type + first 100 chars of message
-   * Same (type, message) → same key → same cached result
+   * Key = type + first 100 chars of message.
+   * Включаем type чтобы два разных типа с одинаковым сообщением не коллидировали в кэше.
+   *
+   * Идемпотентность (classify(classify(x)) === classify(x)) обеспечивается в classify():
+   * при смене типа (UNKNOWN → CONSTRAINT_VIOLATION) результат кэшируется дополнительно
+   * под ключом результата, поэтому повторный вызов с уже классифицированной ошибкой
+   * гарантированно попадает в кэш и возвращает тот же объект.
    */
   private makeCacheKey(error: OrderError): string {
     const message = this.extractMessage(error);
-    // Простой хэш: тип + первые 100 символов сообщения
     return `${error.type}:${message.substring(0, 100)}`;
   }
 

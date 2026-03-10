@@ -186,6 +186,7 @@ export class PositionLot {
    * ```
    */
   public equals(other: PositionLot): boolean {
+    if (other == null || !(other instanceof PositionLot)) return false;
     return (
       this.quantity.equals(other.quantity) &&
       this.entryPrice.equals(other.entryPrice) &&

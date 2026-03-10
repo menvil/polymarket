@@ -525,6 +525,7 @@ export class Orderbook {
    * Проверяет, устарел ли стакан
    *
    * @param maxAgeMs - Максимальный возраст в мс (по умолчанию 5000)
+   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    * @returns True если стакан старше maxAgeMs
    *
    * @remarks
@@ -532,9 +533,6 @@ export class Orderbook {
    *
    * Stale detection по локальному времени получения данных,
    * а не по времени venue (которое может быть некорректным).
-   *
-   * @param maxAgeMs - Максимальный возраст в мс (по умолчанию 5000)
-   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    */
   public isStale(maxAgeMs: number = 5000, nowMs?: number): boolean {
     return this.getAgeMs(nowMs) > maxAgeMs;
