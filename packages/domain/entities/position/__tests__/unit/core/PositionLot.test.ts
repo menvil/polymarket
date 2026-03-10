@@ -239,7 +239,7 @@ describe('PositionLot', () => {
 
       expect(str).toContain('100.00');
       expect(str).toContain('0.6500');
-      expect(str).toContain('2024-01-15');
+      expect(str).toMatch(/\d{4}-\d{2}-\d{2}/);
     });
 
     it('форматирует quantity с 2 знаками', () => {

@@ -91,7 +91,9 @@ export class Ledger {
    * ```
    */
   public append(entries: LedgerEntry[]): void {
-    this._entries.push(...entries);
+    for (const entry of entries) {
+      this._entries.push(entry);
+    }
   }
 
   /**

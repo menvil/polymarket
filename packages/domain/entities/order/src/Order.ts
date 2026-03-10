@@ -271,6 +271,11 @@ export class Order {
         context: { field: 'size', orderId: params.id },
       }));
     }
+    if (params.timestamp == null) {
+      return Err(new TradingError('Timestamp is required', {
+        context: { field: 'timestamp', orderId: params.id },
+      }));
+    }
 
     const event: OrderCreatedEvent = {
       type: 'ORDER_CREATED',
@@ -475,6 +480,8 @@ export class Order {
         return { ...state, status: newStatus, fill: newFill };
       }
 
+      default:
+        return state;
     }
   }
 

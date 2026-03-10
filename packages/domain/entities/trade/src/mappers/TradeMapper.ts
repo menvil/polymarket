@@ -384,7 +384,7 @@ export class TradeMapper {
       );
     }
 
-    if (!snapshot.marketId || snapshot.marketId.trim().length === 0) {
+    if (typeof snapshot.marketId !== 'string' || snapshot.marketId.trim().length === 0) {
       return Err(
         new ValidationError('Invalid snapshot: missing marketId', {
           context: { field: 'marketId' },
