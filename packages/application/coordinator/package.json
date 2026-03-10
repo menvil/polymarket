@@ -1,0 +1,33 @@
+{
+  "name": "@polymarket/coordinator",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/logger":          "workspace:*",
+    "@polymarket/ids":             "workspace:*",
+    "@polymarket/value-objects":   "workspace:*",
+    "@polymarket/result":          "workspace:*",
+    "@polymarket/errors":          "workspace:*",
+    "@polymarket/time":            "workspace:*",
+    "@polymarket/ports":           "workspace:*",
+    "@polymarket/event-bus":       "workspace:*",
+    "@polymarket/market-lifecycle": "workspace:*",
+    "@polymarket/balance-allocator": "workspace:*",
+    "@polymarket/strategy":        "workspace:*"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0"
+  }
+}

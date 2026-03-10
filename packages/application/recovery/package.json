@@ -1,0 +1,31 @@
+{
+  "name": "@polymarket/recovery",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build":     "tsc -p tsconfig.build.json",
+    "test":      "jest",
+    "lint":      "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/logger":    "workspace:*",
+    "@polymarket/result":    "workspace:*",
+    "@polymarket/errors":    "workspace:*",
+    "@polymarket/ids":       "workspace:*",
+    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/portfolio": "workspace:*",
+    "@polymarket/ports":     "workspace:*",
+    "@polymarket/handlers":  "workspace:*",
+    "decimal.js":            "^10.6.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0"
+  }
+}
