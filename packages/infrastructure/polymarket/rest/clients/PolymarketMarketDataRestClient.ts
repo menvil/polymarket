@@ -38,20 +38,6 @@ export interface MarketDataClientConfig {
 }
 
 /**
- * Ответ с исходом маркета (сырой формат API)
- */
-export interface MarketOutcomeResponse {
-  /** Идентификатор токена */
-  token_id: string;
-
-  /** Название исхода (например, "Up", "Down") */
-  name: string;
-
-  /** Текущая цена */
-  price?: string;
-}
-
-/**
  * DTO рыночных данных из Gamma API.
  *
  * @remarks
