@@ -200,7 +200,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
         minShares: sizeValidation.minShares,
       });
 
-      return { ok: false, reason: sizeValidation.reason };
+      return { ok: false, reason: sizeValidation.reason ?? 'Size validation failed' };
     }
 
     // Шаг 3: Проверяем баланс через BalancePolicy
@@ -222,7 +222,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
         suggestedSize: balanceCheck.suggestedSize,
       });
 
-      return { ok: false, reason: balanceCheck.reason };
+      return { ok: false, reason: balanceCheck.reason ?? 'Balance check failed' };
     }
 
     // Используем suggestedSize если он предоставлен проверкой баланса (напр., продажа доступного остатка)

@@ -52,7 +52,7 @@ class UserEventsFeedMetrics implements WsExecutionMapperMetrics {
   }
 
   sample(event: string, data: unknown): void {
-    this.logger.debug(`[UserEventsFeedMetrics] ${event}`, data);
+    this.logger.debug(`[UserEventsFeedMetrics] ${event}`, data as Record<string, unknown> | undefined);
   }
 }
 

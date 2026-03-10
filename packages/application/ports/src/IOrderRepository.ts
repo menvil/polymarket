@@ -22,43 +22,45 @@ export interface IOrderRepository {
    * Возвращает Order по ID или undefined если не найден.
    *
    * @param orderId - ID ордера
-   * @returns Order агрегат или undefined
+   * @returns Promise с Order агрегатом или undefined
    */
-  get(orderId: OrderId): Order | undefined;
+  get(orderId: OrderId): Promise<Order | undefined>;
 
   /**
    * Сохраняет (или обновляет) Order агрегат.
    *
    * @param order - Order для сохранения
+   * @returns Promise, завершающийся при успешном сохранении
    */
-  save(order: Order): void;
+  save(order: Order): Promise<void>;
 
   /**
    * Удаляет Order из хранилища.
    *
    * @param orderId - ID ордера для удаления
+   * @returns Promise, завершающийся при успешном удалении
    */
-  delete(orderId: OrderId): void;
+  delete(orderId: OrderId): Promise<void>;
 
   /**
    * Возвращает все открытые ордера стратегии.
    *
    * @param strategyId - ID стратегии
-   * @returns Readonly массив ордеров стратегии
+   * @returns Promise с readonly массивом ордеров стратегии
    *
    * @remarks
    * Используется TradingAPI.getOpenOrders().
    */
-  getByStrategyId(strategyId: string): readonly Order[];
+  getByStrategyId(strategyId: string): Promise<readonly Order[]>;
 
   /**
    * O(1) счётчик открытых ордеров.
    *
    * @param strategyId - ID стратегии (если undefined — все ордера)
-   * @returns Количество открытых ордеров
+   * @returns Promise с количеством открытых ордеров
    *
    * @remarks
    * Используется OrderRiskChecker для проверки лимита открытых ордеров.
    */
-  countByStrategyId(strategyId?: string): number;
+  countByStrategyId(strategyId?: string): Promise<number>;
 }

@@ -419,6 +419,21 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * TODO: Реализовать когда Polymarket API предоставит endpoint истории исполнений.
    * Пока возвращает пустой массив.
    */
+  /**
+   * Получить исполнения по идентификатору ордера
+   *
+   * @param _orderId - Идентификатор ордера
+   * @returns Массив исполнений
+   *
+   * @remarks
+   * TODO: Реализовать когда Polymarket API предоставит endpoint истории исполнений по ордеру.
+   * Пока возвращает пустой массив.
+   */
+  async getFills(_orderId: string): Promise<FillResponse[]> {
+    this.logger.warn('getFills not yet implemented');
+    return [];
+  }
+
   async getFillHistory(tokenId?: string): Promise<FillResponse[]> {
     this.logger.warn('getFillHistory not yet implemented', { tokenId });
 

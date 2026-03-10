@@ -83,7 +83,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
       throw new Error('logger is required');
     }
 
-    this.logger = logger.child ? logger.child('PolymarketMessageFormatter') : logger;
+    this.logger = logger.child({ component: 'PolymarketMessageFormatter' });
   }
 
   /**

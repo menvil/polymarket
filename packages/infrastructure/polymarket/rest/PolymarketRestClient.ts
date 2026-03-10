@@ -119,7 +119,7 @@ export class PolymarketRestClient {
     };
 
     this.signer = new PolymarketSigner(config.privateKey, config.chainId);
-    this.logger = logger.child?.('PolymarketRestClient') ?? logger;
+    this.logger = logger.child({ component: 'PolymarketRestClient' });
 
     // Создаём L2 аутентификатор если переданы credentials
     if (config.l2Credentials) {

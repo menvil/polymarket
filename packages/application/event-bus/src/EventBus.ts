@@ -104,12 +104,14 @@ export class EventBus implements IEventBus {
       if (!handlers || handlers.size === 0) return;
       await Promise.all(
         [...handlers].map((handler) =>
-          (handler as EventHandler<typeof event>)(event).catch((err: unknown) => {
-            this._logger.error('EventBus handler threw an error', {
-              err,
-              eventType: event.type,
-            });
-          })
+          Promise.resolve()
+            .then(() => (handler as EventHandler<typeof event>)(event))
+            .catch((err: unknown) => {
+              this._logger.error('EventBus handler threw an error', {
+                err,
+                eventType: event.type,
+              });
+            })
         )
       );
     } finally {

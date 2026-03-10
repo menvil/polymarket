@@ -67,12 +67,7 @@ describe('FillEventHandler', () => {
     const raw = makeValidRaw();
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
 
-    // Проверяем только если маппер действительно парсит этот payload
-    if (!mapResult.ok) {
-      // Маппер не принял payload — тест не может проверить публикацию
-      // (payload может не соответствовать текущей версии FillMapper)
-      return;
-    }
+    expect(mapResult.ok).toBe(true);
 
     await handler.handle(raw, ACCOUNT_ID);
 
@@ -88,17 +83,17 @@ describe('FillEventHandler', () => {
   it('логирует error и не публикует при невалидном raw', async () => {
     const raw = { id: 'bad-fill', status: 'MATCHED' }; // невалидный payload, но MATCHED
 
+    // Маппер должен отклонить невалидный payload
+    const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
+    expect(mapResult.ok).toBe(false);
+
     await handler.handle(raw, ACCOUNT_ID);
 
-    // Если маппер его отклонил — должен логировать error
-    const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-    if (!mapResult.ok) {
-      expect(eventBus.publish).not.toHaveBeenCalled();
-      expect(logger.error).toHaveBeenCalledWith(
-        'Failed to parse fill event',
-        expect.any(Object),
-      );
-    }
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to parse fill event',
+      expect.any(Object),
+    );
   });
 
   it('игнорирует fill со статусом MINED (trace-лог, нет публикации)', async () => {
@@ -151,28 +146,28 @@ describe('FillEventHandler', () => {
     const raw = { id: 'fill-bad-123', status: 'MATCHED' };
 
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-    if (!mapResult.ok) {
-      await handler.handle(raw, ACCOUNT_ID);
+    expect(mapResult.ok).toBe(false);
 
-      expect(logger.error).toHaveBeenCalledWith(
-        'Failed to parse fill event',
-        expect.objectContaining({ rawId: 'fill-bad-123' }),
-      );
-    }
+    await handler.handle(raw, ACCOUNT_ID);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to parse fill event',
+      expect.objectContaining({ rawId: 'fill-bad-123' }),
+    );
   });
 
   it('использует "unknown" как rawId если raw["id"] не строка', async () => {
     const raw = { id: 42, status: 'MATCHED' }; // id не строка
 
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-    if (!mapResult.ok) {
-      await handler.handle(raw, ACCOUNT_ID);
+    expect(mapResult.ok).toBe(false);
 
-      expect(logger.error).toHaveBeenCalledWith(
-        'Failed to parse fill event',
-        expect.objectContaining({ rawId: 'unknown' }),
-      );
-    }
+    await handler.handle(raw, ACCOUNT_ID);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to parse fill event',
+      expect.objectContaining({ rawId: 'unknown' }),
+    );
   });
 
   it('не публикует если TimestampService не может создать timestamp', async () => {
@@ -184,9 +179,7 @@ describe('FillEventHandler', () => {
 
     const raw = makeValidRaw();
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-    if (!mapResult.ok) {
-      return; // payload не парсится — тест неприменим
-    }
+    expect(mapResult.ok).toBe(true); // payload должен парситься
 
     await handlerBadClock.handle(raw, ACCOUNT_ID);
 

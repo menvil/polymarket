@@ -14,5 +14,6 @@ interface IMinimalOrderRepository {
  * Stub для WsExecutionNormalizer.
  */
 export class WsExecutionNormalizer {
-  constructor(private readonly _orderRepository: IMinimalOrderRepository) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_orderRepository: IMinimalOrderRepository) {}
 }

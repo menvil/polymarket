@@ -82,6 +82,8 @@ export interface UserFillResponse {
  * Параметры запроса исполнений пользователя
  */
 export interface UserFillsParams {
+  /** Позволяет передавать объект как Record<string, unknown> */
+  [key: string]: unknown;
   /** Фильтр по condition ID маркета */
   market?: string;
 

@@ -169,7 +169,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
     };
 
-    this.logger = logger.child?.('PolymarketMarketDataRestClient') ?? logger;
+    this.logger = logger.child({ component: 'PolymarketMarketDataRestClient' });
   }
 
   /**

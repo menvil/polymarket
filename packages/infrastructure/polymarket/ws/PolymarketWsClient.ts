@@ -108,7 +108,7 @@ export class PolymarketWsClient extends EventEmitter {
     }
 
     this.wsManager = wsManager;
-    this.logger = logger.child ? logger.child('PolymarketWsClient') : logger;
+    this.logger = logger.child({ component: 'PolymarketWsClient' });
 
     this.setupEventForwarding();
   }

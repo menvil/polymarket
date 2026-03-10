@@ -37,7 +37,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { BaseWebSocketConfig } from '../stubs/shared/websocket/types.js';
+import type { BaseWebSocketConfig, ConnectionStatus } from '../stubs/shared/websocket/types.js';
 import { BaseWebSocketTransport } from '../stubs/shared/websocket/BaseWebSocketTransport.js';
 import { PolymarketMessageFormatter } from './PolymarketMessageFormatter.js';
 import { PolymarketMessageParser } from './PolymarketMessageParser.js';
@@ -187,6 +187,37 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
       assets_ids: tokenIds,
       type: 'market',
     });
+  }
+
+  /**
+   * Переподключается для изменения подписок.
+   *
+   * @remarks
+   * Stub — полная реализация в Phase 8.
+   */
+  public async reconnectForNewSubscription(): Promise<void> {
+    await this.disconnect();
+    await this.connect();
+  }
+
+  /**
+   * Возвращает текущий статус соединения.
+   *
+   * @remarks
+   * Stub — возвращает 'disconnected' до Phase 8.
+   */
+  public getStatus(): ConnectionStatus {
+    return 'disconnected';
+  }
+
+  /**
+   * Проверяет подключён ли WebSocket.
+   *
+   * @remarks
+   * Stub — возвращает false до Phase 8.
+   */
+  public isConnected(): boolean {
+    return false;
   }
 
   /**

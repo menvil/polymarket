@@ -218,7 +218,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       throw new Error('logger is required');
     }
 
-    this.logger = logger.child ? logger.child('PolymarketMessageRouter') : logger;
+    this.logger = logger.child({ component: 'PolymarketMessageRouter' });
     this.stats = {
       totalMessages: 0,
       orderbookMessages: 0,

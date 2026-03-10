@@ -1,0 +1,27 @@
+{
+  "name": "@polymarket/orchestrators",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/logger":    "workspace:*",
+    "@polymarket/result":    "workspace:*",
+    "@polymarket/errors":    "workspace:*",
+    "@polymarket/event-bus": "workspace:*",
+    "@polymarket/use-cases": "workspace:*"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0"
+  }
+}

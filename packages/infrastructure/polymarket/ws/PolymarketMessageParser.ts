@@ -87,7 +87,7 @@ export class PolymarketMessageParser implements IMessageParser {
       throw new Error('logger is required');
     }
 
-    this.logger = logger.child ? logger.child('PolymarketMessageParser') : logger;
+    this.logger = logger.child({ component: 'PolymarketMessageParser' });
   }
 
   /**

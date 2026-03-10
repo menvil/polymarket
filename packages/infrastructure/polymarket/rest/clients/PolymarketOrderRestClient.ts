@@ -196,6 +196,8 @@ export interface TradeResponse {
   transaction_hash?: string;
   /** Временная метка матчинга */
   match_time?: string;
+  /** Сторона трейдера (MAKER или TAKER) */
+  trader_side?: 'MAKER' | 'TAKER';
 }
 
 /**
