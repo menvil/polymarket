@@ -272,11 +272,13 @@ export class TradeMapper {
         : undefined;
 
     // Генерировать VenueTradeId из transaction_hash + '_' + timestamp (оригинальное значение из raw)
+    // Если txHash недоступен — добавляем price и size для снижения вероятности коллизий
+    // (одновременные трейды с разными размерами/ценами на том же рынке/токене будут различаться)
     const tsStr = String(timestampRaw).trim();
     const tradeIdString =
       txHash !== undefined
         ? `${txHash}_${tsStr}`
-        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}`;
+        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}_${String(priceRaw).trim()}_${String(sizeRaw).trim()}`;
 
     const tradeId = asVenueTradeId(tradeIdString);
     if (!tradeId) {
@@ -456,7 +458,9 @@ export class TradeMapper {
       tokenId,
       price,
       size,
-      aggressorSide: snapshot.aggressorSide,
+      aggressorSide: snapshot.aggressorSide === 'BUY' || snapshot.aggressorSide === 'SELL'
+        ? snapshot.aggressorSide
+        : undefined,
       timestamp: timestampResult.value,
       txHash,
     });

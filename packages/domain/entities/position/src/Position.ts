@@ -346,6 +346,15 @@ export class Position {
       );
     }
 
+    // Защита от null/undefined: lots должен быть массивом
+    if (!params.lots || !Array.isArray(params.lots)) {
+      return Err(
+        new ValidationError('lots must be an array', {
+          context: { field: 'lots', positionId: params.id },
+        })
+      );
+    }
+
     // Инвариант лотов: нет пустых лотов (quantity = 0)
     // Пустой лот — признак бага в коде вызывающей стороны.
     // computeClose никогда не производит пустые лоты, поэтому
@@ -450,6 +459,14 @@ export class Position {
       );
     }
 
+    if (closedAt.toNumber() < this.openedAt.toNumber()) {
+      return Err(
+        new ValidationError('closedAt must be >= openedAt', {
+          context: { field: 'closedAt', value: closedAt.toNumber(), positionId: this.id },
+        })
+      );
+    }
+
     const orderedLots =
       strategy === 'FIFO' ? this.lots : [...this.lots].reverse();
 
@@ -501,6 +518,14 @@ export class Position {
     newLots: readonly PositionLot[],
     addedAt: Timestamp,
   ): Result<Position, ValidationError> {
+    if (addedAt.toNumber() < this.openedAt.toNumber()) {
+      return Err(
+        new ValidationError('addedAt must be >= openedAt', {
+          context: { field: 'addedAt', positionId: this.id },
+        })
+      );
+    }
+
     if (newLots.length === 0) {
       return Err(
         new ValidationError('New lots must not be empty', {

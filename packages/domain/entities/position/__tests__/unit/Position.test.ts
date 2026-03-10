@@ -45,7 +45,7 @@ describe('Position Entity', () => {
     instrumentId: asInstrumentId('market-abc-token-yes')!,
     asset: TEST_ASSET_ID,
     side: 'LONG',
-    openedAt: Timestamp.now(),
+    openedAt: Timestamp.of(new Decimal(1)),
     lots: [DEFAULT_LOT],
     ...overrides,
   });

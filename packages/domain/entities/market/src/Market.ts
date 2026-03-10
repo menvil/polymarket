@@ -173,9 +173,10 @@ export class Market {
     this.question = props.question;
     this._expirationMs = props.expirationMs;
     this.state = props.state;
+    // Нормализуем имена исходов (trim) при хранении — для консистентности со сравнением в create()
     this.outcomes = [
-      Object.freeze({ ...props.outcomes[0] }),
-      Object.freeze({ ...props.outcomes[1] }),
+      Object.freeze({ ...props.outcomes[0], name: props.outcomes[0].name.trim() }),
+      Object.freeze({ ...props.outcomes[1], name: props.outcomes[1].name.trim() }),
     ];
     this._pendingNotifications = [...pendingNotifications];
   }

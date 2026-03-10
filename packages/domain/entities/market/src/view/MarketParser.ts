@@ -120,8 +120,9 @@ export class MarketParser {
       );
     }
 
-    // question
-    if (typeof data.question !== 'string' || data.question.trim().length === 0) {
+    // question — trim перед валидацией и хранением для консистентности
+    const question = typeof data.question === 'string' ? data.question.trim() : '';
+    if (!question) {
       return Err(
         new MarketValidationError('Market data: question must be a non-empty string', {
           context: { field: 'question', value: data.question },
@@ -215,7 +216,7 @@ export class MarketParser {
     return Ok({
       id: marketId,
       slug: marketSlug,
-      question: data.question as string,
+      question,
       outcomes: [
         { token: token0Result.value, index: 0 as const, name: o0.name as string },
         { token: token1Result.value, index: 1 as const, name: o1.name as string },

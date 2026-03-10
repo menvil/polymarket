@@ -57,7 +57,7 @@ describe('FIFO/LIFO Algorithms', () => {
       instrumentId: asInstrumentId('market-abc')!,
       asset: TEST_ASSET_ID,
       side,
-      openedAt: Timestamp.now(),
+      openedAt: Timestamp.of(new Decimal(1)),
       lots,
     };
 
@@ -188,7 +188,7 @@ describe('FIFO/LIFO Algorithms', () => {
         instrumentId: asInstrumentId('market-abc')!,
         asset: TEST_ASSET_ID,
         side: 'LONG',
-        openedAt: Timestamp.now(),
+        openedAt: Timestamp.of(new Decimal(1)),
         lots: [],
       }));
 

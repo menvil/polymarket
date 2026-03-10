@@ -87,8 +87,9 @@ export class OrderbookNormalizer {
     raw: RawOrderbook,
     policy: NormalizationPolicy = PERMISSIVE_NORMALIZATION_POLICY
   ): Result<NormalizedOrderbook, OrderbookValidationError | OrderbookInvalidError> {
-    // Валидация marketId
-    if (!raw.marketId || raw.marketId.trim().length === 0) {
+    // Валидация marketId — trim при валидации и хранении для консистентности
+    const marketId = raw.marketId?.trim() ?? '';
+    if (!marketId) {
       return Err(
         new OrderbookValidationError('Missing or invalid marketId', {
           context: { field: 'marketId', value: raw.marketId },
@@ -96,23 +97,24 @@ export class OrderbookNormalizer {
       );
     }
 
-    // Валидация tokenId
-    if (!raw.tokenId || raw.tokenId.trim().length === 0) {
+    // Валидация tokenId — trim при валидации и хранении для консистентности
+    const tokenId = raw.tokenId?.trim() ?? '';
+    if (!tokenId) {
       return Err(
         new OrderbookValidationError('Missing or invalid tokenId', {
-          context: { field: 'tokenId', value: raw.tokenId, marketId: raw.marketId },
+          context: { field: 'tokenId', value: raw.tokenId, marketId },
         })
       );
     }
 
     // Парсинг bids
-    const bidsResult = this.parseLevels('bids', raw.bids, raw.marketId, policy);
+    const bidsResult = this.parseLevels('bids', raw.bids, marketId, policy);
     if (!bidsResult.ok) {
       return bidsResult;
     }
 
     // Парсинг asks
-    const asksResult = this.parseLevels('asks', raw.asks, raw.marketId, policy);
+    const asksResult = this.parseLevels('asks', raw.asks, marketId, policy);
     if (!asksResult.ok) {
       return asksResult;
     }
@@ -154,8 +156,8 @@ export class OrderbookNormalizer {
     return Ok({
       bids,
       asks,
-      marketId: raw.marketId,
-      tokenId: raw.tokenId,
+      marketId,
+      tokenId,
       venueTimestamp,
       receivedAt,
     });
