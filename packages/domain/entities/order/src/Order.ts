@@ -341,6 +341,13 @@ export class Order {
       ));
     }
 
+    if (state.status === 'PARTIALLY_FILLED' && !(filledVal.gt(0) && filledVal.lt(sizeVal))) {
+      return Err(new TradingError(
+        `PARTIALLY_FILLED order must have 0 < filledSize < size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
+      ));
+    }
+
     return Ok(new Order(state));
   }
 

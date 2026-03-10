@@ -3,7 +3,7 @@
  */
 
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
-import type { AssetId } from '@polymarket/ids';
+import type { AssetId, OrderId } from '@polymarket/ids';
 import {
   asOrderId,
   asFillId,

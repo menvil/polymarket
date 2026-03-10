@@ -358,6 +358,14 @@ export class TradeMapper {
    * ```
    */
   public static fromSnapshot(snapshot: TradeSnapshot): Result<Trade, ValidationError> {
+    if (snapshot == null || typeof snapshot !== 'object') {
+      return Err(
+        new ValidationError('Invalid snapshot: expected non-null object', {
+          context: { field: 'snapshot', value: snapshot },
+        })
+      );
+    }
+
     const tradeId = asVenueTradeId(snapshot.id);
     if (!tradeId) {
       return Err(
