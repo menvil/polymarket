@@ -12,9 +12,11 @@
  * - Zero memory leak: Cache size capped at maxCacheSize
  *
  * Caching strategy:
- * - Key: hash(type + first 100 chars of message)
+ * - Key: type + first 100 chars of message (both fields prevent same-message collisions)
  * - Value: classified OrderError
  * - LRU eviction: oldest entries deleted when cache full
+ * - Double-cache on type change: result cached under both input key and result key
+ *   (ensures classify(classify(x)) === classify(x))
  * - No TTL: cache persists for session lifetime
  *
  * @example
@@ -217,6 +219,18 @@ export class ErrorClassifier {
     // 6. Кэшируем результат
     this.cache.set(cacheKey, result);
 
+    // 7. Идемпотентность: если тип изменился (UNKNOWN → X), кэшируем также под ключом результата.
+    //    Это гарантирует classify(classify(x)) === classify(x) при повторном вызове с уже
+    //    классифицированной ошибкой (её ключ = resultKey, и она сразу попадёт в кэш).
+    const resultKey = this.makeCacheKey(result);
+    if (resultKey !== cacheKey && !this.cache.has(resultKey)) {
+      if (this.cache.size >= this.maxCacheSize) {
+        const firstKey = this.cache.keys().next().value as string;
+        this.cache.delete(firstKey);
+      }
+      this.cache.set(resultKey, result);
+    }
+
     this.logger.trace('[ErrorClassifier] Cached classification', {
       cacheKey,
       originalType: error.type,
@@ -344,15 +358,17 @@ export class ErrorClassifier {
    * @returns Cache key
    *
    * @remarks
-   * Key = first 100 chars of message (NOT type).
-   * Excluding type is critical for idempotency: classify(classify(x)) === classify(x).
-   * If we keyed on type, a reclassified error (type changed from UNKNOWN to CONSTRAINT_VIOLATION)
-   * would produce a different key on second call → cache miss → re-classified → not same reference.
+   * Key = type + first 100 chars of message.
+   * Включаем type чтобы два разных типа с одинаковым сообщением не коллидировали в кэше.
+   *
+   * Идемпотентность (classify(classify(x)) === classify(x)) обеспечивается в classify():
+   * при смене типа (UNKNOWN → CONSTRAINT_VIOLATION) результат кэшируется дополнительно
+   * под ключом результата, поэтому повторный вызов с уже классифицированной ошибкой
+   * гарантированно попадает в кэш и возвращает тот же объект.
    */
   private makeCacheKey(error: OrderError): string {
     const message = this.extractMessage(error);
-    // Ключ: только первые 100 символов сообщения (без type — иначе нарушается идемпотентность)
-    return message.substring(0, 100);
+    return `${error.type}:${message.substring(0, 100)}`;
   }
 
   /**
