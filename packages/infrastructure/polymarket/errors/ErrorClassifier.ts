@@ -11,13 +11,13 @@
  * - Reference equality: classify(x) twice returns SAME object
  * - Zero memory leak: Cache size capped at maxCacheSize
  *
- * Caching strategy:
- * - Key: type + first 100 chars of message (both fields prevent same-message collisions)
- * - Value: classified OrderError
- * - LRU eviction: oldest entries deleted when cache full
- * - Double-cache on type change: result cached under both input key and result key
- *   (ensures classify(classify(x)) === classify(x))
- * - No TTL: cache persists for session lifetime
+ * Стратегия кэширования:
+ * - Ключ: тип + первые 100 символов сообщения (оба поля исключают коллизии по сообщению)
+ * - Значение: классифицированная OrderError
+ * - LRU вытеснение: старейшие записи удаляются при переполнении
+ * - Двойное кэширование при смене типа: результат кэшируется под ключом входа и под ключом результата
+ *   (гарантирует classify(classify(x)) === classify(x))
+ * - Без TTL: кэш живёт на протяжении сессии
  *
  * @example
  * ```typescript

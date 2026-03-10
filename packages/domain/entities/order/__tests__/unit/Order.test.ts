@@ -316,7 +316,22 @@ describe('Order', () => {
   });
 
   describe('fromEvents()', () => {
-    // Вспомогательная функция: разворачивает Result или бросает ошибку
+    /**
+     * Вспомогательная функция для тестов: разворачивает Result<Order> или бросает ошибку
+     *
+     * @param events - Список доменных событий для воспроизведения заявки
+     * @returns Order при успехе
+     * @throws {TradingError} Если Order.fromEvents() вернул Err
+     *
+     * @remarks
+     * Используется вместо ручного unwrap в каждом тесте.
+     *
+     * @example
+     * ```typescript
+     * const order = replay([createdEvent, acceptedEvent]);
+     * expect(order.status).toBe('OPEN');
+     * ```
+     */
     function replay(events: Parameters<typeof Order.fromEvents>[0]) {
       const result = Order.fromEvents(events);
       if (!result.ok) throw result.error;
