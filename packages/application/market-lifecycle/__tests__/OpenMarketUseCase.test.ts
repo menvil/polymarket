@@ -52,6 +52,7 @@ function makeAllocator(): jest.Mocked<IBalanceAllocator> {
     updateTotalBalance: jest.fn<IBalanceAllocator['updateTotalBalance']>(),
     canAddMarket: jest.fn<IBalanceAllocator['canAddMarket']>(),
     getStats: jest.fn<IBalanceAllocator['getStats']>(),
+    restoreAllocations: jest.fn<IBalanceAllocator['restoreAllocations']>(),
   };
 }
 
