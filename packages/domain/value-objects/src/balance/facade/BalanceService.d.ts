@@ -1,0 +1,450 @@
+import { Result } from '@polymarket/result';
+import type { AccountId, VenueId } from '@polymarket/ids';
+import { InvalidBalanceError } from '@polymarket/errors';
+import { Balance } from '../core/Balance.js';
+import { Money } from '../../money/core/Money.js';
+/**
+ * Фасад для работы с Balance - публичный API
+ *
+ * @remarks
+ * Единая точка входа для всех операций с балансом.
+ * Оркестрирует Core + Rules для безопасных операций.
+ *
+ * **Контракт "Never Throw":**
+ * ВСЕ методы BalanceService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Любые исключения из Core инвариантов или Rules ловятся и преобразуются в Result.Err.
+ *
+ * **Facade Error Contract:**
+ * Любой Err из Facade содержит:
+ * - context.op - название операции (верхний уровень)
+ * - context.opChain - цепочка операций (внутренние op не теряются)
+ * - context.available/reserved/amount - входные параметры (если применимо)
+ * - context.reason - типизированная причина из BalanceErrorReason enum (root, не перетирается)
+ * - context.currency - валюта баланса
+ *
+ * **Правило возвращаемых типов:**
+ * ВСЕ операции возвращают Result<T, InvalidBalanceError>
+ * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
+ *
+ * **Immutability:**
+ * Все операции (reserve, unfreezeReserved, consumeReserved, updateAvailable) возвращают НОВЫЙ экземпляр Balance.
+ * Исходный баланс никогда не модифицируется.
+ *
+ * @example
+ * ```typescript
+ * import { BalanceService } from '@polymarket/value-objects/balance';
+ * import { Money } from '@polymarket/value-objects/money';
+ * import { parseAccountId, asVenueId } from '@polymarket/ids';
+ *
+ * const accountId = parseAccountId('venue:POLYMARKET:0xabc');
+ * const venueId = asVenueId('POLYMARKET');
+ *
+ * // Создание баланса
+ * const result = BalanceService.create(
+ *   Money.fromUSDC(10000),
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
+ * );
+ * if (isErr(result)) {
+ *   console.error(result.error.context.reason); // BalanceErrorReason
+ *   return;
+ * }
+ * const balance = result.value;
+ *
+ * // Резервирование средств
+ * const reserveResult = BalanceService.reserve(balance, Money.fromUSDC(3000));
+ * if (reserveResult.ok) {
+ *   console.log(reserveResult.value.reserved().value()); // 5000
+ * }
+ * ```
+ */
+export declare class BalanceService {
+    private static readonly SERVICE_NAME;
+    /**
+     * Создаёт Balance из available и reserved Money
+     *
+     * @param available - Доступные средства
+     * @param reserved - Зарезервированные средства
+     * @param accountId - ID аккаунта владельца
+     * @param venueId - ID площадки (venue)
+     * @returns Result<Balance, InvalidBalanceError>
+     * @throws Никогда - все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * ПУБЛИЧНЫЙ способ создания Balance.
+     * Возвращает Result вместо исключений.
+     *
+     * Процесс:
+     * 1. Вызывает Balance.of() для создания (проверит инварианты)
+     * 2. Ловит BalanceInvariantViolation и мапит в InvalidBalanceError
+     *
+     * Обработка ошибок:
+     * - Invariant fail (BalanceInvariantViolation) → InvalidBalanceError с reason из enum
+     * - Unexpected error → InvalidBalanceError с cause
+     *
+     * Проверяемые инварианты (в Balance.of):
+     * - available >= 0
+     * - reserved >= 0
+     * - available.currency === reserved.currency
+     *
+     * @example
+     * ```typescript
+     * const result = BalanceService.create(
+     *   Money.fromUSDC(10000),
+     *   Money.fromUSDC(2000),
+     *   accountId,
+     *   venueId
+     * );
+     * if (isErr(result)) {
+     *   console.error(result.error.context.reason);
+     *   // BalanceErrorReason.NEGATIVE_AVAILABLE
+     *   // BalanceErrorReason.NEGATIVE_RESERVED
+     *   // BalanceErrorReason.CURRENCY_MISMATCH
+     * }
+     * ```
+     */
+    static create(available: Money, reserved: Money, accountId: AccountId, venueId: VenueId): Result<Balance, InvalidBalanceError>;
+    /**
+     * Резервирует средства из available
+     *
+     * @param balance - Текущий баланс
+     * @param amount - Сумма для резервирования
+     * @returns Result с новым Balance или InvalidBalanceError
+     * @throws Никогда - все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * Создаёт НОВЫЙ Balance с:
+     * - available = balance.available - amount
+     * - reserved = balance.reserved + amount
+     *
+     * Процесс:
+     * 1. Проверяет валюту через ValidateCurrencyMatch
+     * 2. Проверяет достаточность средств через ValidateReserveAmount
+     * 3. Вычисляет новые available и reserved через MoneyService
+     * 4. Создаёт новый Balance через Balance.of()
+     *
+     * Обработка ошибок:
+     * - Currency mismatch → InvalidBalanceError(CURRENCY_MISMATCH)
+     * - Insufficient funds → InvalidBalanceError(INSUFFICIENT_FUNDS)
+     * - Invariant fail → InvalidBalanceError с reason
+     *
+     * @example
+     * ```typescript
+     * const balance = expectOk(BalanceService.create(
+     *   Money.fromUSDC(10000),
+     *   Money.fromUSDC(2000)
+     * ));
+     *
+     * const result = BalanceService.reserve(balance, Money.fromUSDC(3000));
+     * if (result.ok) {
+     *   console.log(result.value.available().value()); // 7000
+     *   console.log(result.value.reserved().value());  // 5000
+     * } else {
+     *   console.error(result.error.context.reason);
+     *   // BalanceErrorReason.INSUFFICIENT_FUNDS
+     *   // BalanceErrorReason.CURRENCY_MISMATCH
+     * }
+     * ```
+     */
+    static reserve(balance: Balance, amount: Money): Result<Balance, InvalidBalanceError>;
+    /**
+     * Размораживает зарезервированные средства (возврат в available)
+     *
+     * @param balance - Текущий баланс
+     * @param amount - Сумма для разморозки
+     * @returns Result с новым Balance или InvalidBalanceError
+     * @throws Никогда - все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * Создаёт НОВЫЙ Balance с:
+     * - available = balance.available + amount
+     * - reserved = balance.reserved - amount
+     *
+     * **Use cases:**
+     * - Отмена сделки (возврат зарезервированных средств)
+     * - Частичное исполнение (возврат неиспользованного остатка)
+     * - Истечение срока резервирования
+     *
+     * **Важно:** Для списания reserved БЕЗ возврата в available используйте consumeReserved().
+     *
+     * Процесс:
+     * 1. Проверяет валюту через ValidateCurrencyMatch
+     * 2. Проверяет достаточность reserved через ValidateReleaseAmount
+     * 3. Вычисляет новые available и reserved через MoneyService
+     * 4. Создаёт новый Balance через Balance.of()
+     *
+     * Обработка ошибок:
+     * - Currency mismatch → InvalidBalanceError(CURRENCY_MISMATCH)
+     * - Insufficient reserved → InvalidBalanceError(INSUFFICIENT_RESERVED)
+     * - Invariant fail → InvalidBalanceError с reason
+     *
+     * @example
+     * ```typescript
+     * // Отмена сделки - возвращаем зарезервированные средства
+     * const balance = expectOk(BalanceService.create(
+     *   Money.fromUSDC(7000),
+     *   Money.fromUSDC(5000)
+     * ));
+     *
+     * const result = BalanceService.unfreezeReserved(balance, Money.fromUSDC(2000));
+     * if (result.ok) {
+     *   console.log(result.value.available().value()); // 9000 (было 7000)
+     *   console.log(result.value.reserved().value());  // 3000 (было 5000)
+     * } else {
+     *   console.error(result.error.context.reason);
+     *   // BalanceErrorReason.INSUFFICIENT_RESERVED
+     *   // BalanceErrorReason.CURRENCY_MISMATCH
+     * }
+     * ```
+     */
+    static unfreezeReserved(balance: Balance, amount: Money): Result<Balance, InvalidBalanceError>;
+    /**
+     * Списывает зарезервированные средства (исполнение сделки)
+     *
+     * @param balance - Текущий баланс
+     * @param amount - Сумма для списания
+     * @returns Result с новым Balance или InvalidBalanceError
+     * @throws Никогда - все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * Создаёт НОВЫЙ Balance с:
+     * - available не меняется
+     * - reserved = balance.reserved - amount
+     *
+     * **Use cases:**
+     * - Исполнение сделки (списание зарезервированных средств)
+     * - Комиссия за операцию (списание из reserved)
+     * - Любое списание БЕЗ возврата в available
+     *
+     * **Важно:** Это списание БЕЗ возврата в available.
+     * Если нужно вернуть средства в available - используйте unfreezeReserved().
+     *
+     * **Если списалось меньше запланированного:**
+     * ```typescript
+     * // Зарезервировали 100, списалось только 80
+     * consumeReserved(balance, Money.of(80));      // списываем фактическое
+     * unfreezeReserved(balance, Money.of(20));     // размораживаем остаток
+     * ```
+     *
+     * **Если нужно списать больше reserved:**
+     * ```typescript
+     * // reserved = 100, нужно списать 120
+     * reserve(balance, Money.of(20));              // дорезервировать недостающее
+     * consumeReserved(balance, Money.of(120));     // теперь можно списать
+     * ```
+     *
+     * Процесс:
+     * 1. Проверяет валюту через ValidateCurrencyMatch
+     * 2. Проверяет достаточность reserved через ValidateReleaseAmount
+     * 3. Вычисляет новый reserved через MoneyService
+     * 4. Создаёт новый Balance через create()
+     *
+     * Обработка ошибок:
+     * - Currency mismatch → InvalidBalanceError(CURRENCY_MISMATCH)
+     * - Insufficient reserved → InvalidBalanceError(INSUFFICIENT_RESERVED)
+     * - Invariant fail → InvalidBalanceError с reason
+     *
+     * @example
+     * ```typescript
+     * // Исполнение сделки - списываем из reserved
+     * const balance = expectOk(BalanceService.create(
+     *   Money.fromUSDC(7000),
+     *   Money.fromUSDC(5000)
+     * ));
+     *
+     * const result = BalanceService.consumeReserved(balance, Money.fromUSDC(2000));
+     * if (result.ok) {
+     *   console.log(result.value.available().value()); // 7000 (не изменилось!)
+     *   console.log(result.value.reserved().value());  // 3000 (было 5000)
+     * } else {
+     *   console.error(result.error.context.reason);
+     *   // BalanceErrorReason.INSUFFICIENT_RESERVED
+     *   // BalanceErrorReason.CURRENCY_MISMATCH
+     * }
+     * ```
+     */
+    static consumeReserved(balance: Balance, amount: Money): Result<Balance, InvalidBalanceError>;
+    /**
+     * Обновляет доступные средства (available)
+     *
+     * @param balance - Текущий баланс
+     * @param newAvailable - Новое значение available
+     * @returns Result с новым Balance или InvalidBalanceError
+     * @throws Никогда - все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * Создаёт НОВЫЙ Balance с:
+     * - available = newAvailable
+     * - reserved = balance.reserved (не изменяется)
+     *
+     * Процесс:
+     * 1. Проверяет валюту через ValidateCurrencyMatch
+     * 2. Создаёт новый Balance через Balance.of()
+     *
+     * Обработка ошибок:
+     * - Currency mismatch → InvalidBalanceError(CURRENCY_MISMATCH)
+     * - Invariant fail → InvalidBalanceError с reason (например NEGATIVE_AVAILABLE)
+     *
+     * @example
+     * ```typescript
+     * const balance = expectOk(BalanceService.create(
+     *   Money.fromUSDC(10000),
+     *   Money.fromUSDC(2000)
+     * ));
+     *
+     * const result = BalanceService.updateAvailable(
+     *   balance,
+     *   Money.fromUSDC(15000)
+     * );
+     * if (result.ok) {
+     *   console.log(result.value.available().value()); // 15000
+     *   console.log(result.value.reserved().value());  // 2000 (не изменилось)
+     * }
+     * ```
+     */
+    static updateAvailable(balance: Balance, newAvailable: Money): Result<Balance, InvalidBalanceError>;
+    /**
+     * Зачисляет средства в available (кредитование)
+     *
+     * @param balance - Текущий баланс
+     * @param amount - Сумма для зачисления
+     * @returns Result с новым Balance или InvalidBalanceError
+     * @throws Никогда — все ошибки оборачиваются в Result
+     *
+     * @remarks
+     * Создаёт НОВЫЙ Balance с:
+     * - available = balance.available + amount
+     * - reserved = balance.reserved (не изменяется)
+     *
+     * **Use cases:**
+     * - Получение прибыли от закрытой позиции
+     * - Пополнение счёта
+     * - Возврат комиссии
+     *
+     * @example
+     * ```typescript
+     * const result = BalanceService.credit(balance, Money.of(new Decimal(500), 'USDC'));
+     * if (result.ok) {
+     *   console.log(result.value.available().value()); // available + 500
+     *   console.log(result.value.reserved().value());  // reserved (не изменился)
+     * }
+     * ```
+     */
+    static credit(balance: Balance, amount: Money): Result<Balance, InvalidBalanceError>;
+    /**
+     * Сравнивает два баланса на точное равенство
+     *
+     * @param balance1 - Первый баланс
+     * @param balance2 - Второй баланс
+     * @returns Result с true если балансы равны, false в противном случае
+     *
+     * @remarks
+     * **Strict equality (без epsilon):**
+     * - available1 === available2 (точное равенство)
+     * - reserved1 === reserved2 (точное равенство)
+     * - currency1 === currency2 (точное равенство)
+     * - accountId1 === accountId2 (через accountIdEquals, case-insensitive для wallet address)
+     * - venueId1 === venueId2 (точное равенство строк)
+     *
+     * **Проверки:**
+     * 1. Валюты должны совпадать (иначе CURRENCY_MISMATCH)
+     * 2. Сравнение available через MoneyService.equals()
+     * 3. Сравнение reserved через MoneyService.equals()
+     * 4. Сравнение accountId через accountIdEquals()
+     * 5. Сравнение venueId (прямое сравнение строк)
+     *
+     * **Архитектура:**
+     * Этот метод находится в Facade потому что:
+     * - Использует MoneyService для сравнения
+     * - Возвращает Result (может вернуть ошибку)
+     * - Работает с двумя Balance объектами (не intrinsic state)
+     *
+     * @example
+     * ```typescript
+     * const accountId1: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+     * const accountId2: AccountId = { kind: 'WALLET', address: '0xABC...' as WalletAddress };
+     * const venueId1: VenueId = 'POLYMARKET' as VenueId;
+     * const venueId2: VenueId = 'KALSHI' as VenueId;
+     *
+     * // Одинаковые балансы - true
+     * const balance1 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(50), 'USDC'), accountId1, venueId1));
+     * const balance2 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(50), 'USDC'), accountId1, venueId1));
+     * const result1 = BalanceService.equals(balance1, balance2);
+     * console.log(result1.value); // true
+     *
+     * // Разный reserved - false
+     * const balance3 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(51), 'USDC'), accountId1, venueId1));
+     * const result2 = BalanceService.equals(balance1, balance3);
+     * console.log(result2.value); // false
+     * ```
+     */
+    static equals(balance1: Balance, balance2: Balance): Result<boolean, InvalidBalanceError>;
+    /**
+     * Проверяет, достаточно ли available средств для указанной суммы
+     *
+     * @param balance - Баланс для проверки
+     * @param amount - Требуемая сумма
+     * @returns Result с true если available >= amount, false в противном случае
+     *
+     * @remarks
+     * **Проверки:**
+     * 1. Валюта amount должна совпадать с валютой balance (иначе CURRENCY_MISMATCH)
+     * 2. available >= amount (через MoneyService.compare)
+     *
+     * **Архитектура:**
+     * Этот метод находится в Facade потому что:
+     * - Использует MoneyService для сравнения
+     * - Возвращает Result (может вернуть ошибку несовпадения валют)
+     * - Работает с Balance + Money (не intrinsic state)
+     *
+     * **Use case:**
+     * Используется перед операциями с деньгами:
+     * - Перед reserve() - проверяем что можем зарезервировать
+     * - Перед покупкой - проверяем что можем купить
+     * - Перед переводом - проверяем что можем отправить
+     *
+     * @example
+     * ```typescript
+     * const balance = Balance.of(Money.of(1000, 'USDC'), Money.of(500, 'USDC'), accountId, venueId);
+     *
+     * // Проверяем что можем зарезервировать 300
+     * const canReserve = BalanceService.canAfford(balance, Money.of(300, 'USDC'));
+     * console.log(canReserve.value); // true
+     *
+     * // Проверяем что можем зарезервировать 1500
+     * const canReserveLarge = BalanceService.canAfford(balance, Money.of(1500, 'USDC'));
+     * console.log(canReserveLarge.value); // false
+     *
+     * // Ошибка если валюты не совпадают
+     * const canAffordEur = BalanceService.canAfford(balance, Money.of(100, 'EUR'));
+     * // => Err(CURRENCY_MISMATCH)
+     * ```
+     */
+    static canAfford(balance: Balance, amount: Money): Result<boolean, InvalidBalanceError>;
+    /**
+     * Helper: складывает два Money через MoneyService
+     *
+     * @remarks
+     * Внутренний метод для арифметических операций.
+     * Использует MoneyService.add() и мапит ошибки в InvalidBalanceError.
+     *
+     * @param a - Первое слагаемое
+     * @param b - Второе слагаемое
+     * @returns Result<Money, InvalidBalanceError>
+     */
+    private static addMoney;
+    /**
+     * Helper: вычитает Money через MoneyService
+     *
+     * @remarks
+     * Внутренний метод для арифметических операций.
+     * Использует MoneyService.subtract() и мапит ошибки в InvalidBalanceError.
+     *
+     * @param a - Уменьшаемое
+     * @param b - Вычитаемое
+     * @returns Result<Money, InvalidBalanceError>
+     */
+    private static subtractMoney;
+}
+//# sourceMappingURL=BalanceService.d.ts.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"InvalidRatioError.d.ts","sourceRoot":"","sources":["InvalidRatioError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA2CG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,iBAAkB,SAAQ,YAAY;IACjD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,mBAAmB;CAC/C"}

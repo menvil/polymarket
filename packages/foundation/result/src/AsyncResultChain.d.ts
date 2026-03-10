@@ -1,0 +1,661 @@
+/**
+ * AsyncResultChain - асинхронная обёртка для Promise<Result<T, E>>
+ *
+ * @remarks
+ * Предоставляет fluent API для работы с асинхронными Result.
+ * Все методы возвращают новый AsyncResultChain для method chaining.
+ *
+ * ## Единая политика обработки исключений
+ *
+ * **E-сохраняющие transform-методы** (map, mapAsync, flatMapAsync, flatMap) **перехватывают**
+ * исключения из callback и преобразуют их в `Err(onError(exception))` через chain normalizer.
+ * Promise цепочки остаётся resolved.
+ *
+ * **E→F transform-методы** (mapErrAsync, mapErr, orElseAsync, orElse, orAsyncLazy)
+ * **перехватывают** исключения из callback и преобразуют их в `Err(e as F)` —
+ * best-effort cast без нормализации (F-normalizer недоступен). Promise остаётся resolved.
+ *
+ * **Небезопасный transform** (`mapUnsafe`) **НЕ перехватывает** исключения —
+ * они приводят к rejected Promise. Используйте только когда rejected Promise
+ * является желаемым поведением.
+ *
+ * **Side-effect методы** (tap, tapErr) **НЕ перехватывают** исключения —
+ * они приводят к rejected Promise. Исключение в side-effect методе — это баг
+ * в коде пользователя, который не следует маскировать.
+ *
+ * **match** — особый случай: исключение из handler перехватывается, но
+ * пробрасывается как **новый** `Error` с текстом оригинальной ошибки.
+ * Это сохраняет rejected-семантику, но изменяет тип и стек исходного исключения.
+ *
+ * ## Normalizer (onError)
+ *
+ * Чтобы избежать небезопасного `error as E`, AsyncResultChain принимает
+ * опциональный `onError: (e: unknown) => E` normalizer при создании.
+ * При перехвате исключений в transform-методах используется этот normalizer.
+ * Без normalizer тип `E` должен включать `unknown`.
+ *
+ * @template T - Тип успешного результата
+ * @template E - Тип ошибки
+ *
+ * @example
+ * ```typescript
+ * // AsyncResult.from ожидает Promise<Result<T,E>>
+ * const result = await AsyncResult.from(fetchUser('123'))
+ *   .mapAsync(user => fetchProfile(user.id))
+ *   .flatMapAsync(profile => validateProfile(profile))
+ *   .unwrapOr({ name: 'Guest' });
+ *
+ * // С normalizer для строгой типизации:
+ * const result2 = await AsyncResult.from(
+ *   fetchUser('123'),
+ *   (err) => new AppError(String(err))
+ * ).mapAsync(user => fetchProfile(user.id))
+ *  .unwrapOr({ name: 'Guest' });
+ * ```
+ */
+import { Result } from './result.js';
+import { ResultChain } from './ResultChain.js';
+/**
+ * Класс для method chaining с Promise<Result<T, E>>
+ */
+export declare class AsyncResultChain<T, E> {
+    /**
+     * @internal
+     * Внутреннее представление Promise<Result<T, E>>
+     */
+    private readonly promise;
+    /**
+     * @internal
+     * Normalizer для преобразования unknown исключений в тип E
+     * Используется в transform-методах при перехвате исключений
+     */
+    private readonly onError;
+    /**
+     * Создаёт AsyncResultChain из Promise<Result<T, E>>
+     *
+     * @param promise - Promise содержащий Result
+     * @param onError - Normalizer для преобразования исключений в E
+     *   По умолчанию — identity (error as E), что корректно только если E = unknown
+     */
+    constructor(promise: Promise<Result<T, E>>, onError?: (error: unknown) => E);
+    /**
+     * @internal
+     * Создаёт новый AsyncResultChain с тем же normalizer
+     */
+    private chain;
+    /**
+     * @internal
+     * Безопасный вызов onError normalizer
+     *
+     * @param error - Перехваченное исключение
+     * @returns Нормализованная ошибка типа E
+     *
+     * @remarks
+     * Если сам normalizer выбросит исключение, логирует диагностику и возвращает
+     * оригинальную ошибку через небезопасный cast `error as E`.
+     * Гарантирует, что Promise остаётся resolved, даже если normalizer некорректен.
+     */
+    private normalize;
+    /**
+     * Трансформирует успешное значение асинхронно
+     *
+     * @param fn - Async функция для трансформации значения
+     * @returns Новый AsyncResultChain
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err`
+     * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(getUser('123'))
+     *   .mapAsync(user => fetchFullProfile(user.id));
+     * ```
+     */
+    mapAsync<U>(fn: (value: T) => Promise<U>): AsyncResultChain<U, E>;
+    /**
+     * Трансформирует успешное значение синхронно (safe по умолчанию)
+     *
+     * @param fn - Функция для трансформации значения
+     * @returns Новый AsyncResultChain
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err`
+     * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+     *
+     * Для поведения при котором исключение → rejected Promise используйте `mapUnsafe`.
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(getUser('123'))
+     *   .map(user => user.name);
+     * ```
+     */
+    map<U>(fn: (value: T) => U): AsyncResultChain<U, E>;
+    /**
+     * Трансформирует успешное значение синхронно (небезопасная версия)
+     *
+     * @param fn - Функция для трансформации значения
+     * @returns Новый AsyncResultChain
+     *
+     * @remarks
+     * ⚠️ Если fn выбросит исключение, Promise будет rejected.
+     * Это небезопасная версия `map`. Для автоматического перехвата исключений
+     * используйте `map` (safe по умолчанию) или `mapAsync`.
+     *
+     * Предназначен для случаев когда rejected Promise является желаемым поведением
+     * (например, если исключение из callback должно прервать всю цепочку).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(getUser('123'))
+     *   .mapUnsafe(user => user.name); // rejected если fn бросает
+     * ```
+     */
+    mapUnsafe<U>(fn: (value: T) => U): AsyncResultChain<U, E>;
+    /**
+     * Цепочка async Result-возвращающих операций
+     *
+     * @param fn - Async функция возвращающая Result
+     * @returns Новый AsyncResultChain
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err`
+     * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(getUser('123'))
+     *   .flatMapAsync(user => validateUser(user))
+     *   .flatMapAsync(user => saveUser(user));
+     * ```
+     */
+    flatMapAsync<U, F>(fn: (value: T) => Promise<Result<U, F>>): AsyncResultChain<U, E | F>;
+    /**
+     * Цепочка sync Result-возвращающих операций
+     *
+     * @param fn - Функция возвращающая Result
+     * @returns Новый AsyncResultChain
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err`
+     * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(getUser('123'))
+     *   .flatMap(user => validateAge(user.age));
+     * ```
+     */
+    flatMap<U, F>(fn: (value: T) => Result<U, F>): AsyncResultChain<U, E | F>;
+    /**
+     * Трансформирует ошибку асинхронно
+     *
+     * @param fn - Async функция для трансформации ошибки
+     * @returns AsyncResultChain с трансформированной ошибкой
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err<F>`
+     * через best-effort cast `e as F` (F-normalizer недоступен — метод меняет тип E→F).
+     * Promise цепочки остаётся resolved (не rejected).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(fetchData())
+     *   .mapErrAsync(err => enrichErrorWithContext(err));
+     * ```
+     */
+    mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F>;
+    /**
+     * Трансформирует ошибку синхронно
+     *
+     * @param fn - Функция для трансформации ошибки
+     * @returns AsyncResultChain с трансформированной ошибкой
+     *
+     * @remarks
+     * Автоматически перехватывает исключения из fn и преобразует их в `Err<F>`
+     * через best-effort cast `e as F` (F-normalizer недоступен — метод меняет тип E→F).
+     * Promise цепочки остаётся resolved (не rejected).
+     *
+     * @example
+     * ```typescript
+     * const result = AsyncResult.from(fetchData())
+     *   .mapErr(err => `Failed: ${err}`);
+     * ```
+     */
+    mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F>;
+    /**
+     * Извлекает значение из Ok
+     *
+     * @returns Promise с значением если ok = true
+     * @throws {Error} Если ok = false
+     *
+     * @example
+     * ```typescript
+     * const user = await AsyncResult.from(fetchUser('123')).unwrap();
+     * ```
+     */
+    unwrap(): Promise<T>;
+    /**
+     * Извлекает значение или возвращает fallback
+     *
+     * @param defaultValue - Значение по умолчанию
+     * @returns Promise с значением или defaultValue
+     *
+     * @example
+     * ```typescript
+     * const user = await AsyncResult.from(fetchUser('123'))
+     *   .unwrapOr({ id: 'guest', name: 'Guest' });
+     * ```
+     */
+    unwrapOr(defaultValue: T): Promise<T>;
+    /**
+     * Извлекает значение или вычисляет fallback через функцию
+     *
+     * @param fn - Функция для вычисления fallback из ошибки
+     * @returns Promise с значением или результатом fn
+     *
+     * @remarks
+     * Если callback fn бросает исключение, оно пробрасывается как есть (без обёртки).
+     *
+     * @example
+     * ```typescript
+     * const user = await AsyncResult.from(fetchUser('123'))
+     *   .unwrapOrElse(err => {
+     *     console.log('Failed:', err);
+     *     return { id: 'guest', name: 'Guest' };
+     *   });
+     * ```
+     */
+    unwrapOrElse(fn: (error: E) => T): Promise<T>;
+    /**
+     * Извлекает ошибку из Err
+     *
+     * @returns Promise с ошибкой если ok = false
+     * @throws {Error} Если ok = true
+     *
+     * @example
+     * ```typescript
+     * const error = await AsyncResult.from(failedOperation()).unwrapErr();
+     * ```
+     */
+    unwrapErr(): Promise<E>;
+    /**
+     * Проверяет является ли Result успешным
+     *
+     * @returns Promise<boolean>
+     *
+     * @example
+     * ```typescript
+     * if (await AsyncResult.from(fetchUser('123')).isOk()) {
+     *   console.log('Success!');
+     * }
+     * ```
+     */
+    isOk(): Promise<boolean>;
+    /**
+     * Проверяет содержит ли Result ошибку
+     *
+     * @returns Promise<boolean>
+     *
+     * @example
+     * ```typescript
+     * if (await AsyncResult.from(fetchUser('123')).isErr()) {
+     *   console.log('Error!');
+     * }
+     * ```
+     */
+    isErr(): Promise<boolean>;
+    /**
+     * Выполняет функцию для side effects при успехе, возвращает this
+     *
+     * @param fn - Функция для выполнения (получает value если Ok)
+     * @returns this для продолжения цепочки
+     *
+     * @remarks
+     * ⚠️ Если fn выбросит исключение, Promise будет rejected.
+     * tap предназначен для side-effects. Исключение в tap означает баг в логике пользователя.
+     * Для обработки ошибок в tap используйте try/catch внутри fn.
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(fetchUser('123'))
+     *   .tap(user => console.log('User:', user))
+     *   .map(user => user.name)
+     *   .unwrap();
+     * ```
+     */
+    tap(fn: (value: T) => void | Promise<void>): AsyncResultChain<T, E>;
+    /**
+     * Выполняет функцию для side effects при ошибке, возвращает this
+     *
+     * @param fn - Функция для выполнения (получает error если Err)
+     * @returns this для продолжения цепочки
+     *
+     * @remarks
+     * ⚠️ Если fn выбросит исключение, Promise будет rejected.
+     * tapErr предназначен для side-effects. Исключение в tapErr означает баг в логике пользователя.
+     * Для обработки ошибок в tapErr используйте try/catch внутри fn.
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(fetchUser('123'))
+     *   .tapErr(error => console.error('Error:', error))
+     *   .unwrapOr(null);
+     * ```
+     */
+    tapErr(fn: (error: E) => void | Promise<void>): AsyncResultChain<T, E>;
+    /**
+     * Pattern matching для Result
+     *
+     * @param handlers - Объект с обработчиками ok и err
+     * @returns Promise с результатом выполнения соответствующего обработчика
+     *
+     * @remarks
+     * ⚠️ Если handler бросит исключение, Promise будет rejected.
+     * match — это терминальная операция для извлечения значения, не transform-метод.
+     *
+     * Исключение из handler перехватывается и пробрасывается как новый `Error`
+     * с сообщением `"Exception in match handler: <оригинальное значение>"`.
+     * Это изменяет тип и стек исходной ошибки — не следует полагаться на исходный тип exception.
+     *
+     * @example
+     * ```typescript
+     * const message = await AsyncResult.from(fetchUser('123')).match({
+     *   ok: user => `Success: ${user.name}`,
+     *   err: error => `Error: ${error}`
+     * });
+     * ```
+     */
+    match<U>(handlers: {
+        ok: (value: T) => U | Promise<U>;
+        err: (error: E) => U | Promise<U>;
+    }): Promise<U>;
+    /**
+     * Комбинирует два Result - возвращает второй если первый Ok
+     *
+     * @param other - Другой Result
+     * @returns Второй Result если this.ok = true, иначе первую ошибку
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(step1())
+     *   .and(step2())
+     *   .unwrap();
+     * ```
+     */
+    and<U, F>(other: Result<U, F>): AsyncResultChain<U, E | F>;
+    /**
+     * Комбинирует с async Result
+     *
+     * @param other - Promise<Result>
+     * @returns Второй Result если this.ok = true, иначе первую ошибку
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(step1())
+     *   .andAsync(step2())
+     *   .unwrap();
+     * ```
+     */
+    andAsync<U, F>(other: Promise<Result<U, F>>): AsyncResultChain<U, E | F>;
+    /**
+     * Возвращает первый Ok, иначе второй Result
+     *
+     * @param other - Fallback Result
+     * @returns this если ok = true, иначе other
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(primarySource())
+     *   .or(Ok(defaultValue))
+     *   .unwrap();
+     * ```
+     */
+    or<F>(other: Result<T, F>): AsyncResultChain<T, F>;
+    /**
+     * Возвращает первый Ok, иначе async fallback
+     *
+     * @param other - Promise<Result> fallback
+     * @returns this если ok = true, иначе other
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(primarySource())
+     *   .orAsync(fallbackSource())
+     *   .unwrap();
+     * ```
+     */
+    orAsync<F>(other: Promise<Result<T, F>>): AsyncResultChain<T, F>;
+    /**
+     * Возвращает первый Ok, иначе lazy async fallback
+     *
+     * @param fn - Функция возвращающая Promise<Result> (вызывается только при Err)
+     * @returns this если ok = true, иначе результат fn()
+     *
+     * @remarks
+     * В отличие от orAsync, принимает фабричную функцию которая вызывается
+     * только когда результат — Err. Это позволяет избежать ненужных side-effects
+     * и вычислений если основной результат успешный.
+     *
+     * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+     * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(primarySource())
+     *   .orAsyncLazy(() => expensiveFallbackSource())  // Вызовется только при Err
+     *   .unwrap();
+     * ```
+     */
+    orAsyncLazy<F>(fn: () => Promise<Result<T, F>>): AsyncResultChain<T, F>;
+    /**
+     * Recovery при ошибке через async функцию
+     *
+     * @param fn - Async функция для обработки ошибки
+     * @returns AsyncResultChain с восстановленным значением или новой ошибкой
+     *
+     * @remarks
+     * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+     * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(primaryOperation())
+     *   .orElseAsync(async err => {
+     *     console.log('Recovering from:', err);
+     *     return await fallbackOperation();
+     *   })
+     *   .unwrap();
+     * ```
+     */
+    orElseAsync<F>(fn: (error: E) => Promise<Result<T, F>>): AsyncResultChain<T, F>;
+    /**
+     * Recovery при ошибке через sync функцию
+     *
+     * @param fn - Функция для обработки ошибки
+     * @returns AsyncResultChain с восстановленным значением или новой ошибкой
+     *
+     * @remarks
+     * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+     * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(operation())
+     *   .orElse(err => {
+     *     console.log('Recovering from:', err);
+     *     return Ok(defaultValue);
+     *   })
+     *   .unwrap();
+     * ```
+     */
+    orElse<F>(fn: (error: E) => Result<T, F>): AsyncResultChain<T, F>;
+    /**
+     * Алиас для flatMapAsync (Rust-стиль)
+     *
+     * @param fn - Async функция возвращающая Result
+     * @returns Новый AsyncResultChain
+     *
+     * @example
+     * ```typescript
+     * const result = await AsyncResult.from(getUser('123'))
+     *   .andThen(user => validateUser(user));
+     * ```
+     */
+    andThen<U, F>(fn: (value: T) => Promise<Result<U, F>>): AsyncResultChain<U, E | F>;
+    /**
+     * Unwrap с кастомным сообщением ошибки
+     *
+     * @param message - Сообщение для ошибки
+     * @returns Promise с значением если ok = true
+     * @throws {Error} С кастомным сообщением если ok = false
+     *
+     * @example
+     * ```typescript
+     * const user = await AsyncResult.from(fetchUser('123'))
+     *   .expect('User should exist');
+     * ```
+     */
+    expect(message: string): Promise<T>;
+    /**
+     * Unwrap ошибки с кастомным сообщением
+     *
+     * @param message - Сообщение для ошибки
+     * @returns Promise с ошибкой если ok = false
+     * @throws {Error} С кастомным сообщением если ok = true
+     *
+     * @example
+     * ```typescript
+     * const error = await AsyncResult.from(failedOperation())
+     *   .expectErr('Operation should fail');
+     * ```
+     */
+    expectErr(message: string): Promise<E>;
+    /**
+     * Конвертирует AsyncResultChain в Promise<Result<T, E>>
+     *
+     * @returns Promise с plain object Result
+     *
+     * @example
+     * ```typescript
+     * const plainResult = await AsyncResult.from(fetchUser('123')).toPromise();
+     * if (plainResult.ok) {
+     *   console.log('User:', plainResult.value);
+     * }
+     * ```
+     */
+    toPromise(): Promise<Result<T, E>>;
+    /**
+     * Конвертирует в sync ResultChain после await
+     *
+     * @returns Promise<ResultChain<T, E>>
+     *
+     * @example
+     * ```typescript
+     * const chain = await AsyncResult.from(fetchUser('123')).toChain();
+     * const userName = chain.map(user => user.name).unwrap();
+     * ```
+     */
+    toChain(): Promise<ResultChain<T, E>>;
+}
+/**
+ * Хелперы для создания AsyncResultChain
+ *
+ * @example
+ * ```typescript
+ * import { AsyncResult } from '@polymarket/result';
+ *
+ * // Из Promise<Result>
+ * const result1 = await AsyncResult.from(fetchUser('123')).unwrap();
+ *
+ * // Из Promise (wraps в Ok)
+ * const result2 = await AsyncResult.ok(fetch('/api/user')).unwrap();
+ *
+ * // Из значения ошибки
+ * const result3 = await AsyncResult.err('Failed').unwrapErr();
+ * ```
+ */
+export declare const AsyncResult: {
+    /**
+     * Создаёт AsyncResultChain из Promise<Result<T, E>>
+     *
+     * @remarks
+     * Автоматически перехватывает Promise rejections и преобразует их в Err.
+     *
+     * **Без `onReject`**: тип ошибки фиксирован как `unknown` — честное отражение того,
+     * что тип rejection неизвестен без normalizer. Нельзя получить конкретный E без `onReject`.
+     *
+     * **С `onReject`**: E определяется возвращаемым типом функции-normalizer.
+     * Если `onReject` сам бросает исключение, rejection оборачивается через `error as E`
+     * (last-resort fallback без типовой гарантии).
+     *
+     * @param promise - Promise<Result<T, E>> для оборачивания
+     * @param onReject - Функция для трансформации rejection в конкретный тип E
+     * @returns AsyncResultChain<T, unknown> без normalizer; AsyncResultChain<T, E> с normalizer
+     *
+     * @example
+     * ```typescript
+     * // Без normalizer — E = unknown
+     * const result1 = await AsyncResult.from(fetchUser('123')).unwrap();
+     *
+     * // С normalizer для конкретного E:
+     * const result2 = await AsyncResult.from(
+     *   fetchUser('123'),
+     *   (error) => new NetworkError(String(error))
+     * ).unwrapErr();
+     * // result2: NetworkError
+     * ```
+     */
+    readonly from: {
+        /**
+         * Без normalizer — тип ошибки фиксирован как `unknown`.
+         * Promise rejections оборачиваются в `Err<unknown>`.
+         * Для конкретного типа ошибки используйте перегрузку с `onReject`.
+         */
+        <T>(promise: Promise<Result<T, unknown>>): AsyncResultChain<T, unknown>;
+        /**
+         * С normalizer — E определяется возвращаемым типом onReject.
+         * Гарантирует type-safe обработку Promise rejections.
+         */
+        <T, E>(promise: Promise<Result<T, E>>, onReject: (error: unknown) => E): AsyncResultChain<T, E>;
+    };
+    /**
+     * Создаёт AsyncResultChain из Promise<T> (оборачивает в Ok)
+     *
+     * @remarks
+     * Автоматически перехватывает Promise rejections и преобразует их в Err.
+     * Параметр `onError` позволяет трансформировать ошибку в конкретный тип.
+     *
+     * @param promise - Promise для оборачивания
+     * @param onError - Опциональная функция для трансформации ошибки
+     *
+     * @example
+     * ```typescript
+     * // Базовое использование (E = unknown):
+     * const result = await AsyncResult.ok(fetch('/api/user')).unwrap();
+     *
+     * // С трансформацией ошибки:
+     * const result = await AsyncResult.ok(
+     *   fetch('/api/user'),
+     *   (error) => new NetworkError(error)
+     * ).unwrap();
+     * ```
+     */
+    readonly ok: {
+        /**
+         * Без normalizer — E = unknown (rejection reason неизвестен).
+         */
+        <T>(promise: Promise<T>): AsyncResultChain<T, unknown>;
+        /**
+         * С normalizer — E определяется возвращаемым типом onError.
+         * Гарантирует type-safe обработку Promise rejections.
+         */
+        <T, E>(promise: Promise<T>, onError: (error: unknown) => E): AsyncResultChain<T, E>;
+    };
+    /**
+     * Создаёт AsyncResultChain с ошибкой (для симметрии API)
+     */
+    readonly err: <E>(error: E) => AsyncResultChain<never, E>;
+};
+//# sourceMappingURL=AsyncResultChain.d.ts.map

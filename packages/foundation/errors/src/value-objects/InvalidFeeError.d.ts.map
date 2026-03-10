@@ -1,0 +1,1 @@
+{"version":3,"file":"InvalidFeeError.d.ts","sourceRoot":"","sources":["InvalidFeeError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgDG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,eAAgB,SAAQ,YAAY;IAC/C,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,iBAAiB;CAC7C"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"InvalidAmountError.d.ts","sourceRoot":"","sources":["InvalidAmountError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA0DG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,kBAAmB,SAAQ,YAAY;IAClD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,oBAAoB;CAChD"}

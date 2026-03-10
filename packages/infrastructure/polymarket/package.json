@@ -20,6 +20,8 @@
     "@polymarket/value-objects": "workspace:*",
     "@polymarket/order-book":    "workspace:*",
     "@polymarket/trade":         "workspace:*",
+    "@polymarket/ports":         "workspace:*",
+    "@polymarket/handlers":      "workspace:*",
     "decimal.js": "^10.6.0",
     "ethers": "^6.0.0"
   }

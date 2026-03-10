@@ -10,6 +10,17 @@
       "@polymarket/value-objects": ["../../domain/value-objects/src/index.ts"],
       "@polymarket/order-book":    ["../../domain/market-data/order-book/src/index.ts"],
       "@polymarket/trade":         ["../../domain/entities/trade/src/index.ts"],
+      "@polymarket/ports":         ["../../application/ports/src/index.ts"],
+      "@polymarket/handlers":      ["../../application/handlers/src/index.ts"],
+      "@polymarket/event-bus":     ["../../application/event-bus/src/index.ts"],
+      "@polymarket/time":          ["../../foundation/time/src/index.ts"],
+      "@polymarket/math":          ["../../foundation/math/src/index.ts"],
+      "@polymarket/order":         ["../../domain/entities/order/src/index.ts"],
+      "@polymarket/fill":          ["../../domain/entities/fill/src/index.ts"],
+      "@polymarket/portfolio":     ["../../domain/entities/portfolio/src/index.ts"],
+      "@polymarket/ledger":        ["../../domain/accounting/ledger/src/index.ts"],
+      "@polymarket/value-objects/signed-quantity": ["../../domain/value-objects/src/signed-quantity/index.ts"],
+      "@polymarket/value-objects/asset-quantity":  ["../../domain/value-objects/src/asset-quantity/index.ts"],
       "ethers":                    ["./stubs/ethers/index.ts"]
     }
   },

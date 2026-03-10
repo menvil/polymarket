@@ -1,0 +1,6 @@
+# Only review files in the 'src' folder
+reviews:
+  path_filters:
+    - "!dist/**"
+    - "!node_modules/**"
+    - "packages/application/**"

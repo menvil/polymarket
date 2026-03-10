@@ -63,4 +63,15 @@ export interface IOrderRepository {
    * Используется OrderRiskChecker для проверки лимита открытых ордеров.
    */
   countByStrategyId(strategyId?: string): Promise<number>;
+
+  /**
+   * Возвращает все активные ордера во всех стратегиях.
+   *
+   * @returns Promise с readonly массивом всех ордеров
+   *
+   * @remarks
+   * Используется OrderReconciler для сверки локальных ордеров с venue.
+   * Для получения ордеров одной стратегии используй getByStrategyId().
+   */
+  getAll(): Promise<readonly Order[]>;
 }

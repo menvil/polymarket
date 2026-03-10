@@ -1,0 +1,1 @@
+{"version":3,"file":"RatioInvariantViolation.d.ts","sourceRoot":"","sources":["RatioInvariantViolation.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,EAAE,gBAAgB,EAAE,MAAM,+BAA+B,CAAC;AAEjE,qBAAa,uBAAwB,SAAQ,KAAK;IAChD,SAAgB,MAAM,EAAE,gBAAgB,CAAC;gBAE7B,OAAO,EAAE,MAAM,EAAE,MAAM,EAAE,gBAAgB;CAMtD"}

@@ -1,0 +1,54 @@
+import { Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
+/**
+ * Правило: Результат операции должен быть неотрицательным
+ *
+ * @remarks
+ * Это правило не про Quantity как объект, а про результат операции.
+ *
+ * Используется когда результат операции (например, subtract) не должен быть отрицательным.
+ *
+ * Отличается от Core инварианта:
+ * - Core инвариант: объект Quantity НЕ МОЖЕТ существовать с negative значением
+ * - Rule: операция НЕ ДОЛЖНА давать negative результат в этом контексте
+ *
+ * Возвращает InvalidQuantityError — стандарт домена Polymarket для валидации Quantity.
+ *
+ * @param result - Результат операции для проверки (ТОЛЬКО Decimal)
+ * @returns Result<void, InvalidQuantityError>
+ *
+ * @example
+ * ```typescript
+ * const diff = subtractDecimal(qty1.value(), qty2.value());
+ * const validateResult = ValidateResultNonNegative.check(diff);
+ *
+ * if (!validateResult.ok) {
+ *   console.error(validateResult.error.message);
+ *   console.error(validateResult.error.context); // { result }
+ * }
+ * ```
+ */
+export class ValidateResultNonNegative {
+    static check(result) {
+        // Проверка 1: результат должен быть finite
+        if (!result.isFinite()) {
+            return Err(new InvalidQuantityError((ctx) => `Operation result ${ctx.result} must be finite`, {
+                context: {
+                    source: ErrorSource.RULE_VALIDATION,
+                    result: result.toString()
+                }
+            }));
+        }
+        // Проверка 2: результат не должен быть отрицательным
+        if (result.isNegative()) {
+            return Err(new InvalidQuantityError((ctx) => `Operation result ${ctx.result} cannot be negative`, {
+                context: {
+                    source: ErrorSource.RULE_VALIDATION,
+                    result: result.toString()
+                }
+            }));
+        }
+        return Ok(undefined);
+    }
+}
+//# sourceMappingURL=ValidateResultNonNegative.js.map

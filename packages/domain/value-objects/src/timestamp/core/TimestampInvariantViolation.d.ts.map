@@ -1,0 +1,1 @@
+{"version":3,"file":"TimestampInvariantViolation.d.ts","sourceRoot":"","sources":["TimestampInvariantViolation.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,oBAAoB,EAAE,MAAM,mCAAmC,CAAC;AAEzE;;;;;;;;;;;;;;;;;;;GAmBG;AACH,qBAAa,2BAA4B,SAAQ,KAAK;IACpD,SAAgB,MAAM,EAAE,oBAAoB,CAAC;gBAEjC,OAAO,EAAE,MAAM,EAAE,MAAM,EAAE,oBAAoB;CAM1D"}

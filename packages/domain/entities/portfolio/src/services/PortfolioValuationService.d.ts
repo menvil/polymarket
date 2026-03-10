@@ -1,0 +1,81 @@
+/**
+ * Функции оценки стоимости и P&L портфеля
+ *
+ * @remarks
+ * Вынесены из Portfolio aggregate намеренно — требуют внешних рыночных цен,
+ * которые не являются частью доменного состояния.
+ *
+ * ### Почему функции, не класс:
+ * Stateless-операции не нуждаются в классах. Функции проще тестировать,
+ * импортировать и использовать по отдельности.
+ *
+ * ### Почему не в Portfolio:
+ * Оценка требует текущих котировок — внешних данных.
+ * Portfolio aggregate не должен зависеть от рыночного состояния.
+ *
+ * ### Отсутствие cast:
+ * Функции принимают `Iterable<IPosition>` — тот же тип, что возвращает
+ * `portfolio.getPositions()`. Нет промежуточных интерфейсов, нет cast.
+ *
+ * @example
+ * ```typescript
+ * import { getTotalValue, getTotalUnrealizedPnL } from './services/PortfolioValuationService';
+ *
+ * const getPrice = (instrumentId: InstrumentId) => prices.get(instrumentId);
+ *
+ * const totalValue = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
+ * const pnl = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
+ * ```
+ */
+import type { InstrumentId } from '@polymarket/ids';
+import { Money, type SupportedCurrency } from '@polymarket/value-objects/money';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import { Price } from '@polymarket/value-objects';
+import type { IPosition } from '../Portfolio.js';
+/**
+ * Функция-провайдер текущих цен
+ *
+ * @remarks
+ * Возвращает типобезопасный Price VO, а не duck-typed `{ value(): Decimal }`.
+ * Caller обязан предоставить валидный Price (в диапазоне [0.0001, 0.9999]).
+ */
+export type PriceProvider = (instrumentId: InstrumentId) => Price | undefined;
+/**
+ * Считает суммарную стоимость позиций портфеля
+ *
+ * @param positions - Итерируемые позиции (из portfolio.getPositions())
+ * @param getPrice - Провайдер текущих цен
+ * @param currency - Валюта результата (обычно 'USDC')
+ * @returns Суммарная стоимость как Money
+ *
+ * @remarks
+ * Алгоритм: для каждой позиции вычисляет quantity × price.
+ * LONG — положительная стоимость, SHORT — отрицательная.
+ * Позиции без цены пропускаются.
+ *
+ * @example
+ * ```typescript
+ * const value = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
+ * console.log(value.value().toNumber()); // 12500
+ * ```
+ */
+export declare function getTotalValue(positions: Iterable<IPosition>, getPrice: PriceProvider, currency: SupportedCurrency): Money;
+/**
+ * Считает суммарный unrealized P&L по всем позициям
+ *
+ * @param positions - Итерируемые позиции (из portfolio.getPositions())
+ * @param getPrice - Провайдер текущих цен
+ * @returns Суммарный unrealized P&L как SignedQuantity
+ *
+ * @remarks
+ * Делегирует расчёт каждой позиции через `position.getUnrealizedPnL(price)`.
+ * Позиции без цены пропускаются (PnL не считается).
+ *
+ * @example
+ * ```typescript
+ * const pnl = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
+ * console.log(pnl.value().toNumber()); // -150.5
+ * ```
+ */
+export declare function getTotalUnrealizedPnL(positions: Iterable<IPosition>, getPrice: PriceProvider): SignedQuantity;
+//# sourceMappingURL=PortfolioValuationService.d.ts.map
