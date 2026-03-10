@@ -10,7 +10,7 @@
  * - Handlers зависят от @polymarket/event-bus для получения типов событий
  * - Никакой другой пакет не определяет application-level события
  */
-export type { FillReceivedEvent } from './domain-events.js';
+export type { FillReceivedEvent, FillFailedEvent } from './domain-events.js';
 export type {
   TopOfBook,
   BookUpdatedEvent,
@@ -31,8 +31,13 @@ export type { OrderEvent } from '@polymarket/order';
  * - IEventBus<K extends ApplicationEvent['type']> для типобезопасных подписок
  * - HandlerMap для per-event-type хранения handlers
  * - EventBus.publish(event: ApplicationEvent)
+ *
+ * User-channel события:
+ * - FILL_RECEIVED — fill со статусом MATCHED → запустить ProcessFillUseCase
+ * - FILL_FAILED   — fill со статусом FAILED → alert + reconciliation
+ * - OrderEvent (из @polymarket/order) — Order FSM transitions
  */
-import type { FillReceivedEvent } from './domain-events.js';
+import type { FillReceivedEvent, FillFailedEvent } from './domain-events.js';
 import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
 import type { RiskLimitBreachedEvent } from './risk-events.js';
 import type { StrategySignalEvent } from './strategy-events.js';
@@ -40,6 +45,7 @@ import type { OrderEvent } from '@polymarket/order';
 
 export type ApplicationEvent =
   | FillReceivedEvent
+  | FillFailedEvent
   | BookUpdatedEvent
   | BookDepthEvent
   | TradeReceivedEvent

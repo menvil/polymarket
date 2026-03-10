@@ -126,8 +126,12 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   /**
    * Подписывается на fill из user-channel.
    *
-   * @param cb - Callback (async) вызываемый при каждом 'user_fill' событии
+   * @param cb - Callback (async) вызываемый при каждом user-channel 'trade' событии (fill)
    * @returns Функция отписки
+   *
+   * @remarks
+   * Polymarket user channel использует event_type: "trade" для fills.
+   * Отличается от market-channel 'trade' наличием поля taker_order_id.
    */
   onUserFill(cb: (dto: WsUserFillDto) => Promise<void>): () => void {
     this._onFill.add(cb);
@@ -135,10 +139,14 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Подписывается на обновление статуса ордера.
+   * Подписывается на lifecycle событие ордера из user-channel.
    *
-   * @param cb - Callback (async) вызываемый при каждом 'order_update' событии
+   * @param cb - Callback (async) вызываемый при каждом 'order' событии (event_type: "order")
    * @returns Функция отписки
+   *
+   * @remarks
+   * Polymarket user channel использует event_type: "order" для lifecycle событий.
+   * WsOrderUpdateDto.orderEventType содержит тип события (например, "PLACEMENT").
    */
   onOrderUpdate(cb: (dto: WsOrderUpdateDto) => Promise<void>): () => void {
     this._onOrderUpdate.add(cb);
@@ -274,13 +282,10 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       void this._dispatchParsed(message);
     });
 
-    // Также обрабатываем user-channel сообщения если router поддерживает
-    this._router.on('user_fill', (message: unknown) => {
-      void this._dispatchParsed({ ...(message as object), type: 'user_fill' });
-    });
-
-    this._router.on('order_update', (message: unknown) => {
-      void this._dispatchParsed({ ...(message as object), type: 'order_update' });
+    // User channel: order lifecycle события (event_type: "order")
+    // Router эмитирует 'order' если поддерживает user channel
+    this._router.on('order', (message: unknown) => {
+      void this._dispatchParsed({ ...(message as object), type: 'order' });
     });
 
     this._router.on('error', (error: Error) => {
@@ -338,8 +343,10 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     } else if (dto.type === 'trade') {
       await this._dispatchTo(this._onTrade, dto as WsTradeDto);
     } else if ('taker_order_id' in dto) {
+      // User channel fill: event_type "trade" с taker_order_id → WsUserFillDto
       await this._dispatchTo(this._onFill, dto as WsUserFillDto);
-    } else if (dto.type === 'order_update') {
+    } else if (dto.type === 'order') {
+      // User channel order lifecycle: event_type "order" → WsOrderUpdateDto
       await this._dispatchTo(this._onOrderUpdate, dto as WsOrderUpdateDto);
     }
   }

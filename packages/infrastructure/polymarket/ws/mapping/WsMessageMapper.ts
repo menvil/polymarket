@@ -7,12 +7,17 @@
  * Заменяет устаревший mapParsedToDomainEvent.ts (который создавал domain events в infrastructure).
  *
  * ### Правила маппинга:
- * - type='book' → WsOrderbookSnapshotDto
- * - type='trade' → WsTradeDto
- * - type='user_fill' → WsUserFillDto
- * - type='order_update' → WsOrderUpdateDto
+ * - type='book'  → WsOrderbookSnapshotDto
+ * - type='trade' + taker_order_id присутствует → WsUserFillDto (user channel fill)
+ * - type='trade' + taker_order_id отсутствует  → WsTradeDto (market channel public trade)
+ * - type='order' → WsOrderUpdateDto (user channel order lifecycle)
  * - Остальные типы (pong, subscribed, price_change, etc.) → null
  * - Невалидные данные → null (никогда не бросает исключений)
+ *
+ * ### Важно о type='trade':
+ * Polymarket использует event_type "trade" как в market channel (публичные трейды),
+ * так и в user channel (fills конкретного трейдера).
+ * Различаются по форме пейлоада: user fill имеет поле taker_order_id.
  *
  * @example
  * ```typescript
@@ -46,6 +51,9 @@ export type ParsedWsMessage =
  * @remarks
  * Чистая функция — никогда не бросает исключений.
  * Возвращает null для контрольных сообщений (pong, subscribed, error, price_change).
+ *
+ * Для type='trade': различает market trade (WsTradeDto) и user fill (WsUserFillDto)
+ * по наличию поля taker_order_id в пейлоаде.
  */
 export function parseWsMessage(raw: unknown): ParsedWsMessage | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -59,10 +67,12 @@ export function parseWsMessage(raw: unknown): ParsedWsMessage | null {
     case 'book':
       return parseOrderbookSnapshot(msg);
     case 'trade':
+      // User channel fill — различается по наличию taker_order_id
+      if (typeof msg['taker_order_id'] === 'string') {
+        return parseUserFillDto(msg);
+      }
       return parseTradeDto(msg);
-    case 'user_fill':
-      return parseUserFillDto(msg);
-    case 'order_update':
+    case 'order':
       return parseOrderUpdateDto(msg);
     default:
       // pong, subscribed, unsubscribed, error, price_change, tick_size_change, last_trade_price
@@ -98,7 +108,7 @@ function parseOrderbookSnapshot(msg: Record<string, unknown>): WsOrderbookSnapsh
 }
 
 /**
- * Парсит публичный трейд DTO.
+ * Парсит публичный трейд DTO (market channel, type='trade' без taker_order_id).
  *
  * @param msg - Raw JSON объект
  * @returns WsTradeDto или null если невалидно
@@ -125,10 +135,14 @@ function parseTradeDto(msg: Record<string, unknown>): WsTradeDto | null {
 }
 
 /**
- * Парсит user fill DTO.
+ * Парсит user fill DTO (user channel, type='trade' с taker_order_id).
  *
  * @param msg - Raw JSON объект
  * @returns WsUserFillDto или null если невалидно
+ *
+ * @remarks
+ * WsUserFillDto не имеет поля type — это DTO данных, не дискриминирующий тип.
+ * Вызывается только когда msg содержит taker_order_id (user channel fill).
  */
 function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
   const id = msg['id'];
@@ -145,13 +159,14 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
     ? (msg['maker_orders'] as Array<{ order_id: string; matched_amount: string }>)
     : [];
 
+  // WsFillStatus: MATCHED | MINED | CONFIRMED | RETRYING | FAILED
   const status = msg['status'];
-  const validStatus = status === 'MATCHED' || status === 'UNMATCHED' || status === 'DELAYED'
-    ? status
-    : 'MATCHED';
+  const validStatuses = new Set(['MATCHED', 'MINED', 'CONFIRMED', 'RETRYING', 'FAILED']);
+  const validStatus = typeof status === 'string' && validStatuses.has(status)
+    ? (status as 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED')
+    : 'MATCHED'; // по умолчанию MATCHED если неизвестный статус
 
   return {
-    type: 'user_fill' as const,
     id,
     taker_order_id: takerOrderId,
     trader_side: traderSide,
@@ -166,25 +181,31 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
 }
 
 /**
- * Парсит order update DTO.
+ * Парсит order lifecycle DTO (user channel, type='order').
  *
  * @param msg - Raw JSON объект
  * @returns WsOrderUpdateDto или null если невалидно
+ *
+ * @remarks
+ * Поле orderEventType — это поле 'type' из JSON-пейлоада WS-сообщения.
+ * Например: "PLACEMENT" для подтверждения размещения ордера.
  */
 function parseOrderUpdateDto(msg: Record<string, unknown>): WsOrderUpdateDto | null {
   const orderId = msg['order_id'];
   if (typeof orderId !== 'string') return null;
 
-  const status = msg['status'];
-  const validStatuses = ['MATCHED', 'OPEN', 'CANCELED', 'DELAYED', 'UNMATCHED'] as const;
-  const validStatus = validStatuses.includes(status as typeof validStatuses[number])
-    ? (status as typeof validStatuses[number])
-    : 'OPEN';
+  // orderEventType = payload 'type' field (separate from event_type discriminant)
+  const orderEventType = typeof msg['orderEventType'] === 'string'
+    ? msg['orderEventType']
+    : typeof msg['order_event_type'] === 'string'
+      ? msg['order_event_type']
+      : 'UNKNOWN';
 
   return {
-    type: 'order_update',
+    type: 'order',
+    orderEventType,
     order_id: orderId,
-    status: validStatus,
+    status: typeof msg['status'] === 'string' ? msg['status'] : undefined,
     reason: typeof msg['reason'] === 'string' ? msg['reason'] : undefined,
     timestamp: typeof msg['timestamp'] === 'string' ? msg['timestamp'] : String(msg['timestamp'] ?? ''),
   };
