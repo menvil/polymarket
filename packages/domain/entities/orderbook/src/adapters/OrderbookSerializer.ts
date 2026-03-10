@@ -179,11 +179,12 @@ export class OrderbookSerializer {
       const json = JSON.parse(jsonString);
       return this.fromJSON(json, policy);
     } catch (error) {
+      const jsonPreview = jsonString.length > 100 ? `${jsonString.slice(0, 100)}…` : jsonString;
       return {
         ok: false,
         error: new OrderbookValidationError(
           `Failed to parse JSON: ${(error as Error).message}`,
-          { context: { jsonString } }
+          { context: { jsonPreview } }
         ),
       };
     }

@@ -275,10 +275,15 @@ export class TradeMapper {
     // Если txHash недоступен — добавляем price и size для снижения вероятности коллизий
     // (одновременные трейды с разными размерами/ценами на том же рынке/токене будут различаться)
     const tsStr = String(timestampRaw).trim();
+    // Нормализуем числовые поля через Decimal для детерминизма ("0.50" → "0.5")
+    let priceNorm = String(priceRaw).trim();
+    let sizeNorm = String(sizeRaw).trim();
+    try { priceNorm = new Decimal(priceNorm).toString(); } catch { /* оставляем raw */ }
+    try { sizeNorm = new Decimal(sizeNorm).toString(); } catch { /* оставляем raw */ }
     const tradeIdString =
       txHash !== undefined
         ? `${txHash}_${tsStr}`
-        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}_${String(priceRaw).trim()}_${String(sizeRaw).trim()}`;
+        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}_${priceNorm}_${sizeNorm}`;
 
     const tradeId = asVenueTradeId(tradeIdString);
     if (!tradeId) {

@@ -1,7 +1,7 @@
 # @polymarket/orderbook
 
-Доменная entity стакана заявок для Polymarket.
+Domain entity for the order book (Polymarket) / Доменная entity стакана заявок для Polymarket.
 
-## Документация
+## Documentation / Документация
 
 → [docs/orderbook-entity.md](./docs/orderbook-entity.md)

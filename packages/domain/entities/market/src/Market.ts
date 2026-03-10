@@ -355,7 +355,7 @@ export class Market {
         new MarketValidationError('Outcome names must be distinct', {
           context: {
             field: 'outcomes',
-            value: [props.outcomes[0].name, props.outcomes[1].name],
+            value: [props.outcomes[0].name.trim(), props.outcomes[1].name.trim()],
           },
         })
       );
