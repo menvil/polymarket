@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidSpreadError.js","sourceRoot":"","sources":["InvalidSpreadError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;GAoBG;AAEH,OAAO,EAAE,YAAY,EAAiB,MAAM,kBAAkB,CAAC;AAE/D,MAAM,OAAO,kBAAmB,SAAQ,YAAY;IAClC,QAAQ,GAAkB,KAAK,CAAC;IACzC,MAAM,CAAU,IAAI,GAAG,gBAAgB,CAAC"}

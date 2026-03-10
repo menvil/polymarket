@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidTickSizeError.d.ts","sourceRoot":"","sources":["InvalidTickSizeError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;GA0BG;AAEH,OAAO,EAAE,YAAY,EAAE,MAAM,kBAAkB,CAAC;AAChD,OAAO,KAAK,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAEtD;;;;;;GAMG;AACH,qBAAa,oBAAqB,SAAQ,YAAY;IACpD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,uBAAuB;CACnD"}

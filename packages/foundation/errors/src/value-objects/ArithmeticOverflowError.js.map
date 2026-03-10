@@ -1,1 +1,0 @@
-{"version":3,"file":"ArithmeticOverflowError.js","sourceRoot":"","sources":["ArithmeticOverflowError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgEG;AAEH,OAAO,EAAE,YAAY,EAAiB,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,MAAM,OAAO,uBAAwB,SAAQ,YAAY;IACvC,QAAQ,GAAkB,KAAK,CAAC;IAEhD;;OAEG;IACI,MAAM,CAAU,IAAI,GAAG,qBAAqB,CAAC"}

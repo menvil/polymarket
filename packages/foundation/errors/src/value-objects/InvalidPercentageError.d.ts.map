@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidPercentageError.d.ts","sourceRoot":"","sources":["InvalidPercentageError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA6CG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,sBAAuB,SAAQ,YAAY;IACtD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,wBAAwB;CACpD"}

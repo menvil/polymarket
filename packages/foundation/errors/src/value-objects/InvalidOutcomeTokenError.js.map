@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidOutcomeTokenError.js","sourceRoot":"","sources":["InvalidOutcomeTokenError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;GAmBG;AAEH,OAAO,EAAE,YAAY,EAAiB,MAAM,kBAAkB,CAAC;AAE/D,MAAM,OAAO,wBAAyB,SAAQ,YAAY;IACxC,QAAQ,GAAkB,KAAK,CAAC;IAEhD;;OAEG;IACI,MAAM,CAAU,IAAI,GAAG,uBAAuB,CAAC"}

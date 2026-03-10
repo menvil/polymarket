@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidSideError.d.ts","sourceRoot":"","sources":["InvalidSideError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA+CG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,gBAAiB,SAAQ,YAAY;IAChD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,kBAAkB;CAC9C"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidBalanceError.d.ts","sourceRoot":"","sources":["InvalidBalanceError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgDG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D,qBAAa,mBAAoB,SAAQ,YAAY;IACnD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,qBAAqB;CACjD"}

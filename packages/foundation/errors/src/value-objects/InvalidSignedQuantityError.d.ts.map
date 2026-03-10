@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidSignedQuantityError.d.ts","sourceRoot":"","sources":["InvalidSignedQuantityError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA+CG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,0BAA2B,SAAQ,YAAY;IAC1D,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,6BAA6B;CACzD"}

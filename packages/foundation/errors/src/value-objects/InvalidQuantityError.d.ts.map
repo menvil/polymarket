@@ -1,1 +1,0 @@
-{"version":3,"file":"InvalidQuantityError.d.ts","sourceRoot":"","sources":["InvalidQuantityError.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA8CG;AAEH,OAAO,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,oBAAqB,SAAQ,YAAY;IACpD,SAAgB,QAAQ,EAAE,aAAa,CAAS;IAEhD;;OAEG;IACH,gBAAuB,IAAI,sBAAsB;CAClD"}
