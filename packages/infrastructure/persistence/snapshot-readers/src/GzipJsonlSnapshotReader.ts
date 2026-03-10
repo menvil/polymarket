@@ -84,7 +84,7 @@ export class GzipJsonlSnapshotReader implements ISnapshotReader {
       } catch (err) {
         this._logger.warn('Failed to delete temp decompressed file', {
           path: this._decompressedPath,
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
       this._decompressedPath = null;

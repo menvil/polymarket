@@ -215,7 +215,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
       this._logger.warn('[PolymarketMarketCatalog] Failed to parse market, skipping', {
         conditionId: raw.condition_id,
         tokenId,
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
       return null;
     }

@@ -132,7 +132,7 @@ export class DataRecorder implements IMarketDataRecorder {
       const stream = fs.createWriteStream(filePath, { flags: 'a' });
 
       stream.on('error', (err) => {
-        this._logger.error('Write stream error', { marketId: key, filePath, error: err.message });
+        this._logger.error('Write stream error', { marketId: key, filePath, err });
       });
 
       const writer: MarketWriter = {
@@ -159,7 +159,7 @@ export class DataRecorder implements IMarketDataRecorder {
       this._logger.error('Failed to register market', {
         marketId: key,
         filePath,
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
   }
@@ -233,7 +233,7 @@ export class DataRecorder implements IMarketDataRecorder {
         this._logger.warn('Failed to compress market file', {
           marketId: key,
           filePath: writer.filePath,
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     }
