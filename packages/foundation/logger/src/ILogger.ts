@@ -171,45 +171,38 @@ export interface ILogger {
    * Логирует ошибку (уровень ERROR)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст (опционально)
+   * @param context - Дополнительный контекст (опционально). Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Используется для ошибок требующих немедленного внимания.
-   * Если передан Error, его stack trace будет включен в лог.
+   * Для включения stack trace передайте Error объект через поле `err` в контексте:
+   * `logger.error('msg', { err: error, orderId: '123' })`.
+   * Это соответствует Pino-конвенции и даёт полную сериализацию ошибки.
    *
    * @example
    * ```typescript
    * try {
    *   await placeOrder(order);
    * } catch (error) {
-   *   logger.error('Failed to place order', error as Error, {
+   *   logger.error('Failed to place order', {
+   *     err: error as Error,
    *     orderId: order.id,
    *     price: order.price,
    *   });
    * }
    * ```
    */
-  error(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void;
+  error(message: string, context?: Record<string, unknown>): void;
 
   /**
    * Логирует критическую ошибку (уровень FATAL)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст (опционально)
+   * @param context - Дополнительный контекст (опционально). Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Уровень FATAL - самый критичный уровень логирования.
-   * Используется для фатальных ошибок которые приводят к остановке системы:
-   * - Невозможность подключиться к exchange
-   * - Критическая ошибка в risk management
-   * - Потеря соединения с базой данных
-   *
+   * Используется для фатальных ошибок которые приводят к остановке системы.
    * После логирования FATAL обычно следует завершение процесса.
    *
    * @example
@@ -217,7 +210,8 @@ export interface ILogger {
    * try {
    *   await connectToExchange();
    * } catch (error) {
-   *   logger.fatal('Cannot connect to exchange', error as Error, {
+   *   logger.fatal('Cannot connect to exchange', {
+   *     err: error as Error,
    *     exchange: 'Polymarket',
    *     retryAttempts: 5,
    *   });
@@ -225,11 +219,7 @@ export interface ILogger {
    * }
    * ```
    */
-  fatal(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void;
+  fatal(message: string, context?: Record<string, unknown>): void;
 
   /**
    * Создаёт дочерний логгер с привязанным контекстом

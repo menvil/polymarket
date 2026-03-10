@@ -220,38 +220,38 @@ describe('ConsoleLogger', () => {
       });
     });
 
-    it('должен включать Error объект', () => {
+    it('должен включать Error объект через поле err', () => {
       const error = new Error('Something went wrong');
-      logger.error('Operation failed', error);
+      logger.error('Operation failed', { err: error });
 
       const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
 
       expect(loggedData.timestamp).toBe('2024-01-01T00:00:00.000Z');
       expect(loggedData.level).toBe('ERROR');
       expect(loggedData.message).toBe('Operation failed');
-      expect(loggedData.error).toEqual({
+      expect(loggedData.err).toEqual({
         message: 'Something went wrong',
         name: 'Error',
         stack: error.stack,
       });
     });
 
-    it('должен включать контекст вместе с Error', () => {
+    it('должен включать контекст вместе с err', () => {
       const error = new Error('Database error');
-      logger.error('Failed to save order', error, { orderId: 'order-123' });
+      logger.error('Failed to save order', { err: error, orderId: 'order-123' });
 
       const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
 
       expect(loggedData.orderId).toBe('order-123');
-      expect(loggedData.error.message).toBe('Database error');
+      expect(loggedData.err.message).toBe('Database error');
     });
 
     it('должен работать без Error объекта', () => {
-      logger.error('Simple error', undefined, { code: 500 });
+      logger.error('Simple error', { code: 500 });
 
       const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
 
-      expect(loggedData.error).toBeUndefined();
+      expect(loggedData.err).toBeUndefined();
       expect(loggedData.code).toBe(500);
     });
   });
@@ -301,15 +301,15 @@ describe('ConsoleLogger', () => {
       });
     });
 
-    it('должен включать Error объект', () => {
+    it('должен включать Error объект через поле err', () => {
       const error = new Error('Cannot connect');
-      logger.fatal('Fatal error', error, { exchange: 'Polymarket' });
+      logger.fatal('Fatal error', { err: error, exchange: 'Polymarket' });
 
       const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
 
       expect(loggedData.level).toBe('FATAL');
       expect(loggedData.exchange).toBe('Polymarket');
-      expect(loggedData.error.message).toBe('Cannot connect');
+      expect(loggedData.err.message).toBe('Cannot connect');
     });
   });
 

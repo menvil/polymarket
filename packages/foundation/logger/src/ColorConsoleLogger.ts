@@ -46,8 +46,8 @@
  * logger.debug('Fetching orderbook', { marketId: '0xabc' });
  * logger.info('Trading bot started');
  * logger.warn('High position detected', { netPosition: 500 });
- * logger.error('Failed to place order', new Error('Network error'));
- * logger.fatal('Cannot connect to exchange', new Error('Connection refused'));
+ * logger.error('Failed to place order', { err: new Error('Network error') });
+ * logger.fatal('Cannot connect to exchange', { err: new Error('Connection refused') });
  * ```
  *
  * @example
@@ -65,6 +65,21 @@ import type { ILogger } from './ILogger.js';
 import { LogLevel, shouldLog } from './LogLevel.js';
 import { safeStringify } from './utils/safeStringify.js';
 import { sanitizeContext } from './utils/sanitizeContext.js';
+
+/**
+ * Сериализует Error из поля `err` в context в plain объект `{ message, name, stack }`.
+ *
+ * @remarks
+ * JSON.stringify возвращает `{}` для Error (свойства non-enumerable).
+ * Вызывается в `error()` и `fatal()` до передачи context в `log()`.
+ */
+function serializeErrorInContext(
+  context?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!context || !(context.err instanceof Error)) return context;
+  const { err, ...rest } = context;
+  return { ...rest, err: { message: err.message, name: err.name, stack: err.stack } };
+}
 
 /**
  * ANSI color codes для консоли
@@ -297,29 +312,23 @@ export class ColorConsoleLogger implements ILogger {
    * Логирует ошибку (уровень ERROR)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительные данные
+   * @param context - Дополнительные данные. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Уровень ERROR: критические ошибки.
+   * Если в context передан `err: Error`, его message, name и stack сериализуются в лог.
    *
    * @example
    * ```typescript
-   * logger.error('Failed to cancel order', new Error('Timeout'), {
-   *   orderId: '0x123'
+   * logger.error('Failed to cancel order', {
+   *   err: new Error('Timeout'),
+   *   orderId: '0x123',
    * });
    * ```
    */
-  error(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
+  error(message: string, context?: Record<string, unknown>): void {
     if (shouldLog(LogLevel.ERROR, this.level)) {
-      // Передаём context сырым — log() санитизирует его безопасно через sanitizeContext;
-      // errorContext (наши данные) передаётся отдельным аргументом чтобы не спредить
-      // context до санитизации (спред вызвал бы throwing getters)
-      this.log(LogLevel.ERROR, message, context, this.buildErrorContext(error));
+      this.log(LogLevel.ERROR, message, serializeErrorInContext(context));
     }
   }
 
@@ -327,54 +336,25 @@ export class ColorConsoleLogger implements ILogger {
    * Логирует критическую ошибку (уровень FATAL)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительные данные
+   * @param context - Дополнительные данные. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Уровень FATAL: фатальные ошибки приводящие к остановке.
    *
    * @example
    * ```typescript
-   * logger.fatal('Cannot connect to exchange', new Error('Connection refused'), {
+   * logger.fatal('Cannot connect to exchange', {
+   *   err: new Error('Connection refused'),
    *   exchange: 'Polymarket',
-   *   retryAttempts: 5
+   *   retryAttempts: 5,
    * });
    * process.exit(1);
    * ```
    */
-  fatal(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
+  fatal(message: string, context?: Record<string, unknown>): void {
     if (shouldLog(LogLevel.FATAL, this.level)) {
-      this.log(LogLevel.FATAL, message, context, this.buildErrorContext(error));
+      this.log(LogLevel.FATAL, message, serializeErrorInContext(context));
     }
-  }
-
-  /**
-   * Формирует объект контекста для ошибки
-   *
-   * @param error - Объект ошибки (опционально)
-   * @returns Объект `{ error: { message, name, stack } }` или `undefined`
-   *
-   * @remarks
-   * Выделен в helper чтобы избежать дублирования в error() и fatal().
-   * Метод безопасен — работает только с нашими данными (Error instance).
-   *
-   * @internal
-   */
-  private buildErrorContext(
-    error?: Error
-  ): Record<string, unknown> | undefined {
-    if (!error) return undefined;
-    return {
-      error: {
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
-      },
-    };
   }
 
   /**
@@ -537,14 +517,14 @@ export class ColorConsoleLogger implements ILogger {
       return '';
     }
 
-    // Если есть вложенный error object (от error/fatal методов)
-    if (context.error && typeof context.error === 'object') {
-      const err = context.error as { message?: string; stack?: string };
+    // Если есть вложенный error object (от error/fatal методов через поле err)
+    if (context.err && typeof context.err === 'object') {
+      const err = context.err as { message?: string; stack?: string };
       const stackLines = err.stack?.split('\n');
       const stackFrame = stackLines && stackLines.length > 1 ? stackLines[1] : err.message;
-      const errorStr = `error: "${err.message}", stack: "${stackFrame?.trim()}"`;
+      const errorStr = `err: "${err.message}", stack: "${stackFrame?.trim()}"`;
       const otherContext = { ...context };
-      delete otherContext.error;
+      delete otherContext.err;
 
       if (Object.keys(otherContext).length > 0) {
         // Use safeStringify to prevent exceptions on circular refs

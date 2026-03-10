@@ -95,13 +95,13 @@ describe('NoOpLogger', () => {
       expect(() => logger.error('test')).not.toThrow();
     });
 
-    it('НЕ должен выбрасывать ошибку с Error объектом', () => {
+    it('НЕ должен выбрасывать ошибку с err в context', () => {
       const error = new Error('test error');
-      expect(() => logger.error('test', error)).not.toThrow();
+      expect(() => logger.error('test', { err: error })).not.toThrow();
     });
 
     it('НЕ должен выбрасывать ошибку с контекстом', () => {
-      expect(() => logger.error('test', undefined, { key: 'value' })).not.toThrow();
+      expect(() => logger.error('test', { key: 'value' })).not.toThrow();
     });
 
     it('должен возвращать void', () => {
@@ -115,13 +115,13 @@ describe('NoOpLogger', () => {
       expect(() => logger.fatal('test')).not.toThrow();
     });
 
-    it('НЕ должен выбрасывать ошибку с Error объектом', () => {
+    it('НЕ должен выбрасывать ошибку с err в context', () => {
       const error = new Error('test error');
-      expect(() => logger.fatal('test', error)).not.toThrow();
+      expect(() => logger.fatal('test', { err: error })).not.toThrow();
     });
 
     it('НЕ должен выбрасывать ошибку с контекстом', () => {
-      expect(() => logger.fatal('test', undefined, { key: 'value' })).not.toThrow();
+      expect(() => logger.fatal('test', { key: 'value' })).not.toThrow();
     });
 
     it('должен возвращать void', () => {
@@ -163,8 +163,8 @@ describe('NoOpLogger', () => {
         logger.debug('test');
         logger.info('test');
         logger.warn('test');
-        logger.error('test', new Error('test'));
-        logger.fatal('test', new Error('test'));
+        logger.error('test', { err: new Error('test') });
+        logger.fatal('test', { err: new Error('test') });
 
         expect(consoleSpies.trace).not.toHaveBeenCalled();
         expect(consoleSpies.debug).not.toHaveBeenCalled();
@@ -193,8 +193,8 @@ describe('NoOpLogger', () => {
         child.debug('test');
         child.info('test');
         child.warn('test');
-        child.error('test', new Error('test'));
-        child.fatal('test', new Error('test'));
+        child.error('test', { err: new Error('test') });
+        child.fatal('test', { err: new Error('test') });
 
         expect(consoleSpies.trace).not.toHaveBeenCalled();
         expect(consoleSpies.debug).not.toHaveBeenCalled();

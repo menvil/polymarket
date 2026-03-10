@@ -84,7 +84,7 @@ describe('Logger Integration', () => {
       }
 
       handleError(orderId: string, error: Error): void {
-        this.logger.error('Order failed', error, { orderId });
+        this.logger.error('Order failed', { err: error, orderId });
       }
     }
 
@@ -293,7 +293,8 @@ describe('Logger Integration', () => {
         try {
           throw new Error('Failed to save order');
         } catch (orderError) {
-          logger.error('Critical error in order processing', orderError as Error, {
+          logger.error('Critical error in order processing', {
+            err: orderError as Error,
             orderId: 'order-123',
             cause: (dbError as Error).message,
           });
@@ -306,8 +307,8 @@ describe('Logger Integration', () => {
       expect(loggedData.message).toBe('Critical error in order processing');
       expect(loggedData.orderId).toBe('order-123');
       expect(loggedData.cause).toBe('Database connection failed');
-      expect(loggedData.error.message).toBe('Failed to save order');
-      expect(loggedData.error.stack).toBeDefined();
+      expect(loggedData.err.message).toBe('Failed to save order');
+      expect(loggedData.err.stack).toBeDefined();
 
       consoleSpy.mockRestore();
     });

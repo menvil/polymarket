@@ -42,8 +42,9 @@ export class PinoLoggerAdapter implements ILogger {
     'level',   // Log level (устанавливается методом trace/debug/info/etc)
     'pid',     // Process ID (автоматически добавляется Pino)
     'hostname',// Hostname (автоматически добавляется Pino)
-    'err',     // Error object (управляется через параметр error)
     'v'        // Pino version (автоматически добавляется Pino в каждую запись)
+    // Примечание: 'err' НЕ зарезервирован — Pino нативно сериализует поле err: Error.
+    // Передавайте ошибку через context: { err: error }
   ]);
 
   /**
@@ -220,42 +221,33 @@ export class PinoLoggerAdapter implements ILogger {
    * Логирует ошибку (уровень ERROR)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
-   * Pino ожидает Error объект в поле { err: error }.
-   * Pino автоматически сериализует err.message, err.stack, etc.
+   * Pino нативно сериализует поле `err: Error` — автоматически включает
+   * err.message, err.stack, err.type в структурированный лог.
    *
    * @example
    * ```typescript
    * try {
    *   await placeOrder(order);
    * } catch (error) {
-   *   logger.error('Failed to place order', error as Error, {
+   *   logger.error('Failed to place order', {
+   *     err: error as Error,
    *     orderId: order.id,
    *   });
    * }
    * ```
    */
-  error(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
-    const pinoContext = {
-      ...this.sanitizeContext(context),
-      ...(error && { err: error }) // Pino автоматически сериализует err
-    };
-    this.pino.error(pinoContext, message);
+  error(message: string, context?: Record<string, unknown>): void {
+    this.pino.error(this.sanitizeContext(context), message);
   }
 
   /**
    * Логирует критическую ошибку (уровень FATAL)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * FATAL используется для фатальных ошибок которые приводят к остановке.
@@ -266,24 +258,17 @@ export class PinoLoggerAdapter implements ILogger {
    * try {
    *   await connectToExchange();
    * } catch (error) {
-   *   logger.fatal('Cannot connect to exchange', error as Error, {
+   *   logger.fatal('Cannot connect to exchange', {
+   *     err: error as Error,
    *     exchange: 'Polymarket',
-   *     retryAttempts: 5
+   *     retryAttempts: 5,
    *   });
    *   process.exit(1);
    * }
    * ```
    */
-  fatal(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
-    const pinoContext = {
-      ...this.sanitizeContext(context),
-      ...(error && { err: error })
-    };
-    this.pino.fatal(pinoContext, message);
+  fatal(message: string, context?: Record<string, unknown>): void {
+    this.pino.fatal(this.sanitizeContext(context), message);
   }
 
   /**
