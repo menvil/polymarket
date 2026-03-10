@@ -15,33 +15,28 @@
  *   → discoveryService.findCandidates()
  *   → (внутри: TTL cache check → при необходимости refresh())
  *   → возвращает DiscoveredMarket[]
- *   → coordinator.register() в IMarketCatalog
+ *   → coordinator регистрирует каждого кандидата через catalog.register(candidate)
  * ```
  */
-import type { MarketId, InstrumentId } from '@polymarket/ids';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { InstrumentInfo } from './IMarketCatalog.js';
 
 /**
  * Обнаруженный рынок — кандидат для торговли.
  *
  * @remarks
- * Содержит все данные, необходимые для регистрации в каталоге и принятия
- * торгового решения. Поля `spread`, `liquidity` и `score` используются
- * для фильтрации и приоритизации рынков в `MarketFilter` и `MarketScorer`.
+ * Расширяет `InstrumentInfo` — содержит все данные, необходимые для прямой
+ * регистрации в каталоге через `catalog.register(candidate)`. Поля `spread`,
+ * `liquidity` и `score` используются для фильтрации и приоритизации рынков
+ * в `MarketFilter` и `MarketScorer`.
+ *
+ * `active: true` — литеральный тип: кандидат всегда активен по определению
+ * (неактивные рынки отфильтровываются в адаптере ещё до создания DiscoveredMarket).
  */
-export interface DiscoveredMarket {
-  /** ID рынка (condition_id в Polymarket API) */
-  readonly marketId: MarketId;
-  /** ID токена YES исхода (clobTokenIds[0]) */
-  readonly instrumentId: InstrumentId;
+export interface DiscoveredMarket extends InstrumentInfo {
+  /** Кандидат всегда активен (narrowed from boolean → true) */
+  readonly active: true;
   /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
-  /** Время истечения рынка */
-  readonly expiresAt: Timestamp;
-  /** Минимальный шаг цены ордера */
-  readonly tickSize: Price;
-  /** Минимальный размер ордера */
-  readonly minOrderSize: Quantity;
   /** Текущий спред (bid-ask). 0 если недоступен */
   readonly spread: number;
   /** Ликвидность (объём торгов). 0 если недоступен */
@@ -60,13 +55,8 @@ export interface DiscoveredMarket {
  * ```typescript
  * const candidates = await discoveryService.findCandidates();
  * for (const candidate of candidates) {
- *   catalog.register({
- *     instrumentId: candidate.instrumentId,
- *     marketId: candidate.marketId,
- *     tickSize: candidate.tickSize,
- *     minOrderSize: candidate.minOrderSize,
- *     active: true,
- *   });
+ *   // DiscoveredMarket extends InstrumentInfo — регистрируем напрямую
+ *   catalog.register(candidate);
  * }
  * ```
  */

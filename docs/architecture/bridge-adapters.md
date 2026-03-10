@@ -101,6 +101,42 @@ const result = await exchangeClient.submitOrder({ asset, side, price, size });
 
 ---
 
+### PolymarketMarketDiscoveryAdapter
+
+**Ответственность:** Реализует `IMarketDiscoveryService` — обнаружение торговых рынков через Gamma API.
+
+**Поток данных:**
+```
+PolymarketMarketDataRestClient.getActiveMarkets()   → GammaMarketDto[]
+  → предфильтр: active && !closed && enableOrderBook
+  → _mapToDiscoveredMarket(GammaMarketDto)           → DiscoveredMarket | null
+  → MarketFilter.filterCandidates(candidates, cfg)   → DiscoveredMarket[]
+  → MarketScorer.scoreAndSort(filtered)              → DiscoveredMarket[] (sorted)
+  → slice(0, maxMarketsToReturn)
+  → _cachedCandidates                                (TTL кэш, default 60s)
+```
+
+**Архитектурные решения:**
+
+- `GammaMarketDto` — единственный тип данных Gamma API (замена `MarketInfoResponse` + `GammaMarketData`).
+  Определён в `PolymarketMarketDataRestClient`, используется адаптером.
+- `DiscoveredMarket extends InstrumentInfo` — кандидат несёт все поля каталога плюс `question`, `spread`, `liquidity`, `score`.
+  Позволяет напрямую вызвать `catalog.register(candidate)` без маппинга.
+- `active: true` (literal) — кандидат всегда активен; неактивные рынки отфильтровываются в адаптере.
+- `expiresAt: Timestamp` — поле `InstrumentInfo`, заполняется из `endDate` API.
+  Используется `ExpirationRemovalPolicy` для своевременного закрытия рынков.
+
+**Пример использования:**
+```typescript
+// StrategyCoordinator._discover() — candidate IS InstrumentInfo
+const candidates = await discoveryService.findCandidates();
+for (const candidate of candidates) {
+  catalog.register(candidate);  // без ручного маппинга
+}
+```
+
+---
+
 ## Порядок старта системы
 
 ```typescript
@@ -126,3 +162,4 @@ userEventFeedAdapter.start();
 - **Явный маппинг**: без `as unknown as` — поля отображаются явно
 - **Конвертация на границе**: строки → VOs происходит в адаптере, не в handlers
 - **Stop безопасен**: повторный `stop()` идемпотентен
+- **DiscoveredMarket extends InstrumentInfo**: кандидат содержит все данные для регистрации в каталоге

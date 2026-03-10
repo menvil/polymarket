@@ -15,7 +15,7 @@
  * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 
 /**
  * Метаданные торгового инструмента.
@@ -35,6 +35,8 @@ export interface InstrumentInfo {
   readonly minOrderSize: Quantity;
   /** Активен ли рынок */
   readonly active: boolean;
+  /** Время истечения рынка (используется ExpirationRemovalPolicy) */
+  readonly expiresAt: Timestamp;
 }
 
 /**
@@ -55,7 +57,7 @@ export interface InstrumentInfo {
  * riskChecker.validatePrice(price, info.tickSize);
  *
  * // Добавление нового инструмента:
- * catalog.register({ instrumentId, marketId, tickSize, minOrderSize, active: true });
+ * catalog.register({ instrumentId, marketId, tickSize, minOrderSize, active: true, expiresAt });
  *
  * // Удаление по marketId:
  * const found = catalog.getByMarketId(marketId);

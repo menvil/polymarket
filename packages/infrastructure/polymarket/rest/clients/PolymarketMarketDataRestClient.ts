@@ -6,13 +6,11 @@
  * - GET /markets - Получить все маркеты
  * - GET /markets/{tokenId} - Получить информацию о конкретном маркете
  *
- * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
- * Нормализация выполняется маппером в вышестоящих слоях.
+ * Возвращает сырые ответы API (`GammaMarketDto`) без нормализации.
+ * Нормализация (маппинг в domain VO) выполняется `PolymarketMarketDiscoveryAdapter`.
  *
  * **ВАЖНО**: Использует Gamma API (публичный API), НЕ CLOB API.
  * Базовый URL: https://gamma-api.polymarket.com
- *
- * Заменяет GammaApiClient.
  *
  * @example
  * ```typescript
@@ -23,15 +21,10 @@
  *
  * const market = await client.getMarketInfo('0x123');
  * console.log(`Market: ${market.question}`);
- *
- * const constraints = await client.getMarketConstraints('0x123');
- * console.log(`Min size: ${constraints.minimum_order_size}`);
  * ```
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { GammaMarketData } from '../../stubs/domain/services/market-discovery/types.js';
-import type { IMarketDataProvider } from '../../stubs/domain/services/market-discovery/MarketDiscoveryService.js';
 
 /**
  * Конфигурация клиента рыночных данных
@@ -59,14 +52,14 @@ export interface MarketOutcomeResponse {
 }
 
 /**
- * Ответ с информацией о маркете (сырой формат API от Gamma API)
+ * DTO рыночных данных из Gamma API.
  *
  * @remarks
- * Gamma API возвращает поля в camelCase, а НЕ в snake_case!
+ * Gamma API возвращает поля в camelCase.
  *
  * Пример: https://gamma-api.polymarket.com/markets
  */
-export interface MarketInfoResponse {
+export interface GammaMarketDto {
   /** Идентификатор условия маркета */
   conditionId: string;
 
@@ -117,6 +110,12 @@ export interface MarketInfoResponse {
 
   /** Минимальный размер ордера */
   orderMinSize?: number;
+
+  /** Описание рынка */
+  description?: string;
+
+  /** Теги рынка */
+  tags?: string[];
 }
 
 /**
@@ -143,10 +142,10 @@ export interface MarketConstraintsResponse {
  * REST-клиент рыночных данных Polymarket
  *
  * @remarks
- * Реализует IMarketDataProvider для использования с MarketDiscoveryService.
- * Маппирует сырые ответы API (snake_case) в доменные типы (camelCase).
+ * Возвращает сырые DTO из Gamma API без преобразования в domain-объекты.
+ * Маппинг в domain VO (InstrumentId, Price и т.д.) выполняется в адаптере.
  */
-export class PolymarketMarketDataRestClient implements IMarketDataProvider {
+export class PolymarketMarketDataRestClient {
   private readonly config: Required<MarketDataClientConfig>;
   private readonly logger: ILogger;
 
@@ -173,27 +172,23 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Получить все активные маркеты (реализация IMarketDataProvider)
+   * Получить все активные маркеты в виде сырых DTO.
    *
-   * @returns Массив рыночных данных в доменном формате (GammaMarketData)
+   * @returns Массив GammaMarketDto из Gamma API
    * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Реализует интерфейс IMarketDataProvider.
-   * Запрашивает сырые данные API и маппирует в доменный формат (camelCase).
+   * Постранично загружает все активные рынки (до 25 000).
+   * Сортировка по убыванию объёма (наибольший объём первым).
    *
    * @example
    * ```typescript
    * const markets = await client.getActiveMarkets();
    * console.log(`Active markets: ${markets.length}`);
-   *
-   * markets.forEach(market => {
-   *   console.log(`${market.question} - Ends: ${market.endDate}`);
-   * });
    * ```
    */
-  async getActiveMarkets(): Promise<GammaMarketData[]> {
-    const allMarkets: GammaMarketData[] = [];
+  async getActiveMarkets(): Promise<GammaMarketDto[]> {
+    const allMarkets: GammaMarketDto[] = [];
     let offset = 0;
     const limit = 500;
     const maxPages = 50; // Максимум 25 000 маркетов
@@ -209,20 +204,17 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
         url.searchParams.set('order', 'volume'); // Сортировка по объёму
         url.searchParams.set('ascending', 'false'); // По убыванию (наибольший объём первым)
 
-        const rawMarkets = await this.fetch<MarketInfoResponse[]>(url.toString(), true);
+        const batch = await this.fetch<GammaMarketDto[]>(url.toString(), true);
 
-        if (rawMarkets.length === 0) {
+        if (batch.length === 0) {
           break;
         }
 
-        // Маппируем и накапливаем
-        const mappedMarkets = rawMarkets.map((raw) => this.mapToDomainFormat(raw));
-        allMarkets.push(...mappedMarkets);
-
+        allMarkets.push(...batch);
         offset += limit;
 
         // Если получили меньше limit, значит достигли конца
-        if (rawMarkets.length < limit) {
+        if (batch.length < limit) {
           break;
         }
       }
@@ -236,29 +228,6 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       this.logger.error('[Gamma API] Failed to fetch active markets', { err: error instanceof Error ? error : new Error(String(error)) });
       throw error;
     }
-  }
-
-  /**
-   * Получить сырые активные маркеты (для внутреннего использования)
-   *
-   * @returns Массив сырых ответов с информацией о маркетах
-   * @throws {Error} При ошибке API-вызова
-   *
-   * @remarks
-   * Возвращает сырой ответ API без маппинга.
-   * Используйте getActiveMarkets() для доменного формата.
-   */
-  async getRawActiveMarkets(): Promise<MarketInfoResponse[]> {
-    this.logger.debug('Getting raw active markets');
-
-    const url = `${this.config.baseUrl}/markets?active=true`;
-    const markets = await this.fetch<MarketInfoResponse[]>(url);
-
-    this.logger.debug('Raw active markets retrieved', {
-      count: markets.length,
-    });
-
-    return markets;
   }
 
   /**
@@ -276,18 +245,15 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
    *
    * @example
    * ```typescript
-   * // Предпочтительно: использовать slug
    * const market = await client.getMarketInfo('bitcoin-up-or-down-january-8');
-   *
-   * // Запасной вариант: использовать conditionId (может не работать для всех маркетов)
-   * const market2 = await client.getMarketInfo('0x123...');
+   * console.log(`Market: ${market.question}`);
    * ```
    */
-  async getMarketInfo(slugOrConditionId: string): Promise<MarketInfoResponse> {
+  async getMarketInfo(slugOrConditionId: string): Promise<GammaMarketDto> {
     this.logger.debug('Getting market info', { slugOrConditionId });
 
     const url = `${this.config.baseUrl}/markets/${slugOrConditionId}`;
-    const market = await this.fetch<MarketInfoResponse>(url);
+    const market = await this.fetch<GammaMarketDto>(url);
 
     this.logger.debug('Market info retrieved', {
       slug: market.slug,
@@ -314,15 +280,10 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
    * Если передать conditionId и получить HTTP 422 "id is invalid" — это ожидаемо.
    * Метод вернёт безопасные значения по умолчанию.
    *
-   * Для лучших результатов передавайте market.slug вместо market.conditionId.
-   *
    * @example
    * ```typescript
-   * // Предпочтительно: использовать slug
    * const constraints = await client.getMarketConstraints('bitcoin-up-or-down-january-8');
-   *
-   * // Запасной вариант: использовать conditionId (вернёт дефолты при 422)
-   * const constraints2 = await client.getMarketConstraints('0x123...');
+   * console.log(`Min size: ${constraints.minimum_order_size}`);
    * ```
    */
   async getMarketConstraints(slugOrConditionId: string): Promise<MarketConstraintsResponse> {
@@ -361,49 +322,14 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       }
 
       // Возвращаем безопасные значения по умолчанию
-      // КРИТИЧНО: minimum_order_size = 1 (запасной вариант, когда API недоступен)
       return {
-        minimum_order_value: 0, // Нет минимального значения — требуется минимум 1 акция
-        minimum_order_size: 1, // Безопасный дефолт: минимум 1 акция
+        minimum_order_value: 0,
+        minimum_order_size: 1,
         maximum_order_size: 10000,
         minimum_tick_size: 0.01,
         minimum_price_tick: 0.0001,
       };
     }
-  }
-
-  /**
-   * Маппировать сырой ответ API в доменный формат
-   *
-   * @param raw - Сырой ответ с информацией о маркете (camelCase от Gamma API)
-   * @returns Рыночные данные в доменном формате (camelCase)
-   *
-   * @remarks
-   * Gamma API уже возвращает camelCase, поэтому маппинг минимален.
-   * API возвращает JSON-строки для clobTokenIds и outcomes — передаём как есть.
-   * MarketFilter разберёт их позже.
-   */
-  private mapToDomainFormat(raw: MarketInfoResponse): GammaMarketData {
-    return {
-      conditionId: raw.conditionId,
-      question: raw.question,
-      slug: raw.slug,
-      endDate: raw.endDate,  // Уже строка ISO из API
-      active: raw.active,
-      closed: raw.closed,
-      enableOrderBook: raw.enableOrderBook,
-      clobTokenIds: raw.clobTokenIds, // JSON-строка: "[\"token1\", \"token2\"]"
-      outcomes: raw.outcomes, // JSON-строка: "[\"Yes\", \"No\"]"
-      liquidity: raw.liquidity, // Строковое число из API
-      spread: raw.spread, // Спред bid-ask из API
-      bestBid: raw.bestBid, // Лучший bid из API
-      bestAsk: raw.bestAsk, // Лучший ask из API
-      orderMinSize: raw.orderMinSize, // Минимальный размер ордера из API (напр., 5 акций)
-      orderPriceMinTickSize: raw.orderPriceMinTickSize, // Шаг цены из API (напр., 0.01)
-      // Необязательные поля, отсутствующие в ответе API
-      description: undefined,
-      tags: undefined,
-    };
   }
 
   /**

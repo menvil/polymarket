@@ -124,6 +124,7 @@ function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, active =
     marketId,
     tickSize: {} as any,
     minOrderSize: {} as any,
+    expiresAt: makeTimestamp(Date.now() + 48 * 60 * 60 * 1000),
     active,
   };
 }
@@ -317,6 +318,7 @@ describe('StrategyCoordinator', () => {
         expiresAt: makeTimestamp(Date.now() + 48 * 60 * 60 * 1000),
         tickSize: {} as any,
         minOrderSize: {} as any,
+        active: true,
         spread: 0.05,
         liquidity: 10_000,
         score: 24,
@@ -325,13 +327,8 @@ describe('StrategyCoordinator', () => {
 
       await fireNTicks(2); // tick 2 → discover
 
-      expect(catalog.register).toHaveBeenCalledWith({
-        instrumentId: INSTR_ID_1,
-        marketId: MARKET_ID_1,
-        tickSize: candidate.tickSize,
-        minOrderSize: candidate.minOrderSize,
-        active: true,
-      });
+      // DiscoveredMarket extends InstrumentInfo — регистрируем кандидата напрямую
+      expect(catalog.register).toHaveBeenCalledWith(candidate);
     });
 
     it('не вызывает openMarketUseCase если catalog.getAll() возвращает []', async () => {

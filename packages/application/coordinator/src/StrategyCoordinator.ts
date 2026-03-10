@@ -49,7 +49,6 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { Money } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
 import type {
   IBalanceAllocator,
@@ -221,15 +220,9 @@ export class StrategyCoordinator {
       return;
     }
 
-    // 2. Наполнить каталог из кандидатов
+    // 2. Наполнить каталог из кандидатов — DiscoveredMarket extends InstrumentInfo
     for (const candidate of candidates) {
-      this._deps.marketCatalog.register({
-        instrumentId: candidate.instrumentId,
-        marketId: candidate.marketId,
-        tickSize: candidate.tickSize,
-        minOrderSize: candidate.minOrderSize,
-        active: true,
-      });
+      this._deps.marketCatalog.register(candidate);
     }
 
     this._logger.debug('Market catalog updated from discovery', {
@@ -254,40 +247,32 @@ export class StrategyCoordinator {
       return;
     }
 
-    const newMarketIds = activeInstruments
-      .slice(0, remainingSlots)
-      .map((inst) => inst.marketId);
+    const newInstruments = activeInstruments.slice(0, remainingSlots);
 
-    // 5. Открыть новые рынки
-    for (const marketId of newMarketIds) {
+    // 5. Открыть новые рынки — используем inst.expiresAt из каталога (реальный срок истечения)
+    for (const inst of newInstruments) {
       const result = await this._deps.openMarketUseCase.execute({
-        marketId,
-        strategyId: String(marketId),
+        marketId: inst.marketId,
+        strategyId: String(inst.marketId),
         accountId: this._config.accountId,
       });
 
       if (result.ok) {
-        const nowMs = this._deps.clock.now().getTime();
-        const timestampResult = TimestampService.create(nowMs);
-        if (timestampResult.ok) {
-          this._activeMarkets.set(String(marketId), {
-            marketId,
-            expiresAt: timestampResult.value,
-            allocatedBalance: result.value.allocatedAmount,
-            realizedPnL: result.value.allocatedAmount.isZero()
-              ? result.value.allocatedAmount
-              : result.value.allocatedAmount,
-            openOrdersCount: 0,
-          });
-        }
+        this._activeMarkets.set(String(inst.marketId), {
+          marketId: inst.marketId,
+          expiresAt: inst.expiresAt,
+          allocatedBalance: result.value.allocatedAmount,
+          realizedPnL: result.value.allocatedAmount,
+          openOrdersCount: 0,
+        });
 
         this._logger.info('New market opened via discovery', {
-          marketId: String(marketId),
+          marketId: String(inst.marketId),
           allocated: result.value.allocatedAmount.toNumber(),
         });
       } else {
         this._logger.debug('Could not open market (allocation failed)', {
-          marketId: String(marketId),
+          marketId: String(inst.marketId),
           reason: result.error.message,
         });
       }

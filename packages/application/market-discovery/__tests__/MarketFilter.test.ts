@@ -50,6 +50,7 @@ function makeMarket(overrides: Partial<{
     expiresAt: expiresAtResult.value,
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
+    active: true,
     spread,
     liquidity,
     score: 0,

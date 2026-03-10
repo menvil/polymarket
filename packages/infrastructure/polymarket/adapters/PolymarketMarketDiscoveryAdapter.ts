@@ -8,7 +8,7 @@
  * ### Алгоритм `refresh()`:
  * 1. Вызвать `_marketDataClient.getActiveMarkets()` — получить все активные рынки
  * 2. Предфильтр: `active && !closed && enableOrderBook && parseable clobTokenIds`
- * 3. Маппинг `GammaMarketData → DiscoveredMarket` через `_mapToDiscoveredMarket()`
+ * 3. Маппинг `GammaMarketDto → DiscoveredMarket` через `_mapToDiscoveredMarket()`
  * 4. Фильтрация через `MarketFilter.filterCandidates()`
  * 5. Скоринг и сортировка через `MarketScorer.scoreAndSort()`
  * 6. Ограничение: `slice(0, maxMarketsToReturn)`
@@ -18,7 +18,7 @@
  * `findCandidates()` проверяет свежесть кэша (60 секунд по умолчанию).
  * При устаревшем кэше автоматически вызывает `refresh()`.
  *
- * ### Маппинг `GammaMarketData → DiscoveredMarket`:
+ * ### Маппинг `GammaMarketDto → DiscoveredMarket`:
  * - `conditionId` → `asMarketId()` → `MarketId`
  * - `clobTokenIds[0]` (YES token) → `asInstrumentId()` → `InstrumentId`
  * - `endDate` (ISO строка) → `Date.parse()` → `TimestampService.create()` → `Timestamp`
@@ -47,8 +47,7 @@ import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } f
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
-import type { PolymarketMarketDataRestClient } from '../rest/clients/PolymarketMarketDataRestClient.js';
-import type { GammaMarketData } from '../stubs/domain/services/market-discovery/types.js';
+import type { PolymarketMarketDataRestClient, GammaMarketDto } from '../rest/clients/PolymarketMarketDataRestClient.js';
 import type { MarketFilter } from '@polymarket/market-discovery';
 import type { MarketScorer } from '@polymarket/market-discovery';
 
@@ -159,7 +158,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
   public async refresh(): Promise<void> {
     this._logger.info('Refreshing market discovery candidates from Gamma API');
 
-    let rawMarkets: GammaMarketData[];
+    let rawMarkets: GammaMarketDto[];
     try {
       rawMarkets = await this._marketDataClient.getActiveMarkets();
     } catch (error) {
@@ -182,7 +181,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       tradeable: tradeable.length,
     });
 
-    // Маппинг GammaMarketData → DiscoveredMarket (null при ошибке парсинга)
+    // Маппинг GammaMarketDto → DiscoveredMarket (null при ошибке парсинга)
     const nowMs = Date.now();
     const mapped: DiscoveredMarket[] = [];
     let parseErrors = 0;
@@ -249,7 +248,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
    * }
    * ```
    */
-  private _mapToDiscoveredMarket(raw: GammaMarketData): DiscoveredMarket | null {
+  private _mapToDiscoveredMarket(raw: GammaMarketDto): DiscoveredMarket | null {
     // 1. Маппинг MarketId из conditionId
     const marketId = asMarketId(raw.conditionId);
     if (!marketId) {
@@ -379,6 +378,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       expiresAt: expiresAtResult.value,
       tickSize,
       minOrderSize,
+      active: true,
       spread,
       liquidity: liquidityValue,
       score: 0, // Будет установлен MarketScorer в scoreAndSort()

@@ -44,6 +44,7 @@ function makeMarket(params: {
     expiresAt: expiresAtResult.value,
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
+    active: true,
     spread: 0.05,
     liquidity,
     score: 0,
