@@ -111,14 +111,14 @@ const microTs = 1609459200000000; // microseconds (слишком большое
 const errorResult = TimestampService.create(microTs);
 if (!errorResult.ok) {
   console.error(errorResult.error.context?.reason); // "OUT_OF_RANGE"
-  // Подсказка: возможно это microseconds — делим на 1000
-  // Сначала проверяем что значение кратно 1000 (признак microseconds)
-  if (microTs % 1000 === 0) {
-    const candidateMs = microTs / 1000;
-    const fixedResult = TimestampService.create(candidateMs);
-    if (fixedResult.ok) {
-      console.log('Converted microseconds to ms:', fixedResult.value.toISO());
-    }
+  // Подсказка: возможно это microseconds — делим на 1000.
+  // Используем Math.floor вместо проверки % 1000 === 0:
+  // проверка кратности отклонила бы корректные microsecond timestamps с суб-миллисекундной
+  // точностью (например 1609459200000500 µs), что приводило бы к ложным отказам.
+  const candidateMs = Math.floor(microTs / 1000);
+  const fixedResult = TimestampService.create(candidateMs);
+  if (fixedResult.ok) {
+    console.log('Converted microseconds to ms:', fixedResult.value.toISO());
   }
 }
 ```
@@ -187,9 +187,11 @@ function parseTimestamp(raw: unknown): Timestamp | null {
     const reason = result.error.context?.reason;
     switch (reason) {
       case TimestampErrorReason.OUT_OF_RANGE:
-        // Возможно microseconds — проверяем кратность 1000 и делим
-        if (raw % 1000 === 0) {
-          const fixAttempt = TimestampService.create(raw / 1000);
+        // Возможно microseconds — делаем попытку конвертации через Math.floor(raw / 1000).
+        // Не используем raw % 1000 === 0: это бы отвергло microsecond timestamps
+        // с суб-миллисекундной точностью (например 1609459200000500 µs).
+        {
+          const fixAttempt = TimestampService.create(Math.floor(raw / 1000));
           if (fixAttempt.ok) {
             console.warn('Timestamp appears to be in microseconds, converted to ms');
             return fixAttempt.value;

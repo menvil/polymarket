@@ -94,10 +94,8 @@ try {
   }
   // Неожиданная ошибка — это баг в коде, не в данных.
   // Не ре-бросаем — оборачиваем в Result.Err для соблюдения Never Throw Contract.
-  const message = error instanceof Error ? error.message : String(error);
-  return Err(new InvalidMoneyError(`Unexpected error creating Money: ${message}`, {
-    context: { op: 'create', value: decimal.toString(), reason: 'UNEXPECTED_ERROR' }
-  }));
+  // Реальная реализация использует unexpectedError() из @polymarket/errors:
+  return Err(unexpectedError(error, InvalidMoneyError));
 }
 ```
 
@@ -261,10 +259,13 @@ private static mapInvariantToOverflow(
 ): Result<never, InvalidMoneyError>  // reason: EXCEEDS_MAX_AMOUNT | NON_FINITE | NAN
 ```
 
-Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN` — оборачиваются в `Result.Err`.
-Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) указывают на баг в коде и
-также должны быть обёрнуты в `Result.Err` с `reason: 'UNEXPECTED_INVARIANT'` — не следует
-ре-бросать ошибку, чтобы не нарушать Never Throw Contract Facade слоя.
+Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN` — оборачиваются в `Result.Err`
+с сохранением оригинального `reason` из `MoneyInvariantViolation`.
+
+Неожиданные исключения (не `MoneyInvariantViolation`) оборачиваются через `unexpectedError()`
+из `@polymarket/errors` и возвращаются как `Result.Err` без специфичного domain reason —
+это сигнализирует о баге в коде, а не невалидных данных. В любом случае ошибка не
+ре-бросается, чтобы соблюдать Never Throw Contract Facade слоя.
 
 ---
 

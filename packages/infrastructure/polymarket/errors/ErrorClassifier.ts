@@ -240,6 +240,7 @@ export class ErrorClassifier {
    * - Code contains "network" → NETWORK_ERROR
    * - Code contains "rate" → RATE_LIMITED
    * - Code contains "auth" → AUTH_FAILED
+   * - Code matches /5\d{2}/ (5xx HTTP) → SERVER_ERROR
    * - Otherwise → UNKNOWN
    */
   private classifyStructured(structured: StructuredError): OrderError {
@@ -304,7 +305,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('5') || structured.message.toLowerCase().includes('server error')) {
+    if (/5\d{2}/.test(code) || structured.message.toLowerCase().includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,
@@ -343,13 +344,15 @@ export class ErrorClassifier {
    * @returns Cache key
    *
    * @remarks
-   * Key = type + first 100 chars of message
-   * Same (type, message) → same key → same cached result
+   * Key = first 100 chars of message (NOT type).
+   * Excluding type is critical for idempotency: classify(classify(x)) === classify(x).
+   * If we keyed on type, a reclassified error (type changed from UNKNOWN to CONSTRAINT_VIOLATION)
+   * would produce a different key on second call → cache miss → re-classified → not same reference.
    */
   private makeCacheKey(error: OrderError): string {
     const message = this.extractMessage(error);
-    // Простой хэш: тип + первые 100 символов сообщения
-    return `${error.type}:${message.substring(0, 100)}`;
+    // Ключ: только первые 100 символов сообщения (без type — иначе нарушается идемпотентность)
+    return message.substring(0, 100);
   }
 
   /**

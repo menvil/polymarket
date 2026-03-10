@@ -213,7 +213,11 @@ export class TradeTape {
     const before = this._trades.length;
     // Фильтруем независимо от порядка: удаляем все записи с timestamp < cutoffMs
     const kept = this._trades.filter((t) => t.timestamp.toNumber() >= cutoffMs);
-    this._trades.splice(0, this._trades.length, ...kept);
+    // Избегаем splice(0, length, ...kept): при большом kept превышает лимит аргументов стека (V8 ~65K)
+    this._trades.length = 0;
+    for (const trade of kept) {
+      this._trades.push(trade);
+    }
     return before - this._trades.length;
   }
 

@@ -576,12 +576,13 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 // с явным ограничением (например, max 1000 записей).
 const formatCache = new Map<string, string>();
 
-function getSpreadCacheKey(spread: Spread): string {
-  return `${spread.bid().toFixed(8)}-${spread.ask().toFixed(8)}`;
+function getSpreadCacheKey(spread: Spread, decimals: number): string {
+  // Включаем decimals в ключ: один спред с разными decimals → разные строки форматирования
+  return `${spread.bid().toFixed(8)}-${spread.ask().toFixed(8)}-${decimals}`;
 }
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
-  const key = getSpreadCacheKey(spread);
+  const key = getSpreadCacheKey(spread, decimals);
   const existing = formatCache.get(key);
   if (existing) return existing;
 
@@ -601,15 +602,20 @@ function serializeBatch(spreads: Spread[]): string {
 }
 
 function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError> {
-  let jsons: unknown[];
+  let parsed: unknown;
   try {
-    jsons = JSON.parse(jsonString);
+    parsed = JSON.parse(jsonString);
   } catch {
     return Err(new InvalidSpreadError('Invalid JSON array'));
   }
 
+  // Обязательная проверка: JSON.parse может вернуть не массив (строку, число, объект)
+  if (!Array.isArray(parsed)) {
+    return Err(new InvalidSpreadError('Expected JSON array'));
+  }
+
   const spreads: Spread[] = [];
-  for (const json of jsons) {
+  for (const json of parsed) {
     const result = SpreadSerializer.fromJSON(json);
     if (!result.ok) return result; // первая ошибка прерывает пакет
     spreads.push(result.value);

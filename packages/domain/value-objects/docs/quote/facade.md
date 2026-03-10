@@ -800,7 +800,10 @@ if (!bidResult.ok) {
   );
 }
 
-// Паттерн 2: создание новой InvalidQuoteError с явным reason, затем rewrap для добавления opChain
+// Паттерн 2 (предпочтителен при необходимости явного reason):
+// Создаём новую InvalidQuoteError с собственным reason, сохраняя root cause через `cause`.
+// ВАЖНО: используйте rewrap() (Паттерн 1) когда хотите сохранить reason и opChain из source error.
+// Паттерн 2 применяйте только когда нужен ДРУГОЙ reason (например INVALID_BID вместо OUT_OF_RANGE).
 const bidResult2 = PriceService.create(bidDecimal);
 if (!bidResult2.ok) {
   return Err(
@@ -809,8 +812,8 @@ if (!bidResult2.ok) {
       { component: 'bid' },
       new InvalidQuoteError('Invalid bid price', {
         context: {
-          reason: QuoteErrorReason.INVALID_BID,
-          cause: bidResult2.error        // root cause из PriceService
+          reason: QuoteErrorReason.INVALID_BID,  // явный reason для QuoteError
+          cause: bidResult2.error                 // сохраняем root cause из PriceService
         }
       }),
       InvalidQuoteError
