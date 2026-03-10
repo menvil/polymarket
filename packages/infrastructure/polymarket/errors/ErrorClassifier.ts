@@ -319,7 +319,10 @@ export class ErrorClassifier {
       };
     }
 
-    if (/5\d{2}/.test(code) || structured.message.toLowerCase().includes('server error')) {
+    // Проверяем только точные трёхзначные HTTP 5xx коды (500–599), чтобы не ловить подстроки вроде "E1500"
+    const codeNum = parseInt(code, 10);
+    const is5xx = code.length === 3 && codeNum >= 500 && codeNum <= 599;
+    if (is5xx || structured.message.toLowerCase().includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,

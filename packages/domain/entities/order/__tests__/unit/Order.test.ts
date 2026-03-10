@@ -16,6 +16,7 @@ import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import type { FillData, FillState, OrderState } from '../../src/OrderState';
+import { replay } from '../helpers';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -316,28 +317,6 @@ describe('Order', () => {
   });
 
   describe('fromEvents()', () => {
-    /**
-     * Вспомогательная функция для тестов: разворачивает Result<Order> или бросает ошибку
-     *
-     * @param events - Список доменных событий для воспроизведения заявки
-     * @returns Order при успехе
-     * @throws {TradingError} Если Order.fromEvents() вернул Err
-     *
-     * @remarks
-     * Используется вместо ручного unwrap в каждом тесте.
-     *
-     * @example
-     * ```typescript
-     * const order = replay([createdEvent, acceptedEvent]);
-     * expect(order.status).toBe('OPEN');
-     * ```
-     */
-    function replay(events: Parameters<typeof Order.fromEvents>[0]) {
-      const result = Order.fromEvents(events);
-      if (!result.ok) throw result.error;
-      return result.value;
-    }
-
     it('должен воспроизвести заявку из событий', () => {
       const ts = Timestamp.now();
       const order = replay([
@@ -367,7 +346,9 @@ describe('Order', () => {
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
       ]);
       expect(result.ok).toBe(false);
-      expect(!result.ok && result.error.message).toContain('First event must be ORDER_CREATED');
+      if (!result.ok) {
+        expect(result.error.message).toContain('First event must be ORDER_CREATED');
+      }
     });
 
     it('должен воспроизвести полный жизненный цикл с ORDER_FILLED', () => {

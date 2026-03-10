@@ -211,13 +211,14 @@ export class TradeTape {
    */
   public evictBefore(cutoffMs: number): number {
     const before = this._trades.length;
-    // Фильтруем независимо от порядка: удаляем все записи с timestamp < cutoffMs
-    const kept = this._trades.filter((t) => t.timestamp.toNumber() >= cutoffMs);
-    // Избегаем splice(0, length, ...kept): при большом kept превышает лимит аргументов стека (V8 ~65K)
-    this._trades.length = 0;
-    for (const trade of kept) {
-      this._trades.push(trade);
+    // Уплотняем массив на месте: без промежуточного буфера и без пересоздания массива
+    let writeIdx = 0;
+    for (let i = 0; i < this._trades.length; i++) {
+      if (this._trades[i].timestamp.toNumber() >= cutoffMs) {
+        this._trades[writeIdx++] = this._trades[i];
+      }
     }
+    this._trades.length = writeIdx;
     return before - this._trades.length;
   }
 

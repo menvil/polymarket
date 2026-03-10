@@ -578,7 +578,7 @@ const formatCache = new Map<string, string>();
 
 function getSpreadCacheKey(spread: Spread, decimals: number): string {
   // Включаем decimals в ключ: один спред с разными decimals → разные строки форматирования
-  return `${spread.bid().toFixed(8)}-${spread.ask().toFixed(8)}-${decimals}`;
+  return `${spread.bid().value().toFixed(8)}-${spread.ask().value().toFixed(8)}-${decimals}`;
 }
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
@@ -594,6 +594,8 @@ function getCachedFormat(spread: Spread, decimals: number = 4): string {
 ```
 
 ### Batch сериализация
+
+Пример (утилиты для работы с массивами спредов; не экспортируются из пакета — только иллюстрация):
 
 ```typescript
 function serializeBatch(spreads: Spread[]): string {

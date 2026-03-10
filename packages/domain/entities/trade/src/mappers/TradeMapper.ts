@@ -278,8 +278,8 @@ export class TradeMapper {
     // Нормализуем числовые поля через Decimal для детерминизма ("0.50" → "0.5")
     let priceNorm = String(priceRaw).trim();
     let sizeNorm = String(sizeRaw).trim();
-    try { priceNorm = new Decimal(priceNorm).toString(); } catch { /* оставляем raw */ }
-    try { sizeNorm = new Decimal(sizeNorm).toString(); } catch { /* оставляем raw */ }
+    try { priceNorm = new Decimal(priceNorm).toFixed(); } catch { /* оставляем raw */ }
+    try { sizeNorm = new Decimal(sizeNorm).toFixed(); } catch { /* оставляем raw */ }
     const tradeIdString =
       txHash !== undefined
         ? `${txHash}_${tsStr}`

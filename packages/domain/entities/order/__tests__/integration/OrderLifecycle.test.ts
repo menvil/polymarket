@@ -29,6 +29,7 @@ import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
 import type { FillData, OrderSnapshot } from '../../src/OrderState';
+import { replay } from '../helpers';
 
 // ──────────────── Фикстуры ────────────────
 
@@ -386,12 +387,6 @@ describe('Сценарий: вычисления в разных состоян�
 // ──────────────── Сценарий 9: fromEvents replay ────────────────
 
 describe('Сценарий: fromEvents replay', () => {
-  function replay(events: Parameters<typeof Order.fromEvents>[0]) {
-    const result = Order.fromEvents(events);
-    if (!result.ok) throw result.error;
-    return result.value;
-  }
-
   it('воспроизводит полный жизненный цикл из событий', () => {
     const ts = Timestamp.now();
 

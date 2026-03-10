@@ -264,7 +264,7 @@ private static mapInvariantToOverflow(
 
 Неожиданные исключения (не `MoneyInvariantViolation`) оборачиваются через `unexpectedError()`
 из `@polymarket/errors` и возвращаются как `Result.Err` без специфичного domain reason —
-это сигнализирует о баге в коде, а не невалидных данных. В любом случае ошибка не
+это сигнализирует о баге в коде, а не из-за некорректных данных. В любом случае ошибка не
 ре-бросается, чтобы соблюдать Never Throw Contract Facade слоя.
 
 ---

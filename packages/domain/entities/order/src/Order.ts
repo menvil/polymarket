@@ -664,7 +664,7 @@ export class Order {
 
     if (filled) {
       if (!newFill.averagePrice) {
-        // Не должно происходить: addFill всегда устанавливает averagePrice при успехе
+        // Should not happen: addFill always sets averagePrice on success
         return Err(new TradingError('Internal error: averagePrice missing for fully filled order', {
           context: { orderId: this._s.id, fillId: fill.id },
         }));
