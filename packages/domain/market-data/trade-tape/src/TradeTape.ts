@@ -211,18 +211,9 @@ export class TradeTape {
    */
   public evictBefore(cutoffMs: number): number {
     const before = this._trades.length;
-
-    // Находим первый индекс, где timestamp >= cutoffMs
-    let splitIndex = 0;
-    for (let i = 0; i < this._trades.length; i++) {
-      if (this._trades[i]!.timestamp.toNumber() >= cutoffMs) {
-        splitIndex = i;
-        break;
-      }
-      splitIndex = i + 1;
-    }
-
-    this._trades.splice(0, splitIndex);
+    // Фильтруем независимо от порядка: удаляем все записи с timestamp < cutoffMs
+    const kept = this._trades.filter((t) => t.timestamp.toNumber() >= cutoffMs);
+    this._trades.splice(0, this._trades.length, ...kept);
     return before - this._trades.length;
   }
 

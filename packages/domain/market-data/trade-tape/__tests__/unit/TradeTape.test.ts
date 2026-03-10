@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { TradeTape } from '../../src/TradeTape.js';
 import { Trade } from '@polymarket/trade';
-import { AssetIdHelpers, asVenueTradeId, KnownVenues } from '@polymarket/ids';
+import { AssetIdHelpers, asVenueTradeId, KnownVenues, parseAssetId } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
@@ -87,14 +87,19 @@ describe('TradeTape', () => {
     });
 
     it('бросает Error при несовпадающем tokenId', () => {
+      // Создаём ленту для того же рынка, но другого токена
+      const conditionId = '0x' + 'a'.repeat(64);
+      const otherTokenId = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:${conditionId}:YES`);
+      if (!otherTokenId) throw new Error('Test setup: invalid otherTokenId');
       const otherTape = (() => {
-        const r = TradeTape.create('other-market', TOKEN_ID);
+        const r = TradeTape.create(MARKET_ID, otherTokenId);
         if (!r.ok) throw new Error();
         return r.value;
       })();
 
+      // Трейд принадлежит тому же рынку, но токен из ленты другой
       const trade = makeTrade({ marketId: MARKET_ID });
-      expect(() => otherTape.append(trade)).toThrow(/marketId mismatch/);
+      expect(() => otherTape.append(trade)).toThrow(/tokenId mismatch/);
       expect(otherTape.size()).toBe(0);
     });
 

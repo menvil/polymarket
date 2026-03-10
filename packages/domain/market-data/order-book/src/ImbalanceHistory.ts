@@ -80,7 +80,11 @@ export class ImbalanceHistory {
    * ```
    */
   public static create(maxSize?: number): ImbalanceHistory {
-    return new ImbalanceHistory(maxSize ?? ImbalanceHistory.DEFAULT_MAX_SIZE);
+    const size = maxSize ?? ImbalanceHistory.DEFAULT_MAX_SIZE;
+    if (!Number.isInteger(size) || size <= 0) {
+      throw new RangeError(`ImbalanceHistory: maxSize must be a positive integer, got ${maxSize}`);
+    }
+    return new ImbalanceHistory(size);
   }
 
   /**
@@ -148,9 +152,10 @@ export class ImbalanceHistory {
    * ```
    */
   public getAverage(windowMs?: number): Decimal | undefined {
+    const now = Date.now();
     const points =
       windowMs !== undefined
-        ? this.getWindow(Date.now() - windowMs, Date.now())
+        ? this.getWindow(now - windowMs, now)
         : this._points;
 
     if (points.length === 0) return undefined;

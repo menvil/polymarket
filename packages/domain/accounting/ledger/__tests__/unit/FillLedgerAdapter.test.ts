@@ -113,6 +113,7 @@ describe('FillLedgerAdapter', () => {
       const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const posEntry = entries.find(e => e.type === 'POSITION_DELTA');
+      expect(posEntry).toBeDefined();
       expect(posEntry!.balanceDelta.amount.toNumber()).toBe(-10);
     });
 
@@ -127,6 +128,7 @@ describe('FillLedgerAdapter', () => {
       const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const cashEntry = entries.find(e => e.type === 'CASH_DELTA');
+      expect(cashEntry).toBeDefined();
       expect(cashEntry!.balanceDelta.amount.toNumber()).toBeCloseTo(6.20, 5);
     });
   });

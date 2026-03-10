@@ -262,6 +262,10 @@ export class OrderBook {
    * ```
    */
   public getImbalance(topLevels?: number): Decimal {
+    if (topLevels !== undefined && (!Number.isInteger(topLevels) || topLevels < 0)) {
+      throw new RangeError(`OrderBook.getImbalance: topLevels must be a non-negative integer, got ${topLevels}`);
+    }
+
     const bids = this._getSortedBids();
     const asks = this._getSortedAsks();
 
