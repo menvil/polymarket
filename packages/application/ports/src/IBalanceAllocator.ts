@@ -99,9 +99,12 @@ export interface IBalanceAllocator {
    * @param marketId - ID рынка
    * @param realizedPnL - Реализованный PnL (может быть отрицательным)
    *
+   * @throws {TradingError} Если realizedPnL в другой валюте чем totalBalance —
+   *   currency mismatch является invariant violation (архитектурная ошибка конфигурации).
+   *
    * @remarks
    * `_totalBalance += realizedPnL` — баланс растёт при прибыли, уменьшается при убытке.
-   * Если рынок не найден в аллокациях — no-op.
+   * Если рынок не найден в аллокациях — только применяет PnL к балансу.
    */
   releaseWithPnL(marketId: MarketId, realizedPnL: Money): void;
 
@@ -124,8 +127,22 @@ export interface IBalanceAllocator {
    * Обновляет общий баланс (после ребалансировки / депозита / вывода).
    *
    * @param newBalance - Новый общий баланс в USDC
+   * @returns Ok(void) при успехе, Err если новый баланс вызывает over-allocation
+   *   (newBalance < allocatedBalance). Caller должен закрыть часть позиций.
    */
-  updateTotalBalance(newBalance: Money): void;
+  updateTotalBalance(newBalance: Money): Result<void, TradingError>;
+
+  /**
+   * Восстанавливает аллокации из снимка состояния (после рестарта).
+   *
+   * @param snapshot - Снимок аллокаций: marketId → аллоцированная сумма
+   *
+   * @remarks
+   * Используется при старте для восстановления состояния из персистентного хранилища.
+   * Полностью заменяет текущие аллокации снимком (не мержит).
+   * Caller отвечает за корректность snapshot (валидация на стороне источника).
+   */
+  restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): void;
 
   /**
    * Проверяет, можно ли добавить ещё один рынок.

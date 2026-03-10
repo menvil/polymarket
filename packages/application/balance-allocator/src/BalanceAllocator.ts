@@ -6,23 +6,21 @@
  * - Отслеживание общего торгового баланса
  * - Равномерная аллокация свободного баланса на новые рынки
  * - Освобождение аллокации с компаундированием реализованного PnL
- * - Проверка доступных слотов
+ * - Восстановление состояния после рестарта (restoreAllocations)
  *
  * ### Архитектура:
- * BalanceAllocator реализует `IBalanceAllocator` из `@polymarket/ports`.
- * Хранит состояние в памяти. Не является персистентным — при рестарте
- * состояние восстанавливается через coordinator из источника истины (биржа/БД).
+ * Stateful coordinator — хранит state аллокаций в памяти.
+ * Не персистентен: при рестарте состояние восстанавливается через `restoreAllocations(snapshot)`.
  *
  * ### Алгоритм аллокации `allocateToNewMarkets(marketIds)`:
  * 1. `tradingBalance = totalBalance * tradingBalanceRatio`
  * 2. `freeBalance = tradingBalance - sum(allocations.values())`
- * 3. `newMarkets = marketIds фильтр (не в allocations)`
+ * 3. `newMarkets = deduplicate(marketIds).filter(не в allocations)`
  * 4. `availableSlots = maxConcurrentMarkets - allocations.size`
  * 5. `newSlots = min(newMarkets.length, availableSlots)`
  * 6. `newSlots = min(newSlots, floor(freeBalance / minCapital))`
  * 7. `perMarket = freeBalance / max(newSlots, availableSlots)`
- *    — делим на все доступные слоты, а не только на запрошенные,
- *      чтобы резервировать место для будущих аллокаций
+ *    — делим на все доступные слоты, резервируя капитал для будущих аллокаций
  * 8. Если `perMarket < minCapital` → return `[]`
  * 9. Аллоцировать первые `newSlots` рынков
  *
@@ -33,14 +31,14 @@
  * @example
  * ```typescript
  * const allocator = new BalanceAllocator({
- *   tradingBalanceRatio: 0.8,
+ *   tradingBalanceRatio: Ratio.of(new Decimal('0.8')),
  *   minCapitalPerMarket: Money.of(new Decimal(50), 'USDC'),
  *   maxConcurrentMarkets: 10,
  * });
  *
  * allocator.updateTotalBalance(Money.of(new Decimal(10000), 'USDC'));
  * const results = allocator.allocateToNewMarkets(['mkt-1', 'mkt-2', 'mkt-3']);
- * // results.length = 3, каждый получил ≈ $2666
+ * // results.length = 3, каждый получил ≈ $800 (8000/10)
  * ```
  */
 
@@ -62,13 +60,13 @@ import type { BalanceAllocatorConfig } from './BalanceAllocatorConfig.js';
  *
  * @remarks
  * Распределяет торговый баланс равномерно по рынкам.
- * Thread-safe только в single-threaded Node.js окружении.
+ * Использует `MarketId` как ключ Map напрямую (branded string, без String() конверсии).
  */
 export class BalanceAllocator implements IBalanceAllocator {
   /** Общий баланс аккаунта (включая зарезервированные и свободные средства) */
   private _totalBalance: Money;
   /** Текущие аллокации: marketId → аллоцированная сумма */
-  private readonly _allocations = new Map<string, Money>();
+  private readonly _allocations = new Map<MarketId, Money>();
   /** Конфигурация аллокатора */
   private readonly _config: BalanceAllocatorConfig;
   /** Логгер (опционально) */
@@ -92,17 +90,17 @@ export class BalanceAllocator implements IBalanceAllocator {
   /**
    * Аллоцирует свободный баланс на несколько новых рынков.
    *
-   * @param marketIds - Список рынков для аллокации
+   * @param marketIds - Список рынков для аллокации (дубликаты игнорируются)
    * @returns Массив AllocationResult. Пустой если нет слотов или средств.
    *
    * @remarks
    * Рынки, уже имеющие аллокацию, пропускаются.
+   * Дубликаты в marketIds дедуплицируются через Set.
    */
   public allocateToNewMarkets(marketIds: readonly MarketId[]): AllocationResult[] {
-    // Фильтруем уже аллоцированные рынки
-    const newMarkets = marketIds.filter(
-      (id) => !this._allocations.has(String(id)),
-    );
+    // Дедупликация входного списка, затем фильтрация уже аллоцированных
+    const uniqueIds = [...new Set(marketIds)];
+    const newMarkets = uniqueIds.filter((id) => !this._allocations.has(id));
 
     if (newMarkets.length === 0) return [];
 
@@ -114,7 +112,6 @@ export class BalanceAllocator implements IBalanceAllocator {
     if (newSlots <= 0) return [];
 
     // Ограничиваем количество слотов доступными средствами
-    // Используем Decimal.floor() для точного целочисленного деления без потери точности
     const minCapital = this._config.minCapitalPerMarket.value();
     const freeBalanceDec = freeBalance.value();
     const maxByCapital = freeBalanceDec.isPositive()
@@ -125,20 +122,18 @@ export class BalanceAllocator implements IBalanceAllocator {
     if (newSlots <= 0) return [];
 
     // Равномерное распределение по всем доступным слотам (не только по newSlots),
-    // чтобы последующие вызовы тоже могли получить аллокацию
+    // чтобы резервировать капитал для будущих аллокаций
     const denominator = Math.max(newSlots, availableSlots);
     const perMarketResult = MoneyService.divide(freeBalance, denominator);
     if (!perMarketResult.ok) return [];
     const perMarket = perMarketResult.value;
 
-    // Проверка минимальной аллокации
     if (perMarket.value().lessThan(minCapital)) return [];
 
-    // Аллоцировать первые newSlots рынков
     const results: AllocationResult[] = [];
     for (let i = 0; i < newSlots; i++) {
       const marketId = newMarkets[i];
-      this._allocations.set(String(marketId), perMarket);
+      this._allocations.set(marketId, perMarket);
       results.push({ marketId, allocatedAmount: perMarket });
     }
 
@@ -152,6 +147,13 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @returns Ok(AllocationResult) при успехе, Err если нет слотов или средств
    */
   public addMarket(marketId: MarketId): Result<AllocationResult, TradingError> {
+    if (this._allocations.has(marketId)) {
+      return Err(new TradingError(
+        'Cannot add market: market is already allocated',
+        { context: { marketId: String(marketId) } },
+      ));
+    }
+
     if (!this.canAddMarket()) {
       return Err(new TradingError(
         'Cannot add market: no available slots or insufficient balance',
@@ -176,26 +178,26 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @param marketId - ID рынка
    * @param realizedPnL - Реализованный PnL (может быть отрицательным)
    *
+   * @throws {TradingError} Если realizedPnL в другой валюте чем totalBalance.
+   *   Currency mismatch — invariant violation (архитектурная ошибка конфигурации).
+   *
    * @remarks
    * `_totalBalance += realizedPnL` — автоматическое compounding.
    */
   public releaseWithPnL(marketId: MarketId, realizedPnL: Money): void {
-    this._allocations.delete(String(marketId));
+    this._allocations.delete(marketId);
 
-    // Компаундирование PnL: totalBalance += pnl
     const addResult = MoneyService.add(this._totalBalance, realizedPnL);
-    if (addResult.ok) {
-      this._totalBalance = addResult.value;
-    } else {
-      // Currency mismatch — PnL lost, log to surface the misconfiguration
-      this._logger?.warn('releaseWithPnL: currency mismatch, PnL not applied', {
-        marketId: String(marketId),
-        totalBalanceCurrency: this._totalBalance.currency(),
-        pnlCurrency: realizedPnL.currency(),
-        pnlAmount: realizedPnL.toNumber(),
-        error: addResult.error.message,
-      });
+    if (!addResult.ok) {
+      // Currency mismatch — это invariant violation, не recoverable runtime ошибка.
+      // Молча терять деньги недопустимо: бросаем явно.
+      throw new TradingError(
+        `releaseWithPnL: currency mismatch — totalBalance is ${this._totalBalance.currency()}, PnL is ${realizedPnL.currency()}`,
+        { context: { marketId: String(marketId), error: addResult.error.message } },
+      );
     }
+
+    this._totalBalance = addResult.value;
   }
 
   /**
@@ -204,7 +206,7 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @param marketId - ID рынка
    */
   public release(marketId: MarketId): void {
-    this._allocations.delete(String(marketId));
+    this._allocations.delete(marketId);
   }
 
   /**
@@ -214,16 +216,73 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @returns Аллоцированная сумма или undefined
    */
   public getAllocation(marketId: MarketId): Money | undefined {
-    return this._allocations.get(String(marketId));
+    return this._allocations.get(marketId);
   }
 
   /**
-   * Обновляет общий баланс.
+   * Обновляет общий баланс и проверяет инвариант over-allocation.
    *
    * @param newBalance - Новый общий баланс в USDC
+   * @returns Ok(void) при успехе
+   * @returns Err(TradingError) если новый баланс меньше суммы текущих аллокаций.
+   *   Caller должен закрыть часть позиций перед вызовом.
+   *
+   * @remarks
+   * Баланс может уменьшиться (вывод средств, убытки) — это нормально.
+   * Over-allocation (newBalance < allocatedBalance) — критическое состояние.
    */
-  public updateTotalBalance(newBalance: Money): void {
+  public updateTotalBalance(newBalance: Money): Result<void, TradingError> {
+    const tradingBalance = MoneyService.multiply(newBalance, this._config.tradingBalanceRatio.toNumber());
+    if (!tradingBalance.ok) {
+      return Err(new TradingError('Failed to compute trading balance', {
+        context: { error: tradingBalance.error.message },
+      }));
+    }
+
+    const allocatedBalance = this._calcAllocatedBalance();
+    const subtractResult = MoneyService.subtract(tradingBalance.value, allocatedBalance);
+
+    if (!subtractResult.ok || subtractResult.value.isNegative()) {
+      return Err(new TradingError(
+        'updateTotalBalance: new balance would cause over-allocation — close some positions first',
+        {
+          context: {
+            newBalance: newBalance.toNumber(),
+            tradingBalance: tradingBalance.value.toNumber(),
+            allocatedBalance: allocatedBalance.toNumber(),
+          },
+        },
+      ));
+    }
+
     this._totalBalance = newBalance;
+    this._logger?.info('Total balance updated', {
+      newBalance: newBalance.toNumber(),
+      tradingBalance: tradingBalance.value.toNumber(),
+      allocatedBalance: allocatedBalance.toNumber(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Восстанавливает аллокации из снимка состояния (после рестарта).
+   *
+   * @param snapshot - Снимок аллокаций: marketId → аллоцированная сумма
+   *
+   * @remarks
+   * Полностью заменяет текущие аллокации снимком (не мержит).
+   * Caller отвечает за корректность snapshot.
+   * Используется при старте для восстановления состояния из персистентного хранилища.
+   */
+  public restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): void {
+    this._allocations.clear();
+    for (const [marketId, amount] of snapshot) {
+      this._allocations.set(marketId, amount);
+    }
+    this._logger?.info('Allocations restored from snapshot', {
+      count: snapshot.size,
+      markets: [...snapshot.keys()].map(String),
+    });
   }
 
   /**
@@ -238,7 +297,6 @@ export class BalanceAllocator implements IBalanceAllocator {
     const tradingBalance = this._calcTradingBalance();
     const freeBalance = this._calcFreeBalance(tradingBalance);
 
-    // Зеркальная логика allocateToNewMarkets: perMarket = freeBalance / availableSlots
     const perMarketResult = MoneyService.divide(freeBalance, availableSlots);
     if (!perMarketResult.ok) return false;
 
@@ -281,7 +339,7 @@ export class BalanceAllocator implements IBalanceAllocator {
   private _calcTradingBalance(): Money {
     const result = MoneyService.multiply(
       this._totalBalance,
-      this._config.tradingBalanceRatio,
+      this._config.tradingBalanceRatio.toNumber(),
     );
     return result.ok ? result.value : Money.ZERO['USDC'];
   }
@@ -304,7 +362,6 @@ export class BalanceAllocator implements IBalanceAllocator {
   private _calcFreeBalance(tradingBalance: Money): Money {
     const allocated = this._calcAllocatedBalance();
     const result = MoneyService.subtract(tradingBalance, allocated);
-    // Если результат отрицательный — возвращаем 0 (over-allocated state)
     if (!result.ok || result.value.isNegative()) return Money.ZERO['USDC'];
     return result.value;
   }

@@ -4,8 +4,11 @@
  * @remarks
  * Определяет параметры распределения баланса по рынкам.
  * Все параметры заданы при создании и не изменяются в рантайме.
+ *
+ * `tradingBalanceRatio` использует `Ratio` VO — гарантирует значение в [0, 1] на уровне типов.
+ * `Ratio.of()` бросает `RatioInvariantViolation` при значении вне [0, 1].
  */
-import type { Money } from '@polymarket/value-objects';
+import type { Money, Ratio } from '@polymarket/value-objects';
 
 /**
  * Параметры распределения торгового баланса.
@@ -13,9 +16,9 @@ import type { Money } from '@polymarket/value-objects';
  * @example
  * ```typescript
  * const config: BalanceAllocatorConfig = {
- *   tradingBalanceRatio: 0.8,      // 80% от баланса идёт в торговлю
- *   minCapitalPerMarket: Money.of(new Decimal(50), 'USDC'),  // минимум $50 на рынок
- *   maxConcurrentMarkets: 10,       // не более 10 рынков одновременно
+ *   tradingBalanceRatio: Ratio.of(new Decimal('0.8')),  // 80% от баланса идёт в торговлю
+ *   minCapitalPerMarket: Money.of(new Decimal(50), 'USDC'),
+ *   maxConcurrentMarkets: 10,
  * };
  * ```
  */
@@ -24,11 +27,11 @@ export interface BalanceAllocatorConfig {
    * Доля баланса, используемая для торговли [0, 1].
    *
    * @remarks
-   * Например, 0.8 означает что 80% от `totalBalance` доступно для аллокации.
+   * `Ratio` VO гарантирует значение в [0, 1] — leverage невозможен по определению типа.
+   * Например, `Ratio.of(new Decimal('0.8'))` = 80% от totalBalance доступно для аллокации.
    * Остаток (20%) резервируется как подушка безопасности.
-   * По умолчанию: 0.8
    */
-  readonly tradingBalanceRatio: number;
+  readonly tradingBalanceRatio: Ratio;
 
   /**
    * Минимальная сумма аллокации на рынок в USDC.

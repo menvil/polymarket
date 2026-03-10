@@ -6,7 +6,7 @@ import Decimal from 'decimal.js';
 import { BalanceAllocator } from '../src/BalanceAllocator.js';
 import type { BalanceAllocatorConfig } from '../src/BalanceAllocatorConfig.js';
 import type { MarketId } from '@polymarket/ids';
-import { Money, MoneyService } from '@polymarket/value-objects';
+import { Money, MoneyService, Ratio } from '@polymarket/value-objects';
 import { Err } from '@polymarket/result';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -15,9 +15,13 @@ function usdc(amount: number): Money {
   return Money.of(new Decimal(amount), 'USDC');
 }
 
+function ratio(value: number): Ratio {
+  return Ratio.of(new Decimal(value));
+}
+
 function makeConfig(overrides?: Partial<BalanceAllocatorConfig>): BalanceAllocatorConfig {
   return {
-    tradingBalanceRatio: 0.8,
+    tradingBalanceRatio: ratio(0.8),
     minCapitalPerMarket: usdc(50),
     maxConcurrentMarkets: 10,
     ...overrides,
@@ -42,7 +46,7 @@ describe('BalanceAllocator', () => {
       const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m2'), mkt('m3')]);
 
       expect(results.length).toBe(3);
-      // tradingBalance = 10000 * 0.8 = 8000; perMarket = 8000 / 3 ≈ 2666.67
+      // tradingBalance = 10000 * 0.8 = 8000; perMarket = 8000 / 10 = 800
       results.forEach((r) => {
         expect(r.allocatedAmount.value().greaterThan(0)).toBe(true);
       });
@@ -71,7 +75,6 @@ describe('BalanceAllocator', () => {
       allocator.allocateToNewMarkets([mkt('m1')]);
       const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m2')]);
 
-      // m1 пропускается, m2 получает аллокацию
       expect(results.length).toBe(1);
       const allocatedIds = results.map((r) => String(r.marketId));
       expect(allocatedIds).not.toContain('m1');
@@ -82,6 +85,13 @@ describe('BalanceAllocator', () => {
       allocator = new BalanceAllocator(makeConfig(), usdc(0));
       const results = allocator.allocateToNewMarkets([mkt('m1')]);
       expect(results.length).toBe(0);
+    });
+
+    it('дедуплицирует marketIds — один рынок не получает двойную аллокацию', () => {
+      // Без дедупликации m1 мог бы получить 2 аллокации
+      const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m1'), mkt('m1')]);
+      expect(results.length).toBe(1);
+      expect(allocator.getStats().activeMarkets).toBe(1);
     });
   });
 
@@ -111,29 +121,33 @@ describe('BalanceAllocator', () => {
       const result = allocator.addMarket(mkt('m1'));
       expect(result.ok).toBe(false);
     });
+
+    it('возвращает Err если рынок уже аллоцирован', () => {
+      allocator.addMarket(mkt('m1'));
+      const result = allocator.addMarket(mkt('m1'));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/already allocated/);
+    });
   });
 
   describe('releaseWithPnL', () => {
     it('увеличивает totalBalance на положительный PnL', () => {
       allocator.addMarket(mkt('m1'));
-      const statsBefore = allocator.getStats();
-      const beforeBalance = statsBefore.totalBalance.value().toNumber();
+      const beforeBalance = allocator.getStats().totalBalance.value().toNumber();
 
       allocator.releaseWithPnL(mkt('m1'), usdc(500));
 
-      const statsAfter = allocator.getStats();
-      expect(statsAfter.totalBalance.value().toNumber()).toBe(beforeBalance + 500);
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(beforeBalance + 500);
     });
 
     it('уменьшает totalBalance на убыток', () => {
       allocator.addMarket(mkt('m1'));
-      const statsBefore = allocator.getStats();
-      const beforeBalance = statsBefore.totalBalance.value().toNumber();
+      const beforeBalance = allocator.getStats().totalBalance.value().toNumber();
 
       allocator.releaseWithPnL(mkt('m1'), usdc(-200));
 
-      const statsAfter = allocator.getStats();
-      expect(statsAfter.totalBalance.value().toNumber()).toBe(beforeBalance - 200);
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(beforeBalance - 200);
     });
 
     it('освобождает слот', () => {
@@ -145,6 +159,121 @@ describe('BalanceAllocator', () => {
       allocator.releaseWithPnL(mkt('m1'), usdc(0));
 
       expect(allocator.canAddMarket()).toBe(true);
+    });
+
+    it('бросает TradingError при currency mismatch (invariant violation)', () => {
+      allocator.addMarket(mkt('m1'));
+
+      // Мокируем MoneyService.add чтобы симулировать currency mismatch
+      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+        Err(new Error('currency mismatch') as never),
+      );
+
+      expect(() => allocator.releaseWithPnL(mkt('m1'), usdc(100))).toThrow(
+        /currency mismatch/,
+      );
+
+      addSpy.mockRestore();
+    });
+  });
+
+  describe('release', () => {
+    it('освобождает слот без изменения totalBalance', () => {
+      allocator.addMarket(mkt('m1'));
+      const balanceBefore = allocator.getStats().totalBalance.value().toNumber();
+
+      allocator.release(mkt('m1'));
+
+      expect(allocator.getStats().activeMarkets).toBe(0);
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
+    });
+
+    it('не падает при release несуществующего рынка', () => {
+      expect(() => allocator.release(mkt('nonexistent'))).not.toThrow();
+    });
+  });
+
+  describe('getAllocation', () => {
+    it('возвращает аллоцированную сумму для существующего рынка', () => {
+      allocator.addMarket(mkt('m1'));
+      const allocation = allocator.getAllocation(mkt('m1'));
+      expect(allocation).toBeDefined();
+      expect(allocation!.value().greaterThan(0)).toBe(true);
+    });
+
+    it('возвращает undefined для неаллоцированного рынка', () => {
+      expect(allocator.getAllocation(mkt('unknown'))).toBeUndefined();
+    });
+
+    it('возвращает undefined после release', () => {
+      allocator.addMarket(mkt('m1'));
+      allocator.release(mkt('m1'));
+      expect(allocator.getAllocation(mkt('m1'))).toBeUndefined();
+    });
+  });
+
+  describe('updateTotalBalance', () => {
+    it('возвращает Ok и обновляет баланс при корректном значении', () => {
+      const result = allocator.updateTotalBalance(usdc(20000));
+      expect(result.ok).toBe(true);
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(20000);
+      expect(allocator.getStats().tradingBalance.value().toNumber()).toBeCloseTo(16000);
+    });
+
+    it('возвращает Err при over-allocation (новый баланс < аллоцированный)', () => {
+      // Аллоцируем 3 рынка при балансе 10000 → каждый ≈ 800 USDC → итого ~2400 аллоцировано
+      allocator.allocateToNewMarkets([mkt('m1'), mkt('m2'), mkt('m3')]);
+
+      // Устанавливаем баланс 100 — tradingBalance = 80, allocated ~2400 → over-allocation
+      const result = allocator.updateTotalBalance(usdc(100));
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/over-allocation/);
+      // Баланс не обновился
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(10000);
+    });
+
+    it('разрешает уменьшение баланса если аллокаций нет', () => {
+      const result = allocator.updateTotalBalance(usdc(500));
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('restoreAllocations', () => {
+    it('восстанавливает аллокации из снимка', () => {
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('m1'), usdc(800)],
+        [mkt('m2'), usdc(600)],
+      ]);
+
+      allocator.restoreAllocations(snapshot);
+
+      expect(allocator.getStats().activeMarkets).toBe(2);
+      expect(allocator.getAllocation(mkt('m1'))?.value().toNumber()).toBe(800);
+      expect(allocator.getAllocation(mkt('m2'))?.value().toNumber()).toBe(600);
+    });
+
+    it('заменяет текущие аллокации (не мержит)', () => {
+      // Создаём начальные аллокации
+      allocator.allocateToNewMarkets([mkt('old1'), mkt('old2')]);
+      expect(allocator.getStats().activeMarkets).toBe(2);
+
+      // Восстанавливаем снимок с другими рынками
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('new1'), usdc(1000)],
+      ]);
+      allocator.restoreAllocations(snapshot);
+
+      expect(allocator.getStats().activeMarkets).toBe(1);
+      expect(allocator.getAllocation(mkt('old1'))).toBeUndefined();
+      expect(allocator.getAllocation(mkt('new1'))?.value().toNumber()).toBe(1000);
+    });
+
+    it('очищает все аллокации при пустом снимке', () => {
+      allocator.allocateToNewMarkets([mkt('m1')]);
+      allocator.restoreAllocations(new Map());
+      expect(allocator.getStats().activeMarkets).toBe(0);
     });
   });
 
@@ -187,93 +316,6 @@ describe('BalanceAllocator', () => {
       allocator = new BalanceAllocator(config, usdc(10000));
       allocator.addMarket(mkt('m1'));
       expect(allocator.canAddMarket()).toBe(false);
-    });
-  });
-
-  describe('updateTotalBalance', () => {
-    it('обновляет totalBalance и пересчитывает свободный баланс', () => {
-      allocator.updateTotalBalance(usdc(20000));
-      const stats = allocator.getStats();
-      expect(stats.totalBalance.value().toNumber()).toBe(20000);
-      expect(stats.tradingBalance.value().toNumber()).toBeCloseTo(16000);
-    });
-  });
-
-  describe('addMarket — граничные случаи', () => {
-    it('возвращает Err если рынок уже аллоцирован (canAddMarket=true, но allocation пустая)', () => {
-      // canAddMarket() не знает про конкретный marketId — вернёт true,
-      // но allocateToNewMarkets пропустит уже аллоцированный рынок → [] → строка 164
-      allocator.addMarket(mkt('m1'));
-      const result = allocator.addMarket(mkt('m1'));
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toMatch(/insufficient free balance/);
-    });
-  });
-
-  describe('release', () => {
-    it('освобождает слот без изменения totalBalance', () => {
-      allocator.addMarket(mkt('m1'));
-      const balanceBefore = allocator.getStats().totalBalance.value().toNumber();
-
-      allocator.release(mkt('m1'));
-
-      expect(allocator.getStats().activeMarkets).toBe(0);
-      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
-    });
-
-    it('не падает при release несуществующего рынка', () => {
-      expect(() => allocator.release(mkt('nonexistent'))).not.toThrow();
-    });
-  });
-
-  describe('getAllocation', () => {
-    it('возвращает аллоцированную сумму для существующего рынка', () => {
-      allocator.addMarket(mkt('m1'));
-      const allocation = allocator.getAllocation(mkt('m1'));
-      expect(allocation).toBeDefined();
-      expect(allocation!.value().greaterThan(0)).toBe(true);
-    });
-
-    it('возвращает undefined для неаллоцированного рынка', () => {
-      expect(allocator.getAllocation(mkt('unknown'))).toBeUndefined();
-    });
-
-    it('возвращает undefined после release', () => {
-      allocator.addMarket(mkt('m1'));
-      allocator.release(mkt('m1'));
-      expect(allocator.getAllocation(mkt('m1'))).toBeUndefined();
-    });
-  });
-
-  describe('releaseWithPnL — currency mismatch', () => {
-    it('не применяет PnL и логирует warn при несовпадении валют', () => {
-      const warnMock = { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn(), trace: jest.fn(), fatal: jest.fn(), child: jest.fn() };
-      warnMock.child.mockReturnValue(warnMock);
-      const allocatorWithLogger = new BalanceAllocator(makeConfig(), usdc(10000), warnMock as never);
-
-      allocatorWithLogger.addMarket(mkt('m1'));
-      const balanceBefore = allocatorWithLogger.getStats().totalBalance.value().toNumber();
-
-      // Мокируем MoneyService.add чтобы вернуть Err при вызове releaseWithPnL
-      // (в production это случается при currency mismatch, но Money.of не принимает несуществующие валюты)
-      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
-        Err(new Error('currency mismatch') as never),
-      );
-
-      allocatorWithLogger.releaseWithPnL(mkt('m1'), usdc(100));
-
-      addSpy.mockRestore();
-
-      // Слот освобождён
-      expect(allocatorWithLogger.getStats().activeMarkets).toBe(0);
-      // totalBalance не изменился (PnL не применён из-за mocked Err)
-      expect(allocatorWithLogger.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
-      // Warn был залогирован
-      expect(warnMock.warn).toHaveBeenCalledWith(
-        'releaseWithPnL: currency mismatch, PnL not applied',
-        expect.objectContaining({ marketId: 'm1' }),
-      );
     });
   });
 });
