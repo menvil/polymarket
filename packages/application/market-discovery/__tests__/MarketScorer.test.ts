@@ -45,9 +45,9 @@ function makeMarket(params: {
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
     active: true,
-    spread: 0.05,
-    liquidity,
-    score: 0,
+    spread: new Decimal('0.05'),
+    liquidity: new Decimal(liquidity),
+    score: new Decimal(0),
   };
 }
 
@@ -69,7 +69,7 @@ describe('MarketScorer', () => {
       const result = scorer.scoreAndSort([market]);
       expect(result).toHaveLength(1);
       // score ≈ 24 часа (с погрешностью из-за Date.now())
-      expect(result[0]!.score).toBeGreaterThan(0);
+      expect(result[0]!.score.greaterThan(0)).toBe(true);
     });
 
     it('не мутирует исходный массив', () => {
@@ -103,7 +103,7 @@ describe('MarketScorer', () => {
       const result = scorer.scoreAndSort([m48h, m24h]);
 
       // score[0] < score[1] (ближайшее истечение = меньше hoursToExpiry)
-      expect(result[0]!.score).toBeLessThan(result[1]!.score);
+      expect(result[0]!.score.lessThan(result[1]!.score)).toBe(true);
     });
   });
 
@@ -125,9 +125,9 @@ describe('MarketScorer', () => {
 
       const result = scorer.scoreAndSort([low, high, mid]);
 
-      expect(result[0]!.liquidity).toBe(100_000); // high
-      expect(result[1]!.liquidity).toBe(10_000);  // mid
-      expect(result[2]!.liquidity).toBe(1_000);   // low
+      expect(result[0]!.liquidity.toNumber()).toBe(100_000); // high
+      expect(result[1]!.liquidity.toNumber()).toBe(10_000);  // mid
+      expect(result[2]!.liquidity.toNumber()).toBe(1_000);   // low
     });
   });
 

@@ -16,6 +16,7 @@
  * Рынки с ближайшим истечением торгуются активнее и имеют более чёткий исход.
  * При прочих равных предпочитаем более ликвидные рынки для лучшего исполнения ордеров.
  */
+import Decimal from 'decimal.js';
 import type { DiscoveredMarket } from '@polymarket/ports';
 
 /**
@@ -62,10 +63,12 @@ export class MarketScorer {
   public scoreAndSort(markets: readonly DiscoveredMarket[]): DiscoveredMarket[] {
     const nowMs = Date.now();
 
+    const MS_PER_HOUR = new Decimal(1000 * 60 * 60);
+
     // Проставляем score = hoursToExpiry
     const scored = markets.map((market) => {
-      const expiresMs = market.expiresAt.toNumber();
-      const hoursToExpiry = (expiresMs - nowMs) / (1000 * 60 * 60);
+      const expiresMs = new Decimal(market.expiresAt.toNumber());
+      const hoursToExpiry = expiresMs.minus(nowMs).div(MS_PER_HOUR);
       return { ...market, score: hoursToExpiry };
     });
 
@@ -73,7 +76,7 @@ export class MarketScorer {
     scored.sort((a, b) => {
       const expiryDiff = a.expiresAt.toNumber() - b.expiresAt.toNumber();
       if (expiryDiff !== 0) return expiryDiff;
-      return b.liquidity - a.liquidity;
+      return b.liquidity.comparedTo(a.liquidity);
     });
 
     return scored;

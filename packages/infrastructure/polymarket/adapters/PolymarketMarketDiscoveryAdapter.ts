@@ -24,9 +24,9 @@
  * - `endDate` (ISO строка) → `Date.parse()` → `TimestampService.create()` → `Timestamp`
  * - `orderPriceMinTickSize` → `Price.of(new Decimal(value))` → `Price` (дефолт: 0.01)
  * - `orderMinSize` → `Quantity.of(new Decimal(value))` → `Quantity` (дефолт: 1)
- * - `liquidity` (строка) → `parseFloat()` → `number`
- * - `spread` (number) → `number`
- * - `score = 0` (будет установлен `MarketScorer`)
+ * - `liquidity` (строка) → `new Decimal()` → `Decimal`
+ * - `spread` (number) → `new Decimal()` → `Decimal`
+ * - `score = Decimal(0)` (будет установлен `MarketScorer`)
  *
  * @example
  * ```typescript
@@ -363,13 +363,11 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       }
     }
 
-    // 7. Парсинг ликвидности (строка из API)
-    const liquidityRaw = raw.liquidity ?? '0';
-    const liquidity = parseFloat(liquidityRaw);
-    const liquidityValue = isNaN(liquidity) ? 0 : liquidity;
+    // 7. Ликвидность — строка из API, конвертируем напрямую в Decimal (без потери точности)
+    const liquidity = new Decimal(raw.liquidity ?? '0');
 
-    // 8. Спред (уже number или undefined)
-    const spread = raw.spread ?? 0;
+    // 8. Спред (number или undefined) — конвертируем в Decimal
+    const spread = new Decimal(raw.spread ?? 0);
 
     return {
       marketId,
@@ -380,8 +378,8 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       minOrderSize,
       active: true,
       spread,
-      liquidity: liquidityValue,
-      score: 0, // Будет установлен MarketScorer в scoreAndSort()
+      liquidity,
+      score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
     };
   }
 }

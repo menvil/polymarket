@@ -51,9 +51,9 @@ function makeMarket(overrides: Partial<{
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
     active: true,
-    spread,
-    liquidity,
-    score: 0,
+    spread: new Decimal(spread),
+    liquidity: new Decimal(liquidity),
+    score: new Decimal(0),
   };
 }
 

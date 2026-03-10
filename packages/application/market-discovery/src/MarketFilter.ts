@@ -15,6 +15,7 @@
  * 6. `anyOfKeywords` — хотя бы одно слово в question
  * 7. `excludedKeywords` — ни одного слова из списка в question
  */
+import Decimal from 'decimal.js';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 
 /**
@@ -145,8 +146,8 @@ export class MarketFilter {
    * @returns true если spread === 0 (данные недоступны) или spread >= minSpread
    */
   private _passesSpreadFilter(market: DiscoveredMarket, minSpread: number): boolean {
-    if (market.spread === 0) return true;
-    return market.spread >= minSpread;
+    if (market.spread.isZero()) return true;
+    return market.spread.greaterThanOrEqualTo(new Decimal(minSpread));
   }
 
   /**
@@ -157,7 +158,7 @@ export class MarketFilter {
    * @returns true если ликвидность >= minDailyVolume
    */
   private _passesLiquidityFilter(market: DiscoveredMarket, minDailyVolume: number): boolean {
-    return market.liquidity >= minDailyVolume;
+    return market.liquidity.greaterThanOrEqualTo(new Decimal(minDailyVolume));
   }
 
   /**

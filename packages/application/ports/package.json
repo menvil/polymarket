@@ -20,6 +20,7 @@
     "@polymarket/result":       "workspace:*",
     "@polymarket/order":        "workspace:*",
     "@polymarket/portfolio":    "workspace:*",
-    "@polymarket/value-objects": "workspace:*"
+    "@polymarket/value-objects": "workspace:*",
+    "decimal.js":               "^10.4.3"
   }
 }

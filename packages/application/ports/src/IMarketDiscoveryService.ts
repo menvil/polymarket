@@ -18,6 +18,7 @@
  *   → coordinator регистрирует каждого кандидата через catalog.register(candidate)
  * ```
  */
+import type Decimal from 'decimal.js';
 import type { InstrumentInfo } from './IMarketCatalog.js';
 
 /**
@@ -37,15 +38,15 @@ export interface DiscoveredMarket extends InstrumentInfo {
   readonly active: true;
   /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
-  /** Текущий спред (bid-ask). 0 если недоступен */
-  readonly spread: number;
-  /** Ликвидность (объём торгов). 0 если недоступен */
-  readonly liquidity: number;
+  /** Текущий спред (bid-ask). Decimal('0') если недоступен */
+  readonly spread: Decimal;
+  /** Ликвидность (объём торгов). Decimal('0') если недоступен */
+  readonly liquidity: Decimal;
   /**
    * Скор рынка — устанавливается `MarketScorer`.
-   * До скоринга = 0. После = hoursToExpiry (ближайшее истечение → меньше скор → приоритет).
+   * До скоринга = Decimal('0'). После = hoursToExpiry как Decimal.
    */
-  readonly score: number;
+  readonly score: Decimal;
 }
 
 /**
