@@ -1,0 +1,33 @@
+{
+  "name": "@polymarket/backtesting",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/logger": "workspace:*",
+    "@polymarket/ids": "workspace:*",
+    "@polymarket/result": "workspace:*",
+    "@polymarket/errors": "workspace:*",
+    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/ports": "workspace:*",
+    "@polymarket/handlers": "workspace:*",
+    "@polymarket/snapshot-readers": "workspace:*",
+    "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
