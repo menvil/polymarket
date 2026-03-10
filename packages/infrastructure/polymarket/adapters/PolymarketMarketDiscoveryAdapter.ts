@@ -306,7 +306,6 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       this._logger.warn('Cannot parse endDate, skipping market', {
         conditionId: raw.conditionId,
         endDate: raw.endDate,
-        raw: raw,
       });
       return null;
     }
@@ -380,6 +379,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       spread,
       liquidity,
       score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
+      rawMarket: raw as unknown as Record<string, unknown>,
     };
   }
 }
