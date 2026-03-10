@@ -20,7 +20,9 @@
  * 4. `availableSlots = maxConcurrentMarkets - allocations.size`
  * 5. `newSlots = min(newMarkets.length, availableSlots)`
  * 6. `newSlots = min(newSlots, floor(freeBalance / minCapital))`
- * 7. `perMarket = freeBalance / newSlots`
+ * 7. `perMarket = freeBalance / max(newSlots, availableSlots)`
+ *    — делим на все доступные слоты, а не только на запрошенные,
+ *      чтобы резервировать место для будущих аллокаций
  * 8. Если `perMarket < minCapital` → return `[]`
  * 9. Аллоцировать первые `newSlots` рынков
  *
@@ -47,6 +49,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { MarketId } from '@polymarket/ids';
 import { Money, MoneyService } from '@polymarket/value-objects';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IBalanceAllocator,
   AllocationResult,
@@ -68,17 +71,22 @@ export class BalanceAllocator implements IBalanceAllocator {
   private readonly _allocations = new Map<string, Money>();
   /** Конфигурация аллокатора */
   private readonly _config: BalanceAllocatorConfig;
+  /** Логгер (опционально) */
+  private readonly _logger: ILogger | undefined;
 
   /**
    * @param config - Конфигурация параметров аллокации
    * @param initialBalance - Начальный баланс (по умолчанию 0 USDC)
+   * @param logger - Опциональный логгер для диагностики
    */
   constructor(
     config: BalanceAllocatorConfig,
     initialBalance: Money = Money.ZERO['USDC'],
+    logger?: ILogger,
   ) {
     this._config = config;
     this._totalBalance = initialBalance;
+    this._logger = logger?.child({ component: 'BalanceAllocator' });
   }
 
   /**
@@ -178,8 +186,16 @@ export class BalanceAllocator implements IBalanceAllocator {
     const addResult = MoneyService.add(this._totalBalance, realizedPnL);
     if (addResult.ok) {
       this._totalBalance = addResult.value;
+    } else {
+      // Currency mismatch — PnL lost, log to surface the misconfiguration
+      this._logger?.warn('releaseWithPnL: currency mismatch, PnL not applied', {
+        marketId: String(marketId),
+        totalBalanceCurrency: this._totalBalance.currency(),
+        pnlCurrency: realizedPnL.currency(),
+        pnlAmount: realizedPnL.toNumber(),
+        error: addResult.error.message,
+      });
     }
-    // При ошибке (разные валюты) — игнорируем PnL, не обновляем баланс
   }
 
   /**
@@ -216,12 +232,17 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @returns true если есть свободные слоты и достаточно средств
    */
   public canAddMarket(): boolean {
-    const hasSlots = this._allocations.size < this._config.maxConcurrentMarkets;
-    if (!hasSlots) return false;
+    const availableSlots = this._config.maxConcurrentMarkets - this._allocations.size;
+    if (availableSlots <= 0) return false;
 
     const tradingBalance = this._calcTradingBalance();
     const freeBalance = this._calcFreeBalance(tradingBalance);
-    return freeBalance.value().greaterThanOrEqualTo(
+
+    // Зеркальная логика allocateToNewMarkets: perMarket = freeBalance / availableSlots
+    const perMarketResult = MoneyService.divide(freeBalance, availableSlots);
+    if (!perMarketResult.ok) return false;
+
+    return perMarketResult.value.value().greaterThanOrEqualTo(
       this._config.minCapitalPerMarket.value(),
     );
   }
