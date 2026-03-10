@@ -1,12 +1,13 @@
 /**
  * Тесты BalanceAllocator
  */
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { BalanceAllocator } from '../src/BalanceAllocator.js';
 import type { BalanceAllocatorConfig } from '../src/BalanceAllocatorConfig.js';
 import type { MarketId } from '@polymarket/ids';
-import { Money } from '@polymarket/value-objects';
+import { Money, MoneyService } from '@polymarket/value-objects';
+import { Err } from '@polymarket/result';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,84 @@ describe('BalanceAllocator', () => {
       const stats = allocator.getStats();
       expect(stats.totalBalance.value().toNumber()).toBe(20000);
       expect(stats.tradingBalance.value().toNumber()).toBeCloseTo(16000);
+    });
+  });
+
+  describe('addMarket — граничные случаи', () => {
+    it('возвращает Err если рынок уже аллоцирован (canAddMarket=true, но allocation пустая)', () => {
+      // canAddMarket() не знает про конкретный marketId — вернёт true,
+      // но allocateToNewMarkets пропустит уже аллоцированный рынок → [] → строка 164
+      allocator.addMarket(mkt('m1'));
+      const result = allocator.addMarket(mkt('m1'));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/insufficient free balance/);
+    });
+  });
+
+  describe('release', () => {
+    it('освобождает слот без изменения totalBalance', () => {
+      allocator.addMarket(mkt('m1'));
+      const balanceBefore = allocator.getStats().totalBalance.value().toNumber();
+
+      allocator.release(mkt('m1'));
+
+      expect(allocator.getStats().activeMarkets).toBe(0);
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
+    });
+
+    it('не падает при release несуществующего рынка', () => {
+      expect(() => allocator.release(mkt('nonexistent'))).not.toThrow();
+    });
+  });
+
+  describe('getAllocation', () => {
+    it('возвращает аллоцированную сумму для существующего рынка', () => {
+      allocator.addMarket(mkt('m1'));
+      const allocation = allocator.getAllocation(mkt('m1'));
+      expect(allocation).toBeDefined();
+      expect(allocation!.value().greaterThan(0)).toBe(true);
+    });
+
+    it('возвращает undefined для неаллоцированного рынка', () => {
+      expect(allocator.getAllocation(mkt('unknown'))).toBeUndefined();
+    });
+
+    it('возвращает undefined после release', () => {
+      allocator.addMarket(mkt('m1'));
+      allocator.release(mkt('m1'));
+      expect(allocator.getAllocation(mkt('m1'))).toBeUndefined();
+    });
+  });
+
+  describe('releaseWithPnL — currency mismatch', () => {
+    it('не применяет PnL и логирует warn при несовпадении валют', () => {
+      const warnMock = { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn(), trace: jest.fn(), fatal: jest.fn(), child: jest.fn() };
+      warnMock.child.mockReturnValue(warnMock);
+      const allocatorWithLogger = new BalanceAllocator(makeConfig(), usdc(10000), warnMock as never);
+
+      allocatorWithLogger.addMarket(mkt('m1'));
+      const balanceBefore = allocatorWithLogger.getStats().totalBalance.value().toNumber();
+
+      // Мокируем MoneyService.add чтобы вернуть Err при вызове releaseWithPnL
+      // (в production это случается при currency mismatch, но Money.of не принимает несуществующие валюты)
+      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+        Err(new Error('currency mismatch') as never),
+      );
+
+      allocatorWithLogger.releaseWithPnL(mkt('m1'), usdc(100));
+
+      addSpy.mockRestore();
+
+      // Слот освобождён
+      expect(allocatorWithLogger.getStats().activeMarkets).toBe(0);
+      // totalBalance не изменился (PnL не применён из-за mocked Err)
+      expect(allocatorWithLogger.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
+      // Warn был залогирован
+      expect(warnMock.warn).toHaveBeenCalledWith(
+        'releaseWithPnL: currency mismatch, PnL not applied',
+        expect.objectContaining({ marketId: 'm1' }),
+      );
     });
   });
 });
