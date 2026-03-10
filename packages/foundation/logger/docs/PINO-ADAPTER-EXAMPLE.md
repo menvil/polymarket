@@ -193,43 +193,33 @@ export class PinoLoggerAdapter implements ILogger {
    * Логирует ошибку (уровень ERROR)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
-   * Pino ожидает Error объект в поле { err: error }.
-   * Pino автоматически сериализует err.message, err.stack, etc.
+   * Pino нативно сериализует поле `err: Error` — автоматически включает
+   * err.message, err.stack, err.type в структурированный лог.
    *
    * @example
    * ```typescript
    * try {
    *   await placeOrder(order);
    * } catch (error) {
-   *   logger.error('Failed to place order', error as Error, {
+   *   logger.error('Failed to place order', {
+   *     err: error as Error,
    *     orderId: order.id,
    *   });
    * }
    * ```
    */
-  error(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
-    const pinoContext = {
-      ...context,
-      ...(error && { err: error }), // Pino автоматически сериализует err
-      time: this.clock.now().getTime(),
-    };
-    this.pino.error(pinoContext, message);
+  error(message: string, context?: Record<string, unknown>): void {
+    this.pino.error({ ...context, time: this.clock.now().getTime() }, message);
   }
 
   /**
    * Логирует критическую ошибку (уровень FATAL)
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * FATAL используется для фатальных ошибок которые приводят к остановке.
@@ -240,25 +230,17 @@ export class PinoLoggerAdapter implements ILogger {
    * try {
    *   await connectToExchange();
    * } catch (error) {
-   *   logger.fatal('Cannot connect to exchange', error as Error, {
+   *   logger.fatal('Cannot connect to exchange', {
+   *     err: error as Error,
    *     exchange: 'Polymarket',
-   *     retryAttempts: 5
+   *     retryAttempts: 5,
    *   });
    *   process.exit(1);
    * }
    * ```
    */
-  fatal(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
-    const pinoContext = {
-      ...context,
-      ...(error && { err: error }),
-      time: this.clock.now().getTime(),
-    };
-    this.pino.fatal(pinoContext, message);
+  fatal(message: string, context?: Record<string, unknown>): void {
+    this.pino.fatal({ ...context, time: this.clock.now().getTime() }, message);
   }
 
   /**
@@ -505,14 +487,14 @@ describe('PinoLoggerAdapter', () => {
     expect(secondTime).toBe(firstTime + 5000);
   });
 
-  it('должен корректно обрабатывать Error', () => {
+  it('должен корректно обрабатывать Error через поле err', () => {
     const error = new Error('Test error');
-    logger.error('Failed', error, { orderId: '123' });
+    logger.error('Failed', { err: error, orderId: '123' });
 
     expect(pinoLogger.error).toHaveBeenCalledWith(
       {
+        err: error, // Pino нативно сериализует поле err
         orderId: '123',
-        err: error, // Pino ожидает err, не error
         time: clock.now().getTime(),
       },
       'Failed'
@@ -561,8 +543,8 @@ const logger = new PinoLoggerAdapter(pino(), new PaperClock(startDate));
 const serviceLogger = logger.child({ service: 'MarketMaker' });
 serviceLogger.info('Started'); // Автоматически включает service
 
-// 4. Логируйте Error объекты через error параметр
-logger.error('Failed to place order', error, { orderId: '123' });
+// 4. Логируйте Error объекты через поле err в context
+logger.error('Failed to place order', { err: error, orderId: '123' });
 
 // 5. Используйте environment variables для конфигурации
 const logger = new PinoLoggerAdapter(
@@ -576,10 +558,10 @@ const logger = new PinoLoggerAdapter(
 ### ❌ Неправильно
 
 ```typescript
-// 1. НЕ передавайте Error в context
-logger.error('Failed', undefined, { error: err }); // ❌
+// 1. НЕ передавайте только message ошибки — теряете stack trace
+logger.error('Failed', { error: err.message }); // ❌ нет stack trace
 // Вместо этого:
-logger.error('Failed', err); // ✅
+logger.error('Failed', { err }); // ✅ Pino сериализует message + stack + type
 
 // 2. НЕ забывайте про IClock в paper trading
 const logger = new PinoLoggerAdapter(pino(), new LiveClock()); // ❌ в paper mode

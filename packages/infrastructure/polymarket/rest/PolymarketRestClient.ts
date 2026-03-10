@@ -233,7 +233,7 @@ export class PolymarketRestClient {
             method,
             endpoint,
             statusCode: error.statusCode,
-            error,
+            err: error,
           });
           throw error;
         }
@@ -242,7 +242,7 @@ export class PolymarketRestClient {
           this.logger.error(`Request failed after ${attempt + 1} attempts`, {
             method,
             endpoint,
-            error,
+            err: error,
           });
           throw error;
         }

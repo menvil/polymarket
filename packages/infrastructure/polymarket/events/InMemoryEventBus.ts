@@ -28,7 +28,7 @@ export class InMemoryEventBus {
       try {
         sub(envelope);
       } catch (err) {
-        this._logger.error('[InMemoryEventBus] Subscriber error', { error: String(err) });
+        this._logger.error('[InMemoryEventBus] Subscriber error', { err: err instanceof Error ? err : new Error(String(err)) });
       }
     }
   }

@@ -233,7 +233,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       await this._client.destroy();
     } catch (err) {
       this._logger.warn('[PolymarketWsAdapter] Error during client destroy', {
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
 
@@ -285,7 +285,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._router.on('error', (error: Error) => {
       this._logger.error('[PolymarketWsAdapter] Router error', {
-        error: error.message,
+        err: error,
       });
     });
 
@@ -307,7 +307,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         await this._resubscribeAll();
       } catch (err) {
         this._logger.error('[PolymarketWsAdapter] Failed to resubscribe after connect', {
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     });
@@ -319,7 +319,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._client.on('error', (error: Error) => {
       this._logger.error('[PolymarketWsAdapter] WebSocket error', {
-        error: error.message,
+        err: error,
       });
     });
   }
@@ -359,7 +359,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         await cb(dto);
       } catch (err) {
         this._logger.error('[PolymarketWsAdapter] Callback error', {
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     }
@@ -374,7 +374,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         cb();
       } catch (err) {
         this._logger.error('[PolymarketWsAdapter] Reconnect callback error', {
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     }
@@ -421,7 +421,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     } catch (err) {
       if (!this._isDestroyed) {
         this._logger.error('[PolymarketWsAdapter] Failed to send subscriptions', {
-          error: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
           tokenCount: tokens.length,
         });
       }

@@ -238,7 +238,7 @@ export class PolymarketMessageParser implements IMessageParser {
       });
       return null;
     } catch (error) {
-      this.logger.error('Failed to parse message', { error, data });
+      this.logger.error('Failed to parse message', { err: error instanceof Error ? error : new Error(String(error)), data });
       return null;
     }
   }

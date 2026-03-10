@@ -292,7 +292,7 @@ export class PolymarketMessageRouter extends EventEmitter {
         this.emit('error', new Error(rawData));
       } else {
         this.logger.error('Failed to parse WebSocket message', {
-          error: error instanceof Error ? error.message : String(error),
+          err: error instanceof Error ? error : new Error(String(error)),
           rawData: rawData.substring(0, 200),
         });
         this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -452,7 +452,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       }
     } catch (error) {
       this.logger.error('Failed to process message', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error instanceof Error ? error : new Error(String(error)),
         message
       });
       this.emit('error', error instanceof Error ? error : new Error(String(error)));

@@ -292,7 +292,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
 
       // Ордер НЕ найден в open orders → действительно rejected
       this.logger.error('Order genuinely rejected (not found in open orders)', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error instanceof Error ? error : new Error(String(error)),
       });
 
       // Публикуем событие OrderRejected (ExecutionErrorEvent)
@@ -475,7 +475,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       return order;
     } catch (error) {
       this.logger.error('Failed to get order by ID', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error instanceof Error ? error : new Error(String(error)),
         orderId,
       });
       throw error;
