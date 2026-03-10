@@ -158,6 +158,46 @@ describe('Trade', () => {
         expect(result.error.message).toContain('size must be positive');
       }
     });
+
+    it('возвращает Err если tokenId null', () => {
+      const params = makeValidParams({ tokenId: null as unknown as ReturnType<typeof makeTokenId> });
+      const result = Trade.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Token ID is required');
+      }
+    });
+
+    it('возвращает Err если price null', () => {
+      const params = makeValidParams({ price: null as unknown as Price });
+      const result = Trade.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Price is required');
+      }
+    });
+
+    it('возвращает Err если size null', () => {
+      const params = makeValidParams({ size: null as unknown as Quantity });
+      const result = Trade.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Size is required');
+      }
+    });
+
+    it('возвращает Err если timestamp null', () => {
+      const params = makeValidParams({ timestamp: null as unknown as TradeParams['timestamp'] });
+      const result = Trade.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Timestamp is required');
+      }
+    });
   });
 
   describe('getNotional()', () => {

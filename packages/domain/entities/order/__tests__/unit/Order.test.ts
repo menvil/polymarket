@@ -145,6 +145,22 @@ describe('Order', () => {
         expect(result.value.isPending()).toBe(true);
       }
     });
+
+    it('должен вернуть Err если price null', () => {
+      const result = createValidOrder({ price: null as unknown as Price });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Price is required');
+      }
+    });
+
+    it('должен вернуть Err если size null', () => {
+      const result = createValidOrder({ size: null as unknown as Quantity });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Order size is required');
+      }
+    });
   });
 
   describe('rehydrate()', () => {
@@ -230,6 +246,34 @@ describe('Order', () => {
       });
       const result = Order.rehydrate(state);
       expect(result.ok).toBe(true);
+    });
+
+    it('должен вернуть Err для PARTIALLY_FILLED с filledSize === 0', () => {
+      const state = makeState({
+        status: 'PARTIALLY_FILLED',
+        fill: {
+          filledSize: Quantity.of(new Decimal('0')),
+          averagePrice: undefined,
+          fillIds: [],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('PARTIALLY_FILLED');
+    });
+
+    it('должен вернуть Err для PARTIALLY_FILLED с filledSize === size', () => {
+      const state = makeState({
+        status: 'PARTIALLY_FILLED',
+        fill: {
+          filledSize: Quantity.of(new Decimal('100')), // равно size=100 — уже FILLED
+          averagePrice: Price.of(new Decimal('0.65')),
+          fillIds: [FILL_ID_1],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('PARTIALLY_FILLED');
     });
   });
 

@@ -287,9 +287,142 @@ describe('FillMapper', () => {
         expect(result.error.message).toContain('maker_orders');
       }
     });
+
+    it('MAKER: возвращает Err если maker_order.order_id отсутствует', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          maker_orders: [
+            { order_id: '', matched_amount: '10', price: '0.65', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('order_id');
+      }
+    });
+
+    it('MAKER: возвращает Err если maker_order.order_id невалидный', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          maker_orders: [
+            { order_id: 'has\u0000control-char', matched_amount: '10', price: '0.65', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('order_id');
+      }
+    });
+
+    it('MAKER: возвращает Err если maker_order.price невалидный', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          maker_orders: [
+            { order_id: '0x' + 'c'.repeat(64), matched_amount: '10', price: 'INVALID_PRICE', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message.toLowerCase()).toContain('price');
+      }
+    });
+
+    it('MAKER: возвращает Err если maker_order.matched_amount невалидный', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          maker_orders: [
+            { order_id: '0x' + 'c'.repeat(64), matched_amount: 'INVALID_AMOUNT', price: '0.65', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message.toLowerCase()).toContain('amount');
+      }
+    });
   });
 
   describe('fromPolymarketTradeEvent() — ошибки валидации', () => {
+    it('возвращает Err если market отсутствует', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ market: undefined }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('market');
+      }
+    });
+
+    it('возвращает Err если market пустой', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ market: '' }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('market');
+      }
+    });
+
+    it('возвращает Err если asset_id отсутствует', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ asset_id: undefined }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('asset_id');
+      }
+    });
+
+    it('возвращает Err если asset_id невалидный формат', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ asset_id: 'INVALID:::FORMAT:::UNPARSEABLE' }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('asset_id');
+      }
+    });
+
+    it('возвращает Err если timestamp невалидная строка', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ timestamp: 'not-a-number' }),
+        accountId
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('timestamp');
+      }
+    });
+
     it('возвращает Err если id отсутствует', () => {
       const accountId = makeAccountId();
       const result = FillMapper.fromPolymarketTradeEvent(
@@ -585,6 +718,14 @@ describe('FillMapper', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('feeAsset');
+      }
+    });
+
+    it('side="INVALID" → Err (side must be BUY or SELL)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ side: 'INVALID' as 'BUY' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('side must be BUY or SELL');
       }
     });
   });

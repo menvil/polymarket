@@ -179,6 +179,17 @@ describe('TradeMapper', () => {
       }
     });
 
+    it('возвращает Err если asset_id невалидный формат', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        makeValidEvent({ asset_id: 'INVALID:::FORMAT:::UNPARSEABLE' })
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('asset_id');
+      }
+    });
+
     it('возвращает Err если price отсутствует', () => {
       const result = TradeMapper.fromPolymarketLastTradeEvent(
         makeValidEvent({ price: undefined })
@@ -215,6 +226,28 @@ describe('TradeMapper', () => {
       );
 
       expect(result.ok).toBe(false);
+    });
+
+    it('возвращает Err если size нулевой', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        makeValidEvent({ size: '0' })
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
+    });
+
+    it('возвращает Err если size отрицательный', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        makeValidEvent({ size: '-5' })
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
     });
 
     it('возвращает Err если timestamp отсутствует', () => {
@@ -329,6 +362,15 @@ describe('TradeMapper', () => {
   });
 
   describe('toSnapshot() / fromSnapshot()', () => {
+    it('fromSnapshot() возвращает Err если snapshot === null', () => {
+      const result = TradeMapper.fromSnapshot(null as unknown as Parameters<typeof TradeMapper.fromSnapshot>[0]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-null object');
+      }
+    });
+
     it('round-trip: Trade → snapshot → Trade сохраняет все поля', () => {
       const event = makeValidEvent();
       const original = unwrap(TradeMapper.fromPolymarketLastTradeEvent(event));

@@ -3,6 +3,7 @@
  */
 
 import { FillLedgerAdapter } from '../../src/adapters/FillLedgerAdapter';
+import { ALL_LEDGER_ENTRY_TYPES } from '../../src/LedgerEntryType';
 import { Fill } from '@polymarket/fill';
 import type { FillParams } from '@polymarket/fill';
 import {
@@ -184,5 +185,18 @@ describe('FillLedgerAdapter', () => {
 
       expect(totalUsdcDelta.toNumber()).toBeCloseTo(fill.getNetCashFlow().amount.toNumber(), 5);
     });
+  });
+});
+
+describe('ALL_LEDGER_ENTRY_TYPES', () => {
+  it('содержит все три допустимых типа записей', () => {
+    expect(ALL_LEDGER_ENTRY_TYPES).toContain('POSITION_DELTA');
+    expect(ALL_LEDGER_ENTRY_TYPES).toContain('CASH_DELTA');
+    expect(ALL_LEDGER_ENTRY_TYPES).toContain('FEE_DEBIT');
+    expect(ALL_LEDGER_ENTRY_TYPES).toHaveLength(3);
+  });
+
+  it('является readonly (Object.isFrozen)', () => {
+    expect(Object.isFrozen(ALL_LEDGER_ENTRY_TYPES)).toBe(true);
   });
 });

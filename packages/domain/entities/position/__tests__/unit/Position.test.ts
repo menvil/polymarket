@@ -232,6 +232,26 @@ describe('Position Entity', () => {
         expect(position.lots[1].timestamp.toNumber()).toBe(200);
       }
     });
+
+    it('should reject invalid side value', () => {
+      const params = createValidParams({ side: 'INVALID' as 'LONG' });
+      const result = Position.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Position side must be LONG or SHORT');
+      }
+    });
+
+    it('should reject lots that is not an array', () => {
+      const params = createValidParams({ lots: 'not-an-array' as unknown as PositionLot[] });
+      const result = Position.create(params);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('lots must be an array');
+      }
+    });
   });
 
   describe('openedAt / updatedAt', () => {
@@ -741,6 +761,27 @@ describe('Position Entity', () => {
         expect(addResult.value.openedQuantity.value().toNumber()).toBe(150);
       }
     });
+
+    it('should reject addedAt < openedAt', () => {
+      const openedAt = Timestamp.of(new Decimal(5000));
+      const posResult = Position.create(createValidParams({ openedAt }));
+      expect(posResult.ok).toBe(true);
+      if (!posResult.ok) return;
+
+      const newLot = PositionLot.create({
+        quantity: Quantity.of(new Decimal(50)),
+        entryPrice: Price.of(new Decimal(0.70)),
+        timestamp: Timestamp.of(new Decimal(6000)),
+      });
+      const addedAt = Timestamp.of(new Decimal(1000)); // раньше openedAt
+
+      const addResult = posResult.value.addLots([newLot], addedAt);
+
+      expect(addResult.ok).toBe(false);
+      if (!addResult.ok) {
+        expect(addResult.error.message).toContain('addedAt must be >= openedAt');
+      }
+    });
   });
 
   describe('P&L Calculations', () => {
@@ -1119,6 +1160,27 @@ describe('Position Entity', () => {
         expect(position.lots.length).toBe(2);
         expect(position.lots[0].timestamp.toNumber()).toBe(100); // lot1 первый
         expect(position.lots[1].timestamp.toNumber()).toBe(200); // lot2_partial второй
+      }
+    });
+
+    it('should reject closedAt < openedAt', () => {
+      const openedAt = Timestamp.of(new Decimal(5000));
+      const posResult = Position.create(createValidParams({ openedAt }));
+      expect(posResult.ok).toBe(true);
+      if (!posResult.ok) return;
+
+      const closedAt = Timestamp.of(new Decimal(1000)); // раньше openedAt
+
+      const result = posResult.value.close(
+        Quantity.of(new Decimal(100)),
+        Price.of(new Decimal(0.75)),
+        'FIFO',
+        closedAt,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('closedAt must be >= openedAt');
       }
     });
   });
