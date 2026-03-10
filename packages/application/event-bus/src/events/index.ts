@@ -19,6 +19,12 @@ export type {
 } from './market-events.js';
 export type { RiskViolationType, RiskLimitBreachedEvent } from './risk-events.js';
 export type { SignalDirection, StrategySignalEvent } from './strategy-events.js';
+export type {
+  MarketOpenedEvent,
+  MarketClosedEvent,
+  MarketCloseReason,
+} from './market-lifecycle-events.js';
+export type { StrategyTickEvent } from './coordinator-events.js';
 
 // Re-export Order domain events (из @polymarket/order)
 export type { OrderEvent } from '@polymarket/order';
@@ -36,11 +42,20 @@ export type { OrderEvent } from '@polymarket/order';
  * - FILL_RECEIVED — fill со статусом MATCHED → запустить ProcessFillUseCase
  * - FILL_FAILED   — fill со статусом FAILED → alert + reconciliation
  * - OrderEvent (из @polymarket/order) — Order FSM transitions
+ *
+ * Lifecycle события:
+ * - MARKET_OPENED — рынок открыт, аллоцирован баланс, запустить стратегию
+ * - MARKET_CLOSED — рынок закрыт, баланс освобождён, остановить стратегию
+ *
+ * Координационные события:
+ * - STRATEGY_TICK — тик координатора для discovery и policy check
  */
 import type { FillReceivedEvent, FillFailedEvent } from './domain-events.js';
 import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
 import type { RiskLimitBreachedEvent } from './risk-events.js';
 import type { StrategySignalEvent } from './strategy-events.js';
+import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle-events.js';
+import type { StrategyTickEvent } from './coordinator-events.js';
 import type { OrderEvent } from '@polymarket/order';
 
 export type ApplicationEvent =
@@ -51,4 +66,7 @@ export type ApplicationEvent =
   | TradeReceivedEvent
   | RiskLimitBreachedEvent
   | StrategySignalEvent
+  | MarketOpenedEvent
+  | MarketClosedEvent
+  | StrategyTickEvent
   | OrderEvent;

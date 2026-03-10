@@ -32,5 +32,11 @@ export type {
 } from './events/market-events.js';
 export type { RiskViolationType, RiskLimitBreachedEvent } from './events/risk-events.js';
 export type { SignalDirection, StrategySignalEvent } from './events/strategy-events.js';
+export type {
+  MarketOpenedEvent,
+  MarketClosedEvent,
+  MarketCloseReason,
+} from './events/market-lifecycle-events.js';
+export type { StrategyTickEvent } from './events/coordinator-events.js';
 export type { IEventBus, EventHandler } from './IEventBus.js';
 export { EventBus } from './EventBus.js';

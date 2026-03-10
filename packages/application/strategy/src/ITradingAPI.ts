@@ -104,14 +104,17 @@ export interface ITradingAPI {
    * Отменяет открытый ордер.
    *
    * @param orderId - ID ордера для отмены
-   * @returns Ok(void) при успехе или если ордер уже в терминальном статусе
+   * @returns Ok(void) при успехе или если ордер уже в терминальном статусе;
+   *          Err(TradingError) при ошибке отмены на бирже или в локальном состоянии
    *
    * @remarks
-   * Best-effort отмена на бирже: ошибки биржи логируются, но не возвращаются.
+   * Best-effort отмена: ордер помечается отменённым локально.
+   * Ошибки биржи возвращаются как Err(TradingError) для явной обработки caller'ом.
    *
    * @example
    * ```typescript
-   * await api.cancelOrder(orderId);
+   * const result = await api.cancelOrder(orderId);
+   * if (!result.ok) console.warn('Cancel failed:', result.error.message);
    * ```
    */
   cancelOrder(orderId: OrderId): Promise<Result<void, TradingError>>;

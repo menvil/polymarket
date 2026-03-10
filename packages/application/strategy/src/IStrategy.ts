@@ -18,10 +18,13 @@
  *   private _ordersPlaced = 0;
  *
  *   async initialize(ctx: StrategyContext): Promise<Result<void, Error>> {
+ *     // assetId и instrumentId предоставляются конфигурацией стратегии
+ *     const { assetId, instrumentId } = this._config;
  *     ctx.api.subscribe('BOOK_UPDATED', async (event) => {
  *       // Логика размещения ордеров
  *       const result = await ctx.api.placeOrder({
- *         asset: marketId,
+ *         asset: assetId,
+ *         instrumentId,
  *         side: 'BUY',
  *         price: event.topOfBook.bestAsk,
  *         size: Quantity.of(new Decimal('10')),

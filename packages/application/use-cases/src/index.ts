@@ -2,11 +2,13 @@
  * @polymarket/use-cases — Application layer use cases
  *
  * @remarks
- * Три use case оркестрируют domain objects для основных торговых операций:
+ * Use cases оркестрируют domain objects для торговых операций:
  *
  * - **PlaceOrderUseCase** — размещение ордера с пре-трейд риск-проверкой
  * - **ProcessFillUseCase** — обработка исполнения ордера (идемпотентно)
  * - **CancelOrderUseCase** — отмена ордера с откатом резервации
+ * - **ReconcileOrdersUseCase** — сверка открытых ордеров с биржей
+ * - **ReconcileTradesUseCase** — сверка исполнений с биржей
  *
  * Вспомогательные сервисы:
  * - **OrderService** — операции над Order aggregate
@@ -25,6 +27,16 @@ export type { ProcessFillDeps } from './ProcessFillUseCase.js';
 
 export { CancelOrderUseCase } from './CancelOrderUseCase.js';
 export type { CancelOrderInput, CancelOrderDeps } from './CancelOrderUseCase.js';
+
+export { ReconcileOrdersUseCase } from './ReconcileOrdersUseCase.js';
+export type {
+  ReconcileOrdersDeps,
+  ReconcileOrdersInput,
+  ReconciliationReport,
+} from './ReconcileOrdersUseCase.js';
+
+export { ReconcileTradesUseCase } from './ReconcileTradesUseCase.js';
+export type { ReconcileTradesDeps, ReconcileTradesInput } from './ReconcileTradesUseCase.js';
 
 // Services
 export { OrderService } from './services/OrderService.js';

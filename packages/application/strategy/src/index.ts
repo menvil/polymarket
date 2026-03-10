@@ -38,7 +38,7 @@
  *     return Ok(undefined);
  *   }
  *
- *   async stop() { await ctx.api.cancelAll(); }
+ *   async stop() { } // отменить открытые ордера при необходимости
  *   getMetrics() { return { ordersPlaced: this._ordersPlaced }; }
  * }
  *
@@ -59,4 +59,4 @@ export type { IStrategyRunner } from './IStrategyRunner.js';
 export { TradingAPI } from './TradingAPI.js';
 export type { TradingAPIDeps } from './TradingAPI.js';
 export { StrategyRunner } from './StrategyRunner.js';
-export type { StrategyRunnerDeps } from './StrategyRunner.js';
+export type { StrategyRunnerDeps, StrategyFactory } from './StrategyRunner.js';

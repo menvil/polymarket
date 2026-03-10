@@ -38,13 +38,21 @@ export class LedgerService {
   /**
    * @param logger - Logger (дочерний контекст 'LedgerService' добавляется автоматически)
    * @param ledger - Опциональный начальный Ledger (по умолчанию создаётся новый)
+   * @param initialFillIds - Опциональный набор уже записанных fill ID для инициализации
+   *                         idempotency guard (например, при восстановлении из персистентного Ledger)
    */
   constructor(
     logger: ILogger,
     ledger?: Ledger,
+    initialFillIds?: Iterable<string>,
   ) {
     this._logger = logger.child({ component: 'LedgerService' });
     this.ledger = ledger ?? new Ledger();
+    if (initialFillIds) {
+      for (const id of initialFillIds) {
+        this._recordedFillIds.add(id);
+      }
+    }
   }
 
   /**

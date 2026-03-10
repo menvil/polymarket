@@ -24,6 +24,7 @@ export type RiskViolationType = 'DRAWDOWN' | 'POSITION_LIMIT' | 'TOTAL_EXPOSURE'
  * @remarks
  * Если strategyId undefined — системное нарушение (остановить всё).
  * Если strategyId указан — нарушение конкретной стратегии.
+ * accountId идентифицирует аккаунт для мульти-аккаунтных сценариев.
  */
 export interface RiskLimitBreachedEvent {
   readonly type: 'RISK_LIMIT_BREACHED';
@@ -35,4 +36,6 @@ export interface RiskLimitBreachedEvent {
   readonly triggeredAt: Timestamp;
   /** ID стратегии (если undefined — системное нарушение, остановить всё) */
   readonly strategyId?: string;
+  /** ID аккаунта, для которого обнаружено нарушение (для мульти-аккаунтной торговли) */
+  readonly accountId?: string;
 }
