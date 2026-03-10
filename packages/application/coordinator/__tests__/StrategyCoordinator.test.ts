@@ -4,10 +4,12 @@
  * @remarks
  * Покрывает:
  * - Lifecycle: start(), stop(), повторный start() (no-op)
+ * - start(): обработка Result от updateTotalBalance
  * - _discover(): срабатывание каждые discoverEveryNTicks тиков,
+ *   вызов discoveryService.findCandidates(), наполнение каталога,
  *   фильтрация inactive/уже активных, лимит maxStrategies
  * - _checkPolicy(): срабатывание каждые policyCheckEveryNTicks тиков,
- *   закрытие рынков по политике, обработка ошибок закрытия
+ *   закрытие рынков по политике, удаление из каталога, обработка ошибок
  */
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { StrategyCoordinator } from '../src/StrategyCoordinator.js';
@@ -20,6 +22,8 @@ import type {
   InstrumentInfo,
   IBalanceAllocator,
   AllocationResult,
+  IMarketDiscoveryService,
+  DiscoveredMarket,
 } from '@polymarket/ports';
 import type {
   OpenMarketUseCase,
@@ -38,6 +42,8 @@ import Decimal from 'decimal.js';
 const ACCOUNT_ID = 'acc-test' as unknown as AccountId;
 const MARKET_ID_1 = 'mkt-1' as unknown as MarketId;
 const MARKET_ID_2 = 'mkt-2' as unknown as MarketId;
+const INSTR_ID_1 = 'inst-mkt-1' as unknown as InstrumentId;
+const INSTR_ID_2 = 'inst-mkt-2' as unknown as InstrumentId;
 const TOTAL_BALANCE = Money.of(new Decimal(10_000), 'USDC');
 
 function makeTimestamp(ms = 1_700_000_000_000) {
@@ -62,6 +68,17 @@ function makeCatalog(): jest.Mocked<IMarketCatalog> {
   return {
     get: jest.fn<IMarketCatalog['get']>(),
     getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
+    getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
+    register: jest.fn<IMarketCatalog['register']>(),
+    remove: jest.fn<IMarketCatalog['remove']>(),
+    clear: jest.fn<IMarketCatalog['clear']>(),
+  };
+}
+
+function makeDiscoveryService(): jest.Mocked<IMarketDiscoveryService> {
+  return {
+    findCandidates: jest.fn<IMarketDiscoveryService['findCandidates']>().mockResolvedValue([]),
+    refresh: jest.fn<IMarketDiscoveryService['refresh']>().mockResolvedValue(undefined),
   };
 }
 
@@ -72,9 +89,10 @@ function makeAllocator(): jest.Mocked<IBalanceAllocator> {
     releaseWithPnL: jest.fn<IBalanceAllocator['releaseWithPnL']>(),
     release: jest.fn<IBalanceAllocator['release']>(),
     getAllocation: jest.fn<IBalanceAllocator['getAllocation']>(),
-    updateTotalBalance: jest.fn<IBalanceAllocator['updateTotalBalance']>(),
+    updateTotalBalance: jest.fn<IBalanceAllocator['updateTotalBalance']>().mockReturnValue(Ok(undefined)),
     canAddMarket: jest.fn<IBalanceAllocator['canAddMarket']>(),
     getStats: jest.fn<IBalanceAllocator['getStats']>(),
+    restoreAllocations: jest.fn<IBalanceAllocator['restoreAllocations']>(),
   };
 }
 
@@ -100,9 +118,9 @@ function makeClock(nowMs = 1_700_000_000_000): IClock {
   return { now: () => new Date(nowMs) };
 }
 
-function makeInstrument(marketId: MarketId, active = true): InstrumentInfo {
+function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, active = true): InstrumentInfo {
   return {
-    instrumentId: `inst-${String(marketId)}` as unknown as InstrumentId,
+    instrumentId,
     marketId,
     tickSize: {} as any,
     minOrderSize: {} as any,
@@ -130,6 +148,7 @@ describe('StrategyCoordinator', () => {
   let tickHandler: ((e: StrategyTickEvent) => Promise<void>) | undefined;
 
   let catalog: jest.Mocked<IMarketCatalog>;
+  let discoveryService: jest.Mocked<IMarketDiscoveryService>;
   let allocator: jest.Mocked<IBalanceAllocator>;
   let openMarketUseCase: ReturnType<typeof makeOpenMarketUseCase>;
   let closeMarketUseCase: ReturnType<typeof makeCloseMarketUseCase>;
@@ -149,6 +168,7 @@ describe('StrategyCoordinator', () => {
   function buildCoordinator(overrideConfig?: Partial<StrategyCoordinatorConfig>): StrategyCoordinator {
     const deps: StrategyCoordinatorDeps = {
       marketCatalog: catalog,
+      discoveryService,
       balanceAllocator: allocator,
       openMarketUseCase: openMarketUseCase as unknown as OpenMarketUseCase,
       closeMarketUseCase: closeMarketUseCase as unknown as CloseMarketUseCase,
@@ -163,6 +183,7 @@ describe('StrategyCoordinator', () => {
   beforeEach(() => {
     tickHandler = undefined;
     catalog = makeCatalog();
+    discoveryService = makeDiscoveryService();
     allocator = makeAllocator();
     openMarketUseCase = makeOpenMarketUseCase();
     closeMarketUseCase = makeCloseMarketUseCase();
@@ -213,6 +234,28 @@ describe('StrategyCoordinator', () => {
       expect(tickHandler).toBeDefined();
     });
 
+    it('логирует warn если updateTotalBalance вернул Err', () => {
+      allocator.updateTotalBalance.mockReturnValue(
+        Err(new TradingError('Over-allocation detected')),
+      );
+      coordinator.start(TOTAL_BALANCE);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to update total balance'),
+        expect.any(Object),
+      );
+    });
+
+    it('продолжает подписку даже при Err от updateTotalBalance', () => {
+      allocator.updateTotalBalance.mockReturnValue(
+        Err(new TradingError('Over-allocation')),
+      );
+      coordinator.start(TOTAL_BALANCE);
+
+      // Несмотря на ошибку, координатор всё равно подписывается
+      expect(eventBus.subscribe).toHaveBeenCalledWith('STRATEGY_TICK', expect.any(Function));
+    });
+
     it('повторный start() — no-op, предупреждение в лог', () => {
       coordinator.start(TOTAL_BALANCE);
       coordinator.start(TOTAL_BALANCE);
@@ -252,22 +295,56 @@ describe('StrategyCoordinator', () => {
       coordinator.start(TOTAL_BALANCE);
     });
 
-    it('не вызывает catalog.getAll до discoverEveryNTicks тиков', async () => {
+    it('не вызывает discoveryService до discoverEveryNTicks тиков', async () => {
       // discoverEveryNTicks=2, fire only 1 tick
       await fireTick();
-      expect(catalog.getAll).not.toHaveBeenCalled();
+      expect(discoveryService.findCandidates).not.toHaveBeenCalled();
     });
 
-    it('вызывает catalog.getAll каждые discoverEveryNTicks тиков', async () => {
+    it('вызывает discoveryService.findCandidates() каждые discoverEveryNTicks тиков', async () => {
       await fireNTicks(2); // tick 2 → discover
-      expect(catalog.getAll).toHaveBeenCalledTimes(1);
+      expect(discoveryService.findCandidates).toHaveBeenCalledTimes(1);
 
       await fireNTicks(2); // tick 4 → discover
-      expect(catalog.getAll).toHaveBeenCalledTimes(2);
+      expect(discoveryService.findCandidates).toHaveBeenCalledTimes(2);
+    });
+
+    it('регистрирует кандидатов в каталоге через catalog.register()', async () => {
+      const candidate: DiscoveredMarket = {
+        marketId: MARKET_ID_1,
+        instrumentId: INSTR_ID_1,
+        question: 'Will Bitcoin exceed $50k?',
+        expiresAt: makeTimestamp(Date.now() + 48 * 60 * 60 * 1000),
+        tickSize: {} as any,
+        minOrderSize: {} as any,
+        spread: 0.05,
+        liquidity: 10_000,
+        score: 24,
+      };
+      discoveryService.findCandidates.mockResolvedValue([candidate]);
+
+      await fireNTicks(2); // tick 2 → discover
+
+      expect(catalog.register).toHaveBeenCalledWith({
+        instrumentId: INSTR_ID_1,
+        marketId: MARKET_ID_1,
+        tickSize: candidate.tickSize,
+        minOrderSize: candidate.minOrderSize,
+        active: true,
+      });
+    });
+
+    it('не вызывает openMarketUseCase если catalog.getAll() возвращает []', async () => {
+      discoveryService.findCandidates.mockResolvedValue([]);
+      catalog.getAll.mockReturnValue([]);
+
+      await fireNTicks(2);
+
+      expect(openMarketUseCase.execute).not.toHaveBeenCalled();
     });
 
     it('пропускает неактивные инструменты', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, false)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1, false)]);
 
       await fireNTicks(2);
 
@@ -275,7 +352,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('открывает новый рынок через openMarketUseCase', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
 
       await fireNTicks(2); // trigger discovery
@@ -288,7 +365,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('не открывает рынок повторно если он уже активен', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
 
       await fireNTicks(2); // tick 2 → discover → opens MARKET_ID_1
@@ -302,7 +379,7 @@ describe('StrategyCoordinator', () => {
       coordinator = buildCoordinator({ maxStrategies: 0 });
       coordinator.start(TOTAL_BALANCE);
 
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
 
       await fireNTicks(2);
 
@@ -314,8 +391,8 @@ describe('StrategyCoordinator', () => {
       coordinator.start(TOTAL_BALANCE);
 
       catalog.getAll.mockReturnValue([
-        makeInstrument(MARKET_ID_1),
-        makeInstrument(MARKET_ID_2),
+        makeInstrument(MARKET_ID_1, INSTR_ID_1),
+        makeInstrument(MARKET_ID_2, INSTR_ID_2),
       ]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
 
@@ -326,7 +403,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('логирует debug при неудачной аллокации (Err от openMarketUseCase)', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(
         Err(new TradingError('No free slots')),
       );
@@ -340,7 +417,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('добавляет успешно открытый рынок в активные (проверка через последующий policyCheck)', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
       removalPolicy.evaluate.mockReturnValue([]);
 
@@ -353,6 +430,18 @@ describe('StrategyCoordinator', () => {
           expect.objectContaining({ marketId: MARKET_ID_1 }),
         ]),
       );
+    });
+
+    it('логирует error если discoveryService.findCandidates() бросает', async () => {
+      discoveryService.findCandidates.mockRejectedValue(new Error('Network error'));
+
+      await fireNTicks(2);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to fetch discovery candidates'),
+        expect.any(Object),
+      );
+      expect(catalog.register).not.toHaveBeenCalled();
     });
   });
 
@@ -375,7 +464,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('вызывает evaluate с контекстами активных рынков', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
       removalPolicy.evaluate.mockReturnValue([]);
 
@@ -393,7 +482,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('закрывает рынки, отмеченные политикой', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
       removalPolicy.evaluate.mockReturnValue([MARKET_ID_1]);
       closeMarketUseCase.execute.mockResolvedValue(Ok(undefined));
@@ -408,8 +497,39 @@ describe('StrategyCoordinator', () => {
       });
     });
 
+    it('вызывает catalog.remove() после успешного закрытия рынка', async () => {
+      const instrument = makeInstrument(MARKET_ID_1, INSTR_ID_1);
+      catalog.getAll.mockReturnValue([instrument]);
+      catalog.getByMarketId.mockReturnValue(instrument);
+      openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      removalPolicy.evaluate.mockReturnValue([MARKET_ID_1]);
+      closeMarketUseCase.execute.mockResolvedValue(Ok(undefined));
+
+      await fireNTicks(2); // discover
+      await fireTick();    // policy → close → remove
+
+      expect(catalog.remove).toHaveBeenCalledWith(INSTR_ID_1);
+    });
+
+    it('логирует warn если getByMarketId не находит инструмент при закрытии', async () => {
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
+      catalog.getByMarketId.mockReturnValue(undefined); // не найден в каталоге
+      openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      removalPolicy.evaluate.mockReturnValue([MARKET_ID_1]);
+      closeMarketUseCase.execute.mockResolvedValue(Ok(undefined));
+
+      await fireNTicks(2); // discover
+      await fireTick();    // policy → close
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('not found in catalog'),
+        expect.objectContaining({ marketId: String(MARKET_ID_1) }),
+      );
+      expect(catalog.remove).not.toHaveBeenCalled();
+    });
+
     it('удаляет рынок из активных после успешного закрытия', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
       removalPolicy.evaluate
         .mockReturnValueOnce([MARKET_ID_1])
@@ -429,7 +549,7 @@ describe('StrategyCoordinator', () => {
     });
 
     it('оставляет рынок в активных если закрытие вернуло Err', async () => {
-      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1)]);
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
       openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
       removalPolicy.evaluate
         .mockReturnValueOnce([MARKET_ID_1])
@@ -456,10 +576,24 @@ describe('StrategyCoordinator', () => {
       );
     });
 
+    it('не вызывает catalog.remove() если закрытие вернуло Err', async () => {
+      catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
+      openMarketUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      removalPolicy.evaluate.mockReturnValue([MARKET_ID_1]);
+      closeMarketUseCase.execute.mockResolvedValue(
+        Err(new TradingError('Cancel failed')),
+      );
+
+      await fireNTicks(2); // discover
+      await fireTick();    // policy → close fails
+
+      expect(catalog.remove).not.toHaveBeenCalled();
+    });
+
     it('логирует закрытие нескольких рынков', async () => {
       catalog.getAll.mockReturnValue([
-        makeInstrument(MARKET_ID_1),
-        makeInstrument(MARKET_ID_2),
+        makeInstrument(MARKET_ID_1, INSTR_ID_1),
+        makeInstrument(MARKET_ID_2, INSTR_ID_2),
       ]);
       openMarketUseCase.execute
         .mockResolvedValueOnce(Ok(makeAllocation(MARKET_ID_1)))

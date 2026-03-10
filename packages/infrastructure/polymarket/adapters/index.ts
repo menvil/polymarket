@@ -8,6 +8,7 @@
  * - `MarketDataFeedAdapter` — маршрутизация рыночных данных (WS → BookUpdateHandler)
  * - `UserEventFeedAdapter` — маршрутизация user-channel (WS → FillEventHandler, OrderUpdateHandler)
  * - `PolymarketExchangeClientAdapter` — реализует IExchangeClient через REST
+ * - `PolymarketMarketDiscoveryAdapter` — реализует IMarketDiscoveryService через Gamma REST API
  *
  * ### Порядок запуска в системе:
  * ```typescript
@@ -41,3 +42,4 @@
 export { MarketDataFeedAdapter } from './MarketDataFeedAdapter.js';
 export { UserEventFeedAdapter } from './UserEventFeedAdapter.js';
 export { PolymarketExchangeClientAdapter } from './PolymarketExchangeClientAdapter.js';
+export { PolymarketMarketDiscoveryAdapter } from './PolymarketMarketDiscoveryAdapter.js';

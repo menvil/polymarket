@@ -4,9 +4,11 @@
  * @remarks
  * ### Назначение:
  * Координатор реагирует на `STRATEGY_TICK` события (без setInterval!) и управляет:
- * - Обнаружением новых торгуемых инструментов (discovery)
+ * - Обнаружением новых торгуемых инструментов (discovery) через IMarketDiscoveryService
+ * - Наполнением каталога через IMarketCatalog.register()
  * - Аллокацией баланса на новые рынки через OpenMarketUseCase
  * - Проверкой политики удаления и закрытием рынков через CloseMarketUseCase
+ * - Очисткой каталога при закрытии рынков через IMarketCatalog.remove()
  *
  * ### Без setInterval:
  * Координатор не создаёт таймеры. Вместо этого внешний компонент (Scheduler)
@@ -21,15 +23,18 @@
  * ```
  *
  * ### _discover():
- * 1. `marketCatalog.getAll()` → активные инструменты
- * 2. Фильтр: не в _activeMarkets
- * 3. `balanceAllocator.allocateToNewMarkets(newMarketIds)` → AllocationResult[]
- * 4. Для каждого нового рынка: `openMarketUseCase.execute(...)`
+ * 1. `discoveryService.findCandidates()` → список кандидатов из Gamma API
+ * 2. `marketCatalog.register()` для каждого кандидата → наполняем каталог
+ * 3. `marketCatalog.getAll()` → активные инструменты
+ * 4. Фильтр: не в _activeMarkets
+ * 5. `openMarketUseCase.execute(...)` для новых рынков
  *
  * ### _checkPolicy():
  * 1. Собрать MarketContext[] из _activeMarkets
  * 2. `removalPolicy.evaluate(contexts)` → MarketId[] для закрытия
  * 3. Для каждого: `closeMarketUseCase.execute(...)`
+ * 4. Найти `InstrumentInfo` по marketId через `catalog.getByMarketId()`
+ * 5. `marketCatalog.remove(instrumentInfo.instrumentId)`
  *
  * @example
  * ```typescript
@@ -46,7 +51,12 @@ import type { ILogger } from '@polymarket/logger';
 import type { Money } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
-import type { IBalanceAllocator, IMarketCatalog } from '@polymarket/ports';
+import type {
+  IBalanceAllocator,
+  IMarketCatalog,
+  IMarketDiscoveryService,
+  DiscoveredMarket,
+} from '@polymarket/ports';
 import type { IEventBus, StrategyTickEvent } from '@polymarket/event-bus';
 import type { IRemovalPolicy, MarketContext } from '@polymarket/market-lifecycle';
 import type { OpenMarketUseCase } from '@polymarket/market-lifecycle';
@@ -57,8 +67,10 @@ import type { StrategyCoordinatorConfig } from './StrategyCoordinatorConfig.js';
  * Зависимости StrategyCoordinator.
  */
 export interface StrategyCoordinatorDeps {
-  /** Каталог торговых инструментов */
+  /** Каталог торговых инструментов (поддерживает read/write операции) */
   readonly marketCatalog: IMarketCatalog;
+  /** Сервис обнаружения рынков (Gamma API) */
+  readonly discoveryService: IMarketDiscoveryService;
   /** Распределитель баланса */
   readonly balanceAllocator: IBalanceAllocator;
   /** Use case открытия рынка */
@@ -110,6 +122,15 @@ export class StrategyCoordinator {
    * @remarks
    * После start() координатор реагирует на каждый STRATEGY_TICK.
    * Повторный вызов start() без предварительного stop() — no-op.
+   *
+   * `updateTotalBalance` возвращает `Result<void, TradingError>`.
+   * При ошибке (over-allocation) — логируем предупреждение и продолжаем запуск:
+   * система продолжит работать с текущим балансом до следующего обновления.
+   *
+   * @example
+   * ```typescript
+   * coordinator.start(Money.of(new Decimal(10000), 'USDC'));
+   * ```
    */
   public start(totalBalance: Money): void {
     if (this._unsubscribe) {
@@ -123,7 +144,13 @@ export class StrategyCoordinator {
       maxStrategies: this._config.maxStrategies,
     });
 
-    this._deps.balanceAllocator.updateTotalBalance(totalBalance);
+    const updateResult = this._deps.balanceAllocator.updateTotalBalance(totalBalance);
+    if (!updateResult.ok) {
+      this._logger.warn('Failed to update total balance on start (possible over-allocation)', {
+        error: updateResult.error.message,
+        balance: totalBalance.toNumber(),
+      });
+    }
 
     this._unsubscribe = this._deps.eventBus.subscribe(
       'STRATEGY_TICK',
@@ -167,23 +194,60 @@ export class StrategyCoordinator {
    * Обнаруживает новые рынки и открывает их.
    *
    * @remarks
-   * Запрашивает все инструменты из каталога, фильтрует уже активные,
-   * аллоцирует баланс и открывает новые рынки.
+   * ### Алгоритм:
+   * 1. Получить кандидатов через `discoveryService.findCandidates()`
+   * 2. Зарегистрировать каждого кандидата в `marketCatalog` через `register()`
+   * 3. Получить все инструменты из каталога
+   * 4. Фильтр: активные, не в `_activeMarkets`
+   * 5. Аллоцировать баланс и открыть рынки через `openMarketUseCase`
+   *
+   * @example
+   * ```typescript
+   * // Вызывается автоматически каждые discoverEveryNTicks тиков
+   * await this._discover();
+   * ```
    */
   private async _discover(): Promise<void> {
     this._logger.debug('Running market discovery');
 
+    // 1. Получить кандидатов из discovery service
+    let candidates: readonly DiscoveredMarket[];
+    try {
+      candidates = await this._deps.discoveryService.findCandidates();
+    } catch (error) {
+      this._logger.error('Failed to fetch discovery candidates', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    // 2. Наполнить каталог из кандидатов
+    for (const candidate of candidates) {
+      this._deps.marketCatalog.register({
+        instrumentId: candidate.instrumentId,
+        marketId: candidate.marketId,
+        tickSize: candidate.tickSize,
+        minOrderSize: candidate.minOrderSize,
+        active: true,
+      });
+    }
+
+    this._logger.debug('Market catalog updated from discovery', {
+      candidates: candidates.length,
+    });
+
+    // 3. Получить все инструменты из каталога
     const allInstruments = this._deps.marketCatalog.getAll();
     const activeInstruments = allInstruments.filter(
       (inst) => inst.active && !this._activeMarkets.has(String(inst.marketId)),
     );
 
     if (activeInstruments.length === 0) {
-      this._logger.debug('No new instruments to discover');
+      this._logger.debug('No new instruments to open after discovery');
       return;
     }
 
-    // Ограничение по maxStrategies
+    // 4. Ограничение по maxStrategies
     const remainingSlots = this._config.maxStrategies - this._activeMarkets.size;
     if (remainingSlots <= 0) {
       this._logger.debug('Max strategies reached, skipping discovery');
@@ -194,6 +258,7 @@ export class StrategyCoordinator {
       .slice(0, remainingSlots)
       .map((inst) => inst.marketId);
 
+    // 5. Открыть новые рынки
     for (const marketId of newMarketIds) {
       const result = await this._deps.openMarketUseCase.execute({
         marketId,
@@ -202,8 +267,6 @@ export class StrategyCoordinator {
       });
 
       if (result.ok) {
-        // Добавляем в _activeMarkets с минимальным контекстом
-        // expiresAt будет обновлён при первом policyCheck
         const nowMs = this._deps.clock.now().getTime();
         const timestampResult = TimestampService.create(nowMs);
         if (timestampResult.ok) {
@@ -233,6 +296,21 @@ export class StrategyCoordinator {
 
   /**
    * Проверяет политику удаления и закрывает помечённые рынки.
+   *
+   * @remarks
+   * При успешном закрытии рынка:
+   * 1. Удаляет из `_activeMarkets`
+   * 2. Находит `InstrumentInfo` по marketId через `getByMarketId()`
+   * 3. Вызывает `marketCatalog.remove(instrumentInfo.instrumentId)`
+   *
+   * Если `getByMarketId()` возвращает `undefined` — логируем warn,
+   * но продолжаем (рынок уже мог быть удалён из каталога).
+   *
+   * @example
+   * ```typescript
+   * // Вызывается автоматически каждые policyCheckEveryNTicks тиков
+   * await this._checkPolicy();
+   * ```
    */
   private async _checkPolicy(): Promise<void> {
     if (this._activeMarkets.size === 0) return;
@@ -255,6 +333,21 @@ export class StrategyCoordinator {
 
       if (result.ok) {
         this._activeMarkets.delete(String(marketId));
+
+        // Удаляем из каталога через getByMarketId → remove
+        const instrumentInfo = this._deps.marketCatalog.getByMarketId(marketId);
+        if (instrumentInfo) {
+          this._deps.marketCatalog.remove(instrumentInfo.instrumentId);
+          this._logger.debug('Removed closed market from catalog', {
+            marketId: String(marketId),
+            instrumentId: String(instrumentInfo.instrumentId),
+          });
+        } else {
+          this._logger.warn('Market closed by policy but not found in catalog', {
+            marketId: String(marketId),
+          });
+        }
+
         this._logger.info('Market closed by policy', { marketId: String(marketId) });
       } else {
         this._logger.error('Failed to close market by policy', {
