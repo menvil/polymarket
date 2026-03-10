@@ -33,8 +33,8 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import type { ConstraintViolation } from '../../../domain/services/constraints/ConstraintsObservationStore.js';
+import type { ILogger } from '@polymarket/logger';
+import type { ConstraintViolation } from '../stubs/domain/services/constraints/ConstraintsObservationStore.js';
 
 /**
  * Order error types

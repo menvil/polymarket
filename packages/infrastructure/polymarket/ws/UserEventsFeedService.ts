@@ -33,13 +33,13 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import type { IEventBus } from '../../../shared/events/IEventBus.js';
-import type { IOrderRepository } from '../../../domain/ports/IOrderRepository.js';
-import type { ExecutionContext } from '../../../domain/execution/ExecutionContext.js';
+import type { ILogger } from '@polymarket/logger';
+import type { IEventBus } from '../ports/IEventBus.js';
+import type { IInfraOrderRepository as IOrderRepository } from '../ports/IInfraOrderRepository.js';
+import type { ExecutionContext } from '../events/ExecutionContext.js';
 import type { PolymarketWebSocketManager } from './PolymarketWebSocketManager.js';
-import type { WsExecutionMapperMetrics } from '../../ws/WsExecutionMapper.js';
-import { WsExecutionNormalizer } from '../../ws/WsExecutionNormalizer.js';
+import type { WsExecutionMapperMetrics } from './WsExecutionMapper.js';
+import { WsExecutionNormalizer } from './WsExecutionNormalizer.js';
 
 /**
  * Metrics implementation for WsExecutionMapper

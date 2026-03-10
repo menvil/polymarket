@@ -42,10 +42,10 @@
  * @module infrastructure/polymarket/ws/PolymarketMessageFormatter
  */
 
-import type { IMessageFormatter } from '../../../shared/websocket/IMessageFormatter.js';
-import type { SubscriptionParams } from '../../../shared/websocket/types.js';
+import type { IMessageFormatter } from '../stubs/shared/websocket/IMessageFormatter.js';
+import type { SubscriptionParams } from '../stubs/shared/websocket/types.js';
 import type { PolymarketSubscriptionParams } from './types.js';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 
 /**
  * Polymarket message formatter implementation

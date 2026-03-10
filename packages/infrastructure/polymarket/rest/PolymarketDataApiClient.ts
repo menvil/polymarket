@@ -13,7 +13,7 @@
  * @module infrastructure/polymarket/rest/PolymarketDataApiClient
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 
 /**
  * Data API client configuration

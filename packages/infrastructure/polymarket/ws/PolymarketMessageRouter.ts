@@ -40,7 +40,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 
 /**
  * Типы сообщений Polymarket WebSocket

@@ -32,11 +32,11 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IOrdersProvider,
   OrderResponse,
-} from '../../../exchange/ports/IOrdersProvider.js';
+} from '../../ports/IOrdersProvider.js';
 import type { PolymarketOrderRestClient } from '../clients/PolymarketOrderRestClient.js';
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
 

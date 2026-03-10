@@ -29,9 +29,9 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { IBalanceProvider } from '../../../exchange/ports/IBalanceProvider.js';
-import type { IPortfolioProjector } from '../../../../domain/services/portfolio/PortfolioProjector.js';
+import type { ILogger } from '@polymarket/logger';
+import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
+import type { IPortfolioProjector } from '../../ports/IPortfolioProjector.js';
 
 /**
  * Balance check parameters

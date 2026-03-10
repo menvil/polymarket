@@ -26,8 +26,8 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { IBalanceProvider } from '../../../exchange/ports/IBalanceProvider.js';
+import type { ILogger } from '@polymarket/logger';
+import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
 import type { PolymarketBalanceRestClient } from '../clients/PolymarketBalanceRestClient.js';
 import type { PolymarketBalanceMapper } from '../mappers/PolymarketBalanceMapper.js';
 

@@ -41,23 +41,23 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IExecutionAdapter,
   PlaceOrderParams,
   OrderResponse,
   FillResponse,
-} from '../../../exchange/ports/IExecutionAdapter.js';
+} from '../../ports/IExecutionAdapter.js';
 import type { PolymarketOrderRestClient } from '../clients/PolymarketOrderRestClient.js';
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
-import type { IEventBus } from '../../../../shared/events/IEventBus.js';
+import type { IEventBus } from '../../ports/IEventBus.js';
 import type {
   OrderAccepted,
   OrderCancelled,
   OrderRejected,
-} from '../../../../domain/events/ExecutionEvent.js';
-import type { ExecutionContext } from '../../../../domain/execution/ExecutionContext.js';
-import { createProductionEnvelope } from '../../../../shared/events/EventEnvelope.js';
+} from '../../events/ExecutionEvent.js';
+import type { ExecutionContext } from '../../events/ExecutionContext.js';
+import { createProductionEnvelope } from '../../events/EventEnvelope.js';
 
 /**
  * Polymarket Execution Adapter

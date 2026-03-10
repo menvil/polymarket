@@ -38,7 +38,7 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestConfig, PolymarketL2Credentials } from './types.js';
 import { SignatureType } from './types.js';
 import { PolymarketSigner } from './auth/PolymarketSigner.js';

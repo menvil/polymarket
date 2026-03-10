@@ -1,0 +1,25 @@
+{
+  "name": "@polymarket/ports",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/errors":       "workspace:*",
+    "@polymarket/ids":          "workspace:*",
+    "@polymarket/result":       "workspace:*",
+    "@polymarket/order":        "workspace:*",
+    "@polymarket/portfolio":    "workspace:*",
+    "@polymarket/value-objects": "workspace:*"
+  }
+}

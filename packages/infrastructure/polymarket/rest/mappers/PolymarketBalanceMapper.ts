@@ -25,7 +25,7 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { BalanceResponse } from '../clients/PolymarketBalanceRestClient.js';
 import { USDC_MULTIPLIER } from '../constants.js';
 
@@ -148,7 +148,7 @@ export class PolymarketBalanceMapper {
     // КРИТИЧНО: Конвертируем из минимальных единиц в USDC (делим на 10^6)
     const balanceInUSDC = parsed / USDC_MULTIPLIER;
 
-    this.logger.silly('Balance converted from minimum units', {
+    this.logger.debug('Balance converted from minimum units', {
       raw: parsed,
       usdc: balanceInUSDC,
     });

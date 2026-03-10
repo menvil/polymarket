@@ -1,0 +1,26 @@
+{
+  "name": "@polymarket/exchange",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./rest":     { "types": "./dist/rest/index.d.ts",     "import": "./dist/rest/index.js" },
+    "./ws":       { "types": "./dist/ws/index.d.ts",       "import": "./dist/ws/index.js" },
+    "./adapters": { "types": "./dist/adapters/index.d.ts", "import": "./dist/adapters/index.js" }
+  },
+  "scripts": {
+    "build":     "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint":      "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@polymarket/logger":        "workspace:*",
+    "@polymarket/ids":           "workspace:*",
+    "@polymarket/result":        "workspace:*",
+    "@polymarket/errors":        "workspace:*",
+    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/order-book":    "workspace:*",
+    "@polymarket/trade":         "workspace:*",
+    "decimal.js": "*",
+    "ethers": "*"
+  }
+}

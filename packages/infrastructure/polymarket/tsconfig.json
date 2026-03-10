@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/logger":        ["../../foundation/logger/src/index.ts"],
+      "@polymarket/ids":           ["../../foundation/ids/src/index.ts"],
+      "@polymarket/result":        ["../../foundation/result/src/index.ts"],
+      "@polymarket/errors":        ["../../foundation/errors/src/index.ts"],
+      "@polymarket/value-objects": ["../../domain/value-objects/src/index.ts"],
+      "@polymarket/order-book":    ["../../domain/market-data/order-book/src/index.ts"],
+      "@polymarket/trade":         ["../../domain/entities/trade/src/index.ts"],
+      "ethers":                    ["./stubs/ethers/index.ts"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

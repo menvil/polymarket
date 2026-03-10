@@ -181,9 +181,9 @@
  * ```
  */
 
-import type { IMarketDataFeed } from '../../../domain/ports/IMarketDataFeed.js';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import { Orderbook } from '../../../domain/entities/Orderbook.js';
+import type { IMarketDataFeed } from '../ports/IMarketDataFeed.js';
+import type { ILogger } from '@polymarket/logger';
+import { OrderBook as Orderbook } from '@polymarket/order-book';
 
 /**
  * Configuration for official SDK WebSocket client

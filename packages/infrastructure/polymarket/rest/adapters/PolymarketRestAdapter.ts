@@ -47,9 +47,9 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { PlaceOrderParams, OrderResponse } from '../../../exchange/ports/IExecutionAdapter.js';
-import type { PositionResponse } from '../../../exchange/ports/IPortfolioAdapter.js';
+import type { ILogger } from '@polymarket/logger';
+import type { PlaceOrderParams, OrderResponse } from '../../ports/IExecutionAdapter.js';
+import type { PositionResponse } from '../../ports/IPortfolioAdapter.js';
 import type { PolymarketExecutionAdapter } from './PolymarketExecutionAdapter.js';
 import type { PolymarketPortfolioAdapter } from './PolymarketPortfolioAdapter.js';
 import type { PolymarketMarketConstraintsPolicy } from '../policies/PolymarketMarketConstraintsPolicy.js';

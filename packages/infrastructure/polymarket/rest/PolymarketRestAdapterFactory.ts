@@ -37,11 +37,11 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestConfig } from './types.js';
 import type { MarketDataClientConfig } from './clients/PolymarketMarketDataRestClient.js';
-import type { IEventBus } from '../../../shared/events/IEventBus.js';
-import type { IPortfolioProjector } from '../../../domain/services/portfolio/PortfolioProjector.js';
+import type { IEventBus } from '../ports/IEventBus.js';
+import type { IPortfolioProjector } from '../ports/IPortfolioProjector.js';
 
 import { PolymarketRestClient } from './PolymarketRestClient.js';
 import { PolymarketDataApiClient } from './PolymarketDataApiClient.js';

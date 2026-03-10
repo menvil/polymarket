@@ -41,15 +41,15 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IPortfolioAdapter,
   PositionResponse,
   CanPlaceOrderParams,
   CanPlaceOrderResult,
-} from '../../../exchange/ports/IPortfolioAdapter.js';
-import type { IBalanceProvider } from '../../../exchange/ports/IBalanceProvider.js';
-import type { IPositionsProvider } from '../../../exchange/ports/IPositionsProvider.js';
+} from '../../ports/IPortfolioAdapter.js';
+import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
+import type { IPositionsProvider } from '../../ports/IPositionsProvider.js';
 import type { PolymarketMarketConstraintsPolicy } from '../policies/PolymarketMarketConstraintsPolicy.js';
 import type { PolymarketBalancePolicy } from '../policies/PolymarketBalancePolicy.js';
 

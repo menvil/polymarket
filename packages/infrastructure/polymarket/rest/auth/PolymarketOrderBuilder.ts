@@ -38,7 +38,7 @@
 
 import type { Wallet } from 'ethers';
 import type { SignatureType } from '../types.js';
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import { USDC_MULTIPLIER, DEFAULT_PRICE_TICK } from '../constants.js';
 
 /**

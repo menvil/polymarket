@@ -29,9 +29,9 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { GammaMarketData } from '../../../../domain/services/market-discovery/types.js';
-import type { IMarketDataProvider } from '../../../../domain/services/market-discovery/MarketDiscoveryService.js';
+import type { ILogger } from '@polymarket/logger';
+import type { GammaMarketData } from '../../stubs/domain/services/market-discovery/types.js';
+import type { IMarketDataProvider } from '../../stubs/domain/services/market-discovery/MarketDiscoveryService.js';
 
 /**
  * Market data client configuration
@@ -233,7 +233,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
 
       return allMarkets;
     } catch (error) {
-      this.logger.error('[Gamma API] Failed to fetch active markets', error);
+      this.logger.error('[Gamma API] Failed to fetch active markets', { err: error instanceof Error ? error : new Error(String(error)) });
       throw error;
     }
   }

@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/foundation/*",
     "packages/domain/*",
-    "packages/infrastructure/*"
+    "packages/infrastructure/*",
+    "packages/application/*"
   ],
   "scripts": {
     "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo",

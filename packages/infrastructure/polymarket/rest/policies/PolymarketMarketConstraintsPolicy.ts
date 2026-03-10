@@ -31,7 +31,7 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient } from '../clients/PolymarketMarketDataRestClient.js';
 
 /**

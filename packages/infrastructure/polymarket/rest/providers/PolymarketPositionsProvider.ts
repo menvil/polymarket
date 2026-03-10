@@ -29,12 +29,12 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IPositionsProvider,
   PositionResponse,
   PositionState,
-} from '../../../exchange/ports/IPositionsProvider.js';
+} from '../../ports/IPositionsProvider.js';
 import type { PolymarketPositionsRestClient } from '../clients/PolymarketPositionsRestClient.js';
 import type { PolymarketPositionMapper } from '../mappers/PolymarketPositionMapper.js';
 

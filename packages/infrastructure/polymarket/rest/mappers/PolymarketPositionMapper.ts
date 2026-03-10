@@ -28,7 +28,7 @@
  */
 
 import type { PositionResponse as ApiPositionResponse } from '../clients/PolymarketPositionsRestClient.js';
-import type { PositionResponse } from '../../../exchange/ports/IPortfolioAdapter.js';
+import type { PositionResponse } from '../../ports/IPortfolioAdapter.js';
 
 /**
  * Polymarket Position Mapper

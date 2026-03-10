@@ -51,10 +51,10 @@
  */
 
 import type { PolymarketMessage } from '../PolymarketMessageRouter.js';
-import { OrderBookSnapshotReceivedEvent } from '../../../../domain/events/OrderBookSnapshotReceivedEvent.js';
-import { TradeExecutedEvent } from '../../../../domain/events/TradeExecutedEvent.js';
-import type { TradeSide } from '../../../../domain/events/TradeExecutedEvent.js';
-import type { DomainEvent } from '../../../../domain/events/DomainEvent.js';
+import { OrderBookSnapshotReceivedEvent } from '../../events/OrderBookSnapshotReceivedEvent.js';
+import { TradeExecutedEvent } from '../../events/TradeExecutedEvent.js';
+import type { TradeSide } from '../../events/TradeExecutedEvent.js';
+import type { DomainEvent } from '../../events/DomainEvent.js';
 
 /**
  * Маппит Polymarket WS сообщение в DomainEvent

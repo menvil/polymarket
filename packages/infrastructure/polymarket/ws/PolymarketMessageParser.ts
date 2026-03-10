@@ -45,10 +45,10 @@
  * @module infrastructure/polymarket/ws/PolymarketMessageParser
  */
 
-import type { IMessageParser } from '../../../shared/websocket/IMessageParser.js';
-import type { ParsedMessage } from '../../../shared/websocket/types.js';
+import type { IMessageParser } from '../stubs/shared/websocket/IMessageParser.js';
+import type { ParsedMessage } from '../stubs/shared/websocket/types.js';
 import type { PolymarketWSMessage } from './types.js';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 
 /**
  * Polymarket message parser implementation

@@ -36,9 +36,9 @@
  * @module infrastructure/polymarket/ws/PolymarketWebSocketManager
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import type { BaseWebSocketConfig } from '../../../shared/websocket/types.js';
-import { BaseWebSocketTransport } from '../../../shared/websocket/BaseWebSocketTransport.js';
+import type { ILogger } from '@polymarket/logger';
+import type { BaseWebSocketConfig } from '../stubs/shared/websocket/types.js';
+import { BaseWebSocketTransport } from '../stubs/shared/websocket/BaseWebSocketTransport.js';
 import { PolymarketMessageFormatter } from './PolymarketMessageFormatter.js';
 import { PolymarketMessageParser } from './PolymarketMessageParser.js';
 
@@ -261,5 +261,5 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
 }
 
 // Re-export types from shared layer for backward compatibility
-export type { ConnectionStatus } from '../../../shared/websocket/types.js';
-export type { SubscriptionParams } from '../../../shared/websocket/types.js';
+export type { ConnectionStatus } from '../stubs/shared/websocket/types.js';
+export type { SubscriptionParams } from '../stubs/shared/websocket/types.js';
