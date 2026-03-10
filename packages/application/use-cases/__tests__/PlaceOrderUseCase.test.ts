@@ -88,6 +88,7 @@ function makeOrderRepo(): IOrderRepository {
     delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
     getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
     countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
+    getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
   };
 }
 
@@ -96,6 +97,8 @@ function makeExchangeClient(orderId?: OrderId): IExchangeClient {
   return {
     submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok(id)),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+    getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+    getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
   };
 }
 
@@ -159,7 +162,6 @@ describe('PlaceOrderUseCase', () => {
       riskChecker,
       orderService,
       portfolioService,
-      orderRepo,
       exchangeClient,
       eventBus,
       clock,
@@ -227,6 +229,8 @@ describe('PlaceOrderUseCase', () => {
         Err(new TradingError('Exchange unavailable') as never),
       ),
       cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+      getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+      getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
     const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: failingExchange });
     const result = await useCase.execute(makeInput());
@@ -239,6 +243,8 @@ describe('PlaceOrderUseCase', () => {
         Err(new TradingError('Exchange unavailable') as never),
       ),
       cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+      getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+      getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
     const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: failingExchange });
     await useCase.execute(makeInput());

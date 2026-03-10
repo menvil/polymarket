@@ -21,6 +21,7 @@
       "@polymarket/ledger":        ["../../domain/accounting/ledger/src/index.ts"],
       "@polymarket/value-objects/signed-quantity": ["../../domain/value-objects/src/signed-quantity/index.ts"],
       "@polymarket/value-objects/asset-quantity":  ["../../domain/value-objects/src/asset-quantity/index.ts"],
+      "@polymarket/market-discovery": ["../../application/market-discovery/src/index.ts"],
       "ethers":                    ["./stubs/ethers/index.ts"]
     }
   },

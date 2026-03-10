@@ -135,6 +135,7 @@ function makeOrderRepo(order?: Order): IOrderRepository {
     delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
     getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
     countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
+    getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
   };
 }
 
@@ -265,9 +266,25 @@ describe('ProcessFillUseCase', () => {
       return accepted.value;
     })();
 
+    // Для SELL необходима существующая позиция в Portfolio
+    const sellPortfolioMock: Portfolio = {
+      ...makePortfolioMock(),
+      getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
+        instrumentId: ASSET_ID as unknown as InstrumentId,
+        quantity: makeQty('100'),
+        averageEntryPrice: makePrice('0.65'),
+        side: 'LONG',
+        isClosed: () => false,
+      } as never),
+    } as unknown as Portfolio;
+    (sellPortfolioMock.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(sellPortfolioMock));
+    (sellPortfolioMock.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(sellPortfolioMock);
+    const sellPortfolioStore = makePortfolioStore(sellPortfolioMock);
+    const sellPortfolioService = new PortfolioService(sellPortfolioStore, logger);
+
     orderRepo = makeOrderRepo(sellOrder);
     const orderService = new OrderService(orderRepo, logger);
-    const useCase = new ProcessFillUseCase({ ...deps, orderService, orderRepo });
+    const useCase = new ProcessFillUseCase({ ...deps, orderService, orderRepo, portfolioService: sellPortfolioService });
     const result = await useCase.execute(sellFill);
     expect(result.ok).toBe(true);
   });

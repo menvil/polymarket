@@ -10,11 +10,15 @@
  * Используется:
  * - PlaceOrderUseCase — `submitOrder()` → получить OrderId от биржи
  * - CancelOrderUseCase — `cancelOrder()` → отменить ордер на бирже
+ * - ReconcileOrdersUseCase — `getOpenOrders()` → сверить открытые ордера
+ * - ReconcileTradesUseCase — `getTrades()` → сверить исполнения
  */
 import type { Result } from '@polymarket/result';
-import type { OrderId, AssetId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OrderId, AssetId, AccountId } from '@polymarket/ids';
+import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import { TradingError } from '@polymarket/errors';
+import type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
+import type { VenueTradeSnapshot } from './types/VenueTradeSnapshot.js';
 
 /**
  * Ошибка при взаимодействии с биржей.
@@ -25,6 +29,10 @@ import { TradingError } from '@polymarket/errors';
 export class ExchangeError extends TradingError {
   public readonly severity = 'high' as const;
 }
+
+// Re-export snapshot types для удобства импорта из @polymarket/ports
+export type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
+export type { VenueTradeSnapshot, FeeSnapshot } from './types/VenueTradeSnapshot.js';
 
 /**
  * Параметры для размещения лимитного ордера.
@@ -78,4 +86,29 @@ export interface IExchangeClient {
    * @returns Ok(void) при успехе, ExchangeError при ошибке
    */
   cancelOrder(orderId: OrderId): Promise<Result<void, ExchangeError>>;
+
+  /**
+   * Возвращает открытые ордера аккаунта от биржи.
+   *
+   * @param accountId - ID аккаунта
+   * @returns Ok(OpenOrderSnapshot[]) при успехе, ExchangeError при ошибке
+   *
+   * @remarks
+   * Используется `ReconcileOrdersUseCase` для сверки локальных открытых ордеров
+   * с биржевыми. Возвращает только ордера в статусе OPEN/PARTIALLY_FILLED.
+   */
+  getOpenOrders(accountId: AccountId): Promise<Result<OpenOrderSnapshot[], ExchangeError>>;
+
+  /**
+   * Возвращает исполненные сделки аккаунта от биржи.
+   *
+   * @param accountId - ID аккаунта
+   * @param since - Начальная временная метка (опционально; если не указана — возвращает все)
+   * @returns Ok(VenueTradeSnapshot[]) при успехе, ExchangeError при ошибке
+   *
+   * @remarks
+   * Используется `ReconcileTradesUseCase` для обнаружения пропущенных исполнений.
+   * Параметр `since` позволяет ограничить выборку по времени.
+   */
+  getTrades(accountId: AccountId, since?: Timestamp): Promise<Result<VenueTradeSnapshot[], ExchangeError>>;
 }

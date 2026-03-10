@@ -16,7 +16,7 @@
  *   → OrderUpdateHandler.handle(update)
  *
  * IPolymarketWsEmitter.onReconnect()
- *   → логирование; TODO Phase 9: trigger reconciliation
+ *   → логирование + вызов onReconnect() callback (Phase 9: OrderReconciler.reconcile)
  * ```
  *
  * ### Маппинг orderEventType → VenueOrderUpdate:
@@ -48,6 +48,9 @@ import type { WsOrderUpdateDto } from '../ws/dto/WsUserEventDto.js';
  *
  * Для активации user channel перед вызовом `start()` необходимо вызвать:
  * `wsEmitter.subscribeUserChannel({ apiKey, secret, passphrase })`.
+ *
+ * Опциональный `onReconnect` callback вызывается при каждом WS reconnect —
+ * используется для запуска OrderReconciler.reconcile() (Phase 9).
  */
 export class UserEventFeedAdapter {
   private readonly _logger: ILogger;
@@ -60,6 +63,7 @@ export class UserEventFeedAdapter {
    * @param _orderHandler - Application handler lifecycle-событий ордера
    * @param _accountId - AccountId для передачи в FillEventHandler
    * @param logger - Logger
+   * @param _onReconnect - Опциональный callback при WS reconnect (Phase 9: OrderReconciler)
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
@@ -67,6 +71,7 @@ export class UserEventFeedAdapter {
     private readonly _orderHandler: OrderUpdateHandler,
     private readonly _accountId: AccountId,
     logger: ILogger,
+    private readonly _onReconnect?: () => Promise<void>,
   ) {
     this._logger = logger.child({ component: 'UserEventFeedAdapter' });
   }
@@ -104,10 +109,14 @@ export class UserEventFeedAdapter {
       }
     });
 
-    // Reconnect — логируем; Phase 9 добавит запуск reconciliation
+    // Reconnect — логируем + запускаем reconciliation (Phase 9)
     const unsubReconnect = this._wsEmitter.onReconnect(() => {
       this._logger.warn('User channel reconnected — fills during downtime may be missed');
-      // TODO Phase 9: trigger OrderReconciler.reconcile(accountId)
+      if (this._onReconnect) {
+        this._onReconnect().catch((err: unknown) => {
+          this._logger.error('Reconciliation failed after reconnect', { error: String(err) });
+        });
+      }
     });
 
     this._unsubscribes.push(unsubFill, unsubOrder, unsubReconnect);

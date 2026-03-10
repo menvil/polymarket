@@ -101,6 +101,7 @@ function makeOrderRepo(order?: Order): IOrderRepository {
     delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
     getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
     countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
+    getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
   };
 }
 
@@ -110,6 +111,8 @@ function makeExchangeClient(success = true): IExchangeClient {
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
       success ? Ok(undefined) : Err(new TradingError('Exchange error') as never),
     ),
+    getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+    getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
   };
 }
 

@@ -87,6 +87,17 @@ export class BookUpdateHandler {
     }
     this._lastTimestamps.set(key, timestamp);
 
+    // Создаём timestamp ДО мутации Book — чтобы избежать неконсистентного состояния
+    // при ошибке создания timestamp
+    const tsResult = TimestampService.fromDate(this._clock.now());
+    if (!tsResult.ok) {
+      this._logger.error('Failed to create timestamp for book snapshot event', {
+        error: tsResult.error.message,
+        tokenId: String(tokenId),
+      });
+      return;
+    }
+
     const instrument = this._catalog.get(tokenId);
     // Если инструмент найден — используем его marketId, иначе fallback на tokenId
     const marketId = instrument?.marketId ?? (tokenId as unknown as MarketId);
@@ -109,15 +120,6 @@ export class BookUpdateHandler {
       bestBidSize: bestBidLevel?.size,
       bestAskSize: bestAskLevel?.size,
     };
-
-    const tsResult = TimestampService.fromDate(this._clock.now());
-    if (!tsResult.ok) {
-      this._logger.error('Failed to create timestamp for book snapshot event', {
-        error: tsResult.error.message,
-        tokenId: String(tokenId),
-      });
-      return;
-    }
 
     await this._eventBus.publish({
       type: 'BOOK_UPDATED',
