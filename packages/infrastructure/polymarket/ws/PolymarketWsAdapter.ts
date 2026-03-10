@@ -74,6 +74,8 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
   private _isConnected = false;
   private _isDestroyed = false;
+  /** true после первого успешного подключения — используется для отличия reconnect от first connect */
+  private _hasEverConnected = false;
 
   /**
    * Создаёт PolymarketWsAdapter.
@@ -285,6 +287,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     // User channel: order lifecycle события (event_type: "order")
     // Router эмитирует 'order' если поддерживает user channel
     this._router.on('order', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
       void this._dispatchParsed({ ...(message as object), type: 'order' });
     });
 
@@ -296,10 +299,12 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     // События жизненного цикла
     this._client.on('connected', async () => {
-      const wasConnected = this._isConnected;
+      // Reconnect определяем по _hasEverConnected (не _isConnected, т.к. он сбрасывается при disconnect)
+      const isReconnect = this._hasEverConnected;
       this._isConnected = true;
+      this._hasEverConnected = true;
 
-      if (wasConnected) {
+      if (isReconnect) {
         // Reconnect — инвалидируем кэши стаканов у подписчиков
         this._logger.info('[PolymarketWsAdapter] Reconnected — dispatching onReconnect');
         this._dispatchReconnect();

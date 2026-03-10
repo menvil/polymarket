@@ -96,12 +96,17 @@ function parseOrderbookSnapshot(msg: Record<string, unknown>): WsOrderbookSnapsh
   if (typeof market !== 'string' || market.length === 0) return null;
   if (!Array.isArray(bids) || !Array.isArray(asks)) return null;
 
+  const isValidLevel = (entry: unknown): entry is { price: string; size: string } =>
+    typeof entry === 'object' && entry !== null &&
+    typeof (entry as Record<string, unknown>)['price'] === 'string' &&
+    typeof (entry as Record<string, unknown>)['size'] === 'string';
+
   return {
     type: 'book',
     asset_id: assetId,
     market,
-    bids: bids as { price: string; size: string }[],
-    asks: asks as { price: string; size: string }[],
+    bids: (bids as unknown[]).filter(isValidLevel),
+    asks: (asks as unknown[]).filter(isValidLevel),
     timestamp: typeof msg['timestamp'] === 'string' ? msg['timestamp'] : String(msg['timestamp'] ?? ''),
     hash: typeof msg['hash'] === 'string' ? msg['hash'] : undefined,
   };
@@ -156,7 +161,12 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
   if (typeof assetId !== 'string') return null;
 
   const makerOrders = Array.isArray(msg['maker_orders'])
-    ? (msg['maker_orders'] as Array<{ order_id: string; matched_amount: string }>)
+    ? (msg['maker_orders'] as unknown[]).filter(
+        (entry): entry is { order_id: string; matched_amount: string } =>
+          typeof entry === 'object' && entry !== null &&
+          typeof (entry as Record<string, unknown>)['order_id'] === 'string' &&
+          typeof (entry as Record<string, unknown>)['matched_amount'] === 'string'
+      )
     : [];
 
   // WsFillStatus: MATCHED | MINED | CONFIRMED | RETRYING | FAILED
@@ -166,12 +176,15 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
     ? (status as 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED')
     : 'MATCHED'; // по умолчанию MATCHED если неизвестный статус
 
+  // price и size обязательны для user fill — возвращаем null если отсутствуют
+  if (typeof msg['price'] !== 'string' || typeof msg['size'] !== 'string') return null;
+
   return {
     id,
     taker_order_id: takerOrderId,
     trader_side: traderSide,
-    price: String(msg['price'] ?? ''),
-    size: String(msg['size'] ?? ''),
+    price: msg['price'],
+    size: msg['size'],
     fee_rate_bps: String(msg['fee_rate_bps'] ?? '0'),
     status: validStatus,
     asset_id: assetId,

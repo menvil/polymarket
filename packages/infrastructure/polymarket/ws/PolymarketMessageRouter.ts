@@ -50,7 +50,8 @@ import type { ILogger } from '@polymarket/logger';
  */
 export type PolymarketEventType =
   | 'book'              // Snapshot/update стакана
-  | 'trade'             // Исполненная сделка
+  | 'trade'             // Исполненная сделка (market channel) или fill (user channel)
+  | 'order'             // Lifecycle событие ордера (user channel)
   | 'last_trade_price'  // Обновление цены последней сделки
   | 'pong'              // Ответ на heartbeat
   | 'error'             // Сообщение об ошибке
@@ -153,6 +154,7 @@ export type PolymarketMessage =
 export type RouterEvent =
   | 'orderbook'     // Обновление orderbook (book)
   | 'trade'         // Обновление trade (trade или last_trade_price)
+  | 'order'         // Lifecycle событие ордера из user channel (event_type: "order")
   | 'message'       // Все сообщения (до роутинга)
   | 'raw'           // Data события с asset_id (до роутинга)
   | 'error'         // Ошибки парсинга или WebSocket
@@ -170,6 +172,8 @@ export interface RouterStats {
   orderbookMessages: number;
   /** Всего сообщений trade */
   tradeMessages: number;
+  /** Всего order lifecycle сообщений из user channel */
+  orderMessages: number;
   /** Всего ошибок парсинга */
   parsingErrors: number;
   /** Всего batch сообщений (массивов) */
@@ -219,6 +223,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       totalMessages: 0,
       orderbookMessages: 0,
       tradeMessages: 0,
+      orderMessages: 0,
       parsingErrors: 0,
       batchMessages: 0,
       skippedMessages: 0,
@@ -413,6 +418,14 @@ export class PolymarketMessageRouter extends EventEmitter {
         return;
       }
 
+      // User channel: lifecycle событие ордера (event_type: "order") — не требует asset_id
+      if (eventType === 'order') {
+        this.stats.orderMessages++;
+        this.logger.trace('Routing order lifecycle message', { orderId: message.order_id });
+        this.emit('order', message);
+        return;
+      }
+
       // Data сообщения должны иметь asset_id
       if (!assetId) {
         this.logger.warn('Data message without asset_id', { eventType, message });
@@ -489,6 +502,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       totalMessages: 0,
       orderbookMessages: 0,
       tradeMessages: 0,
+      orderMessages: 0,
       parsingErrors: 0,
       batchMessages: 0,
       skippedMessages: 0,

@@ -7,8 +7,8 @@
  */
 import type { ILogger } from '@polymarket/logger';
 
-/** Подписчик на события */
-type Subscriber = (event: unknown) => void;
+/** Подписчик на события (поддерживает синхронные и async-обработчики) */
+type Subscriber = (event: unknown) => void | Promise<void>;
 
 /**
  * Минимальная in-memory реализация event bus.
@@ -25,11 +25,9 @@ export class InMemoryEventBus {
     const subs = this._subscribers.get(eventType);
     if (!subs) return;
     for (const sub of subs) {
-      try {
-        sub(envelope);
-      } catch (err) {
+      void Promise.resolve(sub(envelope)).catch((err: unknown) => {
         this._logger.error('[InMemoryEventBus] Subscriber error', { err: err instanceof Error ? err : new Error(String(err)) });
-      }
+      });
     }
   }
 

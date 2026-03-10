@@ -136,6 +136,9 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
   async load(): Promise<void> {
     const raw = await this._restClient.getActiveMarkets() as unknown as RawMarketResponse[];
 
+    // Очищаем кэш перед загрузкой, чтобы удалённые из API токены не остались в памяти
+    this._byTokenId.clear();
+
     let count = 0;
     for (const market of raw) {
       for (const token of market.tokens) {
