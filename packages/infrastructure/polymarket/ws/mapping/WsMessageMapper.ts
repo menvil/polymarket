@@ -43,9 +43,36 @@ export type ParsedWsMessage =
   | WsOrderUpdateDto;
 
 /**
+ * Проверяет, является ли raw payload user fill событием (user channel trade).
+ *
+ * @param raw - Объект для проверки
+ * @returns true если payload содержит taker_order_id (признак user channel fill)
+ *
+ * @remarks
+ * Polymarket использует `event_type: "trade"` как в market channel (публичные трейды),
+ * так и в user channel (fills конкретного трейдера).
+ * User fill отличается наличием поля `taker_order_id` в пейлоаде.
+ *
+ * @example
+ * ```typescript
+ * if (isUserFillPayload(raw)) {
+ *   // WsUserFillDto
+ * } else {
+ *   // WsTradeDto
+ * }
+ * ```
+ */
+export function isUserFillPayload(raw: Record<string, unknown>): boolean {
+  return typeof raw['taker_order_id'] === 'string';
+}
+
+/**
  * Парсит raw JSON из Polymarket WS в типизированный DTO.
  *
  * @param raw - Распарсенный JSON из WebSocket
+ * @param channel - Опциональный канал ('market' | 'user') для ускорения disambiguation.
+ *   Если задан 'user' — trade события всегда парсятся как WsUserFillDto (минуя проверку taker_order_id).
+ *   Если не задан — используется форма пейлоада (наличие taker_order_id).
  * @returns Типизированный DTO или null для неизвестных/невалидных сообщений
  *
  * @remarks
@@ -53,9 +80,9 @@ export type ParsedWsMessage =
  * Возвращает null для контрольных сообщений (pong, subscribed, error, price_change).
  *
  * Для type='trade': различает market trade (WsTradeDto) и user fill (WsUserFillDto)
- * по наличию поля taker_order_id в пейлоаде.
+ * по наличию поля taker_order_id в пейлоаде (или явному параметру channel).
  */
-export function parseWsMessage(raw: unknown): ParsedWsMessage | null {
+export function parseWsMessage(raw: unknown, channel?: 'market' | 'user'): ParsedWsMessage | null {
   if (!raw || typeof raw !== 'object') return null;
 
   const msg = raw as Record<string, unknown>;
@@ -67,8 +94,8 @@ export function parseWsMessage(raw: unknown): ParsedWsMessage | null {
     case 'book':
       return parseOrderbookSnapshot(msg);
     case 'trade':
-      // User channel fill — различается по наличию taker_order_id
-      if (typeof msg['taker_order_id'] === 'string') {
+      // User channel fill — различается по наличию taker_order_id или явному channel='user'
+      if (channel === 'user' || isUserFillPayload(msg)) {
         return parseUserFillDto(msg);
       }
       return parseTradeDto(msg);

@@ -37,7 +37,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { IPolymarketWsEmitter } from './IPolymarketWsEmitter.js';
+import type { IPolymarketWsEmitter, UserChannelConfig } from './IPolymarketWsEmitter.js';
 import type { WsOrderbookSnapshotDto } from './dto/WsOrderbookDto.js';
 import type { WsTradeDto } from './dto/WsTradeDto.js';
 import type { WsUserFillDto, WsOrderUpdateDto } from './dto/WsUserEventDto.js';
@@ -71,6 +71,9 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
   /** Отслеживает подписанные tokens для переподписки после reconnect */
   private readonly _subscribedTokens = new Set<string>();
+
+  /** Конфигурация user channel (null = не подписаны на user channel) */
+  private _userChannelConfig: UserChannelConfig | null = null;
 
   private _isConnected = false;
   private _isDestroyed = false;
@@ -220,6 +223,39 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
+   * Подписывается на Polymarket user channel (fills + order lifecycle).
+   *
+   * @param config - Credentials для аутентификации: apiKey, secret, passphrase
+   * @returns Promise, который разрешается после отправки subscription message
+   *
+   * @remarks
+   * Сохраняет конфигурацию для автоматической переподписки после reconnect.
+   * Если уже подключены — отправляет subscription message немедленно.
+   *
+   * User channel subscription format:
+   * ```json
+   * { "type": "user", "auth": { "apiKey": "...", "secret": "...", "passphrase": "..." } }
+   * ```
+   *
+   * @throws {Error} Если адаптер уничтожен
+   *
+   * @example
+   * ```typescript
+   * await adapter.connect();
+   * await adapter.subscribeUserChannel({ apiKey, secret, passphrase });
+   * adapter.onUserFill(async (dto) => { ... });
+   * ```
+   */
+  async subscribeUserChannel(config: UserChannelConfig): Promise<void> {
+    this._checkDestroyed();
+    this._userChannelConfig = config;
+
+    if (this._isConnected) {
+      await this._sendUserChannelSubscription();
+    }
+  }
+
+  /**
    * Проверяет подключён ли адаптер.
    */
   get isConnected(): boolean {
@@ -248,6 +284,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     }
 
     this._subscribedTokens.clear();
+    this._userChannelConfig = null;
     this._onSnapshot.clear();
     this._onTrade.clear();
     this._onFill.clear();
@@ -275,17 +312,20 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       this._router.processRawData(rawData);
     });
 
-    // Router эмитирует 'orderbook' и 'trade', мы парсим через WsMessageMapper
+    // Router эмитирует сообщения с event_type (Polymarket wire format).
+    // parseWsMessage читает поле 'type', поэтому добавляем его явно при dispatch.
     this._router.on('orderbook', (message: unknown) => {
-      void this._dispatchParsed(message);
+      if (typeof message !== 'object' || message === null) return;
+      void this._dispatchParsed({ ...(message as object), type: 'book' });
     });
 
     this._router.on('trade', (message: unknown) => {
-      void this._dispatchParsed(message);
+      if (typeof message !== 'object' || message === null) return;
+      // parseWsMessage различит market trade и user fill по наличию taker_order_id
+      void this._dispatchParsed({ ...(message as object), type: 'trade' });
     });
 
     // User channel: order lifecycle события (event_type: "order")
-    // Router эмитирует 'order' если поддерживает user channel
     this._router.on('order', (message: unknown) => {
       if (typeof message !== 'object' || message === null) return;
       void this._dispatchParsed({ ...(message as object), type: 'order' });
@@ -343,15 +383,14 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     const dto = parseWsMessage(message);
     if (!dto) return;
 
-    if (dto.type === 'book') {
-      await this._dispatchTo(this._onSnapshot, dto as WsOrderbookSnapshotDto);
-    } else if (dto.type === 'trade') {
-      await this._dispatchTo(this._onTrade, dto as WsTradeDto);
-    } else if ('taker_order_id' in dto) {
-      // User channel fill: event_type "trade" с taker_order_id → WsUserFillDto
+    // WsUserFillDto не имеет поля 'type' — проверяем первым по наличию taker_order_id
+    if ('taker_order_id' in dto) {
       await this._dispatchTo(this._onFill, dto as WsUserFillDto);
-    } else if (dto.type === 'order') {
-      // User channel order lifecycle: event_type "order" → WsOrderUpdateDto
+    } else if ('type' in dto && dto.type === 'book') {
+      await this._dispatchTo(this._onSnapshot, dto as WsOrderbookSnapshotDto);
+    } else if ('type' in dto && dto.type === 'trade') {
+      await this._dispatchTo(this._onTrade, dto as WsTradeDto);
+    } else if ('type' in dto && dto.type === 'order') {
       await this._dispatchTo(this._onOrderUpdate, dto as WsOrderUpdateDto);
     }
   }
@@ -393,20 +432,31 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Переподписывается на все tokens после reconnect.
+   * Переподписывается на все tokens и user channel после reconnect.
+   *
+   * @remarks
+   * Вызывается из события 'connected' клиента.
+   * Если нет подписанных tokens И нет user channel — ничего не делает.
    */
   private async _resubscribeAll(): Promise<void> {
-    if (this._isDestroyed || this._subscribedTokens.size === 0) return;
+    if (this._isDestroyed) return;
+
+    const hasMarket = this._subscribedTokens.size > 0;
+    const hasUser = this._userChannelConfig !== null;
+
+    if (!hasMarket && !hasUser) return;
 
     this._logger.info('[PolymarketWsAdapter] Resubscribing', {
       tokenCount: this._subscribedTokens.size,
+      hasUserChannel: hasUser,
     });
 
-    await this._sendAllSubscriptions();
+    if (hasMarket) await this._sendAllSubscriptions();
+    if (hasUser) await this._sendUserChannelSubscription();
   }
 
   /**
-   * Отправляет WS-подписку для всех tracked tokens.
+   * Отправляет WS-подписку для всех tracked tokens (market channel).
    *
    * @remarks
    * Polymarket WebSocket ЗАМЕНЯЕТ подписки при каждом вызове.
@@ -427,14 +477,49 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
       await this._client.subscribe('market', params);
 
-      this._logger.debug('[PolymarketWsAdapter] Subscription sent', {
+      this._logger.debug('[PolymarketWsAdapter] Market subscription sent', {
         tokenCount: tokens.length,
       });
     } catch (err) {
       if (!this._isDestroyed) {
-        this._logger.error('[PolymarketWsAdapter] Failed to send subscriptions', {
+        this._logger.error('[PolymarketWsAdapter] Failed to send market subscriptions', {
           err: err instanceof Error ? err : new Error(String(err)),
           tokenCount: tokens.length,
+        });
+      }
+    }
+  }
+
+  /**
+   * Отправляет WS-подписку на user channel с аутентификацией.
+   *
+   * @remarks
+   * User channel subscription format:
+   * ```json
+   * { "type": "user", "auth": { "apiKey": "...", "secret": "...", "passphrase": "..." } }
+   * ```
+   * Получает fills (event_type: "trade" с taker_order_id) и order lifecycle (event_type: "order").
+   */
+  private async _sendUserChannelSubscription(): Promise<void> {
+    if (this._isDestroyed || !this._userChannelConfig) return;
+
+    const { apiKey, secret, passphrase } = this._userChannelConfig;
+
+    try {
+      await this._client.reconnectWithTimeout(10_000);
+
+      const params: SubscriptionParams = {
+        type: 'user',
+        auth: { apiKey, secret, passphrase },
+      };
+
+      await this._client.subscribe('user', params);
+
+      this._logger.debug('[PolymarketWsAdapter] User channel subscription sent');
+    } catch (err) {
+      if (!this._isDestroyed) {
+        this._logger.error('[PolymarketWsAdapter] Failed to send user channel subscription', {
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     }
