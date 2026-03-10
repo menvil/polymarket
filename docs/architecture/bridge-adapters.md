@@ -51,7 +51,8 @@ IPolymarketWsEmitter.onOrderUpdate(dto: WsOrderUpdateDto)
   → OrderUpdateHandler.handle(update)
 
 IPolymarketWsEmitter.onReconnect()
-  → предупреждение в лог (TODO Phase 9: trigger reconciliation)
+  → предупреждение в лог + вызов onReconnect() callback
+  → OrderReconciler.reconcile(accountId)   (Phase 9)
 ```
 
 **Маппинг orderEventType:**

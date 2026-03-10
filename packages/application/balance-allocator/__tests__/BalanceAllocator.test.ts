@@ -247,8 +247,9 @@ describe('BalanceAllocator', () => {
         [mkt('m2'), usdc(600)],
       ]);
 
-      allocator.restoreAllocations(snapshot);
+      const result = allocator.restoreAllocations(snapshot);
 
+      expect(result.ok).toBe(true);
       expect(allocator.getStats().activeMarkets).toBe(2);
       expect(allocator.getAllocation(mkt('m1'))?.value().toNumber()).toBe(800);
       expect(allocator.getAllocation(mkt('m2'))?.value().toNumber()).toBe(600);
@@ -263,8 +264,9 @@ describe('BalanceAllocator', () => {
       const snapshot = new Map<MarketId, Money>([
         [mkt('new1'), usdc(1000)],
       ]);
-      allocator.restoreAllocations(snapshot);
+      const result = allocator.restoreAllocations(snapshot);
 
+      expect(result.ok).toBe(true);
       expect(allocator.getStats().activeMarkets).toBe(1);
       expect(allocator.getAllocation(mkt('old1'))).toBeUndefined();
       expect(allocator.getAllocation(mkt('new1'))?.value().toNumber()).toBe(1000);
@@ -272,7 +274,41 @@ describe('BalanceAllocator', () => {
 
     it('очищает все аллокации при пустом снимке', () => {
       allocator.allocateToNewMarkets([mkt('m1')]);
-      allocator.restoreAllocations(new Map());
+      const result = allocator.restoreAllocations(new Map());
+      expect(result.ok).toBe(true);
+      expect(allocator.getStats().activeMarkets).toBe(0);
+    });
+
+    it('возвращает Err если снимок превышает maxConcurrentMarkets', () => {
+      const config = makeConfig({ maxConcurrentMarkets: 2 });
+      allocator = new BalanceAllocator(config, usdc(10000));
+
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('m1'), usdc(100)],
+        [mkt('m2'), usdc(100)],
+        [mkt('m3'), usdc(100)],
+      ]);
+
+      const result = allocator.restoreAllocations(snapshot);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/maxConcurrentMarkets/);
+      // Состояние не изменилось
+      expect(allocator.getStats().activeMarkets).toBe(0);
+    });
+
+    it('возвращает Err если сумма снимка превышает торговый баланс', () => {
+      // tradingBalance = 10000 * 0.8 = 8000
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('m1'), usdc(5000)],
+        [mkt('m2'), usdc(4000)], // итого 9000 > 8000
+      ]);
+
+      const result = allocator.restoreAllocations(snapshot);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/trading balance/);
+      // Состояние не изменилось
       expect(allocator.getStats().activeMarkets).toBe(0);
     });
   });

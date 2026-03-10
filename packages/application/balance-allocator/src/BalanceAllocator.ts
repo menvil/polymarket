@@ -112,11 +112,7 @@ export class BalanceAllocator implements IBalanceAllocator {
     if (newSlots <= 0) return [];
 
     // Ограничиваем количество слотов доступными средствами
-    const minCapital = this._config.minCapitalPerMarket.value();
-    const freeBalanceDec = freeBalance.value();
-    const maxByCapital = freeBalanceDec.isPositive()
-      ? freeBalanceDec.div(minCapital).floor().toNumber()
-      : 0;
+    const maxByCapital = this._countAffordableSlots(freeBalance, this._config.minCapitalPerMarket);
     newSlots = Math.min(newSlots, maxByCapital);
 
     if (newSlots <= 0) return [];
@@ -128,7 +124,7 @@ export class BalanceAllocator implements IBalanceAllocator {
     if (!perMarketResult.ok) return [];
     const perMarket = perMarketResult.value;
 
-    if (perMarket.value().lessThan(minCapital)) return [];
+    if (perMarket.value().lessThan(this._config.minCapitalPerMarket.value())) return [];
 
     const results: AllocationResult[] = [];
     for (let i = 0; i < newSlots; i++) {
@@ -192,8 +188,8 @@ export class BalanceAllocator implements IBalanceAllocator {
    * `_totalBalance += realizedPnL` — автоматическое compounding.
    */
   public releaseWithPnL(marketId: MarketId, realizedPnL: Money): void {
-    this._allocations.delete(marketId);
-
+    // Сначала проверяем валюту и вычисляем новый баланс — до мутации состояния.
+    // Это обеспечивает атомарность: либо всё успешно, либо состояние не меняется.
     const addResult = MoneyService.add(this._totalBalance, realizedPnL);
     if (!addResult.ok) {
       // Currency mismatch — это invariant violation, не recoverable runtime ошибка.
@@ -204,7 +200,9 @@ export class BalanceAllocator implements IBalanceAllocator {
       );
     }
 
+    // Применяем PnL к балансу, затем освобождаем аллокацию.
     this._totalBalance = addResult.value;
+    this._allocations.delete(marketId);
   }
 
   /**
@@ -275,13 +273,56 @@ export class BalanceAllocator implements IBalanceAllocator {
    * Восстанавливает аллокации из снимка состояния (после рестарта).
    *
    * @param snapshot - Снимок аллокаций: marketId → аллоцированная сумма
+   * @returns Ok(void) при успешном восстановлении
+   * @returns Err(TradingError) если снимок нарушает инварианты:
+   *   - `snapshot.size > maxConcurrentMarkets`
+   *   - сумма аллокаций превышает текущий торговый баланс
    *
    * @remarks
    * Полностью заменяет текущие аллокации снимком (не мержит).
-   * Caller отвечает за корректность snapshot.
+   * Валидирует инварианты перед применением — состояние не меняется при ошибке.
    * Используется при старте для восстановления состояния из персистентного хранилища.
    */
-  public restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): void {
+  public restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): Result<void, TradingError> {
+    if (snapshot.size > this._config.maxConcurrentMarkets) {
+      return Err(new TradingError(
+        'restoreAllocations: snapshot exceeds maxConcurrentMarkets',
+        {
+          context: {
+            snapshotSize: snapshot.size,
+            maxConcurrentMarkets: this._config.maxConcurrentMarkets,
+          },
+        },
+      ));
+    }
+
+    // Вычисляем сумму аллокаций из снимка
+    let snapshotTotal = Money.ZERO[this._totalBalance.currency()];
+    for (const amount of snapshot.values()) {
+      const addResult = MoneyService.add(snapshotTotal, amount);
+      if (!addResult.ok) {
+        return Err(new TradingError(
+          'restoreAllocations: currency mismatch in snapshot',
+          { context: { error: addResult.error.message } },
+        ));
+      }
+      snapshotTotal = addResult.value;
+    }
+
+    const tradingBalance = this._calcTradingBalance();
+    const subtractResult = MoneyService.subtract(tradingBalance, snapshotTotal);
+    if (!subtractResult.ok || subtractResult.value.isNegative()) {
+      return Err(new TradingError(
+        'restoreAllocations: snapshot total exceeds trading balance',
+        {
+          context: {
+            snapshotTotal: snapshotTotal.toNumber(),
+            tradingBalance: tradingBalance.toNumber(),
+          },
+        },
+      ));
+    }
+
     this._allocations.clear();
     for (const [marketId, amount] of snapshot) {
       this._allocations.set(marketId, amount);
@@ -290,6 +331,7 @@ export class BalanceAllocator implements IBalanceAllocator {
       count: snapshot.size,
       markets: [...snapshot.keys()].map(String),
     });
+    return Ok(undefined);
   }
 
   /**
@@ -348,14 +390,14 @@ export class BalanceAllocator implements IBalanceAllocator {
       this._totalBalance,
       this._config.tradingBalanceRatio.toNumber(),
     );
-    return result.ok ? result.value : Money.ZERO['USDC'];
+    return result.ok ? result.value : Money.ZERO[this._totalBalance.currency()];
   }
 
   /**
    * Вычисляет сумму всех аллокаций.
    */
   private _calcAllocatedBalance(): Money {
-    let total = Money.ZERO['USDC'];
+    let total = Money.ZERO[this._totalBalance.currency()];
     for (const allocation of this._allocations.values()) {
       const addResult = MoneyService.add(total, allocation);
       if (addResult.ok) total = addResult.value;
@@ -369,7 +411,24 @@ export class BalanceAllocator implements IBalanceAllocator {
   private _calcFreeBalance(tradingBalance: Money): Money {
     const allocated = this._calcAllocatedBalance();
     const result = MoneyService.subtract(tradingBalance, allocated);
-    if (!result.ok || result.value.isNegative()) return Money.ZERO['USDC'];
+    if (!result.ok || result.value.isNegative()) return Money.ZERO[this._totalBalance.currency()];
     return result.value;
+  }
+
+  /**
+   * Вычисляет количество слотов, которые можно аллоцировать при заданной стоимости слота.
+   *
+   * @param balance - Доступный баланс
+   * @param slotCost - Стоимость одного слота
+   * @returns Количество целых слотов (0 если баланс не положительный)
+   *
+   * @remarks
+   * Инкапсулирует работу с Decimal внутри класса — вызывающий код оперирует
+   * только VO Money, не зная о деталях деления.
+   */
+  private _countAffordableSlots(balance: Money, slotCost: Money): number {
+    const balanceDec = balance.value();
+    if (!balanceDec.isPositive()) return 0;
+    return balanceDec.div(slotCost.value()).floor().toNumber();
   }
 }

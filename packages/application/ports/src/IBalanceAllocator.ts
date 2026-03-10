@@ -136,13 +136,18 @@ export interface IBalanceAllocator {
    * Восстанавливает аллокации из снимка состояния (после рестарта).
    *
    * @param snapshot - Снимок аллокаций: marketId → аллоцированная сумма
+   * @returns Ok(void) при успешном восстановлении
+   * @returns Err(TradingError) если снимок нарушает инварианты:
+   *   - `snapshot.size > maxConcurrentMarkets`
+   *   - сумма аллокаций превышает торговый баланс
+   *   - валюты аллокаций не совпадают с валютой баланса
    *
    * @remarks
    * Используется при старте для восстановления состояния из персистентного хранилища.
    * Полностью заменяет текущие аллокации снимком (не мержит).
-   * Caller отвечает за корректность snapshot (валидация на стороне источника).
+   * Состояние не изменяется при ошибке валидации.
    */
-  restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): void;
+  restoreAllocations(snapshot: ReadonlyMap<MarketId, Money>): Result<void, TradingError>;
 
   /**
    * Проверяет, можно ли добавить ещё один рынок.
