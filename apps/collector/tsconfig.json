@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/ports":            ["../../packages/application/ports/src/index.ts"],
+      "@polymarket/handlers":         ["../../packages/application/handlers/src/index.ts"],
+      "@polymarket/event-bus":        ["../../packages/application/event-bus/src/index.ts"],
+      "@polymarket/market-discovery": ["../../packages/application/market-discovery/src/index.ts"],
+      "@polymarket/order-book":       ["../../packages/domain/market-data/order-book/src/index.ts"],
+      "@polymarket/order":            ["../../packages/domain/entities/order/src/index.ts"],
+      "@polymarket/fill":             ["../../packages/domain/entities/fill/src/index.ts"],
+      "@polymarket/portfolio":        ["../../packages/domain/entities/portfolio/src/index.ts"],
+      "@polymarket/trade":            ["../../packages/domain/entities/trade/src/index.ts"],
+      "@polymarket/ledger":           ["../../packages/domain/accounting/ledger/src/index.ts"],
+      "@polymarket/data-collection":  ["../../packages/infrastructure/persistence/data-collection/src/index.ts"],
+      "@polymarket/exchange/adapters": ["../../packages/infrastructure/polymarket/adapters/index.ts"],
+      "@polymarket/exchange/ws":      ["../../packages/infrastructure/polymarket/ws/index.ts"],
+      "ethers":                       ["../../packages/infrastructure/polymarket/stubs/ethers/index.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}
