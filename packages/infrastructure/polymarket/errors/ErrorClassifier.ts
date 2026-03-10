@@ -12,11 +12,12 @@
  * - Zero memory leak: Cache size capped at maxCacheSize
  *
  * Стратегия кэширования:
- * - Ключ: тип + первые 100 символов сообщения (оба поля исключают коллизии по сообщению)
+ * - Ключ: тип + первые 100 символов сообщения
  * - Значение: классифицированная OrderError
  * - LRU вытеснение: старейшие записи удаляются при переполнении
- * - Двойное кэширование при смене типа: результат кэшируется под ключом входа и под ключом результата
- *   (гарантирует classify(classify(x)) === classify(x))
+ * - Двойное кэширование при смене типа: оба ключа (входной и результата) всегда ссылаются
+ *   на ОДИН и тот же канонический объект и обновляются вместе при cache hit и cache miss —
+ *   гарантирует classify(classify(x)) === classify(x) (ссылочное равенство)
  * - Без TTL: кэш живёт на протяжении сессии
  *
  * @example
@@ -182,6 +183,14 @@ export class ErrorClassifier {
       this.cache.delete(cacheKey);
       this.cache.set(cacheKey, cached);
 
+      // Обновляем alias resultKey (если есть) — оба ключа должны стареть вместе.
+      // Без этого alias evict-ится раньше, что приводит к созданию дубликата объекта при следующем промахе.
+      const resultKey = this.makeCacheKey(cached);
+      if (resultKey !== cacheKey && this.cache.has(resultKey)) {
+        this.cache.delete(resultKey);
+        this.cache.set(resultKey, cached);
+      }
+
       this.logger.trace('[ErrorClassifier] Cache hit (moved to end)', { cacheKey });
       return cached; // Та же ссылка!
     }
@@ -204,9 +213,19 @@ export class ErrorClassifier {
       result = { type: 'UNKNOWN', message, recoverable: false };
     }
 
-    // 5. LRU вытеснение ПЕРЕД добавлением (ГАРАНТИЯ: первый = старейший)
+    const resultKey = this.makeCacheKey(result);
+
+    // Если resultKey уже существует в кэше — переиспользуем тот же канонический объект.
+    // Это предотвращает создание дублирующих экземпляров для одной и той же классификации.
+    if (resultKey !== cacheKey) {
+      const existingCanonical = this.cache.get(resultKey);
+      if (existingCanonical) {
+        result = existingCanonical;
+      }
+    }
+
+    // 5. LRU вытеснение ПЕРЕД добавлением cacheKey (ГАРАНТИЯ: первый = старейший)
     if (this.cache.size >= this.maxCacheSize) {
-      // ГАРАНТИЯ: Первая запись — старейшая (Map сохраняет порядок вставки)
       const firstKey = this.cache.keys().next().value as string;
       this.cache.delete(firstKey);
 
@@ -216,23 +235,25 @@ export class ErrorClassifier {
       });
     }
 
-    // 6. Кэшируем результат
+    // 6. Кэшируем под cacheKey
     this.cache.set(cacheKey, result);
 
-    // 7. Идемпотентность: если тип изменился (UNKNOWN → X), кэшируем также под ключом результата.
-    //    Это гарантирует classify(classify(x)) === classify(x) при повторном вызове с уже
-    //    классифицированной ошибкой (её ключ = resultKey, и она сразу попадёт в кэш).
-    const resultKey = this.makeCacheKey(result);
-    if (resultKey !== cacheKey && !this.cache.has(resultKey)) {
-      if (this.cache.size >= this.maxCacheSize) {
+    // 7. Кэшируем/освежаем alias resultKey (если ключи разные).
+    //    delete+set перемещает запись в конец Map (LRU refresh) независимо от того,
+    //    существовала ли она раньше. Вытеснение только если запись новая.
+    if (resultKey !== cacheKey) {
+      const resultKeyIsNew = !this.cache.has(resultKey);
+      if (resultKeyIsNew && this.cache.size >= this.maxCacheSize) {
         const firstKey = this.cache.keys().next().value as string;
         this.cache.delete(firstKey);
       }
+      this.cache.delete(resultKey);
       this.cache.set(resultKey, result);
     }
 
     this.logger.trace('[ErrorClassifier] Cached classification', {
       cacheKey,
+      resultKey,
       originalType: error.type,
       classifiedType: result.type,
       cacheSize: this.cache.size,

@@ -577,8 +577,10 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 const formatCache = new Map<string, string>();
 
 function getSpreadCacheKey(spread: Spread, decimals: number): string {
-  // Включаем decimals в ключ: один спред с разными decimals → разные строки форматирования
-  return `${spread.bid().value().toFixed(8)}-${spread.ask().value().toFixed(8)}-${decimals}`;
+  // Используем value().toString() (полная точность Decimal) — не toFixed(N), потому что
+  // при decimals > 8 метод toFixed(8) усекает/округляет, что приводит к коллизиям ключей
+  // для разных спредов (например, 0.123456789 и 0.123456788 → одинаковый ключ при toFixed(8)).
+  return `${spread.bid().value().toString()}-${spread.ask().value().toString()}-${decimals}`;
 }
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
