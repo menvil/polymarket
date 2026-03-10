@@ -16,7 +16,7 @@
  *
  * @example
  * ```typescript
- * const orchestrator = new FillOrchestrator(eventBus, processFillUseCase, logger);
+ * const orchestrator = new FillOrchestrator({ eventBus, processFill: processFillUseCase, logger });
  * orchestrator.register();
  * // Теперь каждый FILL_RECEIVED автоматически запускает ProcessFillUseCase
  * ```
@@ -77,11 +77,18 @@ export class FillOrchestrator {
     }
 
     this._unsubscribe = this._eventBus.subscribe('FILL_RECEIVED', async (event) => {
-      const result = await this._processFill.execute(event.fill);
-      if (!result.ok) {
-        this._logger.error('ProcessFillUseCase failed', {
+      try {
+        const result = await this._processFill.execute(event.fill);
+        if (!result.ok) {
+          this._logger.error('ProcessFillUseCase failed', {
+            fillId: String(event.fill.id),
+            error: result.error.message,
+          });
+        }
+      } catch (err) {
+        this._logger.error('Unexpected error processing fill', {
           fillId: String(event.fill.id),
-          error: result.error.message,
+          err: err instanceof Error ? err : new Error(String(err)),
         });
       }
     });

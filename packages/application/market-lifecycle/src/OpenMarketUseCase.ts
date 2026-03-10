@@ -120,7 +120,7 @@ export class OpenMarketUseCase {
       // Событие не опубликовано, но аллокация прошла — логируем, не прерываем
       this._logger.error('Failed to publish MARKET_OPENED event', {
         marketId: String(input.marketId),
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
 

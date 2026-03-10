@@ -40,7 +40,7 @@ import type { IClock } from '@polymarket/time';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
-import type { IOrderRepository, IExchangeClient } from '@polymarket/ports';
+import type { IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
@@ -77,7 +77,6 @@ export interface PlaceOrderDeps {
   readonly riskChecker: IOrderRiskChecker;
   readonly orderService: OrderService;
   readonly portfolioService: PortfolioService;
-  readonly orderRepo: IOrderRepository;
   readonly exchangeClient: IExchangeClient;
   readonly eventBus: IEventBus;
   readonly clock: IClock;
@@ -201,17 +200,53 @@ export class PlaceOrderUseCase {
     // Шаг 5: Принятие ордера (PENDING → OPEN)
     const acceptResult = order.accept();
     if (!acceptResult.ok) {
-      this._deps.portfolioService.releaseReservation(input.accountId, notional);
+      // Откат: снять резервацию и отменить ордер на бирже
+      const releaseResult = this._deps.portfolioService.releaseReservation(input.accountId, notional);
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation during accept() rollback', {
+          orderId: String(input.orderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(input.orderId);
+      if (!cancelExchangeResult.ok) {
+        this._logger.error('Failed to cancel exchange order during accept() rollback', {
+          orderId: String(input.orderId),
+          error: cancelExchangeResult.error.message,
+        });
+      }
       return Err(acceptResult.error);
     }
     const acceptedOrder = acceptResult.value;
 
     // Шаг 6: Сохранение ордера
-    await this._deps.orderService.save(acceptedOrder);
+    try {
+      await this._deps.orderService.save(acceptedOrder);
+    } catch (err) {
+      this._logger.error('Failed to save accepted order', {
+        orderId: String(input.orderId),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(input.orderId) } },
+      ));
+    }
 
     // Шаг 7: Публикация событий
     const events = acceptedOrder.pullEvents();
-    await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    try {
+      await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    } catch (err) {
+      this._logger.error('Failed to publish order placed events', {
+        orderId: String(input.orderId),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(input.orderId) } },
+      ));
+    }
 
     this._logger.info('Order placed successfully', {
       orderId: String(input.orderId),

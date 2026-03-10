@@ -161,7 +161,7 @@ export class CloseMarketUseCase {
     } catch (err) {
       this._logger.error('Failed to publish MARKET_CLOSED event', {
         marketId: String(input.marketId),
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
 

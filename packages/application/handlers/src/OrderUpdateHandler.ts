@@ -102,11 +102,28 @@ export class OrderUpdateHandler {
     }
 
     const updatedOrder = result.value;
-    await this._orders.save(updatedOrder);
+    try {
+      await this._orders.save(updatedOrder);
+    } catch (err) {
+      this._logger.error('Failed to save order after venue update', {
+        orderId: String(update.orderId),
+        updateType: update.type,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return;
+    }
 
     const events = updatedOrder.pullEvents();
     if (events.length > 0) {
-      await this._eventBus.publishAll(events as readonly ApplicationEvent[]);
+      try {
+        await this._eventBus.publishAll(events as readonly ApplicationEvent[]);
+      } catch (err) {
+        this._logger.error('Failed to publish order events', {
+          orderId: String(update.orderId),
+          updateType: update.type,
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
 
     this._logger.info('Order update applied', {

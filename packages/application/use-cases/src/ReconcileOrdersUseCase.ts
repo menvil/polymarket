@@ -173,7 +173,7 @@ export class ReconcileOrdersUseCase {
         } catch (err) {
           this._logger.error('Failed to persist or publish reconciled cancel', {
             orderId: orderIdStr,
-            error: err instanceof Error ? err.message : String(err),
+            err: err instanceof Error ? err : new Error(String(err)),
           });
           errorCount++;
         }

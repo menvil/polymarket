@@ -37,16 +37,42 @@
  * ```
  */
 import type { Result } from '@polymarket/result';
-import { Ok } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
-import type { RiskLimitBreachedEvent, IEventBus } from '@polymarket/event-bus';
+import type {
+  MarketOpenedEvent,
+  MarketClosedEvent,
+  RiskLimitBreachedEvent,
+  IEventBus,
+} from '@polymarket/event-bus';
 import type { IOrderRepository, IPortfolioStore } from '@polymarket/ports';
 import type { PlaceOrderUseCase, CancelOrderUseCase } from '@polymarket/use-cases';
 import type { IStrategy } from './IStrategy.js';
 import type { IStrategyRunner } from './IStrategyRunner.js';
 import { TradingAPI } from './TradingAPI.js';
 import type { StrategyContext } from './StrategyContext.js';
+
+/**
+ * Фабрика для создания стратегий из события открытия рынка.
+ *
+ * @remarks
+ * Передаётся в `StrategyRunnerDeps.strategyFactory`.
+ * `StrategyRunner` вызывает фабрику при каждом `MARKET_OPENED` событии.
+ * Если фабрика возвращает `undefined`, стратегия не запускается.
+ *
+ * @param event - Событие открытия рынка (содержит marketId, strategyId, allocatedBalance)
+ * @returns Новый экземпляр `IStrategy` или `undefined`, если рынок не интересен
+ *
+ * @example
+ * ```typescript
+ * const factory: StrategyFactory = (event) => {
+ *   if (!isEligibleMarket(event.marketId)) return undefined;
+ *   return new SimpleQuoterStrategy(event.strategyId, event.marketId);
+ * };
+ * ```
+ */
+export type StrategyFactory = (event: MarketOpenedEvent) => IStrategy | undefined;
 
 /**
  * Зависимости StrategyRunner.
@@ -69,6 +95,15 @@ export interface StrategyRunnerDeps {
   readonly eventBus: IEventBus;
   /** Logger */
   readonly logger: ILogger;
+  /**
+   * Необязательная фабрика для автоматического запуска стратегий.
+   *
+   * @remarks
+   * Если указана, `StrategyRunner` подписывается на `MARKET_OPENED` и создаёт
+   * стратегию через фабрику при каждом новом рынке. При `MARKET_CLOSED` автоматически
+   * останавливает стратегию с ID = `String(event.marketId)`.
+   */
+  readonly strategyFactory?: StrategyFactory;
 }
 
 /**
@@ -90,9 +125,41 @@ export class StrategyRunner implements IStrategyRunner {
 
   /**
    * @param deps - Общие зависимости для всех TradingAPI
+   *
+   * @remarks
+   * Если `deps.strategyFactory` задана, автоматически подписывается на:
+   * - `MARKET_OPENED` → создаёт стратегию через фабрику и запускает её
+   * - `MARKET_CLOSED` → останавливает стратегию с `strategyId = String(event.marketId)`
+   *
+   * Подписки действуют на весь срок жизни StrategyRunner.
    */
   constructor(private readonly _deps: StrategyRunnerDeps) {
     this._logger = _deps.logger.child({ component: 'StrategyRunner' });
+
+    if (_deps.strategyFactory) {
+      _deps.eventBus.subscribe(
+        'MARKET_OPENED',
+        async (event: MarketOpenedEvent) => {
+          const strategy = this._deps.strategyFactory!(event);
+          if (!strategy) return;
+          const result = await this.start(strategy);
+          if (!result.ok) {
+            this._logger.error('Failed to start strategy on MARKET_OPENED', {
+              marketId: String(event.marketId),
+              strategyId: event.strategyId,
+              error: result.error.message,
+            });
+          }
+        },
+      );
+
+      _deps.eventBus.subscribe(
+        'MARKET_CLOSED',
+        async (event: MarketClosedEvent) => {
+          await this.stop(String(event.marketId));
+        },
+      );
+    }
   }
 
   /**
@@ -129,7 +196,19 @@ export class StrategyRunner implements IStrategyRunner {
     const ctx: StrategyContext = { api: tradingAPI };
 
     this._logger.info('Starting strategy', { strategyId: strategy.id, name: strategy.name });
-    const initResult = await strategy.initialize(ctx);
+
+    let initResult;
+    try {
+      initResult = await strategy.initialize(ctx);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this._logger.error('Strategy initialization threw an error, cleaning up', {
+        strategyId: strategy.id,
+        error: error.message,
+      });
+      tradingAPI.unsubscribeAll();
+      return Err(error);
+    }
 
     if (!initResult.ok) {
       this._logger.error('Strategy initialization failed, cleaning up', {
@@ -175,7 +254,7 @@ export class StrategyRunner implements IStrategyRunner {
     } catch (err) {
       this._logger.error('Strategy.stop() threw an error', {
         strategyId,
-        error: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
 

@@ -115,8 +115,9 @@ export class CancelOrderUseCase {
     const cancelledOrder = cancelResult.value;
 
     // Шаг 3: Снятие резервации (только для BUY ордеров — у SELL нет резервации)
+    // Используем cancelledOrder (обновлённое состояние) для точного расчёта notional
     if (order.side === 'BUY') {
-      const remainingNotional = order.price.value().times(order.remainingSize.value());
+      const remainingNotional = cancelledOrder.price.value().times(cancelledOrder.remainingSize.value());
       const releaseResult = this._deps.portfolioService.releaseReservation(
         input.accountId,
         remainingNotional,
@@ -142,7 +143,18 @@ export class CancelOrderUseCase {
 
     // Шаг 5: Публикация событий
     const events = cancelledOrder.pullEvents();
-    await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    try {
+      await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    } catch (err) {
+      this._logger.error('Failed to publish cancel events', {
+        orderId: String(input.orderId),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(input.orderId) } },
+      ));
+    }
 
     this._logger.info('Order cancelled successfully', {
       orderId: String(input.orderId),

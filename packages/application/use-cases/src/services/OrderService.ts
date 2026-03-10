@@ -22,6 +22,7 @@
  */
 
 import type { Result } from '@polymarket/result';
+import { Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IOrderRepository } from '@polymarket/ports';
@@ -63,7 +64,19 @@ export class OrderService {
       });
       return result;
     }
-    await this._orderRepo.save(result.value);
+    try {
+      await this._orderRepo.save(result.value);
+    } catch (err) {
+      this._logger.error('Failed to save order after fill', {
+        orderId: String(order.id),
+        fillId: String(fillData.id),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(order.id), fillId: String(fillData.id) } },
+      ));
+    }
     this._logger.debug('Fill applied to order', {
       orderId: String(order.id),
       fillId: String(fillData.id),
@@ -93,7 +106,18 @@ export class OrderService {
       });
       return result;
     }
-    await this._orderRepo.save(result.value);
+    try {
+      await this._orderRepo.save(result.value);
+    } catch (err) {
+      this._logger.error('Failed to save order after cancel', {
+        orderId: String(order.id),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(order.id) } },
+      ));
+    }
     this._logger.info('Order cancelled', {
       orderId: String(order.id),
       reason: reason ?? 'User cancelled',
