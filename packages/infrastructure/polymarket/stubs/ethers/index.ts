@@ -6,7 +6,7 @@
  * Заглушка с минимальными типами для компиляции.
  */
 
-/** Minimal Wallet stub */
+/** Минимальная заглушка Wallet */
 export class Wallet {
   readonly address: string = '';
   constructor(_privateKey: string) {}

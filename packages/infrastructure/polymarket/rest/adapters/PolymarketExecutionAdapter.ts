@@ -1,18 +1,18 @@
 /**
- * Polymarket Execution Adapter
+ * Адаптер исполнения заявок Polymarket
  *
  * @remarks
- * ONLY API calls + event publishing, NO validation, NO balance checks.
- * Implements IExecutionAdapter.
+ * ТОЛЬКО API-вызовы + публикация событий, БЕЗ валидации, БЕЗ проверки баланса.
+ * Реализует IExecutionAdapter.
  *
- * Key principle: **Separation of Concerns**
- * - Validation → BalancePolicy, MarketConstraintsPolicy
- * - API calls → ExecutionAdapter (this class)
- * - Event publishing → ExecutionAdapter (после API calls)
- * - Orchestration → RestAdapter (Facade)
+ * Ключевой принцип: **Разделение ответственности**
+ * - Валидация → BalancePolicy, MarketConstraintsPolicy
+ * - API-вызовы → ExecutionAdapter (этот класс)
+ * - Публикация событий → ExecutionAdapter (после API-вызовов)
+ * - Оркестрация → RestAdapter (Фасад)
  *
- * This adapter assumes all parameters are already validated and normalized
- * by policies BEFORE being passed here.
+ * Этот адаптер предполагает, что все параметры уже валидированы и нормализованы
+ * политиками ДО передачи сюда.
  *
  * После API call публикует ExecutionEvent в EventBus
  * - postOrder success → OrderAccepted (с minimal context)
@@ -28,15 +28,15 @@
  *   logger
  * );
  *
- * // Parameters are already normalized and validated!
+ * // Параметры уже нормализованы и валидированы!
  * const order = await adapter.postOrder({
  *   tokenId: '0x123',
  *   side: 'buy',
  *   price: 0.52,
- *   size: 100, // Already rounded to sizeTick
+ *   size: 100, // Уже округлено до sizeTick
  * });
  *
- * // ExecutionAdapter published OrderAccepted event internally
+ * // ExecutionAdapter опубликовал событие OrderAccepted внутренне
  * console.log(`Order placed: ${order.orderId}`);
  * ```
  */
@@ -60,10 +60,10 @@ import type { ExecutionContext } from '../../events/ExecutionContext.js';
 import { createProductionEnvelope } from '../../events/EventEnvelope.js';
 
 /**
- * Polymarket Execution Adapter
+ * Адаптер исполнения заявок Polymarket
  *
  * @remarks
- * ONLY API calls + event publishing - no business validation!
+ * ТОЛЬКО API-вызовы + публикация событий — без бизнес-валидации!
  *
  * Публикует ExecutionEvent в EventBus после каждого API call
  */
@@ -89,17 +89,17 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   }
 
   /**
-   * Place order (ONLY API call + event publishing, NO validation)
+   * Разместить ордер (ТОЛЬКО API-вызов + публикация событий, БЕЗ валидации)
    *
-   * @param params - Normalized order parameters (already validated!)
-   * @returns Order response
-   * @throws {ApiError} If API call fails
+   * @param params - Нормализованные параметры ордера (уже валидированы!)
+   * @returns Ответ с данными ордера
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Assumes:
-   * - Size is already normalized (rounded to sizeTick)
-   * - Balance is already checked
-   * - Price is valid
+   * Предполагает:
+   * - Размер уже нормализован (округлён до sizeTick)
+   * - Баланс уже проверен
+   * - Цена валидна
    *
    * После успешного API call публикует OrderAccepted event
    * При ошибке публикует OrderRejected event (ExecutionErrorEvent)
@@ -112,7 +112,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    *   price: 0.52,
    *   size: 100,
    * });
-   * // OrderAccepted event published internally
+   * // Событие OrderAccepted опубликовано внутренне
    * ```
    */
   async postOrder(params: PlaceOrderParams): Promise<OrderResponse> {
@@ -321,10 +321,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   }
 
   /**
-   * Cancel order (direct API call + event publishing)
+   * Отменить ордер (прямой API-вызов + публикация события)
    *
-   * @param orderId - Order ID to cancel
-   * @throws {ApiError} If API call fails
+   * @param orderId - Идентификатор ордера для отмены
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
    * После успешного API call публикует OrderCancelled event
@@ -379,11 +379,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   }
 
   /**
-   * Get open orders (direct API call)
+   * Получить открытые ордера (прямой API-вызов)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders (normalized)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив открытых ордеров (нормализованных)
+   * @throws {ApiError} При ошибке API-вызова
    */
   async getOpenOrders(tokenId?: string): Promise<OrderResponse[]> {
     // РЕЖИМ СИМУЛЯЦИИ: Возвращаем пустой массив (нет реальных ордеров)
@@ -406,18 +406,18 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   }
 
   /**
-   * Get fill history
+   * Получить историю исполнений (fills)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of fills (normalized)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив исполнений (нормализованных)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Returns executed trades for the user.
-   * This is NOT market trade history - use MarketDataAdapter for that.
+   * Возвращает исполненные сделки пользователя.
+   * Это НЕ история рыночных сделок — для этого используйте MarketDataAdapter.
    *
-   * TODO: Implement when Polymarket API provides fill history endpoint.
-   * For now, returns empty array.
+   * TODO: Реализовать когда Polymarket API предоставит endpoint истории исполнений.
+   * Пока возвращает пустой массив.
    */
   async getFillHistory(tokenId?: string): Promise<FillResponse[]> {
     this.logger.warn('getFillHistory not yet implemented', { tokenId });
@@ -428,22 +428,22 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   }
 
   /**
-   * Get order by ID
+   * Получить ордер по идентификатору
    *
-   * @param orderId - Order ID to fetch
-   * @returns Order with current status
-   * @throws {ApiError} If order not found
+   * @param orderId - Идентификатор ордера для получения
+   * @returns Ордер с текущим статусом
+   * @throws {ApiError} Если ордер не найден
    *
    * @remarks
-   * v7.7.6: Added for SCENARIO C to check order status (filled vs cancelled)
+   * v7.7.6: Добавлено для СЦЕНАРИЯ C для проверки статуса ордера (исполнен или отменён)
    *
    * @example
    * ```typescript
    * const order = await adapter.getOrderById('0x123...');
    * if (order.status === 'filled') {
-   *   // Order was filled
+   *   // Ордер исполнен
    * } else if (order.status === 'cancelled') {
-   *   // Order was cancelled
+   *   // Ордер отменён
    * }
    * ```
    */

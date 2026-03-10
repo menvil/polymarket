@@ -255,9 +255,9 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * Настраивает интеграцию между транспортным слоем и диспетчером.
    *
    * @remarks
-   * Client → Router (raw bytes → parsed messages)
-   * Router → Adapter (parsed messages → DTO dispatch)
-   * Client lifecycle events → isConnected flag + reconnect callbacks
+   * Client → Router (raw bytes → распарсенные сообщения)
+   * Router → Adapter (распарсенные сообщения → диспетчеризация DTO)
+   * События жизненного цикла Client → флаг isConnected + callbacks reconnect
    */
   private _setupIntegration(): void {
     // Пересылаем raw данные из Client в Router
@@ -289,7 +289,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       });
     });
 
-    // Lifecycle events
+    // События жизненного цикла
     this._client.on('connected', async () => {
       const wasConnected = this._isConnected;
       this._isConnected = true;

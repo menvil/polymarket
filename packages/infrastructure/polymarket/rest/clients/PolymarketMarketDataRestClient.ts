@@ -1,18 +1,18 @@
 /**
- * Polymarket Market Data REST Client
+ * REST-клиент рыночных данных Polymarket
  *
  * @remarks
- * Handles Polymarket Gamma API endpoints:
- * - GET /markets - Get all markets
- * - GET /markets/{tokenId} - Get specific market info
+ * Обрабатывает endpoints Gamma API Polymarket:
+ * - GET /markets - Получить все маркеты
+ * - GET /markets/{tokenId} - Получить информацию о конкретном маркете
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
- * **IMPORTANT**: This uses Gamma API (public API), NOT CLOB API.
- * Base URL: https://gamma-api.polymarket.com
+ * **ВАЖНО**: Использует Gamma API (публичный API), НЕ CLOB API.
+ * Базовый URL: https://gamma-api.polymarket.com
  *
- * This replaces GammaApiClient.
+ * Заменяет GammaApiClient.
  *
  * @example
  * ```typescript
@@ -34,127 +34,127 @@ import type { GammaMarketData } from '../../stubs/domain/services/market-discove
 import type { IMarketDataProvider } from '../../stubs/domain/services/market-discovery/MarketDiscoveryService.js';
 
 /**
- * Market data client configuration
+ * Конфигурация клиента рыночных данных
  */
 export interface MarketDataClientConfig {
-  /** Gamma API base URL */
+  /** Базовый URL Gamma API */
   baseUrl: string;
 
-  /** Request timeout in milliseconds */
+  /** Таймаут запроса в миллисекундах */
   timeout?: number;
 }
 
 /**
- * Market outcome response (raw API format)
+ * Ответ с исходом маркета (сырой формат API)
  */
 export interface MarketOutcomeResponse {
-  /** Token ID */
+  /** Идентификатор токена */
   token_id: string;
 
-  /** Outcome name (e.g., "Up", "Down") */
+  /** Название исхода (например, "Up", "Down") */
   name: string;
 
-  /** Current price */
+  /** Текущая цена */
   price?: string;
 }
 
 /**
- * Market info response (raw API format from Gamma API)
+ * Ответ с информацией о маркете (сырой формат API от Gamma API)
  *
  * @remarks
- * Gamma API returns camelCase field names, NOT snake_case!
+ * Gamma API возвращает поля в camelCase, а НЕ в snake_case!
  *
- * Example: https://gamma-api.polymarket.com/markets
+ * Пример: https://gamma-api.polymarket.com/markets
  */
 export interface MarketInfoResponse {
-  /** Market condition ID */
+  /** Идентификатор условия маркета */
   conditionId: string;
 
-  /** Market question */
+  /** Вопрос маркета */
   question: string;
 
-  /** Market slug for URLs */
+  /** Слаг маркета для URL */
   slug?: string;
 
-  /** CLOB token IDs - JSON string array */
+  /** Идентификаторы CLOB-токенов — JSON-строка массива */
   clobTokenIds: string;  // Всегда строка из API: "[\"token1\", \"token2\"]"
 
-  /** Outcomes - JSON string array */
+  /** Исходы — JSON-строка массива */
   outcomes: string;  // Всегда строка из API: "[\"Yes\", \"No\"]"
 
-  /** Market status */
+  /** Статус маркета */
   active: boolean;
 
-  /** Market closed status */
+  /** Статус закрытого маркета */
   closed: boolean;
 
-  /** Order book enabled */
+  /** Стакан ордеров включён */
   enableOrderBook: boolean;
 
-  /** End date (ISO string) */
-  endDate: string;  // ISO format: "2026-01-25T00:00:00Z"
+  /** Дата окончания (строка ISO) */
+  endDate: string;  // Формат ISO: "2026-01-25T00:00:00Z"
 
-  /** Liquidity (string number) */
+  /** Ликвидность (строковое число) */
   liquidity?: string;
 
-  /** Volume (string number) */
+  /** Объём (строковое число) */
   volume?: string;
 
-  /** Spread (bid-ask spread) */
+  /** Спред (bid-ask спред) */
   spread?: number;
 
-  /** Best bid price */
+  /** Лучшая цена bid */
   bestBid?: number;
 
-  /** Best ask price */
+  /** Лучшая цена ask */
   bestAsk?: number;
 
-  /** Outcome prices - JSON string array */
+  /** Цены исходов — JSON-строка массива */
   outcomePrices?: string;
 
-  /** Order price minimum tick size */
+  /** Минимальный шаг цены ордера */
   orderPriceMinTickSize?: number;
 
-  /** Order minimum size */
+  /** Минимальный размер ордера */
   orderMinSize?: number;
 }
 
 /**
- * Market constraints
+ * Ограничения маркета
  */
 export interface MarketConstraintsResponse {
-  /** Minimum order VALUE in USD for BUY orders ($1) */
+  /** Минимальная СТОИМОСТЬ ордера в USD для BUY-ордеров ($1) */
   minimum_order_value?: number;
 
-  /** Minimum order SIZE in shares for SELL orders */
+  /** Минимальный РАЗМЕР ордера в акциях для SELL-ордеров */
   minimum_order_size?: number;
 
-  /** Maximum order size */
+  /** Максимальный размер ордера */
   maximum_order_size: number;
 
-  /** Size tick (minimum size increment) */
+  /** Шаг размера (минимальный шаг увеличения размера) */
   minimum_tick_size: number;
 
-  /** Price tick (minimum price increment) */
+  /** Шаг цены (минимальный шаг увеличения цены) */
   minimum_price_tick: number;
 }
 
 /**
- * Polymarket Market Data REST Client
+ * REST-клиент рыночных данных Polymarket
  *
  * @remarks
- * Implements IMarketDataProvider for use with MarketDiscoveryService.
- * Maps raw API responses (snake_case) to domain types (camelCase).
+ * Реализует IMarketDataProvider для использования с MarketDiscoveryService.
+ * Маппирует сырые ответы API (snake_case) в доменные типы (camelCase).
  */
 export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   private readonly config: Required<MarketDataClientConfig>;
   private readonly logger: ILogger;
 
   /**
-   * Create Polymarket market data client
+   * Создать клиент рыночных данных Polymarket
    *
-   * @param config - Client configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация клиента
+   * @param logger - Экземпляр логгера
    *
    * @example
    * ```typescript
@@ -173,14 +173,14 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Get all active markets (IMarketDataProvider implementation)
+   * Получить все активные маркеты (реализация IMarketDataProvider)
    *
-   * @returns Array of market data in domain format (GammaMarketData)
-   * @throws {Error} If API call fails
+   * @returns Массив рыночных данных в доменном формате (GammaMarketData)
+   * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Implements IMarketDataProvider interface.
-   * Fetches raw API data and maps to domain format (camelCase).
+   * Реализует интерфейс IMarketDataProvider.
+   * Запрашивает сырые данные API и маппирует в доменный формат (camelCase).
    *
    * @example
    * ```typescript
@@ -196,7 +196,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
     const allMarkets: GammaMarketData[] = [];
     let offset = 0;
     const limit = 500;
-    const maxPages = 50; // Max 25,000 markets
+    const maxPages = 50; // Максимум 25 000 маркетов
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -239,14 +239,14 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Get raw active markets (for internal use)
+   * Получить сырые активные маркеты (для внутреннего использования)
    *
-   * @returns Array of raw market info responses
-   * @throws {Error} If API call fails
+   * @returns Массив сырых ответов с информацией о маркетах
+   * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Returns raw API response without mapping.
-   * Use getActiveMarkets() for domain format.
+   * Возвращает сырой ответ API без маппинга.
+   * Используйте getActiveMarkets() для доменного формата.
    */
   async getRawActiveMarkets(): Promise<MarketInfoResponse[]> {
     this.logger.debug('Getting raw active markets');
@@ -262,24 +262,24 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Get market info by slug or condition ID
+   * Получить информацию о маркете по slug или condition ID
    *
-   * @param slugOrConditionId - Market slug (preferred) or condition ID (fallback)
-   * @returns Market info
-   * @throws {Error} If API call fails or market not found
+   * @param slugOrConditionId - Слаг маркета (предпочтительно) или condition ID (запасной вариант)
+   * @returns Информация о маркете
+   * @throws {Error} При ошибке API-вызова или если маркет не найден
    *
    * @remarks
-   * Gamma API primarily uses **slug** (e.g., "bitcoin-up-or-down-january-8")
-   * for /markets/{slug} endpoint, NOT conditionId.
+   * Gamma API использует **slug** (например, "bitcoin-up-or-down-january-8")
+   * для endpoint /markets/{slug}, а НЕ conditionId.
    *
-   * If the API returns 404, conditionId might work as fallback for some markets.
+   * Если API вернёт 404, conditionId может сработать как запасной вариант для некоторых маркетов.
    *
    * @example
    * ```typescript
-   * // Preferred: use slug
+   * // Предпочтительно: использовать slug
    * const market = await client.getMarketInfo('bitcoin-up-or-down-january-8');
    *
-   * // Fallback: use conditionId (may not work for all markets)
+   * // Запасной вариант: использовать conditionId (может не работать для всех маркетов)
    * const market2 = await client.getMarketInfo('0x123...');
    * ```
    */
@@ -300,28 +300,28 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Get market constraints
+   * Получить ограничения маркета
    *
-   * @param slugOrConditionId - Market slug (preferred) or condition ID (fallback)
-   * @returns Market constraints
-   * @throws {Error} If API call fails
+   * @param slugOrConditionId - Слаг маркета (предпочтительно) или condition ID (запасной вариант)
+   * @returns Ограничения маркета
+   * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Returns min/max sizes, tick sizes, etc.
-   * If constraints are not available from API, returns safe defaults.
+   * Возвращает min/max размеры, шаги цены и т.д.
+   * Если ограничения недоступны из API, возвращает безопасные значения по умолчанию.
    *
-   * **IMPORTANT**: Gamma API uses **slug** (NOT conditionId) for /markets/{id}.
-   * If you pass conditionId and get HTTP 422 "id is invalid", this is expected.
-   * The method will fallback to safe defaults.
+   * **ВАЖНО**: Gamma API использует **slug** (НЕ conditionId) для /markets/{id}.
+   * Если передать conditionId и получить HTTP 422 "id is invalid" — это ожидаемо.
+   * Метод вернёт безопасные значения по умолчанию.
    *
-   * For best results, pass market.slug instead of market.conditionId.
+   * Для лучших результатов передавайте market.slug вместо market.conditionId.
    *
    * @example
    * ```typescript
-   * // Preferred: use slug
+   * // Предпочтительно: использовать slug
    * const constraints = await client.getMarketConstraints('bitcoin-up-or-down-january-8');
    *
-   * // Fallback: use conditionId (will return defaults on 422)
+   * // Запасной вариант: использовать conditionId (вернёт дефолты при 422)
    * const constraints2 = await client.getMarketConstraints('0x123...');
    * ```
    */
@@ -373,22 +373,22 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Map raw API response to domain format
+   * Маппировать сырой ответ API в доменный формат
    *
-   * @param raw - Raw market info response (camelCase from Gamma API)
-   * @returns Domain format market data (camelCase)
+   * @param raw - Сырой ответ с информацией о маркете (camelCase от Gamma API)
+   * @returns Рыночные данные в доменном формате (camelCase)
    *
    * @remarks
-   * Gamma API already returns camelCase, so mapping is minimal.
-   * API returns JSON strings for clobTokenIds and outcomes - pass through as-is.
-   * MarketFilter will parse them later.
+   * Gamma API уже возвращает camelCase, поэтому маппинг минимален.
+   * API возвращает JSON-строки для clobTokenIds и outcomes — передаём как есть.
+   * MarketFilter разберёт их позже.
    */
   private mapToDomainFormat(raw: MarketInfoResponse): GammaMarketData {
     return {
       conditionId: raw.conditionId,
       question: raw.question,
       slug: raw.slug,
-      endDate: raw.endDate,  // Already ISO string from API
+      endDate: raw.endDate,  // Уже строка ISO из API
       active: raw.active,
       closed: raw.closed,
       enableOrderBook: raw.enableOrderBook,
@@ -407,12 +407,12 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   }
 
   /**
-   * Generic fetch helper
+   * Универсальный помощник для HTTP-запросов
    *
-   * @param url - Full URL
-   * @param silent - Skip debug logging (for batch operations)
-   * @returns Response data
-   * @throws {Error} If request fails
+   * @param url - Полный URL
+   * @param silent - Пропустить debug-логирование (для пакетных операций)
+   * @returns Данные ответа
+   * @throws {Error} При ошибке запроса
    */
   private async fetch<T>(url: string, silent = false): Promise<T> {
     if (!silent) {

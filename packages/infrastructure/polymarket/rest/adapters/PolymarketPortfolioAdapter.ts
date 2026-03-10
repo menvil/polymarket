@@ -1,19 +1,19 @@
 /**
- * Polymarket Portfolio Adapter
+ * Адаптер портфеля Polymarket
  *
  * @remarks
- * Handles balance, positions, and allowance queries.
- * Uses BalancePolicy + MarketConstraintsPolicy internally.
- * Implements IPortfolioAdapter.
+ * Обрабатывает запросы баланса, позиций и разрешений.
+ * Использует BalancePolicy + MarketConstraintsPolicy внутренне.
+ * Реализует IPortfolioAdapter.
  *
- * **IMPORTANT**: This adapter does NOT handle orderbook or market data.
- * Use MarketDataAdapter for that.
+ * **ВАЖНО**: Этот адаптер НЕ обрабатывает стакан заявок или рыночные данные.
+ * Для этого используйте MarketDataAdapter.
  *
- * Key responsibilities:
- * - Get user balances (USDC, outcome tokens)
- * - Get user positions (filled trades)
- * - Check if order can be placed (uses policies)
- * - Approve USDC for trading (blockchain call)
+ * Ключевые обязанности:
+ * - Получение баланса пользователя (USDC, токены исходов)
+ * - Получение позиций пользователя (исполненные сделки)
+ * - Проверка возможности размещения ордера (использует политики)
+ * - Подтверждение USDC для торговли (вызов блокчейна)
  *
  * @example
  * ```typescript
@@ -25,7 +25,7 @@
  *   logger
  * );
  *
- * // Check if order can be placed
+ * // Проверяем возможность размещения ордера
  * const result = await adapter.canPlaceOrder({
  *   tokenId: '0x123',
  *   side: 'buy',
@@ -54,10 +54,10 @@ import type { PolymarketMarketConstraintsPolicy } from '../policies/PolymarketMa
 import type { PolymarketBalancePolicy } from '../policies/PolymarketBalancePolicy.js';
 
 /**
- * Polymarket Portfolio Adapter
+ * Адаптер портфеля Polymarket
  *
  * @remarks
- * Implements IPortfolioAdapter for Polymarket.
+ * Реализует IPortfolioAdapter для Polymarket.
  */
 export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   constructor(
@@ -69,10 +69,10 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   ) {}
 
   /**
-   * Get available USDC balance
+   * Получить доступный баланс USDC
    *
-   * @returns Available USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Доступный баланс USDC
+   * @throws {ApiError} При ошибке API-вызова
    */
   async getBalance(): Promise<number> {
     this.logger.debug('Getting balance');
@@ -85,11 +85,11 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   }
 
   /**
-   * Get outcome token balance for specific token
+   * Получить баланс токена исхода для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Баланс токена исхода
+   * @throws {ApiError} При ошибке API-вызова
    */
   async getOutcomeBalance(tokenId: string): Promise<number> {
     this.logger.debug('Getting outcome balance', { tokenId });
@@ -105,11 +105,11 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   }
 
   /**
-   * Get current positions (filled trades)
+   * Получить текущие позиции (исполненные сделки)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив позиций
+   * @throws {ApiError} При ошибке API-вызова
    */
   async getPositions(tokenId?: string): Promise<PositionResponse[]> {
     // Дублирующие логи удалены (логируются в PolymarketPositionsRestClient)
@@ -118,23 +118,23 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   }
 
   /**
-   * Check if order can be placed (uses policies internally)
+   * Проверить возможность размещения ордера (использует политики внутренне)
    *
-   * @param params - Order parameters
-   * @returns Result with normalized size or reason for failure
+   * @param params - Параметры ордера
+   * @returns Результат с нормализованным размером или причиной отказа
    *
    * @remarks
-   * This method uses:
-   * - MarketConstraintsPolicy → normalize size, validate constraints
-   * - BalancePolicy → check if sufficient balance
+   * Этот метод использует:
+   * - MarketConstraintsPolicy → нормализация размера, валидация ограничений
+   * - BalancePolicy → проверка достаточности баланса
    *
-   * Returns {ok: true, normalizedSize: ...} if order can be placed.
-   * Returns {ok: false, reason: '...'} otherwise.
+   * Возвращает {ok: true, normalizedSize: ...} если ордер может быть размещён.
+   * Возвращает {ok: false, reason: '...'} в противном случае.
    *
-   * Flow:
-   * 1. Normalize size via MarketConstraintsPolicy
-   * 2. Validate size against constraints (min/max)
-   * 3. Check balance via BalancePolicy
+   * Алгоритм:
+   * 1. Нормализация размера через MarketConstraintsPolicy
+   * 2. Валидация размера против ограничений (min/max)
+   * 3. Проверка баланса через BalancePolicy
    *
    * @example
    * ```typescript
@@ -251,16 +251,16 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   }
 
   /**
-   * Approve USDC for trading (blockchain call)
+   * Подтвердить USDC для торговли (вызов блокчейна)
    *
-   * @param amount - Amount to approve
-   * @throws {BlockchainError} If blockchain call fails
+   * @param amount - Сумма для подтверждения
+   * @throws {BlockchainError} При ошибке вызова блокчейна
    *
    * @remarks
-   * This is a blockchain transaction, not an API call.
-   * May require gas fees.
+   * Это транзакция блокчейна, а не API-вызов.
+   * Может потребовать оплату газа.
    *
-   * TODO: Implement blockchain integration.
+   * TODO: Реализовать интеграцию с блокчейном.
    */
   async approveUSDC(amount: number): Promise<void> {
     this.logger.warn('approveUSDC not yet implemented', { amount });
@@ -270,13 +270,13 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   }
 
   /**
-   * Get current USDC allowance
+   * Получить текущее разрешение USDC
    *
-   * @returns Current allowance amount
-   * @throws {BlockchainError} If blockchain call fails
+   * @returns Текущая сумма разрешения
+   * @throws {BlockchainError} При ошибке вызова блокчейна
    *
    * @remarks
-   * TODO: Implement blockchain integration.
+   * TODO: Реализовать интеграцию с блокчейном.
    */
   async getAllowance(): Promise<number> {
     this.logger.warn('getAllowance not yet implemented');

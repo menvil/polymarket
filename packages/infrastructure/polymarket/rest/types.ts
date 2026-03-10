@@ -1,12 +1,12 @@
 /**
- * Polymarket REST API types
+ * Типы Polymarket REST API
  *
  * @remarks
- * Common types for Polymarket REST implementation.
+ * Общие типы для реализации Polymarket REST.
  */
 
 /**
- * Polymarket L2 API credentials
+ * Учётные данные Polymarket L2 API
  */
 export interface PolymarketL2Credentials {
   /** API ключ (формат UUID) */
@@ -20,13 +20,13 @@ export interface PolymarketL2Credentials {
 }
 
 /**
- * Signature type for Polymarket orders
+ * Тип подписи для ордеров Polymarket
  *
  * @remarks
- * Determines which type of wallet is used for signing:
- * - EOA (0): Standard Ethereum account (MetaMask, hardware wallet)
- * - POLY_PROXY (1): Polymarket proxy wallet (when using funder address)
- * - POLY_GNOSIS_SAFE (2): Gnosis Safe multisig
+ * Определяет, какой тип кошелька используется для подписи:
+ * - EOA (0): Стандартный аккаунт Ethereum (MetaMask, аппаратный кошелёк)
+ * - POLY_PROXY (1): Proxy-кошелёк Polymarket (при использовании адреса фандера)
+ * - POLY_GNOSIS_SAFE (2): Gnosis Safe мультиподпись
  */
 export enum SignatureType {
   /** Стандартный EOA (Externally Owned Account) */
@@ -38,7 +38,7 @@ export enum SignatureType {
 }
 
 /**
- * Polymarket REST Client configuration
+ * Конфигурация Polymarket REST-клиента
  */
 export interface PolymarketRestConfig {
   /** Базовый URL для CLOB API */
@@ -54,22 +54,22 @@ export interface PolymarketRestConfig {
   l2Credentials?: PolymarketL2Credentials;
 
   /**
-   * Signature type for wallet
+   * Тип подписи кошелька
    *
    * @remarks
-   * Use POLY_PROXY (1) when using funder address (proxy wallet).
-   * Use EOA (0) for standard wallets.
+   * Используйте POLY_PROXY (1) при использовании адреса фандера (proxy-кошелёк).
+   * Используйте EOA (0) для стандартных кошельков.
    *
    * @default SignatureType.EOA (0)
    */
   signatureType?: SignatureType;
 
   /**
-   * Funder address (for proxy wallets)
+   * Адрес фандера (для proxy-кошельков)
    *
    * @remarks
-   * When using POLY_PROXY signature type, this is the maker/funder address.
-   * If not specified, wallet address is used.
+   * При использовании типа подписи POLY_PROXY это адрес maker/funder.
+   * Если не указан, используется адрес кошелька.
    */
   funderAddress?: string;
 
@@ -84,7 +84,7 @@ export interface PolymarketRestConfig {
 }
 
 /**
- * API error response
+ * Ответ с ошибкой API
  */
 export interface ApiErrorResponse {
   /** Сообщение об ошибке */

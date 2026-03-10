@@ -1,18 +1,18 @@
 /**
- * Polymarket Order Mapper
+ * Маппер ордеров Polymarket
  *
  * @remarks
- * Maps between domain Order types and Polymarket API order formats.
+ * Выполняет двустороннее преобразование между доменными типами Order и форматами ордеров API Polymarket.
  *
- * Bidirectional mapping:
- * - Domain → API (for placing orders)
- * - API → Domain (for reading orders)
+ * Двустороннее преобразование:
+ * - Домен → API (для размещения ордеров)
+ * - API → Домен (для чтения ордеров)
  *
  * @example
  * ```typescript
  * const mapper = new PolymarketOrderMapper(logger);
  *
- * // API → Domain
+ * // API → Домен
  * const rawOrder = {
  *   orderId: 'order-123',
  *   tokenId: '0x123',
@@ -37,16 +37,16 @@ import type {
 import type { OrderResponse } from '../../ports/IExecutionAdapter.js';
 
 /**
- * Polymarket Order Mapper
+ * Маппер ордеров Polymarket
  */
 export class PolymarketOrderMapper {
   constructor(private readonly logger: ILogger) {}
 
   /**
-   * Map domain order params to API request
+   * Преобразовать параметры доменного ордера в запрос к API
    *
-   * @param params - Domain order parameters
-   * @returns API request format
+   * @param params - Параметры доменного ордера
+   * @returns Формат запроса к API
    *
    * @example
    * ```typescript
@@ -84,10 +84,10 @@ export class PolymarketOrderMapper {
   }
 
   /**
-   * Map API order response to domain format
+   * Преобразовать ответ API по ордеру в доменный формат
    *
-   * @param response - Raw API response
-   * @returns Normalized domain order
+   * @param response - Необработанный ответ API
+   * @returns Нормализованный доменный ордер
    *
    * @example
    * ```typescript
@@ -125,12 +125,12 @@ export class PolymarketOrderMapper {
   }
 
   /**
-   * Map API status to domain status
+   * Преобразовать статус API в доменный статус
    *
-   * @param apiStatus - API status
-   * @param filledSize - Filled size
-   * @param totalSize - Total size
-   * @returns Domain status
+   * @param apiStatus - Статус API
+   * @param filledSize - Исполненный объём
+   * @param totalSize - Общий объём
+   * @returns Доменный статус
    */
   private mapStatus(
     apiStatus: string,
@@ -165,10 +165,10 @@ export class PolymarketOrderMapper {
   }
 
   /**
-   * Parse number from string
+   * Разобрать число из строки
    *
-   * @param value - String value
-   * @returns Parsed number or 0 if invalid
+   * @param value - Строковое значение
+   * @returns Разобранное число или 0 при невалидном значении
    */
   private parseNumber(value: string): number {
     const parsed = parseFloat(value);

@@ -1,14 +1,14 @@
 /**
- * Polymarket Balance Provider
+ * Провайдер баланса Polymarket
  *
  * @remarks
- * Implements IBalanceProvider interface.
- * Uses PolymarketBalanceRestClient + PolymarketBalanceMapper.
+ * Реализует интерфейс IBalanceProvider.
+ * Использует PolymarketBalanceRestClient + PolymarketBalanceMapper.
  *
- * Responsibilities:
- * - Fetch balance data from API
- * - Normalize data using mapper
- * - Return domain-formatted balances
+ * Обязанности:
+ * - Получение данных баланса из API
+ * - Нормализация данных с помощью маппера
+ * - Возврат балансов в доменном формате
  *
  * @example
  * ```typescript
@@ -32,10 +32,10 @@ import type { PolymarketBalanceRestClient } from '../clients/PolymarketBalanceRe
 import type { PolymarketBalanceMapper } from '../mappers/PolymarketBalanceMapper.js';
 
 /**
- * Polymarket Balance Provider
+ * Провайдер баланса Polymarket
  *
  * @remarks
- * Implements IBalanceProvider for Polymarket.
+ * Реализует IBalanceProvider для Polymarket.
  */
 export class PolymarketBalanceProvider implements IBalanceProvider {
   constructor(
@@ -46,10 +46,10 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   ) {}
 
   /**
-   * Get available USDC balance
+   * Получить доступный баланс USDC
    *
-   * @returns Available USDC balance (NOT locked in open orders)
-   * @throws {ApiError} If API call fails
+   * @returns Доступный баланс USDC (НЕ заблокированный в открытых ордерах)
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
@@ -80,11 +80,11 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   }
 
   /**
-   * Get outcome token balance for specific token
+   * Получить баланс outcome-токена для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Баланс outcome-токена
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
@@ -116,10 +116,10 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   }
 
   /**
-   * Get locked balance (in open orders)
+   * Получить заблокированный баланс (в открытых ордерах)
    *
-   * @returns Locked USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Заблокированный баланс USDC
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
@@ -150,10 +150,10 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   }
 
   /**
-   * Get total balance (available + locked)
+   * Получить общий баланс (доступный + заблокированный)
    *
-   * @returns Total USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Общий баланс USDC
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript

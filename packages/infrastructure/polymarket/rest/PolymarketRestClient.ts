@@ -2,20 +2,20 @@
  * Polymarket REST Client
  *
  * @remarks
- * Base HTTP client for Polymarket CLOB API.
+ * Базовый HTTP-клиент для Polymarket CLOB API.
  *
- * Features:
- * - Authentication (signs requests with private key)
- * - Rate limiting
- * - Error handling
- * - Retry logic (exponential backoff)
- * - Timeout handling
+ * Возможности:
+ * - Аутентификация (подписывает запросы приватным ключом)
+ * - Ограничение частоты запросов
+ * - Обработка ошибок
+ * - Логика повтора (экспоненциальная задержка)
+ * - Обработка таймаутов
  *
- * This is a low-level client. Use specialized clients for specific endpoints:
+ * Это низкоуровневый клиент. Для конкретных эндпоинтов используйте специализированные клиенты:
  * - PolymarketOrderRestClient
  * - PolymarketBalanceRestClient
  * - PolymarketPositionsRestClient
- * - etc.
+ * - и т.д.
  *
  * @example
  * ```typescript
@@ -45,7 +45,7 @@ import { PolymarketSigner } from './auth/PolymarketSigner.js';
 import { PolymarketL2Authenticator } from './auth/PolymarketL2Authenticator.js';
 
 /**
- * API Error class
+ * Класс ошибки API
  */
 export class ApiError extends Error {
   constructor(
@@ -59,24 +59,24 @@ export class ApiError extends Error {
 }
 
 /**
- * Request options
+ * Параметры запроса
  */
 interface RequestOptions {
-  /** Query parameters */
+  /** Параметры строки запроса */
   params?: Record<string, string>;
 
-  /** Request headers */
+  /** Заголовки запроса */
   headers?: Record<string, string>;
 
-  /** Request body */
+  /** Тело запроса */
   body?: unknown;
 
-  /** Require signature (default: false for GET, true for POST/DELETE) */
+  /** Требовать подпись (по умолчанию: false для GET, true для POST/DELETE) */
   requireSignature?: boolean;
 }
 
 /**
- * Polymarket REST Client configuration (with defaults applied)
+ * Конфигурация Polymarket REST Client (с применёнными значениями по умолчанию)
  */
 type ResolvedPolymarketRestConfig = Required<
   Omit<PolymarketRestConfig, 'l2Credentials' | 'funderAddress'>
@@ -86,7 +86,7 @@ type ResolvedPolymarketRestConfig = Required<
 };
 
 /**
- * Polymarket REST Client
+ * Polymarket REST-клиент
  */
 export class PolymarketRestClient {
   private readonly config: ResolvedPolymarketRestConfig;
@@ -95,10 +95,10 @@ export class PolymarketRestClient {
   private readonly logger: ILogger;
 
   /**
-   * Create Polymarket REST client
+   * Создаёт Polymarket REST-клиент
    *
-   * @param config - Client configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация клиента
+   * @param logger - Экземпляр логгера
    *
    * @example
    * ```typescript
@@ -141,12 +141,12 @@ export class PolymarketRestClient {
   }
 
   /**
-   * GET request
+   * GET-запрос
    *
-   * @param endpoint - API endpoint (e.g., '/balances')
-   * @param params - Query parameters
-   * @returns Response data
-   * @throws {ApiError} If request fails
+   * @param endpoint - Эндпоинт API (например, '/balances')
+   * @param params - Параметры строки запроса
+   * @returns Данные ответа
+   * @throws {ApiError} Если запрос завершился ошибкой
    *
    * @example
    * ```typescript
@@ -160,13 +160,13 @@ export class PolymarketRestClient {
   }
 
   /**
-   * POST request
+   * POST-запрос
    *
-   * @param endpoint - API endpoint (e.g., '/order')
-   * @param body - Request body
-   * @param options - Additional options
-   * @returns Response data
-   * @throws {ApiError} If request fails
+   * @param endpoint - Эндпоинт API (например, '/order')
+   * @param body - Тело запроса
+   * @param options - Дополнительные параметры
+   * @returns Данные ответа
+   * @throws {ApiError} Если запрос завершился ошибкой
    *
    * @example
    * ```typescript
@@ -184,13 +184,13 @@ export class PolymarketRestClient {
   }
 
   /**
-   * DELETE request
+   * DELETE-запрос
    *
-   * @param endpoint - API endpoint (e.g., '/order')
-   * @param body - Request body
-   * @param options - Additional options
-   * @returns Response data
-   * @throws {ApiError} If request fails
+   * @param endpoint - Эндпоинт API (например, '/order')
+   * @param body - Тело запроса
+   * @param options - Дополнительные параметры
+   * @returns Данные ответа
+   * @throws {ApiError} Если запрос завершился ошибкой
    *
    * @example
    * ```typescript
@@ -205,13 +205,13 @@ export class PolymarketRestClient {
   }
 
   /**
-   * Generic HTTP request with retry logic
+   * Универсальный HTTP-запрос с логикой повтора
    *
-   * @param method - HTTP method
-   * @param endpoint - API endpoint
-   * @param options - Request options
-   * @returns Response data
-   * @throws {ApiError} If all retries fail
+   * @param method - HTTP-метод
+   * @param endpoint - Эндпоинт API
+   * @param options - Параметры запроса
+   * @returns Данные ответа
+   * @throws {ApiError} Если все попытки завершились ошибкой
    */
   private async request<T>(
     method: string,
@@ -264,13 +264,13 @@ export class PolymarketRestClient {
   }
 
   /**
-   * Execute single HTTP request
+   * Выполняет одиночный HTTP-запрос
    *
-   * @param method - HTTP method
-   * @param url - Full URL
-   * @param options - Request options
-   * @returns Response data
-   * @throws {ApiError} If request fails
+   * @param method - HTTP-метод
+   * @param url - Полный URL
+   * @param options - Параметры запроса
+   * @returns Данные ответа
+   * @throws {ApiError} Если запрос завершился ошибкой
    */
   private async executeRequest<T>(
     method: string,
@@ -383,11 +383,11 @@ export class PolymarketRestClient {
   }
 
   /**
-   * Build full URL with query parameters
+   * Формирует полный URL с параметрами строки запроса
    *
-   * @param endpoint - API endpoint
-   * @param params - Query parameters
-   * @returns Full URL
+   * @param endpoint - Эндпоинт API
+   * @param params - Параметры строки запроса
+   * @returns Полный URL
    */
   private buildUrl(endpoint: string, params?: Record<string, string>): string {
     const url = new URL(endpoint, this.config.baseUrl);
@@ -402,51 +402,51 @@ export class PolymarketRestClient {
   }
 
   /**
-   * Sleep for specified milliseconds
+   * Ожидает указанное количество миллисекунд
    *
-   * @param ms - Milliseconds to sleep
+   * @param ms - Количество миллисекунд для ожидания
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
-   * Get wallet address
+   * Возвращает адрес кошелька
    *
-   * @returns Wallet address
+   * @returns Адрес кошелька
    */
   getAddress(): string {
     return this.signer.getAddress();
   }
 
   /**
-   * Get chain ID
+   * Возвращает ID сети
    *
-   * @returns Chain ID
+   * @returns ID сети
    */
   getChainId(): number {
     return this.signer.getChainId();
   }
 
   /**
-   * Get signature type
+   * Возвращает тип подписи
    *
-   * @returns Signature type
+   * @returns Тип подписи
    *
    * @remarks
-   * Signature type determines which wallet type is used:
-   * - EOA (0): Standard Ethereum account
-   * - POLY_PROXY (1): Polymarket proxy wallet (funder address)
-   * - POLY_GNOSIS_SAFE (2): Gnosis Safe multisig
+   * Тип подписи определяет, какой тип кошелька используется:
+   * - EOA (0): Стандартный аккаунт Ethereum
+   * - POLY_PROXY (1): Proxy-кошелёк Polymarket (адрес фандера)
+   * - POLY_GNOSIS_SAFE (2): Gnosis Safe мультиподпись
    */
   getSignatureType(): SignatureType {
     return this.config.signatureType!;
   }
 
   /**
-   * Get API key
+   * Возвращает API-ключ
    *
-   * @returns API key for L2 authentication
+   * @returns API-ключ для L2-аутентификации
    */
   getApiKey(): string {
     if (!this.l2Authenticator) {
@@ -456,9 +456,9 @@ export class PolymarketRestClient {
   }
 
   /**
-   * Get signer (for order building)
+   * Возвращает подписант (для построения ордеров)
    *
-   * @returns Signer instance
+   * @returns Экземпляр подписанта
    */
   getSigner() {
     return this.signer;

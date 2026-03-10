@@ -1,15 +1,15 @@
 /**
- * Polymarket Balance Policy
+ * Политика проверки баланса Polymarket
  *
  * @remarks
- * Checks if user has sufficient USDC and outcome tokens to place order.
+ * Проверяет наличие достаточного количества USDC и outcome-токенов для размещения ордера.
  *
- * This policy is used by PortfolioAdapter.canPlaceOrder() to validate
- * balance BEFORE sending order to API.
+ * Эта политика используется в PortfolioAdapter.canPlaceOrder() для валидации
+ * баланса ДО отправки ордера в API.
  *
- * Validation logic:
- * - BUY order: requires USDC (price * size)
- * - SELL order: requires outcome tokens (size)
+ * Логика валидации:
+ * - Ордер BUY: требует USDC (цена * размер)
+ * - Ордер SELL: требует outcome-токены (размер)
  *
  * @example
  * ```typescript
@@ -34,47 +34,47 @@ import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
 import type { IPortfolioProjector } from '../../ports/IPortfolioProjector.js';
 
 /**
- * Balance check parameters
+ * Параметры проверки баланса
  */
 export interface BalanceCheckParams {
-  /** Token ID */
+  /** Идентификатор токена */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Order price */
+  /** Цена ордера */
   price: number;
 
-  /** Order size */
+  /** Размер ордера */
   size: number;
 
-  /** Minimum order size from market constraints (optional) */
+  /** Минимальный размер ордера из рыночных ограничений (опционально) */
   minOrderSize?: number;
 }
 
 /**
- * Balance check result
+ * Результат проверки баланса
  */
 export interface BalanceCheckResult {
-  /** Whether balance is sufficient */
+  /** Достаточен ли баланс */
   ok: boolean;
 
-  /** Reason if insufficient */
+  /** Причина отказа при недостаточном балансе */
   reason?: string;
 
-  /** Required amount */
+  /** Требуемая сумма */
   required?: number;
 
-  /** Available amount */
+  /** Доступная сумма */
   available?: number;
 
-  /** Suggested size (maximum affordable with current balance) */
+  /** Предлагаемый размер (максимально доступный при текущем балансе) */
   suggestedSize?: number;
 }
 
 /**
- * Polymarket Balance Policy
+ * Политика проверки баланса Polymarket
  */
 export class PolymarketBalancePolicy {
   /**
@@ -97,10 +97,10 @@ export class PolymarketBalancePolicy {
   ) {}
 
   /**
-   * Check if order can be placed (balance check)
+   * Проверить возможность размещения ордера (проверка баланса)
    *
-   * @param params - Balance check parameters
-   * @returns Check result
+   * @param params - Параметры проверки баланса
+   * @returns Результат проверки
    *
    * @example
    * ```typescript
@@ -140,13 +140,13 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Check balance for BUY order
+   * Проверить баланс для BUY-ордера
    *
-   * @param params - Balance check parameters
-   * @returns Check result
+   * @param params - Параметры проверки баланса
+   * @returns Результат проверки
    *
    * @remarks
-   * BUY order requires USDC: required = price * size
+   * BUY-ордер требует USDC: необходимо = цена * размер
    */
   private async checkBuyBalance(
     params: BalanceCheckParams
@@ -201,22 +201,22 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Check balance for SELL order
+   * Проверить баланс для SELL-ордера
    *
-   * @param tokenId - Token ID
-   * @param size - Order size
-   * @returns Check result
+   * @param tokenId - Идентификатор токена
+   * @param size - Размер ордера
+   * @returns Результат проверки
    *
    * @remarks
-   * v7.6: Uses PortfolioProjector FIRST (instant, no lag), then Balance API as fallback.
+   * v7.6: Сначала использует PortfolioProjector (мгновенно, без задержки), затем Balance API как fallback.
    *
-   * SELL order requires outcome tokens: required = size
-   * If balance is slightly less (< 1% deficit), suggests selling available balance
+   * SELL-ордер требует outcome-токены: необходимо = размер
+   * Если баланс незначительно меньше (дефицит < 1%), предлагает продать доступный баланс
    *
-   * **Why PortfolioProjector first?**
-   * - PortfolioProjector = event sourced (instant, always up-to-date)
-   * - Balance API = external API (may lag 0-5 seconds after fills)
-   * - After instant BUY fill, Balance API may still return 0 while PortfolioProjector is correct
+   * **Почему сначала PortfolioProjector?**
+   * - PortfolioProjector = event sourced (мгновенно, всегда актуально)
+   * - Balance API = внешний API (может отставать на 0-5 секунд после fills)
+   * - После мгновенного BUY fill, Balance API может ещё возвращать 0, тогда как PortfolioProjector корректен
    */
   private async checkSellBalance(
     tokenId: string,
@@ -298,7 +298,7 @@ export class PolymarketBalancePolicy {
         reason,
         required: requiredTokens,
         available: availableTokens,
-        suggestedSize: roundedAvailable, // Rounded to 2 decimals
+        suggestedSize: roundedAvailable, // Округлено до 2 знаков
       };
     }
 
@@ -313,12 +313,12 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Check if user has ANY USDC balance
+   * Проверить наличие хоть какого-либо баланса USDC
    *
-   * @returns True if balance > 0
+   * @returns true если баланс > 0
    *
    * @remarks
-   * Quick check for bot shutdown conditions.
+   * Быстрая проверка для условий остановки бота.
    *
    * @example
    * ```typescript
@@ -334,13 +334,13 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Get maximum order size for given price
+   * Получить максимальный размер ордера для заданной цены
    *
-   * @param price - Order price
-   * @returns Maximum size that can be bought with available USDC
+   * @param price - Цена ордера
+   * @returns Максимальный размер, который можно купить при доступном USDC
    *
    * @remarks
-   * Useful for calculating max position size.
+   * Полезно для расчёта максимального размера позиции.
    *
    * @example
    * ```typescript
@@ -366,16 +366,16 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Get maximum sell size for token
+   * Получить максимальный размер продажи для токена
    *
-   * @param tokenId - Token ID
-   * @returns Maximum size that can be sold (outcome token balance, rounded to 2 decimals)
+   * @param tokenId - Идентификатор токена
+   * @returns Максимальный размер для продажи (баланс outcome-токена, округлённый до 2 знаков)
    *
    * @remarks
-   * v7.6: Uses PortfolioProjector FIRST (instant), then Balance API as fallback.
+   * v7.6: Сначала использует PortfolioProjector (мгновенно), затем Balance API как fallback.
    *
-   * Returns balance rounded DOWN to 2 decimals to comply with API requirements.
-   * SELL orders require makerAmount with max 2 decimal places.
+   * Возвращает баланс, округлённый ВНИЗ до 2 знаков в соответствии с требованиями API.
+   * SELL ордера требуют makerAmount с не более чем 2 знаками после запятой.
    *
    * @example
    * ```typescript

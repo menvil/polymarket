@@ -1,14 +1,14 @@
 /**
- * Polymarket Orderbook REST Client
+ * REST-клиент стакана заявок Polymarket
  *
  * @remarks
- * Handles /book endpoint:
- * - GET /book - Get orderbook snapshot
+ * Обрабатывает endpoint /book:
+ * - GET /book - Получить снимок стакана заявок
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
- * **IMPORTANT**: This is PUBLIC market data, NOT user-specific data.
+ * **ВАЖНО**: Это ПУБЛИЧНЫЕ рыночные данные, НЕ данные конкретного пользователя.
  *
  * @example
  * ```typescript
@@ -27,35 +27,35 @@ import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 
 /**
- * Orderbook level (raw API format)
+ * Уровень стакана заявок (сырой формат API)
  */
 export interface OrderbookLevelResponse {
-  /** Price (string format) */
+  /** Цена (строковый формат) */
   price: string;
 
-  /** Size at this price (string format) */
+  /** Размер на этой цене (строковый формат) */
   size: string;
 }
 
 /**
- * Orderbook response (raw API format)
+ * Ответ со стаканом заявок (сырой формат API)
  */
 export interface OrderbookResponse {
-  /** Token ID */
+  /** Идентификатор токена */
   tokenId: string;
 
-  /** Bids (sorted descending by price) */
+  /** Заявки на покупку (отсортированы по убыванию цены) */
   bids: OrderbookLevelResponse[];
 
-  /** Asks (sorted ascending by price) */
+  /** Заявки на продажу (отсортированы по возрастанию цены) */
   asks: OrderbookLevelResponse[];
 
-  /** Snapshot timestamp */
+  /** Временная метка снимка */
   timestamp: number;
 }
 
 /**
- * Polymarket Orderbook REST Client
+ * REST-клиент стакана заявок Polymarket
  */
 export class PolymarketOrderbookRestClient {
   constructor(
@@ -64,25 +64,25 @@ export class PolymarketOrderbookRestClient {
   ) {}
 
   /**
-   * Get orderbook snapshot
+   * Получить снимок стакана заявок
    *
-   * @param tokenId - Token ID
-   * @param depth - Optional: number of levels to return (default: all)
-   * @returns Orderbook snapshot
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @param depth - Необязательно: количество уровней для возврата (по умолчанию: все)
+   * @returns Снимок стакана заявок
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Returns raw API response. Normalization should be done by mapper.
-   * This is PUBLIC data (does not require authentication).
+   * Возвращает сырой ответ API. Нормализация должна выполняться маппером.
+   * Это ПУБЛИЧНЫЕ данные (не требуют аутентификации).
    *
    * @example
    * ```typescript
-   * // Full orderbook
+   * // Полный стакан заявок
    * const orderbook = await client.getOrderbook('0x123');
    * console.log(`Bids: ${orderbook.bids.length}`);
    * console.log(`Asks: ${orderbook.asks.length}`);
    *
-   * // Top 10 levels
+   * // Топ 10 уровней
    * const top10 = await client.getOrderbook('0x123', 10);
    * console.log(`Best bid: ${top10.bids[0].price}`);
    * console.log(`Best ask: ${top10.asks[0].price}`);
@@ -113,11 +113,11 @@ export class PolymarketOrderbookRestClient {
   }
 
   /**
-   * Get best bid and ask
+   * Получить лучший bid и ask
    *
-   * @param tokenId - Token ID
-   * @returns Object with best bid and ask prices
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Объект с лучшими ценами bid и ask
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -148,11 +148,11 @@ export class PolymarketOrderbookRestClient {
   }
 
   /**
-   * Get mid price
+   * Получить среднюю цену (mid price)
    *
-   * @param tokenId - Token ID
-   * @returns Mid price (average of best bid and ask)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Средняя цена (среднее лучших bid и ask)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript

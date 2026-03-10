@@ -1,32 +1,32 @@
 /**
- * Polymarket Official SDK REST Adapter (Placeholder)
+ * REST-адаптер официального SDK Polymarket (Заглушка)
  *
  * @remarks
- * **🚧 PLACEHOLDER IMPLEMENTATION 🚧**
+ * **🚧 ЗАГЛУШКА 🚧**
  *
- * This adapter is a placeholder for integrating the official Polymarket SDK.
- * Currently throws "not implemented" errors for all operations.
+ * Этот адаптер является заглушкой для интеграции официального SDK Polymarket.
+ * В настоящее время выбрасывает ошибки "not implemented" для всех операций.
  *
- * ## Purpose
+ * ## Назначение
  *
- * Provides a drop-in replacement for PolymarketRestAdapter that wraps
- * the official @polymarket/clob-client SDK instead of custom REST clients.
+ * Предоставляет замену для PolymarketRestAdapter, которая оборачивает
+ * официальный SDK @polymarket/clob-client вместо пользовательских REST-клиентов.
  *
- * ## Integration Steps
+ * ## Шаги интеграции
  *
- * To integrate the official SDK:
+ * Для интеграции официального SDK:
  *
- * 1. **Install official SDK**:
+ * 1. **Установить официальный SDK**:
  *    ```bash
  *    npm install @polymarket/clob-client
  *    ```
  *
- * 2. **Import official client**:
+ * 2. **Импортировать официальный клиент**:
  *    ```typescript
  *    import { ClobClient } from '@polymarket/clob-client';
  *    ```
  *
- * 3. **Initialize in constructor**:
+ * 3. **Инициализировать в конструкторе**:
  *    ```typescript
  *    constructor(config: OfficialSDKConfig, logger: ILogger) {
  *      this.clobClient = new ClobClient({
@@ -38,7 +38,7 @@
  *    }
  *    ```
  *
- * 4. **Implement each method**:
+ * 4. **Реализовать каждый метод**:
  *    ```typescript
  *    async placeOrder(params: PlaceOrderParams): Promise<OrderResponse> {
  *      // Map params to official SDK format
@@ -61,7 +61,7 @@
  *    }
  *    ```
  *
- * 5. **Update providers.ts**:
+ * 5. **Обновить providers.ts**:
  *    ```typescript
  *    // In exchangeAdapter registration
  *    if (env.REST_CLIENT_TYPE === 'official') {
@@ -75,14 +75,14 @@
  *    }
  *    ```
  *
- * 6. **Test integration**:
+ * 6. **Протестировать интеграцию**:
  *    ```bash
  *    REST_CLIENT_TYPE=official npm run test:smoke:rest
  *    ```
  *
- * ## Interface Compatibility
+ * ## Совместимость интерфейсов
  *
- * This adapter implements the same public interface as PolymarketRestAdapter:
+ * Этот адаптер реализует тот же публичный интерфейс, что и PolymarketRestAdapter:
  * - placeOrder(params): Promise<OrderResponse>
  * - cancelOrder(orderId): Promise<void>
  * - getOpenOrders(tokenId?): Promise<OrderResponse[]>
@@ -92,16 +92,16 @@
  * - approveUSDC(amount): Promise<void>
  * - clearConstraintsCache(tokenId?): void
  *
- * ## Mapping Strategy
+ * ## Стратегия маппинга
  *
- * When implementing, you'll need to map between:
- * - Our domain types (Order, Price, Quantity, Side) ↔ SDK types
- * - Our error types (ValidationError, ApiError) ↔ SDK errors
- * - Our responses (OrderResponse, PositionResponse) ↔ SDK responses
+ * При реализации потребуется маппинг между:
+ * - Нашими доменными типами (Order, Price, Quantity, Side) ↔ типами SDK
+ * - Нашими типами ошибок (ValidationError, ApiError) ↔ ошибками SDK
+ * - Нашими ответами (OrderResponse, PositionResponse) ↔ ответами SDK
  *
- * ## Error Handling
+ * ## Обработка ошибок
  *
- * Official SDK may throw different errors. Map them to our error types:
+ * Официальный SDK может выбрасывать другие ошибки. Маппируйте их в наши типы:
  * ```typescript
  * try {
  *   return await this.clobClient.createOrder(params);
@@ -115,17 +115,17 @@
  * }
  * ```
  *
- * ## Performance Considerations
+ * ## Особенности производительности
  *
- * Official SDK may have different:
- * - Rate limiting behavior
- * - Retry strategies
- * - Connection pooling
- * - Caching mechanisms
+ * Официальный SDK может иметь иное поведение:
+ * - Ограничение частоты запросов
+ * - Стратегии повторных попыток
+ * - Пул соединений
+ * - Механизмы кэширования
  *
- * Benchmark and compare with custom implementation.
+ * Выполните бенчмарк и сравните с пользовательской реализацией.
  *
- * ## References
+ * ## Ссылки
  *
  * - Official SDK docs: https://github.com/Polymarket/clob-client
  * - API reference: https://docs.polymarket.com/
@@ -157,50 +157,50 @@ import type { PlaceOrderParams, OrderResponse } from '../ports/IExecutionAdapter
 import type { PositionResponse } from '../ports/IPortfolioAdapter.js';
 
 /**
- * Configuration for official SDK client
+ * Конфигурация официального SDK-клиента
  */
 export interface OfficialSDKConfig {
   /**
-   * CLOB API base URL
+   * Базовый URL CLOB API
    * @example 'https://clob.polymarket.com'
    */
   baseUrl: string;
 
   /**
-   * Private key for signing orders
+   * Приватный ключ для подписи ордеров
    * @example '0x...'
    */
   privateKey: string;
 
   /**
-   * Chain ID (Polygon mainnet = 137)
+   * Идентификатор сети (Polygon mainnet = 137)
    */
   chainId: number;
 }
 
 /**
- * Polymarket Official SDK REST Adapter (Placeholder)
+ * REST-адаптер официального SDK Polymarket (Заглушка)
  *
  * @remarks
- * 🚧 NOT YET IMPLEMENTED - throws errors for all operations
+ * 🚧 НЕ РЕАЛИЗОВАН — выбрасывает ошибки для всех операций
  *
- * This is a placeholder for official SDK integration.
- * See class documentation for integration steps.
+ * Это заглушка для интеграции официального SDK.
+ * Шаги интеграции см. в документации класса.
  */
 export class PolymarketOfficialRestAdapter {
   private readonly logger: ILogger;
 
   /**
-   * Create PolymarketOfficialRestAdapter
+   * Создать PolymarketOfficialRestAdapter
    *
-   * @param config - Official SDK configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация официального SDK
+   * @param logger - Экземпляр логгера
    *
    * @remarks
-   * Currently just stores logger. When implementing:
-   * 1. Import official SDK: `import { ClobClient } from '@polymarket/clob-client'`
-   * 2. Initialize client: `this.clobClient = new ClobClient(config)`
-   * 3. Store reference: `private readonly clobClient: ClobClient`
+   * В настоящее время только сохраняет логгер. При реализации:
+   * 1. Импортировать официальный SDK: `import { ClobClient } from '@polymarket/clob-client'`
+   * 2. Инициализировать клиент: `this.clobClient = new ClobClient(config)`
+   * 3. Сохранить ссылку: `private readonly clobClient: ClobClient`
    */
   constructor(_config: OfficialSDKConfig, logger: ILogger) {
     this.logger = logger;
@@ -217,130 +217,130 @@ export class PolymarketOfficialRestAdapter {
   }
 
   /**
-   * Place order
+   * Разместить ордер
    *
-   * @param params - Order parameters
-   * @returns Order response
-   * @throws {Error} Not implemented
+   * @param params - Параметры ордера
+   * @returns Ответ по ордеру
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Map params to SDK format
-   * 2. Call SDK's createOrder()
-   * 3. Map result back to OrderResponse
-   * 4. Handle SDK errors and map to our error types
+   * **Шаги реализации:**
+   * 1. Преобразовать params в формат SDK
+   * 2. Вызвать SDK's createOrder()
+   * 3. Преобразовать результат обратно в OrderResponse
+   * 4. Обработать ошибки SDK и преобразовать в наши типы ошибок
    */
   async placeOrder(_params: PlaceOrderParams): Promise<OrderResponse> {
     throw new Error('PolymarketOfficialRestAdapter.placeOrder() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Cancel order
+   * Отменить ордер
    *
-   * @param orderId - Order ID to cancel
-   * @throws {Error} Not implemented
+   * @param orderId - Идентификатор ордера для отмены
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's cancelOrder(orderId)
-   * 2. Handle SDK errors
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's cancelOrder(orderId)
+   * 2. Обработать ошибки SDK
    */
   async cancelOrder(_orderId: string): Promise<void> {
     throw new Error('PolymarketOfficialRestAdapter.cancelOrder() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Get open orders
+   * Получить открытые ордера
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders
-   * @throws {Error} Not implemented
+   * @param tokenId - Опционально: фильтр по идентификатору токена
+   * @returns Массив открытых ордеров
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's getOrders() with filters
-   * 2. Filter by status: OPEN
-   * 3. Map results to OrderResponse[]
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's getOrders() с фильтрами
+   * 2. Отфильтровать по статусу: OPEN
+   * 3. Преобразовать результаты в OrderResponse[]
    */
   async getOpenOrders(_tokenId?: string): Promise<OrderResponse[]> {
     throw new Error('PolymarketOfficialRestAdapter.getOpenOrders() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Get balance
+   * Получить баланс
    *
-   * @returns Available USDC balance
-   * @throws {Error} Not implemented
+   * @returns Доступный баланс USDC
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's getBalance() or equivalent
-   * 2. Extract USDC balance
-   * 3. Return as number
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's getBalance() или эквивалент
+   * 2. Извлечь баланс USDC
+   * 3. Вернуть как число
    */
   async getBalance(): Promise<number> {
     throw new Error('PolymarketOfficialRestAdapter.getBalance() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Get outcome balance
+   * Получить баланс outcome-токена
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @returns Баланс outcome-токена
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's getBalances() or equivalent
-   * 2. Find token by tokenId
-   * 3. Return balance as number
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's getBalances() или эквивалент
+   * 2. Найти токен по tokenId
+   * 3. Вернуть баланс как число
    */
   async getOutcomeBalance(_tokenId: string): Promise<number> {
     throw new Error('PolymarketOfficialRestAdapter.getOutcomeBalance() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Get positions
+   * Получить позиции
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {Error} Not implemented
+   * @param tokenId - Опционально: фильтр по идентификатору токена
+   * @returns Массив позиций
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's getPositions()
-   * 2. Filter by tokenId if provided
-   * 3. Map results to PositionResponse[]
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's getPositions()
+   * 2. Отфильтровать по tokenId если указан
+   * 3. Преобразовать результаты в PositionResponse[]
    */
   async getPositions(_tokenId?: string): Promise<PositionResponse[]> {
     throw new Error('PolymarketOfficialRestAdapter.getPositions() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Approve USDC for trading
+   * Одобрить USDC для торговли
    *
-   * @param amount - Amount to approve
-   * @throws {Error} Not implemented
+   * @param amount - Сумма для одобрения
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's approve() or equivalent
-   * 2. Wait for blockchain confirmation
-   * 3. Handle blockchain errors
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's approve() или эквивалент
+   * 2. Дождаться подтверждения блокчейна
+   * 3. Обработать ошибки блокчейна
    */
   async approveUSDC(_amount: number): Promise<void> {
     throw new Error('PolymarketOfficialRestAdapter.approveUSDC() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
-   * Clear constraints cache
+   * Очистить кэш ограничений
    *
-   * @param tokenId - Optional: clear specific token, or all if not specified
+   * @param tokenId - Опционально: очистить конкретный токен или все если не указан
    *
    * @remarks
-   * **Implementation note:**
-   * Official SDK may not have constraints caching.
-   * This method may be no-op or log warning.
+   * **Примечание по реализации:**
+   * Официальный SDK может не поддерживать кэширование ограничений.
+   * Этот метод может быть no-op или логировать предупреждение.
    */
   clearConstraintsCache(_tokenId?: string): void {
     this.logger.debug('[PolymarketOfficialRestAdapter] clearConstraintsCache() - no-op in official SDK');

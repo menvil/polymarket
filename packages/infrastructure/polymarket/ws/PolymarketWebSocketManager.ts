@@ -1,19 +1,19 @@
 /**
- * PolymarketWebSocketManager - Polymarket-specific WebSocket manager
+ * PolymarketWebSocketManager — WebSocket-менеджер для Polymarket
  *
  * @remarks
- * Extends BaseWebSocketTransport with Polymarket-specific functionality.
- * Uses composition pattern by injecting PolymarketMessageFormatter and PolymarketMessageParser.
+ * Расширяет BaseWebSocketTransport Polymarket-специфичной функциональностью.
+ * Использует паттерн композиции, внедряя PolymarketMessageFormatter и PolymarketMessageParser.
  *
- * Provides:
- * - Polymarket-specific convenience methods (subscribeToTokens, unsubscribeFromTokens)
- * - Configured BaseWebSocketTransport with Polymarket formatter and parser
- * - Same API as old WebSocketManager (backward compatible)
+ * Предоставляет:
+ * - Удобные методы Polymarket (subscribeToTokens, unsubscribeFromTokens)
+ * - Настроенный BaseWebSocketTransport с форматтером и парсером Polymarket
+ * - Тот же API, что и старый WebSocketManager (обратная совместимость)
  *
- * This is a thin wrapper that:
- * 1. Creates PolymarketMessageFormatter and PolymarketMessageParser
- * 2. Injects them into BaseWebSocketTransport via constructor
- * 3. Provides convenience methods for common Polymarket operations
+ * Это тонкая обёртка, которая:
+ * 1. Создаёт PolymarketMessageFormatter и PolymarketMessageParser
+ * 2. Внедряет их в BaseWebSocketTransport через конструктор
+ * 3. Предоставляет удобные методы для типовых операций Polymarket
  *
  * @example
  * ```typescript
@@ -43,13 +43,13 @@ import { PolymarketMessageFormatter } from './PolymarketMessageFormatter.js';
 import { PolymarketMessageParser } from './PolymarketMessageParser.js';
 
 /**
- * Polymarket WebSocket configuration
+ * Конфигурация WebSocket для Polymarket
  *
  * @remarks
- * Same as BaseWebSocketConfig but with Polymarket-specific defaults.
+ * То же самое, что BaseWebSocketConfig, но с Polymarket-специфичными значениями по умолчанию.
  */
 export interface PolymarketWebSocketConfig extends BaseWebSocketConfig {
-  /** WebSocket URL (default: wss://ws-subscriptions-clob.polymarket.com/ws/market) */
+  /** URL WebSocket (по умолчанию: wss://ws-subscriptions-clob.polymarket.com/ws/market) */
   url: string;
 }
 
@@ -57,24 +57,24 @@ export interface PolymarketWebSocketConfig extends BaseWebSocketConfig {
  * PolymarketWebSocketManager
  *
  * @remarks
- * Polymarket-specific WebSocket manager using composition pattern.
- * Extends BaseWebSocketTransport and injects Polymarket formatter/parser.
+ * Polymarket-специфичный WebSocket-менеджер, использующий паттерн композиции.
+ * Расширяет BaseWebSocketTransport и внедряет форматтер/парсер Polymarket.
  *
- * Features:
- * - Polymarket message formatting (via PolymarketMessageFormatter)
- * - Polymarket message parsing (via PolymarketMessageParser)
- * - Convenience methods for token subscriptions
- * - Same API as old WebSocketManager (backward compatible)
+ * Возможности:
+ * - Форматирование сообщений Polymarket (через PolymarketMessageFormatter)
+ * - Парсинг сообщений Polymarket (через PolymarketMessageParser)
+ * - Удобные методы для подписок на токены
+ * - Тот же API, что и старый WebSocketManager (обратная совместимость)
  *
- * Events (inherited from BaseWebSocketTransport):
- * - `connected` - Successfully connected
- * - `disconnected` - Disconnected
- * - `reconnecting` - Reconnection attempt started
- * - `error` - Error occurred
- * - `message` - Raw WebSocket data (Buffer, emitted FIRST)
- * - `raw` - Parsed message (after message event)
- * - `orderbook` - Orderbook update
- * - `trade` - Trade update
+ * События (унаследованы от BaseWebSocketTransport):
+ * - `connected` — успешное подключение
+ * - `disconnected` — отключение
+ * - `reconnecting` — начало попытки переподключения
+ * - `error` — возникла ошибка
+ * - `message` — raw данные WebSocket (Buffer, эмитируется ПЕРВЫМ)
+ * - `raw` — распарсенное сообщение (после события message)
+ * - `orderbook` — обновление стакана
+ * - `trade` — обновление сделки
  */
 export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   /**
@@ -95,18 +95,18 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   private tradeListenerInitialized = false;
 
   /**
-   * Create a new Polymarket WebSocket manager
+   * Создаёт новый WebSocket-менеджер Polymarket
    *
-   * @param config - WebSocket configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация WebSocket
+   * @param logger - Экземпляр logger
    *
-   * @throws {Error} If config or logger is null
+   * @throws {Error} Если config или logger равны null
    *
    * @remarks
-   * Creates PolymarketMessageFormatter and PolymarketMessageParser internally
-   * and injects them into BaseWebSocketTransport.
+   * Внутренне создаёт PolymarketMessageFormatter и PolymarketMessageParser
+   * и внедряет их в BaseWebSocketTransport.
    *
-   * The formatter and parser are created with the same logger for consistent logging.
+   * Форматтер и парсер создаются с тем же logger для согласованного логирования.
    *
    * @example
    * ```typescript
@@ -132,19 +132,19 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   }
 
   /**
-   * Subscribe to token updates
+   * Подписывается на обновления токенов
    *
-   * @param tokenIds - Array of token IDs to subscribe to
-   * @returns Promise that resolves when subscription message sent
+   * @param tokenIds - Массив token ID для подписки
+   * @returns Promise, который разрешается при отправке сообщения подписки
    *
    * @remarks
-   * Convenience method for subscribing to Polymarket tokens.
-   * Equivalent to: subscribe('market', { assets_ids: tokenIds, type: 'market' })
+   * Удобный метод для подписки на токены Polymarket.
+   * Эквивалентно: subscribe('market', { assets_ids: tokenIds, type: 'market' })
    *
-   * Features:
-   * - Automatic duplicate removal (via PolymarketMessageFormatter)
-   * - Token validation (via PolymarketMessageFormatter)
-   * - Detailed logging
+   * Возможности:
+   * - Автоматическое удаление дублей (через PolymarketMessageFormatter)
+   * - Валидация токенов (через PolymarketMessageFormatter)
+   * - Подробное логирование
    *
    * @example
    * ```typescript
@@ -166,14 +166,14 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   }
 
   /**
-   * Unsubscribe from token updates
+   * Отписывается от обновлений токенов
    *
-   * @param tokenIds - Array of token IDs to unsubscribe from
-   * @returns Promise that resolves when unsubscription message sent
+   * @param tokenIds - Массив token ID для отписки
+   * @returns Promise, который разрешается при отправке сообщения отписки
    *
    * @remarks
-   * Convenience method for unsubscribing from Polymarket tokens.
-   * Equivalent to: unsubscribe('market', { assets_ids: tokenIds, type: 'market' })
+   * Удобный метод для отписки от токенов Polymarket.
+   * Эквивалентно: unsubscribe('market', { assets_ids: tokenIds, type: 'market' })
    *
    * @example
    * ```typescript
@@ -190,21 +190,21 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   }
 
   /**
-   * Subscribe to trade events for a specific token
+   * Подписывается на события сделок по конкретному токену
    *
-   * @param tokenId - Token ID to filter trades by
-   * @param callback - Callback called for each trade
+   * @param tokenId - Token ID для фильтрации сделок
+   * @param callback - Коллбэк, вызываемый для каждой сделки
    *
    * @remarks
-   * v5.4: For trade-based fill detection in PAPER mode.
+   * v5.4: Для обнаружения fills на основе сделок в PAPER режиме.
    *
-   * The callback receives normalized trade data:
-   * - price: number (parsed from string)
-   * - quantity: number (parsed from string)
+   * Коллбэк получает нормализованные данные сделки:
+   * - price: number (распарсено из строки)
+   * - quantity: number (распарсено из строки)
    * - side: 'BUY' | 'SELL' | null
    *
-   * Only one callback per tokenId is supported.
-   * Calling again with same tokenId replaces the previous callback.
+   * Поддерживается только один коллбэк на tokenId.
+   * Повторный вызов с тем же tokenId заменяет предыдущий коллбэк.
    *
    * @example
    * ```typescript
@@ -247,19 +247,19 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   }
 
   /**
-   * Unsubscribe from trade events for a specific token
+   * Отписывается от событий сделок по конкретному токену
    *
-   * @param tokenId - Token ID to unsubscribe from
+   * @param tokenId - Token ID для отписки
    *
    * @remarks
-   * v5.4: Removes the trade callback for this tokenId.
-   * Does NOT remove the underlying 'trade' event listener (it stays active for other tokens).
+   * v5.4: Удаляет коллбэк сделки для данного tokenId.
+   * НЕ удаляет базовый слушатель события 'trade' (он остаётся активным для других токенов).
    */
   public unsubscribeFromTrades(tokenId: string): void {
     this.tradeCallbacks.delete(tokenId);
   }
 }
 
-// Re-export types from shared layer for backward compatibility
+// Реэкспорт типов из общего слоя для обратной совместимости
 export type { ConnectionStatus } from '../stubs/shared/websocket/types.js';
 export type { SubscriptionParams } from '../stubs/shared/websocket/types.js';

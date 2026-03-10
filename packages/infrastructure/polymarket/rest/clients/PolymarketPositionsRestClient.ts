@@ -1,17 +1,17 @@
 /**
- * Polymarket Positions REST Client
+ * REST-клиент позиций Polymarket
  *
  * @remarks
- * Handles Data API /positions endpoint:
- * - GET https://data-api.polymarket.com/positions - Get user positions
+ * Обрабатывает endpoint /positions Data API:
+ * - GET https://data-api.polymarket.com/positions - Получить позиции пользователя
  *
- * **CRITICAL**: Uses Data API (data-api.polymarket.com), NOT CLOB API!
+ * **КРИТИЧНО**: Использует Data API (data-api.polymarket.com), НЕ CLOB API!
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
- * **IMPORTANT**: Positions are FILLED trades, NOT open orders.
- * For open orders, use PolymarketOrdersRestClient.
+ * **ВАЖНО**: Позиции — это ИСПОЛНЕННЫЕ сделки, НЕ открытые ордера.
+ * Для открытых ордеров используйте PolymarketOrdersRestClient.
  *
  * @example
  * ```typescript
@@ -30,39 +30,39 @@ import type { ILogger } from '@polymarket/logger';
 import type { PolymarketDataApiClient } from '../PolymarketDataApiClient.js';
 
 /**
- * Position response (raw Data API format)
+ * Ответ с позицией (сырой формат Data API)
  *
  * @remarks
- * From https://data-api.polymarket.com/positions
+ * Из https://data-api.polymarket.com/positions
  */
 export interface PositionResponse {
-  /** Asset token ID */
+  /** Идентификатор токена актива */
   asset: string;
 
-  /** Condition ID (market) */
+  /** Идентификатор условия (маркет) */
   conditionId: string;
 
-  /** Position size (number of shares) */
+  /** Размер позиции (количество акций) */
   size: number;
 
-  /** Average entry price */
+  /** Средняя цена входа */
   avgPrice: number;
 
-  /** Current market value */
+  /** Текущая рыночная стоимость */
   currentValue: number;
 
-  /** Cash PnL */
+  /** PnL в денежном выражении */
   cashPnl: number;
 
-  /** Percent PnL */
+  /** PnL в процентах */
   percentPnl: number;
 
-  /** Market metadata (nested object from API) */
+  /** Метаданные маркета (вложенный объект из API) */
   market?: any;
 }
 
 /**
- * Polymarket Positions REST Client
+ * REST-клиент позиций Polymarket
  */
 export class PolymarketPositionsRestClient {
   constructor(
@@ -72,29 +72,29 @@ export class PolymarketPositionsRestClient {
   ) {}
 
   /**
-   * Get user positions
+   * Получить позиции пользователя
    *
-   * @param conditionId - Optional: filter by market condition ID
-   * @returns Array of positions
-   * @throws {Error} If API call fails
+   * @param conditionId - Необязательно: фильтр по condition ID маркета
+   * @returns Массив позиций
+   * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Uses Data API (data-api.polymarket.com), NOT CLOB API.
-   * Returns filled trades, NOT open orders.
-   * Returns raw API response (array of positions).
+   * Использует Data API (data-api.polymarket.com), НЕ CLOB API.
+   * Возвращает исполненные сделки, НЕ открытые ордера.
+   * Возвращает сырой ответ API (массив позиций).
    *
    * API Endpoint: GET https://data-api.polymarket.com/positions
-   * Parameters:
-   * - user: User wallet address (required)
-   * - market: Condition ID filter (optional)
+   * Параметры:
+   * - user: Адрес кошелька пользователя (обязательно)
+   * - market: Фильтр по condition ID (необязательно)
    *
    * @example
    * ```typescript
-   * // All positions for user
+   * // Все позиции пользователя
    * const allPositions = await client.getPositions();
    * console.log(`Total positions: ${allPositions.length}`);
    *
-   * // Positions for specific market
+   * // Позиции для конкретного маркета
    * const marketPositions = await client.getPositions('condition-id-123');
    * console.log(`Market positions: ${marketPositions.length}`);
    * ```
@@ -132,15 +132,15 @@ export class PolymarketPositionsRestClient {
   }
 
   /**
-   * Get position for specific asset (token)
+   * Получить позицию для конкретного актива (токена)
    *
-   * @param assetId - Asset token ID
-   * @returns Position response or undefined if not found
-   * @throws {Error} If API call fails
+   * @param assetId - Идентификатор токена актива
+   * @returns Ответ с позицией или undefined если не найдена
+   * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Fetches all user positions and filters by asset ID.
-   * For better performance, use market filtering in getPositions().
+   * Запрашивает все позиции пользователя и фильтрует по ID актива.
+   * Для лучшей производительности используйте фильтр по маркету в getPositions().
    *
    * @example
    * ```typescript

@@ -2,16 +2,16 @@
  * Polymarket REST Adapter Factory
  *
  * @remarks
- * Factory for creating fully configured PolymarketRestAdapter with all dependencies.
+ * Фабрика для создания полностью сконфигурированного PolymarketRestAdapter со всеми зависимостями.
  *
- * This factory wires up:
- * - PolymarketRestClient (base HTTP client)
- * - 6 REST clients (Order, Balance, Positions, Orderbook, Trades, MarketData)
- * - 3 Mappers (Balance, Order, Position)
- * - 2 Providers (Balance, Positions)
- * - 2 Policies (MarketConstraints, Balance)
- * - 2 Adapters (Execution, Portfolio)
- * - 1 Facade (RestAdapter)
+ * Фабрика собирает:
+ * - PolymarketRestClient (базовый HTTP-клиент)
+ * - 6 REST-клиентов (Order, Balance, Positions, Orderbook, Trades, MarketData)
+ * - 3 маппера (Balance, Order, Position)
+ * - 2 провайдера (Balance, Positions)
+ * - 2 политики (MarketConstraints, Balance)
+ * - 2 адаптера (Execution, Portfolio)
+ * - 1 фасад (RestAdapter)
  *
  * @example
  * ```typescript
@@ -31,7 +31,7 @@
  *   logger
  * );
  *
- * // Use adapter
+ * // Используем адаптер
  * const balance = await adapter.getBalance();
  * console.log(`Balance: ${balance} USDC`);
  * ```
@@ -70,15 +70,15 @@ import { PolymarketRestAdapter } from './adapters/PolymarketRestAdapter.js';
  */
 export class PolymarketRestAdapterFactory {
   /**
-   * Create fully configured PolymarketRestAdapter
+   * Создаёт полностью сконфигурированный PolymarketRestAdapter
    *
-   * @param config - REST client configuration
-   * @param marketDataConfig - Market data client configuration
-   * @param eventBus - EventBus for publishing ExecutionEvent
-   * @param logger - Logger instance
-   * @param simulationMode - Enable simulation mode (virtual balance/trades)
+   * @param config - Конфигурация REST-клиента
+   * @param marketDataConfig - Конфигурация клиента рыночных данных
+   * @param eventBus - EventBus для публикации ExecutionEvent
+   * @param logger - Экземпляр логгера
+   * @param simulationMode - Включить режим симуляции (виртуальный баланс/сделки)
    * @param portfolioProjector - Опциональный PortfolioProjector для мгновенных проверок баланса
-   * @returns Configured PolymarketRestAdapter
+   * @returns Сконфигурированный PolymarketRestAdapter
    *
    * @remarks
    * ExecutionAdapter требует EventBus для публикации ExecutionEvent
@@ -98,7 +98,7 @@ export class PolymarketRestAdapterFactory {
    *   baseUrl: 'https://gamma-api.polymarket.com',
    * };
    *
-   * // Without PortfolioProjector (global adapter)
+   * // Без PortfolioProjector (глобальный адаптер)
    * const adapter = PolymarketRestAdapterFactory.create(
    *   config,
    *   marketDataConfig,
@@ -106,7 +106,7 @@ export class PolymarketRestAdapterFactory {
    *   logger
    * );
    *
-   * // With PortfolioProjector (strategy-specific adapter)
+   * // С PortfolioProjector (адаптер для конкретной стратегии)
    * const portfolioProjector = new PortfolioProjector('strategy-1');
    * const adapterWithProjector = PolymarketRestAdapterFactory.create(
    *   config,

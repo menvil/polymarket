@@ -144,7 +144,7 @@ export class PolymarketWsClient extends EventEmitter {
    *
    * @remarks
    * Делегирует WebSocketManager.disconnect().
-   * Graceful shutdown - ждёт подтверждения закрытия.
+   * Graceful завершение — ждёт подтверждения закрытия.
    *
    * @example
    * ```typescript

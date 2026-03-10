@@ -1,20 +1,20 @@
 /**
- * Polymarket Orders Provider (PLURAL!)
+ * Провайдер ордеров Polymarket (множественное число!)
  *
  * @remarks
- * Implements IOrdersProvider interface.
- * Uses PolymarketOrderRestClient + PolymarketOrderMapper.
+ * Реализует интерфейс IOrdersProvider.
+ * Использует PolymarketOrderRestClient + PolymarketOrderMapper.
  *
- * **IMPORTANT**: This is plural "Orders" (not singular "Order")
- * because it manages multiple orders.
+ * **ВАЖНО**: Это множественное число "Orders" (не единственное "Order"),
+ * поскольку управляет несколькими ордерами.
  *
- * **NOTE**: This provider is read-only. For placing/canceling orders,
- * use PolymarketExecutionAdapter.
+ * **ПРИМЕЧАНИЕ**: Провайдер доступен только для чтения. Для размещения/отмены ордеров
+ * используйте PolymarketExecutionAdapter.
  *
- * Responsibilities:
- * - Fetch orders data from API
- * - Normalize data using mapper
- * - Return domain-formatted orders
+ * Обязанности:
+ * - Получение данных ордеров из API
+ * - Нормализация данных с помощью маппера
+ * - Возврат ордеров в доменном формате
  *
  * @example
  * ```typescript
@@ -41,10 +41,10 @@ import type { PolymarketOrderRestClient } from '../clients/PolymarketOrderRestCl
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
 
 /**
- * Polymarket Orders Provider (PLURAL!)
+ * Провайдер ордеров Polymarket (множественное число!)
  *
  * @remarks
- * Implements IOrdersProvider for Polymarket.
+ * Реализует IOrdersProvider для Polymarket.
  */
 export class PolymarketOrdersProvider implements IOrdersProvider {
   constructor(
@@ -54,15 +54,15 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   ) {}
 
   /**
-   * Get all open orders
+   * Получить все открытые ордера
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по идентификатору токена
+   * @returns Массив открытых ордеров
+   * @throws {ApiError} При ошибке вызова API
    *
    * @remarks
-   * Returns only orders with status 'open' or 'partially_filled'.
-   * Filled and cancelled orders are excluded.
+   * Возвращает только ордера со статусом 'open' или 'partially_filled'.
+   * Исполненные и отменённые ордера исключаются.
    *
    * @example
    * ```typescript
@@ -87,11 +87,11 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   }
 
   /**
-   * Get specific order by ID
+   * Получить конкретный ордер по идентификатору
    *
-   * @param orderId - Order ID
-   * @returns Order response
-   * @throws {ApiError} If API call fails or order not found
+   * @param orderId - Идентификатор ордера
+   * @returns Ответ по ордеру
+   * @throws {ApiError} При ошибке вызова API или если ордер не найден
    *
    * @example
    * ```typescript
@@ -115,16 +115,16 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   }
 
   /**
-   * Get orders by status
+   * Получить ордера по статусу
    *
-   * @param status - Order status to filter
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of orders with specified status
-   * @throws {ApiError} If API call fails
+   * @param status - Статус ордера для фильтрации
+   * @param tokenId - Опционально: фильтр по идентификатору токена
+   * @returns Массив ордеров с указанным статусом
+   * @throws {ApiError} При ошибке вызова API
    *
    * @remarks
-   * Filters orders by status locally (after fetching all open orders).
-   * For 'filled' and 'cancelled' orders, use getOrderHistory() if available.
+   * Фильтрует ордера по статусу локально (после получения всех открытых ордеров).
+   * Для ордеров со статусом 'filled' и 'cancelled' используйте getOrderHistory() если доступен.
    *
    * @example
    * ```typescript

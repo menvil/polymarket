@@ -1,8 +1,8 @@
 /**
- * Polymarket REST API - Public Exports
+ * Polymarket REST API — Публичные экспорты
  *
  * @remarks
- * Main entry point for Polymarket REST implementation.
+ * Основная точка входа для реализации Polymarket REST.
  *
  * @example
  * ```typescript

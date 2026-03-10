@@ -1,29 +1,29 @@
 /**
- * Polymarket User Trades REST Client
+ * REST-клиент пользовательских сделок Polymarket
  *
  * @remarks
- * Handles /data/trades endpoint (L2 authenticated):
- * - GET /data/trades - Get user's trade fills history
+ * Обрабатывает endpoint /data/trades (L2-аутентифицированный):
+ * - GET /data/trades - Получить историю исполнений сделок пользователя
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
- * **IMPORTANT**: This returns USER-SPECIFIC fills (authenticated), NOT public market trades.
- * For public market trades, use PolymarketTradesRestClient.
+ * **ВАЖНО**: Возвращает ИСПОЛНЕНИЯ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ (аутентифицированные), НЕ публичные рыночные сделки.
+ * Для публичных рыночных сделок используйте PolymarketTradesRestClient.
  *
  * @example
  * ```typescript
  * const client = new PolymarketUserTradesRestClient(restClient, logger);
  *
- * // Get all user fills
+ * // Получить все исполнения пользователя
  * const fills = await client.getUserFills();
  * console.log(`Total fills: ${fills.length}`);
  *
- * // Get fills for specific market
+ * // Получить исполнения для конкретного маркета
  * const marketFills = await client.getUserFills({ market: '0x123...' });
  * console.log(`Market fills: ${marketFills.length}`);
  *
- * // Get fills for specific asset
+ * // Получить исполнения для конкретного актива
  * const assetFills = await client.getUserFills({ asset_id: '123456...' });
  * ```
  */
@@ -32,83 +32,83 @@ import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 
 /**
- * User fill response (raw API format)
+ * Ответ с исполнением пользователя (сырой формат API)
  *
  * @remarks
- * Represents a single fill (executed trade) for the authenticated user.
+ * Представляет одно исполнение (исполненную сделку) аутентифицированного пользователя.
  */
 export interface UserFillResponse {
-  /** Trade ID */
+  /** Идентификатор сделки */
   id: string;
 
-  /** Order ID that was filled */
+  /** Идентификатор ордера, который был исполнен */
   order_id: string;
 
-  /** Market condition ID */
+  /** Condition ID маркета */
   market: string;
 
-  /** Asset ID (token ID) */
+  /** Идентификатор актива (токена) */
   asset_id: string;
 
-  /** Trade side (BUY or SELL) */
+  /** Направление сделки (BUY или SELL) */
   side: 'BUY' | 'SELL';
 
-  /** Execution price (string format) */
+  /** Цена исполнения (строковый формат) */
   price: string;
 
-  /** Fill size (string format) */
+  /** Размер исполнения (строковый формат) */
   size: string;
 
-  /** Fee amount (string format) */
+  /** Сумма комиссии (строковый формат) */
   fee_amount?: string;
 
-  /** Fee rate in basis points */
+  /** Ставка комиссии в базисных пунктах */
   fee_rate_bps?: string;
 
-  /** Execution timestamp (Unix milliseconds) */
+  /** Временная метка исполнения (Unix миллисекунды) */
   timestamp: number;
 
-  /** Maker address */
+  /** Адрес мейкера */
   maker_address?: string;
 
-  /** Match ID */
+  /** Идентификатор матча */
   match_id?: string;
 
-  /** Transaction hash */
+  /** Хэш транзакции */
   transaction_hash?: string;
 }
 
 /**
- * User fills query parameters
+ * Параметры запроса исполнений пользователя
  */
 export interface UserFillsParams {
-  /** Filter by market condition ID */
+  /** Фильтр по condition ID маркета */
   market?: string;
 
-  /** Filter by asset ID (token ID) */
+  /** Фильтр по идентификатору актива (токена) */
   asset_id?: string;
 
-  /** Filter by maker address */
+  /** Фильтр по адресу мейкера */
   maker_address?: string;
 
-  /** Filter fills before this timestamp */
+  /** Фильтр исполнений до этой временной метки */
   before?: number;
 
-  /** Filter fills after this timestamp */
+  /** Фильтр исполнений после этой временной метки */
   after?: number;
 
-  /** Maximum number of fills to return */
+  /** Максимальное количество исполнений для возврата */
   limit?: number;
 
-  /** Return only first page (default: false) */
+  /** Возвращать только первую страницу (по умолчанию: false) */
   only_first_page?: boolean;
 }
 
 /**
- * Polymarket User Trades REST Client
+ * REST-клиент пользовательских сделок Polymarket
  *
  * @remarks
- * L2 authenticated client for getting user's trade fill history.
+ * L2-аутентифицированный клиент для получения истории исполнений сделок пользователя.
  */
 export class PolymarketUserTradesRestClient {
   constructor(
@@ -117,32 +117,32 @@ export class PolymarketUserTradesRestClient {
   ) {}
 
   /**
-   * Get user's trade fills
+   * Получить исполнения сделок пользователя
    *
-   * @param params - Optional query parameters for filtering
-   * @returns Array of user fills (sorted by timestamp descending)
-   * @throws {ApiError} If API call fails
+   * @param params - Необязательные параметры запроса для фильтрации
+   * @returns Массив исполнений пользователя (отсортированных по убыванию временной метки)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Requires L2 authentication (HMAC-SHA256 signed headers).
-   * Returns user's executed trades (fills), NOT open orders.
+   * Требует L2-аутентификацию (заголовки с подписью HMAC-SHA256).
+   * Возвращает исполненные сделки пользователя, НЕ открытые ордера.
    *
    * @example
    * ```typescript
-   * // Get all fills
+   * // Получить все исполнения
    * const fills = await client.getUserFills();
    *
-   * // Get fills for specific market
+   * // Получить исполнения для конкретного маркета
    * const marketFills = await client.getUserFills({
    *   market: '0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af',
    * });
    *
-   * // Get recent fills (last 24 hours)
+   * // Получить последние исполнения (за последние 24 часа)
    * const recentFills = await client.getUserFills({
    *   after: Date.now() - 24 * 60 * 60 * 1000,
    * });
    *
-   * // Get fills for specific token
+   * // Получить исполнения для конкретного токена
    * const tokenFills = await client.getUserFills({
    *   asset_id: '108770292557037291842343444956827763454878470740965721806292624574119111069516',
    * });
@@ -197,22 +197,22 @@ export class PolymarketUserTradesRestClient {
   }
 
   /**
-   * Get total filled volume for user
+   * Получить суммарный объём исполненных сделок пользователя
    *
-   * @param params - Optional query parameters for filtering
-   * @returns Total volume (sum of size * price)
-   * @throws {ApiError} If API call fails
+   * @param params - Необязательные параметры запроса для фильтрации
+   * @returns Суммарный объём (сумма size * price)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Calculates total dollar volume of all fills.
+   * Вычисляет суммарный долларовый объём всех исполнений.
    *
    * @example
    * ```typescript
-   * // Total volume across all markets
+   * // Суммарный объём по всем маркетам
    * const totalVolume = await client.getTotalVolume();
    * console.log(`Total traded: $${totalVolume.toFixed(2)}`);
    *
-   * // Volume for specific market
+   * // Объём для конкретного маркета
    * const marketVolume = await client.getTotalVolume({
    *   market: '0x123...',
    * });
@@ -238,11 +238,11 @@ export class PolymarketUserTradesRestClient {
   }
 
   /**
-   * Get fill statistics for user
+   * Получить статистику исполнений пользователя
    *
-   * @param params - Optional query parameters for filtering
-   * @returns Fill statistics (count, volume, fees)
-   * @throws {ApiError} If API call fails
+   * @param params - Необязательные параметры запроса для фильтрации
+   * @returns Статистика исполнений (количество, объём, комиссии)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript

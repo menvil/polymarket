@@ -1,45 +1,45 @@
 /**
- * PolymarketMessageParser - Parses Polymarket-specific incoming WebSocket messages
+ * PolymarketMessageParser — парсит входящие WebSocket-сообщения Polymarket
  *
  * @remarks
- * Responsible for parsing INCOMING messages from Polymarket WebSocket.
- * This is the INCOMING half (paired with PolymarketMessageFormatter for outgoing).
+ * Отвечает за разбор ВХОДЯЩИХ сообщений из WebSocket Polymarket.
+ * Это ВХОДЯЩАЯ половина (в паре с PolymarketMessageFormatter для исходящих).
  *
- * Polymarket Message Types:
- * - **Data events** (have asset_id): book, trade, last_trade_price
- * - **Control events** (no asset_id): pong, error, subscribed, unsubscribed
- * - **Ignored events**: price_change, tick_size_change
+ * Типы сообщений Polymarket:
+ * - **События с данными** (имеют asset_id): book, trade, last_trade_price
+ * - **Управляющие события** (без asset_id): pong, error, subscribed, unsubscribed
+ * - **Игнорируемые события**: price_change, tick_size_change
  *
- * Key Responsibilities:
- * - Parse data events → return ParsedMessage
- * - Detect control events → return null
- * - Detect pong messages (for heartbeat)
- * - Detect error messages (for error handling)
- * - Extract error text from error messages
+ * Ключевые обязанности:
+ * - Парсинг событий с данными → возврат ParsedMessage
+ * - Обнаружение управляющих событий → возврат null
+ * - Обнаружение pong-сообщений (для heartbeat)
+ * - Обнаружение сообщений об ошибках (для обработки ошибок)
+ * - Извлечение текста ошибки из сообщений об ошибках
  *
- * Parsing Rules:
- * - Control messages (pong, error, subscribed) → return null
- * - Data messages without asset_id → log warning, return null
- * - Data messages with asset_id → return ParsedMessage
- * - Invalid/incomplete messages → log warning, return null
- * - Never throw exceptions (fail gracefully)
+ * Правила парсинга:
+ * - Управляющие сообщения (pong, error, subscribed) → возврат null
+ * - Сообщения с данными без asset_id → логирование предупреждения, возврат null
+ * - Сообщения с данными и asset_id → возврат ParsedMessage
+ * - Невалидные/неполные сообщения → логирование предупреждения, возврат null
+ * - Никогда не бросает исключений (graceful degradation)
  *
  * @example
  * ```typescript
  * const parser = new PolymarketMessageParser(logger);
  *
- * // Orderbook message
+ * // Сообщение orderbook
  * const parsed = parser.parseMessage({
  *   event_type: 'book',
  *   asset_id: '67704255...',
  *   bids: [{ price: '0.52', size: '100' }],
  *   asks: [{ price: '0.53', size: '150' }],
  * });
- * // Returns: { type: 'orderbook', channelId: '67704255...', payload: {...} }
+ * // Возвращает: { type: 'orderbook', channelId: '67704255...', payload: {...} }
  *
- * // Pong message (control)
+ * // Pong-сообщение (управляющее)
  * const parsed = parser.parseMessage({ event_type: 'pong' });
- * // Returns: null (control message, handled by transport)
+ * // Возвращает: null (управляющее сообщение, обрабатывается транспортом)
  * ```
  *
  * @module infrastructure/polymarket/ws/PolymarketMessageParser
@@ -51,31 +51,31 @@ import type { PolymarketWSMessage } from './types.js';
 import type { ILogger } from '@polymarket/logger';
 
 /**
- * Polymarket message parser implementation
+ * Реализация парсера сообщений Polymarket
  *
  * @remarks
- * Implements IMessageParser for Polymarket CLOB WebSocket API.
+ * Реализует IMessageParser для WebSocket API Polymarket CLOB.
  *
- * Features:
- * - Parses all Polymarket message types
- * - Handles control messages (pong, error, subscribed)
- * - Validates data message structure
- * - Graceful error handling (never throws)
+ * Возможности:
+ * - Парсинг всех типов сообщений Polymarket
+ * - Обработка управляющих сообщений (pong, error, subscribed)
+ * - Валидация структуры сообщений с данными
+ * - Graceful обработка ошибок (никогда не бросает)
  *
- * Error Handling:
- * - Invalid messages → log warning, return null
- * - Missing fields → log warning, return null
- * - Never throws exceptions (fail gracefully)
+ * Обработка ошибок:
+ * - Невалидные сообщения → логирование предупреждения, возврат null
+ * - Отсутствующие поля → логирование предупреждения, возврат null
+ * - Никогда не бросает исключений (graceful degradation)
  */
 export class PolymarketMessageParser implements IMessageParser {
   private readonly logger: ILogger;
 
   /**
-   * Create a new Polymarket message parser
+   * Создаёт новый парсер сообщений Polymarket
    *
-   * @param logger - Logger instance
+   * @param logger - Экземпляр logger
    *
-   * @throws {Error} If logger is null
+   * @throws {Error} Если logger равен null
    *
    * @example
    * ```typescript
@@ -91,46 +91,46 @@ export class PolymarketMessageParser implements IMessageParser {
   }
 
   /**
-   * Parse incoming Polymarket message
+   * Парсит входящее сообщение Polymarket
    *
-   * @param data - Raw message data (parsed JSON object)
-   * @returns ParsedMessage for data events, null for control messages or invalid data
+   * @param data - Raw данные сообщения (распарсенный JSON-объект)
+   * @returns ParsedMessage для событий с данными, null для управляющих или невалидных
    *
    * @remarks
-   * Decision Flow:
-   * 1. Extract event_type from message
-   * 2. Check if control message (pong, error, subscribed, unsubscribed) → return null
-   * 3. Check if ignored message (price_change, tick_size_change) → return null
-   * 4. Check if data message has asset_id → if not, return null
-   * 5. Parse data message based on event_type:
-   *    - book → validate bids/asks, return 'orderbook'
-   *    - trade → validate price/size, return 'trade'
-   *    - last_trade_price → return 'trade'
-   * 6. Unknown event_type → log warning, return null
+   * Процесс принятия решений:
+   * 1. Извлечь event_type из сообщения
+   * 2. Проверить, является ли управляющим (pong, error, subscribed, unsubscribed) → вернуть null
+   * 3. Проверить, является ли игнорируемым (price_change, tick_size_change) → вернуть null
+   * 4. Проверить наличие asset_id в сообщении с данными → если нет, вернуть null
+   * 5. Парсить сообщение с данными по event_type:
+   *    - book → валидировать bids/asks, вернуть 'orderbook'
+   *    - trade → валидировать price/size, вернуть 'trade'
+   *    - last_trade_price → вернуть 'trade'
+   * 6. Неизвестный event_type → логирование предупреждения, вернуть null
    *
-   * Control Messages (return null):
-   * - pong: Heartbeat response
-   * - error: Error notification
-   * - subscribed: Subscription confirmation
-   * - unsubscribed: Unsubscription confirmation
+   * Управляющие сообщения (возврат null):
+   * - pong: Ответ на heartbeat
+   * - error: Уведомление об ошибке
+   * - subscribed: Подтверждение подписки
+   * - unsubscribed: Подтверждение отписки
    *
-   * Ignored Messages (return null):
-   * - price_change: Batch price changes (not needed for trading)
-   * - tick_size_change: Market config changes (not needed for trading)
+   * Игнорируемые сообщения (возврат null):
+   * - price_change: Пакетные изменения цен (не нужны для торговли)
+   * - tick_size_change: Изменения конфигурации рынка (не нужны для торговли)
    *
-   * Data Messages (return ParsedMessage):
+   * Сообщения с данными (возврат ParsedMessage):
    * - book: { type: 'orderbook', channelId: asset_id, payload: message }
    * - trade: { type: 'trade', channelId: asset_id, payload: message }
    * - last_trade_price: { type: 'trade', channelId: asset_id, payload: message }
    *
-   * Validation:
-   * - Data messages MUST have asset_id → else return null
-   * - book messages MUST have bids AND asks → else return null
-   * - trade messages MUST have price AND size → else return null
+   * Валидация:
+   * - Сообщения с данными ДОЛЖНЫ иметь asset_id → иначе вернуть null
+   * - Сообщения book ДОЛЖНЫ иметь bids И asks → иначе вернуть null
+   * - Сообщения trade ДОЛЖНЫ иметь price И size → иначе вернуть null
    *
    * @example
    * ```typescript
-   * // Orderbook update
+   * // Обновление orderbook
    * const parsed = parser.parseMessage({
    *   event_type: 'book',
    *   asset_id: '67704255...',
@@ -138,9 +138,9 @@ export class PolymarketMessageParser implements IMessageParser {
    *   asks: [{ price: '0.53', size: '150' }],
    *   timestamp: 1766875759895,
    * });
-   * // Returns: { type: 'orderbook', channelId: '67704255...', payload: {...} }
+   * // Возвращает: { type: 'orderbook', channelId: '67704255...', payload: {...} }
    *
-   * // Trade update
+   * // Обновление trade
    * const parsed = parser.parseMessage({
    *   event_type: 'trade',
    *   asset_id: '67704255...',
@@ -149,15 +149,15 @@ export class PolymarketMessageParser implements IMessageParser {
    *   side: 'BUY',
    *   timestamp: 1766875759895,
    * });
-   * // Returns: { type: 'trade', channelId: '67704255...', payload: {...} }
+   * // Возвращает: { type: 'trade', channelId: '67704255...', payload: {...} }
    *
-   * // Pong (control message)
+   * // Pong (управляющее сообщение)
    * const parsed = parser.parseMessage({ event_type: 'pong' });
-   * // Returns: null
+   * // Возвращает: null
    *
-   * // Invalid message (missing asset_id)
+   * // Невалидное сообщение (отсутствует asset_id)
    * const parsed = parser.parseMessage({ event_type: 'book' });
-   * // Returns: null (logs warning)
+   * // Возвращает: null (логирует предупреждение)
    * ```
    */
   parseMessage(data: unknown): ParsedMessage | null {
@@ -244,22 +244,22 @@ export class PolymarketMessageParser implements IMessageParser {
   }
 
   /**
-   * Check if message is a pong/heartbeat response
+   * Проверяет, является ли сообщение ответом pong/heartbeat
    *
-   * @param data - Raw message data
-   * @returns true if this is a pong message
+   * @param data - Raw данные сообщения
+   * @returns true если это pong-сообщение
    *
    * @remarks
-   * Polymarket sends { event_type: 'pong' } in response to ping.
-   * This is used by BaseWebSocketTransport to reset heartbeat timeout.
+   * Polymarket отправляет { event_type: 'pong' } в ответ на ping.
+   * Используется BaseWebSocketTransport для сброса таймаута heartbeat.
    *
    * @example
    * ```typescript
    * const isPong = parser.isPongMessage({ event_type: 'pong' });
-   * // Returns: true
+   * // Возвращает: true
    *
    * const isPong = parser.isPongMessage({ event_type: 'book', ... });
-   * // Returns: false
+   * // Возвращает: false
    * ```
    */
   isPongMessage(data: unknown): boolean {
@@ -268,22 +268,22 @@ export class PolymarketMessageParser implements IMessageParser {
   }
 
   /**
-   * Check if message is an error message
+   * Проверяет, является ли сообщение сообщением об ошибке
    *
-   * @param data - Raw message data
-   * @returns true if this is an error message
+   * @param data - Raw данные сообщения
+   * @returns true если это сообщение об ошибке
    *
    * @remarks
-   * Polymarket sends { event_type: 'error', message: '...' } for errors.
-   * This is used by BaseWebSocketTransport to emit error events.
+   * Polymarket отправляет { event_type: 'error', message: '...' } при ошибках.
+   * Используется BaseWebSocketTransport для эмиссии событий ошибки.
    *
    * @example
    * ```typescript
    * const isError = parser.isErrorMessage({ event_type: 'error', message: 'Invalid token' });
-   * // Returns: true
+   * // Возвращает: true
    *
    * const isError = parser.isErrorMessage({ event_type: 'book', ... });
-   * // Returns: false
+   * // Возвращает: false
    * ```
    */
   isErrorMessage(data: unknown): boolean {
@@ -292,18 +292,18 @@ export class PolymarketMessageParser implements IMessageParser {
   }
 
   /**
-   * Extract human-readable error message
+   * Извлекает человекочитаемое сообщение об ошибке
    *
-   * @param data - Raw message data (should be error message)
-   * @returns Error message string, or undefined if not an error
+   * @param data - Raw данные сообщения (должно быть сообщением об ошибке)
+   * @returns Строка с описанием ошибки, или undefined если это не ошибка
    *
    * @remarks
-   * Polymarket error format: { event_type: 'error', message: '...' }
-   * Extracts the message field.
+   * Формат ошибки Polymarket: { event_type: 'error', message: '...' }
+   * Извлекает поле message.
    *
-   * Fallback:
-   * - If message field missing → return 'Unknown error'
-   * - If not an error message → return undefined
+   * Запасные варианты:
+   * - Если поле message отсутствует → вернуть 'Unknown error'
+   * - Если это не сообщение об ошибке → вернуть undefined
    *
    * @example
    * ```typescript
@@ -311,13 +311,13 @@ export class PolymarketMessageParser implements IMessageParser {
    *   event_type: 'error',
    *   message: 'Invalid token ID',
    * });
-   * // Returns: 'Invalid token ID'
+   * // Возвращает: 'Invalid token ID'
    *
    * const errMsg = parser.extractErrorMessage({ event_type: 'error' });
-   * // Returns: 'Unknown error'
+   * // Возвращает: 'Unknown error'
    *
    * const errMsg = parser.extractErrorMessage({ event_type: 'book', ... });
-   * // Returns: undefined
+   * // Возвращает: undefined
    * ```
    */
   extractErrorMessage(data: unknown): string | undefined {

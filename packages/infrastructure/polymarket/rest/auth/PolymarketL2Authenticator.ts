@@ -1,16 +1,16 @@
 /**
- * Polymarket L2 Authenticator
+ * L2-аутентификатор Polymarket
  *
  * @remarks
- * Handles L2 authentication for Polymarket CLOB API.
- * Uses HMAC-SHA256 to sign requests with API credentials.
+ * Обрабатывает L2-аутентификацию для CLOB API Polymarket.
+ * Использует HMAC-SHA256 для подписи запросов с API-учётными данными.
  *
- * Authentication flow (matching official Polymarket client):
- * 1. Create signature string: timestamp + method + requestPath + body
- * 2. Decode secret from base64url using Buffer.from(secret, 'base64url')
- * 3. Sign with HMAC-SHA256 using decoded secret key
- * 4. Return signature as base64url (digest('base64url'))
- * 5. Add headers: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
+ * Алгоритм аутентификации (соответствует официальному клиенту Polymarket):
+ * 1. Создаём строку подписи: timestamp + method + requestPath + body
+ * 2. Декодируем секрет из base64url с помощью Buffer.from(secret, 'base64url')
+ * 3. Подписываем с HMAC-SHA256 используя декодированный секретный ключ
+ * 4. Возвращаем подпись как base64url (digest('base64url'))
+ * 5. Добавляем заголовки: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
  *
  * @example
  * ```typescript
@@ -21,7 +21,7 @@
  * }, address);
  *
  * const headers = auth.createAuthHeaders('GET', '/balance-allowance', '');
- * // Headers: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
+ * // Заголовки: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
  * ```
  */
 
@@ -29,17 +29,17 @@ import { createHmac } from 'crypto';
 import type { PolymarketL2Credentials } from '../types.js';
 
 /**
- * Polymarket L2 Authenticator
+ * L2-аутентификатор Polymarket
  */
 export class PolymarketL2Authenticator {
   private readonly credentials: PolymarketL2Credentials;
   private readonly address: string;
 
   /**
-   * Create L2 authenticator
+   * Создать L2-аутентификатор
    *
-   * @param credentials - L2 API credentials (apiKey, secret, passphrase)
-   * @param address - Wallet address (0x...)
+   * @param credentials - L2 API-учётные данные (apiKey, secret, passphrase)
+   * @param address - Адрес кошелька (0x...)
    *
    * @example
    * ```typescript
@@ -56,25 +56,25 @@ export class PolymarketL2Authenticator {
   }
 
   /**
-   * Create authentication headers for L2 requests
+   * Создать заголовки аутентификации для L2-запросов
    *
-   * @param method - HTTP method (GET, POST, DELETE, etc.)
-   * @param requestPath - Request path (e.g., '/balance-allowance')
-   * @param body - Request body (empty string for GET requests)
-   * @returns Authentication headers
+   * @param method - HTTP-метод (GET, POST, DELETE и т.д.)
+   * @param requestPath - Путь запроса (например, '/balance-allowance')
+   * @param body - Тело запроса (пустая строка для GET-запросов)
+   * @returns Заголовки аутентификации
    *
    * @remarks
-   * Creates HMAC-SHA256 signature:
-   * - Message: timestamp + method + requestPath + body
-   * - Key: secret (base64 decoded)
-   * - Signature: base64 encoded HMAC
+   * Создаёт подпись HMAC-SHA256:
+   * - Сообщение: timestamp + method + requestPath + body
+   * - Ключ: secret (декодированный из base64)
+   * - Подпись: HMAC в кодировке base64
    *
    * @example
    * ```typescript
-   * // GET request
+   * // GET-запрос
    * const headers = auth.createAuthHeaders('GET', '/balance-allowance', '');
    *
-   * // POST request
+   * // POST-запрос
    * const body = JSON.stringify({ tokenId: '0x123', side: 'BUY' });
    * const headers = auth.createAuthHeaders('POST', '/order', body);
    * ```
@@ -104,22 +104,22 @@ export class PolymarketL2Authenticator {
   }
 
   /**
-   * Sign message with HMAC-SHA256
+   * Подписать сообщение с HMAC-SHA256
    *
-   * @param message - Message to sign
-   * @returns Base64url encoded signature
+   * @param message - Сообщение для подписи
+   * @returns Подпись в кодировке base64url
    *
    * @remarks
-   * HMAC-SHA256 signature (matching official Polymarket client):
-   * 1. Decode secret from base64url (Node.js Buffer handles url-safe alphabet natively)
-   * 2. Create HMAC with decoded secret key
-   * 3. Digest and return as base64url
+   * Подпись HMAC-SHA256 (соответствует официальному клиенту Polymarket):
+   * 1. Декодируем секрет из base64url (Node.js Buffer нативно поддерживает url-safe алфавит)
+   * 2. Создаём HMAC с декодированным секретным ключом
+   * 3. Формируем дайджест и возвращаем как base64url
    *
    * @example
    * ```typescript
    * const message = '1234567890GET/balance-allowance';
    * const signature = auth.sign(message);
-   * // Returns: base64url encoded HMAC signature
+   * // Возвращает: HMAC-подпись в кодировке base64url
    * ```
    */
   private sign(message: string): string {
@@ -133,18 +133,18 @@ export class PolymarketL2Authenticator {
   }
 
   /**
-   * Get API key
+   * Получить API-ключ
    *
-   * @returns API key
+   * @returns API-ключ
    */
   getApiKey(): string {
     return this.credentials.apiKey;
   }
 
   /**
-   * Get address
+   * Получить адрес кошелька
    *
-   * @returns Wallet address
+   * @returns Адрес кошелька
    */
   getAddress(): string {
     return this.address;

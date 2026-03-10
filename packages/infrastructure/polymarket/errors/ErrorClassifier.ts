@@ -1,15 +1,15 @@
 /**
- * ErrorClassifier - Idempotent error classifier with LRU cache
+ * ErrorClassifier — идемпотентный классификатор ошибок с LRU-кэшем.
  *
  * @remarks
- * Classifies errors with true idempotency guarantee:
- * classify(classify(x)) === classify(x) (same reference)
+ * Классифицирует ошибки с гарантией истинной идемпотентности:
+ * classify(classify(x)) === classify(x) (та же ссылка)
  *
- * Features:
- * - LRU cache: Max 1000 entries, oldest evicted first
- * - Idempotent: Same (type + message) → same cached result
- * - Reference equality: classify(x) twice returns SAME object
- * - Zero memory leak: Cache size capped at maxCacheSize
+ * Особенности:
+ * - LRU-кэш: максимум 1000 записей, старейшие вытесняются первыми
+ * - Идемпотентность: одинаковые (тип + сообщение) → одинаковый кэшированный результат
+ * - Ссылочное равенство: двойной вызов classify(x) возвращает ОДИН объект
+ * - Нет утечек памяти: размер кэша ограничен maxCacheSize
  *
  * Стратегия кэширования:
  * - Ключ: тип + первые 100 символов сообщения
@@ -37,7 +37,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { ConstraintViolation } from '../stubs/domain/services/constraints/ConstraintsObservationStore.js';
 
 /**
- * Order error types
+ * Типы ошибок ордеров
  */
 export type OrderErrorType =
   | 'UNKNOWN'
@@ -51,7 +51,7 @@ export type OrderErrorType =
   | 'SERVER_ERROR';
 
 /**
- * Base order error
+ * Базовая ошибка ордера
  */
 export interface BaseOrderError {
   type: OrderErrorType;
@@ -60,7 +60,7 @@ export interface BaseOrderError {
 }
 
 /**
- * Constraint violation error
+ * Ошибка нарушения ограничения
  */
 export interface ConstraintViolationError extends BaseOrderError {
   type: 'CONSTRAINT_VIOLATION';
@@ -68,59 +68,59 @@ export interface ConstraintViolationError extends BaseOrderError {
 }
 
 /**
- * Order error (discriminated union)
+ * Ошибка ордера (дискриминированный union)
  */
 export type OrderError = BaseOrderError | ConstraintViolationError;
 
 /**
- * Structured error from parsing
+ * Структурированная ошибка из парсинга
  */
 export interface StructuredError {
-  /** Error code (if available) */
+  /** Код ошибки (если доступен) */
   code?: string;
-  /** Error message */
+  /** Сообщение ошибки */
   message: string;
-  /** Constraint violation (if parsed) */
+  /** Нарушение ограничения (если распарсено) */
   violation?: ConstraintViolation;
 }
 
 /**
- * ErrorAdapter interface for parsing API errors
+ * Интерфейс ErrorAdapter для разбора ошибок API
  */
 export interface ErrorAdapter {
   /**
-   * Parse error message to structured format
+   * Разбирает сообщение об ошибке в структурированный формат.
    *
-   * @param message - Raw error message
-   * @returns Structured error
+   * @param message - Необработанное сообщение об ошибке
+   * @returns Структурированная ошибка
    */
   parse(message: string): StructuredError;
 }
 
 /**
- * ErrorClassifier - Idempotent error classification with LRU cache
+ * ErrorClassifier — идемпотентная классификация ошибок с LRU-кэшем.
  *
  * @remarks
- * Guarantees:
- * - Idempotency: classify(classify(x)) === classify(x) (reference equality)
- * - Zero memory leak: Cache size ≤ maxCacheSize
- * - LRU eviction: Oldest entries deleted first
+ * Гарантии:
+ * - Идемпотентность: classify(classify(x)) === classify(x) (ссылочное равенство)
+ * - Нет утечек памяти: размер кэша ≤ maxCacheSize
+ * - LRU-вытеснение: старейшие записи удаляются первыми
  *
- * Algorithm:
- * 1. Compute cache key from (type + message)
- * 2. Check cache: if hit → return cached (same reference)
- * 3. If miss: parse → classify → cache → return
- * 4. Before caching: if size >= maxSize → delete oldest
+ * Алгоритм:
+ * 1. Вычисляем ключ кэша по (тип + сообщение)
+ * 2. Проверяем кэш: попадание → возвращаем кэшированный (та же ссылка)
+ * 3. Промах: разбираем → классифицируем → кэшируем → возвращаем
+ * 4. Перед кэшированием: если size >= maxSize → удаляем старейший
  */
 export class ErrorClassifier {
   private readonly cache = new Map<string, OrderError>();
   private readonly maxCacheSize = 1000;
 
   /**
-   * Create error classifier
+   * Создаёт классификатор ошибок.
    *
-   * @param errorAdapter - Adapter for parsing API errors
-   * @param logger - Logger instance
+   * @param errorAdapter - Адаптер для разбора ошибок API
+   * @param logger - Экземпляр логгера
    *
    * @example
    * ```typescript
@@ -133,36 +133,36 @@ export class ErrorClassifier {
   ) {}
 
   /**
-   * Classify error idempotently
+   * Идемпотентно классифицирует ошибку.
    *
-   * @param error - Raw or already-classified error
-   * @returns Classified error (same reference if cached)
+   * @param error - Необработанная или уже классифицированная ошибка
+   * @returns Классифицированная ошибка (та же ссылка при попадании в кэш)
    *
    * @remarks
-   * Idempotency guarantee: classify(classify(x)) === classify(x)
+   * Гарантия идемпотентности: classify(classify(x)) === classify(x)
    *
-   * Algorithm:
-   * 1. Compute cache key from (type + message)
-   * 2. Check cache: if hit → delete + re-add to move to end (strict LRU)
-   * 3. If miss:
-   *    a. Extract message from error
-   *    b. Parse message → StructuredError (ErrorAdapter)
-   *    c. Classify StructuredError → OrderError
-   *    d. Choose best classification (new vs existing)
-   *    e. LRU eviction if cache full (GUARANTEED first entry = oldest)
-   *    f. Cache result
-   * 4. Return result
+   * Алгоритм:
+   * 1. Вычисляем ключ кэша по (тип + сообщение)
+   * 2. Проверяем кэш: попадание → удаляем + добавляем заново для перемещения в конец (строгий LRU)
+   * 3. Промах:
+   *    a. Извлекаем сообщение из ошибки
+   *    b. Разбираем сообщение → StructuredError (ErrorAdapter)
+   *    c. Классифицируем StructuredError → OrderError
+   *    d. Выбираем лучшую классификацию (новая vs существующая)
+   *    e. LRU-вытеснение при заполненном кэше (ГАРАНТИЯ: первая запись = старейшая)
+   *    f. Кэшируем результат
+   * 4. Возвращаем результат
    *
-   * CRITICAL LRU guarantees:
-   * - Map iteration order = insertion order (ES2015+ spec)
-   * - Most recent errors at END of Map
-   * - Oldest errors at BEGINNING of Map
-   * - Cache size NEVER exceeds maxCacheSize
-   * - Eviction is ALWAYS oldest entry (Map.keys().next().value)
+   * КРИТИЧНЫЕ гарантии LRU:
+   * - Порядок итерации Map = порядок вставки (спецификация ES2015+)
+   * - Самые свежие ошибки — в КОНЦЕ Map
+   * - Старейшие ошибки — в НАЧАЛЕ Map
+   * - Размер кэша НИКОГДА не превышает maxCacheSize
+   * - Вытеснение ВСЕГДА применяется к старейшей записи (Map.keys().next().value)
    *
-   * High-load safety:
-   * - Single-threaded JS: no race conditions
-   * - Atomic delete+set: move to end is safe
+   * Безопасность при высокой нагрузке:
+   * - Однопоточный JS: гонок нет
+   * - Атомарный delete+set: перемещение в конец безопасно
    *
    * @example
    * ```typescript
@@ -263,20 +263,20 @@ export class ErrorClassifier {
   }
 
   /**
-   * Classify structured error
+   * Классифицирует структурированную ошибку.
    *
-   * @param structured - Structured error from adapter
-   * @returns Classified OrderError
+   * @param structured - Структурированная ошибка из адаптера
+   * @returns Классифицированная OrderError
    *
    * @remarks
-   * Classification rules:
-   * - Has violation → CONSTRAINT_VIOLATION
-   * - Code contains "balance" → BALANCE_INSUFFICIENT
-   * - Code contains "network" → NETWORK_ERROR
-   * - Code contains "rate" → RATE_LIMITED
-   * - Code contains "auth" → AUTH_FAILED
-   * - Code matches /5\d{2}/ (5xx HTTP) → SERVER_ERROR
-   * - Otherwise → UNKNOWN
+   * Правила классификации:
+   * - Есть violation → CONSTRAINT_VIOLATION
+   * - Код содержит "balance" → BALANCE_INSUFFICIENT
+   * - Код содержит "network" → NETWORK_ERROR
+   * - Код содержит "rate" → RATE_LIMITED
+   * - Код содержит "auth" → AUTH_FAILED
+   * - Код соответствует /5\d{2}/ (HTTP 5xx) → SERVER_ERROR
+   * - Иначе → UNKNOWN
    */
   private classifyStructured(structured: StructuredError): OrderError {
     // Проверяем нарушение ограничения
@@ -360,10 +360,10 @@ export class ErrorClassifier {
   }
 
   /**
-   * Extract message from error
+   * Извлекает сообщение из ошибки.
    *
-   * @param error - Order error
-   * @returns Message string
+   * @param error - Ошибка ордера
+   * @returns Строка сообщения
    */
   private extractMessage(error: OrderError): string {
     if ('message' in error && error.message) {
@@ -376,13 +376,13 @@ export class ErrorClassifier {
   }
 
   /**
-   * Make cache key from error
+   * Формирует ключ кэша из ошибки.
    *
-   * @param error - Order error
-   * @returns Cache key
+   * @param error - Ошибка ордера
+   * @returns Ключ кэша
    *
    * @remarks
-   * Key = type + first 100 chars of message.
+   * Ключ = тип + первые 100 символов сообщения.
    * Включаем type чтобы два разных типа с одинаковым сообщением не коллидировали в кэше.
    *
    * Идемпотентность (classify(classify(x)) === classify(x)) обеспечивается в classify():
@@ -396,10 +396,10 @@ export class ErrorClassifier {
   }
 
   /**
-   * Clear cache (for testing)
+   * Очищает кэш (для тестирования).
    *
    * @remarks
-   * Should not be used in production.
+   * Не должно использоваться в production.
    */
   clearCache(): void {
     this.cache.clear();
@@ -407,9 +407,9 @@ export class ErrorClassifier {
   }
 
   /**
-   * Get cache size (for monitoring)
+   * Возвращает размер кэша (для мониторинга).
    *
-   * @returns Current cache size
+   * @returns Текущий размер кэша
    */
   getCacheSize(): number {
     return this.cache.size;

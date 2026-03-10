@@ -1,13 +1,13 @@
 /**
- * Polymarket Balance Mapper
+ * Маппер баланса Polymarket
  *
  * @remarks
- * Maps raw Polymarket API balance responses to domain types.
+ * Преобразует необработанные ответы API Polymarket по балансу в доменные типы.
  *
- * Transformations:
- * - String → number conversion
- * - Field name normalization
- * - Safe defaults for missing fields
+ * Преобразования:
+ * - Конвертация строки → число
+ * - Нормализация имён полей
+ * - Безопасные значения по умолчанию для отсутствующих полей
  *
  * @example
  * ```typescript
@@ -30,33 +30,33 @@ import type { BalanceResponse } from '../clients/PolymarketBalanceRestClient.js'
 import { USDC_MULTIPLIER } from '../constants.js';
 
 /**
- * Normalized balance (domain format)
+ * Нормализованный баланс (доменный формат)
  */
 export interface NormalizedBalance {
-  /** Available USDC balance */
+  /** Доступный баланс USDC */
   availableUSDC: number;
 
-  /** Locked USDC balance (in open orders) */
+  /** Заблокированный баланс USDC (в открытых ордерах) */
   lockedUSDC: number;
 
-  /** Total USDC balance */
+  /** Общий баланс USDC */
   totalUSDC: number;
 
-  /** Outcome token balances (tokenId → balance) */
+  /** Балансы outcome-токенов (tokenId → баланс) */
   outcomeTokens: Record<string, number>;
 }
 
 /**
- * Polymarket Balance Mapper
+ * Маппер баланса Polymarket
  */
 export class PolymarketBalanceMapper {
   constructor(private readonly logger: ILogger) {}
 
   /**
-   * Map balance response to domain format
+   * Преобразовать ответ по балансу в доменный формат
    *
-   * @param response - Raw balance response
-   * @returns Normalized balance
+   * @param response - Необработанный ответ по балансу
+   * @returns Нормализованный баланс
    *
    * @example
    * ```typescript
@@ -85,10 +85,10 @@ export class PolymarketBalanceMapper {
   }
 
   /**
-   * Map multiple balance responses to domain format
+   * Преобразовать несколько ответов по балансу в доменный формат
    *
-   * @param responses - Array of raw balance responses
-   * @returns Normalized balance with outcome tokens
+   * @param responses - Массив необработанных ответов по балансу
+   * @returns Нормализованный баланс с outcome-токенами
    *
    * @example
    * ```typescript
@@ -124,18 +124,18 @@ export class PolymarketBalanceMapper {
   }
 
   /**
-   * Parse balance string to number
+   * Разобрать строку баланса в число
    *
-   * @param balance - Balance string (in minimum units - 6 decimals for USDC)
-   * @returns Parsed number in USDC (divided by 10^6) or 0 if invalid
+   * @param balance - Строка баланса (в минимальных единицах — 6 знаков для USDC)
+   * @returns Разобранное число в USDC (делится на 10^6) или 0 при невалидном значении
    *
    * @remarks
-   * CRITICAL: Polymarket API returns balance in minimum units (wei-like).
-   * USDC has 6 decimal places, so we divide by 1,000,000 to get actual USDC amount.
+   * КРИТИЧНО: API Polymarket возвращает баланс в минимальных единицах (wei-подобный формат).
+   * У USDC 6 знаков после запятой, поэтому делим на 1 000 000 для получения реальной суммы USDC.
    *
-   * Example:
-   * - API returns: "9572736" (minimum units)
-   * - Actual balance: 9.572736 USDC (9572736 / 10^6)
+   * Пример:
+   * - API возвращает: "9572736" (минимальные единицы)
+   * - Реальный баланс: 9.572736 USDC (9572736 / 10^6)
    */
   private parseBalance(balance: string): number {
     const parsed = parseFloat(balance);

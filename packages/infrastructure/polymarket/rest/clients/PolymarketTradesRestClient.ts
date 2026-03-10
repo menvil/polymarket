@@ -1,15 +1,15 @@
 /**
- * Polymarket Trades REST Client
+ * REST-клиент сделок Polymarket
  *
  * @remarks
- * Handles /trades endpoint:
- * - GET /trades - Get market trades history
+ * Обрабатывает endpoint /trades:
+ * - GET /trades - Получить историю рыночных сделок
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
- * **IMPORTANT**: This returns PUBLIC market trades, NOT user-specific fills.
- * For user fill history, use PolymarketOrderRestClient (future implementation).
+ * **ВАЖНО**: Возвращает ПУБЛИЧНЫЕ рыночные сделки, НЕ исполнения конкретного пользователя.
+ * Для истории исполнений пользователя используйте PolymarketOrderRestClient (будущая реализация).
  *
  * @example
  * ```typescript
@@ -25,44 +25,44 @@ import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 
 /**
- * Market trade response (raw API format)
+ * Ответ с рыночной сделкой (сырой формат API)
  */
 export interface MarketTradeResponse {
-  /** Trade ID */
+  /** Идентификатор сделки */
   tradeId: string;
 
-  /** Token ID */
+  /** Идентификатор токена */
   tokenId: string;
 
-  /** Trade side (from taker perspective) */
+  /** Направление сделки (с точки зрения тейкера) */
   side: 'BUY' | 'SELL';
 
-  /** Execution price (string format) */
+  /** Цена исполнения (строковый формат) */
   price: string;
 
-  /** Trade size (string format) */
+  /** Размер сделки (строковый формат) */
   size: string;
 
-  /** Execution timestamp */
+  /** Временная метка исполнения */
   timestamp: number;
 
-  /** Taker address (optional) */
+  /** Адрес тейкера (необязательно) */
   taker?: string;
 
-  /** Maker address (optional) */
+  /** Адрес мейкера (необязательно) */
   maker?: string;
 }
 
 /**
- * Get market trades response
+ * Ответ на запрос рыночных сделок
  */
 export interface GetMarketTradesResponse {
-  /** Array of trades */
+  /** Массив сделок */
   trades: MarketTradeResponse[];
 }
 
 /**
- * Polymarket Trades REST Client
+ * REST-клиент сделок Polymarket
  */
 export class PolymarketTradesRestClient {
   constructor(
@@ -71,24 +71,24 @@ export class PolymarketTradesRestClient {
   ) {}
 
   /**
-   * Get market trades history
+   * Получить историю рыночных сделок
    *
-   * @param tokenId - Token ID
-   * @param limit - Optional: max number of trades to return (default: 100)
-   * @returns Array of market trades (sorted by timestamp descending)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @param limit - Необязательно: максимальное количество сделок для возврата (по умолчанию: 100)
+   * @returns Массив рыночных сделок (отсортированных по убыванию временной метки)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Returns PUBLIC market trades (NOT user-specific fills).
-   * Returns raw API response. Normalization should be done by mapper.
+   * Возвращает ПУБЛИЧНЫЕ рыночные сделки (НЕ исполнения конкретного пользователя).
+   * Возвращает сырой ответ API. Нормализация должна выполняться маппером.
    *
    * @example
    * ```typescript
-   * // Last 100 trades
+   * // Последние 100 сделок
    * const trades = await client.getMarketTrades('0x123');
    * console.log(`Last 100 trades: ${trades.length}`);
    *
-   * // Last 50 trades
+   * // Последние 50 сделок
    * const recentTrades = await client.getMarketTrades('0x123', 50);
    * console.log(`Last trade price: ${recentTrades[0].price}`);
    * ```
@@ -116,11 +116,11 @@ export class PolymarketTradesRestClient {
   }
 
   /**
-   * Get last trade price
+   * Получить цену последней сделки
    *
-   * @param tokenId - Token ID
-   * @returns Last trade price or undefined if no trades
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Цена последней сделки или undefined если сделок нет
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -150,19 +150,19 @@ export class PolymarketTradesRestClient {
   }
 
   /**
-   * Get trade volume in time window
+   * Получить объём торгов за временное окно
    *
-   * @param tokenId - Token ID
-   * @param windowMs - Time window in milliseconds
-   * @returns Total volume (sum of sizes)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @param windowMs - Временное окно в миллисекундах
+   * @returns Суммарный объём (сумма размеров)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Calculates volume by summing trade sizes within specified time window.
+   * Вычисляет объём суммированием размеров сделок в указанном временном окне.
    *
    * @example
    * ```typescript
-   * // Volume in last hour
+   * // Объём за последний час
    * const hourVolume = await client.getTradeVolume('0x123', 3600000);
    * console.log(`Volume in last hour: ${hourVolume}`);
    * ```

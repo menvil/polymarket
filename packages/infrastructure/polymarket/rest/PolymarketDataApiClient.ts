@@ -2,13 +2,13 @@
  * Polymarket Data API Client
  *
  * @remarks
- * Simple HTTP client for Polymarket Data API (data-api.polymarket.com).
- * Used for endpoints that are NOT on CLOB API.
+ * Простой HTTP-клиент для Polymarket Data API (data-api.polymarket.com).
+ * Используется для эндпоинтов, которых НЕТ в CLOB API.
  *
- * Endpoints:
- * - GET /positions - User positions (requires Data API, not CLOB API)
+ * Эндпоинты:
+ * - GET /positions — позиции пользователя (требует Data API, не CLOB API)
  *
- * This is a lightweight client without authentication (Data API is public).
+ * Это лёгкий клиент без аутентификации (Data API является публичным).
  *
  * @module infrastructure/polymarket/rest/PolymarketDataApiClient
  */
@@ -16,13 +16,13 @@
 import type { ILogger } from '@polymarket/logger';
 
 /**
- * Data API client configuration
+ * Конфигурация клиента Data API
  */
 export interface DataApiClientConfig {
-  /** Data API base URL (default: https://data-api.polymarket.com) */
+  /** Базовый URL Data API (по умолчанию: https://data-api.polymarket.com) */
   baseUrl?: string;
 
-  /** Request timeout in milliseconds (default: 30000) */
+  /** Таймаут запроса в миллисекундах (по умолчанию: 30000) */
   timeout?: number;
 }
 
@@ -30,8 +30,8 @@ export interface DataApiClientConfig {
  * Polymarket Data API Client
  *
  * @remarks
- * Lightweight HTTP client for Data API endpoints.
- * No authentication required (public API).
+ * Лёгкий HTTP-клиент для эндпоинтов Data API.
+ * Аутентификация не требуется (публичное API).
  */
 export class PolymarketDataApiClient {
   private readonly baseUrl: string;
@@ -45,12 +45,12 @@ export class PolymarketDataApiClient {
   }
 
   /**
-   * Execute GET request
+   * Выполняет GET-запрос
    *
-   * @param endpoint - API endpoint (e.g., '/positions')
-   * @param params - Query parameters
-   * @returns Response data
-   * @throws {Error} If request fails
+   * @param endpoint - Эндпоинт API (например, '/positions')
+   * @param params - Параметры запроса
+   * @returns Данные ответа
+   * @throws {Error} Если запрос завершился ошибкой
    */
   async get<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(endpoint, this.baseUrl);

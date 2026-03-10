@@ -1,23 +1,23 @@
 /**
- * Polymarket Order Builder
+ * Построитель ордеров Polymarket
  *
  * @remarks
- * Builds EIP-712 signed orders for Polymarket CLOB API.
+ * Строит EIP-712 подписанные ордера для CLOB API Polymarket.
  *
- * Order structure:
- * - salt: Random number for uniqueness
- * - maker: Funder address (who provides liquidity)
- * - signer: Signing address (EOA that signs)
- * - taker: Zero address (anyone can take)
- * - tokenId: Outcome token ID
- * - makerAmount: Amount maker spends (in minimum units)
- * - takerAmount: Amount taker pays (in minimum units)
- * - expiration: Unix timestamp (0 = no expiration)
- * - nonce: Current exchange nonce
- * - feeRateBps: Fee rate in basis points
+ * Структура ордера:
+ * - salt: Случайное число для уникальности
+ * - maker: Адрес фандера (кто предоставляет ликвидность)
+ * - signer: Адрес подписанта (EOA который подписывает)
+ * - taker: Нулевой адрес (любой может принять)
+ * - tokenId: Идентификатор токена исхода
+ * - makerAmount: Сумма которую тратит maker (в минимальных единицах)
+ * - takerAmount: Сумма которую платит taker (в минимальных единицах)
+ * - expiration: Unix timestamp (0 = без истечения)
+ * - nonce: Текущий nonce биржи
+ * - feeRateBps: Ставка комиссии в базисных пунктах
  * - side: 0 = BUY, 1 = SELL
- * - signatureType: Signature type (EOA, POLY_PROXY, etc.)
- * - signature: EIP-712 signature
+ * - signatureType: Тип подписи (EOA, POLY_PROXY и т.д.)
+ * - signature: Подпись EIP-712
  *
  * @example
  * ```typescript
@@ -32,7 +32,7 @@
  *   nonce: 123,
  * });
  *
- * // Use signedOrder in POST /order request
+ * // Использовать signedOrder в запросе POST /order
  * ```
  */
 
@@ -42,7 +42,7 @@ import type { ILogger } from '@polymarket/logger';
 import { USDC_MULTIPLIER, DEFAULT_PRICE_TICK } from '../constants.js';
 
 /**
- * Order parameters for building
+ * Параметры для построения ордера
  */
 export interface BuildOrderParams {
   /** Идентификатор токена */
@@ -71,7 +71,7 @@ export interface BuildOrderParams {
 }
 
 /**
- * Signed order (ready for API)
+ * Подписанный ордер (готов для API)
  */
 export interface SignedOrder {
   salt: number; // Число (не строка!)
@@ -90,7 +90,7 @@ export interface SignedOrder {
 }
 
 /**
- * Contract addresses by chain ID
+ * Адреса контрактов по идентификатору цепочки
  */
 const CONTRACT_ADDRESSES: Record<number, string> = {
   137: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E', // Polygon Mainnet (основная сеть)
@@ -98,7 +98,7 @@ const CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 /**
- * EIP-712 Order type
+ * Тип ордера EIP-712
  */
 const ORDER_TYPE = {
   Order: [
@@ -118,7 +118,7 @@ const ORDER_TYPE = {
 };
 
 /**
- * Polymarket Order Builder
+ * Построитель ордеров Polymarket
  */
 export class PolymarketOrderBuilder {
   private readonly ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -132,10 +132,10 @@ export class PolymarketOrderBuilder {
   ) {}
 
   /**
-   * Build and sign order
+   * Построить и подписать ордер
    *
-   * @param params - Order parameters
-   * @returns Signed order ready for API
+   * @param params - Параметры ордера
+   * @returns Подписанный ордер готовый для API
    *
    * @example
    * ```typescript
@@ -205,23 +205,23 @@ export class PolymarketOrderBuilder {
   }
 
   /**
-   * Get safe default price tick size
+   * Получить безопасный шаг цены по умолчанию
    *
-   * @param price - Order price (unused, kept for future enhancements)
-   * @returns Safe default tick size
+   * @param price - Цена ордера (не используется, сохранён для будущих улучшений)
+   * @returns Безопасный шаг цены по умолчанию
    *
    * @remarks
-   * Always returns 0.01 as the safest default tick size.
-   * This is more conservative than 0.001 and most compatible with Polymarket markets.
+   * Всегда возвращает 0.01 как наиболее безопасный шаг цены по умолчанию.
+   * Это более консервативно, чем 0.001, и наиболее совместимо с маркетами Polymarket.
    *
-   * Important: This is a FALLBACK. The correct approach is to pass
-   * explicit priceTick from market constraints.
+   * Важно: Это ЗАПАСНОЙ ВАРИАНТ. Правильный подход — передавать
+   * явный priceTick из ограничений маркета.
    *
    * @example
    * ```typescript
-   * inferPriceTick(0.52)   // 0.01 (will round 0.52 → 0.52)
-   * inferPriceTick(0.843)  // 0.01 (will round 0.843 → 0.84)
-   * inferPriceTick(0.9506) // 0.01 (will round 0.9506 → 0.95)
+   * inferPriceTick(0.52)   // 0.01 (округлит 0.52 → 0.52)
+   * inferPriceTick(0.843)  // 0.01 (округлит 0.843 → 0.84)
+   * inferPriceTick(0.9506) // 0.01 (округлит 0.9506 → 0.95)
    * ```
    */
   private inferPriceTick(_price: number): number {
@@ -232,21 +232,21 @@ export class PolymarketOrderBuilder {
   }
 
   /**
-   * Calculate maker and taker amounts
+   * Вычислить суммы для maker и taker
    *
-   * @param side - Order side
-   * @param price - Order price (0-1)
-   * @param size - Order size (shares)
-   * @returns Maker and taker amounts in minimum units
+   * @param side - Направление ордера
+   * @param price - Цена ордера (0-1)
+   * @param size - Размер ордера (акции)
+   * @returns Суммы для maker и taker в минимальных единицах
    *
    * @remarks
-   * BUY order:
-   * - Maker spends: price * size (USDC)
-   * - Taker receives: size (outcome tokens)
+   * Ордер BUY:
+   * - Maker тратит: price * size (USDC)
+   * - Taker получает: size (токены исходов)
    *
-   * SELL order:
-   * - Maker spends: size (outcome tokens)
-   * - Taker receives: price * size (USDC)
+   * Ордер SELL:
+   * - Maker тратит: size (токены исходов)
+   * - Taker получает: price * size (USDC)
    */
   private calculateAmounts(
     side: 'BUY' | 'SELL',
@@ -300,10 +300,10 @@ export class PolymarketOrderBuilder {
   }
 
   /**
-   * Sign order with EIP-712
+   * Подписать ордер с EIP-712
    *
-   * @param order - Order object (without signature)
-   * @returns Hex signature
+   * @param order - Объект ордера (без подписи)
+   * @returns Подпись в hex-формате
    */
   private async signOrder(order: Omit<SignedOrder, 'signature'>): Promise<string> {
     // Получаем адрес верифицирующего контракта для этой цепочки

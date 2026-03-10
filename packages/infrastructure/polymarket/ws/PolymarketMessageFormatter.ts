@@ -1,11 +1,11 @@
 /**
- * PolymarketMessageFormatter - Formats Polymarket-specific outgoing WebSocket messages
+ * PolymarketMessageFormatter — форматирует исходящие WebSocket-сообщения Polymarket
  *
  * @remarks
- * Responsible for formatting OUTGOING subscribe/unsubscribe messages in Polymarket format.
- * This is the OUTGOING half (paired with PolymarketMessageParser for incoming).
+ * Отвечает за форматирование ИСХОДЯЩИХ сообщений subscribe/unsubscribe в формате Polymarket.
+ * Это ИСХОДЯЩАЯ половина (в паре с PolymarketMessageParser для входящих).
  *
- * Polymarket Subscription Format:
+ * Формат подписки Polymarket:
  * ```json
  * {
  *   "assets_ids": ["67704255...", "28257334..."],
@@ -13,30 +13,30 @@
  * }
  * ```
  *
- * Key Responsibilities:
- * - Convert SubscriptionParams to Polymarket JSON format
- * - Validate token IDs (must be numeric strings)
- * - Remove duplicate token IDs
- * - Log warnings for suspicious input
+ * Ключевые обязанности:
+ * - Преобразование SubscriptionParams в формат Polymarket JSON
+ * - Валидация token ID (должны быть числовыми строками)
+ * - Удаление дублирующихся token ID
+ * - Логирование предупреждений для подозрительного ввода
  *
- * Validation Rules:
- * - assets_ids is required and must not be empty
- * - Token IDs must be numeric strings (77 digits)
- * - Duplicates are automatically removed
- * - Invalid tokens are logged but not rejected (let exchange validate)
+ * Правила валидации:
+ * - assets_ids обязателен и не должен быть пустым
+ * - Token ID должны быть числовыми строками (77 цифр)
+ * - Дубликаты удаляются автоматически
+ * - Невалидные токены логируются, но не отклоняются (пусть биржа проверяет)
  *
  * @example
  * ```typescript
  * const formatter = new PolymarketMessageFormatter(logger);
  *
  * const message = formatter.formatSubscription('market', {
- *   assets_ids: ['67704255...', '28257334...', '67704255...'], // duplicate
+ *   assets_ids: ['67704255...', '28257334...', '67704255...'], // дубликат
  *   type: 'market',
  * });
  *
  * console.log(message);
  * // {"assets_ids":["67704255...","28257334..."],"type":"market"}
- * // Note: duplicate removed
+ * // Примечание: дубликат удалён
  * ```
  *
  * @module infrastructure/polymarket/ws/PolymarketMessageFormatter
@@ -48,30 +48,30 @@ import type { PolymarketSubscriptionParams } from './types.js';
 import type { ILogger } from '@polymarket/logger';
 
 /**
- * Polymarket message formatter implementation
+ * Реализация форматтера сообщений Polymarket
  *
  * @remarks
- * Implements IMessageFormatter for Polymarket CLOB WebSocket API.
+ * Реализует IMessageFormatter для WebSocket API Polymarket CLOB.
  *
- * Features:
- * - Duplicate token removal
- * - Token format validation
- * - Detailed logging for debugging
+ * Возможности:
+ * - Удаление дублирующихся токенов
+ * - Валидация формата токенов
+ * - Подробное логирование для отладки
  *
- * Error Handling:
- * - Throws Error for missing/empty assets_ids
- * - Logs warnings for invalid token formats (but doesn't throw)
- * - Never returns null/undefined (always throws or returns valid string)
+ * Обработка ошибок:
+ * - Бросает Error при отсутствующем/пустом assets_ids
+ * - Логирует предупреждения при невалидном формате токена (но не бросает)
+ * - Никогда не возвращает null/undefined (всегда бросает или возвращает валидную строку)
  */
 export class PolymarketMessageFormatter implements IMessageFormatter {
   private readonly logger: ILogger;
 
   /**
-   * Create a new Polymarket message formatter
+   * Создаёт новый форматтер сообщений Polymarket
    *
-   * @param logger - Logger instance
+   * @param logger - Экземпляр logger
    *
-   * @throws {Error} If logger is null
+   * @throws {Error} Если logger равен null
    *
    * @example
    * ```typescript
@@ -87,53 +87,53 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
   }
 
   /**
-   * Format Polymarket subscription message
+   * Форматирует сообщение подписки Polymarket
    *
-   * @param channel - Channel name (ignored by Polymarket)
-   * @param params - Subscription parameters
-   * @returns JSON string ready to send via WebSocket
-   * @throws {Error} If assets_ids is missing or empty
+   * @param channel - Имя канала (игнорируется Polymarket)
+   * @param params - Параметры подписки
+   * @returns JSON-строка, готовая к отправке через WebSocket
+   * @throws {Error} Если assets_ids отсутствует или пуст
    *
    * @remarks
-   * Polymarket doesn't use the channel parameter - it only looks at assets_ids and type.
+   * Polymarket не использует параметр channel — только assets_ids и type.
    *
-   * Algorithm:
-   * 1. Cast params to PolymarketSubscriptionParams
-   * 2. Validate assets_ids exists and is non-empty
-   * 3. Remove duplicate token IDs
-   * 4. Validate token format (numeric strings)
-   * 5. Build subscription object
-   * 6. Return JSON.stringify()
+   * Алгоритм:
+   * 1. Привести params к PolymarketSubscriptionParams
+   * 2. Проверить наличие и непустоту assets_ids
+   * 3. Удалить дублирующиеся token ID
+   * 4. Проверить формат токенов (числовые строки)
+   * 5. Сформировать объект подписки
+   * 6. Вернуть JSON.stringify()
    *
-   * Validation:
-   * - assets_ids must exist → throws Error
-   * - assets_ids must not be empty → throws Error
-   * - Token IDs should be numeric strings → logs warning if not
+   * Валидация:
+   * - assets_ids должен присутствовать → бросает Error
+   * - assets_ids не должен быть пустым → бросает Error
+   * - Token ID должны быть числовыми строками → логирует предупреждение если нет
    *
-   * Duplicate Removal:
-   * - Uses Set to remove duplicates
-   * - Logs warning if duplicates detected
+   * Удаление дублей:
+   * - Использует Set для удаления дубликатов
+   * - Логирует предупреждение при обнаружении дублей
    *
    * @example
    * ```typescript
-   * // Valid subscription
+   * // Валидная подписка
    * const msg = formatter.formatSubscription('market', {
    *   assets_ids: ['67704255...', '28257334...'],
    *   type: 'market',
    * });
-   * // Returns: '{"assets_ids":["67704255...","28257334..."],"type":"market"}'
+   * // Возвращает: '{"assets_ids":["67704255...","28257334..."],"type":"market"}'
    *
-   * // Duplicate removal
+   * // Удаление дублей
    * const msg = formatter.formatSubscription('market', {
    *   assets_ids: ['67704255...', '67704255...'],
    *   type: 'market',
    * });
-   * // Returns: '{"assets_ids":["67704255..."],"type":"market"}'
-   * // Logs: ⚠️  Duplicate tokens detected
+   * // Возвращает: '{"assets_ids":["67704255..."],"type":"market"}'
+   * // Логирует: ⚠️  Duplicate tokens detected
    *
-   * // Missing assets_ids (throws)
+   * // Отсутствующий assets_ids (бросает)
    * const msg = formatter.formatSubscription('market', {});
-   * // Throws: Error('assets_ids is required')
+   * // Бросает: Error('assets_ids is required')
    * ```
    */
   formatSubscription(_channel: string, params: SubscriptionParams): string {
@@ -189,18 +189,18 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
   }
 
   /**
-   * Format Polymarket unsubscription message
+   * Форматирует сообщение отписки Polymarket
    *
-   * @param channel - Channel name (ignored by Polymarket)
-   * @param params - Unsubscription parameters
-   * @returns JSON string ready to send via WebSocket
-   * @throws {Error} If assets_ids is missing or empty
+   * @param channel - Имя канала (игнорируется Polymarket)
+   * @param params - Параметры отписки
+   * @returns JSON-строка, готовая к отправке через WebSocket
+   * @throws {Error} Если assets_ids отсутствует или пуст
    *
    * @remarks
-   * Polymarket uses the SAME format for subscribe and unsubscribe.
-   * The exchange determines the operation based on current subscription state.
+   * Polymarket использует ОДИНАКОВЫЙ формат для подписки и отписки.
+   * Биржа определяет операцию на основе текущего состояния подписки.
    *
-   * This method simply delegates to formatSubscription().
+   * Этот метод просто делегирует вызов к formatSubscription().
    *
    * @example
    * ```typescript
@@ -208,7 +208,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
    *   assets_ids: ['67704255...'],
    *   type: 'market',
    * });
-   * // Returns: '{"assets_ids":["67704255..."],"type":"market"}'
+   * // Возвращает: '{"assets_ids":["67704255..."],"type":"market"}'
    * ```
    */
   formatUnsubscription(channel: string, params: SubscriptionParams): string {

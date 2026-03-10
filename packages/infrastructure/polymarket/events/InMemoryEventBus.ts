@@ -1,5 +1,5 @@
 /**
- * In-memory event bus.
+ * In-memory шина событий.
  *
  * @remarks
  * Stub — используется PolymarketWsAdapter до рефакторинга Phase 0.5.
