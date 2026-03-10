@@ -371,28 +371,29 @@ export class Order {
    *
    * Не эмитирует события — pullEvents() вернёт [].
    *
-   * @throws {TradingError} Если массив событий пуст или первое событие не ORDER_CREATED
+   * @returns `Ok(Order)` при успехе, `Err(TradingError)` если массив пуст или первое событие не ORDER_CREATED
    *
    * @example
    * ```typescript
-   * const order = Order.fromEvents([
+   * const result = Order.fromEvents([
    *   { type: 'ORDER_CREATED', orderId, asset, side: 'BUY', price, size, timestamp },
    *   { type: 'ORDER_ACCEPTED', orderId },
    *   { type: 'ORDER_FILLED', orderId, fill: fillData, averagePrice },
    * ]);
+   * if (result.ok) console.log(result.value.status); // 'FILLED'
    * ```
    */
-  public static fromEvents(events: readonly OrderEvent[]): Order {
+  public static fromEvents(events: readonly OrderEvent[]): Result<Order, TradingError> {
     if (events.length === 0) {
-      throw new TradingError('Cannot create Order from empty events list');
+      return Err(new TradingError('Cannot create Order from empty events list'));
     }
 
     const first = events[0];
     if (first.type !== 'ORDER_CREATED') {
-      throw new TradingError(
+      return Err(new TradingError(
         `First event must be ORDER_CREATED, got ${first.type}`,
         { context: { eventType: first.type } },
-      );
+      ));
     }
 
     let state: OrderState = {
@@ -411,7 +412,7 @@ export class Order {
       state = Order._applyEventToState(state, events[i]);
     }
 
-    return new Order(state);
+    return Ok(new Order(state));
   }
 
   // ─── Private: event application ───────────────────────────────────────────
@@ -664,21 +665,29 @@ export class Order {
     const newFill = newFillResult.value;
     const filled = isFull(newFill, this._s.size);
 
-    const event: OrderPartiallyFilledEvent | OrderFilledEvent = filled
-      ? {
-          type: 'ORDER_FILLED',
-          orderId: this._s.id,
-          fill,
-          averagePrice: newFill.averagePrice!,
-        }
-      : {
-          type: 'ORDER_PARTIALLY_FILLED',
-          orderId: this._s.id,
-          fill,
-          filledSize: newFill.filledSize,
-          remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
-        };
+    if (filled) {
+      if (!newFill.averagePrice) {
+        // Не должно происходить: addFill всегда устанавливает averagePrice при успехе
+        return Err(new TradingError('Internal error: averagePrice missing for fully filled order', {
+          context: { orderId: this._s.id, fillId: fill.id },
+        }));
+      }
+      const event: OrderFilledEvent = {
+        type: 'ORDER_FILLED',
+        orderId: this._s.id,
+        fill,
+        averagePrice: newFill.averagePrice,
+      };
+      return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    }
 
+    const event: OrderPartiallyFilledEvent = {
+      type: 'ORDER_PARTIALLY_FILLED',
+      orderId: this._s.id,
+      fill,
+      filledSize: newFill.filledSize,
+      remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
+    };
     return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 

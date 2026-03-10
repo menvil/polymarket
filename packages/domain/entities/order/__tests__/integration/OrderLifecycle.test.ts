@@ -386,6 +386,12 @@ describe('Сценарий: вычисления в разных состоян�
 // ──────────────── Сценарий 9: fromEvents replay ────────────────
 
 describe('Сценарий: fromEvents replay', () => {
+  function replay(events: Parameters<typeof Order.fromEvents>[0]) {
+    const result = Order.fromEvents(events);
+    if (!result.ok) throw result.error;
+    return result.value;
+  }
+
   it('воспроизводит полный жизненный цикл из событий', () => {
     const ts = Timestamp.now();
 
@@ -398,7 +404,7 @@ describe('Сценарий: fromEvents replay', () => {
       price: Price.of(new Decimal('0.60')),
     };
 
-    const order = Order.fromEvents([
+    const order = replay([
       {
         type: 'ORDER_CREATED',
         orderId: ORDER_ID,
@@ -420,7 +426,7 @@ describe('Сценарий: fromEvents replay', () => {
   it('воспроизводит отклонение из событий', () => {
     const ts = Timestamp.now();
 
-    const order = Order.fromEvents([
+    const order = replay([
       {
         type: 'ORDER_CREATED',
         orderId: ORDER_ID,

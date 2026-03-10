@@ -374,13 +374,15 @@ export class FillMapper {
       side = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
 
       // Цена мейкера из maker_orders (может отличаться для limit ордеров)
-      const makerPriceRaw = makerOrderRecord['price'] ?? raw['price'];
+      // Не используем fallback на taker-данные: отсутствие поля = ошибка парсинга
+      const makerPriceRaw = makerOrderRecord['price'];
       const priceResult = parseDecimalPositive(makerPriceRaw, 'maker_orders[].price');
       if (!priceResult.ok) return Err(priceResult.error);
       priceDecimal = priceResult.value;
 
       // Объём мейкера из matched_amount (только его часть трейда)
-      const matchedAmountRaw = makerOrderRecord['matched_amount'] ?? raw['size'];
+      // Не используем fallback на taker-данные: отсутствие поля = ошибка парсинга
+      const matchedAmountRaw = makerOrderRecord['matched_amount'];
       const sizeResult = parseDecimalPositive(matchedAmountRaw, 'maker_orders[].matched_amount');
       if (!sizeResult.ok) return Err(sizeResult.error);
       sizeDecimal = sizeResult.value;
