@@ -48,7 +48,7 @@ import type {
   OrderResponse,
   FillResponse,
 } from '../../ports/IExecutionAdapter.js';
-import type { PolymarketOrderRestClient } from '../clients/PolymarketOrderRestClient.js';
+import type { PolymarketOrderRestClient, TradeResponse } from '../clients/PolymarketOrderRestClient.js';
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
 import type { IEventBus } from '../../ports/IEventBus.js';
 import type {
@@ -440,6 +440,21 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     // TODO: Реализовать когда API endpoint будет доступен
     // Пока возвращаем пустой массив
     return [];
+  }
+
+  /**
+   * Получить исполненные сделки через /data/trades.
+   *
+   * @param tokenId - Фильтр по идентификатору токена (опционально)
+   * @returns Массив TradeResponse с деталями сделок
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Делегирует в `PolymarketOrderRestClient.getFilledOrders()`,
+   * автоматически передавая MAKER-адрес (фандер) если он задан.
+   */
+  async getFilledOrders(tokenId?: string): Promise<TradeResponse[]> {
+    return this.orderClient.getFilledOrders(tokenId, this.orderClient.getMakerAddress());
   }
 
   /**

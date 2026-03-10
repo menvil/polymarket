@@ -40,8 +40,8 @@ import Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
-import type { OrderId, AccountId, AssetId } from '@polymarket/ids';
-import { asOrderId, assetIdToString, isPolymarketCtfToken } from '@polymarket/ids';
+import type { OrderId, AccountId, AssetId, MarketId } from '@polymarket/ids';
+import { asOrderId, assetIdToString, isPolymarketCtfToken, asFillId, asMarketId, unsafeMarketId, AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, SubmitOrderParams, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
@@ -220,21 +220,99 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
   /**
    * Возвращает исполненные сделки аккаунта от биржи.
    *
-   * @param _accountId - ID аккаунта (не используется — маппинг через /data/trades)
-   * @param _since - Начальная временная метка фильтрации (не используется в текущей реализации)
-   * @returns Ok([]) — заглушка (не реализовано)
+   * @param accountId - ID аккаунта (проставляется в каждый VenueTradeSnapshot)
+   * @param since - Фильтр по времени: пропускаются сделки раньше этого момента (опционально)
+   * @returns Ok(VenueTradeSnapshot[]) при успехе, Err(ExchangeError) при ошибке
    *
    * @remarks
-   * TODO: Реализовать через `_executionAdapter.getFilledOrders()` с маппингом
-   * `TradeResponse → VenueTradeSnapshot`. Требует FillId factory и маппинга marketId.
-   * Текущая заглушка безопасна: `ReconcileTradesUseCase` просто не обнаружит пропущенных fills.
+   * Вызывает `/data/trades` через `_executionAdapter.getFilledOrders()`.
+   * Маппинг `TradeResponse → VenueTradeSnapshot`:
+   * - `id`           → `fillId` (asFillId)
+   * - `order_id`     → `orderId` (asOrderId); сделки без orderId пропускаются
+   * - `market`       → `marketId` (asMarketId); если отсутствует — unsafeMarketId('')
+   * - `asset_id`     → `asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId }`
+   * - `side`         → уже 'BUY' | 'SELL'
+   * - `price`/`size` → Price/Quantity VOs
+   * - `fee_rate_bps` → fee amount = price × size × bps / 10000, asset = USDC
+   * - `match_time`   → executedAt (ISO → epoch ms через Date.parse)
+   *
+   * Фильтрация по `since`: применяется после получения данных (API не поддерживает since-фильтр).
    */
   public async getTrades(
-    _accountId: AccountId,
-    _since?: Timestamp,
+    accountId: AccountId,
+    since?: Timestamp,
   ): Promise<Result<VenueTradeSnapshot[], ExchangeError>> {
-    this._logger.warn('getTrades not yet implemented, returning empty list');
-    return Ok([]);
+    try {
+      const trades = await this._executionAdapter.getFilledOrders();
+      const snapshots: VenueTradeSnapshot[] = [];
+
+      for (const t of trades) {
+        const fillId = asFillId(t.id);
+        if (!fillId) {
+          this._logger.warn('Skipping trade with invalid fillId', { id: t.id });
+          continue;
+        }
+
+        // order_id обязателен для VenueTradeSnapshot
+        if (!t.order_id) {
+          this._logger.warn('Skipping trade without order_id', { fillId: t.id });
+          continue;
+        }
+        const orderId = asOrderId(t.order_id);
+        if (!orderId) {
+          this._logger.warn('Skipping trade with invalid order_id', { order_id: t.order_id });
+          continue;
+        }
+
+        // Время исполнения
+        const matchTimeMs = t.match_time ? Date.parse(t.match_time) : NaN;
+        if (isNaN(matchTimeMs)) {
+          this._logger.warn('Skipping trade with invalid match_time', { fillId: t.id });
+          continue;
+        }
+        const executedAtResult = TimestampService.create(matchTimeMs);
+        if (!executedAtResult.ok) continue;
+
+        // Фильтр по since
+        if (since && executedAtResult.value.value().lessThan(since.value())) continue;
+
+        const marketId: MarketId = t.market
+          ? (asMarketId(t.market) ?? unsafeMarketId(t.market))
+          : unsafeMarketId('');
+
+        try {
+          const price = Price.of(new Decimal(t.price));
+          const size = Quantity.of(new Decimal(t.size));
+          const feeBps = t.fee_rate_bps ? parseFloat(t.fee_rate_bps) : 0;
+          const feeAmount = price.value().mul(size.value()).mul(feeBps).div(10000);
+
+          snapshots.push({
+            fillId,
+            orderId,
+            accountId,
+            marketId,
+            asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: t.asset_id } as AssetId,
+            side: t.side,
+            price,
+            size,
+            fee: {
+              amount: Quantity.of(feeAmount),
+              asset: AssetIdHelpers.USDC,
+            },
+            executedAt: executedAtResult.value,
+          });
+        } catch {
+          this._logger.warn('Skipping trade with invalid price/size values', { fillId: t.id });
+        }
+      }
+
+      this._logger.debug('Trades fetched from exchange', { count: snapshots.length });
+      return Ok(snapshots);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._logger.error('Exchange getTrades failed', { error: message });
+      return Err(new ExchangeErrorClass(`Exchange getTrades failed: ${message}`));
+    }
   }
 
   /**
