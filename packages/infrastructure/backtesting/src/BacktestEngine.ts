@@ -43,7 +43,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { PriceLevel } from '@polymarket/order-book';
 import type { BookUpdateHandler } from '@polymarket/handlers';
 import {
@@ -328,10 +328,18 @@ export class BacktestEngine {
 
     const bids = this._convertLevels(event.bids, fileName);
     const asks = this._convertLevels(event.asks, fileName);
-    const timestamp = Number(event.timestamp);
+    const tsResult = TimestampService.create(Number(event.timestamp));
+    if (!tsResult.ok) {
+      this._logger.warn('Invalid timestamp in snapshot event, skipping', {
+        asset_id: event.asset_id,
+        timestamp: event.timestamp,
+        file: fileName,
+      });
+      return { ok: false, error: `Invalid timestamp: ${event.timestamp}` };
+    }
 
     try {
-      await this._deps.bookUpdateHandler.handleSnapshot(tokenId, bids, asks, timestamp);
+      await this._deps.bookUpdateHandler.handleSnapshot(tokenId, bids, asks, tsResult.value);
       return { ok: true, value: undefined };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -3,11 +3,18 @@ import { BookUpdateHandler } from '../src/BookUpdateHandler.js';
 import type { IBookRegistry } from '../src/IBookRegistry.js';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
-import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
-import type { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/value-objects';
+import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+
+/** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
+function makeTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) throw new Error(`Invalid timestamp: ${ms}`);
+  return result.value;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,10 +28,6 @@ function makeLogger(): ILogger {
     fatal: jest.fn() as ILogger['fatal'],
     child: jest.fn() as ILogger['child'],
   };
-}
-
-function makeClock(date = new Date('2024-01-01T00:00:00.000Z')): IClock {
-  return { now: jest.fn<() => Date>().mockReturnValue(date) };
 }
 
 function makeOrderBook(): OrderBook {
@@ -52,7 +55,6 @@ describe('BookUpdateHandler', () => {
   let books: IBookRegistry;
   let eventBus: IEventBus;
   let catalog: IMarketCatalog;
-  let clock: IClock;
   let logger: ILogger;
   let handler: BookUpdateHandler;
   let mockBook: OrderBook;
@@ -72,18 +74,25 @@ describe('BookUpdateHandler', () => {
     catalog = {
       get: jest.fn<IMarketCatalog['get']>().mockReturnValue(undefined),
       getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
+      getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
+      register: jest.fn<IMarketCatalog['register']>(),
+      remove: jest.fn<IMarketCatalog['remove']>(),
+      clear: jest.fn<IMarketCatalog['clear']>(),
     };
-    clock = makeClock();
     logger = makeLogger();
-    handler = new BookUpdateHandler(books, eventBus, catalog, clock, logger);
+    handler = new BookUpdateHandler(books, eventBus, catalog, logger);
   });
 
-  it('применяет снапшот к OrderBook и публикует BOOK_UPDATED', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
+  it('применяет снапшот к OrderBook и публикует BOOK_UPDATED и BOOK_DEPTH', async () => {
+    const ts = makeTimestamp(1000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], ts);
 
-    expect(mockBook.applyFullState).toHaveBeenCalledWith([], []);
+    expect(mockBook.applyFullState).toHaveBeenCalledWith([], [], ts);
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'BOOK_UPDATED' }),
+    );
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'BOOK_DEPTH', timestamp: ts }),
     );
   });
 
@@ -96,7 +105,7 @@ describe('BookUpdateHandler', () => {
       active: true,
     });
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
     expect(books.getOrCreate).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID);
     const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
@@ -104,7 +113,7 @@ describe('BookUpdateHandler', () => {
   });
 
   it('использует tokenId как marketId если инструмент не найден в каталоге', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
     const call = (books.getOrCreate as ReturnType<typeof jest.fn>).mock.calls[0];
     // marketId должен совпадать с tokenId (fallback)
@@ -112,8 +121,8 @@ describe('BookUpdateHandler', () => {
   });
 
   it('логирует warn при stale снапшоте, но всё равно применяет', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 2000);
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000); // stale: 1000 <= 2000
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(2000));
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000)); // stale: 1000 <= 2000
 
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Stale'),
@@ -124,24 +133,25 @@ describe('BookUpdateHandler', () => {
   });
 
   it('логирует warn при равном timestamp (stale: equal не строго больше)', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000); // equal — тоже stale (timestamp <= lastTs)
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000)); // equal — тоже stale
 
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
   it('не логирует warn для первого снапшота', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('передаёт bids/asks в applyFullState', async () => {
+  it('передаёт bids/asks и timestamp в applyFullState', async () => {
     const bid = { price: {} as Price, size: {} as Quantity };
     const ask = { price: {} as Price, size: {} as Quantity };
+    const ts = makeTimestamp(1000);
 
-    await handler.handleSnapshot(TOKEN_ID, [bid], [ask], 1000);
+    await handler.handleSnapshot(TOKEN_ID, [bid], [ask], ts);
 
-    expect(mockBook.applyFullState).toHaveBeenCalledWith([bid], [ask]);
+    expect(mockBook.applyFullState).toHaveBeenCalledWith([bid], [ask], ts);
   });
 
   it('публикует topOfBook из getBestBid/getBestAsk', async () => {
@@ -150,7 +160,7 @@ describe('BookUpdateHandler', () => {
     (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bestBid);
     (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(bestAsk);
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
       topOfBook: { bestBid: Price; bestAsk: Price };
@@ -160,9 +170,9 @@ describe('BookUpdateHandler', () => {
   });
 
   it('onReconnect очищает timestamps — следующий снапшот не считается stale', async () => {
-    await handler.handleSnapshot(TOKEN_ID, [], [], 2000);
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(2000));
     handler.onReconnect();
-    await handler.handleSnapshot(TOKEN_ID, [], [], 1000); // после reconnect — не stale
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000)); // после reconnect — не stale
 
     expect(logger.warn).not.toHaveBeenCalled();
   });

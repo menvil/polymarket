@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { asMarketId } from '@polymarket/ids';
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { PriceService, QuantityService, TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity } from '@polymarket/value-objects';
 // Quantity используется в тесте с отрицательным size через cast
 import { OrderBook } from '../../src/OrderBook.js';
@@ -284,10 +284,14 @@ describe('OrderBook', () => {
   // ==================== toSnapshot ====================
 
   describe('toSnapshot()', () => {
-    it('создаёт корректный снапшот', () => {
-      book.applyFullState([level(0.65, 1000)], [level(0.66, 800)]);
+    it('создаёт корректный снапшот с timestamp из applyFullState', () => {
+      const tsResult = TimestampService.create(1700000000000);
+      if (!tsResult.ok) throw new Error('Invalid timestamp');
+      const ts = tsResult.value;
 
-      const snapshot = book.toSnapshot(1700000000000);
+      book.applyFullState([level(0.65, 1000)], [level(0.66, 800)], ts);
+
+      const snapshot = book.toSnapshot();
 
       expect(snapshot.marketId).toBe('market-abc');
       expect(snapshot.tokenId).toBe('token-yes');
@@ -296,12 +300,12 @@ describe('OrderBook', () => {
       expect(snapshot.bids[0]!.size.value().toNumber()).toBe(1000);
       expect(snapshot.asks[0]!.price.value().toNumber()).toBe(0.66);
       expect(snapshot.asks[0]!.size.value().toNumber()).toBe(800);
-      expect(snapshot.timestampMs).toBe(1700000000000);
+      expect(snapshot.timestamp).toBe(ts);
     });
 
-    it('timestampMs опционален', () => {
+    it('timestamp undefined если applyFullState не вызывался', () => {
       const snapshot = book.toSnapshot();
-      expect(snapshot.timestampMs).toBeUndefined();
+      expect(snapshot.timestamp).toBeUndefined();
     });
   });
 

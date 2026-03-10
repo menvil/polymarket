@@ -16,7 +16,7 @@
  *
  * @example
  * ```typescript
- * const handler = new BookUpdateHandler(bookRegistry, eventBus, catalog, clock, logger);
+ * const handler = new BookUpdateHandler(bookRegistry, eventBus, catalog, logger);
  *
  * // Подключить к WS-потоку:
  * wsEmitter.onOrderbookSnapshot(async (dto) => {
@@ -28,10 +28,9 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { IClock } from '@polymarket/time';
 import type { PriceLevel } from '@polymarket/order-book';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import { TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
@@ -45,16 +44,14 @@ export class BookUpdateHandler {
    * Создаёт BookUpdateHandler.
    *
    * @param _books - Реестр OrderBook экземпляров
-   * @param _eventBus - Event bus для публикации BOOK_UPDATED
+   * @param _eventBus - Event bus для публикации BOOK_UPDATED и BOOK_DEPTH
    * @param _catalog - Каталог инструментов (tokenId → marketId)
-   * @param _clock - Источник времени
    * @param _logger - Logger
    */
   constructor(
     private readonly _books: IBookRegistry,
     private readonly _eventBus: IEventBus,
     private readonly _catalog: IMarketCatalog,
-    private readonly _clock: IClock,
     private readonly _logger: ILogger,
   ) {}
 
@@ -64,45 +61,39 @@ export class BookUpdateHandler {
    * @param tokenId - ID токена (YES/NO outcome token)
    * @param bids - Bids в формате PriceLevel[]
    * @param asks - Asks в формате PriceLevel[]
-   * @param timestamp - Unix timestamp снапшота в мс
+   * @param timestamp - Timestamp снапшота из WS
    *
    * @remarks
    * Polymarket не шлёт дельты — каждый 'book' event это полный снапшот.
+   *
+   * ### События:
+   * - `BOOK_UPDATED` — высокочастотное событие с TopOfBook (лучшие уровни)
+   * - `BOOK_DEPTH` — полный снапшот стакана для стратегий с глубиной стакана
    */
   public async handleSnapshot(
     tokenId: InstrumentId,
     bids: readonly PriceLevel[],
     asks: readonly PriceLevel[],
-    timestamp: number,
+    timestamp: Timestamp,
   ): Promise<void> {
     const key = String(tokenId);
     const lastTs = this._lastTimestamps.get(key);
+    const timestampMs = timestamp.toNumber();
 
-    if (lastTs !== undefined && timestamp <= lastTs) {
+    if (lastTs !== undefined && timestampMs <= lastTs) {
       this._logger.warn('Stale orderbook snapshot received, applying anyway', {
         tokenId: String(tokenId),
         lastTs,
-        got: timestamp,
+        got: timestampMs,
       });
     }
-    this._lastTimestamps.set(key, timestamp);
-
-    // Создаём timestamp ДО мутации Book — чтобы избежать неконсистентного состояния
-    // при ошибке создания timestamp
-    const tsResult = TimestampService.fromDate(this._clock.now());
-    if (!tsResult.ok) {
-      this._logger.error('Failed to create timestamp for book snapshot event', {
-        error: tsResult.error.message,
-        tokenId: String(tokenId),
-      });
-      return;
-    }
+    this._lastTimestamps.set(key, timestampMs);
 
     const instrument = this._catalog.get(tokenId);
     // Если инструмент найден — используем его marketId, иначе fallback на tokenId
     const marketId = instrument?.marketId ?? (tokenId as unknown as MarketId);
     const book = this._books.getOrCreate(marketId, tokenId);
-    book.applyFullState([...bids], [...asks]);
+    book.applyFullState([...bids], [...asks], timestamp);
 
     this._logger.debug('Order book snapshot applied', {
       tokenId: String(tokenId),
@@ -116,7 +107,7 @@ export class BookUpdateHandler {
     const topOfBook: TopOfBook = {
       bestBid: bestBidLevel?.price,
       bestAsk: bestAskLevel?.price,
-      spread: undefined, // TODO: вычислить в Phase 8 когда нужно
+      spread: undefined,
       bestBidSize: bestBidLevel?.size,
       bestAskSize: bestAskLevel?.size,
     };
@@ -126,8 +117,15 @@ export class BookUpdateHandler {
       topOfBook,
       instrumentId: tokenId,
       marketId,
-      sequenceNumber: timestamp, // proxy: Polymarket не шлёт sequence number
-      timestamp: tsResult.value,
+      sequenceNumber: timestampMs, // proxy: Polymarket не шлёт sequence number
+      timestamp,
+    });
+
+    await this._eventBus.publish({
+      type: 'BOOK_DEPTH',
+      instrumentId: tokenId,
+      snapshot: book.toSnapshot(),
+      timestamp,
     });
   }
 

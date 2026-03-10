@@ -21,7 +21,6 @@ import type { ILogger } from '@polymarket/logger';
 import type { IBookRegistry } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
-import type { IClock } from '@polymarket/time';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
 
 // ── Вспомогательные фабрики ───────────────────────────────────────────────────
@@ -90,11 +89,7 @@ function makeDeps(logger: ILogger): {
     clear: jest.fn<IMarketCatalog['clear']>(),
   };
 
-  const clock: IClock = {
-    now: jest.fn<() => Date>().mockReturnValue(new Date('2026-01-01T00:00:00.000Z')),
-  };
-
-  const bookUpdateHandler = new BookUpdateHandler(books, eventBusMock, catalog, clock, logger);
+  const bookUpdateHandler = new BookUpdateHandler(books, eventBusMock, catalog, logger);
 
   const deps: BacktestDeps = {
     bookUpdateHandler,

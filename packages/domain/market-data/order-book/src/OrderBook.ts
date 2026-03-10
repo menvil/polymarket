@@ -24,6 +24,7 @@
 import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal, averageDecimal, isZeroDecimal } from '@polymarket/math';
 import type { MarketId } from '@polymarket/ids';
+import type { Timestamp } from '@polymarket/value-objects';
 import type { PriceLevel } from './PriceLevel.js';
 import type { OrderBookDelta } from './OrderBookDelta.js';
 
@@ -43,8 +44,8 @@ export interface OrderBookSnapshot {
   readonly bids: PriceLevel[];
   /** Уровни продажи (Price/Quantity VO) */
   readonly asks: PriceLevel[];
-  /** Время снапшота в миллисекундах (опционально) */
-  readonly timestampMs?: number;
+  /** Timestamp последнего обновления стакана (опционально — undefined до первого applyFullState) */
+  readonly timestamp: Timestamp | undefined;
 }
 
 /**
@@ -88,6 +89,12 @@ export class OrderBook {
    * Ключ = price.value().toString() для точного Decimal-сравнения
    */
   private _asks: Map<string, PriceLevel>;
+
+  /**
+   * Timestamp последнего вызова applyFullState.
+   * Используется в toSnapshot() без аргументов.
+   */
+  private _lastUpdatedAt: Timestamp | undefined = undefined;
 
   /**
    * Приватный конструктор — используйте OrderBook.create()
@@ -148,21 +155,24 @@ export class OrderBook {
    *
    * @param bids - Уровни покупки
    * @param asks - Уровни продажи
+   * @param timestamp - Timestamp снапшота из WS (опционально)
    *
    * @remarks
    * Используется при получении полного снапшота стакана от биржи.
    * Полностью заменяет текущее состояние.
    * Уровни с size <= 0 игнорируются.
+   * Если передан `timestamp` — сохраняется как `_lastUpdatedAt` и доступен через `toSnapshot()`.
    *
    * @example
    * ```typescript
    * book.applyFullState(
    *   [{ price: bid, size: bidSize }],
-   *   [{ price: ask, size: askSize }]
+   *   [{ price: ask, size: askSize }],
+   *   timestamp,
    * );
    * ```
    */
-  public applyFullState(bids: PriceLevel[], asks: PriceLevel[]): void {
+  public applyFullState(bids: PriceLevel[], asks: PriceLevel[], timestamp?: Timestamp): void {
     this._bids = new Map();
     this._asks = new Map();
 
@@ -175,6 +185,10 @@ export class OrderBook {
       if (level.size.value().gt(0)) {
         this._asks.set(level.price.value().toString(), level);
       }
+    }
+
+    if (timestamp !== undefined) {
+      this._lastUpdatedAt = timestamp;
     }
   }
 
@@ -333,15 +347,15 @@ export class OrderBook {
   /**
    * Создаёт снапшот текущего состояния стакана
    *
-   * @param timestampMs - Время снапшота (опционально)
-   * @returns Снапшот стакана с Price/Quantity VO
+   * @returns Снапшот стакана с Price/Quantity VO и timestamp последнего обновления
    *
    * @remarks
+   * `timestamp` в снапшоте = `_lastUpdatedAt`, устанавливаемый в `applyFullState()`.
    * Для JSON-сериализации конвертируйте Price/Quantity через `.value().toString()`.
    *
    * @example
    * ```typescript
-   * const snapshot = book.toSnapshot(Date.now());
+   * const snapshot = book.toSnapshot();
    * // Для JSON:
    * const json = {
    *   bids: snapshot.bids.map(l => ({
@@ -351,13 +365,13 @@ export class OrderBook {
    * };
    * ```
    */
-  public toSnapshot(timestampMs?: number): OrderBookSnapshot {
+  public toSnapshot(): OrderBookSnapshot {
     return {
       marketId: this.marketId,
       tokenId: this.tokenId,
       bids: this._getSortedBids(),
       asks: this._getSortedAsks(),
-      timestampMs,
+      timestamp: this._lastUpdatedAt,
     };
   }
 

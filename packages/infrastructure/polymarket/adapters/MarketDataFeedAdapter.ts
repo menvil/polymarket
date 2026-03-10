@@ -10,11 +10,15 @@
  * IPolymarketWsEmitter.onOrderbookSnapshot(dto)
  *   → recorder?.recordEvent(tokenId, dto)   (опционально, сначала пишем raw)
  *   → WsRawLevel[] → PriceLevel[]           (конвертация на границе инфраструктуры)
- *   → BookUpdateHandler.handleSnapshot()    (application layer)
+ *   → bookHandler?.handleSnapshot()         (application layer, опционально)
  *
  * IPolymarketWsEmitter.onReconnect()
- *   → BookUpdateHandler.onReconnect()       (инвалидирует кэш стаканов)
+ *   → bookHandler?.onReconnect()            (инвалидирует кэш стаканов, опционально)
  * ```
+ *
+ * ### Режим только записи (data collection):
+ * Если `bookHandler = null`, адаптер работает только как recorder — пишет события
+ * на диск без какой-либо доменной обработки. Используется в скрипте collect-data.
  *
  * ### Запись сырых данных (опционально):
  * Если передан `recorder`, каждый входящий WS-снапшот записывается на диск
@@ -28,11 +32,14 @@
  *
  * @example
  * ```typescript
- * const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger);
- * adapter.start();
- * // С записью сырых данных:
+ * // Торговый режим (с BookUpdateHandler):
  * const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger, recorder);
  * adapter.start();
+ *
+ * // Режим только записи (без BookUpdateHandler):
+ * const adapter = new MarketDataFeedAdapter(wsEmitter, null, logger, recorder);
+ * adapter.start();
+ *
  * // При завершении:
  * adapter.stop();
  * ```
@@ -40,7 +47,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { PriceLevel } from '@polymarket/order-book';
 import type { IMarketDataRecorder } from '@polymarket/ports';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
@@ -53,6 +60,9 @@ import type { BookUpdateHandler } from '@polymarket/handlers';
  * Подписывается на WS-события при `start()`.
  * Снимает все подписки при `stop()`.
  * Опционально записывает raw WS-события через `IMarketDataRecorder` (fire-and-forget).
+ *
+ * `bookHandler` может быть `null` — тогда адаптер работает только как recorder
+ * (режим сбора данных без торговой логики).
  */
 export class MarketDataFeedAdapter {
   private readonly _logger: ILogger;
@@ -61,13 +71,13 @@ export class MarketDataFeedAdapter {
 
   /**
    * @param _wsEmitter - WS-эмиттер raw событий Polymarket
-   * @param _bookHandler - Application handler обновлений стакана
+   * @param _bookHandler - Application handler обновлений стакана, или `null` в режиме только записи
    * @param _logger - Logger
    * @param _recorder - Опциональный рекордер для сохранения сырых WS-событий на диск
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
-    private readonly _bookHandler: BookUpdateHandler,
+    private readonly _bookHandler: BookUpdateHandler | null,
     logger: ILogger,
     private readonly _recorder?: IMarketDataRecorder,
   ) {
@@ -101,14 +111,23 @@ export class MarketDataFeedAdapter {
 
       const bids = this._convertLevels(dto.bids);
       const asks = this._convertLevels(dto.asks);
-      const timestamp = Number(dto.timestamp);
+      const tsResult = TimestampService.create(Number(dto.timestamp));
+      if (!tsResult.ok) {
+        this._logger.warn('Invalid timestamp in WS orderbook snapshot, skipping', {
+          asset_id: dto.asset_id,
+          timestamp: dto.timestamp,
+        });
+        return;
+      }
 
-      await this._bookHandler.handleSnapshot(tokenId, bids, asks, timestamp);
+      if (this._bookHandler) {
+        await this._bookHandler.handleSnapshot(tokenId, bids, asks, tsResult.value);
+      }
     });
 
     const unsubReconnect = this._wsEmitter.onReconnect(() => {
       this._logger.info('Market WS reconnected, invalidating order books');
-      this._bookHandler.onReconnect();
+      this._bookHandler?.onReconnect();
     });
 
     this._unsubscribes.push(unsubSnapshot, unsubReconnect);
