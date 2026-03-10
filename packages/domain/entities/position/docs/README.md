@@ -131,7 +131,7 @@ const result = closeFIFO(position, closeQty, closePrice, Timestamp.now());
 if (result.ok) {
   const { position: newPosition, realizedPnL, closedLots } = result.value;
   console.log(newPosition.quantity.value().toNumber()); // 40
-  console.log(realizedPnL.value().toNumber()); // 8.5
+  console.log(realizedPnL.value().toNumber()); // 6.0
   console.log(newPosition.getStatus()); // 'PARTIALLY_CLOSED'
   console.log(newPosition.openedAt === position.openedAt); // true (не изменился)
 }

@@ -218,8 +218,8 @@ export class MarketParser {
       slug: marketSlug,
       question,
       outcomes: [
-        { token: token0Result.value, index: 0 as const, name: o0.name as string },
-        { token: token1Result.value, index: 1 as const, name: o1.name as string },
+        { token: token0Result.value, index: 0 as const, name: (o0.name as string).trim() },
+        { token: token1Result.value, index: 1 as const, name: (o1.name as string).trim() },
       ] as const,
       expirationMs,
       state: stateResult.value,

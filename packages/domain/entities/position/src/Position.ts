@@ -346,6 +346,14 @@ export class Position {
       );
     }
 
+    if (params.side !== 'LONG' && params.side !== 'SHORT') {
+      return Err(
+        new ValidationError('Position side must be LONG or SHORT', {
+          context: { field: 'side', positionId: params.id, value: params.side },
+        })
+      );
+    }
+
     // Защита от null/undefined: lots должен быть массивом
     if (!params.lots || !Array.isArray(params.lots)) {
       return Err(

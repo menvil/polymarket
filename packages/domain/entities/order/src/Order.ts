@@ -261,6 +261,11 @@ export class Order {
         context: { field: 'side', orderId: params.id },
       }));
     }
+    if (params.size == null) {
+      return Err(new TradingError('Order size is required', {
+        context: { field: 'size', orderId: params.id },
+      }));
+    }
     if (!params.size.isPositive()) {
       return Err(new TradingError('Order size must be positive', {
         context: { field: 'size', orderId: params.id },

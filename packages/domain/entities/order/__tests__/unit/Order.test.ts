@@ -93,7 +93,7 @@ describe('Order', () => {
     });
 
     it('должен вернуть Err для пустого id', () => {
-      const result = createValidOrder({ id: asOrderId('') });
+      const result = createValidOrder({ id: '' as unknown as OrderId });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {

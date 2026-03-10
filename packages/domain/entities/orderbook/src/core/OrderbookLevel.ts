@@ -121,6 +121,7 @@ export class OrderbookLevel {
    * ```
    */
   public equals(other: OrderbookLevel): boolean {
+    if (other == null) return false;
     return (
       this.price.equals(other.price) &&
       this.quantity.equals(other.quantity)

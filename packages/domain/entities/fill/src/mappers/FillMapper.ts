@@ -671,6 +671,14 @@ export class FillMapper {
     const feeAssetQuantity = new AssetQuantity(feeAssetId, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
 
+    if (snapshot.side !== 'BUY' && snapshot.side !== 'SELL') {
+      return Err(
+        new ValidationError('Invalid snapshot: side must be BUY or SELL', {
+          context: { field: 'side', value: snapshot.side },
+        })
+      );
+    }
+
     const fillResult = Fill.create({
       id: fillId,
       orderId,
