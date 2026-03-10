@@ -53,7 +53,7 @@ export interface WsUserFillDto {
   readonly fee_rate_bps: string;
   /** Статус fill (on-chain lifecycle) */
   readonly status: WsFillStatus;
-  /** ID токена (YES/NO token) */
+  /** ID токена (UP/DOWN token) */
   readonly asset_id: string;
   /** Список maker-ордеров, участвовавших в матчинге */
   readonly maker_orders: Array<{

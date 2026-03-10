@@ -65,7 +65,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
   /**
    * Возвращает метаданные инструмента по InstrumentId.
    *
-   * @param instrumentId - ID токена (YES/NO outcome token)
+   * @param instrumentId - ID токена (UP/DOWN outcome token)
    * @returns InstrumentInfo или undefined если инструмент неизвестен
    *
    * @example

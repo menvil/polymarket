@@ -38,7 +38,7 @@ export type { VenueTradeSnapshot, FeeSnapshot } from './types/VenueTradeSnapshot
  * Параметры для размещения лимитного ордера.
  */
 export interface SubmitOrderParams {
-  /** Токен для торговли (YES/NO outcome token) */
+  /** Токен для торговли (UP/DOWN outcome token) */
   readonly asset: AssetId;
   /** Сторона сделки */
   readonly side: Side;

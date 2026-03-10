@@ -29,7 +29,7 @@ export interface WsRawLevel {
  */
 export interface WsOrderbookSnapshotDto {
   readonly type: 'book';
-  /** ID токена (YES/NO token) */
+  /** ID токена (UP/DOWN token) */
   readonly asset_id: string;
   /** ID рынка (condition_id) */
   readonly market: string;

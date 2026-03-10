@@ -58,7 +58,7 @@ export class BookUpdateHandler {
   /**
    * Обрабатывает полный снапшот стакана (Polymarket WS event: type='book').
    *
-   * @param tokenId - ID токена (YES/NO outcome token)
+   * @param tokenId - ID токена (UP/DOWN outcome token)
    * @param bids - Bids в формате PriceLevel[]
    * @param asks - Asks в формате PriceLevel[]
    * @param timestamp - Timestamp снапшота из WS

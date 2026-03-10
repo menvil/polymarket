@@ -25,7 +25,7 @@ import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
  * Все поля уже типизированы — не нужно парсить строки в application layer.
  */
 export interface InstrumentInfo {
-  /** ID токена (YES/NO outcome token) — типизированный branded type */
+  /** ID токена (UP/DOWN outcome token) — типизированный branded type */
   readonly instrumentId: InstrumentId;
   /** ID рынка (condition_id в Polymarket API) */
   readonly marketId: MarketId;
@@ -68,7 +68,7 @@ export interface IMarketCatalog {
   /**
    * Возвращает метаданные инструмента по InstrumentId.
    *
-   * @param instrumentId - ID токена (YES/NO outcome token)
+   * @param instrumentId - ID токена (UP/DOWN outcome token)
    * @returns InstrumentInfo или undefined если инструмент неизвестен
    */
   get(instrumentId: InstrumentId): InstrumentInfo | undefined;

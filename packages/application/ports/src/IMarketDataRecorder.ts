@@ -53,7 +53,7 @@ export interface MarketMeta {
   readonly marketId: MarketId;
   /** Вопрос рынка (для имени файла) */
   readonly question: string;
-  /** Список token ID (YES/NO) для маршрутизации событий */
+  /** Список token ID (UP/DOWN) для маршрутизации событий */
   readonly tokenIds: readonly string[];
   /** Время истечения рынка */
   readonly expiresAt: Timestamp;

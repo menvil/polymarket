@@ -36,12 +36,12 @@ const TEST_CONDITION_REF: OnChainConditionRef = {
   conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
 };
 
-const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
 
 const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: YES_TOKEN, index: 0, name: 'Yes' },
-  { token: NO_TOKEN, index: 1, name: 'No' },
+  { token: UP_TOKEN, index: 0, name: 'Yes' },
+  { token: DOWN_TOKEN, index: 1, name: 'No' },
 ];
 
 function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {

@@ -20,7 +20,7 @@
  *
  * ### Маппинг `GammaMarketDto → DiscoveredMarket`:
  * - `conditionId` → `asMarketId()` → `MarketId`
- * - `clobTokenIds[0]` (YES token) → `asInstrumentId()` → `InstrumentId`
+ * - `clobTokenIds[0]` (UP token) → `asInstrumentId()` → `InstrumentId`
  * - `endDate` (ISO строка) → `Date.parse()` → `TimestampService.create()` → `Timestamp`
  * - `orderPriceMinTickSize` → `Price.of(new Decimal(value))` → `Price` (дефолт: 0.01)
  * - `orderMinSize` → `Quantity.of(new Decimal(value))` → `Quantity` (дефолт: 1)
@@ -233,7 +233,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
    * @remarks
    * ### Особенности маппинга:
    * - `conditionId` → `asMarketId()` → может вернуть `undefined` (логируем, пропускаем)
-   * - `clobTokenIds` — JSON-строка или массив; берём `[0]` (YES token)
+   * - `clobTokenIds` — JSON-строка или массив; берём `[0]` (UP token)
    * - `endDate` → `Date.parse()` → `TimestampService.create()` (может быть невалидным)
    * - `orderPriceMinTickSize` — дефолт 0.01 если не задан
    * - `orderMinSize` — дефолт 1 если не задан
@@ -282,9 +282,9 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       return null;
     }
 
-    // 3. Берём YES token (первый элемент)
-    const yesTokenIdRaw = tokenIds[0];
-    if (!yesTokenIdRaw) {
+    // 3. Берём UP token (первый элемент)
+    const upTokenIdRaw = tokenIds[0];
+    if (!upTokenIdRaw) {
       this._logger.warn('clobTokenIds is empty, skipping market', {
         conditionId: raw.conditionId,
         question: raw.question,
@@ -292,21 +292,21 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       return null;
     }
 
-    const instrumentId = asInstrumentId(yesTokenIdRaw);
+    const instrumentId = asInstrumentId(upTokenIdRaw);
     if (!instrumentId) {
-      this._logger.warn('Cannot parse YES token as InstrumentId, skipping market', {
+      this._logger.warn('Cannot parse UP token as InstrumentId, skipping market', {
         conditionId: raw.conditionId,
-        yesTokenId: yesTokenIdRaw,
+        upTokenId: upTokenIdRaw,
       });
       return null;
     }
-
     // 4. Парсинг даты истечения
     const endDateMs = Date.parse(raw.endDate);
     if (isNaN(endDateMs)) {
       this._logger.warn('Cannot parse endDate, skipping market', {
         conditionId: raw.conditionId,
         endDate: raw.endDate,
+        raw: raw,
       });
       return null;
     }

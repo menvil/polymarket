@@ -12,7 +12,7 @@
  */
 export interface WsTradeDto {
   readonly type: 'trade';
-  /** ID токена (YES/NO token) */
+  /** ID токена (UP/DOWN token) */
   readonly asset_id: string;
   /** Цена трейда (строка для сохранения Decimal-точности) */
   readonly price: string;

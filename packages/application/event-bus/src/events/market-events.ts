@@ -41,7 +41,7 @@ export interface BookUpdatedEvent {
   readonly type: 'BOOK_UPDATED';
   /** Верхушка стакана — лучшие bid/ask цены */
   readonly topOfBook: TopOfBook;
-  /** ID токена (YES/NO outcome token) */
+  /** ID токена (UP/DOWN outcome token) */
   readonly instrumentId: InstrumentId;
   /** ID рынка (condition_id) */
   readonly marketId: MarketId;
@@ -61,7 +61,7 @@ export interface BookUpdatedEvent {
  */
 export interface BookDepthEvent {
   readonly type: 'BOOK_DEPTH';
-  /** ID токена (YES/NO outcome token) */
+  /** ID токена (UP/DOWN outcome token) */
   readonly instrumentId: InstrumentId;
   /** Полный снапшот стакана — типизированный, не массив строк */
   readonly snapshot: OrderBookSnapshot;
@@ -78,7 +78,7 @@ export interface BookDepthEvent {
  */
 export interface TradeReceivedEvent {
   readonly type: 'TRADE_RECEIVED';
-  /** ID токена (YES/NO outcome token) */
+  /** ID токена (UP/DOWN outcome token) */
   readonly instrumentId: InstrumentId;
   /** Цена трейда (VO, не string) */
   readonly price: Price;

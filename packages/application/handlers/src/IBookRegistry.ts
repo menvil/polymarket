@@ -17,7 +17,7 @@ export interface IBookRegistry {
    * Возвращает OrderBook по ключу (marketId, tokenId) или undefined.
    *
    * @param marketId - ID рынка (condition_id)
-   * @param tokenId - ID токена (YES/NO outcome token)
+   * @param tokenId - ID токена (UP/DOWN outcome token)
    * @returns OrderBook или undefined если не найден
    */
   get(marketId: MarketId, tokenId: InstrumentId): OrderBook | undefined;

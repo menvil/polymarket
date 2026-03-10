@@ -52,7 +52,7 @@ import type { PolymarketMarketDataRestClient } from './clients/PolymarketMarketD
  * После Phase 1: будет импортироваться из `@polymarket/ports`.
  */
 export interface InstrumentInfo {
-  /** ID токена (YES/NO outcome token) */
+  /** ID токена (UP/DOWN outcome token) */
   readonly instrumentId: InstrumentId;
   /** ID условия рынка (condition_id) */
   readonly conditionId: string;
@@ -185,7 +185,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * Парсит сырой REST-ответ в InstrumentInfo с domain VOs.
    *
    * @param raw - Сырой ответ Polymarket API
-   * @param tokenId - Token ID (YES/NO токен)
+   * @param tokenId - Token ID (UP/DOWN токен)
    * @returns InstrumentInfo или null если парсинг не удался
    *
    * @remarks

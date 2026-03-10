@@ -51,12 +51,12 @@ const TEST_CONDITION_REF: OnChainConditionRef = {
   conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
 };
 
-const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
 
 const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: YES_TOKEN, index: 0, name: 'Yes' },
-  { token: NO_TOKEN, index: 1, name: 'No' },
+  { token: UP_TOKEN, index: 0, name: 'Yes' },
+  { token: DOWN_TOKEN, index: 1, name: 'No' },
 ];
 
 function makeMarket(overrides: Partial<Parameters<typeof Market.create>[0]> = {}) {
@@ -93,8 +93,8 @@ describe('Market.create()', () => {
   it('возвращает Err при одинаковых outcomeNames', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: 'Yes' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: 'Yes' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -107,8 +107,8 @@ describe('Market.create()', () => {
   it('возвращает Err при одинаковых outcomeTokens', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: YES_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: UP_TOKEN, index: 1, name: 'No' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -130,8 +130,8 @@ describe('Market.create()', () => {
   it('возвращает Err при пустом outcomes[0].name', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: '' },
-        { token: NO_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 0, name: '' },
+        { token: DOWN_TOKEN, index: 1, name: 'No' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -143,8 +143,8 @@ describe('Market.create()', () => {
   it('возвращает Err при пустом outcomes[1].name', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: '' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: '' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -188,7 +188,7 @@ describe('Market.create()', () => {
 
   it('возвращает Err (не TypeError) для outcomes с одним элементом', () => {
     const result = makeMarket({
-      outcomes: [{ token: YES_TOKEN, index: 0, name: 'Yes' }] as never,
+      outcomes: [{ token: UP_TOKEN, index: 0, name: 'Yes' }] as never,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -207,9 +207,9 @@ describe('Market.create()', () => {
   it('возвращает Err для outcomes с 3 элементами (только 2 допустимо)', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: 'No' },
-        { token: YES_TOKEN, index: 2, name: 'Maybe' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 2, name: 'Maybe' },
       ] as never,
     });
     expect(result.ok).toBe(false);
