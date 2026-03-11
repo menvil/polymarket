@@ -213,9 +213,9 @@ export class StrategyCoordinator {
     let candidates: readonly DiscoveredMarket[];
     try {
       candidates = await this._deps.discoveryService.findCandidates();
-    } catch (error) {
+    } catch (err) {
       this._logger.error('Failed to fetch discovery candidates', {
-        error: error instanceof Error ? error.message : String(error),
+        err: err instanceof Error ? err : new Error(String(err)),
       });
       return;
     }
