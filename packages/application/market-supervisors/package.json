@@ -1,5 +1,5 @@
 {
-  "name": "@polymarket/coordinator",
+  "name": "@polymarket/market-supervisors",
   "version": "0.1.0",
   "type": "module",
   "exports": {
