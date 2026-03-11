@@ -75,7 +75,7 @@ if (config.dnsOverrideEnabled) {
     ]);
   } catch (err) {
     logger.warn('DNS override install failed, continuing with system DNS', {
-      err: err instanceof Error ? err.message : String(err),
+      err: err instanceof Error ? err : new Error(String(err)),
     });
   }
 } else {
@@ -405,7 +405,7 @@ try {
   await ws.connect();
 } catch (err) {
   logger.warn('Initial WS connection failed, will retry automatically', {
-    err: err instanceof Error ? err.message : String(err),
+    err: err instanceof Error ? err : new Error(String(err)),
   });
 }
 feed.start();
