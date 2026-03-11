@@ -29,7 +29,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { PriceLevel } from '@polymarket/order-book';
-import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { InstrumentId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/event-bus';
@@ -89,9 +89,13 @@ export class BookUpdateHandler {
     this._lastTimestamps.set(key, timestamp);
 
     const instrument = this._catalog.get(tokenId);
-    // Если инструмент найден — используем его marketId, иначе fallback на tokenId
-    const marketId = instrument?.marketId ?? (tokenId as unknown as MarketId);
-    const book = this._books.getOrCreate(marketId, tokenId);
+    if (!instrument) {
+      this._logger.warn('Received snapshot for unregistered instrument, skipping', {
+        tokenId: String(tokenId),
+      });
+      return;
+    }
+    const book = this._books.getOrCreate(instrument.marketId, tokenId);
     book.applyFullState([...bids], [...asks], timestamp);
 
     this._logger.debug('Order book snapshot applied', {
@@ -115,7 +119,7 @@ export class BookUpdateHandler {
       type: 'BOOK_UPDATED',
       topOfBook,
       instrumentId: tokenId,
-      marketId,
+      marketId: instrument.marketId,
       sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
       timestamp,
     });

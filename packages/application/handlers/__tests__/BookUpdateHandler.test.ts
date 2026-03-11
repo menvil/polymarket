@@ -8,6 +8,7 @@ import type { OrderBook, PriceLevel } from '@polymarket/order-book';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { InstrumentInfo } from '@polymarket/ports';
 
 /** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
 function makeTimestamp(ms: number): Timestamp {
@@ -46,8 +47,20 @@ function makeOrderBook(): OrderBook {
   } as unknown as OrderBook;
 }
 
-const TOKEN_ID = 'token-abc' as unknown as InstrumentId;
+const TOKEN_ID  = 'token-abc'  as unknown as InstrumentId;
 const MARKET_ID = 'market-xyz' as unknown as MarketId;
+
+/** Дефолтная InstrumentInfo для большинства тестов */
+function makeInstrumentInfo(): InstrumentInfo {
+  return {
+    instrumentId: TOKEN_ID,
+    marketId:     MARKET_ID,
+    tickSize:     {} as Price,
+    minOrderSize: {} as Quantity,
+    active:       true,
+    expiresAt:    {} as Timestamp,
+  };
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -72,7 +85,7 @@ describe('BookUpdateHandler', () => {
       subscribe: jest.fn() as IEventBus['subscribe'],
     };
     catalog = {
-      get: jest.fn<IMarketCatalog['get']>().mockReturnValue(undefined),
+      get: jest.fn<IMarketCatalog['get']>().mockReturnValue(makeInstrumentInfo()),
       getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
       getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
       register: jest.fn<IMarketCatalog['register']>(),
@@ -96,15 +109,7 @@ describe('BookUpdateHandler', () => {
     );
   });
 
-  it('использует marketId из каталога если инструмент найден', async () => {
-    (catalog.get as ReturnType<typeof jest.fn>).mockReturnValue({
-      instrumentId: TOKEN_ID,
-      marketId: MARKET_ID,
-      tickSize: {} as Price,
-      minOrderSize: {} as Quantity,
-      active: true,
-    });
-
+  it('использует marketId из каталога для getOrCreate и BOOK_UPDATED', async () => {
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
     expect(books.getOrCreate).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID);
@@ -112,12 +117,17 @@ describe('BookUpdateHandler', () => {
     expect(published).toMatchObject({ type: 'BOOK_UPDATED', marketId: MARKET_ID });
   });
 
-  it('использует tokenId как marketId если инструмент не найден в каталоге', async () => {
+  it('пропускает снапшот и логирует warn если инструмент не найден в каталоге', async () => {
+    (catalog.get as ReturnType<typeof jest.fn>).mockReturnValue(undefined);
+
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
-    const call = (books.getOrCreate as ReturnType<typeof jest.fn>).mock.calls[0];
-    // marketId должен совпадать с tokenId (fallback)
-    expect(String(call?.[0])).toBe(String(TOKEN_ID));
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('unregistered instrument'),
+      expect.any(Object),
+    );
+    expect(books.getOrCreate).not.toHaveBeenCalled();
+    expect(eventBus.publish).not.toHaveBeenCalled();
   });
 
   it('логирует warn при stale снапшоте, но всё равно применяет', async () => {
