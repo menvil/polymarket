@@ -409,8 +409,13 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         // Логируем как WARN (не ERROR) и планируем повторную отправку через дебаунс.
         // Кулдаун в _sendAllSubscriptions() гарантирует, что повтор произойдёт не ранее
         // чем через SUBSCRIPTION_COOLDOWN_MS мс — предотвращает каскадный loop.
+        const elapsed = Date.now() - this._lastSubscriptionSentMs;
         this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION from Polymarket, scheduling retry', {
-          hint: `Subscription rejected; cooldown of ${PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS}ms will throttle retry`,
+          elapsedSinceLastSendMs: elapsed,
+          cooldownMs: PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS,
+          willDefer: elapsed < PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS,
+          hasCooldownTimer: this._cooldownTimer !== null,
+          tokenCount: this._subscribedTokens.size,
         });
         if (this._isConnected) {
           this._scheduleSendAllSubscriptions();
@@ -560,6 +565,17 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     });
 
     // При реконнекте market channel уже отправлен BaseWebSocketTransport._resubscribeAll()
+    // напрямую через _ws.send() — минуя наш _sendAllSubscriptions().
+    // Обновляем _lastSubscriptionSentMs чтобы кулдаун защитил последующие retry-попытки:
+    // если Polymarket ответит INVALID OPERATION, обработчик вызовет _scheduleSendAllSubscriptions()
+    // → 50ms debounce → _sendAllSubscriptions() → elapsed ≈ 50ms < COOLDOWN → отложит retry.
+    if (hasMarket && isReconnect) {
+      this._lastSubscriptionSentMs = Date.now();
+      this._logger.debug('[PolymarketWsAdapter] Updated subscription timestamp for reconnect send', {
+        lastSentMs: this._lastSubscriptionSentMs,
+      });
+    }
+
     if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
     if (hasUser) await this._sendUserChannelSubscription();
   }
@@ -658,10 +674,15 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       type: 'market',
     };
 
+    this._logger.info('[PolymarketWsAdapter] Sending market subscription', {
+      tokenCount: tokens.length,
+      elapsedSinceLastMs: now - (this._lastSubscriptionSentMs === now ? 0 : this._lastSubscriptionSentMs),
+    });
+
     try {
       await this._client.subscribe('market', params);
 
-      this._logger.debug('[PolymarketWsAdapter] Market subscription sent', {
+      this._logger.debug('[PolymarketWsAdapter] Market subscription sent successfully', {
         tokenCount: tokens.length,
       });
     } catch (err) {
