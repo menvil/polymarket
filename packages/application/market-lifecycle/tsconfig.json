@@ -10,7 +10,8 @@
       "@polymarket/ports":            ["../ports/dist/index.d.ts"],
       "@polymarket/event-bus":        ["../event-bus/dist/index.d.ts"],
       "@polymarket/use-cases":        ["../use-cases/dist/index.d.ts"],
-      "@polymarket/balance-allocator": ["../balance-allocator/dist/index.d.ts"]
+      "@polymarket/balance-allocator": ["../balance-allocator/dist/index.d.ts"],
+      "@polymarket/risk":              ["../risk/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

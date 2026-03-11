@@ -20,6 +20,7 @@ export default {
     '^@polymarket/ports$':                         '<rootDir>/../ports/src/index.ts',
     '^@polymarket/handlers$':                      '<rootDir>/../handlers/src/index.ts',
     '^@polymarket/event-bus$':                     '<rootDir>/../event-bus/src/index.ts',
+    '^@polymarket/order-book$':                    '<rootDir>/../../domain/market-data/order-book/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

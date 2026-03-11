@@ -11,6 +11,8 @@ export default {
     '^@polymarket/ports$':         '<rootDir>/../../../application/ports/src/index.ts',
     '^@polymarket/result$':        '<rootDir>/../../../foundation/result/src/index.ts',
     '^@polymarket/errors$':        '<rootDir>/../../../foundation/errors/src/index.ts',
+    '^@polymarket/errors/(.*)$':   '<rootDir>/../../../foundation/errors/src/$1',
+    '^@polymarket/math$':          '<rootDir>/../../../foundation/math/src/index.ts',
     '^@polymarket/time$':          '<rootDir>/../../../foundation/time/src/index.ts',
     '^@polymarket/order$':         '<rootDir>/../../../domain/entities/order/src/index.ts',
     '^@polymarket/portfolio$':     '<rootDir>/../../../domain/entities/portfolio/src/index.ts',
