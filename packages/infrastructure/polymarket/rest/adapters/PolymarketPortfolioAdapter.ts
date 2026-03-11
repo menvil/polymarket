@@ -79,9 +79,9 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
 
     const balance = await this.balanceProvider.getAvailableBalance();
 
-    this.logger.debug('Balance retrieved', { balance });
+    this.logger.debug('Balance retrieved', { balance: balance.toNumber() });
 
-    return balance;
+    return balance.toNumber();
   }
 
   /**
@@ -95,13 +95,14 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
     this.logger.debug('Getting outcome balance', { tokenId });
 
     const balance = await this.balanceProvider.getOutcomeBalance(tokenId);
+    const amount  = balance.amount().value().toNumber();
 
     this.logger.debug('Outcome balance retrieved', {
       tokenId,
-      balance,
+      balance: amount,
     });
 
-    return balance;
+    return amount;
   }
 
   /**

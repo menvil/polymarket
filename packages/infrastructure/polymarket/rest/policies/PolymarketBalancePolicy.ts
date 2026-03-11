@@ -24,11 +24,12 @@
  *
  * if (!result.ok) {
  *   console.error(result.reason);
- *   // "Insufficient USDC: have 50, need 52"
+ *   // "Insufficient USDC: have 50.00, need 52.00"
  * }
  * ```
  */
 
+import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
 import type { IPortfolioProjector } from '../../ports/IPortfolioProjector.js';
@@ -129,7 +130,6 @@ export class PolymarketBalancePolicy {
       minOrderSize: params.minOrderSize,
     });
 
-    // Нормализуем сторону в нижний регистр для сравнения
     const normalizedSide = side.toLowerCase();
 
     if (normalizedSide === 'buy') {
@@ -146,55 +146,54 @@ export class PolymarketBalancePolicy {
    * @returns Результат проверки
    *
    * @remarks
-   * BUY-ордер требует USDC: необходимо = цена * размер
+   * BUY-ордер требует USDC: необходимо = цена * размер.
+   * Использует Decimal-арифметику для точного сравнения.
    */
   private async checkBuyBalance(
     params: BalanceCheckParams
   ): Promise<BalanceCheckResult> {
     const { price, size } = params;
-    const requiredUSDC = price * size;
-    const availableUSDC = await this.balanceProvider.getAvailableBalance();
+
+    const required  = new Decimal(price).mul(size);
+    const available = await this.balanceProvider.getAvailableBalance();
+    const availableDecimal = available.value();
 
     this.logger.debug('Checking buy balance', {
-      requiredUSDC,
-      availableUSDC,
+      requiredUSDC:   required.toNumber(),
+      availableUSDC:  availableDecimal.toNumber(),
     });
 
-    if (availableUSDC < requiredUSDC) {
-      // Вычисляем максимальный доступный размер при текущем балансе
-      let suggestedSize = Math.floor(availableUSDC / price);
-
-      // Проверяем что предложенный размер соответствует минимальному требованию
+    if (availableDecimal.lt(required)) {
       const minOrderSize = params.minOrderSize ?? 1;
+      let suggestedSize  = availableDecimal.div(price).floor().toNumber();
+
       if (suggestedSize < minOrderSize) {
-        suggestedSize = 0; // Не хватает баланса на минимальный размер ордера
+        suggestedSize = 0;
       }
 
-      const reason = `Insufficient USDC: have ${availableUSDC.toFixed(
-        2
-      )}, need ${requiredUSDC.toFixed(2)}`;
+      const reason = `Insufficient USDC: have ${availableDecimal.toFixed(2)}, need ${required.toFixed(2)}`;
 
       this.logger.warn('Insufficient balance for buy order', {
-        requiredUSDC,
-        availableUSDC,
-        deficit: requiredUSDC - availableUSDC,
+        requiredUSDC:  required.toNumber(),
+        availableUSDC: availableDecimal.toNumber(),
+        deficit:       required.sub(availableDecimal).toNumber(),
         suggestedSize,
         minOrderSize,
       });
 
       return {
-        ok: false,
+        ok:            false,
         reason,
-        required: requiredUSDC,
-        available: availableUSDC,
+        required:      required.toNumber(),
+        available:     availableDecimal.toNumber(),
         suggestedSize,
       };
     }
 
     this.logger.debug('Sufficient balance for buy order', {
-      requiredUSDC,
-      availableUSDC,
-      surplus: availableUSDC - requiredUSDC,
+      requiredUSDC:  required.toNumber(),
+      availableUSDC: availableDecimal.toNumber(),
+      surplus:       availableDecimal.sub(required).toNumber(),
     });
 
     return { ok: true };
@@ -208,15 +207,14 @@ export class PolymarketBalancePolicy {
    * @returns Результат проверки
    *
    * @remarks
-   * v7.6: Сначала использует PortfolioProjector (мгновенно, без задержки), затем Balance API как fallback.
+   * Сначала использует PortfolioProjector (мгновенно, без задержки), затем Balance API как fallback.
    *
-   * SELL-ордер требует outcome-токены: необходимо = размер
-   * Если баланс незначительно меньше (дефицит < 1%), предлагает продать доступный баланс
+   * SELL-ордер требует outcome-токены: необходимо = размер.
+   * Если баланс незначительно меньше (дефицит < 1%), предлагает продать доступный баланс.
    *
    * **Почему сначала PortfolioProjector?**
    * - PortfolioProjector = event sourced (мгновенно, всегда актуально)
-   * - Balance API = внешний API (может отставать на 0-5 секунд после fills)
-   * - После мгновенного BUY fill, Balance API может ещё возвращать 0, тогда как PortfolioProjector корректен
+   * - Balance API = внешний API (может отставать на 0–5 секунд после fills)
    */
   private async checkSellBalance(
     tokenId: string,
@@ -224,42 +222,40 @@ export class PolymarketBalancePolicy {
   ): Promise<BalanceCheckResult> {
     const requiredTokens = size;
 
-    // Пробуем PortfolioProjector первым (мгновенно, без задержки)
     let availableTokens: number;
     let balanceSource: 'PortfolioProjector' | 'BalanceAPI';
 
     if (this.portfolioProjector) {
       const position = this.portfolioProjector.getPosition(tokenId);
       availableTokens = position?.quantity ?? 0;
-      balanceSource = 'PortfolioProjector';
+      balanceSource   = 'PortfolioProjector';
 
       this.logger.debug('Checking sell balance (PortfolioProjector - instant)', {
-        tokenId: tokenId.substring(0, 16) + '...',
+        tokenId:         tokenId.substring(0, 16) + '...',
         requiredTokens,
         availableTokens,
-        source: balanceSource,
+        source:          balanceSource,
       });
     } else {
-      // Fallback к Balance API (может отставать после мгновенных fills)
-      availableTokens = await this.balanceProvider.getOutcomeBalance(tokenId);
-      balanceSource = 'BalanceAPI';
+      const outcomeBalance = await this.balanceProvider.getOutcomeBalance(tokenId);
+      availableTokens      = outcomeBalance.amount().value().toNumber();
+      balanceSource        = 'BalanceAPI';
 
       this.logger.debug('Checking sell balance (Balance API - may lag)', {
-        tokenId: tokenId.substring(0, 16) + '...',
+        tokenId:         tokenId.substring(0, 16) + '...',
         requiredTokens,
         availableTokens,
-        source: balanceSource,
+        source:          balanceSource,
       });
     }
 
     if (availableTokens < requiredTokens) {
-      const deficit = requiredTokens - availableTokens;
+      const deficit        = requiredTokens - availableTokens;
       const deficitPercent = (deficit / requiredTokens) * 100;
 
       // Если дефицит незначительный (< 1%), продаём доступный баланс (ошибка округления/комиссия)
       if (deficitPercent < 1 && availableTokens > 0) {
         // КРИТИЧНО: SELL ордера требуют makerAmount (size) с не более 2 знаками после запятой
-        // Округляем вниз до 2 знаков чтобы избежать ошибки API 400
         const roundedSize = Math.floor(availableTokens * 100) / 100;
 
         this.logger.warn('Tiny deficit in sell balance - using available balance', {
@@ -272,15 +268,13 @@ export class PolymarketBalancePolicy {
         });
 
         return {
-          ok: true,
-          available: availableTokens,
-          suggestedSize: roundedSize, // Округлено до 2 знаков (требование API)
+          ok:            true,
+          available:     availableTokens,
+          suggestedSize: roundedSize,
         };
       }
 
-      const reason = `Insufficient outcome tokens: have ${availableTokens.toFixed(
-        2
-      )}, need ${requiredTokens.toFixed(2)}`;
+      const reason = `Insufficient outcome tokens: have ${availableTokens.toFixed(2)}, need ${requiredTokens.toFixed(2)}`;
 
       // Округляем доступные токены до 2 знаков (требование API для SELL ордеров)
       const roundedAvailable = Math.floor(availableTokens * 100) / 100;
@@ -294,11 +288,11 @@ export class PolymarketBalancePolicy {
       });
 
       return {
-        ok: false,
+        ok:            false,
         reason,
-        required: requiredTokens,
-        available: availableTokens,
-        suggestedSize: roundedAvailable, // Округлено до 2 знаков
+        required:      requiredTokens,
+        available:     availableTokens,
+        suggestedSize: roundedAvailable,
       };
     }
 
@@ -313,7 +307,7 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Проверить наличие хоть какого-либо баланса USDC
+   * Проверить наличие хоть какого-либо баланса USDC.
    *
    * @returns true если баланс > 0
    *
@@ -329,17 +323,18 @@ export class PolymarketBalancePolicy {
    * ```
    */
   async hasAnyBalance(): Promise<boolean> {
-    const availableUSDC = await this.balanceProvider.getAvailableBalance();
-    return availableUSDC > 0;
+    const available = await this.balanceProvider.getAvailableBalance();
+    return available.isPositive();
   }
 
   /**
-   * Получить максимальный размер ордера для заданной цены
+   * Получить максимальный размер ордера для заданной цены.
    *
    * @param price - Цена ордера
    * @returns Максимальный размер, который можно купить при доступном USDC
    *
    * @remarks
+   * Использует Decimal-арифметику для точного деления.
    * Полезно для расчёта максимального размера позиции.
    *
    * @example
@@ -353,12 +348,12 @@ export class PolymarketBalancePolicy {
       return 0;
     }
 
-    const availableUSDC = await this.balanceProvider.getAvailableBalance();
-    const maxSize = availableUSDC / price;
+    const available    = await this.balanceProvider.getAvailableBalance();
+    const maxSize      = available.value().div(price).toNumber();
 
     this.logger.debug('Calculated max buy size', {
       price,
-      availableUSDC,
+      availableUSDC: available.toNumber(),
       maxSize,
     });
 
@@ -366,13 +361,13 @@ export class PolymarketBalancePolicy {
   }
 
   /**
-   * Получить максимальный размер продажи для токена
+   * Получить максимальный размер продажи для токена.
    *
    * @param tokenId - Идентификатор токена
-   * @returns Максимальный размер для продажи (баланс outcome-токена, округлённый до 2 знаков)
+   * @returns Максимальный размер для продажи (округлённый до 2 знаков)
    *
    * @remarks
-   * v7.6: Сначала использует PortfolioProjector (мгновенно), затем Balance API как fallback.
+   * Сначала использует PortfolioProjector (мгновенно), затем Balance API как fallback.
    *
    * Возвращает баланс, округлённый ВНИЗ до 2 знаков в соответствии с требованиями API.
    * SELL ордера требуют makerAmount с не более чем 2 знаками после запятой.
@@ -384,26 +379,25 @@ export class PolymarketBalancePolicy {
    * ```
    */
   async getMaxSellSize(tokenId: string): Promise<number> {
-    // Пробуем PortfolioProjector первым (мгновенно, без задержки)
     let availableTokens: number;
 
     if (this.portfolioProjector) {
-      const position = this.portfolioProjector.getPosition(tokenId);
+      const position  = this.portfolioProjector.getPosition(tokenId);
       availableTokens = position?.quantity ?? 0;
 
       this.logger.debug('Calculated max sell size (PortfolioProjector)', {
-        tokenId: tokenId.substring(0, 16) + '...',
+        tokenId:        tokenId.substring(0, 16) + '...',
         availableTokens,
-        source: 'PortfolioProjector',
+        source:         'PortfolioProjector',
       });
     } else {
-      // Fallback к Balance API (может отставать после мгновенных fills)
-      availableTokens = await this.balanceProvider.getOutcomeBalance(tokenId);
+      const outcomeBalance = await this.balanceProvider.getOutcomeBalance(tokenId);
+      availableTokens      = outcomeBalance.amount().value().toNumber();
 
       this.logger.debug('Calculated max sell size (Balance API)', {
-        tokenId: tokenId.substring(0, 16) + '...',
+        tokenId:        tokenId.substring(0, 16) + '...',
         availableTokens,
-        source: 'BalanceAPI',
+        source:         'BalanceAPI',
       });
     }
 
@@ -411,9 +405,9 @@ export class PolymarketBalancePolicy {
     const roundedSize = Math.floor(availableTokens * 100) / 100;
 
     this.logger.debug('Max sell size (rounded)', {
-      tokenId: tokenId.substring(0, 16) + '...',
+      tokenId:        tokenId.substring(0, 16) + '...',
       availableTokens,
-      maxSize: roundedSize,
+      maxSize:        roundedSize,
     });
 
     return roundedSize;
