@@ -38,7 +38,7 @@ import type { IBookRegistry } from './IBookRegistry.js';
 
 export class BookUpdateHandler {
   /** Последний timestamp снапшота per tokenId — для staleness detection */
-  private readonly _lastTimestamps = new Map<string, number>();
+  private readonly _lastTimestamps = new Map<string, Timestamp>();
 
   /**
    * Создаёт BookUpdateHandler.
@@ -76,18 +76,17 @@ export class BookUpdateHandler {
     asks: readonly PriceLevel[],
     timestamp: Timestamp,
   ): Promise<void> {
-    const key = String(tokenId);
+    const key   = String(tokenId);
     const lastTs = this._lastTimestamps.get(key);
-    const timestampMs = timestamp.toNumber();
 
-    if (lastTs !== undefined && timestampMs <= lastTs) {
+    if (lastTs !== undefined && timestamp.isBeforeOrEqual(lastTs)) {
       this._logger.warn('Stale orderbook snapshot received, applying anyway', {
         tokenId: String(tokenId),
-        lastTs,
-        got: timestampMs,
+        lastTs:  lastTs.toISO(),
+        got:     timestamp.toISO(),
       });
     }
-    this._lastTimestamps.set(key, timestampMs);
+    this._lastTimestamps.set(key, timestamp);
 
     const instrument = this._catalog.get(tokenId);
     // Если инструмент найден — используем его marketId, иначе fallback на tokenId
@@ -117,7 +116,7 @@ export class BookUpdateHandler {
       topOfBook,
       instrumentId: tokenId,
       marketId,
-      sequenceNumber: timestampMs, // proxy: Polymarket не шлёт sequence number
+      sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
       timestamp,
     });
 
