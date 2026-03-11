@@ -68,6 +68,8 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   private readonly _onOrderUpdate = new Set<(dto: WsOrderUpdateDto) => Promise<void>>();
   /** Подписчики на reconnect */
   private readonly _onReconnect = new Set<() => void>();
+  /** Подписчики на raw сообщения (оригинальный wire-format, до DTO-маппинга) */
+  private readonly _onRawMessage = new Set<(tokenId: string, rawMsg: unknown) => void>();
 
   /** Отслеживает подписанные tokens для переподписки после reconnect */
   private readonly _subscribedTokens = new Set<string>();
@@ -79,6 +81,17 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   private _isDestroyed = false;
   /** true после первого успешного подключения — используется для отличия reconnect от first connect */
   private _hasEverConnected = false;
+
+  /**
+   * Флаг ожидающей отправки подписки.
+   *
+   * @remarks
+   * Дебаунс для `_sendAllSubscriptions()`: несколько быстрых вызовов
+   * `subscribeToToken` / `unsubscribeFromToken` (например, при открытии рынка с 2 токенами
+   * или при истечении нескольких рынков за один тик) коллапсируются в одну отправку.
+   * Без этого Polymarket отвечает `INVALID OPERATION` на промежуточные сообщения.
+   */
+  private _subscriptionSendPending = false;
 
   /**
    * Создаёт PolymarketWsAdapter.
@@ -172,6 +185,21 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     return () => this._onReconnect.delete(cb);
   }
 
+  /**
+   * Подписывается на сырые рыночные сообщения в оригинальном wire-формате.
+   *
+   * @param cb - Callback: `tokenId` = `asset_id` из сообщения, `rawMsg` = JSON-объект
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Вызывается ДО DTO-маппинга — содержит все оригинальные поля.
+   * Используется DataRecorder в collect-data режиме.
+   */
+  onRawMessage(cb: (tokenId: string, rawMsg: unknown) => void): () => void {
+    this._onRawMessage.add(cb);
+    return () => this._onRawMessage.delete(cb);
+  }
+
   // ─────────────────────────── Управление подключением ─────────────────────────
 
   /**
@@ -198,14 +226,16 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    *
    * @remarks
    * Добавляет tokenId в набор отслеживаемых.
-   * Если уже подключены — отправляет WS подписку немедленно.
+   * Если уже подключены — планирует отправку через `_scheduleSendAllSubscriptions()`.
+   * Несколько последовательных вызовов (например, при открытии рынка с 2 токенами)
+   * коллапсируются в одно WS-сообщение через дебаунс.
    */
   async subscribeToToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
     const wasNew = !this._subscribedTokens.has(tokenId);
     this._subscribedTokens.add(tokenId);
     if (wasNew && this._isConnected) {
-      await this._sendAllSubscriptions();
+      this._scheduleSendAllSubscriptions();
     }
   }
 
@@ -213,12 +243,16 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * Отписывается от WebSocket channel для tokenId.
    *
    * @param tokenId - Token ID для отписки
+   *
+   * @remarks
+   * Несколько последовательных вызовов (например, при истечении рынка с 2 токенами)
+   * коллапсируются в одно WS-сообщение через дебаунс.
    */
   async unsubscribeFromToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
     this._subscribedTokens.delete(tokenId);
     if (this._isConnected) {
-      await this._sendAllSubscriptions();
+      this._scheduleSendAllSubscriptions();
     }
   }
 
@@ -312,6 +346,18 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       this._router.processRawData(rawData);
     });
 
+    // Router эмитирует 'raw' для всех data-сообщений ДО типизированного роутинга.
+    // Это оригинальный wire-format с event_type, asset_id, last_trade_price и т.д.
+    this._router.on('raw', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
+      const tokenId = (message as Record<string, unknown>)['asset_id'];
+      if (typeof tokenId === 'string' && tokenId.length > 0) {
+        for (const cb of this._onRawMessage) {
+          cb(tokenId, message);
+        }
+      }
+    });
+
     // Router эмитирует сообщения с event_type (Polymarket wire format).
     // parseWsMessage читает поле 'type', поэтому добавляем его явно при dispatch.
     this._router.on('orderbook', (message: unknown) => {
@@ -337,6 +383,13 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       });
     });
 
+    // Обязательно слушаем 'error' на клиенте — иначе Node.js упадёт при ошибке соединения
+    this._client.on('error', (error: Error) => {
+      this._logger.error('[PolymarketWsAdapter] Client error', {
+        err: error,
+      });
+    });
+
     // События жизненного цикла
     this._client.on('connected', async () => {
       // Reconnect определяем по _hasEverConnected (не _isConnected, т.к. он сбрасывается при disconnect)
@@ -354,7 +407,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
       // Переподписываемся на все tokens
       try {
-        await this._resubscribeAll();
+        await this._resubscribeAll(isReconnect);
       } catch (err) {
         this._logger.error('[PolymarketWsAdapter] Failed to resubscribe after connect', {
           err: err instanceof Error ? err : new Error(String(err)),
@@ -438,7 +491,22 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * Вызывается из события 'connected' клиента.
    * Если нет подписанных tokens И нет user channel — ничего не делает.
    */
-  private async _resubscribeAll(): Promise<void> {
+  /**
+   * @param isReconnect - `true` при реконнекте, `false` при первом подключении.
+   *
+   * @remarks
+   * При реконнекте market channel НЕ отправляется отсюда:
+   * `BaseWebSocketTransport._resubscribeAll()` уже отправил подписку из своего
+   * `_subscriptions` кэша (вызывается в `_ws.onopen` до `emit('connected')`).
+   * Двойная отправка приводит к `INVALID OPERATION` от Polymarket.
+   *
+   * При первом подключении `_subscriptions` пуст (ни одного `subscribe()` ещё не было),
+   * поэтому market channel отправляем здесь.
+   *
+   * User channel всегда отправляем здесь — в BaseWebSocketTransport он не кэшируется
+   * (хранит только token-подписки через `_sendAllSubscriptions()`).
+   */
+  private async _resubscribeAll(isReconnect: boolean): Promise<void> {
     if (this._isDestroyed) return;
 
     const hasMarket = this._subscribedTokens.size > 0;
@@ -449,10 +517,40 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     this._logger.info('[PolymarketWsAdapter] Resubscribing', {
       tokenCount: this._subscribedTokens.size,
       hasUserChannel: hasUser,
+      isReconnect,
     });
 
-    if (hasMarket) await this._sendAllSubscriptions();
+    // При реконнекте market channel уже отправлен BaseWebSocketTransport._resubscribeAll()
+    if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
     if (hasUser) await this._sendUserChannelSubscription();
+  }
+
+  /**
+   * Планирует отправку подписки через дебаунс (50ms).
+   *
+   * @remarks
+   * Несколько быстрых вызовов `subscribeToToken` / `unsubscribeFromToken`
+   * (например, открытие рынка с 2 токенами = 2 вызова за ~0ms) коллапсируются
+   * в одно WS-сообщение. Без дебаунса Polymarket отвечает `INVALID OPERATION`
+   * на промежуточные сообщения.
+   *
+   * Дебаунс не применяется к `_resubscribeAll()` — там отправка немедленная,
+   * так как при реконнекте промежуточных состояний нет.
+   */
+  private _scheduleSendAllSubscriptions(): void {
+    if (this._subscriptionSendPending) return;
+    this._subscriptionSendPending = true;
+
+    setTimeout(() => {
+      this._subscriptionSendPending = false;
+      if (!this._isDestroyed) {
+        this._sendAllSubscriptions().catch((err) => {
+          this._logger.error('[PolymarketWsAdapter] Failed to send debounced subscriptions', {
+            err: err instanceof Error ? err : new Error(String(err)),
+          });
+        });
+      }
+    }, 50);
   }
 
   /**
@@ -467,14 +565,12 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     const tokens = Array.from(this._subscribedTokens);
 
+    const params: SubscriptionParams = {
+      assets_ids: tokens,
+      type: 'market',
+    };
+
     try {
-      await this._client.reconnectWithTimeout(10_000);
-
-      const params: SubscriptionParams = {
-        assets_ids: tokens,
-        type: 'market',
-      };
-
       await this._client.subscribe('market', params);
 
       this._logger.debug('[PolymarketWsAdapter] Market subscription sent', {
@@ -505,14 +601,12 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     const { apiKey, secret, passphrase } = this._userChannelConfig;
 
+    const params: SubscriptionParams = {
+      type: 'user',
+      auth: { apiKey, secret, passphrase },
+    };
+
     try {
-      await this._client.reconnectWithTimeout(10_000);
-
-      const params: SubscriptionParams = {
-        type: 'user',
-        auth: { apiKey, secret, passphrase },
-      };
-
       await this._client.subscribe('user', params);
 
       this._logger.debug('[PolymarketWsAdapter] User channel subscription sent');

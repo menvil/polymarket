@@ -101,6 +101,10 @@ export class MarketDataFeedAdapter {
       // Записываем raw событие до доменной обработки (fire-and-forget, синхронно)
       this._recorder?.recordEvent(dto.asset_id, dto);
 
+      // В режиме только записи (bookHandler = null) конвертация уровней не нужна:
+      // raw данные уже сохранены выше, а доменная обработка отсутствует.
+      if (!this._bookHandler) return;
+
       const tokenId = asInstrumentId(dto.asset_id);
       if (!tokenId) {
         this._logger.warn('Invalid asset_id in orderbook snapshot, skipping', {
@@ -120,9 +124,7 @@ export class MarketDataFeedAdapter {
         return;
       }
 
-      if (this._bookHandler) {
-        await this._bookHandler.handleSnapshot(tokenId, bids, asks, tsResult.value);
-      }
+      await this._bookHandler.handleSnapshot(tokenId, bids, asks, tsResult.value);
     });
 
     const unsubReconnect = this._wsEmitter.onReconnect(() => {
@@ -167,7 +169,9 @@ export class MarketDataFeedAdapter {
         const size = Quantity.of(new Decimal(level.size));
         result.push({ price, size });
       } catch {
-        this._logger.warn('Invalid price level in WS snapshot, skipping', {
+        // price="1" или price="0" — ожидаемо для рынков у разрешения (losing-токен).
+        // Уровень пропускается корректно — DEBUG, не WARN.
+        this._logger.debug('Skipping out-of-range price level in WS snapshot', {
           price: level.price,
           size: level.size,
         });

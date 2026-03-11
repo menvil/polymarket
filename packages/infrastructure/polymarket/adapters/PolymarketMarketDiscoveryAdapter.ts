@@ -303,7 +303,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
     // 4. Парсинг даты истечения
     const endDateMs = Date.parse(raw.endDate);
     if (isNaN(endDateMs)) {
-      this._logger.warn('Cannot parse endDate, skipping market', {
+      this._logger.debug('Cannot parse endDate, skipping market', {
         conditionId: raw.conditionId,
         endDate: raw.endDate,
       });
@@ -379,6 +379,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       spread,
       liquidity,
       score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
+      allTokenIds: tokenIds,
       rawMarket: raw as unknown as Record<string, unknown>,
     };
   }
