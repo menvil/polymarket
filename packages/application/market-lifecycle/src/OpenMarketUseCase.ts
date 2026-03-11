@@ -9,7 +9,7 @@
  * 3. Вернуть Ok(AllocationResult)
  *
  * ### Использование:
- * Вызывается `StrategyCoordinator._discover()` для каждого нового инструмента.
+ * Вызывается `MarketDiscoveryPublisher._discover()` для каждого нового инструмента.
  *
  * @example
  * ```typescript

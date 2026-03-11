@@ -7,7 +7,7 @@
  *
  * ### Подписчики:
  * - `StrategyRunner` — запускает/останавливает стратегию при MARKET_OPENED/MARKET_CLOSED
- * - `StrategyCoordinator` — обновляет _activeMarkets карту
+ * - `MarketDiscoveryPublisher` / `MarketExpiryMonitor` — обновляют внутреннее состояние
  */
 import type { MarketId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';

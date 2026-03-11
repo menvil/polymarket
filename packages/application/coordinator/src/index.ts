@@ -1,34 +1,41 @@
 /**
- * @polymarket/coordinator — Оркестрация торговых стратегий.
+ * @polymarket/coordinator — Автономные компоненты управления жизненным циклом рынков.
  *
  * @remarks
  * ### Содержимое пакета:
- * - `StrategyCoordinator` — координатор обнаружения рынков и lifecycle стратегий
- * - `StrategyCoordinatorConfig` — конфигурация координатора
- * - `StrategyCoordinatorDeps` — зависимости координатора
+ * - `MarketDiscoveryPublisher` — автономный цикл обнаружения рынков и их открытия
+ * - `MarketExpiryMonitor` — мониторинг истечения рынков и их закрытия
  *
  * ### Принцип работы:
- * Координатор реагирует на `STRATEGY_TICK` события (без setInterval!) и:
- * - Каждые `discoverEveryNTicks` тиков: обнаруживает новые рынки
- * - Каждые `policyCheckEveryNTicks` тиков: проверяет политику удаления
+ * Оба компонента работают автономно, без внешнего тикера:
+ * - `MarketDiscoveryPublisher` использует паттерн «пауза после завершения» (setTimeout)
+ * - `MarketExpiryMonitor` использует фиксированный интервал проверки (setInterval)
+ * - Оба подписываются на `MARKET_OPENED` / `MARKET_CLOSED` для отслеживания состояния
  *
  * ### Интеграция:
  * ```typescript
- * const coordinator = new StrategyCoordinator(deps, config);
- * coordinator.start(totalBalance);
+ * const discovery = new MarketDiscoveryPublisher(deps, { accountId, maxStrategies: 10, scanPauseMs: 30_000 });
+ * const monitor = new MarketExpiryMonitor(deps, { accountId, checkIntervalMs: 5_000 });
  *
- * // Внешний тикер публикует STRATEGY_TICK каждую секунду
- * let tick = 0;
- * setInterval(() => eventBus.publish({
- *   type: 'STRATEGY_TICK', tickNumber: tick++, timestamp,
- * }), 1000);
+ * discovery.start();
+ * monitor.start();
+ *
+ * // При остановке:
+ * discovery.stop();
+ * monitor.stop();
  * ```
  *
  * @packageDocumentation
  */
 
-export { StrategyCoordinator } from './StrategyCoordinator.js';
+export { MarketDiscoveryPublisher } from './MarketDiscoveryPublisher.js';
 export type {
-  StrategyCoordinatorDeps,
-} from './StrategyCoordinator.js';
-export type { StrategyCoordinatorConfig } from './StrategyCoordinatorConfig.js';
+  MarketDiscoveryPublisherDeps,
+  MarketDiscoveryPublisherConfig,
+} from './MarketDiscoveryPublisher.js';
+
+export { MarketExpiryMonitor } from './MarketExpiryMonitor.js';
+export type {
+  MarketExpiryMonitorDeps,
+  MarketExpiryMonitorConfig,
+} from './MarketExpiryMonitor.js';

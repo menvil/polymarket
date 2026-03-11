@@ -7,8 +7,8 @@
  *
  * ### Назначение:
  * Хранит in-memory состояние известных торговых инструментов.
- * Наполняется из `PolymarketMarketDiscoveryAdapter` через `StrategyCoordinator._discover()`.
- * Очищается в `StrategyCoordinator._checkPolicy()` при закрытии рынков.
+ * Наполняется из `PolymarketMarketDiscoveryAdapter` через `MarketDiscoveryPublisher._discover()`.
+ * Очищается при закрытии рынков через `CloseMarketUseCase`.
  *
  * ### Структура хранилища:
  * - Основная карта: `InstrumentId → InstrumentInfo` (O(1) lookup по tokenId)
@@ -44,8 +44,8 @@ import type { ILogger } from '@polymarket/logger';
  *
  * @remarks
  * Реализует `IMarketCatalog` с поддержкой write-операций.
- * Используется как центральный реестр для StrategyCoordinator и
- * application-layer хэндлеров.
+ * Используется как центральный реестр для MarketDiscoveryPublisher,
+ * MarketExpiryMonitor и application-layer хэндлеров.
  */
 export class PolymarketMarketCatalog implements IMarketCatalog {
   /** Основная карта: InstrumentId → InstrumentInfo */

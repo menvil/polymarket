@@ -13,7 +13,7 @@
  * - Проверка доступных слотов и лимитов
  *
  * ### Использование:
- * - `StrategyCoordinator._discover()` — аллокация на новые рынки
+ * - `MarketDiscoveryPublisher._discover()` → `OpenMarketUseCase` — аллокация на новые рынки
  * - `OpenMarketUseCase` — `addMarket()` при открытии рынка
  * - `CloseMarketUseCase` — `releaseWithPnL()` при закрытии рынка
  *

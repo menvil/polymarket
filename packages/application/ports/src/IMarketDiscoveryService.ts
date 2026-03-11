@@ -7,15 +7,15 @@
  * к Gamma REST API, фильтрует и скорит рынки, затем возвращает готовых кандидатов.
  *
  * Используется:
- * - `StrategyCoordinator._discover()` — получить список кандидатов и наполнить каталог
+ * - `MarketDiscoveryPublisher._discover()` — получить список кандидатов и наполнить каталог
  *
  * ### Жизненный цикл:
  * ```
- * StrategyCoordinator._discover()
+ * MarketDiscoveryPublisher._discover()
  *   → discoveryService.findCandidates()
  *   → (внутри: TTL cache check → при необходимости refresh())
  *   → возвращает DiscoveredMarket[]
- *   → coordinator регистрирует каждого кандидата через catalog.register(candidate)
+ *   → publisher регистрирует каждого кандидата через catalog.register(candidate)
  * ```
  */
 import type Decimal from 'decimal.js';
@@ -47,6 +47,18 @@ export interface DiscoveredMarket extends InstrumentInfo {
    * До скоринга = Decimal('0'). После = hoursToExpiry как Decimal.
    */
   readonly score: Decimal;
+  /**
+   * Все token ID рынка (UP + DOWN) из `clobTokenIds`.
+   * Используется для подписки и маршрутизации событий обоих исходов.
+   * Если не задан — только `instrumentId` (UP token).
+   */
+  readonly allTokenIds?: readonly string[];
+  /**
+   * Полные сырые данные рынка из REST API (опционально).
+   * Устанавливается адаптером и передаётся в `MarketMeta.rawMarket`
+   * для записи в meta-строку снапшота.
+   */
+  readonly rawMarket?: Record<string, unknown>;
 }
 
 /**

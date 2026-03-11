@@ -44,8 +44,8 @@ export interface InstrumentInfo {
  *
  * @remarks
  * Расширенный интерфейс поддерживает как чтение (get/getAll/getByMarketId),
- * так и запись (register/remove/clear). Это позволяет StrategyCoordinator
- * динамически наполнять и очищать каталог при обнаружении рынков.
+ * так и запись (register/remove/clear). Это позволяет MarketDiscoveryPublisher
+ * динамически наполнять каталог при обнаружении рынков.
  *
  * @example
  * ```typescript
@@ -80,7 +80,7 @@ export interface IMarketCatalog {
    * @returns InstrumentInfo или undefined если рынок неизвестен
    *
    * @remarks
-   * Используется в _checkPolicy() для поиска instrumentId по marketId
+   * Используется при закрытии рынка для поиска instrumentId по marketId
    * перед вызовом remove().
    */
   getByMarketId(marketId: MarketId): InstrumentInfo | undefined;
@@ -99,7 +99,7 @@ export interface IMarketCatalog {
    *
    * @remarks
    * Если инструмент с таким instrumentId уже существует — перезаписывает его.
-   * Вызывается StrategyCoordinator._discover() для наполнения каталога
+   * Вызывается MarketDiscoveryPublisher._discover() для наполнения каталога
    * из результатов IMarketDiscoveryService.findCandidates().
    *
    * @example
@@ -122,7 +122,7 @@ export interface IMarketCatalog {
    *
    * @remarks
    * Если инструмент не найден — no-op (не бросает ошибку).
-   * Вызывается StrategyCoordinator._checkPolicy() при закрытии рынка.
+   * Вызывается при закрытии рынка для очистки каталога.
    *
    * @example
    * ```typescript

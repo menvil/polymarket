@@ -10,7 +10,7 @@
  * - `ExpirationRemovalPolicy` — закрывает рынки по истечении срока
  *
  * ### Расширение:
- * Новые политики реализуют `IRemovalPolicy` и передаются в `StrategyCoordinator`.
+ * Новые политики реализуют `IRemovalPolicy` и передаются в компоненты координации.
  */
 import type { MarketId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
