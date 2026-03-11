@@ -1,0 +1,35 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/logger":           ["../../foundation/logger/src/index.ts"],
+      "@polymarket/ids":              ["../../foundation/ids/src/index.ts"],
+      "@polymarket/result":           ["../../foundation/result/src/index.ts"],
+      "@polymarket/errors":           ["../../foundation/errors/src/index.ts"],
+      "@polymarket/value-objects":    ["../../domain/value-objects/src/index.ts"],
+      "@polymarket/ports":            ["../../application/ports/src/index.ts"],
+      "@polymarket/market-discovery": ["../../application/market-discovery/src/index.ts"],
+      "@polymarket/data-collection":  ["../../infrastructure/persistence/data-collection/src/index.ts"],
+      "@polymarket/exchange/ws":       ["../../infrastructure/polymarket/ws/index.ts"],
+      "@polymarket/exchange/adapters": ["../../infrastructure/polymarket/adapters/index.ts"],
+      "@polymarket/exchange/rest":     ["../../infrastructure/polymarket/rest/index.ts"],
+      "@polymarket/exchange/dns":      ["../../infrastructure/polymarket/dns/index.ts"],
+      "@polymarket/fill":             ["../../domain/entities/fill/src/index.ts"],
+      "@polymarket/time":             ["../../foundation/time/src/index.ts"],
+      "@polymarket/value-objects/signed-quantity": ["../../domain/value-objects/src/signed-quantity/index.ts"],
+      "@polymarket/value-objects/asset-quantity":  ["../../domain/value-objects/src/asset-quantity/index.ts"],
+      "@polymarket/value-objects/balance":         ["../../domain/value-objects/src/balance/index.ts"],
+      "@polymarket/value-objects/money":           ["../../domain/value-objects/src/money/index.ts"],
+      "@polymarket/order":            ["../../domain/entities/order/src/index.ts"],
+      "@polymarket/portfolio":        ["../../domain/entities/portfolio/src/index.ts"],
+      "@polymarket/order-book":       ["../../domain/market-data/order-book/src/index.ts"],
+      "@polymarket/handlers":         ["../../application/handlers/src/index.ts"],
+      "@polymarket/event-bus":        ["../../application/event-bus/src/index.ts"],
+      "@polymarket/trade":            ["../../domain/entities/trade/src/index.ts"],
+      "ethers":                       ["../../infrastructure/polymarket/stubs/ethers/index.ts"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

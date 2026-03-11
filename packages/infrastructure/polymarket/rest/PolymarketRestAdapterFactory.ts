@@ -42,6 +42,7 @@ import type { PolymarketRestConfig } from './types.js';
 import type { MarketDataClientConfig } from './clients/PolymarketMarketDataRestClient.js';
 import type { IEventBus } from '../ports/IEventBus.js';
 import type { IPortfolioProjector } from '../ports/IPortfolioProjector.js';
+import type { DnsOverride } from '../dns/DnsOverride.js';
 
 import { PolymarketRestClient } from './PolymarketRestClient.js';
 import { PolymarketDataApiClient } from './PolymarketDataApiClient.js';
@@ -78,6 +79,7 @@ export class PolymarketRestAdapterFactory {
    * @param logger - Экземпляр логгера
    * @param simulationMode - Включить режим симуляции (виртуальный баланс/сделки)
    * @param portfolioProjector - Опциональный PortfolioProjector для мгновенных проверок баланса
+   * @param dnsOverride - Опциональный DnsOverride для обхода DNS-блокировок
    * @returns Сконфигурированный PolymarketRestAdapter
    *
    * @remarks
@@ -124,10 +126,11 @@ export class PolymarketRestAdapterFactory {
     eventBus: IEventBus,
     logger: ILogger,
     simulationMode: boolean = false,
-    portfolioProjector?: IPortfolioProjector
+    portfolioProjector?: IPortfolioProjector,
+    dnsOverride?: DnsOverride,
   ): PolymarketRestAdapter {
     // Базовый HTTP клиент
-    const restClient = new PolymarketRestClient(config, logger);
+    const restClient = new PolymarketRestClient(config, logger, dnsOverride);
 
     // Data API клиент (для endpoint позиций)
     const dataApiClient = new PolymarketDataApiClient(

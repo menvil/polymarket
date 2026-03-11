@@ -43,6 +43,7 @@ import type { PolymarketRestConfig, PolymarketL2Credentials } from './types.js';
 import { SignatureType } from './types.js';
 import { PolymarketSigner } from './auth/PolymarketSigner.js';
 import { PolymarketL2Authenticator } from './auth/PolymarketL2Authenticator.js';
+import type { DnsOverride } from '../dns/DnsOverride.js';
 
 /**
  * Класс ошибки API
@@ -93,12 +94,14 @@ export class PolymarketRestClient {
   private readonly signer: PolymarketSigner;
   private readonly l2Authenticator: PolymarketL2Authenticator | null;
   private readonly logger: ILogger;
+  private readonly _dnsOverride: DnsOverride | undefined;
 
   /**
    * Создаёт Polymarket REST-клиент
    *
    * @param config - Конфигурация клиента
    * @param logger - Экземпляр логгера
+   * @param dnsOverride - Опциональный DnsOverride для обхода DNS-блокировок
    *
    * @example
    * ```typescript
@@ -109,7 +112,7 @@ export class PolymarketRestClient {
    * }, logger);
    * ```
    */
-  constructor(config: PolymarketRestConfig, logger: ILogger) {
+  constructor(config: PolymarketRestConfig, logger: ILogger, dnsOverride?: DnsOverride) {
     this.config = {
       ...config,
       timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
@@ -120,6 +123,7 @@ export class PolymarketRestClient {
 
     this.signer = new PolymarketSigner(config.privateKey, config.chainId);
     this.logger = logger.child({ component: 'PolymarketRestClient' });
+    this._dnsOverride = dnsOverride;
 
     // Создаём L2 аутентификатор если переданы credentials
     if (config.l2Credentials) {
@@ -376,6 +380,16 @@ export class PolymarketRestClient {
 
       if ((error as Error).name === 'AbortError') {
         throw new ApiError(`Request timeout after ${this.config.timeout}ms`);
+      }
+
+      // Уведомляем DNS override о сбое — следующий запрос получит другой IP
+      if (this._dnsOverride) {
+        try {
+          const hostname = new URL(url).hostname;
+          this._dnsOverride.notifyConnectionFailed(hostname);
+        } catch {
+          // игнорируем ошибки парсинга URL
+        }
       }
 
       throw new ApiError(`Network error: ${(error as Error).message}`);
