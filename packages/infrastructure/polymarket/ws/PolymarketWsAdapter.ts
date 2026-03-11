@@ -378,9 +378,26 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     });
 
     this._router.on('error', (error: Error) => {
-      this._logger.error('[PolymarketWsAdapter] Router error', {
-        err: error,
-      });
+      if (error.message === 'INVALID OPERATION') {
+        // Polymarket отвечает INVALID OPERATION если подписка отклонена.
+        // Логируем как WARN (не ERROR) и ретраим подписку через 1 сек.
+        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION from Polymarket, retrying subscription', {
+          hint: 'Subscription may have been rejected; will retry in 1s',
+        });
+        setTimeout(() => {
+          if (!this._isDestroyed && this._isConnected) {
+            this._sendAllSubscriptions().catch((retryErr) => {
+              this._logger.error('[PolymarketWsAdapter] Retry after INVALID OPERATION failed', {
+                err: retryErr instanceof Error ? retryErr : new Error(String(retryErr)),
+              });
+            });
+          }
+        }, 1000);
+      } else {
+        this._logger.error('[PolymarketWsAdapter] Router error', {
+          err: error,
+        });
+      }
     });
 
     // Обязательно слушаем 'error' на клиенте — иначе Node.js упадёт при ошибке соединения
@@ -534,6 +551,11 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * в одно WS-сообщение. Без дебаунса Polymarket отвечает `INVALID OPERATION`
    * на промежуточные сообщения.
    *
+   * Флаг `_subscriptionSendPending` сбрасывается только ПОСЛЕ завершения
+   * `_sendAllSubscriptions()`, чтобы исключить гонку: если бы сброс
+   * происходил до `await`, новый `subscribeToToken`-вызов мог бы
+   * назначить второй таймер пока первая отправка ещё не завершена.
+   *
    * Дебаунс не применяется к `_resubscribeAll()` — там отправка немедленная,
    * так как при реконнекте промежуточных состояний нет.
    */
@@ -542,14 +564,19 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     this._subscriptionSendPending = true;
 
     setTimeout(() => {
-      this._subscriptionSendPending = false;
-      if (!this._isDestroyed) {
-        this._sendAllSubscriptions().catch((err) => {
+      if (this._isDestroyed) {
+        this._subscriptionSendPending = false;
+        return;
+      }
+      this._sendAllSubscriptions()
+        .catch((err) => {
           this._logger.error('[PolymarketWsAdapter] Failed to send debounced subscriptions', {
             err: err instanceof Error ? err : new Error(String(err)),
           });
+        })
+        .finally(() => {
+          this._subscriptionSendPending = false;
         });
-      }
     }, 50);
   }
 
