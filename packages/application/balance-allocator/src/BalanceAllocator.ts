@@ -150,29 +150,15 @@ export class BalanceAllocator implements IBalanceAllocator {
       ));
     }
 
-    if (!this.canAddMarket()) {
+    const results = this.allocateToNewMarkets([marketId]);
+    if (results.length === 0) {
       return Err(new TradingError(
         'Cannot add market: no available slots or insufficient balance',
         { context: { marketId: String(marketId), stats: this.getStats() } },
       ));
     }
 
-    const results = this.allocateToNewMarkets([marketId]);
-    if (results.length === 0) {
-      // allocateToNewMarkets фильтрует уже аллоцированные рынки — проверяем явно
-      if (this._allocations.has(marketId)) {
-        return Err(new TradingError(
-          'Cannot add market: market is already allocated',
-          { context: { marketId: String(marketId) } },
-        ));
-      }
-      return Err(new TradingError(
-        'Cannot allocate balance to market: insufficient free balance',
-        { context: { marketId: String(marketId), stats: this.getStats() } },
-      ));
-    }
-
-    return Ok(results[0]);
+    return Ok(results[0]!);
   }
 
   /**
