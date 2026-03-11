@@ -60,7 +60,6 @@ describe('EventBus', () => {
   it('типобезопасно: BOOK_UPDATED handler получает BookUpdatedEvent', async () => {
     let receivedSeq = -1;
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      // TypeScript должен знать, что event: BookUpdatedEvent
       receivedSeq = event.sequenceNumber;
     });
 
@@ -78,6 +77,16 @@ describe('EventBus', () => {
     await bus.publish(makeBookEvent());
 
     expect(callCount).toBe(1);
+  });
+
+  it('unsubscribe последнего handler удаляет Set из Map', () => {
+    const handlers = (bus as unknown as { _handlers: Map<string, Set<unknown>> })._handlers;
+
+    const unsub = bus.subscribe('BOOK_UPDATED', async () => {});
+    expect(handlers.has('BOOK_UPDATED')).toBe(true);
+
+    unsub();
+    expect(handlers.has('BOOK_UPDATED')).toBe(false);
   });
 
   it('publishAll доставляет события последовательно (порядок сохранён)', async () => {
@@ -115,29 +124,76 @@ describe('EventBus', () => {
   });
 
   it('не вызывает handlers если подписчиков нет', async () => {
-    // Просто не должен падать
     await expect(bus.publish(makeBookEvent())).resolves.toBeUndefined();
   });
 
-  it('логирует warn при превышении maxConcurrentPublish', async () => {
-    const lowThresholdBus = new EventBus(logger, 1);
-    // Создаём handler который не завершится сразу
-    let resolveFirst!: () => void;
-    const firstPromise = new Promise<void>((resolve) => { resolveFirst = resolve; });
+  it('reentrancy: publishAll([A,B]) → handler(A) публикует C → порядок A→B→C', async () => {
+    const order: number[] = [];
+    bus.subscribe('BOOK_UPDATED', async (event) => {
+      order.push(event.sequenceNumber);
+      if (event.sequenceNumber === 1) {
+        await bus.publish(makeBookEvent(3));
+      }
+    });
 
-    lowThresholdBus.subscribe('BOOK_UPDATED', async () => { await firstPromise; });
+    await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
 
-    // Начинаем первую публикацию (не await — должна зависнуть)
-    const firstPublish = lowThresholdBus.publish(makeBookEvent());
-    // Вторая публикация — должна сработать warn
-    const secondPublish = lowThresholdBus.publish(makeBookEvent());
+    expect(order).toEqual([1, 2, 3]);
+  });
 
-    // Разрешаем первый handler
-    resolveFirst();
-    await Promise.all([firstPublish, secondPublish]);
+  it('critical handler: ошибка пробрасывается из publish()', async () => {
+    bus.subscribe(
+      'BOOK_UPDATED',
+      async () => { throw new Error('critical boom'); },
+      { critical: true },
+    );
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('high concurrent'),
+    await expect(bus.publish(makeBookEvent())).rejects.toThrow('critical boom');
+  });
+
+  it('critical handler: все handlers запускаются до пробрасывания ошибки', async () => {
+    let secondCalled = false;
+    bus.subscribe(
+      'BOOK_UPDATED',
+      async () => { throw new Error('critical'); },
+      { critical: true },
+    );
+    bus.subscribe('BOOK_UPDATED', async () => { secondCalled = true; });
+
+    await expect(bus.publish(makeBookEvent())).rejects.toThrow('critical');
+    expect(secondCalled).toBe(true);
+  });
+
+  it('critical handler: оставшиеся события в очереди дропаются', async () => {
+    const processed: number[] = [];
+    bus.subscribe('BOOK_UPDATED', async (event) => {
+      if (event.sequenceNumber === 1) {
+        throw new Error('critical');
+      }
+      processed.push(event.sequenceNumber);
+    }, { critical: true });
+
+    await expect(
+      bus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)])
+    ).rejects.toThrow('critical');
+
+    expect(processed).toEqual([]); // seq=2 и seq=3 дропнуты
+  });
+
+  it('drain limit: бесконечный event loop останавливается через maxEventsPerDrain', async () => {
+    const limitedBus = new EventBus(logger, 5);
+    let count = 0;
+    limitedBus.subscribe('BOOK_UPDATED', async (event) => {
+      count++;
+      // Бесконечная петля: каждый handler публикует следующее событие
+      await limitedBus.publish(makeBookEvent(event.sequenceNumber + 1));
+    });
+
+    await limitedBus.publish(makeBookEvent(1));
+
+    expect(count).toBe(5);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('drain limit exceeded'),
       expect.any(Object),
     );
   });

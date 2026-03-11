@@ -68,6 +68,7 @@ export interface IEventBus {
    */
   subscribe<K extends ApplicationEvent['type']>(
     type: K,
-    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>
+    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
+    options?: { critical?: boolean },
   ): () => void;
 }
