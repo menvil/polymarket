@@ -57,6 +57,11 @@ export interface MarketMeta {
   readonly tokenIds: readonly string[];
   /** Время истечения рынка */
   readonly expiresAt: Timestamp;
+  /**
+   * Полные сырые данные рынка из REST API (опционально).
+   * Записывается в meta-строку снапшота под ключом `"m"` для воспроизведения в бектесте.
+   */
+  readonly rawMarket?: Record<string, unknown>;
 }
 
 /**
@@ -111,6 +116,17 @@ export interface IMarketDataRecorder {
    * @throws При ошибке I/O
    */
   close(): Promise<void>;
+
+  /**
+   * Удаляет незавершённые файлы от предыдущих запусков.
+   *
+   * @remarks
+   * Файлы, сохранённые в `.incomplete/` при прошлом shutdown, удаляются.
+   * Вызывать при старте до регистрации рынков.
+   *
+   * @throws При ошибке I/O
+   */
+  cleanup(): Promise<void>;
 
   /**
    * Проверяет, включена ли запись.

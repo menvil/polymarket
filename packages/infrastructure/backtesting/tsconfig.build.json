@@ -4,8 +4,14 @@
     "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
-    "composite": true
+    "composite": true,
+    "noEmit": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["__tests__/**/*", "dist/**/*"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "__tests__/**/*",
+    "dist/**/*"
+  ]
 }

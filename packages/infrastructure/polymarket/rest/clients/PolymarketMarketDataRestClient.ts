@@ -369,6 +369,15 @@ export class PolymarketMarketDataRestClient {
         throw error;
       }
 
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const body = await response.text();
+        throw new Error(
+          `Expected JSON but got ${contentType || 'unknown content-type'}. ` +
+          `Possible proxy/firewall redirect. Body: ${body.substring(0, 200)}`
+        );
+      }
+
       const data = await response.json();
 
       if (!silent) {

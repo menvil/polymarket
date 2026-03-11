@@ -7,12 +7,27 @@
     "declarationMap": true,
     "composite": true,
     "paths": {
-      "@polymarket/logger":        ["../../../foundation/logger/dist/index.d.ts"],
-      "@polymarket/ids":           ["../../../foundation/ids/dist/index.d.ts"],
-      "@polymarket/value-objects": ["../../../domain/value-objects/dist/index.d.ts"],
-      "@polymarket/ports":         ["../../../application/ports/dist/index.d.ts"]
-    }
+      "@polymarket/logger": [
+        "../../../foundation/logger/dist/index.d.ts"
+      ],
+      "@polymarket/ids": [
+        "../../../foundation/ids/dist/index.d.ts"
+      ],
+      "@polymarket/value-objects": [
+        "../../../domain/value-objects/dist/index.d.ts"
+      ],
+      "@polymarket/ports": [
+        "../../../application/ports/dist/index.d.ts"
+      ]
+    },
+    "noEmit": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "__tests__"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__"
+  ]
 }

@@ -126,6 +126,26 @@ export interface IPolymarketWsEmitter {
   onReconnect(cb: () => void): () => void;
 
   /**
+   * Сырое (не трансформированное) рыночное сообщение из WS в оригинальном wire-формате.
+   *
+   * @param cb - Callback: `tokenId` = `asset_id` из сообщения, `rawMsg` = оригинальный JSON-объект
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Вызывается ДО DTO-маппинга — содержит все оригинальные поля
+   * (`event_type`, `last_trade_price`, `hash` и т.д.).
+   * Предназначен для DataRecorder в collect-data режиме.
+   *
+   * @example
+   * ```typescript
+   * ws.onRawMessage((tokenId, rawMsg) => {
+   *   recorder.recordEvent(tokenId, rawMsg);
+   * });
+   * ```
+   */
+  onRawMessage(cb: (tokenId: string, rawMsg: unknown) => void): () => void;
+
+  /**
    * Подписывается на Polymarket user channel (fills + order lifecycle).
    *
    * @param config - Credentials для аутентификации в user channel

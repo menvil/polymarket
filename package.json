@@ -10,9 +10,10 @@
     "packages/application/*"
   ],
   "scripts": {
-    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo",
+    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo && npm run clean:src",
     "clean:dist": "rm -rf packages/*/*/dist",
     "clean:build": "rm -rf packages/*/*/*.tsbuildinfo",
+    "clean:src": "find packages -not -path '*/dist/*' -not -path '*/node_modules/*' -not -path '*/stubs/ethers*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) | grep -v '\\.config\\.' | xargs rm -f 2>/dev/null; true",
     "prebuild": "npm run clean:dist && npm run clean:build",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",

@@ -7,9 +7,18 @@
     "declarationMap": true,
     "composite": true,
     "paths": {
-      "@polymarket/fill": ["../../entities/fill/dist/index.d.ts"]
-    }
+      "@polymarket/fill": [
+        "../../entities/fill/dist/index.d.ts"
+      ]
+    },
+    "noEmit": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "__tests__"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__"
+  ]
 }

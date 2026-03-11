@@ -266,6 +266,24 @@ export class PolymarketMessageRouter extends EventEmitter {
         return;
       }
 
+      // Текстовые ответы сервера (не JSON) — обрабатываем до попытки JSON.parse
+      const knownTextResponses = ['PONG', 'OK', 'TOO MANY REQUESTS'];
+      const knownErrorResponses = ['INVALID OPERATION', 'RATE_LIMIT', 'UNAUTHORIZED', 'ERROR'];
+
+      if (knownTextResponses.includes(rawData)) {
+        this.logger.debug('Text response from server', { message: rawData });
+        return;
+      }
+
+      if (knownErrorResponses.some(e => rawData.includes(e))) {
+        this.logger.warn('Polymarket WebSocket error response', {
+          message: rawData,
+          hint: 'Check subscription format or API changes',
+        });
+        this.emit('error', new Error(rawData));
+        return;
+      }
+
       // Парсим JSON
       const parsed = JSON.parse(rawData);
 

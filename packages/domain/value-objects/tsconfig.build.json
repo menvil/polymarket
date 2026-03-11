@@ -2,13 +2,25 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "./src",
-    "types": []
+    "types": [],
+    "noEmit": false
   },
   "references": [
-    { "path": "../../foundation/result" },
-    { "path": "../../foundation/errors" },
-    { "path": "../../foundation/ids" }
+    {
+      "path": "../../foundation/result"
+    },
+    {
+      "path": "../../foundation/errors"
+    },
+    {
+      "path": "../../foundation/ids"
+    }
   ],
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.spec.ts", "src/**/__tests__/**"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ]
 }

@@ -2,10 +2,15 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "./src",
-    "types": []
+    "types": [],
+    "noEmit": false
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
   "references": [
-    { "path": "../time/tsconfig.build.json" }
+    {
+      "path": "../time/tsconfig.build.json"
+    }
   ]
 }
