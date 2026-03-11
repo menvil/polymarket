@@ -30,6 +30,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId } from '@polymarket/ids';
+import { asFillId, asOrderId } from '@polymarket/ids';
 import { FillMapper } from '@polymarket/fill';
 import { TimestampService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -137,7 +138,19 @@ export class FillEventHandler {
    * Публикует FILL_FAILED для reconciliation.
    */
   private async _handleFailedFill(raw: Record<string, unknown>, rawId: string): Promise<void> {
-    const orderId = typeof raw['taker_order_id'] === 'string' ? raw['taker_order_id'] : 'unknown';
+    const fillId = asFillId(rawId);
+    if (!fillId) {
+      this._logger.warn('Failed fill has unparseable fillId, skipping FILL_FAILED event', { rawId });
+      return;
+    }
+
+    const rawOrderId = typeof raw['taker_order_id'] === 'string' ? raw['taker_order_id'] : '';
+    const orderId = asOrderId(rawOrderId);
+    if (!orderId) {
+      this._logger.warn('Failed fill has unparseable orderId, skipping FILL_FAILED event', { rawId, rawOrderId });
+      return;
+    }
+
     const tsResult = TimestampService.fromDate(this._clock.now());
     if (!tsResult.ok) {
       this._logger.error('Failed to create receivedAt timestamp for failed fill', {
@@ -148,11 +161,11 @@ export class FillEventHandler {
 
     await this._eventBus.publish({
       type: 'FILL_FAILED',
-      fillId: rawId,
+      fillId,
       orderId,
       receivedAt: tsResult.value,
     });
 
-    this._logger.warn('Fill failed event published', { fillId: rawId, orderId });
+    this._logger.warn('Fill failed event published', { fillId, orderId });
   }
 }

@@ -11,7 +11,7 @@ import type { Price, Quantity } from '@polymarket/value-objects';
 /**
  * Направление сигнала стратегии.
  */
-export type SignalDirection = 'BUY' | 'SELL' | 'CLOSE' | 'HEDGE';
+export type SignalDirection = 'BUY' | 'SELL';
 
 /**
  * Торговый сигнал от стратегии.

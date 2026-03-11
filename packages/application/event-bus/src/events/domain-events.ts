@@ -12,6 +12,7 @@
  * FillEventHandler проверяет WsFillStatus и публикует соответствующее событие.
  */
 import type { Fill } from '@polymarket/fill';
+import type { FillId, OrderId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 
 /**
@@ -51,9 +52,9 @@ export interface FillReceivedEvent {
 export interface FillFailedEvent {
   readonly type: 'FILL_FAILED';
   /** ID fail-события (совпадает с WsUserFillDto.id для трассировки) */
-  readonly fillId: string;
+  readonly fillId: FillId;
   /** ID связанного ордера (taker_order_id из WsUserFillDto) */
-  readonly orderId: string;
+  readonly orderId: OrderId;
   /** Timestamp получения события в системе */
   readonly receivedAt: Timestamp;
 }

@@ -5,6 +5,7 @@
  * RiskLimitBreachedEvent публикуется OrderRiskChecker или DrawdownRiskMonitor.
  * StrategyRunner подписывается и останавливает стратегию при нарушении.
  */
+import type { AccountId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 
 /**
@@ -37,5 +38,5 @@ export interface RiskLimitBreachedEvent {
   /** ID стратегии (если undefined — системное нарушение, остановить всё) */
   readonly strategyId?: string;
   /** ID аккаунта, для которого обнаружено нарушение (для мульти-аккаунтной торговли) */
-  readonly accountId?: string;
+  readonly accountId?: AccountId;
 }
