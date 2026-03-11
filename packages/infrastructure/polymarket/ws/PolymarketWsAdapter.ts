@@ -21,6 +21,19 @@
  * - Callbacks await-ятся последовательно (ошибки изолированы через try/catch)
  * - onReconnect() вызывается из события 'connected' клиента
  *
+ * ### Протокол подписки Polymarket:
+ * Polymarket WS принимает ТОЛЬКО ОДНО subscription-сообщение на соединение.
+ * Любое последующее сообщение на том же соединении возвращает INVALID OPERATION.
+ * Поэтому изменение набора токенов требует полного переподключения:
+ * `reconnectForNewSubscription()` очищает кэш, переподключается, затем
+ * PolymarketWsAdapter посылает актуальный список токенов.
+ *
+ * ### Unsubscribe (истечение рынков):
+ * `unsubscribeFromToken()` только удаляет токен из внутреннего set — НЕ посылает
+ * subscription update на сервер. Сервер продолжает слать данные по удалённому токену,
+ * но в collect-data режиме `recorder.recordEvent()` безвредно их игнорирует
+ * (рынок уже финализирован). Это предотвращает INVALID OPERATION при истечении рынков.
+ *
  * @example
  * ```typescript
  * const adapter = new PolymarketWsAdapter(wsManager, logger);
@@ -83,36 +96,18 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   private _hasEverConnected = false;
 
   /**
-   * Флаг ожидающей отправки подписки.
+   * Флаг: запланирован reconnect для смены подписки.
    *
    * @remarks
-   * Дебаунс для `_sendAllSubscriptions()`: несколько быстрых вызовов
-   * `subscribeToToken` / `unsubscribeFromToken` (например, при открытии рынка с 2 токенами
-   * или при истечении нескольких рынков за один тик) коллапсируются в одну отправку.
-   * Без этого Polymarket отвечает `INVALID OPERATION` на промежуточные сообщения.
+   * Дебаунс для `_reconnectForSubscription()`: несколько быстрых вызовов
+   * `subscribeToToken()` (например, при открытии рынка с 2 токенами) коллапсируются
+   * в один reconnect. Без этого флага каждый вызов инициировал бы отдельный reconnect.
    */
-  private _subscriptionSendPending = false;
+  private _reconnectForSubscriptionPending = false;
 
-  /**
-   * Timestamp последней успешной отправки subscription-сообщения (эпоха в мс).
-   *
-   * @remarks
-   * Используется кулдауном в `_sendAllSubscriptions()`, чтобы предотвратить
-   * быстрые повторные отправки — причину ответов `INVALID OPERATION` от Polymarket.
-   */
-  private _lastSubscriptionSentMs = 0;
+  /** Таймер дебаунса для subscription-change reconnect */
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /**
-   * Таймер отложенной отправки подписки в рамках кулдауна.
-   *
-   * @remarks
-   * Ненулевое значение означает, что уже запланирована отправка после истечения кулдауна.
-   * Нет смысла планировать ещё одну — будет отправлен актуальный список токенов.
-   */
-  private _cooldownTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /** Минимальный интервал между отправками subscription-сообщений (кулдаун). */
-  private static readonly SUBSCRIPTION_COOLDOWN_MS = 2000;
 
   /**
    * Создаёт PolymarketWsAdapter.
@@ -241,40 +236,52 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Подписывается на WebSocket channel для tokenId.
+   * Регистрирует tokenId для получения рыночных данных.
    *
    * @param tokenId - Token ID для подписки
    *
    * @remarks
-   * Добавляет tokenId в набор отслеживаемых.
-   * Если уже подключены — планирует отправку через `_scheduleSendAllSubscriptions()`.
+   * Добавляет tokenId во внутренний set. Если адаптер уже был подключён ранее
+   * (`_hasEverConnected = true`) и сейчас подключён — планирует reconnect
+   * через `_scheduleReconnectForSubscription()`. При первом подключении токены
+   * будут отправлены в `_resubscribeAll()` по событию 'connected'.
+   *
    * Несколько последовательных вызовов (например, при открытии рынка с 2 токенами)
-   * коллапсируются в одно WS-сообщение через дебаунс.
+   * коллапсируются в один reconnect через 500ms дебаунс.
+   *
+   * ### Почему reconnect, а не subscription update:
+   * Polymarket WS принимает только ОДНО subscription-сообщение на соединение.
+   * Любое последующее сообщение возвращает INVALID OPERATION.
+   * Единственный способ изменить подписку — переподключиться.
    */
   async subscribeToToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
     const wasNew = !this._subscribedTokens.has(tokenId);
     this._subscribedTokens.add(tokenId);
-    if (wasNew && this._isConnected) {
-      this._scheduleSendAllSubscriptions();
+    if (wasNew && this._hasEverConnected && this._isConnected) {
+      this._scheduleReconnectForSubscription();
     }
   }
 
   /**
-   * Отписывается от WebSocket channel для tokenId.
+   * Убирает tokenId из набора отслеживаемых токенов.
    *
    * @param tokenId - Token ID для отписки
    *
    * @remarks
-   * Несколько последовательных вызовов (например, при истечении рынка с 2 токенами)
-   * коллапсируются в одно WS-сообщение через дебаунс.
+   * Только удаляет из внутреннего set — НЕ посылает никаких сообщений на сервер.
+   * Сервер продолжает слать данные по этому токену; в collect-data режиме
+   * `recorder.recordEvent()` безвредно принимает их (рынок финализирован, данные игнорируются).
+   *
+   * ### Почему не посылаем subscription update:
+   * Polymarket WS возвращает INVALID OPERATION на любое subscription-сообщение
+   * после первого. Посылать обновление бессмысленно и вредно (вызвало бы reconnect-loop).
+   * Накопленный "лишний" трафик по истёкшим токенам минимален и безвреден.
    */
   async unsubscribeFromToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
     this._subscribedTokens.delete(tokenId);
-    if (this._isConnected) {
-      this._scheduleSendAllSubscriptions();
-    }
+    // Намеренно НЕ посылаем subscription update — см. описание в JSDoc.
   }
 
   /**
@@ -330,17 +337,17 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._logger.info('[PolymarketWsAdapter] Destroying adapter');
 
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     try {
       await this._client.destroy();
     } catch (err) {
       this._logger.warn('[PolymarketWsAdapter] Error during client destroy', {
         err: err instanceof Error ? err : new Error(String(err)),
       });
-    }
-
-    if (this._cooldownTimer) {
-      clearTimeout(this._cooldownTimer);
-      this._cooldownTimer = null;
     }
 
     this._subscribedTokens.clear();
@@ -405,20 +412,15 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._router.on('error', (error: Error) => {
       if (error.message === 'INVALID OPERATION') {
-        // Polymarket отвечает INVALID OPERATION если подписка отклонена.
-        // Логируем как WARN (не ERROR) и планируем повторную отправку через дебаунс.
-        // Кулдаун в _sendAllSubscriptions() гарантирует, что повтор произойдёт не ранее
-        // чем через SUBSCRIPTION_COOLDOWN_MS мс — предотвращает каскадный loop.
-        const elapsed = Date.now() - this._lastSubscriptionSentMs;
-        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION from Polymarket, scheduling retry', {
-          elapsedSinceLastSendMs: elapsed,
-          cooldownMs: PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS,
-          willDefer: elapsed < PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS,
-          hasCooldownTimer: this._cooldownTimer !== null,
+        // Polymarket отвечает INVALID OPERATION если subscription message отправлен
+        // на уже существующем соединении (после первоначальной подписки).
+        // Единственное решение — переподключиться с актуальным списком токенов.
+        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION, scheduling reconnect', {
           tokenCount: this._subscribedTokens.size,
+          reconnectPending: this._reconnectForSubscriptionPending,
         });
-        if (this._isConnected) {
-          this._scheduleSendAllSubscriptions();
+        if (this._isConnected && !this._reconnectForSubscriptionPending) {
+          this._scheduleReconnectForSubscription();
         }
       } else {
         this._logger.error('[PolymarketWsAdapter] Router error', {
@@ -460,6 +462,11 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     });
 
     this._client.on('disconnected', () => {
+      if (!this._isConnected) {
+        // Отложенный onclose старого WS после явного disconnect() — уже обработано.
+        this._logger.debug('[PolymarketWsAdapter] Duplicate disconnected event (delayed WS onclose), ignoring');
+        return;
+      }
       this._isConnected = false;
       this._logger.info('[PolymarketWsAdapter] Disconnected');
     });
@@ -529,26 +536,23 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Переподписывается на все tokens и user channel после reconnect.
+   * Переподписывается на все tokens и user channel после connect/reconnect.
+   *
+   * @param isReconnect - `true` при реконнекте, `false` при первом подключении
    *
    * @remarks
-   * Вызывается из события 'connected' клиента.
-   * Если нет подписанных tokens И нет user channel — ничего не делает.
-   */
-  /**
-   * @param isReconnect - `true` при реконнекте, `false` при первом подключении.
+   * ### Два сценария:
    *
-   * @remarks
-   * При реконнекте market channel НЕ отправляется отсюда:
-   * `BaseWebSocketTransport._resubscribeAll()` уже отправил подписку из своего
-   * `_subscriptions` кэша (вызывается в `_ws.onopen` до `emit('connected')`).
-   * Двойная отправка приводит к `INVALID OPERATION` от Polymarket.
+   * **Первое подключение** (`isReconnect=false`):
+   * BaseWebSocket кэш пуст → market channel посылаем здесь.
    *
-   * При первом подключении `_subscriptions` пуст (ни одного `subscribe()` ещё не было),
-   * поэтому market channel отправляем здесь.
+   * **Любой reconnect** (`isReconnect=true`):
+   * BaseWebSocket._resubscribeAll() уже послал подписку из кэша (вызывается в onopen
+   * до emit('connected')). При subscription-change reconnect кэш был обновлён перед
+   * переподключением → BaseWebSocket послал актуальный список токенов. Дублировать нельзя.
    *
-   * User channel всегда отправляем здесь — в BaseWebSocketTransport он не кэшируется
-   * (хранит только token-подписки через `_sendAllSubscriptions()`).
+   * User channel всегда посылаем здесь — BaseWebSocket его не кэширует корректно
+   * при subscription-change reconnect (разные каналы не взаимодействуют).
    */
   private async _resubscribeAll(isReconnect: boolean): Promise<void> {
     if (this._isDestroyed) return;
@@ -564,108 +568,110 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       isReconnect,
     });
 
-    // При реконнекте market channel уже отправлен BaseWebSocketTransport._resubscribeAll()
-    // напрямую через _ws.send() — минуя наш _sendAllSubscriptions().
-    // Обновляем _lastSubscriptionSentMs чтобы кулдаун защитил последующие retry-попытки:
-    // если Polymarket ответит INVALID OPERATION, обработчик вызовет _scheduleSendAllSubscriptions()
-    // → 50ms debounce → _sendAllSubscriptions() → elapsed ≈ 50ms < COOLDOWN → отложит retry.
-    if (hasMarket && isReconnect) {
-      this._lastSubscriptionSentMs = Date.now();
-      this._logger.debug('[PolymarketWsAdapter] Updated subscription timestamp for reconnect send', {
-        lastSentMs: this._lastSubscriptionSentMs,
-      });
-    }
-
+    // При reconnect BaseWebSocket уже послал market subscription из кэша
+    // (кэш обновлён в _reconnectForSubscription() до вызова connect()).
+    // При первом подключении кэш пуст — посылаем здесь.
     if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
     if (hasUser) await this._sendUserChannelSubscription();
   }
 
   /**
-   * Планирует отправку подписки через дебаунс (50ms).
+   * Планирует reconnect для применения изменений подписки (дебаунс 500ms).
    *
    * @remarks
-   * Несколько быстрых вызовов `subscribeToToken` / `unsubscribeFromToken`
-   * (например, открытие рынка с 2 токенами = 2 вызова за ~0ms) коллапсируются
-   * в одно WS-сообщение. Без дебаунса Polymarket отвечает `INVALID OPERATION`
-   * на промежуточные сообщения.
-   *
-   * Флаг `_subscriptionSendPending` сбрасывается только ПОСЛЕ завершения
-   * `_sendAllSubscriptions()`, чтобы исключить гонку: если бы сброс
-   * происходил до `await`, новый `subscribeToToken`-вызов мог бы
-   * назначить второй таймер пока первая отправка ещё не завершена.
-   *
-   * Дебаунс не применяется к `_resubscribeAll()` — там отправка немедленная,
-   * так как при реконнекте промежуточных состояний нет.
+   * Несколько быстрых вызовов (открытие рынка с 2 токенами = 2 subscribeToToken за ~0ms)
+   * коллапсируются в один reconnect. `_reconnectForSubscriptionPending` гарантирует
+   * единственный запланированный reconnect в каждый момент времени.
    */
-  private _scheduleSendAllSubscriptions(): void {
-    if (this._subscriptionSendPending) return;
-    this._subscriptionSendPending = true;
+  private _scheduleReconnectForSubscription(): void {
+    if (this._reconnectForSubscriptionPending) return;
+    this._reconnectForSubscriptionPending = true;
 
-    setTimeout(() => {
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
       if (this._isDestroyed) {
-        this._subscriptionSendPending = false;
+        this._reconnectForSubscriptionPending = false;
         return;
       }
-      this._sendAllSubscriptions()
-        .catch((err) => {
-          this._logger.error('[PolymarketWsAdapter] Failed to send debounced subscriptions', {
-            err: err instanceof Error ? err : new Error(String(err)),
-          });
-        })
-        .finally(() => {
-          this._subscriptionSendPending = false;
+      this._reconnectForSubscription().catch((err) => {
+        this._logger.error('[PolymarketWsAdapter] Failed to reconnect for subscription change', {
+          err: err instanceof Error ? err : new Error(String(err)),
         });
-    }, 50);
+        this._reconnectForSubscriptionPending = false;
+      });
+    }, 500);
+  }
+
+  /**
+   * Выполняет reconnect для применения изменений в наборе подписанных токенов.
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. `disconnect()` — корректно закрывает соединение, предотвращает auto-reconnect
+   * 2. `await sleep(300ms)` — ждём пока `onclose` старого WS сработает до `connect()`
+   *    (предотвращает race condition: `_handleClose()` после нового соединения)
+   * 3. `subscribe('market', updatedTokens)` — обновляем кэш BaseWebSocket пока disconnected
+   *    (BaseWebSocket не шлёт — status='disconnected')
+   * 4. `connect()` — BaseWebSocket открывает новое соединение →
+   *    `_resubscribeAll()` в onopen шлёт из обновлённого кэша (ОДИН send) → emit('connected')
+   *
+   * ### Почему не `reconnectForNewSubscription()`:
+   * `PolymarketWebSocketManager.reconnectForNewSubscription()` переопределяет метод и
+   * вызывает просто `disconnect() + connect()` БЕЗ очистки кэша. В результате
+   * BaseWebSocket на reconnect шлёт старую подписку из кэша, а затем наш
+   * `_resubscribeAll(isReconnect=true)` шлёт повторно → INVALID OPERATION.
+   */
+  private async _reconnectForSubscription(): Promise<void> {
+    if (this._isDestroyed) {
+      this._reconnectForSubscriptionPending = false;
+      return;
+    }
+
+    this._logger.info('[PolymarketWsAdapter] Reconnecting to apply subscription changes', {
+      tokenCount: this._subscribedTokens.size,
+    });
+
+    try {
+      // Шаг 1: Корректное отключение (устанавливает _isShuttingDown=true, предотвращает auto-reconnect)
+      await this._client.disconnect();
+
+      // Шаг 2: Пауза чтобы onclose старого WebSocket сработал до нового connect()
+      // Без паузы: _handleClose() может сработать ПОСЛЕ connect() и сбросить _status='disconnected'
+      await new Promise<void>((r) => setTimeout(r, 300));
+
+      if (this._isDestroyed) return;
+
+      // Шаг 3: Обновляем кэш подписки ПОКА disconnected — BaseWebSocket не шлёт, только кэширует
+      if (this._subscribedTokens.size > 0) {
+        await this._client.subscribe('market', {
+          assets_ids: Array.from(this._subscribedTokens),
+          type: 'market',
+        });
+      }
+
+      // Шаг 4: Переподключаемся — BaseWebSocket пошлёт актуальную подписку из кэша
+      await this._client.connect();
+
+    } catch (err) {
+      this._logger.error('[PolymarketWsAdapter] Reconnect for subscription change failed', {
+        err: err instanceof Error ? err : new Error(String(err)),
+        tokenCount: this._subscribedTokens.size,
+      });
+    } finally {
+      this._reconnectForSubscriptionPending = false;
+    }
   }
 
   /**
    * Отправляет WS-подписку для всех tracked tokens (market channel).
    *
    * @remarks
-   * Polymarket WebSocket ЗАМЕНЯЕТ подписки при каждом вызове.
-   * Поэтому отправляем ВСЕ tokens в одном сообщении.
-   *
-   * ### Кулдаун:
-   * Если с момента предыдущей отправки прошло меньше `SUBSCRIPTION_COOLDOWN_MS`,
-   * метод не отправляет немедленно, а ставит единственный таймер на оставшееся время.
-   * Повторные вызовы в период ожидания игнорируются (таймер уже есть).
-   * Это предотвращает каскадный `INVALID OPERATION` при быстрых повторных попытках.
+   * Polymarket WebSocket принимает subscription-сообщение только ОДИН РАЗ на соединение.
+   * Вызывается из `_resubscribeAll()` — только при первом подключении или после
+   * subscription-change reconnect (когда BaseWebSocket кэш был очищен).
    */
   private async _sendAllSubscriptions(): Promise<void> {
     if (this._isDestroyed || this._subscribedTokens.size === 0) return;
-
-    const now = Date.now();
-    const elapsed = now - this._lastSubscriptionSentMs;
-
-    if (elapsed < PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS) {
-      // Кулдаун ещё активен — откладываем отправку, если не запланирована
-      if (!this._cooldownTimer) {
-        const remaining = PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS - elapsed;
-        this._logger.debug('[PolymarketWsAdapter] Subscription cooldown active, deferring send', {
-          elapsedMs: elapsed,
-          deferMs: remaining,
-        });
-        this._cooldownTimer = setTimeout(() => {
-          this._cooldownTimer = null;
-          if (!this._isDestroyed && this._isConnected) {
-            this._sendAllSubscriptions().catch((err) => {
-              this._logger.error('[PolymarketWsAdapter] Failed deferred subscription send', {
-                err: err instanceof Error ? err : new Error(String(err)),
-              });
-            });
-          }
-        }, remaining);
-      }
-      return;
-    }
-
-    // Кулдаун не активен — отменяем возможный старый таймер (мы отправляем сейчас)
-    if (this._cooldownTimer) {
-      clearTimeout(this._cooldownTimer);
-      this._cooldownTimer = null;
-    }
-
-    this._lastSubscriptionSentMs = now;
 
     const tokens = Array.from(this._subscribedTokens);
 
@@ -676,7 +682,6 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._logger.info('[PolymarketWsAdapter] Sending market subscription', {
       tokenCount: tokens.length,
-      elapsedSinceLastMs: now - (this._lastSubscriptionSentMs === now ? 0 : this._lastSubscriptionSentMs),
     });
 
     try {

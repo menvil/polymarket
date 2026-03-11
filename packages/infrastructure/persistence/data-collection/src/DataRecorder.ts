@@ -117,15 +117,29 @@ export class DataRecorder implements IMarketDataRecorder {
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
+      // Если файл уже существует от предыдущего запуска — удаляем.
+      // Это предотвращает дублирование meta-записей при повторном старте без graceful shutdown.
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        this._logger.warn('Existing market file deleted (previous run, no graceful shutdown)', {
+          marketId: key,
+          filePath,
+        });
+      }
+
       // Синхронно записываем meta-событие: файл гарантированно появляется на диске
       // до создания WriteStream. Это позволяет тестам и мониторингу сразу видеть файл.
-      const metaLine = this._formatter.formatRecord({
+      const metaRecord: Record<string, unknown> = {
         t: 'meta',
         ts: Date.now(),
         marketId: key,
         question: meta.question,
         tokenIds: Array.from(meta.tokenIds),
-      });
+      };
+      if (meta.rawMarket) {
+        metaRecord['m'] = meta.rawMarket;
+      }
+      const metaLine = this._formatter.formatRecord(metaRecord);
       fs.writeFileSync(filePath, metaLine, { flag: 'a' });
 
       // Открываем поток в режиме append после того, как файл создан синхронно
@@ -149,7 +163,7 @@ export class DataRecorder implements IMarketDataRecorder {
         this._tokenIndex.set(tokenId, writer);
       }
 
-      this._logger.info('Market registered for recording', {
+      this._logger.debug('Market registered for recording', {
         marketId: key,
         question: meta.question,
         tokenCount: meta.tokenIds.length,
@@ -224,26 +238,74 @@ export class DataRecorder implements IMarketDataRecorder {
       });
     });
 
-    // Сжимаем только для завершённых (не shutdown) рынков если включено
-    if (this._config.compression === 'gzip' && this._compressor && reason === 'EXPIRED') {
+    if (reason === 'EXPIRED') {
+      // Рынок истёк — данные валидны, сжимаем если включено
+      if (this._config.compression === 'gzip' && this._compressor) {
+        try {
+          const gzPath = await this._compressor.compressFile(writer.filePath);
+          this._logger.debug('Market file compressed', { marketId: key, gzPath });
+        } catch (err) {
+          this._logger.warn('Failed to compress market file', {
+            marketId: key,
+            filePath: writer.filePath,
+            err: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
+      }
+
+      this._logger.info('Market finalized (expired)', {
+        marketId: key,
+        eventsRecorded: writer.eventsRecorded,
+        filePath: writer.filePath,
+      });
+    } else {
+      // Рынок не истёк (shutdown) — удаляем незаконченный файл.
+      // registerMarket() при следующем запуске также удалит любой существующий файл,
+      // поэтому дополнительная логика .incomplete/ не нужна.
       try {
-        const gzPath = await this._compressor.compressFile(writer.filePath);
-        this._logger.debug('Market file compressed', { marketId: key, gzPath });
-      } catch (err) {
-        this._logger.warn('Failed to compress market file', {
+        await fs.promises.unlink(writer.filePath);
+        this._logger.warn('Market finalized (incomplete, deleted on shutdown)', {
           marketId: key,
+          eventsRecorded: writer.eventsRecorded,
           filePath: writer.filePath,
-          err: err instanceof Error ? err : new Error(String(err)),
         });
+      } catch {
+        // Файл уже удалён или не существует — игнорируем
       }
     }
+  }
 
-    this._logger.info('Market finalized', {
-      marketId: key,
-      reason,
-      eventsRecorded: writer.eventsRecorded,
-      filePath: writer.filePath,
-    });
+  /**
+   * Очищает артефакты от предыдущих запусков.
+   *
+   * @remarks
+   * Незаконченные файлы рынков теперь удаляются сразу при graceful shutdown.
+   * Файлы оставшиеся от краш-сценариев (SIGKILL) удаляются в `registerMarket()`
+   * при следующем старте через delete-if-exists логику.
+   *
+   * Метод оставлен для совместимости и на случай оставшихся .incomplete/ папок
+   * от старых версий коллектора.
+   */
+  public async cleanup(): Promise<void> {
+    const incompleteDir = path.join(this._config.outputDir, '.incomplete');
+    if (!fs.existsSync(incompleteDir)) return;
+
+    const files = await fs.promises.readdir(incompleteDir);
+    for (const file of files) {
+      try {
+        await fs.promises.unlink(path.join(incompleteDir, file));
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      await fs.promises.rmdir(incompleteDir);
+    } catch {
+      // ignore
+    }
+    if (files.length > 0) {
+      this._logger.info('Cleaned up legacy .incomplete market files', { count: files.length });
+    }
   }
 
   /**

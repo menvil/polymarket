@@ -256,27 +256,43 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
 // ─── Дискавери ────────────────────────────────────────────────────────────────
 
 /**
- * Сканирует рынки через Gamma API и открывает новые до maxMarkets.
+ * Обновляет кэш кандидатов из Gamma API.
  *
  * @remarks
- * Вызывается при старте и периодически каждые `marketScanPauseMs`.
+ * Независимый процесс — не знает о занятых/свободных слотах.
+ * Просто запрашивает рынки, фильтрует, сортирует, кладёт 30 лучших в кэш.
+ * Вызывается по таймеру (пауза 30с после завершения).
  */
-async function scanAndSubscribe(): Promise<void> {
-  logger.debug('Scanning for markets...', { current: subscribedMarkets.size });
+async function refreshDiscoveryCache(): Promise<void> {
+  logger.debug('Refreshing market discovery cache...');
+  try {
+    await discovery.refresh();
+  } catch (err) {
+    logger.error('Market discovery refresh failed', {
+      err: err instanceof Error ? err : new Error(String(err)),
+    });
+  }
+}
+
+/**
+ * Заполняет свободные слоты рынками из кэша дискавери.
+ *
+ * @remarks
+ * Независимый процесс — не запускает новое сканирование.
+ * Читает кэш, берёт первые N кандидатов которые ещё не подписаны.
+ * Вызывается при старте и после закрытия истёкших рынков.
+ */
+async function fillMarketSlots(): Promise<void> {
+  const remaining = config.maxMarkets - subscribedMarkets.size;
+  if (remaining <= 0) return;
 
   let candidates: readonly DiscoveredMarket[];
   try {
     candidates = await discovery.findCandidates();
   } catch (err) {
-    logger.error('Market discovery failed', {
+    logger.error('Failed to read candidates from cache', {
       err: err instanceof Error ? err : new Error(String(err)),
     });
-    return;
-  }
-
-  const remaining = config.maxMarkets - subscribedMarkets.size;
-  if (remaining <= 0) {
-    logger.debug('Max markets reached, skipping scan', { maxMarkets: config.maxMarkets });
     return;
   }
 
@@ -286,8 +302,6 @@ async function scanAndSubscribe(): Promise<void> {
     const tokenId   = String(candidate.instrumentId);
     const marketKey = String(candidate.marketId);
 
-    // Пропускаем уже подписанные, закрытые и истёкшие рынки
-    // (дублируем проверки из openMarket чтобы не инкрементировать opened зря)
     if (subscribedTokens.has(tokenId)) continue;
     if (closedMarkets.has(marketKey)) continue;
     if (candidate.expiresAt.toNumber() <= Date.now()) continue;
@@ -296,12 +310,13 @@ async function scanAndSubscribe(): Promise<void> {
     opened++;
   }
 
-  logger.info('Scan complete', {
-    found:      candidates.length,
-    opened,
-    total:      subscribedMarkets.size,
-    maxMarkets: config.maxMarkets,
-  });
+  if (opened > 0) {
+    logger.info('Market slots filled from cache', {
+      opened,
+      total:      subscribedMarkets.size,
+      maxMarkets: config.maxMarkets,
+    });
+  }
 }
 
 // ─── Проверка истечений ───────────────────────────────────────────────────────
@@ -329,12 +344,15 @@ async function checkExpiredMarkets(): Promise<void> {
 
   if (expired.length > 0) {
     logger.info('Expired markets finalized', { count: expired.length });
+    // Слоты освободились — берём замены из кэша (без нового API-запроса).
+    await fillMarketSlots();
   }
 }
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 
 let isShuttingDown = false;
+let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
@@ -342,7 +360,7 @@ async function shutdown(signal: string): Promise<void> {
 
   logger.info(`Received ${signal}, shutting down...`);
 
-  clearInterval(scanInterval);
+  if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
   clearInterval(expiryInterval);
 
   feed.stop();
@@ -375,8 +393,10 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 // Удаляем незавершённые файлы от предыдущего запуска
 await recorder.cleanup();
 
-// Начальный дискавери до подключения WS (чтобы подписки были готовы)
-await scanAndSubscribe();
+// Начальный дискавери до подключения WS (чтобы подписки были готовы):
+// сначала заполняем кэш, потом берём рынки из кэша.
+await refreshDiscoveryCache();
+await fillMarketSlots();
 
 // Подключаем WS и запускаем feed
 // connect() может режектить при первоначальной ошибке TLS/сети —
@@ -394,18 +414,25 @@ logger.info('Feed started, collecting data', {
   markets: subscribedMarkets.size,
 });
 
-// Периодический ресканинг новых рынков
-const scanInterval = setInterval(() => {
-  void scanAndSubscribe();
-}, config.marketScanPauseMs);
+// Процесс 1: обновление кэша дискавери (пауза ПОСЛЕ завершения).
+// Не знает о слотах — просто обновляет кэш каждые ~30с.
+async function scheduleScanLoop(): Promise<void> {
+  if (isShuttingDown) return;
+  await refreshDiscoveryCache();
+  if (!isShuttingDown) {
+    scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, config.marketScanPauseMs);
+  }
+}
+scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, config.marketScanPauseMs);
 
-// Периодическая проверка истёкших рынков (каждые 60 сек)
+// Процесс 2: закрытие истёкших + заполнение слотов из кэша (каждые 5 сек).
+// Не знает о сканировании — только читает кэш и управляет слотами.
 const expiryInterval = setInterval(() => {
   void checkExpiredMarkets();
-}, 60_000);
+}, 5_000);
 
 logger.info('Collector running. Press Ctrl+C to stop.', {
   scanEveryMs:   config.marketScanPauseMs,
-  expiryCheckMs: 60_000,
+  expiryCheckMs: 5_000,
   outputDir:     config.outputDir,
 });

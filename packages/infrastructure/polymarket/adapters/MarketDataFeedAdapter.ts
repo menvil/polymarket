@@ -128,8 +128,12 @@ export class MarketDataFeedAdapter {
     });
 
     const unsubReconnect = this._wsEmitter.onReconnect(() => {
-      this._logger.info('Market WS reconnected, invalidating order books');
-      this._bookHandler?.onReconnect();
+      if (this._bookHandler) {
+        this._logger.info('Market WS reconnected, invalidating order books');
+        this._bookHandler.onReconnect();
+      } else {
+        this._logger.info('Market WS reconnected (recorder-only mode, no order books to invalidate)');
+      }
     });
 
     this._unsubscribes.push(unsubSnapshot, unsubReconnect);

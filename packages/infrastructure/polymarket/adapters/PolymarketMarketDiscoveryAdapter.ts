@@ -208,8 +208,13 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
     // Скоринг и сортировка
     const scored = this._scorer.scoreAndSort(filtered);
 
-    // Ограничение по maxMarketsToReturn
-    const final = scored.slice(0, this._filterConfig.maxMarketsToReturn);
+    // Кэшируем с 3× запасом относительно maxMarketsToReturn.
+    // Когда активные рынки истекают и уходят в closedMarkets, scanAndSubscribe()
+    // может немедленно взять следующие лучшие кандидаты из кэша — без ожидания
+    // следующего TTL-рефреша (60 сек). scanAndSubscribe() сам ограничивает
+    // количество открытых рынков по maxMarketsToReturn.
+    const cacheSize = this._filterConfig.maxMarketsToReturn * 3;
+    const final = scored.slice(0, cacheSize);
 
     // Обновляем кэш
     this._cachedCandidates = final;
@@ -220,7 +225,8 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       tradeable: tradeable.length,
       parsed: mapped.length,
       filtered: filtered.length,
-      final: final.length,
+      cached: final.length,
+      maxMarketsToReturn: this._filterConfig.maxMarketsToReturn,
     });
   }
 
