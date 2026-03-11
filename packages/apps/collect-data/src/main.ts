@@ -61,21 +61,25 @@ logger.info('Starting Polymarket data collector', {
 });
 
 // ─── DNS Override ─────────────────────────────────────────────────────────────
-// Патчим dns.lookup ДО любых сетевых вызовов.
-// Использует DoH через 1.1.1.1 (по IP, без DNS-резолвинга у провайдера).
-// Работает прозрачно для fetch() и WebSocket — оба используют undici внутри.
+// Опционально: патчим dns.lookup ДО любых сетевых вызовов.
+// Включается через DNS_OVERRIDE_ENABLED=true в .env (для машин с заблокированным DNS).
+// На серверах с нормальным DNS оставляем false — никаких изменений в поведении.
 const dnsOverride = new DnsOverride(logger);
-try {
-  await dnsOverride.install([
-    'gamma-api.polymarket.com',
-    'clob.polymarket.com',
-    'data-api.polymarket.com',
-    'ws-subscriptions-clob.polymarket.com',
-  ]);
-} catch (err) {
-  logger.warn('DNS override install failed, continuing with system DNS', {
-    err: err instanceof Error ? err.message : String(err),
-  });
+if (config.dnsOverrideEnabled) {
+  try {
+    await dnsOverride.install([
+      'gamma-api.polymarket.com',
+      'clob.polymarket.com',
+      'data-api.polymarket.com',
+      'ws-subscriptions-clob.polymarket.com',
+    ]);
+  } catch (err) {
+    logger.warn('DNS override install failed, continuing with system DNS', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+} else {
+  logger.debug('DNS override disabled (DNS_OVERRIDE_ENABLED != true)');
 }
 
 // ─── Зависимости ──────────────────────────────────────────────────────────────
