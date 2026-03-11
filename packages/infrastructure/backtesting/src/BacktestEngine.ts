@@ -13,6 +13,7 @@
  *     → построчное чтение
  *       → JSON.parse(line)
  *         → если _type === 'EVENT' → извлекаем event
+ *           → replayClock?.update(event.timestamp)  ← синхронизация времени
  *           → конвертируем уровни стакана в PriceLevel[]
  *             → BookUpdateHandler.handleSnapshot(tokenId, bids, asks, timestamp)
  * ```
@@ -46,6 +47,7 @@ import { asInstrumentId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { PriceLevel } from '@polymarket/order-book';
 import type { BookUpdateHandler } from '@polymarket/handlers';
+import { ReplayClock } from '@polymarket/time';
 import {
   SnapshotScanner,
   SnapshotReaderFactory,
@@ -73,6 +75,19 @@ export interface BacktestDeps {
   readonly bookUpdateHandler: BookUpdateHandler;
   /** Логгер */
   readonly logger: ILogger;
+  /**
+   * Опциональный ReplayClock для синхронизации исторического времени.
+   *
+   * @remarks
+   * Если передан — `replayClock.update()` вызывается перед обработкой каждого события,
+   * синхронизируя `clock.now()` с временем из снапшота.
+   * Это обеспечивает детерминизм: все компоненты, зависящие от `IClock`,
+   * видят историческое время вместо реального.
+   *
+   * При нарушении монотонности (событие с более ранним timestamp) — логируем warn,
+   * пропускаем обновление clock и продолжаем обработку.
+   */
+  readonly replayClock?: ReplayClock;
 }
 
 /**
@@ -336,6 +351,21 @@ export class BacktestEngine {
         file: fileName,
       });
       return { ok: false, error: `Invalid timestamp: ${event.timestamp}` };
+    }
+
+    // Синхронизируем ReplayClock с историческим временем события (если передан)
+    if (this._deps.replayClock) {
+      try {
+        this._deps.replayClock.update(tsResult.value.toDate());
+      } catch {
+        // Нарушение монотонности: событие с более ранним timestamp (out-of-order между файлами).
+        // Логируем warn, оставляем clock на текущем значении и продолжаем.
+        this._logger.warn('ReplayClock: out-of-order event timestamp, skipping clock update', {
+          asset_id:  event.asset_id,
+          timestamp: event.timestamp,
+          file:      fileName,
+        });
+      }
     }
 
     try {
