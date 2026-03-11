@@ -94,6 +94,27 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   private _subscriptionSendPending = false;
 
   /**
+   * Timestamp последней успешной отправки subscription-сообщения (эпоха в мс).
+   *
+   * @remarks
+   * Используется кулдауном в `_sendAllSubscriptions()`, чтобы предотвратить
+   * быстрые повторные отправки — причину ответов `INVALID OPERATION` от Polymarket.
+   */
+  private _lastSubscriptionSentMs = 0;
+
+  /**
+   * Таймер отложенной отправки подписки в рамках кулдауна.
+   *
+   * @remarks
+   * Ненулевое значение означает, что уже запланирована отправка после истечения кулдауна.
+   * Нет смысла планировать ещё одну — будет отправлен актуальный список токенов.
+   */
+  private _cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Минимальный интервал между отправками subscription-сообщений (кулдаун). */
+  private static readonly SUBSCRIPTION_COOLDOWN_MS = 2000;
+
+  /**
    * Создаёт PolymarketWsAdapter.
    *
    * @param wsManager - Менеджер WebSocket соединений
@@ -317,6 +338,11 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       });
     }
 
+    if (this._cooldownTimer) {
+      clearTimeout(this._cooldownTimer);
+      this._cooldownTimer = null;
+    }
+
     this._subscribedTokens.clear();
     this._userChannelConfig = null;
     this._onSnapshot.clear();
@@ -380,19 +406,15 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     this._router.on('error', (error: Error) => {
       if (error.message === 'INVALID OPERATION') {
         // Polymarket отвечает INVALID OPERATION если подписка отклонена.
-        // Логируем как WARN (не ERROR) и ретраим подписку через 1 сек.
-        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION from Polymarket, retrying subscription', {
-          hint: 'Subscription may have been rejected; will retry in 1s',
+        // Логируем как WARN (не ERROR) и планируем повторную отправку через дебаунс.
+        // Кулдаун в _sendAllSubscriptions() гарантирует, что повтор произойдёт не ранее
+        // чем через SUBSCRIPTION_COOLDOWN_MS мс — предотвращает каскадный loop.
+        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION from Polymarket, scheduling retry', {
+          hint: `Subscription rejected; cooldown of ${PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS}ms will throttle retry`,
         });
-        setTimeout(() => {
-          if (!this._isDestroyed && this._isConnected) {
-            this._sendAllSubscriptions().catch((retryErr) => {
-              this._logger.error('[PolymarketWsAdapter] Retry after INVALID OPERATION failed', {
-                err: retryErr instanceof Error ? retryErr : new Error(String(retryErr)),
-              });
-            });
-          }
-        }, 1000);
+        if (this._isConnected) {
+          this._scheduleSendAllSubscriptions();
+        }
       } else {
         this._logger.error('[PolymarketWsAdapter] Router error', {
           err: error,
@@ -586,9 +608,48 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * @remarks
    * Polymarket WebSocket ЗАМЕНЯЕТ подписки при каждом вызове.
    * Поэтому отправляем ВСЕ tokens в одном сообщении.
+   *
+   * ### Кулдаун:
+   * Если с момента предыдущей отправки прошло меньше `SUBSCRIPTION_COOLDOWN_MS`,
+   * метод не отправляет немедленно, а ставит единственный таймер на оставшееся время.
+   * Повторные вызовы в период ожидания игнорируются (таймер уже есть).
+   * Это предотвращает каскадный `INVALID OPERATION` при быстрых повторных попытках.
    */
   private async _sendAllSubscriptions(): Promise<void> {
     if (this._isDestroyed || this._subscribedTokens.size === 0) return;
+
+    const now = Date.now();
+    const elapsed = now - this._lastSubscriptionSentMs;
+
+    if (elapsed < PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS) {
+      // Кулдаун ещё активен — откладываем отправку, если не запланирована
+      if (!this._cooldownTimer) {
+        const remaining = PolymarketWsAdapter.SUBSCRIPTION_COOLDOWN_MS - elapsed;
+        this._logger.debug('[PolymarketWsAdapter] Subscription cooldown active, deferring send', {
+          elapsedMs: elapsed,
+          deferMs: remaining,
+        });
+        this._cooldownTimer = setTimeout(() => {
+          this._cooldownTimer = null;
+          if (!this._isDestroyed && this._isConnected) {
+            this._sendAllSubscriptions().catch((err) => {
+              this._logger.error('[PolymarketWsAdapter] Failed deferred subscription send', {
+                err: err instanceof Error ? err : new Error(String(err)),
+              });
+            });
+          }
+        }, remaining);
+      }
+      return;
+    }
+
+    // Кулдаун не активен — отменяем возможный старый таймер (мы отправляем сейчас)
+    if (this._cooldownTimer) {
+      clearTimeout(this._cooldownTimer);
+      this._cooldownTimer = null;
+    }
+
+    this._lastSubscriptionSentMs = now;
 
     const tokens = Array.from(this._subscribedTokens);
 
