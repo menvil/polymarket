@@ -3,10 +3,11 @@
  *
  * @remarks
  * ### Алгоритм:
- * 1. `orderRepo.getByStrategyId(String(marketId))` → открытые ордера рынка
- * 2. Для каждого открытого ордера: `cancelOrderUseCase.execute(...)` (best-effort)
- * 3. `balanceAllocator.releaseWithPnL(marketId, pnl)` → освободить баланс с PnL
- *    или `balanceAllocator.release(marketId)` → без PnL если не указан
+ * 1. `orderRepo.getByMarketId(marketId)` → открытые ордера рынка
+ * 2. Параллельная best-effort отмена пакетами по `CANCEL_BATCH_SIZE` ордеров
+ * 3. Идемпотентное освобождение баланса:
+ *    - Если `getAllocation(marketId) !== undefined` → `releaseWithPnL` / `release`
+ *    - Иначе → warn и пропуск (рынок уже был закрыт ранее)
  * 4. `eventBus.publish({ type: 'MARKET_CLOSED', ... })`
  * 5. Вернуть Ok(void)
  *
@@ -86,6 +87,7 @@ export class CloseMarketUseCase {
    * @remarks
    * Ошибки отмены отдельных ордеров не возвращают Err — они логируются.
    * Событие MARKET_CLOSED публикуется даже при частичных ошибках отмены.
+   * Операция идемпотентна: повторный вызов для уже закрытого рынка безопасен.
    */
   public async execute(input: CloseMarketInput): Promise<Result<void, TradingError>> {
     this._logger.info('Closing market', {
@@ -93,30 +95,48 @@ export class CloseMarketUseCase {
       reason: input.reason,
     });
 
-    // Шаг 1: Получить ордера рынка
-    // Соглашение: strategyId = String(marketId) в контексте координатора
-    const orders = await this._deps.orderRepo.getByStrategyId(String(input.marketId));
+    // Шаг 1: Получить ордера рынка через типизированный метод репозитория
+    const orders = await this._deps.orderRepo.getByMarketId(input.marketId);
 
     // Фильтр — только открытые ордера
     const openOrders = orders.filter(
       (order) => order.status === 'OPEN' || order.status === 'PARTIALLY_FILLED',
     );
 
-    // Шаг 2: Best-effort отмена ордеров
+    // Шаг 2: Параллельная best-effort отмена пакетами
+    const CANCEL_BATCH_SIZE = 10;
     let cancelErrorCount = 0;
-    for (const order of openOrders) {
-      const cancelResult = await this._deps.cancelOrderUseCase.execute({
-        orderId: order.id,
-        accountId: input.accountId,
-        reason: `Market closed: ${input.reason}`,
-      });
-      if (!cancelResult.ok) {
-        this._logger.warn('Failed to cancel order during market close (best effort)', {
-          orderId: String(order.id),
-          marketId: String(input.marketId),
-          error: cancelResult.error.message,
-        });
-        cancelErrorCount++;
+
+    for (let i = 0; i < openOrders.length; i += CANCEL_BATCH_SIZE) {
+      const batch = openOrders.slice(i, i + CANCEL_BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map((order) =>
+          this._deps.cancelOrderUseCase.execute({
+            orderId: order.id,
+            accountId: input.accountId,
+            reason: `Market closed: ${input.reason}`,
+          }),
+        ),
+      );
+
+      for (let j = 0; j < results.length; j++) {
+        const settled = results[j]!;
+        const order = batch[j]!;
+        if (settled.status === 'rejected') {
+          this._logger.warn('Failed to cancel order during market close (best effort)', {
+            orderId: String(order.id),
+            marketId: String(input.marketId),
+            error: String(settled.reason),
+          });
+          cancelErrorCount++;
+        } else if (!settled.value.ok) {
+          this._logger.warn('Failed to cancel order during market close (best effort)', {
+            orderId: String(order.id),
+            marketId: String(input.marketId),
+            error: settled.value.error.message,
+          });
+          cancelErrorCount++;
+        }
       }
     }
 
@@ -128,11 +148,19 @@ export class CloseMarketUseCase {
       });
     }
 
-    // Шаг 3: Освободить аллокацию
-    if (input.realizedPnL !== undefined) {
-      this._deps.balanceAllocator.releaseWithPnL(input.marketId, input.realizedPnL);
+    // Шаг 3: Идемпотентное освобождение аллокации
+    // Если рынок уже был закрыт ранее — аллокация отсутствует, пропускаем
+    const currentAllocation = this._deps.balanceAllocator.getAllocation(input.marketId);
+    if (currentAllocation !== undefined) {
+      if (input.realizedPnL !== undefined) {
+        this._deps.balanceAllocator.releaseWithPnL(input.marketId, input.realizedPnL);
+      } else {
+        this._deps.balanceAllocator.release(input.marketId);
+      }
     } else {
-      this._deps.balanceAllocator.release(input.marketId);
+      this._logger.warn('Market not allocated — skipping balance release (idempotent close)', {
+        marketId: String(input.marketId),
+      });
     }
 
     // Шаг 4: Создать timestamp
@@ -149,7 +177,7 @@ export class CloseMarketUseCase {
     }
 
     // Шаг 5: Опубликовать MARKET_CLOSED событие
-    const realizedPnL = input.realizedPnL ?? Money.ZERO['USDC'];
+    const realizedPnL = input.realizedPnL ?? Money.ZERO.USDC;
     try {
       await this._deps.eventBus.publish({
         type: 'MARKET_CLOSED',

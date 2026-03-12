@@ -100,6 +100,7 @@ describe('CloseMarketUseCase', () => {
       getByStrategyId: jest.fn<IOrderRepository['getByStrategyId']>().mockResolvedValue([]),
       countByStrategyId: jest.fn<IOrderRepository['countByStrategyId']>().mockResolvedValue(0),
       getAll: jest.fn<IOrderRepository['getAll']>().mockResolvedValue([]),
+      getByMarketId: jest.fn<IOrderRepository['getByMarketId']>().mockResolvedValue([]),
     };
     cancelOrderUseCase = {
       execute: jest.fn<CancelOrderUseCase['execute']>().mockResolvedValue(Ok(undefined)),
@@ -124,6 +125,8 @@ describe('CloseMarketUseCase', () => {
   };
 
   it('успешно закрывает рынок без ордеров', async () => {
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+
     const result = await useCase.execute(baseInput);
 
     expect(result.ok).toBe(true);
@@ -136,7 +139,8 @@ describe('CloseMarketUseCase', () => {
   it('отменяет открытые ордера рынка перед закрытием', async () => {
     const order1 = makeOpenOrder('order-1');
     const order2 = makeOpenOrder('order-2');
-    orderRepo.getByStrategyId.mockResolvedValue([order1, order2]);
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+    orderRepo.getByMarketId.mockResolvedValue([order1, order2]);
 
     const result = await useCase.execute(baseInput);
 
@@ -147,6 +151,7 @@ describe('CloseMarketUseCase', () => {
   it('использует releaseWithPnL если указан realizedPnL', async () => {
     const pnl = Money.of(new Decimal(200), 'USDC');
     const input: CloseMarketInput = { ...baseInput, realizedPnL: pnl };
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
 
     const result = await useCase.execute(input);
 
@@ -157,7 +162,8 @@ describe('CloseMarketUseCase', () => {
 
   it('продолжает если отмена одного ордера не удалась', async () => {
     const order = makeOpenOrder('order-fail');
-    orderRepo.getByStrategyId.mockResolvedValue([order]);
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+    orderRepo.getByMarketId.mockResolvedValue([order]);
     (cancelOrderUseCase.execute as jest.MockedFunction<CancelOrderUseCase['execute']>)
       .mockResolvedValue(Ok(undefined)); // best effort — не важно что вернёт
 
@@ -167,8 +173,19 @@ describe('CloseMarketUseCase', () => {
     expect((eventBus.publish as jest.MockedFunction<IEventBus['publish']>)).toHaveBeenCalled();
   });
 
+  it('идемпотентен: повторное закрытие рынка без аллокации не выбрасывает ошибку', async () => {
+    allocator.getAllocation.mockReturnValue(undefined);
+
+    const result = await useCase.execute(baseInput);
+
+    expect(result.ok).toBe(true);
+    expect(allocator.release).not.toHaveBeenCalled();
+    expect(allocator.releaseWithPnL).not.toHaveBeenCalled();
+  });
+
   it('публикует MARKET_CLOSED с reason=MANUAL', async () => {
     const input: CloseMarketInput = { ...baseInput, reason: 'MANUAL' };
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
 
     await useCase.execute(input);
 

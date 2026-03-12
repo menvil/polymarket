@@ -15,7 +15,7 @@
  * - OrderRiskChecker — `countByStrategyId()` → O(1) проверка лимита
  */
 import type { Order } from '@polymarket/order';
-import type { OrderId } from '@polymarket/ids';
+import type { OrderId, MarketId } from '@polymarket/ids';
 
 export interface IOrderRepository {
   /**
@@ -63,6 +63,19 @@ export interface IOrderRepository {
    * Используется OrderRiskChecker для проверки лимита открытых ордеров.
    */
   countByStrategyId(strategyId?: string): Promise<number>;
+
+  /**
+   * Возвращает все ордера указанного рынка.
+   *
+   * @param marketId - ID рынка
+   * @returns Promise с readonly массивом ордеров рынка
+   *
+   * @remarks
+   * Используется `CloseMarketUseCase` для получения ордеров перед закрытием рынка.
+   * Реализации обязаны делать поиск по marketId, а не по strategyId —
+   * это исключает зависимость от конвенции «strategyId == String(marketId)».
+   */
+  getByMarketId(marketId: MarketId): Promise<readonly Order[]>;
 
   /**
    * Возвращает все активные ордера во всех стратегиях.

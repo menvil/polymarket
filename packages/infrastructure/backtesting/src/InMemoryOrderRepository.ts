@@ -23,7 +23,7 @@
  * ```
  */
 import type { Order } from '@polymarket/order';
-import type { OrderId } from '@polymarket/ids';
+import type { OrderId, MarketId } from '@polymarket/ids';
 import type { IOrderRepository } from '@polymarket/ports';
 
 /**
@@ -160,6 +160,26 @@ export class InMemoryOrderRepository implements IOrderRepository {
    */
   public async getAll(): Promise<readonly Order[]> {
     return [...this._store.values()];
+  }
+
+  /**
+   * Возвращает все ордера указанного рынка.
+   *
+   * @remarks
+   * Реализует конвенцию «strategyId == String(marketId)» в одном месте.
+   * Вызывающий код (`CloseMarketUseCase`) работает с типизированным `MarketId`
+   * и не знает о деталях хранения.
+   *
+   * @param marketId - ID рынка
+   * @returns Promise с readonly массивом ордеров рынка
+   *
+   * @example
+   * ```typescript
+   * const orders = await repo.getByMarketId(marketId);
+   * ```
+   */
+  public async getByMarketId(marketId: MarketId): Promise<readonly Order[]> {
+    return this.getByStrategyId(String(marketId));
   }
 
   /**
