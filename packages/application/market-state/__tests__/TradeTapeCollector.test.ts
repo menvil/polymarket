@@ -6,13 +6,12 @@
  * - Конфиг-валидация (RangeError если пустой конфиг)
  * - start() / stop(): подписка и отписка
  * - TRADE_RECEIVED: запись трейдов per tokenId
- * - Ленивое создание ленты при первом трейде
+ * - Ленивое создание TradeTape при первом трейде
  * - Раздельные ленты для разных инструментов
- * - maxCount FIFO
- * - maxAgeMs авто-вытеснение
- * - Оба ограничения одновременно
+ * - maxCount FIFO (обрабатывается внутри TradeTape)
+ * - maxAgeMs авто-вытеснение (обрабатывается внутри TradeTape)
  * - MARKET_CLOSED: cleanup лент закрытого рынка
- * - getRecent() / getWindow() / getAll() / size()
+ * - getTape(): возвращает TradeTape или undefined
  * - instrumentCount() / clear()
  * - Повторный start() не дублирует подписки
  */
@@ -110,7 +109,7 @@ function makeCatalog(mapping: Map<string, string> = new Map()): IMarketCatalog {
   } as unknown as IMarketCatalog;
 }
 
-// ── Trade event helpers ────────────────────────────────────────────────────────
+// ── Trade event helper ─────────────────────────────────────────────────────────
 
 function tradeEvent(
   instrumentId: InstrumentId,
@@ -184,7 +183,7 @@ describe('TradeTapeCollector', () => {
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
 
-      expect(c.size(TOKEN_A)).toBe(0);
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
     });
 
     it('повторный start() не создаёт дублирующих подписок', async () => {
@@ -194,20 +193,28 @@ describe('TradeTapeCollector', () => {
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
 
-      expect(c.size(TOKEN_A)).toBe(1);
+      // Должна быть ровно 1 запись, не 2
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
   });
 
   // ── Запись трейдов ─────────────────────────────────────────────────────────
 
   describe('запись трейдов (TRADE_RECEIVED)', () => {
+    it('getTape() возвращает undefined до первого трейда', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
+    });
+
     it('создаёт ленту лениво при первом трейде', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
-      expect(c.size(TOKEN_A)).toBe(0);
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
-      expect(c.size(TOKEN_A)).toBe(1);
+
+      expect(c.getTape(TOKEN_A)).toBeDefined();
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
 
     it('накапливает несколько трейдов для одного инструмента', async () => {
@@ -218,7 +225,7 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 1000));
       await eventBus.emit(tradeEvent(TOKEN_A, '0.66', '150', 'BUY',  T0 + 2000));
 
-      expect(c.size(TOKEN_A)).toBe(3);
+      expect(c.getTape(TOKEN_A)?.size()).toBe(3);
     });
 
     it('ведёт раздельные ленты для разных инструментов', async () => {
@@ -229,8 +236,8 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'BUY',  T0 + 1000));
       await eventBus.emit(tradeEvent(TOKEN_B, '0.30', '500', 'SELL', T0));
 
-      expect(c.size(TOKEN_A)).toBe(2);
-      expect(c.size(TOKEN_B)).toBe(1);
+      expect(c.getTape(TOKEN_A)?.size()).toBe(2);
+      expect(c.getTape(TOKEN_B)?.size()).toBe(1);
       expect(c.instrumentCount()).toBe(2);
     });
 
@@ -240,7 +247,7 @@ describe('TradeTapeCollector', () => {
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
 
-      const all = c.getAll(TOKEN_A);
+      const all = c.getTape(TOKEN_A)?.getAll() ?? [];
       expect(all).toHaveLength(1);
       expect(all[0]?.price.value().toString()).toBe('0.65');
       expect(all[0]?.size.value().toString()).toBe('100');
@@ -260,21 +267,22 @@ describe('TradeTapeCollector', () => {
         await eventBus.emit(tradeEvent(TOKEN_A, '0.65', `${(i + 1) * 100}`, 'BUY', T0 + i * 1000));
       }
 
-      expect(c.size(TOKEN_A)).toBe(3);
+      const tape = c.getTape(TOKEN_A);
+      expect(tape?.size()).toBe(3);
       // Последние 3: i=2,3,4 → size=300,400,500
-      const all = c.getAll(TOKEN_A);
+      const all = tape?.getAll() ?? [];
       expect(all[0]?.size.value().toString()).toBe('300');
       expect(all[2]?.size.value().toString()).toBe('500');
     });
 
-    it('не вытесняет если size < maxCount', async () => {
+    it('не вытесняет если размер < maxCount', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 10 });
       c.start();
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'BUY', T0 + 1000));
 
-      expect(c.size(TOKEN_A)).toBe(2);
+      expect(c.getTape(TOKEN_A)?.size()).toBe(2);
     });
   });
 
@@ -286,10 +294,11 @@ describe('TradeTapeCollector', () => {
       c.start();
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0));           // T0 - старый
-      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 90_000));  // T0+90s - вытесняет T0
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 90_000));  // T0+90s — вытесняет T0
 
-      expect(c.size(TOKEN_A)).toBe(1);
-      expect(c.getAll(TOKEN_A)[0]?.side).toBe('SELL');
+      const tape = c.getTape(TOKEN_A);
+      expect(tape?.size()).toBe(1);
+      expect(tape?.getAll()[0]?.side).toBe('SELL');
     });
 
     it('не вытесняет трейды моложе maxAgeMs', async () => {
@@ -300,7 +309,7 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'BUY',  T0 + 30_000)); // 30s — свежий
       await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'SELL', T0 + 50_000)); // 50s — свежий
 
-      expect(c.size(TOKEN_A)).toBe(3); // все моложе 60s
+      expect(c.getTape(TOKEN_A)?.size()).toBe(3);
     });
 
     it('оба ограничения работают одновременно', async () => {
@@ -310,10 +319,10 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0));
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'BUY',  T0 + 10_000));
       await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 20_000));
-      // Через 90s — оба первых устарели, maxCount не срабатывает (только 1 свежий)
+      // Через 90s — все три предыдущих устарели по maxAgeMs(60s), cutoff=T0+30000
       await eventBus.emit(tradeEvent(TOKEN_A, '0.62', '400', 'SELL', T0 + 90_000));
 
-      expect(c.size(TOKEN_A)).toBe(1); // только T0+90000 остался: cutoff=T0+30000, все три предыдущих (T0, T0+10000, T0+20000) устарели
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
   });
 
@@ -325,7 +334,7 @@ describe('TradeTapeCollector', () => {
       c.start();
 
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
-      expect(c.size(TOKEN_A)).toBe(1);
+      expect(c.getTape(TOKEN_A)).toBeDefined();
 
       await eventBus.emit({
         type: 'MARKET_CLOSED',
@@ -335,7 +344,7 @@ describe('TradeTapeCollector', () => {
         timestamp: makeTs(T0 + 1000),
       });
 
-      expect(c.size(TOKEN_A)).toBe(0);
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
       expect(c.instrumentCount()).toBe(0);
     });
 
@@ -346,7 +355,6 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0)); // market-1
       await eventBus.emit(tradeEvent(TOKEN_B, '0.30', '500', 'BUY', T0)); // market-2
 
-      // Закрываем только market-1
       await eventBus.emit({
         type: 'MARKET_CLOSED',
         marketId: MARKET_1,
@@ -355,15 +363,15 @@ describe('TradeTapeCollector', () => {
         timestamp: makeTs(T0 + 1000),
       });
 
-      expect(c.size(TOKEN_A)).toBe(0); // удалён
-      expect(c.size(TOKEN_B)).toBe(1); // остался
+      expect(c.getTape(TOKEN_A)).toBeUndefined(); // удалён
+      expect(c.getTape(TOKEN_B)).toBeDefined();   // остался
     });
   });
 
-  // ── getRecent / getWindow ──────────────────────────────────────────────────
+  // ── getTape → TradeTape API ────────────────────────────────────────────────
 
-  describe('getRecent() / getWindow()', () => {
-    it('getRecent() возвращает трейды за последние N мс', async () => {
+  describe('getTape() → TradeTape API', () => {
+    it('getTape().getRecent() возвращает трейды за последние N мс', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
@@ -371,13 +379,13 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 - 30_000));  // в окне
       await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0));           // в окне
 
-      const recent = c.getRecent(TOKEN_A, 60_000, T0);
+      const recent = c.getTape(TOKEN_A)?.getRecent(60_000, T0) ?? [];
       expect(recent).toHaveLength(2);
       expect(recent[0]?.side).toBe('SELL');
       expect(recent[1]?.side).toBe('BUY');
     });
 
-    it('getWindow() возвращает трейды в заданном диапазоне', async () => {
+    it('getTape().getWindow() возвращает трейды в заданном диапазоне', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
@@ -385,25 +393,36 @@ describe('TradeTapeCollector', () => {
       await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 1000));
       await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 2000));
 
-      const w = c.getWindow(TOKEN_A, T0 + 1000, T0 + 2000);
+      const w = c.getTape(TOKEN_A)?.getWindow(T0 + 1000, T0 + 2000) ?? [];
       expect(w).toHaveLength(2);
     });
 
-    it('getRecent() возвращает пустой массив если нет ленты', () => {
+    it('getTape() возвращает undefined если нет трейдов', () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
-      expect(c.getRecent(TOKEN_A, 60_000)).toHaveLength(0);
-    });
-
-    it('getAll() возвращает пустой массив если нет ленты', () => {
-      const c = new TradeTapeCollector(deps, { maxCount: 100 });
-      expect(c.getAll(TOKEN_A)).toHaveLength(0);
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
     });
   });
 
-  // ── clear ──────────────────────────────────────────────────────────────────
+  // ── instrumentCount / clear ────────────────────────────────────────────────
 
-  describe('clear()', () => {
-    it('удаляет все ленты', async () => {
+  describe('instrumentCount() / clear()', () => {
+    it('instrumentCount() возвращает 0 изначально', () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      expect(c.instrumentCount()).toBe(0);
+    });
+
+    it('instrumentCount() растёт при появлении новых инструментов', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
+      expect(c.instrumentCount()).toBe(1);
+
+      await eventBus.emit(tradeEvent(TOKEN_B, '0.30', '500', 'BUY', T0));
+      expect(c.instrumentCount()).toBe(2);
+    });
+
+    it('clear() удаляет все ленты', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
@@ -412,6 +431,7 @@ describe('TradeTapeCollector', () => {
 
       c.clear();
       expect(c.instrumentCount()).toBe(0);
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
     });
   });
 });

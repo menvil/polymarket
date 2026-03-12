@@ -3,7 +3,7 @@
  *
  * @remarks
  * Подписывается на `TRADE_RECEIVED` события и накапливает rolling-ленту
- * трейдов per tokenId в виде простых `TapeRecord` записей.
+ * трейдов per tokenId в виде `TradeTape` из `@polymarket/trade-tape`.
  *
  * ### Принцип: только запись, стратегия считает сама.
  * Коллектор НЕ вычисляет OFI, VWAP или другие метрики.
@@ -11,22 +11,22 @@
  * - Напрямую (buy/sell ratio, simple OFI)
  * - Через `TradeFlowCalculator` (если нужен полный набор метрик)
  *
- * ### Почему не используется `TradeTape` из `@polymarket/trade-tape`:
- * `TradeTape.append()` требует полный `Trade` entity с `VenueTradeId`, `VenueId`
- * и `AssetId` — данные которых нет в `TRADE_RECEIVED`.
- * `TapeRecord` хранит только то, что реально приходит из WS-ленты:
- * цену, объём, сторону и временную метку.
+ * ### Согласованность с BookDepthCollector:
+ * - `BookDepthCollector` хранит `OrderBookHistory` per tokenId
+ * - `TradeTapeCollector` хранит `TradeTape` per tokenId
+ * - Оба создают хранилище лениво при первом событии
+ * - Оба очищают данные при `MARKET_CLOSED`
  *
  * ### Жизненный цикл:
  * 1. `start()` — подписывается на `TRADE_RECEIVED` и `MARKET_CLOSED`
- * 2. `TRADE_RECEIVED` → добавляет `TapeRecord` в ленту инструмента
+ * 2. `TRADE_RECEIVED` → добавляет `TapeRecord` в `TradeTape` инструмента
  * 3. `MARKET_CLOSED` → удаляет ленты инструментов закрытого рынка
  * 4. `stop()` — отписывается от всех событий
  *
  * ### Удержание данных (retention):
- * Поддерживает оба ограничения как `BookDepthCollector`:
+ * Политика передаётся при создании и применяется к каждой `TradeTape`:
  * - `maxCount` — FIFO по количеству записей
- * - `maxAgeMs` — авто-вытеснение по возрасту при каждом `record()`
+ * - `maxAgeMs` — авто-вытеснение по возрасту при каждом `append()`
  *
  * @example
  * ```typescript
@@ -36,42 +36,21 @@
  * });
  * collector.start();
  *
- * // В стратегии — взять ленту за последнюю минуту и посчитать самостоятельно:
- * const trades = collector.getRecent(tokenId, 60_000);
- * const buy  = trades.filter(t => t.side === 'BUY').reduce((s, t) => s + t.size.value().toNumber(), 0);
- * const sell = trades.filter(t => t.side === 'SELL').reduce((s, t) => s + t.size.value().toNumber(), 0);
- * const ofi  = (buy - sell) / (buy + sell || 1);
- *
- * // VWAP:
- * const notional = trades.reduce((s, t) => s + t.price.value().mul(t.size.value()).toNumber(), 0);
- * const volume   = trades.reduce((s, t) => s + t.size.value().toNumber(), 0);
- * const vwap     = volume > 0 ? notional / volume : undefined;
+ * // В стратегии — взять ленту за последнюю минуту и посчитать:
+ * const tape = collector.getTape(tokenId);
+ * if (tape) {
+ *   const trades = tape.getRecent(60_000);
+ *   const metrics = TradeFlowCalculator.compute(trades);
+ * }
  * ```
  */
 
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
-
-/**
- * Минимальная запись трейда из WS-ленты.
- *
- * @remarks
- * Содержит только поля доступные в `TRADE_RECEIVED` событии.
- * Не является полным `Trade` entity — не содержит `VenueTradeId`, `VenueId`, `AssetId`.
- */
-export interface TapeRecord {
-  /** Цена исполнения (Price VO) */
-  readonly price: Price;
-  /** Объём трейда (Quantity VO) */
-  readonly size: Quantity;
-  /** Сторона агрессора */
-  readonly side: 'BUY' | 'SELL';
-  /** Временная метка трейда */
-  readonly timestamp: Timestamp;
-}
+import { TradeTape } from '@polymarket/trade-tape';
+import type { TapeRetentionPolicy } from '@polymarket/trade-tape';
 
 /**
  * Зависимости TradeTapeCollector.
@@ -90,25 +69,15 @@ export interface TradeTapeCollectorDeps {
  *
  * @remarks
  * Хотя бы одно поле должно быть задано.
+ * Псевдоним для `TapeRetentionPolicy` из `@polymarket/trade-tape`.
  */
-export interface TradeTapeCollectorConfig {
-  /**
-   * Максимальное количество трейдов per tokenId.
-   * При превышении самый старый вытесняется (FIFO).
-   */
-  readonly maxCount?: number;
-  /**
-   * Максимальный возраст трейда в мс.
-   * Устаревшие вытесняются при каждом новом трейде.
-   */
-  readonly maxAgeMs?: number;
-}
+export type TradeTapeCollectorConfig = TapeRetentionPolicy;
 
 /**
- * Внутренняя лента per tokenId
+ * Внутренняя структура хранения ленты per tokenId
  */
-interface InternalTape {
-  records: TapeRecord[];
+interface InternalEntry {
+  tape: TradeTape;
   /** marketId сохраняется при создании для cleanup на MARKET_CLOSED */
   marketId: string | undefined;
 }
@@ -117,11 +86,13 @@ interface InternalTape {
  * Коллектор ленты трейдов из WS-потока.
  *
  * @remarks
- * Поддерживает `Map<tokenId, InternalTape>`.
+ * Поддерживает `Map<tokenId, InternalEntry>`.
  * Каждая лента создаётся лениво при первом трейде.
+ * Использует `TradeTape` из `@polymarket/trade-tape` — согласованно с
+ * `BookDepthCollector`, который использует `OrderBookHistory`.
  */
 export class TradeTapeCollector {
-  private readonly _tapes = new Map<string, InternalTape>();
+  private readonly _entries = new Map<string, InternalEntry>();
 
   private _unsubTrade: (() => void) | undefined;
   private _unsubMarketClosed: (() => void) | undefined;
@@ -195,70 +166,21 @@ export class TradeTapeCollector {
   }
 
   /**
-   * Возвращает трейды за последние `durationMs` мс.
+   * Возвращает `TradeTape` для данного инструмента.
    *
    * @param tokenId - ID токена
-   * @param durationMs - Длительность окна в мс
-   * @param nowMs - Текущее время (по умолчанию Date.now())
-   * @returns Трейды в хронологическом порядке или пустой массив
+   * @returns `TradeTape` или `undefined` если трейдов ещё не было
    *
    * @example
    * ```typescript
-   * const lastMinute = collector.getRecent(tokenId, 60_000);
+   * const tape = collector.getTape(tokenId);
+   * if (tape) {
+   *   const metrics = TradeFlowCalculator.compute(tape.getRecent(60_000));
+   * }
    * ```
    */
-  public getRecent(
-    tokenId: InstrumentId,
-    durationMs: number,
-    nowMs?: number,
-  ): readonly TapeRecord[] {
-    const now = nowMs ?? Date.now();
-    return this.getWindow(tokenId, now - durationMs, now);
-  }
-
-  /**
-   * Возвращает трейды в заданном временном окне (включительно).
-   *
-   * @param tokenId - ID токена
-   * @param fromMs - Начало окна в мс
-   * @param toMs - Конец окна в мс
-   * @returns Трейды в хронологическом порядке или пустой массив
-   *
-   * @example
-   * ```typescript
-   * const window = collector.getWindow(tokenId, T0, T0 + 60_000);
-   * ```
-   */
-  public getWindow(
-    tokenId: InstrumentId,
-    fromMs: number,
-    toMs: number,
-  ): readonly TapeRecord[] {
-    const tape = this._tapes.get(String(tokenId));
-    if (!tape) return [];
-    return tape.records.filter(
-      (r) => r.timestamp.toNumber() >= fromMs && r.timestamp.toNumber() <= toMs,
-    );
-  }
-
-  /**
-   * Возвращает все трейды в ленте инструмента.
-   *
-   * @param tokenId - ID токена
-   * @returns Все трейды в хронологическом порядке или пустой массив
-   */
-  public getAll(tokenId: InstrumentId): readonly TapeRecord[] {
-    return this._tapes.get(String(tokenId))?.records ?? [];
-  }
-
-  /**
-   * Возвращает количество трейдов в ленте инструмента.
-   *
-   * @param tokenId - ID токена
-   * @returns Количество записей или 0 если лента не существует
-   */
-  public size(tokenId: InstrumentId): number {
-    return this._tapes.get(String(tokenId))?.records.length ?? 0;
+  public getTape(tokenId: InstrumentId): TradeTape | undefined {
+    return this._entries.get(String(tokenId))?.tape;
   }
 
   /**
@@ -267,7 +189,7 @@ export class TradeTapeCollector {
    * @returns Количество tokenId с накопленными данными
    */
   public instrumentCount(): number {
-    return this._tapes.size;
+    return this._entries.size;
   }
 
   /**
@@ -277,7 +199,7 @@ export class TradeTapeCollector {
    * Используется при сбросе состояния (тестирование, полная остановка).
    */
   public clear(): void {
-    this._tapes.clear();
+    this._entries.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────────────────────
@@ -286,51 +208,33 @@ export class TradeTapeCollector {
    * Добавляет трейд в ленту инструмента.
    *
    * @remarks
-   * Лента создаётся лениво при первом трейде.
+   * Лента (`TradeTape`) создаётся лениво при первом трейде.
    * marketId берётся из каталога один раз при создании ленты — для cleanup.
-   * Порядок: 1) вытеснить старые, 2) добавить, 3) FIFO по maxCount.
+   * Вытеснение устаревших записей обрабатывается внутри `TradeTape.append()`.
    */
   private _record(
     instrumentId: InstrumentId,
-    price: Price,
-    size: Quantity,
+    price: import('@polymarket/value-objects').Price,
+    size: import('@polymarket/value-objects').Quantity,
     side: 'BUY' | 'SELL',
-    timestamp: Timestamp,
+    timestamp: import('@polymarket/value-objects').Timestamp,
   ): void {
     const key = String(instrumentId);
-    let tape = this._tapes.get(key);
+    let entry = this._entries.get(key);
 
-    if (tape === undefined) {
+    if (entry === undefined) {
       const marketId = this._deps.catalog.get(instrumentId)?.marketId;
-      tape = { records: [], marketId: marketId !== undefined ? String(marketId) : undefined };
-      this._tapes.set(key, tape);
+      const tape = TradeTape.create(this._config);
+      entry = { tape, marketId: marketId !== undefined ? String(marketId) : undefined };
+      this._entries.set(key, entry);
 
       this._deps.logger.debug('TradeTapeCollector: new tape created', {
         tokenId: key,
-        marketId: tape.marketId ?? 'unknown',
+        marketId: entry.marketId ?? 'unknown',
       });
     }
 
-    const record: TapeRecord = { price, size, side, timestamp };
-    const nowMs = timestamp.toNumber();
-
-    // Шаг 1: вытеснить устаревшие по возрасту
-    if (this._config.maxAgeMs !== undefined) {
-      const cutoff = nowMs - this._config.maxAgeMs;
-      let i = 0;
-      while (i < tape.records.length && tape.records[i].timestamp.toNumber() < cutoff) {
-        i++;
-      }
-      if (i > 0) tape.records.splice(0, i);
-    }
-
-    // Шаг 2: добавить новый трейд
-    tape.records.push(record);
-
-    // Шаг 3: FIFO по maxCount
-    if (this._config.maxCount !== undefined && tape.records.length > this._config.maxCount) {
-      tape.records.shift();
-    }
+    entry.tape.append({ price, size, side, timestamp });
   }
 
   /**
@@ -346,9 +250,9 @@ export class TradeTapeCollector {
     const marketIdStr = String(marketId);
     let removed = 0;
 
-    for (const [key, tape] of this._tapes) {
-      if (tape.marketId === marketIdStr) {
-        this._tapes.delete(key);
+    for (const [key, entry] of this._entries) {
+      if (entry.marketId === marketIdStr) {
+        this._entries.delete(key);
         removed++;
       }
     }

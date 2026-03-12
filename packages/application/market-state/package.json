@@ -1,0 +1,53 @@
+{
+  "name": "@polymarket/market-state",
+  "version": "0.1.0",
+  "description": "Application-layer state accumulators for market data (book depth, trade tape)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@polymarket/logger": "workspace:*",
+    "@polymarket/ids": "workspace:*",
+    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/ports": "workspace:*",
+    "@polymarket/event-bus": "workspace:*",
+    "@polymarket/order-book": "workspace:*",
+    "@polymarket/trade-tape": "workspace:*"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

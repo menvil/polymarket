@@ -2,181 +2,147 @@
  * Лента трейдов (Trade Tape)
  *
  * @remarks
- * Append-only хранилище трейдов для конкретного рынка и токена.
+ * Append-only хранилище `TapeRecord` с встроенной политикой хранения.
  * Используется для накопления истории рыночных принтов и последующего анализа.
  *
- * ### Дизайн:
- * - Append-only: трейды только добавляются, не изменяются
- * - Фильтрация по marketId+tokenId: несовпадающие трейды логируются и отклоняются
- * - evictBefore(): очистка устаревших данных для управления памятью
- * - getWindow() / getRecent(): гибкая выборка по временным окнам
+ * ### Принцип работы:
+ * - `append(record)` добавляет запись и автоматически вытесняет устаревшие
+ * - Политика: `maxAgeMs` (возраст) и/или `maxCount` (количество)
+ * - `getWindow()` / `getRecent()` — гибкая выборка по временным окнам
+ * - `evictBefore()` — явное управление памятью
  *
- * ### Почему не Map<Timestamp, Trade>:
+ * ### Почему не Map<Timestamp, TapeRecord>:
  * Несколько трейдов могут иметь одинаковый timestamp (в рамках одной миллисекунды).
- * Поэтому используем простой массив с сортировкой по времени при необходимости.
+ * Поэтому используем простой массив с естественным порядком добавления.
  *
  * ### Bounded context:
  * TradeTape — это market-data, не accounting.
- * Не знает о Fill, Order, Portfolio.
+ * Не знает о Fill, Order, Portfolio, VenueTradeId.
  * Данные для аналитики и построения сигналов.
- */
-
-import { Result, Ok, Err } from '@polymarket/result';
-import { ValidationError } from '@polymarket/errors';
-import type { AssetId, MarketId } from '@polymarket/ids';
-import { asMarketId, assetIdToString } from '@polymarket/ids';
-import type { Trade } from '@polymarket/trade';
-
-/**
- * Лента трейдов для конкретного рынка и токена
- *
- * @remarks
- * Создаётся через TradeTape.create() с валидацией.
- * Все добавляемые трейды должны принадлежать тому же marketId+tokenId.
  *
  * @example
  * ```typescript
- * import { TradeTape } from '@polymarket/trade-tape';
- * import { parseAssetId } from '@polymarket/ids';
+ * const tape = TradeTape.create({ maxCount: 1000, maxAgeMs: 300_000 });
+ * tape.append({ price, size, side: 'BUY', timestamp });
  *
- * const tokenId = parseAssetId('token-yes-abc')!;
- * const result = TradeTape.create('market-abc', tokenId);
- * if (result.ok) {
- *   const tape = result.value;
- *   tape.append(trade);
- *
- *   const recent = tape.getRecent(60_000); // последняя минута
- *   const metrics = TradeFlowCalculator.compute(recent);
- * }
+ * const recent = tape.getRecent(60_000);
+ * const metrics = TradeFlowCalculator.compute(recent);
  * ```
  */
-export class TradeTape {
-  public readonly marketId: MarketId;
-  public readonly tokenId: AssetId;
 
-  private readonly _tokenIdStr: string;
-  private readonly _trades: Trade[];
+import type { TapeRecord, TapeRetentionPolicy } from './TapeRecord.js';
+
+/**
+ * Лента трейдов с политикой хранения
+ *
+ * @remarks
+ * Создаётся через `TradeTape.create(policy)`.
+ * `append()` автоматически вытесняет устаревшие записи согласно политике.
+ */
+export class TradeTape {
+  private readonly _records: TapeRecord[];
 
   /**
    * Приватный конструктор — используйте TradeTape.create()
    */
-  private constructor(marketId: MarketId, tokenId: AssetId) {
-    this.marketId = marketId;
-    this.tokenId = tokenId;
-    this._tokenIdStr = assetIdToString(tokenId);
-    this._trades = [];
+  private constructor(private readonly _policy: TapeRetentionPolicy) {
+    this._records = [];
   }
 
   /**
-   * Создаёт новую ленту трейдов с валидацией
+   * Создаёт новую ленту трейдов с заданной политикой хранения
    *
-   * @param marketId - ID рынка (непустая строка)
-   * @param tokenId - ID токена (AssetId)
-   * @returns Result<TradeTape, ValidationError>
+   * @param policy - Политика хранения (maxCount и/или maxAgeMs)
+   * @returns Новый экземпляр TradeTape
    *
-   * @throws Никогда — ошибки возвращаются через Result
+   * @throws {RangeError} Если ни maxCount ни maxAgeMs не заданы
    *
    * @example
    * ```typescript
-   * const result = TradeTape.create('market-abc', tokenId);
-   * if (result.ok) {
-   *   const tape = result.value;
-   * }
+   * const tape = TradeTape.create({ maxCount: 1000 });
+   * const tape2 = TradeTape.create({ maxAgeMs: 300_000 });
+   * const tape3 = TradeTape.create({ maxCount: 500, maxAgeMs: 60_000 });
    * ```
    */
-  public static create(
-    marketId: string,
-    tokenId: AssetId
-  ): Result<TradeTape, ValidationError> {
-    const validMarketId = asMarketId(marketId);
-    if (!validMarketId) {
-      return Err(
-        new ValidationError('Market ID is required and must be non-empty', {
-          context: { field: 'marketId', value: marketId },
-        })
-      );
+  public static create(policy: TapeRetentionPolicy): TradeTape {
+    if (policy.maxCount === undefined && policy.maxAgeMs === undefined) {
+      throw new RangeError('TradeTape: retention policy must specify maxCount and/or maxAgeMs');
     }
-
-    if (!tokenId) {
-      return Err(
-        new ValidationError('Token ID is required', {
-          context: { field: 'tokenId' },
-        })
-      );
-    }
-
-    return Ok(new TradeTape(validMarketId, tokenId));
+    return new TradeTape(policy);
   }
 
   /**
-   * Добавляет трейд в ленту
+   * Добавляет запись трейда в ленту
    *
-   * @param trade - Трейд для добавления
-   *
-   * @throws {Error} Если marketId или tokenId трейда не совпадают с лентой
+   * @param record - Запись трейда для добавления
    *
    * @remarks
-   * Несовпадение marketId или tokenId — это ошибка программиста:
-   * вызывающий код обязан передавать трейды только для нужного инструмента.
+   * Порядок вытеснения:
+   * 1. Устаревшие по возрасту (maxAgeMs) — вытесняются из головы массива
+   * 2. Новая запись добавляется в хвост
+   * 3. Превышение maxCount — вытесняется самая старая запись (FIFO)
+   *
+   * Время вытеснения по возрасту берётся из `record.timestamp` (детерминировано).
    *
    * @example
    * ```typescript
-   * tape.append(trade); // бросит Error если marketId/tokenId не совпадают
+   * tape.append({ price, size, side: 'BUY', timestamp });
    * ```
    */
-  public append(trade: Trade): void {
-    if (trade.marketId !== this.marketId) {
-      throw new Error(
-        `TradeTape[${this.marketId}/${this._tokenIdStr}]: trade marketId mismatch: expected=${this.marketId}, got=${trade.marketId}`
-      );
+  public append(record: TapeRecord): void {
+    // Шаг 1: вытеснить устаревшие по возрасту
+    if (this._policy.maxAgeMs !== undefined) {
+      const cutoff = record.timestamp.toNumber() - this._policy.maxAgeMs;
+      let i = 0;
+      while (i < this._records.length && this._records[i].timestamp.toNumber() < cutoff) {
+        i++;
+      }
+      if (i > 0) this._records.splice(0, i);
     }
 
-    if (assetIdToString(trade.tokenId) !== this._tokenIdStr) {
-      throw new Error(
-        `TradeTape[${this.marketId}/${this._tokenIdStr}]: trade tokenId mismatch: expected=${this._tokenIdStr}, got=${assetIdToString(trade.tokenId)}`
-      );
-    }
+    // Шаг 2: добавить новую запись
+    this._records.push(record);
 
-    this._trades.push(trade);
+    // Шаг 3: FIFO по maxCount
+    if (this._policy.maxCount !== undefined && this._records.length > this._policy.maxCount) {
+      this._records.shift();
+    }
   }
 
   /**
-   * Возвращает все трейды в ленте
+   * Возвращает все записи в ленте
    *
-   * @returns Readonly массив всех трейдов
+   * @returns Readonly массив всех записей в хронологическом порядке
    */
-  public getAll(): readonly Trade[] {
-    return this._trades;
+  public getAll(): readonly TapeRecord[] {
+    return this._records;
   }
 
   /**
-   * Возвращает трейды в заданном временном окне
+   * Возвращает записи в заданном временном окне
    *
    * @param fromMs - Начало окна (включительно) в миллисекундах
    * @param toMs - Конец окна (включительно) в миллисекундах
-   * @returns Отфильтрованные трейды
+   * @returns Отфильтрованные записи
    *
    * @example
    * ```typescript
-   * const window = tape.getWindow(
-   *   Date.now() - 300_000, // 5 минут назад
-   *   Date.now()
-   * );
+   * const window = tape.getWindow(Date.now() - 300_000, Date.now());
    * ```
    */
-  public getWindow(fromMs: number, toMs: number): readonly Trade[] {
-    return this._trades.filter((trade) => {
-      const ms = trade.timestamp.toNumber();
+  public getWindow(fromMs: number, toMs: number): readonly TapeRecord[] {
+    return this._records.filter((r) => {
+      const ms = r.timestamp.toNumber();
       return ms >= fromMs && ms <= toMs;
     });
   }
 
   /**
-   * Возвращает трейды за последние N миллисекунд
+   * Возвращает записи за последние N миллисекунд
    *
    * @param durationMs - Длительность окна в миллисекундах
    * @param nowMs - Текущее время (по умолчанию Date.now())
-   * @returns Трейды в заданном временном окне
+   * @returns Записи в заданном временном окне
    *
    * @remarks
    * nowMs позволяет тестировать метод без зависимости от системного времени.
@@ -187,56 +153,55 @@ export class TradeTape {
    * const last5Min = tape.getRecent(300_000, fixedNow);
    * ```
    */
-  public getRecent(durationMs: number, nowMs?: number): readonly Trade[] {
+  public getRecent(durationMs: number, nowMs?: number): readonly TapeRecord[] {
     const now = nowMs ?? Date.now();
     return this.getWindow(now - durationMs, now);
   }
 
   /**
-   * Удаляет трейды старше заданного момента времени
+   * Удаляет записи старше заданного момента времени
    *
    * @param cutoffMs - Граница отсечения в миллисекундах (исключительно)
-   * @returns Количество удалённых трейдов
+   * @returns Количество удалённых записей
    *
    * @remarks
-   * Используется для управления памятью: удаляет устаревшие данные
-   * которые больше не нужны для анализа.
+   * Используется для явного управления памятью.
+   * При использовании политики maxAgeMs, `append()` уже делает это автоматически.
    *
    * @example
    * ```typescript
-   * // Удалить трейды старше 1 часа
    * const evicted = tape.evictBefore(Date.now() - 3600_000);
-   * console.log(`Evicted ${evicted} old trades`);
+   * console.log(`Evicted ${evicted} old records`);
    * ```
    */
   public evictBefore(cutoffMs: number): number {
-    const before = this._trades.length;
-    // Уплотняем массив на месте: без промежуточного буфера и без пересоздания массива
+    const before = this._records.length;
+    // Уплотняем массив на месте: без промежуточного буфера
     let writeIdx = 0;
-    for (let i = 0; i < this._trades.length; i++) {
-      if (this._trades[i].timestamp.toNumber() >= cutoffMs) {
-        this._trades[writeIdx++] = this._trades[i];
+    for (let i = 0; i < this._records.length; i++) {
+      if (this._records[i].timestamp.toNumber() >= cutoffMs) {
+        this._records[writeIdx++] = this._records[i];
       }
     }
-    this._trades.length = writeIdx;
-    return before - this._trades.length;
+    this._records.length = writeIdx;
+    return before - this._records.length;
   }
 
   /**
-   * Возвращает количество трейдов в ленте
+   * Возвращает количество записей в ленте
    *
-   * @returns Количество трейдов
+   * @returns Количество записей
    */
   public size(): number {
-    return this._trades.length;
+    return this._records.length;
   }
 
   /**
    * Проверяет, пустая ли лента
    *
-   * @returns True если нет трейдов
+   * @returns True если нет записей
    */
   public isEmpty(): boolean {
-    return this._trades.length === 0;
+    return this._records.length === 0;
   }
 }

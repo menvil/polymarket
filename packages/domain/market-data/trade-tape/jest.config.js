@@ -11,7 +11,6 @@ export default {
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../value-objects/src/$1/index.ts',
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
-    '^@polymarket/trade$': '<rootDir>/../../entities/trade/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [
