@@ -9,7 +9,7 @@
  */
 import type { OrderBookSnapshot } from '@polymarket/order-book';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Timestamp, Side } from '@polymarket/value-objects';
 
 /**
  * Верхушка стакана — immutable snapshot лучших цен.
@@ -84,8 +84,8 @@ export interface TradeReceivedEvent {
   readonly price: Price;
   /** Объём трейда (VO, не string) */
   readonly size: Quantity;
-  /** Сторона: BUY или SELL */
-  readonly side: 'BUY' | 'SELL';
+  /** Сторона агрессора */
+  readonly side: Side;
   /** Timestamp трейда */
   readonly timestamp: Timestamp;
 }

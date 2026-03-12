@@ -11,7 +11,7 @@
  * - `TradeFlowCalculator` — вычисление VWAP, OFI, объёмов
  */
 
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Timestamp, Side } from '@polymarket/value-objects';
 
 /**
  * Минимальная запись трейда из WS-ленты
@@ -36,7 +36,7 @@ export interface TapeRecord {
    * Сторона агрессора.
    * undefined — нет информации о стороне (исключается из OFI, но входит в VWAP).
    */
-  readonly side: 'BUY' | 'SELL' | undefined;
+  readonly side: Side | undefined;
   /** Временная метка трейда в мс */
   readonly timestamp: Timestamp;
 }

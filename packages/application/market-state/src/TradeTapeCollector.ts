@@ -47,6 +47,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { Side } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import { TradeTape } from '@polymarket/trade-tape';
@@ -216,7 +217,7 @@ export class TradeTapeCollector {
     instrumentId: InstrumentId,
     price: import('@polymarket/value-objects').Price,
     size: import('@polymarket/value-objects').Quantity,
-    side: 'BUY' | 'SELL',
+    side: Side,
     timestamp: import('@polymarket/value-objects').Timestamp,
   ): void {
     const key = String(instrumentId);
