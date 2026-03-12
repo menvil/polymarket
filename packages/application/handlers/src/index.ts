@@ -25,3 +25,5 @@ export { FillEventHandler } from './FillEventHandler.js';
 export { OrderUpdateHandler } from './OrderUpdateHandler.js';
 export type { VenueOrderUpdate } from './OrderUpdateHandler.js';
 export type { IBookRegistry } from './IBookRegistry.js';
+export { BookDepthCollector } from './BookDepthCollector.js';
+export type { BookDepthCollectorDeps, BookDepthCollectorConfig } from './BookDepthCollector.js';
