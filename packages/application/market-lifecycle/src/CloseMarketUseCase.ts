@@ -3,8 +3,8 @@
  *
  * @remarks
  * ### Алгоритм:
- * 1. `orderRepo.getByMarketId(marketId)` → открытые ордера рынка
- * 2. Параллельная best-effort отмена пакетами по `CANCEL_BATCH_SIZE` ордеров
+ * 1. `orderRepo.getByMarketId(marketId)` → ордера рынка
+ * 2. `cancellationService.cancelOpenOrders(...)` → best-effort отмена (батчинг внутри сервиса)
  * 3. Идемпотентное освобождение баланса:
  *    - Если `getAllocation(marketId) !== undefined` → `releaseWithPnL` / `release`
  *    - Иначе → warn и пропуск (рынок уже был закрыт ранее)
@@ -12,7 +12,7 @@
  * 5. Вернуть Ok(void)
  *
  * ### Best-effort отмена:
- * Ошибки при отмене отдельных ордеров логируются, но не останавливают процесс.
+ * Ошибки при отмене отдельных ордеров логируются в CancellationService, не останавливают процесс.
  * Reconciliation позаботится об оставшихся ордерах.
  *
  * @example
@@ -38,13 +38,13 @@ import { Money, TimestampService } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
 import type { IBalanceAllocator, IOrderRepository } from '@polymarket/ports';
 import type { IEventBus, MarketCloseReason } from '@polymarket/event-bus';
-import type { CancelOrderUseCase } from '@polymarket/use-cases';
+import type { CancellationService } from './CancellationService.js';
 
 /** Зависимости CloseMarketUseCase */
 export interface CloseMarketDeps {
   readonly balanceAllocator: IBalanceAllocator;
   readonly orderRepo: IOrderRepository;
-  readonly cancelOrderUseCase: CancelOrderUseCase;
+  readonly cancellationService: CancellationService;
   readonly eventBus: IEventBus;
   readonly clock: IClock;
   readonly logger: ILogger;
@@ -95,56 +95,20 @@ export class CloseMarketUseCase {
       reason: input.reason,
     });
 
-    // Шаг 1: Получить ордера рынка через типизированный метод репозитория
+    // Шаг 1: Получить ордера рынка и отменить открытые (best-effort, батчинг внутри сервиса)
     const orders = await this._deps.orderRepo.getByMarketId(input.marketId);
-
-    // Фильтр — только открытые ордера
-    const openOrders = orders.filter(
-      (order) => order.status === 'OPEN' || order.status === 'PARTIALLY_FILLED',
+    const { cancelled, failed } = await this._deps.cancellationService.cancelOpenOrders(
+      orders,
+      input.accountId,
+      input.marketId,
+      input.reason,
     );
 
-    // Шаг 2: Параллельная best-effort отмена пакетами
-    const CANCEL_BATCH_SIZE = 10;
-    let cancelErrorCount = 0;
-
-    for (let i = 0; i < openOrders.length; i += CANCEL_BATCH_SIZE) {
-      const batch = openOrders.slice(i, i + CANCEL_BATCH_SIZE);
-      const results = await Promise.allSettled(
-        batch.map((order) =>
-          this._deps.cancelOrderUseCase.execute({
-            orderId: order.id,
-            accountId: input.accountId,
-            reason: `Market closed: ${input.reason}`,
-          }),
-        ),
-      );
-
-      for (let j = 0; j < results.length; j++) {
-        const settled = results[j]!;
-        const order = batch[j]!;
-        if (settled.status === 'rejected') {
-          this._logger.warn('Failed to cancel order during market close (best effort)', {
-            orderId: String(order.id),
-            marketId: String(input.marketId),
-            error: String(settled.reason),
-          });
-          cancelErrorCount++;
-        } else if (!settled.value.ok) {
-          this._logger.warn('Failed to cancel order during market close (best effort)', {
-            orderId: String(order.id),
-            marketId: String(input.marketId),
-            error: settled.value.error.message,
-          });
-          cancelErrorCount++;
-        }
-      }
-    }
-
-    if (cancelErrorCount > 0) {
+    if (failed > 0) {
       this._logger.warn('Some orders failed to cancel during market close', {
         marketId: String(input.marketId),
-        failedCount: cancelErrorCount,
-        totalCount: openOrders.length,
+        failed,
+        cancelled,
       });
     }
 
@@ -164,8 +128,7 @@ export class CloseMarketUseCase {
     }
 
     // Шаг 4: Создать timestamp
-    const now = this._deps.clock.now();
-    const timestampResult = TimestampService.create(now.getTime());
+    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
 
     if (!timestampResult.ok) {
       this._logger.error('Failed to create timestamp for MARKET_CLOSED event', {
@@ -196,7 +159,7 @@ export class CloseMarketUseCase {
     this._logger.info('Market closed', {
       marketId: String(input.marketId),
       reason: input.reason,
-      cancelledOrders: openOrders.length - cancelErrorCount,
+      cancelled,
     });
 
     return Ok(undefined);

@@ -41,3 +41,6 @@ export type { OpenMarketDeps, OpenMarketInput } from './OpenMarketUseCase.js';
 
 export { CloseMarketUseCase } from './CloseMarketUseCase.js';
 export type { CloseMarketDeps, CloseMarketInput } from './CloseMarketUseCase.js';
+
+export { CancellationService } from './CancellationService.js';
+export type { CancellationResult } from './CancellationService.js';

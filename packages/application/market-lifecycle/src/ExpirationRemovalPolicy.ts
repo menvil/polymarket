@@ -42,10 +42,19 @@ export class ExpirationRemovalPolicy implements IRemovalPolicy {
    * @param _clock - Источник времени (dependency injection)
    * @param _leadTimeMs - За сколько мс до истечения закрывать рынок (по умолчанию 30 мин)
    */
+  /**
+   * @throws {RangeError} Если `leadTimeMs` отрицательный
+   */
   constructor(
     private readonly _clock: IClock,
     private readonly _leadTimeMs = DEFAULT_LEAD_TIME_MS,
-  ) {}
+  ) {
+    if (_leadTimeMs < 0) {
+      throw new RangeError(
+        `ExpirationRemovalPolicy: leadTimeMs must be >= 0, got ${_leadTimeMs}`,
+      );
+    }
+  }
 
   /**
    * Определяет рынки для закрытия по критерию истечения срока.

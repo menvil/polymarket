@@ -4,13 +4,12 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { CloseMarketUseCase } from '../src/CloseMarketUseCase.js';
 import type { CloseMarketInput } from '../src/CloseMarketUseCase.js';
+import type { CancellationService } from '../src/CancellationService.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IBalanceAllocator, IOrderRepository } from '@polymarket/ports';
-import type { CancelOrderUseCase } from '@polymarket/use-cases';
 import type { AccountId, MarketId, OrderId, AssetId } from '@polymarket/ids';
 import { Money, Price, Quantity } from '@polymarket/value-objects';
-import { Ok } from '@polymarket/result';
 import { Order } from '@polymarket/order';
 import Decimal from 'decimal.js';
 
@@ -86,7 +85,7 @@ function makeAllocator(): jest.Mocked<IBalanceAllocator> {
 describe('CloseMarketUseCase', () => {
   let allocator: jest.Mocked<IBalanceAllocator>;
   let orderRepo: jest.Mocked<IOrderRepository>;
-  let cancelOrderUseCase: jest.Mocked<Pick<CancelOrderUseCase, 'execute'>>;
+  let cancellationService: jest.Mocked<Pick<CancellationService, 'cancelOpenOrders'>>;
   let eventBus: IEventBus;
   let logger: ILogger;
   let useCase: CloseMarketUseCase;
@@ -102,8 +101,9 @@ describe('CloseMarketUseCase', () => {
       getAll: jest.fn<IOrderRepository['getAll']>().mockResolvedValue([]),
       getByMarketId: jest.fn<IOrderRepository['getByMarketId']>().mockResolvedValue([]),
     };
-    cancelOrderUseCase = {
-      execute: jest.fn<CancelOrderUseCase['execute']>().mockResolvedValue(Ok(undefined)),
+    cancellationService = {
+      cancelOpenOrders: jest.fn<CancellationService['cancelOpenOrders']>()
+        .mockResolvedValue({ cancelled: 0, failed: 0 }),
     };
     eventBus = makeEventBus();
     logger = makeLogger();
@@ -111,7 +111,7 @@ describe('CloseMarketUseCase', () => {
     useCase = new CloseMarketUseCase({
       balanceAllocator: allocator,
       orderRepo,
-      cancelOrderUseCase: cancelOrderUseCase as unknown as CancelOrderUseCase,
+      cancellationService: cancellationService as unknown as CancellationService,
       eventBus,
       clock: makeClock(),
       logger,
@@ -141,11 +141,18 @@ describe('CloseMarketUseCase', () => {
     const order2 = makeOpenOrder('order-2');
     allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
     orderRepo.getByMarketId.mockResolvedValue([order1, order2]);
+    (cancellationService.cancelOpenOrders as jest.MockedFunction<CancellationService['cancelOpenOrders']>)
+      .mockResolvedValue({ cancelled: 2, failed: 0 });
 
     const result = await useCase.execute(baseInput);
 
     expect(result.ok).toBe(true);
-    expect(cancelOrderUseCase.execute).toHaveBeenCalledTimes(2);
+    expect(cancellationService.cancelOpenOrders).toHaveBeenCalledWith(
+      [order1, order2],
+      ACCOUNT_ID,
+      MARKET_ID,
+      'EXPIRED',
+    );
   });
 
   it('использует releaseWithPnL если указан realizedPnL', async () => {
@@ -160,12 +167,10 @@ describe('CloseMarketUseCase', () => {
     expect(allocator.release).not.toHaveBeenCalled();
   });
 
-  it('продолжает если отмена одного ордера не удалась', async () => {
-    const order = makeOpenOrder('order-fail');
+  it('продолжает если отмена одного ордера не удалась (best effort)', async () => {
     allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
-    orderRepo.getByMarketId.mockResolvedValue([order]);
-    (cancelOrderUseCase.execute as jest.MockedFunction<CancelOrderUseCase['execute']>)
-      .mockResolvedValue(Ok(undefined)); // best effort — не важно что вернёт
+    (cancellationService.cancelOpenOrders as jest.MockedFunction<CancellationService['cancelOpenOrders']>)
+      .mockResolvedValue({ cancelled: 0, failed: 1 });
 
     const result = await useCase.execute(baseInput);
 

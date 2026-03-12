@@ -24,6 +24,7 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { OpenMarketUseCase } from '../../src/OpenMarketUseCase.js';
 import { CloseMarketUseCase } from '../../src/CloseMarketUseCase.js';
+import { CancellationService } from '../../src/CancellationService.js';
 import { BalanceAllocator } from '@polymarket/balance-allocator';
 import { CancelOrderUseCase } from '@polymarket/use-cases';
 import { OrderService } from '@polymarket/use-cases';
@@ -265,10 +266,11 @@ describe('MarketLifecycle (integration)', () => {
       logger: LOGGER,
     });
 
+    const cancellationService = new CancellationService(cancelOrderUseCase, { logger: LOGGER });
     const useCase = new CloseMarketUseCase({
       balanceAllocator: allocator,
       orderRepo,
-      cancelOrderUseCase,
+      cancellationService,
       eventBus,
       clock: { now: () => new Date() },
       logger: LOGGER,
@@ -330,10 +332,11 @@ describe('MarketLifecycle (integration)', () => {
       logger: LOGGER,
     });
 
+    const cancellationService = new CancellationService(cancelOrderUseCase, { logger: LOGGER });
     const useCase = new CloseMarketUseCase({
       balanceAllocator: allocator,
       orderRepo,
-      cancelOrderUseCase,
+      cancellationService,
       eventBus,
       clock: { now: () => new Date() },
       logger: LOGGER,

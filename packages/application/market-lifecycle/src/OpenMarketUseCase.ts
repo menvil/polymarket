@@ -28,7 +28,7 @@
  * ```
  */
 import type { Result } from '@polymarket/result';
-import { Err } from '@polymarket/result';
+import { Err, Ok } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, MarketId } from '@polymarket/ids';
@@ -85,6 +85,15 @@ export class OpenMarketUseCase {
       strategyId: input.strategyId,
     });
 
+    // Идемпотентность: если рынок уже открыт — вернуть существующую аллокацию
+    const existingAllocation = this._deps.balanceAllocator.getAllocation(input.marketId);
+    if (existingAllocation !== undefined) {
+      this._logger.debug('Market already open — returning existing allocation (idempotent)', {
+        marketId: String(input.marketId),
+      });
+      return Ok({ marketId: input.marketId, allocatedAmount: existingAllocation });
+    }
+
     // Шаг 1: Аллоцировать баланс
     const allocationResult = this._deps.balanceAllocator.addMarket(input.marketId);
     if (!allocationResult.ok) {
@@ -98,8 +107,7 @@ export class OpenMarketUseCase {
     const allocation = allocationResult.value;
 
     // Шаг 2: Создать timestamp
-    const now = this._deps.clock.now();
-    const timestampResult = TimestampService.create(now.getTime());
+    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
     if (!timestampResult.ok) {
       return Err(new TradingError(
         `Failed to create timestamp: ${timestampResult.error.message}`,
