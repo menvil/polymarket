@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
+import { PaperClock } from '@polymarket/time';
 import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { DiscoveredMarket } from '@polymarket/ports';
@@ -13,7 +14,7 @@ import { MarketScorer } from '../src/MarketScorer.js';
 
 // Фиксированные отметки времени для тестов
 // Используем будущее время, чтобы score (hoursToExpiry) был положительным
-const NOW_MS = Date.now();
+const NOW_MS = 1_700_000_000_000;
 const IN_24H = NOW_MS + 24 * 60 * 60 * 1000;
 const IN_48H = NOW_MS + 48 * 60 * 60 * 1000;
 const IN_72H = NOW_MS + 72 * 60 * 60 * 1000;
@@ -55,7 +56,7 @@ describe('MarketScorer', () => {
   let scorer: MarketScorer;
 
   beforeEach(() => {
-    scorer = new MarketScorer();
+    scorer = new MarketScorer(new PaperClock(new Date(NOW_MS)));
   });
 
   describe('базовые случаи', () => {

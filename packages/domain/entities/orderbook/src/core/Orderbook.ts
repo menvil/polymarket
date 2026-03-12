@@ -39,6 +39,7 @@
 import type { Price, Spread } from '@polymarket/value-objects';
 import { PriceService, Quantity, QuantityService, SpreadService, Timestamp } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
+import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -127,11 +128,20 @@ export class Orderbook {
      * Когда мы получили/создали этот orderbook.
      *
      * Используется для:
-     * - Stale detection (Date.now() - receivedAt.toNumber())
+     * - Stale detection (receivedAt.toNumber() vs nowMs)
      * - Age calculation
      * - TTL проверок
      */
-    public readonly receivedAt: Timestamp
+    public readonly receivedAt: Timestamp,
+
+    /**
+     * Опциональный источник времени для детерминированной работы getAgeMs() и isStale().
+     *
+     * @remarks
+     * Если задан — getAgeMs()/isStale() без явного nowMs используют clock.now().getTime()
+     * вместо Date.now(). Обратная совместимость сохраняется через явный nowMs.
+     */
+    private readonly _clock?: IClock
   ) {
     Object.freeze(this);
   }
@@ -155,7 +165,7 @@ export class Orderbook {
    * }
    * ```
    */
-  public static fromNormalized(normalized: NormalizedOrderbook): Orderbook {
+  public static fromNormalized(normalized: NormalizedOrderbook, clock?: IClock): Orderbook {
     // NormalizedOrderbook уже содержит Timestamp VO — конвертация не нужна
     return new Orderbook(
       normalized.marketId as InstrumentId,
@@ -163,7 +173,8 @@ export class Orderbook {
       normalized.bids,
       normalized.asks,
       normalized.venueTimestamp,
-      normalized.receivedAt
+      normalized.receivedAt,
+      clock
     );
   }
 
@@ -184,14 +195,15 @@ export class Orderbook {
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty(instrumentId: InstrumentId, asset: InstrumentId): Orderbook {
+  public static empty(instrumentId: InstrumentId, asset: InstrumentId, clock?: IClock): Orderbook {
     return new Orderbook(
       instrumentId,
       asset,
       [],
       [],
       undefined,
-      Timestamp.now()
+      Timestamp.now(),
+      clock
     );
   }
 
@@ -501,7 +513,7 @@ export class Orderbook {
    * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    */
   public getAgeMs(nowMs?: number): number {
-    return (nowMs ?? Date.now()) - this.receivedAt.toNumber();
+    return (nowMs ?? this._clock?.now().getTime() ?? Date.now()) - this.receivedAt.toNumber();
   }
 
   /**

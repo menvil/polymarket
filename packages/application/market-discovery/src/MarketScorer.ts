@@ -17,19 +17,25 @@
  * При прочих равных предпочитаем более ликвидные рынки для лучшего исполнения ордеров.
  */
 import Decimal from 'decimal.js';
+import type { IClock } from '@polymarket/time';
 import type { DiscoveredMarket } from '@polymarket/ports';
 
 /**
- * Stateless скорер и сортировщик кандидатов рынков.
+ * Скорер и сортировщик кандидатов рынков.
  *
  * @example
  * ```typescript
- * const scorer = new MarketScorer();
+ * const scorer = new MarketScorer(clock);
  * const scored = scorer.scoreAndSort(filteredMarkets);
  * // scored[0] — рынок с ближайшим истечением (наивысший приоритет)
  * ```
  */
 export class MarketScorer {
+  /**
+   * @param _clock - Источник времени для детерминированного скоринга
+   */
+  constructor(private readonly _clock: IClock) {}
+
   /**
    * Проставляет score каждому рынку и сортирует список по приоритету.
    *
@@ -61,7 +67,7 @@ export class MarketScorer {
    * ```
    */
   public scoreAndSort(markets: readonly DiscoveredMarket[]): DiscoveredMarket[] {
-    const nowMs = Date.now();
+    const nowMs = this._clock.now().getTime();
 
     const MS_PER_HOUR = new Decimal(1000 * 60 * 60);
 

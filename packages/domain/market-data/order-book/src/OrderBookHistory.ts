@@ -45,6 +45,7 @@
  * ```
  */
 
+import type { IClock } from '@polymarket/time';
 import type { OrderBookSnapshot } from './OrderBook.js';
 
 /**
@@ -98,7 +99,7 @@ export class OrderBookHistory {
   private readonly _maxAgeMs: number | undefined;
   private readonly _snapshots: StoredSnapshot[];
 
-  private constructor(policy: OrderBookRetentionPolicy) {
+  private constructor(policy: OrderBookRetentionPolicy, private readonly _clock: IClock) {
     this._maxCount = policy.maxCount;
     this._maxAgeMs = policy.maxAgeMs;
     this._snapshots = [];
@@ -108,18 +109,19 @@ export class OrderBookHistory {
    * Создаёт новую историю снапшотов с заданной политикой хранения.
    *
    * @param policy - Политика вытеснения (maxCount и/или maxAgeMs)
+   * @param clock - Источник времени для детерминированной работы (используется как fallback в record/getRecent)
    * @returns Новый экземпляр OrderBookHistory
    *
    * @throws {RangeError} Если политика пустая или содержит невалидные значения
    *
    * @example
    * ```typescript
-   * const history = OrderBookHistory.create({ maxCount: 1000 });
-   * const history = OrderBookHistory.create({ maxAgeMs: 300_000 });
-   * const history = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 });
+   * const history = OrderBookHistory.create({ maxCount: 1000 }, clock);
+   * const history = OrderBookHistory.create({ maxAgeMs: 300_000 }, clock);
+   * const history = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 }, clock);
    * ```
    */
-  public static create(policy: OrderBookRetentionPolicy): OrderBookHistory {
+  public static create(policy: OrderBookRetentionPolicy, clock: IClock): OrderBookHistory {
     if (policy.maxCount === undefined && policy.maxAgeMs === undefined) {
       throw new RangeError('OrderBookHistory: retention policy must specify maxCount and/or maxAgeMs');
     }
@@ -129,7 +131,7 @@ export class OrderBookHistory {
     if (policy.maxAgeMs !== undefined && (!Number.isFinite(policy.maxAgeMs) || policy.maxAgeMs <= 0)) {
       throw new RangeError(`OrderBookHistory: maxAgeMs must be a positive number, got ${policy.maxAgeMs}`);
     }
-    return new OrderBookHistory(policy);
+    return new OrderBookHistory(policy, clock);
   }
 
   /**
@@ -151,7 +153,7 @@ export class OrderBookHistory {
    * ```
    */
   public record(snapshot: OrderBookSnapshot, nowMs?: number): void {
-    const ts = nowMs ?? Date.now();
+    const ts = nowMs ?? this._clock.now().getTime();
 
     // Шаг 1: вытесняем по возрасту (снапшоты в хронологическом порядке — сканируем с начала)
     this._evictOld(ts);
@@ -213,7 +215,7 @@ export class OrderBookHistory {
    * ```
    */
   public getRecent(durationMs: number, nowMs?: number): readonly OrderBookSnapshot[] {
-    const now = nowMs ?? Date.now();
+    const now = nowMs ?? this._clock.now().getTime();
     return this.getWindow(now - durationMs, now);
   }
 

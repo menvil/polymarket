@@ -16,6 +16,7 @@
  * - Повторный start() не дублирует подписки
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { PaperClock } from '@polymarket/time';
 import { TradeTapeCollector } from '../src/TradeTapeCollector.js';
 import type { TradeTapeCollectorDeps } from '../src/TradeTapeCollector.js';
 import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
@@ -63,6 +64,9 @@ const MARKET_1 = 'market-1' as unknown as MarketId;
 const MARKET_2 = 'market-2' as unknown as MarketId;
 
 const T0 = 1_700_000_000_000;
+
+/** Детерминированный clock для тестов */
+const clock = new PaperClock(new Date(T0));
 
 // ── EventBus stub ──────────────────────────────────────────────────────────────
 
@@ -143,7 +147,7 @@ describe('TradeTapeCollector', () => {
       [String(TOKEN_B), String(MARKET_2)],
     ]));
     logger = makeLogger();
-    deps = { eventBus, catalog, logger };
+    deps = { eventBus, catalog, logger, clock };
   });
 
   // ── Валидация конфига ──────────────────────────────────────────────────────

@@ -53,6 +53,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import type { IClock } from '@polymarket/time';
 import {
   type MarketId,
   type MarketSlug,
@@ -167,7 +168,11 @@ export class Market {
   /**
    * Приватный конструктор — используйте Market.create()
    */
-  private constructor(props: MarketProps, pendingNotifications: MarketNotification[] = []) {
+  private constructor(
+    props: MarketProps,
+    pendingNotifications: MarketNotification[] = [],
+    private readonly _clock?: IClock,
+  ) {
     this.id = props.id;
     this.slug = props.slug;
     this.question = props.question;
@@ -297,7 +302,7 @@ export class Market {
    * }
    * ```
    */
-  public static create(props: MarketProps): Result<Market, MarketValidationError> {
+  public static create(props: MarketProps, clock?: IClock): Result<Market, MarketValidationError> {
     // Валидация question — не может быть гарантирована типом string
     if (typeof props.question !== 'string' || props.question.trim().length === 0) {
       return Err(
@@ -409,7 +414,7 @@ export class Market {
       }
     }
 
-    return Ok(new Market(props));
+    return Ok(new Market(props, [], clock));
   }
 
   /**
@@ -435,8 +440,8 @@ export class Market {
    * const restored = Market.fromSnapshot(snapshot);
    * ```
    */
-  public static fromSnapshot(snapshot: MarketSnapshot): Result<Market, MarketValidationError> {
-    return Market.create(snapshot);
+  public static fromSnapshot(snapshot: MarketSnapshot, clock?: IClock): Result<Market, MarketValidationError> {
+    return Market.create(snapshot, clock);
   }
 
   // ==================== Time Methods ====================
@@ -479,7 +484,7 @@ export class Market {
    * ```
    */
   public isExpired(): boolean {
-    return this.isExpiredAt(Date.now());
+    return this.isExpiredAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   /**
@@ -518,7 +523,7 @@ export class Market {
    * ```
    */
   public timeToExpiry(): number {
-    return this.timeToExpiryAt(Date.now());
+    return this.timeToExpiryAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   // ==================== Predicates ====================
@@ -615,7 +620,8 @@ export class Market {
         expirationMs: this._expirationMs,
         state,
       },
-      notifications
+      notifications,
+      this._clock,
     );
   }
 

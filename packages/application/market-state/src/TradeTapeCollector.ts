@@ -47,6 +47,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { IClock } from '@polymarket/time';
 import type { Side } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
@@ -63,6 +64,8 @@ export interface TradeTapeCollectorDeps {
   readonly catalog: IMarketCatalog;
   /** Logger */
   readonly logger: ILogger;
+  /** Источник времени для детерминированной работы TradeTape */
+  readonly clock: IClock;
 }
 
 /**
@@ -225,7 +228,7 @@ export class TradeTapeCollector {
 
     if (entry === undefined) {
       const marketId = this._deps.catalog.get(instrumentId)?.marketId;
-      const tape = TradeTape.create(this._config);
+      const tape = TradeTape.create(this._config, this._deps.clock);
       entry = { tape, marketId: marketId !== undefined ? String(marketId) : undefined };
       this._entries.set(key, entry);
 

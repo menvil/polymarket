@@ -51,7 +51,8 @@ const logLevelMap: Record<string, LogLevel> = {
   FATAL: LogLevel.FATAL,
 };
 const logLevel = logLevelMap[process.env['LOG_LEVEL'] ?? 'INFO'] ?? LogLevel.INFO;
-const logger = new ColorConsoleLogger(new LiveClock(), logLevel);
+const clock = new LiveClock();
+const logger = new ColorConsoleLogger(clock, logLevel);
 
 logger.info('Starting Polymarket data collector', {
   outputDir:   config.outputDir,
@@ -131,7 +132,7 @@ const filterConfig = {
 const discovery = new PolymarketMarketDiscoveryAdapter(
   marketDataClient,
   new MarketFilter(),
-  new MarketScorer(),
+  new MarketScorer(clock),
   filterConfig,
   logger,
 );

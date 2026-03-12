@@ -10,11 +10,15 @@
  * - Сброс состояния через reset()
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
+import { PaperClock } from '@polymarket/time';
 import { MockExchangeClient } from '../src/MockExchangeClient.js';
 import type { SubmitOrderParams } from '@polymarket/ports';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { asPolymarketCtfToken, parseAccountId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
+
+/** Детерминированный clock для тестов */
+const clock = new PaperClock(new Date(1_700_000_000_000));
 
 /** Тестовый AssetId: POLYMARKET_CTF_TOKEN */
 const TEST_ASSET = asPolymarketCtfToken('1')!;
@@ -39,7 +43,7 @@ describe('MockExchangeClient', () => {
   let client: MockExchangeClient;
 
   beforeEach(() => {
-    client = new MockExchangeClient();
+    client = new MockExchangeClient(clock);
   });
 
   // ── submitOrder ────────────────────────────────────────────────────────────

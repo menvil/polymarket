@@ -18,7 +18,7 @@
  *
  * @example
  * ```typescript
- * const client = new MockExchangeClient();
+ * const client = new MockExchangeClient(clock);
  *
  * const result = await client.submitOrder({
  *   asset: tokenId,
@@ -38,6 +38,7 @@
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { OrderId, AccountId } from '@polymarket/ids';
+import type { IClock } from '@polymarket/time';
 import type { Timestamp } from '@polymarket/value-objects';
 import type {
   IExchangeClient,
@@ -70,6 +71,11 @@ export class MockExchangeClient implements IExchangeClient {
   /** Счётчик для генерации уникальных OrderId */
   private _counter = 0;
 
+  /**
+   * @param _clock - Источник времени для детерминированной генерации OrderId и submittedAt
+   */
+  constructor(private readonly _clock: IClock) {}
+
   /** Список всех поданных ордеров */
   private readonly _submittedOrders: SubmittedOrder[] = [];
 
@@ -96,12 +102,13 @@ export class MockExchangeClient implements IExchangeClient {
     params: SubmitOrderParams,
   ): Promise<Result<OrderId, ExchangeError>> {
     this._counter += 1;
-    const orderId = `order-${Date.now()}-${this._counter}` as OrderId;
+    const now = this._clock.now();
+    const orderId = `order-${now.getTime()}-${this._counter}` as OrderId;
 
     this._submittedOrders.push({
       orderId,
       params,
-      submittedAt: new Date(),
+      submittedAt: now,
     });
 
     return Ok(orderId);

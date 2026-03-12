@@ -13,6 +13,7 @@
  * - Повторный start() не создаёт дублирующих подписок
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { PaperClock } from '@polymarket/time';
 import { BookDepthCollector } from '../src/BookDepthCollector.js';
 import type { BookDepthCollectorDeps } from '../src/BookDepthCollector.js';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -50,6 +51,9 @@ function makeSnapshot(marketId: string, tokenId: string): OrderBookSnapshot {
 
 /** Базовое время */
 const T0 = 1_700_000_000_000;
+
+/** Детерминированный clock для тестов */
+const clock = new PaperClock(new Date(T0));
 
 const TOKEN_A   = 'token-a'   as unknown as InstrumentId;
 const TOKEN_B   = 'token-b'   as unknown as InstrumentId;
@@ -102,7 +106,7 @@ describe('BookDepthCollector', () => {
   beforeEach(() => {
     eventBus = makeEventBus();
     logger = makeLogger();
-    deps = { eventBus, logger };
+    deps = { eventBus, logger, clock };
   });
 
   // ── start / stop ─────────────────────────────────────────────────────────────

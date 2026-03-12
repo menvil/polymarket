@@ -30,6 +30,7 @@
  * ```
  */
 
+import type { IClock } from '@polymarket/time';
 import type { TapeRecord, TapeRetentionPolicy } from './TapeRecord.js';
 
 /**
@@ -45,7 +46,7 @@ export class TradeTape {
   /**
    * Приватный конструктор — используйте TradeTape.create()
    */
-  private constructor(private readonly _policy: TapeRetentionPolicy) {
+  private constructor(private readonly _policy: TapeRetentionPolicy, private readonly _clock: IClock) {
     this._records = [];
   }
 
@@ -53,22 +54,23 @@ export class TradeTape {
    * Создаёт новую ленту трейдов с заданной политикой хранения
    *
    * @param policy - Политика хранения (maxCount и/или maxAgeMs)
+   * @param clock - Источник времени для детерминированной работы getRecent()
    * @returns Новый экземпляр TradeTape
    *
    * @throws {RangeError} Если ни maxCount ни maxAgeMs не заданы
    *
    * @example
    * ```typescript
-   * const tape = TradeTape.create({ maxCount: 1000 });
-   * const tape2 = TradeTape.create({ maxAgeMs: 300_000 });
-   * const tape3 = TradeTape.create({ maxCount: 500, maxAgeMs: 60_000 });
+   * const tape = TradeTape.create({ maxCount: 1000 }, clock);
+   * const tape2 = TradeTape.create({ maxAgeMs: 300_000 }, clock);
+   * const tape3 = TradeTape.create({ maxCount: 500, maxAgeMs: 60_000 }, clock);
    * ```
    */
-  public static create(policy: TapeRetentionPolicy): TradeTape {
+  public static create(policy: TapeRetentionPolicy, clock: IClock): TradeTape {
     if (policy.maxCount === undefined && policy.maxAgeMs === undefined) {
       throw new RangeError('TradeTape: retention policy must specify maxCount and/or maxAgeMs');
     }
-    return new TradeTape(policy);
+    return new TradeTape(policy, clock);
   }
 
   /**
@@ -154,7 +156,7 @@ export class TradeTape {
    * ```
    */
   public getRecent(durationMs: number, nowMs?: number): readonly TapeRecord[] {
-    const now = nowMs ?? Date.now();
+    const now = nowMs ?? this._clock.now().getTime();
     return this.getWindow(now - durationMs, now);
   }
 

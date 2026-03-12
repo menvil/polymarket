@@ -7,7 +7,8 @@
   },
   "references": [
     { "path": "../../../foundation/ids" },
-    { "path": "../../../foundation/math" }
+    { "path": "../../../foundation/math" },
+    { "path": "../../../foundation/time" }
   ],
   "include": ["src/**/*", "__tests__/**/*"],
   "exclude": ["node_modules", "dist"]

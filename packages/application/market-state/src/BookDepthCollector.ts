@@ -46,6 +46,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId } from '@polymarket/ids';
+import type { IClock } from '@polymarket/time';
 import { OrderBookHistory } from '@polymarket/order-book';
 import type { OrderBookRetentionPolicy, OrderBookSnapshot } from '@polymarket/order-book';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -58,6 +59,8 @@ export interface BookDepthCollectorDeps {
   readonly eventBus: IEventBus;
   /** Logger */
   readonly logger: ILogger;
+  /** Источник времени для детерминированной работы OrderBookHistory */
+  readonly clock: IClock;
 }
 
 /**
@@ -238,7 +241,7 @@ export class BookDepthCollector {
     let history = this._histories.get(key);
 
     if (history === undefined) {
-      history = OrderBookHistory.create(this._config);
+      history = OrderBookHistory.create(this._config, this._deps.clock);
       this._histories.set(key, history);
 
       this._deps.logger.debug('BookDepthCollector: new history created', {
