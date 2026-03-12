@@ -222,12 +222,12 @@ export class BalanceAllocator implements IBalanceAllocator {
    *
    * @param newBalance - Новый общий баланс в USDC
    * @returns Ok(void) при успехе
-   * @returns Err(TradingError) если новый баланс меньше суммы текущих аллокаций.
+   * @returns Err(TradingError) если tradingBalance(newBalance × ratio) < allocatedBalance.
    *   Caller должен закрыть часть позиций перед вызовом.
    *
    * @remarks
    * Баланс может уменьшиться (вывод средств, убытки) — это нормально.
-   * Over-allocation (newBalance < allocatedBalance) — критическое состояние.
+   * Over-allocation (tradingBalance < allocatedBalance) — критическое состояние.
    */
   public updateTotalBalance(newBalance: Money): Result<void, TradingError> {
     const tradingBalance = MoneyService.multiply(newBalance, this._config.tradingBalanceRatio.toNumber());
@@ -270,6 +270,7 @@ export class BalanceAllocator implements IBalanceAllocator {
    * @returns Err(TradingError) если снимок нарушает инварианты:
    *   - `snapshot.size > maxConcurrentMarkets`
    *   - сумма аллокаций превышает текущий торговый баланс
+   *   - несовместимые валюты аллокаций в снимке (currency mismatch при суммировании)
    *
    * @remarks
    * Полностью заменяет текущие аллокации снимком (не мержит).

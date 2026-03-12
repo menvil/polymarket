@@ -48,7 +48,7 @@ describe('BalanceAllocator', () => {
       expect(results.length).toBe(3);
       // tradingBalance = 10000 * 0.8 = 8000; perMarket = 8000 / 10 = 800
       results.forEach((r) => {
-        expect(r.allocatedAmount.value().greaterThan(0)).toBe(true);
+        expect(r.allocatedAmount.value().toNumber()).toBe(800);
       });
     });
 
@@ -63,12 +63,13 @@ describe('BalanceAllocator', () => {
     });
 
     it('возвращает [] если perMarket < minCapitalPerMarket', () => {
-      // totalBalance = 100, tradingBalance = 80, 3 рынка → perMarket ≈ 26.67 < 50
+      // totalBalance=100, tradingBalance=80, minCapital=50, maxSlots=10
+      // maxByCapital = floor(80/50) = 1, newSlots=1
+      // perMarket = 80 / max(1,10) = 80/10 = 8 < 50 → []
       allocator = new BalanceAllocator(makeConfig(), usdc(100));
       const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m2'), mkt('m3')]);
 
-      // Может аллоцировать только 1 рынок (80 / 50 = 1)
-      expect(results.length).toBeLessThanOrEqual(1);
+      expect(results.length).toBe(0);
     });
 
     it('пропускает уже аллоцированные рынки', () => {
@@ -92,6 +93,32 @@ describe('BalanceAllocator', () => {
       const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m1'), mkt('m1')]);
       expect(results.length).toBe(1);
       expect(allocator.getStats().activeMarkets).toBe(1);
+    });
+
+    it('возвращает [] если все рынки уже аллоцированы', () => {
+      allocator.allocateToNewMarkets([mkt('m1'), mkt('m2')]);
+      const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m2')]);
+      expect(results).toHaveLength(0);
+    });
+
+    it('возвращает [] при ошибке MoneyService.divide', () => {
+      const divideSpy = jest.spyOn(MoneyService, 'divide').mockReturnValueOnce(
+        Err(new Error('divide error') as never),
+      );
+
+      const results = allocator.allocateToNewMarkets([mkt('m1')]);
+      expect(results).toHaveLength(0);
+
+      divideSpy.mockRestore();
+    });
+
+    it('аллоцирует ровно $800 при balance=10000, ratio=0.8, maxSlots=10', () => {
+      // freeBalance=8000, denominator=max(3,10)=10, perMarket=800
+      const results = allocator.allocateToNewMarkets([mkt('m1'), mkt('m2'), mkt('m3')]);
+      expect(results.length).toBe(3);
+      results.forEach((r) => {
+        expect(r.allocatedAmount.value().toNumber()).toBe(800);
+      });
     });
   });
 
@@ -179,6 +206,24 @@ describe('BalanceAllocator', () => {
     it('бросает TradingError для несуществующей аллокации', () => {
       expect(() => allocator.releaseWithPnL(mkt('no-such-market'), usdc(0))).toThrow(/no active allocation/);
     });
+
+    it('не изменяет состояние при currency mismatch (атомарность)', () => {
+      allocator.addMarket(mkt('m1'));
+      const balanceBefore = allocator.getStats().totalBalance.value().toNumber();
+      const allocationBefore = allocator.getAllocation(mkt('m1'))!.value().toNumber();
+
+      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+        Err(new Error('currency mismatch') as never),
+      );
+
+      expect(() => allocator.releaseWithPnL(mkt('m1'), usdc(100))).toThrow();
+
+      // Баланс и аллокация не изменились
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(balanceBefore);
+      expect(allocator.getAllocation(mkt('m1'))!.value().toNumber()).toBe(allocationBefore);
+
+      addSpy.mockRestore();
+    });
   });
 
   describe('release', () => {
@@ -241,6 +286,38 @@ describe('BalanceAllocator', () => {
     it('разрешает уменьшение баланса если аллокаций нет', () => {
       const result = allocator.updateTotalBalance(usdc(500));
       expect(result.ok).toBe(true);
+    });
+
+    it('возвращает Err при ошибке MoneyService.multiply', () => {
+      const multiplySpy = jest.spyOn(MoneyService, 'multiply').mockReturnValueOnce(
+        Err(new Error('multiply error') as never),
+      );
+
+      const result = allocator.updateTotalBalance(usdc(10000));
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/Failed to compute trading balance/);
+
+      multiplySpy.mockRestore();
+    });
+
+    it('возвращает Err если tradingBalance < allocatedBalance (хотя newBalance > allocatedBalance)', () => {
+      // Аллоцируем 3 рынка при балансе 10000 → каждый $800 → allocated = 2400
+      allocator.allocateToNewMarkets([mkt('m1'), mkt('m2'), mkt('m3')]);
+      const allocated = allocator.getStats().allocatedBalance.value().toNumber(); // 2400
+
+      // newBalance = 3100 > allocated=2400, но tradingBalance = 3100*0.8 = 2480 > 2400 → Ok
+      // newBalance = 2800 > allocated=2400, но tradingBalance = 2800*0.8 = 2240 < 2400 → Err
+      const result = allocator.updateTotalBalance(usdc(2800));
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/over-allocation/);
+      // Баланс не изменился
+      expect(allocator.getStats().totalBalance.value().toNumber()).toBe(10000);
+      // Ранее: allocated = 2400 (3 × 800)
+      expect(allocated).toBe(2400);
     });
   });
 
@@ -315,6 +392,27 @@ describe('BalanceAllocator', () => {
       // Состояние не изменилось
       expect(allocator.getStats().activeMarkets).toBe(0);
     });
+
+    it('возвращает Err при несовместимых валютах в снимке', () => {
+      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+        Err(new Error('currency mismatch') as never),
+      );
+
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('m1'), usdc(100)],
+        [mkt('m2'), usdc(200)],
+      ]);
+
+      const result = allocator.restoreAllocations(snapshot);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toMatch(/currency mismatch/);
+      // Состояние не изменилось
+      expect(allocator.getStats().activeMarkets).toBe(0);
+
+      addSpy.mockRestore();
+    });
   });
 
   describe('getStats', () => {
@@ -356,6 +454,75 @@ describe('BalanceAllocator', () => {
       allocator = new BalanceAllocator(config, usdc(10000));
       allocator.addMarket(mkt('m1'));
       expect(allocator.canAddMarket()).toBe(false);
+    });
+
+    it('возвращает false при ошибке MoneyService.divide', () => {
+      const divideSpy = jest.spyOn(MoneyService, 'divide').mockReturnValueOnce(
+        Err(new Error('divide error') as never),
+      );
+
+      expect(allocator.canAddMarket()).toBe(false);
+
+      divideSpy.mockRestore();
+    });
+  });
+
+  // ── Приватные defensive-ветки ─────────────────────────────────────────────
+
+  describe('_calcAllocatedBalance (currency mismatch → throw)', () => {
+    it('бросает TradingError если аллокации содержат несовместимые валюты', () => {
+      // Восстанавливаем аллокации через restoreAllocations (публичный путь),
+      // затем эмулируем currency mismatch при суммировании в _calcAllocatedBalance
+      const snapshot = new Map<MarketId, Money>([
+        [mkt('m1'), usdc(800)],
+        [mkt('m2'), usdc(700)],
+      ]);
+      expect(allocator.restoreAllocations(snapshot).ok).toBe(true);
+
+      const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+        Err(new Error('currency mismatch in allocations') as never),
+      );
+
+      // getStats() вызывает _calcAllocatedBalance() → MoneyService.add → throw TradingError
+      expect(() => allocator.getStats()).toThrow(/currency mismatch/);
+
+      addSpy.mockRestore();
+    });
+  });
+
+  describe('_calcFreeBalance (subtract failure → ZERO)', () => {
+    it('возвращает [] если MoneyService.subtract вернул ошибку в _calcFreeBalance', () => {
+      // _calcFreeBalance вызывает MoneyService.subtract(tradingBalance, allocated)
+      // При ошибке возвращает ZERO → perMarket < minCapital → []
+      const subtractSpy = jest.spyOn(MoneyService, 'subtract').mockReturnValueOnce(
+        Err(new Error('subtract error') as never),
+      );
+
+      const results = allocator.allocateToNewMarkets([mkt('m1')]);
+      expect(results).toHaveLength(0);
+
+      subtractSpy.mockRestore();
+    });
+  });
+
+  describe('_countAffordableSlots (slotCost < 0 → 0)', () => {
+    it('возвращает [] если minCapitalPerMarket отрицательный (slotCost not positive)', () => {
+      // Decimal(0).isPositive() = true в decimal.js (0 имеет знак +1).
+      // Ветка !slotCostDec.isPositive() срабатывает только при slotCost < 0.
+      // Эмулируем через partial-mock Money с отрицательным value().
+      const negativeMinCapital = {
+        value: () => new Decimal(-1),
+        currency: () => 'USDC',
+        toNumber: () => -1,
+      } as unknown as Money;
+
+      const config = makeConfig({ minCapitalPerMarket: negativeMinCapital });
+      const a = new BalanceAllocator(config, usdc(10000));
+
+      // _countAffordableSlots(8000, -1): slotCostDec=-1, isPositive()=false → 0
+      // newSlots = min(1, 0) = 0 → []
+      const results = a.allocateToNewMarkets([mkt('m1')]);
+      expect(results).toHaveLength(0);
     });
   });
 });

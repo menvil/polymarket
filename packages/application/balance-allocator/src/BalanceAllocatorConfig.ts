@@ -38,7 +38,7 @@ export interface BalanceAllocatorConfig {
    *
    * @remarks
    * Если свободного баланса не хватает на минимальную аллокацию хотя бы на 1 рынок,
-   * аллокация не происходит. По умолчанию: $50 USDC.
+   * аллокация не происходит. Рекомендуется: $50 USDC.
    */
   readonly minCapitalPerMarket: Money;
 
@@ -47,7 +47,7 @@ export interface BalanceAllocatorConfig {
    *
    * @remarks
    * Ограничивает диверсификацию сверху.
-   * По умолчанию: 10.
+   * Рекомендуется: 10.
    */
   readonly maxConcurrentMarkets: number;
 }

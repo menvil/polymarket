@@ -99,12 +99,14 @@ export interface IBalanceAllocator {
    * @param marketId - ID рынка
    * @param realizedPnL - Реализованный PnL (может быть отрицательным)
    *
+   * @throws {TradingError} Если рынок не найден в аллокациях (нет активной аллокации для marketId).
    * @throws {TradingError} Если realizedPnL в другой валюте чем totalBalance —
    *   currency mismatch является invariant violation (архитектурная ошибка конфигурации).
    *
    * @remarks
    * `_totalBalance += realizedPnL` — баланс растёт при прибыли, уменьшается при убытке.
-   * Если рынок не найден в аллокациях — только применяет PnL к балансу.
+   * Операция атомарна: если MoneyService.add завершается ошибкой (currency mismatch),
+   * ни баланс, ни аллокация не изменяются.
    */
   releaseWithPnL(marketId: MarketId, realizedPnL: Money): void;
 
@@ -128,7 +130,7 @@ export interface IBalanceAllocator {
    *
    * @param newBalance - Новый общий баланс в USDC
    * @returns Ok(void) при успехе, Err если новый баланс вызывает over-allocation
-   *   (newBalance < allocatedBalance). Caller должен закрыть часть позиций.
+   *   (tradingBalance(newBalance × ratio) < allocatedBalance). Caller должен закрыть часть позиций.
    */
   updateTotalBalance(newBalance: Money): Result<void, TradingError>;
 
