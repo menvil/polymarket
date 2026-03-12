@@ -162,14 +162,21 @@ describe('MarketScorer', () => {
       // [BUG до фикса]: String(a) < String(b) ? -1 : 1 возвращал 1 при a === b
       // (нарушение антисимметрии: cmp(a,b)=1 И cmp(b,a)=1 одновременно)
       // [После фикса]: возвращает 0 → сортировка стабильна
-      const m1 = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'eq' });
-      const m2 = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'eq' }); // тот же marketId
+      //
+      // 3 элемента обязательны: 2-элементный sort V8 вызывает compare(arr[1], arr[0]),
+      // что даёт aId < bId ('diff' < 'same') и не затрагивает ветку aId === bId → 0.
+      // При 3 элементах binary insertion вызывает compare(mEq1, mEq2) на шаге поиска.
+      const mDiff = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'diff' });
+      const mEq1  = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'same' });
+      const mEq2  = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'same' }); // тот же marketId
 
-      const result = scorer.scoreAndSort([m1, m2]);
+      const result = scorer.scoreAndSort([mDiff, mEq1, mEq2]);
 
-      expect(result).toHaveLength(2);
-      // Оба имеют одинаковый marketId → порядок сохранился
-      expect(String(result[0]!.marketId)).toBe(String(result[1]!.marketId));
+      expect(result).toHaveLength(3);
+      // 'diff' < 'same' → mDiff идёт первым; mEq1/mEq2 с равным marketId остаются в исходном порядке
+      expect(result[0]!.marketId).toBe(mDiff.marketId);
+      expect(String(result[1]!.marketId)).toBe(String(mEq1.marketId));
+      expect(String(result[2]!.marketId)).toBe(String(mEq2.marketId));
     });
   });
 
