@@ -93,11 +93,26 @@ export class OrderUpdateHandler {
     }
 
     if (!result.ok) {
-      this._logger.error('Failed to apply order update', {
-        error: result.error.message,
-        orderId: String(update.orderId),
-        updateType: update.type,
-      });
+      // Дублирующее WS-событие (ACCEPTED на уже OPEN ордере и т.п.) — idempotent, debug уровень.
+      // Реальная ошибка (ACCEPTED на CANCELLED/FILLED) — error уровень.
+      const isIdempotent =
+        (update.type === 'ACCEPTED' && order.status === 'OPEN') ||
+        (update.type === 'CANCELLED' && order.status === 'CANCELED') ||
+        (update.type === 'EXPIRED' && order.status === 'EXPIRED');
+
+      if (isIdempotent) {
+        this._logger.debug('Ignoring duplicate venue update (already in target state)', {
+          orderId: String(update.orderId),
+          updateType: update.type,
+          currentStatus: order.status,
+        });
+      } else {
+        this._logger.error('Failed to apply order update', {
+          error: result.error.message,
+          orderId: String(update.orderId),
+          updateType: update.type,
+        });
+      }
       return;
     }
 

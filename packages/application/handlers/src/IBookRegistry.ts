@@ -38,4 +38,15 @@ export interface IBookRegistry {
    * @param tokenId - ID токена
    */
   delete(marketId: MarketId, tokenId: InstrumentId): void;
+
+  /**
+   * Удаляет все OrderBook для указанного рынка.
+   *
+   * @param marketId - ID рынка
+   *
+   * @remarks
+   * Вызывается при закрытии рынка (MARKET_CLOSED) для освобождения памяти.
+   * Удаляет все токены (YES/NO), связанные с данным рынком.
+   */
+  deleteMarket(marketId: MarketId): void;
 }

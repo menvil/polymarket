@@ -22,6 +22,9 @@ import type { IBookRegistry } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
+import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { MarketId } from '@polymarket/ids';
+import type { InstrumentInfo } from '@polymarket/ports';
 
 // ── Вспомогательные фабрики ───────────────────────────────────────────────────
 
@@ -72,6 +75,7 @@ function makeDeps(logger: ILogger): {
     get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
     getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(mockBook),
     delete: jest.fn<IBookRegistry['delete']>(),
+    deleteMarket: jest.fn<IBookRegistry['deleteMarket']>(),
   };
 
   const eventBusMock: IEventBus = {
@@ -81,7 +85,16 @@ function makeDeps(logger: ILogger): {
   };
 
   const catalog: IMarketCatalog = {
-    get: jest.fn<IMarketCatalog['get']>().mockReturnValue(undefined),
+    // Возвращаем валидный InstrumentInfo для любого tokenId — BacktestEngine не регистрирует
+    // инструменты заранее, но BookUpdateHandler требует их наличия в catalog для обработки.
+    get: jest.fn<IMarketCatalog['get']>().mockImplementation((tokenId) => ({
+      instrumentId: tokenId,
+      marketId: 'market-backtest' as unknown as MarketId,
+      tickSize: {} as Price,
+      minOrderSize: {} as Quantity,
+      active: true,
+      expiresAt: {} as Timestamp,
+    }) as InstrumentInfo),
     getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
     getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
     register: jest.fn<IMarketCatalog['register']>(),

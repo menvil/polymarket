@@ -78,6 +78,7 @@ describe('BookUpdateHandler', () => {
       get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
       getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(mockBook),
       delete: jest.fn<IBookRegistry['delete']>(),
+      deleteMarket: jest.fn<IBookRegistry['deleteMarket']>(),
     };
     eventBus = {
       publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),

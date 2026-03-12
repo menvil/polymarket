@@ -29,8 +29,9 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { PriceLevel } from '@polymarket/order-book';
-import type { InstrumentId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { Price, Timestamp } from '@polymarket/value-objects';
+import { PriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
@@ -39,6 +40,8 @@ import type { IBookRegistry } from './IBookRegistry.js';
 export class BookUpdateHandler {
   /** Последний timestamp снапшота per tokenId — для staleness detection */
   private readonly _lastTimestamps = new Map<string, Timestamp>();
+  /** Обратный индекс: marketId → Set<tokenId> — для batch-удаления при закрытии рынка */
+  private readonly _marketToTokens = new Map<string, Set<string>>();
 
   /**
    * Создаёт BookUpdateHandler.
@@ -98,8 +101,18 @@ export class BookUpdateHandler {
     const book = this._books.getOrCreate(instrument.marketId, tokenId);
     book.applyFullState(bids, asks, timestamp);
 
+    // Индексируем tokenId → marketId для последующей очистки в onMarketClosed
+    const marketKey = String(instrument.marketId);
+    const tokenKey  = String(tokenId);
+    let tokenSet = this._marketToTokens.get(marketKey);
+    if (!tokenSet) {
+      tokenSet = new Set();
+      this._marketToTokens.set(marketKey, tokenSet);
+    }
+    tokenSet.add(tokenKey);
+
     this._logger.debug('Order book snapshot applied', {
-      tokenId: String(tokenId),
+      tokenId: tokenKey,
       bidsCount: bids.length,
       asksCount: asks.length,
     });
@@ -107,10 +120,20 @@ export class BookUpdateHandler {
     const bestBidLevel = book.getBestBid();
     const bestAskLevel = book.getBestAsk();
 
+    // Spread = bestAsk - bestBid (O(1)) — делегируем OrderBook для переиспользования логики
+    let spread: Price | undefined;
+    if (bestBidLevel && bestAskLevel) {
+      const rawSpread = book.getSpread();
+      if (rawSpread !== undefined && rawSpread.gt(0)) {
+        const spreadResult = PriceService.create(rawSpread.toString());
+        if (spreadResult.ok) spread = spreadResult.value;
+      }
+    }
+
     const topOfBook: TopOfBook = {
       bestBid: bestBidLevel?.price,
       bestAsk: bestAskLevel?.price,
-      spread: undefined,
+      spread,
       bestBidSize: bestBidLevel?.size,
       bestAskSize: bestAskLevel?.size,
     };
@@ -142,6 +165,39 @@ export class BookUpdateHandler {
   public onReconnect(): void {
     this._lastTimestamps.clear();
     this._logger.info('Book timestamps reset after reconnect', {});
+  }
+
+  /**
+   * Вызывается при закрытии рынка — очищает OrderBook и staleness timestamps.
+   *
+   * @param marketId - ID закрытого рынка
+   *
+   * @remarks
+   * Удаляет все OrderBook для всех токенов (YES/NO) данного рынка из реестра.
+   * Также удаляет staleness timestamps для этих токенов.
+   * Освобождает память, занятую стаканами неактивного рынка.
+   *
+   * Должен вызываться orchestration-слоем при получении MARKET_CLOSED события.
+   *
+   * @example
+   * ```typescript
+   * eventBus.subscribe('MARKET_CLOSED', (event) => {
+   *   bookHandler.onMarketClosed(event.marketId);
+   * });
+   * ```
+   */
+  public onMarketClosed(marketId: MarketId): void {
+    const marketKey = String(marketId);
+    const tokens = this._marketToTokens.get(marketKey);
+    if (!tokens) return;
+
+    for (const tokenKey of tokens) {
+      this._lastTimestamps.delete(tokenKey);
+    }
+    this._marketToTokens.delete(marketKey);
+    this._books.deleteMarket(marketId);
+
+    this._logger.info('Book registry cleaned up for closed market', { marketId: marketKey });
   }
 }
 
