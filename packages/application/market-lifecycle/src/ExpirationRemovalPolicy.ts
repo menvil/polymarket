@@ -10,11 +10,13 @@
  *
  * ### Алгоритм:
  * ```
- * nowMs = clock.now().getTime()
+ * deadline = now + leadTimeMs
  * for market in markets:
- *   timeToExpiry = market.expiresAt.toNumber() - nowMs
- *   if timeToExpiry <= leadTimeMs → закрыть рынок
+ *   if market.expiresAt <= deadline → закрыть рынок
  * ```
+ *
+ * Сравнение производится через `Timestamp.isBeforeOrEqual(deadline)` —
+ * внутреннее представление VO не утекает в application слой.
  *
  * @example
  * ```typescript
@@ -24,6 +26,7 @@
  * // toClose = рынки истекающие в течение 30 минут
  * ```
  */
+import { TimestampService } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
 import type { MarketId } from '@polymarket/ids';
 import type { IRemovalPolicy, MarketContext } from './IRemovalPolicy.js';
@@ -41,8 +44,7 @@ export class ExpirationRemovalPolicy implements IRemovalPolicy {
   /**
    * @param _clock - Источник времени (dependency injection)
    * @param _leadTimeMs - За сколько мс до истечения закрывать рынок (по умолчанию 30 мин)
-   */
-  /**
+   *
    * @throws {RangeError} Если `leadTimeMs` отрицательный
    */
   constructor(
@@ -60,19 +62,25 @@ export class ExpirationRemovalPolicy implements IRemovalPolicy {
    * Определяет рынки для закрытия по критерию истечения срока.
    *
    * @param markets - Список активных рынков
-   * @returns ID рынков, до истечения которых осталось меньше leadTimeMs
+   * @returns ID рынков, до истечения которых осталось не более `leadTimeMs`
    *
    * @remarks
-   * Рынки с уже истёкшим expiresAt (timeToExpiry < 0) также включаются.
+   * Рынки с уже истёкшим `expiresAt` (deadline в прошлом) также включаются.
+   * Если `TimestampService.create(deadline)` не удался — возвращает пустой список
+   * (не бросает: evaluate() должен быть чистым и безопасным).
    */
   public evaluate(markets: readonly MarketContext[]): readonly MarketId[] {
     const nowMs = this._clock.now().getTime();
+    const deadlineResult = TimestampService.create(nowMs + this._leadTimeMs);
+
+    // Теоретически невозможно для валидных значений clock и leadTimeMs,
+    // но обрабатываем корректно — не бросаем из policy.
+    if (!deadlineResult.ok) return [];
+
+    const deadline = deadlineResult.value;
 
     return markets
-      .filter((market) => {
-        const timeToExpiry = market.expiresAt.toNumber() - nowMs;
-        return timeToExpiry <= this._leadTimeMs;
-      })
+      .filter((market) => market.expiresAt.isBeforeOrEqual(deadline))
       .map((market) => market.marketId);
   }
 }

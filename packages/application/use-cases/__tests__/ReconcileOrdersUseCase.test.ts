@@ -94,6 +94,7 @@ describe('ReconcileOrdersUseCase', () => {
       getByStrategyId: jest.fn<IOrderRepository['getByStrategyId']>().mockResolvedValue([]),
       countByStrategyId: jest.fn<IOrderRepository['countByStrategyId']>().mockResolvedValue(0),
       getAll: jest.fn<IOrderRepository['getAll']>(),
+      getByMarketId: jest.fn<IOrderRepository['getByMarketId']>().mockResolvedValue([]),
     };
     exchangeClient = {
       submitOrder: jest.fn() as jest.MockedFunction<IExchangeClient['submitOrder']>,

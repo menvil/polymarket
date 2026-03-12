@@ -97,9 +97,7 @@ export class CancellationService {
     marketId: MarketId,
     reason: MarketCloseReason,
   ): Promise<CancellationResult> {
-    const openOrders = orders.filter(
-      (o) => o.status === 'OPEN' || o.status === 'PARTIALLY_FILLED',
-    );
+    const openOrders = orders.filter((o) => o.canCancel());
 
     if (openOrders.length === 0) {
       return { cancelled: 0, failed: 0 };

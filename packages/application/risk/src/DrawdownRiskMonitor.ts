@@ -142,7 +142,7 @@ export class DrawdownRiskMonitor {
       violationType: 'DRAWDOWN',
       violation: `Drawdown ${drawdown.times(100).toFixed(2)}% exceeded max ${this._params.maxDrawdown.times(100).toFixed(2)}%`,
       triggeredAt: tsResult.value,
-      accountId: String(accountId),
+      accountId,
     });
 
     this._logger.error('Drawdown limit breached', {
