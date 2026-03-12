@@ -164,37 +164,99 @@ describe('EventBus', () => {
     expect(secondCalled).toBe(true);
   });
 
-  it('critical handler: оставшиеся события в очереди дропаются', async () => {
+  it('critical handler: оставшиеся события в очереди сохраняются для следующего drain', async () => {
     const processed: number[] = [];
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      if (event.sequenceNumber === 1) {
-        throw new Error('critical');
-      }
+      if (event.sequenceNumber === 1) throw new Error('critical');
       processed.push(event.sequenceNumber);
     }, { critical: true });
 
+    // seq=2 остаётся в очереди после critical failure на seq=1
     await expect(
-      bus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)])
+      bus.publishAll([makeBookEvent(1), makeBookEvent(2)])
     ).rejects.toThrow('critical');
 
-    expect(processed).toEqual([]); // seq=2 и seq=3 дропнуты
+    // следующий publish возобновляет drain: обрабатывает seq=2, потом seq=3
+    await bus.publish(makeBookEvent(3));
+    expect(processed).toEqual([2, 3]);
   });
 
-  it('drain limit: бесконечный event loop останавливается через maxEventsPerDrain', async () => {
+  it('drain limit: бесконечный event loop бросает ошибку и очищает очередь', async () => {
     const limitedBus = new EventBus(logger, 5);
     let count = 0;
     limitedBus.subscribe('BOOK_UPDATED', async (event) => {
       count++;
-      // Бесконечная петля: каждый handler публикует следующее событие
       await limitedBus.publish(makeBookEvent(event.sequenceNumber + 1));
     });
 
-    await limitedBus.publish(makeBookEvent(1));
-
+    await expect(limitedBus.publish(makeBookEvent(1))).rejects.toThrow('drain limit exceeded');
     expect(count).toBe(5);
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('drain limit exceeded'),
-      expect.any(Object),
-    );
+  });
+
+  it('queue overflow: publish бросает если очередь переполнена', async () => {
+    const tinyBus = new EventBus(logger, 10_000, 2);
+
+    // handler зависает, чтобы очередь не опустошалась
+    let resolveBlock!: () => void;
+    const block = new Promise<void>((resolve) => { resolveBlock = resolve; });
+    tinyBus.subscribe('BOOK_UPDATED', async () => { await block; });
+
+    // первый publish — запускает drain, handler завис
+    const first = tinyBus.publish(makeBookEvent(1));
+    // второй и третий — в очередь (maxQueueSize=2, очередь уже содержит 0 сейчас,
+    // но drain запущен поэтому push идёт в очередь)
+    await tinyBus.publish(makeBookEvent(2)); // reentrant push, queue=[2]
+    await tinyBus.publish(makeBookEvent(3)); // reentrant push, queue=[2,3]
+
+    // четвёртый — переполнение
+    await expect(tinyBus.publish(makeBookEvent(4))).rejects.toThrow('queue overflow');
+
+    resolveBlock();
+    await first;
+  });
+
+  it('getStats возвращает корректное состояние', async () => {
+    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 0, dispatching: false });
+
+    let resolveBlock!: () => void;
+    const block = new Promise<void>((resolve) => { resolveBlock = resolve; });
+    bus.subscribe('BOOK_UPDATED', async () => { await block; });
+
+    const inflight = bus.publish(makeBookEvent());
+    // drain запущен: dispatching=true, queue пуста (событие уже dequeued в dispatch)
+    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: true });
+
+    resolveBlock();
+    await inflight;
+    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: false });
+  });
+
+  it('двойной unsubscribe не падает (idempotent)', async () => {
+    const unsub = bus.subscribe('BOOK_UPDATED', async () => {});
+    unsub(); // удаляет Set из Map
+    expect(() => unsub()).not.toThrow(); // второй вызов — Set уже нет
+  });
+
+  it('reentrancy: publishAll из handler-а ставит события в очередь корректно', async () => {
+    const order: number[] = [];
+    bus.subscribe('BOOK_UPDATED', async (event) => {
+      order.push(event.sequenceNumber);
+      if (event.sequenceNumber === 1) {
+        // publishAll из handler'а — должно встать в очередь ПОСЛЕ текущего drain
+        await bus.publishAll([makeBookEvent(10), makeBookEvent(11)]);
+      }
+    });
+
+    await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
+
+    expect(order).toEqual([1, 2, 10, 11]);
+  });
+
+  it('queue overflow: publishAll бросает если batch превышает лимит', async () => {
+    const tinyBus = new EventBus(logger, 10_000, 2);
+
+    await expect(
+      tinyBus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)])
+    ).rejects.toThrow('queue overflow');
   });
 });
