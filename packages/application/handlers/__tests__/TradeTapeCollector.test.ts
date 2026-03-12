@@ -313,7 +313,7 @@ describe('TradeTapeCollector', () => {
       // Через 90s — оба первых устарели, maxCount не срабатывает (только 1 свежий)
       await eventBus.emit(tradeEvent(TOKEN_A, '0.62', '400', 'SELL', T0 + 90_000));
 
-      expect(c.size(TOKEN_A)).toBe(1); // только T0+20000 свежий (70s), T0 и T0+10000 устарели
+      expect(c.size(TOKEN_A)).toBe(1); // только T0+90000 остался: cutoff=T0+30000, все три предыдущих (T0, T0+10000, T0+20000) устарели
     });
   });
 

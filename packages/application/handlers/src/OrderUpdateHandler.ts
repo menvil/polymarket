@@ -123,6 +123,7 @@ export class OrderUpdateHandler {
           updateType: update.type,
           err: err instanceof Error ? err : new Error(String(err)),
         });
+        return;
       }
     }
 

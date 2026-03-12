@@ -194,7 +194,9 @@ export class OrderBookHistory {
    * ```
    */
   public getLast(n: number): readonly OrderBookSnapshot[] {
-    return this._snapshots.slice(-n).map((s) => s.snapshot);
+    const count = Math.floor(n);
+    if (count <= 0) return [];
+    return this._snapshots.slice(-count).map((s) => s.snapshot);
   }
 
   /**

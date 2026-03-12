@@ -23,10 +23,10 @@
  *
  * @example
  * ```typescript
- * const collector = new BookDepthCollector(eventBus, logger, {
- *   maxCount: 500,      // последние 500 снапшотов
- *   maxAgeMs: 300_000,  // или не старше 5 минут
- * });
+ * const collector = new BookDepthCollector(
+ *   { eventBus, logger },
+ *   { maxCount: 500, maxAgeMs: 300_000 },
+ * );
  * collector.start();
  *
  * // В стратегии — забрать данные и посчитать самостоятельно:
@@ -78,6 +78,7 @@ export interface BookDepthCollectorDeps {
  */
 export type BookDepthCollectorConfig = OrderBookRetentionPolicy;
 
+
 /**
  * Коллектор полных снапшотов стакана.
  *
@@ -97,11 +98,19 @@ export class BookDepthCollector {
   /**
    * @param _deps - Зависимости (eventBus, logger)
    * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
+   *
+   * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
    */
   constructor(
     private readonly _deps: BookDepthCollectorDeps,
     private readonly _config: BookDepthCollectorConfig,
-  ) {}
+  ) {
+    if (_config.maxCount === undefined && _config.maxAgeMs === undefined) {
+      throw new RangeError(
+        'BookDepthCollector: retention policy must specify maxCount and/or maxAgeMs',
+      );
+    }
+  }
 
   /**
    * Запускает коллектор — подписывается на события.
@@ -123,7 +132,14 @@ export class BookDepthCollector {
     this._unsubBookDepth = this._deps.eventBus.subscribe(
       'BOOK_DEPTH',
       async (event) => {
-        this._record(event.instrumentId, event.snapshot, event.timestamp.toNumber());
+        try {
+          this._record(event.instrumentId, event.snapshot, event.timestamp.toNumber());
+        } catch (err) {
+          this._deps.logger.error('BookDepthCollector: failed to record snapshot', {
+            instrumentId: String(event.instrumentId),
+            err: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
       },
     );
 

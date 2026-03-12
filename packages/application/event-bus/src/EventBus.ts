@@ -281,6 +281,12 @@ export class EventBus implements IEventBus {
         if (!hasCriticalError) {
           hasCriticalError = true;
           criticalError = result.reason;
+        } else {
+          // Последующие critical ошибки: логируем, не теряем
+          this._logger.error('EventBus critical handler threw an additional error', {
+            err: result.reason,
+            eventType: event.type,
+          });
         }
       } else {
         this._logger.error('EventBus handler threw an error', {

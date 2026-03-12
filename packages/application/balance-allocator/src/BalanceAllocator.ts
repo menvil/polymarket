@@ -386,7 +386,13 @@ export class BalanceAllocator implements IBalanceAllocator {
     let total = Money.ZERO[this._totalBalance.currency()];
     for (const allocation of this._allocations.values()) {
       const addResult = MoneyService.add(total, allocation);
-      if (addResult.ok) total = addResult.value;
+      if (!addResult.ok) {
+        throw new TradingError(
+          `_calcAllocatedBalance: currency mismatch — totalBalance is ${this._totalBalance.currency()}, allocation is ${allocation.currency()}`,
+          { context: { error: addResult.error.message } },
+        );
+      }
+      total = addResult.value;
     }
     return total;
   }
@@ -415,6 +421,8 @@ export class BalanceAllocator implements IBalanceAllocator {
   private _countAffordableSlots(balance: Money, slotCost: Money): number {
     const balanceDec = balance.value();
     if (!balanceDec.isPositive()) return 0;
-    return balanceDec.div(slotCost.value()).floor().toNumber();
+    const slotCostDec = slotCost.value();
+    if (!slotCostDec.isPositive()) return 0;
+    return balanceDec.div(slotCostDec).floor().toNumber();
   }
 }
