@@ -35,9 +35,11 @@ export interface IEventBus {
    * Публикует одно событие всем подписчикам (fanout).
    *
    * @param event - ApplicationEvent для публикации
+   * @throws Если critical handler выбросил исключение, или очередь переполнена.
    * @remarks
-   * Handlers одного события НЕ должны зависеть от side-effects друг друга.
-   * Публикация параллельная (Promise.all fanout).
+   * Handlers одного события запускаются параллельно через Promise.allSettled —
+   * все handlers дожидаются завершения перед переходом к следующему событию.
+   * Handlers НЕ должны зависеть от side-effects друг друга.
    */
   publish(event: ApplicationEvent): Promise<void>;
 
@@ -56,14 +58,21 @@ export interface IEventBus {
    *
    * @param type - Тип события (ApplicationEvent['type'])
    * @param handler - Async handler для событий этого типа
+   * @param options - Опции подписки
+   * @param options.critical - Если true: ошибка handler пробрасывается из publish(),
+   *   drain прерывается, bus остаётся работоспособным. По умолчанию false:
+   *   ошибки логируются и не останавливают остальных handlers.
    * @returns Функция отписки — вызвать при cleanup
    *
    * @example
    * ```typescript
+   * // Non-critical (по умолчанию): ошибки логируются
    * const unsub = bus.subscribe('BOOK_UPDATED', async (event) => {
-   *   // event здесь BookUpdatedEvent — TypeScript знает точный тип
    *   strategy.onBookUpdated(event.topOfBook);
    * });
+   *
+   * // Critical: ошибка пробрасывается caller'у
+   * bus.subscribe('RISK_LIMIT_BREACHED', riskHandler, { critical: true });
    * ```
    */
   subscribe<K extends ApplicationEvent['type']>(

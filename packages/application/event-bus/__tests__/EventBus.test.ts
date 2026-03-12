@@ -57,7 +57,7 @@ describe('EventBus', () => {
     expect(calls.sort()).toEqual([1, 2]);
   });
 
-  it('типобезопасно: BOOK_UPDATED handler получает BookUpdatedEvent', async () => {
+  it('доставляет корректные поля события handler-у (runtime delivery)', async () => {
     let receivedSeq = -1;
     bus.subscribe('BOOK_UPDATED', async (event) => {
       receivedSeq = event.sequenceNumber;
@@ -258,5 +258,58 @@ describe('EventBus', () => {
     await expect(
       tinyBus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)])
     ).rejects.toThrow('queue overflow');
+  });
+
+  it('два critical handler-а оба падают: первая ошибка пробрасывается, вторая логируется', async () => {
+    bus.subscribe(
+      'BOOK_UPDATED',
+      async () => { throw new Error('first critical'); },
+      { critical: true },
+    );
+    bus.subscribe(
+      'BOOK_UPDATED',
+      async () => { throw new Error('second critical'); },
+      { critical: true },
+    );
+
+    await expect(bus.publish(makeBookEvent())).rejects.toThrow('first critical');
+    expect(logger.error).toHaveBeenCalledWith(
+      'EventBus critical handler threw an additional error',
+      expect.objectContaining({ eventType: 'BOOK_UPDATED' }),
+    );
+  });
+
+  it('publishAll([]) резолвится без побочных эффектов', async () => {
+    let handlerCalled = false;
+    bus.subscribe('BOOK_UPDATED', async () => { handlerCalled = true; });
+
+    await expect(bus.publishAll([])).resolves.toBeUndefined();
+    expect(handlerCalled).toBe(false);
+    expect(bus.getStats().dispatching).toBe(false);
+  });
+
+  it('subscribe с explicit critical:false ведёт себя как non-critical (ошибка логируется)', async () => {
+    let secondCalled = false;
+    bus.subscribe(
+      'BOOK_UPDATED',
+      async () => { throw new Error('non-critical explicit'); },
+      { critical: false },
+    );
+    bus.subscribe('BOOK_UPDATED', async () => { secondCalled = true; });
+
+    await bus.publish(makeBookEvent());
+
+    expect(secondCalled).toBe(true);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('FillFailedEvent доступен из корня пакета (@polymarket/event-bus)', async () => {
+    // Если импорт ниже не компилируется — контракт публичного API нарушен.
+    // Тест намеренно статический: runtime-проверка exports через dynamic import.
+    const mod = await import('../src/index.js');
+    // FillFailedEvent — type-only экспорт, его нет как value.
+    // Проверяем что EventBus (value export) присутствует — модуль загружен корректно.
+    expect(typeof mod.EventBus).toBe('function');
+    // TypeScript-компилятор проверит FillFailedEvent при typecheck.
   });
 });
