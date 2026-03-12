@@ -207,6 +207,17 @@ describe('FillEventHandler', () => {
     );
   });
 
+  it('FAILED с taker_order_id не строкой (число) — rawOrderId становится "", warn, нет публикации', async () => {
+    // typeof 123 !== 'string' → rawOrderId = '' → asOrderId('') = undefined → warn
+    await handler.handle({ id: 'fill-001', status: 'FAILED', taker_order_id: 123 }, ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed fill has unparseable orderId, skipping FILL_FAILED event',
+      expect.any(Object),
+    );
+  });
+
   it('FAILED с пустым taker_order_id — логирует warn и не публикует FILL_FAILED', async () => {
     // asOrderId('') возвращает undefined → ранний возврат без публикации
     await handler.handle({ id: 'fill-001', status: 'FAILED', taker_order_id: '' }, ACCOUNT_ID);
