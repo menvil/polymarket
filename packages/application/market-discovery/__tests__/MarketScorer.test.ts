@@ -144,6 +144,20 @@ describe('MarketScorer', () => {
       expect(result[1]!.marketId).toBe(mZ.marketId);
     });
 
+    it('aId > bId: рынок с большим marketId ставится после рынка с меньшим', () => {
+      // Три рынка в обратном лексикографическом порядке marketId.
+      // Sort вызывает compare(a,b) где aId > bId → покрывает ветку ?: 1
+      const mC = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'cc' });
+      const mB = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'bb' });
+      const mA = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'aa' });
+
+      const result = scorer.scoreAndSort([mC, mB, mA]);
+
+      expect(result[0]!.marketId).toBe(mA.marketId); // 'aa' < 'bb' < 'cc'
+      expect(result[1]!.marketId).toBe(mB.marketId);
+      expect(result[2]!.marketId).toBe(mC.marketId);
+    });
+
     it('одинаковый marketId дважды → comparator возвращает 0, не нарушает детерминизм', () => {
       // [BUG до фикса]: String(a) < String(b) ? -1 : 1 возвращал 1 при a === b
       // (нарушение антисимметрии: cmp(a,b)=1 И cmp(b,a)=1 одновременно)
