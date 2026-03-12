@@ -167,7 +167,7 @@ export class EventBus implements IEventBus {
    * обрабатывается после текущего события, до следующего в publishAll.
    */
   public async publish(event: ApplicationEvent): Promise<void> {
-    if (this._queue.length >= this._maxQueueSize) {
+    if (this._queue.length + 1 > this._maxQueueSize) {
       throw new Error(
         `EventBus queue overflow (${this._maxQueueSize}): cannot enqueue ${event.type}`,
       );
