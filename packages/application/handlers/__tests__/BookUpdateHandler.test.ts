@@ -5,8 +5,9 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { ILogger } from '@polymarket/logger';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService, PriceService } from '@polymarket/value-objects';
 import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 
@@ -194,5 +195,83 @@ describe('BookUpdateHandler', () => {
       expect.stringContaining('reset'),
       expect.any(Object),
     );
+  });
+
+  // ── Spread calculation ─────────────────────────────────────────────────────
+
+  it('topOfBook.spread содержит Price если getSpread() > 0 и PriceService.create успешен', async () => {
+    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
+    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
+    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0.05'));
+
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+
+    const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
+      { topOfBook: { spread: Price | undefined } };
+    expect(event.topOfBook.spread).toBeDefined();
+  });
+
+  it('topOfBook.spread undefined если getSpread() === 0', async () => {
+    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
+    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
+    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0'));
+
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+
+    const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
+      { topOfBook: { spread: Price | undefined } };
+    expect(event.topOfBook.spread).toBeUndefined();
+  });
+
+  it('topOfBook.spread undefined если PriceService.create() возвращает Err', async () => {
+    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
+    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
+    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
+    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0.05'));
+
+    const spy = jest.spyOn(PriceService, 'create').mockReturnValueOnce(
+      { ok: false, error: new Error('mock price error') } as ReturnType<typeof PriceService.create>,
+    );
+
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+
+    const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
+      { topOfBook: { spread: Price | undefined } };
+    expect(event.topOfBook.spread).toBeUndefined();
+    spy.mockRestore();
+  });
+
+  // ── onMarketClosed ─────────────────────────────────────────────────────────
+
+  it('onMarketClosed очищает timestamps и вызывает deleteMarket для известного marketId', async () => {
+    // Зарегистрировать инструмент через снапшот (заполняет _marketToTokens и _lastTimestamps)
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(2000));
+
+    handler.onMarketClosed(MARKET_ID);
+
+    expect(books.deleteMarket).toHaveBeenCalledWith(MARKET_ID);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('cleaned up'),
+      expect.objectContaining({ marketId: String(MARKET_ID) }),
+    );
+
+    // После очистки следующий снапшот с меньшим ts не должен считаться stale
+    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(500));
+    // warn не вызывался (warn mocked в beforeEach, проверяем что не было вызова)
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('onMarketClosed не делает ничего если marketId неизвестен', () => {
+    const unknownId = 'no-such-market' as unknown as typeof MARKET_ID;
+
+    handler.onMarketClosed(unknownId);
+
+    expect(books.deleteMarket).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalled();
   });
 });

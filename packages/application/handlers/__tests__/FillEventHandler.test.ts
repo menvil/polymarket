@@ -30,19 +30,20 @@ function makeEventBus(): IEventBus {
 
 const ACCOUNT_ID = 'venue:POLYMARKET:0xabc' as unknown as AccountId;
 
-// Минимальный валидный raw payload из Polymarket WS user-channel
+// Минимальный валидный raw payload из Polymarket WS user-channel (формат TAKER-события)
 function makeValidRaw(): Record<string, unknown> {
   return {
     id: 'fill-001',
     taker_order_id: 'order-999',
-    trader_side: 'BUY',
-    asset_id: 'token-abc',
-    outcome: 'YES',
+    trader_side: 'TAKER',        // 'TAKER' | 'MAKER', не сторона сделки
+    market: 'market-abc',        // обязателен для asMarketId()
+    asset_id: '12345',           // числовой ERC1155 tokenId — parseAssetId принимает /^\d+$/
+    side: 'BUY',                 // сторона ТЕЙКЕРА: 'BUY' | 'SELL'
     price: '0.65',
     size: '100',
     fee_rate_bps: '0',
     status: 'MATCHED',
-    match_time: String(Date.now()),
+    timestamp: '1672290701',     // Unix секунды; FillMapper использует 'timestamp', не 'match_time'
     transaction_hash: '0xdeadbeef',
     maker_orders: [],
   };
@@ -72,7 +73,11 @@ describe('FillEventHandler', () => {
     await handler.handle(raw, ACCOUNT_ID);
 
     expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'FILL_RECEIVED' }),
+      expect.objectContaining({
+        type: 'FILL_RECEIVED',
+        fill: expect.objectContaining({ id: 'fill-001' }),
+        receivedAt: expect.any(Object),
+      }),
     );
     expect(logger.info).toHaveBeenCalledWith(
       'Fill event published',
@@ -187,6 +192,58 @@ describe('FillEventHandler', () => {
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to create receivedAt timestamp',
+      expect.any(Object),
+    );
+  });
+
+  it('FAILED с пустым id — логирует warn и не публикует FILL_FAILED', async () => {
+    // asFillId('') возвращает undefined → ранний возврат без публикации
+    await handler.handle({ id: '', status: 'FAILED', taker_order_id: 'order-999' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed fill has unparseable fillId, skipping FILL_FAILED event',
+      expect.any(Object),
+    );
+  });
+
+  it('FAILED с пустым taker_order_id — логирует warn и не публикует FILL_FAILED', async () => {
+    // asOrderId('') возвращает undefined → ранний возврат без публикации
+    await handler.handle({ id: 'fill-001', status: 'FAILED', taker_order_id: '' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed fill has unparseable orderId, skipping FILL_FAILED event',
+      expect.any(Object),
+    );
+  });
+
+  it('статус не строка — трактуется как UNKNOWN, trace-лог, нет публикации', async () => {
+    // typeof raw['status'] !== 'string' → status = 'UNKNOWN' → не в FILL_CREATE_STATUSES
+    await handler.handle({ status: 42 }, ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.trace).toHaveBeenCalledWith(
+      'Fill event ignored (non-primary status)',
+      expect.objectContaining({ status: 'UNKNOWN' }),
+    );
+  });
+
+  it('FAILED: не публикует FILL_FAILED если clock возвращает невалидную дату', async () => {
+    const badClock: IClock = {
+      now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
+    };
+    const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
+
+    // id и taker_order_id валидны, но clock невалидный → TimestampService.fromDate fail
+    await handlerBadClock.handle(
+      { id: 'fill-001', status: 'FAILED', taker_order_id: 'order-999' },
+      ACCOUNT_ID,
+    );
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to create receivedAt timestamp for failed fill',
       expect.any(Object),
     );
   });
