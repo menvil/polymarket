@@ -108,15 +108,20 @@ function makePortfolioMock(): Portfolio {
     getPositionCount: () => 0,
     reserveForOrder: jest.fn<Portfolio['reserveForOrder']>(),
     releaseReservation: jest.fn<Portfolio['releaseReservation']>(),
+    reserveTokensForOrder: jest.fn<Portfolio['reserveTokensForOrder']>(),
+    releaseTokenReservation: jest.fn<Portfolio['releaseTokenReservation']>(),
     applyDebit: jest.fn<Portfolio['applyDebit']>(),
     applyCredit: jest.fn<Portfolio['applyCredit']>(),
     upsertPosition: jest.fn<Portfolio['upsertPosition']>(),
+    tokenReservations: new Map(),
   } as unknown as Portfolio;
 
   // mock вернёт сам себя при applyDebit (side effect: позиция обновилась)
   (p.applyDebit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(p);
+  (p.reserveTokensForOrder as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
+  (p.releaseTokenReservation as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   return p;
 }
 

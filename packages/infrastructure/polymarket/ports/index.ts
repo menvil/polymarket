@@ -11,7 +11,7 @@ export type { IPortfolioAdapter, PositionResponse, CanPlaceOrderParams, CanPlace
 export type { IBalanceProvider } from './IBalanceProvider.js';
 export type { IPositionsProvider, PositionResponse as PositionResp, PositionState } from './IPositionsProvider.js';
 export type { IOrdersProvider, OrderResponse as OrderResponseOrders } from './IOrdersProvider.js';
-export type { IPortfolioProjector } from './IPortfolioProjector.js';
+export type { IPortfolioProjector, ProjectedPosition } from './IPortfolioProjector.js';
 export type { IInfraOrderRepository } from './IInfraOrderRepository.js';
 export type { IEventBus } from './IEventBus.js';
 export type { IMarketDataFeed } from './IMarketDataFeed.js';

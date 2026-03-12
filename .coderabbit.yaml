@@ -3,4 +3,9 @@ reviews:
   path_filters:
     - "!dist/**"
     - "!node_modules/**"
-    - "packages/application/**"
+    - "packages/domain/entitites/portfolio/**"
+    - "packages/domain/accounting/legder/**"
+    - "packages/domain/market-data/**"
+    - "packages/application/balance-allocator/**"
+    - "packages/application/event-bus/**"
+    - "packages/application/handlers/**"

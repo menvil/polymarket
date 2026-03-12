@@ -32,6 +32,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, OrderId } from '@polymarket/ids';
+import { asInstrumentId, assetIdToString } from '@polymarket/ids';
 import type { IOrderRepository, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { OrderService } from './services/OrderService.js';
@@ -114,8 +115,8 @@ export class CancelOrderUseCase {
     }
     const cancelledOrder = cancelResult.value;
 
-    // Шаг 3: Снятие резервации (только для BUY ордеров — у SELL нет резервации)
-    // Используем cancelledOrder (обновлённое состояние) для точного расчёта notional
+    // Шаг 3: Снятие резервации по стороне ордера
+    // Используем cancelledOrder (обновлённое состояние) для точного расчёта остатка
     if (order.side === 'BUY') {
       const remainingNotional = cancelledOrder.price.value().times(cancelledOrder.remainingSize.value());
       const releaseResult = this._deps.portfolioService.releaseReservation(
@@ -123,11 +124,34 @@ export class CancelOrderUseCase {
         remainingNotional,
       );
       if (!releaseResult.ok) {
-        this._logger.error('Failed to release reservation after cancel', {
+        this._logger.error('Failed to release USDC reservation after BUY cancel', {
           orderId: String(input.orderId),
           error: releaseResult.error.message,
         });
         // Не прерываем — ордер уже отменён
+      }
+    } else {
+      // SELL: освободить токенную резервацию
+      const instrumentId = asInstrumentId(assetIdToString(cancelledOrder.asset));
+      if (instrumentId) {
+        const remainingQty = cancelledOrder.remainingSize.value();
+        const releaseResult = this._deps.portfolioService.releaseTokenReservation(
+          input.accountId,
+          instrumentId,
+          remainingQty,
+        );
+        if (!releaseResult.ok) {
+          this._logger.error('Failed to release token reservation after SELL cancel', {
+            orderId: String(input.orderId),
+            error: releaseResult.error.message,
+          });
+          // Не прерываем — ордер уже отменён
+        }
+      } else {
+        this._logger.warn('Could not resolve instrumentId for SELL order cancel', {
+          orderId: String(input.orderId),
+          asset: String(cancelledOrder.asset),
+        });
       }
     }
 

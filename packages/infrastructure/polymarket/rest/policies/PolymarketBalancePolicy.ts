@@ -227,7 +227,12 @@ export class PolymarketBalancePolicy {
 
     if (this.portfolioProjector) {
       const position = this.portfolioProjector.getPosition(tokenId);
-      availableTokens = position?.quantity ?? 0;
+      if (position) {
+        const available = position.totalQty.minus(position.reservedQty);
+        availableTokens = available.isNegative() ? 0 : available.toNumber();
+      } else {
+        availableTokens = 0;
+      }
       balanceSource   = 'PortfolioProjector';
 
       this.logger.debug('Checking sell balance (PortfolioProjector - instant)', {
@@ -382,8 +387,13 @@ export class PolymarketBalancePolicy {
     let availableTokens: number;
 
     if (this.portfolioProjector) {
-      const position  = this.portfolioProjector.getPosition(tokenId);
-      availableTokens = position?.quantity ?? 0;
+      const position = this.portfolioProjector.getPosition(tokenId);
+      if (position) {
+        const available = position.totalQty.minus(position.reservedQty);
+        availableTokens = available.isNegative() ? 0 : available.toNumber();
+      } else {
+        availableTokens = 0;
+      }
 
       this.logger.debug('Calculated max sell size (PortfolioProjector)', {
         tokenId:        tokenId.substring(0, 16) + '...',

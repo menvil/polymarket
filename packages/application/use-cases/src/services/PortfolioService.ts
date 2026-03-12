@@ -3,13 +3,18 @@
  *
  * @remarks
  * Отвечает за обновление баланса и позиций Portfolio при:
- * - Размещении ордера (резервирование средств)
+ * - Размещении ордера (резервирование средств или токенов)
  * - Отмене ордера (снятие резервации)
  * - Исполнении fill (дебет/кредит баланса + обновление позиции)
  *
  * ### Схема обновления баланса при Fill:
  * - BUY fill: `applyDebit(price × size)` — снимает из зарезервированных средств
  * - SELL fill: `applyCredit(price × size)` — зачисляет на доступный баланс
+ *
+ * ### Резервации токенов (SELL ордера):
+ * - SELL order placed:    `reserveTokensForOrder(accountId, instrumentId, size)` → tokenReservations[id] += size
+ * - SELL fill received:   `releaseTokenReservation(accountId, instrumentId, size)` → tokenReservations[id] -= size
+ * - SELL order cancelled: `releaseTokenReservation(accountId, instrumentId, size)` → tokenReservations[id] -= size
  *
  * ### Позиции:
  * Позиции хранятся как SimplePosition (агрегированные qty + avgEntryPrice).
@@ -134,6 +139,90 @@ export class PortfolioService {
   }
 
   /**
+   * Резервирует outcome-токены для нового SELL ордера.
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента (outcome-токена)
+   * @param qty - Количество токенов для резервирования
+   * @returns Ok(void) или Err при ошибке резервирования / конфликте версий
+   *
+   * @remarks
+   * Симметричен `reserveForOrder` (USDC-резервация для BUY).
+   * Вызывается в PlaceOrderUseCase перед отправкой SELL ордера на биржу.
+   * При ошибке биржи необходимо вызвать `releaseTokenReservation` для отката.
+   */
+  public reserveTokensForOrder(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+    qty: Decimal,
+  ): Result<void, PortfolioSaveError> {
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+    }
+
+    const reserveResult = portfolio.reserveTokensForOrder(instrumentId, qty);
+    if (!reserveResult.ok) {
+      return Err(new TradingError(
+        `Failed to reserve tokens: ${reserveResult.error.message}`,
+        { context: { accountId: String(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(reserveResult.value, 0);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Tokens reserved for SELL order', {
+      accountId: String(accountId),
+      instrumentId: String(instrumentId),
+      qty: qty.toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Снимает токенную резервацию (при исполнении или отмене SELL ордера).
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента
+   * @param qty - Ранее зарезервированное количество токенов
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Симметричен `releaseReservation` (USDC-резервация для BUY).
+   * Вызывается в CancelOrderUseCase или при откате PlaceOrderUseCase для SELL ордеров.
+   * При fill SELL-ордера вызывается из `applyFill` (best-effort).
+   */
+  public releaseTokenReservation(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+    qty: Decimal,
+  ): Result<void, PortfolioSaveError> {
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+    }
+
+    const releaseResult = portfolio.releaseTokenReservation(instrumentId, qty);
+    if (!releaseResult.ok) {
+      return Err(new TradingError(
+        `Failed to release token reservation: ${releaseResult.error.message}`,
+        { context: { accountId: String(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(releaseResult.value, 0);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Token reservation released', {
+      accountId: String(accountId),
+      instrumentId: String(instrumentId),
+      qty: qty.toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
    * Применяет Fill к Portfolio: обновляет баланс и позицию.
    *
    * @param fill - Исполнение ордера
@@ -145,8 +234,9 @@ export class PortfolioService {
    * 2. Позиция LONG: quantity += size, пересчёт averageEntryPrice по VWAP
    *
    * ### SELL fill:
-   * 1. `applyCredit(price × size)` — зачисляет выручку на доступный баланс
-   * 2. Позиция LONG: quantity -= size, isClosed() = true при quantity = 0
+   * 1. Снимаем токенную резервацию (best effort — бот мог перезапуститься)
+   * 2. `applyCredit(price × size)` — зачисляет выручку на доступный баланс
+   * 3. Позиция LONG: quantity -= size, isClosed() = true при quantity = 0
    *
    * tokenId используется как instrumentId для поиска/обновления позиции.
    */
@@ -159,22 +249,6 @@ export class PortfolioService {
       ));
     }
 
-    const notional = fill.price.value().times(fill.size.value());
-    const money = Money.of(notional, 'USDC');
-
-    // 1. Обновить баланс
-    const balanceResult = fill.side === 'BUY'
-      ? portfolio.applyDebit(money)
-      : portfolio.applyCredit(money);
-
-    if (!balanceResult.ok) {
-      return Err(new TradingError(
-        `Failed to apply balance change: ${balanceResult.error.message}`,
-        { context: { fillId: String(fill.id), side: fill.side } },
-      ));
-    }
-
-    // 2. Обновить позицию
     const instrumentId = asInstrumentId(assetIdToString(fill.tokenId));
     if (!instrumentId) {
       return Err(new TradingError(
@@ -183,6 +257,40 @@ export class PortfolioService {
       ));
     }
 
+    const fillQty = fill.size.value();
+    const notional = fill.price.value().times(fillQty);
+    const money = Money.of(notional, 'USDC');
+
+    // Для SELL: снять токенную резервацию (best effort)
+    let portfolioAfterTokenRelease = portfolio;
+    if (fill.side === 'SELL') {
+      const releaseResult = portfolio.releaseTokenReservation(instrumentId, fillQty);
+      if (!releaseResult.ok) {
+        // best effort: резервации может не быть (бот перезапустился)
+        this._logger.warn('Token reservation not found for SELL fill — skipping release', {
+          accountId: String(fill.accountId),
+          fillId: String(fill.id),
+          instrumentId: String(instrumentId),
+          fillQty: fillQty.toString(),
+        });
+      } else {
+        portfolioAfterTokenRelease = releaseResult.value;
+      }
+    }
+
+    // Обновить баланс
+    const balanceResult = fill.side === 'BUY'
+      ? portfolioAfterTokenRelease.applyDebit(money)
+      : portfolioAfterTokenRelease.applyCredit(money);
+
+    if (!balanceResult.ok) {
+      return Err(new TradingError(
+        `Failed to apply balance change: ${balanceResult.error.message}`,
+        { context: { fillId: String(fill.id), side: fill.side } },
+      ));
+    }
+
+    // Обновить позицию
     const positionResult = this._applyPositionUpdate(balanceResult.value, instrumentId, fill);
     if (!positionResult.ok) {
       return Err(new TradingError(

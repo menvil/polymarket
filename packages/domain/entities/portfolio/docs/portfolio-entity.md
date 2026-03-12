@@ -52,7 +52,28 @@ getTotalValue(prices: Map<InstrumentId, Price>): Money
 getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
 ```
 
-### 5. Структурная типизация для позиций (IPosition)
+### 5. `tokenReservations` — резервации outcome-токенов для SELL ордеров
+
+**Проблема**: При размещении SELL ордера outcome-токены не резервировались. Это приводило к:
+- `BalancePolicy` видел полную позицию без учёта открытых SELL ордеров → **двойная продажа**
+- При отмене SELL ничего не освобождалось
+- При fill SELL резервация не снималась
+
+**Решение**: `tokenReservations: ReadonlyMap<InstrumentId, Decimal>` — симметрично `balance.reserved` для USDC.
+
+```typescript
+// Баланс USDC (BUY):
+balance.available()  // USDC доступно
+balance.reserved()   // USDC под открытые BUY ордера
+
+// Токены (SELL):
+availableTokenQuantity(id)          // токены доступно (= position.qty - reserved)
+tokenReservations.get(id)           // токены под открытые SELL ордера
+```
+
+Не используется `Quantity` VO (требует значение >= 0.0001) — для Map достаточно `Decimal`.
+
+### 6. Структурная типизация для позиций (IPosition)
 
 **Проблема**: Прямая зависимость от `Position` entity из другого package требовала, чтобы тот package был скомпилирован. При build errors в position — portfolio тоже не собирался.
 
@@ -69,7 +90,7 @@ export interface IPosition {
 ```
 Реальный `Position` структурно совместим с `IPosition`. `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
 
-### 6. `applyCredit()` вместо прямой манипуляции с балансом
+### 7. `applyCredit()` вместо прямой манипуляции с балансом
 
 **Проблема**: Внешний код мог напрямую вычислять новый available и создавать Balance, обходя инварианты.
 
@@ -95,19 +116,47 @@ packages/domain/entities/portfolio/
 
 ## Жизненный цикл баланса
 
+### USDC (BUY ордера)
+
 ```
 reserveForOrder(amount)    →  available -= amount, reserved += amount
 releaseReservation(amount) →  available += amount, reserved -= amount
-applyDebit(amount)         →  reserved -= amount  (исполнение ордера)
-applyCredit(amount)        →  available += amount (зачисление)
+applyDebit(amount)         →  reserved -= amount  (исполнение BUY fill)
+applyCredit(amount)        →  available += amount (зачисление при SELL fill)
 ```
 
 | Метод | Сценарий использования |
 |-------|----------------------|
-| `reserveForOrder(amount)` | Размещение ордера — заморозить средства |
-| `releaseReservation(amount)` | Отмена ордера — вернуть средства |
-| `applyDebit(amount)` | Исполнение ордера — списать из reserved |
-| `applyCredit(amount)` | Получение средств (profit, пополнение) |
+| `reserveForOrder(amount)` | Размещение BUY ордера — заморозить USDC |
+| `releaseReservation(amount)` | Отмена BUY ордера — вернуть USDC |
+| `applyDebit(amount)` | BUY fill — списать из reserved |
+| `applyCredit(amount)` | SELL fill — зачислить выручку |
+
+### Outcome-токены (SELL ордера)
+
+```
+reserveTokensForOrder(id, qty)   →  tokenReservations[id] += qty
+releaseTokenReservation(id, qty) →  tokenReservations[id] -= qty
+availableTokenQuantity(id)       →  position.qty - tokenReservations[id]
+```
+
+| Метод | Сценарий использования |
+|-------|----------------------|
+| `reserveTokensForOrder(id, qty)` | Размещение SELL ордера — заморозить токены |
+| `releaseTokenReservation(id, qty)` | SELL fill или отмена SELL — освободить токены |
+| `availableTokenQuantity(id)` | Проверка доступного объёма перед новым SELL |
+
+**Жизненный цикл SELL ордера (симметрия с BUY):**
+
+```
+BUY order placed:    reserveForOrder(USDC)             → balance.reserved += notional
+BUY fill received:   applyDebit(USDC)                  → balance.reserved -= notional
+BUY order cancelled: releaseReservation(USDC)          → balance.reserved -= notional
+
+SELL order placed:    reserveTokensForOrder(id, qty)   → tokenReservations[id] += qty
+SELL fill received:   releaseTokenReservation(id, qty)  → tokenReservations[id] -= qty
+SELL order cancelled: releaseTokenReservation(id, qty)  → tokenReservations[id] -= qty
+```
 
 ---
 
@@ -181,6 +230,34 @@ for (const pos of portfolio.getPositions()) {
   console.log(pos.instrumentId);
 }
 console.log(portfolio.getPositionCount()); // 3
+```
+
+### Токенные резервации (SELL ордера)
+
+```typescript
+// Позиция: 100 токенов
+const withPosition = portfolio.upsertPosition(openPosition); // quantity = 100
+
+// Размещение SELL ордера — зарезервировать 80 токенов
+const reserved = withPosition.reserveTokensForOrder(instrumentId, new Decimal(80));
+if (reserved.ok) {
+  const p = reserved.value;
+  p.availableTokenQuantity(instrumentId).toNumber(); // 20 (100 - 80)
+  p.tokenReservations.get(instrumentId)?.toNumber(); // 80
+}
+
+// Отмена SELL ордера — освободить 80 токенов
+const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(80));
+if (released.ok) {
+  released.value.availableTokenQuantity(instrumentId).toNumber(); // 100
+  released.value.tokenReservations.size; // 0 (запись удалена)
+}
+
+// Проверка перед новым ордером (BalancePolicy)
+const available = portfolio.availableTokenQuantity(instrumentId);
+if (available.gte(orderSize)) {
+  // можно размещать SELL ордер
+}
 ```
 
 ### Оценка стоимости

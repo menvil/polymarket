@@ -153,13 +153,25 @@ export class PlaceOrderUseCase {
     }
     const order = orderResult.value;
 
-    // Шаг 3: Резервирование баланса
-    const notional = input.price.value().times(input.size.value());
-    const reserveResult = this._deps.portfolioService.reserveForOrder(input.accountId, notional);
+    // Шаг 3: Резервирование ресурсов (BUY → USDC, SELL → токены)
+    const isBuy = input.side === 'BUY';
+    const notional = isBuy ? input.price.value().times(input.size.value()) : undefined;
+    const reserveResult = isBuy
+      ? this._deps.portfolioService.reserveForOrder(input.accountId, notional!)
+      : this._deps.portfolioService.reserveTokensForOrder(
+          input.accountId,
+          input.instrumentId,
+          input.size.value(),
+        );
     if (!reserveResult.ok) {
       return Err(new TradingError(
-        `Failed to reserve balance: ${reserveResult.error.message}`,
-        { context: { orderId: String(input.orderId), notional: notional.toString() } },
+        `Failed to reserve ${isBuy ? 'balance' : 'tokens'}: ${reserveResult.error.message}`,
+        {
+          context: {
+            orderId: String(input.orderId),
+            ...(isBuy ? { notional: notional!.toString() } : { instrumentId: String(input.instrumentId), size: input.size.value().toString() }),
+          },
+        },
       ));
     }
 
@@ -179,7 +191,13 @@ export class PlaceOrderUseCase {
         orderId: String(input.orderId),
         error: submitResult.error.message,
       });
-      const releaseResult = this._deps.portfolioService.releaseReservation(input.accountId, notional);
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation during rollback', {
           orderId: String(input.orderId),
@@ -201,7 +219,13 @@ export class PlaceOrderUseCase {
     const acceptResult = order.accept();
     if (!acceptResult.ok) {
       // Откат: снять резервацию и отменить ордер на бирже
-      const releaseResult = this._deps.portfolioService.releaseReservation(input.accountId, notional);
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation during accept() rollback', {
           orderId: String(input.orderId),
@@ -251,7 +275,7 @@ export class PlaceOrderUseCase {
     this._logger.info('Order placed successfully', {
       orderId: String(input.orderId),
       side: input.side,
-      notional: notional.toString(),
+      ...(notional !== undefined ? { notional: notional.toString() } : { size: input.size.value().toString() }),
     });
 
     return Ok(input.orderId);
