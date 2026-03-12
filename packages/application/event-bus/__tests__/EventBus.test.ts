@@ -6,6 +6,8 @@ import type { ILogger } from '@polymarket/logger';
 import { EventBus } from '../src/EventBus.js';
 import type { ApplicationEvent } from '../src/events/index.js';
 import type { BookUpdatedEvent } from '../src/events/market-events.js';
+// Compile-time check: если FillFailedEvent не экспортируется из index.ts — typecheck падает.
+import type { FillFailedEvent } from '../src/index.js';
 
 // Минимальный mock logger
 function makeLogger(): ILogger {
@@ -303,13 +305,11 @@ describe('EventBus', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('FillFailedEvent доступен из корня пакета (@polymarket/event-bus)', async () => {
-    // Если импорт ниже не компилируется — контракт публичного API нарушен.
-    // Тест намеренно статический: runtime-проверка exports через dynamic import.
-    const mod = await import('../src/index.js');
-    // FillFailedEvent — type-only экспорт, его нет как value.
-    // Проверяем что EventBus (value export) присутствует — модуль загружен корректно.
-    expect(typeof mod.EventBus).toBe('function');
-    // TypeScript-компилятор проверит FillFailedEvent при typecheck.
+  it('FillFailedEvent экспортируется из корня пакета (compile-time)', () => {
+    // Реальная проверка — compile-time: import type { FillFailedEvent } вверху файла.
+    // Если FillFailedEvent убрать из src/index.ts, typecheck упадёт на строке импорта.
+    // Здесь фиксируем контракт структуры типа: тип должен иметь поле type.
+    const _check: FillFailedEvent['type'] = 'FILL_FAILED';
+    expect(_check).toBe('FILL_FAILED');
   });
 });
