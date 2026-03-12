@@ -172,7 +172,7 @@ export class OrderBook {
    * );
    * ```
    */
-  public applyFullState(bids: PriceLevel[], asks: PriceLevel[], timestamp?: Timestamp): void {
+  public applyFullState(bids: readonly PriceLevel[], asks: readonly PriceLevel[], timestamp?: Timestamp): void {
     this._bids = new Map();
     this._asks = new Map();
 

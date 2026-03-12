@@ -68,6 +68,12 @@ export class MarketDataFeedAdapter {
   private readonly _logger: ILogger;
   /** Список активных unsubscribe-функций */
   private readonly _unsubscribes: Array<() => void> = [];
+  /**
+   * Последний хэш снапшота per asset_id — для дедупликации reconnect-дублей.
+   * Хэш специфичен для конкретного asset_id (не market), что подтверждено
+   * реальными данными: YES/NO токены одного рынка имеют разные хэши.
+   */
+  private readonly _lastHashes = new Map<string, string>();
 
   /**
    * @param _wsEmitter - WS-эмиттер raw событий Polymarket
@@ -104,6 +110,17 @@ export class MarketDataFeedAdapter {
       // В режиме только записи (bookHandler = null) конвертация уровней не нужна:
       // raw данные уже сохранены выше, а доменная обработка отсутствует.
       if (!this._bookHandler) return;
+
+      // Дедупликация по хэшу: пропускаем снапшот если состояние книги не изменилось.
+      // Эффективно при reconnect — Polymarket переотправляет снапшоты, большинство
+      // из которых идентичны уже обработанным (те же хэши → skip).
+      if (dto.hash) {
+        if (this._lastHashes.get(dto.asset_id) === dto.hash) {
+          this._logger.debug('Skipping duplicate orderbook snapshot', { asset_id: dto.asset_id });
+          return;
+        }
+        this._lastHashes.set(dto.asset_id, dto.hash);
+      }
 
       const tokenId = asInstrumentId(dto.asset_id);
       if (!tokenId) {

@@ -96,7 +96,7 @@ export class BookUpdateHandler {
       return;
     }
     const book = this._books.getOrCreate(instrument.marketId, tokenId);
-    book.applyFullState([...bids], [...asks], timestamp);
+    book.applyFullState(bids, asks, timestamp);
 
     this._logger.debug('Order book snapshot applied', {
       tokenId: String(tokenId),
