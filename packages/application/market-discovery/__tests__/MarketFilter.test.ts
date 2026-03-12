@@ -263,6 +263,29 @@ describe('MarketFilter', () => {
     });
   });
 
+  describe('word-boundary matching (ложные срабатывания)', () => {
+    it('excludedKeywords: war — не исключает рынок со словом "reward"', () => {
+      const market = makeMarket({ question: 'Will the reward program expand globally?' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['war'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('excludedKeywords: war — исключает рынок где "war" является отдельным словом', () => {
+      const market = makeMarket({ question: 'Will the war in Ukraine end this year?' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['war'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(0);
+    });
+
+    it('requiredKeywords: up — не матчит слово "output"', () => {
+      const market = makeMarket({ question: 'Will output increase next quarter?' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, requiredKeywords: ['up'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(0);
+    });
+  });
+
   describe('комбинация фильтров', () => {
     it('рынок не проходит несколько фильтров → исключён', () => {
       const market = makeMarket({

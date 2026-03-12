@@ -11,9 +11,13 @@
  * 2. `hoursToExpiry >= minTimeToExpiryHours` — временной фильтр
  * 3. `spread >= minSpread` — фильтр по спреду (только если spread > 0)
  * 4. `liquidity >= minDailyVolume` — фильтр по ликвидности
- * 5. `requiredKeywords` — все слова в question (регистронезависимо)
+ * 5. `requiredKeywords` — все слова в question (по границам слов, регистронезависимо)
  * 6. `anyOfKeywords` — хотя бы одно слово в question
  * 7. `excludedKeywords` — ни одного слова из списка в question
+ *
+ * ### Поиск ключевых слов:
+ * Используется `\bkeyword\b` (word-boundary regex), что предотвращает ложные срабатывания.
+ * Например, `excludedKeywords: ['war']` не будет матчить `'reward'` или `'forward'`.
  */
 import Decimal from 'decimal.js';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
@@ -71,6 +75,13 @@ export class MarketFilter {
     // 1. Дедупликация по marketId (последний дубликат побеждает)
     const deduped = this._deduplicateByMarketId(markets);
 
+    // Компилируем регексы один раз для всего прохода фильтра.
+    // Поиск с \b-границами слов предотвращает ложные срабатывания
+    // (например, 'war' не матчит 'reward' или 'forward').
+    const requiredRegexes = this._compileKeywords(config.requiredKeywords);
+    const anyOfRegexes    = this._compileKeywords(config.anyOfKeywords);
+    const excludedRegexes = this._compileKeywords(config.excludedKeywords);
+
     return deduped.filter((market) => {
       // 2. Временной фильтр
       if (!this._passesExpiryFilter(market, config.minTimeToExpiryHours, nowMs)) {
@@ -87,19 +98,24 @@ export class MarketFilter {
         return false;
       }
 
-      // 5. Обязательные ключевые слова
-      if (!this._passesRequiredKeywords(market, config.requiredKeywords)) {
-        return false;
-      }
+      // toLowerCase() вычисляется один раз на рынок — только если нужны keyword-фильтры
+      if (requiredRegexes.length > 0 || anyOfRegexes.length > 0 || excludedRegexes.length > 0) {
+        const question = market.question.toLowerCase();
 
-      // 6. Хотя бы одно ключевое слово из anyOfKeywords
-      if (!this._passesAnyOfKeywords(market, config.anyOfKeywords)) {
-        return false;
-      }
+        // 5. Обязательные ключевые слова
+        if (!this._passesRequiredKeywords(question, requiredRegexes)) {
+          return false;
+        }
 
-      // 7. Запрещённые ключевые слова
-      if (!this._passesExcludedKeywords(market, config.excludedKeywords)) {
-        return false;
+        // 6. Хотя бы одно ключевое слово из anyOfKeywords
+        if (!this._passesAnyOfKeywords(question, anyOfRegexes)) {
+          return false;
+        }
+
+        // 7. Запрещённые ключевые слова
+        if (!this._passesExcludedKeywords(question, excludedRegexes)) {
+          return false;
+        }
       }
 
       return true;
@@ -162,50 +178,64 @@ export class MarketFilter {
   }
 
   /**
+   * Компилирует список ключевых слов в регулярные выражения с `\b`-границами слов.
+   *
+   * @param keywords - Список ключевых слов (или undefined)
+   * @returns Массив скомпилированных RegExp (case-insensitive)
+   *
+   * @remarks
+   * `\b`-границы предотвращают ложные срабатывания: `'war'` не матчит `'reward'`.
+   * Специальные символы regex в ключевых словах экранируются автоматически,
+   * что делает поиск безопасным для слов вроде `'$50'` или `'c++'`.
+   *
+   * @example
+   * ```typescript
+   * const regexes = this._compileKeywords(['war', 'bitcoin']);
+   * // regexes[0] === /\bwar\b/i
+   * // regexes[1] === /\bbitcoin\b/i
+   * ```
+   */
+  private _compileKeywords(keywords: readonly string[] | undefined): RegExp[] {
+    if (!keywords || keywords.length === 0) return [];
+    return keywords.map((kw) => {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'i');
+    });
+  }
+
+  /**
    * Проверяет наличие всех обязательных ключевых слов в question.
    *
-   * @param market - Рынок для проверки
-   * @param keywords - Список обязательных ключевых слов (или undefined)
-   * @returns true если все слова присутствуют, или список пустой/undefined
+   * @param question - Вопрос рынка в нижнем регистре
+   * @param regexes - Предскомпилированные `\b`-регексы обязательных слов
+   * @returns true если все регексы дают совпадение, или список пустой
    */
-  private _passesRequiredKeywords(
-    market: DiscoveredMarket,
-    keywords: readonly string[] | undefined,
-  ): boolean {
-    if (!keywords || keywords.length === 0) return true;
-    const question = market.question.toLowerCase();
-    return keywords.every((kw) => question.includes(kw.toLowerCase()));
+  private _passesRequiredKeywords(question: string, regexes: RegExp[]): boolean {
+    if (regexes.length === 0) return true;
+    return regexes.every((re) => re.test(question));
   }
 
   /**
    * Проверяет наличие хотя бы одного слова из anyOfKeywords в question.
    *
-   * @param market - Рынок для проверки
-   * @param keywords - Список ключевых слов «хотя бы одно» (или undefined)
-   * @returns true если хотя бы одно слово присутствует, или список пустой/undefined
+   * @param question - Вопрос рынка в нижнем регистре
+   * @param regexes - Предскомпилированные `\b`-регексы слов «хотя бы одно»
+   * @returns true если хотя бы один регекс даёт совпадение, или список пустой
    */
-  private _passesAnyOfKeywords(
-    market: DiscoveredMarket,
-    keywords: readonly string[] | undefined,
-  ): boolean {
-    if (!keywords || keywords.length === 0) return true;
-    const question = market.question.toLowerCase();
-    return keywords.some((kw) => question.includes(kw.toLowerCase()));
+  private _passesAnyOfKeywords(question: string, regexes: RegExp[]): boolean {
+    if (regexes.length === 0) return true;
+    return regexes.some((re) => re.test(question));
   }
 
   /**
    * Проверяет отсутствие запрещённых ключевых слов в question.
    *
-   * @param market - Рынок для проверки
-   * @param keywords - Список запрещённых слов (или undefined)
-   * @returns true если ни одного слова из списка нет в question, или список пустой/undefined
+   * @param question - Вопрос рынка в нижнем регистре
+   * @param regexes - Предскомпилированные `\b`-регексы запрещённых слов
+   * @returns true если ни один регекс не даёт совпадение, или список пустой
    */
-  private _passesExcludedKeywords(
-    market: DiscoveredMarket,
-    keywords: readonly string[] | undefined,
-  ): boolean {
-    if (!keywords || keywords.length === 0) return true;
-    const question = market.question.toLowerCase();
-    return !keywords.some((kw) => question.includes(kw.toLowerCase()));
+  private _passesExcludedKeywords(question: string, regexes: RegExp[]): boolean {
+    if (regexes.length === 0) return true;
+    return !regexes.some((re) => re.test(question));
   }
 }

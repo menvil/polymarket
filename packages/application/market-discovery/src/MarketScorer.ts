@@ -68,20 +68,21 @@ export class MarketScorer {
    */
   public scoreAndSort(markets: readonly DiscoveredMarket[]): DiscoveredMarket[] {
     const nowMs = this._clock.now().getTime();
+    const MS_PER_HOUR = 1000 * 60 * 60;
 
-    const MS_PER_HOUR = new Decimal(1000 * 60 * 60);
-
-    // Проставляем score = hoursToExpiry
+    // Проставляем score = hoursToExpiry.
+    // score является единственным источником правды для сортировки:
+    // сортировка ниже опирается только на него, а не на expiresAt напрямую.
     const scored = markets.map((market) => {
-      const expiresMs = new Decimal(market.expiresAt.toNumber());
-      const hoursToExpiry = expiresMs.minus(nowMs).div(MS_PER_HOUR);
-      return { ...market, score: hoursToExpiry };
+      const hoursToExpiry = (market.expiresAt.toNumber() - nowMs) / MS_PER_HOUR;
+      return { ...market, score: new Decimal(hoursToExpiry) };
     });
 
-    // Сортировка: expiresAt ASC, при равных — liquidity DESC
+    // Сортировка: score ASC (ближайшее истечение первым),
+    // при равных score — liquidity DESC.
     scored.sort((a, b) => {
-      const expiryDiff = a.expiresAt.toNumber() - b.expiresAt.toNumber();
-      if (expiryDiff !== 0) return expiryDiff;
+      const scoreDiff = a.score.comparedTo(b.score);
+      if (scoreDiff !== 0) return scoreDiff;
       return b.liquidity.comparedTo(a.liquidity);
     });
 
