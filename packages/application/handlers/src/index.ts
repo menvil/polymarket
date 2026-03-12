@@ -27,3 +27,9 @@ export type { VenueOrderUpdate } from './OrderUpdateHandler.js';
 export type { IBookRegistry } from './IBookRegistry.js';
 export { BookDepthCollector } from './BookDepthCollector.js';
 export type { BookDepthCollectorDeps, BookDepthCollectorConfig } from './BookDepthCollector.js';
+export { TradeTapeCollector } from './TradeTapeCollector.js';
+export type {
+  TradeTapeCollectorDeps,
+  TradeTapeCollectorConfig,
+  TapeRecord,
+} from './TradeTapeCollector.js';
