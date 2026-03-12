@@ -15,7 +15,7 @@
  * - `BookDepthCollector` хранит `OrderBookHistory` per tokenId
  * - `TradeTapeCollector` хранит `TradeTape` per tokenId
  * - Оба создают хранилище лениво при первом событии
- * - Оба очищают данные при `MARKET_CLOSED`
+ * - Оба очищают данные при `MARKET_CLOSED` за O(k)
  *
  * ### Жизненный цикл:
  * 1. `start()` — подписывается на `TRADE_RECEIVED` и `MARKET_CLOSED`
@@ -27,6 +27,11 @@
  * Политика передаётся при создании и применяется к каждой `TradeTape`:
  * - `maxCount` — FIFO по количеству записей
  * - `maxAgeMs` — авто-вытеснение по возрасту при каждом `append()`
+ *
+ * ### Сложность операций:
+ * - `_record()` — O(1) amortized
+ * - `_cleanup()` — O(k) где k = количество инструментов рынка (обычно 2)
+ *   Достигается за счёт reverse index `_byMarket: Map<marketId, Set<InstrumentId>>`
  *
  * @example
  * ```typescript
@@ -78,31 +83,41 @@ export interface TradeTapeCollectorDeps {
 export type TradeTapeCollectorConfig = TapeRetentionPolicy;
 
 /**
- * Внутренняя структура хранения ленты per tokenId
+ * Внутренняя структура хранения ленты per tokenId.
+ *
+ * @remarks
+ * `marketId` сохраняется при создании из каталога и не зависит от retention eviction.
+ * Используется как ключ в reverse index для O(1) cleanup.
  */
 interface InternalEntry {
-  tape: TradeTape;
-  /** marketId сохраняется при создании для cleanup на MARKET_CLOSED */
-  marketId: string | undefined;
+  readonly tape: TradeTape;
+  /** String(marketId) из каталога при создании; undefined если инструмент не в каталоге */
+  readonly marketId: string | undefined;
 }
 
 /**
  * Коллектор ленты трейдов из WS-потока.
  *
  * @remarks
- * Поддерживает `Map<tokenId, InternalEntry>`.
+ * Поддерживает `Map<InstrumentId, InternalEntry>` + `_byMarket: Map<string, Set<InstrumentId>>`
+ * для O(1) cleanup при `MARKET_CLOSED`.
  * Каждая лента создаётся лениво при первом трейде.
- * Использует `TradeTape` из `@polymarket/trade-tape` — согласованно с
- * `BookDepthCollector`, который использует `OrderBookHistory`.
  */
 export class TradeTapeCollector {
-  private readonly _entries = new Map<string, InternalEntry>();
+  /** Ленты per InstrumentId */
+  private readonly _entries = new Map<InstrumentId, InternalEntry>();
+
+  /**
+   * Reverse index: marketId → Set<InstrumentId>.
+   * Позволяет удалить все инструменты рынка за O(k), а не O(N).
+   */
+  private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
   private _unsubTrade: (() => void) | undefined;
   private _unsubMarketClosed: (() => void) | undefined;
 
   /**
-   * @param _deps - Зависимости (eventBus, catalog, logger)
+   * @param _deps - Зависимости (eventBus, catalog, logger, clock)
    * @param _config - Политика хранения (maxCount и/или maxAgeMs)
    *
    * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
@@ -135,14 +150,14 @@ export class TradeTapeCollector {
 
     this._unsubTrade = this._deps.eventBus.subscribe(
       'TRADE_RECEIVED',
-      async (event) => {
+      (event) => {
         this._record(event.instrumentId, event.price, event.size, event.side, event.timestamp);
       },
     );
 
     this._unsubMarketClosed = this._deps.eventBus.subscribe(
       'MARKET_CLOSED',
-      async (event) => {
+      (event) => {
         this._cleanup(event.marketId);
       },
     );
@@ -184,7 +199,7 @@ export class TradeTapeCollector {
    * ```
    */
   public getTape(tokenId: InstrumentId): TradeTape | undefined {
-    return this._entries.get(String(tokenId))?.tape;
+    return this._entries.get(tokenId)?.tape;
   }
 
   /**
@@ -197,13 +212,14 @@ export class TradeTapeCollector {
   }
 
   /**
-   * Очищает все ленты из памяти.
+   * Очищает все ленты и reverse index из памяти.
    *
    * @remarks
    * Используется при сбросе состояния (тестирование, полная остановка).
    */
   public clear(): void {
     this._entries.clear();
+    this._byMarket.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────────────────────
@@ -213,7 +229,7 @@ export class TradeTapeCollector {
    *
    * @remarks
    * Лента (`TradeTape`) создаётся лениво при первом трейде.
-   * marketId берётся из каталога один раз при создании ленты — для cleanup.
+   * marketId берётся из каталога один раз при создании и регистрируется в reverse index.
    * Вытеснение устаревших записей обрабатывается внутри `TradeTape.append()`.
    */
   private _record(
@@ -223,18 +239,28 @@ export class TradeTapeCollector {
     side: Side,
     timestamp: import('@polymarket/value-objects').Timestamp,
   ): void {
-    const key = String(instrumentId);
-    let entry = this._entries.get(key);
+    let entry = this._entries.get(instrumentId);
 
     if (entry === undefined) {
       const marketId = this._deps.catalog.get(instrumentId)?.marketId;
+      const marketIdStr = marketId !== undefined ? String(marketId) : undefined;
       const tape = TradeTape.create(this._config, this._deps.clock);
-      entry = { tape, marketId: marketId !== undefined ? String(marketId) : undefined };
-      this._entries.set(key, entry);
+      entry = { tape, marketId: marketIdStr };
+      this._entries.set(instrumentId, entry);
+
+      // Регистрируем в reverse index: marketId → instrumentId
+      if (marketIdStr !== undefined) {
+        let set = this._byMarket.get(marketIdStr);
+        if (set === undefined) {
+          set = new Set<InstrumentId>();
+          this._byMarket.set(marketIdStr, set);
+        }
+        set.add(instrumentId);
+      }
 
       this._deps.logger.debug('TradeTapeCollector: new tape created', {
-        tokenId: key,
-        marketId: entry.marketId ?? 'unknown',
+        tokenId: String(instrumentId),
+        marketId: marketIdStr ?? 'unknown',
       });
     }
 
@@ -245,27 +271,25 @@ export class TradeTapeCollector {
    * Удаляет ленты инструментов закрытого рынка.
    *
    * @remarks
-   * Ищет ленты у которых сохранённый marketId совпадает с закрытым.
-   * Если marketId при создании ленты был неизвестен (нет в каталоге) — лента не удаляется.
+   * Сложность O(k) где k = количество инструментов рынка (обычно 2 для Polymarket).
+   * Использует reverse index `_byMarket` — не итерирует все записи.
+   * Инструменты без известного marketId (не в каталоге) не удаляются.
    *
    * @param marketId - ID закрытого рынка
    */
   private _cleanup(marketId: MarketId): void {
     const marketIdStr = String(marketId);
-    let removed = 0;
+    const keys = this._byMarket.get(marketIdStr);
+    if (keys === undefined || keys.size === 0) return;
 
-    for (const [key, entry] of this._entries) {
-      if (entry.marketId === marketIdStr) {
-        this._entries.delete(key);
-        removed++;
-      }
+    for (const key of keys) {
+      this._entries.delete(key);
     }
+    this._byMarket.delete(marketIdStr);
 
-    if (removed > 0) {
-      this._deps.logger.debug('TradeTapeCollector: tapes cleaned up', {
-        marketId: marketIdStr,
-        removed,
-      });
-    }
+    this._deps.logger.debug('TradeTapeCollector: tapes cleaned up', {
+      marketId: marketIdStr,
+      removed: keys.size,
+    });
   }
 }

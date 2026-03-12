@@ -21,10 +21,15 @@
  * У каждого tokenId своя `OrderBookHistory` с единой политикой из конфига.
  * Создаётся лениво при первом снапшоте.
  *
+ * ### Сложность операций:
+ * - `_record()` — O(1) amortized (lazy creation + reverse index update)
+ * - `_cleanup()` — O(k) где k = количество инструментов рынка (обычно 2)
+ *   Достигается за счёт reverse index `_byMarket: Map<marketId, Set<InstrumentId>>`
+ *
  * @example
  * ```typescript
  * const collector = new BookDepthCollector(
- *   { eventBus, logger },
+ *   { eventBus, logger, clock },
  *   { maxCount: 500, maxAgeMs: 300_000 },
  * );
  * collector.start();
@@ -32,7 +37,7 @@
  * // В стратегии — забрать данные и посчитать самостоятельно:
  * const history = collector.getHistory(tokenId);
  * if (history) {
- *   const snapshots = history.getRecent(60_000);          // последняя минута
+ *   const snapshots = history.getRecent(60_000);
  *   const latest = history.getLatest();
  *   if (latest) {
  *     const imbalance = ImbalanceCalculator.calculate(
@@ -81,25 +86,43 @@ export interface BookDepthCollectorDeps {
  */
 export type BookDepthCollectorConfig = OrderBookRetentionPolicy;
 
+/**
+ * Внутренняя запись: история снапшотов + marketId для cleanup.
+ *
+ * @remarks
+ * `marketId` сохраняется при создании записи и не зависит от retention eviction —
+ * даже если history пустая, запись можно найти по рынку через reverse index.
+ */
+interface InternalEntry {
+  readonly history: OrderBookHistory;
+  /** String(marketId) из первого снапшота; используется для O(1) cleanup */
+  readonly marketId: string;
+}
 
 /**
  * Коллектор полных снапшотов стакана.
  *
  * @remarks
- * Поддерживает `Map<tokenId, OrderBookHistory>`.
+ * Поддерживает `Map<InstrumentId, InternalEntry>` + `_byMarket: Map<string, Set<InstrumentId>>`
+ * для O(1) cleanup при `MARKET_CLOSED`.
  * Каждая история создаётся лениво при первом снапшоте.
- * При `MARKET_CLOSED` история удаляется из памяти.
  */
 export class BookDepthCollector {
-  /** Histories per tokenId */
-  private readonly _histories = new Map<string, OrderBookHistory>();
+  /** Истории per InstrumentId */
+  private readonly _entries = new Map<InstrumentId, InternalEntry>();
+
+  /**
+   * Reverse index: marketId → Set<InstrumentId>.
+   * Позволяет удалить все инструменты рынка за O(k), а не O(N).
+   */
+  private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
   /** Unsubscribe-функции для cleanup */
   private _unsubBookDepth: (() => void) | undefined;
   private _unsubMarketClosed: (() => void) | undefined;
 
   /**
-   * @param _deps - Зависимости (eventBus, logger)
+   * @param _deps - Зависимости (eventBus, logger, clock)
    * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
    *
    * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
@@ -134,7 +157,7 @@ export class BookDepthCollector {
 
     this._unsubBookDepth = this._deps.eventBus.subscribe(
       'BOOK_DEPTH',
-      async (event) => {
+      (event) => {
         try {
           this._record(event.instrumentId, event.snapshot, event.timestamp.toNumber());
         } catch (err) {
@@ -148,8 +171,8 @@ export class BookDepthCollector {
 
     this._unsubMarketClosed = this._deps.eventBus.subscribe(
       'MARKET_CLOSED',
-      async (event) => {
-        this._cleanup(event.marketId);
+      (event) => {
+        this._cleanup(String(event.marketId));
       },
     );
 
@@ -198,7 +221,7 @@ export class BookDepthCollector {
    * ```
    */
   public getHistory(tokenId: InstrumentId): OrderBookHistory | undefined {
-    return this._histories.get(String(tokenId));
+    return this._entries.get(tokenId)?.history;
   }
 
   /**
@@ -207,17 +230,18 @@ export class BookDepthCollector {
    * @returns Количество tokenId в коллекторе
    */
   public instrumentCount(): number {
-    return this._histories.size;
+    return this._entries.size;
   }
 
   /**
-   * Очищает все истории из памяти.
+   * Очищает все истории и reverse index из памяти.
    *
    * @remarks
    * Используется для сброса состояния (например, при тестировании).
    */
   public clear(): void {
-    this._histories.clear();
+    this._entries.clear();
+    this._byMarket.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────────────────────
@@ -227,9 +251,10 @@ export class BookDepthCollector {
    *
    * @remarks
    * История создаётся лениво при первом снапшоте.
+   * При создании сохраняет `marketId` из снапшота и регистрирует в reverse index.
    *
    * @param tokenId - ID токена
-   * @param snapshot - Полный снапшот стакана
+   * @param snapshot - Полный снапшот стакана (содержит `snapshot.marketId`)
    * @param nowMs - Текущее время (из timestamp события)
    */
   private _record(
@@ -237,45 +262,52 @@ export class BookDepthCollector {
     snapshot: OrderBookSnapshot,
     nowMs: number,
   ): void {
-    const key = String(tokenId);
-    let history = this._histories.get(key);
+    let entry = this._entries.get(tokenId);
 
-    if (history === undefined) {
-      history = OrderBookHistory.create(this._config, this._deps.clock);
-      this._histories.set(key, history);
+    if (entry === undefined) {
+      const history = OrderBookHistory.create(this._config, this._deps.clock);
+      entry = { history, marketId: snapshot.marketId };
+      this._entries.set(tokenId, entry);
+
+      // Регистрируем в reverse index: marketId → tokenId
+      let set = this._byMarket.get(snapshot.marketId);
+      if (set === undefined) {
+        set = new Set<InstrumentId>();
+        this._byMarket.set(snapshot.marketId, set);
+      }
+      set.add(tokenId);
 
       this._deps.logger.debug('BookDepthCollector: new history created', {
-        tokenId: key,
+        tokenId: String(tokenId),
+        marketId: snapshot.marketId,
       });
     }
 
-    history.record(snapshot, nowMs);
+    entry.history.record(snapshot, nowMs);
   }
 
   /**
-   * Удаляет все истории связанные с рынком при его закрытии.
+   * Удаляет все истории рынка при его закрытии.
    *
    * @remarks
-   * Polymarket: каждый рынок имеет два токена (YES/NO).
-   * Ищем истории по `snapshot.marketId` совпадающему с закрытым.
+   * Сложность O(k) где k = количество инструментов рынка (обычно 2 для Polymarket).
+   * Использует reverse index `_byMarket` — не итерирует все записи.
+   * Корректно работает даже если retention eviction очистил историю полностью.
    *
-   * @param marketId - ID закрытого рынка
+   * @param marketId - String(marketId) закрытого рынка
    */
   private _cleanup(marketId: string): void {
-    let removed = 0;
-    for (const [key, history] of this._histories) {
-      const latest = history.getLatest();
-      if (latest?.marketId === marketId) {
-        this._histories.delete(key);
-        removed++;
-      }
-    }
+    const keys = this._byMarket.get(marketId);
+    if (keys === undefined || keys.size === 0) return;
 
-    if (removed > 0) {
-      this._deps.logger.debug('BookDepthCollector: histories cleaned up', {
-        marketId,
-        removed,
-      });
+    for (const key of keys) {
+      this._entries.delete(key);
     }
+    this._byMarket.delete(marketId);
+
+    this._deps.logger.debug('BookDepthCollector: histories cleaned up', {
+      marketId,
+      removed: keys.size,
+    });
   }
 }

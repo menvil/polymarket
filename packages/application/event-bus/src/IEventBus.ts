@@ -20,8 +20,13 @@ import type { ApplicationEvent } from './events/index.js';
  * Типизированный handler конкретного события.
  *
  * @typeParam T - Конкретный тип ApplicationEvent
+ *
+ * @remarks
+ * Разрешает как sync (`void`), так и async (`Promise<void>`) handlers.
+ * Sync handlers не создают лишних Promise-объектов — EventBus обрабатывает оба варианта.
+ * Async handlers используют `await` внутри (например, обращения к репозиторию).
  */
-export type EventHandler<T extends ApplicationEvent> = (event: T) => Promise<void>;
+export type EventHandler<T extends ApplicationEvent> = (event: T) => void | Promise<void>;
 
 /**
  * Интерфейс application event bus.
