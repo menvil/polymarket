@@ -78,12 +78,15 @@ export class MarketScorer {
       return { ...market, score: new Decimal(hoursToExpiry) };
     });
 
-    // Сортировка: score ASC (ближайшее истечение первым),
-    // при равных score — liquidity DESC.
+    // Сортировка: score ASC → liquidity DESC → marketId ASC (детерминированный порядок).
+    // Третий ключ (marketId) гарантирует полный детерминизм: при равных score и liquidity
+    // результат воспроизводим независимо от порядка входных данных.
     scored.sort((a, b) => {
       const scoreDiff = a.score.comparedTo(b.score);
       if (scoreDiff !== 0) return scoreDiff;
-      return b.liquidity.comparedTo(a.liquidity);
+      const liquidityDiff = b.liquidity.comparedTo(a.liquidity);
+      if (liquidityDiff !== 0) return liquidityDiff;
+      return String(a.marketId) < String(b.marketId) ? -1 : 1;
     });
 
     return scored;
