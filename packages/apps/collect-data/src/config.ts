@@ -38,8 +38,8 @@ export interface CollectorConfig {
   /** Минимальный спред */
   readonly minSpread: number;
 
-  /** Минимальная ликвидность (USD) */
-  readonly minDailyVolume: number;
+  /** Минимальная ликвидность рынка (глубина стакана, не дневной объём) */
+  readonly minLiquidity: number;
 
   /** Максимальное количество одновременно отслеживаемых рынков */
   readonly maxMarkets: number;
@@ -115,7 +115,7 @@ export function loadConfig(): CollectorConfig {
     wsReconnectDelayMs:   optionalNumber('WS_RECONNECT_DELAY_MS', 3000),
     minTimeToExpiryHours: optionalNumber('MARKET_DISCOVERY_MIN_TIME_TO_EXPIRY_HOURS', 0),
     minSpread:            optionalNumber('MARKET_DISCOVERY_MIN_SPREAD', 0.02),
-    minDailyVolume:       optionalNumber('MARKET_DISCOVERY_MIN_DAILY_VOLUME', 100),
+    minLiquidity:         optionalNumber('MARKET_DISCOVERY_MIN_LIQUIDITY', 100),
     maxMarkets:           optionalNumber('DATA_COLLECTION_MAX_MARKETS', 10),
     requiredKeywords:     parseKeywords('MARKET_DISCOVERY_REQUIRED_KEYWORDS'),
     anyOfKeywords:        parseKeywords('MARKET_DISCOVERY_ANY_OF_KEYWORDS'),

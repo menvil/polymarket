@@ -38,8 +38,8 @@ export interface DiscoveredMarket extends InstrumentInfo {
   readonly active: true;
   /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
-  /** Текущий спред (bid-ask). Decimal('0') если недоступен */
-  readonly spread: Decimal;
+  /** Текущий спред (bid-ask). `undefined` если недоступен (нет данных от API). */
+  readonly spread?: Decimal;
   /** Ликвидность (объём торгов). Decimal('0') если недоступен */
   readonly liquidity: Decimal;
   /**

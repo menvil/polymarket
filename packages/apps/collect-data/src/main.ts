@@ -122,7 +122,7 @@ const marketDataClient = new PolymarketMarketDataRestClient(
 const filterConfig = {
   minTimeToExpiryHours: config.minTimeToExpiryHours,
   minSpread:            config.minSpread,
-  minDailyVolume:       config.minDailyVolume,
+  minLiquidity:         config.minLiquidity,
   maxMarketsToReturn:   config.maxMarkets,
   requiredKeywords:     config.requiredKeywords,
   anyOfKeywords:        config.anyOfKeywords,

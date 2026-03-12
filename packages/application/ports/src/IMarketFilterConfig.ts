@@ -8,8 +8,8 @@
  * ### Порядок применения фильтров в MarketFilter:
  * 1. Дедупликация по marketId
  * 2. `hoursToExpiry >= minTimeToExpiryHours`
- * 3. `spread >= minSpread` (только если spread > 0)
- * 4. `liquidity >= minDailyVolume`
+ * 3. `spread >= minSpread` (только если spread !== undefined)
+ * 4. `liquidity >= minLiquidity`
  * 5. `requiredKeywords` — все слова должны присутствовать в question
  * 6. `anyOfKeywords` — хотя бы одно слово должно присутствовать
  * 7. `excludedKeywords` — ни одного из слов не должно быть в question
@@ -19,7 +19,7 @@
  * const config: IMarketFilterConfig = {
  *   minTimeToExpiryHours: 24,
  *   minSpread: 0.02,
- *   minDailyVolume: 10000,
+ *   minLiquidity: 10000,
  *   maxMarketsToReturn: 10,
  *   requiredKeywords: ['bitcoin'],
  *   anyOfKeywords: ['price', 'value'],
@@ -41,20 +41,22 @@ export interface IMarketFilterConfig {
    * Минимальный bid-ask спред для включения рынка.
    *
    * @remarks
-   * Фильтр применяется только если `market.spread > 0`.
-   * Если `market.spread === 0` (данные недоступны) — рынок проходит фильтр.
+   * Фильтр применяется только если `market.spread !== undefined`.
+   * Если `market.spread === undefined` (данные недоступны) — рынок проходит фильтр.
    * Пример: 0.02 означает спред не менее 2%.
    */
   readonly minSpread: number;
 
   /**
-   * Минимальная дневная ликвидность рынка (объём торгов).
+   * Минимальная ликвидность рынка.
    *
    * @remarks
-   * Рынки с `liquidity < minDailyVolume` исключаются.
-   * Пример: 10000 означает минимум $10,000 в день.
+   * Соответствует полю `liquidity` из Gamma API — глубина рынка, а не дневной объём
+   * (дневной объём доступен в отдельном поле `volume`).
+   * Рынки с `liquidity < minLiquidity` исключаются.
+   * Пример: 10000 означает минимум $10,000 ликвидности.
    */
-  readonly minDailyVolume: number;
+  readonly minLiquidity: number;
 
   /**
    * Максимальное количество рынков для возврата.

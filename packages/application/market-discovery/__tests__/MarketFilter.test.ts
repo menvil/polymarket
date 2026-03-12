@@ -22,7 +22,7 @@ const NOW_MS = 1_700_000_000_000; // 2023-11-14 22:13:20 UTC
 function makeMarket(overrides: Partial<{
   question: string;
   expiresAtMs: number;
-  spread: number;
+  spread: number | null; // null = нет данных о спреде (undefined в DiscoveredMarket); omit = дефолт 0.05
   liquidity: number;
   marketIdSuffix: string;
 }>): DiscoveredMarket {
@@ -51,7 +51,7 @@ function makeMarket(overrides: Partial<{
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
     active: true,
-    spread: new Decimal(spread),
+    spread: spread !== null ? new Decimal(spread) : undefined,
     liquidity: new Decimal(liquidity),
     score: new Decimal(0),
   };
@@ -61,7 +61,7 @@ function makeMarket(overrides: Partial<{
 const BASE_CONFIG: IMarketFilterConfig = {
   minTimeToExpiryHours: 24,
   minSpread: 0,
-  minDailyVolume: 0,
+  minLiquidity: 0,
   maxMarketsToReturn: 100,
 };
 
@@ -110,8 +110,8 @@ describe('MarketFilter', () => {
   });
 
   describe('фильтр по спреду', () => {
-    it('spread === 0 (данные недоступны) → проходит фильтр даже при minSpread > 0', () => {
-      const market = makeMarket({ spread: 0 });
+    it('spread === undefined (нет данных) → проходит фильтр даже при minSpread > 0', () => {
+      const market = makeMarket({ spread: null });
       const config: IMarketFilterConfig = { ...BASE_CONFIG, minSpread: 0.05 };
       const result = filter.filterCandidates([market], config, NOW_MS);
       expect(result).toHaveLength(1);
@@ -133,16 +133,16 @@ describe('MarketFilter', () => {
   });
 
   describe('фильтр по ликвидности', () => {
-    it('liquidity >= minDailyVolume → включён', () => {
+    it('liquidity >= minLiquidity → включён', () => {
       const market = makeMarket({ liquidity: 10_000 });
-      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDailyVolume: 10_000 };
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minLiquidity: 10_000 };
       const result = filter.filterCandidates([market], config, NOW_MS);
       expect(result).toHaveLength(1);
     });
 
-    it('liquidity < minDailyVolume → исключён', () => {
+    it('liquidity < minLiquidity → исключён', () => {
       const market = makeMarket({ liquidity: 5_000 });
-      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDailyVolume: 10_000 };
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minLiquidity: 10_000 };
       const result = filter.filterCandidates([market], config, NOW_MS);
       expect(result).toHaveLength(0);
     });
@@ -317,7 +317,7 @@ describe('MarketFilter', () => {
       const config: IMarketFilterConfig = {
         minTimeToExpiryHours: 24,
         minSpread: 0,
-        minDailyVolume: 5000,
+        minLiquidity: 5000,
         maxMarketsToReturn: 100,
         excludedKeywords: ['test'],
       };
@@ -328,7 +328,7 @@ describe('MarketFilter', () => {
     it('смешанный список: одни проходят, другие нет', () => {
       const passing = makeMarket({ marketIdSuffix: 'A1', liquidity: 20_000 });
       const failing = makeMarket({ marketIdSuffix: 'A2', liquidity: 100 });
-      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDailyVolume: 10_000 };
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minLiquidity: 10_000 };
       const result = filter.filterCandidates([passing, failing], config, NOW_MS);
       expect(result).toHaveLength(1);
       expect(result[0]!.marketId).toBe(passing.marketId);

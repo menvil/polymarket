@@ -85,7 +85,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
    *   marketDataClient,
    *   new MarketFilter(),
    *   new MarketScorer(),
-   *   { minTimeToExpiryHours: 24, minSpread: 0, minDailyVolume: 1000, maxMarketsToReturn: 10 },
+   *   { minTimeToExpiryHours: 24, minSpread: 0, minLiquidity: 1000, maxMarketsToReturn: 10 },
    *   logger,
    * );
    * ```
@@ -372,7 +372,9 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
     const liquidity = new Decimal(raw.liquidity ?? '0');
 
     // 8. Спред (number или undefined) — конвертируем в Decimal
-    const spread = new Decimal(raw.spread ?? 0);
+    // spread: undefined означает "данные недоступны" (Gamma API не вернул поле).
+    // В отличие от Decimal(0), undefined явно разделяет "нет данных" и "реальный нулевой спред".
+    const spread = raw.spread != null ? new Decimal(raw.spread) : undefined;
 
     return {
       marketId,

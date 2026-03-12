@@ -9,8 +9,8 @@
  * ### Порядок фильтрации:
  * 1. Дедупликация по marketId
  * 2. `hoursToExpiry >= minTimeToExpiryHours` — временной фильтр
- * 3. `spread >= minSpread` — фильтр по спреду (только если spread > 0)
- * 4. `liquidity >= minDailyVolume` — фильтр по ликвидности
+ * 3. `spread >= minSpread` — фильтр по спреду (только если spread !== undefined)
+ * 4. `liquidity >= minLiquidity` — фильтр по ликвидности
  * 5. `requiredKeywords` — все слова в question (по границам слов, регистронезависимо)
  * 6. `anyOfKeywords` — хотя бы одно слово в question
  * 7. `excludedKeywords` — ни одного слова из списка в question
@@ -31,7 +31,7 @@ import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
  * const config: IMarketFilterConfig = {
  *   minTimeToExpiryHours: 24,
  *   minSpread: 0,
- *   minDailyVolume: 1000,
+ *   minLiquidity: 1000,
  *   maxMarketsToReturn: 5,
  * };
  * const filtered = filter.filterCandidates(markets, config, Date.now());
@@ -50,8 +50,8 @@ export class MarketFilter {
    * Порядок применения фильтров:
    * 1. Дедупликация по marketId (последний дубликат выигрывает)
    * 2. Временной фильтр: hoursToExpiry >= minTimeToExpiryHours
-   * 3. Спред: market.spread >= minSpread (пропускается если market.spread === 0)
-   * 4. Ликвидность: market.liquidity >= minDailyVolume
+   * 3. Спред: market.spread >= minSpread (пропускается если market.spread === undefined)
+   * 4. Ликвидность: market.liquidity >= minLiquidity
    * 5. requiredKeywords: все слова должны быть в question (case-insensitive)
    * 6. anyOfKeywords: хотя бы одно слово должно быть в question
    * 7. excludedKeywords: ни одного слова не должно быть в question
@@ -61,7 +61,7 @@ export class MarketFilter {
    * const filter = new MarketFilter();
    * const results = filter.filterCandidates(
    *   candidates,
-   *   { minTimeToExpiryHours: 24, minSpread: 0, minDailyVolume: 5000, maxMarketsToReturn: 10 },
+   *   { minTimeToExpiryHours: 24, minSpread: 0, minLiquidity: 5000, maxMarketsToReturn: 10 },
    *   Date.now(),
    * );
    * console.log(`Filtered: ${results.length} markets`);
@@ -94,7 +94,7 @@ export class MarketFilter {
       }
 
       // 4. Ликвидность
-      if (!this._passesLiquidityFilter(market, config.minDailyVolume)) {
+      if (!this._passesLiquidityFilter(market, config.minLiquidity)) {
         return false;
       }
 
@@ -159,10 +159,14 @@ export class MarketFilter {
    *
    * @param market - Рынок для проверки
    * @param minSpread - Минимальный порог спреда
-   * @returns true если spread === 0 (данные недоступны) или spread >= minSpread
+   * @returns true если `market.spread === undefined` (нет данных) или `spread >= minSpread`
+   *
+   * @remarks
+   * `undefined` означает что Gamma API не вернул данные о спреде — рынок пропускается
+   * через фильтр без проверки. Это отличается от `Decimal(0)` — реального нулевого спреда.
    */
   private _passesSpreadFilter(market: DiscoveredMarket, minSpread: number): boolean {
-    if (market.spread.isZero()) return true;
+    if (market.spread === undefined) return true;
     return market.spread.greaterThanOrEqualTo(new Decimal(minSpread));
   }
 
@@ -170,11 +174,11 @@ export class MarketFilter {
    * Проверяет ликвидность рынка.
    *
    * @param market - Рынок для проверки
-   * @param minDailyVolume - Минимальный порог ликвидности
-   * @returns true если ликвидность >= minDailyVolume
+   * @param minLiquidity - Минимальный порог ликвидности
+   * @returns true если ликвидность >= minLiquidity
    */
-  private _passesLiquidityFilter(market: DiscoveredMarket, minDailyVolume: number): boolean {
-    return market.liquidity.greaterThanOrEqualTo(new Decimal(minDailyVolume));
+  private _passesLiquidityFilter(market: DiscoveredMarket, minLiquidity: number): boolean {
+    return market.liquidity.greaterThanOrEqualTo(new Decimal(minLiquidity));
   }
 
   /**
