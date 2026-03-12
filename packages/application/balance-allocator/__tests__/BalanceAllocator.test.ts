@@ -7,7 +7,7 @@ import { BalanceAllocator } from '../src/BalanceAllocator.js';
 import type { BalanceAllocatorConfig } from '../src/BalanceAllocatorConfig.js';
 import type { MarketId } from '@polymarket/ids';
 import { Money, MoneyService, Ratio } from '@polymarket/value-objects';
-import { Err } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,17 @@ describe('BalanceAllocator', () => {
 
   beforeEach(() => {
     allocator = new BalanceAllocator(makeConfig(), usdc(10000));
+  });
+
+  describe('constructor', () => {
+    it('использует Money.ZERO[USDC] как initialBalance по умолчанию', () => {
+      const defaultAllocator = new BalanceAllocator(makeConfig());
+      const stats = defaultAllocator.getStats();
+      expect(stats.totalBalance.value().toNumber()).toBe(0);
+      expect(stats.tradingBalance.value().toNumber()).toBe(0);
+      expect(defaultAllocator.canAddMarket()).toBe(false);
+      expect(defaultAllocator.allocateToNewMarkets([mkt('m1')])).toHaveLength(0);
+    });
   });
 
   describe('allocateToNewMarkets', () => {
@@ -469,6 +480,24 @@ describe('BalanceAllocator', () => {
 
   // ── Приватные defensive-ветки ─────────────────────────────────────────────
 
+  describe('_calcTradingBalance (multiply failure → ZERO fallback)', () => {
+    it('возвращает ZERO tradingBalance при ошибке MoneyService.multiply', () => {
+      const multiplySpy = jest.spyOn(MoneyService, 'multiply').mockReturnValue(
+        Err(new Error('multiply error') as never),
+      );
+
+      // _calcTradingBalance → ZERO: propagates через getStats и allocateToNewMarkets
+      const stats = allocator.getStats();
+      expect(stats.tradingBalance.value().toNumber()).toBe(0);
+      expect(stats.freeBalance.value().toNumber()).toBe(0);
+
+      const results = allocator.allocateToNewMarkets([mkt('m1')]);
+      expect(results).toHaveLength(0);
+
+      multiplySpy.mockRestore();
+    });
+  });
+
   describe('_calcAllocatedBalance (currency mismatch → throw)', () => {
     it('бросает TradingError если аллокации содержат несовместимые валюты', () => {
       // Восстанавливаем аллокации через restoreAllocations (публичный путь),
@@ -505,7 +534,7 @@ describe('BalanceAllocator', () => {
     });
   });
 
-  describe('_countAffordableSlots (slotCost < 0 → 0)', () => {
+  describe('_countAffordableSlots (не-положительные аргументы → 0)', () => {
     it('возвращает [] если minCapitalPerMarket отрицательный (slotCost not positive)', () => {
       // Decimal(0).isPositive() = true в decimal.js (0 имеет знак +1).
       // Ветка !slotCostDec.isPositive() срабатывает только при slotCost < 0.
@@ -523,6 +552,30 @@ describe('BalanceAllocator', () => {
       // newSlots = min(1, 0) = 0 → []
       const results = a.allocateToNewMarkets([mkt('m1')]);
       expect(results).toHaveLength(0);
+    });
+
+    it('возвращает [] если freeBalance отрицательный (balance not positive)', () => {
+      // _calcFreeBalance возвращает Money.ZERO при отрицательном результате,
+      // и Decimal(0).isPositive()=true — поэтому ветку balance<0 нельзя достичь
+      // через обычный поток. Подменяем subtract чтобы вернуть отрицательный Money
+      // с isNegative()=false, обходя clamping в _calcFreeBalance.
+      const fakeNegativeMoney = {
+        value: () => new Decimal(-500),
+        isNegative: () => false,
+        currency: () => 'USDC',
+        toNumber: () => -500,
+      } as unknown as Money;
+
+      const subtractSpy = jest.spyOn(MoneyService, 'subtract').mockReturnValueOnce(
+        Ok(fakeNegativeMoney),
+      );
+
+      // _countAffordableSlots(-500, 50): balanceDec=-500, isPositive()=false → 0
+      // newSlots = min(1, 0) = 0 → []
+      const results = allocator.allocateToNewMarkets([mkt('m1')]);
+      expect(results).toHaveLength(0);
+
+      subtractSpy.mockRestore();
     });
   });
 });
