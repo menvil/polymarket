@@ -126,4 +126,57 @@ describe('OpenMarketUseCase', () => {
     // Аллокация прошла успешно — возвращаем Ok несмотря на ошибку publish
     expect(result.ok).toBe(true);
   });
+
+  it('publish бросает не-Error (строка) → нормализуется в Error, Ok(AllocationResult)', async () => {
+    const allocation: AllocationResult = {
+      marketId: MARKET_ID,
+      allocatedAmount: Money.of(new Decimal(300), 'USDC'),
+    };
+    allocator.addMarket.mockReturnValue(Ok(allocation));
+    (eventBus.publish as jest.MockedFunction<IEventBus['publish']>)
+      .mockRejectedValue('plain string error');
+
+    const result = await useCase.execute(input);
+
+    expect(result.ok).toBe(true);
+    // Ошибка залогирована через logger.error
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('идемпотентен: рынок уже открыт → Ok(existingAllocation), addMarket не вызывается', async () => {
+    const existing = Money.of(new Decimal(500), 'USDC');
+    allocator.getAllocation.mockReturnValue(existing);
+
+    const result = await useCase.execute(input);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.marketId).toBe(MARKET_ID);
+    expect(result.value.allocatedAmount).toBe(existing);
+    expect(allocator.addMarket).not.toHaveBeenCalled();
+    expect((eventBus.publish as jest.MockedFunction<IEventBus['publish']>)).not.toHaveBeenCalled();
+  });
+
+  it('ошибка создания timestamp (invalid Date) → Err(TradingError)', async () => {
+    const allocation: AllocationResult = {
+      marketId: MARKET_ID,
+      allocatedAmount: Money.of(new Decimal(1000), 'USDC'),
+    };
+    allocator.addMarket.mockReturnValue(Ok(allocation));
+
+    // new Date(NaN).getTime() === NaN → TimestampService.fromDate вернёт Err
+    const brokenUseCase = new OpenMarketUseCase({
+      balanceAllocator: allocator,
+      eventBus,
+      clock: { now: () => new Date(NaN) },
+      logger,
+    });
+
+    const result = await brokenUseCase.execute(input);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(TradingError);
+    expect((eventBus.publish as jest.MockedFunction<IEventBus['publish']>)).not.toHaveBeenCalled();
+  });
 });

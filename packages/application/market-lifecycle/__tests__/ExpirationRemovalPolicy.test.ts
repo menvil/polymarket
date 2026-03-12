@@ -5,7 +5,8 @@ import { describe, it, expect } from '@jest/globals';
 import { ExpirationRemovalPolicy } from '../src/ExpirationRemovalPolicy.js';
 import type { MarketContext } from '../src/IRemovalPolicy.js';
 import type { MarketId } from '@polymarket/ids';
-import { Money } from '@polymarket/value-objects';
+import { Money, TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -18,12 +19,16 @@ function mkt(id: string): MarketId {
   return id as unknown as MarketId;
 }
 
-function makeTimestamp(ms: number) {
-  return {
-    value: () => new Decimal(ms),
-    toNumber: () => ms,
-    toISO: () => new Date(ms).toISOString(),
-  } as never;
+/**
+ * Создаёт реальный Timestamp через TimestampService.create, чтобы
+ * ExpirationRemovalPolicy.evaluate() мог вызвать isBeforeOrEqual() корректно.
+ * isBeforeOrEqual(other) обращается к приватному полю other._ms, поэтому
+ * объект-заглушка («as never») не работает.
+ */
+function makeTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) throw new Error(`Invalid timestamp ms=${ms}: ${result.error.message}`);
+  return result.value;
 }
 
 function makeMarketContext(id: string, expiresAtMs: number): MarketContext {
@@ -41,6 +46,29 @@ function makeMarketContext(id: string, expiresAtMs: number): MarketContext {
 describe('ExpirationRemovalPolicy', () => {
   const NOW_MS = 1_700_000_000_000; // фиксированное время
   const LEAD_TIME_MS = 30 * 60 * 1000; // 30 минут
+
+  describe('конструктор', () => {
+    it('отрицательный leadTimeMs → RangeError', () => {
+      const clock = makeClock(NOW_MS);
+      expect(() => new ExpirationRemovalPolicy(clock, -1)).toThrow(RangeError);
+      expect(() => new ExpirationRemovalPolicy(clock, -1)).toThrow('leadTimeMs must be >= 0');
+    });
+
+    it('использует default leadTime 30 минут без второго аргумента', () => {
+      const clock = makeClock(NOW_MS);
+      const policy = new ExpirationRemovalPolicy(clock); // без второго аргумента
+
+      // Истекает через 20 мин — внутри дефолтных 30 мин → должен закрыться
+      const mInside = makeMarketContext('m-20min', NOW_MS + 20 * 60 * 1000);
+      // Истекает через 45 мин — за пределами 30 мин → должен остаться
+      const mOutside = makeMarketContext('m-45min', NOW_MS + 45 * 60 * 1000);
+
+      const result = policy.evaluate([mInside, mOutside]);
+
+      expect(result).toHaveLength(1);
+      expect(String(result[0])).toBe('m-20min');
+    });
+  });
 
   it('не закрывает рынки с большим временем до истечения', () => {
     const clock = makeClock(NOW_MS);
@@ -132,5 +160,17 @@ describe('ExpirationRemovalPolicy', () => {
     const result = policy.evaluate([market]);
 
     expect(result).toHaveLength(0);
+  });
+
+  it('clock возвращает невалидную дату (NaN) → evaluate безопасно возвращает []', () => {
+    // Теоретически невозможно при нормальной работе, но guard на строке 78 должен срабатывать:
+    // Date(NaN).getTime() = NaN → NaN + leadTimeMs = NaN → TimestampService.create(NaN) = Err
+    const brokenClock = { now: () => new Date(NaN) };
+    const policy = new ExpirationRemovalPolicy(brokenClock, LEAD_TIME_MS);
+    const market = makeMarketContext('m-any', NOW_MS + 60_000);
+
+    const result = policy.evaluate([market]);
+
+    expect(result).toEqual([]);
   });
 });

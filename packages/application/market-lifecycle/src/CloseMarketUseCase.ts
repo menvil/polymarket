@@ -18,7 +18,7 @@
  * @example
  * ```typescript
  * const useCase = new CloseMarketUseCase({
- *   balanceAllocator, orderRepo, cancelOrderUseCase, eventBus, clock, logger,
+ *   balanceAllocator, orderRepo, cancellationService, eventBus, clock, logger,
  * });
  *
  * await useCase.execute({

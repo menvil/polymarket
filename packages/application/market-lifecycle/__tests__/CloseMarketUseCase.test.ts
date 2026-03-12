@@ -198,4 +198,58 @@ describe('CloseMarketUseCase', () => {
       expect.objectContaining({ type: 'MARKET_CLOSED', reason: 'MANUAL' }),
     );
   });
+
+  it('ошибка создания timestamp (invalid Date) → Ok(undefined), publish не вызывается', async () => {
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+
+    // new Date(NaN).getTime() === NaN → TimestampService.fromDate вернёт Err
+    const brokenUseCase = new CloseMarketUseCase({
+      balanceAllocator: allocator,
+      orderRepo,
+      cancellationService: cancellationService as unknown as CancellationService,
+      eventBus,
+      clock: { now: () => new Date(NaN) },
+      logger,
+    });
+
+    const result = await brokenUseCase.execute(baseInput);
+
+    expect(result.ok).toBe(true);
+    expect((eventBus.publish as jest.MockedFunction<IEventBus['publish']>)).not.toHaveBeenCalled();
+    // Ошибка создания timestamp логируется
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('eventBus.publish бросает Error → Ok(undefined), ошибка логируется', async () => {
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+    (eventBus.publish as jest.MockedFunction<IEventBus['publish']>)
+      .mockRejectedValue(new Error('Bus failure'));
+
+    const result = await useCase.execute(baseInput);
+
+    expect(result.ok).toBe(true);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('eventBus.publish бросает не-Error (строка) → нормализуется, Ok(undefined)', async () => {
+    allocator.getAllocation.mockReturnValue(Money.of(new Decimal(1000), 'USDC'));
+    (eventBus.publish as jest.MockedFunction<IEventBus['publish']>)
+      .mockRejectedValue('plain string error');
+
+    const result = await useCase.execute(baseInput);
+
+    expect(result.ok).toBe(true);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('идемпотентное закрытие без аллокации → warn log зафиксирован', async () => {
+    allocator.getAllocation.mockReturnValue(undefined);
+
+    await useCase.execute(baseInput);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('skipping balance release'),
+      expect.objectContaining({ marketId: String(MARKET_ID) }),
+    );
+  });
 });
