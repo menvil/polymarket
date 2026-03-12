@@ -18,6 +18,8 @@ export { OrderBook } from './OrderBook.js';
 export type { OrderBookSnapshot } from './OrderBook.js';
 export { ImbalanceHistory } from './ImbalanceHistory.js';
 export type { ImbalancePoint } from './ImbalanceHistory.js';
+export { ImbalanceCalculator } from './ImbalanceCalculator.js';
+export type { ImbalanceMode } from './ImbalanceCalculator.js';
 export { OrderBookHistory } from './OrderBookHistory.js';
 export type { OrderBookRetentionPolicy } from './OrderBookHistory.js';
 export type { PriceLevel } from './PriceLevel.js';
