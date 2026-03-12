@@ -98,9 +98,9 @@ export class MarketFilter {
         return false;
       }
 
-      // toLowerCase() вычисляется один раз на рынок — только если нужны keyword-фильтры
+      // question передаётся as-is: regex скомпилирован с флагом /i, toLowerCase() лишний
       if (requiredRegexes.length > 0 || anyOfRegexes.length > 0 || excludedRegexes.length > 0) {
-        const question = market.question.toLowerCase();
+        const question = market.question;
 
         // 5. Обязательные ключевые слова
         if (!this._passesRequiredKeywords(question, requiredRegexes)) {
@@ -178,28 +178,35 @@ export class MarketFilter {
   }
 
   /**
-   * Компилирует список ключевых слов в регулярные выражения с `\b`-границами слов.
+   * Компилирует список ключевых слов в регулярные выражения.
    *
    * @param keywords - Список ключевых слов (или undefined)
    * @returns Массив скомпилированных RegExp (case-insensitive)
    *
    * @remarks
-   * `\b`-границы предотвращают ложные срабатывания: `'war'` не матчит `'reward'`.
-   * Специальные символы regex в ключевых словах экранируются автоматически,
-   * что делает поиск безопасным для слов вроде `'$50'` или `'c++'`.
+   * Используются негативные lookbehind/lookahead `(?<![a-zA-Z0-9])..(?![a-zA-Z0-9])`,
+   * а не `\b`. Причина: `\b` работает только на границах `[A-Za-z0-9_]`, поэтому
+   * в текстах Polymarket с апострофами и дефисами поведение непредсказуемо.
+   * Lookahead/lookbehind явно задают: ключевое слово не должно быть частью
+   * более длинного буквенно-цифрового токена.
+   *
+   * Флаг `/i` делает поиск регистронезависимым — `toLowerCase()` не нужен.
+   *
+   * Спецсимволы regex экранируются автоматически (безопасно для `'$50'`, `'c++'`).
    *
    * @example
    * ```typescript
-   * const regexes = this._compileKeywords(['war', 'bitcoin']);
-   * // regexes[0] === /\bwar\b/i
-   * // regexes[1] === /\bbitcoin\b/i
+   * const regexes = this._compileKeywords(['war', 'trump']);
+   * // 'war'   → /(?<![a-zA-Z0-9])war(?![a-zA-Z0-9])/i
+   * // Матчит:  "the war in Ukraine", "WAR of words", "Trump's"
+   * // Не матч: "reward", "forward", "Trumpist"
    * ```
    */
   private _compileKeywords(keywords: readonly string[] | undefined): RegExp[] {
     if (!keywords || keywords.length === 0) return [];
     return keywords.map((kw) => {
       const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b${escaped}\\b`, 'i');
+      return new RegExp(`(?<![a-zA-Z0-9])${escaped}(?![a-zA-Z0-9])`, 'i');
     });
   }
 

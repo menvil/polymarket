@@ -284,6 +284,27 @@ describe('MarketFilter', () => {
       const result = filter.filterCandidates([market], config, NOW_MS);
       expect(result).toHaveLength(0);
     });
+
+    it("requiredKeywords: trump — матчит \"Trump's approval rating\" (апостроф не ломает поиск)", () => {
+      const market = makeMarket({ question: "Will Trump's approval rating exceed 50%?" });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, requiredKeywords: ['trump'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('excludedKeywords: trump — не матчит "Trumpist" (часть более длинного слова)', () => {
+      const market = makeMarket({ question: 'Will Trumpist policies dominate 2025?' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['trump'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('requiredKeywords: covid — матчит "COVID-19" (дефис не ломает поиск)', () => {
+      const market = makeMarket({ question: 'Will COVID-19 cases rise this winter?' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, requiredKeywords: ['covid'] };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
   });
 
   describe('комбинация фильтров', () => {
