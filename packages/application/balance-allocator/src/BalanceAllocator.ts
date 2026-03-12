@@ -174,6 +174,13 @@ export class BalanceAllocator implements IBalanceAllocator {
    * `_totalBalance += realizedPnL` — автоматическое compounding.
    */
   public releaseWithPnL(marketId: MarketId, realizedPnL: Money): void {
+    if (!this._allocations.has(marketId)) {
+      throw new TradingError(
+        `releaseWithPnL: market ${String(marketId)} has no active allocation`,
+        { context: { marketId: String(marketId) } },
+      );
+    }
+
     // Сначала проверяем валюту и вычисляем новый баланс — до мутации состояния.
     // Это обеспечивает атомарность: либо всё успешно, либо состояние не меняется.
     const addResult = MoneyService.add(this._totalBalance, realizedPnL);

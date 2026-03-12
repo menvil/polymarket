@@ -250,7 +250,7 @@ if (reserved.ok) {
 const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(80));
 if (released.ok) {
   released.value.availableTokenQuantity(instrumentId).toNumber(); // 100
-  released.value.tokenReservations.size; // 0 (запись удалена)
+  released.value.tokenReservations.has(instrumentId); // false (запись удалена)
 }
 
 // Проверка перед новым ордером (BalancePolicy)

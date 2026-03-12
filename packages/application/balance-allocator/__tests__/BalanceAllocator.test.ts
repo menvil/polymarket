@@ -175,6 +175,10 @@ describe('BalanceAllocator', () => {
 
       addSpy.mockRestore();
     });
+
+    it('бросает TradingError для несуществующей аллокации', () => {
+      expect(() => allocator.releaseWithPnL(mkt('no-such-market'), usdc(0))).toThrow(/no active allocation/);
+    });
   });
 
   describe('release', () => {

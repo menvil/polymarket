@@ -13,6 +13,7 @@
  * - nowMs параметр для детерминированного тестирования
  */
 import { describe, it, expect } from '@jest/globals';
+import { PaperClock } from '@polymarket/time';
 import { OrderBookHistory } from '../../src/OrderBookHistory.js';
 import type { OrderBookSnapshot } from '../../src/OrderBook.js';
 import type { PriceLevel } from '../../src/PriceLevel.js';
@@ -35,6 +36,9 @@ function makeSnapshot(
 /** Базовое время для детерминированных тестов */
 const T0 = 1_700_000_000_000;
 
+/** Детерминированный clock для тестов */
+const clock = new PaperClock(new Date(T0));
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('OrderBookHistory', () => {
@@ -43,33 +47,33 @@ describe('OrderBookHistory', () => {
 
   describe('create()', () => {
     it('создаёт историю с maxCount', () => {
-      expect(() => OrderBookHistory.create({ maxCount: 100 })).not.toThrow();
+      expect(() => OrderBookHistory.create({ maxCount: 100 }, clock)).not.toThrow();
     });
 
     it('создаёт историю с maxAgeMs', () => {
-      expect(() => OrderBookHistory.create({ maxAgeMs: 60_000 })).not.toThrow();
+      expect(() => OrderBookHistory.create({ maxAgeMs: 60_000 }, clock)).not.toThrow();
     });
 
     it('создаёт историю с обоими ограничениями', () => {
-      expect(() => OrderBookHistory.create({ maxCount: 1000, maxAgeMs: 300_000 })).not.toThrow();
+      expect(() => OrderBookHistory.create({ maxCount: 1000, maxAgeMs: 300_000 }, clock)).not.toThrow();
     });
 
     it('бросает RangeError если политика пустая', () => {
-      expect(() => OrderBookHistory.create({})).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({}, clock)).toThrow(RangeError);
     });
 
     it('бросает RangeError если maxCount <= 0', () => {
-      expect(() => OrderBookHistory.create({ maxCount: 0 })).toThrow(RangeError);
-      expect(() => OrderBookHistory.create({ maxCount: -1 })).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({ maxCount: 0 }, clock)).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({ maxCount: -1 }, clock)).toThrow(RangeError);
     });
 
     it('бросает RangeError если maxCount не целое число', () => {
-      expect(() => OrderBookHistory.create({ maxCount: 1.5 })).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({ maxCount: 1.5 }, clock)).toThrow(RangeError);
     });
 
     it('бросает RangeError если maxAgeMs <= 0', () => {
-      expect(() => OrderBookHistory.create({ maxAgeMs: 0 })).toThrow(RangeError);
-      expect(() => OrderBookHistory.create({ maxAgeMs: -1000 })).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({ maxAgeMs: 0 }, clock)).toThrow(RangeError);
+      expect(() => OrderBookHistory.create({ maxAgeMs: -1000 }, clock)).toThrow(RangeError);
     });
   });
 
@@ -77,13 +81,13 @@ describe('OrderBookHistory', () => {
 
   describe('isEmpty() / size()', () => {
     it('новая история пустая', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       expect(h.isEmpty()).toBe(true);
       expect(h.size()).toBe(0);
     });
 
     it('size() увеличивается при record()', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       h.record(makeSnapshot(), T0);
       h.record(makeSnapshot(), T0 + 1000);
       expect(h.size()).toBe(2);
@@ -95,12 +99,12 @@ describe('OrderBookHistory', () => {
 
   describe('getLatest()', () => {
     it('возвращает undefined для пустой истории', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       expect(h.getLatest()).toBeUndefined();
     });
 
     it('возвращает последний добавленный снапшот', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       const s1 = makeSnapshot('mkt-1', 'tok-1');
       const s2 = makeSnapshot('mkt-1', 'tok-2');
       h.record(s1, T0);
@@ -113,12 +117,12 @@ describe('OrderBookHistory', () => {
 
   describe('getLast()', () => {
     it('возвращает пустой массив для пустой истории', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       expect(h.getLast(5)).toHaveLength(0);
     });
 
     it('возвращает последние N снапшотов в хронологическом порядке', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       const snapshots = Array.from({ length: 5 }, (_, i) => makeSnapshot('mkt-1', `tok-${i}`));
       snapshots.forEach((s, i) => h.record(s, T0 + i * 1000));
 
@@ -130,7 +134,7 @@ describe('OrderBookHistory', () => {
     });
 
     it('возвращает все если n > size()', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       h.record(makeSnapshot(), T0);
       h.record(makeSnapshot(), T0 + 1000);
       expect(h.getLast(100)).toHaveLength(2);
@@ -141,12 +145,12 @@ describe('OrderBookHistory', () => {
 
   describe('getRecent()', () => {
     it('возвращает пустой массив для пустой истории', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       expect(h.getRecent(60_000, T0)).toHaveLength(0);
     });
 
     it('возвращает снапшоты за последние durationMs мс', () => {
-      const h = OrderBookHistory.create({ maxCount: 100 });
+      const h = OrderBookHistory.create({ maxCount: 100 }, clock);
       const s1 = makeSnapshot('m', 'a'); // T0 - 120s — вне окна
       const s2 = makeSnapshot('m', 'b'); // T0 - 30s  — в окне
       const s3 = makeSnapshot('m', 'c'); // T0         — в окне
@@ -165,7 +169,7 @@ describe('OrderBookHistory', () => {
 
   describe('getWindow()', () => {
     it('возвращает снапшоты в заданном диапазоне (включительно)', () => {
-      const h = OrderBookHistory.create({ maxCount: 100 });
+      const h = OrderBookHistory.create({ maxCount: 100 }, clock);
       const s1 = makeSnapshot('m', 'a');
       const s2 = makeSnapshot('m', 'b');
       const s3 = makeSnapshot('m', 'c');
@@ -180,7 +184,7 @@ describe('OrderBookHistory', () => {
     });
 
     it('возвращает пустой массив если ни один снапшот не попадает в окно', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       h.record(makeSnapshot(), T0);
       expect(h.getWindow(T0 + 1000, T0 + 2000)).toHaveLength(0);
     });
@@ -190,7 +194,7 @@ describe('OrderBookHistory', () => {
 
   describe('getAll()', () => {
     it('возвращает все снапшоты в хронологическом порядке', () => {
-      const h = OrderBookHistory.create({ maxCount: 10 });
+      const h = OrderBookHistory.create({ maxCount: 10 }, clock);
       const s1 = makeSnapshot('m', 'a');
       const s2 = makeSnapshot('m', 'b');
       h.record(s1, T0);
@@ -206,7 +210,7 @@ describe('OrderBookHistory', () => {
 
   describe('вытеснение по maxCount', () => {
     it('вытесняет самый старый снапшот при превышении maxCount', () => {
-      const h = OrderBookHistory.create({ maxCount: 3 });
+      const h = OrderBookHistory.create({ maxCount: 3 }, clock);
       const snapshots = Array.from({ length: 5 }, (_, i) => makeSnapshot('m', `tok-${i}`));
       snapshots.forEach((s, i) => h.record(s, T0 + i * 1000));
 
@@ -219,14 +223,14 @@ describe('OrderBookHistory', () => {
     });
 
     it('не вытесняет если size() < maxCount', () => {
-      const h = OrderBookHistory.create({ maxCount: 5 });
+      const h = OrderBookHistory.create({ maxCount: 5 }, clock);
       h.record(makeSnapshot(), T0);
       h.record(makeSnapshot(), T0 + 1000);
       expect(h.size()).toBe(2);
     });
 
     it('ровно maxCount снапшотов при добавлении maxCount+1', () => {
-      const h = OrderBookHistory.create({ maxCount: 2 });
+      const h = OrderBookHistory.create({ maxCount: 2 }, clock);
       h.record(makeSnapshot('m', 'a'), T0);
       h.record(makeSnapshot('m', 'b'), T0 + 1000);
       h.record(makeSnapshot('m', 'c'), T0 + 2000);
@@ -242,7 +246,7 @@ describe('OrderBookHistory', () => {
 
   describe('вытеснение по maxAgeMs', () => {
     it('вытесняет снапшоты старше maxAgeMs при record()', () => {
-      const h = OrderBookHistory.create({ maxAgeMs: 60_000 });
+      const h = OrderBookHistory.create({ maxAgeMs: 60_000 }, clock);
       const old   = makeSnapshot('m', 'old');
       const fresh = makeSnapshot('m', 'fresh');
 
@@ -254,7 +258,7 @@ describe('OrderBookHistory', () => {
     });
 
     it('не вытесняет снапшоты моложе maxAgeMs', () => {
-      const h = OrderBookHistory.create({ maxAgeMs: 60_000 });
+      const h = OrderBookHistory.create({ maxAgeMs: 60_000 }, clock);
       h.record(makeSnapshot('m', 'a'), T0);
       h.record(makeSnapshot('m', 'b'), T0 + 30_000);
       h.record(makeSnapshot('m', 'c'), T0 + 59_000);
@@ -268,7 +272,7 @@ describe('OrderBookHistory', () => {
     });
 
     it('вытесняет все снапшоты если все старше maxAgeMs', () => {
-      const h = OrderBookHistory.create({ maxAgeMs: 10_000 });
+      const h = OrderBookHistory.create({ maxAgeMs: 10_000 }, clock);
       h.record(makeSnapshot('m', 'a'), T0);
       h.record(makeSnapshot('m', 'b'), T0 + 1000);
 
@@ -284,19 +288,20 @@ describe('OrderBookHistory', () => {
 
   describe('вытеснение при обоих ограничениях (maxCount + maxAgeMs)', () => {
     it('maxAgeMs вытесняет раньше чем maxCount заполнится', () => {
-      const h = OrderBookHistory.create({ maxCount: 100, maxAgeMs: 30_000 });
+      const h = OrderBookHistory.create({ maxCount: 100, maxAgeMs: 30_000 }, clock);
       h.record(makeSnapshot('m', 'a'), T0);
       h.record(makeSnapshot('m', 'b'), T0 + 10_000);
 
       // Через 40 секунд — 'a' устарел (40s > 30s), 'b' устарел (30s = 30s граница, строго <)
       h.record(makeSnapshot('m', 'c'), T0 + 40_000);
 
-      // 'a' устарел (40s), 'b' устарел ровно на границе (< 30s не выполняется)
+      // 'a' устарел (40s > 30s) → evicted; 'b' на границе (30s = maxAgeMs) → строго < не выполняется → остаётся
+      expect(h.size()).toBe(2); // 'b' и 'c' остаются
       expect(h.getLatest()?.tokenId).toBe('c');
     });
 
     it('maxCount вытесняет когда maxAgeMs ещё не истёк', () => {
-      const h = OrderBookHistory.create({ maxCount: 2, maxAgeMs: 300_000 });
+      const h = OrderBookHistory.create({ maxCount: 2, maxAgeMs: 300_000 }, clock);
       const s1 = makeSnapshot('m', 'a');
       const s2 = makeSnapshot('m', 'b');
       const s3 = makeSnapshot('m', 'c');

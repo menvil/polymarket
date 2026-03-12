@@ -117,6 +117,9 @@ export class OrderUpdateHandler {
     }
 
     const updatedOrder = result.value;
+    // pullEvents() до save(): события извлекаются из order ДО персистентности,
+    // чтобы в случае ошибки publish они были в локальном контексте для retry/logging.
+    const events = updatedOrder.pullEvents();
     try {
       await this._orders.save(updatedOrder);
     } catch (err) {
@@ -127,8 +130,6 @@ export class OrderUpdateHandler {
       });
       return;
     }
-
-    const events = updatedOrder.pullEvents();
     if (events.length > 0) {
       try {
         await this._eventBus.publishAll(events as readonly ApplicationEvent[]);

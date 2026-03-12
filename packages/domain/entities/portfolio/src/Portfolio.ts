@@ -549,7 +549,7 @@ export class Portfolio {
    * ```typescript
    * const result = portfolio.reserveTokensForOrder(instrumentId, new Decimal(50));
    * if (result.ok) {
-   *   console.log(result.value.availableTokenQuantity(instrumentId).toNumber()); // positon - 50
+   *   console.log(result.value.availableTokenQuantity(instrumentId).toNumber()); // position - 50
    * }
    * ```
    */
@@ -557,6 +557,14 @@ export class Portfolio {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<Portfolio, InvalidBalanceError> {
+    if (qty.lte(0)) {
+      return Err(
+        new InvalidBalanceError(
+          `reserveTokensForOrder: qty must be positive, got ${qty.toString()}`,
+          { context: { instrumentId: String(instrumentId), qty: qty.toString() } },
+        ),
+      );
+    }
     const available = this.availableTokenQuantity(instrumentId);
     if (available.lt(qty)) {
       return Err(
@@ -603,6 +611,14 @@ export class Portfolio {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<Portfolio, InvalidBalanceError> {
+    if (qty.lte(0)) {
+      return Err(
+        new InvalidBalanceError(
+          `releaseTokenReservation: qty must be positive, got ${qty.toString()}`,
+          { context: { instrumentId: String(instrumentId), qty: qty.toString() } },
+        ),
+      );
+    }
     const current = this.tokenReservations.get(instrumentId) ?? new Decimal(0);
     if (current.lt(qty)) {
       return Err(
