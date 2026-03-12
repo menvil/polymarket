@@ -307,6 +307,74 @@ describe('MarketFilter', () => {
     });
   });
 
+  describe('экранирование спецсимволов в ключевых словах', () => {
+    it('requiredKeywords: "$50" — $ экранируется, матчит "$50" но не "$5000"', () => {
+      const mMatch = makeMarket({ question: 'Will price reach $50 by end of year?', marketIdSuffix: 'sp1' });
+      const mNoMatch = makeMarket({ question: 'Will price reach $5000 by end of year?', marketIdSuffix: 'sp2' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, requiredKeywords: ['$50'] };
+
+      const result = filter.filterCandidates([mMatch, mNoMatch], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.marketId).toBe(mMatch.marketId);
+    });
+
+    it('excludedKeywords: "c++" — + экранируется, исключает "C++" но не "C-based"', () => {
+      const mExcluded = makeMarket({ question: 'Will C++ remain the top systems language?', marketIdSuffix: 'cpp1' });
+      const mKept = makeMarket({ question: 'Will C-based languages grow in 2025?', marketIdSuffix: 'cpp2' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['c++'] };
+
+      const result = filter.filterCandidates([mExcluded, mKept], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.marketId).toBe(mKept.marketId);
+    });
+  });
+
+  describe('lookaround matching: цифры и дефисы в ключевых словах', () => {
+    it('anyOfKeywords: "web3" — матчит "Web3" но не "web30" (цифра блокирует lookahead)', () => {
+      const mMatch = makeMarket({ question: 'Will Web3 adoption grow in 2025?', marketIdSuffix: 'w31' });
+      const mNoMatch = makeMarket({ question: 'Will Web30 protocol dominate the market?', marketIdSuffix: 'w32' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, anyOfKeywords: ['web3'] };
+
+      const result = filter.filterCandidates([mMatch, mNoMatch], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.marketId).toBe(mMatch.marketId);
+    });
+
+    it('excludedKeywords: "ai" — не матчит "retail" (lookahead предотвращает ложное срабатывание)', () => {
+      const mExcluded = makeMarket({ question: 'Will AI dominate the tech market?', marketIdSuffix: 'ai1' });
+      const mKept = makeMarket({ question: 'Will retail sales exceed expectations?', marketIdSuffix: 'ai2' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['ai'] };
+
+      const result = filter.filterCandidates([mExcluded, mKept], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.marketId).toBe(mKept.marketId); // 'ret-ai-l' не матчит 'ai'
+    });
+
+    it('anyOfKeywords: "covid-19" — дефис не ломает поиск, матчит "COVID-19"', () => {
+      const m = makeMarket({ question: 'Will COVID-19 cases decline next year?', marketIdSuffix: 'cov1' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, anyOfKeywords: ['covid-19'] };
+
+      const result = filter.filterCandidates([m], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('excludedKeywords: "e-sports" — не матчит "esports" (без дефиса)', () => {
+      const mExcluded = makeMarket({ question: 'Will e-sports market grow in 2025?', marketIdSuffix: 'es1' });
+      const mKept = makeMarket({ question: 'Will esports revenues exceed $5B?', marketIdSuffix: 'es2' });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, excludedKeywords: ['e-sports'] };
+
+      const result = filter.filterCandidates([mExcluded, mKept], config, NOW_MS);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.marketId).toBe(mKept.marketId);
+    });
+  });
+
   describe('комбинация фильтров', () => {
     it('рынок не проходит несколько фильтров → исключён', () => {
       const market = makeMarket({

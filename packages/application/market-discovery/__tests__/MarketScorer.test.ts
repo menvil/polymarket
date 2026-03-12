@@ -69,8 +69,8 @@ describe('MarketScorer', () => {
       const market = makeMarket({ expiresAtMs: IN_24H, suffix: 'solo' });
       const result = scorer.scoreAndSort([market]);
       expect(result).toHaveLength(1);
-      // score ≈ 24 часа (с погрешностью из-за Date.now())
-      expect(result[0]!.score.greaterThan(0)).toBe(true);
+      // score = 24 ровно: PaperClock детерминирован (всегда возвращает NOW_MS)
+      expect(result[0]!.score.toNumber()).toBe(24);
     });
 
     it('не мутирует исходный массив', () => {
@@ -129,6 +129,33 @@ describe('MarketScorer', () => {
       expect(result[0]!.liquidity.toNumber()).toBe(100_000); // high
       expect(result[1]!.liquidity.toNumber()).toBe(10_000);  // mid
       expect(result[2]!.liquidity.toNumber()).toBe(1_000);   // low
+    });
+  });
+
+  describe('третий ключ сортировки: marketId ASC', () => {
+    it('равные score и liquidity → детерминированный порядок по marketId ASC', () => {
+      // suffix 'z1' > 'a1' лексикографически → 'a1' должен идти первым
+      const mZ = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'z1' });
+      const mA = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'a1' });
+
+      const result = scorer.scoreAndSort([mZ, mA]);
+
+      expect(result[0]!.marketId).toBe(mA.marketId); // '0xmarketa1' < '0xmarketz1'
+      expect(result[1]!.marketId).toBe(mZ.marketId);
+    });
+
+    it('одинаковый marketId дважды → comparator возвращает 0, не нарушает детерминизм', () => {
+      // [BUG до фикса]: String(a) < String(b) ? -1 : 1 возвращал 1 при a === b
+      // (нарушение антисимметрии: cmp(a,b)=1 И cmp(b,a)=1 одновременно)
+      // [После фикса]: возвращает 0 → сортировка стабильна
+      const m1 = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'eq' });
+      const m2 = makeMarket({ expiresAtMs: IN_24H, liquidity: 5000, suffix: 'eq' }); // тот же marketId
+
+      const result = scorer.scoreAndSort([m1, m2]);
+
+      expect(result).toHaveLength(2);
+      // Оба имеют одинаковый marketId → порядок сохранился
+      expect(String(result[0]!.marketId)).toBe(String(result[1]!.marketId));
     });
   });
 

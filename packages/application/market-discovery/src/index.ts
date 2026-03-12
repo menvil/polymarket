@@ -14,7 +14,7 @@
  * import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
  *
  * const filter = new MarketFilter();
- * const scorer = new MarketScorer();
+ * const scorer = new MarketScorer(clock);
  *
  * const filtered = filter.filterCandidates(rawMarkets, config, Date.now());
  * const sorted = scorer.scoreAndSort(filtered);

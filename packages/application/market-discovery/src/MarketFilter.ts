@@ -16,8 +16,10 @@
  * 7. `excludedKeywords` — ни одного слова из списка в question
  *
  * ### Поиск ключевых слов:
- * Используется `\bkeyword\b` (word-boundary regex), что предотвращает ложные срабатывания.
+ * Используется негативный lookbehind/lookahead `(?<![a-zA-Z0-9])keyword(?![a-zA-Z0-9])`,
+ * что предотвращает ложные срабатывания.
  * Например, `excludedKeywords: ['war']` не будет матчить `'reward'` или `'forward'`.
+ * Спецсимволы regex в ключевых словах (например `'$50'`, `'c++'`) экранируются автоматически.
  */
 import Decimal from 'decimal.js';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
@@ -76,7 +78,7 @@ export class MarketFilter {
     const deduped = this._deduplicateByMarketId(markets);
 
     // Компилируем регексы один раз для всего прохода фильтра.
-    // Поиск с \b-границами слов предотвращает ложные срабатывания
+    // Lookaround-паттерны предотвращают ложные срабатывания
     // (например, 'war' не матчит 'reward' или 'forward').
     const requiredRegexes = this._compileKeywords(config.requiredKeywords);
     const anyOfRegexes    = this._compileKeywords(config.anyOfKeywords);
@@ -217,8 +219,8 @@ export class MarketFilter {
   /**
    * Проверяет наличие всех обязательных ключевых слов в question.
    *
-   * @param question - Вопрос рынка в нижнем регистре
-   * @param regexes - Предскомпилированные `\b`-регексы обязательных слов
+   * @param question - Вопрос рынка (поиск регистронезависимый, флаг `/i`)
+   * @param regexes - Предскомпилированные lookaround-регексы обязательных слов
    * @returns true если все регексы дают совпадение, или список пустой
    */
   private _passesRequiredKeywords(question: string, regexes: RegExp[]): boolean {
@@ -229,8 +231,8 @@ export class MarketFilter {
   /**
    * Проверяет наличие хотя бы одного слова из anyOfKeywords в question.
    *
-   * @param question - Вопрос рынка в нижнем регистре
-   * @param regexes - Предскомпилированные `\b`-регексы слов «хотя бы одно»
+   * @param question - Вопрос рынка (поиск регистронезависимый, флаг `/i`)
+   * @param regexes - Предскомпилированные lookaround-регексы слов «хотя бы одно»
    * @returns true если хотя бы один регекс даёт совпадение, или список пустой
    */
   private _passesAnyOfKeywords(question: string, regexes: RegExp[]): boolean {
@@ -241,8 +243,8 @@ export class MarketFilter {
   /**
    * Проверяет отсутствие запрещённых ключевых слов в question.
    *
-   * @param question - Вопрос рынка в нижнем регистре
-   * @param regexes - Предскомпилированные `\b`-регексы запрещённых слов
+   * @param question - Вопрос рынка (поиск регистронезависимый, флаг `/i`)
+   * @param regexes - Предскомпилированные lookaround-регексы запрещённых слов
    * @returns true если ни один регекс не даёт совпадение, или список пустой
    */
   private _passesExcludedKeywords(question: string, regexes: RegExp[]): boolean {

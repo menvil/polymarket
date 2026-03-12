@@ -11,6 +11,7 @@
  * ### Алгоритм сортировки:
  * 1. По `expiresAt` ASC (ближайшее истечение первым)
  * 2. При равных `expiresAt` — по `liquidity` DESC (больше ликвидность → выше приоритет)
+ * 3. При равных `expiresAt` и `liquidity` — по `marketId` ASC (детерминированный порядок)
  *
  * ### Обоснование решения:
  * Рынки с ближайшим истечением торгуются активнее и имеют более чёткий исход.
@@ -52,7 +53,7 @@ export class MarketScorer {
    *
    * @example
    * ```typescript
-   * const scorer = new MarketScorer();
+   * const scorer = new MarketScorer(clock);
    *
    * const markets = [
    *   { ...market1, expiresAt: in48hours, liquidity: 5000 },
@@ -86,7 +87,9 @@ export class MarketScorer {
       if (scoreDiff !== 0) return scoreDiff;
       const liquidityDiff = b.liquidity.comparedTo(a.liquidity);
       if (liquidityDiff !== 0) return liquidityDiff;
-      return String(a.marketId) < String(b.marketId) ? -1 : 1;
+      const aId = String(a.marketId);
+      const bId = String(b.marketId);
+      return aId < bId ? -1 : aId > bId ? 1 : 0;
     });
 
     return scored;
