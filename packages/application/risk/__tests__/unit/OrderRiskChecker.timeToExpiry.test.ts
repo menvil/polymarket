@@ -62,6 +62,7 @@ function makePortfolio(): Portfolio {
 
 const INSTRUMENT_ID = 'token-abc' as unknown as InstrumentId;
 const BUY = 'BUY' as unknown as Side;
+const SELL = 'SELL' as unknown as Side;
 
 /**
  * Создаёт PreOrderCheckInput с возможностью переопределения полей.
@@ -216,6 +217,31 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
     );
     checker.checkBeforeOrder(makeInput({ timeToExpiryMs: 120_000 }));
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  // ── SELL: не блокируется у экспирации ───────────────────────────────────
+
+  it('Ok для SELL даже если timeToExpiryMs === 0', () => {
+    // SELL ликвидирует позицию — блокировать нельзя, даже у самой экспирации
+    const checker = new OrderRiskChecker(
+      { minTimeToExpiryMs: 60_000 },
+      logger,
+    );
+    const result = checker.checkBeforeOrder(
+      makeInput({ side: SELL, timeToExpiryMs: 0 }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('Ok для SELL если timeToExpiryMs < minTimeToExpiryMs', () => {
+    const checker = new OrderRiskChecker(
+      { minTimeToExpiryMs: 30_000 },
+      logger,
+    );
+    const result = checker.checkBeforeOrder(
+      makeInput({ side: SELL, timeToExpiryMs: 5_000 }),
+    );
+    expect(result.ok).toBe(true);
   });
 
   // ── fail-fast: проверка expiry первая в цепочке ─────────────────────────

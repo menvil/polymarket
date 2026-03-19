@@ -61,8 +61,8 @@ export class OrderRiskChecker implements IOrderRiskChecker {
   public checkBeforeOrder(input: PreOrderCheckInput): Result<void, RiskViolationError> {
     const orderNotional = input.price.value().times(input.size.value());
 
-    // 0. minTimeToExpiryMs — O(1)
-    const expiryViolation = this._checkTimeToExpiry(input.timeToExpiryMs);
+    // 0. minTimeToExpiryMs — O(1), только для BUY (SELL ликвидирует позицию — не блокируем)
+    const expiryViolation = this._checkTimeToExpiry(input.timeToExpiryMs, input.side);
     if (expiryViolation) return Err(expiryViolation);
 
     // 1. maxOpenOrders — O(1)
@@ -101,14 +101,17 @@ export class OrderRiskChecker implements IOrderRiskChecker {
   // ── Приватные проверки ─────────────────────────────────────────────────────
 
   /**
-   * Проверяет minTimeToExpiryMs — не размещать ордера слишком близко к экспирации.
+   * Проверяет minTimeToExpiryMs — не размещать BUY-ордера слишком близко к экспирации.
    *
    * @param timeToExpiryMs - Время до экспирации в ms (undefined = не проверять)
+   * @param side - Сторона ордера. SELL не блокируется — ликвидация позиции у экспирации допустима.
    * @returns RiskViolationError или undefined если проверка пройдена
    */
-  private _checkTimeToExpiry(timeToExpiryMs: number | undefined): RiskViolationError | undefined {
+  private _checkTimeToExpiry(timeToExpiryMs: number | undefined, side: unknown): RiskViolationError | undefined {
     if (this._params.minTimeToExpiryMs === undefined) return undefined;
     if (timeToExpiryMs === undefined) return undefined;
+    // Только BUY: SELL-ордера (ликвидация позиции) разрешены у самой экспирации
+    if (String(side) !== 'BUY') return undefined;
     if (timeToExpiryMs >= this._params.minTimeToExpiryMs) return undefined;
 
     return this._violation(

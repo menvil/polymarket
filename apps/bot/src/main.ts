@@ -1895,7 +1895,7 @@ function buildRiskParams(): RiskParams {
     maxPositionSize: new Decimal('20'),
     maxTotalExposure: new Decimal('2000'),
     minAvailableBalance: new Decimal('1'),
-    minTimeToExpiryMs: 0,
+    minTimeToExpiryMs: 30_000, // не открывать BUY за < 30 сек до экспирации
   };
 }
 

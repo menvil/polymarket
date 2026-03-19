@@ -30,6 +30,6 @@ export interface RiskParams {
   readonly maxOpenOrders?: number;
   /** Минимальный доступный баланс после резервирования (в USDC) */
   readonly minAvailableBalance?: Decimal;
-  /** Минимальное время до экспирации рынка (ms) — не размещать ордера если осталось меньше */
+  /** Минимальное время до экспирации рынка (ms) — не размещать BUY-ордера если осталось меньше. SELL разрешён. */
   readonly minTimeToExpiryMs?: number;
 }
