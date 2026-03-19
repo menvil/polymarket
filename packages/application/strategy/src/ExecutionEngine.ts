@@ -113,6 +113,16 @@ import type { IOrderRepository } from '@polymarket/ports';
 export class ExecutionEngine {
   private readonly _logger: ILogger;
 
+  /**
+   * Cooldown per instrumentId для SELL-ордеров ниже minOrderSize.
+   * Ключ: строковый instrumentId. Значение: timestamp последней попытки (Date.now()).
+   * Цель: не спамить venue повторными попытками если биржа отклоняет ордер.
+   */
+  private readonly _sellBelowMinCooldowns = new Map<string, number>();
+
+  /** 60 секунд между повторными попытками SELL ниже minOrderSize */
+  private static readonly _SELL_BELOW_MIN_COOLDOWN_MS = 60_000;
+
   constructor(private readonly _deps: ExecutionEngineDeps) {
     this._logger = _deps.logger.child({ component: 'ExecutionEngine' });
   }
@@ -296,29 +306,60 @@ export class ExecutionEngine {
     if (info) {
       // 1. Клампирование к minOrderSize (минимум в токенах)
       if (effectiveSize.value().lt(info.minOrderSize.value())) {
-        // Для SELL: если позиция меньше minOrderSize — клампирование только усугубит ситуацию
-        // (PlaceOrderUseCase отклонит ордер с «Insufficient token balance»).
-        // Пропускаем вместо клампирования.
         if (intent.side === 'SELL') {
           const availableQty = portfolio.getPosition(ctx.instrumentId)?.quantity.value()
             ?? new Decimal(0);
+
+          if (availableQty.lte(0)) {
+            return 'skipped';
+          }
+
           if (availableQty.lt(info.minOrderSize.value())) {
-            this._logger.debug('ExecutionEngine: skip — SELL position below minOrderSize', {
+            // Позиция застряла (partial fill + cancel) — меньше minOrderSize.
+            // Пробуем продать фактический размер: биржа может принять полный close позиции.
+            // Cooldown предотвращает спам если биржа отклоняет.
+            const key = String(ctx.instrumentId);
+            const nowMs = Date.now();
+            const lastAttempt = this._sellBelowMinCooldowns.get(key) ?? 0;
+
+            if (nowMs - lastAttempt < ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS) {
+              this._logger.debug('ExecutionEngine: skip — SELL below minOrderSize cooldown active', {
+                strategyId: ctx.strategyId,
+                instrumentId: key,
+                positionQty: availableQty.toNumber(),
+                minOrderSize: info.minOrderSize.toNumber(),
+                retryInMs: ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS - (nowMs - lastAttempt),
+              });
+              return 'skipped';
+            }
+
+            this._sellBelowMinCooldowns.set(key, nowMs);
+            effectiveSize = Quantity.of(availableQty);
+            this._logger.info('ExecutionEngine: SELL below minOrderSize — attempting with actual position qty', {
               strategyId: ctx.strategyId,
-              instrumentId: String(ctx.instrumentId),
+              instrumentId: key,
               positionQty: availableQty.toNumber(),
               minOrderSize: info.minOrderSize.toNumber(),
             });
-            return 'skipped';
+          } else {
+            // Позиции достаточно — клампируем intent.size к minOrderSize (стандартное поведение)
+            this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
+              strategyId: ctx.strategyId,
+              instrumentId: String(ctx.instrumentId),
+              requested: effectiveSize.toNumber(),
+              effective: info.minOrderSize.toNumber(),
+            });
+            effectiveSize = info.minOrderSize;
           }
+        } else {
+          this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
+            strategyId: ctx.strategyId,
+            instrumentId: String(ctx.instrumentId),
+            requested: effectiveSize.toNumber(),
+            effective: info.minOrderSize.toNumber(),
+          });
+          effectiveSize = info.minOrderSize;
         }
-        this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
-          strategyId: ctx.strategyId,
-          instrumentId: String(ctx.instrumentId),
-          requested: effectiveSize.toNumber(),
-          effective: info.minOrderSize.toNumber(),
-        });
-        effectiveSize = info.minOrderSize;
       }
 
       // 2. Клампирование к minOrderValue (минимальная стоимость в USDC: price × size >= minOrderValue)

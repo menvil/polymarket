@@ -553,12 +553,12 @@ describe('ExecutionEngine', () => {
     });
   });
 
-  // ── SELL: позиция меньше minOrderSize ───────────────────
+  // ── SELL: позиция меньше minOrderSize (stuck position) ──
 
-  describe('SELL skip when position < minOrderSize', () => {
-    it('should skip SELL when position qty < minOrderSize', async () => {
-      // positionQty=0.21, minOrderSize=5 → skip вместо клампирования к 5
-      // (клампирование привело бы к «Insufficient token balance: available 0.21, required 5»)
+  describe('SELL below minOrderSize (stuck position)', () => {
+    it('should attempt SELL with actual position qty on first call (no cooldown)', async () => {
+      // positionQty=0.21, minOrderSize=5 → первая попытка: размещаем с size=0.21
+      // Биржа может принять полный close позиции даже ниже minOrderSize
       const minOrderSize = Quantity.of(new Decimal('5'));
       const portfolio = {
         getPosition: jest.fn().mockReturnValue({
@@ -575,11 +575,56 @@ describe('ExecutionEngine', () => {
         { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) },
       ]);
 
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+      expect(report.errors).toHaveLength(0);
+      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
+      expect(call.size.toNumber()).toBe(0.21); // фактический размер позиции
+    });
+
+    it('should skip SELL below minOrderSize on second call within cooldown', async () => {
+      // Первый вызов → cooldown установлен → размещение.
+      // Второй вызов сразу → cooldown активен → skip.
+      const minOrderSize = Quantity.of(new Decimal('5'));
+      const portfolio = {
+        getPosition: jest.fn().mockReturnValue({
+          quantity: Quantity.of(new Decimal('0.21')),
+        }),
+      };
+      deps = makeDeps({
+        catalog: makeCatalog(minOrderSize),
+        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
+      });
+      engine = new ExecutionEngine(deps);
+
+      const intent = [{ type: 'PLACE' as const, side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) }];
+
+      const first = await engine.execute(ctx, intent);
+      expect(first.placed).toBe(1);
+
+      const second = await engine.execute(ctx, intent);
+      expect(second.skipped).toBe(1);
+      expect(second.placed).toBe(0);
+    });
+
+    it('should skip SELL when position qty is zero', async () => {
+      // positionQty=0 → нечего продавать
+      const minOrderSize = Quantity.of(new Decimal('5'));
+      const portfolio = {
+        getPosition: jest.fn().mockReturnValue(undefined),
+      };
+      deps = makeDeps({
+        catalog: makeCatalog(minOrderSize),
+        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
+      });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) },
+      ]);
+
       expect(report.skipped).toBe(1);
       expect(report.placed).toBe(0);
-      expect(report.errors).toHaveLength(0);
-      // placeOrderUseCase не вызывается
-      expect((deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls).toHaveLength(0);
     });
 
     it('should clamp and place SELL when position qty >= minOrderSize', async () => {
@@ -606,8 +651,8 @@ describe('ExecutionEngine', () => {
       expect(call.size.toNumber()).toBe(5); // клампировано к minOrderSize
     });
 
-    it('should not skip SELL when position qty exactly equals minOrderSize', async () => {
-      // positionQty=5 === minOrderSize=5 → не skip (достаточно для клампирования)
+    it('should clamp and place SELL when position qty exactly equals minOrderSize', async () => {
+      // positionQty=5 === minOrderSize=5 → не stuck-path, клампирование к 5
       const minOrderSize = Quantity.of(new Decimal('5'));
       const portfolio = {
         getPosition: jest.fn().mockReturnValue({
