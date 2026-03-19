@@ -248,21 +248,8 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
         return [];
       }
 
-      // Нет ордеров → проверяем баланс и минимальную стоимость, ставим новый
+      // Нет ордеров → проверяем баланс и ставим новый
       const cost = targetBuyPrice.mul(this._config.orderSize);
-
-      // Polymarket отклоняет BUY-ордера с notional < $1.
-      // Проверяем заранее чтобы не спамить "ENTER BUY" для мёртвых рынков (refPrice ≈ 0.01).
-      const MIN_ORDER_VALUE = new Decimal('1');
-      if (cost.lt(MIN_ORDER_VALUE)) {
-        this._logger?.debug('DumbStrategy: skip — order value below minimum', {
-          refPrice: data.refPrice.toFixed(4),
-          targetBuyPrice: targetBuyPrice.toFixed(4),
-          cost: cost.toFixed(4),
-          minOrderValue: MIN_ORDER_VALUE.toFixed(2),
-        });
-        return [];
-      }
 
       if (data.availableBalance.lt(cost)) {
         this._logger?.debug('DumbStrategy: skip — insufficient balance', {
@@ -272,7 +259,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
         return [];
       }
 
-      this._logger?.info('DumbStrategy: ENTER BUY', {
+      this._logger?.debug('DumbStrategy: ENTER BUY', {
         refPrice: data.refPrice.toFixed(4),
         targetBuyPrice: targetBuyPrice.toFixed(4),
         size: this._config.orderSize.toFixed(2),
