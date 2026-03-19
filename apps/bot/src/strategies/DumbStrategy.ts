@@ -217,7 +217,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
           const drift = targetPrice.minus(openOrder.orderPrice);
 
           if (drift.gte(this._config.repriceThreshold)) {
-            this._logger?.info('DumbStrategy: REPRICE — market moved up, chasing', {
+            this._logger?.debug('DumbStrategy: REPRICE — market moved up, chasing', {
               refPrice: data.refPrice.toFixed(4),
               orderPrice: openOrder.orderPrice.toFixed(4),
               targetPrice: targetPrice.toFixed(4),
@@ -299,7 +299,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
     // Не продаём если цена вне допустимого диапазона
     if (sellPrice.gt('0.99')) return [];
 
-    this._logger?.info('DumbStrategy: EXIT SELL', {
+    this._logger?.debug('DumbStrategy: EXIT SELL', {
       entryPrice: data.entryPrice.toFixed(4),
       sellPrice: sellPrice.toFixed(4),
       size: Decimal.min(data.positionQty, this._config.orderSize).toFixed(2),
