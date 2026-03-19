@@ -635,6 +635,15 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       return;
     }
 
+    // Если за время debounce (500ms) все токены были unsubscribed — reconnect не нужен.
+    // Иначе BaseWebSocket отправил бы устаревший кэш рыночной подписки (удалённые токены),
+    // Polymarket ответил бы INVALID OPERATION → бесконечный reconnect-цикл.
+    if (this._subscribedTokens.size === 0) {
+      this._logger.debug('[PolymarketWsAdapter] No tokens after debounce — skipping subscription-change reconnect');
+      this._reconnectForSubscriptionPending = false;
+      return;
+    }
+
     this._logger.info('[PolymarketWsAdapter] Reconnecting to apply subscription changes', {
       tokenCount: this._subscribedTokens.size,
     });

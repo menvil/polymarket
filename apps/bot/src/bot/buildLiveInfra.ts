@@ -224,12 +224,35 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
   );
 
-  // Inline adapter: IVenueOrderProvider → exchangeClient.getOpenOrders()
+  // Inline adapter: IVenueOrderProvider → LIVE + MATCHED ордера
+  // ВАЖНО: включаем и MATCHED ордера (сматченные, ожидающие on-chain сеттлмента).
+  // Polymarket не возвращает MATCHED из /orders (getOpenOrders), только LIVE.
+  // Без учёта MATCHED reconciler локально отменяет ордер до прихода fill → двойная покупка.
   const venueOrderProvider: IVenueOrderProvider = {
     async getOpenOrderIds(): Promise<readonly string[]> {
-      const result = await exchangeClient.getOpenOrders(accountId);
-      if (!result.ok) throw new Error(`getOpenOrders failed: ${result.error.message}`);
-      return result.value.map((o) => String(o.orderId));
+      const [liveResult, matchedOrders] = await Promise.allSettled([
+        exchangeClient.getOpenOrders(accountId),
+        orderRestClient.getMatchedOrders(undefined, 50),
+      ]);
+
+      if (liveResult.status === 'rejected') {
+        throw new Error(`getOpenOrders failed: ${String(liveResult.reason)}`);
+      }
+      if (!liveResult.value.ok) {
+        throw new Error(`getOpenOrders failed: ${liveResult.value.error.message}`);
+      }
+
+      const liveIds = liveResult.value.value.map((o) => String(o.orderId));
+
+      // MATCHED ордера — best-effort (не прерываем reconciliation при ошибке)
+      const matchedIds: string[] = [];
+      if (matchedOrders.status === 'fulfilled') {
+        for (const o of matchedOrders.value) {
+          matchedIds.push(o.id);
+        }
+      }
+
+      return [...liveIds, ...matchedIds];
     },
   };
 
