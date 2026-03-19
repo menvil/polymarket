@@ -36,7 +36,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
-import { asVenueId, AssetIdHelpers } from '@polymarket/ids';
+import { asVenueId, AssetIdHelpers, accountIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import { Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
@@ -88,7 +88,7 @@ export class ReconcileTradesUseCase {
    */
   public async execute(input: ReconcileTradesInput): Promise<Result<void, TradingError>> {
     this._logger.info('Starting trade reconciliation', {
-      accountId: String(input.accountId),
+      accountId: accountIdToString(input.accountId),
       since: input.since ? input.since.toNumber() : undefined,
     });
 
@@ -104,7 +104,7 @@ export class ReconcileTradesUseCase {
       });
       return Err(new TradingError(
         `Exchange getTrades failed: ${tradesResult.error.message}`,
-        { context: { accountId: String(input.accountId) } },
+        { context: { accountId: accountIdToString(input.accountId) } },
       ));
     }
 

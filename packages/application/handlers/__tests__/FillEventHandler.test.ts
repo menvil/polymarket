@@ -64,13 +64,27 @@ describe('FillEventHandler', () => {
     handler = new FillEventHandler(eventBus, clock, logger);
   });
 
-  it('публикует FILL_RECEIVED при валидном raw payload', async () => {
-    const raw = makeValidRaw();
+  it('MATCHED: кеширует fill, НЕ публикует FILL_RECEIVED', async () => {
+    const raw = makeValidRaw(); // status: 'MATCHED'
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-
     expect(mapResult.ok).toBe(true);
 
     await handler.handle(raw, ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill cached, waiting for on-chain confirmation',
+      expect.any(Object),
+    );
+  });
+
+  it('MINED после MATCHED: публикует FILL_RECEIVED из кеша', async () => {
+    // Шаг 1: MATCHED → кешируем
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    expect(eventBus.publish).not.toHaveBeenCalled();
+
+    // Шаг 2: MINED → достаём из кеша и публикуем
+    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -81,14 +95,34 @@ describe('FillEventHandler', () => {
     );
     expect(logger.info).toHaveBeenCalledWith(
       'Fill event published',
-      expect.any(Object),
+      expect.objectContaining({ status: 'MINED' }),
     );
   });
 
-  it('логирует error и не публикует при невалидном raw', async () => {
-    const raw = { id: 'bad-fill', status: 'MATCHED' }; // невалидный payload, но MATCHED
+  it('CONFIRMED после MATCHED: публикует FILL_RECEIVED из кеша', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
 
-    // Маппер должен отклонить невалидный payload
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'FILL_RECEIVED',
+        fill: expect.objectContaining({ id: 'fill-001' }),
+      }),
+    );
+  });
+
+  it('MINED + CONFIRMED: публикует дважды — второй раз парсит из raw (ProcessFillUseCase идемпотентен)', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+    // CONFIRMED без кеша, но с полным payload — fallback парсинг
+    await handler.handle({ ...makeValidRaw(), status: 'CONFIRMED' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('логирует error и не публикует при невалидном raw (MATCHED)', async () => {
+    const raw = { id: 'bad-fill', status: 'MATCHED' }; // невалидный payload
+
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
     expect(mapResult.ok).toBe(false);
 
@@ -101,24 +135,36 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('игнорирует fill со статусом MINED (trace-лог, нет публикации)', async () => {
+  it('MINED без кеша и с полным payload: парсит fallback и публикует', async () => {
     const raw = { ...makeValidRaw(), status: 'MINED' };
-
     await handler.handle(raw, ACCOUNT_ID);
 
-    expect(eventBus.publish).not.toHaveBeenCalled();
-    expect(logger.trace).toHaveBeenCalledWith(
-      'Fill event ignored (non-primary status)',
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'FILL_RECEIVED' }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill not in cache, parsing from on-chain event directly',
       expect.objectContaining({ status: 'MINED' }),
     );
   });
 
-  it('игнорирует fill со статусом CONFIRMED', async () => {
+  it('CONFIRMED без кеша и с полным payload: парсит fallback и публикует', async () => {
     const raw = { ...makeValidRaw(), status: 'CONFIRMED' };
-
     await handler.handle(raw, ACCOUNT_ID);
 
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'FILL_RECEIVED' }),
+    );
+  });
+
+  it('MINED без кеша и с невалидным payload: логирует ошибку, не публикует', async () => {
+    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+
     expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to parse fill event',
+      expect.objectContaining({ status: 'MINED' }),
+    );
   });
 
   it('игнорирует fill со статусом RETRYING', async () => {
@@ -175,7 +221,7 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('не публикует если TimestampService не может создать timestamp', async () => {
+  it('MINED: не публикует если TimestampService не может создать timestamp', async () => {
     // Симулируем невалидный clock — возвращает Invalid Date
     const badClock: IClock = {
       now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
@@ -183,12 +229,13 @@ describe('FillEventHandler', () => {
     const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
 
     const raw = makeValidRaw();
-    const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
-    expect(mapResult.ok).toBe(true); // payload должен парситься
-
+    // MATCHED парсится без clock (clock используется только при публикации)
     await handlerBadClock.handle(raw, ACCOUNT_ID);
+    expect(eventBus.publish).not.toHaveBeenCalled();
 
-    // FILL_RECEIVED не должен быть опубликован при невалидном timestamp
+    // MINED → пытаемся опубликовать, но clock невалидный → ошибка
+    await handlerBadClock.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to create receivedAt timestamp',

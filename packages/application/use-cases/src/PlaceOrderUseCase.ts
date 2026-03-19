@@ -4,16 +4,23 @@
  * @remarks
  * ### Алгоритм (7 шагов):
  * 1. Пре-трейд риск-проверка (OrderRiskChecker)
- * 2. Создание Order aggregate (Order.create → PENDING)
- * 3. Резервирование баланса (portfolio.reserveForOrder)
- * 4. Отправка на биржу (exchangeClient.submitOrder)
- *    - При ошибке биржи: откат резервации + отклонение ордера
- * 5. Принятие ордера биржей (order.accept → OPEN)
- * 6. Сохранение ордера в репозиторий
+ * 2. Резервирование баланса (portfolio.reserveForOrder)
+ * 3. Отправка на биржу (exchangeClient.submitOrder) → получаем venueOrderId
+ *    - При ошибке биржи: откат резервации
+ * 4. Создание Order aggregate с **venueOrderId** (Order.create → PENDING)
+ * 5. Принятие ордера (order.accept → OPEN)
+ * 6. Сохранение ордера в репозиторий (с venueOrderId!)
  * 7. Публикация доменных событий
  *
+ * ### Почему Order создаётся ПОСЛЕ отправки на биржу:
+ * Polymarket возвращает свой orderId (0xa928...) при размещении.
+ * Именно этот venueOrderId используется во всех WS-событиях (fills, order updates).
+ * Order хранится в репозитории под venueOrderId — только так OrderUpdateHandler
+ * и FillEventHandler смогут найти ордер по ID из WS-событий.
+ * input.orderId используется как clientOrderId для идемпотентности retry.
+ *
  * ### Идемпотентность:
- * orderId должен быть уникальным для каждой попытки.
+ * input.orderId (внутренний UUID) передаётся в биржу как clientOrderId для retry.
  * При ошибке биржи резервация автоматически откатывается.
  *
  * @example
@@ -50,7 +57,11 @@ import type { OrderService } from './services/OrderService.js';
 
 /** Входные данные для PlaceOrderUseCase */
 export interface PlaceOrderInput {
-  /** ID нового ордера (должен быть уникальным) */
+  /**
+   * Внутренний ID ордера — используется как clientOrderId для идемпотентности retry.
+   * Фактический orderId ордера будет venueOrderId, возвращённый биржей.
+   * Use case вернёт Ok(venueOrderId), а не Ok(orderId).
+   */
   readonly orderId: OrderId;
   /** ID аккаунта владельца ордера */
   readonly accountId: AccountId;
@@ -125,35 +136,12 @@ export class PlaceOrderUseCase {
     if (!riskResult.ok) {
       this._logger.warn('Pre-trade risk check failed', {
         riskCode: riskResult.error.riskCode,
-        orderId: String(input.orderId),
+        clientOrderId: String(input.orderId),
       });
       return riskResult;
     }
 
-    // Шаг 2: Создание Order aggregate
-    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
-    if (!timestampResult.ok) {
-      return Err(new TradingError(
-        `Failed to create timestamp: ${timestampResult.error.message}`,
-        { context: { orderId: String(input.orderId) } },
-      ));
-    }
-
-    const orderResult = Order.create({
-      id: input.orderId,
-      asset: input.asset,
-      side: input.side,
-      price: input.price,
-      size: input.size,
-      timestamp: timestampResult.value,
-      strategyId: input.strategyId,
-    });
-    if (!orderResult.ok) {
-      return Err(orderResult.error);
-    }
-    const order = orderResult.value;
-
-    // Шаг 3: Резервирование ресурсов (BUY → USDC, SELL → токены)
+    // Шаг 2: Резервирование ресурсов (BUY → USDC, SELL → токены)
     const isBuy = input.side === 'BUY';
     const notional = isBuy ? input.price.value().times(input.size.value()) : undefined;
     const reserveResult = isBuy
@@ -168,14 +156,16 @@ export class PlaceOrderUseCase {
         `Failed to reserve ${isBuy ? 'balance' : 'tokens'}: ${reserveResult.error.message}`,
         {
           context: {
-            orderId: String(input.orderId),
+            clientOrderId: String(input.orderId),
             ...(isBuy ? { notional: notional!.toString() } : { instrumentId: String(input.instrumentId), size: input.size.value().toString() }),
           },
         },
       ));
     }
 
-    // Шаг 4: Отправка на биржу
+    // Шаг 3: Отправка на биржу
+    // input.orderId используется как clientOrderId для идемпотентности retry.
+    // Фактический orderId ордера = venueOrderId, который вернёт биржа.
     const submitResult = await this._deps.exchangeClient.submitOrder({
       asset: input.asset,
       side: input.side,
@@ -188,7 +178,7 @@ export class PlaceOrderUseCase {
     if (!submitResult.ok) {
       // Откат: снять резервацию
       this._logger.warn('Exchange rejected order, rolling back reservation', {
-        orderId: String(input.orderId),
+        clientOrderId: String(input.orderId),
         error: submitResult.error.message,
       });
       const releaseResult = isBuy
@@ -200,7 +190,7 @@ export class PlaceOrderUseCase {
           );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation during rollback', {
-          orderId: String(input.orderId),
+          clientOrderId: String(input.orderId),
           releaseError: releaseResult.error.message,
         });
       }
@@ -208,12 +198,68 @@ export class PlaceOrderUseCase {
         `Exchange submission failed: ${submitResult.error.message}`,
         {
           context: {
-            orderId: String(input.orderId),
+            clientOrderId: String(input.orderId),
             rollbackError: releaseResult.ok ? undefined : releaseResult.error.message,
           },
         },
       ));
     }
+
+    // venueOrderId — реальный ID от биржи (0xa928...).
+    // Именно этот ID используется в WS-событиях (fills, order updates).
+    // Order entity создаётся с этим ID, чтобы lookups в OrderUpdateHandler работали.
+    const venueOrderId = submitResult.value;
+
+    // Шаг 4: Создание Order aggregate с venueOrderId
+    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
+    if (!timestampResult.ok) {
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after timestamp failure', {
+          venueOrderId: String(venueOrderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      return Err(new TradingError(
+        `Failed to create timestamp: ${timestampResult.error.message}`,
+        { context: { venueOrderId: String(venueOrderId) } },
+      ));
+    }
+
+    const orderResult = Order.create({
+      id: venueOrderId,
+      asset: input.asset,
+      side: input.side,
+      price: input.price,
+      size: input.size,
+      timestamp: timestampResult.value,
+      strategyId: input.strategyId,
+    });
+    if (!orderResult.ok) {
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after Order.create failure', {
+          venueOrderId: String(venueOrderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      return Err(orderResult.error);
+    }
+    const order = orderResult.value;
 
     // Шаг 5: Принятие ордера (PENDING → OPEN)
     const acceptResult = order.accept();
@@ -228,14 +274,14 @@ export class PlaceOrderUseCase {
           );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation during accept() rollback', {
-          orderId: String(input.orderId),
+          venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
         });
       }
-      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(input.orderId);
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
       if (!cancelExchangeResult.ok) {
         this._logger.error('Failed to cancel exchange order during accept() rollback', {
-          orderId: String(input.orderId),
+          venueOrderId: String(venueOrderId),
           error: cancelExchangeResult.error.message,
         });
       }
@@ -243,17 +289,17 @@ export class PlaceOrderUseCase {
     }
     const acceptedOrder = acceptResult.value;
 
-    // Шаг 6: Сохранение ордера
+    // Шаг 6: Сохранение ордера (с venueOrderId)
     try {
       await this._deps.orderService.save(acceptedOrder);
     } catch (err) {
       this._logger.error('Failed to save accepted order', {
-        orderId: String(input.orderId),
+        venueOrderId: String(venueOrderId),
         err: err instanceof Error ? err : new Error(String(err)),
       });
       return Err(new TradingError(
         `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { orderId: String(input.orderId) } },
+        { context: { venueOrderId: String(venueOrderId) } },
       ));
     }
 
@@ -263,21 +309,22 @@ export class PlaceOrderUseCase {
       await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
     } catch (err) {
       this._logger.error('Failed to publish order placed events', {
-        orderId: String(input.orderId),
+        venueOrderId: String(venueOrderId),
         err: err instanceof Error ? err : new Error(String(err)),
       });
       return Err(new TradingError(
         `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { orderId: String(input.orderId) } },
+        { context: { venueOrderId: String(venueOrderId) } },
       ));
     }
 
     this._logger.info('Order placed successfully', {
-      orderId: String(input.orderId),
+      venueOrderId: String(venueOrderId),
+      clientOrderId: String(input.orderId),
       side: input.side,
       ...(notional !== undefined ? { notional: notional.toString() } : { size: input.size.value().toString() }),
     });
 
-    return Ok(input.orderId);
+    return Ok(venueOrderId);
   }
 }

@@ -220,7 +220,7 @@ describe('TradingFlow (integration)', () => {
     };
 
     const processDeps: ProcessFillDeps = {
-      orderService,
+      orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
       orderRepo,
@@ -341,6 +341,7 @@ describe('TradingFlow (integration)', () => {
       orderService,
       portfolioService,
       orderRepo,
+      orderStateStore: orderRepo,
       exchangeClient: makeExchangeClient(),
       eventBus,
       logger: LOGGER,

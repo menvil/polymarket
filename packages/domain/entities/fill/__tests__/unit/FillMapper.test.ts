@@ -284,7 +284,7 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('maker_orders');
+        expect(result.error.message).toContain('cannot identify our maker_order');
       }
     });
 
@@ -459,6 +459,54 @@ describe('FillMapper', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('taker_order_id');
+      }
+    });
+
+    it('TAKER без top-level side, maker BUY → сторона тейкера SELL (мгновенное исполнение)', () => {
+      // Это случай когда наш лимитный ордер исполняется немедленно как taker:
+      // Polymarket не включает top-level side, но maker_orders[].side = BUY → мы SELL
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.61',
+            owner: 'some-other-uuid',
+            asset_id: TEST_TOKEN_ID,
+            side: 'BUY',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('SELL');
+      }
+    });
+
+    it('TAKER без top-level side, maker SELL → сторона тейкера BUY', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.39',
+            owner: 'some-other-uuid',
+            asset_id: TEST_TOKEN_ID,
+            side: 'SELL',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('BUY');
       }
     });
 
@@ -844,7 +892,7 @@ describe('FillMapper', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('no maker_orders entry');
+        expect(result.error.message).toContain('cannot identify our maker_order');
       }
     });
 

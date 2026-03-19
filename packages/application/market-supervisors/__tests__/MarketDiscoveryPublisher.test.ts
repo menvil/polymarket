@@ -1,14 +1,5 @@
 /**
  * Тесты MarketDiscoveryPublisher.
- *
- * @remarks
- * Покрывает:
- * - Lifecycle: start(), stop(), повторный start() (no-op)
- * - _discover(): вызов findCandidates(), наполнение каталога, открытие рынков
- * - Лимит maxStrategies
- * - Обновление _openMarkets через MARKET_OPENED/MARKET_CLOSED
- * - Планирование следующего цикла после завершения
- * - Обработка ошибок findCandidates
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { MarketDiscoveryPublisher } from '../src/MarketDiscoveryPublisher.js';
@@ -18,10 +9,11 @@ import type { IEventBus, MarketOpenedEvent, MarketClosedEvent } from '@polymarke
 import type {
   IMarketCatalog,
   IMarketDiscoveryService,
+  IBalanceAllocator,
   InstrumentInfo,
   AllocationResult,
 } from '@polymarket/ports';
-import type { OpenMarketUseCase } from '@polymarket/market-lifecycle';
+import type { IClock } from '@polymarket/time';
 import type { AccountId, MarketId, InstrumentId } from '@polymarket/ids';
 import { Money, TimestampService } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
@@ -72,8 +64,22 @@ function makeDiscoveryService(): jest.Mocked<IMarketDiscoveryService> {
   };
 }
 
-function makeOpenUseCase() {
-  return { execute: jest.fn<OpenMarketUseCase['execute']>() };
+function makeAllocator(): jest.Mocked<IBalanceAllocator> {
+  return {
+    allocateToNewMarkets: jest.fn<IBalanceAllocator['allocateToNewMarkets']>(),
+    addMarket: jest.fn<IBalanceAllocator['addMarket']>(),
+    releaseWithPnL: jest.fn<IBalanceAllocator['releaseWithPnL']>(),
+    release: jest.fn<IBalanceAllocator['release']>(),
+    getAllocation: jest.fn<IBalanceAllocator['getAllocation']>().mockReturnValue(undefined),
+    updateTotalBalance: jest.fn<IBalanceAllocator['updateTotalBalance']>(),
+    canAddMarket: jest.fn<IBalanceAllocator['canAddMarket']>(),
+    getStats: jest.fn<IBalanceAllocator['getStats']>(),
+    restoreAllocations: jest.fn<IBalanceAllocator['restoreAllocations']>(),
+  };
+}
+
+function makeClock(): IClock {
+  return { now: () => new Date(1_700_000_000_000) };
 }
 
 function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, active = true): InstrumentInfo {
@@ -91,7 +97,6 @@ function makeAllocation(marketId: MarketId): AllocationResult {
   return { marketId, allocatedAmount: Money.of(new Decimal(500), 'USDC') };
 }
 
-/** Сбрасывает очередь микрозадач для завершения async-цепочек. */
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -103,11 +108,10 @@ async function flushMicrotasks(): Promise<void> {
 describe('MarketDiscoveryPublisher', () => {
   let catalog: jest.Mocked<IMarketCatalog>;
   let discoveryService: jest.Mocked<IMarketDiscoveryService>;
-  let openUseCase: ReturnType<typeof makeOpenUseCase>;
+  let allocator: jest.Mocked<IBalanceAllocator>;
   let logger: ILogger;
   let publisher: MarketDiscoveryPublisher;
 
-  /** Захваченные event-handlers, установленные через subscribe() */
   let openedHandler: ((e: MarketOpenedEvent) => Promise<void>) | undefined;
   let closedHandler: ((e: MarketClosedEvent) => Promise<void>) | undefined;
   let unsubscribeOpenedFn: jest.Mock;
@@ -124,8 +128,9 @@ describe('MarketDiscoveryPublisher', () => {
     const deps: MarketDiscoveryPublisherDeps = {
       discoveryService,
       marketCatalog: catalog,
-      openMarketUseCase: openUseCase as unknown as OpenMarketUseCase,
+      balanceAllocator: allocator,
       eventBus,
+      clock: makeClock(),
       logger,
     };
     return new MarketDiscoveryPublisher(deps, { ...config, ...cfg });
@@ -135,7 +140,7 @@ describe('MarketDiscoveryPublisher', () => {
     jest.useFakeTimers();
     catalog = makeCatalog();
     discoveryService = makeDiscoveryService();
-    openUseCase = makeOpenUseCase();
+    allocator = makeAllocator();
     logger = makeLogger();
     openedHandler = undefined;
     closedHandler = undefined;
@@ -181,7 +186,7 @@ describe('MarketDiscoveryPublisher', () => {
       publisher.start();
       publisher.start();
 
-      expect(eventBus.subscribe).toHaveBeenCalledTimes(2); // только первый раз
+      expect(eventBus.subscribe).toHaveBeenCalledTimes(2);
       expect(logger.warn).toHaveBeenCalledWith(
         'MarketDiscoveryPublisher already running, ignoring start()',
       );
@@ -197,11 +202,10 @@ describe('MarketDiscoveryPublisher', () => {
 
     it('stop() очищает таймер', async () => {
       publisher.start();
-      await flushMicrotasks(); // первый discover завершился, setTimeout установлен
+      await flushMicrotasks();
 
       publisher.stop();
 
-      // Таймер очищен — advance не запускает новый discover
       discoveryService.findCandidates.mockClear();
       await jest.runAllTimersAsync();
       expect(discoveryService.findCandidates).not.toHaveBeenCalled();
@@ -243,18 +247,17 @@ describe('MarketDiscoveryPublisher', () => {
       expect(catalog.register).toHaveBeenCalledWith(candidate);
     });
 
-    it('открывает новые активные рынки через openMarketUseCase', async () => {
+    it('аллоцирует баланс и публикует MARKET_OPENED для нового рынка', async () => {
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
-      openUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      allocator.addMarket.mockReturnValue(Ok(makeAllocation(MARKET_ID_1)));
 
       publisher.start();
       await flushMicrotasks();
 
-      expect(openUseCase.execute).toHaveBeenCalledWith({
-        marketId: MARKET_ID_1,
-        strategyId: String(MARKET_ID_1),
-        accountId: ACCOUNT_ID,
-      });
+      expect(allocator.addMarket).toHaveBeenCalledWith(MARKET_ID_1);
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 }),
+      );
     });
 
     it('пропускает неактивные инструменты', async () => {
@@ -263,17 +266,16 @@ describe('MarketDiscoveryPublisher', () => {
       publisher.start();
       await flushMicrotasks();
 
-      expect(openUseCase.execute).not.toHaveBeenCalled();
+      expect(allocator.addMarket).not.toHaveBeenCalled();
     });
 
     it('не открывает рынок если он уже в _openMarkets', async () => {
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
-      openUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      allocator.addMarket.mockReturnValue(Ok(makeAllocation(MARKET_ID_1)));
 
       publisher.start();
       await flushMicrotasks();
 
-      // Симулируем MARKET_OPENED для MARKET_ID_1
       await openedHandler!({
         type: 'MARKET_OPENED',
         marketId: MARKET_ID_1,
@@ -283,13 +285,12 @@ describe('MarketDiscoveryPublisher', () => {
         timestamp: makeTimestamp(),
       } as any);
 
-      openUseCase.execute.mockClear();
+      allocator.addMarket.mockClear();
 
-      // Следующий цикл — MARKET_ID_1 уже в _openMarkets
       await jest.advanceTimersByTimeAsync(config.scanPauseMs);
       await flushMicrotasks();
 
-      expect(openUseCase.execute).not.toHaveBeenCalled();
+      expect(allocator.addMarket).not.toHaveBeenCalled();
     });
 
     it('соблюдает лимит maxStrategies', async () => {
@@ -298,51 +299,46 @@ describe('MarketDiscoveryPublisher', () => {
         makeInstrument(MARKET_ID_1, INSTR_ID_1),
         makeInstrument(MARKET_ID_2, INSTR_ID_2),
       ]);
-      openUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_1)));
+      allocator.addMarket.mockReturnValue(Ok(makeAllocation(MARKET_ID_1)));
 
       publisher.start();
       await flushMicrotasks();
 
-      // Только 1 рынок (remainingSlots = maxStrategies - _openMarkets.size = 1)
-      expect(openUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(allocator.addMarket).toHaveBeenCalledTimes(1);
     });
 
-    it('не открывает рынки если слоты заняты (_openMarkets >= maxStrategies)', async () => {
+    it('не открывает рынки если слоты заняты', async () => {
       publisher = buildPublisher({ maxStrategies: 1 });
 
-      // Первый discover: каталог пуст → ничего не открываем
       publisher.start();
       await flushMicrotasks();
 
-      // Заполняем слот вручную через MARKET_OPENED событие (внешний источник)
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
 
-      // Второй цикл: каталог содержит MARKET_ID_2, но _openMarkets.size=1 = maxStrategies
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_2, INSTR_ID_2)]);
 
       await jest.advanceTimersByTimeAsync(config.scanPauseMs);
       await flushMicrotasks();
 
-      expect(openUseCase.execute).not.toHaveBeenCalled();
+      expect(allocator.addMarket).not.toHaveBeenCalled();
     });
 
-    it('прекращает открытие рынков при Err от openMarketUseCase', async () => {
+    it('прекращает открытие рынков при Err от addMarket', async () => {
       catalog.getAll.mockReturnValue([
         makeInstrument(MARKET_ID_1, INSTR_ID_1),
         makeInstrument(MARKET_ID_2, INSTR_ID_2),
       ]);
-      openUseCase.execute.mockResolvedValue(Err(new TradingError('No free slots')));
+      allocator.addMarket.mockReturnValue(Err(new TradingError('No free slots')));
 
       publisher.start();
       await flushMicrotasks();
 
-      // break после первого Err — второй рынок не открывается
-      expect(openUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(allocator.addMarket).toHaveBeenCalledTimes(1);
     });
 
-    it('логирует debug при Err от openMarketUseCase', async () => {
+    it('логирует debug при Err от addMarket', async () => {
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_1, INSTR_ID_1)]);
-      openUseCase.execute.mockResolvedValue(Err(new TradingError('No balance')));
+      allocator.addMarket.mockReturnValue(Err(new TradingError('No balance')));
 
       publisher.start();
       await flushMicrotasks();
@@ -372,11 +368,10 @@ describe('MarketDiscoveryPublisher', () => {
   describe('планирование цикла', () => {
     it('планирует следующий цикл через scanPauseMs после завершения discover', async () => {
       publisher.start();
-      await flushMicrotasks(); // первый цикл завершён
+      await flushMicrotasks();
 
       expect(discoveryService.findCandidates).toHaveBeenCalledTimes(1);
 
-      // Продвигаем на scanPauseMs — следующий цикл запускается
       await jest.advanceTimersByTimeAsync(config.scanPauseMs);
       await flushMicrotasks();
 
@@ -403,17 +398,15 @@ describe('MarketDiscoveryPublisher', () => {
       publisher.start();
       await flushMicrotasks();
 
-      // Добавляем через событие
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
 
-      // Теперь _openMarkets.size=1 = maxStrategies → не открываем новые рынки
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_2, INSTR_ID_2)]);
-      openUseCase.execute.mockClear();
+      allocator.addMarket.mockClear();
 
       await jest.advanceTimersByTimeAsync(config.scanPauseMs);
       await flushMicrotasks();
 
-      expect(openUseCase.execute).not.toHaveBeenCalled();
+      expect(allocator.addMarket).not.toHaveBeenCalled();
     });
 
     it('удаляет marketId из _openMarkets при MARKET_CLOSED', async () => {
@@ -421,21 +414,16 @@ describe('MarketDiscoveryPublisher', () => {
       publisher.start();
       await flushMicrotasks();
 
-      // Сначала добавляем
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
-      // Затем убираем
       await closedHandler!({ type: 'MARKET_CLOSED', marketId: MARKET_ID_1 } as any);
 
-      // Слот освободился → открываем следующий рынок
       catalog.getAll.mockReturnValue([makeInstrument(MARKET_ID_2, INSTR_ID_2)]);
-      openUseCase.execute.mockResolvedValue(Ok(makeAllocation(MARKET_ID_2)));
+      allocator.addMarket.mockReturnValue(Ok(makeAllocation(MARKET_ID_2)));
 
       await jest.advanceTimersByTimeAsync(config.scanPauseMs);
       await flushMicrotasks();
 
-      expect(openUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ marketId: MARKET_ID_2 }),
-      );
+      expect(allocator.addMarket).toHaveBeenCalledWith(MARKET_ID_2);
     });
   });
 });

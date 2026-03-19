@@ -23,7 +23,6 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { ReconcileOrdersUseCase } from '../../src/ReconcileOrdersUseCase.js';
 import { ReconcileTradesUseCase } from '../../src/ReconcileTradesUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
-import { OrderService } from '../../src/services/OrderService.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import { EventBus } from '@polymarket/event-bus';
@@ -262,12 +261,11 @@ describe('ReconcileTradesUseCase (integration)', () => {
     orderRepo = new InMemoryOrderRepository();
     eventBus = new EventBus(LOGGER);
 
-    const orderService = new OrderService(orderRepo, LOGGER);
     const portfolioService = new PortfolioService(portfolioStore, LOGGER);
     const ledgerService = new LedgerService(LOGGER);
 
     processFillUseCase = new ProcessFillUseCase({
-      orderService,
+      orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
       orderRepo,

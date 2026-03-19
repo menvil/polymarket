@@ -73,7 +73,7 @@ export interface BookDepthCollectorDeps {
  *
  * @remarks
  * Политика применяется одинаково ко всем инструментам.
- * Хотя бы одно поле должно быть задано (иначе `OrderBookHistory.create()` бросит `RangeError`).
+ * Хотя бы одно поле должно быть задано (иначе конструктор `BookDepthCollector` бросит `RangeError`).
  *
  * @example
  * ```typescript
@@ -87,16 +87,10 @@ export interface BookDepthCollectorDeps {
 export type BookDepthCollectorConfig = OrderBookRetentionPolicy;
 
 /**
- * Внутренняя запись: история снапшотов + marketId для cleanup.
- *
- * @remarks
- * `marketId` сохраняется при создании записи и не зависит от retention eviction —
- * даже если history пустая, запись можно найти по рынку через reverse index.
+ * Внутренняя запись: история снапшотов per tokenId.
  */
 interface InternalEntry {
   readonly history: OrderBookHistory;
-  /** String(marketId) из первого снапшота; используется для O(1) cleanup */
-  readonly marketId: string;
 }
 
 /**
@@ -234,6 +228,25 @@ export class BookDepthCollector {
   }
 
   /**
+   * Записывает снапшот напрямую, минуя EventBus подписку.
+   *
+   * @param instrumentId - ID инструмента (tokenId)
+   * @param snapshot - Полный снапшот стакана
+   * @param nowMs - Текущее время в epoch ms
+   *
+   * @remarks
+   * Используется MarketDataStore для записи BOOK_DEPTH событий
+   * без дублирования EventBus подписки (MarketDataStore уже подписан).
+   */
+  public recordDirect(
+    instrumentId: InstrumentId,
+    snapshot: OrderBookSnapshot,
+    nowMs: number,
+  ): void {
+    this._record(instrumentId, snapshot, nowMs);
+  }
+
+  /**
    * Очищает все истории и reverse index из памяти.
    *
    * @remarks
@@ -266,7 +279,7 @@ export class BookDepthCollector {
 
     if (entry === undefined) {
       const history = OrderBookHistory.create(this._config, this._deps.clock);
-      entry = { history, marketId: snapshot.marketId };
+      entry = { history };
       this._entries.set(tokenId, entry);
 
       // Регистрируем в reverse index: marketId → tokenId

@@ -255,7 +255,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
 
         // order_id обязателен для VenueTradeSnapshot
         if (!t.order_id) {
-          this._logger.warn('Skipping trade without order_id', { fillId: t.id });
+          this._logger.debug('Skipping trade without order_id', { fillId: t.id });
           continue;
         }
         const orderId = asOrderId(t.order_id);

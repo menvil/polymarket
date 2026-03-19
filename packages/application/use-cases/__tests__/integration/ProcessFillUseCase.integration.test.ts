@@ -28,7 +28,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
-import { OrderService } from '../../src/services/OrderService.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import type { ProcessFillDeps } from '../../src/ProcessFillUseCase.js';
@@ -215,12 +214,11 @@ describe('ProcessFillUseCase (integration)', () => {
     portfolioStore = new TestPortfolioStore();
     eventBus = new EventBus(LOGGER);
 
-    const orderService = new OrderService(orderRepo, LOGGER);
     const portfolioService = new PortfolioService(portfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
 
     deps = {
-      orderService,
+      orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
       orderRepo,

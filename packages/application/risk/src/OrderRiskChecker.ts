@@ -61,6 +61,10 @@ export class OrderRiskChecker implements IOrderRiskChecker {
   public checkBeforeOrder(input: PreOrderCheckInput): Result<void, RiskViolationError> {
     const orderNotional = input.price.value().times(input.size.value());
 
+    // 0. minTimeToExpiryMs — O(1)
+    const expiryViolation = this._checkTimeToExpiry(input.timeToExpiryMs);
+    if (expiryViolation) return Err(expiryViolation);
+
     // 1. maxOpenOrders — O(1)
     const openOrdersViolation = this._checkMaxOpenOrders(input.openOrdersCount, input.strategyId);
     if (openOrdersViolation) return Err(openOrdersViolation);
@@ -95,6 +99,27 @@ export class OrderRiskChecker implements IOrderRiskChecker {
   }
 
   // ── Приватные проверки ─────────────────────────────────────────────────────
+
+  /**
+   * Проверяет minTimeToExpiryMs — не размещать ордера слишком близко к экспирации.
+   *
+   * @param timeToExpiryMs - Время до экспирации в ms (undefined = не проверять)
+   * @returns RiskViolationError или undefined если проверка пройдена
+   */
+  private _checkTimeToExpiry(timeToExpiryMs: number | undefined): RiskViolationError | undefined {
+    if (this._params.minTimeToExpiryMs === undefined) return undefined;
+    if (timeToExpiryMs === undefined) return undefined;
+    if (timeToExpiryMs >= this._params.minTimeToExpiryMs) return undefined;
+
+    return this._violation(
+      'TOO_CLOSE_TO_EXPIRY',
+      `Time to expiry ${timeToExpiryMs}ms < min ${this._params.minTimeToExpiryMs}ms`,
+      {
+        timeToExpiryMs,
+        minTimeToExpiryMs: this._params.minTimeToExpiryMs,
+      },
+    );
+  }
 
   /**
    * @returns RiskViolationError или undefined если проверка пройдена

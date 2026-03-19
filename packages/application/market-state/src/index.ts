@@ -15,16 +15,19 @@
  *   в `OrderBookHistory` per tokenId
  * - `TradeTapeCollector` — накапливает ленту трейдов (TRADE_RECEIVED events)
  *   в `TradeTape` per tokenId
+ * - `MarketDataStore` — фасад: объединяет оба коллектора + TopOfBook tracking;
+ *   используется StrategyScheduler как единая точка доступа к рыночным данным
  *
  * @example
  * ```typescript
- * import { BookDepthCollector, TradeTapeCollector } from '@polymarket/market-state';
+ * import { BookDepthCollector, TradeTapeCollector, MarketDataStore } from '@polymarket/market-state';
  *
  * const bookCollector = new BookDepthCollector(deps, { maxCount: 500 });
  * const tapeCollector = new TradeTapeCollector(deps, { maxAgeMs: 300_000 });
+ * const store = new MarketDataStore({ eventBus, bookCollector, tapeCollector, logger });
  *
- * bookCollector.start();
- * tapeCollector.start();
+ * store.setOnChange((instrumentId, reason) => scheduler.onStateChanged(instrumentId, reason));
+ * store.start();
  * ```
  */
 
@@ -33,3 +36,6 @@ export type { BookDepthCollectorDeps, BookDepthCollectorConfig } from './BookDep
 
 export { TradeTapeCollector } from './TradeTapeCollector.js';
 export type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from './TradeTapeCollector.js';
+
+export { MarketDataStore } from './MarketDataStore.js';
+export type { MarketDataStoreDeps, MarketDataReason } from './MarketDataStore.js';

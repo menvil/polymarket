@@ -407,6 +407,118 @@ describe('TradeTapeCollector', () => {
     });
   });
 
+  // ── recordDirect ──────────────────────────────────────────────────────────────
+
+  describe('recordDirect()', () => {
+    it('записывает трейд без подписки на EventBus', () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      // start() не вызывается
+
+      c.recordDirect(TOKEN_A, makePrice('0.65'), makeQty('100'), 'BUY', makeTs(T0));
+
+      expect(c.getTape(TOKEN_A)).toBeDefined();
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
+    });
+
+    it('накапливает трейды через recordDirect', () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+
+      c.recordDirect(TOKEN_A, makePrice('0.65'), makeQty('100'), 'BUY', makeTs(T0));
+      c.recordDirect(TOKEN_A, makePrice('0.64'), makeQty('200'), 'SELL', makeTs(T0 + 1000));
+
+      expect(c.getTape(TOKEN_A)?.size()).toBe(2);
+    });
+  });
+
+  // ── Инструмент не в каталоге ───────────────────────────────────────────────
+
+  describe('инструмент не в каталоге', () => {
+    it('создаёт ленту для инструмента без marketId в каталоге', async () => {
+      // catalog не содержит TOKEN_A (не задан при инициализации теста)
+      const unknownCatalog = makeCatalog(new Map()); // пустой маппинг
+      const c = new TradeTapeCollector({ ...deps, catalog: unknownCatalog }, { maxCount: 100 });
+      c.start();
+
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
+
+      // Лента создана, несмотря на отсутствие в каталоге
+      expect(c.getTape(TOKEN_A)).toBeDefined();
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
+    });
+
+    it('не регистрирует в reverse index если инструмент не в каталоге — MARKET_CLOSED не удаляет', async () => {
+      const unknownCatalog = makeCatalog(new Map());
+      const c = new TradeTapeCollector({ ...deps, catalog: unknownCatalog }, { maxCount: 100 });
+      c.start();
+
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
+
+      await eventBus.emit({
+        type: 'MARKET_CLOSED',
+        marketId: MARKET_1,
+        reason: 'EXPIRED',
+        realizedPnL: {} as Money,
+        timestamp: makeTs(T0 + 1000),
+      });
+
+      // Инструмент был без marketId — не попал в reverse index — лента сохраняется
+      expect(c.getTape(TOKEN_A)).toBeDefined();
+    });
+  });
+
+  // ── Обработка ошибок ──────────────────────────────────────────────────────
+
+  describe('обработка ошибок в обработчике TRADE_RECEIVED', () => {
+    it('логирует ошибку и не падает если _record бросает', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+
+      // Передаём невалидный timestamp: append() получит некорректный объект
+      // Проще всего — заставить catalog.get() бросить
+      (catalog as any).get = () => { throw new Error('catalog exploded'); };
+
+      // Не бросает наружу
+      await expect(eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0))).resolves.not.toThrow();
+
+      expect((logger as any).error).toHaveBeenCalledWith(
+        'TradeTapeCollector: failed to record trade',
+        expect.objectContaining({ instrumentId: String(TOKEN_A) }),
+      );
+    });
+  });
+
+  // ── getWindow() граничные значения ────────────────────────────────────────
+
+  describe('getWindow() граничные значения', () => {
+    it('включает трейды точно на границах fromMs и toMs', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0));
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 1000));
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 2000));
+
+      // Граничные значения включены
+      const w = c.getTape(TOKEN_A)?.getWindow(T0, T0 + 2000) ?? [];
+      expect(w).toHaveLength(3);
+    });
+
+    it('не включает трейды вне диапазона', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0 - 1));      // до диапазона
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0));           // в диапазоне
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 1000));    // в диапазоне
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.62', '400', 'SELL', T0 + 1001));    // после диапазона
+
+      const w = c.getTape(TOKEN_A)?.getWindow(T0, T0 + 1000) ?? [];
+      expect(w).toHaveLength(2);
+      expect(w[0]?.side).toBe('SELL');
+      expect(w[1]?.side).toBe('BUY');
+    });
+  });
+
   // ── instrumentCount / clear ────────────────────────────────────────────────
 
   describe('instrumentCount() / clear()', () => {

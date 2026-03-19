@@ -5,7 +5,7 @@ import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IExchangeClient } from '@polymarket/ports';
+import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
@@ -110,6 +110,15 @@ function makeOrderRepo(order?: Order): IOrderRepository {
   };
 }
 
+function makeOrderStateStore(order?: Order): IOrderStateStore {
+  return {
+    getOrder: jest.fn<IOrderStateStore['getOrder']>().mockReturnValue(order),
+    saveSync: jest.fn<IOrderStateStore['saveSync']>(),
+    getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
+    getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
+  };
+}
+
 function makeExchangeClient(success = true): IExchangeClient {
   return {
     submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok(ORDER_ID)),
@@ -136,6 +145,7 @@ describe('CancelOrderUseCase', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
   let orderRepo: IOrderRepository;
+  let orderStateStore: IOrderStateStore;
   let portfolioStore: IPortfolioStore;
   let exchangeClient: IExchangeClient;
   let deps: CancelOrderDeps;
@@ -145,6 +155,7 @@ describe('CancelOrderUseCase', () => {
     eventBus = makeEventBus();
     const order = makeOpenOrder();
     orderRepo = makeOrderRepo(order);
+    orderStateStore = makeOrderStateStore(order);
     portfolioStore = makePortfolioStore();
     exchangeClient = makeExchangeClient(true);
 
@@ -155,6 +166,7 @@ describe('CancelOrderUseCase', () => {
       orderService,
       portfolioService,
       orderRepo,
+      orderStateStore,
       exchangeClient,
       eventBus,
       logger,

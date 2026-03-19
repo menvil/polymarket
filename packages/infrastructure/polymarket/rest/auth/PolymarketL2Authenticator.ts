@@ -7,10 +7,11 @@
  *
  * Алгоритм аутентификации (соответствует официальному клиенту Polymarket):
  * 1. Создаём строку подписи: timestamp + method + requestPath + body
- * 2. Декодируем секрет из base64url с помощью Buffer.from(secret, 'base64url')
- * 3. Подписываем с HMAC-SHA256 используя декодированный секретный ключ
- * 4. Возвращаем подпись как base64url (digest('base64url'))
- * 5. Добавляем заголовки: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
+ * 2. base64url → base64: secret.replace(/-/g, '+').replace(/_/g, '/')
+ * 3. Декодируем секрет: Buffer.from(secret, 'base64')
+ * 4. Подписываем с HMAC-SHA256, дайджест как 'base64'
+ * 5. base64 → base64url: replace('+', '-').replace('/', '_')
+ * 6. Добавляем заголовки: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
  *
  * @example
  * ```typescript
@@ -123,13 +124,22 @@ export class PolymarketL2Authenticator {
    * ```
    */
   private sign(message: string): string {
-    // Декодируем секрет из base64url — Buffer нативно поддерживает url-safe алфавит
-    const secretBuffer = Buffer.from(this.credentials.secret, 'base64url');
+    // base64url → base64: заменяем url-safe символы на стандартные
+    // Критично делать через replace, а не Buffer('base64url') — идентично py-clob-client и v3
+    let secret = this.credentials.secret;
+    secret = secret.replace(/-/g, '+').replace(/_/g, '/');
 
-    // Создаём HMAC-SHA256 и возвращаем как base64url
+    // Декодируем секрет из стандартного base64
+    const secretBuffer = Buffer.from(secret, 'base64');
+
+    // Создаём HMAC-SHA256, дайджест как base64
     const hmac = createHmac('sha256', secretBuffer);
     hmac.update(message);
-    return hmac.digest('base64url');
+    let signature = hmac.digest('base64');
+
+    // base64 → base64url: заменяем обратно
+    signature = signature.replace(/\+/g, '-').replace(/\//g, '_');
+    return signature;
   }
 
   /**

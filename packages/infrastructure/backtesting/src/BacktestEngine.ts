@@ -6,65 +6,167 @@
  * `@polymarket/data-collection`, и прогоняет их через те же application-layer
  * хендлеры, что используются при live-торговле.
  *
- * ### Поток данных при бектесте:
- * ```
- * SnapshotScanner → список файлов (фильтр по дате/рынку)
- *   → SnapshotReaderFactory → ISnapshotReader (JSONL / JSONL.GZ)
- *     → построчное чтение
- *       → JSON.parse(line)
- *         → если _type === 'EVENT' → извлекаем event
- *           → replayClock?.update(event.timestamp)  ← синхронизация времени
- *           → конвертируем уровни стакана в PriceLevel[]
- *             → BookUpdateHandler.handleSnapshot(tokenId, bids, asks, timestamp)
+ * ### Поддерживаемые форматы файлов:
+ *
+ * **Формат collect-data (актуальный):**
+ * ```json
+ * { "t": "meta", "marketId": "0x...", "tokenIds": ["...", "..."] }
+ * { "event_type": "book", "asset_id": "...", "bids": [...], "asks": [...], "timestamp": "..." }
+ * { "event_type": "last_trade_price", "asset_id": "...", "price": "...", "size": "...", "side": "BUY", "timestamp": "..." }
  * ```
  *
- * ### Формат записей в NDJSON-файле:
+ * **Формат legacy (устаревший):**
  * ```json
  * { "_type": "META", ... }
  * { "_type": "EVENT", "event": { "asset_id": "...", "bids": [...], "asks": [...], "timestamp": "..." } }
  * ```
  *
+ * ### Поток данных:
+ * ```
+ * filePaths → JsonlSnapshotReader (построчно)
+ *   → meta строка → читаем marketId + tokenIds[outcomeIndex]
+ *   → book событие → BookUpdateHandler.handleSnapshot() → BOOK_UPDATED в EventBus
+ *   → last_trade_price → EventBus.publish(TRADE_RECEIVED)
+ *   → ReplayClock.update(timestamp) перед каждым событием
+ * ```
+ *
+ * ### Источники файлов:
+ * - `config.filePaths` — явный список файлов (рекомендуется для бектеста одного рынка)
+ * - `config.snapshotDir` + `fromDate/toDate/marketId` — сканирование директории через SnapshotScanner
+ *
  * ### Обработка ошибок:
  * - Невалидный JSON → лог warn, счётчик ошибок++, продолжаем.
  * - Невалидный asset_id → лог warn, пропускаем строку.
- * - Ошибка Price/Quantity → лог warn, пропускаем уровень (как в MarketDataFeedAdapter).
+ * - Ошибка Price/Quantity → лог warn, пропускаем уровень.
  * - Ошибка в BookUpdateHandler → лог error, счётчик ошибок++, продолжаем.
  *
  * @example
  * ```typescript
+ * // Явный список файлов (одиночный снапшот):
  * const engine = new BacktestEngine(
- *   { snapshotDir: './data/snapshots', fromDate: '2026-01-01' },
- *   { bookUpdateHandler: handler, logger },
+ *   { filePaths: ['./snapshots/Bitcoin_Up_or_Down.jsonl'], outcomeIndex: 1 },
+ *   { bookUpdateHandler, eventBus, replayClock, logger },
+ * );
+ *
+ * // Сканирование директории:
+ * const engine = new BacktestEngine(
+ *   { snapshotDir: './data/snapshots', fromDate: '2026-01-01', outcomeIndex: 0 },
+ *   { bookUpdateHandler, eventBus, replayClock, logger },
  * );
  *
  * const result = await engine.run();
- * console.log(`Processed ${result.processedEvents} events in ${result.durationMs}ms`);
+ * console.log(`book=${result.bookEvents}, trades=${result.tradeEvents}, errors=${result.errors}`);
  * ```
  */
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
-import { asInstrumentId } from '@polymarket/ids';
+import { asInstrumentId, asMarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import type { Side } from '@polymarket/value-objects';
 import type { PriceLevel } from '@polymarket/order-book';
 import type { BookUpdateHandler } from '@polymarket/handlers';
+import type { IEventBus } from '@polymarket/event-bus';
 import { ReplayClock } from '@polymarket/time';
 import {
+  JsonlSnapshotReader,
   SnapshotScanner,
-  SnapshotReaderFactory,
 } from '@polymarket/snapshot-readers';
+
+// ── Raw форматы снапшота ──────────────────────────────────────────────────────
+
+/**
+ * Meta-строка формата collect-data.
+ * @internal
+ */
+interface RawMeta {
+  readonly t: 'meta';
+  readonly marketId: string;
+  readonly tokenIds: string[];
+}
+
+/**
+ * Уровень стакана (price + size строками).
+ * @internal
+ */
+interface RawLevel {
+  readonly price: string;
+  readonly size: string;
+}
+
+/**
+ * Событие стакана формата collect-data.
+ * @internal
+ */
+interface RawBookEvent {
+  readonly event_type: 'book';
+  readonly asset_id: string;
+  readonly timestamp: string;
+  readonly bids: readonly RawLevel[];
+  readonly asks: readonly RawLevel[];
+}
+
+/**
+ * Событие сделки формата collect-data.
+ * @internal
+ */
+interface RawTradeEvent {
+  readonly event_type: 'last_trade_price';
+  readonly asset_id: string;
+  readonly timestamp: string;
+  readonly price: string;
+  readonly size: string;
+  readonly side: string;
+}
+
+/**
+ * Событие legacy-формата (устаревший).
+ * @internal
+ */
+interface RawLegacyOrderbookEvent {
+  readonly asset_id: string;
+  readonly bids: readonly RawLevel[];
+  readonly asks: readonly RawLevel[];
+  readonly timestamp: string;
+}
+
+/**
+ * Запись legacy-формата в NDJSON.
+ * @internal
+ */
+interface LegacySnapshotRecord {
+  readonly _type: string;
+  readonly event?: RawLegacyOrderbookEvent;
+}
+
+// ── Конфигурация и зависимости ────────────────────────────────────────────────
 
 /**
  * Конфигурация бектеста.
+ *
+ * @remarks
+ * Укажите либо `filePaths` (явный список), либо `snapshotDir` (сканирование директории).
  */
 export interface BacktestConfig {
+  /**
+   * Явный список путей к JSONL файлам снапшотов.
+   * Используется в приоритете над `snapshotDir`.
+   */
+  readonly filePaths?: string[];
   /** Путь к корневой директории снапшотов (структура: `dir/YYYY-MM-DD/*.jsonl(.gz)`) */
-  readonly snapshotDir: string;
+  readonly snapshotDir?: string;
   /** Начальная дата включительно (YYYY-MM-DD). Если не указана — все даты. */
   readonly fromDate?: string;
   /** Конечная дата включительно (YYYY-MM-DD). Если не указана — все даты. */
   readonly toDate?: string;
   /** Фильтр по ID рынка (substring match в имени файла). Если не указан — все рынки. */
   readonly marketId?: string;
+  /**
+   * Индекс outcome токена из meta.tokenIds (0 = YES, 1 = NO).
+   * Только этот токен обрабатывается.
+   * @defaultValue 0
+   */
+  readonly outcomeIndex?: 0 | 1;
 }
 
 /**
@@ -73,19 +175,19 @@ export interface BacktestConfig {
 export interface BacktestDeps {
   /** Application-layer хендлер обновлений стакана */
   readonly bookUpdateHandler: BookUpdateHandler;
+  /**
+   * EventBus для публикации TRADE_RECEIVED.
+   * Обязателен только если снапшоты содержат `event_type: 'last_trade_price'`.
+   */
+  readonly eventBus?: IEventBus;
   /** Логгер */
   readonly logger: ILogger;
   /**
-   * Опциональный ReplayClock для синхронизации исторического времени.
+   * ReplayClock для синхронизации исторического времени.
    *
    * @remarks
-   * Если передан — `replayClock.update()` вызывается перед обработкой каждого события,
-   * синхронизируя `clock.now()` с временем из снапшота.
-   * Это обеспечивает детерминизм: все компоненты, зависящие от `IClock`,
-   * видят историческое время вместо реального.
-   *
-   * При нарушении монотонности (событие с более ранним timestamp) — логируем warn,
-   * пропускаем обновление clock и продолжаем обработку.
+   * `replayClock.update()` вызывается перед каждым событием — все компоненты
+   * видят историческое время. При нарушении монотонности — логируем warn, пропускаем.
    */
   readonly replayClock?: ReplayClock;
 }
@@ -96,45 +198,26 @@ export interface BacktestDeps {
 export interface BacktestResult {
   /** Количество обработанных файлов */
   readonly processedFiles: number;
-  /** Количество обработанных событий (записей типа EVENT) */
+  /** Количество обработанных событий стакана */
+  readonly bookEvents: number;
+  /** Количество обработанных событий ленты (сделок) */
+  readonly tradeEvents: number;
+  /**
+   * Общее количество обработанных событий (bookEvents + tradeEvents).
+   * @deprecated Используй bookEvents + tradeEvents для детализации.
+   */
   readonly processedEvents: number;
   /** Общая длительность выполнения в миллисекундах */
   readonly durationMs: number;
-  /** Количество ошибок (невалидный JSON, ошибки хендлера, и т.д.) */
+  /** Количество ошибок (невалидный JSON, невалидные данные, и т.д.) */
   readonly errors: number;
+  /** marketId из последнего обработанного файла */
+  readonly marketId: MarketId | undefined;
+  /** instrumentId обрабатываемого токена */
+  readonly instrumentId: InstrumentId | undefined;
 }
 
-/**
- * DTO для одного уровня стакана из WS-снапшота (raw формат).
- *
- * @internal
- */
-interface RawLevel {
-  readonly price: string;
-  readonly size: string;
-}
-
-/**
- * DTO события стакана из записанного снапшота (raw формат Polymarket WS).
- *
- * @internal
- */
-interface RawOrderbookEvent {
-  readonly asset_id: string;
-  readonly bids: readonly RawLevel[];
-  readonly asks: readonly RawLevel[];
-  readonly timestamp: string;
-}
-
-/**
- * Запись в NDJSON файле снапшота.
- *
- * @internal
- */
-interface SnapshotRecord {
-  readonly _type: string;
-  readonly event?: RawOrderbookEvent;
-}
+// ── Реализация ────────────────────────────────────────────────────────────────
 
 /**
  * Движок бектестирования: воспроизводит снапшоты через application-layer хендлеры.
@@ -145,30 +228,18 @@ interface SnapshotRecord {
  */
 export class BacktestEngine {
   private readonly _logger: ILogger;
-  private readonly _scanner: SnapshotScanner;
-  private readonly _readerFactory: SnapshotReaderFactory;
 
   /**
    * Создаёт BacktestEngine.
    *
-   * @param _config - Конфигурация бектеста (директория, фильтры дат/рынка)
-   * @param _deps - Зависимости (BookUpdateHandler, ILogger)
-   *
-   * @example
-   * ```typescript
-   * const engine = new BacktestEngine(
-   *   { snapshotDir: './data/snapshots' },
-   *   { bookUpdateHandler, logger },
-   * );
-   * ```
+   * @param _config - Конфигурация бектеста
+   * @param _deps - Зависимости (BookUpdateHandler, EventBus, ILogger)
    */
   constructor(
     private readonly _config: BacktestConfig,
     private readonly _deps: BacktestDeps,
   ) {
     this._logger = _deps.logger.child({ component: 'BacktestEngine' });
-    this._scanner = new SnapshotScanner(_config.snapshotDir, this._logger);
-    this._readerFactory = new SnapshotReaderFactory(this._logger);
   }
 
   /**
@@ -176,40 +247,168 @@ export class BacktestEngine {
    *
    * @remarks
    * Алгоритм:
-   * 1. Вызываем `SnapshotScanner.scan()` с фильтрами из конфига.
-   * 2. Для каждого найденного файла создаём `ISnapshotReader` через `SnapshotReaderFactory`.
-   * 3. Читаем файл построчно через `reader.readLines()`.
-   * 4. Парсим каждую строку как JSON.
-   * 5. Если `_type === 'EVENT'` и `event` присутствует:
-   *    а. Конвертируем `event.asset_id` в `InstrumentId`.
-   *    б. Конвертируем `event.bids`/`event.asks` в `PriceLevel[]`.
-   *    в. Вызываем `bookUpdateHandler.handleSnapshot(tokenId, bids, asks, timestamp)`.
-   * 6. Считаем статистику (processedFiles, processedEvents, errors).
-   * 7. После каждого файла вызываем `reader.close()`.
-   * 8. Возвращаем `BacktestResult`.
+   * 1. Определяем список файлов: из `filePaths` или через SnapshotScanner.
+   * 2. Для каждого файла читаем построчно через `JsonlSnapshotReader`.
+   * 3. Meta-строку (`t === 'meta'`) → извлекаем marketId и tokenIds[outcomeIndex].
+   * 4. `event_type === 'book'` → BookUpdateHandler.handleSnapshot() → BOOK_UPDATED.
+   * 5. `event_type === 'last_trade_price'` → EventBus.publish(TRADE_RECEIVED).
+   * 6. Перед каждым событием → ReplayClock.update(timestamp).
    *
-   * @returns BacktestResult со статистикой выполнения
+   * @returns BacktestResult со статистикой
    *
    * @example
    * ```typescript
    * const result = await engine.run();
-   * console.log(`Files: ${result.processedFiles}`);
-   * console.log(`Events: ${result.processedEvents}`);
-   * console.log(`Errors: ${result.errors}`);
-   * console.log(`Duration: ${result.durationMs}ms`);
+   * console.log(`book=${result.bookEvents}, trades=${result.tradeEvents}`);
    * ```
    */
   public async run(): Promise<BacktestResult> {
     const startTime = Date.now();
+    const outcomeIndex = this._config.outcomeIndex ?? 0;
 
     this._logger.info('BacktestEngine starting', {
+      filePaths: this._config.filePaths,
       snapshotDir: this._config.snapshotDir,
-      fromDate: this._config.fromDate,
-      toDate: this._config.toDate,
-      marketId: this._config.marketId,
+      outcomeIndex,
     });
 
-    const scanResult = await this._scanner.scan({
+    const filePaths = await this._resolveFilePaths();
+
+    let processedFiles = 0;
+    let bookEvents = 0;
+    let tradeEvents = 0;
+    let errors = 0;
+    let marketId: MarketId | undefined;
+    let instrumentId: InstrumentId | undefined;
+
+    for (const filePath of filePaths) {
+      this._logger.debug('Processing snapshot file', { filePath });
+      const reader = new JsonlSnapshotReader(filePath);
+
+      let fileMarketId: MarketId | undefined;
+      let fileInstrumentId: InstrumentId | undefined;
+
+      try {
+        for await (const line of reader.readLines()) {
+          let raw: Record<string, unknown>;
+          try {
+            raw = JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            errors += 1;
+            continue;
+          }
+
+          // ── Meta (формат collect-data) ──────────────────────────────────
+          if (raw['t'] === 'meta') {
+            const meta = raw as unknown as RawMeta;
+            fileMarketId = asMarketId(meta.marketId) ?? undefined;
+            const tokenId = meta.tokenIds[outcomeIndex];
+            fileInstrumentId = tokenId ? (asInstrumentId(tokenId) ?? undefined) : undefined;
+            this._logger.info('Meta loaded', {
+              marketId: meta.marketId,
+              tokenId,
+              outcomeIndex,
+            });
+            continue;
+          }
+
+          // ── Определяем тип события ──────────────────────────────────────
+          const eventType = raw['event_type'] as string | undefined;
+
+          if (eventType === 'book' || eventType === 'last_trade_price') {
+            // Формат collect-data
+            if (!fileInstrumentId || !fileMarketId) continue;
+
+            const assetId = raw['asset_id'] as string | undefined;
+            if (assetId !== String(fileInstrumentId)) continue;
+
+            if (eventType === 'book') {
+              const result = await this._processBookEvent(
+                raw as unknown as RawBookEvent,
+                fileInstrumentId,
+                filePath,
+              );
+              if (result) bookEvents += 1;
+              else errors += 1;
+            } else {
+              const result = await this._processTradeEvent(
+                raw as unknown as RawTradeEvent,
+                fileInstrumentId,
+                filePath,
+              );
+              if (result) tradeEvents += 1;
+              else errors += 1;
+            }
+          } else if (raw['_type'] === 'EVENT' && raw['event']) {
+            // Legacy формат
+            const record = raw as unknown as LegacySnapshotRecord;
+            if (!record.event) continue;
+
+            const tokenId = asInstrumentId(record.event.asset_id);
+            if (!tokenId) { errors += 1; continue; }
+
+            const result = await this._processLegacyEvent(record.event, tokenId, filePath);
+            if (result) bookEvents += 1;
+            else errors += 1;
+          }
+        }
+
+        marketId = fileMarketId ?? marketId;
+        instrumentId = fileInstrumentId ?? instrumentId;
+        processedFiles += 1;
+      } catch (err) {
+        this._logger.error('Failed to read snapshot file', {
+          filePath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        errors += 1;
+      } finally {
+        await reader.close();
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    const processedEvents = bookEvents + tradeEvents;
+
+    this._logger.info('BacktestEngine finished', {
+      processedFiles,
+      bookEvents,
+      tradeEvents,
+      errors,
+      durationMs,
+    });
+
+    return {
+      processedFiles,
+      bookEvents,
+      tradeEvents,
+      processedEvents,
+      durationMs,
+      errors,
+      marketId,
+      instrumentId,
+    };
+  }
+
+  // ── Приватные методы ──────────────────────────────────────────────────────
+
+  /**
+   * Определяет список файлов для воспроизведения.
+   *
+   * @returns Массив путей к файлам
+   */
+  private async _resolveFilePaths(): Promise<string[]> {
+    if (this._config.filePaths && this._config.filePaths.length > 0) {
+      return this._config.filePaths;
+    }
+
+    if (!this._config.snapshotDir) {
+      this._logger.warn('No filePaths and no snapshotDir specified, nothing to replay');
+      return [];
+    }
+
+    const scanner = new SnapshotScanner(this._config.snapshotDir, this._logger);
+    const scanResult = await scanner.scan({
       fromDate: this._config.fromDate,
       toDate: this._config.toDate,
       marketId: this._config.marketId,
@@ -220,201 +419,181 @@ export class BacktestEngine {
       totalSizeBytes: scanResult.totalSizeBytes,
     });
 
-    let processedFiles = 0;
-    let processedEvents = 0;
-    let errors = 0;
+    return scanResult.files.map((f) => f.filePath);
+  }
 
-    for (const fileInfo of scanResult.files) {
-      this._logger.debug('Processing snapshot file', {
-        file: fileInfo.fileName,
-        date: fileInfo.date,
-        sizeBytes: fileInfo.sizeBytes,
+  /**
+   * Обрабатывает book-событие формата collect-data.
+   *
+   * @param event - Raw book событие
+   * @param instrumentId - ID токена
+   * @param filePath - Путь файла для логирования
+   * @returns true если успешно
+   */
+  private async _processBookEvent(
+    event: RawBookEvent,
+    instrumentId: InstrumentId,
+    filePath: string,
+  ): Promise<boolean> {
+    const tsResult = TimestampService.create(Number(event.timestamp));
+    if (!tsResult.ok) return false;
+
+    this._advanceClock(new Date(Number(event.timestamp)));
+
+    const bids = this._convertLevels(event.bids, filePath);
+    const asks = this._convertLevels(event.asks, filePath);
+
+    try {
+      await this._deps.bookUpdateHandler.handleSnapshot(instrumentId, bids, asks, tsResult.value);
+      return true;
+    } catch (err) {
+      this._logger.error('BookUpdateHandler error', {
+        filePath,
+        error: err instanceof Error ? err.message : String(err),
       });
+      return false;
+    }
+  }
 
-      const reader = this._readerFactory.create(fileInfo.filePath);
+  /**
+   * Обрабатывает last_trade_price-событие формата collect-data.
+   *
+   * @param event - Raw trade событие
+   * @param instrumentId - ID токена
+   * @param filePath - Путь файла для логирования
+   * @returns true если успешно
+   */
+  private async _processTradeEvent(
+    event: RawTradeEvent,
+    instrumentId: InstrumentId,
+    filePath: string,
+  ): Promise<boolean> {
+    const tsResult = TimestampService.create(Number(event.timestamp));
+    if (!tsResult.ok) return false;
 
-      try {
-        for await (const line of reader.readLines()) {
-          const parseResult = this._parseLine(line);
-          if (!parseResult.ok) {
-            this._logger.warn('Failed to parse snapshot line', {
-              file: fileInfo.fileName,
-              error: parseResult.error,
-            });
-            errors += 1;
-            continue;
-          }
-
-          const record = parseResult.value;
-
-          if (record._type !== 'EVENT' || !record.event) {
-            continue;
-          }
-
-          const handlerResult = await this._processEvent(record.event, fileInfo.fileName);
-          if (!handlerResult.ok) {
-            errors += 1;
-            continue;
-          }
-
-          processedEvents += 1;
-        }
-
-        processedFiles += 1;
-      } catch (err) {
-        this._logger.error('Failed to read snapshot file', {
-          file: fileInfo.filePath,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        errors += 1;
-      } finally {
-        await reader.close();
-      }
+    let price: Price;
+    let size: Quantity;
+    try {
+      price = Price.of(new Decimal(event.price));
+      size = Quantity.of(new Decimal(event.size));
+    } catch {
+      this._logger.warn('Invalid price/size in trade event', { filePath, price: event.price, size: event.size });
+      return false;
     }
 
-    const durationMs = Date.now() - startTime;
+    const side = this._parseSide(event.side);
+    if (!side) {
+      this._logger.warn('Invalid side in trade event', { filePath, side: event.side });
+      return false;
+    }
 
-    this._logger.info('BacktestEngine finished', {
-      processedFiles,
-      processedEvents,
-      errors,
-      durationMs,
+    if (!this._deps.eventBus) {
+      this._logger.warn('TRADE_RECEIVED skipped: eventBus not provided in deps');
+      return false;
+    }
+
+    this._advanceClock(new Date(Number(event.timestamp)));
+
+    // price и size точно инициализированы — try/catch выше вернул бы false при ошибке
+    await this._deps.eventBus.publish({
+      type: 'TRADE_RECEIVED',
+      instrumentId,
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      price: price!,
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      size: size!,
+      side,
+      timestamp: tsResult.value,
     });
 
-    return {
-      processedFiles,
-      processedEvents,
-      durationMs,
-      errors,
-    };
-  }
-
-  // ── Приватные методы ──────────────────────────────────────────────────────
-
-  /**
-   * Разбирает строку NDJSON в объект записи снапшота.
-   *
-   * @param line - Одна строка из NDJSON файла
-   * @returns Ok(SnapshotRecord) при успехе, Err(сообщение ошибки) при невалидном JSON
-   *
-   * @remarks
-   * Обрабатывает ошибки парсинга и типизирует результат.
-   * Строки с невалидным JSON возвращают Err.
-   */
-  private _parseLine(
-    line: string,
-  ): { ok: true; value: SnapshotRecord } | { ok: false; error: string } {
-    try {
-      const parsed = JSON.parse(line) as SnapshotRecord;
-      return { ok: true, value: parsed };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+    return true;
   }
 
   /**
-   * Обрабатывает одно EVENT-событие: конвертирует и передаёт в BookUpdateHandler.
+   * Обрабатывает событие legacy-формата (только book).
    *
-   * @remarks
-   * Алгоритм:
-   * 1. Конвертируем `event.asset_id` в `InstrumentId` через `asInstrumentId()`.
-   * 2. Конвертируем `event.bids`/`event.asks` в `PriceLevel[]` через `_convertLevels()`.
-   * 3. Вызываем `bookUpdateHandler.handleSnapshot()`.
-   *
-   * @param event - Raw DTO события из снапшота
-   * @param fileName - Имя файла для логирования
-   * @returns Ok(void) при успехе, Err(сообщение ошибки) при ошибке
+   * @param event - Raw legacy событие
+   * @param tokenId - ID токена
+   * @param filePath - Путь файла
+   * @returns true если успешно
    */
-  private async _processEvent(
-    event: RawOrderbookEvent,
-    fileName: string,
-  ): Promise<{ ok: true; value: void } | { ok: false; error: string }> {
-    const tokenId = asInstrumentId(event.asset_id);
-    if (!tokenId) {
-      this._logger.warn('Invalid asset_id in snapshot event, skipping', {
-        asset_id: event.asset_id,
-        file: fileName,
-      });
-      return { ok: false, error: `Invalid asset_id: ${event.asset_id}` };
-    }
-
-    const bids = this._convertLevels(event.bids, fileName);
-    const asks = this._convertLevels(event.asks, fileName);
+  private async _processLegacyEvent(
+    event: RawLegacyOrderbookEvent,
+    tokenId: InstrumentId,
+    filePath: string,
+  ): Promise<boolean> {
     const tsResult = TimestampService.create(Number(event.timestamp));
-    if (!tsResult.ok) {
-      this._logger.warn('Invalid timestamp in snapshot event, skipping', {
-        asset_id: event.asset_id,
-        timestamp: event.timestamp,
-        file: fileName,
-      });
-      return { ok: false, error: `Invalid timestamp: ${event.timestamp}` };
-    }
+    if (!tsResult.ok) return false;
 
-    // Синхронизируем ReplayClock с историческим временем события (если передан)
-    if (this._deps.replayClock) {
-      try {
-        this._deps.replayClock.update(tsResult.value.toDate());
-      } catch {
-        // Нарушение монотонности: событие с более ранним timestamp (out-of-order между файлами).
-        // Логируем warn, оставляем clock на текущем значении и продолжаем.
-        this._logger.warn('ReplayClock: out-of-order event timestamp, skipping clock update', {
-          asset_id:  event.asset_id,
-          timestamp: event.timestamp,
-          file:      fileName,
-        });
-      }
-    }
+    this._advanceClock(new Date(Number(event.timestamp)));
+
+    const bids = this._convertLevels(event.bids, filePath);
+    const asks = this._convertLevels(event.asks, filePath);
 
     try {
       await this._deps.bookUpdateHandler.handleSnapshot(tokenId, bids, asks, tsResult.value);
-      return { ok: true, value: undefined };
+      return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this._logger.error('BookUpdateHandler failed processing snapshot event', {
-        asset_id: event.asset_id,
-        file: fileName,
-        error: message,
+      this._logger.error('BookUpdateHandler error (legacy)', {
+        filePath,
+        error: err instanceof Error ? err.message : String(err),
       });
-      return { ok: false, error: message };
+      return false;
+    }
+  }
+
+  /**
+   * Продвигает ReplayClock к timestamp события (с защитой от out-of-order).
+   *
+   * @param date - Timestamp события
+   */
+  private _advanceClock(date: Date): void {
+    if (!this._deps.replayClock) return;
+    try {
+      this._deps.replayClock.update(date);
+    } catch {
+      // out-of-order timestamp — оставляем clock на текущем значении
+      this._logger.warn('ReplayClock: out-of-order event, skipping clock update');
     }
   }
 
   /**
    * Конвертирует raw уровни стакана в PriceLevel[] (Value Objects).
    *
-   * @remarks
-   * Повторяет логику `MarketDataFeedAdapter._convertLevels()`:
-   * - Создаёт `Price.of(new Decimal(level.price))` и `Quantity.of(new Decimal(level.size))`.
-   * - Если уровень невалиден (исключение Price/Quantity) — пропускает с лог warn.
-   * - Конвертация происходит на границе инфраструктуры до передачи в application layer.
-   *
-   * @param levels - Raw уровни стакана из WS-снапшота
-   * @param fileName - Имя файла для логирования
-   * @returns Массив PriceLevel с типизированными Value Objects
+   * @param levels - Массив { price, size } из JSON
+   * @param filePath - Путь файла для логирования
+   * @returns PriceLevel[] с Value Objects
    */
   private _convertLevels(
     levels: readonly RawLevel[],
-    fileName: string,
+    filePath: string,
   ): PriceLevel[] {
     const result: PriceLevel[] = [];
-
     for (const level of levels) {
       try {
-        const price = Price.of(new Decimal(level.price));
-        const size = Quantity.of(new Decimal(level.size));
-        result.push({ price, size });
+        result.push({
+          price: Price.of(new Decimal(level.price)),
+          size: Quantity.of(new Decimal(level.size)),
+        });
       } catch {
-        this._logger.warn('Invalid price level in snapshot, skipping', {
+        this._logger.warn('Invalid price level, skipping', {
           price: level.price,
           size: level.size,
-          file: fileName,
+          file: filePath,
         });
       }
     }
-
     return result;
+  }
+
+  /**
+   * Парсит сторону сделки из строки.
+   *
+   * @param raw - Строка 'BUY' или 'SELL'
+   * @returns Side или undefined если невалидно
+   */
+  private _parseSide(raw: string): Side | undefined {
+    if (raw === 'BUY' || raw === 'SELL') return raw;
+    return undefined;
   }
 }

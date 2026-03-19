@@ -4,39 +4,36 @@
  * @remarks
  * ### Назначение:
  * Периодически опрашивает `IMarketDiscoveryService` (Gamma API),
- * наполняет каталог инструментов и открывает новые рынки через `OpenMarketUseCase`.
+ * наполняет каталог инструментов и открывает новые рынки:
+ * аллоцирует баланс через `IBalanceAllocator` и публикует `MARKET_OPENED`.
  *
  * ### Алгоритм (цикл с паузой ПОСЛЕ завершения):
  * 1. `discoveryService.findCandidates()` → список кандидатов из кэша
  * 2. `marketCatalog.register(candidate)` для каждого — наполняем каталог
  * 3. `marketCatalog.getAll()` → фильтр: active && не в `_openMarkets`
- * 4. `openMarketUseCase.execute()` для каждого нового рынка (до `maxStrategies`)
+ * 4. Для каждого нового рынка (до `maxStrategies`):
+ *    - `balanceAllocator.addMarket(marketId)` → аллоцировать баланс
+ *    - `eventBus.publish(MARKET_OPENED)`
  * 5. `setTimeout(loop, scanPauseMs)` — пауза после завершения
- *
- * Подписывается на `MARKET_OPENED` / `MARKET_CLOSED` для отслеживания
- * текущих активных рынков без дополнительного состояния.
- *
- * ### Без STRATEGY_TICK:
- * Использует реальный `setTimeout`. Тестирование через `jest.useFakeTimers()`.
  *
  * @example
  * ```typescript
  * const publisher = new MarketDiscoveryPublisher(
- *   { discoveryService, marketCatalog, openMarketUseCase, eventBus, logger },
+ *   { discoveryService, marketCatalog, balanceAllocator, eventBus, clock, logger },
  *   { accountId, maxStrategies: 10, scanPauseMs: 30_000 },
  * );
  *
  * publisher.start();
- * // Остановить:
  * publisher.stop();
  * ```
  */
 
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
-import type { IMarketCatalog, IMarketDiscoveryService } from '@polymarket/ports';
+import type { IMarketCatalog, IMarketDiscoveryService, IBalanceAllocator } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { OpenMarketUseCase } from '@polymarket/market-lifecycle';
+import type { IClock } from '@polymarket/time';
+import { TimestampService } from '@polymarket/value-objects';
 
 /**
  * Зависимости MarketDiscoveryPublisher.
@@ -46,10 +43,12 @@ export interface MarketDiscoveryPublisherDeps {
   readonly discoveryService: IMarketDiscoveryService;
   /** Каталог торговых инструментов */
   readonly marketCatalog: IMarketCatalog;
-  /** Use case открытия рынка */
-  readonly openMarketUseCase: OpenMarketUseCase;
-  /** Event bus для подписки на MARKET_OPENED/MARKET_CLOSED */
+  /** Аллокатор баланса */
+  readonly balanceAllocator: IBalanceAllocator;
+  /** Event bus */
   readonly eventBus: IEventBus;
+  /** Источник времени */
+  readonly clock: IClock;
   /** Logger */
   readonly logger: ILogger;
 }
@@ -58,7 +57,7 @@ export interface MarketDiscoveryPublisherDeps {
  * Конфигурация MarketDiscoveryPublisher.
  */
 export interface MarketDiscoveryPublisherConfig {
-  /** ID аккаунта для передачи в OpenMarketUseCase */
+  /** ID аккаунта для публикации событий */
   readonly accountId: AccountId;
   /** Максимальное количество одновременно активных стратегий */
   readonly maxStrategies: number;
@@ -68,18 +67,11 @@ export interface MarketDiscoveryPublisherConfig {
 
 /**
  * Автономный публикатор обнаружения рынков.
- *
- * @remarks
- * Запускает независимый цикл опроса Gamma API и открывает новые рынки.
- * Не зависит от внешнего тикера.
  */
 export class MarketDiscoveryPublisher {
   private readonly _logger: ILogger;
-  /** Флаг работы цикла */
   private _running = false;
-  /** Идентификатор текущего таймера (для отмены при stop()) */
   private _timeoutId: ReturnType<typeof setTimeout> | undefined;
-  /** Текущие открытые рынки (обновляется через MARKET_OPENED/MARKET_CLOSED) */
   private readonly _openMarkets = new Set<string>();
   private _unsubscribeOpened: (() => void) | undefined;
   private _unsubscribeClosed: (() => void) | undefined;
@@ -99,8 +91,7 @@ export class MarketDiscoveryPublisher {
    * Запускает цикл обнаружения рынков.
    *
    * @remarks
-   * Повторный вызов без предварительного `stop()` — no-op с предупреждением.
-   * Первый цикл запускается немедленно, последующие — через `scanPauseMs` после завершения.
+   * Повторный вызов без `stop()` — no-op с предупреждением.
    */
   public start(): void {
     if (this._running) {
@@ -127,10 +118,7 @@ export class MarketDiscoveryPublisher {
   }
 
   /**
-   * Останавливает цикл обнаружения рынков и отписывается от событий.
-   *
-   * @remarks
-   * Текущий выполняющийся цикл завершится, следующий не запустится.
+   * Останавливает цикл обнаружения рынков.
    */
   public stop(): void {
     this._running = false;
@@ -145,13 +133,6 @@ export class MarketDiscoveryPublisher {
 
   // ── Приватная логика ──────────────────────────────────────────────────────
 
-  /**
-   * Планирует следующую итерацию цикла.
-   *
-   * @remarks
-   * Паттерн «пауза после завершения»: `setTimeout` устанавливается
-   * в `finally` блоке, после того как `_discover()` завершился.
-   */
   private async _scheduleLoop(): Promise<void> {
     if (!this._running) return;
     try {
@@ -207,25 +188,44 @@ export class MarketDiscoveryPublisher {
     }
 
     for (const inst of newInstruments) {
-      const result = await this._deps.openMarketUseCase.execute({
-        marketId: inst.marketId,
-        strategyId: String(inst.marketId),
-        accountId: this._config.accountId,
-      });
+      const allocationResult = this._deps.balanceAllocator.addMarket(inst.marketId);
 
-      if (result.ok) {
-        this._logger.info('New market opened via discovery', {
-          marketId: String(inst.marketId),
-          allocated: result.value.allocatedAmount.toNumber(),
-        });
-      } else {
+      if (!allocationResult.ok) {
         this._logger.debug('Could not open market (allocation failed)', {
           marketId: String(inst.marketId),
-          reason: result.error.message,
+          reason: allocationResult.error.message,
         });
-        // Нет смысла пробовать дальше: нет слотов/баланса
         break;
       }
+
+      const timestampResult = TimestampService.fromDate(this._deps.clock.now());
+      if (!timestampResult.ok) {
+        this._logger.error('Failed to create timestamp for MARKET_OPENED event', {
+          marketId: String(inst.marketId),
+          error: timestampResult.error.message,
+        });
+        break;
+      }
+
+      try {
+        await this._deps.eventBus.publish({
+          type: 'MARKET_OPENED',
+          marketId: inst.marketId,
+          strategyId: String(inst.marketId),
+          allocatedBalance: allocationResult.value.allocatedAmount,
+          timestamp: timestampResult.value,
+        });
+      } catch (err) {
+        this._logger.error('Failed to publish MARKET_OPENED event', {
+          marketId: String(inst.marketId),
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+
+      this._logger.info('New market opened via discovery', {
+        marketId: String(inst.marketId),
+        allocated: allocationResult.value.allocatedAmount.toNumber(),
+      });
     }
   }
 }

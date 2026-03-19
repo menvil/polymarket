@@ -127,11 +127,11 @@ export class PolymarketRestClient {
 
     // Создаём L2 аутентификатор если переданы credentials
     if (config.l2Credentials) {
-      // КРИТИЧНО: Всегда используем адрес подписанта для L2 auth (владелец API ключа)
-      // Это адрес, который сгенерировал API credentials
+      // POLY_ADDRESS = адрес оператора (из PRIVATE_KEY), даже при POLY_PROXY.
+      // API ключ создаётся через подпись оператора → привязан к его адресу.
       this.l2Authenticator = new PolymarketL2Authenticator(
         config.l2Credentials,
-        this.signer.getAddress()
+        this.signer.getAddress(),
       );
       this.logger.debug('L2 authenticator initialized', {
         apiKey: config.l2Credentials.apiKey,

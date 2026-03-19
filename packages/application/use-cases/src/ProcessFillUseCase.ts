@@ -6,23 +6,32 @@
  * 1. Idempotency guard (IProcessedFillRepository.markIfNotExists)
  *    — при дублирующемся fill возвращает Ok без повторной обработки
  * 2. Получение Order из репозитория
- * 3. Применение Fill к Order (OrderService.applyFill)
- * 4. Обновление Portfolio (PortfolioService.applyFill)
- * 5. Запись в Ledger (LedgerService.recordFill)
- * 6. Публикация доменных событий Order
+ * 3. Применение Fill к Order (sync, order.applyFill)
+ * 4. Синхронное сохранение обновлённого Order (orderStateStore.saveSync)
+ * 5. Обновление Portfolio (PortfolioService.applyFill)
+ * 6. Запись в Ledger (LedgerService.recordFill)
+ * 7. Публикация доменных событий Order (await)
  *
  * ### Идемпотентность:
  * Повторный вызов с тем же fillId безопасен — шаг 1 предотвращает
  * повторную обработку. Гарантирует «exactly once» семантику.
  *
- * ### Консистентность:
- * Order и Portfolio обновляются независимо. При VersionConflictError
- * на Portfolio caller должен повторить операцию.
+ * ### Консистентность (устранение race condition):
+ * Шаги 3–6 выполняются синхронно, без yield между ними.
+ * `await` появляется только на шаге 7 (publishAll).
+ * К моменту первого yield ордер уже помечен как terminal (FILED/CANCELLED),
+ * поэтому любой тик стратегии или CancelOrderUseCase, запущенный в этом окне,
+ * увидит `order.isTerminal === true` и пропустит отмену:
+ * ```
+ * // CancelOrderUseCase, строка 100:
+ * if (order.isTerminal) return Ok(undefined);  // no-op
+ * ```
+ * Это устраняет ошибку «Cannot unfreeze/consume X: only 0 reserved».
  *
  * @example
  * ```typescript
  * const useCase = new ProcessFillUseCase({
- *   orderService, portfolioService, ledgerService,
+ *   orderStateStore, portfolioService, ledgerService,
  *   processedFillRepo, orderRepo, eventBus, logger,
  * });
  *
@@ -35,17 +44,16 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
-import type { IOrderRepository, IProcessedFillRepository } from '@polymarket/ports';
+import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
-import type { OrderService } from './services/OrderService.js';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 
 /** Зависимости ProcessFillUseCase */
 export interface ProcessFillDeps {
-  readonly orderService: OrderService;
+  readonly orderStateStore: IOrderStateStore;
   readonly portfolioService: PortfolioService;
   readonly ledgerService: LedgerService;
   readonly orderRepo: IOrderRepository;
@@ -60,6 +68,7 @@ export interface ProcessFillDeps {
  * @remarks
  * Оркестрирует идемпотентное обновление Order, Portfolio и Ledger
  * при получении нового исполнения ордера.
+ * Все state-мутации выполняются синхронно до первого await.
  */
 export class ProcessFillUseCase {
   private readonly _logger: ILogger;
@@ -102,7 +111,10 @@ export class ProcessFillUseCase {
       ));
     }
 
-    // Шаг 3: Применить Fill к Order
+    // Шаги 3–6 выполняются синхронно (без yield) — атомарное обновление состояния.
+    // Первый await появляется только на шаге 7 (publishAll).
+
+    // Шаг 3: Применить Fill к Order (sync)
     const fillData: FillData = {
       id: fill.id,
       orderId: fill.orderId,
@@ -111,8 +123,13 @@ export class ProcessFillUseCase {
       size: fill.size,
       price: fill.price,
     };
-    const applyResult = await this._deps.orderService.applyFill(order, fillData);
+    const applyResult = order.applyFill(fillData);
     if (!applyResult.ok) {
+      this._logger.warn('Failed to apply fill to order', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        error: applyResult.error.message,
+      });
       return Err(new TradingError(
         `Failed to apply fill to order: ${applyResult.error.message}`,
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
@@ -120,8 +137,15 @@ export class ProcessFillUseCase {
     }
     const updatedOrder = applyResult.value;
 
-    // Шаг 4: Обновить Portfolio
-    const portfolioResult = this._deps.portfolioService.applyFill(fill);
+    // Шаг 4: Синхронно сохранить обновлённый Order (terminal = true)
+    // После этой строки любой читатель IOrderStateStore увидит ордер как FILED/terminal.
+    // CancelOrderUseCase: if (order.isTerminal) return Ok(undefined) — пропустит cancel.
+    this._deps.orderStateStore.saveSync(updatedOrder);
+
+    // Шаг 5: Обновить Portfolio (sync)
+    // Передаём цену ордера, чтобы точно совпасть с зарезервированной суммой
+    // (fill.price может быть округлена биржей: 0.829 → 0.83, что вызывает «Cannot unfreeze/consume»).
+    const portfolioResult = this._deps.portfolioService.applyFill(fill, order.price.value());
     if (!portfolioResult.ok) {
       this._logger.error('Failed to apply fill to portfolio', {
         fillId: String(fill.id),
@@ -133,10 +157,11 @@ export class ProcessFillUseCase {
       ));
     }
 
-    // Шаг 5: Запись в Ledger
+    // Шаг 6: Запись в Ledger (sync)
     this._deps.ledgerService.recordFill(fill);
 
-    // Шаг 6: Публикация событий
+    // Шаг 7: Публикация событий (первый await — yield-окно открывается здесь)
+    // К этому моменту: Order = FILED (terminal), Portfolio = обновлён.
     const events = updatedOrder.pullEvents();
     await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
 

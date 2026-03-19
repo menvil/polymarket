@@ -109,6 +109,22 @@ describe('BookDepthCollector', () => {
     deps = { eventBus, logger, clock };
   });
 
+  // ── Конструктор ────────────────────────────────────────────────────────────────
+
+  describe('конструктор', () => {
+    it('бросает RangeError если конфиг пустой ({})', () => {
+      expect(() => new BookDepthCollector(deps, {})).toThrow(RangeError);
+    });
+
+    it('принимает конфиг только с maxCount', () => {
+      expect(() => new BookDepthCollector(deps, { maxCount: 100 })).not.toThrow();
+    });
+
+    it('принимает конфиг только с maxAgeMs', () => {
+      expect(() => new BookDepthCollector(deps, { maxAgeMs: 60_000 })).not.toThrow();
+    });
+  });
+
   // ── start / stop ─────────────────────────────────────────────────────────────
 
   describe('start() / stop()', () => {
@@ -232,6 +248,26 @@ describe('BookDepthCollector', () => {
       expect(collector.getHistory(TOKEN_A)?.size()).toBe(3);
     });
 
+    it('FIFO: сохраняет именно последние снапшоты (не первые)', async () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 2 });
+      collector.start();
+
+      // Отправляем 3 снапшота с уникальными bids для идентификации
+      const snap0 = { ...makeSnapshot('market-1', String(TOKEN_A)), bids: [{ price: '0.10', size: 1 }] } as any;
+      const snap1 = { ...makeSnapshot('market-1', String(TOKEN_A)), bids: [{ price: '0.20', size: 1 }] } as any;
+      const snap2 = { ...makeSnapshot('market-1', String(TOKEN_A)), bids: [{ price: '0.30', size: 1 }] } as any;
+
+      await eventBus.emit({ type: 'BOOK_DEPTH', instrumentId: TOKEN_A, snapshot: snap0, timestamp: makeTimestamp(T0) });
+      await eventBus.emit({ type: 'BOOK_DEPTH', instrumentId: TOKEN_A, snapshot: snap1, timestamp: makeTimestamp(T0 + 1000) });
+      await eventBus.emit({ type: 'BOOK_DEPTH', instrumentId: TOKEN_A, snapshot: snap2, timestamp: makeTimestamp(T0 + 2000) });
+
+      const history = collector.getHistory(TOKEN_A);
+      expect(history?.size()).toBe(2);
+      const latest = history?.getLatest();
+      // Последний снапшот — snap2 с bids price 0.30
+      expect(latest?.bids[0]?.price).toBe('0.30');
+    });
+
     it('использует timestamp из события как nowMs', async () => {
       const collector = new BookDepthCollector(deps, { maxAgeMs: 60_000 });
       collector.start();
@@ -253,6 +289,63 @@ describe('BookDepthCollector', () => {
       });
 
       expect(collector.getHistory(TOKEN_A)?.size()).toBe(1);
+    });
+  });
+
+  // ── Обработка ошибок ─────────────────────────────────────────────────────────
+
+  describe('обработка ошибок в обработчике BOOK_DEPTH', () => {
+    it('логирует ошибку и не падает если _record бросает', async () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      collector.start();
+
+      // Передаём невалидный timestamp: toNumber() бросает
+      const badEvent: any = {
+        type: 'BOOK_DEPTH',
+        instrumentId: TOKEN_A,
+        snapshot: makeSnapshot('market-1', String(TOKEN_A)),
+        timestamp: {
+          toNumber: () => { throw new Error('bad timestamp'); },
+        },
+      };
+
+      await expect(eventBus.emit(badEvent)).resolves.not.toThrow();
+      expect((logger as any).error).toHaveBeenCalledWith(
+        'BookDepthCollector: failed to record snapshot',
+        expect.objectContaining({ instrumentId: String(TOKEN_A) }),
+      );
+    });
+  });
+
+  // ── recordDirect ──────────────────────────────────────────────────────────────
+
+  describe('recordDirect()', () => {
+    it('записывает снапшот без подписки на EventBus', () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      // start() не вызывается
+
+      collector.recordDirect(
+        TOKEN_A,
+        makeSnapshot('market-1', String(TOKEN_A)),
+        T0,
+      );
+
+      expect(collector.getHistory(TOKEN_A)).toBeDefined();
+      expect(collector.getHistory(TOKEN_A)?.size()).toBe(1);
+    });
+
+    it('накапливает снапшоты через recordDirect', () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+
+      for (let i = 0; i < 3; i++) {
+        collector.recordDirect(
+          TOKEN_A,
+          makeSnapshot('market-1', String(TOKEN_A)),
+          T0 + i * 1000,
+        );
+      }
+
+      expect(collector.getHistory(TOKEN_A)?.size()).toBe(3);
     });
   });
 

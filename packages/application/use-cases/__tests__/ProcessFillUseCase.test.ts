@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { ProcessFillUseCase } from '../src/ProcessFillUseCase.js';
-import { OrderService } from '../src/services/OrderService.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import { LedgerService } from '../src/services/LedgerService.js';
 import type { ProcessFillDeps } from '../src/ProcessFillUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IProcessedFillRepository } from '@polymarket/ports';
+import type { IOrderRepository, IPortfolioStore, IProcessedFillRepository, IOrderStateStore } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
@@ -145,6 +144,15 @@ function makeOrderRepo(order?: Order): IOrderRepository {
   };
 }
 
+function makeOrderStateStore(order?: Order): IOrderStateStore {
+  return {
+    getOrder: jest.fn<IOrderStateStore['getOrder']>().mockReturnValue(order),
+    saveSync: jest.fn<IOrderStateStore['saveSync']>(),
+    getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
+    getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
+  };
+}
+
 function makeProcessedFillRepo(isNew = true): IProcessedFillRepository {
   return {
     markIfNotExists: jest.fn<IProcessedFillRepository['markIfNotExists']>().mockResolvedValue(isNew),
@@ -157,6 +165,7 @@ describe('ProcessFillUseCase', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
   let orderRepo: IOrderRepository;
+  let orderStateStore: IOrderStateStore;
   let portfolioStore: IPortfolioStore;
   let processedFillRepo: IProcessedFillRepository;
   let deps: ProcessFillDeps;
@@ -166,15 +175,15 @@ describe('ProcessFillUseCase', () => {
     eventBus = makeEventBus();
     const order = makeOrderOpen();
     orderRepo = makeOrderRepo(order);
+    orderStateStore = makeOrderStateStore(order);
     portfolioStore = makePortfolioStore();
     processedFillRepo = makeProcessedFillRepo(true);
 
-    const orderService = new OrderService(orderRepo, logger);
     const portfolioService = new PortfolioService(portfolioStore, logger);
     const ledgerService = new LedgerService(logger);
 
     deps = {
-      orderService,
+      orderStateStore,
       portfolioService,
       ledgerService,
       orderRepo,
@@ -192,10 +201,10 @@ describe('ProcessFillUseCase', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('обновляет ордер в репозитории', async () => {
+  it('обновляет ордер в хранилище (saveSync)', async () => {
     const useCase = new ProcessFillUseCase(deps);
     await useCase.execute(makeFill());
-    expect(orderRepo.save).toHaveBeenCalled();
+    expect(orderStateStore.saveSync).toHaveBeenCalled();
   });
 
   it('публикует события', async () => {
@@ -230,8 +239,7 @@ describe('ProcessFillUseCase', () => {
 
   it('возвращает Err если ордер не найден', async () => {
     orderRepo = makeOrderRepo(undefined);
-    const orderService = new OrderService(orderRepo, logger);
-    const useCase = new ProcessFillUseCase({ ...deps, orderService, orderRepo });
+    const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: makeOrderStateStore(undefined), orderRepo });
     const result = await useCase.execute(makeFill());
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -289,8 +297,7 @@ describe('ProcessFillUseCase', () => {
     const sellPortfolioService = new PortfolioService(sellPortfolioStore, logger);
 
     orderRepo = makeOrderRepo(sellOrder);
-    const orderService = new OrderService(orderRepo, logger);
-    const useCase = new ProcessFillUseCase({ ...deps, orderService, orderRepo, portfolioService: sellPortfolioService });
+    const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: makeOrderStateStore(sellOrder), orderRepo, portfolioService: sellPortfolioService });
     const result = await useCase.execute(sellFill);
     expect(result.ok).toBe(true);
   });

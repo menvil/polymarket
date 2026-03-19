@@ -1,0 +1,28 @@
+{
+  "strategy": "market-maker",
+  "strategyParams": {
+    "spreadOffset": 0.02,
+    "minSpread": 0.01,
+    "orderSize": 10,
+    "exitThresholdMs": 300000
+  },
+  "market": {
+    "source": "fixed",
+    "marketId": "0xabc123def456",
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 5000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 50,
+    "tradingBalanceRatio": 0.9
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": false
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

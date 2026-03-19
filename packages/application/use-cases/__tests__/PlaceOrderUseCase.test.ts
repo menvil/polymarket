@@ -158,7 +158,7 @@ describe('PlaceOrderUseCase', () => {
     eventBus = makeEventBus();
     orderRepo = makeOrderRepo();
     portfolioStore = makePortfolioStore();
-    exchangeClient = makeExchangeClient(ORDER_ID);
+    exchangeClient = makeExchangeClient(); // default: 'exchange-order-1' (venueOrderId)
     riskChecker = makeRiskChecker(true);
 
     const portfolioService = new PortfolioService(portfolioStore, logger);
@@ -177,11 +177,12 @@ describe('PlaceOrderUseCase', () => {
 
   // ── Успешный сценарий ─────────────────────────────────────────────────────
 
-  it('возвращает Ok(orderId) при успешном размещении', async () => {
+  it('возвращает Ok(venueOrderId) при успешном размещении', async () => {
     const useCase = new PlaceOrderUseCase(deps);
     const result = await useCase.execute(makeInput());
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe(ORDER_ID);
+    // Возвращается venueOrderId от биржи, а не внутренний ORDER_ID
+    if (result.ok) expect(result.value).toBe('exchange-order-1');
   });
 
   it('вызывает submitOrder на бирже', async () => {

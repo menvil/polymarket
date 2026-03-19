@@ -22,7 +22,6 @@ export default {
     '^@polymarket/use-cases$':               '<rootDir>/../use-cases/src/index.ts',
     '^@polymarket/risk$':                    '<rootDir>/../risk/src/index.ts',
     '^@polymarket/balance-allocator$':       '<rootDir>/../balance-allocator/src/index.ts',
-    '^@polymarket/market-lifecycle$':        '<rootDir>/../market-lifecycle/src/index.ts',
     '^@polymarket/strategy$':               '<rootDir>/../strategy/src/index.ts',
     '^@polymarket/orchestrators$':           '<rootDir>/../orchestrators/src/index.ts',
   },

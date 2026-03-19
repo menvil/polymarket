@@ -84,15 +84,9 @@ export type TradeTapeCollectorConfig = TapeRetentionPolicy;
 
 /**
  * Внутренняя структура хранения ленты per tokenId.
- *
- * @remarks
- * `marketId` сохраняется при создании из каталога и не зависит от retention eviction.
- * Используется как ключ в reverse index для O(1) cleanup.
  */
 interface InternalEntry {
   readonly tape: TradeTape;
-  /** String(marketId) из каталога при создании; undefined если инструмент не в каталоге */
-  readonly marketId: string | undefined;
 }
 
 /**
@@ -151,7 +145,14 @@ export class TradeTapeCollector {
     this._unsubTrade = this._deps.eventBus.subscribe(
       'TRADE_RECEIVED',
       (event) => {
-        this._record(event.instrumentId, event.price, event.size, event.side, event.timestamp);
+        try {
+          this._record(event.instrumentId, event.price, event.size, event.side, event.timestamp);
+        } catch (err) {
+          this._deps.logger.error('TradeTapeCollector: failed to record trade', {
+            instrumentId: String(event.instrumentId),
+            err: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
       },
     );
 
@@ -212,6 +213,29 @@ export class TradeTapeCollector {
   }
 
   /**
+   * Записывает трейд напрямую, минуя EventBus подписку.
+   *
+   * @param instrumentId - ID инструмента (tokenId)
+   * @param price - Цена трейда
+   * @param size - Объём трейда
+   * @param side - Сторона агрессора
+   * @param timestamp - Timestamp трейда
+   *
+   * @remarks
+   * Используется MarketDataStore для записи TRADE_RECEIVED событий
+   * без дублирования EventBus подписки (MarketDataStore уже подписан).
+   */
+  public recordDirect(
+    instrumentId: InstrumentId,
+    price: import('@polymarket/value-objects').Price,
+    size: import('@polymarket/value-objects').Quantity,
+    side: Side,
+    timestamp: import('@polymarket/value-objects').Timestamp,
+  ): void {
+    this._record(instrumentId, price, size, side, timestamp);
+  }
+
+  /**
    * Очищает все ленты и reverse index из памяти.
    *
    * @remarks
@@ -245,7 +269,7 @@ export class TradeTapeCollector {
       const marketId = this._deps.catalog.get(instrumentId)?.marketId;
       const marketIdStr = marketId !== undefined ? String(marketId) : undefined;
       const tape = TradeTape.create(this._config, this._deps.clock);
-      entry = { tape, marketId: marketIdStr };
+      entry = { tape };
       this._entries.set(instrumentId, entry);
 
       // Регистрируем в reverse index: marketId → instrumentId

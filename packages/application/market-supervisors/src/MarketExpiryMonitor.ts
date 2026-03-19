@@ -3,50 +3,56 @@
  *
  * @remarks
  * ### Назначение:
- * Отслеживает `expiresAt` активных рынков и закрывает их через
- * `CloseMarketUseCase` когда срок истекает.
+ * Отслеживает активные рынки через `IRemovalPolicy` и закрывает их
+ * когда политика решает, что пора: освобождает аллокацию и публикует `MARKET_CLOSED`.
  *
  * ### Алгоритм:
- * 1. `MARKET_OPENED` → `marketCatalog.getByMarketId()` → запомнить `{marketId, expiresAtMs}`
- * 2. `setInterval(checkIntervalMs)` → для каждого tracked: если `expiresAt <= now` → `closeMarketUseCase(EXPIRED)`
- * 3. `MARKET_CLOSED` → убрать из `_trackedMarkets`
+ * 1. `MARKET_OPENED` → `marketCatalog.getByMarketId()` → запомнить `{marketId, expiresAt}`
+ * 2. `setInterval(checkIntervalMs)` → строим `MarketContext[]` → `policy.evaluate()`
+ * 3. Для каждого возвращённого marketId:
+ *    - `balanceAllocator.release(marketId)` — освободить аллокацию
+ *    - `eventBus.publish(MARKET_CLOSED)` — уведомить стратегию
+ * 4. `MARKET_CLOSED` → убрать из `_trackedMarkets`
  *
- * ### Без IRemovalPolicy:
- * Проверка истечения встроена напрямую (сравнение `expiresAtMs <= now.getTime()`).
- * `IRemovalPolicy` остаётся доступным для более сложных политик удаления,
- * но `MarketExpiryMonitor` не использует его — его задача только expiry.
+ * ### Ответственность:
+ * Только административная: освобождение ресурсов бота.
+ * Управление ордерами — зона ответственности стратегии, реагирующей на MARKET_CLOSED.
  *
  * @example
  * ```typescript
+ * const policy = new ExpirationRemovalPolicy(clock, 30 * 60 * 1000);
  * const monitor = new MarketExpiryMonitor(
- *   { closeMarketUseCase, marketCatalog, eventBus, clock, logger },
+ *   { balanceAllocator, policy, marketCatalog, eventBus, clock, logger },
  *   { accountId, checkIntervalMs: 5_000 },
  * );
  *
  * monitor.start();
- * // При остановке:
  * monitor.stop();
  * ```
  */
 
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, MarketId } from '@polymarket/ids';
-import type { IMarketCatalog } from '@polymarket/ports';
+import type { IMarketCatalog, IBalanceAllocator } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IClock } from '@polymarket/time';
-import type { CloseMarketUseCase } from '@polymarket/market-lifecycle';
+import { Money, TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
+import type { IRemovalPolicy, MarketContext } from './IRemovalPolicy.js';
 
 /**
  * Зависимости MarketExpiryMonitor.
  */
 export interface MarketExpiryMonitorDeps {
-  /** Use case закрытия рынка */
-  readonly closeMarketUseCase: CloseMarketUseCase;
+  /** Аллокатор баланса (для освобождения при закрытии) */
+  readonly balanceAllocator: IBalanceAllocator;
+  /** Политика удаления рынков */
+  readonly policy: IRemovalPolicy;
   /** Каталог инструментов (для получения expiresAt по marketId) */
   readonly marketCatalog: IMarketCatalog;
-  /** Event bus для подписки на MARKET_OPENED/MARKET_CLOSED */
+  /** Event bus */
   readonly eventBus: IEventBus;
-  /** Источник текущего времени */
+  /** Источник времени */
   readonly clock: IClock;
   /** Logger */
   readonly logger: ILogger;
@@ -56,25 +62,19 @@ export interface MarketExpiryMonitorDeps {
  * Конфигурация MarketExpiryMonitor.
  */
 export interface MarketExpiryMonitorConfig {
-  /** ID аккаунта для передачи в CloseMarketUseCase */
+  /** ID аккаунта для публикации событий */
   readonly accountId: AccountId;
-  /** Интервал проверки истечения (мс). По умолчанию рекомендуется 5000. */
+  /** Интервал проверки (мс) */
   readonly checkIntervalMs: number;
 }
 
 /**
  * Монитор истечения рынков.
- *
- * @remarks
- * Закрывает рынки когда истекает `expiresAt`, публикуя MARKET_CLOSED
- * через CloseMarketUseCase (который реагирует StrategyRunner).
  */
 export class MarketExpiryMonitor {
   private readonly _logger: ILogger;
-  /** Идентификатор интервала проверки */
   private _intervalId: ReturnType<typeof setInterval> | undefined;
-  /** Отслеживаемые рынки: stringMarketId → {marketId, expiresAtMs} */
-  private readonly _trackedMarkets = new Map<string, { marketId: MarketId; expiresAtMs: number }>();
+  private readonly _trackedMarkets = new Map<string, { marketId: MarketId; expiresAt: Timestamp }>();
   private _unsubscribeOpened: (() => void) | undefined;
   private _unsubscribeClosed: (() => void) | undefined;
 
@@ -90,7 +90,7 @@ export class MarketExpiryMonitor {
   }
 
   /**
-   * Запускает монитор: подписывается на события и стартует интервал проверки.
+   * Запускает монитор.
    *
    * @remarks
    * Повторный вызов без `stop()` — no-op с предупреждением.
@@ -106,7 +106,7 @@ export class MarketExpiryMonitor {
       if (instrument) {
         this._trackedMarkets.set(String(event.marketId), {
           marketId: event.marketId,
-          expiresAtMs: instrument.expiresAt.toNumber(),
+          expiresAt: instrument.expiresAt,
         });
         this._logger.debug('Market expiry tracking started', {
           marketId: String(event.marketId),
@@ -134,7 +134,7 @@ export class MarketExpiryMonitor {
   }
 
   /**
-   * Останавливает монитор: очищает интервал и отписывается от событий.
+   * Останавливает монитор.
    */
   public stop(): void {
     if (this._intervalId !== undefined) {
@@ -149,37 +149,47 @@ export class MarketExpiryMonitor {
   // ── Приватная логика ──────────────────────────────────────────────────────
 
   /**
-   * Проверяет истечение всех отслеживаемых рынков и закрывает просроченные.
+   * Проверяет рынки через политику и закрывает те, которые она вернула.
    *
    * @remarks
-   * Вызывается по `setInterval`. Собирает просроченные рынки snapshot'ом
-   * (до await), чтобы avoid concurrent modification при удалении через MARKET_CLOSED.
+   * Собирает snapshot перед await, чтобы избежать concurrent modification
+   * при удалении через MARKET_CLOSED.
    */
   private async _checkExpired(): Promise<void> {
-    const nowMs = this._deps.clock.now().getTime();
+    if (this._trackedMarkets.size === 0) return;
 
-    const expired = [...this._trackedMarkets.values()].filter(
-      (m) => m.expiresAtMs <= nowMs,
-    );
+    const contexts: MarketContext[] = [...this._trackedMarkets.values()].map(({ marketId, expiresAt }) => ({
+      marketId,
+      expiresAt,
+      allocatedBalance: this._deps.balanceAllocator.getAllocation(marketId) ?? Money.ZERO.USDC,
+      realizedPnL: Money.ZERO.USDC,
+      openOrdersCount: 0,
+    }));
 
-    if (expired.length === 0) return;
+    const toClose = this._deps.policy.evaluate(contexts);
 
-    this._logger.info('Expiry check: closing expired markets', { count: expired.length });
+    if (toClose.length === 0) return;
 
-    for (const { marketId } of expired) {
+    this._logger.info('Expiry check: closing expired markets', { count: toClose.length });
+
+    for (const marketId of toClose) {
       try {
-        const result = await this._deps.closeMarketUseCase.execute({
-          marketId,
-          accountId: this._config.accountId,
-          reason: 'EXPIRED',
-        });
-        if (!result.ok) {
-          this._logger.error('Failed to close expired market', {
+        this._deps.balanceAllocator.release(marketId);
+
+        const timestampResult = TimestampService.fromDate(this._deps.clock.now());
+        if (timestampResult.ok) {
+          await this._deps.eventBus.publish({
+            type: 'MARKET_CLOSED',
+            marketId,
+            reason: 'EXPIRED',
+            realizedPnL: Money.ZERO.USDC,
+            timestamp: timestampResult.value,
+          });
+        } else {
+          this._logger.error('Failed to create timestamp for MARKET_CLOSED event', {
             marketId: String(marketId),
-            error: result.error.message,
           });
         }
-        // CloseMarketUseCase публикует MARKET_CLOSED → подписчик удалит из _trackedMarkets
       } catch (err) {
         this._logger.error('Unexpected error closing expired market', {
           marketId: String(marketId),

@@ -57,9 +57,10 @@ function makeInstrumentInfo(): InstrumentInfo {
     instrumentId: TOKEN_ID,
     marketId:     MARKET_ID,
     tickSize:     {} as Price,
-    minOrderSize: {} as Quantity,
-    active:       true,
-    expiresAt:    {} as Timestamp,
+    minOrderSize:  {} as Quantity,
+    minOrderValue: {} as Quantity,
+    active:        true,
+    expiresAt:     {} as Timestamp,
   };
 }
 

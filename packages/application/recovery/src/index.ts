@@ -48,3 +48,16 @@ export type { OrderReconcilerDeps } from './OrderReconciler.js';
 
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
 export type { IVenueOrderProvider } from './IVenueOrderProvider.js';
+
+export { FillsReconciler } from './FillsReconciler.js';
+export type {
+  FillsReconcilerDeps,
+  FillReconciliationReport,
+  IVenueFillProcessor,
+} from './FillsReconciler.js';
+
+export { StateReconciliationService } from './StateReconciliationService.js';
+export type {
+  StateReconciliationDeps,
+  StateReconciliationConfig,
+} from './StateReconciliationService.js';

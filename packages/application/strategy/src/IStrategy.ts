@@ -2,65 +2,71 @@
  * IStrategy — публичный интерфейс для пользовательских стратегий.
  *
  * @remarks
- * Стратегия получает изолированный TradingAPI через StrategyContext.
+ * ### Новая архитектура: reactive scheduling
+ * Стратегия **НЕ** подписывается на события. Вместо этого:
+ * 1. Events → State Stores (in-memory, sync)
+ * 2. State Stores → DirtyTracker.markDirty()
+ * 3. StrategyScheduler → strategy.tick(snapshot, reasons) → StrategyIntent[]
+ * 4. ExecutionEngine → исполняет intents
  *
  * ### Жизненный цикл:
- * 1. `StrategyRunner.start(strategy)` → `strategy.initialize(ctx)`
- * 2. Стратегия подписывается на события через `ctx.api.subscribe()`
- * 3. При срабатывании лимита риска: `strategy.stop()` (через RiskOrchestrator)
- * 4. При явной остановке: `StrategyRunner.stop(strategyId)` → `strategy.stop()`
+ * 1. `StrategyScheduler.register(registration)` → `strategy.initialize()`
+ * 2. Данные обновляются → scheduler вызывает `strategy.tick(snapshot, reasons)`
+ * 3. tick() возвращает StrategyIntent[] — декларативные намерения
+ * 4. При остановке: `strategy.stop()` → финальные intents (обычно CANCEL_ALL)
  *
  * @example
  * ```typescript
  * class SimpleQuoter implements IStrategy {
  *   readonly id = 'simple-quoter-1';
  *   readonly name = 'SimpleQuoter';
- *   private _ordersPlaced = 0;
+ *   private _tickCount = 0;
  *
- *   async initialize(ctx: StrategyContext): Promise<Result<void, Error>> {
- *     // assetId и instrumentId предоставляются конфигурацией стратегии
- *     const { assetId, instrumentId } = this._config;
- *     ctx.api.subscribe('BOOK_UPDATED', async (event) => {
- *       // Логика размещения ордеров
- *       const result = await ctx.api.placeOrder({
- *         asset: assetId,
- *         instrumentId,
- *         side: 'BUY',
- *         price: event.topOfBook.bestAsk,
- *         size: Quantity.of(new Decimal('10')),
- *       });
- *       if (result.ok) this._ordersPlaced++;
- *     });
+ *   async initialize(): Promise<Result<void, Error>> {
+ *     // Без подписок — стратегия работает через tick()
  *     return Ok(undefined);
  *   }
  *
- *   async stop(): Promise<void> {
- *     // cleanup: отменить открытые ордера и т.п.
+ *   tick(snapshot: StrategySnapshot, reasons: ReadonlySet<TriggerReason>): StrategyIntent[] {
+ *     this._tickCount++;
+ *     const { topOfBook, portfolio } = snapshot;
+ *     if (!topOfBook || !portfolio) return [];
+ *
+ *     return [
+ *       { type: 'CANCEL_ALL' },
+ *       { type: 'PLACE', side: 'BUY', price: topOfBook.bestBid, size: Quantity.of(new Decimal('10')) },
+ *     ];
+ *   }
+ *
+ *   stop(): StrategyIntent[] {
+ *     return [{ type: 'CANCEL_ALL' }];
  *   }
  *
  *   getMetrics() {
- *     return { ordersPlaced: this._ordersPlaced };
+ *     return { tickCount: this._tickCount };
  *   }
  * }
  * ```
  */
 import type { Result } from '@polymarket/result';
-import type { StrategyContext } from './StrategyContext.js';
+import type { StrategySnapshot } from './types/StrategySnapshot.js';
+import type { StrategyIntent } from './types/StrategyIntent.js';
+import type { TriggerReason } from './types/TriggerReason.js';
 
 /**
  * Интерфейс торговой стратегии.
  *
  * @remarks
- * Реализуется пользовательскими стратегиями (не в этом пакете).
- * StrategyRunner управляет жизненным циклом.
+ * Реализуется пользовательскими стратегиями.
+ * StrategyScheduler управляет жизненным циклом и вызывает tick().
  */
 export interface IStrategy {
   /**
    * Уникальный идентификатор стратегии.
    *
    * @remarks
-   * Используется для трекинга в `StrategyRunner._strategies` Map
-   * и для изоляции ордеров в `TradingAPI`.
+   * Используется для трекинга в StrategyScheduler,
+   * маршрутизации dirty flags и изоляции ордеров.
    */
   readonly id: string;
 
@@ -70,34 +76,51 @@ export interface IStrategy {
   readonly name: string;
 
   /**
-   * Инициализация стратегии.
+   * Однократная инициализация.
    *
-   * @param context - StrategyContext с изолированным TradingAPI
-   * @returns `Ok(undefined)` при успехе или `Err(Error)` при ошибке инициализации
+   * @returns `Ok(undefined)` при успехе или `Err(Error)` при ошибке
    *
    * @remarks
-   * Вызывается один раз при `StrategyRunner.start()`.
-   * В этом методе стратегия должна подписаться на нужные события через `context.api.subscribe()`.
+   * Вызывается один раз при `StrategyScheduler.register()`.
+   * Без подписок на events — стратегия работает через tick().
+   * Используется для загрузки конфигурации, подключения к внешним сервисам и т.п.
    *
-   * Если `initialize()` вернул `Err`, StrategyRunner:
-   * - Вызовет `context.api.unsubscribeAll()` для cleanup
-   * - НЕ добавит стратегию в активные
-   * - Вернёт ошибку вызывающей стороне
+   * Если `initialize()` вернул `Err`, StrategyScheduler:
+   * - НЕ регистрирует стратегию
+   * - Возвращает ошибку вызывающей стороне
    */
-  initialize(context: StrategyContext): Promise<Result<void, Error>>;
+  initialize(): Promise<Result<void, Error>>;
 
   /**
-   * Остановка стратегии.
+   * Один цикл: данные → решение → намерения.
+   *
+   * @param snapshot - Readonly snapshot состояния (market data, orders, portfolio, timing)
+   * @param reasons - Что изменилось с последнего tick (BOOK, TRADE, FILL, ...)
+   * @returns Массив намерений (PLACE, CANCEL, CANCEL_ALL) или [] (ничего не делать)
+   *
+   * @remarks
+   * **СИНХРОННЫЙ.** Scheduler вызывает, передаёт готовый snapshot.
+   * Стратегия не делает async calls — только чтение из snapshot и логика.
+   *
+   * Возвращённые intents передаются в ExecutionEngine для нормализации
+   * (dedupe) и исполнения.
+   */
+  tick(snapshot: StrategySnapshot, reasons: ReadonlySet<TriggerReason>): StrategyIntent[];
+
+  /**
+   * Cleanup. Возвращает финальные intents.
+   *
+   * @returns Финальные intents (обычно `[{ type: 'CANCEL_ALL' }]`)
    *
    * @remarks
    * Вызывается при:
-   * - Явном запросе: `StrategyRunner.stop(strategyId)`
-   * - Срабатывании риск-лимита: `RiskOrchestrator` → `StrategyRunner.onRiskBreached()`
-   * - Системной остановке: `StrategyRunner.stopAll()`
+   * - Явном запросе: `StrategyScheduler.unregister(strategyId)`
+   * - Срабатывании риск-лимита: `scheduler.onRiskBreached()`
+   * - Системной остановке: `scheduler.stopAll()`
    *
-   * После `stop()` StrategyRunner автоматически вызовет `tradingAPI.unsubscribeAll()`.
+   * Возвращённые intents исполняются ExecutionEngine перед удалением стратегии.
    */
-  stop(): Promise<void>;
+  stop(): StrategyIntent[];
 
   /**
    * Текущие метрики стратегии.
@@ -105,7 +128,6 @@ export interface IStrategy {
    * @returns Объект с метриками (формат на усмотрение стратегии)
    *
    * @remarks
-   * Вызывается `StrategyRunner.getMetrics()` для мониторинга.
    * Должен быть безопасен для частых вызовов и не изменять состояние.
    */
   getMetrics(): Record<string, unknown>;

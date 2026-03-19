@@ -1,26 +1,16 @@
 /**
  * Тесты MarketExpiryMonitor.
- *
- * @remarks
- * Покрывает:
- * - Lifecycle: start(), stop(), повторный start() (no-op)
- * - Трекинг рынков через MARKET_OPENED / MARKET_CLOSED
- * - _checkExpired(): закрытие просроченных рынков
- * - Обработка ошибок CloseMarketUseCase
- * - Snapshot-подход: expired собираются до await, не подвержены concurrent modification
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { MarketExpiryMonitor } from '../src/MarketExpiryMonitor.js';
 import type { MarketExpiryMonitorDeps, MarketExpiryMonitorConfig } from '../src/MarketExpiryMonitor.js';
+import type { IRemovalPolicy } from '../src/IRemovalPolicy.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus, MarketOpenedEvent, MarketClosedEvent } from '@polymarket/event-bus';
-import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
-import type { CloseMarketUseCase } from '@polymarket/market-lifecycle';
+import type { IMarketCatalog, IBalanceAllocator, InstrumentInfo } from '@polymarket/ports';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, MarketId, InstrumentId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/value-objects';
-import { Ok, Err } from '@polymarket/result';
-import { TradingError } from '@polymarket/errors';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -31,8 +21,7 @@ const INSTR_ID_1 = 'inst-1' as unknown as InstrumentId;
 const INSTR_ID_2 = 'inst-2' as unknown as InstrumentId;
 
 const NOW_MS = 1_700_000_000_000;
-const FUTURE_MS = NOW_MS + 60_000; // +1 мин — не истёк
-const EXPIRED_MS = NOW_MS - 1; // -1 мс — уже истёк
+const FUTURE_MS = NOW_MS + 60_000;
 
 function makeTimestamp(ms: number) {
   const r = TimestampService.create(ms);
@@ -67,8 +56,24 @@ function makeCatalog(): jest.Mocked<IMarketCatalog> {
   };
 }
 
-function makeCloseUseCase() {
-  return { execute: jest.fn<CloseMarketUseCase['execute']>() };
+function makeAllocator(): jest.Mocked<IBalanceAllocator> {
+  return {
+    allocateToNewMarkets: jest.fn<IBalanceAllocator['allocateToNewMarkets']>(),
+    addMarket: jest.fn<IBalanceAllocator['addMarket']>(),
+    releaseWithPnL: jest.fn<IBalanceAllocator['releaseWithPnL']>(),
+    release: jest.fn<IBalanceAllocator['release']>(),
+    getAllocation: jest.fn<IBalanceAllocator['getAllocation']>().mockReturnValue(undefined),
+    updateTotalBalance: jest.fn<IBalanceAllocator['updateTotalBalance']>(),
+    canAddMarket: jest.fn<IBalanceAllocator['canAddMarket']>(),
+    getStats: jest.fn<IBalanceAllocator['getStats']>(),
+    restoreAllocations: jest.fn<IBalanceAllocator['restoreAllocations']>(),
+  };
+}
+
+function makePolicy(): jest.Mocked<IRemovalPolicy> {
+  return {
+    evaluate: jest.fn<IRemovalPolicy['evaluate']>().mockReturnValue([]),
+  };
 }
 
 function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, expiresAtMs = FUTURE_MS): InstrumentInfo {
@@ -92,11 +97,11 @@ async function flushMicrotasks(): Promise<void> {
 
 describe('MarketExpiryMonitor', () => {
   let catalog: jest.Mocked<IMarketCatalog>;
-  let closeUseCase: ReturnType<typeof makeCloseUseCase>;
+  let allocator: jest.Mocked<IBalanceAllocator>;
+  let policy: jest.Mocked<IRemovalPolicy>;
   let logger: ILogger;
   let monitor: MarketExpiryMonitor;
 
-  /** Захваченные event-handlers */
   let openedHandler: ((e: MarketOpenedEvent) => Promise<void>) | undefined;
   let closedHandler: ((e: MarketClosedEvent) => Promise<void>) | undefined;
   let unsubscribeOpenedFn: jest.Mock;
@@ -110,7 +115,8 @@ describe('MarketExpiryMonitor', () => {
 
   function buildMonitor(clockMs = NOW_MS, cfg?: Partial<MarketExpiryMonitorConfig>): MarketExpiryMonitor {
     const deps: MarketExpiryMonitorDeps = {
-      closeMarketUseCase: closeUseCase as unknown as CloseMarketUseCase,
+      balanceAllocator: allocator,
+      policy,
       marketCatalog: catalog,
       eventBus,
       clock: makeClock(clockMs),
@@ -122,7 +128,8 @@ describe('MarketExpiryMonitor', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     catalog = makeCatalog();
-    closeUseCase = makeCloseUseCase();
+    allocator = makeAllocator();
+    policy = makePolicy();
     logger = makeLogger();
     openedHandler = undefined;
     closedHandler = undefined;
@@ -175,7 +182,7 @@ describe('MarketExpiryMonitor', () => {
       monitor.start();
       monitor.start();
 
-      expect(eventBus.subscribe).toHaveBeenCalledTimes(2); // только первый раз
+      expect(eventBus.subscribe).toHaveBeenCalledTimes(2);
       expect(logger.warn).toHaveBeenCalledWith(
         'MarketExpiryMonitor already running, ignoring start()',
       );
@@ -193,10 +200,10 @@ describe('MarketExpiryMonitor', () => {
       monitor.start();
       monitor.stop();
 
-      closeUseCase.execute.mockClear();
+      allocator.release.mockClear();
       await jest.runAllTimersAsync();
 
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
+      expect(allocator.release).not.toHaveBeenCalled();
     });
 
     it('stop() без предварительного start() — no error', () => {
@@ -235,34 +242,66 @@ describe('MarketExpiryMonitor', () => {
     });
 
     it('удаляет рынок из трекинга при MARKET_CLOSED', async () => {
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS));
-      closeUseCase.execute.mockResolvedValue(Ok(undefined));
+      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
+      policy.evaluate.mockReturnValue([MARKET_ID_1]);
 
-      // Добавляем, потом убираем
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
       await closedHandler!({ type: 'MARKET_CLOSED', marketId: MARKET_ID_1 } as any);
 
-      // Продвигаем интервал — рынок удалён из трекинга, закрытие не вызывается
+      policy.evaluate.mockClear();
+      allocator.release.mockClear();
+
       await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
       await flushMicrotasks();
 
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
+      // _trackedMarkets пуст → _checkExpired выходит сразу, policy не вызывается
+      expect(policy.evaluate).not.toHaveBeenCalled();
+      expect(allocator.release).not.toHaveBeenCalled();
     });
   });
 
   // ── _checkExpired() ───────────────────────────────────────────────────────
 
   describe('_checkExpired()', () => {
-    it('не вызывает closeMarketUseCase если нет отслеживаемых рынков', async () => {
+    it('не вызывает policy если нет отслеживаемых рынков', async () => {
       monitor.start();
 
       await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
       await flushMicrotasks();
 
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
+      expect(policy.evaluate).not.toHaveBeenCalled();
     });
 
-    it('не закрывает рынок если expiresAtMs > now', async () => {
+    it('не закрывает рынок если policy вернула пустой список', async () => {
+      monitor.start();
+      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
+      policy.evaluate.mockReturnValue([]);
+
+      await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
+
+      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
+      await flushMicrotasks();
+
+      expect(allocator.release).not.toHaveBeenCalled();
+    });
+
+    it('вызывает release и публикует MARKET_CLOSED для рынков из policy', async () => {
+      monitor.start();
+      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
+      policy.evaluate.mockReturnValue([MARKET_ID_1]);
+
+      await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
+
+      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
+      await flushMicrotasks();
+
+      expect(allocator.release).toHaveBeenCalledWith(MARKET_ID_1);
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'MARKET_CLOSED', marketId: MARKET_ID_1, reason: 'EXPIRED' }),
+      );
+    });
+
+    it('передаёт корректный MarketContext в policy', async () => {
       monitor.start();
       catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
 
@@ -271,37 +310,21 @@ describe('MarketExpiryMonitor', () => {
       await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
       await flushMicrotasks();
 
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
+      expect(policy.evaluate).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ marketId: MARKET_ID_1 }),
+        ]),
+      );
     });
 
-    it('закрывает рынок с reason EXPIRED если expiresAtMs <= now', async () => {
-      monitor = buildMonitor(NOW_MS);
-      monitor.start();
-
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS));
-      closeUseCase.execute.mockResolvedValue(Ok(undefined));
-
-      await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
-
-      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
-      await flushMicrotasks();
-
-      expect(closeUseCase.execute).toHaveBeenCalledWith({
-        marketId: MARKET_ID_1,
-        accountId: ACCOUNT_ID,
-        reason: 'EXPIRED',
-      });
-    });
-
-    it('закрывает несколько истёкших рынков', async () => {
-      monitor = buildMonitor(NOW_MS);
+    it('закрывает несколько рынков возвращённых policy', async () => {
       monitor.start();
 
       catalog.getByMarketId
-        .mockReturnValueOnce(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS))
-        .mockReturnValueOnce(makeInstrument(MARKET_ID_2, INSTR_ID_2, EXPIRED_MS));
+        .mockReturnValueOnce(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS))
+        .mockReturnValueOnce(makeInstrument(MARKET_ID_2, INSTR_ID_2, FUTURE_MS));
 
-      closeUseCase.execute.mockResolvedValue(Ok(undefined));
+      policy.evaluate.mockReturnValue([MARKET_ID_1, MARKET_ID_2]);
 
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_2 } as any);
@@ -309,39 +332,21 @@ describe('MarketExpiryMonitor', () => {
       await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
       await flushMicrotasks();
 
-      expect(closeUseCase.execute).toHaveBeenCalledTimes(2);
-      expect(closeUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ marketId: MARKET_ID_1, reason: 'EXPIRED' }),
+      expect(allocator.release).toHaveBeenCalledTimes(2);
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ marketId: MARKET_ID_1 }),
       );
-      expect(closeUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ marketId: MARKET_ID_2, reason: 'EXPIRED' }),
-      );
-    });
-
-    it('логирует ошибку если closeMarketUseCase вернул Err', async () => {
-      monitor = buildMonitor(NOW_MS);
-      monitor.start();
-
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS));
-      closeUseCase.execute.mockResolvedValue(Err(new TradingError('Cancel failed')));
-
-      await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
-
-      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
-      await flushMicrotasks();
-
-      expect(logger.error).toHaveBeenCalledWith(
-        'Failed to close expired market',
-        expect.objectContaining({ marketId: String(MARKET_ID_1) }),
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ marketId: MARKET_ID_2 }),
       );
     });
 
-    it('логирует ошибку если closeMarketUseCase бросает исключение', async () => {
-      monitor = buildMonitor(NOW_MS);
+    it('логирует ошибку если eventBus.publish бросает', async () => {
       monitor.start();
-
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS));
-      closeUseCase.execute.mockRejectedValue(new Error('Unexpected failure'));
+      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
+      policy.evaluate.mockReturnValue([MARKET_ID_1]);
+      (eventBus.publish as jest.MockedFunction<IEventBus['publish']>)
+        .mockRejectedValue(new Error('Bus failure'));
 
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
 
@@ -354,31 +359,10 @@ describe('MarketExpiryMonitor', () => {
       );
     });
 
-    it('проверяет истечение периодически каждые checkIntervalMs', async () => {
-      monitor = buildMonitor(NOW_MS);
-      monitor.start();
-      closeUseCase.execute.mockResolvedValue(Ok(undefined));
-
-      // Первый интервал — рынки не истекли
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
-      await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
-
-      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
-      await flushMicrotasks();
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
-
-      // Второй интервал — тот же рынок ещё не истёк
-      await jest.advanceTimersByTimeAsync(config.checkIntervalMs);
-      await flushMicrotasks();
-      expect(closeUseCase.execute).not.toHaveBeenCalled();
-    });
-
     it('логирует info о закрытии истёкших рынков (count)', async () => {
-      monitor = buildMonitor(NOW_MS);
       monitor.start();
-
-      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, EXPIRED_MS));
-      closeUseCase.execute.mockResolvedValue(Ok(undefined));
+      catalog.getByMarketId.mockReturnValue(makeInstrument(MARKET_ID_1, INSTR_ID_1, FUTURE_MS));
+      policy.evaluate.mockReturnValue([MARKET_ID_1]);
 
       await openedHandler!({ type: 'MARKET_OPENED', marketId: MARKET_ID_1 } as any);
 

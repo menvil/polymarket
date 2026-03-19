@@ -175,8 +175,12 @@ import type { Price, Quantity, Side } from '@polymarket/value-objects';
 export type StrategyIntent =
   | { readonly type: 'PLACE'; readonly side: Side; readonly price: Price; readonly size: Quantity }
   | { readonly type: 'CANCEL'; readonly orderId: OrderId }
-  | { readonly type: 'CANCEL_ALL' }
-  | { readonly type: 'AMEND'; readonly orderId: OrderId; readonly newPrice?: Price; readonly newSize?: Quantity };
+  | { readonly type: 'CANCEL_ALL' };
+
+// AMEND удалён: на Polymarket нет атомарного amend.
+// Cancel + Place — два отдельных intenta. Стратегия сама решает когда и как.
+// Причины: race condition между cancel и place, нет гарантии что place пройдёт
+// после cancel, risk check на новый place может не пройти.
 ```
 
 ### 1.3 StrategySnapshot.ts
@@ -407,7 +411,7 @@ export interface IStrategy {
    *
    * @param snapshot - Readonly состояние (market, market data, orders, portfolio, timing)
    * @param reasons - Что изменилось с последнего tick (BOOK, TRADE, FILL, ...)
-   * @returns Массив намерений (PLACE, CANCEL, CANCEL_ALL, AMEND) или [] (ничего не делать)
+   * @returns Массив намерений (PLACE, CANCEL, CANCEL_ALL) или [] (ничего не делать)
    */
   tick(snapshot: StrategySnapshot, reasons: ReadonlySet<TriggerReason>): StrategyIntent[];
 
@@ -497,8 +501,14 @@ export class ExecutionEngine {
   constructor(private readonly _deps: ExecutionEngineDeps) {}
 
   /**
-   * Исполняет intents.
-   * Порядок: CANCEL_ALL → CANCEL → AMEND (cancel+place) → PLACE.
+   * Нормализует и исполняет intents.
+   *
+   * Нормализация (dedupe):
+   * 1. Если есть CANCEL_ALL → убираем все отдельные CANCEL (они дублируют)
+   * 2. Dedupe CANCEL по orderId (один orderId → один cancel)
+   * 3. Dedupe PLACE по key (side + price) — оставить последний
+   *
+   * Порядок исполнения: CANCEL_ALL → CANCEL → PLACE.
    * Cancels параллельно, places последовательно (баланс обновляется).
    * Risk — внутри PlaceOrderUseCase (не дублируем).
    */
@@ -507,13 +517,15 @@ export class ExecutionEngine {
 ```
 
 **Алгоритм execute():**
-1. Разделить intents: CANCEL_ALL → CANCEL → AMEND → PLACE
+1. **Normalize** — dedupe и очистка:
+   - Если есть CANCEL_ALL → удалить все отдельные CANCEL (дублирование)
+   - Dedupe CANCEL по orderId (Set)
+   - Dedupe PLACE по `${side}:${price}` — оставить последний
 2. CANCEL_ALL → orderStateStore.getOpenOrders(strategyId) → cancelOrderUseCase для каждого
 3. CANCEL → cancelOrderUseCase(orderId)
-4. AMEND → cancel(oldOrderId) + place(newParams) — не атомарно
-5. PLACE → orderId = crypto.randomUUID(), portfolio = portfolioStore.get(), placeOrderUseCase.execute()
-6. Cancels параллельно, places последовательно
-7. Собрать ExecutionReport
+4. PLACE → orderId = crypto.randomUUID(), portfolio = portfolioStore.get(), placeOrderUseCase.execute()
+5. Cancels параллельно, places последовательно
+6. Собрать ExecutionReport
 
 **Тесты:** ExecutionEngine.test.ts
 
@@ -548,9 +560,15 @@ export interface StrategySchedulerDeps {
 export class StrategyScheduler {
   /** instrumentId → Set<strategyId> */
   private readonly _instrumentToStrategies = new Map<string, Set<string>>();
-  /** strategyId → entry (strategy, config, lastRunMs, executionPromise, market) */
+  /** strategyId → entry (strategy, config, lastRunMs, running, rerunRequested, market) */
   private readonly _entries = new Map<string, StrategyEntry>();
-  private _timer: NodeJS.Timeout | undefined;
+  /** Event-driven queue: стратегии ожидающие tick */
+  private readonly _queue: string[] = [];
+  /** Set для O(1) проверки «уже в очереди?» */
+  private readonly _queued = new Set<string>();
+  private _stopped = false;
+  /** Timer IDs для deferred re-queue (throttled strategies) */
+  private readonly _deferredTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(deps: StrategySchedulerDeps) {
     deps.marketDataStore.setOnChange((instrumentId, reason) => {
@@ -560,7 +578,7 @@ export class StrategyScheduler {
 
   async register(reg: StrategyRegistration): Promise<Result<void, Error>>;
   async unregister(strategyId: string): Promise<void>;
-  start(checkIntervalMs?: number): void;  // default 5ms
+  start(): void;   // Запускает heartbeat таймеры, больше НЕ setInterval(5ms)
   stop(): void;
   async stopAll(): Promise<void>;
   onOrderChanged(strategyId: string, reason: TriggerReason): void;
@@ -590,23 +608,56 @@ private _buildSnapshot(entry: StrategyEntry): StrategySnapshot {
 }
 ```
 
-**Внутренний алгоритм (в setInterval):**
+**Внутренний алгоритм (event-driven queue + coalescing):**
+
+Вместо `setInterval(5ms)` который поллит все стратегии каждые 5ms,
+используем event-driven очередь: события сами ставят стратегии в очередь.
+
+### markDirty → enqueue
 
 ```
-for each entry in _entries:
-  if entry.executionPromise !== undefined → skip
+markDirty(strategyId, reason):
+  dirtyTracker.markDirty(strategyId, reason)
+  if strategyId NOT in _queued:
+    _queued.add(strategyId)
+    _queue.push(strategyId)
+    _scheduleProcessing()  // queueMicrotask или setImmediate
+```
 
-  hasPriority = dirtyTracker.hasPriorityTrigger(id, config.priorityTriggers)
-  isDirty = dirtyTracker.isDirty(id)
-  elapsed = clock.now() - entry.lastRunMs
+### _processQueue (microtask worker)
 
-  shouldRun =
-    (isDirty AND elapsed >= config.minIntervalMs)
-    OR hasPriority
-    OR elapsed >= config.maxIdleMs
+```
+_processQueue():
+  while _queue is not empty AND not _stopped:
+    strategyId = _queue.shift()
+    _queued.delete(strategyId)
 
-  if !shouldRun → skip
+    entry = _entries.get(strategyId)
+    if !entry → continue
 
+    // ── Throttle check ──────────────────────────────
+    hasPriority = dirtyTracker.hasPriorityTrigger(id, config.priorityTriggers)
+    elapsed = clock.now() - entry.lastRunMs
+    remaining = config.minIntervalMs - elapsed
+
+    if remaining > 0 AND NOT hasPriority:
+      // Ещё рано — отложить на remaining ms
+      _deferRequeue(strategyId, remaining)
+      continue
+
+    // ── Coalescing: если уже running → запомнить и вернуться ──
+    if entry.running:
+      entry.rerunRequested = true
+      continue
+
+    // ── Execute ─────────────────────────────────────
+    _executeTick(entry)
+```
+
+### _executeTick (coalescing pattern)
+
+```
+_executeTick(entry):
   snapshot = _buildSnapshot(entry)
   reasons = dirtyTracker.getReasons(id)
   dirtyTracker.clearDirty(id)
@@ -614,25 +665,69 @@ for each entry in _entries:
 
   intents = entry.strategy.tick(snapshot, reasons)   // SYNC
 
-  if intents.length === 0 → continue
+  if intents.length === 0 → return
 
-  entry.executionPromise = executionEngine            // ASYNC fire-and-forget
+  entry.running = true
+  executionEngine
     .execute(executionCtx, intents)
     .then(report => _logReport(id, report))
     .catch(err => _logError(id, err))
-    .finally(() => { entry.executionPromise = undefined })
+    .finally(() => {
+      entry.running = false
+      // ── Coalescing: новые данные пришли пока мы исполняли ──
+      if entry.rerunRequested:
+        entry.rerunRequested = false
+        _scheduleImmediate(strategyId)  // enqueue для немедленного rerun
+    })
 ```
+
+### _deferRequeue
+
+```
+_deferRequeue(strategyId, delayMs):
+  // Отменяем предыдущий таймер если есть (идемпотентность)
+  clearTimeout(_deferredTimers.get(strategyId))
+  _deferredTimers.set(strategyId, setTimeout(() => {
+    _deferredTimers.delete(strategyId)
+    if dirtyTracker.isDirty(strategyId):
+      _enqueue(strategyId)
+  }, delayMs))
+```
+
+### Heartbeat (maxIdleMs)
+
+```
+// При register: запускаем periodic timer per strategy
+entry.heartbeatTimer = setInterval(() => {
+  dirtyTracker.markDirty(strategyId, 'TIMER')
+  _enqueue(strategyId)
+}, config.maxIdleMs)
+```
+
+### Преимущества над setInterval(5ms):
+
+| setInterval(5ms) | Event-driven queue |
+|---|---|
+| Поллит ВСЕ стратегии каждые 5ms | Обрабатывает ТОЛЬКО dirty стратегии |
+| O(strategies × time) | O(events) |
+| 200 стратегий = 40 000 checks/sec | 200 стратегий, 10 events/sec = 10 ticks/sec |
+| CPU spin при idle | Zero CPU при отсутствии событий |
+| Latency до 5ms (worst case) | Latency < 1ms (microtask) |
+| executionPromise skip → потеря данных | Coalescing → rerun с fresh данными |
 
 **Тесты:** StrategyScheduler.test.ts
 - register / unregister lifecycle
-- Dirty routing: BOOK → markDirty → tick вызывается
-- Throttle: minIntervalMs
-- Priority: FILL → немедленный tick
-- maxIdleMs: heartbeat
-- Running guard: не запускает tick пока execute идёт
+- Dirty routing: BOOK → markDirty → enqueue → tick вызывается
+- Event-driven: нет tick без dirty (zero CPU при idle)
+- Throttle: minIntervalMs → deferred re-queue
+- Priority: FILL → немедленный tick (bypass throttle)
+- maxIdleMs: heartbeat timer → TIMER reason
+- Coalescing: данные приходят во время execute → rerunRequested → rerun с fresh snapshot
+- Coalescing: несколько dirty событий во время execute → один rerun (не N)
 - buildSnapshot: корректные данные из stores (portfolio целиком, market целиком)
 - stop/stopAll: strategy.stop() → execute(CANCEL_ALL)
 - onRiskBreached: stop конкретной или всех
+- Intent normalization: CANCEL_ALL + CANCEL → только CANCEL_ALL (dedupe в ExecutionEngine)
 
 ---
 
@@ -881,11 +976,35 @@ apps/bot/src/strategyFactory.ts
 ### 5. Risk: два уровня
 ✅ Решено. Strategy-level (pre-trade в PlaceOrderUseCase) + System-level (post-trade DrawdownRiskMonitor).
 
-### 6. AMEND на Polymarket
-✅ Cancel + Place (не атомарно). Ok для v1.
+### 6. AMEND удалён из StrategyIntent
+✅ Решено. AMEND НЕ входит в StrategyIntent:
+- Polymarket не поддерживает атомарный amend
+- Cancel + Place как два отдельных intenta безопаснее
+- Каждый проходит свой risk check независимо
+- Нет race condition: стратегия видит результат cancel в следующем tick и решает сама
 
-### 7. execute() fire-and-forget
+### 7. execute() fire-and-forget + coalescing
 ✅ By design. Результат в следующем tick через ORDER_UPDATE dirty.
+Если новые данные пришли пока execute работал — coalescing pattern
+запускает rerun с актуальным snapshot (вместо пропуска тика).
+
+### 8. Event-driven scheduler (не setInterval polling)
+✅ Решено. `setInterval(5ms)` заменён на event-driven queue:
+- markDirty → enqueue → microtask worker
+- O(events) вместо O(strategies × time)
+- Zero CPU при idle
+- Latency < 1ms (microtask) вместо до 5ms (poll interval)
+
+### 9. Coalescing вместо executionPromise skip
+✅ Решено. Старый подход: `if executionPromise → skip` (потеря данных).
+Новый: `if running → rerunRequested = true`. После завершения execute —
+немедленный rerun с актуальным snapshot.
+
+### 10. Intent normalization в ExecutionEngine
+✅ Решено. Перед исполнением intents нормализуются:
+- CANCEL_ALL → удаляет все отдельные CANCEL (дублирование)
+- Dedupe CANCEL по orderId
+- Dedupe PLACE по `${side}:${price}`
 
 ## Исправляемые GAP'ы
 

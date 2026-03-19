@@ -1,0 +1,27 @@
+{
+  "strategy": "dumb",
+  "strategyParams": {
+    "orderSize": 5,
+    "buyOffsetPct": 10,
+    "profitMarginPct": 5,
+    "repriceThreshold": 0.08
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "anyOfKeywords": ["bitcoin", "crypto", "ETH", "BTC"],
+      "minLiquidity": 500
+    },
+    "scanPauseMs": 60000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 10,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:0x326A9569053C4815991C38a60B0B84F054c337f2"
+  }
+}

@@ -25,6 +25,21 @@ import type { ILogger } from '@polymarket/logger';
 import type { OrderId } from '@polymarket/ids';
 import type { IOrderRepository } from '@polymarket/ports';
 import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
+import type { Order } from '@polymarket/order';
+
+/**
+ * Callback для освобождения резервации баланса при внешней отмене ордера.
+ *
+ * @remarks
+ * Вызывается OrderUpdateHandler только при успешной обработке CANCELLED/EXPIRED
+ * от биржи (venue-initiated). Для внутренних отмен (CancelOrderUseCase) —
+ * unreserve выполняется в use case, этот callback не нужен.
+ *
+ * Двойного снятия не происходит: если CancelOrderUseCase отработал первым,
+ * ордер уже в статусе CANCELED → order.cancel() вернёт Err → ранний return
+ * без вызова callback.
+ */
+export type OnExternalOrderCancelled = (cancelledOrder: Order) => void;
 
 /**
  * Venue-обновление статуса ордера (из Polymarket WS order-channel).
@@ -49,11 +64,15 @@ export class OrderUpdateHandler {
    * @param _orders - Репозиторий ордеров для get/save
    * @param _eventBus - Event bus для публикации OrderEvent[]
    * @param _logger - Logger
+   * @param _onExternalCancel - Опциональный callback для освобождения резервации
+   *   баланса при venue-initiated отмене (внешняя отмена: пользователь или биржа).
+   *   Если не задан — unreserve не выполняется (допустимо в тестах и backtest).
    */
   constructor(
     private readonly _orders: IOrderRepository,
     private readonly _eventBus: IEventBus,
     private readonly _logger: ILogger,
+    private readonly _onExternalCancel?: OnExternalOrderCancelled,
   ) {}
 
   /**
@@ -117,6 +136,24 @@ export class OrderUpdateHandler {
     }
 
     const updatedOrder = result.value;
+
+    // Для venue-initiated отмен (CANCELLED/EXPIRED) — освобождаем резервацию баланса.
+    // CancelOrderUseCase делает unreserve сам; здесь обрабатываем только внешние случаи
+    // (ручная отмена на бирже или отмена биржей). Двойного снятия не происходит:
+    // если CancelOrderUseCase отработал первым — ордер уже CANCELED → order.cancel()
+    // вернул бы Err → мы вернулись бы раньше.
+    if ((update.type === 'CANCELLED' || update.type === 'EXPIRED') && this._onExternalCancel) {
+      try {
+        this._onExternalCancel(updatedOrder);
+      } catch (err) {
+        this._logger.error('onExternalCancel callback threw', {
+          orderId: String(update.orderId),
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+        // Не прерываем — продолжаем сохранение и публикацию событий
+      }
+    }
+
     // pullEvents() до save(): события извлекаются из order ДО персистентности,
     // чтобы в случае ошибки publish они были в локальном контексте для retry/logging.
     const events = updatedOrder.pullEvents();

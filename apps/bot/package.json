@@ -1,0 +1,39 @@
+{
+  "name": "@polymarket/bot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx --env-file=.env src/main.ts",
+    "dev":   "npx tsx --env-file=.env src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@polymarket/logger": "workspace:*",
+    "@polymarket/ids": "workspace:*",
+    "@polymarket/time": "workspace:*",
+    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/math": "workspace:*",
+    "@polymarket/result": "workspace:*",
+    "@polymarket/errors": "workspace:*",
+    "@polymarket/ports": "workspace:*",
+    "@polymarket/event-bus": "workspace:*",
+    "@polymarket/handlers": "workspace:*",
+    "@polymarket/strategy": "workspace:*",
+    "@polymarket/use-cases": "workspace:*",
+    "@polymarket/risk": "workspace:*",
+    "@polymarket/market-state": "workspace:*",
+    "@polymarket/market-discovery": "workspace:*",
+    "@polymarket/backtesting": "workspace:*",
+    "@polymarket/exchange": "workspace:*",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "@types/jest": "^29.5.12",
+    "typescript": "^5.4.0"
+  }
+}

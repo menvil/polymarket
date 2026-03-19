@@ -139,13 +139,13 @@ export class FillMapper {
    * - `taker_order_id` (string) — OrderId тейкера (hex)
    * - `market` (string) — ID рынка (hex)
    * - `asset_id` (string) — ID токена (числовой ERC1155 ID или internal строка)
-   * - `side` (string) — 'BUY' | 'SELL' (сторона ТЕЙКЕРА)
+   * - `side` (string, optional) — 'BUY' | 'SELL' (сторона ТЕЙКЕРА; отсутствует в MAKER-событиях)
    * - `size` (string) — объём тейкера
    * - `price` (string) — цена
    * - `fee_rate_bps` (string) — ставка комиссии в базисных пунктах (0 = no fee)
    * - `status` (string) — 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED'
    * - `owner` (string) — UUID пользователя (не используется напрямую)
-   * - `timestamp` (string) — Unix timestamp в секундах
+   * - `timestamp` (string) — Unix timestamp в миллисекундах (13 цифр, не в секундах)
    * - `trader_side` (string) — 'TAKER' | 'MAKER'
    * - `transaction_hash` (string, optional) — хэш транзакции → venueTradeId
    * - `maker_orders` (array, optional) — записи мейкеров [{ order_id, matched_amount, price, owner }]
@@ -245,16 +245,6 @@ export class FillMapper {
       );
     }
 
-    // Извлечь side тейкера (для мейкера будет инвертирован)
-    const takerSideRaw = raw['side'];
-    if (takerSideRaw !== 'BUY' && takerSideRaw !== 'SELL') {
-      return Err(
-        new ValidationError('Invalid trade event: side must be BUY or SELL', {
-          context: { field: 'side', value: takerSideRaw },
-        })
-      );
-    }
-
     // Извлечь timestamp
     const timestampRaw = raw['timestamp'];
     if (timestampRaw === undefined || timestampRaw === null) {
@@ -265,16 +255,19 @@ export class FillMapper {
       );
     }
 
-    const timestampSec = Number(String(timestampRaw));
-    if (!Number.isFinite(timestampSec) || timestampSec <= 0) {
+    // Polymarket fill события шлют timestamp в миллисекундах (13 цифр, ~1.7e12).
+    // Для обратной совместимости: если значение < 1e12 — считаем секундами и умножаем на 1000.
+    const timestampRawNum = Number(String(timestampRaw));
+    if (!Number.isFinite(timestampRawNum) || timestampRawNum <= 0) {
       return Err(
         new ValidationError('Invalid trade event: timestamp must be a positive number', {
           context: { field: 'timestamp', value: timestampRaw },
         })
       );
     }
+    const timestampMs = timestampRawNum < 1e12 ? timestampRawNum * 1000 : timestampRawNum;
 
-    const timestampResult = TimestampService.create(timestampSec * 1000);
+    const timestampResult = TimestampService.create(timestampMs);
     if (!timestampResult.ok) {
       return Err(
         new ValidationError(`Invalid trade event: ${timestampResult.error.message}`, {
@@ -283,11 +276,15 @@ export class FillMapper {
       );
     }
 
-    // Логика TAKER vs MAKER: определяем orderId, side, size, price
+    // Логика TAKER vs MAKER: определяем orderId, side, size, price, и effectiveTokenId.
+    // В cross-outcome fills (тейкер DOWN, мы мейкер UP) top-level asset_id = DOWN токен (тейкерский).
+    // Для MAKER нужно использовать asset_id из нашей записи в maker_orders[], а не top-level.
     let orderId;
     let side: 'BUY' | 'SELL';
     let priceDecimal: Decimal;
     let sizeDecimal: Decimal;
+    // По умолчанию — top-level tokenId. MAKER-ветка может переопределить.
+    let effectiveTokenId = tokenId;
 
     if (!isMaker) {
       // TAKER: orderId из taker_order_id, side/size/price из верхнего уровня
@@ -309,7 +306,47 @@ export class FillMapper {
         );
       }
 
-      side = takerSideRaw;
+      // side тейкера из верхнего уровня.
+      // В cross-outcome fills (тейкер BUY токен A, мейкеры BUY токен B) Polymarket
+      // не включает top-level side. Определяем по asset_id:
+      // - одинаковые asset_id → обычный fill, side обязателен
+      // - разные asset_id → cross-outcome → тейкер всегда BUY (обе стороны покупают за $1 пару)
+      const takerSideRaw = raw['side'];
+      if (takerSideRaw === 'BUY' || takerSideRaw === 'SELL') {
+        side = takerSideRaw;
+      } else {
+        // Fallback для cross-outcome: проверяем совпадение asset_id с maker_orders
+        const makerOrdersRaw = raw['maker_orders'];
+        const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
+        const isEntry = (o: unknown): o is Record<string, unknown> =>
+          o !== null && typeof o === 'object';
+        const firstMakerAssetId = makerOrders.length > 0 && isEntry(makerOrders[0])
+          ? makerOrders[0]['asset_id']
+          : undefined;
+
+        if (typeof firstMakerAssetId === 'string' && firstMakerAssetId !== assetIdRaw.trim()) {
+          // Cross-outcome: тейкер всегда BUY своего токена
+          side = 'BUY';
+        } else {
+          // Same-asset fill без top-level side: тейкер — противоположная сторона от мейкера.
+          // Например: мейкер BUY → тейкер SELL (продаём в ожидающий BUY-ордер).
+          // Это происходит когда наш лимитный ордер исполняется немедленно как taker.
+          const firstMakerSideRaw = makerOrders.length > 0 && isEntry(makerOrders[0])
+            ? makerOrders[0]['side']
+            : undefined;
+          if (firstMakerSideRaw === 'BUY') {
+            side = 'SELL';
+          } else if (firstMakerSideRaw === 'SELL') {
+            side = 'BUY';
+          } else {
+            return Err(
+              new ValidationError('Invalid trade event: side must be BUY or SELL', {
+                context: { field: 'side', value: takerSideRaw },
+              })
+            );
+          }
+        }
+      }
 
       const priceResult = parseDecimalPositive(raw['price'], 'price');
       if (!priceResult.ok) return Err(priceResult.error);
@@ -319,39 +356,62 @@ export class FillMapper {
       if (!sizeResult.ok) return Err(sizeResult.error);
       sizeDecimal = sizeResult.value;
     } else {
-      // MAKER: orderId из maker_orders (по owner UUID), side инвертирован
+      // MAKER: orderId из maker_orders.
+      // Поиск нашего ордера: сначала по owner UUID, затем по maker_address (ETH wallet).
+      // В cross-outcome fills (тейкер продаёт DOWN, мы мейкер UP) top-level owner = UUID тейкера,
+      // поэтому fallback на maker_address обязателен.
       const ownerRaw = raw['owner'];
+      const makerAddressRaw = raw['maker_address']; // наш ETH-адрес, injected из credentials
       const makerOrdersRaw = raw['maker_orders'];
       const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
 
-      // owner UUID обязателен для MAKER: без него невозможно определить чей ордер
-      if (typeof ownerRaw !== 'string' || ownerRaw.trim().length === 0) {
-        return Err(
-          new ValidationError(
-            'Invalid trade event: missing owner field for MAKER trader_side',
-            { context: { field: 'owner', value: ownerRaw } }
+      // Поиск по owner UUID (прямые fills) или по maker_address (cross-outcome fills)
+      const isEntry = (o: unknown): o is Record<string, unknown> =>
+        o !== null && typeof o === 'object';
+
+      let makerOrder = typeof ownerRaw === 'string' && ownerRaw.length > 0
+        ? makerOrders.find(
+            (o) => isEntry(o) && (o as Record<string, unknown>)['owner'] === ownerRaw
           )
+        : undefined;
+
+      if (!makerOrder && typeof makerAddressRaw === 'string' && makerAddressRaw.length > 0) {
+        const addrLower = makerAddressRaw.toLowerCase();
+        makerOrder = makerOrders.find(
+          (o) => isEntry(o) &&
+            typeof (o as Record<string, unknown>)['maker_address'] === 'string' &&
+            ((o as Record<string, unknown>)['maker_address'] as string).toLowerCase() === addrLower
         );
       }
-
-      // Найти maker_order строго по owner UUID — тихий fallback запрещён
-      const makerOrder = makerOrders.find(
-        (o: unknown) =>
-          o !== null &&
-          typeof o === 'object' &&
-          (o as Record<string, unknown>)['owner'] === ownerRaw
-      );
 
       if (!makerOrder) {
         return Err(
           new ValidationError(
-            'Invalid trade event: no maker_orders entry matching owner UUID',
-            { context: { field: 'owner', value: ownerRaw, makerOrderCount: makerOrders.length } }
+            'Invalid trade event: cannot identify our maker_order (tried owner UUID and maker_address)',
+            {
+              context: {
+                owner: ownerRaw,
+                maker_address: makerAddressRaw,
+                makerOrderCount: makerOrders.length,
+              },
+            }
           )
         );
       }
 
       const makerOrderRecord = makerOrder as Record<string, unknown>;
+
+      // В cross-outcome fills maker_orders[].asset_id — это наш токен (UP/DOWN),
+      // а top-level asset_id — токен тейкера (противоположный исход).
+      // Используем asset_id из нашей maker_order записи если он присутствует.
+      const makerAssetIdRaw = makerOrderRecord['asset_id'];
+      if (typeof makerAssetIdRaw === 'string' && makerAssetIdRaw.trim().length > 0) {
+        const parsedMakerAsset = parseAssetId(makerAssetIdRaw.trim());
+        if (parsedMakerAsset) {
+          effectiveTokenId = parsedMakerAsset;
+        }
+      }
+
       const makerOrderIdRaw = makerOrderRecord['order_id'];
       if (typeof makerOrderIdRaw !== 'string' || makerOrderIdRaw.trim().length === 0) {
         return Err(
@@ -370,8 +430,24 @@ export class FillMapper {
         );
       }
 
-      // Мейкер стоит на противоположной стороне от тейкера
-      side = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
+      // Сторона мейкера — берём из maker_orders[].side (реальный формат Polymarket).
+      // Если поле отсутствует (старый формат/тесты) — инвертируем тейкерский side.
+      const makerSideRaw = makerOrderRecord['side'];
+      if (makerSideRaw === 'BUY' || makerSideRaw === 'SELL') {
+        side = makerSideRaw;
+      } else {
+        // Fallback: инвертируем top-level side тейкера (требует его наличия)
+        const takerSideRaw = raw['side'];
+        if (takerSideRaw !== 'BUY' && takerSideRaw !== 'SELL') {
+          return Err(
+            new ValidationError(
+              'Invalid trade event: cannot determine maker side — no side in maker_orders entry and no valid top-level side',
+              { context: { field: 'side / maker_orders[].side', value: takerSideRaw } }
+            )
+          );
+        }
+        side = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
+      }
 
       // Цена мейкера из maker_orders (может отличаться для limit ордеров)
       // Не используем fallback на taker-данные: отсутствие поля = ошибка парсинга
@@ -420,13 +496,14 @@ export class FillMapper {
     }
 
     // Создать Fill с settlementAssetId = USDC
+    // effectiveTokenId: для MAKER = asset_id из maker_orders[] (наш токен, а не тейкерский)
     const fillResult = Fill.create({
       id: fillId,
       orderId,
       accountId,
       venueId,
       marketId: marketIdParsed,
-      tokenId,
+      tokenId: effectiveTokenId,
       settlementAssetId: AssetIdHelpers.USDC,
       price,
       size,

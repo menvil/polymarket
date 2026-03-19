@@ -20,7 +20,8 @@
  * - Логирование предупреждений для подозрительного ввода
  *
  * Правила валидации:
- * - assets_ids обязателен и не должен быть пустым
+ * - Для `type=user`: assets_ids не нужен, используется поле `auth`
+ * - Для `type=market`: assets_ids обязателен и не должен быть пустым
  * - Token ID должны быть числовыми строками (77 цифр)
  * - Дубликаты удаляются автоматически
  * - Невалидные токены логируются, но не отклоняются (пусть биржа проверяет)
@@ -137,9 +138,19 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
    * ```
    */
   formatSubscription(_channel: string, params: SubscriptionParams): string {
-    const polyParams = params as Partial<PolymarketSubscriptionParams>;
+    const polyParams = params as Partial<PolymarketSubscriptionParams> & { auth?: unknown };
 
-    // Проверяем обязательные поля
+    // ── User channel: { type: 'user', auth: { apiKey, secret, passphrase } } ──
+    // Не требует assets_ids — аутентифицируется через HMAC подпись.
+    if (polyParams.type === 'user') {
+      const subscription = { type: 'user', auth: polyParams.auth };
+      const json = JSON.stringify(subscription);
+      this.logger.debug('Formatting Polymarket user channel subscription');
+      return json;
+    }
+
+    // ── Market channel: { type: 'market', assets_ids: [...] } ─────────────────
+
     if (!polyParams.assets_ids || polyParams.assets_ids.length === 0) {
       this.logger.error('assets_ids is required for Polymarket subscription', { params });
       throw new Error('assets_ids is required and must not be empty');
@@ -175,11 +186,10 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
 
     const subscriptionJson = JSON.stringify(subscription);
 
-    // Логируем детали подписки
     this.logger.info('📡 Formatting Polymarket subscription', {
       tokenCount: uniqueTokens.length,
       tokens: uniqueTokens.map(t => t.substring(0, 16) + '...'),
-      fullTokens: uniqueTokens, // Полные токены для отладки
+      fullTokens: uniqueTokens,
       type: subscription.type,
       jsonLength: subscriptionJson.length,
       jsonPreview: subscriptionJson.substring(0, 500) + (subscriptionJson.length > 500 ? '...' : ''),

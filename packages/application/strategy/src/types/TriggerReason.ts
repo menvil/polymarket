@@ -1,0 +1,15 @@
+/**
+ * Причина, по которой стратегия должна пересчитать.
+ *
+ * @remarks
+ * Накапливаются в DirtyTracker между тиками стратегии.
+ * Стратегия получает `ReadonlySet<TriggerReason>` в tick() и может
+ * адаптировать решение в зависимости от того, что именно изменилось.
+ *
+ * - `'BOOK'` — обновился стакан (TopOfBook / BookDepth)
+ * - `'TRADE'` — пришёл публичный трейд
+ * - `'FILL'` — исполнение нашего ордера (priority trigger — bypass throttle)
+ * - `'ORDER_UPDATE'` — изменился статус ордера (accept, cancel, expire)
+ * - `'TIMER'` — heartbeat: maxIdleMs истёк без событий
+ */
+export type TriggerReason = 'BOOK' | 'TRADE' | 'FILL' | 'ORDER_UPDATE' | 'TIMER';

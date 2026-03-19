@@ -43,8 +43,16 @@ export interface WsUserFillDto {
   readonly id: string;
   /** ID taker-ордера */
   readonly taker_order_id: string;
-  /** Сторона taker-трейдера */
-  readonly trader_side: 'BUY' | 'SELL';
+  /** UUID владельца (наш аккаунт Polymarket). Используется FillMapper для поиска нашего maker_order. */
+  readonly owner?: string;
+  /** ID рынка (condition ID, hex). Опционально — может отсутствовать в некоторых событиях. */
+  readonly market?: string;
+  /**
+   * Роль трейдера в этом исполнении.
+   * 'TAKER' — наш ордер пересёк книгу (агрессор).
+   * 'MAKER' — наш ордер стоял в книге (пассивная сторона).
+   */
+  readonly trader_side: 'TAKER' | 'MAKER';
   /** Цена исполнения (строка для Decimal-точности) */
   readonly price: string;
   /** Объём исполнения (строка для Decimal-точности) */

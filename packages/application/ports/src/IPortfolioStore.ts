@@ -51,4 +51,16 @@ export interface IPortfolioStore {
    * При конфликте caller должен перечитать Portfolio и повторить операцию.
    */
   save(portfolio: Portfolio, expectedVersion: number): Result<void, VersionConflictError>;
+
+  /**
+   * Возвращает текущую версию Portfolio для заданного аккаунта.
+   *
+   * @remarks
+   * Опциональный метод — если реализация не поддерживает версионирование,
+   * возвращает 0. Используется `PortfolioService` для корректного CAS-сохранения.
+   *
+   * @param accountId - ID аккаунта
+   * @returns Текущая версия (0 если Portfolio не сохранён)
+   */
+  getVersion?(accountId: AccountId): number;
 }

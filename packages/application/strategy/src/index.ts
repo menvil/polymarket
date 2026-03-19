@@ -1,62 +1,79 @@
 /**
- * @polymarket/strategy — Управление жизненным циклом торговых стратегий.
+ * @polymarket/strategy — Reactive scheduling архитектура для торговых стратегий.
  *
  * @remarks
  * ### Содержимое пакета:
  *
+ * **Типы:**
+ * - `TriggerReason` — причина пересчёта (BOOK, TRADE, FILL, ORDER_UPDATE, TIMER)
+ * - `StrategyIntent` — декларативное намерение (PLACE, CANCEL, CANCEL_ALL)
+ * - `StrategySnapshot` — readonly snapshot состояния
+ * - `ScheduleConfig` — конфигурация расписания
+ *
  * **Интерфейсы:**
- * - `IStrategy` — контракт пользовательской стратегии
- * - `StrategyContext` — контекст инициализации (передаётся в initialize())
- * - `ITradingAPI` — фасад торговых операций для стратегии
- * - `IStrategyRunner` — полный интерфейс менеджера стратегий
+ * - `IStrategy` — контракт пользовательской стратегии (tick-based)
  *
  * **Реализации:**
- * - `TradingAPI` — изолированный торговый API (один экземпляр на стратегию)
- * - `StrategyRunner` — менеджер жизненного цикла стратегий
+ * - `BaseStrategy` — абстрактный класс с gather → decide → toIntents pipeline
+ * - `DirtyTracker` — отслеживание dirty стратегий
+ * - `ExecutionEngine` — нормализация и исполнение intents
+ * - `StrategyScheduler` — ядро: event-driven queue + coalescing
  *
- * **Типы:**
- * - `PlaceOrderParams` — параметры размещения ордера
- * - `TradingAPIDeps` — зависимости TradingAPI
- * - `StrategyRunnerDeps` — зависимости StrategyRunner
+ * **Интеграция:**
+ * - `OrderEventBridge` — мост между Order domain events и StrategyScheduler
  *
  * @example
  * ```typescript
- * import type { IStrategy, StrategyContext } from '@polymarket/strategy';
- * import { StrategyRunner } from '@polymarket/strategy';
- * import { Ok } from '@polymarket/result';
+ * import type { IStrategy, StrategySnapshot, TriggerReason, StrategyIntent } from '@polymarket/strategy';
+ * import { StrategyScheduler, BaseStrategy } from '@polymarket/strategy';
  *
- * class SimpleQuoter implements IStrategy {
+ * class SimpleQuoter extends BaseStrategy<MyData, MyAction> {
  *   readonly id = 'simple-quoter-1';
  *   readonly name = 'SimpleQuoter';
- *   private _ordersPlaced = 0;
  *
- *   async initialize(ctx: StrategyContext) {
- *     ctx.api.subscribe('BOOK_UPDATED', async (event) => {
- *       await ctx.api.placeOrder({ ... });
- *       this._ordersPlaced++;
- *     });
- *     return Ok(undefined);
- *   }
- *
- *   async stop() { } // отменить открытые ордера при необходимости
- *   getMetrics() { return { ordersPlaced: this._ordersPlaced }; }
+ *   protected gather(snapshot: StrategySnapshot) { ... }
+ *   protected decide(data: MyData, reasons: ReadonlySet<TriggerReason>) { ... }
+ *   protected toIntents(actions: MyAction[]): StrategyIntent[] { ... }
  * }
  *
- * const runner = new StrategyRunner({ ... });
- * await runner.start(new SimpleQuoter());
+ * const scheduler = new StrategyScheduler(deps);
+ * scheduler.start();
+ * await scheduler.register({ strategy: new SimpleQuoter(), instrumentId, asset, accountId, market });
  * ```
  *
  * @packageDocumentation
  */
 
-// Интерфейсы
-export type { IStrategy } from './IStrategy.js';
-export type { StrategyContext } from './StrategyContext.js';
-export type { ITradingAPI, PlaceOrderParams } from './ITradingAPI.js';
-export type { IStrategyRunner } from './IStrategyRunner.js';
+// ── Новая архитектура: types ────────────────────────────────
+export type { TriggerReason } from './types/index.js';
+export type {
+  StrategyIntent,
+  PlaceIntent,
+  CancelIntent,
+  CancelAllIntent,
+} from './types/index.js';
+export type { StrategySnapshot } from './types/index.js';
+export type { ScheduleConfig } from './types/index.js';
+export { DEFAULT_SCHEDULE_CONFIG } from './types/index.js';
 
-// Реализации
-export { TradingAPI } from './TradingAPI.js';
-export type { TradingAPIDeps } from './TradingAPI.js';
-export { StrategyRunner } from './StrategyRunner.js';
-export type { StrategyRunnerDeps, StrategyFactory } from './StrategyRunner.js';
+// ── Новая архитектура: интерфейсы ───────────────────────────
+export type { IStrategy } from './IStrategy.js';
+
+// ── Новая архитектура: реализации ───────────────────────────
+export { BaseStrategy } from './BaseStrategy.js';
+export { DirtyTracker } from './DirtyTracker.js';
+export { ExecutionEngine } from './ExecutionEngine.js';
+export type { ExecutionEngineDeps, ExecutionContext, ExecutionReport } from './ExecutionEngine.js';
+export { StrategyScheduler } from './StrategyScheduler.js';
+export type {
+  StrategySchedulerDeps,
+  StrategyRegistration,
+  IMarketDataStore,
+} from './StrategyScheduler.js';
+// IOrderStateStore re-exported from ports for backward compatibility
+export type { IOrderStateStore } from '@polymarket/ports';
+
+// ── Интеграция ───────────────────────────────────────────────
+export { OrderEventBridge } from './OrderEventBridge.js';
+export type { OrderEventBridgeDeps } from './OrderEventBridge.js';
+

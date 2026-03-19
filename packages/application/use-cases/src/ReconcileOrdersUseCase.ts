@@ -39,6 +39,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type { IOrderRepository, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 
@@ -99,7 +100,7 @@ export class ReconcileOrdersUseCase {
    */
   public async execute(input: ReconcileOrdersInput): Promise<Result<ReconciliationReport, TradingError>> {
     this._logger.info('Starting order reconciliation', {
-      accountId: String(input.accountId),
+      accountId: accountIdToString(input.accountId),
     });
 
     // Шаг 1: Получить все локальные ордера
@@ -123,7 +124,7 @@ export class ReconcileOrdersUseCase {
       });
       return Err(new TradingError(
         `Exchange getOpenOrders failed: ${exchangeResult.error.message}`,
-        { context: { accountId: String(input.accountId) } },
+        { context: { accountId: accountIdToString(input.accountId) } },
       ));
     }
 

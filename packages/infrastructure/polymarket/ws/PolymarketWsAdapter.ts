@@ -405,9 +405,17 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     });
 
     // User channel: order lifecycle события (event_type: "order")
+    // Polymarket использует поле 'type' для обозначения вида события (PLACEMENT, CANCELLATION, ...).
+    // НО parseWsMessage использует 'type' как дискриминант для маршрутизации (type='order').
+    // Поэтому сохраняем оригинальный 'type' в 'orderEventType' ДО того, как перезаписываем его.
     this._router.on('order', (message: unknown) => {
       if (typeof message !== 'object' || message === null) return;
-      void this._dispatchParsed({ ...(message as object), type: 'order' });
+      const msg = message as Record<string, unknown>;
+      void this._dispatchParsed({
+        ...msg,
+        orderEventType: msg['type'],  // PLACEMENT / CANCELLATION — из wire-формата Polymarket
+        type: 'order',                // дискриминант для parseWsMessage
+      });
     });
 
     this._router.on('error', (error: Error) => {

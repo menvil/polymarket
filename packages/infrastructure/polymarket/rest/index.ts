@@ -62,3 +62,5 @@ export { PolymarketPositionMapper } from './mappers/PolymarketPositionMapper.js'
 
 // Аутентификация
 export { PolymarketSigner } from './auth/PolymarketSigner.js';
+export { PolymarketOrderBuilder } from './auth/PolymarketOrderBuilder.js';
+export { SignatureType } from './types.js';

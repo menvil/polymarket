@@ -103,7 +103,7 @@ export class MockExchangeClient implements IExchangeClient {
   ): Promise<Result<OrderId, ExchangeError>> {
     this._counter += 1;
     const now = this._clock.now();
-    const orderId = `order-${now.getTime()}-${this._counter}` as OrderId;
+    const orderId = (params.clientOrderId ?? `order-${now.getTime()}-${this._counter}`) as OrderId;
 
     this._submittedOrders.push({
       orderId,

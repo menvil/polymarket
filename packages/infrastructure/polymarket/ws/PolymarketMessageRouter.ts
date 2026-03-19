@@ -383,6 +383,15 @@ export class PolymarketMessageRouter extends EventEmitter {
 
       // Извлекаем тип события и asset ID
       const eventType = message.event_type || message.type;
+
+      // Raw-лог всех user-channel событий (кроме book/trade — слишком шумные)
+      if (eventType !== 'book' && eventType !== 'trade' && eventType !== 'last_trade_price' &&
+          eventType !== 'pong' && eventType !== 'price_change' && eventType !== 'tick_size_change') {
+        this.logger.info('[WS-RAW] user channel message', {
+          event_type: eventType,
+          raw: JSON.stringify(message),
+        });
+      }
       const assetId = message.asset_id || message.market;
 
       // Обрабатываем контрольные сообщения

@@ -11,7 +11,6 @@
       "@polymarket/event-bus":          ["../event-bus/dist/index.d.ts"],
       "@polymarket/use-cases":          ["../use-cases/dist/index.d.ts"],
       "@polymarket/balance-allocator":  ["../balance-allocator/dist/index.d.ts"],
-      "@polymarket/market-lifecycle":   ["../market-lifecycle/dist/index.d.ts"],
       "@polymarket/strategy":           ["../strategy/dist/index.d.ts"]
     }
   },

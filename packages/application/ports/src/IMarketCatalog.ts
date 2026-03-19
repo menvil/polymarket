@@ -31,8 +31,14 @@ export interface InstrumentInfo {
   readonly marketId: MarketId;
   /** Минимальный шаг цены */
   readonly tickSize: Price;
-  /** Минимальный размер ордера */
+  /** Минимальный размер ордера в токенах */
   readonly minOrderSize: Quantity;
+  /**
+   * Минимальная стоимость ордера в USDC (price × size >= minOrderValue).
+   * Polymarket требует >= $1 для BUY-ордеров.
+   * Дефолт: Quantity.of(new Decimal('1'))
+   */
+  readonly minOrderValue: Quantity;
   /** Активен ли рынок */
   readonly active: boolean;
   /** Время истечения рынка (используется ExpirationRemovalPolicy) */

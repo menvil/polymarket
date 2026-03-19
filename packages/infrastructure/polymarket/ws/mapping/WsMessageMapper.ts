@@ -184,7 +184,7 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
 
   if (typeof id !== 'string') return null;
   if (typeof takerOrderId !== 'string') return null;
-  if (traderSide !== 'BUY' && traderSide !== 'SELL') return null;
+  // trader_side — роль трейдера (TAKER/MAKER), не проверяем строго: TAKER по умолчанию
   if (typeof assetId !== 'string') return null;
 
   const makerOrders = Array.isArray(msg['maker_orders'])
@@ -206,15 +206,20 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
   // price и size обязательны для user fill — возвращаем null если отсутствуют
   if (typeof msg['price'] !== 'string' || typeof msg['size'] !== 'string') return null;
 
+  // trader_side: Polymarket шлёт 'TAKER' или 'MAKER' (роль трейдера, НЕ сторона BUY/SELL)
+  const normalizedTraderSide: 'TAKER' | 'MAKER' = traderSide === 'MAKER' ? 'MAKER' : 'TAKER';
+
   return {
     id,
     taker_order_id: takerOrderId,
-    trader_side: traderSide,
+    trader_side: normalizedTraderSide,
     price: msg['price'],
     size: msg['size'],
     fee_rate_bps: String(msg['fee_rate_bps'] ?? '0'),
     status: validStatus,
     asset_id: assetId,
+    owner: typeof msg['owner'] === 'string' ? msg['owner'] : undefined,
+    market: typeof msg['market'] === 'string' ? msg['market'] : undefined,
     maker_orders: makerOrders,
     timestamp: typeof msg['timestamp'] === 'string' ? msg['timestamp'] : String(msg['timestamp'] ?? ''),
   };
@@ -231,8 +236,13 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
  * Например: "PLACEMENT" для подтверждения размещения ордера.
  */
 function parseOrderUpdateDto(msg: Record<string, unknown>): WsOrderUpdateDto | null {
-  const orderId = msg['order_id'];
-  if (typeof orderId !== 'string') return null;
+  // Polymarket использует разные поля для order ID в зависимости от события:
+  // - Некоторые события: 'order_id' (например, подтверждение размещения из matching engine)
+  // - Lifecycle события (CANCELLATION, PLACEMENT): 'id' (основной ID ордера)
+  const orderIdRaw = typeof msg['order_id'] === 'string' ? msg['order_id']
+    : typeof msg['id'] === 'string' ? msg['id']
+    : undefined;
+  if (!orderIdRaw) return null;
 
   // orderEventType = payload 'type' field (separate from event_type discriminant)
   const orderEventType = typeof msg['orderEventType'] === 'string'
@@ -244,7 +254,7 @@ function parseOrderUpdateDto(msg: Record<string, unknown>): WsOrderUpdateDto | n
   return {
     type: 'order',
     orderEventType,
-    order_id: orderId,
+    order_id: orderIdRaw,
     status: typeof msg['status'] === 'string' ? msg['status'] : undefined,
     reason: typeof msg['reason'] === 'string' ? msg['reason'] : undefined,
     timestamp: typeof msg['timestamp'] === 'string' ? msg['timestamp'] : String(msg['timestamp'] ?? ''),

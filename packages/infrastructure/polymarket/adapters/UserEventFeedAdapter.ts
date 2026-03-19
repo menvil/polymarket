@@ -64,6 +64,9 @@ export class UserEventFeedAdapter {
    * @param _accountId - AccountId для передачи в FillEventHandler
    * @param logger - Logger
    * @param _onReconnect - Опциональный callback при WS reconnect (Phase 9: OrderReconciler)
+   * @param _makerAddress - ETH-адрес нашего кошелька (maker_address в ордерах Polymarket).
+   *   Используется как fallback для поиска нашего maker_order в cross-outcome fills,
+   *   где top-level `owner` = UUID тейкера, а не наш UUID.
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
@@ -72,6 +75,7 @@ export class UserEventFeedAdapter {
     private readonly _accountId: AccountId,
     logger: ILogger,
     private readonly _onReconnect?: () => Promise<void>,
+    private readonly _makerAddress?: string,
   ) {
     this._logger = logger.child({ component: 'UserEventFeedAdapter' });
   }
@@ -91,7 +95,19 @@ export class UserEventFeedAdapter {
   public start(): void {
     // Fills из user-channel (исполнение наших ордеров)
     const unsubFill = this._wsEmitter.onUserFill(async (dto) => {
-      this._logger.debug('Received user fill from WS', { id: dto.id, status: dto.status });
+      this._logger.info('[USER-EVENT] fill received', {
+        id: dto.id,
+        taker_order_id: dto.taker_order_id,
+        trader_side: dto.trader_side,
+        market: dto.market,
+        asset_id: dto.asset_id,
+        price: dto.price,
+        size: dto.size,
+        fee_rate_bps: dto.fee_rate_bps,
+        status: dto.status,
+        maker_orders: dto.maker_orders,
+        timestamp: dto.timestamp,
+      });
       // Явный маппинг WsUserFillDto → Record<string, unknown>
       // FillEventHandler принимает raw DTO в виде Record
       await this._fillHandler.handle(this._mapFillDto(dto), this._accountId);
@@ -99,13 +115,21 @@ export class UserEventFeedAdapter {
 
     // Обновления статуса ордеров из user-channel
     const unsubOrder = this._wsEmitter.onOrderUpdate(async (dto) => {
+      this._logger.info('[USER-EVENT] order update received', {
+        orderEventType: dto.orderEventType,
+        order_id: dto.order_id,
+        status: dto.status,
+        reason: dto.reason,
+        timestamp: dto.timestamp,
+      });
       const update = this._mapOrderUpdate(dto);
       if (update) {
-        this._logger.debug('Received order update from WS', {
-          orderId: String(update.orderId),
-          type: update.type,
-        });
         await this._orderHandler.handle(update);
+      } else {
+        this._logger.debug('[USER-EVENT] order update ignored (unmapped type)', {
+          orderEventType: dto.orderEventType,
+          order_id: dto.order_id,
+        });
       }
     });
 
@@ -150,12 +174,14 @@ export class UserEventFeedAdapter {
   private _mapFillDto(dto: {
     readonly id: string;
     readonly taker_order_id: string;
-    readonly trader_side: 'BUY' | 'SELL';
+    readonly trader_side: 'TAKER' | 'MAKER';
     readonly price: string;
     readonly size: string;
     readonly fee_rate_bps: string;
     readonly status: string;
     readonly asset_id: string;
+    readonly owner?: string;
+    readonly market?: string;
     readonly maker_orders: Array<{ readonly order_id: string; readonly matched_amount: string }>;
     readonly timestamp: string;
   }): Record<string, unknown> {
@@ -168,6 +194,9 @@ export class UserEventFeedAdapter {
       fee_rate_bps: dto.fee_rate_bps,
       status: dto.status,
       asset_id: dto.asset_id,
+      owner: dto.owner,
+      maker_address: this._makerAddress,
+      market: dto.market,
       maker_orders: dto.maker_orders,
       timestamp: dto.timestamp,
     };

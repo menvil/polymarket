@@ -48,3 +48,4 @@ export type { IBalanceAllocator, AllocationResult, AllocationStats } from './IBa
 export type { IMarketDataRecorder, MarketMeta } from './IMarketDataRecorder.js';
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
+export type { IOrderStateStore } from './IOrderStateStore.js';

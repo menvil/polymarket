@@ -23,7 +23,6 @@
     "@polymarket/time":            "workspace:*",
     "@polymarket/ports":           "workspace:*",
     "@polymarket/event-bus":       "workspace:*",
-    "@polymarket/market-lifecycle": "workspace:*",
     "@polymarket/balance-allocator": "workspace:*",
     "@polymarket/strategy":        "workspace:*"
   },

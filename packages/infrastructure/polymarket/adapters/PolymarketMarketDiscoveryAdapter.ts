@@ -383,6 +383,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       expiresAt: expiresAtResult.value,
       tickSize,
       minOrderSize,
+      minOrderValue: Quantity.of(new Decimal('1')), // Polymarket требует >= $1 для BUY-ордеров
       active: true,
       spread,
       liquidity,

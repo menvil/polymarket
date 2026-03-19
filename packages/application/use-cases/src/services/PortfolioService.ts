@@ -36,7 +36,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, InstrumentId } from '@polymarket/ids';
-import { asInstrumentId, assetIdToString } from '@polymarket/ids';
+import { asInstrumentId, assetIdToString, accountIdToString } from '@polymarket/ids';
 import { Money } from '@polymarket/value-objects';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
@@ -76,9 +76,10 @@ export class PortfolioService {
     accountId: AccountId,
     notional: Decimal,
   ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(accountId) ?? 0;
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
-      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
     const amount = Money.of(notional, 'USDC');
@@ -86,15 +87,15 @@ export class PortfolioService {
     if (!reserveResult.ok) {
       return Err(new TradingError(
         `Failed to reserve balance: ${reserveResult.error.message}`,
-        { context: { accountId: String(accountId), notional: notional.toString() } },
+        { context: { accountId: accountIdToString(accountId), notional: notional.toString() } },
       ));
     }
 
-    const saveResult = this._store.save(reserveResult.value, 0);
+    const saveResult = this._store.save(reserveResult.value, version);
     if (!saveResult.ok) return saveResult;
 
     this._logger.debug('Balance reserved for order', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       notional: notional.toString(),
     });
     return Ok(undefined);
@@ -114,9 +115,10 @@ export class PortfolioService {
     accountId: AccountId,
     notional: Decimal,
   ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(accountId) ?? 0;
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
-      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
     const amount = Money.of(notional, 'USDC');
@@ -124,15 +126,15 @@ export class PortfolioService {
     if (!releaseResult.ok) {
       return Err(new TradingError(
         `Failed to release reservation: ${releaseResult.error.message}`,
-        { context: { accountId: String(accountId), notional: notional.toString() } },
+        { context: { accountId: accountIdToString(accountId), notional: notional.toString() } },
       ));
     }
 
-    const saveResult = this._store.save(releaseResult.value, 0);
+    const saveResult = this._store.save(releaseResult.value, version);
     if (!saveResult.ok) return saveResult;
 
     this._logger.debug('Reservation released', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       notional: notional.toString(),
     });
     return Ok(undefined);
@@ -156,24 +158,25 @@ export class PortfolioService {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(accountId) ?? 0;
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
-      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
     const reserveResult = portfolio.reserveTokensForOrder(instrumentId, qty);
     if (!reserveResult.ok) {
       return Err(new TradingError(
         `Failed to reserve tokens: ${reserveResult.error.message}`,
-        { context: { accountId: String(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
       ));
     }
 
-    const saveResult = this._store.save(reserveResult.value, 0);
+    const saveResult = this._store.save(reserveResult.value, version);
     if (!saveResult.ok) return saveResult;
 
     this._logger.debug('Tokens reserved for SELL order', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       instrumentId: String(instrumentId),
       qty: qty.toString(),
     });
@@ -198,24 +201,25 @@ export class PortfolioService {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(accountId) ?? 0;
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
-      return Err(new TradingError('Portfolio not found', { context: { accountId: String(accountId) } }));
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
     const releaseResult = portfolio.releaseTokenReservation(instrumentId, qty);
     if (!releaseResult.ok) {
       return Err(new TradingError(
         `Failed to release token reservation: ${releaseResult.error.message}`,
-        { context: { accountId: String(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
       ));
     }
 
-    const saveResult = this._store.save(releaseResult.value, 0);
+    const saveResult = this._store.save(releaseResult.value, version);
     if (!saveResult.ok) return saveResult;
 
     this._logger.debug('Token reservation released', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       instrumentId: String(instrumentId),
       qty: qty.toString(),
     });
@@ -226,12 +230,19 @@ export class PortfolioService {
    * Применяет Fill к Portfolio: обновляет баланс и позицию.
    *
    * @param fill - Исполнение ордера
+   * @param orderPrice - Цена ордера (Decimal). Если передана для BUY fill,
+   *   используется вместо `fill.price` для расчёта дебета.
+   *   Это устраняет ошибку «Cannot unfreeze/consume X: only Y reserved»,
+   *   возникающую когда биржа округляет цену в fill-событии (0.829 → 0.83),
+   *   а зарезервировано было по точной цене ордера.
    * @returns Ok(void) или Err при ошибке
    *
    * @remarks
    * ### BUY fill:
-   * 1. `applyDebit(price × size)` — дебетует зарезервированные средства
+   * 1. `applyDebit(orderPrice × size)` — дебетует зарезервированные средства
+   *    (используем цену ордера, а не цену fill, чтобы точно совпасть с резервацией)
    * 2. Позиция LONG: quantity += size, пересчёт averageEntryPrice по VWAP
+   *    (averageEntryPrice считается по fill.price — реальная цена исполнения)
    *
    * ### SELL fill:
    * 1. Снимаем токенную резервацию (best effort — бот мог перезапуститься)
@@ -240,16 +251,24 @@ export class PortfolioService {
    *
    * tokenId используется как instrumentId для поиска/обновления позиции.
    */
-  public applyFill(fill: Fill): Result<void, PortfolioSaveError> {
+  public applyFill(fill: Fill, orderPrice?: Decimal): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(fill.accountId) ?? 0;
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
       return Err(new TradingError(
         'Portfolio not found',
-        { context: { accountId: String(fill.accountId), fillId: String(fill.id) } },
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
       ));
     }
 
-    const instrumentId = asInstrumentId(assetIdToString(fill.tokenId));
+    // Для POLYMARKET_CTF_TOKEN извлекаем числовой tokenId напрямую,
+    // чтобы InstrumentId совпадал с тем, что использует стратегия (asInstrumentId(tokenId)).
+    // assetIdToString() для CTF_TOKEN возвращает "POLYMARKET_CTF_TOKEN:888...",
+    // что создаёт InstrumentId отличный от "888..." → portfolio.getPosition() возвращает undefined.
+    const rawTokenId = fill.tokenId.type === 'POLYMARKET_CTF_TOKEN'
+      ? fill.tokenId.tokenId
+      : assetIdToString(fill.tokenId);
+    const instrumentId = asInstrumentId(rawTokenId);
     if (!instrumentId) {
       return Err(new TradingError(
         `Invalid tokenId: ${String(fill.tokenId)}`,
@@ -258,7 +277,10 @@ export class PortfolioService {
     }
 
     const fillQty = fill.size.value();
-    const notional = fill.price.value().times(fillQty);
+    // Для BUY: используем цену ордера (если передана), чтобы точно совпасть с зарезервированной суммой.
+    // Биржа может округлить цену в fill-событии (0.829 → 0.83), а резервация была по точной цене ордера.
+    const priceForDebit = (fill.side === 'BUY' && orderPrice !== undefined) ? orderPrice : fill.price.value();
+    const notional = priceForDebit.times(fillQty);
     const money = Money.of(notional, 'USDC');
 
     // Для SELL: снять токенную резервацию (best effort)
@@ -268,7 +290,7 @@ export class PortfolioService {
       if (!releaseResult.ok) {
         // best effort: резервации может не быть (бот перезапустился)
         this._logger.warn('Token reservation not found for SELL fill — skipping release', {
-          accountId: String(fill.accountId),
+          accountId: accountIdToString(fill.accountId),
           fillId: String(fill.id),
           instrumentId: String(instrumentId),
           fillQty: fillQty.toString(),
@@ -299,11 +321,11 @@ export class PortfolioService {
       ));
     }
 
-    const saveResult = this._store.save(positionResult.value, 0);
+    const saveResult = this._store.save(positionResult.value, version);
     if (!saveResult.ok) return saveResult;
 
     this._logger.debug('Fill applied to portfolio', {
-      accountId: String(fill.accountId),
+      accountId: accountIdToString(fill.accountId),
       fillId: String(fill.id),
       side: fill.side,
       notional: notional.toString(),

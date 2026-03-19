@@ -6,9 +6,10 @@ dist/
 dist-test/
 *.tsbuildinfo
 
-# Environment files
+# Environment files — никогда не коммитить (любые .env варианты)
 .env
-.env.local
+.env.*
+!.env.example
 
 # Logs
 logs/
@@ -56,5 +57,4 @@ src_bundle.md
 snapshots/
 # Исключение: папка snapshots в collect-data отслеживается (содержимое игнорируется локальным .gitignore)
 !packages/apps/collect-data/snapshots/
-.env.smoke
 *.zip

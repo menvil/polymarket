@@ -33,7 +33,7 @@ import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { asInstrumentId, assetIdToString } from '@polymarket/ids';
-import type { IOrderRepository, IExchangeClient } from '@polymarket/ports';
+import type { IOrderRepository, IOrderStateStore, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { OrderService } from './services/OrderService.js';
 import type { PortfolioService } from './services/PortfolioService.js';
@@ -53,6 +53,7 @@ export interface CancelOrderDeps {
   readonly orderService: OrderService;
   readonly portfolioService: PortfolioService;
   readonly orderRepo: IOrderRepository;
+  readonly orderStateStore: IOrderStateStore;
   readonly exchangeClient: IExchangeClient;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
@@ -116,8 +117,24 @@ export class CancelOrderUseCase {
     const cancelledOrder = cancelResult.value;
 
     // Шаг 3: Снятие резервации по стороне ордера
-    // Используем cancelledOrder (обновлённое состояние) для точного расчёта остатка
-    if (order.side === 'BUY') {
+    //
+    // ВАЖНО: проверяем актуальный статус ордера в store перед снятием резервации.
+    // `orderService.cancel()` содержит `await orderRepo.save()` (yield B).
+    // Во время yield B мог выполниться ProcessFillUseCase:
+    //   - saveSync(FILED) → перезаписал CANCELLED → FILED в store
+    //   - portfolioApplyFill → reservation потреблена (reserved = 0)
+    // Если это произошло — нельзя снимать резервацию повторно (она уже потреблена fill).
+    // Синхронная проверка (без yield) читает актуальное состояние из store.
+    const currentStoredOrder = this._deps.orderStateStore.getOrder(input.orderId);
+    if (currentStoredOrder?.status !== cancelledOrder.status) {
+      // Ордер был изменён конкурентно (fill перезаписал CANCELLED → FILED).
+      // Резервация уже потреблена fill — пропускаем освобождение.
+      this._logger.debug('Order status changed during cancel (concurrent fill), skipping reservation release', {
+        orderId: String(input.orderId),
+        cancelledStatus: cancelledOrder.status,
+        currentStatus: currentStoredOrder?.status,
+      });
+    } else if (order.side === 'BUY') {
       const remainingNotional = cancelledOrder.price.value().times(cancelledOrder.remainingSize.value());
       const releaseResult = this._deps.portfolioService.releaseReservation(
         input.accountId,

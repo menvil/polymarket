@@ -40,4 +40,6 @@ export interface PreOrderCheckInput {
   readonly instrumentId: InstrumentId;
   /** ID стратегии (опционально — для per-strategy лимитов) */
   readonly strategyId?: string;
+  /** Время до экспирации рынка (ms, опционально — для minTimeToExpiryMs проверки) */
+  readonly timeToExpiryMs?: number;
 }

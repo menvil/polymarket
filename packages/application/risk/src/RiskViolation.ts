@@ -23,6 +23,7 @@ import { TradingError } from '@polymarket/errors';
  * Коды нарушений пре-трейд риск-проверок.
  *
  * @remarks
+ * - TOO_CLOSE_TO_EXPIRY — слишком близко к экспирации рынка
  * - MAX_OPEN_ORDERS_EXCEEDED — слишком много открытых ордеров
  * - ORDER_NOTIONAL_EXCEEDED — notional одного ордера превышает лимит
  * - INSUFFICIENT_AVAILABLE_BALANCE — недостаточно свободного баланса
@@ -30,6 +31,7 @@ import { TradingError } from '@polymarket/errors';
  * - TOTAL_EXPOSURE_EXCEEDED — совокупная экспозиция превысит лимит
  */
 export type RiskViolationCode =
+  | 'TOO_CLOSE_TO_EXPIRY'
   | 'MAX_OPEN_ORDERS_EXCEEDED'
   | 'ORDER_NOTIONAL_EXCEEDED'
   | 'INSUFFICIENT_AVAILABLE_BALANCE'

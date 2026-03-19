@@ -1,0 +1,30 @@
+{
+  "strategy": "dumb",
+  "strategyParams": {
+    "orderSize": 5,
+    "buyOffsetPct": 10,
+    "profitMarginPct": 5,
+    "repriceThreshold": 0.08
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "../../packages/apps/collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_635PM-640PM_ET___0xd63862dcb53670f87c4dda7bf5b9a014703b56.jsonl"
+    ],
+    "outcomeIndex": 1
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:backtest-account"
+  }
+}

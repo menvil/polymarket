@@ -92,6 +92,7 @@ function makeDeps(logger: ILogger): {
       marketId: 'market-backtest' as unknown as MarketId,
       tickSize: {} as Price,
       minOrderSize: {} as Quantity,
+      minOrderValue: {} as Quantity,
       active: true,
       expiresAt: {} as Timestamp,
     }) as InstrumentInfo),

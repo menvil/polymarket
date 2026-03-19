@@ -43,3 +43,4 @@ export { MarketDataFeedAdapter } from './MarketDataFeedAdapter.js';
 export { UserEventFeedAdapter } from './UserEventFeedAdapter.js';
 export { PolymarketExchangeClientAdapter } from './PolymarketExchangeClientAdapter.js';
 export { PolymarketMarketDiscoveryAdapter } from './PolymarketMarketDiscoveryAdapter.js';
+export { PolymarketMarketDataRestClient } from '../rest/clients/PolymarketMarketDataRestClient.js';

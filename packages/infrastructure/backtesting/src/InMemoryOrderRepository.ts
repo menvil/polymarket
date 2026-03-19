@@ -2,13 +2,15 @@
  * InMemoryOrderRepository — хранилище ордеров в памяти для бектестирования.
  *
  * @remarks
- * Реализует интерфейс `IOrderRepository` на основе `Map`.
+ * Реализует интерфейсы `IOrderRepository` (async) и `IOrderStateStore` (sync)
+ * на основе `Map`.
  * Используется в `BacktestEngine` как замена Redis/Postgres хранилища.
  *
  * ### Особенности:
- * - Все операции синхронны под капотом, обёрнуты в Promise для совместимости с интерфейсом.
+ * - Все операции синхронны под капотом, обёрнуты в Promise для совместимости с IOrderRepository.
+ * - `IOrderStateStore` — синхронные методы для StrategyScheduler (без async overhead).
  * - `getByStrategyId()` выполняет линейный поиск O(n) — приемлемо для бектеста.
- * - `countByStrategyId()` считает через фильтрацию всего Map.
+ * - `countByStrategyId()` считает только активные (не терминальные) ордера.
  * - `getAll()` возвращает snapshot всех значений на момент вызова.
  *
  * @example
@@ -23,17 +25,20 @@
  * ```
  */
 import type { Order } from '@polymarket/order';
-import type { OrderId, MarketId } from '@polymarket/ids';
-import type { IOrderRepository } from '@polymarket/ports';
+import type { OrderId, MarketId, InstrumentId } from '@polymarket/ids';
+import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 
 /**
  * In-memory реализация хранилища Order агрегатов.
  *
  * @remarks
  * Хранит ордера в `Map<OrderId, Order>`.
+ * Реализует оба интерфейса:
+ * - `IOrderRepository` — async для use-cases и handlers
+ * - `IOrderStateStore` — sync для StrategyScheduler
  * Не потокобезопасна (Node.js single-thread достаточно для бектеста).
  */
-export class InMemoryOrderRepository implements IOrderRepository {
+export class InMemoryOrderRepository implements IOrderRepository, IOrderStateStore {
   /** Внутреннее хранилище: OrderId → Order */
   private readonly _store = new Map<OrderId, Order>();
 
@@ -131,14 +136,12 @@ export class InMemoryOrderRepository implements IOrderRepository {
    * ```
    */
   public async countByStrategyId(strategyId?: string): Promise<number> {
-    if (strategyId === undefined) {
-      return this._store.size;
-    }
     let count = 0;
     for (const order of this._store.values()) {
-      if (order.strategyId === strategyId) {
-        count += 1;
-      }
+      // Считаем только активные (не терминальные) ордера
+      if (order.isTerminal) continue;
+      if (strategyId !== undefined && order.strategyId !== strategyId) continue;
+      count += 1;
     }
     return count;
   }
@@ -180,6 +183,79 @@ export class InMemoryOrderRepository implements IOrderRepository {
    */
   public async getByMarketId(marketId: MarketId): Promise<readonly Order[]> {
     return this.getByStrategyId(String(marketId));
+  }
+
+  // ── IOrderStateStore (sync methods) ──────────────────────
+
+  /**
+   * Sync: возвращает все ордера стратегии.
+   *
+   * @param strategyId - ID стратегии
+   * @returns Readonly массив ордеров стратегии
+   *
+   * @remarks
+   * Синхронная версия getByStrategyId() для StrategyScheduler.
+   */
+  public getOpenOrders(strategyId: string): readonly Order[] {
+    const result: Order[] = [];
+    for (const order of this._store.values()) {
+      if (order.strategyId === strategyId) {
+        result.push(order);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Sync: возвращает ордера стратегии на конкретном инструменте.
+   *
+   * @param strategyId - ID стратегии
+   * @param instrumentId - ID инструмента (tokenId)
+   * @returns Readonly массив ордеров
+   *
+   * @remarks
+   * Фильтрует по strategyId и сравнивает order.asset с instrumentId (string match).
+   */
+  public getOpenOrdersByInstrument(strategyId: string, instrumentId: InstrumentId): readonly Order[] {
+    const instrumentStr = String(instrumentId);
+    const result: Order[] = [];
+    for (const order of this._store.values()) {
+      if (order.isTerminal) continue;
+      // AssetId — объект ({type, tokenId}), поэтому String() даёт "[object Object]".
+      // Для CTF-токенов Polymarket tokenId совпадает с InstrumentId.
+      const assetStr =
+        order.asset.type === 'POLYMARKET_CTF_TOKEN'
+          ? order.asset.tokenId
+          : String(order.asset);
+      if (order.strategyId === strategyId && assetStr === instrumentStr) {
+        result.push(order);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Sync: возвращает ордер по ID.
+   *
+   * @param orderId - ID ордера
+   * @returns Order или undefined
+   */
+  public getOrder(orderId: OrderId): Order | undefined {
+    return this._store.get(orderId);
+  }
+
+  /**
+   * Sync: сохраняет (перезаписывает) ордер в хранилище без async overhead.
+   *
+   * @param order - Order для сохранения
+   *
+   * @remarks
+   * Используется в ProcessFillUseCase для устранения race condition:
+   * ордер помечается как FILED синхронно до обновления Portfolio,
+   * что исключает yield-окно между двумя state-мутациями.
+   */
+  public saveSync(order: Order): void {
+    this._store.set(order.id, order);
   }
 
   /**
