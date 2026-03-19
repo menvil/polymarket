@@ -556,10 +556,11 @@ describe('ExecutionEngine', () => {
   // ── SELL: позиция меньше minOrderSize (stuck position) ──
 
   describe('SELL below minOrderSize (stuck position)', () => {
-    it('should attempt SELL with actual position qty on first call (no cooldown)', async () => {
-      // positionQty=0.21, minOrderSize=5 → первая попытка: размещаем с size=0.21
-      // Биржа может принять полный close позиции даже ниже minOrderSize
+    it('should skip SELL when position qty < minOrderSize (first call — logs warn)', async () => {
+      // positionQty=0.21, minOrderSize=5 → skip, Polymarket отклоняет SELL < minOrderSize
+      // Ожидаем reconciliation которая пополнит позицию до полного размера
       const minOrderSize = Quantity.of(new Decimal('5'));
+      const logger = makeLogger();
       const portfolio = {
         getPosition: jest.fn().mockReturnValue({
           quantity: Quantity.of(new Decimal('0.21')),
@@ -568,6 +569,7 @@ describe('ExecutionEngine', () => {
       deps = makeDeps({
         catalog: makeCatalog(minOrderSize),
         portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
+        logger: logger as any,
       });
       engine = new ExecutionEngine(deps);
 
@@ -575,17 +577,21 @@ describe('ExecutionEngine', () => {
         { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) },
       ]);
 
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(0);
       expect(report.errors).toHaveLength(0);
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(0.21); // фактический размер позиции
+      expect((deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls).toHaveLength(0);
+      // первый вызов логирует warn
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('stuck position'),
+        expect.objectContaining({ positionQty: 0.21, minOrderSize: 5 }),
+      );
     });
 
-    it('should skip SELL below minOrderSize on second call within cooldown', async () => {
-      // Первый вызов → cooldown установлен → размещение.
-      // Второй вызов сразу → cooldown активен → skip.
+    it('should skip silently on repeated calls within cooldown (no warn spam)', async () => {
+      // Второй вызов в течение 60s → только debug, без warn
       const minOrderSize = Quantity.of(new Decimal('5'));
+      const logger = makeLogger();
       const portfolio = {
         getPosition: jest.fn().mockReturnValue({
           quantity: Quantity.of(new Decimal('0.21')),
@@ -594,17 +600,18 @@ describe('ExecutionEngine', () => {
       deps = makeDeps({
         catalog: makeCatalog(minOrderSize),
         portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
+        logger: logger as any,
       });
       engine = new ExecutionEngine(deps);
 
       const intent = [{ type: 'PLACE' as const, side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) }];
 
-      const first = await engine.execute(ctx, intent);
-      expect(first.placed).toBe(1);
+      await engine.execute(ctx, intent); // первый: warn
+      (logger.warn as ReturnType<typeof jest.fn>).mockClear();
 
       const second = await engine.execute(ctx, intent);
       expect(second.skipped).toBe(1);
-      expect(second.placed).toBe(0);
+      expect(logger.warn).not.toHaveBeenCalled(); // второй: тихо
     });
 
     it('should skip SELL when position qty is zero', async () => {

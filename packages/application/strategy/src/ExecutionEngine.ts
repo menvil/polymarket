@@ -315,32 +315,29 @@ export class ExecutionEngine {
           }
 
           if (availableQty.lt(info.minOrderSize.value())) {
-            // Позиция застряла (partial fill + cancel) — меньше minOrderSize.
-            // Пробуем продать фактический размер: биржа может принять полный close позиции.
-            // Cooldown предотвращает спам если биржа отклоняет.
+            // Позиция меньше minOrderSize (partial fill + cancel или tiny fill).
+            // Polymarket отклоняет SELL < minOrderSize так же как BUY.
+            // Ждём StateReconciliationService (~60s): после reconcile позиция вырастет
+            // до полного размера и SELL пройдёт по обычному пути.
             const key = String(ctx.instrumentId);
             const nowMs = Date.now();
-            const lastAttempt = this._sellBelowMinCooldowns.get(key) ?? 0;
+            const lastLogged = this._sellBelowMinCooldowns.get(key) ?? 0;
 
-            if (nowMs - lastAttempt < ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS) {
-              this._logger.debug('ExecutionEngine: skip — SELL below minOrderSize cooldown active', {
+            if (nowMs - lastLogged >= ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS) {
+              this._sellBelowMinCooldowns.set(key, nowMs);
+              this._logger.warn('ExecutionEngine: skip — SELL stuck position below minOrderSize, awaiting reconciliation', {
                 strategyId: ctx.strategyId,
                 instrumentId: key,
                 positionQty: availableQty.toNumber(),
                 minOrderSize: info.minOrderSize.toNumber(),
-                retryInMs: ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS - (nowMs - lastAttempt),
               });
-              return 'skipped';
+            } else {
+              this._logger.debug('ExecutionEngine: skip — SELL below minOrderSize (logged recently)', {
+                strategyId: ctx.strategyId,
+                instrumentId: key,
+              });
             }
-
-            this._sellBelowMinCooldowns.set(key, nowMs);
-            effectiveSize = Quantity.of(availableQty);
-            this._logger.info('ExecutionEngine: SELL below minOrderSize — attempting with actual position qty', {
-              strategyId: ctx.strategyId,
-              instrumentId: key,
-              positionQty: availableQty.toNumber(),
-              minOrderSize: info.minOrderSize.toNumber(),
-            });
+            return 'skipped';
           } else {
             // Позиции достаточно — клампируем intent.size к minOrderSize (стандартное поведение)
             this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
