@@ -359,6 +359,40 @@ export class Portfolio {
     return Ok(this.withBalance(balanceResult.value));
   }
 
+  /**
+   * Списывает средства напрямую из available (без резервации).
+   *
+   * @param amount - Сумма для списания
+   * @returns Result с новым Portfolio или InvalidBalanceError
+   *
+   * @remarks
+   * Используется для fills по terminal/не найденным ордерам, когда резервация
+   * уже была снята (CancelOrderUseCase). Биржевое событие — источник истины.
+   *
+   * Если available < amount — списывает до нуля (best-effort).
+   * REST-синхронизация портфолио скорректирует баланс в течение ~15 секунд.
+   *
+   * ```
+   * applyDirectDebit(amount) → available = max(0, available - amount)
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // fill на отменённый ордер: резервация уже снята
+   * const result = portfolio.applyDirectDebit(Money.of(notional, 'USDC'));
+   * ```
+   */
+  public applyDirectDebit(amount: Money): Result<Portfolio, InvalidBalanceError> {
+    const currentAvailable = this.balance.available().value();
+    const newAvailableValue = Decimal.max(new Decimal(0), currentAvailable.minus(amount.value()));
+    const newAvailable = Money.of(newAvailableValue, 'USDC');
+    const balanceResult = BalanceService.updateAvailable(this.balance, newAvailable);
+    if (!balanceResult.ok) {
+      return Err(balanceResult.error);
+    }
+    return Ok(this.withBalance(balanceResult.value));
+  }
+
   // ────────────────────────────────────────────────────────────
   // Операции с позициями
   // ────────────────────────────────────────────────────────────

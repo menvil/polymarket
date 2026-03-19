@@ -333,6 +333,107 @@ export class PortfolioService {
     return Ok(undefined);
   }
 
+  /**
+   * Применяет Fill напрямую к Portfolio без задействования резерваций.
+   *
+   * @param fill - Исполнение ордера
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Используется когда fill приходит на terminal или не найденный ордер.
+   * Биржевое событие — источник истины: токены получены/переданы независимо
+   * от локального состояния ордера.
+   *
+   * ### BUY fill:
+   * - `applyDirectDebit(fill.price × size)` — прямой дебит из available
+   *   (резервация уже снята CancelOrderUseCase или ордер был внешним)
+   * - Позиция LONG: quantity += size
+   *
+   * ### SELL fill:
+   * - Снимаем токенную резервацию (best effort)
+   * - `applyCredit(fill.price × size)` — зачисление выручки
+   * - Позиция LONG: quantity -= size (best effort — позиции может не быть)
+   */
+  public applyDirectFill(fill: Fill): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(fill.accountId) ?? 0;
+    const portfolio = this._store.get(fill.accountId);
+    if (!portfolio) {
+      return Err(new TradingError(
+        'Portfolio not found',
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
+      ));
+    }
+
+    const rawTokenId = fill.tokenId.type === 'POLYMARKET_CTF_TOKEN'
+      ? fill.tokenId.tokenId
+      : assetIdToString(fill.tokenId);
+    const instrumentId = asInstrumentId(rawTokenId);
+    if (!instrumentId) {
+      return Err(new TradingError(
+        `Invalid tokenId: ${String(fill.tokenId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const fillQty = fill.size.value();
+    const notional = fill.price.value().times(fillQty);
+    const money = Money.of(notional, 'USDC');
+
+    let portfolioAfterBalance: Portfolio;
+
+    if (fill.side === 'BUY') {
+      // Прямой дебит из available (резервация уже снята или ордер внешний)
+      const debitResult = portfolio.applyDirectDebit(money);
+      if (!debitResult.ok) {
+        return Err(new TradingError(
+          `Failed direct debit for fill: ${debitResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = debitResult.value;
+    } else {
+      // SELL: снимаем токенную резервацию best-effort + кредитуем USDC
+      const releaseResult = portfolio.releaseTokenReservation(instrumentId, fillQty);
+      const afterRelease = releaseResult.ok ? releaseResult.value : portfolio;
+      const creditResult = afterRelease.applyCredit(money);
+      if (!creditResult.ok) {
+        return Err(new TradingError(
+          `Failed credit for fill: ${creditResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = creditResult.value;
+    }
+
+    // Обновляем позицию (для SELL — best effort: позиции может не быть)
+    const positionResult = this._applyPositionUpdate(portfolioAfterBalance, instrumentId, fill);
+    const finalPortfolio = positionResult.ok
+      ? positionResult.value
+      : portfolioAfterBalance; // SELL без позиции — только баланс
+
+    if (!positionResult.ok) {
+      this._logger.warn('Direct fill: position update skipped (best effort)', {
+        fillId: String(fill.id),
+        side: fill.side,
+        instrumentId: String(instrumentId),
+        reason: positionResult.error.message,
+      });
+    }
+
+    const saveResult = this._store.save(finalPortfolio, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.info('Direct fill applied to portfolio', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      side: fill.side,
+      size: fillQty.toString(),
+      price: fill.price.toNumber(),
+      notional: notional.toString(),
+    });
+    return Ok(undefined);
+  }
+
   // ── Приватные методы ───────────────────────────────────────────────────────
 
   /**

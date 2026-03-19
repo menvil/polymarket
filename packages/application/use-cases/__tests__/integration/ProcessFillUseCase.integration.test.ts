@@ -44,6 +44,7 @@ import {
   asFillId,
   asOrderId,
   asMarketId,
+  asInstrumentId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
 import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value-objects';
@@ -113,6 +114,7 @@ const TOKEN_ASSET_ID = {
   type: 'POLYMARKET_CTF_TOKEN',
   tokenId: 'token-abc-integration',
 } as unknown as AssetId;
+const TOKEN_INSTRUMENT_ID = asInstrumentId('token-abc-integration')!;
 const MARKET_ID = asMarketId('market-integration-001')!;
 const ORDER_ID = asOrderId('order-integration-001')!;
 const FILL_ID = asFillId('fill-integration-001')!;
@@ -350,20 +352,33 @@ describe('ProcessFillUseCase (integration)', () => {
     expect(actualVwap).toBeCloseTo(expectedVwap, 6);
   });
 
-  // ── Сценарий 4: Order не найден → Ok (только ledger) ──────────────────────
+  // ── Сценарий 4: Order не найден → direct fill (portfolio + ledger) ──────────
 
-  it('Order не найден → возвращает Ok и записывает fill в ledger', async () => {
-    // Arrange: orderRepo пуст, portfolio есть
-    // Это сценарий «fill на CANCELLED ордер»: резервация уже снята,
-    // portfolio корректируется StateReconciliationService (~60s).
-    portfolioStore.save(makePortfolio(), 0);
+  it('Order не найден → возвращает Ok, обновляет portfolio через direct fill', async () => {
+    // Arrange: orderRepo пуст, portfolio есть с available=1000, reserved=50
+    // Сценарий: fill на CANCELLED/MATCHED ордер — биржа источник истины.
+    const portfolio = makePortfolio(new Decimal('1000'), new Decimal('50'));
+    portfolioStore.save(portfolio, 0);
+    // FILL_SIZE=50, FILL_PRICE=0.65 → notional=32.50
     const fill = makeFill();
 
     // Act
     const result = await new ProcessFillUseCase(deps).execute(fill);
 
-    // Assert
+    // Assert: Ok
     expect(result.ok).toBe(true);
+
+    // Portfolio обновлён: available -= notional (direct debit), позиция добавлена
+    const updatedPortfolio = portfolioStore.get(ACCOUNT_ID)!;
+    expect(updatedPortfolio).toBeDefined();
+    // available уменьшилась на notional (32.50): 1000 - 32.50 = 967.50
+    expect(updatedPortfolio.balance.available().value().toNumber()).toBeCloseTo(967.5, 2);
+    // reserved не изменился (нет reservation dance)
+    expect(updatedPortfolio.balance.reserved().value().toNumber()).toBeCloseTo(50, 2);
+    // позиция добавлена
+    const pos = updatedPortfolio.getPosition(TOKEN_INSTRUMENT_ID);
+    expect(pos).toBeDefined();
+    expect(pos!.quantity.value().toNumber()).toBeCloseTo(50, 2);
   });
 
   // ── Сценарий 5: Portfolio не найден → Err ──────────────────────────────────

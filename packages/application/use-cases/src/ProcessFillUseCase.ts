@@ -6,8 +6,8 @@
  * 1. Idempotency guard (IProcessedFillRepository.markIfNotExists)
  *    — при дублирующемся fill возвращает Ok без повторной обработки
  * 2. Получение Order из репозитория
- *    — если ордер не найден или уже terminal (CANCELLED/FILLED): только Ledger, без Portfolio.
- *    Portfolio корректируется StateReconciliationService (~60s)
+ *    — если ордер не найден или уже terminal (CANCELLED/FILLED): direct fill path.
+ *    Portfolio обновляется немедленно через applyDirectFill (без резерваций).
  * 3. Применение Fill к Order (sync, order.applyFill)
  * 4. Синхронное сохранение обновлённого Order (orderStateStore.saveSync)
  * 5. Обновление Portfolio (PortfolioService.applyFill)
@@ -104,23 +104,32 @@ export class ProcessFillUseCase {
     const order = await this._deps.orderRepo.get(fill.orderId);
 
     // Особый случай: ордер не найден или уже terminal (например, CANCELLED).
-    // Это происходит при частичном fill → стратегия отменяет оставшийся ордер →
-    // второй fill (уже MATCHED) приходит как MINED на теперь CANCELLED ордер.
-    // Резервация баланса была снята CancelOrderUseCase, поэтому applyFill/applyDebit
-    // провалится с «Cannot unfreeze/consume». Вместо этого: только ledger, без portfolio.
-    // Portfolio будет скорректирован StateReconciliationService (~60s).
+    // Это происходит при: частичный fill → стратегия отменяет ордер → оставшийся
+    // fill (MATCHED) приходит на уже CANCELLED ордер. Также: внешние/ручные ордера.
+    //
+    // Биржевое событие — источник истины: токены реально получены/переданы.
+    // Применяем fill напрямую без резервационного dance (applyDirectFill).
     if (!order || order.isTerminal) {
       const reason = !order ? 'not found' : `terminal (${order.status})`;
-      this._logger.warn('Fill arrived for order that is ' + reason + ' — recording in ledger only', {
+      this._logger.warn('Fill arrived for order that is ' + reason + ' — applying direct fill', {
         fillId: String(fill.id),
         orderId: String(fill.orderId),
         side: fill.side,
         size: fill.size.toNumber(),
         price: fill.price.toNumber(),
       });
-      // Записываем в Ledger — для корректной финансовой отчётности
+
+      const directResult = this._deps.portfolioService.applyDirectFill(fill);
+      if (!directResult.ok) {
+        this._logger.error('Direct fill portfolio update failed', {
+          fillId: String(fill.id),
+          orderId: String(fill.orderId),
+          error: directResult.error.message,
+        });
+        // Не останавливаем: ledger всё равно запишем
+      }
+
       this._deps.ledgerService.recordFill(fill);
-      // Portfolio будет синхронизирован reconciler'ом
       return Ok(undefined);
     }
 
