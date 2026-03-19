@@ -61,4 +61,26 @@ export interface IOrderStateStore {
    * но ордер ещё OPEN → шлёт CANCEL → "Cannot unfreeze".
    */
   saveSync(order: Order): void;
+
+  /**
+   * Помечает ордер как MATCHED на бирже.
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Вызывается при получении WS-события `status=MATCHED` от Polymarket.
+   * После пометки `CancelOrderUseCase` пропускает отмену этого ордера:
+   * MATCHED означает, что ордер уже исполнен на бирже и отмена невозможна.
+   * Предотвращает race condition: partial fill → стратегия отменяет →
+   * оставшийся fill приходит на "не найден" ордер → portfolio desync.
+   */
+  markMatchedOnExchange(orderId: OrderId): void;
+
+  /**
+   * Возвращает true если ордер помечен как MATCHED на бирже.
+   *
+   * @param orderId - ID ордера
+   * @returns true если WS сообщил MATCHED для этого ордера
+   */
+  isMatchedOnExchange(orderId: OrderId): boolean;
 }

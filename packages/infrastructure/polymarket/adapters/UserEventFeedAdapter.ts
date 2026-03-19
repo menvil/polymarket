@@ -33,7 +33,7 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId } from '@polymarket/ids';
+import type { AccountId, OrderId } from '@polymarket/ids';
 import { asOrderId } from '@polymarket/ids';
 import type { FillEventHandler, OrderUpdateHandler, VenueOrderUpdate } from '@polymarket/handlers';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
@@ -67,6 +67,9 @@ export class UserEventFeedAdapter {
    * @param _makerAddress - ETH-адрес нашего кошелька (maker_address в ордерах Polymarket).
    *   Используется как fallback для поиска нашего maker_order в cross-outcome fills,
    *   где top-level `owner` = UUID тейкера, а не наш UUID.
+   * @param _onMatchedOnExchange - Опциональный callback при WS status=MATCHED для ордера.
+   *   Позволяет пометить ордер как "matched on exchange" чтобы CancelOrderUseCase
+   *   пропустил его отмену — MATCHED ордер уже исполнен, отмена невозможна.
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
@@ -76,6 +79,7 @@ export class UserEventFeedAdapter {
     logger: ILogger,
     private readonly _onReconnect?: () => Promise<void>,
     private readonly _makerAddress?: string,
+    private readonly _onMatchedOnExchange?: (orderId: OrderId) => void,
   ) {
     this._logger = logger.child({ component: 'UserEventFeedAdapter' });
   }
@@ -122,6 +126,21 @@ export class UserEventFeedAdapter {
         reason: dto.reason,
         timestamp: dto.timestamp,
       });
+
+      // Когда Polymarket сообщает status=MATCHED — ордер исполнен на бирже,
+      // отмена невозможна. Помечаем ордер, чтобы CancelOrderUseCase пропустил его.
+      // Это устраняет race condition: partial fill → стратегия отменяет →
+      // оставшийся fill на "отменённый" ордер → portfolio desync.
+      if (dto.orderEventType === 'UPDATE' && dto.status === 'MATCHED' && this._onMatchedOnExchange) {
+        const orderId = asOrderId(dto.order_id);
+        if (orderId) {
+          this._logger.debug('[USER-EVENT] order MATCHED on exchange — marking non-cancellable', {
+            order_id: dto.order_id,
+          });
+          this._onMatchedOnExchange(orderId);
+        }
+      }
+
       const update = this._mapOrderUpdate(dto);
       if (update) {
         await this._orderHandler.handle(update);

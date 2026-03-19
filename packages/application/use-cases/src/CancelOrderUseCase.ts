@@ -106,6 +106,17 @@ export class CancelOrderUseCase {
       return Ok(undefined);
     }
 
+    // MATCHED на бирже — ордер уже исполнен, отмена невозможна.
+    // WS сообщил status=MATCHED → fill(ы) идут в пути → portfolio обновится через ProcessFillUseCase.
+    // Попытка cancel здесь вызовет race: fill придёт на "не найден" ордер → portfolio desync.
+    if (this._deps.orderStateStore.isMatchedOnExchange(input.orderId)) {
+      this._logger.info('Order is MATCHED on exchange — skipping cancel to prevent fill desync', {
+        orderId: String(input.orderId),
+        status: order.status,
+      });
+      return Ok(undefined);
+    }
+
     // Шаг 2: Отмена Order
     const cancelResult = await this._deps.orderService.cancel(order, input.reason);
     if (!cancelResult.ok) {

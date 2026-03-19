@@ -43,6 +43,15 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   private readonly _store = new Map<OrderId, Order>();
 
   /**
+   * Множество orderId, помеченных как MATCHED на бирже.
+   *
+   * @remarks
+   * Заполняется при получении WS-события status=MATCHED.
+   * Используется CancelOrderUseCase для блокировки отмены MATCHED ордеров.
+   */
+  private readonly _matchedOnExchange = new Set<string>();
+
+  /**
    * Возвращает Order по ID или undefined если не найден.
    *
    * @param orderId - ID ордера
@@ -256,6 +265,29 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public saveSync(order: Order): void {
     this._store.set(order.id, order);
+  }
+
+  /**
+   * Помечает ордер как MATCHED на бирже.
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Вызывается при получении WS status=MATCHED.
+   * После пометки CancelOrderUseCase пропустит отмену этого ордера.
+   */
+  public markMatchedOnExchange(orderId: OrderId): void {
+    this._matchedOnExchange.add(String(orderId));
+  }
+
+  /**
+   * Возвращает true если ордер помечен как MATCHED на бирже.
+   *
+   * @param orderId - ID ордера
+   * @returns true если WS сообщил MATCHED для этого ордера
+   */
+  public isMatchedOnExchange(orderId: OrderId): boolean {
+    return this._matchedOnExchange.has(String(orderId));
   }
 
   /**

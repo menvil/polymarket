@@ -110,12 +110,17 @@ function makeOrderRepo(order?: Order): IOrderRepository {
   };
 }
 
-function makeOrderStateStore(order?: Order): IOrderStateStore {
+function makeOrderStateStore(order?: Order, matchedOrderIds: string[] = []): IOrderStateStore {
+  const matched = new Set(matchedOrderIds);
   return {
     getOrder: jest.fn<IOrderStateStore['getOrder']>().mockReturnValue(order),
     saveSync: jest.fn<IOrderStateStore['saveSync']>(),
     getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
+    markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
+    isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockImplementation(
+      (id) => matched.has(String(id)),
+    ),
   };
 }
 
@@ -269,6 +274,23 @@ describe('CancelOrderUseCase', () => {
     await useCase.execute(makeInput());
     // Для терминального ордера не вызываем cancelOrder
     expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  // ── MATCHED на бирже ─────────────────────────────────────────────────────
+
+  it('возвращает Ok без отмены если ордер MATCHED на бирже', async () => {
+    orderStateStore = makeOrderStateStore(makeOpenOrder(), [String(ORDER_ID)]);
+    const useCase = new CancelOrderUseCase({ ...deps, orderStateStore });
+    const result = await useCase.execute(makeInput());
+    expect(result.ok).toBe(true);
+    expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('не отменяет MATCHED ордер локально (orderRepo.save не вызывается)', async () => {
+    orderStateStore = makeOrderStateStore(makeOpenOrder(), [String(ORDER_ID)]);
+    const useCase = new CancelOrderUseCase({ ...deps, orderStateStore });
+    await useCase.execute(makeInput());
+    expect(orderRepo.save).not.toHaveBeenCalled();
   });
 
   // ── Best-effort биржевая отмена ────────────────────────────────────────────

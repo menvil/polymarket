@@ -57,6 +57,8 @@ function makeOrderStateStore(): IOrderStateStore {
     getOpenOrdersByInstrument: fn().mockReturnValue([]),
     getOrder: fn().mockReturnValue(undefined),
     saveSync: fn(),
+    markMatchedOnExchange: fn(),
+    isMatchedOnExchange: fn().mockReturnValue(false),
   };
 }
 

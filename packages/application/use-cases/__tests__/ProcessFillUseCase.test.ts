@@ -152,6 +152,8 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     saveSync: jest.fn<IOrderStateStore['saveSync']>(),
     getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
+    markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
+    isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockReturnValue(false),
   };
 }
 

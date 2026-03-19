@@ -288,6 +288,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
     // makerAddress: ETH-адрес нашего кошелька — fallback для cross-outcome fills
     makerAddress,
+    // onMatchedOnExchange: помечаем ордер как MATCHED, чтобы CancelOrderUseCase пропустил его.
+    // Устраняет race: partial fill → стратегия cancels → fill 4.68 на "не найден" → portfolio desync.
+    (orderId) => { repos.orderRepo.markMatchedOnExchange(orderId); },
   );
 
   return {
