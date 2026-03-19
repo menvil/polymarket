@@ -350,10 +350,12 @@ describe('ProcessFillUseCase (integration)', () => {
     expect(actualVwap).toBeCloseTo(expectedVwap, 6);
   });
 
-  // ── Сценарий 4: Order не найден → Err ──────────────────────────────────────
+  // ── Сценарий 4: Order не найден → Ok (только ledger) ──────────────────────
 
-  it('Order не найден → возвращает Err с сообщением Order not found', async () => {
+  it('Order не найден → возвращает Ok и записывает fill в ledger', async () => {
     // Arrange: orderRepo пуст, portfolio есть
+    // Это сценарий «fill на CANCELLED ордер»: резервация уже снята,
+    // portfolio корректируется StateReconciliationService (~60s).
     portfolioStore.save(makePortfolio(), 0);
     const fill = makeFill();
 
@@ -361,10 +363,7 @@ describe('ProcessFillUseCase (integration)', () => {
     const result = await new ProcessFillUseCase(deps).execute(fill);
 
     // Assert
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toMatch(/Order not found/);
-    }
+    expect(result.ok).toBe(true);
   });
 
   // ── Сценарий 5: Portfolio не найден → Err ──────────────────────────────────

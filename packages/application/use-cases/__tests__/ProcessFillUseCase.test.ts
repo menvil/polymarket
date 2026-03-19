@@ -237,14 +237,12 @@ describe('ProcessFillUseCase', () => {
 
   // ── Order не найден ───────────────────────────────────────────────────────
 
-  it('возвращает Err если ордер не найден', async () => {
+  it('возвращает Ok если ордер не найден (только ledger)', async () => {
+    // Ордер не найден — fill записывается в ledger, portfolio корректируется reconciler'ом
     orderRepo = makeOrderRepo(undefined);
     const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: makeOrderStateStore(undefined), orderRepo });
     const result = await useCase.execute(makeFill());
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toMatch(/Order not found/);
-    }
+    expect(result.ok).toBe(true);
   });
 
   // ── Portfolio не найден ───────────────────────────────────────────────────

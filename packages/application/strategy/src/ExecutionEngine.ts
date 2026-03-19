@@ -296,6 +296,22 @@ export class ExecutionEngine {
     if (info) {
       // 1. Клампирование к minOrderSize (минимум в токенах)
       if (effectiveSize.value().lt(info.minOrderSize.value())) {
+        // Для SELL: если позиция меньше minOrderSize — клампирование только усугубит ситуацию
+        // (PlaceOrderUseCase отклонит ордер с «Insufficient token balance»).
+        // Пропускаем вместо клампирования.
+        if (intent.side === 'SELL') {
+          const availableQty = portfolio.getPosition(ctx.instrumentId)?.quantity.value()
+            ?? new Decimal(0);
+          if (availableQty.lt(info.minOrderSize.value())) {
+            this._logger.debug('ExecutionEngine: skip — SELL position below minOrderSize', {
+              strategyId: ctx.strategyId,
+              instrumentId: String(ctx.instrumentId),
+              positionQty: availableQty.toNumber(),
+              minOrderSize: info.minOrderSize.toNumber(),
+            });
+            return 'skipped';
+          }
+        }
         this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
           strategyId: ctx.strategyId,
           instrumentId: String(ctx.instrumentId),

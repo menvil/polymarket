@@ -6,6 +6,8 @@
  * 1. Idempotency guard (IProcessedFillRepository.markIfNotExists)
  *    — при дублирующемся fill возвращает Ok без повторной обработки
  * 2. Получение Order из репозитория
+ *    — если ордер не найден или уже terminal (CANCELLED/FILLED): только Ledger, без Portfolio.
+ *    Portfolio корректируется StateReconciliationService (~60s)
  * 3. Применение Fill к Order (sync, order.applyFill)
  * 4. Синхронное сохранение обновлённого Order (orderStateStore.saveSync)
  * 5. Обновление Portfolio (PortfolioService.applyFill)
@@ -100,15 +102,26 @@ export class ProcessFillUseCase {
 
     // Шаг 2: Получить Order
     const order = await this._deps.orderRepo.get(fill.orderId);
-    if (!order) {
-      this._logger.warn('Order not found for fill', {
+
+    // Особый случай: ордер не найден или уже terminal (например, CANCELLED).
+    // Это происходит при частичном fill → стратегия отменяет оставшийся ордер →
+    // второй fill (уже MATCHED) приходит как MINED на теперь CANCELLED ордер.
+    // Резервация баланса была снята CancelOrderUseCase, поэтому applyFill/applyDebit
+    // провалится с «Cannot unfreeze/consume». Вместо этого: только ledger, без portfolio.
+    // Portfolio будет скорректирован StateReconciliationService (~60s).
+    if (!order || order.isTerminal) {
+      const reason = !order ? 'not found' : `terminal (${order.status})`;
+      this._logger.warn('Fill arrived for order that is ' + reason + ' — recording in ledger only', {
         fillId: String(fill.id),
         orderId: String(fill.orderId),
+        side: fill.side,
+        size: fill.size.toNumber(),
+        price: fill.price.toNumber(),
       });
-      return Err(new TradingError(
-        `Order not found: ${String(fill.orderId)}`,
-        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
-      ));
+      // Записываем в Ledger — для корректной финансовой отчётности
+      this._deps.ledgerService.recordFill(fill);
+      // Portfolio будет синхронизирован reconciler'ом
+      return Ok(undefined);
     }
 
     // Шаги 3–6 выполняются синхронно (без yield) — атомарное обновление состояния.
