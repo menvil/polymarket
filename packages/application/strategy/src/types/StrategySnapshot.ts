@@ -36,6 +36,7 @@ import type { TradeTape } from '@polymarket/trade-tape';
 import type { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { Market } from '@polymarket/market';
+import type { InstrumentConstraints } from './InstrumentConstraints.js';
 
 export interface StrategySnapshot {
   /** ID инструмента (outcome token) */
@@ -84,8 +85,38 @@ export interface StrategySnapshot {
    *
    * @remarks
    * Sync read из OrderStateStore. Пустой массив если нет ордеров.
+   * НЕ включает ордера в статусе MATCHED на бирже — они в `matchedOrders`.
    */
   readonly openOrders: readonly Order[];
+
+  /**
+   * Ордера ЭТОЙ стратегии, помеченные как MATCHED на бирже (in-flight fills).
+   *
+   * @remarks
+   * MATCHED = fill(ы) в пути (MATCHED → MINED → CONFIRMED), отменить нельзя.
+   * Стратегия должна учитывать эти ордера при принятии решений:
+   * - Не размещать новый BUY пока есть MATCHED BUY (иначе двойная покупка)
+   * - Не пытаться отменить (отмена невозможна, fill уже on-chain)
+   *
+   * После CONFIRMED → fill обработан → ордер FILLED → исчезает из обоих массивов.
+   */
+  readonly matchedOrders: readonly Order[];
+
+  // ── Constraints ─────────────────────────────────────────
+  /**
+   * Ограничения инструмента: minOrderSize, minOrderValue, tickSize.
+   *
+   * @remarks
+   * Из каталога инструментов (IMarketCatalog).
+   * undefined если инструмент неизвестен каталогу.
+   *
+   * Стратегия использует для адаптации размеров ордеров:
+   * - Если остаток после SELL < minOrderSize → продавать всё
+   * - Если orderValue < minOrderValue → увеличить size или пропустить
+   *
+   * BaseStrategy предоставляет helpers: adjustSellSize(), adjustBuySize().
+   */
+  readonly constraints: InstrumentConstraints | undefined;
 
   // ── Portfolio ────────────────────────────────────────────
   /**

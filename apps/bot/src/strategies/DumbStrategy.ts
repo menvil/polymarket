@@ -104,6 +104,18 @@ export interface DumbData {
   readonly openBuyOrders: readonly OpenBuyOrder[];
   /** Есть ли открытые SELL-ордера (для HOLD при ожидании продажи) */
   readonly hasOpenSellOrders: boolean;
+  /**
+   * Есть ли MATCHED ордера (in-flight fills, MATCHED → MINED → CONFIRMED).
+   *
+   * @remarks
+   * Если true — не размещать новые BUY/SELL, ждать CONFIRMED.
+   * Без этой проверки стратегия многократно покупает пока fills в пути.
+   */
+  readonly hasMatchedOrders: boolean;
+  /** Минимальный размер ордера в токенах (из constraints, undefined если нет данных) */
+  readonly minOrderSize: Decimal | undefined;
+  /** Минимальная стоимость ордера в USDC (из constraints, undefined если нет данных) */
+  readonly minOrderValue: Decimal | undefined;
 }
 
 /** Действие стратегии */
@@ -171,6 +183,8 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
     const hasOpenSellOrders = snapshot.openOrders.some((o) => o.side === 'SELL');
 
+    const hasMatchedOrders = snapshot.matchedOrders.length > 0;
+
     return {
       refPrice,
       positionQty,
@@ -178,6 +192,9 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       availableBalance,
       openBuyOrders,
       hasOpenSellOrders,
+      hasMatchedOrders,
+      minOrderSize: snapshot.constraints?.minOrderSize.value(),
+      minOrderValue: snapshot.constraints?.minOrderValue.value(),
     };
   }
 
@@ -197,6 +214,14 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
    * - positionQty>0 и есть SELL-ордер → HOLD
    */
   protected decide(data: DumbData, _reasons: ReadonlySet<TriggerReason>): DumbAction[] {
+    // ── In-flight fills → HOLD ──────────────────────────────────────────────
+    // MATCHED ордера = fills в пути (on-chain). Ждём CONFIRMED.
+    // Без этой проверки стратегия ставит новый BUY каждый тик пока fills идут.
+    if (data.hasMatchedOrders) {
+      this._logger?.debug('DumbStrategy: HOLD — matched orders in-flight, waiting for CONFIRMED');
+      return [];
+    }
+
     // ── Нет позиции ─────────────────────────────────────────────────────────
     if (data.positionQty.isZero()) {
       if (data.refPrice === undefined) return [];
@@ -248,8 +273,13 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
         return [];
       }
 
+      // Корректируем размер с учётом constraints (minOrderSize, minOrderValue)
+      const effectiveSize = data.minOrderSize !== undefined && data.minOrderValue !== undefined
+        ? this.adjustBuySize(this._config.orderSize, targetBuyPrice, data.minOrderValue, data.minOrderSize)
+        : this._config.orderSize;
+
       // Нет ордеров → проверяем баланс и ставим новый
-      const cost = targetBuyPrice.mul(this._config.orderSize);
+      const cost = targetBuyPrice.mul(effectiveSize);
 
       if (data.availableBalance.lt(cost)) {
         this._logger?.debug('DumbStrategy: skip — insufficient balance', {
@@ -262,13 +292,14 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       this._logger?.debug('DumbStrategy: ENTER BUY', {
         refPrice: data.refPrice.toFixed(4),
         targetBuyPrice: targetBuyPrice.toFixed(4),
-        size: this._config.orderSize.toFixed(2),
+        size: effectiveSize.toFixed(2),
+        adjustedFromConfig: !effectiveSize.eq(this._config.orderSize),
       });
 
       return [{
         type: 'ENTER',
         price: targetBuyPrice,
-        size: this._config.orderSize,
+        size: effectiveSize,
       }];
     }
 
@@ -299,16 +330,33 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
     // Не продаём если цена вне допустимого диапазона
     if (sellPrice.gt('0.99')) return [];
 
+    // Корректируем размер с учётом minOrderSize:
+    // если после SELL остаток < minOrderSize → продать всю позицию
+    const desiredSellSize = Decimal.min(data.positionQty, this._config.orderSize);
+    const effectiveSellSize = data.minOrderSize !== undefined
+      ? this.adjustSellSize(desiredSellSize, data.positionQty, data.minOrderSize)
+      : desiredSellSize;
+
+    // Если позиция < minOrderSize — продать невозможно, пропускаем
+    if (data.minOrderSize !== undefined && data.positionQty.lt(data.minOrderSize)) {
+      this._logger?.debug('DumbStrategy: skip SELL — position below minOrderSize', {
+        positionQty: data.positionQty.toFixed(2),
+        minOrderSize: data.minOrderSize.toFixed(2),
+      });
+      return [];
+    }
+
     this._logger?.debug('DumbStrategy: EXIT SELL', {
       entryPrice: data.entryPrice.toFixed(4),
       sellPrice: sellPrice.toFixed(4),
-      size: Decimal.min(data.positionQty, this._config.orderSize).toFixed(2),
+      size: effectiveSellSize.toFixed(2),
+      adjustedFromDesired: !effectiveSellSize.eq(desiredSellSize),
     });
 
     return [{
       type: 'EXIT',
       price: sellPrice,
-      size: Decimal.min(data.positionQty, this._config.orderSize),
+      size: effectiveSellSize,
     }];
   }
 

@@ -112,6 +112,19 @@ export class UserEventFeedAdapter {
         maker_orders: dto.maker_orders,
         timestamp: dto.timestamp,
       });
+
+      // Fill в пути (MATCHED/MINED/CONFIRMED) → помечаем orderId как MATCHED.
+      // Это блокирует CancelOrderUseCase от отмены ордера с in-flight fill.
+      //
+      // Без этого TAKER cross-outcome MINT fills вызывают phantom position:
+      // 1. Fill MINED приходит раньше WS order MATCHED event
+      // 2. Стратегия отменяет ордер (isMatchedOnExchange = false)
+      // 3. Cancel успешен на CLOB, но on-chain MINT завершается
+      // 4. Токены в portfolio но не на CLOB balance → SELL невозможен навсегда
+      if (dto.status !== 'FAILED' && this._onMatchedOnExchange) {
+        this._markOrderFromFill(dto);
+      }
+
       // Явный маппинг WsUserFillDto → Record<string, unknown>
       // FillEventHandler принимает raw DTO в виде Record
       await this._fillHandler.handle(this._mapFillDto(dto), this._accountId);
@@ -219,6 +232,46 @@ export class UserEventFeedAdapter {
       maker_orders: dto.maker_orders,
       timestamp: dto.timestamp,
     };
+  }
+
+  /**
+   * Помечает orderId из fill-события как MATCHED на бирже.
+   *
+   * @param dto - Raw fill DTO из user-channel
+   *
+   * @remarks
+   * Определяет наш orderId по trader_side:
+   * - TAKER → наш ордер = taker_order_id
+   * - MAKER → наши ордера = maker_orders[].order_id
+   *
+   * Вызывается при любом fill-статусе кроме FAILED.
+   * Идемпотентен (Set.add — повторные вызовы безопасны).
+   */
+  private _markOrderFromFill(dto: {
+    readonly taker_order_id: string;
+    readonly trader_side: 'TAKER' | 'MAKER';
+    readonly maker_orders: ReadonlyArray<{ readonly order_id: string }>;
+  }): void {
+    if (dto.trader_side === 'TAKER') {
+      const orderId = asOrderId(dto.taker_order_id);
+      if (orderId) {
+        this._logger.debug('[USER-EVENT] fill received — marking order as MATCHED (taker)', {
+          order_id: dto.taker_order_id,
+        });
+        this._onMatchedOnExchange!(orderId);
+      }
+    } else {
+      // MAKER: все maker_orders в этом fill — наши ордера
+      for (const mo of dto.maker_orders) {
+        const orderId = asOrderId(mo.order_id);
+        if (orderId) {
+          this._logger.debug('[USER-EVENT] fill received — marking order as MATCHED (maker)', {
+            order_id: mo.order_id,
+          });
+          this._onMatchedOnExchange!(orderId);
+        }
+      }
+    }
   }
 
   /**

@@ -150,6 +150,10 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
       // Считаем только активные (не терминальные) ордера
       if (order.isTerminal) continue;
       if (strategyId !== undefined && order.strategyId !== strategyId) continue;
+      // MATCHED на бирже → fill(ы) в пути, отменить нельзя, не считаем как "открытые".
+      // Без этого фильтра MAX_OPEN_ORDERS блокирует новые ордера на 5-20 сек
+      // пока MATCHED→CONFIRMED проходит через Polygon finality.
+      if (this._matchedOnExchange.has(String(order.id))) continue;
       count += 1;
     }
     return count;
@@ -288,6 +292,19 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public isMatchedOnExchange(orderId: OrderId): boolean {
     return this._matchedOnExchange.has(String(orderId));
+  }
+
+  /**
+   * Снимает пометку MATCHED с ордера.
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Вызывается после обработки CONFIRMED fill.
+   * Идемпотентен: повторный вызов безопасен (Set.delete на отсутствующем — no-op).
+   */
+  public clearMatchedOnExchange(orderId: OrderId): void {
+    this._matchedOnExchange.delete(String(orderId));
   }
 
   /**

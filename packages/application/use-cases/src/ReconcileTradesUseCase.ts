@@ -123,6 +123,24 @@ export class ReconcileTradesUseCase {
     for (const trade of trades) {
       const fillIdStr = String(trade.fillId);
 
+      // Фильтрация по on-chain статусу.
+      // MATCHED / MINED / RETRYING / FAILED → пропускаем без markIfNotExists,
+      // чтобы CONFIRMED-версия того же fill не была заблокирована idempotency-check'ом.
+      //
+      // Почему не обрабатываем MINED:
+      // Cross-outcome MINT fills (обе стороны BUY) — CLOB отклоняет SELL до CONFIRMED,
+      // так как свежеминченные токены не доступны до finality.
+      // Для обычных transfer fills задержка 2–5 секунд до CONFIRMED несущественна
+      // на 5-минутных маркетах. Следующий reconciliation-цикл (5 с) подхватит CONFIRMED.
+      if (trade.status !== 'CONFIRMED') {
+        this._logger.debug('Trade not yet confirmed, skipping portfolio update', {
+          fillId: fillIdStr,
+          status: trade.status ?? 'undefined',
+        });
+        skippedCount++;
+        continue;
+      }
+
       // Проверка idempotency — markIfNotExists атомарна
       const isNew = await this._deps.processedFillRepo.markIfNotExists(trade.fillId);
 
@@ -157,7 +175,7 @@ export class ReconcileTradesUseCase {
       }
 
       processedCount++;
-      this._logger.debug('Reconciled fill processed', { fillId: fillIdStr });
+      this._logger.debug('Reconciled fill processed', { fillId: fillIdStr, status: trade.status });
     }
 
     this._logger.info('Trade reconciliation complete', {

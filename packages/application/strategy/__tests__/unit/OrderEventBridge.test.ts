@@ -58,6 +58,7 @@ function makeOrderStateStore(orders: Map<string, any> = new Map()) {
     getOrder: jest.fn((id: OrderId) => orders.get(String(id))),
     saveSync: jest.fn(),
     markMatchedOnExchange: jest.fn(),
+    clearMatchedOnExchange: jest.fn(),
     isMatchedOnExchange: jest.fn().mockReturnValue(false),
   };
 }

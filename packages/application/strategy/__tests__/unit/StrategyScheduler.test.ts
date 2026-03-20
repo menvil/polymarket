@@ -58,6 +58,7 @@ function makeOrderStateStore(): IOrderStateStore {
     getOrder: fn().mockReturnValue(undefined),
     saveSync: fn(),
     markMatchedOnExchange: fn(),
+    clearMatchedOnExchange: fn(),
     isMatchedOnExchange: fn().mockReturnValue(false),
   };
 }
@@ -103,6 +104,17 @@ function makeRegistration(strategy: IStrategy, overrides: Partial<StrategyRegist
   };
 }
 
+function makeCatalog() {
+  return {
+    get: fn().mockReturnValue(undefined),
+    getByMarketId: fn().mockReturnValue(undefined),
+    getAll: fn().mockReturnValue([]),
+    register: fn(),
+    remove: fn(),
+    clear: fn(),
+  };
+}
+
 function makeDeps(overrides: Partial<StrategySchedulerDeps> = {}) {
   const marketDataStore = makeMarketDataStore();
   const clock = makeClock();
@@ -111,6 +123,7 @@ function makeDeps(overrides: Partial<StrategySchedulerDeps> = {}) {
       marketDataStore,
       orderStateStore: makeOrderStateStore(),
       portfolioStore: makePortfolioStore() as any,
+      catalog: makeCatalog() as any,
       executionEngine: makeExecutionEngine() as any,
       clock: clock as any,
       logger: makeLogger() as any,
@@ -500,9 +513,49 @@ describe('StrategyScheduler', () => {
       expect(capturedSnapshot!.topOfBook).toBe(topOfBook);
       expect(capturedSnapshot!.bookHistory).toBe(bookHistory);
       expect(capturedSnapshot!.tradeTape).toBe(tradeTape);
-      expect(capturedSnapshot!.openOrders).toBe(openOrders);
+      expect(capturedSnapshot!.openOrders).toStrictEqual(openOrders);
+      expect(capturedSnapshot!.matchedOrders).toEqual([]);
+      expect(capturedSnapshot!.constraints).toBeUndefined();
       expect(capturedSnapshot!.portfolio).toBe(portfolio);
       expect(typeof capturedSnapshot!.nowMs).toBe('number');
+    });
+
+    it('should populate constraints from catalog when available', async () => {
+      const { Quantity } = await import('@polymarket/value-objects');
+      const { Price } = await import('@polymarket/value-objects');
+      const { default: Decimal } = await import('decimal.js');
+
+      const minOrderSize = Quantity.of(new Decimal('5'));
+      const minOrderValue = Quantity.of(new Decimal('1'));
+      const tickSize = Price.of(new Decimal('0.01'));
+      const catalog = makeCatalog();
+      (catalog.get as any).mockReturnValue({ minOrderSize, minOrderValue, tickSize });
+
+      const { deps: d, marketDataStore: mds, clock: clk } = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d);
+
+      let capturedSnapshot: StrategySnapshot | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.tick as any).mockImplementation((snap: StrategySnapshot) => {
+        capturedSnapshot = snap;
+        return [];
+      });
+
+      await s.register(makeRegistration(strategy));
+      s.start();
+
+      clk.advance(100);
+      mds._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush(10);
+
+      expect(capturedSnapshot).toBeDefined();
+      expect(capturedSnapshot!.constraints).toBeDefined();
+      expect(capturedSnapshot!.constraints!.minOrderSize).toBe(minOrderSize);
+      expect(capturedSnapshot!.constraints!.minOrderValue).toBe(minOrderValue);
+      expect(capturedSnapshot!.constraints!.tickSize).toBe(tickSize);
+
+      await s.stopAll();
+      s.stop();
     });
   });
 
@@ -591,6 +644,43 @@ describe('StrategyScheduler', () => {
       await flush();
 
       expect(strategy.tick).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Snapshot: MATCHED ордера скрыты ────────────────
+
+  describe('snapshot: MATCHED orders separated', () => {
+    it('should split orders into openOrders and matchedOrders', async () => {
+      const orderMatched = { id: 'order-matched' } as any;
+      const orderNormal = { id: 'order-normal' } as any;
+
+      const orderStateStore = makeOrderStateStore();
+      (orderStateStore.getOpenOrdersByInstrument as any).mockReturnValue([orderMatched, orderNormal]);
+      (orderStateStore.isMatchedOnExchange as any).mockImplementation(
+        (id: any) => String(id) === 'order-matched',
+      );
+
+      const { deps: d, marketDataStore: mds, clock: clk } = makeDeps({ orderStateStore });
+      const s = new StrategyScheduler(d);
+
+      const strategy = makeStrategy('s1');
+      await s.register(makeRegistration(strategy));
+      s.start();
+
+      // Trigger tick
+      clk.advance(100);
+      mds._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush(10);
+
+      expect(strategy.tick).toHaveBeenCalled();
+      const snapshot: StrategySnapshot = (strategy.tick as any).mock.calls[0][0];
+      expect(snapshot.openOrders).toEqual([orderNormal]);
+      expect(snapshot.openOrders).not.toContainEqual(orderMatched);
+      expect(snapshot.matchedOrders).toEqual([orderMatched]);
+      expect(snapshot.matchedOrders).not.toContainEqual(orderNormal);
+
+      await s.stopAll();
+      s.stop();
     });
   });
 });

@@ -78,14 +78,32 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED после MATCHED: публикует FILL_RECEIVED из кеша', async () => {
+  it('MINED после MATCHED: держит fill в кеше, НЕ публикует (ждём CONFIRMED)', async () => {
     // Шаг 1: MATCHED → кешируем
     await handler.handle(makeValidRaw(), ACCOUNT_ID);
     expect(eventBus.publish).not.toHaveBeenCalled();
 
-    // Шаг 2: MINED → достаём из кеша и публикуем
+    // Шаг 2: MINED → держим в кеше, НЕ публикуем
     await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
 
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill MINED — holding for CONFIRMED',
+      expect.objectContaining({ rawId: 'fill-001' }),
+    );
+  });
+
+  it('MATCHED → MINED → CONFIRMED: публикует FILL_RECEIVED ровно один раз из кеша', async () => {
+    // Шаг 1: MATCHED → кешируем
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    // Шаг 2: MINED → держим в кеше
+    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+    expect(eventBus.publish).not.toHaveBeenCalled();
+
+    // Шаг 3: CONFIRMED → достаём из кеша и публикуем
+    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'FILL_RECEIVED',
@@ -95,7 +113,7 @@ describe('FillEventHandler', () => {
     );
     expect(logger.info).toHaveBeenCalledWith(
       'Fill event published',
-      expect.objectContaining({ status: 'MINED' }),
+      expect.objectContaining({ status: 'CONFIRMED' }),
     );
   });
 
@@ -111,13 +129,19 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED + CONFIRMED: публикует дважды — второй раз парсит из raw (ProcessFillUseCase идемпотентен)', async () => {
+  it('MATCHED → MINED → CONFIRMED → CONFIRMED: публикует ровно один раз (дедупликация по _publishedFillIds)', async () => {
     await handler.handle(makeValidRaw(), ACCOUNT_ID);
     await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
-    // CONFIRMED без кеша, но с полным payload — fallback парсинг
+    // Первый CONFIRMED — публикует из кеша, добавляет в _publishedFillIds
+    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
+    // Второй CONFIRMED — уже в _publishedFillIds → debug-лог, НЕ публикует
     await handler.handle({ ...makeValidRaw(), status: 'CONFIRMED' }, ACCOUNT_ID);
 
-    expect(eventBus.publish).toHaveBeenCalledTimes(2);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill already published, ignoring duplicate CONFIRMED',
+      expect.objectContaining({ rawId: 'fill-001' }),
+    );
   });
 
   it('логирует error и не публикует при невалидном raw (MATCHED)', async () => {
@@ -135,16 +159,14 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED без кеша и с полным payload: парсит fallback и публикует', async () => {
+  it('MINED без предшествующего MATCHED: debug-лог «holding», НЕ публикует', async () => {
     const raw = { ...makeValidRaw(), status: 'MINED' };
     await handler.handle(raw, ACCOUNT_ID);
 
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'FILL_RECEIVED' }),
-    );
+    expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      'Fill not in cache, parsing from on-chain event directly',
-      expect.objectContaining({ status: 'MINED' }),
+      'Fill MINED — holding for CONFIRMED',
+      expect.any(Object),
     );
   });
 
@@ -157,13 +179,14 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED без кеша и с невалидным payload: логирует ошибку, не публикует', async () => {
+  it('MINED без кеша и с невалидным payload: debug-лог «holding», НЕ пытается парсить', async () => {
     await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to parse fill event',
-      expect.objectContaining({ status: 'MINED' }),
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill MINED — holding for CONFIRMED',
+      expect.any(Object),
     );
   });
 
@@ -221,7 +244,7 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED: не публикует если TimestampService не может создать timestamp', async () => {
+  it('CONFIRMED: не публикует если TimestampService не может создать timestamp', async () => {
     // Симулируем невалидный clock — возвращает Invalid Date
     const badClock: IClock = {
       now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
@@ -233,8 +256,13 @@ describe('FillEventHandler', () => {
     await handlerBadClock.handle(raw, ACCOUNT_ID);
     expect(eventBus.publish).not.toHaveBeenCalled();
 
-    // MINED → пытаемся опубликовать, но clock невалидный → ошибка
+    // MINED → держим в кеше (не обращается к clock)
     await handlerBadClock.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+
+    // CONFIRMED → пытаемся опубликовать, но clock невалидный → ошибка
+    await handlerBadClock.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(

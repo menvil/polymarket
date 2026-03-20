@@ -47,7 +47,7 @@ import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { RiskLimitBreachedEvent } from '@polymarket/event-bus';
-import type { IPortfolioStore, IOrderStateStore } from '@polymarket/ports';
+import type { IPortfolioStore, IOrderStateStore, IMarketCatalog } from '@polymarket/ports';
 import type { Market } from '@polymarket/market';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
@@ -106,6 +106,8 @@ export interface StrategySchedulerDeps {
   readonly marketDataStore: IMarketDataStore;
   readonly orderStateStore: IOrderStateStore;
   readonly portfolioStore: IPortfolioStore;
+  /** Каталог инструментов — для передачи constraints в snapshot */
+  readonly catalog: IMarketCatalog;
   readonly executionEngine: ExecutionEngine;
   readonly clock: IClock;
   readonly logger: ILogger;
@@ -571,13 +573,39 @@ export class StrategyScheduler {
    */
   private _buildSnapshot(entry: StrategyEntry): StrategySnapshot {
     const id = entry.instrumentId;
+
+    // Разделяем ордера на cancellable (openOrders) и in-flight (matchedOrders).
+    // MATCHED = fill(ы) в пути (MATCHED → MINED → CONFIRMED), отменить нельзя.
+    // openOrders — стратегия может отменять/переставлять.
+    // matchedOrders — стратегия должна учитывать (чтобы не перекупать), но не отменять.
+    const allOpen = this._deps.orderStateStore.getOpenOrdersByInstrument(entry.strategy.id, id);
+    const openOrders: import('@polymarket/order').Order[] = [];
+    const matchedOrders: import('@polymarket/order').Order[] = [];
+    for (const o of allOpen) {
+      if (this._deps.orderStateStore.isMatchedOnExchange(o.id)) {
+        matchedOrders.push(o);
+      } else {
+        openOrders.push(o);
+      }
+    }
+
+    // Ограничения инструмента из каталога.
+    // Стратегия использует для адаптации размеров ордеров вместо
+    // молчаливого клампирования в ExecutionEngine.
+    const info = this._deps.catalog.get(id);
+    const constraints = info
+      ? { minOrderSize: info.minOrderSize, minOrderValue: info.minOrderValue, tickSize: info.tickSize }
+      : undefined;
+
     return {
       instrumentId: id,
       market: entry.market,
       topOfBook: this._deps.marketDataStore.getTopOfBook(id),
       bookHistory: this._deps.marketDataStore.getBookHistory(id),
       tradeTape: this._deps.marketDataStore.getTradeTape(id),
-      openOrders: this._deps.orderStateStore.getOpenOrdersByInstrument(entry.strategy.id, id),
+      openOrders,
+      matchedOrders,
+      constraints,
       portfolio: this._deps.portfolioStore.get(entry.accountId),
       nowMs: this._deps.clock.now().getTime(),
     };

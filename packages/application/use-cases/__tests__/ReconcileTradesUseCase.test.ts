@@ -54,6 +54,7 @@ function makeTradeSnapshot(fillId: string): VenueTradeSnapshot {
       asset: USDC_ASSET,
     },
     executedAt: mockTimestamp,
+    status: 'CONFIRMED',
   };
 }
 
@@ -149,6 +150,21 @@ describe('ReconcileTradesUseCase', () => {
 
     expect(result.ok).toBe(true);
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('пропускает fills со статусами MINED / MATCHED / RETRYING / undefined без вызова markIfNotExists', async () => {
+    const statuses = ['MINED', 'MATCHED', 'RETRYING', undefined] as const;
+    for (const status of statuses) {
+      const snapshot = { ...makeTradeSnapshot(`fill-${status ?? 'undef'}`), status };
+      (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+        .mockResolvedValue(Ok([snapshot]));
+      processedFillRepo.markIfNotExists.mockClear();
+
+      const result = await useCase.execute({ accountId: ACCOUNT_ID });
+
+      expect(result.ok).toBe(true);
+      expect(processedFillRepo.markIfNotExists).not.toHaveBeenCalled();
+    }
   });
 
   it('передаёт since в getTrades если указан', async () => {

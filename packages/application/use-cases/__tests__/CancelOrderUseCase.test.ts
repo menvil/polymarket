@@ -118,6 +118,7 @@ function makeOrderStateStore(order?: Order, matchedOrderIds: string[] = []): IOr
     getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
     markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
+    clearMatchedOnExchange: jest.fn<IOrderStateStore['clearMatchedOnExchange']>(),
     isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockImplementation(
       (id) => matched.has(String(id)),
     ),

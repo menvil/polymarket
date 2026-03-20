@@ -6,7 +6,7 @@
  * 1. **Нормализация** — dedupe и очистка intents перед исполнением
  * 2. **Порядок** — CANCEL_ALL → CANCEL → PLACE
  * 3. **Параллелизм** — Cancels параллельно, Places последовательно
- * 4. **Клампирование размера** — size клампируется к minOrderSize из каталога
+ * 4. **Валидация** — reject (skip) если size/value нарушает constraints каталога
  * 5. **Отчёт** — ExecutionReport с результатами и ошибками
  *
  * ### Нормализация intents:
@@ -14,10 +14,11 @@
  * - Dedupe CANCEL по orderId (один orderId → один cancel)
  * - Dedupe PLACE по `${side}:${price}` — оставить последний
  *
- * ### Клампирование размера ордера:
- * Перед отправкой PLACE проверяем `InstrumentInfo.minOrderSize` из каталога.
- * Если `intent.size < minOrderSize` — клампируем к minOrderSize и логируем WARN.
- * Это корректирует некорректный конфиг стратегии вместо отклонения ордера.
+ * ### Валидация размера (reject-only, без коррекции):
+ * Стратегия получает `InstrumentConstraints` через snapshot и сама адаптирует
+ * размеры ордеров (BaseStrategy.adjustBuySize/adjustSellSize).
+ * ExecutionEngine только валидирует: если intent нарушает constraints — reject (skip).
+ * Никакого молчаливого клампирования — стратегия и execution полностью прозрачны.
  *
  * ### Делегация:
  * - Risk check — внутри PlaceOrderUseCase (не дублируем)
@@ -44,8 +45,6 @@ import { asOrderId } from '@polymarket/ids';
 import type { PlaceOrderUseCase } from '@polymarket/use-cases';
 import type { CancelOrderUseCase } from '@polymarket/use-cases';
 import type { IPortfolioStore, IMarketCatalog } from '@polymarket/ports';
-import { Quantity } from '@polymarket/value-objects';
-import Decimal from 'decimal.js';
 import type {
   StrategyIntent,
   PlaceIntent,
@@ -62,14 +61,8 @@ export interface ExecutionEngineDeps {
   readonly cancelOrderUseCase: CancelOrderUseCase;
   readonly orderRepo: IOrderRepository;
   readonly portfolioStore: IPortfolioStore;
-  /** Каталог инструментов — используется для получения minOrderSize при клампировании */
+  /** Каталог инструментов — для валидации constraints (reject-only, без коррекции) */
   readonly catalog: IMarketCatalog;
-  /**
-   * Максимальный размер позиции по инструменту (в токенах).
-   * Если задан, клампирование для minOrderValue не превысит оставшуюся ёмкость позиции —
-   * вместо отправки заведомо невалидного ордера выдаётся ранний отказ.
-   */
-  readonly maxPositionSize?: Decimal;
   readonly logger: ILogger;
 }
 
@@ -95,8 +88,8 @@ export interface ExecutionReport {
    * Количество намеренно пропущенных размещений (skip).
    *
    * @remarks
-   * Skip ≠ ошибка. Пример: price × maxPositionCapacity < minOrderValue —
-   * размещать заведомо невалидный ордер нет смысла.
+   * Skip ≠ ошибка. Пример: size < minOrderSize или value < minOrderValue.
+   * Стратегия должна использовать constraints из snapshot для корректных размеров.
    */
   readonly skipped: number;
   /** Ошибки при исполнении отдельных intents */
@@ -114,14 +107,19 @@ export class ExecutionEngine {
   private readonly _logger: ILogger;
 
   /**
-   * Cooldown per instrumentId для SELL-ордеров ниже minOrderSize.
-   * Ключ: строковый instrumentId. Значение: timestamp последней попытки (Date.now()).
-   * Цель: не спамить venue повторными попытками если биржа отклоняет ордер.
+   * Cooldown per `${instrumentId}:${side}` после отклонения ордера биржей.
+   * Ключ: `${instrumentId}:${side}`. Значение: timestamp последнего rejection (Date.now()).
+   *
+   * @remarks
+   * Защищает от бесконечного retry-цикла когда биржа стабильно отклоняет ордер
+   * (например, SELL с "not enough balance/allowance" из-за отсутствия token approval).
+   * Без этого cooldown каждое новое рыночное событие триггерит стратегию →
+   * SELL → rejection → откат резервации → следующий тик → снова SELL → 10+ RPS.
    */
-  private readonly _sellBelowMinCooldowns = new Map<string, number>();
+  private readonly _exchangeRejectionCooldowns = new Map<string, number>();
 
-  /** 60 секунд между повторными попытками SELL ниже minOrderSize */
-  private static readonly _SELL_BELOW_MIN_COOLDOWN_MS = 60_000;
+  /** 5 секунд cooldown после отклонения биржей */
+  private static readonly _EXCHANGE_REJECTION_COOLDOWN_MS = 5_000;
 
   constructor(private readonly _deps: ExecutionEngineDeps) {
     this._logger = _deps.logger.child({ component: 'ExecutionEngine' });
@@ -277,17 +275,34 @@ export class ExecutionEngine {
    * Генерирует orderId, получает portfolio из store,
    * считает openOrdersCount и вызывает PlaceOrderUseCase.
    *
-   * ### Клампирование размера:
-   * Если `intent.size < minOrderSize` (из каталога) — клампируем к minOrderSize.
-   * Это корректирует конфиг стратегии (orderSize) вместо отклонения ордера.
-   * Логируем WARN с requested/effective размерами для отладки.
+   * ### Валидация (reject-only, без коррекции):
+   * - Reject если `size < minOrderSize`
+   * - Reject BUY если `price × size < minOrderValue`
+   * Стратегия должна сама адаптировать размеры через `InstrumentConstraints`
+   * в snapshot и helpers `BaseStrategy.adjustBuySize()/adjustSellSize()`.
    *
-   * ### Skip vs Error:
-   * `'skipped'` возвращается когда размещать ордер нет смысла по известному условию
-   * (например, price × maxPositionCapacity < minOrderValue). Это НЕ ошибка —
-   * стратегия просто ждёт пока рыночные условия изменятся.
+   * ### Exchange rejection cooldown:
+   * При rejection от биржи устанавливается 5-секундный cooldown per `instrumentId:side`.
+   * Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
    */
   private async _executePlace(ctx: ExecutionContext, intent: PlaceIntent): Promise<'placed' | 'skipped' | 'failed'> {
+    // ── Exchange rejection cooldown ──────────────────────────
+    // Если биржа недавно отклонила ордер по этому инструменту/стороне —
+    // пропускаем размещение до истечения cooldown.
+    // Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
+    const rejectionKey = `${String(ctx.instrumentId)}:${intent.side}`;
+    const nowForCooldown = Date.now();
+    const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey) ?? 0;
+    if (nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
+      this._logger.debug('ExecutionEngine: skip — exchange rejection cooldown active', {
+        strategyId: ctx.strategyId,
+        instrumentId: String(ctx.instrumentId),
+        side: intent.side,
+        cooldownRemainingMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS - (nowForCooldown - lastRejectedMs),
+      });
+      return 'skipped';
+    }
+
     const orderId = asOrderId(randomUUID())!;
     const portfolio = this._deps.portfolioStore.get(ctx.accountId);
 
@@ -299,106 +314,38 @@ export class ExecutionEngine {
       return 'failed';
     }
 
-    // Клампирование size из каталога
+    // Валидация size по каталогу — reject без коррекции.
+    // Стратегия должна сама адаптировать size используя constraints из snapshot
+    // и helpers BaseStrategy.adjustBuySize() / adjustSellSize().
     const info = this._deps.catalog.get(ctx.instrumentId);
-    let effectiveSize = intent.size;
+    const effectiveSize = intent.size;
 
     if (info) {
-      // 1. Клампирование к minOrderSize (минимум в токенах)
+      // 1. Reject если size < minOrderSize
       if (effectiveSize.value().lt(info.minOrderSize.value())) {
-        if (intent.side === 'SELL') {
-          const availableQty = portfolio.getPosition(ctx.instrumentId)?.quantity.value()
-            ?? new Decimal(0);
-
-          if (availableQty.lte(0)) {
-            return 'skipped';
-          }
-
-          if (availableQty.lt(info.minOrderSize.value())) {
-            // Позиция меньше minOrderSize (partial fill + cancel или tiny fill).
-            // Polymarket отклоняет SELL < minOrderSize так же как BUY.
-            // Ждём StateReconciliationService (~60s): после reconcile позиция вырастет
-            // до полного размера и SELL пройдёт по обычному пути.
-            const key = String(ctx.instrumentId);
-            const nowMs = Date.now();
-            const lastLogged = this._sellBelowMinCooldowns.get(key) ?? 0;
-
-            if (nowMs - lastLogged >= ExecutionEngine._SELL_BELOW_MIN_COOLDOWN_MS) {
-              this._sellBelowMinCooldowns.set(key, nowMs);
-              this._logger.warn('ExecutionEngine: skip — SELL stuck position below minOrderSize, awaiting reconciliation', {
-                strategyId: ctx.strategyId,
-                instrumentId: key,
-                positionQty: availableQty.toNumber(),
-                minOrderSize: info.minOrderSize.toNumber(),
-              });
-            } else {
-              this._logger.debug('ExecutionEngine: skip — SELL below minOrderSize (logged recently)', {
-                strategyId: ctx.strategyId,
-                instrumentId: key,
-              });
-            }
-            return 'skipped';
-          } else {
-            // Позиции достаточно — клампируем intent.size к minOrderSize (стандартное поведение)
-            this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
-              strategyId: ctx.strategyId,
-              instrumentId: String(ctx.instrumentId),
-              requested: effectiveSize.toNumber(),
-              effective: info.minOrderSize.toNumber(),
-            });
-            effectiveSize = info.minOrderSize;
-          }
-        } else {
-          this._logger.warn('ExecutionEngine: clamping order size to minOrderSize', {
-            strategyId: ctx.strategyId,
-            instrumentId: String(ctx.instrumentId),
-            requested: effectiveSize.toNumber(),
-            effective: info.minOrderSize.toNumber(),
-          });
-          effectiveSize = info.minOrderSize;
-        }
+        this._logger.warn('ExecutionEngine: reject — size below minOrderSize (strategy must use constraints)', {
+          strategyId: ctx.strategyId,
+          instrumentId: String(ctx.instrumentId),
+          side: intent.side,
+          size: effectiveSize.toNumber(),
+          minOrderSize: info.minOrderSize.toNumber(),
+        });
+        return 'skipped';
       }
 
-      // 2. Клампирование к minOrderValue (минимальная стоимость в USDC: price × size >= minOrderValue)
-      // Polymarket отклоняет BUY-ордера с суммой < $1
+      // 2. Reject BUY если orderValue < minOrderValue
       if (intent.side === 'BUY' && info.minOrderValue.value().gt(0)) {
         const orderValue = intent.price.value().mul(effectiveSize.value());
         if (orderValue.lt(info.minOrderValue.value())) {
-          const minSizeForValue = info.minOrderValue.value().div(intent.price.value()).ceil();
-
-          // Ограничиваем клампирование оставшейся ёмкостью позиции (maxPositionSize из riskParams).
-          // Если minSizeForValue > remaining capacity — ордер всё равно провалился бы на риск-чекере.
-          // Вместо отправки заведомо невалидного ордера — отказываем здесь с понятным сообщением.
-          const maxPos = this._deps.maxPositionSize;
-          if (maxPos !== undefined) {
-            const currentQtyDecimal = portfolio.getPosition(ctx.instrumentId)?.quantity.value()
-              ?? new Decimal(0);
-            const remaining = maxPos.minus(currentQtyDecimal);
-            if (minSizeForValue.gt(remaining)) {
-              this._logger.debug('ExecutionEngine: skip — order value too small to place within position limit', {
-                strategyId: ctx.strategyId,
-                instrumentId: String(ctx.instrumentId),
-                price: intent.price.toNumber(),
-                requestedSize: effectiveSize.toNumber(),
-                neededSizeForMinValue: minSizeForValue.toNumber(),
-                remainingPositionCapacity: remaining.toNumber(),
-                minOrderValue: info.minOrderValue.toNumber(),
-              });
-              return 'skipped';
-            }
-          }
-
-          const clampedSize = Quantity.of(minSizeForValue);
-          this._logger.warn('ExecutionEngine: clamping order size to meet minOrderValue', {
+          this._logger.warn('ExecutionEngine: reject — order value below minOrderValue (strategy must use constraints)', {
             strategyId: ctx.strategyId,
             instrumentId: String(ctx.instrumentId),
             price: intent.price.toNumber(),
-            requestedSize: effectiveSize.toNumber(),
-            effectiveSize: clampedSize.toNumber(),
+            size: effectiveSize.toNumber(),
             orderValue: orderValue.toNumber(),
             minOrderValue: info.minOrderValue.toNumber(),
           });
-          effectiveSize = clampedSize;
+          return 'skipped';
         }
       }
     }
@@ -419,13 +366,23 @@ export class ExecutionEngine {
     });
 
     if (!result.ok) {
-      this._logger.warn('ExecutionEngine: place failed', {
+      // Устанавливаем cooldown чтобы не спамить биржу при стабильном rejection.
+      // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (30s).
+      this._exchangeRejectionCooldowns.set(rejectionKey, Date.now());
+      // portfolioTokenQty: диагностика десинка in-memory vs on-chain.
+      // Если qty совпадает с размером ордера — скорее всего token approval не выставлен.
+      // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.
+      const portfolioTokenQty = this._deps.portfolioStore.get(ctx.accountId)
+        ?.getPosition?.(ctx.instrumentId)?.quantity.value().toNumber();
+      this._logger.warn('ExecutionEngine: place failed — exchange rejection cooldown set', {
         orderId: String(orderId),
         strategyId: ctx.strategyId,
         side: intent.side,
         price: intent.price.toNumber(),
         size: intent.size.toNumber(),
         error: result.error.message,
+        cooldownMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS,
+        portfolioTokenQty,
       });
       return 'failed';
     }

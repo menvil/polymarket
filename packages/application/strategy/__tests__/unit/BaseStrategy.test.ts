@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { BaseStrategy } from '../../src/BaseStrategy.js';
 import type { StrategySnapshot } from '../../src/types/StrategySnapshot.js';
 import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
@@ -46,6 +47,15 @@ class TestStrategy extends BaseStrategy<TestData, TestAction> {
     this.toIntentsCalls.push(actions);
     return this.intentsResult;
   }
+
+  /** Публичные обёртки для тестирования protected helpers */
+  publicAdjustSellSize(desired: Decimal, positionQty: Decimal, minOrderSize: Decimal): Decimal {
+    return this.adjustSellSize(desired, positionQty, minOrderSize);
+  }
+
+  publicAdjustBuySize(desired: Decimal, price: Decimal, minOrderValue: Decimal, minOrderSize: Decimal): Decimal {
+    return this.adjustBuySize(desired, price, minOrderValue, minOrderSize);
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────
@@ -58,6 +68,8 @@ function makeSnapshot(overrides: Partial<StrategySnapshot> = {}): StrategySnapsh
     bookHistory: undefined,
     tradeTape: undefined,
     openOrders: [],
+    matchedOrders: [],
+    constraints: undefined,
     portfolio: undefined,
     nowMs: 1000,
     ...overrides,
@@ -185,6 +197,75 @@ describe('BaseStrategy', () => {
 
       expect(strategy.id).toBe('test-1');
       expect(strategy.name).toBe('TestStrategy');
+    });
+  });
+
+  // ── adjustSellSize() ──────────────────────────────────
+
+  describe('adjustSellSize()', () => {
+    const strategy = new TestStrategy();
+    const d = (v: string) => new Decimal(v);
+
+    it('should return positionQty when positionQty < minOrderSize', () => {
+      // positionQty=4, minOrderSize=5 → позиция слишком мала → возвращаем как есть
+      expect(strategy.publicAdjustSellSize(d('4'), d('4'), d('5'))).toEqual(d('4'));
+    });
+
+    it('should clamp up to minOrderSize when desired < minOrderSize', () => {
+      // positionQty=15, desired=3, minOrderSize=5 → effective=5, remainder=10>=5 → 5
+      expect(strategy.publicAdjustSellSize(d('3'), d('15'), d('5'))).toEqual(d('5'));
+    });
+
+    it('should sell entire position when remainder < minOrderSize', () => {
+      // positionQty=9, desired=5, minOrderSize=5 → remainder=4<5 → продать 9
+      expect(strategy.publicAdjustSellSize(d('5'), d('9'), d('5'))).toEqual(d('9'));
+    });
+
+    it('should use desired when remainder >= minOrderSize', () => {
+      // positionQty=15, desired=5, minOrderSize=5 → remainder=10>=5 → 5
+      expect(strategy.publicAdjustSellSize(d('5'), d('15'), d('5'))).toEqual(d('5'));
+    });
+
+    it('should sell entire position when desired equals positionQty', () => {
+      // positionQty=5, desired=5, minOrderSize=5 → remainder=0 → 5
+      expect(strategy.publicAdjustSellSize(d('5'), d('5'), d('5'))).toEqual(d('5'));
+    });
+
+    it('should sell entire position when positionQty equals minOrderSize and desired < min', () => {
+      // positionQty=5, desired=3, minOrderSize=5 → effective=5, remainder=0 → 5
+      expect(strategy.publicAdjustSellSize(d('3'), d('5'), d('5'))).toEqual(d('5'));
+    });
+  });
+
+  // ── adjustBuySize() ───────────────────────────────────
+
+  describe('adjustBuySize()', () => {
+    const strategy = new TestStrategy();
+    const d = (v: string) => new Decimal(v);
+
+    it('should return desired when it meets all constraints', () => {
+      // desired=10, price=0.55, minOrderValue=1, minOrderSize=5 → value=5.5>=1 → 10
+      expect(strategy.publicAdjustBuySize(d('10'), d('0.55'), d('1'), d('5'))).toEqual(d('10'));
+    });
+
+    it('should clamp up to minOrderSize when desired < minOrderSize', () => {
+      // desired=3, price=0.55, minOrderValue=1, minOrderSize=5 → effective=5, value=2.75>=1 → 5
+      expect(strategy.publicAdjustBuySize(d('3'), d('0.55'), d('1'), d('5'))).toEqual(d('5'));
+    });
+
+    it('should clamp up to meet minOrderValue when value too low', () => {
+      // desired=5, price=0.117, minOrderValue=1, minOrderSize=5 → value=0.585<1 → ceil(1/0.117)=9
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.117'), d('1'), d('5'))).toEqual(d('9'));
+    });
+
+    it('should not clamp when value exactly meets minOrderValue', () => {
+      // desired=5, price=0.20, minOrderValue=1, minOrderSize=5 → value=1.0>=1 → 5
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.20'), d('1'), d('5'))).toEqual(d('5'));
+    });
+
+    it('should handle very low price requiring large size', () => {
+      // desired=5, price=0.01, minOrderValue=1, minOrderSize=5 → value=0.05<1 → ceil(1/0.01)=100
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.01'), d('1'), d('5'))).toEqual(d('100'));
     });
   });
 });

@@ -17,7 +17,8 @@ Exchange WS → EventAdapters → EventBus → State Stores → DirtyTracker →
 |-----|----------|
 | `TriggerReason` | `'BOOK' \| 'TRADE' \| 'FILL' \| 'ORDER_UPDATE' \| 'TIMER'` |
 | `StrategyIntent` | `PLACE \| CANCEL \| CANCEL_ALL` (декларативные намерения) |
-| `StrategySnapshot` | Readonly snapshot: market data + orders + portfolio + timing |
+| `StrategySnapshot` | Readonly snapshot: market data + orders + portfolio + constraints + timing |
+| `InstrumentConstraints` | `minOrderSize`, `minOrderValue`, `tickSize` (из каталога) |
 | `ScheduleConfig` | `minIntervalMs`, `priorityTriggers`, `maxIdleMs` |
 
 ### Шаг 2: State Stores
@@ -56,10 +57,53 @@ interface IStrategy {
 
 `BaseStrategy<TData, TAction>` — gather → decide → toIntents pipeline.
 
+#### InstrumentConstraints в snapshot
+Стратегия получает `InstrumentConstraints` через `snapshot.constraints`:
+```typescript
+interface InstrumentConstraints {
+  readonly minOrderSize: Quantity;
+  readonly minOrderValue: Quantity;
+  readonly tickSize: Price;
+}
+```
+
+#### Helpers в BaseStrategy
+Два protected-метода для адаптации размеров ордеров с учётом constraints:
+- `adjustSellSize(desired, positionQty, minOrderSize)` — корректирует SELL:
+  - `positionQty < minOrderSize` → возвращает positionQty (позиция слишком мала)
+  - остаток после продажи < minOrderSize → продать всю позицию (иначе остаток «застрянет»)
+  - иначе → clamp к minOrderSize
+- `adjustBuySize(desired, price, minOrderValue, minOrderSize)` — корректирует BUY:
+  - clamp к minOrderSize если desired ниже
+  - если `price × size < minOrderValue` → увеличить до `ceil(minOrderValue / price)`
+
+#### Почему constraints в стратегии, а не в ExecutionEngine
+**Принцип прозрачности**: стратегия и execution полностью прозрачны.
+Раньше ExecutionEngine молча корректировал размеры (clamping) — стратегия логировала
+одни intents, а по факту исполнялись другие. Это приводило к неожиданностям:
+- Купил 9 токенов вместо 5 (clamping для minOrderValue)
+- Продал 5, остаток 4 < minOrderSize — позиция «застряла»
+
+Теперь стратегия сама решает размеры через helpers, а ExecutionEngine только
+валидирует (reject без коррекции). Логи полностью совпадают с исполнением.
+
 ### Шаг 5: ExecutionEngine
 Нормализует и исполняет intents:
 1. Нормализация: CANCEL_ALL поглощает CANCELs, dedupe CANCEL по orderId, dedupe PLACE по `side:price`
 2. Порядок: CANCEL_ALL → CANCEL (параллельно) → PLACE (последовательно)
+3. Валидация (reject-only): `size < minOrderSize` → skip, BUY `price × size < minOrderValue` → skip
+4. Exchange rejection cooldown: 5s per `instrumentId:side` после отклонения биржей
+
+### isMatchedOnExchange lifecycle
+Флаг `isMatchedOnExchange` управляет видимостью ордера в snapshot:
+- **Set**: при fill MATCHED/MINED (in-flight) или ORDER UPDATE status=MATCHED
+- **Clear**: после ProcessFillUseCase обработал CONFIRMED fill (`clearMatchedOnExchange`)
+- Ордера с флагом → `matchedOrders` (стратегия видит но не отменяет)
+- Ордера без флага → `openOrders` (стратегия может отменять/переставлять)
+
+Без очистки флага: если Polymarket заполняет ордер с dust-остатком (4.99/5.0),
+ордер остаётся PARTIALLY_FILLED + isMatchedOnExchange=true → matchedOrders навсегда →
+стратегия HOLD на каждом тике.
 
 ### Шаг 6: StrategyScheduler
 Event-driven queue с coalescing:

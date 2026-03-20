@@ -148,6 +148,7 @@ function makeTradeSnapshot(fillId: FillId): VenueTradeSnapshot {
       asset: AssetIdHelpers.USDC,
     },
     executedAt: unwrap(TimestampService.create(Date.now())),
+    status: 'CONFIRMED',
   };
 }
 

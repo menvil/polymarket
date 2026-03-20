@@ -130,6 +130,7 @@ export class ProcessFillUseCase {
       }
 
       this._deps.ledgerService.recordFill(fill);
+      this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
       return Ok(undefined);
     }
 
@@ -186,6 +187,11 @@ export class ProcessFillUseCase {
     // К этому моменту: Order = FILED (terminal), Portfolio = обновлён.
     const events = updatedOrder.pullEvents();
     await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+
+    // Шаг 8: Снимаем флаг MATCHED — fill осел on-chain, опасность "in-flight" миновала.
+    // Если другой fill для того же ордера ещё в пути, следующий MATCHED-event
+    // заново поставит флаг. Без очистки ордер навсегда в matchedOrders snapshot'а.
+    this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
 
     this._logger.info('Fill processed successfully', {
       fillId: String(fill.id),

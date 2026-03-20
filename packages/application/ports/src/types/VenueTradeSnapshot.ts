@@ -42,6 +42,19 @@ export interface FeeSnapshot {
  * };
  * ```
  */
+/**
+ * Статус сделки на блокчейне.
+ *
+ * @remarks
+ * Жизненный цикл fill на Polygon:
+ * - `MATCHED`   — fill передан executor service (матчер подтвердил), НЕ on-chain
+ * - `MINED`     — транзакция включена в блок, но finality не достигнута
+ * - `CONFIRMED` — finality достигнута, токены реально в кошельке ✓
+ * - `RETRYING`  — транзакция упала, executor повторяет
+ * - `FAILED`    — транзакция окончательно не прошла, токены НЕ переданы
+ */
+export type VenueTradeStatus = 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED';
+
 export interface VenueTradeSnapshot {
   /** Уникальный ID исполнения */
   readonly fillId: FillId;
@@ -63,4 +76,13 @@ export interface VenueTradeSnapshot {
   readonly fee: FeeSnapshot;
   /** Время исполнения */
   readonly executedAt: Timestamp;
+  /**
+   * On-chain статус сделки.
+   *
+   * @remarks
+   * Только `CONFIRMED` гарантирует что токены реально в кошельке.
+   * `MATCHED` = в очереди на запись, портфолио обновлять рано.
+   * `undefined` — статус не был возвращён биржей (старый API).
+   */
+  readonly status?: VenueTradeStatus;
 }

@@ -32,7 +32,6 @@
 
 import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
 import type { IMarketCatalog } from '@polymarket/ports';
-import type { RiskParams } from '@polymarket/risk';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 import type { UseCases } from './buildUseCases.js';
@@ -44,10 +43,8 @@ export interface BuildStrategyEngineParams {
   readonly repos: Repositories;
   readonly useCases: UseCases;
   readonly marketDataStore: MarketDataStore;
-  /** Каталог инструментов — для клампирования размера ордера к minOrderSize */
+  /** Каталог инструментов — для валидации constraints и передачи в snapshot стратегиям */
   readonly marketCatalog: IMarketCatalog;
-  /** Параметры риска — используются для ограничения minOrderValue-клампирования по maxPositionSize */
-  readonly riskParams?: RiskParams;
 }
 
 /** Результат построения стратегического движка */
@@ -71,7 +68,7 @@ export interface StrategyEngine {
  * ```
  */
 export function buildStrategyEngine(params: BuildStrategyEngineParams): StrategyEngine {
-  const { infra, repos, useCases, marketDataStore, marketCatalog, riskParams } = params;
+  const { infra, repos, useCases, marketDataStore, marketCatalog } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
@@ -82,7 +79,6 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     orderRepo,
     portfolioStore,
     catalog: marketCatalog,
-    maxPositionSize: riskParams?.maxPositionSize,
     logger,
   });
 
@@ -90,6 +86,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     marketDataStore,
     orderStateStore: orderRepo,
     portfolioStore,
+    catalog: marketCatalog,
     executionEngine,
     clock,
     logger,

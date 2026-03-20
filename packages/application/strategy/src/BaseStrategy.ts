@@ -56,6 +56,7 @@
  */
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
+import Decimal from 'decimal.js';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
 import type { StrategyIntent } from './types/StrategyIntent.js';
@@ -147,5 +148,98 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    */
   public getMetrics(): Record<string, unknown> {
     return {};
+  }
+
+  // ── Helpers для учёта ограничений инструмента ───────────
+
+  /**
+   * Корректирует размер SELL с учётом minOrderSize.
+   *
+   * @param desiredSize - Желаемый размер продажи
+   * @param positionQty - Текущий размер позиции
+   * @param minOrderSize - Минимальный размер ордера из constraints
+   * @returns Скорректированный размер
+   *
+   * @remarks
+   * Логика:
+   * - Если после продажи остаток < minOrderSize → продать всю позицию.
+   *   Иначе остаток «застрянет» — Polymarket отклоняет ордера < minOrderSize.
+   * - Если desiredSize < minOrderSize и positionQty >= minOrderSize →
+   *   клампировать к minOrderSize.
+   * - Если positionQty < minOrderSize → вернуть positionQty
+   *   (может быть отклонён биржей, но стратегия решает сама).
+   *
+   * @example
+   * ```typescript
+   * // positionQty=9, desired=5, minOrderSize=5 → остаток 4<5 → продаём 9
+   * adjustSellSize(5, 9, 5) // → 9
+   *
+   * // positionQty=15, desired=5, minOrderSize=5 → остаток 10>=5 → продаём 5
+   * adjustSellSize(5, 15, 5) // → 5
+   *
+   * // positionQty=4, desired=4, minOrderSize=5 → positionQty<minOrderSize → 4
+   * adjustSellSize(4, 4, 5) // → 4
+   * ```
+   */
+  protected adjustSellSize(desiredSize: Decimal, positionQty: Decimal, minOrderSize: Decimal): Decimal {
+    // Позиция слишком мала для любого валидного SELL — возвращаем как есть
+    if (positionQty.lt(minOrderSize)) {
+      return positionQty;
+    }
+
+    // Клампируем вверх если desired < minOrderSize
+    const effectiveSize = Decimal.max(desiredSize, minOrderSize);
+
+    // Ограничиваем позицией
+    const clamped = Decimal.min(effectiveSize, positionQty);
+
+    // Если после продажи остаток < minOrderSize — продать всё
+    const remainder = positionQty.minus(clamped);
+    if (remainder.gt(0) && remainder.lt(minOrderSize)) {
+      return positionQty;
+    }
+
+    return clamped;
+  }
+
+  /**
+   * Корректирует размер BUY с учётом minOrderValue.
+   *
+   * @param desiredSize - Желаемый размер покупки
+   * @param price - Цена ордера
+   * @param minOrderValue - Минимальная стоимость ордера в USDC
+   * @param minOrderSize - Минимальный размер ордера в токенах
+   * @returns Скорректированный размер
+   *
+   * @remarks
+   * Если price × desiredSize < minOrderValue — увеличивает size до
+   * ceil(minOrderValue / price). Это единственный способ выставить ордер
+   * при низкой цене: Polymarket отклоняет BUY с суммой < $1.
+   *
+   * @example
+   * ```typescript
+   * // price=0.117, desired=5 → value=$0.585 < $1 → ceil(1/0.117) = 9
+   * adjustBuySize(5, 0.117, 1, 5) // → 9
+   *
+   * // price=0.55, desired=5 → value=$2.75 >= $1 → 5
+   * adjustBuySize(5, 0.55, 1, 5) // → 5
+   * ```
+   */
+  protected adjustBuySize(
+    desiredSize: Decimal,
+    price: Decimal,
+    minOrderValue: Decimal,
+    minOrderSize: Decimal,
+  ): Decimal {
+    // Клампируем к minOrderSize если ниже
+    let effectiveSize = Decimal.max(desiredSize, minOrderSize);
+
+    // Клампируем к minOrderValue если стоимость ниже
+    const orderValue = price.mul(effectiveSize);
+    if (orderValue.lt(minOrderValue)) {
+      effectiveSize = minOrderValue.div(price).ceil();
+    }
+
+    return effectiveSize;
   }
 }

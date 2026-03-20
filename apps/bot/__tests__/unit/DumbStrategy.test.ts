@@ -79,6 +79,7 @@ function makeSnapshot(overrides: Partial<{
     bookHistory: undefined,
     tradeTape: undefined,
     openOrders: openOrders as any,
+    matchedOrders: [],
     portfolio: mockPortfolio as any,
     nowMs: Date.now(),
   };
@@ -114,6 +115,7 @@ describe('DumbStrategy', () => {
       bookHistory: undefined,
       tradeTape: undefined,
       openOrders: [],
+      matchedOrders: [],
       portfolio: undefined,
       nowMs: Date.now(),
     };

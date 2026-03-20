@@ -510,6 +510,33 @@ describe('FillMapper', () => {
       }
     });
 
+    it('cross-outcome SELL: тейкер SELL Up, мейкер SELL Down (разные asset_id) → side SELL', () => {
+      // Реальный сценарий: наш SELL Up ордер исполняется через cross-outcome с SELL Down.
+      // Polymarket не включает top-level side. maker asset_id ≠ top-level asset_id.
+      // Ожидаем: side = SELL (совпадает с мейкером, НЕ инвертируется).
+      const DOWN_TOKEN_ID = `OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:NO`;
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.35',
+            owner: 'some-other-uuid',
+            asset_id: DOWN_TOKEN_ID,  // разный asset_id → cross-outcome
+            side: 'SELL',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('SELL');
+      }
+    });
+
     it('возвращает Err если side невалидный', () => {
       const accountId = makeAccountId();
       const result = FillMapper.fromPolymarketTradeEvent(

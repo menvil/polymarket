@@ -338,7 +338,7 @@ async function runPaper(): Promise<void> {
   const useCases = { processFillUseCase, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, riskParams });
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
 
   // BookUpdateHandler — конвертирует WS snapshots в BOOK_UPDATED события
   const bookRegistry = new SimpleBookRegistry();
@@ -546,7 +546,7 @@ async function runPaper(): Promise<void> {
     for (const c of candidates) {
       const key = String(c.marketId);
       if (closedMarkets.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs) continue;
+      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
       await openMarket(c);
       return;
     }
@@ -562,6 +562,17 @@ async function runPaper(): Promise<void> {
    * BUY и SELL ордера отменяются через CANCEL_ALL при scheduler.unregister().
    */
   const CANCEL_BEFORE_EXPIRY_MS = 5_000;
+
+  /**
+   * Минимальное время жизни рынка (мс) для переключения.
+   *
+   * @remarks
+   * Рынки с остатком < 30 сек не имеют смысла: ротация + подписка WS + первый тик
+   * занимают ~5 сек, плюс CANCEL_BEFORE_EXPIRY_MS=5 сек на закрытие.
+   * Без фильтра fillMarketSlot() может открыть рынок с 3 сек жизни,
+   * который сразу истечёт → бесполезный цикл ротации.
+   */
+  const MIN_VIABLE_TRADING_MS = 30_000;
 
   /**
    * Проверяет истечение текущего рынка и переключает на следующий.
@@ -928,7 +939,7 @@ async function runBacktest(): Promise<void> {
   const useCases = { processFillUseCase, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, riskParams });
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
 
   // Регистрируем инструмент в каталоге (нужен BookUpdateHandler для маппинга tokenId → marketId)
   const expiresAtResult = TimestampService.create(Date.now() + 86400_000);
@@ -1416,7 +1427,7 @@ async function runLive(): Promise<void> {
   // ── Market data + strategy engine ────────────────────────────────────────
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, riskParams });
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
@@ -1581,7 +1592,7 @@ async function runLive(): Promise<void> {
     for (const c of candidates) {
       const key = String(c.marketId);
       if (closedMarkets.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs) continue;
+      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
       await openMarket(c);
       return;
     }
@@ -1591,6 +1602,15 @@ async function runLive(): Promise<void> {
 
   /** Закрываем рынок за 5 сек до истечения чтобы успеть снять ордера. */
   const CANCEL_BEFORE_EXPIRY_MS = 5_000;
+
+  /**
+   * Минимальное время жизни рынка (мс) для переключения.
+   *
+   * @remarks
+   * Рынки с остатком < 30 сек не имеют смысла: ротация + подписка WS + первый тик
+   * занимают ~5 сек, плюс CANCEL_BEFORE_EXPIRY_MS=5 сек на закрытие.
+   */
+  const MIN_VIABLE_TRADING_MS = 30_000;
 
   /**
    * Проверяет истечение текущего рынка и переключает на следующий.
@@ -1818,7 +1838,7 @@ async function runLive(): Promise<void> {
 
   // ── REST polling fallback (safety net) ───────────────────────────────────
 
-  const RECONCILE_INTERVAL_MS = 60_000;
+  const RECONCILE_INTERVAL_MS = 5_000;
   const reconcileIntervalId = setInterval(() => {
     void liveInfra.reconcileTradesUseCase.execute({ accountId }).then((result) => {
       if (!result.ok) {

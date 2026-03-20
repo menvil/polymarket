@@ -153,6 +153,7 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
     markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
+    clearMatchedOnExchange: jest.fn<IOrderStateStore['clearMatchedOnExchange']>(),
     isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockReturnValue(false),
   };
 }
@@ -223,6 +224,12 @@ describe('ProcessFillUseCase', () => {
     expect(logger.info).toHaveBeenCalledWith('Fill processed successfully', expect.any(Object));
   });
 
+  it('снимает флаг isMatchedOnExchange после обработки fill', async () => {
+    const useCase = new ProcessFillUseCase(deps);
+    await useCase.execute(makeFill());
+    expect(orderStateStore.clearMatchedOnExchange).toHaveBeenCalledWith(ORDER_ID);
+  });
+
   // ── Idempotency ──────────────────────────────────────────────────────────
 
   it('возвращает Ok(void) при дублирующемся fill (idempotency)', async () => {
@@ -244,9 +251,18 @@ describe('ProcessFillUseCase', () => {
   it('возвращает Ok если ордер не найден (только ledger)', async () => {
     // Ордер не найден — fill записывается в ledger, portfolio корректируется reconciler'ом
     orderRepo = makeOrderRepo(undefined);
-    const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: makeOrderStateStore(undefined), orderRepo });
+    const directOrderStateStore = makeOrderStateStore(undefined);
+    const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: directOrderStateStore, orderRepo });
     const result = await useCase.execute(makeFill());
     expect(result.ok).toBe(true);
+  });
+
+  it('снимает флаг isMatchedOnExchange в direct fill path (ордер не найден)', async () => {
+    orderRepo = makeOrderRepo(undefined);
+    const directOrderStateStore = makeOrderStateStore(undefined);
+    const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: directOrderStateStore, orderRepo });
+    await useCase.execute(makeFill());
+    expect(directOrderStateStore.clearMatchedOnExchange).toHaveBeenCalledWith(ORDER_ID);
   });
 
   // ── Portfolio не найден ───────────────────────────────────────────────────

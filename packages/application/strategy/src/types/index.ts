@@ -16,5 +16,6 @@ export type {
   CancelAllIntent,
 } from './StrategyIntent.js';
 export type { StrategySnapshot } from './StrategySnapshot.js';
+export type { InstrumentConstraints } from './InstrumentConstraints.js';
 export type { ScheduleConfig } from './ScheduleConfig.js';
 export { DEFAULT_SCHEDULE_CONFIG } from './ScheduleConfig.js';

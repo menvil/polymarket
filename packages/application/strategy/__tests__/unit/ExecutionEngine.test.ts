@@ -393,10 +393,10 @@ describe('ExecutionEngine', () => {
     });
   });
 
-  // ── Клампирование minOrderSize ───────────────────────────
+  // ── Валидация minOrderSize (reject-only) ──────────────
 
-  describe('minOrderSize clamping', () => {
-    it('should use intent size when >= minOrderSize', async () => {
+  describe('minOrderSize validation (reject, no clamping)', () => {
+    it('should pass through intent size when >= minOrderSize', async () => {
       const minOrderSize = Quantity.of(new Decimal('5'));
       deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
       engine = new ExecutionEngine(deps);
@@ -408,19 +408,20 @@ describe('ExecutionEngine', () => {
       expect(call.size.toNumber()).toBe(10);
     });
 
-    it('should clamp size to minOrderSize when intent size < minOrderSize', async () => {
+    it('should reject (skip) when intent size < minOrderSize', async () => {
       const minOrderSize = Quantity.of(new Decimal('5'));
       deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
       engine = new ExecutionEngine(deps);
 
       const size2 = Quantity.of(new Decimal('2'));
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
+      const report = await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
 
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(5);
+      expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should log warn when clamping occurs', async () => {
+    it('should log warn when rejecting for minOrderSize', async () => {
       const minOrderSize = Quantity.of(new Decimal('5'));
       deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
       engine = new ExecutionEngine(deps);
@@ -430,12 +431,12 @@ describe('ExecutionEngine', () => {
       await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('clamping'),
-        expect.objectContaining({ requested: 2, effective: 5 }),
+        expect.stringContaining('size below minOrderSize'),
+        expect.objectContaining({ size: 2, minOrderSize: 5 }),
       );
     });
 
-    it('should use intent size when catalog returns undefined (unknown instrument)', async () => {
+    it('should pass through when catalog returns undefined (unknown instrument)', async () => {
       deps = makeDeps({ catalog: makeCatalog(undefined) });
       engine = new ExecutionEngine(deps);
 
@@ -445,235 +446,151 @@ describe('ExecutionEngine', () => {
       const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
       expect(call.size.toNumber()).toBe(2);
     });
+
+    it('should reject SELL when size < minOrderSize', async () => {
+      const minOrderSize = Quantity.of(new Decimal('5'));
+      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
+      engine = new ExecutionEngine(deps);
+
+      const size3 = Quantity.of(new Decimal('3'));
+      const report = await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: size3 }]);
+
+      expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should pass SELL when size >= minOrderSize', async () => {
+      const minOrderSize = Quantity.of(new Decimal('5'));
+      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
+      engine = new ExecutionEngine(deps);
+
+      const size5 = Quantity.of(new Decimal('5'));
+      const report = await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: size5 }]);
+
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
   });
 
-  // ── Skip по позиционному лимиту ─────────────────────────
+  // ── Валидация minOrderValue (reject-only, BUY only) ───
 
-  describe('minOrderValue skip (neededSize > remainingCapacity)', () => {
-    it('should skip and count as skipped when neededSizeForMinValue > remainingPositionCapacity', async () => {
-      // price=0.045, minOrderValue=$1 → neededSize=ceil(1/0.045)=23
-      // maxPositionSize=20, currentPosition=0 → remaining=20 < 23 → skip
+  describe('minOrderValue validation (reject BUY, no clamping)', () => {
+    it('should reject BUY when price × size < minOrderValue', async () => {
+      // price=0.01, size=5 → value=$0.05 < $1 → reject
       const minOrderSize = Quantity.of(new Decimal('1'));
       const minOrderValue = Quantity.of(new Decimal('1'));
-      const lowPrice = Price.of(new Decimal('0.045'));
-      const maxPositionSize = new Decimal(20);
-
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue(undefined), // нет позиции
-      };
-
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize, minOrderValue),
-        maxPositionSize,
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-      });
+      const lowPrice = Price.of(new Decimal('0.01'));
+      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
       engine = new ExecutionEngine(deps);
 
       const report = await engine.execute(ctx, [
         { type: 'PLACE', side: BUY, price: lowPrice, size: Quantity.of(new Decimal('5')) },
       ]);
 
-      expect(report.placed).toBe(0);
       expect(report.skipped).toBe(1);
-      expect(report.errors).toHaveLength(0);
+      expect(report.placed).toBe(0);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should not skip when neededSizeForMinValue <= remainingPositionCapacity', async () => {
-      // price=0.10, minOrderValue=$1 → neededSize=ceil(1/0.10)=10
-      // maxPositionSize=20, currentPosition=0 → remaining=20 >= 10 → clamp and place
+    it('should pass BUY when price × size >= minOrderValue', async () => {
+      // price=0.55, size=2 → value=$1.10 >= $1 → pass
       const minOrderSize = Quantity.of(new Decimal('1'));
       const minOrderValue = Quantity.of(new Decimal('1'));
-      const price = Price.of(new Decimal('0.10'));
-      const maxPositionSize = new Decimal(20);
-
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue(undefined),
-      };
-
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize, minOrderValue),
-        maxPositionSize,
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-      });
+      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
       engine = new ExecutionEngine(deps);
 
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price, size: Quantity.of(new Decimal('5')) },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: Quantity.of(new Decimal('2')) },
       ]);
 
       expect(report.placed).toBe(1);
       expect(report.skipped).toBe(0);
-      expect(report.errors).toHaveLength(0);
     });
-  });
 
-  // ── Клампирование minOrderValue ──────────────────────────
-
-  describe('minOrderValue clamping (BUY: price × size >= minOrderValue)', () => {
-    it('should clamp size up when price × size < minOrderValue', async () => {
-      // price=0.01, size=5 → value=$0.05 < $1 → minSize=ceil(1/0.01)=100
+    it('should not apply minOrderValue check to SELL orders', async () => {
+      // SELL: value=$0.05 < $1 but SELL is not subject to minOrderValue check
       const minOrderSize = Quantity.of(new Decimal('1'));
       const minOrderValue = Quantity.of(new Decimal('1'));
       const lowPrice = Price.of(new Decimal('0.01'));
       deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: lowPrice, size: Quantity.of(new Decimal('5')) }]);
-
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(100); // ceil(1 / 0.01) = 100
-    });
-
-    it('should not clamp when price × size >= minOrderValue', async () => {
-      // price=0.55, size=2 → value=$1.10 >= $1 → no clamp
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: Quantity.of(new Decimal('2')) }]);
-
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(2);
-    });
-
-    it('should not apply minOrderValue clamp to SELL orders', async () => {
-      // SELL: стратегия продаёт токены, minOrderValue не применяется
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      const lowPrice = Price.of(new Decimal('0.01'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: lowPrice, size: Quantity.of(new Decimal('5')) }]);
-
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(5); // нет клампирования для SELL
-    });
-  });
-
-  // ── SELL: позиция меньше minOrderSize (stuck position) ──
-
-  describe('SELL below minOrderSize (stuck position)', () => {
-    it('should skip SELL when position qty < minOrderSize (first call — logs warn)', async () => {
-      // positionQty=0.21, minOrderSize=5 → skip, Polymarket отклоняет SELL < minOrderSize
-      // Ожидаем reconciliation которая пополнит позицию до полного размера
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      const logger = makeLogger();
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue({
-          quantity: Quantity.of(new Decimal('0.21')),
-        }),
-      };
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize),
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-        logger: logger as any,
-      });
       engine = new ExecutionEngine(deps);
 
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) },
+        { type: 'PLACE', side: SELL, price: lowPrice, size: Quantity.of(new Decimal('5')) },
       ]);
 
-      expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(0);
-      expect(report.errors).toHaveLength(0);
-      expect((deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls).toHaveLength(0);
-      // первый вызов логирует warn
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+
+    it('should log warn when rejecting for minOrderValue', async () => {
+      const minOrderSize = Quantity.of(new Decimal('1'));
+      const minOrderValue = Quantity.of(new Decimal('1'));
+      const lowPrice = Price.of(new Decimal('0.01'));
+      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
+      engine = new ExecutionEngine(deps);
+      const logger = deps.logger as ReturnType<typeof makeLogger>;
+
+      await engine.execute(ctx, [
+        { type: 'PLACE', side: BUY, price: lowPrice, size: Quantity.of(new Decimal('5')) },
+      ]);
+
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('stuck position'),
-        expect.objectContaining({ positionQty: 0.21, minOrderSize: 5 }),
+        expect.stringContaining('order value below minOrderValue'),
+        expect.objectContaining({ minOrderValue: 1 }),
       );
     });
+  });
 
-    it('should skip silently on repeated calls within cooldown (no warn spam)', async () => {
-      // Второй вызов в течение 60s → только debug, без warn
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      const logger = makeLogger();
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue({
-          quantity: Quantity.of(new Decimal('0.21')),
-        }),
-      };
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize),
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-        logger: logger as any,
-      });
-      engine = new ExecutionEngine(deps);
+  // ── Exchange rejection cooldown ──────────────────────────
 
-      const intent = [{ type: 'PLACE' as const, side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) }];
-
-      await engine.execute(ctx, intent); // первый: warn
-      (logger.warn as ReturnType<typeof jest.fn>).mockClear();
-
-      const second = await engine.execute(ctx, intent);
-      expect(second.skipped).toBe(1);
-      expect(logger.warn).not.toHaveBeenCalled(); // второй: тихо
-    });
-
-    it('should skip SELL when position qty is zero', async () => {
-      // positionQty=0 → нечего продавать
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue(undefined),
-      };
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize),
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-      });
-      engine = new ExecutionEngine(deps);
+  describe('exchange rejection cooldown', () => {
+    it('should return failed on first exchange rejection', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('not enough balance/allowance')),
+      );
 
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('0.21')) },
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+      ]);
+
+      expect(report.errors).toHaveLength(1);
+      expect(report.placed).toBe(0);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip second attempt immediately after rejection (cooldown active)', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('not enough balance/allowance')),
+      );
+
+      // Первая попытка → rejection + cooldown установлен
+      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
+      (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
+
+      // Вторая попытка сразу → cooldown активен → skip
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
       ]);
 
       expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(0);
+      expect(report.errors).toHaveLength(0);
+      // Биржа НЕ вызывается в cooldown
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should clamp and place SELL when position qty >= minOrderSize', async () => {
-      // positionQty=10, minOrderSize=5, intent.size=3 → клампирование к 5, размещение
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue({
-          quantity: Quantity.of(new Decimal('10')),
-        }),
-      };
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize),
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-      });
-      engine = new ExecutionEngine(deps);
+    it('should not apply cooldown to different side', async () => {
+      (deps.placeOrderUseCase as any).execute
+        .mockResolvedValueOnce(Err(new TradingError('not enough balance/allowance')))
+        .mockResolvedValueOnce(Ok(ORDER_1));
 
+      // SELL fails → cooldown для SELL
+      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
+
+      // BUY для того же инструмента — cooldown не затрагивает BUY
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('3')) },
-      ]);
-
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(5); // клампировано к minOrderSize
-    });
-
-    it('should clamp and place SELL when position qty exactly equals minOrderSize', async () => {
-      // positionQty=5 === minOrderSize=5 → не stuck-path, клампирование к 5
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      const portfolio = {
-        getPosition: jest.fn().mockReturnValue({
-          quantity: Quantity.of(new Decimal('5')),
-        }),
-      };
-      deps = makeDeps({
-        catalog: makeCatalog(minOrderSize),
-        portfolioStore: { get: jest.fn().mockReturnValue(portfolio) } as any,
-      });
-      engine = new ExecutionEngine(deps);
-
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('3')) },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
       ]);
 
       expect(report.placed).toBe(1);

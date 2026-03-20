@@ -307,33 +307,47 @@ export class FillMapper {
       }
 
       // side тейкера из верхнего уровня.
-      // В cross-outcome fills (тейкер BUY токен A, мейкеры BUY токен B) Polymarket
-      // не включает top-level side. Определяем по asset_id:
-      // - одинаковые asset_id → обычный fill, side обязателен
-      // - разные asset_id → cross-outcome → тейкер всегда BUY (обе стороны покупают за $1 пару)
+      // Если top-level side отсутствует (cross-outcome fill или немедленное исполнение) —
+      // определяем по asset_id относительно maker_orders:
+      // - одинаковые asset_id → same-asset fill → тейкер ПРОТИВОПОЛОЖЕН мейкеру
+      // - разные asset_id → cross-outcome fill → тейкер ТОТ ЖЕ side что мейкер
+      //   (SELL Up + SELL Down: оба продают свой токен, Polymarket не включает top-level side)
       const takerSideRaw = raw['side'];
       if (takerSideRaw === 'BUY' || takerSideRaw === 'SELL') {
         side = takerSideRaw;
       } else {
-        // Fallback для cross-outcome: проверяем совпадение asset_id с maker_orders
+        // Fallback: определяем side по maker_orders
         const makerOrdersRaw = raw['maker_orders'];
         const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
         const isEntry = (o: unknown): o is Record<string, unknown> =>
           o !== null && typeof o === 'object';
-        const firstMakerAssetId = makerOrders.length > 0 && isEntry(makerOrders[0])
-          ? makerOrders[0]['asset_id']
+        const firstMaker = makerOrders.length > 0 && isEntry(makerOrders[0])
+          ? makerOrders[0]
           : undefined;
+        const firstMakerAssetId = firstMaker?.['asset_id'];
+        const firstMakerSideRaw = firstMaker?.['side'];
 
-        if (typeof firstMakerAssetId === 'string' && firstMakerAssetId !== assetIdRaw.trim()) {
-          // Cross-outcome: тейкер всегда BUY своего токена
-          side = 'BUY';
+        const isCrossOutcome =
+          typeof firstMakerAssetId === 'string' && firstMakerAssetId !== assetIdRaw.trim();
+
+        if (isCrossOutcome) {
+          // Cross-outcome fill: тейкер SELL Up + мейкер SELL Down (или наоборот).
+          // Оба участника продают комплементарный токен — side у тейкера совпадает с мейкером.
+          // Polymarket не включает top-level side в таких событиях.
+          if (firstMakerSideRaw === 'SELL' || firstMakerSideRaw === 'BUY') {
+            side = firstMakerSideRaw;
+          } else {
+            return Err(
+              new ValidationError(
+                'Invalid cross-outcome trade event: cannot determine taker side from maker',
+                { context: { field: 'maker_orders[0].side', value: firstMakerSideRaw } },
+              )
+            );
+          }
         } else {
           // Same-asset fill без top-level side: тейкер — противоположная сторона от мейкера.
           // Например: мейкер BUY → тейкер SELL (продаём в ожидающий BUY-ордер).
           // Это происходит когда наш лимитный ордер исполняется немедленно как taker.
-          const firstMakerSideRaw = makerOrders.length > 0 && isEntry(makerOrders[0])
-            ? makerOrders[0]['side']
-            : undefined;
           if (firstMakerSideRaw === 'BUY') {
             side = 'SELL';
           } else if (firstMakerSideRaw === 'SELL') {

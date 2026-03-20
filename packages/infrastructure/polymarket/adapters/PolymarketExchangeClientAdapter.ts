@@ -286,6 +286,12 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
           const feeBps = t.fee_rate_bps ? parseFloat(t.fee_rate_bps) : 0;
           const feeAmount = price.value().mul(size.value()).mul(feeBps).div(10000);
 
+          const knownStatuses = ['MATCHED', 'MINED', 'CONFIRMED', 'RETRYING', 'FAILED'] as const;
+          type KnownStatus = typeof knownStatuses[number];
+          const status = knownStatuses.includes(t.status as KnownStatus)
+            ? (t.status as KnownStatus)
+            : undefined;
+
           snapshots.push({
             fillId,
             orderId,
@@ -300,6 +306,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
               asset: AssetIdHelpers.USDC,
             },
             executedAt: executedAtResult.value,
+            status,
           });
         } catch {
           this._logger.warn('Skipping trade with invalid price/size values', { fillId: t.id });

@@ -83,4 +83,21 @@ export interface IOrderStateStore {
    * @returns true если WS сообщил MATCHED для этого ордера
    */
   isMatchedOnExchange(orderId: OrderId): boolean;
+
+  /**
+   * Снимает пометку MATCHED с ордера.
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Вызывается после обработки CONFIRMED fill в ProcessFillUseCase.
+   * CONFIRMED = fill осел on-chain (finality) → опасность "in-flight" миновала.
+   *
+   * Если другой fill для того же ордера ещё в пути (MATCHED),
+   * следующее MATCHED-событие заново поставит флаг.
+   *
+   * Без очистки ордер навсегда остаётся в `matchedOrders` snapshot'а —
+   * стратегия возвращает HOLD на каждом тике, не может ни продать, ни купить.
+   */
+  clearMatchedOnExchange(orderId: OrderId): void;
 }

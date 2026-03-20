@@ -5,28 +5,33 @@
  * Получает raw fill-событие (WsUserFillDto или совместимый Record),
  * маршрутизирует по статусу WsFillStatus:
  *
- * - MATCHED  → парсит Fill, кеширует в `_pendingFills`, НЕ публикует.
+ * - MATCHED   → парсит Fill, кеширует в `_pendingFills`, НЕ публикует.
  *   Токены ещё не на блокчейне — стратегия не должна пытаться продавать.
  *
- * - MINED / CONFIRMED → достаёт Fill из кеша, публикует FILL_RECEIVED.
- *   Токены подтверждены on-chain — позиция обновлена, можно продавать.
- *   Если fill нет в кеше (бот перезапустился) — warn, без публикации.
- *   Если оба события приходят (MINED + CONFIRMED) — второй игнорируется
- *   (fill удалён из кеша при первом; ProcessFillUseCase идемпотентен).
+ * - MINED     → держим fill в кеше, НЕ публикуем, ждём CONFIRMED.
+ *   Токены включены в блок, но finality не достигнута.
+ *   Для cross-outcome mint-сделок (обе стороны BUY) CLOB отклоняет SELL
+ *   до CONFIRMED — публикация при MINED вызывает спам rejection-ов.
+ *   Для обычных (transfer) сделок CONFIRMED приходит через 2-5 секунд,
+ *   потеря скорости незначительна по сравнению с 5-минутными маркетами.
  *
- * - FAILED   → публикует FILL_FAILED (требует reconciliation)
+ * - CONFIRMED → достаёт Fill из кеша (или парсит из raw при отсутствии),
+ *   публикует FILL_RECEIVED. Токены finalized on-chain — SELL безопасен.
+ *
+ * - FAILED    → публикует FILL_FAILED (требует reconciliation)
  * - остальные → логирует trace, игнорирует (RETRYING и т.д.)
  *
  * ### Ответственность:
  * - НЕ обновляет Portfolio (это задача ProcessFillUseCase через FillOrchestrator)
- * - Кеш pending fills — in-memory, живёт до MINED/CONFIRMED или рестарта бота
+ * - Кеш pending fills — in-memory, живёт до CONFIRMED или рестарта бота
  * - Только маршрутизация по статусу и публикация событий
  *
- * ### Почему не публикуем при MATCHED:
- * При MATCHED fill токены находятся на бирже (CLOB), но ещё не заминированы
- * в блокчейн. Polymarket возвращает "not enough balance/allowance" при попытке
- * разместить SELL-ордер до MINED. Откладывая публикацию до MINED, мы исключаем
- * спам из 10+ неудачных попыток продажи (2-3 секунды).
+ * ### Почему только CONFIRMED (не MINED):
+ * На Polymarket cross-outcome BUY (обе стороны покупают) = минтинг новых токенов.
+ * Свежеминченные токены доступны для торговли только после finality (CONFIRMED).
+ * CLOB возвращает "not enough balance/allowance" при SELL пока статус MINED.
+ * Обычные transfer-fills (REDEEM) также ждут CONFIRMED — задержка 2-5 секунд
+ * при 5-минутных маркетах несущественна.
  *
  * @example
  * ```typescript
@@ -48,17 +53,28 @@ import type { IEventBus } from '@polymarket/event-bus';
 
 /** Статусы, при которых парсим и кешируем Fill (но НЕ публикуем) */
 const FILL_PARSE_STATUSES = new Set(['MATCHED']);
-/** Статусы on-chain подтверждения: публикуем кешированный Fill */
-const FILL_PUBLISH_STATUSES = new Set(['MINED', 'CONFIRMED']);
+/** Статус включения в блок — держим fill в кеше, НЕ публикуем, ждём CONFIRMED */
+const FILL_HOLD_STATUSES = new Set(['MINED']);
+/** Статусы finality: публикуем кешированный Fill */
+const FILL_PUBLISH_STATUSES = new Set(['CONFIRMED']);
 /** Статусы, сигнализирующие об ошибке исполнения */
 const FILL_FAILED_STATUSES = new Set(['FAILED']);
 
 export class FillEventHandler {
   /**
    * Кеш распарсенных fills, ожидающих on-chain подтверждения.
-   * Ключ — строковый fillId. Заполняется при MATCHED, очищается при MINED/CONFIRMED.
+   * Ключ — строковый fillId. Заполняется при MATCHED, очищается при CONFIRMED.
    */
   private readonly _pendingFills = new Map<string, Fill>();
+
+  /**
+   * Множество уже опубликованных fillId.
+   * Защита от дублирования: Polymarket может присылать CONFIRMED несколько раз.
+   * Без дедупликации FillEventHandler публиковал бы FILL_RECEIVED повторно
+   * (fallback-парсинг при отсутствии в кеше), что могло вызвать двойную реакцию стратегии:
+   * «SELL подтверждён» → новый BUY → совместно с уже ожидающим BUY = две покупки, один SELL.
+   */
+  private readonly _publishedFillIds = new Set<string>();
 
   /**
    * Создаёт FillEventHandler.
@@ -98,6 +114,14 @@ export class FillEventHandler {
 
     if (FILL_PARSE_STATUSES.has(status)) {
       this._cacheMatchedFill(raw, accountId, rawId);
+      return;
+    }
+
+    if (FILL_HOLD_STATUSES.has(status)) {
+      // MINED: токены в блоке, но finality ещё не достигнута.
+      // Cross-outcome MINT fills (обе стороны BUY) — SELL отклоняется CLOB до CONFIRMED.
+      // Держим fill в кеше (_pendingFills уже заполнен при MATCHED), ждём CONFIRMED.
+      this._logger.debug('Fill MINED — holding for CONFIRMED', { rawId });
       return;
     }
 
@@ -153,12 +177,14 @@ export class FillEventHandler {
    *
    * @remarks
    * ### Алгоритм:
-   * 1. Пробуем достать fill из `_pendingFills` (fast path — MATCHED был раньше).
-   * 2. Если нет в кеше — парсим из raw напрямую (fallback).
+   * 1. Дедупликация: если fillId уже в `_publishedFillIds` → debug-лог, выход.
+   *    Защита от дублирования: Polymarket присылает CONFIRMED несколько раз.
+   * 2. Пробуем достать fill из `_pendingFills` (fast path — MATCHED был раньше).
+   * 3. Если нет в кеше — парсим из raw напрямую (fallback).
    *    Это покрывает два случая:
    *    - CONFIRMED приходит без предшествующего MATCHED (биржа может пропустить шаг)
-   *    - Бот перезапустился между MATCHED и MINED/CONFIRMED
-   * 3. Идемпотентность: ProcessFillUseCase игнорирует повторный fillId через markIfNotExists.
+   *    - Бот перезапустился между MATCHED и CONFIRMED
+   * 4. Публикуем FILL_RECEIVED, добавляем fillId в `_publishedFillIds`.
    */
   private async _publishCachedOrParsedFill(
     raw: Record<string, unknown>,
@@ -166,6 +192,13 @@ export class FillEventHandler {
     rawId: string,
     status: string,
   ): Promise<void> {
+    // Дедупликация: Polymarket может слать CONFIRMED несколько раз.
+    // Повторная публикация могла бы вызвать двойную реакцию стратегии на fill-событие.
+    if (this._publishedFillIds.has(rawId)) {
+      this._logger.debug('Fill already published, ignoring duplicate CONFIRMED', { rawId, status });
+      return;
+    }
+
     let fill = this._pendingFills.get(rawId);
 
     if (fill) {
@@ -201,6 +234,8 @@ export class FillEventHandler {
       fill,
       receivedAt: tsResult.value,
     });
+
+    this._publishedFillIds.add(rawId);
 
     this._logger.info('Fill event published', {
       fillId: String(fill.id),

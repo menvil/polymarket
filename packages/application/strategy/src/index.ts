@@ -53,6 +53,7 @@ export type {
   CancelAllIntent,
 } from './types/index.js';
 export type { StrategySnapshot } from './types/index.js';
+export type { InstrumentConstraints } from './types/index.js';
 export type { ScheduleConfig } from './types/index.js';
 export { DEFAULT_SCHEDULE_CONFIG } from './types/index.js';
 
@@ -76,4 +77,3 @@ export type { IOrderStateStore } from '@polymarket/ports';
 // ── Интеграция ───────────────────────────────────────────────
 export { OrderEventBridge } from './OrderEventBridge.js';
 export type { OrderEventBridgeDeps } from './OrderEventBridge.js';
-
