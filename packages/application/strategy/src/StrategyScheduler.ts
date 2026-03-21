@@ -344,6 +344,31 @@ export class StrategyScheduler {
   }
 
   /**
+   * Вызывается при получении FILL_RECEIVED для инструмента.
+   *
+   * @param instrumentId - Инструмент (tokenId → InstrumentId)
+   *
+   * @remarks
+   * Маршрутизирует fill-уведомление ко всем стратегиям, подписанным на инструмент.
+   * Необходим для direct fill path: когда fill приходит на отсутствующий/terminal ордер,
+   * ProcessFillUseCase обновляет Portfolio, но не публикует ORDER_* событий.
+   * Без этого метода scheduler никогда не узнает о direct fill → стратегия не тикнет.
+   */
+  public onFillForInstrument(instrumentId: InstrumentId): void {
+    // CONFIRMED fill пришёл → on-chain settlement завершён.
+    // Сбрасываем post-cancel cooldown — безопасно размещать новые ордера.
+    this._deps.executionEngine.clearPostCancelCooldown(instrumentId);
+
+    const strategyIds = this._instrumentToStrategies.get(String(instrumentId));
+    if (!strategyIds) return;
+
+    for (const id of strategyIds) {
+      this._dirtyTracker.markDirty(id, 'FILL');
+      this._enqueue(id);
+    }
+  }
+
+  /**
    * Возвращает метрики стратегии.
    *
    * @param strategyId - ID стратегии
@@ -523,6 +548,12 @@ export class StrategyScheduler {
 
     if (intents.length === 0) return;
 
+    this._logger.debug('StrategyScheduler: executing intents', {
+      strategyId,
+      intentCount: intents.length,
+      types: intents.map((i) => i.type === 'PLACE' ? `${i.type}:${i.side}` : i.type).join(','),
+    });
+
     // Async execution с coalescing
     entry.running = true;
     const ctx = this._makeExecutionContext(entry);
@@ -589,6 +620,29 @@ export class StrategyScheduler {
       }
     }
 
+    // Instrument-level in-flight detection:
+    // Если есть in-flight fills на инструменте (MATCHED/MINED пришёл, CONFIRMED ещё нет),
+    // добавляем виртуальный matched-маркер. Это ловит случай когда ордер уже cancelled/deleted
+    // из repo, но fill ещё в пути on-chain.
+    const hasInFlightFills = this._deps.orderStateStore.hasInFlightFills(id);
+    if (hasInFlightFills && matchedOrders.length === 0) {
+      this._deps.logger.debug('Instrument has in-flight fills (no matched orders in repo)', {
+        strategyId: entry.strategy.id,
+        instrumentId: String(id),
+      });
+    }
+
+    // Диагностика: логируем застрявшие matched ордера для отладки.
+    if (matchedOrders.length > 0) {
+      this._deps.logger.debug('Snapshot has matched orders (strategy will HOLD)', {
+        strategyId: entry.strategy.id,
+        matchedCount: matchedOrders.length,
+        matchedOrderIds: matchedOrders.map(o => String(o.id)),
+        matchedOrderStatuses: matchedOrders.map(o => o.status),
+        matchedOrderSides: matchedOrders.map(o => o.side),
+      });
+    }
+
     // Ограничения инструмента из каталога.
     // Стратегия использует для адаптации размеров ордеров вместо
     // молчаливого клампирования в ExecutionEngine.
@@ -605,6 +659,7 @@ export class StrategyScheduler {
       tradeTape: this._deps.marketDataStore.getTradeTape(id),
       openOrders,
       matchedOrders,
+      hasInFlightFills,
       constraints,
       portfolio: this._deps.portfolioStore.get(entry.accountId),
       nowMs: this._deps.clock.now().getTime(),

@@ -347,15 +347,32 @@ describe('ExecutionEngine', () => {
 
       await engine.execute(ctx, intents);
 
+      // Cancel выполняется первым
       expect(order[0]).toBe('cancel');
-      expect(order[1]).toBe('place');
+      // Place пропущен из-за post-cancel cooldown (20s safety window)
+      expect(order).toHaveLength(1);
+    });
+
+    it('should allow place after post-cancel cooldown is cleared', async () => {
+      // Сначала cancel — устанавливает cooldown
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      // Симулируем получение fill — сбрасывает cooldown
+      engine.clearPostCancelCooldown(INSTRUMENT_ID);
+
+      // Теперь place должен пройти
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ]);
+
+      expect(report.placed).toBe(1);
     });
   });
 
   // ── Смешанный сценарий ───────────────────────────────
 
   describe('mixed scenario', () => {
-    it('should handle CANCEL_ALL + PLACE correctly', async () => {
+    it('should handle CANCEL_ALL + PLACE — places skipped by post-cancel cooldown', async () => {
       (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
         makeOrder(ORDER_1),
         makeOrder(ORDER_2),
@@ -370,11 +387,54 @@ describe('ExecutionEngine', () => {
       const report = await engine.execute(ctx, intents);
 
       expect(report.cancelled).toBe(2);
-      expect(report.placed).toBe(2);
+      // Places пропущены из-за post-cancel cooldown (20s safety window).
+      // Стратегия поставит ордера на следующем тике после получения fill.
+      expect(report.skipped).toBe(2);
+      expect(report.placed).toBe(0);
       expect(report.errors).toHaveLength(0);
     });
 
-    it('should continue placing after partial cancel failure', async () => {
+    it('should handle CANCEL_ALL + PLACE after cooldown cleared', async () => {
+      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
+        makeOrder(ORDER_1),
+        makeOrder(ORDER_2),
+      ]);
+
+      // Cancel all
+      await engine.execute(ctx, [{ type: 'CANCEL_ALL' }]);
+
+      // Симулируем fill — сбрасывает cooldown
+      engine.clearPostCancelCooldown(INSTRUMENT_ID);
+
+      // Теперь place проходят
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+      ]);
+
+      expect(report.placed).toBe(2);
+    });
+
+    it('should continue placing after partial cancel failure (no successful cancel = no cooldown)', async () => {
+      // Оба cancel-а фейлятся → cooldown НЕ устанавливается
+      (deps.cancelOrderUseCase as any).execute
+        .mockResolvedValueOnce(Err(new TradingError('Not found')))
+        .mockResolvedValueOnce(Err(new TradingError('Not found')));
+
+      const intents: StrategyIntent[] = [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'CANCEL', orderId: ORDER_2 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ];
+
+      const report = await engine.execute(ctx, intents);
+
+      expect(report.cancelled).toBe(0);
+      expect(report.placed).toBe(1);
+      expect(report.errors).toHaveLength(2);
+    });
+
+    it('should skip place when at least one cancel succeeds (cooldown set)', async () => {
       (deps.cancelOrderUseCase as any).execute
         .mockResolvedValueOnce(Err(new TradingError('Not found')))
         .mockResolvedValueOnce(Ok(undefined));
@@ -388,7 +448,9 @@ describe('ExecutionEngine', () => {
       const report = await engine.execute(ctx, intents);
 
       expect(report.cancelled).toBe(1);
-      expect(report.placed).toBe(1);
+      // Place пропущен — cooldown от успешного cancel ORDER_2
+      expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(0);
       expect(report.errors).toHaveLength(1);
     });
   });
@@ -447,7 +509,7 @@ describe('ExecutionEngine', () => {
       expect(call.size.toNumber()).toBe(2);
     });
 
-    it('should reject SELL when size < minOrderSize', async () => {
+    it('should allow SELL even when size < minOrderSize (Polymarket allows selling remainder)', async () => {
       const minOrderSize = Quantity.of(new Decimal('5'));
       deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
       engine = new ExecutionEngine(deps);
@@ -455,9 +517,10 @@ describe('ExecutionEngine', () => {
       const size3 = Quantity.of(new Decimal('3'));
       const report = await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: size3 }]);
 
-      expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(0);
-      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      // SELL не блокируется по minOrderSize — Polymarket позволяет продать остаток
+      // целиком даже если он меньше minOrderSize (после fee deduction и т.п.).
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
     });
 
     it('should pass SELL when size >= minOrderSize', async () => {

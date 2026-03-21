@@ -31,6 +31,7 @@
  */
 
 import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
+import type { ITokenBalanceChecker } from '@polymarket/strategy';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
@@ -45,6 +46,8 @@ export interface BuildStrategyEngineParams {
   readonly marketDataStore: MarketDataStore;
   /** Каталог инструментов — для валидации constraints и передачи в snapshot стратегиям */
   readonly marketCatalog: IMarketCatalog;
+  /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
+  readonly tokenBalanceChecker?: ITokenBalanceChecker;
 }
 
 /** Результат построения стратегического движка */
@@ -68,7 +71,7 @@ export interface StrategyEngine {
  * ```
  */
 export function buildStrategyEngine(params: BuildStrategyEngineParams): StrategyEngine {
-  const { infra, repos, useCases, marketDataStore, marketCatalog } = params;
+  const { infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
@@ -80,6 +83,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     portfolioStore,
     catalog: marketCatalog,
     logger,
+    tokenBalanceChecker,
   });
 
   const scheduler = new StrategyScheduler({
@@ -95,6 +99,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
   const orderEventBridge = new OrderEventBridge({
     eventBus,
     scheduler,
+    executionEngine,
     orderStateStore: orderRepo,
     orderRepo,
     logger,

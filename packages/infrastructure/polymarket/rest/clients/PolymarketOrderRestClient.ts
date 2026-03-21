@@ -32,6 +32,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import { ApiError } from '../PolymarketRestClient.js';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 import type { PolymarketOrderBuilder } from '../auth/PolymarketOrderBuilder.js';
 
@@ -114,17 +115,19 @@ export interface CancelOrderRequest {
 }
 
 /**
- * Ответ на отмену ордера
+ * Ответ Polymarket API на отмену ордера.
+ *
+ * @remarks
+ * Реальный формат: `{"not_canceled": {}, "canceled": ["0xabc..."]}`.
+ * `canceled` — массив orderId которые были успешно отменены.
+ * `not_canceled` — объект `{ orderId: reason }` для ордеров, которые не удалось отменить.
  */
 export interface CancelOrderResponse {
-  /** Флаг успеха */
-  success: boolean;
+  /** Массив orderId, успешно отменённых */
+  canceled: string[];
 
-  /** Идентификатор ордера */
-  orderId: string;
-
-  /** Статус после отмены */
-  status: 'CANCELLED';
+  /** Объект orderId → причина для не-отменённых ордеров */
+  not_canceled: Record<string, string>;
 }
 
 /**
@@ -331,11 +334,29 @@ export class PolymarketOrderRestClient {
     this.logger.debug('Cancelling order', { orderId });
 
     const response = await this.restClient.delete<CancelOrderResponse>('/order', {
-      orderId,
+      orderID: orderId,
       timestamp: Date.now(),
     });
 
-    this.logger.info('Order cancelled successfully', { orderId });
+    // Проверяем что ордер попал в canceled, а не в not_canceled
+    const isCanceled = response.canceled?.includes(orderId);
+    const notCanceledReason = response.not_canceled?.[orderId];
+
+    if (notCanceledReason) {
+      throw new ApiError(
+        `Cancel order rejected by exchange: ${notCanceledReason} (orderId=${orderId})`,
+      );
+    }
+
+    if (!isCanceled) {
+      this.logger.warn('Order not found in canceled list — may have already been filled/cancelled', {
+        orderId,
+        canceled: response.canceled,
+        not_canceled: response.not_canceled,
+      });
+    } else {
+      this.logger.info('Order cancelled successfully', { orderId });
+    }
 
     return response;
   }
@@ -602,5 +623,43 @@ export class PolymarketOrderRestClient {
     }
 
     return allTrades;
+  }
+
+  /**
+   * Получить базовую ставку комиссии для токена
+   *
+   * @param tokenId - Идентификатор токена (asset ID)
+   * @returns Базовая ставка комиссии в базисных пунктах
+   * @throws {ApiError} При ошибке API-вызова или если токен не найден
+   *
+   * @remarks
+   * Использует endpoint `GET /fee-rate/{token_id}`.
+   * Возвращает `base_fee` в базисных пунктах (например, 30 bps).
+   *
+   * ВАЖНО: Это ставка для подписи ордера (`feeRateBps` в `BuildOrderParams`),
+   * а НЕ параметр `feeRate` из формулы расчёта комиссии!
+   * Формула: `fee = C × p × feeRate × (p × (1-p))^exponent`, где feeRate = 0.25 (crypto).
+   *
+   * @example
+   * ```typescript
+   * const baseFee = await client.getFeeRate('0x123...');
+   * console.log(`Base fee: ${baseFee} bps`); // "Base fee: 30 bps"
+   * ```
+   */
+  async getFeeRate(tokenId: string): Promise<number> {
+    this.logger.debug('Getting fee rate', {
+      tokenId: tokenId.substring(0, 16) + '...',
+    });
+
+    const response = await this.restClient.get<{ base_fee: number }>(
+      `/fee-rate/${tokenId}`
+    );
+
+    this.logger.debug('Fee rate retrieved', {
+      tokenId: tokenId.substring(0, 16) + '...',
+      baseFee: response.base_fee,
+    });
+
+    return response.base_fee;
   }
 }

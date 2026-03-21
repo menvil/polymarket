@@ -64,7 +64,7 @@ export type { IStrategy } from './IStrategy.js';
 export { BaseStrategy } from './BaseStrategy.js';
 export { DirtyTracker } from './DirtyTracker.js';
 export { ExecutionEngine } from './ExecutionEngine.js';
-export type { ExecutionEngineDeps, ExecutionContext, ExecutionReport } from './ExecutionEngine.js';
+export type { ExecutionEngineDeps, ExecutionContext, ExecutionReport, ITokenBalanceChecker } from './ExecutionEngine.js';
 export { StrategyScheduler } from './StrategyScheduler.js';
 export type {
   StrategySchedulerDeps,

@@ -123,9 +123,13 @@ describe('FillMapper', () => {
       }
     });
 
-    it('вычисляет fee из fee_rate_bps: price × size × bps / 10000', () => {
+    it('вычисляет fee по формуле Polymarket: C × p × feeRate × (p × (1-p))^exponent', () => {
       const accountId = makeAccountId();
-      // 0.65 × 10 × 20 / 10000 = 0.013
+      // Формула: feeUSDC = C × p × feeRate × (p × (1-p))^exponent
+      // Crypto market: feeRate = 0.25 (фиксированный!), exponent = 2
+      // p=0.65, C=10
+      // pq = 0.65 × 0.35 = 0.2275
+      // feeUSDC = 10 × 0.65 × 0.25 × (0.2275)^2 = 10 × 0.65 × 0.25 × 0.05175625 = 0.08410...
       const result = FillMapper.fromPolymarketTradeEvent(
         makeValidTakerEvent({ fee_rate_bps: '20', price: '0.65', size: '10' }),
         accountId
@@ -133,7 +137,11 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.fill.fee.quantity.amount().value().toNumber()).toBeCloseTo(0.013, 5);
+        const feeUSDC = result.value.fill.fee.quantity.amount().value().toNumber();
+        // Проверяем формулу: C × p × feeRate × (p × (1-p))^2
+        // feeRate = 0.25 (фиксированный для crypto), НЕ fee_rate_bps/10000
+        const expected = 10 * 0.65 * 0.25 * Math.pow(0.65 * 0.35, 2);
+        expect(feeUSDC).toBeCloseTo(expected, 8);
         expect(result.value.fill.hasFee()).toBe(true);
       }
     });
@@ -232,6 +240,19 @@ describe('FillMapper', () => {
         // size из matched_amount
         expect(fill.size.value().toNumber()).toBe(10);
         expect(metadata.liquidity).toBe('MAKER');
+      }
+    });
+
+    it('MAKER: fee = 0 (мейкеры не платят комиссию на Polymarket)', () => {
+      const accountId = makeAccountId();
+      const event = makeValidMakerEvent({ fee_rate_bps: '1000' });
+      const result = FillMapper.fromPolymarketTradeEvent(event, accountId);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const { fill } = result.value;
+        // Мейкерская комиссия = 0 независимо от fee_rate_bps в событии
+        expect(fill.fee.quantity.amount().value().toNumber()).toBe(0);
       }
     });
 

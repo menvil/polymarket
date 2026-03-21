@@ -290,11 +290,24 @@ export class PolymarketOrderBuilder {
 
       return { makerAmount, takerAmount };
     } else {
-      // SELL: Maker тратит outcome токены, taker предоставляет USDC
-      // makerAmount (токены) — максимум 2 знака после запятой
-      // takerAmount (USDC) — точное вычисление (без округления до центов)
-      const makerAmount = Math.round(size * multiplier);
-      const takerAmount = Math.round(usdcAmount * multiplier);
+      // SELL: Maker тратит outcome токены, taker предоставляет USDC.
+      // Polymarket API ограничения точности для SELL:
+      //   makerAmount (токены) — макс 2 знака после запятой
+      //   takerAmount (USDC)   — макс 4 знака после запятой
+      //
+      // В минимальных единицах (1e6):
+      //   makerAmount должен быть кратен 10000 (1e6 / 1e2)
+      //   takerAmount должен быть кратен 100   (1e6 / 1e4)
+      //
+      // КРИТИЧНО: takerAmount ДОЛЖЕН использовать усечённый size (после truncation до 2 знаков),
+      // а НЕ оригинальный size! API проверяет: takerAmount === truncated_size × rounded_price.
+      // Если использовать оригинальный size → рассогласование → "invalid amounts" ошибка.
+      //
+      // Math.floor для makerAmount — не продать больше, чем имеем на балансе.
+      const truncatedSize = Math.floor(size * 100) / 100; // 6.8907... → 6.89
+      const makerAmount = truncatedSize * multiplier; // 6.89 * 1e6 = 6890000
+      const sellUsdcAmount = truncatedSize * price; // Используем усечённый size!
+      const takerAmount = Math.round(sellUsdcAmount * 10000) * 100;
       return { makerAmount, takerAmount };
     }
   }

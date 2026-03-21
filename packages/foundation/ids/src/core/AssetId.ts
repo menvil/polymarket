@@ -9,6 +9,8 @@ import { parseChainId, isValidChainId } from './ChainId.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { AssetIdValidationError } from '@polymarket/errors';
+import type { InstrumentId } from '../market-data/InstrumentId.js';
+import { asInstrumentId } from '../market-data/InstrumentId.js';
 
 export { AssetIdValidationError };
 
@@ -384,6 +386,34 @@ export function assetIdToString(asset: AssetId): string {
   // OUTCOME_TOKEN всегда имеет OnChainConditionRef
   const ref = asset.conditionRef;
   return `OUTCOME_TOKEN:${ref.kind}:${ref.protocolId}:${ref.chainId}:${ref.conditionId}:${asset.outcomeKey}`;
+}
+
+/**
+ * Извлекает InstrumentId из AssetId.
+ *
+ * @param asset - AssetId для конвертации
+ * @returns InstrumentId или undefined если актив не является торгуемым инструментом
+ *
+ * @remarks
+ * Для POLYMARKET_CTF_TOKEN возвращает raw tokenId (например `"888..."`),
+ * а НЕ `"POLYMARKET_CTF_TOKEN:888..."` (как assetIdToString).
+ *
+ * Это критически важно: PlaceOrderUseCase резервирует токены под raw tokenId
+ * (через input.instrumentId от стратегии). Освобождение резервации
+ * (CancelOrderUseCase, OrderUpdateHandler) должно использовать тот же формат ключа.
+ *
+ * @example
+ * ```typescript
+ * const asset = asPolymarketCtfToken('888...')!;
+ * assetIdToInstrumentId(asset);  // → '888...' as InstrumentId
+ * assetIdToString(asset);        // → 'POLYMARKET_CTF_TOKEN:888...' ← НЕ ТО!
+ * ```
+ */
+export function assetIdToInstrumentId(asset: AssetId): InstrumentId | undefined {
+  if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+    return asInstrumentId(asset.tokenId);
+  }
+  return asInstrumentId(assetIdToString(asset));
 }
 
 /**

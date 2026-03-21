@@ -203,43 +203,37 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
   }
 
   /**
-   * Корректирует размер BUY с учётом minOrderValue.
+   * Корректирует размер BUY с учётом minOrderSize.
    *
    * @param desiredSize - Желаемый размер покупки
    * @param price - Цена ордера
-   * @param minOrderValue - Минимальная стоимость ордера в USDC
+   * @param _minOrderValue - Минимальная стоимость ордера в USDC (не используется —
+   *   увеличение size сверх desiredSize вызывает overbuy; если биржа отклонит
+   *   по minOrderValue, стратегия попробует снова на следующем тике)
    * @param minOrderSize - Минимальный размер ордера в токенах
    * @returns Скорректированный размер
    *
    * @remarks
-   * Если price × desiredSize < minOrderValue — увеличивает size до
-   * ceil(minOrderValue / price). Это единственный способ выставить ордер
-   * при низкой цене: Polymarket отклоняет BUY с суммой < $1.
+   * Только клампирует вверх до minOrderSize. НЕ увеличивает ради minOrderValue —
+   * при дешёвых токенах ($0.11) это удваивало size (5→10), покупая больше
+   * конфигурации пользователя.
    *
    * @example
    * ```typescript
-   * // price=0.117, desired=5 → value=$0.585 < $1 → ceil(1/0.117) = 9
-   * adjustBuySize(5, 0.117, 1, 5) // → 9
+   * // price=0.11, desired=5, minOrderSize=5 → 5 (не 10!)
+   * adjustBuySize(5, 0.11, 1, 5) // → 5
    *
-   * // price=0.55, desired=5 → value=$2.75 >= $1 → 5
-   * adjustBuySize(5, 0.55, 1, 5) // → 5
+   * // price=0.55, desired=3, minOrderSize=5 → 5
+   * adjustBuySize(3, 0.55, 1, 5) // → 5
    * ```
    */
   protected adjustBuySize(
     desiredSize: Decimal,
-    price: Decimal,
-    minOrderValue: Decimal,
+    _price: Decimal,
+    _minOrderValue: Decimal,
     minOrderSize: Decimal,
   ): Decimal {
     // Клампируем к minOrderSize если ниже
-    let effectiveSize = Decimal.max(desiredSize, minOrderSize);
-
-    // Клампируем к minOrderValue если стоимость ниже
-    const orderValue = price.mul(effectiveSize);
-    if (orderValue.lt(minOrderValue)) {
-      effectiveSize = minOrderValue.div(price).ceil();
-    }
-
-    return effectiveSize;
+    return Decimal.max(desiredSize, minOrderSize);
   }
 }

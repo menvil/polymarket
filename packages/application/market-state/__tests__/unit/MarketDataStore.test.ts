@@ -223,7 +223,7 @@ describe('MarketDataStore', () => {
       );
     });
 
-    it('should NOT call onChange for BOOK_DEPTH (already called from BOOK_UPDATED)', () => {
+    it('не вызывает onChange для BOOK_DEPTH (вызван из BOOK_UPDATED)', () => {
       const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
       store.setOnChange(onChange);
       store.start();
@@ -236,6 +236,27 @@ describe('MarketDataStore', () => {
         timestamp: { toNumber: () => 1000 },
       });
 
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('BOOK_DEPTH без предшествующего BOOK_UPDATED — onChange не вызывается (known limitation)', () => {
+      // Документирует архитектурное допущение: depth всегда приходит вместе с top-of-book update.
+      // Если upstream нарушит этот контракт, стратегия не увидит обновление стакана.
+      const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
+      store.setOnChange(onChange);
+      store.start();
+
+      const eventBus = deps.eventBus as any;
+      // Только BOOK_DEPTH, без BOOK_UPDATED
+      eventBus._emit('BOOK_DEPTH', {
+        type: 'BOOK_DEPTH',
+        instrumentId: INSTRUMENT_1,
+        snapshot: { marketId: 'market-1' } as any,
+        timestamp: { toNumber: () => 1000 },
+      });
+
+      // bookCollector получил данные — но onChange не вызван
+      expect((deps.bookCollector as any).recordDirect).toHaveBeenCalledTimes(1);
       expect(onChange).not.toHaveBeenCalled();
     });
   });
@@ -321,7 +342,7 @@ describe('MarketDataStore', () => {
       expect(types).toContain('TRADE_RECEIVED');
     });
 
-    it('should not process events after stop', () => {
+    it('after stop(): BOOK_UPDATED не обновляет state и не вызывает onChange', () => {
       const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
       store.setOnChange(onChange);
       store.start();
@@ -337,9 +358,40 @@ describe('MarketDataStore', () => {
         timestamp: { toNumber: () => 1000 },
       });
 
-      // Events emitted after stop() must not trigger onChange or update state
       expect(onChange).not.toHaveBeenCalled();
       expect(store.getTopOfBook(INSTRUMENT_1)).toBeUndefined();
+    });
+
+    it('after stop(): BOOK_DEPTH не доходит до bookCollector', () => {
+      store.start();
+      store.stop();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('BOOK_DEPTH', {
+        type: 'BOOK_DEPTH',
+        instrumentId: INSTRUMENT_1,
+        snapshot: { marketId: 'market-1' } as any,
+        timestamp: { toNumber: () => 1000 },
+      });
+
+      expect((deps.bookCollector as any).recordDirect).not.toHaveBeenCalled();
+    });
+
+    it('after stop(): TRADE_RECEIVED не доходит до tapeCollector', () => {
+      store.start();
+      store.stop();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('TRADE_RECEIVED', {
+        type: 'TRADE_RECEIVED',
+        instrumentId: INSTRUMENT_1,
+        price: {} as any,
+        size: {} as any,
+        side: 'BUY',
+        timestamp: {} as any,
+      });
+
+      expect((deps.tapeCollector as any).recordDirect).not.toHaveBeenCalled();
     });
 
     it('should handle double start safely', () => {

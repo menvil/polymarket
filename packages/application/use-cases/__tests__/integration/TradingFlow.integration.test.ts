@@ -44,8 +44,7 @@ import {
   asFillId,
   asOrderId,
   asMarketId,
-  asInstrumentId,
-  assetIdToString,
+  assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, OrderId } from '@polymarket/ids';
 import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value-objects';
@@ -57,8 +56,8 @@ import type { IOrderRiskChecker } from '@polymarket/risk';
 import type { IClock } from '@polymarket/time';
 import Decimal from 'decimal.js';
 
-import { InMemoryOrderRepository } from '../../../../infrastructure/backtesting/src/InMemoryOrderRepository.js';
-import { InMemoryProcessedFillRepository } from '../../../../infrastructure/backtesting/src/InMemoryProcessedFillRepository.js';
+import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
+import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -98,7 +97,7 @@ const TOKEN_ASSET_ID = {
   type: 'POLYMARKET_CTF_TOKEN',
   tokenId: 'token-trading-flow',
 } as unknown as AssetId;
-const INSTRUMENT_ID = asInstrumentId(assetIdToString(TOKEN_ASSET_ID))!;
+const INSTRUMENT_ID = assetIdToInstrumentId(TOKEN_ASSET_ID)!;
 const MARKET_ID = asMarketId('market-trading-flow-001')!;
 const ORDER_ID = asOrderId('order-trading-flow-001')!;
 const ORDER_PRICE = Price.of(new Decimal('0.65'));

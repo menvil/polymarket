@@ -15,7 +15,10 @@
  *
  * ### Особенности подписок:
  * - BOOK_UPDATED → сохраняет TopOfBook + onChange('BOOK')
- * - BOOK_DEPTH → записывает в BookDepthCollector (без onChange — BOOK_UPDATED уже вызвал)
+ * - BOOK_DEPTH → записывает в BookDepthCollector; onChange **не вызывается** —
+ *   архитектурное допущение: каждый BOOK_DEPTH сопровождается BOOK_UPDATED,
+ *   который уже уведомил стратегию. Если upstream начнёт слать depth без
+ *   paired top-of-book update, стратегия это изменение не увидит.
  * - TRADE_RECEIVED → записывает в TradeTapeCollector + onChange('TRADE')
  *
  * @example

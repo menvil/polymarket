@@ -128,6 +128,20 @@ Race condition между cancel и place, risk check на новый place мо
 Если стратегия running и пришли новые данные → rerun с fresh snapshot после execute.
 Гарантирует что стратегия увидит все данные, без потери событий.
 
+### assetIdToInstrumentId — единый хелпер конвертации AssetId → InstrumentId
+**Проблема**: `assetIdToString()` для `POLYMARKET_CTF_TOKEN` возвращает `"POLYMARKET_CTF_TOKEN:888..."`,
+но `PlaceOrderUseCase` резервирует токены под raw tokenId `"888..."` (через `input.instrumentId`
+от стратегии). Если `CancelOrderUseCase` или `OrderUpdateHandler._onExternalCancel` использует
+`asInstrumentId(assetIdToString(order.asset))` для снятия резервации — ключ не совпадает.
+Резервация остаётся навсегда, `availableTokenQuantity = 0`, все SELL заблокированы.
+
+**Решение**: хелпер `assetIdToInstrumentId(asset)` в `@polymarket/ids`:
+- Для `POLYMARKET_CTF_TOKEN` → извлекает `asset.tokenId` (raw id)
+- Для остальных → fallback к `assetIdToString()`
+
+Используется в: `CancelOrderUseCase`, `PortfolioService.applyFill/applyDirectFill`,
+`buildLiveInfra._onExternalCancel`.
+
 ## Шаг 7: Интеграция
 
 ### OrderEventBridge (`strategy/src/OrderEventBridge.ts`)

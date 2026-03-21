@@ -102,6 +102,19 @@ export interface StrategySnapshot {
    */
   readonly matchedOrders: readonly Order[];
 
+  /**
+   * true если на инструменте есть in-flight fills (MATCHED/MINED, не CONFIRMED).
+   *
+   * @remarks
+   * Instrument-level флаг: работает даже если ордер уже cancelled/deleted из repo.
+   * Решает race condition: cancel → place → fill(старый) → двойная покупка.
+   *
+   * Отличие от `matchedOrders.length > 0`:
+   * - matchedOrders ищет в repo (cancelled ордера нет) → пропускает
+   * - hasInFlightFills трекает по instrumentId независимо от ордера → ловит
+   */
+  readonly hasInFlightFills: boolean;
+
   // ── Constraints ─────────────────────────────────────────
   /**
    * Ограничения инструмента: minOrderSize, minOrderValue, tickSize.

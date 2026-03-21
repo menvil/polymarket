@@ -57,7 +57,8 @@
  * - `trader_side = "MAKER"`: orderId из `maker_orders` (matched by owner UUID), side инвертирован
  *
  * ### Расчёт комиссии:
- * fee_amount = price × size × fee_rate_bps / 10000
+ * - TAKER: feeUSDC = C × p × feeRate × (p × (1-p))^exponent (формула Polymarket)
+ * - MAKER: fee = 0 (мейкеры не платят комиссию на Polymarket)
  *
  * @example
  * ```typescript
@@ -92,6 +93,7 @@ import Decimal from 'decimal.js';
 import { Fill } from '../Fill.js';
 import type { FillSnapshot } from '../FillSnapshot.js';
 import type { ExecutionMetadata, TradeStatus } from '../ExecutionMetadata.js';
+import { calculatePolymarketTakerFee } from '../polymarket-fee.js';
 
 /**
  * ID торговой площадки Polymarket по умолчанию
@@ -119,54 +121,20 @@ const VALID_TRADE_STATUSES: ReadonlySet<string> = new Set([
  */
 export class FillMapper {
   /**
-   * Создаёт Fill и ExecutionMetadata из события Polymarket user-channel trade
+   * Создаёт Fill и ExecutionMetadata из события Polymarket user-channel trade.
    *
    * @param raw - Сырые данные события (Record<string, unknown>)
    * @param accountId - AccountId пользователя (из сессионного контекста, не из события)
-   * @returns Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError>
+   * @returns Result с первым Fill (для обратной совместимости)
    *
    * @remarks
-   * Алгоритм:
-   * 1. Определить тип участника (`trader_side`: TAKER или MAKER)
-   * 2. TAKER: orderId = `taker_order_id`, side/size/price из верхнего уровня события
-   * 3. MAKER: orderId из `maker_orders[n].order_id` (n = индекс по owner UUID), side инвертирован
-   * 4. Вычислить fee: `price × size × fee_rate_bps / 10000`
-   * 5. Создать Fill с settlementAssetId = USDC
-   * 6. Собрать ExecutionMetadata: liquidity (из trader_side), tradeStatus (из status), venueTradeId (из transaction_hash)
-   *
-   * ### Формат входных данных (real Polymarket user-channel trade event):
-   * - `id` (string) — UUID трейда → FillId
-   * - `taker_order_id` (string) — OrderId тейкера (hex)
-   * - `market` (string) — ID рынка (hex)
-   * - `asset_id` (string) — ID токена (числовой ERC1155 ID или internal строка)
-   * - `side` (string, optional) — 'BUY' | 'SELL' (сторона ТЕЙКЕРА; отсутствует в MAKER-событиях)
-   * - `size` (string) — объём тейкера
-   * - `price` (string) — цена
-   * - `fee_rate_bps` (string) — ставка комиссии в базисных пунктах (0 = no fee)
-   * - `status` (string) — 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED'
-   * - `owner` (string) — UUID пользователя (не используется напрямую)
-   * - `timestamp` (string) — Unix timestamp в миллисекундах (13 цифр, не в секундах)
-   * - `trader_side` (string) — 'TAKER' | 'MAKER'
-   * - `transaction_hash` (string, optional) — хэш транзакции → venueTradeId
-   * - `maker_orders` (array, optional) — записи мейкеров [{ order_id, matched_amount, price, owner }]
+   * **ВАЖНО**: в cross-outcome trades один WS-event может содержать несколько наших
+   * maker_orders. Этот метод возвращает только ПЕРВЫЙ найденный fill.
+   * Для обработки ВСЕХ fills используйте `allFromPolymarketTradeEvent()`.
    *
    * @example
    * ```typescript
-   * const accountId = parseAccountId('wallet:0xabc...')!;
-   * const result = FillMapper.fromPolymarketTradeEvent({
-   *   id: '28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e',
-   *   taker_order_id: '0x06bc63...',
-   *   market: '0xbd31dc8a...',
-   *   asset_id: 'OUTCOME_TOKEN:...',
-   *   price: '0.57',
-   *   size: '10',
-   *   side: 'BUY',
-   *   fee_rate_bps: '0',
-   *   status: 'MATCHED',
-   *   timestamp: '1672290701',
-   *   trader_side: 'TAKER',
-   *   transaction_hash: '0xabcdef...',
-   * }, accountId);
+   * const result = FillMapper.fromPolymarketTradeEvent(raw, accountId);
    * if (result.ok) {
    *   const { fill, metadata } = result.value;
    * }
@@ -176,6 +144,57 @@ export class FillMapper {
     raw: Record<string, unknown>,
     accountId: AccountId
   ): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError> {
+    const allResult = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
+    if (!allResult.ok) return Err(allResult.error);
+    if (allResult.value.length === 0) {
+      return Err(new ValidationError('No fills parsed from trade event'));
+    }
+    return Ok(allResult.value[0]);
+  }
+
+  /**
+   * Создаёт ВСЕ Fill и ExecutionMetadata из события Polymarket user-channel trade.
+   *
+   * @param raw - Сырые данные события (Record<string, unknown>)
+   * @param accountId - AccountId пользователя (из сессионного контекста, не из события)
+   * @returns Result<Array<{ fill, metadata }>, ValidationError>
+   *
+   * @remarks
+   * ### Почему массив:
+   * В cross-outcome trades (тейкер продаёт DOWN, мейкеры покупают UP) один WS-event
+   * содержит ВСЕ maker_orders трейда. Если у нас 2+ ордеров на одном инструменте,
+   * все они оказываются в maker_orders одного трейда.
+   *
+   * `fromPolymarketTradeEvent()` использует `.find()` и возвращает только первый fill —
+   * остальные наши ордера теряются (portfolio desync).
+   *
+   * Этот метод создаёт отдельный Fill для КАЖДОГО нашего maker_order.
+   *
+   * ### FillId для multi-maker:
+   * Для уникальности FillId при нескольких fills из одного трейда используется
+   * формат `{tradeId}:{orderId}`. Это гарантирует идемпотентность в ProcessFillUseCase.
+   *
+   * ### Алгоритм:
+   * 1. Парсим общие поля (id, market, asset_id, timestamp)
+   * 2. TAKER: один fill — orderId из taker_order_id, FillId = tradeId
+   * 3. MAKER: N fills — для каждого нашего maker_order по owner UUID или maker_address
+   *    - Если один наш ордер → FillId = tradeId (обратная совместимость)
+   *    - Если несколько → FillId = `{tradeId}:{orderId}`
+   *
+   * @example
+   * ```typescript
+   * const result = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
+   * if (result.ok) {
+   *   for (const { fill, metadata } of result.value) {
+   *     await processFill(fill);
+   *   }
+   * }
+   * ```
+   */
+  public static allFromPolymarketTradeEvent(
+    raw: Record<string, unknown>,
+    accountId: AccountId
+  ): Result<Array<{ fill: Fill; metadata: ExecutionMetadata }>, ValidationError> {
     // Защита от null/примитивов на уровне runtime (TypeScript защищает только на уровне компилятора)
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
       return Err(
@@ -370,35 +389,44 @@ export class FillMapper {
       if (!sizeResult.ok) return Err(sizeResult.error);
       sizeDecimal = sizeResult.value;
     } else {
-      // MAKER: orderId из maker_orders.
-      // Поиск нашего ордера: сначала по owner UUID, затем по maker_address (ETH wallet).
-      // В cross-outcome fills (тейкер продаёт DOWN, мы мейкер UP) top-level owner = UUID тейкера,
-      // поэтому fallback на maker_address обязателен.
+      // MAKER: собираем ВСЕ наши ордера из maker_orders.
+      // В cross-outcome trades один WS-event содержит ~70 maker_orders.
+      // Если у нас 2+ ордеров (cancel-and-replace race, лестница) — все попадают в один event.
+      // Нужно создать Fill для КАЖДОГО нашего ордера, иначе portfolio desync.
       const ownerRaw = raw['owner'];
       const makerAddressRaw = raw['maker_address']; // наш ETH-адрес, injected из credentials
       const makerOrdersRaw = raw['maker_orders'];
       const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
 
-      // Поиск по owner UUID (прямые fills) или по maker_address (cross-outcome fills)
       const isEntry = (o: unknown): o is Record<string, unknown> =>
         o !== null && typeof o === 'object';
 
-      let makerOrder = typeof ownerRaw === 'string' && ownerRaw.length > 0
-        ? makerOrders.find(
-            (o) => isEntry(o) && (o as Record<string, unknown>)['owner'] === ownerRaw
-          )
-        : undefined;
+      // Найти ВСЕ наши maker_orders (по owner UUID или maker_address)
+      const ourMakerOrders: Array<Record<string, unknown>> = [];
 
-      if (!makerOrder && typeof makerAddressRaw === 'string' && makerAddressRaw.length > 0) {
-        const addrLower = makerAddressRaw.toLowerCase();
-        makerOrder = makerOrders.find(
-          (o) => isEntry(o) &&
-            typeof (o as Record<string, unknown>)['maker_address'] === 'string' &&
-            ((o as Record<string, unknown>)['maker_address'] as string).toLowerCase() === addrLower
-        );
+      for (const o of makerOrders) {
+        if (!isEntry(o)) continue;
+        const entry = o as Record<string, unknown>;
+
+        // Совпадение по owner UUID (прямые fills)
+        if (typeof ownerRaw === 'string' && ownerRaw.length > 0 && entry['owner'] === ownerRaw) {
+          ourMakerOrders.push(entry);
+          continue;
+        }
+
+        // Совпадение по maker_address (cross-outcome fills)
+        if (typeof makerAddressRaw === 'string' && makerAddressRaw.length > 0) {
+          const entryAddr = entry['maker_address'];
+          if (
+            typeof entryAddr === 'string' &&
+            entryAddr.toLowerCase() === makerAddressRaw.toLowerCase()
+          ) {
+            ourMakerOrders.push(entry);
+          }
+        }
       }
 
-      if (!makerOrder) {
+      if (ourMakerOrders.length === 0) {
         return Err(
           new ValidationError(
             'Invalid trade event: cannot identify our maker_order (tried owner UUID and maker_address)',
@@ -413,82 +441,150 @@ export class FillMapper {
         );
       }
 
-      const makerOrderRecord = makerOrder as Record<string, unknown>;
+      // Общие данные для всех fills из этого trade event
+      const venueId = asVenueId(POLYMARKET_VENUE_ID);
+      if (!venueId) {
+        return Err(
+          new ValidationError('Cannot create POLYMARKET venue ID', {
+            context: { venueId: POLYMARKET_VENUE_ID },
+          })
+        );
+      }
 
-      // В cross-outcome fills maker_orders[].asset_id — это наш токен (UP/DOWN),
-      // а top-level asset_id — токен тейкера (противоположный исход).
-      // Используем asset_id из нашей maker_order записи если он присутствует.
-      const makerAssetIdRaw = makerOrderRecord['asset_id'];
-      if (typeof makerAssetIdRaw === 'string' && makerAssetIdRaw.trim().length > 0) {
-        const parsedMakerAsset = parseAssetId(makerAssetIdRaw.trim());
-        if (parsedMakerAsset) {
-          effectiveTokenId = parsedMakerAsset;
+      const statusRaw = raw['status'];
+      const tradeStatus =
+        typeof statusRaw === 'string' && VALID_TRADE_STATUSES.has(statusRaw)
+          ? (statusRaw as TradeStatus)
+          : undefined;
+
+      const txHashRaw = raw['transaction_hash'];
+      let venueTradeId;
+      if (typeof txHashRaw === 'string' && txHashRaw.trim().length > 0) {
+        venueTradeId = asVenueTradeId(txHashRaw.trim()) ?? undefined;
+      }
+
+      const metadata: ExecutionMetadata = { liquidity: 'MAKER', tradeStatus, venueTradeId };
+
+      // Создать Fill для каждого нашего maker_order
+      const results: Array<{ fill: Fill; metadata: ExecutionMetadata }> = [];
+
+      for (const makerOrderRecord of ourMakerOrders) {
+        // asset_id из maker_order (в cross-outcome — наш токен, а не тейкерский)
+        let makerTokenId = tokenId;
+        const makerAssetIdRaw = makerOrderRecord['asset_id'];
+        if (typeof makerAssetIdRaw === 'string' && makerAssetIdRaw.trim().length > 0) {
+          const parsedMakerAsset = parseAssetId(makerAssetIdRaw.trim());
+          if (parsedMakerAsset) {
+            makerTokenId = parsedMakerAsset;
+          }
         }
-      }
 
-      const makerOrderIdRaw = makerOrderRecord['order_id'];
-      if (typeof makerOrderIdRaw !== 'string' || makerOrderIdRaw.trim().length === 0) {
-        return Err(
-          new ValidationError('Invalid trade event: missing order_id in maker_orders entry', {
-            context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
-          })
-        );
-      }
-
-      orderId = asOrderId(makerOrderIdRaw.trim());
-      if (!orderId) {
-        return Err(
-          new ValidationError('Invalid trade event: invalid order_id in maker_orders entry', {
-            context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
-          })
-        );
-      }
-
-      // Сторона мейкера — берём из maker_orders[].side (реальный формат Polymarket).
-      // Если поле отсутствует (старый формат/тесты) — инвертируем тейкерский side.
-      const makerSideRaw = makerOrderRecord['side'];
-      if (makerSideRaw === 'BUY' || makerSideRaw === 'SELL') {
-        side = makerSideRaw;
-      } else {
-        // Fallback: инвертируем top-level side тейкера (требует его наличия)
-        const takerSideRaw = raw['side'];
-        if (takerSideRaw !== 'BUY' && takerSideRaw !== 'SELL') {
+        // orderId из maker_order
+        const makerOrderIdRaw = makerOrderRecord['order_id'];
+        if (typeof makerOrderIdRaw !== 'string' || makerOrderIdRaw.trim().length === 0) {
           return Err(
-            new ValidationError(
-              'Invalid trade event: cannot determine maker side — no side in maker_orders entry and no valid top-level side',
-              { context: { field: 'side / maker_orders[].side', value: takerSideRaw } }
-            )
+            new ValidationError('Invalid trade event: missing order_id in maker_orders entry', {
+              context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
+            })
           );
         }
-        side = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
+
+        const makerOrderId = asOrderId(makerOrderIdRaw.trim());
+        if (!makerOrderId) {
+          return Err(
+            new ValidationError('Invalid trade event: invalid order_id in maker_orders entry', {
+              context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
+            })
+          );
+        }
+
+        // side мейкера
+        const makerSideRaw = makerOrderRecord['side'];
+        let makerSide: 'BUY' | 'SELL';
+        if (makerSideRaw === 'BUY' || makerSideRaw === 'SELL') {
+          makerSide = makerSideRaw;
+        } else {
+          const takerSideRaw = raw['side'];
+          if (takerSideRaw !== 'BUY' && takerSideRaw !== 'SELL') {
+            return Err(
+              new ValidationError(
+                'Invalid trade event: cannot determine maker side',
+                { context: { field: 'side / maker_orders[].side', value: takerSideRaw } }
+              )
+            );
+          }
+          makerSide = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
+        }
+
+        // Цена и объём из maker_order
+        const makerPriceResult = parseDecimalPositive(makerOrderRecord['price'], 'maker_orders[].price');
+        if (!makerPriceResult.ok) return Err(makerPriceResult.error);
+        const makerPriceDecimal = makerPriceResult.value;
+
+        const matchedAmountResult = parseDecimalPositive(
+          makerOrderRecord['matched_amount'],
+          'maker_orders[].matched_amount',
+        );
+        if (!matchedAmountResult.ok) return Err(matchedAmountResult.error);
+        const makerSizeDecimal = matchedAmountResult.value;
+
+        const makerPrice = Price.of(makerPriceDecimal);
+        const makerSize = Quantity.of(makerSizeDecimal);
+
+        // MAKER fee = 0 на Polymarket. Комиссию платит только TAKER.
+        // fee_rate_bps в WS event — это taker fee rate, к мейкерам не применяется.
+        const fee = Fee.of(new AssetQuantity(AssetIdHelpers.USDC, Quantity.of(new Decimal(0))));
+
+        // FillId: при одном нашем ордере — оригинальный tradeId (обратная совместимость).
+        // При нескольких — `{tradeId}:{orderId}` для уникальности в idempotency guard.
+        const effectiveFillId = ourMakerOrders.length === 1
+          ? fillId
+          : asFillId(`${String(fillId)}:${makerOrderIdRaw.trim()}`);
+
+        if (!effectiveFillId) {
+          return Err(
+            new ValidationError('Cannot create composite FillId', {
+              context: { tradeId: String(fillId), orderId: makerOrderIdRaw },
+            })
+          );
+        }
+
+        const fillResult = Fill.create({
+          id: effectiveFillId,
+          orderId: makerOrderId,
+          accountId,
+          venueId,
+          marketId: marketIdParsed,
+          tokenId: makerTokenId,
+          settlementAssetId: AssetIdHelpers.USDC,
+          price: makerPrice,
+          size: makerSize,
+          side: makerSide,
+          timestamp: timestampResult.value,
+          fee,
+        });
+
+        if (!fillResult.ok) {
+          return Err(fillResult.error);
+        }
+
+        results.push({ fill: fillResult.value, metadata });
       }
 
-      // Цена мейкера из maker_orders (может отличаться для limit ордеров)
-      // Не используем fallback на taker-данные: отсутствие поля = ошибка парсинга
-      const makerPriceRaw = makerOrderRecord['price'];
-      const priceResult = parseDecimalPositive(makerPriceRaw, 'maker_orders[].price');
-      if (!priceResult.ok) return Err(priceResult.error);
-      priceDecimal = priceResult.value;
-
-      // Объём мейкера из matched_amount (только его часть трейда)
-      // Не используем fallback на taker-данные: отсутствие поля = ошибка парсинга
-      const matchedAmountRaw = makerOrderRecord['matched_amount'];
-      const sizeResult = parseDecimalPositive(matchedAmountRaw, 'maker_orders[].matched_amount');
-      if (!sizeResult.ok) return Err(sizeResult.error);
-      sizeDecimal = sizeResult.value;
+      return Ok(results);
     }
 
     const price = Price.of(priceDecimal);
     const size = Quantity.of(sizeDecimal);
 
-    // Вычислить fee из fee_rate_bps: fee_amount = price × size × fee_rate_bps / 10000
+    // TAKER fee по формуле Polymarket. MAKER fee = 0 (обработан выше, isMaker=true → return).
     const feeRateBpsRaw = raw['fee_rate_bps'];
     let feeAmount = new Decimal(0);
     if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
       try {
         const feeRateBps = new Decimal(String(feeRateBpsRaw));
         if (feeRateBps.isFinite() && feeRateBps.gt(0)) {
-          feeAmount = priceDecimal.mul(sizeDecimal).mul(feeRateBps).div(10000);
+          feeAmount = calculatePolymarketTakerFee(sizeDecimal, priceDecimal);
         }
       } catch {
         // Невалидный fee_rate_bps → комиссия = 0
@@ -509,8 +605,7 @@ export class FillMapper {
       );
     }
 
-    // Создать Fill с settlementAssetId = USDC
-    // effectiveTokenId: для MAKER = asset_id из maker_orders[] (наш токен, а не тейкерский)
+    // Создать Fill (TAKER path — всегда один fill)
     const fillResult = Fill.create({
       id: fillId,
       orderId,
@@ -530,8 +625,8 @@ export class FillMapper {
       return Err(fillResult.error);
     }
 
-    // Собрать ExecutionMetadata
-    const liquidity = traderSideRaw === 'MAKER' ? 'MAKER' : 'TAKER';
+    // Собрать ExecutionMetadata (TAKER path — isMaker=false уже проверен выше)
+    const liquidity = isMaker ? 'MAKER' as const : 'TAKER' as const;
 
     const statusRaw = raw['status'];
     const tradeStatus =
@@ -547,7 +642,7 @@ export class FillMapper {
 
     const metadata: ExecutionMetadata = { liquidity, tradeStatus, venueTradeId };
 
-    return Ok({ fill: fillResult.value, metadata });
+    return Ok([{ fill: fillResult.value, metadata }]);
   }
 
   /**

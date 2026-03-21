@@ -27,6 +27,7 @@
     "@polymarket/market-state": "workspace:*",
     "@polymarket/market-discovery": "workspace:*",
     "@polymarket/backtesting": "workspace:*",
+    "@polymarket/in-memory": "workspace:*",
     "@polymarket/exchange": "workspace:*",
     "decimal.js": "^10.4.3"
   },

@@ -69,6 +69,7 @@ function makeSnapshot(overrides: Partial<StrategySnapshot> = {}): StrategySnapsh
     tradeTape: undefined,
     openOrders: [],
     matchedOrders: [],
+    hasInFlightFills: false,
     constraints: undefined,
     portfolio: undefined,
     nowMs: 1000,

@@ -12,6 +12,8 @@
  * - ORDER_CANCELLED / ORDER_EXPIRED → scheduler.onOrderChanged(strategyId, 'ORDER_UPDATE') + delete from repo
  * - ORDER_PARTIALLY_FILLED → scheduler.onOrderChanged(strategyId, 'FILL')
  * - ORDER_FILLED → scheduler.onOrderChanged(strategyId, 'FILL') + delete from repo
+ * - FILL_RECEIVED → scheduler.onFillForInstrument(instrumentId) — fallback для direct fill path
+ * - FILL_CONFIRMED → scheduler.onFillConfirmed(instrumentId) — сброс rejection cooldown + тик
  *
  * ### Определение strategyId:
  * OrderEvent содержит только orderId. Bridge ищет Order через IOrderStateStore
@@ -32,9 +34,11 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { OrderId } from '@polymarket/ids';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import type { StrategyScheduler } from './StrategyScheduler.js';
+import type { ExecutionEngine } from './ExecutionEngine.js';
 
 // ── Публичные типы ─────────────────────────────────────────
 
@@ -44,6 +48,7 @@ import type { StrategyScheduler } from './StrategyScheduler.js';
 export interface OrderEventBridgeDeps {
   readonly eventBus: IEventBus;
   readonly scheduler: StrategyScheduler;
+  readonly executionEngine: ExecutionEngine;
   readonly orderStateStore: IOrderStateStore;
   readonly orderRepo: IOrderRepository;
   readonly logger: ILogger;
@@ -110,6 +115,39 @@ export class OrderEventBridge {
       this._deps.eventBus.subscribe('ORDER_FILLED', (event) => {
         this._notifyScheduler(event.orderId, 'FILL');
         void this._cleanupOrder(event.orderId);
+      }),
+    );
+
+    // FILL_RECEIVED → notify scheduler по instrumentId (для direct fill path).
+    // Когда fill приходит на отсутствующий/terminal ордер, ProcessFillUseCase
+    // обновляет Portfolio, но не публикует ORDER_* событий.
+    // Этот fallback гарантирует, что стратегия тикнет после любого fill.
+    this._unsubs.push(
+      this._deps.eventBus.subscribe('FILL_RECEIVED', (event) => {
+        const instrumentId = assetIdToInstrumentId(event.fill.tokenId);
+        if (instrumentId) {
+          this._deps.scheduler.onFillForInstrument(instrumentId);
+        }
+      }),
+    );
+
+    // FILL_CONFIRMED → сброс cooldowns + очистка in-flight флагов + тик стратегии.
+    // Когда CONFIRMED приходит для fill, уже обработанного при MATCHED —
+    // токены on-chain, SELL больше не будет отклонён биржей.
+    //
+    // Очистка inFlightFills здесь — страховка от deadlock:
+    // если MINED ре-маркировал инструмент после того как ProcessFillUseCase
+    // снял флаг при MATCHED, CONFIRMED гарантированно снимет его.
+    this._unsubs.push(
+      this._deps.eventBus.subscribe('FILL_CONFIRMED', (event) => {
+        for (const fill of event.fills) {
+          const instrumentId = assetIdToInstrumentId(fill.tokenId);
+          if (instrumentId) {
+            this._deps.orderStateStore.clearInFlightFills(instrumentId);
+            this._deps.executionEngine.clearExchangeRejectionCooldown(instrumentId);
+            this._deps.scheduler.onFillForInstrument(instrumentId);
+          }
+        }
       }),
     );
 

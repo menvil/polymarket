@@ -149,7 +149,8 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
    * Считывает данные из snapshot.
    *
    * @param snapshot - Readonly snapshot текущего состояния
-   * @returns DumbData или undefined если нет ни topOfBook ни tape-данных
+   * @returns DumbData (refPrice может быть undefined — decide() сам решает,
+   *   какие ветки требуют refPrice)
    *
    * @remarks
    * Приоритет цены: lastTradePrice (tape) > bestAsk (topOfBook).
@@ -164,16 +165,24 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       : undefined;
 
     const refPrice = lastTradePrice ?? tob?.bestAsk?.value();
-    if (refPrice === undefined) {
-      this._logger?.debug('DumbStrategy: no refPrice, skipping tick', {
-        hasBestAsk: !!tob?.bestAsk,
-        hasTape: !!tapeRecords?.length,
-      });
-      return undefined;
-    }
 
     const position = snapshot.portfolio?.getPosition(snapshot.instrumentId);
-    const positionQty = position?.quantity.value() ?? new Decimal(0);
+    // Пыль: если остаток < minOrderSize → SELL невозможен, считаем за ноль.
+    // Без этого стратегия зависает: positionQty > 0 (не может BUY),
+    // но < minOrderSize (не может SELL) → бесконечный HOLD.
+    // Fallback 0.01 — минимальная точность SELL на Polymarket (2 знака после запятой).
+    const rawQty = position?.quantity.value() ?? new Decimal(0);
+    const minSize = snapshot.constraints?.minOrderSize.value();
+    const dustThreshold = minSize ?? new Decimal('0.01');
+    const isDust = rawQty.gt(0) && rawQty.lt(dustThreshold);
+    const positionQty = isDust ? new Decimal(0) : rawQty;
+
+    if (isDust) {
+      this._logger?.debug('DumbStrategy: dust position detected, treating as zero', {
+        rawQty: rawQty.toFixed(4),
+        dustThreshold: dustThreshold.toFixed(2),
+      });
+    }
     const entryPrice = position ? position.averageEntryPrice.value() : undefined;
     const availableBalance = snapshot.portfolio?.balance.available().value() ?? new Decimal(0);
 
@@ -183,7 +192,9 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
     const hasOpenSellOrders = snapshot.openOrders.some((o) => o.side === 'SELL');
 
-    const hasMatchedOrders = snapshot.matchedOrders.length > 0;
+    // Instrument-level: ловит in-flight fills даже для cancelled/deleted ордеров.
+    // matchedOrders.length > 0 не работает: cancelled ордер удалён из repo.
+    const hasMatchedOrders = snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0;
 
     return {
       refPrice,
@@ -214,6 +225,18 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
    * - positionQty>0 и есть SELL-ордер → HOLD
    */
   protected decide(data: DumbData, _reasons: ReadonlySet<TriggerReason>): DumbAction[] {
+    // Диагностика: полный snapshot данных на каждый тик (INFO для видимости в логах).
+    this._logger?.debug('DumbStrategy tick', {
+      positionQty: data.positionQty.toFixed(4),
+      entryPrice: data.entryPrice?.toFixed(4) ?? 'none',
+      refPrice: data.refPrice?.toFixed(4) ?? 'none',
+      hasMatchedOrders: data.hasMatchedOrders,
+      openBuyOrders: data.openBuyOrders.length,
+      hasOpenSellOrders: data.hasOpenSellOrders,
+      availableBalance: data.availableBalance.toFixed(4),
+      reasons: [..._reasons].join(','),
+    });
+
     // ── In-flight fills → HOLD ──────────────────────────────────────────────
     // MATCHED ордера = fills в пути (on-chain). Ждём CONFIRMED.
     // Без этой проверки стратегия ставит новый BUY каждый тик пока fills идут.
@@ -261,6 +284,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       }
 
       // Целевая цена покупки: на buyOffsetPct% ниже refPrice
+      // При buyOffsetPct=0 → BUY по refPrice (taker, мгновенный fill)
       const targetBuyPrice = data.refPrice.mul(
         new Decimal(1).minus(this._config.buyOffsetPct.div(ONE_HUNDRED)),
       );
@@ -273,10 +297,15 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
         return [];
       }
 
-      // Корректируем размер с учётом constraints (minOrderSize, minOrderValue)
-      const effectiveSize = data.minOrderSize !== undefined && data.minOrderValue !== undefined
-        ? this.adjustBuySize(this._config.orderSize, targetBuyPrice, data.minOrderValue, data.minOrderSize)
+      // Размер BUY: minOrderSize + запас на fee deduction (3%).
+      // После BUY комиссия вычитается из токенов (fee ≈ 1.5% при p=0.50).
+      // Без буфера: BUY 5 → fee 0.08 → 4.92 < minOrderSize → SELL невозможен.
+      // С буфером 3%: BUY 5.15 → fee 0.08 → 5.07 ≥ minOrderSize → SELL OK.
+      const FEE_BUFFER = new Decimal('1.03');
+      const minSizeWithBuffer = data.minOrderSize !== undefined
+        ? data.minOrderSize.mul(FEE_BUFFER).toDecimalPlaces(2, Decimal.ROUND_UP)
         : this._config.orderSize;
+      const effectiveSize = Decimal.max(this._config.orderSize, minSizeWithBuffer);
 
       // Нет ордеров → проверяем баланс и ставим новый
       const cost = targetBuyPrice.mul(effectiveSize);
@@ -321,36 +350,35 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
     }
 
     // Нет SELL → выставляем с наценкой
-    if (data.entryPrice === undefined) return [];
+    if (data.entryPrice === undefined) {
+      this._logger?.debug('DumbStrategy: skip SELL — no entryPrice');
+      return [];
+    }
 
     const sellPrice = data.entryPrice.mul(
       new Decimal(1).plus(this._config.profitMarginPct.div(new Decimal(100))),
     );
 
     // Не продаём если цена вне допустимого диапазона
-    if (sellPrice.gt('0.99')) return [];
-
-    // Корректируем размер с учётом minOrderSize:
-    // если после SELL остаток < minOrderSize → продать всю позицию
-    const desiredSellSize = Decimal.min(data.positionQty, this._config.orderSize);
-    const effectiveSellSize = data.minOrderSize !== undefined
-      ? this.adjustSellSize(desiredSellSize, data.positionQty, data.minOrderSize)
-      : desiredSellSize;
-
-    // Если позиция < minOrderSize — продать невозможно, пропускаем
-    if (data.minOrderSize !== undefined && data.positionQty.lt(data.minOrderSize)) {
-      this._logger?.debug('DumbStrategy: skip SELL — position below minOrderSize', {
-        positionQty: data.positionQty.toFixed(2),
-        minOrderSize: data.minOrderSize.toFixed(2),
+    if (sellPrice.gt('0.99')) {
+      this._logger?.debug('DumbStrategy: skip SELL — sellPrice > 0.99', {
+        sellPrice: sellPrice.toFixed(4),
+        entryPrice: data.entryPrice.toFixed(4),
+        profitMarginPct: this._config.profitMarginPct.toFixed(2),
       });
       return [];
     }
+
+    // DumbStrategy продаёт всю позицию целиком.
+    // orderSize ограничивает только BUY (размер входа).
+    // SELL всегда = positionQty — нет смысла дробить на части.
+    const effectiveSellSize = data.positionQty;
 
     this._logger?.debug('DumbStrategy: EXIT SELL', {
       entryPrice: data.entryPrice.toFixed(4),
       sellPrice: sellPrice.toFixed(4),
       size: effectiveSellSize.toFixed(2),
-      adjustedFromDesired: !effectiveSellSize.eq(desiredSellSize),
+      minOrderSize: data.minOrderSize?.toFixed(2) ?? 'none',
     });
 
     return [{

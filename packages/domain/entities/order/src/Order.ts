@@ -509,7 +509,7 @@ export class Order {
       ));
     }
     const event: OrderAcceptedEvent = { type: 'ORDER_ACCEPTED', orderId: this._s.id };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [...this._pendingEvents, event]));
   }
 
   /**

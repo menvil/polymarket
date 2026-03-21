@@ -78,10 +78,11 @@ describe('FillOrchestrator', () => {
     deps = { eventBus, processFill, logger };
   });
 
-  it('подписывается на FILL_RECEIVED при register()', () => {
+  it('подписывается на FILL_RECEIVED и FILL_FAILED при register()', () => {
     const orchestrator = new FillOrchestrator(deps);
     orchestrator.register();
     expect(eventBus.subscribe).toHaveBeenCalledWith('FILL_RECEIVED', expect.any(Function));
+    expect(eventBus.subscribe).toHaveBeenCalledWith('FILL_FAILED', expect.any(Function));
   });
 
   it('вызывает ProcessFillUseCase.execute при получении FILL_RECEIVED', async () => {
@@ -113,8 +114,8 @@ describe('FillOrchestrator', () => {
     const orchestrator = new FillOrchestrator(deps);
     orchestrator.register();
     orchestrator.register();
-    // subscribe вызвался дважды
-    expect(eventBus.subscribe).toHaveBeenCalledTimes(2);
+    // subscribe вызвался 4 раза: 2 события (FILL_RECEIVED + FILL_FAILED) × 2 register
+    expect(eventBus.subscribe).toHaveBeenCalledTimes(4);
   });
 
   it('логирует info при register()', () => {

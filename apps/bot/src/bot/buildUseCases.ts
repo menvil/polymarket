@@ -59,9 +59,10 @@ export interface BuildProcessFillParams {
   readonly repos: Repositories;
 }
 
-/** Результат: только ProcessFillUseCase */
+/** Результат: ProcessFillUseCase + PortfolioService (для FillOrchestrator rollback) */
 export interface ProcessFillBundle {
   readonly processFillUseCase: ProcessFillUseCase;
+  readonly portfolioService: PortfolioService;
 }
 
 /** Параметры для создания PlaceOrderUseCase + CancelOrderUseCase */
@@ -111,7 +112,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
     logger,
   });
 
-  return { processFillUseCase };
+  return { processFillUseCase, portfolioService };
 }
 
 /**
@@ -169,8 +170,8 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
 export function buildAllUseCases(
   params: BuildProcessFillParams & { exchangeClient: IExchangeClient; riskParams: RiskParams },
 ): UseCases {
-  const { processFillUseCase } = buildProcessFillUseCase(params);
+  const { processFillUseCase, portfolioService } = buildProcessFillUseCase(params);
   const orderCases = buildOrderUseCases(params);
 
-  return { processFillUseCase, ...orderCases };
+  return { processFillUseCase, portfolioService, ...orderCases };
 }

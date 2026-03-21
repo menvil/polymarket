@@ -100,4 +100,35 @@ export interface IOrderStateStore {
    * стратегия возвращает HOLD на каждом тике, не может ни продать, ни купить.
    */
   clearMatchedOnExchange(orderId: OrderId): void;
+
+  /**
+   * Помечает инструмент как имеющий in-flight fills (MATCHED/MINED).
+   *
+   * @param instrumentId - ID инструмента
+   *
+   * @remarks
+   * Трекинг на уровне инструмента, а не ордера.
+   * Решает проблему: после cancel ордер удалён из repo, но fill в пути.
+   * `isMatchedOnExchange(orderId)` не поможет — ордера нет в `getOpenOrdersByInstrument`.
+   * `hasInFlightFills(instrumentId)` работает независимо от состояния ордера.
+   */
+  markInFlightFill(instrumentId: InstrumentId): void;
+
+  /**
+   * Возвращает true если на инструменте есть in-flight fills.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если MATCHED/MINED fill в пути
+   */
+  hasInFlightFills(instrumentId: InstrumentId): boolean;
+
+  /**
+   * Снимает пометку in-flight fills с инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   *
+   * @remarks
+   * Вызывается после обработки CONFIRMED fill.
+   */
+  clearInFlightFills(instrumentId: InstrumentId): void;
 }

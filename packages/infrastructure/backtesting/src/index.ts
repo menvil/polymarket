@@ -8,9 +8,10 @@
  * ### Содержимое пакета:
  * - `BacktestEngine` — главный оркестратор бектеста
  * - `MockExchangeClient` — симулятор биржевого клиента (реализует IExchangeClient)
- * - `InMemoryOrderRepository` — хранилище ордеров в памяти (реализует IOrderRepository)
- * - `InMemoryPortfolioStore` — CAS-хранилище Portfolio в памяти (реализует IPortfolioStore)
- * - `InMemoryProcessedFillRepository` — idempotency guard в памяти (реализует IProcessedFillRepository)
+ *
+ * ### In-memory хранилища:
+ * Re-export из `@polymarket/in-memory` для обратной совместимости.
+ * Новый код должен импортировать напрямую из `@polymarket/in-memory`.
  *
  * ### Типы:
  * - `BacktestConfig` — конфигурация бектест-прогона
@@ -20,29 +21,8 @@
  *
  * @example
  * ```typescript
- * import {
- *   BacktestEngine,
- *   MockExchangeClient,
- *   InMemoryOrderRepository,
- *   InMemoryPortfolioStore,
- *   InMemoryProcessedFillRepository,
- * } from '@polymarket/backtesting';
- *
- * const engine = new BacktestEngine(
- *   {
- *     snapshotDir: './data/snapshots',
- *     fromDate: '2026-01-01',
- *     toDate: '2026-01-07',
- *     marketId: '0xabc',
- *   },
- *   {
- *     bookUpdateHandler: handler,
- *     logger,
- *   },
- * );
- *
- * const result = await engine.run();
- * console.log(`Processed ${result.processedEvents} events in ${result.durationMs}ms`);
+ * import { BacktestEngine, MockExchangeClient } from '@polymarket/backtesting';
+ * import { InMemoryOrderRepository } from '@polymarket/in-memory';
  * ```
  */
 
@@ -52,6 +32,8 @@ export type { BacktestConfig, BacktestDeps, BacktestResult } from './BacktestEng
 export { MockExchangeClient } from './MockExchangeClient.js';
 export type { SubmittedOrder } from './MockExchangeClient.js';
 
+// Re-export из @polymarket/in-memory для обратной совместимости.
+// Новый код должен импортировать напрямую из @polymarket/in-memory.
 export { InMemoryOrderRepository } from './InMemoryOrderRepository.js';
 export { InMemoryPortfolioStore } from './InMemoryPortfolioStore.js';
 export { InMemoryProcessedFillRepository } from './InMemoryProcessedFillRepository.js';

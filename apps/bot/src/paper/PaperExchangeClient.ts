@@ -6,6 +6,11 @@
  * - `submitOrder()` → MockExchangeClient + simulator.trackOrder()
  * - `cancelOrder()` → MockExchangeClient + simulator.removeOrder()
  *
+ * ### Мульти-маркет:
+ * Поддерживает одновременную торговлю на нескольких рынках.
+ * `registerMarket()` добавляет рыночный контекст в реестр,
+ * `submitOrder()` маршрутизирует по `params.asset` → правильный инструмент/рынок.
+ *
  * ### Почему отдельный класс, а не модификация MockExchangeClient:
  * MockExchangeClient — инфраструктурный компонент для тестирования.
  * PaperExchangeClient — application-уровень, зависит от домена.
@@ -20,6 +25,10 @@
  *   marketId,
  *   accountId,
  * });
+ *
+ * // Мульти-маркет: регистрируем дополнительные рынки
+ * paperClient.registerMarket(instrumentId2, marketId2, accountId, asset2);
+ *
  * // Используется вместо реального exchange client:
  * const placeOrderUseCase = new PlaceOrderUseCase({ exchangeClient: paperClient, ... });
  * ```
@@ -28,9 +37,20 @@
 import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, ExchangeError, SubmitOrderParams } from '@polymarket/ports';
 import type { MockExchangeClient } from '@polymarket/backtesting';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
+import { assetIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { Result } from '@polymarket/result';
 import type { PaperFillSimulator } from './PaperFillSimulator.js';
+
+/**
+ * Контекст рынка для маршрутизации ордеров.
+ */
+interface MarketContext {
+  readonly instrumentId: InstrumentId;
+  readonly marketId: MarketId;
+  readonly accountId: AccountId;
+  readonly asset: AssetId;
+}
 
 /**
  * Зависимости PaperExchangeClient.
@@ -56,11 +76,48 @@ export class PaperExchangeClient implements IExchangeClient {
   private _accountId: AccountId;
   private _asset: AssetId;
 
+  /** Реестр рыночных контекстов: asset string → context */
+  private readonly _marketContexts = new Map<string, MarketContext>();
+
   constructor(private readonly _deps: PaperExchangeClientDeps) {
     this._instrumentId = _deps.instrumentId;
     this._marketId = _deps.marketId;
     this._accountId = _deps.accountId;
     this._asset = _deps.asset;
+
+    // Регистрируем начальный рынок
+    this._marketContexts.set(assetIdToString(_deps.asset), {
+      instrumentId: _deps.instrumentId,
+      marketId: _deps.marketId,
+      accountId: _deps.accountId,
+      asset: _deps.asset,
+    });
+  }
+
+  /**
+   * Регистрирует дополнительный рынок для мульти-маркет торговли.
+   *
+   * @param instrumentId - Инструмент (outcome token)
+   * @param marketId - Рынок
+   * @param accountId - Аккаунт
+   * @param asset - Торговый актив (ключ маршрутизации)
+   *
+   * @remarks
+   * При `submitOrder()` контекст выбирается по `params.asset`.
+   * Если asset не зарегистрирован — используется fallback (текущий `this._instrumentId`).
+   */
+  public registerMarket(
+    instrumentId: InstrumentId,
+    marketId: MarketId,
+    accountId: AccountId,
+    asset: AssetId,
+  ): void {
+    this._marketContexts.set(assetIdToString(asset), {
+      instrumentId,
+      marketId,
+      accountId,
+      asset,
+    });
   }
 
   /**
@@ -72,8 +129,8 @@ export class PaperExchangeClient implements IExchangeClient {
    * @param asset - Новый торговый актив
    *
    * @remarks
-   * Вызывается при смене рынка в discovery-режиме без пересоздания
-   * всей цепочки PlaceOrderUseCase → ExecutionEngine → StrategyScheduler.
+   * Вызывается при смене рынка в discovery-режиме (sequential rotation).
+   * Для мульти-маркет используйте `registerMarket()`.
    */
   public setMarket(
     instrumentId: InstrumentId,
@@ -85,6 +142,14 @@ export class PaperExchangeClient implements IExchangeClient {
     this._marketId = marketId;
     this._accountId = accountId;
     this._asset = asset;
+
+    // Синхронизируем реестр
+    this._marketContexts.set(assetIdToString(asset), {
+      instrumentId,
+      marketId,
+      accountId,
+      asset,
+    });
   }
 
   /**
@@ -94,6 +159,8 @@ export class PaperExchangeClient implements IExchangeClient {
    * @returns Результат с orderId или ошибкой биржи
    *
    * @remarks
+   * Маршрутизация: по `params.asset` находит зарегистрированный рыночный контекст.
+   * При отсутствии — fallback на текущий `this._instrumentId`.
    * При успехе: ордер добавляется в PaperFillSimulator.
    * При ошибке (risk check и т.д.): в симулятор не добавляется.
    */
@@ -103,16 +170,18 @@ export class PaperExchangeClient implements IExchangeClient {
     const result = await this._deps.mock.submitOrder(params);
 
     if (result.ok) {
+      const ctx = this._marketContexts.get(assetIdToString(params.asset));
+
       this._deps.simulator.trackOrder({
         orderId: result.value,
-        instrumentId: this._instrumentId,
-        marketId: this._marketId,
+        instrumentId: ctx?.instrumentId ?? this._instrumentId,
+        marketId: ctx?.marketId ?? this._marketId,
         side: params.side,
         price: params.price,
         totalSize: params.size,
         remainingSize: params.size.value(),
-        accountId: this._accountId,
-        asset: this._asset,
+        accountId: ctx?.accountId ?? this._accountId,
+        asset: ctx?.asset ?? this._asset,
       });
     }
 

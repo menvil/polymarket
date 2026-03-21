@@ -116,12 +116,35 @@ describe('BookDepthCollector', () => {
       expect(() => new BookDepthCollector(deps, {})).toThrow(RangeError);
     });
 
-    it('принимает конфиг только с maxCount', () => {
-      expect(() => new BookDepthCollector(deps, { maxCount: 100 })).not.toThrow();
+    it('принимает конфиг только с maxCount — записывает снапшоты', async () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      collector.start();
+      await eventBus.emit({
+        type: 'BOOK_DEPTH',
+        instrumentId: TOKEN_A,
+        snapshot: makeSnapshot('market-1', String(TOKEN_A)),
+        timestamp: makeTimestamp(T0),
+      });
+      expect(collector.getHistory(TOKEN_A)?.size()).toBe(1);
     });
 
-    it('принимает конфиг только с maxAgeMs', () => {
-      expect(() => new BookDepthCollector(deps, { maxAgeMs: 60_000 })).not.toThrow();
+    it('принимает конфиг только с maxAgeMs — вытесняет устаревшие', async () => {
+      const collector = new BookDepthCollector(deps, { maxAgeMs: 60_000 });
+      collector.start();
+      await eventBus.emit({
+        type: 'BOOK_DEPTH',
+        instrumentId: TOKEN_A,
+        snapshot: makeSnapshot('market-1', String(TOKEN_A)),
+        timestamp: makeTimestamp(T0),
+      });
+      await eventBus.emit({
+        type: 'BOOK_DEPTH',
+        instrumentId: TOKEN_A,
+        snapshot: makeSnapshot('market-1', String(TOKEN_A)),
+        timestamp: makeTimestamp(T0 + 90_000),
+      });
+      // Старый вытеснен по maxAgeMs=60s
+      expect(collector.getHistory(TOKEN_A)?.size()).toBe(1);
     });
   });
 
@@ -295,11 +318,10 @@ describe('BookDepthCollector', () => {
   // ── Обработка ошибок ─────────────────────────────────────────────────────────
 
   describe('обработка ошибок в обработчике BOOK_DEPTH', () => {
-    it('логирует ошибку и не падает если _record бросает', async () => {
+    it('логирует ошибку и не падает если _record бросает Error', async () => {
       const collector = new BookDepthCollector(deps, { maxCount: 100 });
       collector.start();
 
-      // Передаём невалидный timestamp: toNumber() бросает
       const badEvent: any = {
         type: 'BOOK_DEPTH',
         instrumentId: TOKEN_A,
@@ -312,8 +334,47 @@ describe('BookDepthCollector', () => {
       await expect(eventBus.emit(badEvent)).resolves.not.toThrow();
       expect((logger as any).error).toHaveBeenCalledWith(
         'BookDepthCollector: failed to record snapshot',
-        expect.objectContaining({ instrumentId: String(TOKEN_A) }),
+        expect.objectContaining({ instrumentId: String(TOKEN_A), err: expect.any(Error) }),
       );
+    });
+
+    it('нормализует non-Error исключение в Error при логировании', async () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      collector.start();
+
+      const badEvent: any = {
+        type: 'BOOK_DEPTH',
+        instrumentId: TOKEN_A,
+        snapshot: makeSnapshot('market-1', String(TOKEN_A)),
+        timestamp: {
+          toNumber: () => { throw 'plain string error'; },
+        },
+      };
+
+      await expect(eventBus.emit(badEvent)).resolves.not.toThrow();
+      const call = (logger as any).error.mock.calls[0][1];
+      expect(call.err).toBeInstanceOf(Error);
+      expect(call.err.message).toBe('plain string error');
+    });
+  });
+
+  // ── no-op cleanup ─────────────────────────────────────────────────────────────
+
+  describe('no-op cleanup', () => {
+    it('MARKET_CLOSED для рынка без данных — не падает и не меняет state', async () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      collector.start();
+
+      // Данных нет, но MARKET_CLOSED приходит
+      await expect(eventBus.emit({
+        type: 'MARKET_CLOSED',
+        marketId: MARKET_1,
+        reason: 'EXPIRED',
+        timestamp: makeTimestamp(T0),
+        realizedPnL: {} as Money,
+      })).resolves.not.toThrow();
+
+      expect(collector.instrumentCount()).toBe(0);
     });
   });
 

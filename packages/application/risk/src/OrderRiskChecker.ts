@@ -155,17 +155,24 @@ export class OrderRiskChecker implements IOrderRiskChecker {
     );
   }
 
+  /**
+   * Проверяет минимальный доступный USDC-баланс.
+   *
+   * @remarks
+   * Только для BUY: SELL не расходует USDC (продаёт токены за USDC).
+   * Без этого skip'а SELL с нулевым USDC-балансом ложно блокируется,
+   * хотя токены для продажи есть.
+   */
   private _checkAvailableBalance(
     input: PreOrderCheckInput,
     orderNotional: Decimal,
   ): RiskViolationError | undefined {
     if (this._params.minAvailableBalance === undefined) return undefined;
+    // SELL не расходует USDC — пропускаем проверку баланса
+    if (String(input.side) !== 'BUY') return undefined;
 
     const available = input.portfolio.balance.available().value();
-    // SELL не требует резервирования средств — баланс не уменьшается
-    const afterReserve = String(input.side) !== 'BUY'
-      ? available
-      : available.minus(orderNotional);
+    const afterReserve = available.minus(orderNotional);
     if (!afterReserve.lt(this._params.minAvailableBalance)) return undefined;
 
     return this._violation(

@@ -43,7 +43,7 @@ import { Portfolio } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
-import { InMemoryOrderRepository } from '../../../../infrastructure/backtesting/src/InMemoryOrderRepository.js';
+import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 

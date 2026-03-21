@@ -39,6 +39,7 @@ import {
   asInstrumentId,
   asMarketId,
   asPolymarketCtfToken,
+  assetIdToInstrumentId,
   parseAccountId,
   KnownVenues,
 } from '@polymarket/ids';
@@ -67,8 +68,10 @@ import type { LiveCredentials } from './bot/buildLiveInfra.js';
 import { buildMarketData } from './bot/buildMarketData.js';
 import { buildStrategyEngine } from './bot/buildStrategyEngine.js';
 import { FillOrchestrator } from '@polymarket/orchestrators';
+import { SimplePosition } from '@polymarket/use-cases';
 import { createStrategy } from './strategyFactory.js';
 import type { StrategyConfig } from './strategyFactory.js';
+import type { IStrategy } from '@polymarket/strategy';
 import type { RiskParams } from '@polymarket/risk';
 import type { InstrumentInfo } from '@polymarket/ports';
 
@@ -198,22 +201,64 @@ async function runPaper(): Promise<void> {
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
   const { clock, logger, eventBus } = infra;
 
-  // ── Resolve первый рынок ──────────────────────────────────────────────────
-  // Мутабельное состояние текущего рынка (обновляется при ротации)
-  let activeInstrumentId: InstrumentId;  // фильтр trade bridge обновляется автоматически
-  let currentTokenIdStr: string;
-  let currentMarketId: MarketId;
-  let currentAsset: AssetId;
-  let currentMarketExpiresAtMs: number;
+  // ── Типы для мульти-маркетных слотов (paper) ──────────────────────────────
+
+  interface PaperFillRecord {
+    side: 'BUY' | 'SELL';
+    size: string;
+    price: string;
+    notional: string;
+    at: string;
+    partial?: boolean;
+  }
+
+  interface PaperPartialAccum {
+    side: 'BUY' | 'SELL';
+    totalSize: Decimal;
+    totalNotional: Decimal;
+    firstAt: string;
+  }
+
+  /**
+   * Слот активного рынка в paper-режиме.
+   *
+   * @remarks
+   * Аналогичен ActiveMarketSlot в runLive, но без tickSize/minOrderSize
+   * (paper использует дефолты).
+   */
+  interface PaperMarketSlot {
+    readonly instrumentId: InstrumentId;
+    readonly marketId: MarketId;
+    readonly asset: AssetId;
+    readonly tokenIdStr: string;
+    readonly expiresAtMs: number;
+    readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
+    readonly strategy: IStrategy;
+    fillHistory: PaperFillRecord[];
+    partialAccum: Map<string, PaperPartialAccum>;
+    openedAt: number;
+  }
+
+  // ── Мульти-маркетное состояние (paper) ──────────────────────────────────────
+
+  /** Активные рыночные слоты: key = tokenIdStr */
+  const activeMarkets = new Map<string, PaperMarketSlot>();
+  /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
+  const orderToSlot = new Map<string, string>();
+  /** Счётчик для уникальных strategy ID */
+  let _slotCounter = 0;
+
+  const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
+  const minCapitalPerMarket = config.resources.minCapitalPerMarket;
 
   // Discovery-специфичное состояние
   type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
   let discoveryAdapter: DiscoveryAdapter | null = null;
-  let currentDiscoveryCandidate: import('@polymarket/ports').DiscoveredMarket | null = null;
   const closedMarkets = new Set<string>();
   let isShuttingDown = false;
   let expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
   let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let _rotationInProgress = false;
 
   if (config.market.source === 'fixed') {
     const mc = config.market;
@@ -226,18 +271,29 @@ async function runPaper(): Promise<void> {
     // Polymarket CTF токены: conditionId × 2 + outcomeIndex (BigInt арифметика).
     const hexId = mc.marketId.replace(/^0x/i, '');
     const tokenBigInt = BigInt('0x' + hexId) * 2n + BigInt(mc.outcomeIndex);
-    currentTokenIdStr = tokenBigInt.toString();
-    const iId = asInstrumentId(currentTokenIdStr);
-    const ast = asPolymarketCtfToken(currentTokenIdStr);
+    const tStr = tokenBigInt.toString();
+    const iId = asInstrumentId(tStr);
+    const ast = asPolymarketCtfToken(tStr);
     if (!iId || !ast) {
-      logger.fatal('Cannot derive instrumentId', { tokenIdStr: currentTokenIdStr });
+      logger.fatal('Cannot derive instrumentId', { tokenIdStr: tStr });
       process.exit(1);
     }
-    currentMarketId = mid;
-    activeInstrumentId = iId;
-    currentAsset = ast;
-    // Для fixed-source реальное время экспирации неизвестно без API-вызова → +24h как безопасный дефолт
-    currentMarketExpiresAtMs = Date.now() + 24 * 60 * 60 * 1000;
+    const fixedStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
+    activeMarkets.set(tStr, {
+      instrumentId: iId,
+      marketId: mid,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+      candidate: null,
+      strategy: fixedStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    });
   } else {
     // Discovery mode: создаём адаптер один раз — он будет использоваться для ротации
     const mc = config.market;
@@ -281,28 +337,41 @@ async function runPaper(): Promise<void> {
       logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
       process.exit(1);
     }
-    currentMarketId = candidate.marketId;
-    activeInstrumentId = iId;
-    currentAsset = ast;
-    currentTokenIdStr = tStr;
-    currentMarketExpiresAtMs = candidate.expiresAt.toNumber();
-    currentDiscoveryCandidate = candidate;
+    const discoveryStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
+    const expiresMs = candidate.expiresAt.toNumber();
+    activeMarkets.set(tStr, {
+      instrumentId: iId,
+      marketId: candidate.marketId,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: expiresMs,
+      candidate,
+      strategy: discoveryStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    });
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
     logger.info('Initial market discovered', {
       question: candidate.question,
       slug: slug ?? '(no slug)',
-      marketId: String(currentMarketId),
+      marketId: String(candidate.marketId),
       tokenId: tStr,
       liquidity: candidate.liquidity.toFixed(0),
-      expiresAt: new Date(currentMarketExpiresAtMs).toISOString(),
-      hoursToExpiry: ((currentMarketExpiresAtMs - Date.now()) / 3_600_000).toFixed(2),
+      expiresAt: new Date(expiresMs).toISOString(),
+      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
     });
   }
 
+  const firstSlot = activeMarkets.values().next().value!;
   logger.info('Bot starting in paper mode', {
     strategy: config.strategy,
-    marketId: String(currentMarketId),
+    marketId: String(firstSlot.marketId),
+    maxConcurrentMarkets,
     initialBalance: config.resources.initialBalance,
   });
 
@@ -319,7 +388,7 @@ async function runPaper(): Promise<void> {
 
   // Chicken-and-egg: MockExchangeClient → ProcessFillUseCase → Simulator → PaperExchangeClient
   const { mockClient } = buildPaperInfra({ clock });
-  const { processFillUseCase } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
 
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
@@ -327,15 +396,15 @@ async function runPaper(): Promise<void> {
     eventBus,
     clock,
     logger,
-    instrumentId: activeInstrumentId,
-    marketId: currentMarketId,
+    instrumentId: firstSlot.instrumentId,
+    marketId: firstSlot.marketId,
     accountId,
-    asset: currentAsset,
+    asset: firstSlot.asset,
     config: config.paper,
   });
 
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
-  const useCases = { processFillUseCase, ...orderUseCases };
+  const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
   const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
@@ -355,10 +424,11 @@ async function runPaper(): Promise<void> {
   const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based fills в PaperFillSimulator)
-  // Использует activeInstrumentId (мутабельная ссылка) — автоматически фильтрует по текущему рынку
+  // Фильтруем только трейды по активным рынкам
   wsAdapter.onTradeEvent(async (dto) => {
+    if (!activeMarkets.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
-    if (!tradeInstrumentId || String(tradeInstrumentId) !== String(activeInstrumentId)) return;
+    if (!tradeInstrumentId) return;
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
@@ -388,33 +458,23 @@ async function runPaper(): Promise<void> {
   }
   portfolioStore.save(portfolioResult.value, 0);
 
-  // Стратегия создаётся один раз — stateless, пересоздавать не нужно
-  const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
-
-  // ── Хелперы ротации рынков (только для discovery) ─────────────────────────
+  // ── Хелперы ротации рынков ──────────────────────────────────────────────
 
   /**
    * Регистрирует инструмент в каталоге и стратегию в планировщике.
    *
-   * @param instrumentId - Инструмент нового рынка
-   * @param marketId - ID нового рынка
-   * @param asset - Торговый актив нового рынка
-   * @param expiresAtMs - UTC timestamp истечения рынка
+   * @param slot - Слот активного рынка
+   * @returns true если регистрация успешна
    */
-  async function registerMarketAndStrategy(
-    instrumentId: InstrumentId,
-    marketId: MarketId,
-    asset: AssetId,
-    expiresAtMs: number,
-  ): Promise<boolean> {
-    const expiresAtResult = TimestampService.create(expiresAtMs);
+  async function registerMarketAndStrategy(slot: PaperMarketSlot): Promise<boolean> {
+    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
-      logger.error('Failed to create expiresAt timestamp', { expiresAtMs });
+      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
       return false;
     }
     marketCatalog.register({
-      instrumentId,
-      marketId,
+      instrumentId: slot.instrumentId,
+      marketId: slot.marketId,
       tickSize: Price.of(new Decimal('0.001')),
       minOrderSize: Quantity.of(new Decimal('1')),
       minOrderValue: Quantity.of(new Decimal('1')),
@@ -422,8 +482,14 @@ async function runPaper(): Promise<void> {
       expiresAt: expiresAtResult.value,
     });
 
-    const marketStub = { expirationMs: expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
-    const regResult = await engine.scheduler.register({ strategy, instrumentId, asset, accountId: accountId!, market: marketStub });
+    const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const regResult = await engine.scheduler.register({
+      strategy: slot.strategy,
+      instrumentId: slot.instrumentId,
+      asset: slot.asset,
+      accountId: accountId!,
+      market: marketStub,
+    });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
       return false;
@@ -432,46 +498,65 @@ async function runPaper(): Promise<void> {
   }
 
   /**
-   * Переключает бота на новый рынок:
-   * 1. Обновляет exchangeClient (без пересоздания цепочки use cases)
-   * 2. Обновляет мутабельные переменные состояния
-   * 3. Регистрирует инструмент в каталоге + стратегию в планировщике
-   * 4. Подписывается на WS для нового токена
+   * Открывает новый рыночный слот из discovery-кандидата (paper).
    *
-   * @param candidate - Новый рынок из discovery
+   * @param candidate - Кандидат рынка
+   * @returns true если рынок успешно открыт
    */
-  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<void> {
+  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<boolean> {
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
     const iId = asInstrumentId(tStr);
     const ast = asPolymarketCtfToken(tStr);
     if (!iId || !ast) {
       logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId) });
-      return;
+      return false;
+    }
+
+    // Проверяем доступный капитал
+    const portfolio = portfolioStore.get(accountId!);
+    if (portfolio) {
+      const available = portfolio.balance.available().value();
+      if (available.lt(minCapitalPerMarket)) {
+        logger.warn('Insufficient capital for new market slot', {
+          available: available.toFixed(2),
+          minCapitalPerMarket,
+          marketId: String(candidate.marketId),
+        });
+        return false;
+      }
     }
 
     const expiresMs = candidate.expiresAt.toNumber();
+    const slotStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
 
-    // Обновляем exchange client для нового рынка (без пересоздания use cases)
-    exchangeClient.setMarket(iId, candidate.marketId, accountId!, ast);
+    const slot: PaperMarketSlot = {
+      instrumentId: iId,
+      marketId: candidate.marketId,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: expiresMs,
+      candidate,
+      strategy: slotStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    };
 
-    // Сбрасываем историю fills для нового рынка
-    fillHistory = [];
-    marketOpenMs = Date.now();
+    // Регистрируем рынок в PaperExchangeClient для маршрутизации ордеров
+    exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
 
-    // Обновляем мутабельное состояние (trade bridge фильтрует по activeInstrumentId)
-    activeInstrumentId = iId;
-    currentTokenIdStr = tStr;
-    currentMarketId = candidate.marketId;
-    currentAsset = ast;
-    currentMarketExpiresAtMs = expiresMs;
-    currentDiscoveryCandidate = candidate;
-
-    // Подписываемся на новый токен до регистрации стратегии
+    activeMarkets.set(tStr, slot);
     await wsAdapter.subscribeToToken(tStr);
 
-    const ok = await registerMarketAndStrategy(iId, candidate.marketId, ast, expiresMs);
-    if (!ok) return;
+    const ok = await registerMarketAndStrategy(slot);
+    if (!ok) {
+      activeMarkets.delete(tStr);
+      return false;
+    }
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
     logger.info('Market opened', {
@@ -479,57 +564,56 @@ async function runPaper(): Promise<void> {
       slug: slug ?? '(no slug)',
       marketId: String(candidate.marketId),
       tokenId: tStr,
+      activeSlots: activeMarkets.size,
+      maxSlots: maxConcurrentMarkets,
       expiresAt: new Date(expiresMs).toISOString(),
       hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
     });
+    return true;
   }
 
   /**
-   * Закрывает текущий рынок:
-   * 1. scheduler.unregister() → strategy.stop() → CANCEL_ALL открытых ордеров
-   * 2. Отписка от WS токена
-   * 3. Удаление из каталога
-   * 4. При EXPIRED — добавляем в blacklist чтобы не открыть снова
+   * Закрывает конкретный рыночный слот (paper).
    *
+   * @param tokenIdStr - Ключ слота
    * @param reason - Причина закрытия
    */
-  async function closeCurrentMarket(reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
-    const savedTokenIdStr = currentTokenIdStr;
-    const savedMarketId = currentMarketId;
-    const savedInstrumentId = activeInstrumentId;
+  async function closeMarket(tokenIdStr: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+    const slot = activeMarkets.get(tokenIdStr);
+    if (!slot) return;
 
-    logger.info('Closing market', { reason, marketId: String(savedMarketId), question: currentDiscoveryCandidate?.question });
+    logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
 
     // Снимаем стратегию → автоматически отменяет все открытые ордера через CANCEL_ALL
-    // (включая BUY и SELL — оба типа ордеров снимаются перед сводкой)
-    await engine.scheduler.unregister(strategy.id);
+    await engine.scheduler.unregister(slot.strategy.id);
 
     // Сводка ПОСЛЕ unregister чтобы finalUsdcReserved отображал 0 (ордера уже отменены)
-    printMarketSummary(currentDiscoveryCandidate?.question ?? String(savedMarketId));
+    printMarketSummary(slot);
 
-    // Отписываемся от WS для старого токена
-    await wsAdapter.unsubscribeFromToken(savedTokenIdStr);
-
-    // Удаляем из каталога
-    marketCatalog.remove(savedInstrumentId);
+    await wsAdapter.unsubscribeFromToken(tokenIdStr);
+    marketCatalog.remove(slot.instrumentId);
 
     if (reason === 'EXPIRED') {
-      // Blacklist: Gamma API может ещё долго возвращать этот рынок как active
-      closedMarkets.add(String(savedMarketId));
+      closedMarkets.add(String(slot.marketId));
     }
 
-    currentDiscoveryCandidate = null;
-    logger.info('Market closed', { reason, marketId: String(savedMarketId) });
+    // Очистить orderToSlot для этого слота
+    for (const [orderId, slotKey] of orderToSlot) {
+      if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
+    }
+
+    activeMarkets.delete(tokenIdStr);
+    logger.info('Market closed', { reason, marketId: String(slot.marketId), activeSlots: activeMarkets.size });
   }
 
   /**
-   * Ищет следующий валидный рынок из кэша discovery и открывает его.
+   * Заполняет свободные слоты рынками из кэша discovery (paper).
    *
    * @remarks
-   * Не делает новый API-запрос — читает из кэша. Кэш обновляется в scheduleScanLoop.
-   * Пропускает истёкшие и закрытые (blacklisted) рынки.
+   * Открывает кандидатов пока `activeMarkets.size < maxConcurrentMarkets`.
+   * Не делает новый API-запрос — читает из кэша.
    */
-  async function fillMarketSlot(): Promise<void> {
+  async function fillMarketSlots(): Promise<void> {
     if (!discoveryAdapter) return;
 
     let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
@@ -542,16 +626,27 @@ async function runPaper(): Promise<void> {
       return;
     }
 
-    const nowMs = Date.now();
-    for (const c of candidates) {
-      const key = String(c.marketId);
-      if (closedMarkets.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
-      await openMarket(c);
-      return;
+    const activeMarketIds = new Set<string>();
+    for (const slot of activeMarkets.values()) {
+      activeMarketIds.add(String(slot.marketId));
     }
 
-    logger.warn('No valid market candidates in cache, waiting for next scan');
+    const nowMs = Date.now();
+    for (const c of candidates) {
+      if (activeMarkets.size >= maxConcurrentMarkets) break;
+
+      const key = String(c.marketId);
+      if (closedMarkets.has(key)) continue;
+      if (activeMarketIds.has(key)) continue;
+      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+
+      const opened = await openMarket(c);
+      if (opened) activeMarketIds.add(key);
+    }
+
+    if (activeMarkets.size === 0) {
+      logger.warn('No valid market candidates in cache, waiting for next scan');
+    }
   }
 
   /**
@@ -575,23 +670,36 @@ async function runPaper(): Promise<void> {
   const MIN_VIABLE_TRADING_MS = 30_000;
 
   /**
-   * Проверяет истечение текущего рынка и переключает на следующий.
+   * Проверяет истечение всех активных рынков и заполняет освободившиеся слоты (paper).
    *
    * @remarks
-   * Вызывается каждые 5 сек. Закрывает рынок за CANCEL_BEFORE_EXPIRY_MS до истечения
-   * чтобы успеть снять все ордера (BUY и SELL) до реального expiry.
+   * Reentrancy guard: `_rotationInProgress` предотвращает параллельные вызовы.
    */
-  async function checkExpiredMarket(): Promise<void> {
-    if (isShuttingDown || !currentDiscoveryCandidate) return;
-    if (currentMarketExpiresAtMs - Date.now() <= CANCEL_BEFORE_EXPIRY_MS) {
-      const msTillExpiry = currentMarketExpiresAtMs - Date.now();
-      logger.info('Market expiring soon, closing early to cancel orders', {
-        marketId: String(currentMarketId),
-        expiresAt: new Date(currentMarketExpiresAtMs).toISOString(),
-        msTillExpiry: Math.max(0, msTillExpiry),
-      });
-      await closeCurrentMarket('EXPIRED');
-      await fillMarketSlot();
+  async function checkExpiredMarkets(): Promise<void> {
+    if (isShuttingDown || _rotationInProgress) return;
+    _rotationInProgress = true;
+    try {
+      const nowMs = Date.now();
+      const expiredTokens: string[] = [];
+      for (const [tokenIdStr, slot] of activeMarkets) {
+        if (!slot.candidate) continue; // fixed-рынки не истекают
+        if (slot.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS) {
+          logger.info('Market expiring soon, closing early to cancel orders', {
+            marketId: String(slot.marketId),
+            expiresAt: new Date(slot.expiresAtMs).toISOString(),
+            msTillExpiry: Math.max(0, slot.expiresAtMs - nowMs),
+          });
+          expiredTokens.push(tokenIdStr);
+        }
+      }
+      for (const tokenIdStr of expiredTokens) {
+        await closeMarket(tokenIdStr, 'EXPIRED');
+      }
+      if (expiredTokens.length > 0) {
+        await fillMarketSlots();
+      }
+    } finally {
+      _rotationInProgress = false;
     }
   }
 
@@ -632,57 +740,53 @@ async function runPaper(): Promise<void> {
     getPortfolioSnapshot: () => {
       const portfolio = portfolioStore.get(accountId!);
       if (!portfolio) return undefined;
-      const position = portfolio.getPosition(activeInstrumentId);
-      const qty = position?.quantity.value();
+      let totalQty = new Decimal(0);
+      let avgEntry: string | undefined;
+      for (const slot of activeMarkets.values()) {
+        const position = portfolio.getPosition(slot.instrumentId);
+        if (position) {
+          totalQty = totalQty.plus(position.quantity.value());
+          if (!avgEntry) avgEntry = position.averageEntryPrice.value().toFixed(4);
+        }
+      }
       return {
-        tokenQty: (qty ?? new Decimal(0)).toFixed(2),
-        avgEntry: position ? position.averageEntryPrice.value().toFixed(4) : undefined,
+        tokenQty: totalQty.toFixed(2),
+        avgEntry,
         usdc: portfolio.balance.available().value().toFixed(2),
         reserved: portfolio.balance.reserved().value().toFixed(2),
       };
     },
   });
 
-  // ── Трекинг истории fills для сводки по рынку ───────────────────────────────
+  // ── Трекинг fills для сводки по рынку (per-slot, paper) ───────────────────
 
-  /** Запись об исполненном ордере (полностью или частично до отмены) */
-  interface FillRecord {
-    side: 'BUY' | 'SELL';
-    /** Суммарный объём всех partial + final fill */
-    size: string;
-    /** Средневзвешенная цена по всем fills */
-    price: string;
-    notional: string;
-    at: string;
-    /** true если ордер был отменён с частичным заполнением */
-    partial?: boolean;
+  /** Роутинг ORDER_CREATED → orderToSlot для привязки ордера к слоту */
+  eventBus.subscribe('ORDER_CREATED', (event) => {
+    const iId = assetIdToInstrumentId(event.asset);
+    const tokenIdStr = iId ? String(iId) : undefined;
+    if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
+      orderToSlot.set(String(event.orderId), tokenIdStr);
+    }
+  });
+
+  /** Хелпер: найти слот по orderId через orderToSlot */
+  function findSlotByOrderId(orderId: string): PaperMarketSlot | undefined {
+    const tokenIdStr = orderToSlot.get(orderId);
+    return tokenIdStr ? activeMarkets.get(tokenIdStr) : undefined;
   }
 
-  /** Аккумулятор частичных fills до ORDER_FILLED или ORDER_CANCELLED */
-  interface PartialAccum {
-    side: 'BUY' | 'SELL';
-    totalSize: Decimal;
-    totalNotional: Decimal;
-    firstAt: string;
-  }
-
-  let fillHistory: FillRecord[] = [];
-  let marketOpenMs = Date.now();
-
-  // orderId → аккумулятор частичных fills
-  const _partialAccum = new Map<string, PartialAccum>();
-
-  // Накапливаем partial fills по orderId
   eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
     const id = String(event.orderId);
-    const existing = _partialAccum.get(id);
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const existing = slot.partialAccum.get(id);
     const fillSize = event.fill.size.value();
     const fillNotional = fillSize.times(event.fill.price.value());
     if (existing) {
       existing.totalSize = existing.totalSize.plus(fillSize);
       existing.totalNotional = existing.totalNotional.plus(fillNotional);
     } else {
-      _partialAccum.set(id, {
+      slot.partialAccum.set(id, {
         side: event.fill.side as 'BUY' | 'SELL',
         totalSize: fillSize,
         totalNotional: fillNotional,
@@ -691,19 +795,18 @@ async function runPaper(): Promise<void> {
     }
   });
 
-  // ORDER_FILLED: суммируем с накопленными partial, записываем итог
   eventBus.subscribe('ORDER_FILLED', (event) => {
     const id = String(event.orderId);
-    const accum = _partialAccum.get(id);
-    _partialAccum.delete(id);
-
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const accum = slot.partialAccum.get(id);
+    slot.partialAccum.delete(id);
     const lastSize = event.fill.size.value();
     const totalSize = (accum?.totalSize ?? new Decimal(0)).plus(lastSize);
     const totalNotional = (accum?.totalNotional ?? new Decimal(0))
       .plus(lastSize.times(event.fill.price.value()));
     const avgPrice = totalNotional.div(totalSize);
-
-    fillHistory.push({
+    slot.fillHistory.push({
       side: event.fill.side as 'BUY' | 'SELL',
       size: totalSize.toFixed(2),
       price: avgPrice.toFixed(4),
@@ -712,15 +815,15 @@ async function runPaper(): Promise<void> {
     });
   });
 
-  // ORDER_CANCELLED: если был частично заполнен — записываем как partial fill
   eventBus.subscribe('ORDER_CANCELLED', (event) => {
     const id = String(event.orderId);
-    const accum = _partialAccum.get(id);
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const accum = slot.partialAccum.get(id);
     if (!accum || accum.totalSize.lte(0)) return;
-    _partialAccum.delete(id);
-
+    slot.partialAccum.delete(id);
     const avgPrice = accum.totalNotional.div(accum.totalSize);
-    fillHistory.push({
+    slot.fillHistory.push({
       side: accum.side,
       size: accum.totalSize.toFixed(2),
       price: avgPrice.toFixed(4),
@@ -731,27 +834,23 @@ async function runPaper(): Promise<void> {
   });
 
   /**
-   * Выводит сводку по всем fills на текущем рынке.
+   * Выводит сводку по всем fills конкретного рыночного слота (paper).
    *
-   * @param marketQuestion - Название рынка для заголовка
-   *
-   * @remarks
-   * Вызывается при закрытии рынка (истечение или shutdown).
-   * Показывает циклы BUY→SELL с PnL по каждому, суммарный PnL,
-   * финальный баланс токенов и USDC.
+   * @param slot - Слот активного рынка
    */
-  function printMarketSummary(marketQuestion: string): void {
-    if (fillHistory.length === 0) {
+  function printMarketSummary(slot: PaperMarketSlot): void {
+    const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
+    if (slot.fillHistory.length === 0) {
       logger.info('=== Market summary: no fills ===', { market: marketQuestion });
       return;
     }
 
-    const durationMs = Date.now() - marketOpenMs;
+    const durationMs = Date.now() - slot.openedAt;
     const durMin = Math.floor(durationMs / 60_000);
     const durSec = Math.round((durationMs % 60_000) / 1000);
 
-    const buys  = fillHistory.filter(f => f.side === 'BUY');
-    const sells = fillHistory.filter(f => f.side === 'SELL');
+    const buys  = slot.fillHistory.filter(f => f.side === 'BUY');
+    const sells = slot.fillHistory.filter(f => f.side === 'SELL');
 
     const cycles = buys.map((buy, i) => {
       const sell = sells[i];
@@ -773,7 +872,7 @@ async function runPaper(): Promise<void> {
     }, new Decimal(0));
 
     const portfolio = portfolioStore.get(accountId!);
-    const position  = portfolio?.getPosition(activeInstrumentId);
+    const position  = portfolio?.getPosition(slot.instrumentId);
 
     logger.warn('=== Market summary ===', {
       market:       marketQuestion,
@@ -789,15 +888,19 @@ async function runPaper(): Promise<void> {
     });
   }
 
-  // Регистрируем первый рынок
-  const ok = await registerMarketAndStrategy(activeInstrumentId, currentMarketId, currentAsset, currentMarketExpiresAtMs);
-  if (!ok) {
-    logger.fatal('Failed to register initial strategy');
-    process.exit(1);
+  // Регистрируем все начальные слоты
+  for (const slot of activeMarkets.values()) {
+    const ok = await registerMarketAndStrategy(slot);
+    if (!ok) {
+      logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
+      process.exit(1);
+    }
   }
 
-  // Подключаемся к WS и подписываемся на первый токен
-  await wsAdapter.subscribeToToken(currentTokenIdStr);
+  // Подключаемся к WS и подписываемся на все токены
+  for (const slot of activeMarkets.values()) {
+    await wsAdapter.subscribeToToken(slot.tokenIdStr);
+  }
   try {
     await wsAdapter.connect();
   } catch (err) {
@@ -807,25 +910,30 @@ async function runPaper(): Promise<void> {
     // Адаптер сам переподключится — это не фатальная ошибка
   }
 
+  const activeSlotIds = Array.from(activeMarkets.values()).map(s => s.strategy.id);
   logger.info('Bot is running in paper mode', {
     strategy: config.strategy,
-    strategyId: strategy.id,
-    marketId: String(currentMarketId),
-    tokenId: currentTokenIdStr,
-    expiresAt: new Date(currentMarketExpiresAtMs).toISOString(),
-    hoursToExpiry: ((currentMarketExpiresAtMs - Date.now()) / 3_600_000).toFixed(2),
+    strategyIds: activeSlotIds,
+    activeSlots: activeMarkets.size,
+    maxConcurrentMarkets,
+    source: config.market.source,
   });
 
   // Запускаем ротацию только для discovery режима
   if (discoveryAdapter) {
-    // Цикл 1: проверка истечения + переключение рынка каждые 5 сек
-    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarket(); }, 5_000);
-    // Цикл 2: обновление кэша discovery (пауза после завершения)
+    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarkets(); }, 5_000);
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
+
+    // Если maxConcurrentMarkets > 1, заполняем оставшиеся слоты
+    if (maxConcurrentMarkets > 1) {
+      void fillMarketSlots();
+    }
+
     logger.info('Market rotation enabled', {
       expiryCheckMs: 5_000,
       scanPauseMs: mc.scanPauseMs ?? 60_000,
+      maxConcurrentMarkets,
     });
   }
 
@@ -839,11 +947,14 @@ async function runPaper(): Promise<void> {
     if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
 
     try {
-      // Сводка по текущему рынку перед остановкой
-      printMarketSummary(currentDiscoveryCandidate?.question ?? String(currentMarketId));
+      // Закрываем все активные слоты: сводка + unregister стратегий
+      for (const slot of activeMarkets.values()) {
+        printMarketSummary(slot);
+        await engine.scheduler.unregister(slot.strategy.id);
+      }
+      activeMarkets.clear();
+      orderToSlot.clear();
 
-      // Снимаем стратегию (отменяет все открытые ордера через CANCEL_ALL)
-      await engine.scheduler.unregister(strategy.id);
       engine.scheduler.stop();
       engine.orderEventBridge.stop();
       simulator.stop();
@@ -920,7 +1031,7 @@ async function runBacktest(): Promise<void> {
 
   // Chicken-and-egg
   const { mockClient } = buildPaperInfra({ clock: replayClock });
-  const { processFillUseCase } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
 
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
@@ -936,7 +1047,7 @@ async function runBacktest(): Promise<void> {
   });
 
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
-  const useCases = { processFillUseCase, ...orderUseCases };
+  const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
   const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
@@ -1252,25 +1363,66 @@ async function runLive(): Promise<void> {
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
   const { clock, logger, eventBus } = infra;
 
-  // ── Resolve первый рынок ──────────────────────────────────────────────────
-  // Мутабельное состояние текущего рынка (обновляется при ротации)
-  let activeInstrumentId: InstrumentId;
-  let currentTokenIdStr: string;
-  let currentMarketId: MarketId;
-  let currentAsset: AssetId;
-  let currentMarketExpiresAtMs: number;
-  // Торговые параметры инструмента — обновляются из DiscoveredMarket при ротации
-  let currentTickSize: Price = Price.of(new Decimal('0.001'));
-  let currentMinOrderSize: Quantity = Quantity.of(new Decimal('1'));
+  // ── Типы для мульти-маркетных слотов ──────────────────────────────────────
+
+  interface FillRecord {
+    side: 'BUY' | 'SELL';
+    size: string;
+    price: string;
+    notional: string;
+    at: string;
+    partial?: boolean;
+  }
+
+  interface PartialAccum {
+    side: 'BUY' | 'SELL';
+    totalSize: Decimal;
+    totalNotional: Decimal;
+    firstAt: string;
+  }
+
+  /**
+   * Слот активного рынка — хранит всё состояние, привязанное к конкретному рынку.
+   *
+   * @remarks
+   * Каждый рынок получает свой слот при открытии и удаляется из Map при закрытии.
+   * Стратегия создаётся индивидуально для каждого слота с уникальным ID.
+   */
+  interface ActiveMarketSlot {
+    readonly instrumentId: InstrumentId;
+    readonly marketId: MarketId;
+    readonly asset: AssetId;
+    readonly tokenIdStr: string;
+    readonly expiresAtMs: number;
+    readonly tickSize: Price;
+    readonly minOrderSize: Quantity;
+    readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
+    readonly strategy: IStrategy;
+    fillHistory: FillRecord[];
+    partialAccum: Map<string, PartialAccum>;
+    openedAt: number;
+  }
+
+  // ── Мульти-маркетное состояние ──────────────────────────────────────────────
+
+  /** Активные рыночные слоты: key = tokenIdStr */
+  const activeMarkets = new Map<string, ActiveMarketSlot>();
+  /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
+  const orderToSlot = new Map<string, string>();
+  /** Счётчик для уникальных strategy ID (монотонно растёт, не уменьшается) */
+  let _slotCounter = 0;
+
+  const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
+  const minCapitalPerMarket = config.resources.minCapitalPerMarket;
 
   // Discovery-специфичное состояние
   type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
   let discoveryAdapter: DiscoveryAdapter | null = null;
-  let currentDiscoveryCandidate: import('@polymarket/ports').DiscoveredMarket | null = null;
   const closedMarkets = new Set<string>();
   let isShuttingDown = false;
   let expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
   let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let _rotationInProgress = false;
 
   if (config.market.source === 'fixed') {
     const mc = config.market;
@@ -1281,17 +1433,31 @@ async function runLive(): Promise<void> {
     }
     const hexId = mc.marketId.replace(/^0x/i, '');
     const tokenBigInt = BigInt('0x' + hexId) * 2n + BigInt(mc.outcomeIndex);
-    currentTokenIdStr = tokenBigInt.toString();
-    const iId = asInstrumentId(currentTokenIdStr);
-    const ast = asPolymarketCtfToken(currentTokenIdStr);
+    const tStr = tokenBigInt.toString();
+    const iId = asInstrumentId(tStr);
+    const ast = asPolymarketCtfToken(tStr);
     if (!iId || !ast) {
-      logger.fatal('Cannot derive instrumentId', { tokenIdStr: currentTokenIdStr });
+      logger.fatal('Cannot derive instrumentId', { tokenIdStr: tStr });
       process.exit(1);
     }
-    currentMarketId = mid;
-    activeInstrumentId = iId;
-    currentAsset = ast;
-    currentMarketExpiresAtMs = Date.now() + 24 * 60 * 60 * 1000;
+    const fixedStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
+    activeMarkets.set(tStr, {
+      instrumentId: iId,
+      marketId: mid,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+      tickSize: Price.of(new Decimal('0.001')),
+      minOrderSize: Quantity.of(new Decimal('1')),
+      candidate: null,
+      strategy: fixedStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    });
   } else if (config.market.source === 'discovery') {
     const mc = config.market;
     const filterConfig: IMarketFilterConfig = {
@@ -1333,34 +1499,46 @@ async function runLive(): Promise<void> {
       logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
       process.exit(1);
     }
-    currentMarketId = candidate.marketId;
-    activeInstrumentId = iId;
-    currentAsset = ast;
-    currentTokenIdStr = tStr;
-    currentMarketExpiresAtMs = candidate.expiresAt.toNumber();
-    // Торговые параметры из Gamma API — используются в registerMarketAndStrategy
-    currentTickSize = candidate.tickSize;
-    currentMinOrderSize = candidate.minOrderSize;
-    currentDiscoveryCandidate = candidate;
+    const discoveryStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
+    const expiresMs = candidate.expiresAt.toNumber();
+    activeMarkets.set(tStr, {
+      instrumentId: iId,
+      marketId: candidate.marketId,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: expiresMs,
+      tickSize: candidate.tickSize,
+      minOrderSize: candidate.minOrderSize,
+      candidate,
+      strategy: discoveryStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    });
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
     logger.info('Initial market discovered', {
       question: candidate.question,
       slug: slug ?? '(no slug)',
-      marketId: String(currentMarketId),
+      marketId: String(candidate.marketId),
       tokenId: tStr,
       liquidity: candidate.liquidity.toFixed(0),
-      expiresAt: new Date(currentMarketExpiresAtMs).toISOString(),
-      hoursToExpiry: ((currentMarketExpiresAtMs - Date.now()) / 3_600_000).toFixed(2),
+      expiresAt: new Date(expiresMs).toISOString(),
+      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
     });
   } else {
     console.error('[Bot] live mode supports market.source=fixed or market.source=discovery');
     process.exit(1);
   }
 
+  const firstSlot = activeMarkets.values().next().value!;
   logger.info('Bot starting in live mode', {
     strategy: config.strategy,
-    marketId: String(currentMarketId),
+    marketId: String(firstSlot.marketId),
+    maxConcurrentMarkets,
     funderAddress: credentials.funderAddress ?? '(signer)',
   });
 
@@ -1394,7 +1572,7 @@ async function runLive(): Promise<void> {
   );
   const userWsAdapter = new PolymarketWsAdapter(userWsManager, logger);
 
-  const { processFillUseCase } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
 
   const liveInfra = buildLiveInfra({
     credentials,
@@ -1407,6 +1585,7 @@ async function runLive(): Promise<void> {
 
   const useCases = {
     processFillUseCase,
+    portfolioService,
     ...buildOrderUseCases({
       infra,
       repos,
@@ -1416,10 +1595,13 @@ async function runLive(): Promise<void> {
   };
 
   // ── FillOrchestrator: FILL_RECEIVED → ProcessFillUseCase ─────────────────
-  // Без него WS fills публикуются в eventBus, но никто их не обрабатывает
+  // FILL_RECEIVED публикуется на MATCHED (early processing) — Portfolio обновляется сразу.
+  // FILL_FAILED → portfolioService.reverseFill() откатывает Portfolio при on-chain revert.
   const fillOrchestrator = new FillOrchestrator({
     eventBus,
     processFill: processFillUseCase,
+    orderStateStore: repos.orderRepo,
+    portfolioService,
     logger,
   });
   fillOrchestrator.register();
@@ -1427,17 +1609,31 @@ async function runLive(): Promise<void> {
   // ── Market data + strategy engine ────────────────────────────────────────
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
+
+  // ITokenBalanceChecker: при SELL rejection проверяем реальный баланс/allowance токена на CLOB.
+  // Диагностика: отличает settlement lag (balance=0) от allowance проблемы (allowance=0).
+  const tokenBalanceChecker = {
+    async getTokenBalanceAllowance(tokenId: string) {
+      try {
+        return await liveInfra.balanceRestClient.getOutcomeTokenBalanceAllowance(tokenId);
+      } catch {
+        return undefined;
+      }
+    },
+  };
+
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker });
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
   const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based аналитики)
-  // activeInstrumentId мутабельная — автоматически переключается при ротации рынка
+  // Фильтруем только трейды по активным рынкам
   marketWsAdapter.onTradeEvent(async (dto) => {
+    if (!activeMarkets.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
-    if (!tradeInstrumentId || String(tradeInstrumentId) !== String(activeInstrumentId)) return;
+    if (!tradeInstrumentId) return;
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
@@ -1454,39 +1650,38 @@ async function runLive(): Promise<void> {
     }
   });
 
-  // ── Стратегия (создаётся один раз — stateless) ───────────────────────────
-
-  const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
-
   // ── Хелперы ротации рынков ───────────────────────────────────────────────
 
   /**
    * Регистрирует инструмент в каталоге и стратегию в планировщике.
+   *
+   * @param slot - Слот активного рынка с торговыми параметрами и стратегией
+   * @returns true если регистрация успешна
    */
-  async function registerMarketAndStrategy(
-    instrumentId: InstrumentId,
-    marketId: MarketId,
-    asset: AssetId,
-    expiresAtMs: number,
-  ): Promise<boolean> {
-    const expiresAtResult = TimestampService.create(expiresAtMs);
+  async function registerMarketAndStrategy(slot: ActiveMarketSlot): Promise<boolean> {
+    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
-      logger.error('Failed to create expiresAt timestamp', { expiresAtMs });
+      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
       return false;
     }
-    // Используем currentTickSize/currentMinOrderSize — обновляются из кандидата в openMarket
     marketCatalog.register({
-      instrumentId,
-      marketId,
-      tickSize: currentTickSize,
-      minOrderSize: currentMinOrderSize,
+      instrumentId: slot.instrumentId,
+      marketId: slot.marketId,
+      tickSize: slot.tickSize,
+      minOrderSize: slot.minOrderSize,
       minOrderValue: Quantity.of(new Decimal('1')), // Polymarket: BUY-ордера >= $1
       active: true,
       expiresAt: expiresAtResult.value,
     });
 
-    const marketStub = { expirationMs: expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
-    const regResult = await engine.scheduler.register({ strategy, instrumentId, asset, accountId: accountId!, market: marketStub });
+    const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const regResult = await engine.scheduler.register({
+      strategy: slot.strategy,
+      instrumentId: slot.instrumentId,
+      asset: slot.asset,
+      accountId: accountId!,
+      market: marketStub,
+    });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
       return false;
@@ -1495,44 +1690,75 @@ async function runLive(): Promise<void> {
   }
 
   /**
-   * Переключает бота на новый рынок из discovery.
-   * В live режиме после переключения запускается сверка ордеров.
+   * Открывает новый рыночный слот из discovery-кандидата.
+   *
+   * @remarks
+   * Создаёт стратегию с уникальным ID, добавляет слот в activeMarkets,
+   * подписывается на WS и регистрирует в каталоге + планировщике.
+   * Не заменяет глобальные переменные — каждый слот автономен.
+   *
+   * @param candidate - Обнаруженный кандидат рынка
+   * @returns true если рынок успешно открыт
    */
-  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<void> {
+  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<boolean> {
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
     const iId = asInstrumentId(tStr);
     const ast = asPolymarketCtfToken(tStr);
     if (!iId || !ast) {
       logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId) });
-      return;
+      return false;
+    }
+
+    // Проверяем доступный капитал
+    const portfolio = portfolioStore.get(accountId!);
+    if (portfolio) {
+      const available = portfolio.balance.available().value();
+      if (available.lt(minCapitalPerMarket)) {
+        logger.warn('Insufficient capital for new market slot', {
+          available: available.toFixed(2),
+          minCapitalPerMarket,
+          marketId: String(candidate.marketId),
+        });
+        return false;
+      }
     }
 
     const expiresMs = candidate.expiresAt.toNumber();
+    const slotStrategy = createStrategy(
+      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      logger,
+    );
 
-    fillHistory = [];
-    marketOpenMs = Date.now();
+    const slot: ActiveMarketSlot = {
+      instrumentId: iId,
+      marketId: candidate.marketId,
+      asset: ast,
+      tokenIdStr: tStr,
+      expiresAtMs: expiresMs,
+      tickSize: candidate.tickSize,
+      minOrderSize: candidate.minOrderSize,
+      candidate,
+      strategy: slotStrategy,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    };
 
-    activeInstrumentId = iId;
-    currentTokenIdStr = tStr;
-    currentMarketId = candidate.marketId;
-    currentAsset = ast;
-    currentMarketExpiresAtMs = expiresMs;
-    // Обновляем торговые параметры из Gamma API — используются в registerMarketAndStrategy
-    currentTickSize = candidate.tickSize;
-    currentMinOrderSize = candidate.minOrderSize;
-    currentDiscoveryCandidate = candidate;
-
+    activeMarkets.set(tStr, slot);
     await marketWsAdapter.subscribeToToken(tStr);
 
-    const ok = await registerMarketAndStrategy(iId, candidate.marketId, ast, expiresMs);
-    if (!ok) return;
+    const ok = await registerMarketAndStrategy(slot);
+    if (!ok) {
+      activeMarkets.delete(tStr);
+      return false;
+    }
 
-    // Сверяем ордера с биржей после переключения на новый рынок
+    // Сверяем ордера с биржей после открытия нового рынка
     try {
       await liveInfra.orderReconciler.reconcile(accountId!);
     } catch (err) {
-      logger.warn('Order reconciliation after market switch failed', {
+      logger.warn('Order reconciliation after market open failed', {
         err: err instanceof Error ? err : new Error(String(err)),
       });
     }
@@ -1543,39 +1769,53 @@ async function runLive(): Promise<void> {
       slug: slug ?? '(no slug)',
       marketId: String(candidate.marketId),
       tokenId: tStr,
+      activeSlots: activeMarkets.size,
+      maxSlots: maxConcurrentMarkets,
       expiresAt: new Date(expiresMs).toISOString(),
       hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
     });
+    return true;
   }
 
   /**
-   * Закрывает текущий рынок: отменяет все ордера, отписывается от WS, удаляет из каталога.
+   * Закрывает конкретный рыночный слот: отменяет ордера, отписывается от WS, удаляет из каталога.
+   *
+   * @param tokenIdStr - Ключ слота (tokenIdStr)
+   * @param reason - Причина закрытия
    */
-  async function closeCurrentMarket(reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
-    const savedTokenIdStr = currentTokenIdStr;
-    const savedMarketId = currentMarketId;
-    const savedInstrumentId = activeInstrumentId;
+  async function closeMarket(tokenIdStr: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+    const slot = activeMarkets.get(tokenIdStr);
+    if (!slot) return;
 
-    logger.info('Closing market', { reason, marketId: String(savedMarketId), question: currentDiscoveryCandidate?.question });
+    logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
 
-    await engine.scheduler.unregister(strategy.id);
-    printMarketSummary(currentDiscoveryCandidate?.question ?? String(savedMarketId));
+    await engine.scheduler.unregister(slot.strategy.id);
+    printMarketSummary(slot);
 
-    await marketWsAdapter.unsubscribeFromToken(savedTokenIdStr);
-    marketCatalog.remove(savedInstrumentId);
+    await marketWsAdapter.unsubscribeFromToken(tokenIdStr);
+    marketCatalog.remove(slot.instrumentId);
 
     if (reason === 'EXPIRED') {
-      closedMarkets.add(String(savedMarketId));
+      closedMarkets.add(String(slot.marketId));
     }
 
-    currentDiscoveryCandidate = null;
-    logger.info('Market closed', { reason, marketId: String(savedMarketId) });
+    // Очистить orderToSlot для этого слота
+    for (const [orderId, slotKey] of orderToSlot) {
+      if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
+    }
+
+    activeMarkets.delete(tokenIdStr);
+    logger.info('Market closed', { reason, marketId: String(slot.marketId), activeSlots: activeMarkets.size });
   }
 
   /**
-   * Ищет следующий валидный рынок из кэша discovery и открывает его.
+   * Заполняет свободные слоты рынками из кэша discovery.
+   *
+   * @remarks
+   * Открывает кандидатов пока `activeMarkets.size < maxConcurrentMarkets`.
+   * Пропускает уже активные (по marketId), закрытые и истёкшие рынки.
    */
-  async function fillMarketSlot(): Promise<void> {
+  async function fillMarketSlots(): Promise<void> {
     if (!discoveryAdapter) return;
 
     let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
@@ -1588,16 +1828,28 @@ async function runLive(): Promise<void> {
       return;
     }
 
-    const nowMs = Date.now();
-    for (const c of candidates) {
-      const key = String(c.marketId);
-      if (closedMarkets.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
-      await openMarket(c);
-      return;
+    // Собираем marketId всех активных слотов для дедупликации
+    const activeMarketIds = new Set<string>();
+    for (const slot of activeMarkets.values()) {
+      activeMarketIds.add(String(slot.marketId));
     }
 
-    logger.warn('No valid market candidates in cache, waiting for next scan');
+    const nowMs = Date.now();
+    for (const c of candidates) {
+      if (activeMarkets.size >= maxConcurrentMarkets) break;
+
+      const key = String(c.marketId);
+      if (closedMarkets.has(key)) continue;
+      if (activeMarketIds.has(key)) continue;
+      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+
+      const opened = await openMarket(c);
+      if (opened) activeMarketIds.add(key);
+    }
+
+    if (activeMarkets.size === 0) {
+      logger.warn('No valid market candidates in cache, waiting for next scan');
+    }
   }
 
   /** Закрываем рынок за 5 сек до истечения чтобы успеть снять ордера. */
@@ -1613,19 +1865,36 @@ async function runLive(): Promise<void> {
   const MIN_VIABLE_TRADING_MS = 30_000;
 
   /**
-   * Проверяет истечение текущего рынка и переключает на следующий.
+   * Проверяет истечение всех активных рынков и заполняет освободившиеся слоты.
+   *
+   * @remarks
+   * Reentrancy guard: `_rotationInProgress` предотвращает параллельные вызовы.
    */
-  async function checkExpiredMarket(): Promise<void> {
-    if (isShuttingDown || !currentDiscoveryCandidate) return;
-    if (currentMarketExpiresAtMs - Date.now() <= CANCEL_BEFORE_EXPIRY_MS) {
-      const msTillExpiry = currentMarketExpiresAtMs - Date.now();
-      logger.info('Market expiring soon, closing early to cancel orders', {
-        marketId: String(currentMarketId),
-        expiresAt: new Date(currentMarketExpiresAtMs).toISOString(),
-        msTillExpiry: Math.max(0, msTillExpiry),
-      });
-      await closeCurrentMarket('EXPIRED');
-      await fillMarketSlot();
+  async function checkExpiredMarkets(): Promise<void> {
+    if (isShuttingDown || _rotationInProgress) return;
+    _rotationInProgress = true;
+    try {
+      const nowMs = Date.now();
+      const expiredTokens: string[] = [];
+      for (const [tokenIdStr, slot] of activeMarkets) {
+        if (!slot.candidate) continue; // fixed-рынки не истекают
+        if (slot.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS) {
+          logger.info('Market expiring soon, closing early to cancel orders', {
+            marketId: String(slot.marketId),
+            expiresAt: new Date(slot.expiresAtMs).toISOString(),
+            msTillExpiry: Math.max(0, slot.expiresAtMs - nowMs),
+          });
+          expiredTokens.push(tokenIdStr);
+        }
+      }
+      for (const tokenIdStr of expiredTokens) {
+        await closeMarket(tokenIdStr, 'EXPIRED');
+      }
+      if (expiredTokens.length > 0) {
+        await fillMarketSlots();
+      }
+    } finally {
+      _rotationInProgress = false;
     }
   }
 
@@ -1648,74 +1917,78 @@ async function runLive(): Promise<void> {
     }
   }
 
-  // ── Трекинг fills для сводки по рынку ────────────────────────────────────
+  // ── Трекинг fills для сводки по рынку (per-slot) ─────────────────────────
 
-  interface FillRecord {
-    side: 'BUY' | 'SELL';
-    size: string;
-    price: string;
-    notional: string;
-    at: string;
-    partial?: boolean;
+  /** Роутинг ORDER_CREATED → orderToSlot для привязки ордера к слоту */
+  eventBus.subscribe('ORDER_CREATED', (event) => {
+    const iId = assetIdToInstrumentId(event.asset);
+    const tokenIdStr = iId ? String(iId) : undefined;
+    if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
+      orderToSlot.set(String(event.orderId), tokenIdStr);
+    }
+  });
+
+  /** Хелпер: найти слот по orderId через orderToSlot */
+  function findSlotByOrderId(orderId: string): ActiveMarketSlot | undefined {
+    const tokenIdStr = orderToSlot.get(orderId);
+    return tokenIdStr ? activeMarkets.get(tokenIdStr) : undefined;
   }
-
-  interface PartialAccum {
-    side: 'BUY' | 'SELL';
-    totalSize: Decimal;
-    totalNotional: Decimal;
-    firstAt: string;
-  }
-
-  let fillHistory: FillRecord[] = [];
-  let marketOpenMs = Date.now();
-  const _partialAccum = new Map<string, PartialAccum>();
 
   eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
     const id = String(event.orderId);
-    const existing = _partialAccum.get(id);
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const existing = slot.partialAccum.get(id);
     const fillSize = event.fill.size.value();
     const fillNotional = fillSize.times(event.fill.price.value());
     if (existing) {
       existing.totalSize = existing.totalSize.plus(fillSize);
       existing.totalNotional = existing.totalNotional.plus(fillNotional);
     } else {
-      _partialAccum.set(id, { side: event.fill.side as 'BUY' | 'SELL', totalSize: fillSize, totalNotional: fillNotional, firstAt: clock.now().toISOString().slice(11, 19) });
+      slot.partialAccum.set(id, { side: event.fill.side as 'BUY' | 'SELL', totalSize: fillSize, totalNotional: fillNotional, firstAt: clock.now().toISOString().slice(11, 19) });
     }
   });
 
   eventBus.subscribe('ORDER_FILLED', (event) => {
     const id = String(event.orderId);
-    const accum = _partialAccum.get(id);
-    _partialAccum.delete(id);
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const accum = slot.partialAccum.get(id);
+    slot.partialAccum.delete(id);
     const lastSize = event.fill.size.value();
     const totalSize = (accum?.totalSize ?? new Decimal(0)).plus(lastSize);
     const totalNotional = (accum?.totalNotional ?? new Decimal(0)).plus(lastSize.times(event.fill.price.value()));
     const avgPrice = totalNotional.div(totalSize);
-    fillHistory.push({ side: event.fill.side as 'BUY' | 'SELL', size: totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: totalNotional.toFixed(2), at: accum?.firstAt ?? clock.now().toISOString().slice(11, 19) });
+    slot.fillHistory.push({ side: event.fill.side as 'BUY' | 'SELL', size: totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: totalNotional.toFixed(2), at: accum?.firstAt ?? clock.now().toISOString().slice(11, 19) });
   });
 
   eventBus.subscribe('ORDER_CANCELLED', (event) => {
     const id = String(event.orderId);
-    const accum = _partialAccum.get(id);
+    const slot = findSlotByOrderId(id);
+    if (!slot) return;
+    const accum = slot.partialAccum.get(id);
     if (!accum || accum.totalSize.lte(0)) return;
-    _partialAccum.delete(id);
+    slot.partialAccum.delete(id);
     const avgPrice = accum.totalNotional.div(accum.totalSize);
-    fillHistory.push({ side: accum.side, size: accum.totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: accum.totalNotional.toFixed(2), at: accum.firstAt, partial: true });
+    slot.fillHistory.push({ side: accum.side, size: accum.totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: accum.totalNotional.toFixed(2), at: accum.firstAt, partial: true });
   });
 
   /**
-   * Выводит сводку по всем fills текущего рынка.
+   * Выводит сводку по всем fills конкретного рыночного слота.
+   *
+   * @param slot - Слот активного рынка
    */
-  function printMarketSummary(marketQuestion: string): void {
-    if (fillHistory.length === 0) {
+  function printMarketSummary(slot: ActiveMarketSlot): void {
+    const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
+    if (slot.fillHistory.length === 0) {
       logger.info('=== Market summary: no fills ===', { market: marketQuestion });
       return;
     }
-    const durationMs = Date.now() - marketOpenMs;
+    const durationMs = Date.now() - slot.openedAt;
     const durMin = Math.floor(durationMs / 60_000);
     const durSec = Math.round((durationMs % 60_000) / 1000);
-    const buys  = fillHistory.filter(f => f.side === 'BUY');
-    const sells = fillHistory.filter(f => f.side === 'SELL');
+    const buys  = slot.fillHistory.filter(f => f.side === 'BUY');
+    const sells = slot.fillHistory.filter(f => f.side === 'SELL');
     const cycles = buys.map((buy, i) => {
       const sell = sells[i];
       const buyLabel = `${buy.size}@${buy.price}${buy.partial ? '(partial)' : ''} [${buy.at}]`;
@@ -1729,7 +2002,7 @@ async function runLive(): Promise<void> {
       return acc.plus(new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(sell.size)));
     }, new Decimal(0));
     const portfolio = portfolioStore.get(accountId!);
-    const position  = portfolio?.getPosition(activeInstrumentId);
+    const position  = portfolio?.getPosition(slot.instrumentId);
     logger.warn('=== Market summary ===', {
       market: marketQuestion,
       duration: `${durMin}m${durSec}s`,
@@ -1752,11 +2025,19 @@ async function runLive(): Promise<void> {
     getPortfolioSnapshot: () => {
       const portfolio = portfolioStore.get(accountId!);
       if (!portfolio) return undefined;
-      const position = portfolio.getPosition(activeInstrumentId);
-      const qty = position?.quantity.value();
+      // Агрегируем позиции по всем активным слотам
+      let totalQty = new Decimal(0);
+      let avgEntry: string | undefined;
+      for (const slot of activeMarkets.values()) {
+        const position = portfolio.getPosition(slot.instrumentId);
+        if (position) {
+          totalQty = totalQty.plus(position.quantity.value());
+          if (!avgEntry) avgEntry = position.averageEntryPrice.value().toFixed(4);
+        }
+      }
       return {
-        tokenQty: (qty ?? new Decimal(0)).toFixed(2),
-        avgEntry: position ? position.averageEntryPrice.value().toFixed(4) : undefined,
+        tokenQty: totalQty.toFixed(2),
+        avgEntry,
         usdc: portfolio.balance.available().value().toFixed(2),
         reserved: portfolio.balance.reserved().value().toFixed(2),
       };
@@ -1801,16 +2082,21 @@ async function runLive(): Promise<void> {
   engine.orderEventBridge.start();
   engine.scheduler.start();
 
-  const ok = await registerMarketAndStrategy(activeInstrumentId, currentMarketId, currentAsset, currentMarketExpiresAtMs);
-  if (!ok) {
-    logger.fatal('Failed to register initial strategy');
-    process.exit(1);
+  // Регистрируем все начальные слоты
+  for (const slot of activeMarkets.values()) {
+    const ok = await registerMarketAndStrategy(slot);
+    if (!ok) {
+      logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
+      process.exit(1);
+    }
   }
 
   // ── WS подключение (два отдельных соединения) ────────────────────────────
   //
   // /ws/market — рыночные данные (orderbook, trades)
-  await marketWsAdapter.subscribeToToken(currentTokenIdStr);
+  for (const slot of activeMarkets.values()) {
+    await marketWsAdapter.subscribeToToken(slot.tokenIdStr);
+  }
   try {
     await marketWsAdapter.connect();
   } catch (err) {
@@ -1847,24 +2133,104 @@ async function runLive(): Promise<void> {
     });
   }, RECONCILE_INTERVAL_MS);
 
+  // ── Token balance reconciliation (CLOB → Portfolio sync) ───────────────
+  // ВРЕМЕННО ОТКЛЮЧЕНО: будет включено позже для тестирования трёх режимов:
+  // 1. Только события (WS fills)
+  // 2. Только периодические запросы (polling CLOB balance)
+  // 3. Совмещённый режим (события + polling для ускорения)
+  //
+  // Периодически сверяем баланс токенов на CLOB с позицией в Portfolio.
+  // Если CLOB показывает больше токенов → корректируем Portfolio.
+  // Цель: подхватить fills которые не дошли по WS (MATCHED/MINED застряли,
+  // WS drop без reconnect, или fill вообще не пришёл).
+
+  const TOKEN_BALANCE_SYNC_INTERVAL_MS = 30_000;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _tokenBalanceSyncDisabled = TOKEN_BALANCE_SYNC_INTERVAL_MS; // сохраняем константу
+  /* TOKEN_BALANCE_SYNC — DISABLED
+  const tokenBalanceSyncId = setInterval(() => {
+    void (async () => {
+      try {
+        const tokenId = currentTokenIdStr;
+        const instrumentId = activeInstrumentId;
+        const portfolio = portfolioStore.get(accountId);
+        if (!portfolio) return;
+
+        const clobResult = await liveInfra.balanceRestClient.getOutcomeTokenBalance(tokenId);
+        const clobBalance = new Decimal(clobResult);
+        const portfolioPosition = portfolio.getPosition(instrumentId);
+        const portfolioQty = portfolioPosition?.quantity.value() ?? new Decimal(0);
+
+        // Разница значима если > 0.01 (порог dust для SELL precision)
+        const diff = clobBalance.minus(portfolioQty);
+        if (diff.abs().lte('0.01')) return;
+
+        if (diff.gt(0)) {
+          // CLOB показывает больше токенов → пропущенный fill.
+          // Корректируем Portfolio: создаём позицию с CLOB балансом.
+          // Entry price берём из существующей позиции или используем 0 (unknown).
+          const entryPrice = portfolioPosition?.averageEntryPrice.value() ?? new Decimal(0);
+          const newPosition = new SimplePosition({
+            instrumentId,
+            quantity: clobBalance,
+            averageEntryPrice: entryPrice.isZero() ? new Decimal('0.50') : entryPrice,
+            side: 'LONG' as const,
+          });
+          const updated = portfolio.upsertPosition(newPosition);
+          portfolioStore.save(updated, 0);
+          logger.warn('Token balance reconciled: CLOB > Portfolio', {
+            tokenId: tokenId.substring(0, 16) + '...',
+            clobBalance: clobBalance.toFixed(4),
+            portfolioQty: portfolioQty.toFixed(4),
+            diff: diff.toFixed(4),
+            newQty: clobBalance.toFixed(4),
+          });
+        } else {
+          // Portfolio показывает больше чем CLOB → возможно settlement ещё не завершился.
+          // Логируем для диагностики, но НЕ корректируем (settlement может догнать).
+          logger.debug('Token balance check: Portfolio > CLOB (possible pending settlement)', {
+            tokenId: tokenId.substring(0, 16) + '...',
+            clobBalance: clobBalance.toFixed(4),
+            portfolioQty: portfolioQty.toFixed(4),
+            diff: diff.toFixed(4),
+          });
+        }
+      } catch (err) {
+        logger.debug('Token balance sync failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }, TOKEN_BALANCE_SYNC_INTERVAL_MS);
+  TOKEN_BALANCE_SYNC — DISABLED */
+
+  const activeSlotIds = Array.from(activeMarkets.values()).map(s => s.strategy.id);
   logger.info('Bot is running in live mode', {
     strategy: config.strategy,
-    strategyId: strategy.id,
-    marketId: String(currentMarketId),
-    tokenId: currentTokenIdStr,
+    strategyIds: activeSlotIds,
+    activeSlots: activeMarkets.size,
+    maxConcurrentMarkets,
     source: config.market.source,
     reconcileIntervalSec: RECONCILE_INTERVAL_MS / 1000,
+    // tokenBalanceSyncSec: TOKEN_BALANCE_SYNC_INTERVAL_MS / 1000, // DISABLED
   });
 
   // ── Ротация рынков (только для discovery) ────────────────────────────────
 
   if (discoveryAdapter) {
-    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarket(); }, 5_000);
+    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarkets(); }, 5_000);
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
+
+    // Если maxConcurrentMarkets > 1, заполняем оставшиеся слоты после WS connect
+    if (maxConcurrentMarkets > 1) {
+      void fillMarketSlots();
+    }
+
     logger.info('Market rotation enabled', {
       expiryCheckMs: 5_000,
       scanPauseMs: mc.scanPauseMs ?? 60_000,
+      maxConcurrentMarkets,
     });
   }
 
@@ -1878,10 +2244,17 @@ async function runLive(): Promise<void> {
     if (expiryCheckIntervalId) { clearInterval(expiryCheckIntervalId); expiryCheckIntervalId = null; }
     if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
     clearInterval(reconcileIntervalId);
+    // clearInterval(tokenBalanceSyncId); // DISABLED — token balance sync
 
     try {
-      printMarketSummary(currentDiscoveryCandidate?.question ?? String(currentMarketId));
-      await engine.scheduler.unregister(strategy.id);
+      // Закрываем все активные слоты: сводка + unregister стратегий
+      for (const slot of activeMarkets.values()) {
+        printMarketSummary(slot);
+        await engine.scheduler.unregister(slot.strategy.id);
+      }
+      activeMarkets.clear();
+      orderToSlot.clear();
+
       engine.scheduler.stop();
       engine.orderEventBridge.stop();
       fillOrchestrator.unregister();

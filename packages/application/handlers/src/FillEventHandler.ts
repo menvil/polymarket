@@ -5,33 +5,34 @@
  * Получает raw fill-событие (WsUserFillDto или совместимый Record),
  * маршрутизирует по статусу WsFillStatus:
  *
- * - MATCHED   → парсит Fill, кеширует в `_pendingFills`, НЕ публикует.
- *   Токены ещё не на блокчейне — стратегия не должна пытаться продавать.
+ * - MATCHED   → парсит Fill(s), публикует FILL_RECEIVED немедленно.
+ *   Portfolio обновляется сразу — стратегия может выставить SELL.
+ *   Если CLOB отклонит SELL (cross-outcome mint, finality не достигнута),
+ *   ExecutionEngine установит rejection cooldown, retry на следующем тике.
+ *   Fills кэшируются в `_pendingFills` для потенциального отката при FAILED.
  *
- * - MINED     → держим fill в кеше, НЕ публикуем, ждём CONFIRMED.
- *   Токены включены в блок, но finality не достигнута.
- *   Для cross-outcome mint-сделок (обе стороны BUY) CLOB отклоняет SELL
- *   до CONFIRMED — публикация при MINED вызывает спам rejection-ов.
- *   Для обычных (transfer) сделок CONFIRMED приходит через 2-5 секунд,
- *   потеря скорости незначительна по сравнению с 5-минутными маркетами.
+ * - MINED     → логируем, ждём finality. Fills уже обработаны при MATCHED.
  *
- * - CONFIRMED → достаёт Fill из кеша (или парсит из raw при отсутствии),
- *   публикует FILL_RECEIVED. Токены finalized on-chain — SELL безопасен.
+ * - CONFIRMED → finality достигнута. Если fill уже опубликован при MATCHED —
+ *   просто очищаем кэш (rollback больше не нужен). Если MATCHED был пропущен
+ *   (рестарт бота) — fallback: парсим из raw и публикуем FILL_RECEIVED.
+ *   ProcessFillUseCase idempotency guard обеспечивает «exactly once» обработку.
  *
- * - FAILED    → публикует FILL_FAILED (требует reconciliation)
+ * - FAILED    → публикует FILL_FAILED с кэшированными fills для отката Portfolio.
+ *   FillOrchestrator вызовет PortfolioService.reverseFill() для каждого fill.
+ *
  * - остальные → логирует trace, игнорирует (RETRYING и т.д.)
+ *
+ * ### Multi-maker fills:
+ * В cross-outcome trades один WS-event может содержать несколько наших maker_orders
+ * (cancel-and-replace race, лестница ордеров). `FillMapper.allFromPolymarketTradeEvent()`
+ * создаёт отдельный Fill для каждого нашего ордера. Все fills кэшируются и публикуются
+ * независимо.
  *
  * ### Ответственность:
  * - НЕ обновляет Portfolio (это задача ProcessFillUseCase через FillOrchestrator)
- * - Кеш pending fills — in-memory, живёт до CONFIRMED или рестарта бота
+ * - Кеш pending fills — in-memory, живёт до CONFIRMED/FAILED или рестарта бота
  * - Только маршрутизация по статусу и публикация событий
- *
- * ### Почему только CONFIRMED (не MINED):
- * На Polymarket cross-outcome BUY (обе стороны покупают) = минтинг новых токенов.
- * Свежеминченные токены доступны для торговли только после finality (CONFIRMED).
- * CLOB возвращает "not enough balance/allowance" при SELL пока статус MINED.
- * Обычные transfer-fills (REDEEM) также ждут CONFIRMED — задержка 2-5 секунд
- * при 5-минутных маркетах несущественна.
  *
  * @example
  * ```typescript
@@ -51,30 +52,33 @@ import { FillMapper } from '@polymarket/fill';
 import { TimestampService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 
-/** Статусы, при которых парсим и кешируем Fill (но НЕ публикуем) */
-const FILL_PARSE_STATUSES = new Set(['MATCHED']);
-/** Статус включения в блок — держим fill в кеше, НЕ публикуем, ждём CONFIRMED */
+/** Статусы, при которых парсим, кешируем и ПУБЛИКУЕМ Fill (Portfolio обновляется сразу) */
+const FILL_PUBLISH_ON_MATCH_STATUSES = new Set(['MATCHED']);
+/** Статус включения в блок — fill уже обработан при MATCHED, ждём finality */
 const FILL_HOLD_STATUSES = new Set(['MINED']);
-/** Статусы finality: публикуем кешированный Fill */
-const FILL_PUBLISH_STATUSES = new Set(['CONFIRMED']);
+/** Статус finality — fallback-публикация если MATCHED был пропущен, иначе cleanup кеша */
+const FILL_CONFIRM_STATUSES = new Set(['CONFIRMED']);
 /** Статусы, сигнализирующие об ошибке исполнения */
 const FILL_FAILED_STATUSES = new Set(['FAILED']);
 
 export class FillEventHandler {
   /**
    * Кеш распарсенных fills, ожидающих on-chain подтверждения.
-   * Ключ — строковый fillId. Заполняется при MATCHED, очищается при CONFIRMED.
+   * Ключ — rawId (UUID трейда из WS). Значение — массив fills (>1 при multi-maker).
+   * Заполняется при MATCHED, очищается при CONFIRMED или FAILED.
+   *
+   * @remarks
+   * При FAILED кэшированные fills передаются в FILL_FAILED событие
+   * для отката Portfolio (PortfolioService.reverseFill).
    */
-  private readonly _pendingFills = new Map<string, Fill>();
+  private readonly _pendingFills = new Map<string, Fill[]>();
 
   /**
-   * Множество уже опубликованных fillId.
-   * Защита от дублирования: Polymarket может присылать CONFIRMED несколько раз.
-   * Без дедупликации FillEventHandler публиковал бы FILL_RECEIVED повторно
-   * (fallback-парсинг при отсутствии в кеше), что могло вызвать двойную реакцию стратегии:
-   * «SELL подтверждён» → новый BUY → совместно с уже ожидающим BUY = две покупки, один SELL.
+   * Множество уже опубликованных rawId.
+   * Защита от дублирования: MATCHED публикует fill, CONFIRMED не должен повторять.
+   * Без дедупликации двойная публикация вызывает двойную реакцию стратегии.
    */
-  private readonly _publishedFillIds = new Set<string>();
+  private readonly _publishedRawIds = new Set<string>();
 
   /**
    * Создаёт FillEventHandler.
@@ -98,10 +102,11 @@ export class FillEventHandler {
    * @remarks
    * Алгоритм:
    * 1. Извлекаем status из raw (WsFillStatus)
-   * 2. MATCHED  → парсим Fill, кешируем в _pendingFills (НЕ публикуем)
-   * 3. MINED / CONFIRMED → достаём Fill из кеша, публикуем FILL_RECEIVED
-   * 4. FAILED   → публикуем FILL_FAILED (без парсинга Fill — транзакция упала)
-   * 5. Остальные (RETRYING и т.д.) → trace-лог, игнорируем
+   * 2. MATCHED   → парсим Fill(s), кешируем, публикуем FILL_RECEIVED немедленно
+   * 3. MINED     → логируем, ожидаем finality (fill уже обработан)
+   * 4. CONFIRMED → fallback-публикация если MATCHED пропущен, иначе cleanup кеша
+   * 5. FAILED    → публикуем FILL_FAILED с fills для отката Portfolio
+   * 6. Остальные (RETRYING и т.д.) → trace-лог, игнорируем
    */
   public async handle(raw: Record<string, unknown>, accountId: AccountId): Promise<void> {
     const status = typeof raw['status'] === 'string' ? raw['status'] : 'UNKNOWN';
@@ -112,21 +117,19 @@ export class FillEventHandler {
       return;
     }
 
-    if (FILL_PARSE_STATUSES.has(status)) {
-      this._cacheMatchedFill(raw, accountId, rawId);
+    if (FILL_PUBLISH_ON_MATCH_STATUSES.has(status)) {
+      await this._handleMatchedFill(raw, accountId, rawId);
       return;
     }
 
     if (FILL_HOLD_STATUSES.has(status)) {
-      // MINED: токены в блоке, но finality ещё не достигнута.
-      // Cross-outcome MINT fills (обе стороны BUY) — SELL отклоняется CLOB до CONFIRMED.
-      // Держим fill в кеше (_pendingFills уже заполнен при MATCHED), ждём CONFIRMED.
-      this._logger.debug('Fill MINED — holding for CONFIRMED', { rawId });
+      // MINED: fill уже обработан при MATCHED, ожидаем finality.
+      this._logger.debug('Fill MINED — already processed at MATCHED, waiting for CONFIRMED', { rawId });
       return;
     }
 
-    if (FILL_PUBLISH_STATUSES.has(status)) {
-      await this._publishCachedOrParsedFill(raw, accountId, rawId, status);
+    if (FILL_CONFIRM_STATUSES.has(status)) {
+      await this._handleConfirmedFill(raw, accountId, rawId);
       return;
     }
 
@@ -135,22 +138,23 @@ export class FillEventHandler {
   }
 
   /**
-   * Парсит и кеширует fill при статусе MATCHED.
+   * Парсит, кеширует и публикует fill(s) при статусе MATCHED.
    *
    * @param raw - Raw fill-событие
    * @param accountId - AccountId пользователя
    * @param rawId - ID события для логирования
    *
    * @remarks
-   * НЕ публикует FILL_RECEIVED — токены ещё не on-chain.
-   * Стратегия не должна получать сигнал до MINED/CONFIRMED.
+   * Публикует FILL_RECEIVED немедленно — стратегия может начать SELL.
+   * Fills остаются в _pendingFills для потенциального отката при FAILED.
+   * При multi-maker trade кэшируется и публикуется массив fills.
    */
-  private _cacheMatchedFill(
+  private async _handleMatchedFill(
     raw: Record<string, unknown>,
     accountId: AccountId,
     rawId: string,
-  ): void {
-    const result = FillMapper.fromPolymarketTradeEvent(raw, accountId);
+  ): Promise<void> {
+    const result = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
     if (!result.ok) {
       this._logger.error('Failed to parse fill event', {
         error: result.error.message,
@@ -159,66 +163,110 @@ export class FillEventHandler {
       return;
     }
 
-    const { fill } = result.value;
-    this._pendingFills.set(rawId, fill);
-    this._logger.debug('Fill cached, waiting for on-chain confirmation', {
-      fillId: String(fill.id),
-      orderId: String(fill.orderId),
-    });
-  }
+    const fills = result.value.map((r) => r.fill);
 
-  /**
-   * Публикует fill при статусе MINED или CONFIRMED.
-   *
-   * @param raw - Raw fill-событие
-   * @param accountId - AccountId пользователя
-   * @param rawId - ID fill-события (ключ в _pendingFills)
-   * @param status - Текущий статус (MINED | CONFIRMED)
-   *
-   * @remarks
-   * ### Алгоритм:
-   * 1. Дедупликация: если fillId уже в `_publishedFillIds` → debug-лог, выход.
-   *    Защита от дублирования: Polymarket присылает CONFIRMED несколько раз.
-   * 2. Пробуем достать fill из `_pendingFills` (fast path — MATCHED был раньше).
-   * 3. Если нет в кеше — парсим из raw напрямую (fallback).
-   *    Это покрывает два случая:
-   *    - CONFIRMED приходит без предшествующего MATCHED (биржа может пропустить шаг)
-   *    - Бот перезапустился между MATCHED и CONFIRMED
-   * 4. Публикуем FILL_RECEIVED, добавляем fillId в `_publishedFillIds`.
-   */
-  private async _publishCachedOrParsedFill(
-    raw: Record<string, unknown>,
-    accountId: AccountId,
-    rawId: string,
-    status: string,
-  ): Promise<void> {
-    // Дедупликация: Polymarket может слать CONFIRMED несколько раз.
-    // Повторная публикация могла бы вызвать двойную реакцию стратегии на fill-событие.
-    if (this._publishedFillIds.has(rawId)) {
-      this._logger.debug('Fill already published, ignoring duplicate CONFIRMED', { rawId, status });
+    // Кешируем для потенциального FAILED отката
+    this._pendingFills.set(rawId, fills);
+
+    if (fills.length > 1) {
+      this._logger.info('Multi-maker fill matched — publishing all fills immediately', {
+        rawId,
+        fillCount: fills.length,
+        orderIds: fills.map((f) => String(f.orderId)),
+      });
+    }
+
+    // Публикуем FILL_RECEIVED немедленно — не ждём CONFIRMED
+    const tsResult = TimestampService.fromDate(this._clock.now());
+    if (!tsResult.ok) {
+      this._logger.error('Failed to create receivedAt timestamp', {
+        error: tsResult.error.message,
+      });
       return;
     }
 
-    let fill = this._pendingFills.get(rawId);
+    for (const fill of fills) {
+      await this._eventBus.publish({
+        type: 'FILL_RECEIVED',
+        fill,
+        receivedAt: tsResult.value,
+      });
 
-    if (fill) {
+      this._logger.info('Fill published on MATCHED (early processing)', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        side: fill.side,
+        size: fill.size.toNumber(),
+        price: fill.price.toNumber(),
+      });
+    }
+
+    this._publishedRawIds.add(rawId);
+  }
+
+  /**
+   * Обрабатывает fill при статусе CONFIRMED (finality достигнута).
+   *
+   * @param raw - Raw fill-событие
+   * @param accountId - AccountId пользователя
+   * @param rawId - ID fill-события
+   *
+   * @remarks
+   * ### Нормальный flow (MATCHED → CONFIRMED):
+   * Fill уже опубликован при MATCHED. Очищаем _pendingFills — откат больше не нужен.
+   *
+   * ### Fallback (MATCHED пропущен, например рестарт бота):
+   * Парсим fill из raw и публикуем FILL_RECEIVED.
+   * ProcessFillUseCase idempotency guard (markIfNotExists) предотвращает двойную обработку.
+   */
+  private async _handleConfirmedFill(
+    raw: Record<string, unknown>,
+    accountId: AccountId,
+    rawId: string,
+  ): Promise<void> {
+    // Нормальный flow: fill уже опубликован при MATCHED
+    if (this._publishedRawIds.has(rawId)) {
+      // Finality достигнута — откат невозможен.
+      // Публикуем FILL_CONFIRMED чтобы:
+      // 1. Сбросить exchange rejection cooldown (токены теперь on-chain, SELL безопасен)
+      // 2. Тригернуть стратегию на retry SELL (после cross-outcome mint rejection)
+      const confirmedFills = this._pendingFills.get(rawId);
+      this._pendingFills.delete(rawId);
+
+      if (confirmedFills && confirmedFills.length > 0) {
+        const tsResult = TimestampService.fromDate(this._clock.now());
+        if (tsResult.ok) {
+          await this._eventBus.publish({
+            type: 'FILL_CONFIRMED',
+            fills: confirmedFills,
+            receivedAt: tsResult.value,
+          });
+        }
+      }
+
+      this._logger.debug('Fill CONFIRMED — on-chain finality, FILL_CONFIRMED published', { rawId });
+      return;
+    }
+
+    // Fallback: MATCHED был пропущен (рестарт бота, WS reconnect).
+    // Публикуем FILL_RECEIVED — ProcessFillUseCase idempotency guard обработает корректно.
+    this._logger.info('Fill CONFIRMED without prior MATCHED — fallback publish', { rawId });
+
+    let fills = this._pendingFills.get(rawId);
+
+    if (fills) {
       this._pendingFills.delete(rawId);
     } else {
-      // Fallback: парсим из raw (MATCHED мог быть пропущен или бот перезапустился)
-      this._logger.debug('Fill not in cache, parsing from on-chain event directly', {
-        rawId,
-        status,
-      });
-      const result = FillMapper.fromPolymarketTradeEvent(raw, accountId);
+      const result = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
       if (!result.ok) {
         this._logger.error('Failed to parse fill event', {
           error: result.error.message,
           rawId,
-          status,
+          status: 'CONFIRMED',
         });
         return;
       }
-      fill = result.value.fill;
+      fills = result.value.map((r) => r.fill);
     }
 
     const tsResult = TimestampService.fromDate(this._clock.now());
@@ -229,19 +277,20 @@ export class FillEventHandler {
       return;
     }
 
-    await this._eventBus.publish({
-      type: 'FILL_RECEIVED',
-      fill,
-      receivedAt: tsResult.value,
-    });
+    for (const fill of fills) {
+      await this._eventBus.publish({
+        type: 'FILL_RECEIVED',
+        fill,
+        receivedAt: tsResult.value,
+      });
 
-    this._publishedFillIds.add(rawId);
+      this._logger.info('Fill event published (CONFIRMED fallback)', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+      });
+    }
 
-    this._logger.info('Fill event published', {
-      fillId: String(fill.id),
-      orderId: String(fill.orderId),
-      status,
-    });
+    this._publishedRawIds.add(rawId);
   }
 
   /**
@@ -251,16 +300,99 @@ export class FillEventHandler {
    * @param rawId - ID события для логирования
    *
    * @remarks
-   * Не парсит Fill — транзакция никогда не была исполнена.
-   * Публикует FILL_FAILED для reconciliation.
+   * Публикует FILL_FAILED для отката Portfolio.
+   * Если fills закэшированы при MATCHED — передаёт их в событии для reversal.
+   * Удаляет fills из кэша (_pendingFills).
    */
   private async _handleFailedFill(raw: Record<string, unknown>, rawId: string): Promise<void> {
+    // Достаём кэшированные fills для отката Portfolio
+    const cachedFills = this._pendingFills.get(rawId);
+    if (cachedFills) {
+      this._pendingFills.delete(rawId);
+      this._logger.warn('Failed fill has cached fills for rollback', {
+        rawId,
+        fillCount: cachedFills.length,
+      });
+    }
+
+    // Убираем из published — fill провалился
+    this._publishedRawIds.delete(rawId);
+
     const fillId = asFillId(rawId);
     if (!fillId) {
       this._logger.warn('Failed fill has unparseable fillId, skipping FILL_FAILED event', { rawId });
       return;
     }
 
+    // Для TAKER: orderId из taker_order_id
+    // Для MAKER: может быть несколько ордеров — публикуем FILL_FAILED для каждого
+    const traderSide = typeof raw['trader_side'] === 'string' ? raw['trader_side'] : '';
+    const makerAddressRaw = raw['maker_address'];
+    const ownerRaw = raw['owner'];
+
+    if (traderSide === 'MAKER') {
+      // Находим все наши maker_orders и публикуем FILL_FAILED для каждого
+      const makerOrdersRaw = raw['maker_orders'];
+      const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
+
+      const tsResult = TimestampService.fromDate(this._clock.now());
+      if (!tsResult.ok) {
+        this._logger.error('Failed to create receivedAt timestamp for failed fill', {
+          error: tsResult.error.message,
+        });
+        return;
+      }
+
+      let publishedCount = 0;
+      for (const mo of makerOrders) {
+        if (mo === null || typeof mo !== 'object') continue;
+        const entry = mo as Record<string, unknown>;
+
+        // Проверяем что это наш ордер (по owner UUID или maker_address)
+        let isOurs = false;
+        if (typeof ownerRaw === 'string' && ownerRaw.length > 0 && entry['owner'] === ownerRaw) {
+          isOurs = true;
+        }
+        if (
+          !isOurs &&
+          typeof makerAddressRaw === 'string' &&
+          makerAddressRaw.length > 0 &&
+          typeof entry['maker_address'] === 'string' &&
+          (entry['maker_address'] as string).toLowerCase() === makerAddressRaw.toLowerCase()
+        ) {
+          isOurs = true;
+        }
+
+        if (!isOurs) continue;
+
+        const orderIdRaw = typeof entry['order_id'] === 'string' ? entry['order_id'] : '';
+        const orderId = asOrderId(orderIdRaw);
+        if (!orderId) continue;
+
+        const effectiveFillId = asFillId(`${rawId}:${orderIdRaw}`) ?? fillId;
+
+        await this._eventBus.publish({
+          type: 'FILL_FAILED',
+          fillId: effectiveFillId,
+          orderId,
+          receivedAt: tsResult.value,
+          fills: cachedFills,
+        });
+        publishedCount++;
+      }
+
+      if (publishedCount > 0) {
+        this._logger.warn('Fill failed events published (maker)', {
+          rawId,
+          count: publishedCount,
+        });
+      } else {
+        this._logger.warn('Failed fill: no matching maker_orders found', { rawId });
+      }
+      return;
+    }
+
+    // TAKER path: один orderId
     const rawOrderId = typeof raw['taker_order_id'] === 'string' ? raw['taker_order_id'] : '';
     const orderId = asOrderId(rawOrderId);
     if (!orderId) {
@@ -281,8 +413,9 @@ export class FillEventHandler {
       fillId,
       orderId,
       receivedAt: tsResult.value,
+      fills: cachedFills,
     });
 
-    this._logger.warn('Fill failed event published', { fillId, orderId });
+    this._logger.warn('Fill failed event published', { fillId, orderId, hasFillsForRollback: !!cachedFills });
   }
 }

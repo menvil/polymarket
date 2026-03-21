@@ -183,7 +183,8 @@ export class PolymarketRestAdapterFactory {
     // Политики
     const constraintsPolicy = new PolymarketMarketConstraintsPolicy(
       marketDataClient,
-      logger
+      logger,
+      (tokenId) => orderClient.getFeeRate(tokenId)
     );
 
     // Передаём PortfolioProjector в BalancePolicy для мгновенных проверок баланса

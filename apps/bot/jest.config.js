@@ -42,6 +42,7 @@ export default {
     '^@polymarket/trade$': '<rootDir>/../../packages/domain/entities/trade/src/index.ts',
     '^@polymarket/use-cases$': '<rootDir>/../../packages/application/use-cases/src/index.ts',
     '^@polymarket/backtesting$': '<rootDir>/../../packages/infrastructure/backtesting/src/index.ts',
+    '^@polymarket/in-memory$': '<rootDir>/../../packages/infrastructure/in-memory/src/index.ts',
     '^@polymarket/snapshot-readers$': '<rootDir>/../../packages/infrastructure/persistence/snapshot-readers/src/index.ts',
     '^@polymarket/handlers$': '<rootDir>/../../packages/application/handlers/src/index.ts',
     '^@polymarket/market-state$': '<rootDir>/../../packages/application/market-state/src/index.ts',

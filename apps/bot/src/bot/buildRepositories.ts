@@ -21,7 +21,7 @@ import {
   InMemoryOrderRepository,
   InMemoryPortfolioStore,
   InMemoryProcessedFillRepository,
-} from '@polymarket/backtesting';
+} from '@polymarket/in-memory';
 
 /** Результат построения репозиториев */
 export interface Repositories {

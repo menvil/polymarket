@@ -33,8 +33,8 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId, OrderId } from '@polymarket/ids';
-import { asOrderId } from '@polymarket/ids';
+import type { AccountId, OrderId, InstrumentId } from '@polymarket/ids';
+import { asOrderId, asInstrumentId } from '@polymarket/ids';
 import type { FillEventHandler, OrderUpdateHandler, VenueOrderUpdate } from '@polymarket/handlers';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
 import type { WsOrderUpdateDto } from '../ws/dto/WsUserEventDto.js';
@@ -80,6 +80,7 @@ export class UserEventFeedAdapter {
     private readonly _onReconnect?: () => Promise<void>,
     private readonly _makerAddress?: string,
     private readonly _onMatchedOnExchange?: (orderId: OrderId) => void,
+    private readonly _onInFlightFill?: (instrumentId: InstrumentId) => void,
   ) {
     this._logger = logger.child({ component: 'UserEventFeedAdapter' });
   }
@@ -113,7 +114,7 @@ export class UserEventFeedAdapter {
         timestamp: dto.timestamp,
       });
 
-      // Fill в пути (MATCHED/MINED/CONFIRMED) → помечаем orderId как MATCHED.
+      // Fill в пути → помечаем orderId как MATCHED.
       // Это блокирует CancelOrderUseCase от отмены ордера с in-flight fill.
       //
       // Без этого TAKER cross-outcome MINT fills вызывают phantom position:
@@ -121,8 +122,38 @@ export class UserEventFeedAdapter {
       // 2. Стратегия отменяет ордер (isMatchedOnExchange = false)
       // 3. Cancel успешен на CLOB, но on-chain MINT завершается
       // 4. Токены в portfolio но не на CLOB balance → SELL невозможен навсегда
-      if (dto.status !== 'FAILED' && this._onMatchedOnExchange) {
+      //
+      // Помечаем ордер при MATCHED и MINED (в обоих случаях cancel опасен).
+      // НЕ маркируем при CONFIRMED: ProcessFillUseCase сразу снимет флаг.
+      // При FAILED — fill не исполнился, маркировать не нужно.
+      const shouldMarkOrder = dto.status !== 'FAILED' && dto.status !== 'CONFIRMED';
+      if (shouldMarkOrder && this._onMatchedOnExchange) {
         this._markOrderFromFill(dto);
+      }
+
+      // Instrument-level tracking: помечаем инструмент как имеющий in-flight fills.
+      // ТОЛЬКО при MATCHED — первое подтверждение in-flight fill.
+      //
+      // НЕ маркируем при MINED: fill уже обработан при MATCHED,
+      // ProcessFillUseCase уже снял флаг через clearInFlightFills.
+      // Повторная маркировка при MINED создаёт deadlock:
+      //   MATCHED → markInFlightFill → process → clearInFlightFills → стратегия SELL
+      //   MINED → markInFlightFill снова → FillEventHandler: "already processed" →
+      //   FILL_RECEIVED не публикуется → clearInFlightFills НИКОГДА не вызывается →
+      //   hasInFlightFills=true навсегда → стратегия HOLD навсегда.
+      //
+      // Order-level tracking (shouldMarkOrder) маркирует и MINED — это безопасно,
+      // т.к. order-level флаг снимается ProcessFillUseCase для каждого fill.
+      const shouldMarkInstrument = dto.status === 'MATCHED';
+      if (shouldMarkInstrument && this._onInFlightFill) {
+        const instrumentId = asInstrumentId(dto.asset_id);
+        if (instrumentId) {
+          this._logger.debug('[USER-EVENT] marking instrument as having in-flight fill', {
+            asset_id: dto.asset_id,
+            status: dto.status,
+          });
+          this._onInFlightFill(instrumentId);
+        }
       }
 
       // Явный маппинг WsUserFillDto → Record<string, unknown>

@@ -51,8 +51,8 @@ import type {
 } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
-import { InMemoryOrderRepository } from '../../../../infrastructure/backtesting/src/InMemoryOrderRepository.js';
-import { InMemoryProcessedFillRepository } from '../../../../infrastructure/backtesting/src/InMemoryProcessedFillRepository.js';
+import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
+import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 

@@ -48,6 +48,14 @@ function makeOrder(id: OrderId, strategyId?: string) {
 function makeScheduler() {
   return {
     onOrderChanged: jest.fn(),
+    onFillForInstrument: jest.fn(),
+  };
+}
+
+function makeExecutionEngine() {
+  return {
+    clearExchangeRejectionCooldown: jest.fn(),
+    clearPostCancelCooldown: jest.fn(),
   };
 }
 
@@ -60,6 +68,9 @@ function makeOrderStateStore(orders: Map<string, any> = new Map()) {
     markMatchedOnExchange: jest.fn(),
     clearMatchedOnExchange: jest.fn(),
     isMatchedOnExchange: jest.fn().mockReturnValue(false),
+    markInFlightFill: jest.fn(),
+    hasInFlightFills: jest.fn().mockReturnValue(false),
+    clearInFlightFills: jest.fn(),
   };
 }
 
@@ -80,6 +91,7 @@ function makeDeps(overrides: Partial<OrderEventBridgeDeps> = {}): OrderEventBrid
   return {
     eventBus: makeEventBus() as any,
     scheduler: makeScheduler() as any,
+    executionEngine: makeExecutionEngine() as any,
     orderStateStore: makeOrderStateStore() as any,
     orderRepo: makeOrderRepo() as any,
     logger: makeLogger() as any,
@@ -101,10 +113,10 @@ describe('OrderEventBridge', () => {
   // ── Подписки ────────────────────────────────────────
 
   describe('start', () => {
-    it('should subscribe to 6 order event types', () => {
+    it('should subscribe to 6 order event types + FILL_RECEIVED + FILL_CONFIRMED', () => {
       bridge.start();
 
-      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(6);
+      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(8);
       const types = (deps.eventBus.subscribe as any).mock.calls.map((c: any[]) => c[0]);
       expect(types).toContain('ORDER_ACCEPTED');
       expect(types).toContain('ORDER_REJECTED');
@@ -112,6 +124,8 @@ describe('OrderEventBridge', () => {
       expect(types).toContain('ORDER_EXPIRED');
       expect(types).toContain('ORDER_PARTIALLY_FILLED');
       expect(types).toContain('ORDER_FILLED');
+      expect(types).toContain('FILL_RECEIVED');
+      expect(types).toContain('FILL_CONFIRMED');
     });
   });
 
@@ -230,6 +244,42 @@ describe('OrderEventBridge', () => {
     });
   });
 
+  // ── FILL_RECEIVED ─────────────────────────────────
+
+  describe('FILL_RECEIVED', () => {
+    it('should notify scheduler via onFillForInstrument', () => {
+      bridge.start();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('FILL_RECEIVED', {
+        type: 'FILL_RECEIVED',
+        fill: { tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } },
+        receivedAt: {},
+      });
+
+      expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
+    });
+  });
+
+  // ── FILL_CONFIRMED ──────────────────────────────────
+
+  describe('FILL_CONFIRMED', () => {
+    it('should clear in-flight fills, exchange rejection cooldown, and notify scheduler', () => {
+      bridge.start();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('FILL_CONFIRMED', {
+        type: 'FILL_CONFIRMED',
+        fills: [{ tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
+        receivedAt: {},
+      });
+
+      expect((deps.orderStateStore as any).clearInFlightFills).toHaveBeenCalled();
+      expect((deps.executionEngine as any).clearExchangeRejectionCooldown).toHaveBeenCalled();
+      expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
+    });
+  });
+
   // ── Edge cases ──────────────────────────────────────
 
   describe('edge cases', () => {
@@ -287,7 +337,7 @@ describe('OrderEventBridge', () => {
       bridge.start();
       bridge.stop();
 
-      // All 6 unsubscribe functions should have been called
+      // All 8 unsubscribe functions should have been called
       const unsubs = (deps.eventBus.subscribe as any).mock.results.map((r: any) => r.value);
       for (const unsub of unsubs) {
         expect(unsub).toHaveBeenCalled();

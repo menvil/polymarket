@@ -205,4 +205,46 @@ export class PolymarketBalanceRestClient {
 
     return actualBalance;
   }
+
+  /**
+   * Получить баланс И allowance для конкретного токена исхода.
+   *
+   * @param tokenId - Идентификатор токена исхода
+   * @returns Объект с balance и allowance (конвертированы из минимальных единиц)
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Расширенная версия `getOutcomeTokenBalance` — возвращает также allowance.
+   * Диагностика: при SELL rejection различает `balance=0` (settlement lag)
+   * от `allowance=0` (token approval не выставлен).
+   *
+   * @example
+   * ```typescript
+   * const { balance, allowance } = await client.getOutcomeTokenBalanceAllowance('0x123...');
+   * if (balance > 0 && allowance === 0) {
+   *   console.log('Token approval needed');
+   * }
+   * ```
+   */
+  async getOutcomeTokenBalanceAllowance(tokenId: string): Promise<{ balance: number; allowance: number }> {
+    const params: Record<string, string> = {
+      asset_type: 'CONDITIONAL',
+      token_id: tokenId,
+      signature_type: this.restClient.getSignatureType().toString(),
+    };
+
+    const response = await this.restClient.get<BalanceAllowanceResponse>(
+      '/balance-allowance',
+      params
+    );
+
+    const OUTCOME_TOKEN_DECIMALS = 6;
+    const divisor = Math.pow(10, OUTCOME_TOKEN_DECIMALS);
+    const rawBalance = parseFloat(response.balance);
+    const rawAllowance = parseFloat(response.allowance);
+    return {
+      balance: isNaN(rawBalance) ? 0 : rawBalance / divisor,
+      allowance: isNaN(rawAllowance) ? 0 : rawAllowance / divisor,
+    };
+  }
 }

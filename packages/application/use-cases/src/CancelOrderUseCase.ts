@@ -32,7 +32,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import { asInstrumentId, assetIdToString } from '@polymarket/ids';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IOrderRepository, IOrderStateStore, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { OrderService } from './services/OrderService.js';
@@ -160,7 +160,7 @@ export class CancelOrderUseCase {
       }
     } else {
       // SELL: освободить токенную резервацию
-      const instrumentId = asInstrumentId(assetIdToString(cancelledOrder.asset));
+      const instrumentId = assetIdToInstrumentId(cancelledOrder.asset);
       if (instrumentId) {
         const remainingQty = cancelledOrder.remainingSize.value();
         const releaseResult = this._deps.portfolioService.releaseTokenReservation(

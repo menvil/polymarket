@@ -25,7 +25,7 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { FillOrchestrator } from '../../src/FillOrchestrator.js';
 import { ProcessFillUseCase } from '@polymarket/use-cases';
-import { OrderService } from '@polymarket/use-cases';
+// OrderService не нужен — ProcessFillDeps использует orderStateStore напрямую
 import { PortfolioService } from '@polymarket/use-cases';
 import { LedgerService } from '@polymarket/use-cases';
 import { EventBus } from '@polymarket/event-bus';
@@ -51,8 +51,8 @@ import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
-import { InMemoryOrderRepository } from '../../../../infrastructure/backtesting/src/InMemoryOrderRepository.js';
-import { InMemoryProcessedFillRepository } from '../../../../infrastructure/backtesting/src/InMemoryProcessedFillRepository.js';
+import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
+import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -156,12 +156,11 @@ describe('FillOrchestrator (integration)', () => {
     portfolioStore = new TestPortfolioStore();
     eventBus = new EventBus(LOGGER);
 
-    const orderService = new OrderService(orderRepo, LOGGER);
     const portfolioService = new PortfolioService(portfolioStore, LOGGER);
     const ledgerService = new LedgerService(LOGGER);
 
     processFillUseCase = new ProcessFillUseCase({
-      orderService,
+      orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
       orderRepo,

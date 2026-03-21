@@ -60,6 +60,9 @@ function makeOrderStateStore(): IOrderStateStore {
     markMatchedOnExchange: fn(),
     clearMatchedOnExchange: fn(),
     isMatchedOnExchange: fn().mockReturnValue(false),
+    markInFlightFill: fn(),
+    hasInFlightFills: fn().mockReturnValue(false),
+    clearInFlightFills: fn(),
   };
 }
 

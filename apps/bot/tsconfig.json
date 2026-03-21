@@ -27,6 +27,7 @@
       "@polymarket/position":         ["../../packages/domain/entities/position/src/index.ts"],
       "@polymarket/ledger":           ["../../packages/domain/accounting/ledger/src/index.ts"],
       "@polymarket/backtesting":      ["../../packages/infrastructure/backtesting/src/index.ts"],
+      "@polymarket/in-memory":        ["../../packages/infrastructure/in-memory/src/index.ts"],
       "@polymarket/exchange/adapters": ["../../packages/infrastructure/polymarket/adapters/index.ts"],
       "@polymarket/exchange/ws":      ["../../packages/infrastructure/polymarket/ws/index.ts"],
       "@polymarket/exchange/rest":    ["../../packages/infrastructure/polymarket/rest/index.ts"],

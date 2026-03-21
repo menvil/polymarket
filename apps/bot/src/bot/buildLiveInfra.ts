@@ -33,7 +33,7 @@ import type { AccountId } from '@polymarket/ids';
 import type { IExchangeClient } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
 import { ReconcileTradesUseCase, PortfolioService } from '@polymarket/use-cases';
-import { asInstrumentId, assetIdToString } from '@polymarket/ids';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
 import { PortfolioReplayService, OrderReconciler } from '@polymarket/recovery';
 import type { ICurrentBalanceProvider, IVenueOrderProvider } from '@polymarket/recovery';
@@ -101,6 +101,8 @@ export interface LiveInfra {
   readonly orderReconciler: OrderReconciler;
   /** Fallback polling: сверка fills через REST (safety net) */
   readonly reconcileTradesUseCase: ReconcileTradesUseCase;
+  /** Проверка баланса токена на CLOB (для диагностики SELL rejection) */
+  readonly balanceRestClient: PolymarketBalanceRestClient;
 }
 
 // ── Реализация ────────────────────────────────────────────────────────────────
@@ -206,7 +208,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
         }
       } else {
         // SELL: освобождаем резервацию токенов
-        const instrumentId = asInstrumentId(assetIdToString(cancelledOrder.asset));
+        const instrumentId = assetIdToInstrumentId(cancelledOrder.asset);
         if (instrumentId) {
           const releaseResult = portfolioServiceForCancel.releaseTokenReservation(
             orderAccountId,
@@ -291,6 +293,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     // onMatchedOnExchange: помечаем ордер как MATCHED, чтобы CancelOrderUseCase пропустил его.
     // Устраняет race: partial fill → стратегия cancels → fill 4.68 на "не найден" → portfolio desync.
     (orderId) => { repos.orderRepo.markMatchedOnExchange(orderId); },
+    // onInFlightFill: instrument-level tracking — блокирует стратегию даже если ордер уже cancelled/deleted.
+    // Решает race: cancel → place → fill(старый) → двойная покупка.
+    (instrumentId) => { repos.orderRepo.markInFlightFill(instrumentId); },
   );
 
   return {
@@ -299,5 +304,6 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     portfolioReplayService,
     orderReconciler,
     reconcileTradesUseCase,
+    balanceRestClient,
   };
 }

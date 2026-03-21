@@ -36,7 +36,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, InstrumentId } from '@polymarket/ids';
-import { asInstrumentId, assetIdToString, accountIdToString } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import { Money } from '@polymarket/value-objects';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
@@ -241,8 +241,9 @@ export class PortfolioService {
    * ### BUY fill:
    * 1. `applyDebit(orderPrice × size)` — дебетует зарезервированные средства
    *    (используем цену ордера, а не цену fill, чтобы точно совпасть с резервацией)
-   * 2. Позиция LONG: quantity += size, пересчёт averageEntryPrice по VWAP
+   * 2. Позиция LONG: quantity += size - feeInTokens, пересчёт averageEntryPrice по VWAP
    *    (averageEntryPrice считается по fill.price — реальная цена исполнения)
+   *    feeInTokens = feeUSDC / price (Polymarket списывает fee в shares при BUY)
    *
    * ### SELL fill:
    * 1. Снимаем токенную резервацию (best effort — бот мог перезапуститься)
@@ -261,14 +262,7 @@ export class PortfolioService {
       ));
     }
 
-    // Для POLYMARKET_CTF_TOKEN извлекаем числовой tokenId напрямую,
-    // чтобы InstrumentId совпадал с тем, что использует стратегия (asInstrumentId(tokenId)).
-    // assetIdToString() для CTF_TOKEN возвращает "POLYMARKET_CTF_TOKEN:888...",
-    // что создаёт InstrumentId отличный от "888..." → portfolio.getPosition() возвращает undefined.
-    const rawTokenId = fill.tokenId.type === 'POLYMARKET_CTF_TOKEN'
-      ? fill.tokenId.tokenId
-      : assetIdToString(fill.tokenId);
-    const instrumentId = asInstrumentId(rawTokenId);
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
     if (!instrumentId) {
       return Err(new TradingError(
         `Invalid tokenId: ${String(fill.tokenId)}`,
@@ -312,7 +306,7 @@ export class PortfolioService {
       ));
     }
 
-    // Обновить позицию
+    // Обновить позицию (с учётом fee deduction для BUY)
     const positionResult = this._applyPositionUpdate(balanceResult.value, instrumentId, fill);
     if (!positionResult.ok) {
       return Err(new TradingError(
@@ -364,10 +358,7 @@ export class PortfolioService {
       ));
     }
 
-    const rawTokenId = fill.tokenId.type === 'POLYMARKET_CTF_TOKEN'
-      ? fill.tokenId.tokenId
-      : assetIdToString(fill.tokenId);
-    const instrumentId = asInstrumentId(rawTokenId);
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
     if (!instrumentId) {
       return Err(new TradingError(
         `Invalid tokenId: ${String(fill.tokenId)}`,
@@ -434,6 +425,135 @@ export class PortfolioService {
     return Ok(undefined);
   }
 
+  /**
+   * Откатывает ранее применённый Fill (при on-chain FAILED).
+   *
+   * @param fill - Fill, который был ранее применён через applyFill/applyDirectFill
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Обратная операция к applyFill/applyDirectFill.
+   * Вызывается FillOrchestrator при получении FILL_FAILED после MATCHED.
+   *
+   * ### BUY fill reversal:
+   * 1. Позиция LONG: quantity -= (fillQty - feeInTokens) — снимаем то что было добавлено
+   * 2. `applyCredit(price × size)` — возвращаем USDC на available баланс
+   *    (резервация уже была consumed при applyFill, кредитуем в available)
+   *
+   * ### SELL fill reversal:
+   * 1. `applyDirectDebit(price × size)` — снимаем USDC, которые были зачислены
+   * 2. Позиция LONG: quantity += fillQty — восстанавливаем позицию
+   *
+   * ### Ограничения:
+   * - averageEntryPrice не восстанавливается точно (VWAP пересчёт необратим)
+   * - Если позиция была закрыта (SELL) и удалена из Portfolio — создаётся заново
+   * - FAILED — крайне редкое событие, точность reversal достаточна
+   */
+  public reverseFill(fill: Fill): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion?.(fill.accountId) ?? 0;
+    const portfolio = this._store.get(fill.accountId);
+    if (!portfolio) {
+      return Err(new TradingError(
+        'Portfolio not found for fill reversal',
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
+      ));
+    }
+
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    if (!instrumentId) {
+      return Err(new TradingError(
+        `Invalid tokenId for fill reversal: ${String(fill.tokenId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const fillQty = fill.size.value();
+    const notional = fill.price.value().times(fillQty);
+    const money = Money.of(notional, 'USDC');
+
+    let portfolioAfterBalance: Portfolio;
+
+    if (fill.side === 'BUY') {
+      // BUY reversal: кредитуем USDC обратно (резервация была consumed, возвращаем в available)
+      const creditResult = portfolio.applyCredit(money);
+      if (!creditResult.ok) {
+        return Err(new TradingError(
+          `Failed to credit USDC for BUY fill reversal: ${creditResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = creditResult.value;
+
+      // Уменьшаем позицию (обратно BUY: снимаем добавленные токены)
+      const existing = portfolioAfterBalance.getPosition(instrumentId);
+      const currentQty = existing?.quantity.value() ?? new Decimal(0);
+
+      let feeInTokens = new Decimal(0);
+      if (!fill.fee.isZero()) {
+        const feeUSDC = fill.fee.quantity.amount().value();
+        feeInTokens = feeUSDC.div(fill.price.value());
+      }
+      const netFillQty = fillQty.minus(feeInTokens);
+      const newQty = currentQty.minus(netFillQty);
+
+      if (newQty.lte(0)) {
+        // Позиция полностью обнулилась — SimplePosition с qty=0 будет удалена upsertPosition
+        const zeroPosition = new SimplePosition({
+          instrumentId,
+          quantity: new Decimal(0),
+          averageEntryPrice: new Decimal(0),
+          side: 'LONG',
+        });
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition);
+      } else {
+        const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
+        const reversePosition = new SimplePosition({
+          instrumentId,
+          quantity: newQty,
+          averageEntryPrice: avgPrice,
+          side: 'LONG',
+        });
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition);
+      }
+    } else {
+      // SELL reversal: дебетуем USDC (снимаем зачисленную выручку)
+      const debitResult = portfolio.applyDirectDebit(money);
+      if (!debitResult.ok) {
+        return Err(new TradingError(
+          `Failed to debit USDC for SELL fill reversal: ${debitResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = debitResult.value;
+
+      // Восстанавливаем позицию (обратно SELL: добавляем проданные токены)
+      const existing = portfolioAfterBalance.getPosition(instrumentId);
+      const currentQty = existing?.quantity.value() ?? new Decimal(0);
+      const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
+      const newQty = currentQty.plus(fillQty);
+
+      const restorePosition = new SimplePosition({
+        instrumentId,
+        quantity: newQty,
+        averageEntryPrice: avgPrice,
+        side: 'LONG',
+      });
+      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition);
+    }
+
+    const saveResult = this._store.save(portfolioAfterBalance, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.warn('Fill reversed in portfolio (on-chain FAILED)', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      side: fill.side,
+      size: fillQty.toString(),
+      notional: notional.toString(),
+    });
+    return Ok(undefined);
+  }
+
   // ── Приватные методы ───────────────────────────────────────────────────────
 
   /**
@@ -460,11 +580,21 @@ export class PortfolioService {
       const currentQty = existing?.quantity.value() ?? new Decimal(0);
       const currentAvg = existing?.averageEntryPrice.value() ?? new Decimal(0);
 
-      const newQty = currentQty.plus(fillQty);
-      // Средневзвешенная цена входа
+      // Polymarket on-chain settlement списывает fee из получаемых токенов при BUY.
+      // feeInTokens = feeUSDC / price — конвертация из USDC в shares.
+      // Если fee = 0 (MAKER или zero-fee рынок) → feeInTokens = 0, ничего не вычитается.
+      let feeInTokens = new Decimal(0);
+      if (!fill.fee.isZero()) {
+        const feeUSDC = fill.fee.quantity.amount().value();
+        feeInTokens = feeUSDC.div(fillPrice);
+      }
+      const netFillQty = fillQty.minus(feeInTokens);
+
+      const newQty = currentQty.plus(netFillQty);
+      // Средневзвешенная цена входа (по net quantity — реально полученные токены)
       const newAvg = currentQty.isZero()
         ? fillPrice
-        : currentQty.times(currentAvg).plus(fillQty.times(fillPrice)).dividedBy(newQty);
+        : currentQty.times(currentAvg).plus(netFillQty.times(fillPrice)).dividedBy(newQty);
 
       const newPosition = new SimplePosition({
         instrumentId,

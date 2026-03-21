@@ -43,6 +43,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { OrderId, AccountId, AssetId, MarketId } from '@polymarket/ids';
 import { asOrderId, assetIdToString, isPolymarketCtfToken, asFillId, asMarketId, unsafeMarketId, AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { calculatePolymarketTakerFee } from '@polymarket/fill';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, SubmitOrderParams, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
@@ -283,8 +284,11 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         try {
           const price = Price.of(new Decimal(t.price));
           const size = Quantity.of(new Decimal(t.size));
-          const feeBps = t.fee_rate_bps ? parseFloat(t.fee_rate_bps) : 0;
-          const feeAmount = price.value().mul(size.value()).mul(feeBps).div(10000);
+          // MAKER fee = 0 на Polymarket. Комиссию платит только TAKER.
+          const isMaker = t.trader_side === 'MAKER';
+          const feeAmount = (!isMaker && t.fee_rate_bps && parseFloat(t.fee_rate_bps) > 0)
+            ? calculatePolymarketTakerFee(size.value(), price.value())
+            : new Decimal(0);
 
           const knownStatuses = ['MATCHED', 'MINED', 'CONFIRMED', 'RETRYING', 'FAILED'] as const;
           type KnownStatus = typeof knownStatuses[number];

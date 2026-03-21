@@ -122,6 +122,9 @@ function makeOrderStateStore(order?: Order, matchedOrderIds: string[] = []): IOr
     isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockImplementation(
       (id) => matched.has(String(id)),
     ),
+    markInFlightFill: jest.fn<IOrderStateStore['markInFlightFill']>(),
+    hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockReturnValue(false),
+    clearInFlightFills: jest.fn<IOrderStateStore['clearInFlightFills']>(),
   };
 }
 

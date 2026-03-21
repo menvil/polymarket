@@ -50,6 +50,7 @@ import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore } fro
 import type { IEventBus } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 
@@ -130,12 +131,32 @@ export class ProcessFillUseCase {
       }
 
       this._deps.ledgerService.recordFill(fill);
-      this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
+      this._clearInFlightFlags(fill);
+
+      // Диагностика fee для direct fill (BUY).
+      // PortfolioService.applyDirectFill тоже вычтет feeInTokens из позиции.
+      if (fill.side === 'BUY' && !fill.fee.isZero()) {
+        const feeUSDC = fill.fee.quantity.amount().value();
+        const fillPrice = fill.price.value();
+        const feeInTokens = feeUSDC.div(fillPrice);
+        this._logger.info('BUY direct fill fee deduction applied', {
+          fillId: String(fill.id),
+          grossTokens: fill.size.value().toNumber(),
+          feeUSDC: feeUSDC.toNumber(),
+          feeInTokens: feeInTokens.toNumber(),
+          netTokens: fill.size.value().minus(feeInTokens).toNumber(),
+        });
+      }
+
       return Ok(undefined);
     }
 
     // Шаги 3–6 выполняются синхронно (без yield) — атомарное обновление состояния.
     // Первый await появляется только на шаге 7 (publishAll).
+    //
+    // КРИТИЧНО: clearMatchedOnExchange вызывается ВСЕГДА (в finally-pattern).
+    // Без этого ошибка на любом шаге (applyFill, portfolio, ledger) оставляет
+    // флаг matchedOnExchange навсегда → hasMatchedOrders: true → стратегия зависает в HOLD.
 
     // Шаг 3: Применить Fill к Order (sync)
     const fillData: FillData = {
@@ -153,6 +174,9 @@ export class ProcessFillUseCase {
         orderId: String(fill.orderId),
         error: applyResult.error.message,
       });
+      // Снимаем флаг MATCHED даже при ошибке — fill уже on-chain,
+      // повторная пометка произойдёт при следующем fill-событии если нужно.
+      this._clearInFlightFlags(fill);
       return Err(new TradingError(
         `Failed to apply fill to order: ${applyResult.error.message}`,
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
@@ -174,24 +198,97 @@ export class ProcessFillUseCase {
         fillId: String(fill.id),
         error: portfolioResult.error.message,
       });
+      // Снимаем флаг MATCHED даже при ошибке portfolio.
+      // Ордер уже сохранён как terminal (шаг 4), поэтому он не появится
+      // в getOpenOrdersByInstrument. Но для чистоты — снимаем флаг.
+      this._clearInFlightFlags(fill);
       return Err(new TradingError(
         `Failed to update portfolio: ${portfolioResult.error.message}`,
         { context: { fillId: String(fill.id) } },
       ));
     }
 
+    // Шаг 5b: Снять остаток резервации при FILLED через dust threshold.
+    // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
+    // (остаток 0.007233 < 0.01 = FILLED), но PortfolioService.applyFill снял резервацию
+    // только на fillQty. Остаток застревает навсегда, блокируя будущие ордера.
+    if (updatedOrder.isTerminal) {
+      const remainingQty = updatedOrder.remainingSize.value();
+      if (remainingQty.gt(0)) {
+        if (fill.side === 'SELL') {
+          // SELL: снять остаток токенной резервации
+          const instrumentId = assetIdToInstrumentId(fill.tokenId);
+          if (instrumentId) {
+            const releaseResult = this._deps.portfolioService.releaseTokenReservation(
+              fill.accountId,
+              instrumentId,
+              remainingQty,
+            );
+            if (releaseResult.ok) {
+              this._logger.info('Released dust token reservation after SELL FILLED', {
+                fillId: String(fill.id),
+                orderId: String(fill.orderId),
+                dustQty: remainingQty.toNumber(),
+              });
+            }
+          }
+        } else {
+          // BUY: снять остаток USDC резервации (remainingQty × orderPrice)
+          const dustNotional = remainingQty.times(order.price.value());
+          const releaseResult = this._deps.portfolioService.releaseReservation(
+            fill.accountId,
+            dustNotional,
+          );
+          if (releaseResult.ok) {
+            this._logger.info('Released dust USDC reservation after BUY FILLED', {
+              fillId: String(fill.id),
+              orderId: String(fill.orderId),
+              dustQty: remainingQty.toNumber(),
+              dustNotional: dustNotional.toNumber(),
+            });
+          }
+        }
+      }
+    }
+
     // Шаг 6: Запись в Ledger (sync)
     this._deps.ledgerService.recordFill(fill);
 
-    // Шаг 7: Публикация событий (первый await — yield-окно открывается здесь)
-    // К этому моменту: Order = FILED (terminal), Portfolio = обновлён.
+    // Шаг 7: Снимаем все in-flight флаги ПЕРЕД публикацией событий.
+    // КРИТИЧНО: publishAll (шаг 8) — await, создаёт yield-окно.
+    // Обработчики ORDER_FILLED (OrderEventBridge) запланируют тик стратегии
+    // через microtask (Promise.resolve().then(processQueue)).
+    // Если флаги не сняты ДО yield — стратегия увидит hasInFlightFills=true
+    // на тике, который выполнится ВНУТРИ await → зависнет в HOLD навсегда.
+    // Безопасно: если другой fill для того же ордера ещё в пути,
+    // следующий MATCHED-event заново поставит флаг.
+    this._clearInFlightFlags(fill);
+
+    // Шаг 8: Публикация событий.
+    // К этому моменту: Order = terminal, Portfolio = обновлён, флаги сняты.
+    // Стратегия на тике увидит чистое состояние.
     const events = updatedOrder.pullEvents();
     await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
 
-    // Шаг 8: Снимаем флаг MATCHED — fill осел on-chain, опасность "in-flight" миновала.
-    // Если другой fill для того же ордера ещё в пути, следующий MATCHED-event
-    // заново поставит флаг. Без очистки ордер навсегда в matchedOrders snapshot'а.
-    this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
+    // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
+    // Polymarket on-chain settlement списывает fee из получаемых токенов (BUY).
+    // feeInTokens = feeUSDC / price — конвертация из USDC в shares.
+    // PortfolioService уже вычел feeInTokens из позиции при BUY.
+    if (fill.side === 'BUY' && !fill.fee.isZero()) {
+      const feeUSDC = fill.fee.quantity.amount().value();
+      const fillPrice = fill.price.value();
+      const feeInTokens = feeUSDC.div(fillPrice);
+      const grossTokens = fill.size.value();
+      this._logger.info('BUY fill fee deduction applied to portfolio', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        grossTokens: grossTokens.toNumber(),
+        feeUSDC: feeUSDC.toNumber(),
+        feeInTokens: feeInTokens.toNumber(),
+        netTokens: grossTokens.minus(feeInTokens).toNumber(),
+        price: fillPrice.toNumber(),
+      });
+    }
 
     this._logger.info('Fill processed successfully', {
       fillId: String(fill.id),
@@ -200,5 +297,24 @@ export class ProcessFillUseCase {
     });
 
     return Ok(undefined);
+  }
+
+  /**
+   * Снимает все in-flight флаги: order-level matchedOnExchange + instrument-level inFlightFills.
+   *
+   * @param fill - Обработанный fill
+   *
+   * @remarks
+   * Вызывается после обработки CONFIRMED fill (или на error path).
+   * Очищает оба уровня tracking:
+   * - `clearMatchedOnExchange(orderId)` — order-level (для CancelOrderUseCase)
+   * - `clearInFlightFills(instrumentId)` — instrument-level (для StrategyScheduler snapshot)
+   */
+  private _clearInFlightFlags(fill: Fill): void {
+    this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    if (instrumentId) {
+      this._deps.orderStateStore.clearInFlightFills(instrumentId);
+    }
   }
 }

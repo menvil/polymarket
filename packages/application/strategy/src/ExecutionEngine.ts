@@ -54,6 +54,23 @@ import type {
 // ── Публичные типы ─────────────────────────────────────────
 
 /**
+ * Провайдер баланса токена на бирже (CLOB).
+ *
+ * @remarks
+ * Опциональная диагностика: при SELL rejection запрашивает реальный баланс
+ * токена на CLOB, чтобы определить причину отклонения (settlement lag, allowance и т.д.).
+ */
+export interface ITokenBalanceChecker {
+  /**
+   * Возвращает баланс и allowance токена на CLOB.
+   *
+   * @param tokenId - ID токена (raw, например "888...")
+   * @returns Объект с balance и allowance, или undefined при ошибке запроса
+   */
+  getTokenBalanceAllowance(tokenId: string): Promise<{ balance: number; allowance: number } | undefined>;
+}
+
+/**
  * Зависимости ExecutionEngine.
  */
 export interface ExecutionEngineDeps {
@@ -64,6 +81,8 @@ export interface ExecutionEngineDeps {
   /** Каталог инструментов — для валидации constraints (reject-only, без коррекции) */
   readonly catalog: IMarketCatalog;
   readonly logger: ILogger;
+  /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
+  readonly tokenBalanceChecker?: ITokenBalanceChecker;
 }
 
 /**
@@ -121,8 +140,79 @@ export class ExecutionEngine {
   /** 5 секунд cooldown после отклонения биржей */
   private static readonly _EXCHANGE_REJECTION_COOLDOWN_MS = 5_000;
 
+  /**
+   * Cooldown per instrumentId после cancel ордера.
+   * Ключ: instrumentId. Значение: timestamp последнего cancel (Date.now()).
+   *
+   * @remarks
+   * Защищает от cancel-and-replace race condition на Polymarket:
+   * cancel на CLOB НЕ отменяет on-chain fill (MINT уже в пути).
+   * Без этого cooldown стратегия отменяет ордер, сразу ставит новый,
+   * а fill на отменённый ордер всё равно приходит → двойная/тройная покупка.
+   *
+   * Polymarket on-chain settlement: 15-25 секунд (Polygon finality).
+   * 20 секунд — безопасный запас.
+   */
+  private readonly _postCancelCooldowns = new Map<string, number>();
+
+  /**
+   * 3 секунды cooldown после cancel — ожидание MATCHED/MINED события.
+   *
+   * @remarks
+   * Не ждём полный on-chain settlement (15-20с).
+   * Если MATCHED/MINED приходит за 3с — matchedOnExchange блокирует стратегию
+   * до CONFIRMED (отдельный механизм в StrategyScheduler).
+   * Если за 3с ничего не пришло — ордер реально отменён, можно торговать.
+   */
+  private static readonly _POST_CANCEL_COOLDOWN_MS = 3_000;
+
   constructor(private readonly _deps: ExecutionEngineDeps) {
     this._logger = _deps.logger.child({ component: 'ExecutionEngine' });
+  }
+
+  /**
+   * Сбрасывает post-cancel cooldown для инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   *
+   * @remarks
+   * Вызывается при получении CONFIRMED fill для инструмента.
+   * On-chain settlement завершён → безопасно размещать новые ордера.
+   * Без этого стратегия ждёт полные 20 секунд даже если fill пришёл раньше.
+   */
+  public clearPostCancelCooldown(instrumentId: InstrumentId): void {
+    const key = String(instrumentId);
+    if (this._postCancelCooldowns.delete(key)) {
+      this._logger.debug('ExecutionEngine: post-cancel cooldown cleared (fill received)', {
+        instrumentId: key,
+      });
+    }
+  }
+
+  /**
+   * Сбрасывает exchange rejection cooldown для инструмента (обе стороны).
+   *
+   * @param instrumentId - ID инструмента
+   *
+   * @remarks
+   * Вызывается при получении FILL_CONFIRMED — on-chain settlement завершён,
+   * токены доступны для SELL. Без этого стратегия ждёт полные 5 секунд cooldown
+   * даже после finality, теряя время на retry.
+   */
+  public clearExchangeRejectionCooldown(instrumentId: InstrumentId): void {
+    const key = String(instrumentId);
+    const buyKey = `${key}:BUY`;
+    const sellKey = `${key}:SELL`;
+    let cleared = false;
+
+    if (this._exchangeRejectionCooldowns.delete(buyKey)) cleared = true;
+    if (this._exchangeRejectionCooldowns.delete(sellKey)) cleared = true;
+
+    if (cleared) {
+      this._logger.debug('ExecutionEngine: exchange rejection cooldown cleared (fill confirmed)', {
+        instrumentId: key,
+      });
+    }
   }
 
   /**
@@ -263,6 +353,19 @@ export class ExecutionEngine {
       });
       return false;
     }
+
+    // Post-cancel cooldown: блокируем PLACE на этом инструменте на 20 секунд.
+    // Cancel на CLOB не отменяет on-chain fill — MINT может быть уже в пути.
+    // Без cooldown: cancel → place(новый) → fill(старый) приходит → двойная покупка.
+    const instrumentKey = String(ctx.instrumentId);
+    this._postCancelCooldowns.set(instrumentKey, Date.now());
+    this._logger.info('ExecutionEngine: post-cancel cooldown set', {
+      strategyId: ctx.strategyId,
+      instrumentId: instrumentKey,
+      orderId: String(intent.orderId),
+      cooldownMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS,
+    });
+
     return true;
   }
 
@@ -286,17 +389,34 @@ export class ExecutionEngine {
    * Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
    */
   private async _executePlace(ctx: ExecutionContext, intent: PlaceIntent): Promise<'placed' | 'skipped' | 'failed'> {
+    const nowForCooldown = Date.now();
+    const instrumentKey = String(ctx.instrumentId);
+
+    // ── Post-cancel cooldown ────────────────────────────────
+    // После cancel ордера ждём 20 секунд — on-chain fill может прийти
+    // на отменённый ордер (cancel CLOB ≠ cancel on-chain MINT).
+    // Без этого: cancel → place → fill(старый) → двойная/тройная покупка.
+    const lastCancelMs = this._postCancelCooldowns.get(instrumentKey) ?? 0;
+    if (nowForCooldown - lastCancelMs < ExecutionEngine._POST_CANCEL_COOLDOWN_MS) {
+      this._logger.debug('ExecutionEngine: skip — post-cancel cooldown active', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        side: intent.side,
+        cooldownRemainingMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS - (nowForCooldown - lastCancelMs),
+      });
+      return 'skipped';
+    }
+
     // ── Exchange rejection cooldown ──────────────────────────
     // Если биржа недавно отклонила ордер по этому инструменту/стороне —
     // пропускаем размещение до истечения cooldown.
     // Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
-    const rejectionKey = `${String(ctx.instrumentId)}:${intent.side}`;
-    const nowForCooldown = Date.now();
+    const rejectionKey = `${instrumentKey}:${intent.side}`;
     const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey) ?? 0;
     if (nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
-      this._logger.debug('ExecutionEngine: skip — exchange rejection cooldown active', {
+      this._logger.info('ExecutionEngine: skip — exchange rejection cooldown active', {
         strategyId: ctx.strategyId,
-        instrumentId: String(ctx.instrumentId),
+        instrumentId: instrumentKey,
         side: intent.side,
         cooldownRemainingMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS - (nowForCooldown - lastRejectedMs),
       });
@@ -321,8 +441,10 @@ export class ExecutionEngine {
     const effectiveSize = intent.size;
 
     if (info) {
-      // 1. Reject если size < minOrderSize
-      if (effectiveSize.value().lt(info.minOrderSize.value())) {
+      // 1. Reject BUY если size < minOrderSize.
+      // SELL не блокируем по minOrderSize — Polymarket позволяет продать остаток
+      // целиком даже если он меньше minOrderSize (после fee deduction и т.п.).
+      if (intent.side === 'BUY' && effectiveSize.value().lt(info.minOrderSize.value())) {
         this._logger.warn('ExecutionEngine: reject — size below minOrderSize (strategy must use constraints)', {
           strategyId: ctx.strategyId,
           instrumentId: String(ctx.instrumentId),
@@ -372,8 +494,11 @@ export class ExecutionEngine {
       // portfolioTokenQty: диагностика десинка in-memory vs on-chain.
       // Если qty совпадает с размером ордера — скорее всего token approval не выставлен.
       // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.
-      const portfolioTokenQty = this._deps.portfolioStore.get(ctx.accountId)
+      const currentPortfolio = this._deps.portfolioStore.get(ctx.accountId);
+      const portfolioTokenQty = currentPortfolio
         ?.getPosition?.(ctx.instrumentId)?.quantity.value().toNumber();
+      const tokenReserved = currentPortfolio
+        ?.tokenReservations?.get(ctx.instrumentId)?.toNumber();
       this._logger.warn('ExecutionEngine: place failed — exchange rejection cooldown set', {
         orderId: String(orderId),
         strategyId: ctx.strategyId,
@@ -383,11 +508,35 @@ export class ExecutionEngine {
         error: result.error.message,
         cooldownMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS,
         portfolioTokenQty,
+        tokenReserved,
       });
+
+      // Диагностика: при SELL rejection проверяем реальный баланс токена на CLOB.
+      // Позволяет отличить settlement lag от allowance проблемы.
+      if (intent.side === 'SELL' && this._deps.tokenBalanceChecker) {
+        const rawTokenId = ctx.asset.type === 'POLYMARKET_CTF_TOKEN'
+          ? ctx.asset.tokenId
+          : String(ctx.instrumentId);
+        this._deps.tokenBalanceChecker.getTokenBalanceAllowance(rawTokenId)
+          .then((clobBalance) => {
+            if (clobBalance) {
+              this._logger.warn('ExecutionEngine: CLOB token balance after SELL rejection', {
+                strategyId: ctx.strategyId,
+                instrumentId: String(ctx.instrumentId),
+                clobBalance: clobBalance.balance,
+                clobAllowance: clobBalance.allowance,
+                portfolioTokenQty,
+                tokenReserved,
+              });
+            }
+          })
+          .catch(() => { /* best effort */ });
+      }
+
       return 'failed';
     }
 
-    this._logger.debug('ExecutionEngine: order placed', {
+    this._logger.info('ExecutionEngine: order placed', {
       orderId: String(result.value),
       strategyId: ctx.strategyId,
       side: intent.side,

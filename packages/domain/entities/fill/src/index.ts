@@ -23,3 +23,4 @@ export type { ExecutionMetadata, TradeStatus } from './ExecutionMetadata.js';
 export { FillMapper } from './mappers/FillMapper.js';
 export type { Liquidity } from './value-objects/Liquidity.js';
 export { ALL_LIQUIDITY, isValidLiquidity } from './value-objects/Liquidity.js';
+export { calculatePolymarketTakerFee } from './polymarket-fee.js';

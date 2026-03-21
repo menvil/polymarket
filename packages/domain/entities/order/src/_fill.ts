@@ -10,10 +10,22 @@
  * - VWAP: взвешенная средняя цена
  */
 
+import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, Price } from '@polymarket/value-objects';
 import type { FillState, FillData } from './OrderState.js';
 import { TradingError } from '@polymarket/errors';
+
+/**
+ * Порог «пыли» для определения полного исполнения.
+ *
+ * @remarks
+ * Polymarket CLOB округляет fill size до 2 знаков после запятой.
+ * Если ордер на 5.071832064 → fill приходит на 5.07.
+ * Остаток 0.001832064 меньше минимального размера ордера (0.01).
+ * Без dust threshold ордер навсегда застревает в PARTIALLY_FILLED.
+ */
+const DUST_THRESHOLD = new Decimal('0.01');
 
 /**
  * Создаёт пустое fill-состояние для новой заявки
@@ -74,10 +86,25 @@ export function addFill(
 }
 
 /**
- * Проверяет что заявка полностью исполнена
+ * Проверяет что заявка полностью исполнена.
+ *
+ * @remarks
+ * Учитывает dust threshold: если остаток (orderSize - filledSize) < DUST_THRESHOLD (0.01),
+ * ордер считается полностью исполненным. Это необходимо потому что Polymarket CLOB
+ * округляет fill size до 2 знаков после запятой, и остаток может быть меньше
+ * минимального размера ордера.
+ *
+ * @example
+ * ```typescript
+ * // orderSize = 5.071832064, filledSize = 5.07
+ * // remaining = 0.001832064 < 0.01 → true (FILLED)
+ * isFull(state, orderSize); // true
+ * ```
  */
 export function isFull(state: FillState, orderSize: Quantity): boolean {
-  return state.filledSize.equals(orderSize);
+  if (state.filledSize.equals(orderSize)) return true;
+  const remaining = orderSize.value().minus(state.filledSize.value());
+  return remaining.gte(0) && remaining.lt(DUST_THRESHOLD);
 }
 
 /**

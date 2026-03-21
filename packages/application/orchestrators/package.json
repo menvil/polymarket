@@ -19,6 +19,8 @@
     "@polymarket/result":    "workspace:*",
     "@polymarket/errors":    "workspace:*",
     "@polymarket/event-bus": "workspace:*",
+    "@polymarket/ids":       "workspace:*",
+    "@polymarket/ports":     "workspace:*",
     "@polymarket/use-cases": "workspace:*"
   },
   "devDependencies": {

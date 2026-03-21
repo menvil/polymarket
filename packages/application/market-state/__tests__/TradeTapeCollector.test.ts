@@ -157,16 +157,28 @@ describe('TradeTapeCollector', () => {
       expect(() => new TradeTapeCollector(deps, {})).toThrow(RangeError);
     });
 
-    it('принимает конфиг с maxCount', () => {
-      expect(() => new TradeTapeCollector(deps, { maxCount: 100 })).not.toThrow();
+    it('принимает конфиг с maxCount — записывает трейды', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
 
-    it('принимает конфиг с maxAgeMs', () => {
-      expect(() => new TradeTapeCollector(deps, { maxAgeMs: 60_000 })).not.toThrow();
+    it('принимает конфиг с maxAgeMs — вытесняет устаревшие', async () => {
+      const c = new TradeTapeCollector(deps, { maxAgeMs: 60_000 });
+      c.start();
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0));
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 90_000));
+      expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
 
-    it('принимает конфиг с обоими ограничениями', () => {
-      expect(() => new TradeTapeCollector(deps, { maxCount: 100, maxAgeMs: 60_000 })).not.toThrow();
+    it('принимает конфиг с обоими ограничениями — применяет оба', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 2, maxAgeMs: 60_000 });
+      c.start();
+      for (let i = 0; i < 5; i++) {
+        await eventBus.emit(tradeEvent(TOKEN_A, '0.65', `${100 * (i + 1)}`, 'BUY', T0 + i * 1000));
+      }
+      expect(c.getTape(TOKEN_A)?.size()).toBe(2);
     });
   });
 
@@ -389,16 +401,20 @@ describe('TradeTapeCollector', () => {
       expect(recent[1]?.side).toBe('BUY');
     });
 
-    it('getTape().getWindow() возвращает трейды в заданном диапазоне', async () => {
+    it('getTape().getWindow() возвращает трейды в диапазоне с правильным содержимым', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
-      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0));
-      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 1000));
-      await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 2000));
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY',  T0));           // вне окна
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.64', '200', 'SELL', T0 + 1000));    // граница — включён
+      await eventBus.emit(tradeEvent(TOKEN_A, '0.63', '300', 'BUY',  T0 + 2000));    // граница — включён
 
       const w = c.getTape(TOKEN_A)?.getWindow(T0 + 1000, T0 + 2000) ?? [];
       expect(w).toHaveLength(2);
+      expect(w[0]?.side).toBe('SELL');
+      expect(w[0]?.price.value().toString()).toBe('0.64');
+      expect(w[1]?.side).toBe('BUY');
+      expect(w[1]?.price.value().toString()).toBe('0.63');
     });
 
     it('getTape() возвращает undefined если нет трейдов', () => {
@@ -469,21 +485,31 @@ describe('TradeTapeCollector', () => {
   // ── Обработка ошибок ──────────────────────────────────────────────────────
 
   describe('обработка ошибок в обработчике TRADE_RECEIVED', () => {
-    it('логирует ошибку и не падает если _record бросает', async () => {
+    it('логирует ошибку и не падает если _record бросает Error', async () => {
       const c = new TradeTapeCollector(deps, { maxCount: 100 });
       c.start();
 
-      // Передаём невалидный timestamp: append() получит некорректный объект
-      // Проще всего — заставить catalog.get() бросить
       (catalog as any).get = () => { throw new Error('catalog exploded'); };
 
-      // Не бросает наружу
       await expect(eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0))).resolves.not.toThrow();
 
       expect((logger as any).error).toHaveBeenCalledWith(
         'TradeTapeCollector: failed to record trade',
-        expect.objectContaining({ instrumentId: String(TOKEN_A) }),
+        expect.objectContaining({ instrumentId: String(TOKEN_A), err: expect.any(Error) }),
       );
+    });
+
+    it('нормализует non-Error исключение в Error при логировании', async () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      c.start();
+
+      (catalog as any).get = () => { throw 42; };
+
+      await expect(eventBus.emit(tradeEvent(TOKEN_A, '0.65', '100', 'BUY', T0))).resolves.not.toThrow();
+
+      const call = (logger as any).error.mock.calls[0][1];
+      expect(call.err).toBeInstanceOf(Error);
+      expect(call.err.message).toBe('42');
     });
   });
 

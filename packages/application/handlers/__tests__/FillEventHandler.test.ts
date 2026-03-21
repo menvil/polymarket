@@ -64,85 +64,111 @@ describe('FillEventHandler', () => {
     handler = new FillEventHandler(eventBus, clock, logger);
   });
 
-  it('MATCHED: кеширует fill, НЕ публикует FILL_RECEIVED', async () => {
+  // ── MATCHED → немедленная публикация ──────────────────────────────────────
+
+  it('MATCHED: парсит fill и публикует FILL_RECEIVED немедленно', async () => {
     const raw = makeValidRaw(); // status: 'MATCHED'
     const mapResult = FillMapper.fromPolymarketTradeEvent(raw, ACCOUNT_ID);
     expect(mapResult.ok).toBe(true);
 
     await handler.handle(raw, ACCOUNT_ID);
 
-    expect(eventBus.publish).not.toHaveBeenCalled();
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Fill cached, waiting for on-chain confirmation',
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'FILL_RECEIVED',
+        fill: expect.objectContaining({ id: 'fill-001' }),
+      }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'Fill published on MATCHED (early processing)',
       expect.any(Object),
     );
   });
 
-  it('MINED после MATCHED: держит fill в кеше, НЕ публикует (ждём CONFIRMED)', async () => {
-    // Шаг 1: MATCHED → кешируем
-    await handler.handle(makeValidRaw(), ACCOUNT_ID);
-    expect(eventBus.publish).not.toHaveBeenCalled();
+  // ── MINED → no-op (fill уже обработан при MATCHED) ──────────────────────
 
-    // Шаг 2: MINED → держим в кеше, НЕ публикуем
+  it('MINED после MATCHED: логирует debug, НЕ публикует повторно', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1); // MATCHED опубликовал
+
+    (eventBus.publish as ReturnType<typeof jest.fn>).mockClear();
+
     await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      'Fill MINED — holding for CONFIRMED',
+      'Fill MINED — already processed at MATCHED, waiting for CONFIRMED',
       expect.objectContaining({ rawId: 'fill-001' }),
     );
   });
 
-  it('MATCHED → MINED → CONFIRMED: публикует FILL_RECEIVED ровно один раз из кеша', async () => {
-    // Шаг 1: MATCHED → кешируем
-    await handler.handle(makeValidRaw(), ACCOUNT_ID);
-    // Шаг 2: MINED → держим в кеше
-    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
-    expect(eventBus.publish).not.toHaveBeenCalled();
+  // ── CONFIRMED после MATCHED → публикует FILL_CONFIRMED ──────────────────
 
-    // Шаг 3: CONFIRMED → достаём из кеша и публикуем
+  it('MATCHED → MINED → CONFIRMED: публикует FILL_RECEIVED + FILL_CONFIRMED', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
+    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(2);
+    expect(eventBus.publish).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({ type: 'FILL_RECEIVED' }),
+    );
+    expect(eventBus.publish).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({ type: 'FILL_CONFIRMED' }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill CONFIRMED — on-chain finality, FILL_CONFIRMED published',
+      expect.objectContaining({ rawId: 'fill-001' }),
+    );
+  });
+
+  it('CONFIRMED после MATCHED: публикует FILL_CONFIRMED (не FILL_RECEIVED)', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+
+    (eventBus.publish as ReturnType<typeof jest.fn>).mockClear();
     await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).toHaveBeenCalledTimes(1);
     expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'FILL_RECEIVED',
-        fill: expect.objectContaining({ id: 'fill-001' }),
-        receivedAt: expect.any(Object),
-      }),
+      expect.objectContaining({ type: 'FILL_CONFIRMED' }),
+    );
+  });
+
+  // ── CONFIRMED без MATCHED → fallback публикация ──────────────────────────
+
+  it('CONFIRMED без предшествующего MATCHED (рестарт бота): парсит fallback и публикует', async () => {
+    const raw = { ...makeValidRaw(), status: 'CONFIRMED' };
+    await handler.handle(raw, ACCOUNT_ID);
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'FILL_RECEIVED' }),
     );
     expect(logger.info).toHaveBeenCalledWith(
-      'Fill event published',
-      expect.objectContaining({ status: 'CONFIRMED' }),
-    );
-  });
-
-  it('CONFIRMED после MATCHED: публикует FILL_RECEIVED из кеша', async () => {
-    await handler.handle(makeValidRaw(), ACCOUNT_ID);
-    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
-
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'FILL_RECEIVED',
-        fill: expect.objectContaining({ id: 'fill-001' }),
-      }),
-    );
-  });
-
-  it('MATCHED → MINED → CONFIRMED → CONFIRMED: публикует ровно один раз (дедупликация по _publishedFillIds)', async () => {
-    await handler.handle(makeValidRaw(), ACCOUNT_ID);
-    await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
-    // Первый CONFIRMED — публикует из кеша, добавляет в _publishedFillIds
-    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
-    // Второй CONFIRMED — уже в _publishedFillIds → debug-лог, НЕ публикует
-    await handler.handle({ ...makeValidRaw(), status: 'CONFIRMED' }, ACCOUNT_ID);
-
-    expect(eventBus.publish).toHaveBeenCalledTimes(1);
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Fill already published, ignoring duplicate CONFIRMED',
+      'Fill CONFIRMED without prior MATCHED — fallback publish',
       expect.objectContaining({ rawId: 'fill-001' }),
     );
   });
+
+  // ── Дедупликация: MATCHED → CONFIRMED → CONFIRMED ───────────────────────
+
+  it('MATCHED → CONFIRMED → CONFIRMED: публикует FILL_RECEIVED + FILL_CONFIRMED, второй CONFIRMED — fallback', async () => {
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    // Первый CONFIRMED → FILL_CONFIRMED (fills в кеше)
+    await handler.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
+    // Второй CONFIRMED → rawId в publishedRawIds → FILL_CONFIRMED (но _pendingFills уже удалён → нет fills)
+    await handler.handle({ ...makeValidRaw(), status: 'CONFIRMED' }, ACCOUNT_ID);
+
+    // 1: FILL_RECEIVED (MATCHED), 2: FILL_CONFIRMED (1st CONFIRMED), 3: нет fills → нет publish
+    expect(eventBus.publish).toHaveBeenCalledTimes(2);
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Fill CONFIRMED — on-chain finality, FILL_CONFIRMED published',
+      expect.objectContaining({ rawId: 'fill-001' }),
+    );
+  });
+
+  // ── Ошибки парсинга ──────────────────────────────────────────────────────
 
   it('логирует error и не публикует при невалидном raw (MATCHED)', async () => {
     const raw = { id: 'bad-fill', status: 'MATCHED' }; // невалидный payload
@@ -159,36 +185,31 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('MINED без предшествующего MATCHED: debug-лог «holding», НЕ публикует', async () => {
+  // ── MINED без MATCHED ───────────────────────────────────────────────────
+
+  it('MINED без предшествующего MATCHED: debug-лог, НЕ публикует', async () => {
     const raw = { ...makeValidRaw(), status: 'MINED' };
     await handler.handle(raw, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      'Fill MINED — holding for CONFIRMED',
+      'Fill MINED — already processed at MATCHED, waiting for CONFIRMED',
       expect.any(Object),
     );
   });
 
-  it('CONFIRMED без кеша и с полным payload: парсит fallback и публикует', async () => {
-    const raw = { ...makeValidRaw(), status: 'CONFIRMED' };
-    await handler.handle(raw, ACCOUNT_ID);
-
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'FILL_RECEIVED' }),
-    );
-  });
-
-  it('MINED без кеша и с невалидным payload: debug-лог «holding», НЕ пытается парсить', async () => {
+  it('MINED без кеша и с невалидным payload: debug-лог, НЕ пытается парсить', async () => {
     await handler.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      'Fill MINED — holding for CONFIRMED',
+      'Fill MINED — already processed at MATCHED, waiting for CONFIRMED',
       expect.any(Object),
     );
   });
+
+  // ── RETRYING ────────────────────────────────────────────────────────────
 
   it('игнорирует fill со статусом RETRYING', async () => {
     const raw = { ...makeValidRaw(), status: 'RETRYING' };
@@ -197,6 +218,8 @@ describe('FillEventHandler', () => {
 
     expect(eventBus.publish).not.toHaveBeenCalled();
   });
+
+  // ── FAILED ──────────────────────────────────────────────────────────────
 
   it('публикует FILL_FAILED при статусе FAILED', async () => {
     const raw = { ...makeValidRaw(), status: 'FAILED' };
@@ -215,6 +238,23 @@ describe('FillEventHandler', () => {
       expect.any(Object),
     );
   });
+
+  it('MATCHED → FAILED: публикует FILL_FAILED с кэшированными fills для отката', async () => {
+    // MATCHED → parse & publish & cache
+    await handler.handle(makeValidRaw(), ACCOUNT_ID);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+
+    // FAILED → достаёт fills из кеша, прикрепляет к событию
+    await handler.handle({ ...makeValidRaw(), status: 'FAILED' }, ACCOUNT_ID);
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(2);
+    const failedCall = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[1][0];
+    expect(failedCall.type).toBe('FILL_FAILED');
+    expect(failedCall.fills).toBeDefined();
+    expect(failedCall.fills.length).toBeGreaterThan(0);
+  });
+
+  // ── Граничные случаи для rawId и orderId ──────────────────────────────
 
   it('логирует rawId из raw["id"] при ошибке парсинга', async () => {
     const raw = { id: 'fill-bad-123', status: 'MATCHED' };
@@ -244,33 +284,6 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('CONFIRMED: не публикует если TimestampService не может создать timestamp', async () => {
-    // Симулируем невалидный clock — возвращает Invalid Date
-    const badClock: IClock = {
-      now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
-    };
-    const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
-
-    const raw = makeValidRaw();
-    // MATCHED парсится без clock (clock используется только при публикации)
-    await handlerBadClock.handle(raw, ACCOUNT_ID);
-    expect(eventBus.publish).not.toHaveBeenCalled();
-
-    // MINED → держим в кеше (не обращается к clock)
-    await handlerBadClock.handle({ id: 'fill-001', status: 'MINED' }, ACCOUNT_ID);
-    expect(eventBus.publish).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
-
-    // CONFIRMED → пытаемся опубликовать, но clock невалидный → ошибка
-    await handlerBadClock.handle({ id: 'fill-001', status: 'CONFIRMED' }, ACCOUNT_ID);
-
-    expect(eventBus.publish).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to create receivedAt timestamp',
-      expect.any(Object),
-    );
-  });
-
   it('FAILED с пустым id — логирует warn и не публикует FILL_FAILED', async () => {
     // asFillId('') возвращает undefined → ранний возврат без публикации
     await handler.handle({ id: '', status: 'FAILED', taker_order_id: 'order-999' }, ACCOUNT_ID);
@@ -282,8 +295,7 @@ describe('FillEventHandler', () => {
     );
   });
 
-  it('FAILED с taker_order_id не строкой (число) — rawOrderId становится "", warn, нет публикации', async () => {
-    // typeof 123 !== 'string' → rawOrderId = '' → asOrderId('') = undefined → warn
+  it('FAILED с taker_order_id не строкой (число) — warn, нет публикации', async () => {
     await handler.handle({ id: 'fill-001', status: 'FAILED', taker_order_id: 123 }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
@@ -294,7 +306,6 @@ describe('FillEventHandler', () => {
   });
 
   it('FAILED с пустым taker_order_id — логирует warn и не публикует FILL_FAILED', async () => {
-    // asOrderId('') возвращает undefined → ранний возврат без публикации
     await handler.handle({ id: 'fill-001', status: 'FAILED', taker_order_id: '' }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
@@ -305,7 +316,6 @@ describe('FillEventHandler', () => {
   });
 
   it('статус не строка — трактуется как UNKNOWN, trace-лог, нет публикации', async () => {
-    // typeof raw['status'] !== 'string' → status = 'UNKNOWN' → не в FILL_CREATE_STATUSES
     await handler.handle({ status: 42 }, ACCOUNT_ID);
 
     expect(eventBus.publish).not.toHaveBeenCalled();
@@ -315,13 +325,29 @@ describe('FillEventHandler', () => {
     );
   });
 
+  // ── Невалидный clock ───────────────────────────────────────────────────
+
+  it('MATCHED: не публикует если TimestampService не может создать timestamp', async () => {
+    const badClock: IClock = {
+      now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
+    };
+    const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
+
+    await handlerBadClock.handle(makeValidRaw(), ACCOUNT_ID);
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to create receivedAt timestamp',
+      expect.any(Object),
+    );
+  });
+
   it('FAILED: не публикует FILL_FAILED если clock возвращает невалидную дату', async () => {
     const badClock: IClock = {
       now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
     };
     const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
 
-    // id и taker_order_id валидны, но clock невалидный → TimestampService.fromDate fail
     await handlerBadClock.handle(
       { id: 'fill-001', status: 'FAILED', taker_order_id: 'order-999' },
       ACCOUNT_ID,

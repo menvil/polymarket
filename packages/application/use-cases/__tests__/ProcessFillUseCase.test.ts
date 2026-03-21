@@ -155,6 +155,9 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
     clearMatchedOnExchange: jest.fn<IOrderStateStore['clearMatchedOnExchange']>(),
     isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockReturnValue(false),
+    markInFlightFill: jest.fn<IOrderStateStore['markInFlightFill']>(),
+    hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockReturnValue(false),
+    clearInFlightFills: jest.fn<IOrderStateStore['clearInFlightFills']>(),
   };
 }
 
