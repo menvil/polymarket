@@ -69,7 +69,7 @@ import type { BookUpdateHandler } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import { ReplayClock } from '@polymarket/time';
 import {
-  JsonlSnapshotReader,
+  SnapshotReaderFactory,
   SnapshotScanner,
 } from '@polymarket/snapshot-readers';
 
@@ -170,6 +170,19 @@ export interface BacktestConfig {
 }
 
 /**
+ * Интерфейс CryptoPriceStore для BacktestEngine.
+ *
+ * @remarks
+ * Минимальный интерфейс для передачи крипто-цен при реплее.
+ */
+export interface IBacktestCryptoPriceStore {
+  get(symbolOrAsset: string): { targetPrice: number | undefined } | undefined;
+  updatePrice(symbol: string, price: number, timestampMs: number): void;
+  setTargetPrice(symbolOrAsset: string, price: number): void;
+  setResolutionPrice(symbolOrAsset: string, price: number): void;
+}
+
+/**
  * Зависимости бектест-движка.
  */
 export interface BacktestDeps {
@@ -190,6 +203,8 @@ export interface BacktestDeps {
    * видят историческое время. При нарушении монотонности — логируем warn, пропускаем.
    */
   readonly replayClock?: ReplayClock;
+  /** Опциональный store крипто-цен для реплея crypto_price событий */
+  readonly cryptoPriceStore?: IBacktestCryptoPriceStore;
 }
 
 /**
@@ -209,6 +224,8 @@ export interface BacktestResult {
   readonly processedEvents: number;
   /** Общая длительность выполнения в миллисекундах */
   readonly durationMs: number;
+  /** Количество обработанных crypto_price событий */
+  readonly cryptoPriceEvents: number;
   /** Количество ошибок (невалидный JSON, невалидные данные, и т.д.) */
   readonly errors: number;
   /** marketId из последнего обработанного файла */
@@ -277,13 +294,15 @@ export class BacktestEngine {
     let processedFiles = 0;
     let bookEvents = 0;
     let tradeEvents = 0;
+    let cryptoPriceEvents = 0;
     let errors = 0;
     let marketId: MarketId | undefined;
     let instrumentId: InstrumentId | undefined;
 
     for (const filePath of filePaths) {
       this._logger.debug('Processing snapshot file', { filePath });
-      const reader = new JsonlSnapshotReader(filePath);
+      const readerFactory = new SnapshotReaderFactory(this._logger);
+      const reader = readerFactory.create(filePath);
 
       let fileMarketId: MarketId | undefined;
       let fileInstrumentId: InstrumentId | undefined;
@@ -309,6 +328,56 @@ export class BacktestEngine {
               tokenId,
               outcomeIndex,
             });
+            continue;
+          }
+
+          // ── strike_price событие (записано collect-data при открытии рынка) ──
+          if (raw['t'] === 'strike_price' && this._deps.cryptoPriceStore) {
+            const symbol = raw['symbol'] as string;
+            const strikePrice = raw['strikePrice'] as number;
+            if (symbol && typeof strikePrice === 'number') {
+              this._deps.cryptoPriceStore.setTargetPrice(symbol, strikePrice);
+              this._logger.info('Strike price loaded', {
+                symbol,
+                strikePrice,
+              });
+            }
+            continue;
+          }
+
+          // ── crypto_price события (записанные collect-data) ──────────────
+          // Реплеим ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
+          if (raw['t'] === 'crypto_price' && this._deps.cryptoPriceStore) {
+            const symbol = raw['symbol'] as string;
+            const price = raw['price'] as number;
+            const ts = raw['ts'] as number;
+            if (symbol && typeof price === 'number' && typeof ts === 'number') {
+              this._advanceClock(new Date(ts));
+              this._deps.cryptoPriceStore.updatePrice(symbol, price, ts);
+
+              // Обновляем resolution price (последнее значение будет финальным)
+              this._deps.cryptoPriceStore.setResolutionPrice(symbol, price);
+
+              cryptoPriceEvents++;
+              continue;
+            }
+          }
+
+          // ── market_resolved события ────────────────────────────────────────
+          if (raw['t'] === 'market_resolved' && this._deps.cryptoPriceStore) {
+            const symbol = raw['symbol'] as string;
+            const strikePrice = raw['strikePrice'] as number;
+            const resolutionPrice = raw['resolutionPrice'] as number;
+            if (symbol && typeof strikePrice === 'number' && typeof resolutionPrice === 'number') {
+              this._deps.cryptoPriceStore.setTargetPrice(symbol, strikePrice);
+              this._deps.cryptoPriceStore.setResolutionPrice(symbol, resolutionPrice);
+              this._logger.info('Market resolved event replayed', {
+                symbol,
+                strikePrice,
+                resolutionPrice,
+                outcome: raw['outcome'],
+              });
+            }
             continue;
           }
 
@@ -374,6 +443,7 @@ export class BacktestEngine {
       processedFiles,
       bookEvents,
       tradeEvents,
+      cryptoPriceEvents,
       errors,
       durationMs,
     });
@@ -382,6 +452,7 @@ export class BacktestEngine {
       processedFiles,
       bookEvents,
       tradeEvents,
+      cryptoPriceEvents,
       processedEvents,
       durationMs,
       errors,

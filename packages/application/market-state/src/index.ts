@@ -39,3 +39,6 @@ export type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from './TradeTa
 
 export { MarketDataStore } from './MarketDataStore.js';
 export type { MarketDataStoreDeps, MarketDataReason } from './MarketDataStore.js';
+
+export { CryptoPriceStore } from './CryptoPriceStore.js';
+export type { CryptoPriceSnapshot } from './CryptoPriceStore.js';

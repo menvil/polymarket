@@ -27,7 +27,7 @@
  */
 
 export { BacktestEngine } from './BacktestEngine.js';
-export type { BacktestConfig, BacktestDeps, BacktestResult } from './BacktestEngine.js';
+export type { BacktestConfig, BacktestDeps, BacktestResult, IBacktestCryptoPriceStore } from './BacktestEngine.js';
 
 export { MockExchangeClient } from './MockExchangeClient.js';
 export type { SubmittedOrder } from './MockExchangeClient.js';

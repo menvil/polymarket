@@ -70,6 +70,7 @@ export type {
   StrategySchedulerDeps,
   StrategyRegistration,
   IMarketDataStore,
+  ICryptoPriceStore,
 } from './StrategyScheduler.js';
 // IOrderStateStore re-exported from ports for backward compatibility
 export type { IOrderStateStore } from '@polymarket/ports';

@@ -11,5 +11,6 @@
  * - `'FILL'` — исполнение нашего ордера (priority trigger — bypass throttle)
  * - `'ORDER_UPDATE'` — изменился статус ордера (accept, cancel, expire)
  * - `'TIMER'` — heartbeat: maxIdleMs истёк без событий
+ * - `'CRYPTO_PRICE'` — обновилась цена крипто-актива (из RTDS / backtest replay)
  */
-export type TriggerReason = 'BOOK' | 'TRADE' | 'FILL' | 'ORDER_UPDATE' | 'TIMER';
+export type TriggerReason = 'BOOK' | 'TRADE' | 'FILL' | 'ORDER_UPDATE' | 'TIMER' | 'CRYPTO_PRICE';

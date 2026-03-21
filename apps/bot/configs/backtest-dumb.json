@@ -3,15 +3,15 @@
   "strategyParams": {
     "orderSize": 5,
     "buyOffsetPct": 10,
-    "profitMarginPct": 5,
+    "profitMarginPct": 10,
     "repriceThreshold": 0.08
   },
   "market": {
     "source": "snapshots",
     "paths": [
-      "../../packages/apps/collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_635PM-640PM_ET___0xd63862dcb53670f87c4dda7bf5b9a014703b56.jsonl"
+      "../../packages/apps/collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_645PM-700PM_ET___0xc151d0210090eab3e00c0cd44bbb18eb5f4a0e.jsonl.gz"
     ],
-    "outcomeIndex": 1
+    "outcomeIndex": 0
   },
   "resources": {
     "initialBalance": 1000,

@@ -32,9 +32,10 @@ import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import { DataRecorder, NDJSONFormatter, GzipCompressor } from '@polymarket/data-collection';
 import { PolymarketWebSocketManager } from '@polymarket/exchange/ws';
 import { PolymarketWsAdapter } from '@polymarket/exchange/ws';
-import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter } from '@polymarket/exchange/adapters';
+import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter, parseCryptoMeta, computeInterval, BinanceKlinesClient } from '@polymarket/exchange/adapters';
 import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
 import { DnsOverride } from '@polymarket/exchange/dns';
+import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import { loadConfig } from './config.js';
 
@@ -73,6 +74,7 @@ if (config.dnsOverrideEnabled) {
       'clob.polymarket.com',
       'data-api.polymarket.com',
       'ws-subscriptions-clob.polymarket.com',
+      'ws-live-data.polymarket.com',
     ]);
   } catch (err) {
     logger.warn('DNS override install failed, continuing with system DNS', {
@@ -137,6 +139,34 @@ const discovery = new PolymarketMarketDiscoveryAdapter(
   logger,
 );
 
+// ─── RTDS (реал-тайм крипто-цены) ─────────────────────────────────────────────
+
+const rtdsClient = new RtdsWebSocketClient(
+  { url: 'wss://ws-live-data.polymarket.com' },
+  logger,
+);
+const binanceClient = new BinanceKlinesClient(logger);
+
+/**
+ * RTDS symbol → Set<tokenId> для маршрутизации записи цен.
+ *
+ * @remarks
+ * Set, а не одиночный tokenId: несколько рынков могут следить за одним символом
+ * одновременно (BTC 430-445 и BTC 435-440). Каждый получает свою копию crypto_price.
+ */
+const symbolToTokenIds = new Map<string, Set<string>>();
+
+// RTDS → recorder wiring: записываем крипто-цены в тот же .jsonl файл
+// source определяем по формату символа: 'btc/usd' → chainlink, 'btcusdt' → binance
+rtdsClient.onPrice((symbol, price, ts) => {
+  const tokenIds = symbolToTokenIds.get(symbol);
+  if (!tokenIds || tokenIds.size === 0) return;
+  const source = symbol.includes('/') ? 'chainlink' : 'binance';
+  for (const tokenId of tokenIds) {
+    recorder.recordEvent(tokenId, { t: 'crypto_price', symbol, price, ts, source });
+  }
+});
+
 // ─── Состояние ────────────────────────────────────────────────────────────────
 
 /** tokenId → DiscoveredMarket для O(1) проверки подписан ли уже */
@@ -149,6 +179,8 @@ const subscribedMarkets = new Map<string, DiscoveredMarket>();
  * продолжает возвращать active=true даже после истечения.
  */
 const closedMarkets = new Set<string>();
+/** Отложенные таймеры запроса strike price (marketId → timer) */
+const pendingStrikeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // ─── Хелперы ──────────────────────────────────────────────────────────────────
 
@@ -208,11 +240,66 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
     await ws.subscribeToToken(tokenId);
   }
 
+  // Подписка на RTDS для крипто-рынков + запись strike price
+  const cryptoMeta = parseCryptoMeta(candidate.rawMarket);
+  if (cryptoMeta) {
+    // Подписываемся на ОБА topic (Binance + Chainlink) — RTDS может
+    // отправлять цены на любой из них в зависимости от символа
+    for (const sub of cryptoMeta.rtdsSubscriptions) {
+      rtdsClient.subscribe(sub.topic, sub.filter);
+      // Маппинг symbol → tokenIds для маршрутизации в recorder
+      let ids = symbolToTokenIds.get(sub.filter);
+      if (!ids) { ids = new Set(); symbolToTokenIds.set(sub.filter, ids); }
+      ids.add(allTokenIds[0]!);
+    }
+
+    // Strike price = candle open на eventStartTime.
+    // Свеча появляется на Binance только ПОСЛЕ eventStartTime,
+    // поэтому запрашиваем с задержкой (eventStartTime + 5с).
+    const delayMs = Math.max(0, cryptoMeta.eventStartTimeMs - Date.now()) + 5_000;
+    const strikeMeta = { ...cryptoMeta };
+    const strikeTokenId = allTokenIds[0]!;
+    const strikeTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const interval = computeInterval(strikeMeta.endDateMs - strikeMeta.eventStartTimeMs);
+          const kline = await binanceClient.getKline(strikeMeta.binanceSymbol, strikeMeta.eventStartTimeMs, interval);
+          recorder.recordEvent(strikeTokenId, {
+            t: 'strike_price',
+            ts: strikeMeta.eventStartTimeMs,
+            symbol: strikeMeta.rtdsFilter,
+            strikePrice: kline.open,
+            binanceSymbol: strikeMeta.binanceSymbol,
+            interval,
+          });
+          logger.info('Strike price recorded', {
+            symbol: strikeMeta.rtdsFilter,
+            strikePrice: kline.open,
+            eventStartTime: new Date(strikeMeta.eventStartTimeMs).toISOString(),
+          });
+        } catch (err) {
+          logger.warn('Failed to fetch strike price from Binance', {
+            symbol: strikeMeta.binanceSymbol,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
+    }, delayMs);
+    strikeTimer.unref();
+    pendingStrikeTimers.set(marketKey, strikeTimer);
+
+    logger.info('RTDS subscriptions added for crypto market', {
+      subscriptions: cryptoMeta.rtdsSubscriptions.map((s) => `${s.topic}:${s.filter}`),
+      source: cryptoMeta.source,
+    });
+  }
+
   logger.info('Market opened for collection', {
     question: candidate.question,
     marketId: marketKey,
     tokenIds: allTokenIds,
     expiresAt: new Date(candidate.expiresAt.toNumber()).toISOString(),
+    isCrypto: !!cryptoMeta,
   });
 }
 
@@ -228,6 +315,11 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
  */
 async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
   const marketKey  = String(candidate.marketId);
+
+  // Отменяем отложенный запрос strike price если ещё не выполнен
+  const strikeTimer = pendingStrikeTimers.get(marketKey);
+  if (strikeTimer) { clearTimeout(strikeTimer); pendingStrikeTimers.delete(marketKey); }
+
   const allTokenIds = candidate.allTokenIds?.length
     ? candidate.allTokenIds.map(String)
     : [String(candidate.instrumentId)];
@@ -237,6 +329,48 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
     await ws.unsubscribeFromToken(tokenId);
   }
   subscribedMarkets.delete(marketKey);
+
+  // Записываем market_resolved для крипто-рынков при EXPIRED
+  const closeCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+  if (closeCryptoMeta && reason === 'EXPIRED') {
+    try {
+      const interval = computeInterval(closeCryptoMeta.endDateMs - closeCryptoMeta.eventStartTimeMs);
+      const kline = await binanceClient.getKline(closeCryptoMeta.binanceSymbol, closeCryptoMeta.eventStartTimeMs, interval);
+      const outcome = kline.close >= kline.open ? 'UP' : 'DOWN';
+      const winningTokenIndex = outcome === 'UP' ? 0 : 1;
+      recorder.recordEvent(allTokenIds[0]!, {
+        t: 'market_resolved',
+        ts: closeCryptoMeta.endDateMs,
+        symbol: closeCryptoMeta.rtdsFilter,
+        strikePrice: kline.open,
+        resolutionPrice: kline.close,
+        outcome,
+        winningTokenIndex,
+      });
+      logger.info('Market resolved event recorded', {
+        symbol: closeCryptoMeta.rtdsFilter,
+        strikePrice: kline.open,
+        resolutionPrice: kline.close,
+        outcome,
+      });
+    } catch (err) {
+      logger.warn('Failed to record market_resolved event', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // Удаляем tokenId из маппинга для каждой подписки
+    // Если другие рынки ещё используют тот же символ — оставляем подписку
+    for (const sub of closeCryptoMeta.rtdsSubscriptions) {
+      const ids = symbolToTokenIds.get(sub.filter);
+      if (ids) {
+        ids.delete(allTokenIds[0]!);
+        if (ids.size === 0) {
+          symbolToTokenIds.delete(sub.filter);
+          rtdsClient.unsubscribe(sub.topic, sub.filter);
+        }
+      }
+    }
+  }
 
   // Запоминаем рынок как постоянно закрытый при EXPIRED,
   // чтобы scanAndSubscribe не открыл его снова (Gamma API может
@@ -380,6 +514,7 @@ async function shutdown(signal: string): Promise<void> {
 
   await recorder.close();
   await ws.disconnect();
+  rtdsClient.disconnect();
   dnsOverride.uninstall();
 
   logger.info('Shutdown complete');
@@ -410,6 +545,15 @@ try {
   });
 }
 feed.start();
+
+// Подключаем RTDS для крипто-цен
+try {
+  await rtdsClient.connect();
+} catch (err) {
+  logger.warn('Initial RTDS connection failed, crypto prices unavailable', {
+    err: err instanceof Error ? err.message : String(err),
+  });
+}
 
 logger.info('Feed started, collecting data', {
   markets: subscribedMarkets.size,

@@ -77,6 +77,8 @@ export interface StrategyRegistration {
   readonly market: Market;
   /** Конфигурация расписания (опционально, по умолчанию DEFAULT_SCHEDULE_CONFIG) */
   readonly config?: Partial<ScheduleConfig>;
+  /** Символ крипто-актива для привязки к CryptoPriceStore (e.g. 'btcusdt') */
+  readonly cryptoSymbol?: string;
 }
 
 /**
@@ -100,6 +102,28 @@ export interface IMarketDataStore {
 // IOrderStateStore импортирован из @polymarket/ports (re-export для обратной совместимости)
 
 /**
+ * Интерфейс CryptoPriceStore для StrategyScheduler.
+ *
+ * @remarks
+ * Минимальный интерфейс чтобы не создавать прямую зависимость
+ * от market-state пакета.
+ */
+export interface ICryptoPriceStore {
+  get(symbolOrAsset: string): {
+    asset: string;
+    symbol: string;
+    currentPrice: number;
+    currentPriceTimestampMs: number;
+    chainlink: { price: number; timestampMs: number } | undefined;
+    binance: { price: number; timestampMs: number } | undefined;
+    targetPrice: number | undefined;
+    resolutionPrice: number | undefined;
+    resolved: boolean;
+  } | undefined;
+  setOnChange(cb: (asset: string) => void): void;
+}
+
+/**
  * Зависимости StrategyScheduler.
  */
 export interface StrategySchedulerDeps {
@@ -111,6 +135,8 @@ export interface StrategySchedulerDeps {
   readonly executionEngine: ExecutionEngine;
   readonly clock: IClock;
   readonly logger: ILogger;
+  /** Опциональный store крипто-цен (для крипто-рынков) */
+  readonly cryptoPriceStore?: ICryptoPriceStore;
 }
 
 // ── Внутренние типы ────────────────────────────────────────
@@ -122,6 +148,8 @@ interface StrategyEntry {
   readonly accountId: AccountId;
   readonly market: Market;
   readonly config: ScheduleConfig;
+  /** Символ крипто-актива (e.g. 'btcusdt') — для CryptoPriceStore lookup */
+  readonly cryptoSymbol?: string;
   lastRunMs: number;
   running: boolean;
   rerunRequested: boolean;
@@ -138,6 +166,8 @@ export class StrategyScheduler {
   private readonly _entries = new Map<string, StrategyEntry>();
   /** instrumentId → Set<strategyId> */
   private readonly _instrumentToStrategies = new Map<string, Set<string>>();
+  /** cryptoSymbol → Set<strategyId> */
+  private readonly _symbolToStrategies = new Map<string, Set<string>>();
 
   /** Event-driven queue: стратегии ожидающие tick */
   private readonly _queue: string[] = [];
@@ -154,6 +184,12 @@ export class StrategyScheduler {
     _deps.marketDataStore.setOnChange((instrumentId, reason) => {
       this._onMarketDataChanged(instrumentId, reason);
     });
+    // Подписка на обновления крипто-цен
+    if (_deps.cryptoPriceStore) {
+      _deps.cryptoPriceStore.setOnChange((symbol) => {
+        this._onCryptoPriceChanged(symbol);
+      });
+    }
   }
 
   // ── Публичный API ────────────────────────────────────────
@@ -236,6 +272,7 @@ export class StrategyScheduler {
       accountId: reg.accountId,
       market: reg.market,
       config,
+      cryptoSymbol: reg.cryptoSymbol,
       lastRunMs: 0,
       running: false,
       rerunRequested: false,
@@ -252,6 +289,16 @@ export class StrategyScheduler {
       this._instrumentToStrategies.set(instrumentKey, set);
     }
     set.add(strategyId);
+
+    // Маппинг cryptoSymbol → strategies
+    if (reg.cryptoSymbol) {
+      let symSet = this._symbolToStrategies.get(reg.cryptoSymbol);
+      if (symSet === undefined) {
+        symSet = new Set<string>();
+        this._symbolToStrategies.set(reg.cryptoSymbol, symSet);
+      }
+      symSet.add(strategyId);
+    }
 
     // Запуск heartbeat
     entry.heartbeatTimer = setInterval(() => {
@@ -403,6 +450,25 @@ export class StrategyScheduler {
   }
 
   // ── Внутренний механизм: event-driven queue ──────────────
+
+  /**
+   * Маршрутизация обновлений крипто-цены к стратегиям.
+   *
+   * @param symbol - Символ крипто-актива (e.g. 'btcusdt')
+   *
+   * @remarks
+   * Находит все стратегии привязанные к данному символу,
+   * помечает их dirty с reason 'CRYPTO_PRICE' и ставит в очередь.
+   */
+  private _onCryptoPriceChanged(symbol: string): void {
+    const strategyIds = this._symbolToStrategies.get(symbol);
+    if (!strategyIds) return;
+
+    for (const id of strategyIds) {
+      this._dirtyTracker.markDirty(id, 'CRYPTO_PRICE');
+      this._enqueue(id);
+    }
+  }
 
   /**
    * Маршрутизация market data events к стратегиям.
@@ -651,6 +717,24 @@ export class StrategyScheduler {
       ? { minOrderSize: info.minOrderSize, minOrderValue: info.minOrderValue, tickSize: info.tickSize }
       : undefined;
 
+    // Крипто-цена (если стратегия привязана к символу)
+    let cryptoPrice: StrategySnapshot['cryptoPrice'];
+    if (entry.cryptoSymbol && this._deps.cryptoPriceStore) {
+      const snap = this._deps.cryptoPriceStore.get(entry.cryptoSymbol);
+      if (snap) {
+        cryptoPrice = {
+          asset: snap.asset,
+          chainlink: snap.chainlink,
+          binance: snap.binance,
+          targetPrice: snap.targetPrice,
+          resolutionPrice: snap.resolutionPrice,
+          resolved: snap.resolved,
+          currentPrice: snap.currentPrice,
+          symbol: snap.symbol,
+        };
+      }
+    }
+
     return {
       instrumentId: id,
       market: entry.market,
@@ -661,6 +745,7 @@ export class StrategyScheduler {
       matchedOrders,
       hasInFlightFills,
       constraints,
+      cryptoPrice,
       portfolio: this._deps.portfolioStore.get(entry.accountId),
       nowMs: this._deps.clock.now().getTime(),
     };
@@ -701,6 +786,17 @@ export class StrategyScheduler {
       set.delete(strategyId);
       if (set.size === 0) {
         this._instrumentToStrategies.delete(instrumentKey);
+      }
+    }
+
+    // Remove from symbol map
+    if (entry.cryptoSymbol) {
+      const symSet = this._symbolToStrategies.get(entry.cryptoSymbol);
+      if (symSet) {
+        symSet.delete(strategyId);
+        if (symSet.size === 0) {
+          this._symbolToStrategies.delete(entry.cryptoSymbol);
+        }
       }
     }
 

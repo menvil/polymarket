@@ -26,13 +26,15 @@
  */
 
 import path from 'node:path';
-import { createInterface } from 'node:readline';
-import { createReadStream } from 'node:fs';
+import * as fs from 'node:fs';
 import Decimal from 'decimal.js';
 import { LogLevel } from '@polymarket/logger';
 import { PolymarketWsAdapter, PolymarketWebSocketManager } from '@polymarket/exchange/ws';
-import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter } from '@polymarket/exchange/adapters';
+import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter, parseCryptoMeta, computeInterval, BinanceKlinesClient } from '@polymarket/exchange/adapters';
+import type { CryptoMarketMeta } from '@polymarket/exchange/adapters';
 import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
+import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
+import { CryptoPriceStore } from '@polymarket/market-state';
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import type { IMarketFilterConfig } from '@polymarket/ports';
 import {
@@ -48,6 +50,7 @@ import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
+import { SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 import { BookUpdateHandler } from '@polymarket/handlers';
 import type { IBookRegistry } from '@polymarket/handlers';
 import { OrderBook } from '@polymarket/order-book';
@@ -146,6 +149,7 @@ const { mode, config } = configResult.value;
       'clob.polymarket.com',
       'data-api.polymarket.com',
       'ws-subscriptions-clob.polymarket.com',
+      'ws-live-data.polymarket.com',
     ]);
   } catch (err) {
     _dnsLogger.warn('DNS override install failed, continuing with system DNS', {
@@ -234,6 +238,8 @@ async function runPaper(): Promise<void> {
     readonly expiresAtMs: number;
     readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
     readonly strategy: IStrategy;
+    /** Метаданные крипто-рынка (undefined для не-крипто) */
+    readonly cryptoMeta: CryptoMarketMeta | undefined;
     fillHistory: PaperFillRecord[];
     partialAccum: Map<string, PaperPartialAccum>;
     openedAt: number;
@@ -250,6 +256,20 @@ async function runPaper(): Promise<void> {
 
   const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
   const minCapitalPerMarket = config.resources.minCapitalPerMarket;
+
+  // ── Crypto price infrastructure (paper) ────────────────────────────────
+  const cryptoPriceStore = new CryptoPriceStore();
+  const binanceClient = new BinanceKlinesClient(logger);
+  const rtdsClient = new RtdsWebSocketClient(
+    { url: 'wss://ws-live-data.polymarket.com' },
+    logger,
+  );
+
+  // RTDS → CryptoPriceStore wiring
+  // Передаём ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
+  rtdsClient.onPrice((symbol, price, ts) => {
+    cryptoPriceStore.updatePrice(symbol, price, ts);
+  });
 
   // Discovery-специфичное состояние
   type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
@@ -290,6 +310,7 @@ async function runPaper(): Promise<void> {
       expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
       candidate: null,
       strategy: fixedStrategy,
+      cryptoMeta: undefined,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -342,6 +363,7 @@ async function runPaper(): Promise<void> {
       logger,
     );
     const expiresMs = candidate.expiresAt.toNumber();
+    const initialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
     activeMarkets.set(tStr, {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -350,10 +372,30 @@ async function runPaper(): Promise<void> {
       expiresAtMs: expiresMs,
       candidate,
       strategy: discoveryStrategy,
+      cryptoMeta: initialCryptoMeta,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
     });
+
+    // Fetch strike price и подписка RTDS для начального рынка
+    if (initialCryptoMeta) {
+      try {
+        const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
+        const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
+        cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
+        logger.info('Strike price fetched for initial market', {
+          symbol: initialCryptoMeta.rtdsFilter,
+          strikePrice: kline.open,
+        });
+      } catch (err) {
+        logger.warn('Failed to fetch strike price for initial market', {
+          symbol: initialCryptoMeta.binanceSymbol,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      rtdsClient.subscribe(initialCryptoMeta.rtdsTopic, initialCryptoMeta.rtdsFilter);
+    }
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
     logger.info('Initial market discovered', {
@@ -407,7 +449,7 @@ async function runPaper(): Promise<void> {
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore });
 
   // BookUpdateHandler — конвертирует WS snapshots в BOOK_UPDATED события
   const bookRegistry = new SimpleBookRegistry();
@@ -489,6 +531,7 @@ async function runPaper(): Promise<void> {
       asset: slot.asset,
       accountId: accountId!,
       market: marketStub,
+      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
     });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
@@ -533,6 +576,8 @@ async function runPaper(): Promise<void> {
       logger,
     );
 
+    const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+
     const slot: PaperMarketSlot = {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -541,10 +586,26 @@ async function runPaper(): Promise<void> {
       expiresAtMs: expiresMs,
       candidate,
       strategy: slotStrategy,
+      cryptoMeta: slotCryptoMeta,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
     };
+
+    // Fetch strike price и подписка RTDS для крипто-рынка
+    if (slotCryptoMeta) {
+      try {
+        const interval = computeInterval(slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs);
+        const kline = await binanceClient.getKline(slotCryptoMeta.binanceSymbol, slotCryptoMeta.eventStartTimeMs, interval);
+        cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, kline.open);
+      } catch (err) {
+        logger.warn('Failed to fetch strike price', {
+          symbol: slotCryptoMeta.binanceSymbol,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      rtdsClient.subscribe(slotCryptoMeta.rtdsTopic, slotCryptoMeta.rtdsFilter);
+    }
 
     // Регистрируем рынок в PaperExchangeClient для маршрутизации ордеров
     exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
@@ -592,6 +653,51 @@ async function runPaper(): Promise<void> {
 
     await wsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
+
+    // Отписка от RTDS для крипто-рынка
+    if (slot.cryptoMeta) {
+      rtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
+    }
+
+    // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
+    if (reason === 'EXPIRED' && slot.cryptoMeta) {
+      const resolution = cryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
+      if (resolution) {
+        const portfolio = portfolioStore.get(accountId!);
+        const position = portfolio?.getPosition(slot.instrumentId);
+        if (portfolio && position && !position.isClosed()) {
+          const qty = position.quantity.value();
+          const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
+          const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
+          const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+          const cashCredit = qty.times(settlementPrice);
+
+          // Удаляем позицию (settled)
+          const closedPosition = new SimplePosition({
+            instrumentId: slot.instrumentId,
+            quantity: new Decimal(0),
+            averageEntryPrice: position.averageEntryPrice.value(),
+            side: 'LONG' as const,
+          });
+          let updated = portfolio.upsertPosition(closedPosition);
+
+          // Зачисляем settlement cash
+          if (cashCredit.gt(0)) {
+            const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+            if (creditResult.ok) updated = creditResult.value;
+          }
+
+          portfolioStore.save(updated, 0);
+          logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
+            symbol: slot.cryptoMeta.rtdsFilter,
+            resolution,
+            settlementPrice: settlementPrice.toFixed(2),
+            cashCredit: cashCredit.toFixed(4),
+            outcomeIndex: oi,
+          });
+        }
+      }
+    }
 
     if (reason === 'EXPIRED') {
       closedMarkets.add(String(slot.marketId));
@@ -910,6 +1016,18 @@ async function runPaper(): Promise<void> {
     // Адаптер сам переподключится — это не фатальная ошибка
   }
 
+  // Подключаемся к RTDS для крипто-цен (если есть крипто-рынки)
+  const hasCryptoMarkets = Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
+  if (hasCryptoMarkets) {
+    try {
+      await rtdsClient.connect();
+    } catch (err) {
+      logger.warn('Failed to connect to RTDS, crypto prices unavailable', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   const activeSlotIds = Array.from(activeMarkets.values()).map(s => s.strategy.id);
   logger.info('Bot is running in paper mode', {
     strategy: config.strategy,
@@ -960,6 +1078,7 @@ async function runPaper(): Promise<void> {
       simulator.stop();
       marketDataFeedAdapter.stop();
       await wsAdapter.disconnect();
+      rtdsClient.disconnect();
       marketDataStore.stop();
       logger.info('Shutdown complete');
     } catch (err) {
@@ -989,34 +1108,49 @@ async function runBacktest(): Promise<void> {
   }
 
   const marketConfig = config.market;
-  const snapshotPath = marketConfig.paths[0];
   const outcomeIndex = marketConfig.outcomeIndex ?? 1;
 
-  if (!snapshotPath) {
+  if (!marketConfig.paths || marketConfig.paths.length === 0) {
     console.error('[Bot] market.paths must be non-empty for backtest mode');
     process.exit(1);
   }
 
-  // Читаем meta из снапшота
+  // Резолв glob-паттернов в paths (поддержка *, **, и конкретных файлов)
+  const resolvedPaths = await resolveSnapshotPaths(marketConfig.paths);
+  if (resolvedPaths.length === 0) {
+    console.error('[Bot] No snapshot files found for paths:', marketConfig.paths);
+    process.exit(1);
+  }
+
+  const snapshotPath = resolvedPaths[0]!;
+
+  // Читаем meta из первого снапшота
   const metaResult = await readSnapshotMeta(snapshotPath, outcomeIndex);
   if (!metaResult) {
     console.error('[Bot] No meta line found in snapshot:', snapshotPath);
     process.exit(1);
   }
 
-  const { marketId, instrumentId, asset } = metaResult;
+  const { marketId, instrumentId, asset, rawMarket: snapshotRawMarket } = metaResult;
 
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.INFO });
   const { logger, eventBus } = infra;
 
   logger.warn('Bot starting in backtest mode', {
-    snapshot: path.basename(snapshotPath),
+    files: resolvedPaths.length,
+    firstSnapshot: path.basename(snapshotPath),
     outcomeIndex,
     marketId: String(marketId),
     instrumentId: String(instrumentId),
     initialBalance: config.resources.initialBalance,
   });
+
+  if (resolvedPaths.length > 1) {
+    logger.info('Backtest snapshot files', {
+      paths: resolvedPaths.map((p) => path.basename(p)),
+    });
+  }
 
   const repos = buildRepositories();
   const { portfolioStore, orderRepo } = repos;
@@ -1050,7 +1184,20 @@ async function runBacktest(): Promise<void> {
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog });
+
+  // ── Crypto price infrastructure (backtest) ──────────────────────────────
+  const backtestCryptoPriceStore = new CryptoPriceStore();
+  const backtestCryptoMeta = parseCryptoMeta(snapshotRawMarket);
+
+  if (backtestCryptoMeta) {
+    logger.info('Crypto market detected in snapshot', {
+      source: backtestCryptoMeta.source,
+      symbol: backtestCryptoMeta.binanceSymbol,
+      rtdsFilter: backtestCryptoMeta.rtdsFilter,
+    });
+  }
+
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore: backtestCryptoPriceStore });
 
   // Регистрируем инструмент в каталоге (нужен BookUpdateHandler для маппинга tokenId → marketId)
   const expiresAtResult = TimestampService.create(Date.now() + 86400_000);
@@ -1191,18 +1338,47 @@ async function runBacktest(): Promise<void> {
   const expirationMs = Date.now() + 24 * 60 * 60 * 1000;
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
-  const regResult = await engine.scheduler.register({ strategy, instrumentId, asset, accountId, market: marketStub });
+  const regResult = await engine.scheduler.register({
+    strategy, instrumentId, asset, accountId, market: marketStub,
+    cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
+  });
   if (!regResult.ok) {
     logger.fatal('Failed to register strategy', { error: String(regResult.error) });
     process.exit(1);
   }
 
   const backtestEngine = new BacktestEngine(
-    { filePaths: [snapshotPath], outcomeIndex },
-    { bookUpdateHandler, eventBus, replayClock, logger },
+    { filePaths: resolvedPaths, outcomeIndex },
+    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore: backtestCryptoPriceStore },
   );
 
   const replayResult = await backtestEngine.run();
+
+  // Fallback для старых снапшотов без crypto_price записей: Binance klines
+  if (backtestCryptoMeta && replayResult.cryptoPriceEvents === 0) {
+    logger.info('No crypto_price events in snapshot, falling back to Binance klines');
+    const backtestBinanceClient = new BinanceKlinesClient(logger);
+    try {
+      const interval = computeInterval(backtestCryptoMeta.endDateMs - backtestCryptoMeta.eventStartTimeMs);
+      const kline = await backtestBinanceClient.getKline(
+        backtestCryptoMeta.binanceSymbol,
+        backtestCryptoMeta.eventStartTimeMs,
+        interval,
+      );
+      backtestCryptoPriceStore.setTargetPrice(backtestCryptoMeta.rtdsFilter, kline.open);
+      backtestCryptoPriceStore.updatePrice(backtestCryptoMeta.rtdsFilter, kline.close, backtestCryptoMeta.endDateMs);
+      backtestCryptoPriceStore.setResolutionPrice(backtestCryptoMeta.rtdsFilter, kline.close);
+      logger.info('Binance klines fallback applied', {
+        symbol: backtestCryptoMeta.binanceSymbol,
+        strikePrice: kline.open,
+        resolutionPrice: kline.close,
+      });
+    } catch (err) {
+      logger.warn('Binance klines fallback failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Остановка
   await engine.scheduler.unregister(strategy.id);
@@ -1210,6 +1386,45 @@ async function runBacktest(): Promise<void> {
   engine.orderEventBridge.stop();
   simulator.stop();
   marketDataStore.stop();
+
+  // Settlement при наличии крипто-рынка с известным исходом
+  if (backtestCryptoMeta) {
+    const resolution = backtestCryptoPriceStore.getResolution(backtestCryptoMeta.rtdsFilter);
+    if (resolution) {
+      const portfolio = portfolioStore.get(accountId)!;
+      const position = portfolio.getPosition(instrumentId);
+      if (position && !position.isClosed()) {
+        const qty = position.quantity.value();
+        const isWinning = (outcomeIndex === 0 && resolution === 'UP') || (outcomeIndex === 1 && resolution === 'DOWN');
+        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+        const cashCredit = qty.times(settlementPrice);
+
+        // Удаляем позицию (settled)
+        const closedPosition = new SimplePosition({
+          instrumentId,
+          quantity: new Decimal(0),
+          averageEntryPrice: position.averageEntryPrice.value(),
+          side: 'LONG' as const,
+        });
+        let updated = portfolio.upsertPosition(closedPosition);
+
+        // Зачисляем settlement cash
+        if (cashCredit.gt(0)) {
+          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+          if (creditResult.ok) updated = creditResult.value;
+        }
+
+        portfolioStore.save(updated, 0);
+        logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
+          symbol: backtestCryptoMeta.rtdsFilter,
+          resolution,
+          settlementPrice: settlementPrice.toFixed(2),
+          cashCredit: cashCredit.toFixed(4),
+          outcomeIndex,
+        });
+      }
+    }
+  }
 
   // Результаты
   const orders = await orderRepo.getAll();
@@ -1223,13 +1438,24 @@ async function runBacktest(): Promise<void> {
     new Decimal(0),
   );
 
+  // Crypto price summary
+  const cryptoSnap = backtestCryptoMeta ? backtestCryptoPriceStore.get(backtestCryptoMeta.rtdsFilter) : undefined;
+  const cryptoResolution = backtestCryptoMeta ? backtestCryptoPriceStore.getResolution(backtestCryptoMeta.rtdsFilter) : undefined;
+
   logger.warn('=== BACKTEST RESULTS ===', {
     snapshot: path.basename(snapshotPath),
     outcome: outcomeIndex === 0 ? 'YES' : 'NO',
     bookEvents: replayResult.bookEvents,
     tradeEvents: replayResult.tradeEvents,
+    cryptoPriceEvents: replayResult.cryptoPriceEvents,
     errors: replayResult.errors,
     durationMs: replayResult.durationMs,
+    ...(cryptoSnap ? {
+      cryptoSymbol: cryptoSnap.symbol,
+      strikePrice: cryptoSnap.targetPrice,
+      resolutionPrice: cryptoSnap.resolutionPrice,
+      cryptoResolution,
+    } : {}),
   });
 
   logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
@@ -1398,6 +1624,8 @@ async function runLive(): Promise<void> {
     readonly minOrderSize: Quantity;
     readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
     readonly strategy: IStrategy;
+    /** Метаданные крипто-рынка (undefined для не-крипто) */
+    readonly cryptoMeta: CryptoMarketMeta | undefined;
     fillHistory: FillRecord[];
     partialAccum: Map<string, PartialAccum>;
     openedAt: number;
@@ -1414,6 +1642,19 @@ async function runLive(): Promise<void> {
 
   const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
   const minCapitalPerMarket = config.resources.minCapitalPerMarket;
+
+  // ── Crypto price infrastructure (live) ─────────────────────────────────
+  const liveCryptoPriceStore = new CryptoPriceStore();
+  const liveBinanceClient = new BinanceKlinesClient(logger);
+  const liveRtdsClient = new RtdsWebSocketClient(
+    { url: 'wss://ws-live-data.polymarket.com' },
+    logger,
+  );
+
+  // RTDS → CryptoPriceStore wiring
+  liveRtdsClient.onPrice((symbol, price, ts) => {
+    liveCryptoPriceStore.updatePrice(symbol, price, ts);
+  });
 
   // Discovery-специфичное состояние
   type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
@@ -1454,6 +1695,7 @@ async function runLive(): Promise<void> {
       minOrderSize: Quantity.of(new Decimal('1')),
       candidate: null,
       strategy: fixedStrategy,
+      cryptoMeta: undefined,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -1504,6 +1746,7 @@ async function runLive(): Promise<void> {
       logger,
     );
     const expiresMs = candidate.expiresAt.toNumber();
+    const liveInitialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
     activeMarkets.set(tStr, {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -1514,10 +1757,30 @@ async function runLive(): Promise<void> {
       minOrderSize: candidate.minOrderSize,
       candidate,
       strategy: discoveryStrategy,
+      cryptoMeta: liveInitialCryptoMeta,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
     });
+
+    // Fetch strike price и подписка RTDS для начального крипто-рынка
+    if (liveInitialCryptoMeta) {
+      try {
+        const interval = computeInterval(liveInitialCryptoMeta.endDateMs - liveInitialCryptoMeta.eventStartTimeMs);
+        const kline = await liveBinanceClient.getKline(liveInitialCryptoMeta.binanceSymbol, liveInitialCryptoMeta.eventStartTimeMs, interval);
+        liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, kline.open);
+        logger.info('Strike price fetched for initial market (live)', {
+          symbol: liveInitialCryptoMeta.rtdsFilter,
+          strikePrice: kline.open,
+        });
+      } catch (err) {
+        logger.warn('Failed to fetch strike price (live)', {
+          symbol: liveInitialCryptoMeta.binanceSymbol,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      liveRtdsClient.subscribe(liveInitialCryptoMeta.rtdsTopic, liveInitialCryptoMeta.rtdsFilter);
+    }
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
     logger.info('Initial market discovered', {
@@ -1622,7 +1885,7 @@ async function runLive(): Promise<void> {
     },
   };
 
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker });
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker, cryptoPriceStore: liveCryptoPriceStore });
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
@@ -1681,6 +1944,7 @@ async function runLive(): Promise<void> {
       asset: slot.asset,
       accountId: accountId!,
       market: marketStub,
+      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
     });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
@@ -1730,6 +1994,8 @@ async function runLive(): Promise<void> {
       logger,
     );
 
+    const liveSlotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+
     const slot: ActiveMarketSlot = {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -1740,10 +2006,26 @@ async function runLive(): Promise<void> {
       minOrderSize: candidate.minOrderSize,
       candidate,
       strategy: slotStrategy,
+      cryptoMeta: liveSlotCryptoMeta,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
     };
+
+    // Fetch strike price и подписка RTDS для крипто-рынка
+    if (liveSlotCryptoMeta) {
+      try {
+        const interval = computeInterval(liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs);
+        const kline = await liveBinanceClient.getKline(liveSlotCryptoMeta.binanceSymbol, liveSlotCryptoMeta.eventStartTimeMs, interval);
+        liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, kline.open);
+      } catch (err) {
+        logger.warn('Failed to fetch strike price (live)', {
+          symbol: liveSlotCryptoMeta.binanceSymbol,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      liveRtdsClient.subscribe(liveSlotCryptoMeta.rtdsTopic, liveSlotCryptoMeta.rtdsFilter);
+    }
 
     activeMarkets.set(tStr, slot);
     await marketWsAdapter.subscribeToToken(tStr);
@@ -1794,6 +2076,11 @@ async function runLive(): Promise<void> {
 
     await marketWsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
+
+    // Отписка от RTDS для крипто-рынка
+    if (slot.cryptoMeta) {
+      liveRtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
+    }
 
     if (reason === 'EXPIRED') {
       closedMarkets.add(String(slot.marketId));
@@ -2119,6 +2406,18 @@ async function runLive(): Promise<void> {
     });
   }
 
+  // Подключаемся к RTDS для крипто-цен (live)
+  const liveHasCryptoMarkets = Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
+  if (liveHasCryptoMarkets) {
+    try {
+      await liveRtdsClient.connect();
+    } catch (err) {
+      logger.warn('Failed to connect to RTDS, crypto prices unavailable', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   marketDataFeedAdapter.start();
   liveInfra.userEventFeedAdapter.start();
 
@@ -2144,10 +2443,7 @@ async function runLive(): Promise<void> {
   // Цель: подхватить fills которые не дошли по WS (MATCHED/MINED застряли,
   // WS drop без reconnect, или fill вообще не пришёл).
 
-  const TOKEN_BALANCE_SYNC_INTERVAL_MS = 30_000;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _tokenBalanceSyncDisabled = TOKEN_BALANCE_SYNC_INTERVAL_MS; // сохраняем константу
-  /* TOKEN_BALANCE_SYNC — DISABLED
+  /* TOKEN_BALANCE_SYNC — DISABLED (interval was 30_000ms)
   const tokenBalanceSyncId = setInterval(() => {
     void (async () => {
       try {
@@ -2262,6 +2558,7 @@ async function runLive(): Promise<void> {
       marketDataFeedAdapter.stop();
       await marketWsAdapter.disconnect();
       await userWsAdapter.disconnect();
+      liveRtdsClient.disconnect();
       marketDataStore.stop();
       logger.info('Shutdown complete');
     } catch (err) {
@@ -2312,38 +2609,119 @@ function buildInitialBalance(
 }
 
 /**
- * Читает первую meta-строку из JSONL снапшота и извлекает marketId и instrumentId.
+ * Резолвит пути к снапшотам с поддержкой директорий и glob-like паттернов.
  *
- * @param filePath - Путь к JSONL файлу
+ * @param patterns - Массив путей: конкретный файл, директория, или паттерн с `*`
+ * @returns Отсортированный массив абсолютных путей к .jsonl/.jsonl.gz файлам
+ *
+ * @remarks
+ * Поддерживает:
+ * - Конкретный файл: `snapshots/2026-03-11/Bitcoin.jsonl.gz`
+ * - Директория (все файлы): `snapshots/2026-03-11/` или `snapshots/2026-03-11/*`
+ * - Рекурсивный обход: `snapshots/**` или `snapshots/`
+ * Фильтрует только .jsonl и .jsonl.gz файлы, сортирует по имени.
+ *
+ * @example
+ * ```typescript
+ * const files = await resolveSnapshotPaths(['snapshots/2026-03-11/*']);
+ * // → ['/.../Bitcoin_Up.jsonl.gz', '/.../Ethereum_Up.jsonl.gz']
+ * ```
+ */
+async function resolveSnapshotPaths(patterns: string[]): Promise<string[]> {
+  const results: string[] = [];
+  const isSnapshotFile = (f: string) => f.endsWith('.jsonl') || f.endsWith('.jsonl.gz');
+
+  for (const pattern of patterns) {
+    // Паттерн с * → определяем директорию и рекурсивность
+    if (pattern.includes('*')) {
+      const recursive = pattern.includes('**');
+      // Берём часть пути до первого *
+      const dir = path.resolve(pattern.substring(0, pattern.indexOf('*')));
+      if (!fs.existsSync(dir)) continue;
+      collectFiles(dir, recursive, results, isSnapshotFile);
+    } else {
+      const resolved = path.resolve(pattern);
+      if (!fs.existsSync(resolved)) continue;
+      const stat = fs.statSync(resolved);
+      if (stat.isDirectory()) {
+        // Директория → рекурсивно собираем файлы
+        collectFiles(resolved, true, results, isSnapshotFile);
+      } else if (isSnapshotFile(resolved)) {
+        results.push(resolved);
+      }
+    }
+  }
+
+  results.sort();
+  return results;
+}
+
+/**
+ * Рекурсивно собирает файлы из директории.
+ *
+ * @param dir - Путь к директории
+ * @param recursive - Обходить поддиректории
+ * @param out - Массив для результатов
+ * @param filter - Фильтр по имени файла
+ */
+function collectFiles(
+  dir: string,
+  recursive: boolean,
+  out: string[],
+  filter: (f: string) => boolean,
+): void {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory() && recursive) {
+      collectFiles(full, recursive, out, filter);
+    } else if (entry.isFile() && filter(full)) {
+      out.push(full);
+    }
+  }
+}
+
+/**
+ * Читает первую meta-строку из JSONL/JSONL.GZ снапшота и извлекает marketId и instrumentId.
+ *
+ * @param filePath - Путь к .jsonl или .jsonl.gz файлу
  * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
  * @returns Объект с marketId, instrumentId, asset или null если meta не найдена
+ *
+ * @remarks
+ * Использует SnapshotReaderFactory для прозрачной поддержки сжатых файлов.
+ * Временный файл (для .gz) удаляется в finally-блоке через reader.close().
  */
 async function readSnapshotMeta(
   filePath: string,
   outcomeIndex: 0 | 1,
-): Promise<{ marketId: MarketId; instrumentId: InstrumentId; asset: AssetId } | null> {
-  const rl = createInterface({
-    input: createReadStream(filePath),
-    crlfDelay: Infinity,
-  });
+): Promise<{ marketId: MarketId; instrumentId: InstrumentId; asset: AssetId; rawMarket?: Record<string, unknown> } | null> {
+  // Минимальный логгер для фабрики (readSnapshotMeta вызывается до создания основного логгера)
+  const noop = () => {};
+  const minLogger = { trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child: () => minLogger } as unknown as import('@polymarket/logger').ILogger;
+  const factory = new SnapshotReaderFactory(minLogger);
+  const reader = factory.create(filePath);
 
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    const raw = JSON.parse(line) as Record<string, unknown>;
-    if (raw['t'] === 'meta') {
-      rl.close();
-      const marketId = asMarketId(raw['marketId'] as string);
-      const tokenIds = raw['tokenIds'] as string[];
-      const tokenId = tokenIds[outcomeIndex];
-      if (!marketId || !tokenId) return null;
-      const instrumentId = asInstrumentId(tokenId);
-      const asset = asPolymarketCtfToken(tokenId);
-      if (!instrumentId || !asset) return null;
-      return { marketId, instrumentId, asset };
+  try {
+    for await (const line of reader.readLines()) {
+      if (!line.trim()) continue;
+      const raw = JSON.parse(line) as Record<string, unknown>;
+      if (raw['t'] === 'meta') {
+        const marketId = asMarketId(raw['marketId'] as string);
+        const tokenIds = raw['tokenIds'] as string[];
+        const tokenId = tokenIds[outcomeIndex];
+        if (!marketId || !tokenId) return null;
+        const instrumentId = asInstrumentId(tokenId);
+        const asset = asPolymarketCtfToken(tokenId);
+        if (!instrumentId || !asset) return null;
+        // rawMarket сохранён в поле 'm' DataRecorder'ом
+        const rawMarket = raw['m'] as Record<string, unknown> | undefined;
+        return { marketId, instrumentId, asset, rawMarket };
+      }
     }
+    return null;
+  } finally {
+    await reader.close();
   }
-
-  rl.close();
-  return null;
 }
 

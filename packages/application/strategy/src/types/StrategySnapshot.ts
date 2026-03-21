@@ -148,6 +148,36 @@ export interface StrategySnapshot {
   readonly portfolio: Portfolio | undefined;
 
   // ── Timing ───────────────────────────────────────────────
+  // ── Crypto Price ────────────────────────────────────────────
+  /**
+   * Цена крипто-актива для крипто-рынков (Bitcoin Up or Down и т.п.).
+   *
+   * @remarks
+   * undefined для не-крипто рынков.
+   *
+   * Стратегия может определить текущий прогноз исхода:
+   * - `cryptoPrice.currentPrice >= cryptoPrice.targetPrice` → рынок в зоне UP
+   * - `cryptoPrice.resolved && cryptoPrice.resolutionPrice >= cryptoPrice.targetPrice` → UP resolved
+   */
+  readonly cryptoPrice?: {
+    /** Базовый актив (e.g. 'btc', 'eth') */
+    readonly asset: string;
+    /** Chainlink oracle цена (используется для resolution) */
+    readonly chainlink: { readonly price: number; readonly timestampMs: number } | undefined;
+    /** Binance spot цена */
+    readonly binance: { readonly price: number; readonly timestampMs: number } | undefined;
+    /** Strike/open цена (из Binance klines на eventStartTime) */
+    readonly targetPrice: number | undefined;
+    /** Финальная цена на endDate */
+    readonly resolutionPrice: number | undefined;
+    readonly resolved: boolean;
+    /** Chainlink цена (приоритет) или Binance — для обратной совместимости */
+    readonly currentPrice: number;
+    /** @deprecated Используй asset */
+    readonly symbol: string;
+  } | undefined;
+
+  // ── Timing ───────────────────────────────────────────────
   /**
    * Текущее время в ms (epoch).
    *

@@ -30,3 +30,5 @@ export type { IPolymarketWsEmitter, UserChannelConfig } from './IPolymarketWsEmi
 export { PolymarketWsAdapter } from './PolymarketWsAdapter.js';
 export { PolymarketWebSocketManager } from './PolymarketWebSocketManager.js';
 export type { PolymarketWebSocketConfig } from './PolymarketWebSocketManager.js';
+export { RtdsWebSocketClient } from './RtdsWebSocketClient.js';
+export type { RtdsConfig } from './RtdsWebSocketClient.js';

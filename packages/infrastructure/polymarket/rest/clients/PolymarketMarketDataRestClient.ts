@@ -102,6 +102,12 @@ export interface GammaMarketDto {
 
   /** Теги рынка */
   tags?: string[];
+
+  /** Источник разрешения рынка (URL биржи/оракула) */
+  resolutionSource?: string;
+
+  /** Время начала события (ISO строка) — для крипто-рынков */
+  eventStartTime?: string;
 }
 
 /**

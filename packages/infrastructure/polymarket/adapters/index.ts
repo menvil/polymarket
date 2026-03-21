@@ -44,3 +44,7 @@ export { UserEventFeedAdapter } from './UserEventFeedAdapter.js';
 export { PolymarketExchangeClientAdapter } from './PolymarketExchangeClientAdapter.js';
 export { PolymarketMarketDiscoveryAdapter } from './PolymarketMarketDiscoveryAdapter.js';
 export { PolymarketMarketDataRestClient } from '../rest/clients/PolymarketMarketDataRestClient.js';
+export { parseCryptoMeta, computeInterval } from './CryptoMarketMeta.js';
+export type { CryptoMarketMeta, RtdsSubscription } from './CryptoMarketMeta.js';
+export { BinanceKlinesClient } from './BinanceKlinesClient.js';
+export type { KlineData } from './BinanceKlinesClient.js';

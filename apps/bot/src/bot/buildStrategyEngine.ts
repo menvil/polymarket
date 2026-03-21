@@ -31,7 +31,7 @@
  */
 
 import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
-import type { ITokenBalanceChecker } from '@polymarket/strategy';
+import type { ITokenBalanceChecker, ICryptoPriceStore } from '@polymarket/strategy';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
@@ -48,6 +48,8 @@ export interface BuildStrategyEngineParams {
   readonly marketCatalog: IMarketCatalog;
   /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
   readonly tokenBalanceChecker?: ITokenBalanceChecker;
+  /** Опциональный: store крипто-цен для StrategyScheduler */
+  readonly cryptoPriceStore?: ICryptoPriceStore;
 }
 
 /** Результат построения стратегического движка */
@@ -71,7 +73,7 @@ export interface StrategyEngine {
  * ```
  */
 export function buildStrategyEngine(params: BuildStrategyEngineParams): StrategyEngine {
-  const { infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker } = params;
+  const { infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker, cryptoPriceStore } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
@@ -94,6 +96,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     executionEngine,
     clock,
     logger,
+    cryptoPriceStore,
   });
 
   const orderEventBridge = new OrderEventBridge({

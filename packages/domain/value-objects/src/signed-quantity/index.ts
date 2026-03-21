@@ -44,4 +44,5 @@ export { SignedQuantityService } from './facade/SignedQuantityService.js';
 
 // Adapters
 export { SignedQuantityFormatter } from './adapters/SignedQuantityFormatter.js';
-export { SignedQuantitySerializer, SignedQuantityJSON } from './adapters/SignedQuantitySerializer.js';
+export { SignedQuantitySerializer } from './adapters/SignedQuantitySerializer.js';
+export type { SignedQuantityJSON } from './adapters/SignedQuantitySerializer.js';

@@ -46,12 +46,27 @@ import type { IFormatter } from './formatters/IFormatter.js';
 import type { GzipCompressor } from './compression/GzipCompressor.js';
 
 /**
+ * Буферизированное событие с timestamp для сортировки перед записью.
+ *
+ * @remarks
+ * Хранит извлечённый timestamp и отформатированную NDJSON-строку.
+ * При flush буфер сортируется по `ts`, чтобы crypto_price события
+ * были перемешаны с book/trade в хронологическом порядке.
+ */
+interface BufferedEvent {
+  /** Timestamp события в Unix ms (для сортировки) */
+  readonly ts: number;
+  /** Отформатированная NDJSON-строка (с trailing newline) */
+  readonly line: string;
+}
+
+/**
  * Внутреннее состояние записи для одного рынка.
  */
 interface MarketWriter {
   readonly meta: MarketMeta;
   readonly filePath: string;
-  buffer: string[];
+  buffer: BufferedEvent[];
   stream: fs.WriteStream | null;
   lastFlushTime: number;
   eventsRecorded: number;
@@ -186,13 +201,17 @@ export class DataRecorder implements IMarketDataRecorder {
    *
    * @remarks
    * Никогда не бросает. O(1) поиск через tokenIndex.
+   * Извлекает timestamp из события для сортировки при flush.
+   * Поддерживаемые поля: `timestamp` (string|number), `ts` (number).
    */
   public recordEvent(tokenId: string, rawEvent: unknown): void {
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
 
     try {
-      writer.buffer.push(this._formatter.formatRecord(rawEvent as object));
+      const line = this._formatter.formatRecord(rawEvent as object);
+      const ts = this._extractTimestamp(rawEvent);
+      writer.buffer.push({ ts, line });
       writer.eventsRecorded++;
 
       if (writer.buffer.length >= this._config.bufferSize) {
@@ -260,17 +279,20 @@ export class DataRecorder implements IMarketDataRecorder {
       });
     } else {
       // Рынок не истёк (shutdown) — удаляем незаконченный файл.
-      // registerMarket() при следующем запуске также удалит любой существующий файл,
-      // поэтому дополнительная логика .incomplete/ не нужна.
+      // Неполные данные бесполезны для бэктеста и занимают место.
       try {
         await fs.promises.unlink(writer.filePath);
-        this._logger.warn('Market finalized (incomplete, deleted on shutdown)', {
+        this._logger.info('Incomplete market file deleted on shutdown', {
           marketId: key,
           eventsRecorded: writer.eventsRecorded,
           filePath: writer.filePath,
         });
-      } catch {
-        // Файл уже удалён или не существует — игнорируем
+      } catch (err) {
+        this._logger.warn('Failed to delete incomplete market file', {
+          marketId: key,
+          filePath: writer.filePath,
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
       }
     }
   }
@@ -334,7 +356,34 @@ export class DataRecorder implements IMarketDataRecorder {
       ),
     );
 
+    // Удаляем пустые date-директории после удаления незаконченных файлов
+    await this._removeEmptyDateDirs();
+
     this._logger.info('DataRecorder closed');
+  }
+
+  /**
+   * Удаляет пустые date-директории в outputDir.
+   *
+   * @remarks
+   * После удаления незаконченных файлов при shutdown date-директории
+   * (e.g. `2026-03-21/`) могут остаться пустыми. Этот метод их подчищает.
+   */
+  private async _removeEmptyDateDirs(): Promise<void> {
+    try {
+      const entries = await fs.promises.readdir(this._config.outputDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dirPath = path.join(this._config.outputDir, entry.name);
+        const files = await fs.promises.readdir(dirPath);
+        if (files.length === 0) {
+          await fs.promises.rmdir(dirPath);
+          this._logger.debug('Removed empty date directory', { dir: dirPath });
+        }
+      }
+    } catch {
+      // outputDir может не существовать — игнорируем
+    }
   }
 
   // ── Приватные методы ──────────────────────────────────────────────────────
@@ -361,12 +410,21 @@ export class DataRecorder implements IMarketDataRecorder {
    * Сбрасывает буфер одного рынка на диск.
    *
    * @param writer - Внутреннее состояние рынка
+   *
+   * @remarks
+   * Сортирует события по timestamp перед записью, чтобы crypto_price
+   * и book/trade были перемешаны в хронологическом порядке.
+   * При реплее в бектесте события приходят так же, как в реальном времени.
+   *
    * @throws При ошибке записи в поток
    */
   private async _flushWriter(writer: MarketWriter): Promise<void> {
     if (writer.buffer.length === 0 || !writer.stream) return;
 
-    const data = writer.buffer.join('');
+    // Сортируем по timestamp для хронологического порядка в файле
+    writer.buffer.sort((a, b) => a.ts - b.ts);
+
+    const data = writer.buffer.map((e) => e.line).join('');
     writer.buffer = [];
     writer.lastFlushTime = Date.now();
 
@@ -387,6 +445,34 @@ export class DataRecorder implements IMarketDataRecorder {
     await Promise.all(
       [...this._writers.values()].map((w) => this._flushWriter(w)),
     );
+  }
+
+  /**
+   * Извлекает timestamp из сырого события для сортировки в буфере.
+   *
+   * @param rawEvent - Сырое событие (book, trade, crypto_price и т.д.)
+   * @returns Timestamp в Unix ms. Если не найден — Date.now() (fallback).
+   *
+   * @remarks
+   * Поддерживаемые поля:
+   * - `timestamp` (string|number) — book/trade события Polymarket WS
+   * - `ts` (number) — crypto_price и meta события
+   */
+  private _extractTimestamp(rawEvent: unknown): number {
+    if (rawEvent && typeof rawEvent === 'object') {
+      const obj = rawEvent as Record<string, unknown>;
+      // WS book/trade: timestamp (строка Unix ms)
+      if (obj['timestamp'] !== undefined) {
+        const v = Number(obj['timestamp']);
+        if (!Number.isNaN(v)) return v;
+      }
+      // crypto_price / meta: ts (число)
+      if (obj['ts'] !== undefined) {
+        const v = Number(obj['ts']);
+        if (!Number.isNaN(v)) return v;
+      }
+    }
+    return Date.now();
   }
 
   /**
