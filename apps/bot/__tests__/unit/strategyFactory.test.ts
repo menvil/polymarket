@@ -6,55 +6,13 @@
  */
 import {
   createStrategy,
-  DEFAULT_MARKET_MAKER_CONFIG,
-  DEFAULT_MOMENTUM_CONFIG,
   DEFAULT_DUMB_CONFIG,
+  DEFAULT_AS_CONFIG,
 } from '../../src/strategyFactory.js';
-import { SimpleMarketMaker } from '../../src/strategies/SimpleMarketMaker.js';
-import { MomentumStrategy } from '../../src/strategies/MomentumStrategy.js';
 import { DumbStrategy } from '../../src/strategies/DumbStrategy.js';
+import { AvellanedaStoikovStrategy } from '../../src/strategies/AvellanedaStoikovStrategy.js';
 
 describe('createStrategy', () => {
-  it('создаёт SimpleMarketMaker', () => {
-    const strategy = createStrategy({
-      type: 'market-maker',
-      params: DEFAULT_MARKET_MAKER_CONFIG,
-    });
-
-    expect(strategy).toBeInstanceOf(SimpleMarketMaker);
-    expect(strategy.name).toBe('SimpleMarketMaker');
-  });
-
-  it('создаёт SimpleMarketMaker с кастомным id', () => {
-    const strategy = createStrategy({
-      type: 'market-maker',
-      id: 'custom-mm',
-      params: DEFAULT_MARKET_MAKER_CONFIG,
-    });
-
-    expect(strategy.id).toBe('custom-mm');
-  });
-
-  it('создаёт MomentumStrategy', () => {
-    const strategy = createStrategy({
-      type: 'momentum',
-      params: DEFAULT_MOMENTUM_CONFIG,
-    });
-
-    expect(strategy).toBeInstanceOf(MomentumStrategy);
-    expect(strategy.name).toBe('MomentumStrategy');
-  });
-
-  it('создаёт MomentumStrategy с кастомным id', () => {
-    const strategy = createStrategy({
-      type: 'momentum',
-      id: 'custom-momentum',
-      params: DEFAULT_MOMENTUM_CONFIG,
-    });
-
-    expect(strategy.id).toBe('custom-momentum');
-  });
-
   it('создаёт DumbStrategy', () => {
     const strategy = createStrategy({
       type: 'dumb',
@@ -75,6 +33,26 @@ describe('createStrategy', () => {
     expect(strategy.id).toBe('custom-dumb');
   });
 
+  it('создаёт AvellanedaStoikovStrategy', () => {
+    const strategy = createStrategy({
+      type: 'avellaneda-stoikov',
+      params: DEFAULT_AS_CONFIG,
+    });
+
+    expect(strategy).toBeInstanceOf(AvellanedaStoikovStrategy);
+    expect(strategy.name).toBe('AvellanedaStoikovStrategy');
+  });
+
+  it('создаёт AvellanedaStoikovStrategy с кастомным id', () => {
+    const strategy = createStrategy({
+      type: 'avellaneda-stoikov',
+      id: 'custom-as',
+      params: DEFAULT_AS_CONFIG,
+    });
+
+    expect(strategy.id).toBe('custom-as');
+  });
+
   it('бросает ошибку для неизвестного типа', () => {
     expect(() => {
       createStrategy({ type: 'unknown' as any, params: {} as any });
@@ -83,23 +61,17 @@ describe('createStrategy', () => {
 });
 
 describe('дефолтные конфигурации', () => {
-  it('DEFAULT_MARKET_MAKER_CONFIG содержит корректные значения', () => {
-    expect(DEFAULT_MARKET_MAKER_CONFIG.spreadOffset.toNumber()).toBe(0.02);
-    expect(DEFAULT_MARKET_MAKER_CONFIG.minSpread.toNumber()).toBe(0.01);
-    expect(DEFAULT_MARKET_MAKER_CONFIG.orderSize.toNumber()).toBe(10);
-    expect(DEFAULT_MARKET_MAKER_CONFIG.exitThresholdMs).toBe(60_000);
-  });
-
-  it('DEFAULT_MOMENTUM_CONFIG содержит корректные значения', () => {
-    expect(DEFAULT_MOMENTUM_CONFIG.entryThreshold.toNumber()).toBe(0.65);
-    expect(DEFAULT_MOMENTUM_CONFIG.exitThreshold.toNumber()).toBe(0.40);
-    expect(DEFAULT_MOMENTUM_CONFIG.orderSize.toNumber()).toBe(5);
-  });
-
   it('DEFAULT_DUMB_CONFIG содержит корректные значения', () => {
     expect(DEFAULT_DUMB_CONFIG.orderSize.toNumber()).toBe(5);
     expect(DEFAULT_DUMB_CONFIG.buyOffsetPct.toNumber()).toBe(10);
     expect(DEFAULT_DUMB_CONFIG.profitMarginPct.toNumber()).toBe(5);
     expect(DEFAULT_DUMB_CONFIG.repriceThreshold.toNumber()).toBe(0.08);
+  });
+
+  it('DEFAULT_AS_CONFIG содержит корректные значения', () => {
+    expect(DEFAULT_AS_CONFIG.gamma.toNumber()).toBe(0.05);
+    expect(DEFAULT_AS_CONFIG.qMax).toBe(5);
+    expect(DEFAULT_AS_CONFIG.orderSize.toNumber()).toBe(10);
+    expect(DEFAULT_AS_CONFIG.marketDuration).toBe('5m');
   });
 });

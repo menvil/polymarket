@@ -1,6 +1,6 @@
 # Стратегии торгового бота
 
-> Дата: 2026-03-17
+> Дата: 2026-03-23
 
 ## Обзор
 
@@ -25,133 +25,88 @@
 Есть позиция + есть SELL ордер  → HOLD (ждём)
 ```
 
-**Расчёт дрейфа:**
-```
-newTargetPrice = bestAsk_now - buyOffset
-drift_bps      = |newTargetPrice - orderPrice| / orderPrice × 10 000
-```
-Если `bestAsk` не изменился → `drift = 0`. Если `bestAsk` ушёл вверх на 0.03 → `drift = 0.03/orderPrice × 10 000`.
-
 **Конфигурация:**
 | Параметр | Тип | По умолчанию | Описание |
 |----------|-----|-------------|----------|
-| `orderSize` | `Decimal` | `5` | Размер ордера (в токенах) |
-| `buyOffset` | `Decimal` | `0.02` | Отступ ниже bestAsk для лимитки |
-| `profitMargin` | `Decimal` | `0.05` | Наценка на SELL от средней цены входа |
-| `repriceThresholdBps` | `number` | `50` | Порог дрейфа для перестановки (базисные пункты) |
+| `orderSize` | `Decimal` | `5` | Размер ордера в токенах |
+| `buyOffsetPct` | `Decimal` | `10` | Отступ BUY от refPrice в % |
+| `profitMarginPct` | `Decimal` | `5` | Наценка SELL в % |
+| `repriceThreshold` | `Decimal` | `0.08` | Порог переставки в USDC |
 
-**Пример потока:**
+### AvellanedaStoikovStrategy
+
+**Назначение:** Маркет-мейкинг по модели Avellaneda-Stoikov с калиброванными параметрами из исследования на 10M трейдов Polymarket.
+
+**Модель (logit-space):**
 ```
-bestAsk=0.50 → BUY лимитка @ 0.48 (offset=0.02)
-bestAsk=0.55 → newTarget=0.53, drift=(0.53-0.48)/0.48×10000=1042 bps > 50 → REPRICE @ 0.53
-BUY исполнился @ 0.53 → позиция open
-→ SELL @ 0.53+0.05 = 0.58
-SELL исполнился → начинаем сначала
+reservation_price: r_x = logit(mid) - (q/qMax) × γ × σ² × τ
+optimal_spread:    δ = γ × σ² × τ + 2/κ + jump_premium
+bid = sigmoid(r_x - δ/2) × 100
+ask = sigmoid(r_x + δ/2) × 100
 ```
-
-**Пример создания:**
-```typescript
-const dumb = new DumbStrategy({
-  orderSize: new Decimal('5'),
-  buyOffset: new Decimal('0.02'),
-  profitMargin: new Decimal('0.05'),
-  repriceThresholdBps: 50,
-});
-```
-
-### SimpleMarketMaker
-
-**Назначение:** Котирование bid/ask вокруг mid-price.
 
 **Алгоритм:**
 ```
-timeToExpiry < exitThreshold → CANCEL_ALL + SELL позицию
-spread < minSpread           → CANCEL_ALL
-нет bid/ask                  → HOLD
-нормальный режим             → BUY (mid - offset) + SELL (mid + offset)
+tradeCount < minTradesForMid → SKIP (EWMA ненадёжна)
+tauSec < stagedStopSec (10s) → STOP: CANCEL_ALL
+tauSec < stagedWideSec (30s) → spread × 3 (защита от экспирации)
+in-flight fills              → SKIP (ждём подтверждения)
+inventory at ±qMax           → не котируем перегруженную сторону
+нормальный режим             → CANCEL_ALL + PLACE BUY(bid) + PLACE SELL(ask)
 ```
+
+**Калибровка:**
+- σ (волатильность), κ (order arrival), jump premium — per-minute-bucket
+- Две таблицы: 5-минутные (6 бакетов) и 15-минутные (16 бакетов)
+- Волатильность в последнюю минуту 3.8× выше чем за 5 минут до конца
 
 **Конфигурация:**
 | Параметр | Тип | По умолчанию | Описание |
 |----------|-----|-------------|----------|
-| `spreadOffset` | `Decimal` | `0.02` | Отступ от mid для bid/ask |
-| `minSpread` | `Decimal` | `0.01` | Минимальный спред для котирования |
-| `orderSize` | `Decimal` | `10` | Размер каждого ордера |
-| `exitThresholdMs` | `number` | `60000` | Порог экспирации для выхода (ms) |
+| `gamma` | `Decimal` | `0.05` | Risk aversion (выше → шире спреды) |
+| `qMax` | `number` | `5` | Макс позиция в единицах orderSize |
+| `orderSize` | `Decimal` | `10` | Размер одного ордера |
+| `marketDuration` | `string` | `'5m'` | `'5m'` или `'15m'` — выбор калибровки |
+| `spreadMult` | `Decimal` | `1.0` | Множитель спреда |
+| `ewmaAlpha` | `number` | `0.3` | Alpha EWMA mid-price |
+| `stagedWideSec` | `number` | `30` | 3× wide spread за N сек до экспирации |
+| `stagedStopSec` | `number` | `10` | Полная остановка за N сек |
+| `minTradesForMid` | `number` | `5` | Мин трейдов для расчёта EWMA |
 
-### MomentumStrategy
-
-**Назначение:** Следование за моментумом через анализ соотношения BUY/SELL в ленте сделок.
-
-**Алгоритм:**
+**Пример конфига (JSON):**
+```json
+{
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 10,
+    "marketDuration": "5m"
+  }
+}
 ```
-buyRatio > entryThreshold + нет позиции → BUY по bestAsk
-buyRatio < exitThreshold + есть позиция → SELL по bestBid
-иначе                                   → HOLD
-```
 
-**buyRatio** = сумма объёмов BUY / сумма всех объёмов (из TradeTape).
-
-**Конфигурация:**
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `entryThreshold` | `Decimal` | `0.65` | Порог buyRatio для входа |
-| `exitThreshold` | `Decimal` | `0.40` | Порог buyRatio для выхода |
-| `orderSize` | `Decimal` | `5` | Размер ордера |
-
-## Запуск через apps/bot
-
-### Переменные окружения
-
-| Переменная | Обязательная | По умолчанию | Описание |
-|-----------|-------------|-------------|----------|
-| `TOKEN_ID` | ✅ | — | ID токена (outcome token, instrumentId) |
-| `MARKET_ID` | ✅ | — | ID рынка (condition_id) |
-| `STRATEGY` | ❌ | `market-maker` | Тип стратегии: `dumb` / `market-maker` / `momentum` |
-| `ACCOUNT_ID` | ❌ | `venue:POLYMARKET:dev-account` | ID аккаунта |
-| `INITIAL_BALANCE` | ❌ | `1000` | Начальный баланс USDC |
-| `EXPIRATION_MS` | ❌ | `now + 24h` | Время экспирации рынка (epoch ms) |
-
-### Команды запуска
+## Запуск
 
 ```bash
 cd apps/bot
 
-# DumbStrategy — проверка всей цепочки
-TOKEN_ID="0xabc123" MARKET_ID="0xdef456" STRATEGY=dumb \
-  node --loader ts-node/esm src/main.ts
+# Paper mode с discovery крипто-рынков
+MODE=paper CONFIG=./configs/as-mm-paper-discovery.json npx tsx src/main.ts
 
-# SimpleMarketMaker
-TOKEN_ID="0xabc123" MARKET_ID="0xdef456" STRATEGY=market-maker \
-  INITIAL_BALANCE=5000 \
-  node --loader ts-node/esm src/main.ts
+# Backtest на собранных снапшотах
+MODE=backtest CONFIG=./configs/as-mm-backtest.json npx tsx src/main.ts
 
-# MomentumStrategy
-TOKEN_ID="0xabc123" MARKET_ID="0xdef456" STRATEGY=momentum \
-  node --loader ts-node/esm src/main.ts
+# DumbStrategy для smoke-тестирования
+MODE=paper CONFIG=./configs/dumb-paper-discovery.json npx tsx src/main.ts
 ```
-
-### Запуск тестов
-
-```bash
-cd apps/bot
-npx jest                      # все тесты
-npx jest DumbStrategy         # только DumbStrategy
-npx jest --coverage           # с покрытием
-```
-
-### Graceful shutdown
-
-Бот ловит `SIGINT` (Ctrl+C) и `SIGTERM`:
-1. `scheduler.unregister(strategy.id)` → `strategy.stop()` → `CANCEL_ALL`
-2. Останавливает MarketDataStore и OrderEventBridge
 
 ## Фабрика стратегий
 
 ```typescript
-import { createStrategy, DEFAULT_DUMB_CONFIG } from './strategyFactory.js';
+import { createStrategy, DEFAULT_AS_CONFIG } from './strategyFactory.js';
 
-const strategy = createStrategy({ type: 'dumb', params: DEFAULT_DUMB_CONFIG });
+const strategy = createStrategy({ type: 'avellaneda-stoikov', params: DEFAULT_AS_CONFIG });
 scheduler.register({ strategy, instrumentId, asset, accountId, market });
 ```
 

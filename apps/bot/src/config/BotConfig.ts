@@ -26,8 +26,7 @@
  */
 
 import type { DumbStrategyConfig } from '../strategies/DumbStrategy.js';
-import type { SimpleMarketMakerConfig } from '../strategies/SimpleMarketMaker.js';
-import type { MomentumStrategyConfig } from '../strategies/MomentumStrategy.js';
+import type { ASStrategyConfig } from '../strategies/AvellanedaStoikovStrategy.js';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
 
@@ -35,7 +34,7 @@ import type { MomentumStrategyConfig } from '../strategies/MomentumStrategy.js';
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'market-maker' | 'momentum';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -153,7 +152,7 @@ export interface BotConfig {
   readonly strategy: StrategyType;
 
   /** Параметры конкретной стратегии (зависят от strategy) */
-  readonly strategyParams: DumbStrategyConfig | SimpleMarketMakerConfig | MomentumStrategyConfig;
+  readonly strategyParams: DumbStrategyConfig | ASStrategyConfig;
 
   /** Источник и конфигурация рынка */
   readonly market: MarketConfig;

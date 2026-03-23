@@ -168,24 +168,20 @@ Config: `{ intervalMs, fillLookbackMs }`.
 
 ## Шаг 8: Примеры стратегий + apps/bot
 
-### SimpleMarketMaker (`apps/bot/src/strategies/SimpleMarketMaker.ts`)
-- `extends BaseStrategy<MakerData, MakerAction>`
-- gather: topOfBook + orders + position + balance + timeToExpiry
-- decide:
-  - timeToExpiry < exitThresholdMs → CANCEL_ALL + SELL позицию
-  - spread < minSpread → CANCEL_ALL
-  - нормальный режим → bid/ask котировки с offset от mid
-- toIntents: MakerAction → StrategyIntent[]
+### AvellanedaStoikovStrategy (`apps/bot/src/strategies/AvellanedaStoikovStrategy.ts`)
+- `extends BaseStrategy<ASData, ASAction>`
+- gather: EWMA mid из trade tape + inventory из portfolio + time-to-expiry из market
+- decide: AS модель в logit-space → bid/ask с inventory skew + time staging
+- toIntents: CANCEL_ALL + PLACE BUY(bid) + PLACE SELL(ask)
+- Калиброванные таблицы σ, κ, jump premium per-minute-bucket (5m и 15m)
 
-### MomentumStrategy (`apps/bot/src/strategies/MomentumStrategy.ts`)
-- `extends BaseStrategy<MomentumData, MomentumAction>`
-- gather: tradeTape → buyRatio + topOfBook + position
-- decide: buyRatio > threshold → ENTER, buyRatio < threshold → EXIT
-- toIntents: MomentumAction → StrategyIntent[]
+### DumbStrategy (`apps/bot/src/strategies/DumbStrategy.ts`)
+- `extends BaseStrategy<DumbData, DumbAction>`
+- Smoke-тестирование: BUY → SELL → BUY цикл
 
 ### StrategyFactory (`apps/bot/src/strategyFactory.ts`)
-Фабрика: `createStrategy({ type: 'market-maker' | 'momentum', params })`.
-Дефолтные конфигурации: `DEFAULT_MARKET_MAKER_CONFIG`, `DEFAULT_MOMENTUM_CONFIG`.
+Фабрика: `createStrategy({ type: 'dumb' | 'avellaneda-stoikov', params })`.
+Дефолтные конфигурации: `DEFAULT_DUMB_CONFIG`, `DEFAULT_AS_CONFIG`.
 
 ### main.ts (`apps/bot/src/main.ts`)
 13 шагов инициализации:
@@ -208,7 +204,7 @@ Config: `{ intervalMs, fillLookbackMs }`.
 |-----------|----------|-------------|
 | `TOKEN_ID` | ID токена (обязательно) | — |
 | `MARKET_ID` | ID рынка (обязательно) | — |
-| `STRATEGY` | Тип стратегии | `market-maker` |
+| `STRATEGY` | Тип стратегии | `avellaneda-stoikov` |
 | `ACCOUNT_ID` | ID аккаунта | `venue:POLYMARKET:dev-account` |
 | `INITIAL_BALANCE` | Начальный баланс USDC | `1000` |
 | `EXPIRATION_MS` | Время экспирации (epoch ms) | +24 часа |

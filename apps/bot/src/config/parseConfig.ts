@@ -90,7 +90,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'market-maker', 'momentum'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -218,19 +218,19 @@ function parseStrategyParams(
       if (!result['profitMarginPct']) errors.push('strategyParams.profitMarginPct is required for dumb strategy');
       if (result['repriceThreshold'] === undefined) errors.push('strategyParams.repriceThreshold is required for dumb strategy');
       break;
-    case 'market-maker':
-      if (!result['spreadOffset']) errors.push('strategyParams.spreadOffset is required for market-maker strategy');
-      if (!result['minSpread']) errors.push('strategyParams.minSpread is required for market-maker strategy');
-      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for market-maker strategy');
-      if (raw['exitThresholdMs'] === undefined) errors.push('strategyParams.exitThresholdMs is required for market-maker strategy');
-      if (typeof raw['exitThresholdMs'] === 'number') {
-        result['exitThresholdMs'] = raw['exitThresholdMs'];
+    case 'avellaneda-stoikov':
+      if (!result['gamma']) errors.push('strategyParams.gamma is required for avellaneda-stoikov strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for avellaneda-stoikov strategy');
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for avellaneda-stoikov strategy');
+      if (!raw['marketDuration']) errors.push('strategyParams.marketDuration is required for avellaneda-stoikov strategy');
+      // qMax — целое число, не Decimal
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      // marketDuration — строка '5m' | '15m'
+      if (typeof raw['marketDuration'] === 'string') result['marketDuration'] = raw['marketDuration'];
+      // Опциональные числовые поля — оставить как number, не Decimal
+      for (const numField of ['ewmaAlpha', 'stagedWideSec', 'stagedStopSec', 'minTradesForMid']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
-      break;
-    case 'momentum':
-      if (!result['entryThreshold']) errors.push('strategyParams.entryThreshold is required for momentum strategy');
-      if (!result['exitThreshold']) errors.push('strategyParams.exitThreshold is required for momentum strategy');
-      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for momentum strategy');
       break;
   }
 
