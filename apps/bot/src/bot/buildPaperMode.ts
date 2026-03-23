@@ -122,6 +122,7 @@ export function buildPaperSimulator(params: BuildPaperSimulatorParams): PaperSim
   const exchangeClient = new PaperExchangeClient({
     mock: mockClient,
     simulator,
+    clock,
     instrumentId: ids.instrumentId,
     marketId: ids.marketId,
     accountId: ids.accountId,

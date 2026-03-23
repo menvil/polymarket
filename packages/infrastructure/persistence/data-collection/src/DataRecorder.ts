@@ -194,6 +194,61 @@ export class DataRecorder implements IMarketDataRecorder {
   }
 
   /**
+   * Обновляет первую строку (meta) файла с новыми rawMarket данными.
+   *
+   * @param marketId - ID рынка
+   * @param updatedRawMarket - Обновлённый rawMarket из Gamma API
+   *
+   * @remarks
+   * Перезаписывает первую строку файла. Нужно вызывать после flush буфера,
+   * но до закрытия stream. Используется для записи `eventMetadata.priceToBeat`
+   * и `eventMetadata.finalPrice` которые появляются в API после старта/завершения рынка.
+   */
+  public async updateMarketMeta(marketId: MarketId, updatedRawMarket: Record<string, unknown>): Promise<void> {
+    const key = String(marketId);
+    const writer = this._writers.get(key);
+    if (!writer) return;
+
+    // Сбрасываем буфер перед перезаписью
+    await this._flushWriter(writer);
+
+    // Закрываем текущий stream
+    if (writer.stream) {
+      await new Promise<void>((resolve, reject) => {
+        writer.stream!.end((err?: Error | null) => {
+          if (err) reject(err); else resolve();
+        });
+      });
+      writer.stream = null;
+    }
+
+    // Читаем файл, заменяем первую строку
+    const content = fs.readFileSync(writer.filePath, 'utf-8');
+    const lines = content.split('\n');
+    const newMeta: Record<string, unknown> = {
+      t: 'meta',
+      ts: Date.now(),
+      marketId: key,
+      question: writer.meta.question,
+      tokenIds: Array.from(writer.meta.tokenIds),
+      m: updatedRawMarket,
+    };
+    lines[0] = this._formatter.formatRecord(newMeta).replace(/\n$/, '');
+    fs.writeFileSync(writer.filePath, lines.join('\n'));
+
+    // Переоткрываем stream для append
+    writer.stream = fs.createWriteStream(writer.filePath, { flags: 'a' });
+    writer.stream.on('error', (err) => {
+      this._logger.error('Write stream error', { marketId: key, filePath: writer.filePath, err });
+    });
+
+    this._logger.info('Market meta updated with API data', {
+      marketId: key,
+      hasPriceToBeat: updatedRawMarket['events'] !== undefined,
+    });
+  }
+
+  /**
    * Записывает сырое WS-событие в буфер (синхронно, fire-and-forget).
    *
    * @param tokenId - ID токена (YES или NO)

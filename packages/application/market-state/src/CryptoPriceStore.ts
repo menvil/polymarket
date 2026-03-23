@@ -88,6 +88,10 @@ export class CryptoPriceStore {
   private readonly _targets = new Map<string, number>();
   /** asset → resolution/close price */
   private readonly _resolutions = new Map<string, number>();
+  /** asset'ы с заблокированным targetPrice (priceToBeat из Polymarket meta) */
+  private readonly _lockedTargets = new Set<string>();
+  /** asset'ы с заблокированным resolutionPrice (finalPrice из Polymarket meta) */
+  private readonly _lockedResolutions = new Set<string>();
   /** Callback при обновлении цены */
   private _onChange?: (asset: string) => void;
 
@@ -156,9 +160,30 @@ export class CryptoPriceStore {
    *
    * @param symbolOrAsset - Базовый актив ('btc') или символ RTDS ('btc/usd', 'btcusdt')
    * @param price - Strike цена
+   *
+   * @remarks
+   * Не перезаписывает заблокированное значение (установленное через `lockTargetPrice`).
    */
   setTargetPrice(symbolOrAsset: string, price: number): void {
-    this._targets.set(CryptoPriceStore._toAsset(symbolOrAsset), price);
+    const asset = CryptoPriceStore._toAsset(symbolOrAsset);
+    if (this._lockedTargets.has(asset)) return;
+    this._targets.set(asset, price);
+  }
+
+  /**
+   * Устанавливает и блокирует target/strike цену от перезаписи.
+   *
+   * @param symbolOrAsset - Базовый актив ('btc') или символ RTDS ('btc/usd', 'btcusdt')
+   * @param price - Strike цена (priceToBeat из Polymarket eventMetadata)
+   *
+   * @remarks
+   * Используется для priceToBeat из Gamma API — авторитетный источник.
+   * После вызова `setTargetPrice()` становится no-op для этого актива.
+   */
+  lockTargetPrice(symbolOrAsset: string, price: number): void {
+    const asset = CryptoPriceStore._toAsset(symbolOrAsset);
+    this._targets.set(asset, price);
+    this._lockedTargets.add(asset);
   }
 
   /**
@@ -166,9 +191,30 @@ export class CryptoPriceStore {
    *
    * @param symbolOrAsset - Базовый актив ('btc') или символ RTDS ('btc/usd', 'btcusdt')
    * @param price - Resolution цена
+   *
+   * @remarks
+   * Не перезаписывает заблокированное значение (установленное через `lockResolutionPrice`).
    */
   setResolutionPrice(symbolOrAsset: string, price: number): void {
-    this._resolutions.set(CryptoPriceStore._toAsset(symbolOrAsset), price);
+    const asset = CryptoPriceStore._toAsset(symbolOrAsset);
+    if (this._lockedResolutions.has(asset)) return;
+    this._resolutions.set(asset, price);
+  }
+
+  /**
+   * Устанавливает и блокирует resolution цену от перезаписи.
+   *
+   * @param symbolOrAsset - Базовый актив ('btc') или символ RTDS ('btc/usd', 'btcusdt')
+   * @param price - Resolution цена (finalPrice из Polymarket eventMetadata)
+   *
+   * @remarks
+   * Используется для finalPrice из Gamma API — авторитетный источник (Chainlink oracle).
+   * После вызова `setResolutionPrice()` становится no-op для этого актива.
+   */
+  lockResolutionPrice(symbolOrAsset: string, price: number): void {
+    const asset = CryptoPriceStore._toAsset(symbolOrAsset);
+    this._resolutions.set(asset, price);
+    this._lockedResolutions.add(asset);
   }
 
   /**
@@ -181,27 +227,37 @@ export class CryptoPriceStore {
   }
 
   /**
-   * Определяет текущий прогноз исхода рынка.
+   * Определяет финальный исход рынка для settlement.
    *
    * @param symbolOrAsset - Базовый актив или символ RTDS
    * @returns 'UP' если цена >= targetPrice, 'DOWN' если ниже, undefined если нет данных
    *
    * @remarks
-   * Использует resolutionPrice если доступна, иначе Chainlink, иначе Binance.
+   * ### Приоритет определения исхода:
+   * 1. `resolutionPrice` (finalPrice из meta или последний crypto_price) vs `targetPrice` (priceToBeat)
+   * 2. Если нет resolutionPrice — последняя Chainlink цена vs targetPrice
+   * 3. Без `targetPrice` (priceToBeat) — невозможно определить исход → undefined
+   *
+   * **Важно**: Binance цена НЕ используется для определения исхода.
+   * Polymarket резолвит рынки по Chainlink oracle, поэтому только Chainlink
+   * является авторитетным источником для fallback.
    */
   getResolution(symbolOrAsset: string): 'UP' | 'DOWN' | undefined {
     const asset = CryptoPriceStore._toAsset(symbolOrAsset);
     const target = this._targets.get(asset);
     if (target === undefined) return undefined;
 
+    // Приоритет 1: resolutionPrice (finalPrice из meta или последний crypto_price)
     const resolution = this._resolutions.get(asset);
     if (resolution !== undefined) return resolution >= target ? 'UP' : 'DOWN';
 
+    // Приоритет 2: последняя Chainlink цена (ТОЛЬКО Chainlink — Polymarket резолвит по нему)
     const prices = this._prices.get(asset);
-    const price = prices?.chainlink?.price ?? prices?.binance?.price;
-    if (price === undefined) return undefined;
+    const chainlinkPrice = prices?.chainlink?.price;
+    if (chainlinkPrice !== undefined) return chainlinkPrice >= target ? 'UP' : 'DOWN';
 
-    return price >= target ? 'UP' : 'DOWN';
+    // Без Chainlink цены и без resolutionPrice — исход не определён
+    return undefined;
   }
 
   /**

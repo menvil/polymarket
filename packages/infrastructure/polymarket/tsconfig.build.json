@@ -79,6 +79,7 @@
     "ws/**/*",
     "errors/**/*",
     "adapters/**/*",
-    "ports/**/*"
+    "ports/**/*",
+    "dns/**/*"
   ]
 }

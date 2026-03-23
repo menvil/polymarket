@@ -39,6 +39,7 @@ import type { MockExchangeClient } from '@polymarket/backtesting';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
+import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import type { PaperFillSimulator } from './PaperFillSimulator.js';
 
@@ -60,6 +61,8 @@ export interface PaperExchangeClientDeps {
   readonly mock: MockExchangeClient;
   /** Симулятор fills */
   readonly simulator: PaperFillSimulator;
+  /** Источник времени для определения maker/taker */
+  readonly clock: IClock;
   /** ID торгуемого инструмента (outcome token) */
   readonly instrumentId: InstrumentId;
   /** ID рынка */
@@ -182,6 +185,7 @@ export class PaperExchangeClient implements IExchangeClient {
         remainingSize: params.size.value(),
         accountId: ctx?.accountId ?? this._accountId,
         asset: ctx?.asset ?? this._asset,
+        placedAtMs: this._deps.clock.now().getTime(),
       });
     }
 

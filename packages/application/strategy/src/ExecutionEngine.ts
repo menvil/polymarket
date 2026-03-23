@@ -40,6 +40,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { ILogger } from '@polymarket/logger';
+import type { IClock } from '@polymarket/time';
 import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
 import { asOrderId } from '@polymarket/ids';
 import type { PlaceOrderUseCase } from '@polymarket/use-cases';
@@ -80,6 +81,8 @@ export interface ExecutionEngineDeps {
   readonly portfolioStore: IPortfolioStore;
   /** Каталог инструментов — для валидации constraints (reject-only, без коррекции) */
   readonly catalog: IMarketCatalog;
+  /** Источник времени (IClock) — для cooldown-таймеров. В backtest используется ReplayClock. */
+  readonly clock: IClock;
   readonly logger: ILogger;
   /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
   readonly tokenBalanceChecker?: ITokenBalanceChecker;
@@ -127,7 +130,7 @@ export class ExecutionEngine {
 
   /**
    * Cooldown per `${instrumentId}:${side}` после отклонения ордера биржей.
-   * Ключ: `${instrumentId}:${side}`. Значение: timestamp последнего rejection (Date.now()).
+   * Ключ: `${instrumentId}:${side}`. Значение: timestamp последнего rejection (clock.now()).
    *
    * @remarks
    * Защищает от бесконечного retry-цикла когда биржа стабильно отклоняет ордер
@@ -142,7 +145,7 @@ export class ExecutionEngine {
 
   /**
    * Cooldown per instrumentId после cancel ордера.
-   * Ключ: instrumentId. Значение: timestamp последнего cancel (Date.now()).
+   * Ключ: instrumentId. Значение: timestamp последнего cancel (clock.now()).
    *
    * @remarks
    * Защищает от cancel-and-replace race condition на Polymarket:
@@ -358,7 +361,7 @@ export class ExecutionEngine {
     // Cancel на CLOB не отменяет on-chain fill — MINT может быть уже в пути.
     // Без cooldown: cancel → place(новый) → fill(старый) приходит → двойная покупка.
     const instrumentKey = String(ctx.instrumentId);
-    this._postCancelCooldowns.set(instrumentKey, Date.now());
+    this._postCancelCooldowns.set(instrumentKey, this._deps.clock.now().getTime());
     this._logger.info('ExecutionEngine: post-cancel cooldown set', {
       strategyId: ctx.strategyId,
       instrumentId: instrumentKey,
@@ -389,7 +392,7 @@ export class ExecutionEngine {
    * Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
    */
   private async _executePlace(ctx: ExecutionContext, intent: PlaceIntent): Promise<'placed' | 'skipped' | 'failed'> {
-    const nowForCooldown = Date.now();
+    const nowForCooldown = this._deps.clock.now().getTime();
     const instrumentKey = String(ctx.instrumentId);
 
     // ── Post-cancel cooldown ────────────────────────────────
@@ -490,7 +493,7 @@ export class ExecutionEngine {
     if (!result.ok) {
       // Устанавливаем cooldown чтобы не спамить биржу при стабильном rejection.
       // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (30s).
-      this._exchangeRejectionCooldowns.set(rejectionKey, Date.now());
+      this._exchangeRejectionCooldowns.set(rejectionKey, this._deps.clock.now().getTime());
       // portfolioTokenQty: диагностика десинка in-memory vs on-chain.
       // Если qty совпадает с размером ордера — скорее всего token approval не выставлен.
       // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.

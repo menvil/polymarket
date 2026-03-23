@@ -65,6 +65,23 @@ export interface CryptoMarketMeta {
   readonly binanceSymbol: string;
   readonly eventStartTimeMs: number;
   readonly endDateMs: number;
+  /**
+   * Официальный strike price от Polymarket (eventMetadata.priceToBeat).
+   *
+   * @remarks
+   * Доступен через Gamma API только ПОСЛЕ eventStartTime.
+   * При регистрации рынка ДО старта — undefined.
+   * Collect-data перезапрашивает метаданные после eventStartTime для получения.
+   */
+  readonly priceToBeat: number | undefined;
+  /**
+   * Финальная цена от Polymarket (eventMetadata.finalPrice).
+   *
+   * @remarks
+   * Доступен через Gamma API только ПОСЛЕ endDate (закрытие рынка).
+   * Chainlink цена на момент endDate — используется для resolution.
+   */
+  readonly finalPrice: number | undefined;
 }
 
 /**
@@ -93,8 +110,9 @@ const CHAINLINK_TO_BINANCE: Record<string, string> = {
  * Обратный маппинг Binance символов → Chainlink символы.
  *
  * @remarks
- * RTDS topic `crypto_prices` (Binance source) не отправляет обновления.
- * Все крипто-цены доступны через `crypto_prices_chainlink`.
+ * Оба RTDS topic отправляют обновления:
+ * - `crypto_prices` (Binance): фильтры через comma-separated строку
+ * - `crypto_prices_chainlink` (Chainlink): JSON фильтр или пустая строка (все символы)
  * Маппинг нужен для Binance-sourced рынков: `BTCUSDT` → `btc/usd`.
  */
 const BINANCE_TO_CHAINLINK: Record<string, string> = Object.fromEntries(
@@ -139,6 +157,11 @@ export function parseCryptoMeta(rawMarket: Record<string, unknown> | undefined |
   const endDateMs = new Date(endDate).getTime();
   if (Number.isNaN(eventStartTimeMs) || Number.isNaN(endDateMs)) return undefined;
 
+  // Извлекаем priceToBeat и finalPrice из events[0].eventMetadata
+  const eventMeta = _extractEventMetadata(rawMarket);
+  const priceToBeat = eventMeta?.priceToBeat;
+  const finalPrice = eventMeta?.finalPrice;
+
   // Binance source: https://www.binance.com/en/trade/BTC_USDT
   if (resolutionSource.includes('binance.com')) {
     const match = resolutionSource.match(/\/trade\/([A-Z]+)_([A-Z]+)/i);
@@ -161,6 +184,8 @@ export function parseCryptoMeta(rawMarket: Record<string, unknown> | undefined |
       binanceSymbol,
       eventStartTimeMs,
       endDateMs,
+      priceToBeat,
+      finalPrice,
     };
   }
 
@@ -185,6 +210,8 @@ export function parseCryptoMeta(rawMarket: Record<string, unknown> | undefined |
       binanceSymbol,
       eventStartTimeMs,
       endDateMs,
+      priceToBeat,
+      finalPrice,
     };
   }
 
@@ -209,6 +236,37 @@ export function parseCryptoMeta(rawMarket: Record<string, unknown> | undefined |
  * computeInterval(3_600_000); // '1h'
  * ```
  */
+/**
+ * Извлекает eventMetadata из events[0].
+ *
+ * @param rawMarket - Сырой объект рынка из Gamma API
+ * @returns priceToBeat и finalPrice, или undefined если нет данных
+ *
+ * @remarks
+ * Polymarket устанавливает эти поля в eventMetadata:
+ * - `priceToBeat` — появляется после eventStartTime (strike price)
+ * - `finalPrice` — появляется после endDate (resolution price)
+ * Оба значения от Chainlink oracle.
+ */
+function _extractEventMetadata(rawMarket: Record<string, unknown>): { priceToBeat?: number; finalPrice?: number } | undefined {
+  const events = rawMarket['events'] as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(events) || events.length === 0) return undefined;
+
+  const meta = events[0]!['eventMetadata'] as Record<string, unknown> | undefined;
+  if (!meta) return undefined;
+
+  const toNum = (v: unknown): number | undefined => {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+    return Number.isNaN(n) ? undefined : n;
+  };
+
+  return {
+    priceToBeat: toNum(meta['priceToBeat']),
+    finalPrice: toNum(meta['finalPrice']),
+  };
+}
+
 export function computeInterval(durationMs: number): string {
   if (durationMs <= 60_000) return '1m';
   if (durationMs <= 180_000) return '3m';

@@ -83,6 +83,8 @@ interface RawMeta {
   readonly t: 'meta';
   readonly marketId: string;
   readonly tokenIds: string[];
+  /** Сырой rawMarket из Gamma API (обновлённый при finalize) */
+  readonly m?: Record<string, unknown>;
 }
 
 /**
@@ -180,6 +182,10 @@ export interface IBacktestCryptoPriceStore {
   updatePrice(symbol: string, price: number, timestampMs: number): void;
   setTargetPrice(symbolOrAsset: string, price: number): void;
   setResolutionPrice(symbolOrAsset: string, price: number): void;
+  /** Устанавливает и блокирует targetPrice (priceToBeat из meta) от перезаписи */
+  lockTargetPrice(symbolOrAsset: string, price: number): void;
+  /** Устанавливает и блокирует resolutionPrice (finalPrice из meta) от перезаписи */
+  lockResolutionPrice(symbolOrAsset: string, price: number): void;
 }
 
 /**
@@ -205,6 +211,14 @@ export interface BacktestDeps {
   readonly replayClock?: ReplayClock;
   /** Опциональный store крипто-цен для реплея crypto_price событий */
   readonly cryptoPriceStore?: IBacktestCryptoPriceStore;
+  /**
+   * Парсер крипто-метаданных из rawMarket.
+   *
+   * @remarks
+   * Используется для извлечения priceToBeat и finalPrice из meta строки.
+   * Если не предоставлен — fallback на strike_price/market_resolved события.
+   */
+  readonly parseCryptoMeta?: (rawMarket: Record<string, unknown>) => { rtdsFilter: string; priceToBeat?: number; finalPrice?: number } | undefined;
 }
 
 /**
@@ -323,6 +337,28 @@ export class BacktestEngine {
             fileMarketId = asMarketId(meta.marketId) ?? undefined;
             const tokenId = meta.tokenIds[outcomeIndex];
             fileInstrumentId = tokenId ? (asInstrumentId(tokenId) ?? undefined) : undefined;
+
+            // Извлекаем priceToBeat и finalPrice из rawMarket (eventMetadata)
+            if (this._deps.cryptoPriceStore && meta.m) {
+              const cryptoMeta = this._deps.parseCryptoMeta?.(meta.m as Record<string, unknown>);
+              if (cryptoMeta) {
+                if (cryptoMeta.priceToBeat !== undefined) {
+                  this._deps.cryptoPriceStore.lockTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
+                  this._logger.info('Strike price locked from meta (priceToBeat)', {
+                    symbol: cryptoMeta.rtdsFilter,
+                    strikePrice: cryptoMeta.priceToBeat,
+                  });
+                }
+                if (cryptoMeta.finalPrice !== undefined) {
+                  this._deps.cryptoPriceStore.lockResolutionPrice(cryptoMeta.rtdsFilter, cryptoMeta.finalPrice);
+                  this._logger.info('Resolution price locked from meta (finalPrice)', {
+                    symbol: cryptoMeta.rtdsFilter,
+                    finalPrice: cryptoMeta.finalPrice,
+                  });
+                }
+              }
+            }
+
             this._logger.info('Meta loaded', {
               marketId: meta.marketId,
               tokenId,
@@ -331,13 +367,13 @@ export class BacktestEngine {
             continue;
           }
 
-          // ── strike_price событие (записано collect-data при открытии рынка) ──
+          // ── strike_price событие (обратная совместимость со старыми снапшотами) ──
           if (raw['t'] === 'strike_price' && this._deps.cryptoPriceStore) {
             const symbol = raw['symbol'] as string;
             const strikePrice = raw['strikePrice'] as number;
             if (symbol && typeof strikePrice === 'number') {
               this._deps.cryptoPriceStore.setTargetPrice(symbol, strikePrice);
-              this._logger.info('Strike price loaded', {
+              this._logger.info('Strike price loaded (legacy event)', {
                 symbol,
                 strikePrice,
               });
@@ -355,8 +391,12 @@ export class BacktestEngine {
               this._advanceClock(new Date(ts));
               this._deps.cryptoPriceStore.updatePrice(symbol, price, ts);
 
-              // Обновляем resolution price (последнее значение будет финальным)
-              this._deps.cryptoPriceStore.setResolutionPrice(symbol, price);
+              // Обновляем resolution price только от Chainlink (Polymarket резолвит по нему).
+              // Binance цена НЕ используется для определения исхода рынка.
+              // Формат Chainlink: 'btc/usd', Binance: 'btcusdt'.
+              if (symbol.includes('/')) {
+                this._deps.cryptoPriceStore.setResolutionPrice(symbol, price);
+              }
 
               cryptoPriceEvents++;
               continue;
@@ -369,9 +409,9 @@ export class BacktestEngine {
             const strikePrice = raw['strikePrice'] as number;
             const resolutionPrice = raw['resolutionPrice'] as number;
             if (symbol && typeof strikePrice === 'number' && typeof resolutionPrice === 'number') {
-              this._deps.cryptoPriceStore.setTargetPrice(symbol, strikePrice);
-              this._deps.cryptoPriceStore.setResolutionPrice(symbol, resolutionPrice);
-              this._logger.info('Market resolved event replayed', {
+              this._deps.cryptoPriceStore.lockTargetPrice(symbol, strikePrice);
+              this._deps.cryptoPriceStore.lockResolutionPrice(symbol, resolutionPrice);
+              this._logger.info('Market resolved event replayed (locked)', {
                 symbol,
                 strikePrice,
                 resolutionPrice,
@@ -398,7 +438,10 @@ export class BacktestEngine {
                 filePath,
               );
               if (result) bookEvents += 1;
-              else errors += 1;
+              else {
+                if (errors < 3) this._logger.warn('Book event processing failed', { timestamp: raw['timestamp'], assetId, bidsLen: (raw['bids'] as unknown[])?.length, asksLen: (raw['asks'] as unknown[])?.length });
+                errors += 1;
+              }
             } else {
               const result = await this._processTradeEvent(
                 raw as unknown as RawTradeEvent,
@@ -406,7 +449,10 @@ export class BacktestEngine {
                 filePath,
               );
               if (result) tradeEvents += 1;
-              else errors += 1;
+              else {
+                if (errors < 3) this._logger.warn('Trade event processing failed', { timestamp: raw['timestamp'], price: raw['price'], size: raw['size'], side: raw['side'] });
+                errors += 1;
+              }
             }
           } else if (raw['_type'] === 'EVENT' && raw['event']) {
             // Legacy формат
@@ -623,8 +669,8 @@ export class BacktestEngine {
     try {
       this._deps.replayClock.update(date);
     } catch {
-      // out-of-order timestamp — оставляем clock на текущем значении
-      this._logger.warn('ReplayClock: out-of-order event, skipping clock update');
+      // out-of-order timestamp — нормально при чередовании book/crypto_price событий
+      this._logger.debug('ReplayClock: out-of-order event, skipping clock update');
     }
   }
 

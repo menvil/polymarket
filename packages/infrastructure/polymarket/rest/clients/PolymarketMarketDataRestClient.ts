@@ -244,8 +244,12 @@ export class PolymarketMarketDataRestClient {
   async getMarketInfo(slugOrConditionId: string): Promise<GammaMarketDto> {
     this.logger.debug('Getting market info', { slugOrConditionId });
 
-    const url = `${this.config.baseUrl}/markets/${slugOrConditionId}`;
-    const market = await this.fetch<GammaMarketDto>(url);
+    const url = `${this.config.baseUrl}/markets?slug=${encodeURIComponent(slugOrConditionId)}`;
+    const results = await this.fetch<GammaMarketDto[]>(url);
+    const market = Array.isArray(results) ? results[0] : results;
+    if (!market) {
+      throw new Error(`Market not found: ${slugOrConditionId}`);
+    }
 
     this.logger.debug('Market info retrieved', {
       slug: market.slug,

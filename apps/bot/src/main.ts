@@ -50,7 +50,6 @@ import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
-import { SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 import { BookUpdateHandler } from '@polymarket/handlers';
 import type { IBookRegistry } from '@polymarket/handlers';
 import { OrderBook } from '@polymarket/order-book';
@@ -70,6 +69,8 @@ import { buildLiveInfra } from './bot/buildLiveInfra.js';
 import type { LiveCredentials } from './bot/buildLiveInfra.js';
 import { buildMarketData } from './bot/buildMarketData.js';
 import { buildStrategyEngine } from './bot/buildStrategyEngine.js';
+import { readSnapshotMeta } from './bot/readSnapshotMeta.js';
+import { runMultiMarketBacktest } from './bot/runMultiMarketBacktest.js';
 import { FillOrchestrator } from '@polymarket/orchestrators';
 import { SimplePosition } from '@polymarket/use-cases';
 import { createStrategy } from './strategyFactory.js';
@@ -267,8 +268,50 @@ async function runPaper(): Promise<void> {
 
   // RTDS → CryptoPriceStore wiring
   // Передаём ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
+  //
+  // Chainlink strike price fallback: если targetPrice ещё не установлен
+  // (Gamma API не вернула priceToBeat, Binance kline не доступен),
+  // первая Chainlink цена после eventStartTime используется как strike.
+  // Chainlink strike price fallback:
+  // Map: rtdsFilter → eventStartTimeMs. Первая Chainlink цена с ts >= eventStartTime = strike.
+  const pendingChainlinkStrike = new Map<string, number>(); // symbol → eventStartTimeMs
+  let lastCryptoPriceLogMs = 0;
+  const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
   rtdsClient.onPrice((symbol, price, ts) => {
     cryptoPriceStore.updatePrice(symbol, price, ts);
+
+    // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
+    if (symbol.includes('/')) {
+      const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol);
+      if (isActiveSymbol) {
+        const now = Date.now();
+        if (now - lastCryptoPriceLogMs >= CRYPTO_PRICE_LOG_INTERVAL_MS) {
+          lastCryptoPriceLogMs = now;
+          const snap = cryptoPriceStore.get(symbol);
+          logger.info('Crypto price update', {
+            symbol,
+            price: price.toFixed(2),
+            targetPrice: snap?.targetPrice?.toFixed(2) ?? '-',
+            source: 'chainlink',
+          });
+        }
+      }
+    }
+
+    // Chainlink strike fallback: первая Chainlink цена после eventStartTime
+    if (symbol.includes('/') && pendingChainlinkStrike.has(symbol)) {
+      const eventStartMs = pendingChainlinkStrike.get(symbol)!;
+      if (ts >= eventStartMs) {
+        cryptoPriceStore.setTargetPrice(symbol, price);
+        pendingChainlinkStrike.delete(symbol);
+        logger.info('Strike price from Chainlink RTDS (first after eventStart)', {
+          symbol,
+          strikePrice: price,
+          chainlinkTs: new Date(ts).toISOString(),
+          eventStartTime: new Date(eventStartMs).toISOString(),
+        });
+      }
+    }
   });
 
   // Discovery-специфичное состояние
@@ -380,21 +423,31 @@ async function runPaper(): Promise<void> {
 
     // Fetch strike price и подписка RTDS для начального рынка
     if (initialCryptoMeta) {
-      try {
-        const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
-        const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
-        cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
-        logger.info('Strike price fetched for initial market', {
+      if (initialCryptoMeta.priceToBeat !== undefined) {
+        cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, initialCryptoMeta.priceToBeat);
+        logger.info('Strike price from API (priceToBeat)', {
           symbol: initialCryptoMeta.rtdsFilter,
-          strikePrice: kline.open,
+          strikePrice: initialCryptoMeta.priceToBeat,
         });
-      } catch (err) {
-        logger.warn('Failed to fetch strike price for initial market', {
-          symbol: initialCryptoMeta.binanceSymbol,
-          err: err instanceof Error ? err.message : String(err),
-        });
+      } else {
+        try {
+          const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
+          const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
+          cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
+          logger.info('Strike price from Binance kline (fallback)', {
+            symbol: initialCryptoMeta.rtdsFilter,
+            strikePrice: kline.open,
+          });
+        } catch (err) {
+          logger.warn('Failed to fetch strike price for initial market', {
+            symbol: initialCryptoMeta.binanceSymbol,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-      rtdsClient.subscribe(initialCryptoMeta.rtdsTopic, initialCryptoMeta.rtdsFilter);
+      for (const sub of initialCryptoMeta.rtdsSubscriptions) {
+        rtdsClient.subscribe(sub.topic, sub.filter);
+      }
     }
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
@@ -594,17 +647,45 @@ async function runPaper(): Promise<void> {
 
     // Fetch strike price и подписка RTDS для крипто-рынка
     if (slotCryptoMeta) {
-      try {
-        const interval = computeInterval(slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs);
-        const kline = await binanceClient.getKline(slotCryptoMeta.binanceSymbol, slotCryptoMeta.eventStartTimeMs, interval);
-        cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, kline.open);
-      } catch (err) {
-        logger.warn('Failed to fetch strike price', {
-          symbol: slotCryptoMeta.binanceSymbol,
-          err: err instanceof Error ? err.message : String(err),
+      if (slotCryptoMeta.priceToBeat !== undefined) {
+        cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, slotCryptoMeta.priceToBeat);
+        logger.info('Strike price from API (priceToBeat)', {
+          symbol: slotCryptoMeta.rtdsFilter,
+          strikePrice: slotCryptoMeta.priceToBeat,
         });
+      } else {
+        const eventStarted = Date.now() > slotCryptoMeta.eventStartTimeMs;
+
+        if (eventStarted) {
+          // Рынок уже начался давно — Binance kline open как fallback
+          try {
+            const interval = computeInterval(slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs);
+            const kline = await binanceClient.getKline(slotCryptoMeta.binanceSymbol, slotCryptoMeta.eventStartTimeMs, interval);
+            cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, kline.open);
+            logger.info('Strike price from Binance kline (event already started)', {
+              symbol: slotCryptoMeta.rtdsFilter,
+              strikePrice: kline.open,
+            });
+          } catch (err) {
+            // Binance тоже не смог → ждём первую Chainlink цену из RTDS
+            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS', {
+              symbol: slotCryptoMeta.binanceSymbol,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
+          }
+        } else {
+          // Рынок ещё не начался — ждём первую Chainlink цену после eventStartTime
+          pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
+          logger.info('Waiting for first Chainlink price after event start as strike', {
+            symbol: slotCryptoMeta.rtdsFilter,
+            eventStartTime: new Date(slotCryptoMeta.eventStartTimeMs).toISOString(),
+          });
+        }
       }
-      rtdsClient.subscribe(slotCryptoMeta.rtdsTopic, slotCryptoMeta.rtdsFilter);
+      for (const sub of slotCryptoMeta.rtdsSubscriptions) {
+        rtdsClient.subscribe(sub.topic, sub.filter);
+      }
     }
 
     // Регистрируем рынок в PaperExchangeClient для маршрутизации ордеров
@@ -648,55 +729,86 @@ async function runPaper(): Promise<void> {
     // Снимаем стратегию → автоматически отменяет все открытые ордера через CANCEL_ALL
     await engine.scheduler.unregister(slot.strategy.id);
 
-    // Сводка ПОСЛЕ unregister чтобы finalUsdcReserved отображал 0 (ордера уже отменены)
-    printMarketSummary(slot);
-
     await wsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
 
-    // Отписка от RTDS для крипто-рынка
+    // Отписка от RTDS для крипто-рынка + очистка pending Chainlink strike
     if (slot.cryptoMeta) {
       rtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
+      pendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
     }
 
     // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
+    let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
     if (reason === 'EXPIRED' && slot.cryptoMeta) {
       const resolution = cryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
-      if (resolution) {
-        const portfolio = portfolioStore.get(accountId!);
-        const position = portfolio?.getPosition(slot.instrumentId);
-        if (portfolio && position && !position.isClosed()) {
-          const qty = position.quantity.value();
-          const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
-          const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
-          const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
-          const cashCredit = qty.times(settlementPrice);
+      const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
+      const portfolio = portfolioStore.get(accountId!);
+      const position = portfolio?.getPosition(slot.instrumentId);
+      const hasTokens = position && !position.isClosed();
 
-          // Удаляем позицию (settled)
-          const closedPosition = new SimplePosition({
-            instrumentId: slot.instrumentId,
-            quantity: new Decimal(0),
-            averageEntryPrice: position.averageEntryPrice.value(),
-            side: 'LONG' as const,
-          });
-          let updated = portfolio.upsertPosition(closedPosition);
+      logger.info('Settlement check', {
+        hasCryptoMeta: true,
+        symbol: slot.cryptoMeta.rtdsFilter,
+        targetPrice: cryptoSnap?.targetPrice,
+        currentPrice: cryptoSnap?.currentPrice,
+        resolution: resolution ?? 'unknown',
+        hasTokens,
+        tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
+      });
 
-          // Зачисляем settlement cash
-          if (cashCredit.gt(0)) {
-            const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
-            if (creditResult.ok) updated = creditResult.value;
-          }
+      if (resolution && portfolio && position && !position.isClosed()) {
+        const qty = position.quantity.value();
+        const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
+        const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
+        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+        const cashCredit = qty.times(settlementPrice);
 
-          portfolioStore.save(updated, 0);
-          logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
-            symbol: slot.cryptoMeta.rtdsFilter,
-            resolution,
-            settlementPrice: settlementPrice.toFixed(2),
-            cashCredit: cashCredit.toFixed(4),
-            outcomeIndex: oi,
-          });
+        settlementResult = { resolution, settlementPrice, cashCredit, qty };
+
+        // Удаляем позицию (settled)
+        const closedPosition = new SimplePosition({
+          instrumentId: slot.instrumentId,
+          quantity: new Decimal(0),
+          averageEntryPrice: position.averageEntryPrice.value(),
+          side: 'LONG' as const,
+        });
+        let updated = portfolio.upsertPosition(closedPosition);
+
+        // Зачисляем settlement cash
+        if (cashCredit.gt(0)) {
+          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+          if (creditResult.ok) updated = creditResult.value;
         }
+
+        const ver = portfolioStore.getVersion(accountId!);
+        const saveRes = portfolioStore.save(updated, ver);
+        if (!saveRes.ok) {
+          logger.error('Settlement portfolio save failed (version conflict)', { expected: ver });
+        }
+        logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
+          symbol: slot.cryptoMeta.rtdsFilter,
+          resolution,
+          settlementPrice: settlementPrice.toFixed(2),
+          cashCredit: cashCredit.toFixed(4),
+          outcomeIndex: oi,
+        });
       }
+    }
+
+    // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
+    printMarketSummary(slot, settlementResult);
+
+    // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
+    const closeTimestamp = TimestampService.create(Date.now());
+    if (closeTimestamp.ok) {
+      await eventBus.publish({
+        type: 'MARKET_CLOSED',
+        marketId: slot.marketId,
+        reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
+        realizedPnL: Money.of(new Decimal(0), 'USDC'),
+        timestamp: closeTimestamp.value,
+      });
     }
 
     if (reason === 'EXPIRED') {
@@ -944,7 +1056,21 @@ async function runPaper(): Promise<void> {
    *
    * @param slot - Слот активного рынка
    */
-  function printMarketSummary(slot: PaperMarketSlot): void {
+  /**
+   * Печатает сводку по рынку с учётом settlement.
+   *
+   * @param slot - Слот рынка
+   * @param settlement - Результат settlement (если был): resolution, settlementPrice, cashCredit, qty
+   *
+   * @remarks
+   * Открытые циклы (buy без sell) получают settlement PnL:
+   * settlementPrice × qty - entryPrice × qty.
+   * Это даёт полную картину PnL включая unsold токены.
+   */
+  function printMarketSummary(
+    slot: PaperMarketSlot,
+    settlement?: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal },
+  ): void {
     const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
     if (slot.fillHistory.length === 0) {
       logger.info('=== Market summary: no fills ===', { market: marketQuestion });
@@ -961,7 +1087,19 @@ async function runPaper(): Promise<void> {
     const cycles = buys.map((buy, i) => {
       const sell = sells[i];
       const buyLabel = `${buy.size}@${buy.price}${buy.partial ? '(partial)' : ''} [${buy.at}]`;
-      if (!sell) return { buy: buyLabel, sell: '(open)', pnl: '-' };
+      if (!sell) {
+        // Открытый цикл — показываем settlement PnL если есть
+        if (settlement) {
+          const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
+          const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
+          return {
+            buy: buyLabel,
+            sell: `(settled@${settlement.settlementPrice} ${settlement.resolution})`,
+            pnl: (settlePnl.gte(0) ? '+' : '') + settlePnl.toFixed(4) + ' USDC',
+          };
+        }
+        return { buy: buyLabel, sell: '(open)', pnl: '-' };
+      }
       const pnl = new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(buy.size));
       const sellLabel = `${sell.size}@${sell.price}${sell.partial ? '(partial)' : ''} [${sell.at}]`;
       return {
@@ -971,11 +1109,22 @@ async function runPaper(): Promise<void> {
       };
     });
 
-    const totalPnl = sells.reduce((acc, sell, i) => {
+    // PnL от завершённых циклов
+    let totalPnl = sells.reduce((acc, sell, i) => {
       const buy = buys[i];
       if (!buy) return acc;
       return acc.plus(new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(sell.size)));
     }, new Decimal(0));
+
+    // PnL от settlement открытых циклов
+    if (settlement) {
+      for (let i = sells.length; i < buys.length; i++) {
+        const buy = buys[i];
+        const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
+        const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
+        totalPnl = totalPnl.plus(settlePnl);
+      }
+    }
 
     const portfolio = portfolioStore.get(accountId!);
     const position  = portfolio?.getPosition(slot.instrumentId);
@@ -985,8 +1134,9 @@ async function runPaper(): Promise<void> {
       duration:     `${durMin}m${durSec}s`,
       buys:         buys.length,
       sells:        sells.length,
-      openCycles:   buys.length - sells.length,
+      openCycles:   settlement ? 0 : buys.length - sells.length,
       totalPnl:     (totalPnl.gte(0) ? '+' : '') + totalPnl.toFixed(4) + ' USDC',
+      settlement:   settlement ? `${settlement.resolution} @${settlement.settlementPrice}` : undefined,
       cycles,
       finalTokens:  position?.quantity.value().toFixed(2) ?? '0.00',
       finalUsdcFree:    portfolio?.balance.available().value().toFixed(2) ?? '-',
@@ -1120,6 +1270,12 @@ async function runBacktest(): Promise<void> {
   if (resolvedPaths.length === 0) {
     console.error('[Bot] No snapshot files found for paths:', marketConfig.paths);
     process.exit(1);
+  }
+
+  // Multi-market mode: каждый файл — изолированный бэктест + агрегация
+  if (resolvedPaths.length > 1) {
+    await runMultiMarketBacktest(resolvedPaths, config, outcomeIndex as 0 | 1);
+    return;
   }
 
   const snapshotPath = resolvedPaths[0]!;
@@ -1349,34 +1505,48 @@ async function runBacktest(): Promise<void> {
 
   const backtestEngine = new BacktestEngine(
     { filePaths: resolvedPaths, outcomeIndex },
-    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore: backtestCryptoPriceStore },
+    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore: backtestCryptoPriceStore, parseCryptoMeta },
   );
 
   const replayResult = await backtestEngine.run();
 
-  // Fallback для старых снапшотов без crypto_price записей: Binance klines
-  if (backtestCryptoMeta && replayResult.cryptoPriceEvents === 0) {
-    logger.info('No crypto_price events in snapshot, falling back to Binance klines');
-    const backtestBinanceClient = new BinanceKlinesClient(logger);
-    try {
-      const interval = computeInterval(backtestCryptoMeta.endDateMs - backtestCryptoMeta.eventStartTimeMs);
-      const kline = await backtestBinanceClient.getKline(
-        backtestCryptoMeta.binanceSymbol,
-        backtestCryptoMeta.eventStartTimeMs,
-        interval,
-      );
-      backtestCryptoPriceStore.setTargetPrice(backtestCryptoMeta.rtdsFilter, kline.open);
-      backtestCryptoPriceStore.updatePrice(backtestCryptoMeta.rtdsFilter, kline.close, backtestCryptoMeta.endDateMs);
-      backtestCryptoPriceStore.setResolutionPrice(backtestCryptoMeta.rtdsFilter, kline.close);
-      logger.info('Binance klines fallback applied', {
-        symbol: backtestCryptoMeta.binanceSymbol,
-        strikePrice: kline.open,
-        resolutionPrice: kline.close,
+  // Fallback: если после replay нет targetPrice или crypto_price — Binance klines
+  if (backtestCryptoMeta) {
+    const snap = backtestCryptoPriceStore.get(backtestCryptoMeta.rtdsFilter);
+    const needTarget = !snap?.targetPrice;
+    const needPrices = replayResult.cryptoPriceEvents === 0;
+
+    if (needTarget || needPrices) {
+      logger.info('Backtest crypto fallback needed', {
+        needTarget,
+        needPrices,
+        symbol: backtestCryptoMeta.rtdsFilter,
       });
-    } catch (err) {
-      logger.warn('Binance klines fallback failed', {
-        err: err instanceof Error ? err.message : String(err),
-      });
+      const backtestBinanceClient = new BinanceKlinesClient(logger);
+      try {
+        const interval = computeInterval(backtestCryptoMeta.endDateMs - backtestCryptoMeta.eventStartTimeMs);
+        const kline = await backtestBinanceClient.getKline(
+          backtestCryptoMeta.binanceSymbol,
+          backtestCryptoMeta.eventStartTimeMs,
+          interval,
+        );
+        if (needTarget) {
+          backtestCryptoPriceStore.setTargetPrice(backtestCryptoMeta.rtdsFilter, kline.open);
+        }
+        if (needPrices) {
+          backtestCryptoPriceStore.updatePrice(backtestCryptoMeta.rtdsFilter, kline.close, backtestCryptoMeta.endDateMs);
+        }
+        backtestCryptoPriceStore.setResolutionPrice(backtestCryptoMeta.rtdsFilter, kline.close);
+        logger.info('Binance klines fallback applied', {
+          symbol: backtestCryptoMeta.binanceSymbol,
+          strikePrice: needTarget ? kline.open : snap?.targetPrice,
+          resolutionPrice: kline.close,
+        });
+      } catch (err) {
+        logger.warn('Binance klines fallback failed', {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 
@@ -1414,7 +1584,13 @@ async function runBacktest(): Promise<void> {
           if (creditResult.ok) updated = creditResult.value;
         }
 
-        portfolioStore.save(updated, 0);
+        const currentVersion = portfolioStore.getVersion(accountId);
+        const saveResult = portfolioStore.save(updated, currentVersion);
+        if (!saveResult.ok) {
+          logger.error('Settlement portfolio save failed (version conflict)', {
+            expected: currentVersion,
+          });
+        }
         logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
           symbol: backtestCryptoMeta.rtdsFilter,
           resolution,
@@ -1652,8 +1828,46 @@ async function runLive(): Promise<void> {
   );
 
   // RTDS → CryptoPriceStore wiring
+  // Chainlink strike price fallback (аналогично paper mode):
+  // Map: rtdsFilter → eventStartTimeMs. Первая Chainlink цена с ts >= eventStartTime = strike.
+  const livePendingChainlinkStrike = new Map<string, number>();
+  let liveLastCryptoPriceLogMs = 0;
+  const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
   liveRtdsClient.onPrice((symbol, price, ts) => {
     liveCryptoPriceStore.updatePrice(symbol, price, ts);
+
+    // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
+    if (symbol.includes('/')) {
+      const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol);
+      if (isActiveSymbol) {
+        const now = Date.now();
+        if (now - liveLastCryptoPriceLogMs >= CRYPTO_PRICE_LOG_INTERVAL_MS) {
+          liveLastCryptoPriceLogMs = now;
+          const snap = liveCryptoPriceStore.get(symbol);
+          logger.info('Crypto price update', {
+            symbol,
+            price: price.toFixed(2),
+            targetPrice: snap?.targetPrice?.toFixed(2) ?? '-',
+            source: 'chainlink',
+          });
+        }
+      }
+    }
+
+    // Chainlink strike fallback: первая Chainlink цена после eventStartTime
+    if (symbol.includes('/') && livePendingChainlinkStrike.has(symbol)) {
+      const eventStartMs = livePendingChainlinkStrike.get(symbol)!;
+      if (ts >= eventStartMs) {
+        liveCryptoPriceStore.setTargetPrice(symbol, price);
+        livePendingChainlinkStrike.delete(symbol);
+        logger.info('Strike price from Chainlink RTDS (first after eventStart, live)', {
+          symbol,
+          strikePrice: price,
+          chainlinkTs: new Date(ts).toISOString(),
+          eventStartTime: new Date(eventStartMs).toISOString(),
+        });
+      }
+    }
   });
 
   // Discovery-специфичное состояние
@@ -1765,21 +1979,45 @@ async function runLive(): Promise<void> {
 
     // Fetch strike price и подписка RTDS для начального крипто-рынка
     if (liveInitialCryptoMeta) {
-      try {
-        const interval = computeInterval(liveInitialCryptoMeta.endDateMs - liveInitialCryptoMeta.eventStartTimeMs);
-        const kline = await liveBinanceClient.getKline(liveInitialCryptoMeta.binanceSymbol, liveInitialCryptoMeta.eventStartTimeMs, interval);
-        liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, kline.open);
-        logger.info('Strike price fetched for initial market (live)', {
+      if (liveInitialCryptoMeta.priceToBeat !== undefined) {
+        liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.priceToBeat);
+        logger.info('Strike price from API (priceToBeat, live)', {
           symbol: liveInitialCryptoMeta.rtdsFilter,
-          strikePrice: kline.open,
+          strikePrice: liveInitialCryptoMeta.priceToBeat,
         });
-      } catch (err) {
-        logger.warn('Failed to fetch strike price (live)', {
-          symbol: liveInitialCryptoMeta.binanceSymbol,
-          err: err instanceof Error ? err.message : String(err),
-        });
+      } else {
+        const eventStarted = Date.now() > liveInitialCryptoMeta.eventStartTimeMs;
+
+        if (eventStarted) {
+          // Рынок уже начался давно — Binance kline open как fallback
+          try {
+            const interval = computeInterval(liveInitialCryptoMeta.endDateMs - liveInitialCryptoMeta.eventStartTimeMs);
+            const kline = await liveBinanceClient.getKline(liveInitialCryptoMeta.binanceSymbol, liveInitialCryptoMeta.eventStartTimeMs, interval);
+            liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, kline.open);
+            logger.info('Strike price from Binance kline (event already started, live)', {
+              symbol: liveInitialCryptoMeta.rtdsFilter,
+              strikePrice: kline.open,
+            });
+          } catch (err) {
+            // Binance тоже не смог → ждём первую Chainlink цену из RTDS
+            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS (live)', {
+              symbol: liveInitialCryptoMeta.binanceSymbol,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            livePendingChainlinkStrike.set(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.eventStartTimeMs);
+          }
+        } else {
+          // Рынок ещё не начался — ждём первую Chainlink цену после eventStartTime
+          livePendingChainlinkStrike.set(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.eventStartTimeMs);
+          logger.info('Waiting for first Chainlink price after event start as strike (live)', {
+            symbol: liveInitialCryptoMeta.rtdsFilter,
+            eventStartTime: new Date(liveInitialCryptoMeta.eventStartTimeMs).toISOString(),
+          });
+        }
       }
-      liveRtdsClient.subscribe(liveInitialCryptoMeta.rtdsTopic, liveInitialCryptoMeta.rtdsFilter);
+      for (const sub of liveInitialCryptoMeta.rtdsSubscriptions) {
+        liveRtdsClient.subscribe(sub.topic, sub.filter);
+      }
     }
 
     const slug = candidate.rawMarket?.['slug'] as string | undefined;
@@ -2014,17 +2252,42 @@ async function runLive(): Promise<void> {
 
     // Fetch strike price и подписка RTDS для крипто-рынка
     if (liveSlotCryptoMeta) {
-      try {
-        const interval = computeInterval(liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs);
-        const kline = await liveBinanceClient.getKline(liveSlotCryptoMeta.binanceSymbol, liveSlotCryptoMeta.eventStartTimeMs, interval);
-        liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, kline.open);
-      } catch (err) {
-        logger.warn('Failed to fetch strike price (live)', {
-          symbol: liveSlotCryptoMeta.binanceSymbol,
-          err: err instanceof Error ? err.message : String(err),
+      if (liveSlotCryptoMeta.priceToBeat !== undefined) {
+        liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.priceToBeat);
+        logger.info('Strike price from API (priceToBeat, live)', {
+          symbol: liveSlotCryptoMeta.rtdsFilter,
+          strikePrice: liveSlotCryptoMeta.priceToBeat,
         });
+      } else {
+        const eventStarted = Date.now() > liveSlotCryptoMeta.eventStartTimeMs;
+
+        if (eventStarted) {
+          try {
+            const interval = computeInterval(liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs);
+            const kline = await liveBinanceClient.getKline(liveSlotCryptoMeta.binanceSymbol, liveSlotCryptoMeta.eventStartTimeMs, interval);
+            liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, kline.open);
+            logger.info('Strike price from Binance kline (event already started, live)', {
+              symbol: liveSlotCryptoMeta.rtdsFilter,
+              strikePrice: kline.open,
+            });
+          } catch (err) {
+            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS (live)', {
+              symbol: liveSlotCryptoMeta.binanceSymbol,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            livePendingChainlinkStrike.set(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.eventStartTimeMs);
+          }
+        } else {
+          livePendingChainlinkStrike.set(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.eventStartTimeMs);
+          logger.info('Waiting for first Chainlink price after event start as strike (live)', {
+            symbol: liveSlotCryptoMeta.rtdsFilter,
+            eventStartTime: new Date(liveSlotCryptoMeta.eventStartTimeMs).toISOString(),
+          });
+        }
       }
-      liveRtdsClient.subscribe(liveSlotCryptoMeta.rtdsTopic, liveSlotCryptoMeta.rtdsFilter);
+      for (const sub of liveSlotCryptoMeta.rtdsSubscriptions) {
+        liveRtdsClient.subscribe(sub.topic, sub.filter);
+      }
     }
 
     activeMarkets.set(tStr, slot);
@@ -2072,14 +2335,87 @@ async function runLive(): Promise<void> {
     logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
 
     await engine.scheduler.unregister(slot.strategy.id);
-    printMarketSummary(slot);
 
     await marketWsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
 
-    // Отписка от RTDS для крипто-рынка
+    // Отписка от RTDS для крипто-рынка + очистка pending Chainlink strike
     if (slot.cryptoMeta) {
       liveRtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
+      livePendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
+    }
+
+    // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
+    let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
+    if (reason === 'EXPIRED' && slot.cryptoMeta) {
+      const resolution = liveCryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
+      const cryptoSnap = liveCryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
+      const portfolio = portfolioStore.get(accountId!);
+      const position = portfolio?.getPosition(slot.instrumentId);
+      const hasTokens = position && !position.isClosed();
+
+      logger.info('Settlement check (live)', {
+        hasCryptoMeta: true,
+        symbol: slot.cryptoMeta.rtdsFilter,
+        targetPrice: cryptoSnap?.targetPrice,
+        currentPrice: cryptoSnap?.currentPrice,
+        resolution: resolution ?? 'unknown',
+        hasTokens,
+        tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
+      });
+
+      if (resolution && portfolio && position && !position.isClosed()) {
+        const qty = position.quantity.value();
+        const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
+        const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
+        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+        const cashCredit = qty.times(settlementPrice);
+
+        settlementResult = { resolution, settlementPrice, cashCredit, qty };
+
+        // Удаляем позицию (settled)
+        const closedPosition = new SimplePosition({
+          instrumentId: slot.instrumentId,
+          quantity: new Decimal(0),
+          averageEntryPrice: position.averageEntryPrice.value(),
+          side: 'LONG' as const,
+        });
+        let updated = portfolio.upsertPosition(closedPosition);
+
+        // Зачисляем settlement cash
+        if (cashCredit.gt(0)) {
+          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+          if (creditResult.ok) updated = creditResult.value;
+        }
+
+        const ver = portfolioStore.getVersion(accountId!);
+        const saveRes = portfolioStore.save(updated, ver);
+        if (!saveRes.ok) {
+          logger.error('Settlement portfolio save failed (version conflict, live)', { expected: ver });
+        }
+        logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens (live)`, {
+          symbol: slot.cryptoMeta.rtdsFilter,
+          resolution,
+          settlementPrice: settlementPrice.toFixed(2),
+          cashCredit: cashCredit.toFixed(4),
+          outcomeIndex: oi,
+        });
+      }
+    }
+
+    // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
+    printMarketSummary(slot, settlementResult);
+
+    // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
+    const liveCloseTimestamp = TimestampService.create(Date.now());
+    if (liveCloseTimestamp.ok) {
+      await eventBus.publish({
+        type: 'MARKET_CLOSED',
+        marketId: slot.marketId,
+        reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
+        realizedPnL: Money.of(new Decimal(0), 'USDC'),
+        timestamp: liveCloseTimestamp.value,
+      });
     }
 
     if (reason === 'EXPIRED') {
@@ -2261,11 +2597,19 @@ async function runLive(): Promise<void> {
   });
 
   /**
-   * Выводит сводку по всем fills конкретного рыночного слота.
+   * Выводит сводку по всем fills конкретного рыночного слота с учётом settlement.
    *
    * @param slot - Слот активного рынка
+   * @param settlement - Результат settlement (если был): resolution, settlementPrice, cashCredit, qty
+   *
+   * @remarks
+   * Открытые циклы (buy без sell) получают settlement PnL:
+   * settlementPrice × qty - entryPrice × qty.
    */
-  function printMarketSummary(slot: ActiveMarketSlot): void {
+  function printMarketSummary(
+    slot: ActiveMarketSlot,
+    settlement?: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal },
+  ): void {
     const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
     if (slot.fillHistory.length === 0) {
       logger.info('=== Market summary: no fills ===', { market: marketQuestion });
@@ -2279,15 +2623,39 @@ async function runLive(): Promise<void> {
     const cycles = buys.map((buy, i) => {
       const sell = sells[i];
       const buyLabel = `${buy.size}@${buy.price}${buy.partial ? '(partial)' : ''} [${buy.at}]`;
-      if (!sell) return { buy: buyLabel, sell: '(open)', pnl: '-' };
+      if (!sell) {
+        if (settlement) {
+          const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
+          const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
+          return {
+            buy: buyLabel,
+            sell: `(settled@${settlement.settlementPrice} ${settlement.resolution})`,
+            pnl: (settlePnl.gte(0) ? '+' : '') + settlePnl.toFixed(4) + ' USDC',
+          };
+        }
+        return { buy: buyLabel, sell: '(open)', pnl: '-' };
+      }
       const pnl = new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(buy.size));
       return { buy: buyLabel, sell: `${sell.size}@${sell.price}${sell.partial ? '(partial)' : ''} [${sell.at}]`, pnl: (pnl.gte(0) ? '+' : '') + pnl.toFixed(4) + ' USDC' };
     });
-    const totalPnl = sells.reduce((acc, sell, i) => {
+
+    // PnL от завершённых циклов
+    let totalPnl = sells.reduce((acc, sell, i) => {
       const buy = buys[i];
       if (!buy) return acc;
       return acc.plus(new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(sell.size)));
     }, new Decimal(0));
+
+    // PnL от settlement открытых циклов
+    if (settlement) {
+      for (let i = sells.length; i < buys.length; i++) {
+        const buy = buys[i];
+        const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
+        const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
+        totalPnl = totalPnl.plus(settlePnl);
+      }
+    }
+
     const portfolio = portfolioStore.get(accountId!);
     const position  = portfolio?.getPosition(slot.instrumentId);
     logger.warn('=== Market summary ===', {
@@ -2295,8 +2663,9 @@ async function runLive(): Promise<void> {
       duration: `${durMin}m${durSec}s`,
       buys: buys.length,
       sells: sells.length,
-      openCycles: buys.length - sells.length,
+      openCycles: settlement ? 0 : buys.length - sells.length,
       totalPnl: (totalPnl.gte(0) ? '+' : '') + totalPnl.toFixed(4) + ' USDC',
+      settlement: settlement ? `${settlement.resolution} @${settlement.settlementPrice}` : undefined,
       cycles,
       finalTokens: position?.quantity.value().toFixed(2) ?? '0.00',
       finalUsdcFree: portfolio?.balance.available().value().toFixed(2) ?? '-',
@@ -2681,47 +3050,5 @@ function collectFiles(
   }
 }
 
-/**
- * Читает первую meta-строку из JSONL/JSONL.GZ снапшота и извлекает marketId и instrumentId.
- *
- * @param filePath - Путь к .jsonl или .jsonl.gz файлу
- * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
- * @returns Объект с marketId, instrumentId, asset или null если meta не найдена
- *
- * @remarks
- * Использует SnapshotReaderFactory для прозрачной поддержки сжатых файлов.
- * Временный файл (для .gz) удаляется в finally-блоке через reader.close().
- */
-async function readSnapshotMeta(
-  filePath: string,
-  outcomeIndex: 0 | 1,
-): Promise<{ marketId: MarketId; instrumentId: InstrumentId; asset: AssetId; rawMarket?: Record<string, unknown> } | null> {
-  // Минимальный логгер для фабрики (readSnapshotMeta вызывается до создания основного логгера)
-  const noop = () => {};
-  const minLogger = { trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child: () => minLogger } as unknown as import('@polymarket/logger').ILogger;
-  const factory = new SnapshotReaderFactory(minLogger);
-  const reader = factory.create(filePath);
-
-  try {
-    for await (const line of reader.readLines()) {
-      if (!line.trim()) continue;
-      const raw = JSON.parse(line) as Record<string, unknown>;
-      if (raw['t'] === 'meta') {
-        const marketId = asMarketId(raw['marketId'] as string);
-        const tokenIds = raw['tokenIds'] as string[];
-        const tokenId = tokenIds[outcomeIndex];
-        if (!marketId || !tokenId) return null;
-        const instrumentId = asInstrumentId(tokenId);
-        const asset = asPolymarketCtfToken(tokenId);
-        if (!instrumentId || !asset) return null;
-        // rawMarket сохранён в поле 'm' DataRecorder'ом
-        const rawMarket = raw['m'] as Record<string, unknown> | undefined;
-        return { marketId, instrumentId, asset, rawMarket };
-      }
-    }
-    return null;
-  } finally {
-    await reader.close();
-  }
-}
+// readSnapshotMeta() извлечена в ./bot/readSnapshotMeta.ts
 

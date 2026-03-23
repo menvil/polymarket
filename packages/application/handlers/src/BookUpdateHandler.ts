@@ -83,7 +83,7 @@ export class BookUpdateHandler {
     const lastTs = this._lastTimestamps.get(key);
 
     if (lastTs !== undefined && timestamp.isBeforeOrEqual(lastTs)) {
-      this._logger.warn('Stale orderbook snapshot received, applying anyway', {
+      this._logger.debug('Stale orderbook snapshot received, applying anyway', {
         tokenId: String(tokenId),
         lastTs:  lastTs.toISO(),
         got:     timestamp.toISO(),

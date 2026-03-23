@@ -32,7 +32,7 @@ import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import { DataRecorder, NDJSONFormatter, GzipCompressor } from '@polymarket/data-collection';
 import { PolymarketWebSocketManager } from '@polymarket/exchange/ws';
 import { PolymarketWsAdapter } from '@polymarket/exchange/ws';
-import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter, parseCryptoMeta, computeInterval, BinanceKlinesClient } from '@polymarket/exchange/adapters';
+import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter, parseCryptoMeta } from '@polymarket/exchange/adapters';
 import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
@@ -145,7 +145,6 @@ const rtdsClient = new RtdsWebSocketClient(
   { url: 'wss://ws-live-data.polymarket.com' },
   logger,
 );
-const binanceClient = new BinanceKlinesClient(logger);
 
 /**
  * RTDS symbol → Set<tokenId> для маршрутизации записи цен.
@@ -179,8 +178,109 @@ const subscribedMarkets = new Map<string, DiscoveredMarket>();
  * продолжает возвращать active=true даже после истечения.
  */
 const closedMarkets = new Set<string>();
-/** Отложенные таймеры запроса strike price (marketId → timer) */
-const pendingStrikeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Очередь отложенного обогащения meta: рынки ожидающие priceToBeat из API.
+ *
+ * @remarks
+ * При EXPIRED крипто-рынок добавляется сюда вместо немедленного finalize.
+ * Background таймер каждые 30 сек проверяет API — как только priceToBeat
+ * появятся оба, обновляет meta и финализирует. По таймауту — финализируем
+ * с тем что есть (бэктест fallback на Binance kline для недостающих).
+ *
+ * На каждом retry обновляем meta если появились новые данные.
+ * При shutdown — финализируем pending как EXPIRED (архивируем с данными).
+ */
+interface PendingEnrichment {
+  readonly marketId: MarketId;
+  readonly slug: string;
+  readonly symbol: string;
+  readonly question: string;
+  readonly startedAt: number;
+  attempts: number;
+  /** Последнее известное состояние — чтобы обновлять meta только при изменениях */
+  lastPriceToBeat: number | undefined;
+  lastFinalPrice: number | undefined;
+}
+const pendingEnrichment = new Map<string, PendingEnrichment>();
+
+const ENRICHMENT_MAX_WAIT_MS = 15 * 60_000; // 15 минут
+const ENRICHMENT_INTERVAL_MS = 30_000;      // проверяем каждые 30 сек
+
+/**
+ * Проверяет pending enrichment очередь: re-fetch API, обновляет meta, финализирует.
+ *
+ * @remarks
+ * Вызывается по таймеру каждые 30 сек. Для каждого pending рынка:
+ * 1. Re-fetch Gamma API по slug
+ * 2. Всегда перезаписываем первую строку файла свежими данными API
+ * 3. Если ОБА поля (priceToBeat + finalPrice) есть → finalizeMarket (архив)
+ * 4. Если timeout → finalizeMarket с тем что есть (бэктест fallback)
+ */
+async function processEnrichmentQueue(): Promise<void> {
+  if (pendingEnrichment.size === 0) return;
+
+  for (const [marketKey, pe] of [...pendingEnrichment]) {
+    pe.attempts++;
+    const elapsed = Date.now() - pe.startedAt;
+
+    try {
+      const updatedMarket = await marketDataClient.getMarketInfo(pe.slug);
+      const updatedCrypto = parseCryptoMeta(updatedMarket as unknown as Record<string, unknown>);
+
+      // Всегда перезаписываем meta свежими данными API
+      await recorder.updateMarketMeta(
+        pe.marketId,
+        updatedMarket as unknown as Record<string, unknown>,
+      );
+
+      pe.lastPriceToBeat = updatedCrypto?.priceToBeat;
+      pe.lastFinalPrice = updatedCrypto?.finalPrice;
+
+      logger.debug('Enrichment meta updated', {
+        symbol: pe.symbol,
+        priceToBeat: pe.lastPriceToBeat,
+        finalPrice: pe.lastFinalPrice,
+        attempts: pe.attempts,
+      });
+
+      // Оба поля есть — финализируем (архивируем)
+      if (pe.lastPriceToBeat !== undefined && pe.lastFinalPrice !== undefined) {
+        await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
+        pendingEnrichment.delete(marketKey);
+        logger.info('Market fully enriched and finalized', {
+          question: pe.question,
+          symbol: pe.symbol,
+          priceToBeat: pe.lastPriceToBeat,
+          finalPrice: pe.lastFinalPrice,
+          attempts: pe.attempts,
+          elapsedMs: elapsed,
+        });
+        continue;
+      }
+    } catch (err) {
+      logger.debug('Enrichment re-fetch failed (will retry)', {
+        slug: pe.slug,
+        attempt: pe.attempts,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Timeout — финализируем с тем что есть
+    if (elapsed >= ENRICHMENT_MAX_WAIT_MS) {
+      await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
+      pendingEnrichment.delete(marketKey);
+      logger.warn('Market finalized on timeout (incomplete enrichment)', {
+        question: pe.question,
+        symbol: pe.symbol,
+        priceToBeat: pe.lastPriceToBeat,
+        finalPrice: pe.lastFinalPrice,
+        attempts: pe.attempts,
+        elapsedMs: elapsed,
+      });
+    }
+  }
+}
 
 // ─── Хелперы ──────────────────────────────────────────────────────────────────
 
@@ -253,41 +353,6 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
       ids.add(allTokenIds[0]!);
     }
 
-    // Strike price = candle open на eventStartTime.
-    // Свеча появляется на Binance только ПОСЛЕ eventStartTime,
-    // поэтому запрашиваем с задержкой (eventStartTime + 5с).
-    const delayMs = Math.max(0, cryptoMeta.eventStartTimeMs - Date.now()) + 5_000;
-    const strikeMeta = { ...cryptoMeta };
-    const strikeTokenId = allTokenIds[0]!;
-    const strikeTimer = setTimeout(() => {
-      void (async () => {
-        try {
-          const interval = computeInterval(strikeMeta.endDateMs - strikeMeta.eventStartTimeMs);
-          const kline = await binanceClient.getKline(strikeMeta.binanceSymbol, strikeMeta.eventStartTimeMs, interval);
-          recorder.recordEvent(strikeTokenId, {
-            t: 'strike_price',
-            ts: strikeMeta.eventStartTimeMs,
-            symbol: strikeMeta.rtdsFilter,
-            strikePrice: kline.open,
-            binanceSymbol: strikeMeta.binanceSymbol,
-            interval,
-          });
-          logger.info('Strike price recorded', {
-            symbol: strikeMeta.rtdsFilter,
-            strikePrice: kline.open,
-            eventStartTime: new Date(strikeMeta.eventStartTimeMs).toISOString(),
-          });
-        } catch (err) {
-          logger.warn('Failed to fetch strike price from Binance', {
-            symbol: strikeMeta.binanceSymbol,
-            err: err instanceof Error ? err.message : String(err),
-          });
-        }
-      })();
-    }, delayMs);
-    strikeTimer.unref();
-    pendingStrikeTimers.set(marketKey, strikeTimer);
-
     logger.info('RTDS subscriptions added for crypto market', {
       subscriptions: cryptoMeta.rtdsSubscriptions.map((s) => `${s.topic}:${s.filter}`),
       source: cryptoMeta.source,
@@ -316,10 +381,6 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
 async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
   const marketKey  = String(candidate.marketId);
 
-  // Отменяем отложенный запрос strike price если ещё не выполнен
-  const strikeTimer = pendingStrikeTimers.get(marketKey);
-  if (strikeTimer) { clearTimeout(strikeTimer); pendingStrikeTimers.delete(marketKey); }
-
   const allTokenIds = candidate.allTokenIds?.length
     ? candidate.allTokenIds.map(String)
     : [String(candidate.instrumentId)];
@@ -330,36 +391,9 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
   }
   subscribedMarkets.delete(marketKey);
 
-  // Записываем market_resolved для крипто-рынков при EXPIRED
+  // Для крипто-рынков: убираем RTDS подписки
   const closeCryptoMeta = parseCryptoMeta(candidate.rawMarket);
-  if (closeCryptoMeta && reason === 'EXPIRED') {
-    try {
-      const interval = computeInterval(closeCryptoMeta.endDateMs - closeCryptoMeta.eventStartTimeMs);
-      const kline = await binanceClient.getKline(closeCryptoMeta.binanceSymbol, closeCryptoMeta.eventStartTimeMs, interval);
-      const outcome = kline.close >= kline.open ? 'UP' : 'DOWN';
-      const winningTokenIndex = outcome === 'UP' ? 0 : 1;
-      recorder.recordEvent(allTokenIds[0]!, {
-        t: 'market_resolved',
-        ts: closeCryptoMeta.endDateMs,
-        symbol: closeCryptoMeta.rtdsFilter,
-        strikePrice: kline.open,
-        resolutionPrice: kline.close,
-        outcome,
-        winningTokenIndex,
-      });
-      logger.info('Market resolved event recorded', {
-        symbol: closeCryptoMeta.rtdsFilter,
-        strikePrice: kline.open,
-        resolutionPrice: kline.close,
-        outcome,
-      });
-    } catch (err) {
-      logger.warn('Failed to record market_resolved event', {
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-    // Удаляем tokenId из маппинга для каждой подписки
-    // Если другие рынки ещё используют тот же символ — оставляем подписку
+  if (closeCryptoMeta) {
     for (const sub of closeCryptoMeta.rtdsSubscriptions) {
       const ids = symbolToTokenIds.get(sub.filter);
       if (ids) {
@@ -379,12 +413,36 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
     closedMarkets.add(marketKey);
   }
 
-  await recorder.finalizeMarket(candidate.marketId, reason);
+  if (reason === 'SHUTDOWN' || !closeCryptoMeta) {
+    // Не-крипто рынок или shutdown — финализируем сразу
+    await recorder.finalizeMarket(candidate.marketId, reason);
+    logger.info('Market closed', { question: candidate.question, marketId: marketKey, reason });
+    return;
+  }
 
-  logger.info('Market closed', {
+  // Крипто-рынок EXPIRED — откладываем finalize до получения priceToBeat.
+  // Слот уже освобождён (subscribedMarkets.delete выше) → новые рынки открываются сразу.
+  const slug = (candidate.rawMarket as Record<string, unknown>)?.['slug'] as string | undefined;
+  if (!slug) {
+    await recorder.finalizeMarket(candidate.marketId, reason);
+    logger.info('Market closed (no slug for enrichment)', { marketId: marketKey });
+    return;
+  }
+
+  pendingEnrichment.set(marketKey, {
+    marketId: candidate.marketId,
+    slug,
+    symbol: closeCryptoMeta.rtdsFilter,
+    question: candidate.question,
+    startedAt: Date.now(),
+    attempts: 0,
+    lastPriceToBeat: undefined,
+    lastFinalPrice: undefined,
+  });
+  logger.info('Market expired, waiting for priceToBeat enrichment', {
     question: candidate.question,
     marketId: marketKey,
-    reason,
+    slug,
   });
 }
 
@@ -497,6 +555,27 @@ async function shutdown(signal: string): Promise<void> {
 
   if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
   clearInterval(expiryInterval);
+  clearInterval(enrichmentInterval);
+
+  // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
+  // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
+  for (const [marketKey, pe] of pendingEnrichment) {
+    try {
+      await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
+      logger.info('Pending enrichment archived on shutdown', {
+        marketKey,
+        priceToBeat: pe.lastPriceToBeat,
+        finalPrice: pe.lastFinalPrice,
+        attempts: pe.attempts,
+      });
+    } catch (err) {
+      logger.warn('Error finalizing pending enrichment', {
+        marketKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  pendingEnrichment.clear();
 
   feed.stop();
 
@@ -575,6 +654,11 @@ scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, config.marketScan
 const expiryInterval = setInterval(() => {
   void checkExpiredMarkets();
 }, 5_000);
+
+// Background enrichment: проверяем priceToBeat каждые 30 сек
+const enrichmentInterval = setInterval(() => {
+  void processEnrichmentQueue();
+}, ENRICHMENT_INTERVAL_MS);
 
 logger.info('Collector running. Press Ctrl+C to stop.', {
   scanEveryMs:   config.marketScanPauseMs,

@@ -4,14 +4,13 @@
  * @remarks
  * ### Протокол:
  * - Endpoint: `wss://ws-live-data.polymarket.com`
- * - Формат подписки: `{ type: 'subscribe', topic: 'crypto_prices', filter: 'btcusdt' }`
- * - Формат отписки: `{ type: 'unsubscribe', topic: 'crypto_prices', filter: 'btcusdt' }`
  * - PING text-frame каждые 5 секунд (сервер ожидает — иначе disconnect)
- * - Сообщения: `{ topic, type, payload: { symbol, value, timestamp } }`
+ * - Сообщения: `{ topic, type, timestamp, payload: { symbol, value, timestamp } }`
+ * - Подписки аддитивные: каждый subscribe/unsubscribe добавляет/удаляет
  *
- * ### Topics:
- * - `crypto_prices` — Binance source (btcusdt, ethusdt, ...)
- * - `crypto_prices_chainlink` — Chainlink source (btc/usd, eth/usd, ...)
+ * ### Topics и форматы подписок:
+ * - `crypto_prices` (Binance): type `"update"`, filters comma-separated `"btcusdt,ethusdt"`
+ * - `crypto_prices_chainlink` (Chainlink): type `"*"`, filters `""` (все) или JSON `'{"symbol":"btc/usd"}'`
  *
  * ### Standalone класс:
  * НЕ наследует BaseWebSocketTransport — RTDS использует другой протокол
@@ -68,12 +67,16 @@ export class RtdsWebSocketClient {
   private _reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private _reconnectDelay = 1000;
 
-  /** Кэш активных подписок: Set<'topic:filter'> */
+  /** Кэш активных подписок: Set<'topic:filter'> (для трекинга, фильтрация в коде caller'а) */
   private readonly _subscriptions = new Set<string>();
+  /** Активные topic'и с subscribe на RTDS: topic → true если подписка отправлена */
+  private readonly _activeTopics = new Set<string>();
   /** Callback'и на ценовые обновления */
   private readonly _priceCallbacks: PriceCallback[] = [];
   /** Счётчик сообщений для отладочного логирования */
   private _messageCount = 0;
+  /** Дедупликация: symbol → последний emitted timestamp+price */
+  private readonly _lastEmitted = new Map<string, { ts: number; price: number }>();
 
   /**
    * Создаёт RtdsWebSocketClient.
@@ -182,12 +185,15 @@ export class RtdsWebSocketClient {
    */
   subscribe(topic: string, filter: string): void {
     const key = `${topic}:${filter}`;
+    if (this._subscriptions.has(key)) return;
     this._subscriptions.add(key);
 
-    if (this._connected && this._ws) {
-      // RTDS заменяет ВСЕ подписки при каждом subscribe.
-      // Отправляем полный набор подписок (все topic + filter) в одном сообщении.
-      this._sendSubscribeAll();
+    // Подписываемся на topic целиком (без фильтров) при первом символе на этом topic.
+    // RTDS не поддерживает per-symbol фильтры для ongoing updates —
+    // фильтрация по нужным символам происходит в onPrice callback caller'а.
+    if (this._connected && this._ws && !this._activeTopics.has(topic)) {
+      this._sendTopicSubscribe(topic);
+      this._activeTopics.add(topic);
     }
 
     this._logger.debug('RTDS subscription added', { topic, filter });
@@ -198,18 +204,19 @@ export class RtdsWebSocketClient {
    *
    * @param topic - RTDS topic
    * @param filter - Фильтр символа
+   *
+   * @remarks
+   * Unsubscribe от RTDS topic отправляется только когда на нём не осталось ни одного символа.
    */
   unsubscribe(topic: string, filter: string): void {
     const key = `${topic}:${filter}`;
     this._subscriptions.delete(key);
 
-    if (this._connected && this._ws) {
-      // Переподписываем оставшиеся (RTDS заменяет всё целиком)
-      if (this._subscriptions.size > 0) {
-        this._sendSubscribeAll();
-      } else {
-        this._sendUnsubscribe(topic, filter);
-      }
+    // Если на topic не осталось подписок — отписываемся от RTDS
+    const hasTopicLeft = [...this._subscriptions].some((k) => k.startsWith(`${topic}:`));
+    if (!hasTopicLeft && this._connected && this._ws && this._activeTopics.has(topic)) {
+      this._sendTopicUnsubscribe(topic);
+      this._activeTopics.delete(topic);
     }
 
     this._logger.debug('RTDS subscription removed', { topic, filter });
@@ -296,8 +303,17 @@ export class RtdsWebSocketClient {
 
   /**
    * Отправляет ценовое обновление во все callback'и.
+   *
+   * @remarks
+   * Дедупликация: пропускает события с тем же symbol+ts+price.
+   * Каждый `_sendSubscribeAll()` вызывает batch-ответ RTDS с последними ценами,
+   * при N параллельных рынках одного актива это N одинаковых batch'ей.
    */
   private _emitPrice(symbol: string, price: number, timestampMs: number): void {
+    const last = this._lastEmitted.get(symbol);
+    if (last && last.ts === timestampMs && last.price === price) return;
+    this._lastEmitted.set(symbol, { ts: timestampMs, price });
+
     for (const cb of this._priceCallbacks) {
       try {
         cb(symbol, price, timestampMs);
@@ -310,47 +326,64 @@ export class RtdsWebSocketClient {
   }
 
   /**
-   * Отправляет subscribe для ВСЕХ активных подписок (все topic + filter) в одном сообщении.
+   * Подписывается на RTDS topic целиком (без per-symbol фильтров).
    *
    * @remarks
-   * RTDS заменяет ВСЕ подписки при каждом `action: 'subscribe'`.
-   * Поэтому при добавлении нового символа надо переподписать всё целиком.
+   * Тест показал: RTDS поддерживает ТОЛЬКО подписку на ALL symbols per topic.
+   * Per-symbol фильтры (comma-separated, JSON) ломают подписку целиком (0 сообщений).
+   * Рабочий формат:
+   * - Binance: `{ topic: "crypto_prices", type: "update" }` (без filters)
+   * - Chainlink: `{ topic: "crypto_prices_chainlink", type: "*", filters: "" }`
+   *
+   * Фильтрация по нужным символам происходит на стороне caller'а через symbolToTokenIds.
+   */
+  private _sendTopicSubscribe(topic: string): void {
+    const sub = topic === 'crypto_prices'
+      ? { topic, type: 'update' }
+      : { topic, type: '*', filters: '' };
+
+    this._send(JSON.stringify({ action: 'subscribe', subscriptions: [sub] }));
+    this._logger.info('RTDS topic subscribed (all symbols)', { topic });
+  }
+
+  /**
+   * Отписывается от RTDS topic целиком.
+   */
+  private _sendTopicUnsubscribe(topic: string): void {
+    const sub = topic === 'crypto_prices'
+      ? { topic, type: 'update' }
+      : { topic, type: '*', filters: '' };
+
+    this._send(JSON.stringify({ action: 'unsubscribe', subscriptions: [sub] }));
+    this._logger.info('RTDS topic unsubscribed', { topic });
+  }
+
+  /**
+   * Восстанавливает подписки после reconnect.
+   *
+   * @remarks
+   * Определяет уникальные topic'и из кэша и подписывается на каждый целиком.
    */
   private _sendSubscribeAll(): void {
     if (this._subscriptions.size === 0) return;
 
-    const subscriptions: Array<{ topic: string; type: string; filters: string }> = [];
+    // Собираем уникальные topic'и
+    const topics = new Set<string>();
     for (const key of this._subscriptions) {
-      const [topic, filter] = key.split(':', 2);
-      if (topic && filter) {
-        subscriptions.push({
-          topic,
-          type: 'update',
-          filters: JSON.stringify({ symbol: filter }),
-        });
-      }
+      const [topic] = key.split(':', 2);
+      if (topic) topics.add(topic);
     }
 
-    this._send(JSON.stringify({ action: 'subscribe', subscriptions }));
+    this._activeTopics.clear();
+    for (const topic of topics) {
+      this._sendTopicSubscribe(topic);
+      this._activeTopics.add(topic);
+    }
 
-    this._logger.debug('RTDS subscribed all', {
-      count: subscriptions.length,
-      keys: [...this._subscriptions].join(', '),
+    this._logger.debug('RTDS resubscribed after reconnect', {
+      topics: [...topics].join(', '),
+      subscriptionCount: this._subscriptions.size,
     });
-  }
-
-  /**
-   * Отправляет unsubscribe сообщение в формате официального RTDS API.
-   */
-  private _sendUnsubscribe(topic: string, filter: string): void {
-    this._send(JSON.stringify({
-      action: 'unsubscribe',
-      subscriptions: [{
-        topic,
-        type: 'update',
-        filters: JSON.stringify({ symbol: filter }),
-      }],
-    }));
   }
 
   /**

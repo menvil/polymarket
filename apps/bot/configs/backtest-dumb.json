@@ -2,14 +2,14 @@
   "strategy": "dumb",
   "strategyParams": {
     "orderSize": 5,
-    "buyOffsetPct": 10,
+    "buyOffsetPct": 2,
     "profitMarginPct": 10,
     "repriceThreshold": 0.08
   },
   "market": {
     "source": "snapshots",
     "paths": [
-      "../../packages/apps/collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_645PM-700PM_ET___0xc151d0210090eab3e00c0cd44bbb18eb5f4a0e.jsonl.gz"
+      "../../packages/apps/collect-data/snapshots/2026-03-22/*"
     ],
     "outcomeIndex": 0
   },

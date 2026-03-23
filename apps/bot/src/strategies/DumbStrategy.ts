@@ -241,13 +241,16 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
     // MATCHED ордера = fills в пути (on-chain). Ждём CONFIRMED.
     // Без этой проверки стратегия ставит новый BUY каждый тик пока fills идут.
     if (data.hasMatchedOrders) {
-      this._logger?.debug('DumbStrategy: HOLD — matched orders in-flight, waiting for CONFIRMED');
+      this._logger?.info('DumbStrategy: HOLD — matched orders in-flight, waiting for CONFIRMED');
       return [];
     }
 
     // ── Нет позиции ─────────────────────────────────────────────────────────
     if (data.positionQty.isZero()) {
-      if (data.refPrice === undefined) return [];
+      if (data.refPrice === undefined) {
+        this._logger?.info('DumbStrategy: skip — no refPrice (no book/tape data yet)');
+        return [];
+      }
 
       const ONE_HUNDRED = new Decimal(100);
 
@@ -265,7 +268,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
           const drift = targetPrice.minus(openOrder.orderPrice);
 
           if (drift.gte(this._config.repriceThreshold)) {
-            this._logger?.debug('DumbStrategy: REPRICE — market moved up, chasing', {
+            this._logger?.info('DumbStrategy: REPRICE — market moved up, chasing', {
               refPrice: data.refPrice.toFixed(4),
               orderPrice: openOrder.orderPrice.toFixed(4),
               targetPrice: targetPrice.toFixed(4),
@@ -361,7 +364,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
     // Не продаём если цена вне допустимого диапазона
     if (sellPrice.gt('0.99')) {
-      this._logger?.debug('DumbStrategy: skip SELL — sellPrice > 0.99', {
+      this._logger?.info('DumbStrategy: skip SELL — sellPrice > 0.99', {
         sellPrice: sellPrice.toFixed(4),
         entryPrice: data.entryPrice.toFixed(4),
         profitMarginPct: this._config.profitMarginPct.toFixed(2),
@@ -374,7 +377,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
     // SELL всегда = positionQty — нет смысла дробить на части.
     const effectiveSellSize = data.positionQty;
 
-    this._logger?.debug('DumbStrategy: EXIT SELL', {
+    this._logger?.info('DumbStrategy: EXIT SELL', {
       entryPrice: data.entryPrice.toFixed(4),
       sellPrice: sellPrice.toFixed(4),
       size: effectiveSellSize.toFixed(2),

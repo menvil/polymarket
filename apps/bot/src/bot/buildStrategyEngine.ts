@@ -84,6 +84,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     orderRepo,
     portfolioStore,
     catalog: marketCatalog,
+    clock,
     logger,
     tokenBalanceChecker,
   });

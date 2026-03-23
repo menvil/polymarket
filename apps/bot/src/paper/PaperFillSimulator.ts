@@ -57,10 +57,11 @@ import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polym
 import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
-import { Fee, Price, Quantity } from '@polymarket/value-objects';
+import { AssetQuantity, Fee, Price, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
+import { calculatePolymarketTakerFee } from '@polymarket/fill';
 import Decimal from 'decimal.js';
 
 // ── Типы ─────────────────────────────────────────────────────────────────────
@@ -82,6 +83,15 @@ export interface PendingPaperOrder {
   remainingSize: Decimal;
   readonly accountId: AccountId;
   readonly asset: AssetId;
+  /**
+   * Время размещения ордера (epoch ms от clock).
+   *
+   * @remarks
+   * Используется для определения maker/taker:
+   * - fill на том же тике (fillTime === placedAtMs) → taker (пересёк спред)
+   * - fill позже → maker (стоял в стакане, рынок пришёл)
+   */
+  readonly placedAtMs: number;
 }
 
 /**
@@ -233,8 +243,9 @@ export class PaperFillSimulator {
       }
 
       if (fillPrice !== undefined) {
-        // Book crossing → full fill (нет информации об объёме)
-        await this._applyFill(order, fillPrice, order.remainingSize);
+        const nowMs = this._deps.clock.now().getTime();
+        const isTaker = nowMs === order.placedAtMs;
+        await this._applyFill(order, fillPrice, order.remainingSize, isTaker);
       }
     }
   }
@@ -276,7 +287,9 @@ export class PaperFillSimulator {
         // Исполняем min(tradeSize, remainingSize) — partial fill если нужно
         const fillSize = Decimal.min(tradeSize, order.remainingSize);
         const fillPrice = this._deps.config.fillAtOrderPrice ? orderPrice : tradePrice;
-        await this._applyFill(order, fillPrice, fillSize);
+        const nowMs = this._deps.clock.now().getTime();
+        const isTaker = nowMs === order.placedAtMs;
+        await this._applyFill(order, fillPrice, fillSize, isTaker);
       }
     }
   }
@@ -287,8 +300,12 @@ export class PaperFillSimulator {
    * @remarks
    * 1. Уменьшает remainingSize в pending ордере
    * 2. Если remainingSize = 0 → удаляет ордер из pending
-   * 3. Создаёт Fill domain object
+   * 3. Создаёт Fill domain object с комиссией
    * 4. Вызывает ProcessFillUseCase.execute(fill)
+   *
+   * ### Комиссия Polymarket (crypto-рынки):
+   * - **Taker**: `feeUSDC = size × price × 0.25 × (price × (1 - price))^2`
+   * - **Maker**: fee = 0 (taker-only fee model)
    *
    * ProcessFillUseCase:
    * - Обновляет Order (applyFill → PARTIALLY_FILLED или FILLED)
@@ -299,11 +316,13 @@ export class PaperFillSimulator {
    * @param order - Ожидающий ордер
    * @param fillPrice - Цена исполнения
    * @param fillSize - Объём исполнения
+   * @param isTaker - true если мы пересекли спред (taker), false если стояли в стакане (maker)
    */
   private async _applyFill(
     order: PendingPaperOrder,
     fillPrice: Decimal,
     fillSize: Decimal,
+    isTaker: boolean,
   ): Promise<void> {
     // Обновляем remainingSize
     order.remainingSize = order.remainingSize.minus(fillSize);
@@ -320,6 +339,7 @@ export class PaperFillSimulator {
       fillSize: fillSize.toNumber(),
       remaining: order.remainingSize.toNumber(),
       full: isFull,
+      liquidity: isTaker ? 'TAKER' : 'MAKER',
     });
 
     // Создаём Fill domain object
@@ -339,6 +359,15 @@ export class PaperFillSimulator {
       return;
     }
 
+    // Комиссия: taker платит, maker — нет (Polymarket taker-only fee model)
+    // Формула: feeUSDC = size × price × 0.25 × (price × (1 - price))^2
+    const feeAmount = isTaker
+      ? calculatePolymarketTakerFee(fillSize, fillPrice)
+      : new Decimal(0);
+    const fee = feeAmount.gt(0)
+      ? Fee.of(AssetQuantity.usdc(Quantity.of(feeAmount)))
+      : Fee.zero(AssetIdHelpers.USDC);
+
     const fillResult = Fill.create({
       id: fillId,
       orderId: order.orderId,
@@ -351,7 +380,7 @@ export class PaperFillSimulator {
       size: Quantity.of(fillSize),
       side: order.side,
       timestamp: timestampResult.value,
-      fee: Fee.zero(AssetIdHelpers.USDC),
+      fee,
     });
 
     if (!fillResult.ok) {

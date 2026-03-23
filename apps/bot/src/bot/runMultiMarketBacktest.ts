@@ -1,0 +1,503 @@
+/**
+ * Multi-market бэктест: прогоняет каждый снапшот как изолированный рынок
+ * и агрегирует результаты.
+ *
+ * @remarks
+ * ### Алгоритм:
+ * 1. Для каждого файла: `readSnapshotMeta()` → создать всю инфраструктуру с нуля →
+ *    `BacktestEngine.run()` → settlement → собрать результат.
+ * 2. После всех рынков: агрегация (total PnL, win rate, best/worst).
+ *
+ * ### Изоляция между рынками:
+ * Каждый рынок получает свежие: ReplayClock, EventBus, Repositories,
+ * PaperSimulator, Strategy, Portfolio, CryptoPriceStore.
+ * Это гарантирует отсутствие state leaks между рынками.
+ *
+ * ### Binance fallback:
+ * В multi-market режиме Binance klines fallback **пропускается** —
+ * meta из collect-data содержит priceToBeat и finalPrice (locked в BacktestEngine).
+ *
+ * @example
+ * ```typescript
+ * await runMultiMarketBacktest(resolvedPaths, config, 0);
+ * ```
+ */
+
+import path from 'node:path';
+import Decimal from 'decimal.js';
+import { LogLevel } from '@polymarket/logger';
+import type { ILogger } from '@polymarket/logger';
+import { ReplayClock } from '@polymarket/time';
+import { BacktestEngine } from '@polymarket/backtesting';
+import { CryptoPriceStore } from '@polymarket/market-state';
+import { BookUpdateHandler } from '@polymarket/handlers';
+import type { IBookRegistry } from '@polymarket/handlers';
+import { OrderBook } from '@polymarket/order-book';
+import type { OrderBook as OrderBookType } from '@polymarket/order-book';
+import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
+import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import {
+  parseAccountId,
+  KnownVenues,
+} from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
+import { parseCryptoMeta } from '@polymarket/exchange/adapters';
+import type { InstrumentInfo } from '@polymarket/ports';
+import { SimplePosition } from '@polymarket/use-cases';
+
+import type { BotConfig } from '../config/BotConfig.js';
+import { buildCoreInfra } from './buildCoreInfra.js';
+import { subscribeToOrderEvents } from './buildEventLogger.js';
+import { buildRepositories } from './buildRepositories.js';
+import { buildProcessFillUseCase, buildOrderUseCases } from './buildUseCases.js';
+import { buildPaperInfra, buildPaperSimulator } from './buildPaperMode.js';
+import { buildMarketData } from './buildMarketData.js';
+import { buildStrategyEngine } from './buildStrategyEngine.js';
+import { readSnapshotMeta } from './readSnapshotMeta.js';
+import { createStrategy } from '../strategyFactory.js';
+import type { StrategyConfig } from '../strategyFactory.js';
+import type { RiskParams } from '@polymarket/risk';
+
+// ── Типы ────────────────────────────────────────────────────────────────────
+
+/** Результат бэктеста одного рынка */
+interface MarketBacktestResult {
+  readonly file: string;
+  readonly marketId: string;
+  readonly instrumentId: string;
+  readonly cryptoSymbol?: string;
+  readonly strikePrice?: number;
+  readonly resolutionPrice?: number;
+  readonly resolution?: 'UP' | 'DOWN';
+  readonly pnl: Decimal;
+  readonly buys: number;
+  readonly sells: number;
+  readonly completedCycles: number;
+  readonly bookEvents: number;
+  readonly tradeEvents: number;
+  readonly errors: number;
+  readonly durationMs: number;
+}
+
+// ── SimpleBookRegistry (дубль из main.ts, нужен для BookUpdateHandler) ──────
+
+/**
+ * Простая in-memory реализация IBookRegistry для backtest режима.
+ * @internal
+ */
+class SimpleBookRegistry implements IBookRegistry {
+  private readonly _books = new Map<string, OrderBookType>();
+  private _key(mId: MarketId, tId: InstrumentId): string { return `${String(mId)}:${String(tId)}`; }
+  get(mId: MarketId, tId: InstrumentId): OrderBookType | undefined { return this._books.get(this._key(mId, tId)); }
+  getOrCreate(mId: MarketId, tId: InstrumentId): OrderBookType {
+    const key = this._key(mId, tId);
+    let book = this._books.get(key);
+    if (!book) { book = OrderBook.create(mId, String(tId)); this._books.set(key, book); }
+    return book;
+  }
+  delete(mId: MarketId, tId: InstrumentId): void { this._books.delete(this._key(mId, tId)); }
+  deleteMarket(mId: MarketId): void {
+    const prefix = `${String(mId)}:`;
+    for (const key of [...this._books.keys()]) { if (key.startsWith(prefix)) this._books.delete(key); }
+  }
+}
+
+// ── Вспомогательные функции ─────────────────────────────────────────────────
+
+/**
+ * Строит RiskParams с параметрами по умолчанию для backtest режима.
+ * @internal
+ */
+function buildRiskParams(): RiskParams {
+  return {
+    maxOpenOrders: 2,
+    maxOrderNotional: new Decimal('100'),
+    maxPositionSize: new Decimal('20'),
+    maxTotalExposure: new Decimal('2000'),
+    minAvailableBalance: new Decimal('1'),
+    minTimeToExpiryMs: 30_000,
+  };
+}
+
+/**
+ * Создаёт начальный баланс для портфеля.
+ * @internal
+ */
+function buildInitialBalance(
+  initialBalance: number,
+  accountId: NonNullable<ReturnType<typeof parseAccountId>>,
+): Balance {
+  return Balance.of(
+    Money.of(new Decimal(initialBalance), 'USDC'),
+    Money.of(new Decimal(0), 'USDC'),
+    accountId,
+    KnownVenues.POLYMARKET,
+  );
+}
+
+// ── Single-market бэктест ───────────────────────────────────────────────────
+
+/**
+ * Запускает изолированный бэктест одного рынка (одного снапшот-файла).
+ *
+ * @param filePath - Путь к .jsonl или .jsonl.gz файлу
+ * @param config - Конфигурация бота (strategy, paper, resources, account)
+ * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
+ * @param parentLogger - Корневой логгер (создаётся child с контекстом рынка)
+ * @returns Результат бэктеста или null если meta не найдена
+ *
+ * @remarks
+ * Пересоздаёт всю инфраструктуру с нуля для полной изоляции:
+ * ReplayClock, EventBus, Repositories, PaperSimulator, Strategy, Portfolio.
+ */
+async function runSingleMarketBacktest(
+  filePath: string,
+  config: BotConfig,
+  outcomeIndex: 0 | 1,
+  parentLogger: ILogger,
+): Promise<MarketBacktestResult | null> {
+  const fileName = path.basename(filePath);
+
+  // 1. Читаем meta
+  const meta = await readSnapshotMeta(filePath, outcomeIndex);
+  if (!meta) {
+    parentLogger.warn('Skipping file — no meta found', { file: fileName });
+    return null;
+  }
+
+  const { marketId, instrumentId, asset, rawMarket } = meta;
+
+  // 2. Создаём изолированную инфраструктуру
+  const replayClock = new ReplayClock(new Date(0));
+  const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.WARN });
+  const { logger, eventBus } = infra;
+
+  const repos = buildRepositories();
+  const { portfolioStore } = repos;
+  const riskParams = buildRiskParams();
+
+  const accountId = parseAccountId(config.account.accountId);
+  if (!accountId) return null;
+
+  // 3. Paper infra + simulator
+  const { mockClient } = buildPaperInfra({ clock: replayClock });
+  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
+  const { simulator, exchangeClient } = buildPaperSimulator({
+    mockClient,
+    processFillUseCase,
+    eventBus,
+    clock: replayClock,
+    logger,
+    instrumentId,
+    marketId,
+    accountId,
+    asset,
+    config: config.paper,
+  });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
+  const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
+
+  // 4. Market data + catalog
+  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+
+  // 5. Crypto price store
+  const cryptoPriceStore = new CryptoPriceStore();
+  const cryptoMeta = parseCryptoMeta(rawMarket);
+
+  // 6. Strategy engine
+  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore });
+
+  // 7. Регистрация инструмента в каталоге
+  const expiresAtResult = TimestampService.create(Date.now() + 86400_000);
+  if (!expiresAtResult.ok) return null;
+  const instrumentInfo: InstrumentInfo = {
+    instrumentId,
+    marketId,
+    tickSize: Price.of(new Decimal('0.001')),
+    minOrderSize: Quantity.of(new Decimal('1')),
+    minOrderValue: Quantity.of(new Decimal('1')),
+    active: true,
+    expiresAt: expiresAtResult.value,
+  };
+  marketCatalog.register(instrumentInfo);
+
+  // 8. Начальный портфель
+  const initialBalanceDecimal = new Decimal(config.resources.initialBalance);
+  const initialBalance = buildInitialBalance(config.resources.initialBalance, accountId);
+  const portfolioResult = Portfolio.create({
+    id: asPortfolioId(`portfolio:${config.account.accountId}`),
+    accountId,
+    balance: initialBalance,
+  });
+  if (!portfolioResult.ok) return null;
+  portfolioStore.save(portfolioResult.value, 0);
+
+  // 9. BookUpdateHandler
+  const bookRegistry = new SimpleBookRegistry();
+  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+
+  // 10. Запуск сервисов
+  marketDataStore.start();
+  engine.orderEventBridge.start();
+  simulator.start();
+  engine.scheduler.start();
+
+  // Минимальное логирование (без verbose per-book/trade)
+  subscribeToOrderEvents(eventBus, logger, { bookLogEvery: 0, logTrades: false });
+
+  // 11. Трекинг fills
+  let buyCount = 0;
+  let sellCount = 0;
+  eventBus.subscribe('ORDER_FILLED', (event) => {
+    if (event.fill.side === 'BUY') buyCount++;
+    else sellCount++;
+  });
+
+  // 12. Создаём и регистрируем стратегию
+  const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
+  const expirationMs = Date.now() + 24 * 60 * 60 * 1000;
+  const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+
+  const regResult = await engine.scheduler.register({
+    strategy, instrumentId, asset, accountId, market: marketStub,
+    cryptoSymbol: cryptoMeta?.rtdsFilter,
+  });
+  if (!regResult.ok) return null;
+
+  // 13. BacktestEngine — один файл
+  const backtestEngine = new BacktestEngine(
+    { filePaths: [filePath], outcomeIndex },
+    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, parseCryptoMeta },
+  );
+  const replayResult = await backtestEngine.run();
+
+  // 14. Остановка
+  await engine.scheduler.unregister(strategy.id);
+  engine.scheduler.stop();
+  engine.orderEventBridge.stop();
+  simulator.stop();
+  marketDataStore.stop();
+
+  // 15. Settlement
+  if (cryptoMeta) {
+    const resolution = cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter);
+    if (resolution) {
+      const portfolio = portfolioStore.get(accountId)!;
+      const position = portfolio.getPosition(instrumentId);
+      if (position && !position.isClosed()) {
+        const qty = position.quantity.value();
+        const isWinning = (outcomeIndex === 0 && resolution === 'UP') || (outcomeIndex === 1 && resolution === 'DOWN');
+        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+        const cashCredit = qty.times(settlementPrice);
+
+        const closedPosition = new SimplePosition({
+          instrumentId,
+          quantity: new Decimal(0),
+          averageEntryPrice: position.averageEntryPrice.value(),
+          side: 'LONG' as const,
+        });
+        let updated = portfolio.upsertPosition(closedPosition);
+
+        if (cashCredit.gt(0)) {
+          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+          if (creditResult.ok) updated = creditResult.value;
+        }
+
+        const currentVersion = portfolioStore.getVersion(accountId);
+        portfolioStore.save(updated, currentVersion);
+      }
+    }
+  }
+
+  // 16. Результат
+  const finalPortfolio = portfolioStore.get(accountId)!;
+  const available = finalPortfolio.balance.available().value();
+  const pnl = available.minus(initialBalanceDecimal);
+
+  const cryptoSnap = cryptoMeta ? cryptoPriceStore.get(cryptoMeta.rtdsFilter) : undefined;
+  const resolution = cryptoMeta ? cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter) : undefined;
+
+  return {
+    file: fileName,
+    marketId: String(marketId),
+    instrumentId: String(instrumentId).slice(0, 12) + '…',
+    cryptoSymbol: cryptoSnap?.symbol,
+    strikePrice: cryptoSnap?.targetPrice,
+    resolutionPrice: cryptoSnap?.resolutionPrice,
+    resolution,
+    pnl,
+    buys: buyCount,
+    sells: sellCount,
+    completedCycles: Math.min(buyCount, sellCount),
+    bookEvents: replayResult.bookEvents,
+    tradeEvents: replayResult.tradeEvents,
+    errors: replayResult.errors,
+    durationMs: replayResult.durationMs,
+  };
+}
+
+// ── Multi-market оркестратор ────────────────────────────────────────────────
+
+/**
+ * Запускает бэктест по всем снапшот-файлам последовательно и выводит агрегированный отчёт.
+ *
+ * @param resolvedPaths - Массив путей к снапшот-файлам
+ * @param config - Конфигурация бота
+ * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
+ *
+ * @remarks
+ * Каждый файл прогоняется как изолированный рынок с чистым состоянием.
+ * Binance klines fallback пропускается — meta из collect-data содержит
+ * priceToBeat и finalPrice.
+ *
+ * @example
+ * ```typescript
+ * await runMultiMarketBacktest(resolvedPaths, config, 0);
+ * ```
+ */
+export async function runMultiMarketBacktest(
+  resolvedPaths: string[],
+  config: BotConfig,
+  outcomeIndex: 0 | 1,
+): Promise<void> {
+  const startTime = Date.now();
+
+  // Создаём корневой логгер для summary (не привязан к ReplayClock)
+  const rootInfra = buildCoreInfra({ logLevel: LogLevel.WARN });
+  const logger = rootInfra.logger;
+
+  logger.warn('=== MULTI-MARKET BACKTEST ===', {
+    totalFiles: resolvedPaths.length,
+    strategy: config.strategy,
+    outcomeIndex,
+    initialBalance: config.resources.initialBalance,
+  });
+
+  const results: MarketBacktestResult[] = [];
+  let skipped = 0;
+  let failed = 0;
+
+  for (const [i, filePath] of resolvedPaths.entries()) {
+    try {
+      const result = await runSingleMarketBacktest(filePath, config, outcomeIndex, logger);
+      if (result) {
+        results.push(result);
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      failed++;
+      logger.error('Market backtest failed', {
+        file: path.basename(filePath),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Progress log каждые 25 рынков
+    if ((i + 1) % 25 === 0 || i === resolvedPaths.length - 1) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      logger.warn('Progress', {
+        completed: `${i + 1}/${resolvedPaths.length}`,
+        elapsed: `${elapsed}s`,
+        wins: results.filter(r => r.pnl.gt(0)).length,
+        losses: results.filter(r => r.pnl.lt(0)).length,
+      });
+    }
+  }
+
+  // ── Агрегация ───────────────────────────────────────────────────────────
+
+  const totalDurationMs = Date.now() - startTime;
+
+  if (results.length === 0) {
+    logger.warn('=== NO RESULTS ===', { skipped, failed });
+    return;
+  }
+
+  const wins = results.filter(r => r.pnl.gt(0));
+  const losses = results.filter(r => r.pnl.lt(0));
+  const neutral = results.filter(r => r.pnl.isZero());
+
+  const totalPnl = results.reduce((acc, r) => acc.plus(r.pnl), new Decimal(0));
+  const avgPnl = totalPnl.div(results.length);
+  const totalFills = results.reduce((acc, r) => acc + r.buys + r.sells, 0);
+  const totalCycles = results.reduce((acc, r) => acc + r.completedCycles, 0);
+
+  // Сортировка по PnL для best/worst
+  const sorted = [...results].sort((a, b) => b.pnl.minus(a.pnl).toNumber());
+  const best = sorted[0]!;
+  const worst = sorted[sorted.length - 1]!;
+
+  const winRate = wins.length + losses.length > 0
+    ? (wins.length / (wins.length + losses.length) * 100).toFixed(1)
+    : '0.0';
+
+  // ── Summary log ─────────────────────────────────────────────────────────
+
+  logger.warn('=== MULTI-MARKET BACKTEST SUMMARY ===', {
+    markets: results.length,
+    skipped,
+    failed,
+    wins: wins.length,
+    losses: losses.length,
+    neutral: neutral.length,
+    winRate: `${winRate}%`,
+    totalPnl: `${totalPnl.gte(0) ? '+' : ''}${totalPnl.toFixed(4)} USDC`,
+    avgPnl: `${avgPnl.gte(0) ? '+' : ''}${avgPnl.toFixed(4)} USDC`,
+    bestPnl: `${best.pnl.gte(0) ? '+' : ''}${best.pnl.toFixed(4)} (${best.file.slice(0, 50)})`,
+    worstPnl: `${worst.pnl.gte(0) ? '+' : ''}${worst.pnl.toFixed(4)} (${worst.file.slice(0, 50)})`,
+    totalFills,
+    totalCycles,
+    totalDuration: `${(totalDurationMs / 1000).toFixed(1)}s`,
+    avgPerMarket: `${(totalDurationMs / results.length).toFixed(0)}ms`,
+  });
+
+  // Strategy config
+  logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
+
+  // Per-market results (sorted by PnL, top 10 + bottom 10)
+  const topN = 10;
+  const topWins = sorted.slice(0, topN);
+  const topLosses = sorted.slice(-topN).reverse();
+
+  logger.warn(`Top ${topN} winners`, {
+    markets: topWins.map((r, i) => ({
+      rank: i + 1,
+      pnl: `${r.pnl.gte(0) ? '+' : ''}${r.pnl.toFixed(4)}`,
+      cycles: `${r.buys}B/${r.sells}S`,
+      resolution: r.resolution ?? '?',
+      file: r.file.slice(0, 60),
+    })),
+  });
+
+  logger.warn(`Top ${topN} losers`, {
+    markets: topLosses.map((r, i) => ({
+      rank: results.length - topN + i + 1,
+      pnl: `${r.pnl.gte(0) ? '+' : ''}${r.pnl.toFixed(4)}`,
+      cycles: `${r.buys}B/${r.sells}S`,
+      resolution: r.resolution ?? '?',
+      file: r.file.slice(0, 60),
+    })),
+  });
+
+  // Distribution by resolution
+  const upMarkets = results.filter(r => r.resolution === 'UP');
+  const downMarkets = results.filter(r => r.resolution === 'DOWN');
+  const unknownMarkets = results.filter(r => !r.resolution);
+
+  logger.warn('Resolution breakdown', {
+    UP: {
+      count: upMarkets.length,
+      avgPnl: upMarkets.length > 0
+        ? upMarkets.reduce((a, r) => a.plus(r.pnl), new Decimal(0)).div(upMarkets.length).toFixed(4)
+        : '-',
+    },
+    DOWN: {
+      count: downMarkets.length,
+      avgPnl: downMarkets.length > 0
+        ? downMarkets.reduce((a, r) => a.plus(r.pnl), new Decimal(0)).div(downMarkets.length).toFixed(4)
+        : '-',
+    },
+    unknown: unknownMarkets.length,
+  });
+}
