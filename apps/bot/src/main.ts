@@ -698,6 +698,19 @@ async function runPaper(): Promise<void> {
       expiresAt: expiresAtResult.value,
     });
 
+    // Регистрируем комплементарный инструмент в каталоге (для ExecutionEngine routing)
+    if (slot.complementaryInstrumentId) {
+      marketCatalog.register({
+        instrumentId: slot.complementaryInstrumentId,
+        marketId: slot.marketId,
+        tickSize: Price.of(new Decimal('0.001')),
+        minOrderSize: Quantity.of(new Decimal('1')),
+        minOrderValue: Quantity.of(new Decimal('1')),
+        active: true,
+        expiresAt: expiresAtResult.value,
+      });
+    }
+
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
     const compId = slot.complementaryInstrumentId;
     const regResult = await engine.scheduler.register({
@@ -835,6 +848,12 @@ async function runPaper(): Promise<void> {
       };
 
       exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
+
+      // Регистрируем комплементарный токен для auto-selection (fills на DOWN ордера)
+      if (compInstrumentId && compAsset) {
+        exchangeClient.registerMarket(compInstrumentId, candidate.marketId, accountId!, compAsset);
+      }
+
       activeMarkets.set(tStr, slot);
       await wsAdapter.subscribeToToken(tStr);
 
@@ -3918,6 +3937,19 @@ async function runLive(): Promise<void> {
       active: true,
       expiresAt: expiresAtResult.value,
     });
+
+    // Регистрируем комплементарный инструмент в каталоге (для ExecutionEngine routing)
+    if (slot.complementaryInstrumentId) {
+      marketCatalog.register({
+        instrumentId: slot.complementaryInstrumentId,
+        marketId: slot.marketId,
+        tickSize: slot.tickSize,
+        minOrderSize: slot.minOrderSize,
+        minOrderValue: Quantity.of(new Decimal('1')),
+        active: true,
+        expiresAt: expiresAtResult.value,
+      });
+    }
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
     const compId = slot.complementaryInstrumentId;
