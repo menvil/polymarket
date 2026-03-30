@@ -63,6 +63,10 @@ export interface MarketDiscoveryFilter {
   readonly anyOfKeywords?: string[];
   readonly requiredKeywords?: string[];
   readonly excludedKeywords?: string[];
+  /** Минимальная длительность рынка в минутах (из eventStartTime/endDate API). */
+  readonly minDurationMinutes?: number;
+  /** Максимальная длительность рынка в минутах. */
+  readonly maxDurationMinutes?: number;
 }
 
 /** Автопоиск рынков через Gamma API */

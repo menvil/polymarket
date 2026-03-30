@@ -11,9 +11,10 @@
  * 2. `hoursToExpiry >= minTimeToExpiryHours` — временной фильтр
  * 3. `spread >= minSpread` — фильтр по спреду (только если spread !== undefined)
  * 4. `liquidity >= minLiquidity` — фильтр по ликвидности
- * 5. `requiredKeywords` — все слова в question (по границам слов, регистронезависимо)
- * 6. `anyOfKeywords` — хотя бы одно слово в question
- * 7. `excludedKeywords` — ни одного слова из списка в question
+ * 5. `duration` в диапазоне `[minDurationMinutes, maxDurationMinutes]` — по eventStartMs и expiresAt
+ * 6. `requiredKeywords` — все слова в question (по границам слов, регистронезависимо)
+ * 7. `anyOfKeywords` — хотя бы одно слово в question
+ * 8. `excludedKeywords` — ни одного слова из списка в question
  *
  * ### Поиск ключевых слов:
  * Используется негативный lookbehind/lookahead `(?<![a-zA-Z0-9])keyword(?![a-zA-Z0-9])`,
@@ -100,6 +101,11 @@ export class MarketFilter {
         return false;
       }
 
+      // 5. Длительность рынка (eventStartMs → expiresAt)
+      if (!this._passesDurationFilter(market, config.minDurationMinutes, config.maxDurationMinutes)) {
+        return false;
+      }
+
       // question передаётся as-is: regex скомпилирован с флагом /i, toLowerCase() лишний
       if (requiredRegexes.length > 0 || anyOfRegexes.length > 0 || excludedRegexes.length > 0) {
         const question = market.question;
@@ -181,6 +187,30 @@ export class MarketFilter {
    */
   private _passesLiquidityFilter(market: DiscoveredMarket, minLiquidity: number): boolean {
     return market.liquidity.greaterThanOrEqualTo(new Decimal(minLiquidity));
+  }
+
+  /**
+   * Проверяет длительность рынка по eventStartMs и expiresAt.
+   *
+   * @param market - Рынок для проверки
+   * @param minMinutes - Минимальная длительность (undefined = без ограничения)
+   * @param maxMinutes - Максимальная длительность (undefined = без ограничения)
+   * @returns true если длительность в диапазоне или eventStartMs недоступен
+   */
+  private _passesDurationFilter(
+    market: DiscoveredMarket,
+    minMinutes: number | undefined,
+    maxMinutes: number | undefined,
+  ): boolean {
+    if (minMinutes === undefined && maxMinutes === undefined) return true;
+    if (market.eventStartMs === undefined) return true; // нет данных — пропускаем
+
+    const durationMs = market.expiresAt.toNumber() - market.eventStartMs;
+    const durationMin = durationMs / (1000 * 60);
+
+    if (minMinutes !== undefined && durationMin < minMinutes) return false;
+    if (maxMinutes !== undefined && durationMin > maxMinutes) return false;
+    return true;
   }
 
   /**

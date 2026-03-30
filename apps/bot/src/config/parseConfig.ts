@@ -374,6 +374,14 @@ function parseMarketConfig(
         ? Number(env['MARKET_DISCOVERY_MIN_TIME_TO_EXPIRY_HOURS'])
         : undefined;
 
+      // Duration filter: env > JSON
+      const envMinDuration = env['MARKET_DISCOVERY_MIN_DURATION_MINUTES']
+        ? Number(env['MARKET_DISCOVERY_MIN_DURATION_MINUTES'])
+        : undefined;
+      const envMaxDuration = env['MARKET_DISCOVERY_MAX_DURATION_MINUTES']
+        ? Number(env['MARKET_DISCOVERY_MAX_DURATION_MINUTES'])
+        : undefined;
+
       return {
         source: 'discovery',
         filter: {
@@ -382,6 +390,8 @@ function parseMarketConfig(
           requiredKeywords: parseKeywords(env['MARKET_DISCOVERY_REQUIRED_KEYWORDS']) ?? (filter['requiredKeywords'] as string[] | undefined),
           anyOfKeywords:    parseKeywords(env['MARKET_DISCOVERY_ANY_OF_KEYWORDS'])   ?? (filter['anyOfKeywords']    as string[] | undefined),
           excludedKeywords: parseKeywords(env['MARKET_DISCOVERY_EXCLUDED_KEYWORDS']) ?? (filter['excludedKeywords'] as string[] | undefined),
+          minDurationMinutes: envMinDuration ?? (filter['minDurationMinutes'] as number | undefined),
+          maxDurationMinutes: envMaxDuration ?? (filter['maxDurationMinutes'] as number | undefined),
         },
         scanPauseMs,
         outcomeIndex: outcomeIndex as 0 | 1,

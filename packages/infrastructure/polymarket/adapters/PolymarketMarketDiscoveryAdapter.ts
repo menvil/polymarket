@@ -376,6 +376,11 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
     // В отличие от Decimal(0), undefined явно разделяет "нет данных" и "реальный нулевой спред".
     const spread = raw.spread != null ? new Decimal(raw.spread) : undefined;
 
+    // eventStartTime → epoch ms (для фильтрации по длительности рынка)
+    const eventStartMs = raw.eventStartTime
+      ? Date.parse(raw.eventStartTime)
+      : undefined;
+
     return {
       marketId,
       instrumentId,
@@ -390,6 +395,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
       allTokenIds: tokenIds,
       rawMarket: raw as unknown as Record<string, unknown>,
+      eventStartMs: eventStartMs && !isNaN(eventStartMs) ? eventStartMs : undefined,
     };
   }
 }

@@ -59,6 +59,11 @@ export interface DiscoveredMarket extends InstrumentInfo {
    * для записи в meta-строку снапшота.
    */
   readonly rawMarket?: Record<string, unknown>;
+  /**
+   * Время начала события (epoch ms). Парсится из `eventStartTime` в API.
+   * Используется вместе с `expiresAt` для вычисления длительности рынка.
+   */
+  readonly eventStartMs?: number;
 }
 
 /**

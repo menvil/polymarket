@@ -93,4 +93,23 @@ export interface IMarketFilterConfig {
    * Пример: `['test', 'demo']` — исключить тестовые рынки.
    */
   readonly excludedKeywords?: readonly string[];
+
+  /**
+   * Минимальная длительность рынка в минутах.
+   *
+   * @remarks
+   * Вычисляется из `eventStartMs` и `expiresAt` в DiscoveredMarket.
+   * Если `eventStartMs` недоступен — рынок пропускается через фильтр.
+   * Пример: `14` пропустит 15-минутные, отсечёт 5-минутные.
+   */
+  readonly minDurationMinutes?: number;
+
+  /**
+   * Максимальная длительность рынка в минутах.
+   *
+   * @remarks
+   * Рынки длиннее этого значения исключаются.
+   * Пример: `16` пропустит 15-минутные, отсечёт 30-минутные.
+   */
+  readonly maxDurationMinutes?: number;
 }

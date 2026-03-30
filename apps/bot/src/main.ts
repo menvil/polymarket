@@ -470,6 +470,8 @@ async function runPaper(): Promise<void> {
       anyOfKeywords: mc.filter.anyOfKeywords,
       requiredKeywords: mc.filter.requiredKeywords,
       excludedKeywords: mc.filter.excludedKeywords,
+      minDurationMinutes: mc.filter.minDurationMinutes,
+      maxDurationMinutes: mc.filter.maxDurationMinutes,
     };
     logger.info('Starting market discovery', { filter: filterConfig });
 
