@@ -37,6 +37,7 @@ import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
+import type { MarketId } from '@polymarket/ids';
 import { loadConfig } from './config.js';
 
 // ─── Запуск ──────────────────────────────────────────────────────────────────
@@ -177,7 +178,9 @@ const subscribedMarkets = new Map<string, DiscoveredMarket>();
  * Предотвращает повторную регистрацию рынков которые Gamma API
  * продолжает возвращать active=true даже после истечения.
  */
-const closedMarkets = new Set<string>();
+/** marketId → timestamp закрытия (ms). Очищается периодически — записи старше 24ч удаляются. */
+const closedMarkets = new Map<string, number>();
+const CLOSED_MARKETS_TTL_MS = 24 * 60 * 60_000; // 24 часа
 
 /**
  * Очередь отложенного обогащения meta: рынки ожидающие priceToBeat из API.
@@ -410,7 +413,7 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
   // чтобы scanAndSubscribe не открыл его снова (Gamma API может
   // возвращать active=true ещё долго после истечения рынка).
   if (reason === 'EXPIRED') {
-    closedMarkets.add(marketKey);
+    closedMarkets.set(marketKey, Date.now());
   }
 
   if (reason === 'SHUTDOWN' || !closeCryptoMeta) {
@@ -556,6 +559,7 @@ async function shutdown(signal: string): Promise<void> {
   if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
   clearInterval(expiryInterval);
   clearInterval(enrichmentInterval);
+  clearInterval(closedMarketsCleanupInterval);
 
   // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
   // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
@@ -659,6 +663,21 @@ const expiryInterval = setInterval(() => {
 const enrichmentInterval = setInterval(() => {
   void processEnrichmentQueue();
 }, ENRICHMENT_INTERVAL_MS);
+
+// Очистка closedMarkets от записей старше 24ч (каждый час)
+const closedMarketsCleanupInterval = setInterval(() => {
+  const now = Date.now();
+  let removed = 0;
+  for (const [key, closedAt] of closedMarkets) {
+    if (now - closedAt >= CLOSED_MARKETS_TTL_MS) {
+      closedMarkets.delete(key);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    logger.debug('Cleaned up stale closedMarkets entries', { removed, remaining: closedMarkets.size });
+  }
+}, 60 * 60_000);
 
 logger.info('Collector running. Press Ctrl+C to stop.', {
   scanEveryMs:   config.marketScanPauseMs,

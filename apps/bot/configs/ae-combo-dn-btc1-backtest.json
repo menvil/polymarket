@@ -1,0 +1,15 @@
+{
+  "strategy": "adaptive-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "waitPct": 0.5,
+    "minEwmaCents": 45,
+    "minRiseCents": 5,
+    "warmupTrades": 10,
+    "bidOffsetCents": 2
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day1/*"], "outcomeIndex": 1 },
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+}

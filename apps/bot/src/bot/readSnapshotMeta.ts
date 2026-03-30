@@ -18,6 +18,8 @@ export interface SnapshotMeta {
   readonly asset: AssetId;
   /** Сырой rawMarket из Gamma API (сохранён DataRecorder в поле 'm') */
   readonly rawMarket?: Record<string, unknown>;
+  /** ID комплементарного токена (другой outcome того же рынка). undefined если нет. */
+  readonly complementaryInstrumentId?: InstrumentId;
 }
 
 /**
@@ -63,7 +65,11 @@ export async function readSnapshotMeta(
         if (!instrumentId || !asset) return null;
         // rawMarket сохранён в поле 'm' DataRecorder'ом
         const rawMarket = raw['m'] as Record<string, unknown> | undefined;
-        return { marketId, instrumentId, asset, rawMarket };
+        // Комплементарный токен (другой outcome)
+        const compIndex = 1 - outcomeIndex;
+        const compTokenId = tokenIds[compIndex];
+        const complementaryInstrumentId = compTokenId ? (asInstrumentId(compTokenId) ?? undefined) : undefined;
+        return { marketId, instrumentId, asset, rawMarket, complementaryInstrumentId };
       }
     }
     return null;

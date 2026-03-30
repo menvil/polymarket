@@ -32,7 +32,8 @@
       "@polymarket/exchange/ws":      ["../../packages/infrastructure/polymarket/ws/index.ts"],
       "@polymarket/exchange/rest":    ["../../packages/infrastructure/polymarket/rest/index.ts"],
       "@polymarket/exchange/dns":     ["../../packages/infrastructure/polymarket/dns/index.ts"],
-      "@polymarket/snapshot-readers":  ["../../packages/infrastructure/persistence/snapshot-readers/src/index.ts"]
+      "@polymarket/snapshot-readers":  ["../../packages/infrastructure/persistence/snapshot-readers/src/index.ts"],
+      "@polymarket/cross-market":      ["../../packages/domain/cross-market/src/index.ts"]
     }
   },
   "include": ["src/**/*"]

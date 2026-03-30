@@ -39,6 +39,7 @@ import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/v
 import {
   parseAccountId,
   KnownVenues,
+  asPolymarketCtfToken,
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
@@ -108,14 +109,27 @@ class SimpleBookRegistry implements IBookRegistry {
  * Строит RiskParams с параметрами по умолчанию для backtest режима.
  * @internal
  */
-function buildRiskParams(): RiskParams {
+/**
+ * Строит параметры risk-чека из конфигурации бота.
+ *
+ * @param config - Конфигурация бота
+ * @returns RiskParams согласованные со стратегией
+ */
+function buildRiskParams(config: BotConfig): RiskParams {
+  const params = config.strategyParams as unknown as Record<string, unknown>;
+  const orderSize = params['orderSize'] instanceof Decimal
+    ? (params['orderSize'] as Decimal).toNumber()
+    : 10;
+  const qMax = typeof params['qMax'] === 'number' ? (params['qMax'] as number) : 5;
+  const initialBalance = config.resources.initialBalance;
+
   return {
     maxOpenOrders: 2,
-    maxOrderNotional: new Decimal('100'),
-    maxPositionSize: new Decimal('20'),
-    maxTotalExposure: new Decimal('2000'),
+    maxOrderNotional: new Decimal(initialBalance),
+    maxPositionSize: new Decimal(qMax * orderSize),
+    maxTotalExposure: new Decimal(initialBalance * 2),
     minAvailableBalance: new Decimal('1'),
-    minTimeToExpiryMs: 30_000,
+    minTimeToExpiryMs: 0,
   };
 }
 
@@ -165,7 +179,7 @@ async function runSingleMarketBacktest(
     return null;
   }
 
-  const { marketId, instrumentId, asset, rawMarket } = meta;
+  const { marketId, instrumentId, asset, rawMarket, complementaryInstrumentId } = meta;
 
   // 2. Создаём изолированную инфраструктуру
   const replayClock = new ReplayClock(new Date(0));
@@ -174,7 +188,7 @@ async function runSingleMarketBacktest(
 
   const repos = buildRepositories();
   const { portfolioStore } = repos;
-  const riskParams = buildRiskParams();
+  const riskParams = buildRiskParams(config);
 
   const accountId = parseAccountId(config.account.accountId);
   if (!accountId) return null;
@@ -194,6 +208,14 @@ async function runSingleMarketBacktest(
     asset,
     config: config.paper,
   });
+  // Регистрируем комплементарный рынок для auto-selection (если нужен)
+  if (complementaryInstrumentId) {
+    const compAst = asPolymarketCtfToken(String(complementaryInstrumentId));
+    if (compAst) {
+      exchangeClient.registerMarket(complementaryInstrumentId, marketId, accountId, compAst);
+    }
+  }
+
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
@@ -208,7 +230,9 @@ async function runSingleMarketBacktest(
   const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore });
 
   // 7. Регистрация инструмента в каталоге
-  const expiresAtResult = TimestampService.create(Date.now() + 86400_000);
+  const rawEndDateForInstrument = rawMarket?.['endDate'] as string | undefined;
+  const endDateMsForInstrument = rawEndDateForInstrument ? new Date(rawEndDateForInstrument).getTime() : NaN;
+  const expiresAtResult = TimestampService.create(!Number.isNaN(endDateMsForInstrument) ? endDateMsForInstrument : Date.now() + 86400_000);
   if (!expiresAtResult.ok) return null;
   const instrumentInfo: InstrumentInfo = {
     instrumentId,
@@ -255,18 +279,50 @@ async function runSingleMarketBacktest(
 
   // 12. Создаём и регистрируем стратегию
   const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
-  const expirationMs = Date.now() + 24 * 60 * 60 * 1000;
+
+  // Извлекаем eventStartTime / endDate из rawMarket (Gamma API)
+  const rawEventStart = rawMarket?.['eventStartTime'] as string | undefined;
+  const rawEndDate = rawMarket?.['endDate'] as string | undefined;
+  const parsedEventStartMs = rawEventStart ? new Date(rawEventStart).getTime() : NaN;
+  const parsedEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : NaN;
+
+  const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+  const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
+
+  // Определяем нужен ли dual-token режим (для стратегий типа adaptive-entry)
+  const needsComplementary = config.strategy === 'adaptive-entry';
+  const complementaryAsset = needsComplementary && complementaryInstrumentId
+    ? asPolymarketCtfToken(String(complementaryInstrumentId))
+    : undefined;
+
+  // Регистрируем комплементарный инструмент в каталоге (нужен для ExecutionEngine валидации)
+  if (needsComplementary && complementaryInstrumentId) {
+    const compInfo: InstrumentInfo = {
+      instrumentId: complementaryInstrumentId,
+      marketId,
+      tickSize: Price.of(new Decimal('0.001')),
+      minOrderSize: Quantity.of(new Decimal('1')),
+      minOrderValue: Quantity.of(new Decimal('1')),
+      active: true,
+      expiresAt: expiresAtResult.value,
+    };
+    marketCatalog.register(compInfo);
+  }
 
   const regResult = await engine.scheduler.register({
     strategy, instrumentId, asset, accountId, market: marketStub,
     cryptoSymbol: cryptoMeta?.rtdsFilter,
+    eventStartMs,
+    complementaryInstrumentId: needsComplementary ? complementaryInstrumentId : undefined,
+    complementaryAsset: complementaryAsset ?? undefined,
+    additionalInstrumentIds: needsComplementary && complementaryInstrumentId ? [complementaryInstrumentId] : undefined,
   });
   if (!regResult.ok) return null;
 
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
-    { filePaths: [filePath], outcomeIndex },
+    { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary },
     { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, parseCryptoMeta },
   );
   const replayResult = await backtestEngine.run();
@@ -279,39 +335,87 @@ async function runSingleMarketBacktest(
   marketDataStore.stop();
 
   // 15. Settlement
+  // Auto-selection: позиция может быть на primary ИЛИ complementary инструменте.
+  // Проверяем оба, определяем outcomeIndex позиции для корректного settlement.
   if (cryptoMeta) {
     const resolution = cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter);
-    if (resolution) {
-      const portfolio = portfolioStore.get(accountId)!;
-      const position = portfolio.getPosition(instrumentId);
-      if (position && !position.isClosed()) {
-        const qty = position.quantity.value();
-        const isWinning = (outcomeIndex === 0 && resolution === 'UP') || (outcomeIndex === 1 && resolution === 'DOWN');
-        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
-        const cashCredit = qty.times(settlementPrice);
+    const portfolio = portfolioStore.get(accountId);
 
-        const closedPosition = new SimplePosition({
-          instrumentId,
-          quantity: new Decimal(0),
-          averageEntryPrice: position.averageEntryPrice.value(),
-          side: 'LONG' as const,
-        });
-        let updated = portfolio.upsertPosition(closedPosition);
+    // Ищем позицию: на primary или complementary инструменте
+    const primaryPosition = portfolio?.getPosition(instrumentId);
+    const compPosition = complementaryInstrumentId ? portfolio?.getPosition(complementaryInstrumentId) : undefined;
+    const hasPrimary = primaryPosition && !primaryPosition.isClosed();
+    const hasComp = compPosition && !compPosition.isClosed();
+    const activePosition = hasPrimary ? primaryPosition : hasComp ? compPosition : undefined;
+    const activeInstrumentId = hasPrimary ? instrumentId : hasComp ? complementaryInstrumentId! : instrumentId;
+    // Для complementary токена outcomeIndex инвертирован
+    const activeOutcomeIndex = hasPrimary ? outcomeIndex : hasComp ? (1 - outcomeIndex) as 0 | 1 : outcomeIndex;
 
-        if (cashCredit.gt(0)) {
-          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
-          if (creditResult.ok) updated = creditResult.value;
-        }
+    if (resolution && portfolio && activePosition && (hasPrimary || hasComp)) {
+      // Известный исход — settlement по $1 (win) или $0 (lose)
+      const qty = activePosition.quantity.value();
+      const isWinning = (activeOutcomeIndex === 0 && resolution === 'UP') || (activeOutcomeIndex === 1 && resolution === 'DOWN');
+      const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+      const cashCredit = qty.times(settlementPrice);
 
-        const currentVersion = portfolioStore.getVersion(accountId);
-        portfolioStore.save(updated, currentVersion);
+      const closedPosition = new SimplePosition({
+        instrumentId: activeInstrumentId,
+        quantity: new Decimal(0),
+        averageEntryPrice: activePosition.averageEntryPrice.value(),
+        side: 'LONG' as const,
+      });
+      let updated = portfolio.upsertPosition(closedPosition);
+
+      if (cashCredit.gt(0)) {
+        const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
+        if (creditResult.ok) updated = creditResult.value;
       }
+
+      const currentVersion = portfolioStore.getVersion(accountId);
+      portfolioStore.save(updated, currentVersion);
+
+      if (hasComp) {
+        logger.debug('Settlement: position on complementary token (auto-selected)', {
+          instrumentId: String(activeInstrumentId).slice(0, 12) + '…',
+          outcomeIndex: activeOutcomeIndex,
+          resolution,
+          isWinning,
+        });
+      }
+    } else if (!resolution && portfolio && activePosition && (hasPrimary || hasComp)) {
+      // Unknown resolution — откат: возвращаем cash по средней цене входа,
+      // как будто мы не торговали (рынок без резолва = skip)
+      const qty = activePosition.quantity.value();
+      const avgEntry = activePosition.averageEntryPrice.value();
+      const refund = qty.times(avgEntry); // возвращаем потраченный cash
+
+      const closedPosition = new SimplePosition({
+        instrumentId: activeInstrumentId,
+        quantity: new Decimal(0),
+        averageEntryPrice: activePosition.averageEntryPrice.value(),
+        side: 'LONG' as const,
+      });
+      let updated = portfolio.upsertPosition(closedPosition);
+
+      if (refund.gt(0)) {
+        const creditResult = updated.applyCredit(Money.of(refund, 'USDC'));
+        if (creditResult.ok) updated = creditResult.value;
+      }
+
+      const currentVersion = portfolioStore.getVersion(accountId);
+      portfolioStore.save(updated, currentVersion);
+
+      logger.debug('Settlement: unknown resolution, refunding position', {
+        qty: qty.toFixed(1),
+        avgEntry: avgEntry.toFixed(4),
+        refund: refund.toFixed(4),
+      });
     }
   }
 
   // 16. Результат
-  const finalPortfolio = portfolioStore.get(accountId)!;
-  const available = finalPortfolio.balance.available().value();
+  const finalPortfolio = portfolioStore.get(accountId);
+  const available = finalPortfolio ? finalPortfolio.balance.available().value() : initialBalanceDecimal;
   const pnl = available.minus(initialBalanceDecimal);
 
   const cryptoSnap = cryptoMeta ? cryptoPriceStore.get(cryptoMeta.rtdsFilter) : undefined;
@@ -484,6 +588,9 @@ export async function runMultiMarketBacktest(
   const upMarkets = results.filter(r => r.resolution === 'UP');
   const downMarkets = results.filter(r => r.resolution === 'DOWN');
   const unknownMarkets = results.filter(r => !r.resolution);
+  const unknownPnl = unknownMarkets.reduce((a, r) => a.plus(r.pnl), new Decimal(0));
+  const knownResults = results.filter(r => r.resolution);
+  const knownPnl = knownResults.reduce((a, r) => a.plus(r.pnl), new Decimal(0));
 
   logger.warn('Resolution breakdown', {
     UP: {
@@ -499,5 +606,11 @@ export async function runMultiMarketBacktest(
         : '-',
     },
     unknown: unknownMarkets.length,
+    unknownPnl: unknownMarkets.length > 0
+      ? `${unknownPnl.gte(0) ? '+' : ''}${unknownPnl.toFixed(4)} USDC`
+      : '-',
+    adjustedPnl: knownResults.length > 0
+      ? `${knownPnl.gte(0) ? '+' : ''}${knownPnl.toFixed(4)} USDC (excl unknown)`
+      : '-',
   });
 }

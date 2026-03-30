@@ -169,6 +169,17 @@ export interface BacktestConfig {
    * @defaultValue 0
    */
   readonly outcomeIndex?: 0 | 1;
+  /**
+   * Реплеить trade tape комплементарного токена (другой outcome).
+   *
+   * @remarks
+   * Если true, события `last_trade_price` для tokenIds[1 - outcomeIndex]
+   * тоже публикуются в EventBus. Это позволяет стратегии получать
+   * `complementaryTradeTape` в snapshot для сравнения momentum обоих токенов.
+   *
+   * @defaultValue false
+   */
+  readonly replayComplementaryTrades?: boolean;
 }
 
 /**
@@ -246,6 +257,8 @@ export interface BacktestResult {
   readonly marketId: MarketId | undefined;
   /** instrumentId обрабатываемого токена */
   readonly instrumentId: InstrumentId | undefined;
+  /** instrumentId комплементарного токена (если replayComplementaryTrades=true) */
+  readonly complementaryInstrumentId: InstrumentId | undefined;
 }
 
 // ── Реализация ────────────────────────────────────────────────────────────────
@@ -305,6 +318,8 @@ export class BacktestEngine {
 
     const filePaths = await this._resolveFilePaths();
 
+    const replayComplementary = this._config.replayComplementaryTrades ?? false;
+
     let processedFiles = 0;
     let bookEvents = 0;
     let tradeEvents = 0;
@@ -312,6 +327,7 @@ export class BacktestEngine {
     let errors = 0;
     let marketId: MarketId | undefined;
     let instrumentId: InstrumentId | undefined;
+    let complementaryInstrumentId: InstrumentId | undefined;
 
     for (const filePath of filePaths) {
       this._logger.debug('Processing snapshot file', { filePath });
@@ -320,6 +336,7 @@ export class BacktestEngine {
 
       let fileMarketId: MarketId | undefined;
       let fileInstrumentId: InstrumentId | undefined;
+      let fileComplementaryId: InstrumentId | undefined;
 
       try {
         for await (const line of reader.readLines()) {
@@ -337,6 +354,19 @@ export class BacktestEngine {
             fileMarketId = asMarketId(meta.marketId) ?? undefined;
             const tokenId = meta.tokenIds[outcomeIndex];
             fileInstrumentId = tokenId ? (asInstrumentId(tokenId) ?? undefined) : undefined;
+
+            // Комплементарный токен (другой outcome) для dual-token стратегий
+            if (replayComplementary) {
+              const compIndex = 1 - outcomeIndex;
+              const compTokenId = meta.tokenIds[compIndex];
+              fileComplementaryId = compTokenId ? (asInstrumentId(compTokenId) ?? undefined) : undefined;
+              if (fileComplementaryId) {
+                this._logger.info('Complementary token registered', {
+                  complementaryTokenId: compTokenId,
+                  complementaryIndex: compIndex,
+                });
+              }
+            }
 
             // Извлекаем priceToBeat и finalPrice из rawMarket (eventMetadata)
             if (this._deps.cryptoPriceStore && meta.m) {
@@ -429,9 +459,14 @@ export class BacktestEngine {
             if (!fileInstrumentId || !fileMarketId) continue;
 
             const assetId = raw['asset_id'] as string | undefined;
-            if (assetId !== String(fileInstrumentId)) continue;
+            const isPrimary = assetId === String(fileInstrumentId);
+            const isComplementary = fileComplementaryId && assetId === String(fileComplementaryId);
+
+            if (!isPrimary && !isComplementary) continue;
 
             if (eventType === 'book') {
+              // Book events — только для основного токена
+              if (!isPrimary) continue;
               const result = await this._processBookEvent(
                 raw as unknown as RawBookEvent,
                 fileInstrumentId,
@@ -443,9 +478,11 @@ export class BacktestEngine {
                 errors += 1;
               }
             } else {
+              // Trade events — для обоих токенов
+              const targetId = isPrimary ? fileInstrumentId : fileComplementaryId!;
               const result = await this._processTradeEvent(
                 raw as unknown as RawTradeEvent,
-                fileInstrumentId,
+                targetId,
                 filePath,
               );
               if (result) tradeEvents += 1;
@@ -470,6 +507,7 @@ export class BacktestEngine {
 
         marketId = fileMarketId ?? marketId;
         instrumentId = fileInstrumentId ?? instrumentId;
+        complementaryInstrumentId = fileComplementaryId ?? complementaryInstrumentId;
         processedFiles += 1;
       } catch (err) {
         this._logger.error('Failed to read snapshot file', {
@@ -504,6 +542,7 @@ export class BacktestEngine {
       errors,
       marketId,
       instrumentId,
+      complementaryInstrumentId,
     };
   }
 

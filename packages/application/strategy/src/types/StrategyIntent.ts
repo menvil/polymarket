@@ -22,7 +22,7 @@
  * ];
  * ```
  */
-import type { OrderId } from '@polymarket/ids';
+import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 
 export type StrategyIntent =
@@ -43,6 +43,23 @@ export interface PlaceIntent {
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
+  /**
+   * Целевой инструмент для размещения ордера. Если указан — ордер размещается
+   * на этом инструменте вместо основного из ExecutionContext.
+   *
+   * @remarks
+   * Используется для auto-selection: стратегия зарегистрирована на UP токене,
+   * но решает купить DOWN токен — указывает его ID здесь.
+   * Если не указан — ордер идёт на основной instrumentId из контекста.
+   */
+  readonly targetInstrumentId?: InstrumentId;
+  /**
+   * Торговый актив целевого инструмента. Обязателен если указан targetInstrumentId.
+   *
+   * @remarks
+   * AssetId нужен для PlaceOrderUseCase — определяет какой CTF токен торгуется.
+   */
+  readonly targetAsset?: AssetId;
 }
 
 /**

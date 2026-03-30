@@ -90,7 +90,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -222,13 +222,83 @@ function parseStrategyParams(
       if (!result['gamma']) errors.push('strategyParams.gamma is required for avellaneda-stoikov strategy');
       if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for avellaneda-stoikov strategy');
       if (!result['orderSize']) errors.push('strategyParams.orderSize is required for avellaneda-stoikov strategy');
-      if (!raw['marketDuration']) errors.push('strategyParams.marketDuration is required for avellaneda-stoikov strategy');
       // qMax — целое число, не Decimal
       if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
-      // marketDuration — строка '5m' | '15m'
-      if (typeof raw['marketDuration'] === 'string') result['marketDuration'] = raw['marketDuration'];
       // Опциональные числовые поля — оставить как number, не Decimal
-      for (const numField of ['ewmaAlpha', 'stagedWideSec', 'stagedStopSec', 'minTradesForMid']) {
+      // Probability table: string fields
+      if (typeof raw['probTablePath'] === 'string') result['probTablePath'] = raw['probTablePath'];
+      if (typeof raw['probTableMode'] === 'string') result['probTableMode'] = raw['probTableMode'];
+      for (const numField of ['skewMult', 'ewmaAlpha', 'unwindSec', 'unwindMaxDiscountCents', 'stopLossCents', 'stopLossSpreadMult', 'minTradesForMid', 'regimeWindow', 'regimeTrendThreshold', 'regimeRangeThreshold', 'regimeTrendSpreadMult', 'regimeRangeSpreadMult', 'warmupSec', 'jumpThreshold', 'jumpWidenFactor', 'jumpCooldownTrades', 'profitHoldThreshold', 'profitHoldSkewReduction', 'dynGammaSlope', 'maxWarmupVolCents', 'minWarmupTradesPerSec', 'maxSpreadCents', 'maxWarmupImbalance', 'imbalanceSpreadFactor', 'depthSpreadFactor', 'ofiWindow', 'ofiWeight', 'conditionCheckSpreadCents', 'conditionCheckVolCents', 'conditionCheckMinDepth', 'conditionCheckCooldownSec', 'adaptiveScale', 'adaptiveMinOrderRatio', 'aasConsecutiveThreshold', 'ofiSkipThreshold', 'trailDistanceCents', 'trailTightCents', 'trailWideZoneCents', 'trailWideDistanceCents', 'trailHoldZoneCents', 'minBidZoneCents', 'maxBidZoneCents', 'dynSizeAlpha', 'dynSizeMinRatio', 'dynSizeMaxRatio', 'probTableMinEdge', 'probTableMinN', 'cryptoExitProbThreshold', 'cryptoExitDiscountCents', 'cryptoEntryMinEdge', 'cryptoEntryMinProb']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      // dynamicQ — массив фаз {until, qMax}, передаём as-is (не конвертируем в Decimal)
+      if (Array.isArray(raw['dynamicQ'])) {
+        result['dynamicQ'] = raw['dynamicQ'];
+      }
+      break;
+
+    case 'cross-market-arb':
+      // Параметры для кросс-маркетного арбитража.
+      // peerInstrumentId и strike'ы задаются динамически из discovery, не из конфига.
+      // В конфиге только общие пороги.
+      for (const numField of ['minSpreadAfterFees', 'maxPositionUnits']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'prob-table':
+      if (typeof raw['probTablePath'] !== 'string') errors.push('strategyParams.probTablePath is required for prob-table strategy');
+      else result['probTablePath'] = raw['probTablePath'];
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for prob-table strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for prob-table strategy');
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      for (const numField of ['entryEdge', 'exitEdge', 'stopEdge', 'exitTauSec', 'minN', 'warmupSec', 'ewmaAlpha', 'minTradesForMid']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'crypto-prob':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for crypto-prob strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for crypto-prob strategy');
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      for (const numField of ['entryProb', 'exitProb', 'minEdgeCents', 'exitTauSec', 'warmupSec', 'exitDiscountCents', 'minBidZoneCents', 'maxBidZoneCents', 'minDeltaPct', 'maxEntryTauSec', 'minEntryProb']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'selective-entry':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for selective-entry strategy');
+      for (const numField of ['minZoneCents', 'maxZoneCents', 'minDeltaPct', 'maxDeltaPct', 'minTauSec', 'maxTauSec', 'maxSpreadCents', 'warmupSec', 'bidOffsetCents']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['side'] === 'up' || raw['side'] === 'down') result['side'] = raw['side'];
+      break;
+
+    case 'oscillation-mm':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for oscillation-mm strategy');
+      for (const numField of ['entryOffsetCents', 'profitTargetCents', 'stopLossCents', 'maxHoldSec', 'cooldownSec', 'maxRoundTrips', 'minTauSec', 'warmupSec', 'ofiWindow', 'ofiEntryThreshold', 'ofiExitThreshold', 'aasThreshold', 'maxDropCents', 'dropWindowSec', 'confirmationSec', 'confirmStopCents', 'confirmOfiThreshold', 'confirmAasThreshold']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'momentum-scalp':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for momentum-scalp strategy');
+      for (const numField of ['priceMinCents', 'priceMaxCents', 'maxTauSec', 'minTauSec', 'velocityMin', 'velocityMax', 'pressureMin', 'pressureMax', 'takeProfitCents', 'stopLossCents', 'tpTimeoutSec', 'warmupSec', 'maxEntries', 'cooldownSec']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'smart-entry':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for smart-entry strategy');
+      for (const numField of ['waitPct', 'minEwmaCents', 'maxEwmaCentsForDown', 'minRiseCents', 'minFallCents', 'warmupTrades', 'bidOffsetCents', 'maxSpreadCents']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['mode'] === 'bullish' || raw['mode'] === 'bearish' || raw['mode'] === 'adaptive') result['mode'] = raw['mode'];
+      break;
+
+    case 'adaptive-entry':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for adaptive-entry strategy');
+      for (const numField of ['waitPct', 'minEwmaCents', 'minRiseCents', 'warmupTrades', 'bidOffsetCents']) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       break;

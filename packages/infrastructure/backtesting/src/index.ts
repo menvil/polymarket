@@ -29,6 +29,20 @@
 export { BacktestEngine } from './BacktestEngine.js';
 export type { BacktestConfig, BacktestDeps, BacktestResult, IBacktestCryptoPriceStore } from './BacktestEngine.js';
 
+export { CrossMarketBacktestEngine } from './CrossMarketBacktestEngine.js';
+export type {
+  CrossMarketBacktestConfig,
+  CrossMarketBacktestDeps,
+  CrossMarketBacktestResult,
+  ArbitrageOpportunity,
+  PairResult,
+  OpportunityWindow,
+  SimulatedTrade,
+  PairSimulationResult,
+  SharedBalanceSimulationResult,
+  SettlementInfo,
+} from './CrossMarketBacktestEngine.js';
+
 export { MockExchangeClient } from './MockExchangeClient.js';
 export type { SubmittedOrder } from './MockExchangeClient.js';
 

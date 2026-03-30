@@ -27,6 +27,12 @@
 
 import type { DumbStrategyConfig } from '../strategies/DumbStrategy.js';
 import type { ASStrategyConfig } from '../strategies/AvellanedaStoikovStrategy.js';
+import type { CrossMarketArbConfig } from '../strategies/CrossMarketArbStrategy.js';
+import type { ProbTableConfig } from '../strategies/ProbTableStrategy.js';
+import type { OscillationMMConfig } from '../strategies/OscillationMMStrategy.js';
+import type { MomentumScalpConfig } from '../strategies/MomentumScalpStrategy.js';
+import type { SmartEntryConfig } from '../strategies/SmartEntryStrategy.js';
+import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
 
@@ -34,7 +40,7 @@ import type { ASStrategyConfig } from '../strategies/AvellanedaStoikovStrategy.j
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -70,6 +76,12 @@ export interface DiscoveryMarketConfig {
    * @defaultValue 0
    */
   readonly outcomeIndex: 0 | 1;
+  /**
+   * Открывать два слота на рынок (UP + DOWN).
+   * Для каждого создаётся отдельный экземпляр стратегии с side='up'/'down'.
+   * @defaultValue false
+   */
+  readonly bidirectional?: boolean;
 }
 
 /** Исторические снапшоты для backtest */
@@ -152,7 +164,7 @@ export interface BotConfig {
   readonly strategy: StrategyType;
 
   /** Параметры конкретной стратегии (зависят от strategy) */
-  readonly strategyParams: DumbStrategyConfig | ASStrategyConfig;
+  readonly strategyParams: DumbStrategyConfig | ASStrategyConfig | CrossMarketArbConfig | ProbTableConfig | OscillationMMConfig | MomentumScalpConfig | SmartEntryConfig | AdaptiveEntryConfig;
 
   /** Источник и конфигурация рынка */
   readonly market: MarketConfig;

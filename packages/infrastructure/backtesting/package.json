@@ -22,6 +22,7 @@
     "@polymarket/ports": "workspace:*",
     "@polymarket/handlers": "workspace:*",
     "@polymarket/snapshot-readers": "workspace:*",
+    "@polymarket/cross-market": "^0.1.0",
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {

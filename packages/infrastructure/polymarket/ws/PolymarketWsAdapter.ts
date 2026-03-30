@@ -264,24 +264,26 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Убирает tokenId из набора отслеживаемых токенов.
+   * Убирает tokenId из набора отслеживаемых токенов и переподключается.
    *
    * @param tokenId - Token ID для отписки
    *
    * @remarks
-   * Только удаляет из внутреннего set — НЕ посылает никаких сообщений на сервер.
-   * Сервер продолжает слать данные по этому токену; в collect-data режиме
-   * `recorder.recordEvent()` безвредно принимает их (рынок финализирован, данные игнорируются).
+   * Удаляет tokenId из внутреннего set и планирует reconnect (debounce 500ms),
+   * чтобы сервер перестал слать snapshots по удалённым токенам.
+   * Без reconnect сервер продолжал бы слать данные → BookUpdateHandler
+   * логировал бы «Received snapshot for unregistered instrument» для каждого snapshot.
    *
-   * ### Почему не посылаем subscription update:
-   * Polymarket WS возвращает INVALID OPERATION на любое subscription-сообщение
-   * после первого. Посылать обновление бессмысленно и вредно (вызвало бы reconnect-loop).
-   * Накопленный "лишний" трафик по истёкшим токенам минимален и безвреден.
+   * Несколько быстрых вызовов unsubscribe (закрытие арб-пары = 3-4 токена)
+   * коллапсируются в один reconnect через debounce в `_scheduleReconnectForSubscription()`.
    */
   async unsubscribeFromToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
+    const wasPresent = this._subscribedTokens.has(tokenId);
     this._subscribedTokens.delete(tokenId);
-    // Намеренно НЕ посылаем subscription update — см. описание в JSDoc.
+    if (wasPresent && this._hasEverConnected && this._isConnected) {
+      this._scheduleReconnectForSubscription();
+    }
   }
 
   /**
@@ -357,6 +359,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     this._onFill.clear();
     this._onOrderUpdate.clear();
     this._onReconnect.clear();
+    this._client.removeAllListeners();
     this._router.removeAllListeners();
     this._isConnected = false;
 
@@ -479,11 +482,6 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       this._logger.info('[PolymarketWsAdapter] Disconnected');
     });
 
-    this._client.on('error', (error: Error) => {
-      this._logger.error('[PolymarketWsAdapter] WebSocket error', {
-        err: error,
-      });
-    });
   }
 
   /**

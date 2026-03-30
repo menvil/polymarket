@@ -236,10 +236,16 @@ export class PaperFillSimulator {
 
       if (order.side === 'BUY' && bestAsk !== undefined && bestAsk.lte(orderPrice)) {
         // Кто-то готов продать по цене ≤ нашей лимитки → fill
-        fillPrice = this._deps.config.fillAtOrderPrice ? orderPrice : bestAsk;
+        // Price improvement: на реальной бирже BUY заполняется по min(orderPrice, bestAsk)
+        fillPrice = this._deps.config.fillAtOrderPrice
+          ? Decimal.min(orderPrice, bestAsk)
+          : bestAsk;
       } else if (order.side === 'SELL' && bestBid !== undefined && bestBid.gte(orderPrice)) {
         // Кто-то готов купить по цене ≥ нашей лимитки → fill
-        fillPrice = this._deps.config.fillAtOrderPrice ? orderPrice : bestBid;
+        // Price improvement: на реальной бирже SELL заполняется по max(orderPrice, bestBid)
+        fillPrice = this._deps.config.fillAtOrderPrice
+          ? Decimal.max(orderPrice, bestBid)
+          : bestBid;
       }
 
       if (fillPrice !== undefined) {
@@ -286,7 +292,10 @@ export class PaperFillSimulator {
       if (matches) {
         // Исполняем min(tradeSize, remainingSize) — partial fill если нужно
         const fillSize = Decimal.min(tradeSize, order.remainingSize);
-        const fillPrice = this._deps.config.fillAtOrderPrice ? orderPrice : tradePrice;
+        // Price improvement: BUY → min(order, trade), SELL → max(order, trade)
+        const fillPrice = this._deps.config.fillAtOrderPrice
+          ? (order.side === 'BUY' ? Decimal.min(orderPrice, tradePrice) : Decimal.max(orderPrice, tradePrice))
+          : tradePrice;
         const nowMs = this._deps.clock.now().getTime();
         const isTaker = nowMs === order.placedAtMs;
         await this._applyFill(order, fillPrice, fillSize, isTaker);

@@ -1,0 +1,18 @@
+{
+  "strategy": "avellaneda-stoikov",
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "strategyParams": {
+    "gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0,
+    "ewmaAlpha": 0.3, "minTradesForMid": 5, "warmupSec": 10,
+    "minBidZoneCents": 55, "maxBidZoneCents": 73,
+    "regimeWindow": 0, "jumpThreshold": 0, "dynGammaSlope": 0,
+    "imbalanceSpreadFactor": 0, "ofiWindow": 0, "ofiWeight": 0,
+    "ofiSkipThreshold": 0, "aasConsecutiveThreshold": 0,
+    "trailDistanceCents": 0, "dynSizeAlpha": 0, "stopLossCents": 0,
+    "cryptoExitProbThreshold": 30, "cryptoEntryMinEdge": 0,
+    "cryptoEntryMinProb": 60
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day5/*"], "outcomeIndex": 0 }
+}

@@ -483,12 +483,16 @@ export class DataRecorder implements IMarketDataRecorder {
     writer.buffer = [];
     writer.lastFlushTime = Date.now();
 
-    await new Promise<void>((resolve, reject) => {
-      writer.stream!.write(data, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+    const canContinue = writer.stream!.write(data, (err) => {
+      if (err) this._logger.error('Stream write error', { error: err.message });
     });
+
+    // Backpressure: если внутренний буфер потока переполнен — ждём drain
+    if (!canContinue) {
+      await new Promise<void>((resolve) => {
+        writer.stream!.once('drain', resolve);
+      });
+    }
   }
 
   /**

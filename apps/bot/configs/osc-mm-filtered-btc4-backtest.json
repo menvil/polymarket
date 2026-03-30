@@ -1,0 +1,24 @@
+{
+  "strategy": "oscillation-mm",
+  "strategyParams": {
+    "orderSize": 5,
+    "entryOffsetCents": 2,
+    "profitTargetCents": 3,
+    "stopLossCents": 5,
+    "maxHoldSec": 90,
+    "cooldownSec": 20,
+    "maxRoundTrips": 5,
+    "minTauSec": 180,
+    "warmupSec": 45,
+    "ofiWindow": 10,
+    "ofiEntryThreshold": 0.4,
+    "ofiExitThreshold": 0.3,
+    "aasThreshold": 3,
+    "maxDropCents": 3,
+    "dropWindowSec": 30
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day4/*"], "outcomeIndex": 0 },
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+}

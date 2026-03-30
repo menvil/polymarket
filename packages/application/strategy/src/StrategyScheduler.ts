@@ -79,6 +79,34 @@ export interface StrategyRegistration {
   readonly config?: Partial<ScheduleConfig>;
   /** Символ крипто-актива для привязки к CryptoPriceStore (e.g. 'btcusdt') */
   readonly cryptoSymbol?: string;
+  /** Время начала торговли на рынке (epoch ms). Из Gamma API eventStartTime. */
+  readonly eventStartMs?: number;
+  /**
+   * Дополнительные инструменты, обновления которых триггерят тик стратегии.
+   *
+   * @remarks
+   * Используется для арбитражных стратегий: стратегия зарегистрирована на hard_Up,
+   * но должна тикать и при обновлении easy_Up книги.
+   * Snapshot.topOfBook по-прежнему содержит основной instrumentId.
+   */
+  readonly additionalInstrumentIds?: readonly InstrumentId[];
+  /**
+   * ID комплементарного токена (другой outcome того же рынка).
+   *
+   * @remarks
+   * Для binary рынков: если основной = UP (outcomeIndex=0), complementary = DOWN (outcomeIndex=1).
+   * Trade tape комплементарного токена включается в snapshot как `complementaryTradeTape`.
+   * Используется стратегиями для сравнения momentum обоих сторон.
+   */
+  readonly complementaryInstrumentId?: InstrumentId;
+  /**
+   * Торговый актив комплементарного токена.
+   *
+   * @remarks
+   * Нужен для auto-selection: стратегия передаёт в PlaceIntent.targetAsset
+   * при размещении ордера на комплементарный инструмент.
+   */
+  readonly complementaryAsset?: AssetId;
 }
 
 /**
@@ -150,6 +178,14 @@ interface StrategyEntry {
   readonly config: ScheduleConfig;
   /** Символ крипто-актива (e.g. 'btcusdt') — для CryptoPriceStore lookup */
   readonly cryptoSymbol?: string;
+  /** Время начала торговли на рынке (epoch ms) */
+  readonly eventStartMs?: number;
+  /** Дополнительные инструменты для триггера тика */
+  readonly additionalInstrumentIds?: readonly InstrumentId[];
+  /** ID комплементарного токена */
+  readonly complementaryInstrumentId?: InstrumentId;
+  /** Торговый актив комплементарного токена */
+  readonly complementaryAsset?: AssetId;
   lastRunMs: number;
   running: boolean;
   rerunRequested: boolean;
@@ -273,6 +309,10 @@ export class StrategyScheduler {
       market: reg.market,
       config,
       cryptoSymbol: reg.cryptoSymbol,
+      eventStartMs: reg.eventStartMs,
+      additionalInstrumentIds: reg.additionalInstrumentIds,
+      complementaryInstrumentId: reg.complementaryInstrumentId,
+      complementaryAsset: reg.complementaryAsset,
       lastRunMs: 0,
       running: false,
       rerunRequested: false,
@@ -289,6 +329,19 @@ export class StrategyScheduler {
       this._instrumentToStrategies.set(instrumentKey, set);
     }
     set.add(strategyId);
+
+    // Маппинг дополнительных instruments → та же стратегия (для арбитража)
+    if (reg.additionalInstrumentIds) {
+      for (const addId of reg.additionalInstrumentIds) {
+        const addKey = String(addId);
+        let addSet = this._instrumentToStrategies.get(addKey);
+        if (addSet === undefined) {
+          addSet = new Set<string>();
+          this._instrumentToStrategies.set(addKey, addSet);
+        }
+        addSet.add(strategyId);
+      }
+    }
 
     // Маппинг cryptoSymbol → strategies
     if (reg.cryptoSymbol) {
@@ -735,6 +788,9 @@ export class StrategyScheduler {
       }
     }
 
+    // Комплементарный токен: trade tape для стратегий, сравнивающих оба outcome.
+    const compId = entry.complementaryInstrumentId;
+
     return {
       instrumentId: id,
       market: entry.market,
@@ -748,6 +804,10 @@ export class StrategyScheduler {
       cryptoPrice,
       portfolio: this._deps.portfolioStore.get(entry.accountId),
       nowMs: this._deps.clock.now().getTime(),
+      eventStartMs: entry.eventStartMs,
+      complementaryInstrumentId: compId,
+      complementaryAsset: entry.complementaryAsset,
+      complementaryTradeTape: compId ? this._deps.marketDataStore.getTradeTape(compId) : undefined,
     };
   }
 
@@ -786,6 +846,20 @@ export class StrategyScheduler {
       set.delete(strategyId);
       if (set.size === 0) {
         this._instrumentToStrategies.delete(instrumentKey);
+      }
+    }
+
+    // Remove additional instrument mappings
+    if (entry.additionalInstrumentIds) {
+      for (const addId of entry.additionalInstrumentIds) {
+        const addKey = String(addId);
+        const addSet = this._instrumentToStrategies.get(addKey);
+        if (addSet) {
+          addSet.delete(strategyId);
+          if (addSet.size === 0) {
+            this._instrumentToStrategies.delete(addKey);
+          }
+        }
       }
     }
 

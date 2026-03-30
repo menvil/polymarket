@@ -4,7 +4,6 @@
     "gamma": 0.05,
     "qMax": 5,
     "orderSize": 10,
-    "marketDuration": "5m",
     "spreadMult": 1.0,
     "ewmaAlpha": 0.3,
     "stagedWideSec": 30,

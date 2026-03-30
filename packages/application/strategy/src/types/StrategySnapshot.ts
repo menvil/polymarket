@@ -29,7 +29,7 @@
  * const timeToExpiry = market.expiresAt.toNumber() - nowMs;
  * ```
  */
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, AssetId } from '@polymarket/ids';
 import type { TopOfBook } from '@polymarket/event-bus';
 import type { OrderBookHistory } from '@polymarket/order-book';
 import type { TradeTape } from '@polymarket/trade-tape';
@@ -186,4 +186,62 @@ export interface StrategySnapshot {
    * Стратегия использует для расчёта timeToExpiry и других time-based решений.
    */
   readonly nowMs: number;
+
+  /**
+   * Время начала торговли на рынке (epoch ms).
+   *
+   * @remarks
+   * Из Gamma API поле `eventStartTime` для крипто-рынков.
+   * undefined если неизвестно.
+   *
+   * Стратегия использует для вычисления длительности рынка:
+   * `durationMs = market.expirationMs - eventStartMs`
+   *
+   * @example
+   * ```typescript
+   * const durationMs = snapshot.eventStartMs
+   *   ? snapshot.market.expirationMs - snapshot.eventStartMs
+   *   : undefined;
+   * ```
+   */
+  readonly eventStartMs?: number;
+
+  // ── Complementary Token ───────────────────────────────────
+  /**
+   * ID комплементарного токена (другой outcome того же рынка).
+   *
+   * @remarks
+   * Для binary рынков (UP/DOWN): если основной токен = UP, то complementary = DOWN.
+   * undefined если не зарегистрирован.
+   */
+  readonly complementaryInstrumentId?: InstrumentId;
+
+  /**
+   * Торговый актив комплементарного токена.
+   *
+   * @remarks
+   * Нужен стратегии для auto-selection: если решает купить комплементарный токен,
+   * указывает `targetAsset` в PlaceIntent для корректной маршрутизации в ExecutionEngine.
+   * undefined если комплементарный токен не зарегистрирован.
+   */
+  readonly complementaryAsset?: AssetId;
+
+  /**
+   * Rolling лента публичных трейдов комплементарного токена.
+   *
+   * @remarks
+   * undefined если комплементарный токен не зарегистрирован или трейдов ещё не было.
+   * Используется AdaptiveEntryStrategy для сравнения momentum обоих токенов:
+   * покупаем тот, у которого EWMA растёт сильнее.
+   *
+   * @example
+   * ```typescript
+   * const myTape = snapshot.tradeTape;
+   * const otherTape = snapshot.complementaryTradeTape;
+   * if (myTape && otherTape) {
+   *   // Сравниваем EWMA обоих токенов
+   * }
+   * ```
+   */
+  readonly complementaryTradeTape?: TradeTape;
 }

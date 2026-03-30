@@ -1,0 +1,31 @@
+{
+  "strategy": "cross-market-arb",
+  "strategyParams": {
+    "peerInstrumentId": "placeholder",
+    "minSpreadAfterFees": 0.005,
+    "maxPositionUnits": 50
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "anyOfKeywords": ["bitcoin", "crypto", "BTC", "ETH"],
+      "minLiquidity": 500
+    },
+    "scanPauseMs": 60000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 10000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 100,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-arb-account"
+  }
+}

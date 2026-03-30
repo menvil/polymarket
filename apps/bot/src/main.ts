@@ -40,6 +40,7 @@ import type { IMarketFilterConfig } from '@polymarket/ports';
 import {
   asInstrumentId,
   asMarketId,
+  asOrderId,
   asPolymarketCtfToken,
   assetIdToInstrumentId,
   parseAccountId,
@@ -78,6 +79,10 @@ import type { StrategyConfig } from './strategyFactory.js';
 import type { IStrategy } from '@polymarket/strategy';
 import type { RiskParams } from '@polymarket/risk';
 import type { InstrumentInfo } from '@polymarket/ports';
+import { MarketPairMatcher } from '@polymarket/cross-market';
+import type { MarketInfo } from '@polymarket/cross-market';
+import type { CrossMarketArbConfig } from './strategies/CrossMarketArbStrategy.js';
+import { CrossMarketArbStrategy } from './strategies/CrossMarketArbStrategy.js';
 
 // ── SimpleBookRegistry ─────────────────────────────────────────────────────────
 
@@ -241,6 +246,14 @@ async function runPaper(): Promise<void> {
     readonly strategy: IStrategy;
     /** Метаданные крипто-рынка (undefined для не-крипто) */
     readonly cryptoMeta: CryptoMarketMeta | undefined;
+    /** Дополнительные инструменты для триггера тика (арбитраж: easy book) */
+    readonly additionalInstrumentIds?: readonly InstrumentId[];
+    /** ID комплементарного токена (другой outcome) для dual-token стратегий */
+    readonly complementaryInstrumentId?: InstrumentId;
+    /** AssetId комплементарного токена (для auto-selection в PlaceIntent) */
+    readonly complementaryAsset?: AssetId;
+    /** Индекс outcome для этого слота (0=UP, 1=DOWN). Нужен для settlement. */
+    readonly outcomeIndex: 0 | 1;
     fillHistory: PaperFillRecord[];
     partialAccum: Map<string, PaperPartialAccum>;
     openedAt: number;
@@ -280,9 +293,10 @@ async function runPaper(): Promise<void> {
   rtdsClient.onPrice((symbol, price, ts) => {
     cryptoPriceStore.updatePrice(symbol, price, ts);
 
-    // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
+    // Периодический лог крипто-цен (раз в 30с) — символ активного рынка или арб-пары
     if (symbol.includes('/')) {
-      const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol);
+      const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol)
+        || Array.from(activeArbPairs.values()).some(p => p.easySlot.cryptoMeta?.rtdsFilter === symbol);
       if (isActiveSymbol) {
         const now = Date.now();
         if (now - lastCryptoPriceLogMs >= CRYPTO_PRICE_LOG_INTERVAL_MS) {
@@ -310,6 +324,92 @@ async function runPaper(): Promise<void> {
           chainlinkTs: new Date(ts).toISOString(),
           eventStartTime: new Date(eventStartMs).toISOString(),
         });
+      }
+    }
+
+    // Арб-пары: определяем strike для easy и hard рынков из первой Chainlink цены
+    // после eventStartTime каждого рынка. Easy и hard имеют разные startTime → разные strikes.
+    if (symbol.includes('/')) {
+      for (const pair of activeArbPairs.values()) {
+        // Проверяем что символ соответствует этой паре (e.g. 'btc/usd' для BTC пары)
+        const pairSymbol = pair.easySlot.cryptoMeta?.rtdsFilter;
+        if (!pairSymbol || pairSymbol !== symbol) continue;
+
+        // Диагностика: логируем почему strike не назначается
+        if (!pair.easyStrikeLocked || !pair.hardStrikeLocked) {
+          const nowWall = Date.now();
+          // Логируем только раз в 60с чтобы не спамить
+          const diagKey = `_lastStrikeDiagMs_${pair.pairId}`;
+          const lastDiag = (pair as any)[diagKey] ?? 0;
+          if (nowWall - lastDiag > 60_000) {
+            (pair as any)[diagKey] = nowWall;
+            logger.debug('Strike assignment check', {
+              pairId: pair.pairId.slice(0, 30) + '...',
+              symbol,
+              chainlinkTs: ts,
+              chainlinkTsIso: new Date(ts).toISOString(),
+              easyStartMs: pair.easyStartMs,
+              easyStartIso: pair.easyStartMs > 0 ? new Date(pair.easyStartMs).toISOString() : 'N/A',
+              hardStartMs: pair.hardStartMs,
+              hardStartIso: pair.hardStartMs > 0 ? new Date(pair.hardStartMs).toISOString() : 'N/A',
+              easyLocked: pair.easyStrikeLocked,
+              hardLocked: pair.hardStrikeLocked,
+              easyReady: !pair.easyStrikeLocked && pair.easyStartMs > 0 && ts >= pair.easyStartMs,
+              hardReady: !pair.hardStrikeLocked && pair.hardStartMs > 0 && ts >= pair.hardStartMs,
+            });
+          }
+        }
+
+        // easy (15m) = peer market → peerStrike (2nd arg)
+        if (!pair.easyStrikeLocked && pair.easyStartMs > 0 && ts >= pair.easyStartMs) {
+          pair.easyStrikeLocked = true;
+          pair.strategy.updateStrikes(null, price);
+          logger.info('Arb peer (easy) strike from Chainlink', {
+            pairId: pair.pairId,
+            peerStrike: price,
+            assignment: pair.strategy.assignment,
+            chainlinkTs: new Date(ts).toISOString(),
+            eventStartTime: new Date(pair.easyStartMs).toISOString(),
+          });
+        }
+        // hard (5m) = slot market → slotStrike (1st arg)
+        if (!pair.hardStrikeLocked && pair.hardStartMs > 0 && ts >= pair.hardStartMs) {
+          pair.hardStrikeLocked = true;
+          pair.strategy.updateStrikes(price, null);
+          logger.info('Arb slot (hard) strike from Chainlink', {
+            pairId: pair.pairId,
+            slotStrike: price,
+            assignment: pair.strategy.assignment,
+            chainlinkTs: new Date(ts).toISOString(),
+            eventStartTime: new Date(pair.hardStartMs).toISOString(),
+          });
+        }
+      }
+
+      // Warming пара: назначаем strikes из Chainlink (стратегии ещё нет — сохраняем в warming)
+      if (warmingArbPair) {
+        const wp = warmingArbPair;
+        const wpSymbol = wp.easyCryptoMeta?.rtdsFilter;
+        if (wpSymbol && wpSymbol === symbol) {
+          if (!wp.easyStrikeLocked && wp.easyStartMs > 0 && ts >= wp.easyStartMs) {
+            wp.easyStrikeLocked = true;
+            wp.easyStrike = price;
+            logger.info('Warming pair: easy strike from Chainlink', {
+              pairId: wp.pairId,
+              easyStrike: price,
+              chainlinkTs: new Date(ts).toISOString(),
+            });
+          }
+          if (!wp.hardStrikeLocked && wp.hardStartMs > 0 && ts >= wp.hardStartMs) {
+            wp.hardStrikeLocked = true;
+            wp.hardStrike = price;
+            logger.info('Warming pair: hard strike from Chainlink', {
+              pairId: wp.pairId,
+              hardStrike: price,
+              chainlinkTs: new Date(ts).toISOString(),
+            });
+          }
+        }
       }
     }
   });
@@ -354,6 +454,7 @@ async function runPaper(): Promise<void> {
       candidate: null,
       strategy: fixedStrategy,
       cryptoMeta: undefined,
+      outcomeIndex: (config.market as { outcomeIndex?: number }).outcomeIndex as 0 | 1 ?? 0,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -393,79 +494,93 @@ async function runPaper(): Promise<void> {
       process.exit(1);
     }
 
-    const candidate = validCandidates[0]!;
-    const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
-    const iId = asInstrumentId(tStr);
-    const ast = asPolymarketCtfToken(tStr);
-    if (!iId || !ast) {
-      logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
-      process.exit(1);
-    }
-    const discoveryStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-      logger,
-    );
-    const expiresMs = candidate.expiresAt.toNumber();
-    const initialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
-    activeMarkets.set(tStr, {
-      instrumentId: iId,
-      marketId: candidate.marketId,
-      asset: ast,
-      tokenIdStr: tStr,
-      expiresAtMs: expiresMs,
-      candidate,
-      strategy: discoveryStrategy,
-      cryptoMeta: initialCryptoMeta,
-      fillHistory: [],
-      partialAccum: new Map(),
-      openedAt: Date.now(),
-    });
+    // Арб-режим: не создаём начальный single-market слот.
+    // Пары будут открыты позже через fillArbSlots() → openArbPair().
+    if (config.strategy !== 'cross-market-arb') {
+      const candidate = validCandidates[0]!;
+      const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
+      const iId = asInstrumentId(tStr);
+      const ast = asPolymarketCtfToken(tStr);
+      if (!iId || !ast) {
+        logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
+        process.exit(1);
+      }
+      const discoveryStrategy = createStrategy(
+        { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+        logger,
+      );
+      const expiresMs = candidate.expiresAt.toNumber();
+      const initialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+      activeMarkets.set(tStr, {
+        instrumentId: iId,
+        marketId: candidate.marketId,
+        asset: ast,
+        tokenIdStr: tStr,
+        expiresAtMs: expiresMs,
+        candidate,
+        strategy: discoveryStrategy,
+        cryptoMeta: initialCryptoMeta,
+        outcomeIndex: mc.outcomeIndex,
+        fillHistory: [],
+        partialAccum: new Map(),
+        openedAt: Date.now(),
+      });
 
-    // Fetch strike price и подписка RTDS для начального рынка
-    if (initialCryptoMeta) {
-      if (initialCryptoMeta.priceToBeat !== undefined) {
-        cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, initialCryptoMeta.priceToBeat);
-        logger.info('Strike price from API (priceToBeat)', {
-          symbol: initialCryptoMeta.rtdsFilter,
-          strikePrice: initialCryptoMeta.priceToBeat,
-        });
-      } else {
-        try {
-          const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
-          const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
-          cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
-          logger.info('Strike price from Binance kline (fallback)', {
+      // Fetch strike price и подписка RTDS для начального рынка
+      if (initialCryptoMeta) {
+        if (initialCryptoMeta.priceToBeat !== undefined) {
+          cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, initialCryptoMeta.priceToBeat);
+          logger.info('Strike price from API (priceToBeat)', {
             symbol: initialCryptoMeta.rtdsFilter,
-            strikePrice: kline.open,
+            strikePrice: initialCryptoMeta.priceToBeat,
           });
-        } catch (err) {
-          logger.warn('Failed to fetch strike price for initial market', {
-            symbol: initialCryptoMeta.binanceSymbol,
-            err: err instanceof Error ? err.message : String(err),
-          });
+        } else {
+          try {
+            const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
+            const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
+            cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
+            logger.info('Strike price from Binance kline (fallback)', {
+              symbol: initialCryptoMeta.rtdsFilter,
+              strikePrice: kline.open,
+            });
+          } catch (err) {
+            logger.warn('Failed to fetch strike price for initial market', {
+              symbol: initialCryptoMeta.binanceSymbol,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        for (const sub of initialCryptoMeta.rtdsSubscriptions) {
+          rtdsClient.subscribe(sub.topic, sub.filter);
         }
       }
-      for (const sub of initialCryptoMeta.rtdsSubscriptions) {
-        rtdsClient.subscribe(sub.topic, sub.filter);
-      }
-    }
 
-    const slug = candidate.rawMarket?.['slug'] as string | undefined;
-    logger.info('Initial market discovered', {
-      question: candidate.question,
-      slug: slug ?? '(no slug)',
-      marketId: String(candidate.marketId),
-      tokenId: tStr,
-      liquidity: candidate.liquidity.toFixed(0),
-      expiresAt: new Date(expiresMs).toISOString(),
-      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-    });
+      const slug = candidate.rawMarket?.['slug'] as string | undefined;
+      logger.info('Initial market discovered', {
+        question: candidate.question,
+        slug: slug ?? '(no slug)',
+        marketId: String(candidate.marketId),
+        tokenId: tStr,
+        liquidity: candidate.liquidity.toFixed(0),
+        expiresAt: new Date(expiresMs).toISOString(),
+        hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
+      });
+    } else {
+      logger.info('Arb mode: skipping initial single-market slot, pairs will be opened via fillArbSlots()', {
+        candidatesAvailable: validCandidates.length,
+      });
+    }
   }
 
-  const firstSlot = activeMarkets.values().next().value!;
+  // Для non-arb: firstSlot обязателен. Для arb: placeholder — будет перезаписан через registerMarket().
+  const firstSlot = activeMarkets.values().next().value;
+  const placeholderInstrumentId = firstSlot?.instrumentId ?? asInstrumentId('1')!;
+  const placeholderMarketId = firstSlot?.marketId ?? asMarketId('0x0000000000000000000000000000000000000000000000000000000000000001')!;
+  const placeholderAsset = firstSlot?.asset ?? asPolymarketCtfToken('1')!;
+
   logger.info('Bot starting in paper mode', {
     strategy: config.strategy,
-    marketId: String(firstSlot.marketId),
+    marketId: firstSlot ? String(firstSlot.marketId) : '(arb: deferred)',
     maxConcurrentMarkets,
     initialBalance: config.resources.initialBalance,
   });
@@ -473,7 +588,7 @@ async function runPaper(): Promise<void> {
   const repos = buildRepositories();
   const { portfolioStore } = repos;
 
-  const riskParams: RiskParams = buildRiskParams();
+  const riskParams: RiskParams = buildRiskParams(config);
 
   const accountId = parseAccountId(config.account.accountId);
   if (!accountId) {
@@ -491,10 +606,10 @@ async function runPaper(): Promise<void> {
     eventBus,
     clock,
     logger,
-    instrumentId: firstSlot.instrumentId,
-    marketId: firstSlot.marketId,
+    instrumentId: placeholderInstrumentId,
+    marketId: placeholderMarketId,
     accountId,
-    asset: firstSlot.asset,
+    asset: placeholderAsset,
     config: config.paper,
   });
 
@@ -562,6 +677,10 @@ async function runPaper(): Promise<void> {
    * @returns true если регистрация успешна
    */
   async function registerMarketAndStrategy(slot: PaperMarketSlot): Promise<boolean> {
+    // Подписка на WS комплементарного токена (для dual-token стратегий)
+    if (slot.complementaryInstrumentId) {
+      await wsAdapter.subscribeToToken(String(slot.complementaryInstrumentId));
+    }
     const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
       logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
@@ -578,6 +697,7 @@ async function runPaper(): Promise<void> {
     });
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const compId = slot.complementaryInstrumentId;
     const regResult = await engine.scheduler.register({
       strategy: slot.strategy,
       instrumentId: slot.instrumentId,
@@ -585,6 +705,10 @@ async function runPaper(): Promise<void> {
       accountId: accountId!,
       market: marketStub,
       cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
+      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
+      additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),
+      complementaryInstrumentId: compId,
+      complementaryAsset: slot.complementaryAsset,
     });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
@@ -601,13 +725,6 @@ async function runPaper(): Promise<void> {
    */
   async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<boolean> {
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-    const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
-    const iId = asInstrumentId(tStr);
-    const ast = asPolymarketCtfToken(tStr);
-    if (!iId || !ast) {
-      logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId) });
-      return false;
-    }
 
     // Проверяем доступный капитал
     const portfolio = portfolioStore.get(accountId!);
@@ -624,28 +741,9 @@ async function runPaper(): Promise<void> {
     }
 
     const expiresMs = candidate.expiresAt.toNumber();
-    const slotStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-      logger,
-    );
-
     const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
-    const slot: PaperMarketSlot = {
-      instrumentId: iId,
-      marketId: candidate.marketId,
-      asset: ast,
-      tokenIdStr: tStr,
-      expiresAtMs: expiresMs,
-      candidate,
-      strategy: slotStrategy,
-      cryptoMeta: slotCryptoMeta,
-      fillHistory: [],
-      partialAccum: new Map(),
-      openedAt: Date.now(),
-    };
-
-    // Fetch strike price и подписка RTDS для крипто-рынка
+    // Fetch strike price и подписка RTDS для крипто-рынка (один раз на рынок)
     if (slotCryptoMeta) {
       if (slotCryptoMeta.priceToBeat !== undefined) {
         cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, slotCryptoMeta.priceToBeat);
@@ -657,7 +755,6 @@ async function runPaper(): Promise<void> {
         const eventStarted = Date.now() > slotCryptoMeta.eventStartTimeMs;
 
         if (eventStarted) {
-          // Рынок уже начался давно — Binance kline open как fallback
           try {
             const interval = computeInterval(slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs);
             const kline = await binanceClient.getKline(slotCryptoMeta.binanceSymbol, slotCryptoMeta.eventStartTimeMs, interval);
@@ -667,7 +764,6 @@ async function runPaper(): Promise<void> {
               strikePrice: kline.open,
             });
           } catch (err) {
-            // Binance тоже не смог → ждём первую Chainlink цену из RTDS
             logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS', {
               symbol: slotCryptoMeta.binanceSymbol,
               err: err instanceof Error ? err.message : String(err),
@@ -675,7 +771,6 @@ async function runPaper(): Promise<void> {
             pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
           }
         } else {
-          // Рынок ещё не начался — ждём первую Chainlink цену после eventStartTime
           pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
           logger.info('Waiting for first Chainlink price after event start as strike', {
             symbol: slotCryptoMeta.rtdsFilter,
@@ -688,30 +783,82 @@ async function runPaper(): Promise<void> {
       }
     }
 
-    // Регистрируем рынок в PaperExchangeClient для маршрутизации ордеров
-    exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
-
-    activeMarkets.set(tStr, slot);
-    await wsAdapter.subscribeToToken(tStr);
-
-    const ok = await registerMarketAndStrategy(slot);
-    if (!ok) {
-      activeMarkets.delete(tStr);
-      return false;
+    // Определяем какие стороны открываем
+    const sides: Array<{ outcomeIndex: 0 | 1; side: 'up' | 'down' }> = [
+      { outcomeIndex: mc.outcomeIndex, side: mc.outcomeIndex === 0 ? 'up' : 'down' },
+    ];
+    if (mc.bidirectional) {
+      const oppositeIndex: 0 | 1 = mc.outcomeIndex === 0 ? 1 : 0;
+      sides.push({ outcomeIndex: oppositeIndex, side: oppositeIndex === 0 ? 'up' : 'down' });
     }
 
-    const slug = candidate.rawMarket?.['slug'] as string | undefined;
-    logger.info('Market opened', {
-      question: candidate.question,
-      slug: slug ?? '(no slug)',
-      marketId: String(candidate.marketId),
-      tokenId: tStr,
-      activeSlots: activeMarkets.size,
-      maxSlots: maxConcurrentMarkets,
-      expiresAt: new Date(expiresMs).toISOString(),
-      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-    });
-    return true;
+    let anyOpened = false;
+    for (const { outcomeIndex, side } of sides) {
+      const tStr = candidate.allTokenIds?.[outcomeIndex] ?? String(candidate.instrumentId);
+      const iId = asInstrumentId(tStr);
+      const ast = asPolymarketCtfToken(tStr);
+      if (!iId || !ast) {
+        logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId), side });
+        continue;
+      }
+
+      // Стратегия с нужным side
+      const sideParams = { ...config.strategyParams, side };
+      const slotStrategy = createStrategy(
+        { type: config.strategy, id: `${config.strategy}-${side}-slot-${_slotCounter++}`, params: sideParams } as unknown as StrategyConfig,
+        logger,
+      );
+
+      // Комплементарный токен для dual-token стратегий (adaptive-entry)
+      const compIndex = 1 - outcomeIndex;
+      const compTokenStr = candidate.allTokenIds?.[compIndex];
+      const compInstrumentId = compTokenStr ? (asInstrumentId(compTokenStr) ?? undefined) : undefined;
+      const compAsset = compTokenStr ? (asPolymarketCtfToken(compTokenStr) ?? undefined) : undefined;
+
+      const slot: PaperMarketSlot = {
+        instrumentId: iId,
+        marketId: candidate.marketId,
+        asset: ast,
+        tokenIdStr: tStr,
+        expiresAtMs: expiresMs,
+        candidate,
+        strategy: slotStrategy,
+        cryptoMeta: slotCryptoMeta,
+        complementaryInstrumentId: compInstrumentId,
+        complementaryAsset: compAsset,
+        outcomeIndex,
+        fillHistory: [],
+        partialAccum: new Map(),
+        openedAt: Date.now(),
+      };
+
+      exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
+      activeMarkets.set(tStr, slot);
+      await wsAdapter.subscribeToToken(tStr);
+
+      const ok = await registerMarketAndStrategy(slot);
+      if (!ok) {
+        activeMarkets.delete(tStr);
+        continue;
+      }
+
+      const slug = candidate.rawMarket?.['slug'] as string | undefined;
+      logger.info('Market opened', {
+        question: candidate.question,
+        slug: slug ?? '(no slug)',
+        marketId: String(candidate.marketId),
+        tokenId: tStr,
+        side,
+        outcomeIndex,
+        activeSlots: activeMarkets.size,
+        maxSlots: maxConcurrentMarkets,
+        expiresAt: new Date(expiresMs).toISOString(),
+        hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
+      });
+      anyOpened = true;
+    }
+
+    return anyOpened;
   }
 
   /**
@@ -759,7 +906,7 @@ async function runPaper(): Promise<void> {
 
       if (resolution && portfolio && position && !position.isClosed()) {
         const qty = position.quantity.value();
-        const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
+        const oi = slot.outcomeIndex;
         const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
         const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
         const cashCredit = qty.times(settlementPrice);
@@ -828,7 +975,8 @@ async function runPaper(): Promise<void> {
    * Заполняет свободные слоты рынками из кэша discovery (paper).
    *
    * @remarks
-   * Открывает кандидатов пока `activeMarkets.size < maxConcurrentMarkets`.
+   * Открывает кандидатов пока количество уникальных рынков < maxConcurrentMarkets.
+   * При bidirectional один рынок занимает 2 слота (UP + DOWN).
    * Не делает новый API-запрос — читает из кэша.
    */
   async function fillMarketSlots(): Promise<void> {
@@ -851,7 +999,7 @@ async function runPaper(): Promise<void> {
 
     const nowMs = Date.now();
     for (const c of candidates) {
-      if (activeMarkets.size >= maxConcurrentMarkets) break;
+      if (activeMarketIds.size >= maxConcurrentMarkets) break;
 
       const key = String(c.marketId);
       if (closedMarkets.has(key)) continue;
@@ -892,12 +1040,42 @@ async function runPaper(): Promise<void> {
    *
    * @remarks
    * Reentrancy guard: `_rotationInProgress` предотвращает параллельные вызовы.
+   * В арб-режиме дополнительно проверяет арб-пары и вызывает fillArbSlots().
    */
+  /** Счётчик для throttle арб-статуса (логируем каждые ~30с = 6 × 5с) */
+  let _arbStatusCounter = 0;
+
   async function checkExpiredMarkets(): Promise<void> {
     if (isShuttingDown || _rotationInProgress) return;
     _rotationInProgress = true;
     try {
       const nowMs = Date.now();
+
+      // Периодический лог состояния арб-пар (каждые ~30с)
+      if (isArbMode && ++_arbStatusCounter % 6 === 0) {
+        for (const [pairId, pair] of activeArbPairs) {
+          const easyBook = marketDataStore.getTopOfBook(pair.easySlot.instrumentId);
+          const hardSlot = activeMarkets.get(pair.hardTokenIdStr);
+          const hardInstrumentId = hardSlot?.instrumentId;
+          const hardBook = hardInstrumentId ? marketDataStore.getTopOfBook(hardInstrumentId) : undefined;
+          const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
+          const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
+          logger.info('Arb pair status', {
+            pairId,
+            ttlSec,
+            ticks: metrics?.['tickCount'] ?? 0,
+            divergences: metrics?.['divergenceCount'] ?? 0,
+            trades: metrics?.['tradeCount'] ?? 0,
+            easyBid: easyBook?.bestBid?.value().toFixed(2) ?? '-',
+            easyAsk: easyBook?.bestAsk?.value().toFixed(2) ?? '-',
+            hardBid: hardBook?.bestBid?.value().toFixed(2) ?? '-',
+            hardAsk: hardBook?.bestAsk?.value().toFixed(2) ?? '-',
+            peerStrike: pair.easyStrikeLocked ? 'set' : 'pending',
+            slotStrike: pair.hardStrikeLocked ? 'set' : 'pending',
+          });
+        }
+      }
+
       const expiredTokens: string[] = [];
       for (const [tokenIdStr, slot] of activeMarkets) {
         if (!slot.candidate) continue; // fixed-рынки не истекают
@@ -911,10 +1089,39 @@ async function runPaper(): Promise<void> {
         }
       }
       for (const tokenIdStr of expiredTokens) {
-        await closeMarket(tokenIdStr, 'EXPIRED');
+        // Если это hard нога арб-пары — закрываем всю пару
+        const arbPairId = hardTokenToArbPair.get(tokenIdStr);
+        if (arbPairId) {
+          await closeArbPair(arbPairId, 'EXPIRED');
+        } else {
+          await closeMarket(tokenIdStr, 'EXPIRED');
+        }
       }
       if (expiredTokens.length > 0) {
-        await fillMarketSlots();
+        if (isArbMode) {
+          // Промоутим warming пару (если есть) — мгновенное переключение
+          const promoted = await promoteWarmPair();
+          if (!promoted) {
+            // Fallback: ищем пару с нуля (как раньше)
+            await fillArbSlots();
+          }
+          // Прогреваем следующую пару для следующего цикла
+          await warmNextArbPair();
+        } else {
+          await fillMarketSlots();
+        }
+      }
+
+      // Арб: если до expiry активной пары < WARM_AHEAD_MS и нет warming → прогреваем
+      if (isArbMode && !warmingArbPair && activeArbPairs.size > 0) {
+        let earliestExpiryMs = Infinity;
+        for (const pair of activeArbPairs.values()) {
+          if (pair.expiresAtMs < earliestExpiryMs) earliestExpiryMs = pair.expiresAtMs;
+        }
+        const ttlMs = earliestExpiryMs - nowMs;
+        if (ttlMs <= WARM_AHEAD_MS && ttlMs > 0) {
+          await warmNextArbPair();
+        }
       }
     } finally {
       _rotationInProgress = false;
@@ -927,6 +1134,8 @@ async function runPaper(): Promise<void> {
    * @remarks
    * Не знает о текущем рынке — просто обновляет кэш.
    * fillMarketSlot() читает из этого кэша при смене рынка.
+   * В арб-режиме после обновления кэша проверяет свободные слоты
+   * и запускает fillArbSlots() для поиска новых пар.
    */
   async function scheduleScanLoop(): Promise<void> {
     if (isShuttingDown || !discoveryAdapter) return;
@@ -938,9 +1147,1473 @@ async function runPaper(): Promise<void> {
         err: err instanceof Error ? err : new Error(String(err)),
       });
     }
+
+    // В арб-режиме: если есть свободные слоты — ищем новые пары
+    if (isArbMode && activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
+      try {
+        await fillArbSlots();
+      } catch (err) {
+        logger.error('Periodic arb slot filling failed', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    // Арб: попытка обновить warming — может появилась более близкая пара
+    if (isArbMode && !isShuttingDown && activeArbPairs.size > 0) {
+      try {
+        await tryUpgradeWarmingPair();
+      } catch (err) {
+        logger.error('Warming pair upgrade failed', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
     if (!isShuttingDown) {
       const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
       scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
+    }
+  }
+
+  // ── Кросс-маркетный арбитраж (paper) ────────────────────────────────────
+
+  /**
+   * Слот пассивного рынка (easy нога арб-пары).
+   *
+   * @remarks
+   * Easy рынок не имеет стратегии — данные читаются через MarketDataStore.getTopOfBook().
+   * Ордера на easy ногу размещаются через callback в CrossMarketArbStrategy.
+   */
+  interface ArbEasySlot {
+    readonly instrumentId: InstrumentId;
+    readonly marketId: MarketId;
+    readonly asset: AssetId;
+    readonly tokenIdStr: string;
+    readonly candidate: import('@polymarket/ports').DiscoveredMarket;
+    readonly cryptoMeta: CryptoMarketMeta | undefined;
+  }
+
+  /**
+   * Арбитражная пара: easy + hard рынок.
+   *
+   * @remarks
+   * hard слот живёт в `activeMarkets` (имеет стратегию).
+   * easy слот — пассивный (только WS-подписка + marketCatalog).
+   */
+  interface ArbPairSlot {
+    readonly pairId: string;
+    readonly easySlot: ArbEasySlot;
+    readonly hardTokenIdStr: string;
+    /** hardDown токен (BUY нога UP арбитража) — нужен для WS-отписки при закрытии */
+    readonly hardDownTokenIdStr: string;
+    /** easyDown токен (BUY нога DOWN арбитража) — нужен для WS-отписки при закрытии */
+    readonly easyDownTokenIdStr: string | undefined;
+    readonly expiresAtMs: number;
+    /** Стратегия арб-пары — для обновления strikes из Chainlink RTDS */
+    readonly strategy: CrossMarketArbStrategy;
+    /** eventStartTimeMs easy рынка (для определения strike) */
+    readonly easyStartMs: number;
+    /** eventStartTimeMs hard рынка (для определения strike) */
+    readonly hardStartMs: number;
+    /** Уже получен easy strike */
+    easyStrikeLocked: boolean;
+    /** Уже получен hard strike */
+    hardStrikeLocked: boolean;
+  }
+
+  /**
+   * Пара в «зоне прогрева»: WS + RTDS подписки активны, книги ордеров заполняются,
+   * strikes назначаются из Chainlink — но стратегия ещё НЕ создана.
+   *
+   * @remarks
+   * Warming pair не занимает слот в `activeMarkets` и не считается при проверке
+   * `maxConcurrentMarkets`. При промоушне (`promoteWarmPair()`) все данные уже готовы —
+   * создаётся только стратегия + callback + scheduler registration.
+   */
+  interface WarmingArbPair {
+    readonly pairId: string;
+    readonly easyCandidate: import('@polymarket/ports').DiscoveredMarket;
+    readonly hardCandidate: import('@polymarket/ports').DiscoveredMarket;
+    readonly easyUpTokenStr: string;
+    readonly hardUpTokenStr: string;
+    readonly hardDownTokenStr: string;
+    readonly easyDownTokenStr: string | undefined;
+    readonly easyIId: InstrumentId;
+    readonly hardUpIId: InstrumentId;
+    readonly hardDownIId: InstrumentId;
+    readonly easyDownIId: InstrumentId | undefined;
+    readonly easyAst: AssetId;
+    readonly hardUpAst: AssetId;
+    readonly hardDownAst: AssetId;
+    readonly easyCryptoMeta: CryptoMarketMeta | undefined;
+    readonly hardCryptoMeta: CryptoMarketMeta | undefined;
+    readonly expiresAtMs: number;
+    readonly easyStartMs: number;
+    readonly hardStartMs: number;
+    /** Strike от Chainlink уже получен для easy рынка */
+    easyStrikeLocked: boolean;
+    /** Strike от Chainlink уже получен для hard рынка */
+    hardStrikeLocked: boolean;
+    /** Текущий easy strike (назначается из Chainlink RTDS) */
+    easyStrike: number | null;
+    /** Текущий hard strike (назначается из Chainlink RTDS) */
+    hardStrike: number | null;
+  }
+
+  /** Активные арб-пары: key = pairId */
+  const activeArbPairs = new Map<string, ArbPairSlot>();
+  /** Маппинг hardTokenIdStr → pairId для быстрого поиска */
+  const hardTokenToArbPair = new Map<string, string>();
+  /** Пара в зоне прогрева (максимум одна) — WS/RTDS подписки активны, стратегии нет */
+  let warmingArbPair: WarmingArbPair | null = null;
+  /** За сколько мс до expiry начинать прогрев следующей пары */
+  const WARM_AHEAD_MS = 60_000;
+  /** Счётчик для easy leg ордеров */
+  let _arbOrderCounter = 0;
+  const isArbMode = config.strategy === 'cross-market-arb';
+
+  const pairMatcher = new MarketPairMatcher();
+
+  /**
+   * Открывает арбитражную пару (easy + hard) из двух discovery-кандидатов.
+   *
+   * @param easyCandidate - Кандидат easy рынка (длинная дюрация, напр. 15m)
+   * @param hardCandidate - Кандидат hard рынка (короткая дюрация, напр. 5m)
+   * @returns true если пара успешно открыта
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. Деривация tokenId, instrumentId, asset для обоих рынков
+   * 2. Подписка обоих токенов на WS
+   * 3. Регистрация обоих в marketCatalog (для BookUpdateHandler → BOOK_UPDATED → MarketDataStore)
+   * 4. Регистрация обоих в exchangeClient (для маршрутизации ордеров)
+   * 5. Создание CrossMarketArbStrategy на hard рынке
+   * 6. Установка easy leg callback: PlaceOrderUseCase.execute() для BUY easy_Up
+   * 7. Регистрация стратегии в SchedulerS
+   */
+  async function openArbPair(
+    easyCandidate: import('@polymarket/ports').DiscoveredMarket,
+    hardCandidate: import('@polymarket/ports').DiscoveredMarket,
+  ): Promise<boolean> {
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const arbConfig = config.strategyParams as CrossMarketArbConfig;
+
+    // ── Деривация токенов ────────────────────────────────────────────────
+    // Easy Up (outcomeIndex=0) и Hard Up (outcomeIndex=0) — для чтения orderbook.
+    // Hard Down (outcomeIndex=1) — для размещения BUY hard_Down ордера.
+    const easyUpTokenStr = easyCandidate.allTokenIds?.[mc.outcomeIndex] ?? String(easyCandidate.instrumentId);
+    const hardUpTokenStr = hardCandidate.allTokenIds?.[mc.outcomeIndex] ?? String(hardCandidate.instrumentId);
+    const hardDownIndex = mc.outcomeIndex === 0 ? 1 : 0;
+    const hardDownTokenStr = hardCandidate.allTokenIds?.[hardDownIndex];
+
+    if (!hardDownTokenStr) {
+      logger.error('Cannot find hard Down token (allTokenIds missing)', {
+        hardMarketId: String(hardCandidate.marketId),
+        allTokenIds: hardCandidate.allTokenIds,
+      });
+      return false;
+    }
+
+    const easyIId = asInstrumentId(easyUpTokenStr);
+    const hardUpIId = asInstrumentId(hardUpTokenStr);
+    const hardDownIId = asInstrumentId(hardDownTokenStr);
+    const easyAst = asPolymarketCtfToken(easyUpTokenStr);
+    const hardUpAst = asPolymarketCtfToken(hardUpTokenStr);
+    const hardDownAst = asPolymarketCtfToken(hardDownTokenStr);
+
+    if (!easyIId || !hardUpIId || !hardDownIId || !easyAst || !hardUpAst || !hardDownAst) {
+      logger.error('Cannot derive instrumentIds for arb pair', {
+        easyToken: easyUpTokenStr, hardUpToken: hardUpTokenStr, hardDownToken: hardDownTokenStr,
+      });
+      return false;
+    }
+
+    // Проверяем доступный капитал
+    const portfolio = portfolioStore.get(accountId!);
+    if (portfolio) {
+      const available = portfolio.balance.available().value();
+      if (available.lt(minCapitalPerMarket)) {
+        logger.warn('Insufficient capital for arb pair', {
+          available: available.toFixed(2), minCapitalPerMarket,
+        });
+        return false;
+      }
+    }
+
+    // ── Метаданные и strike prices ─────────────────────────────────────
+    const easyCryptoMeta = parseCryptoMeta(easyCandidate.rawMarket);
+    const hardCryptoMeta = parseCryptoMeta(hardCandidate.rawMarket);
+
+    const easyStrike = easyCryptoMeta?.priceToBeat ?? null;
+    const hardStrike = hardCryptoMeta?.priceToBeat ?? null;
+
+    // Пропускаем пару если рынок уже начался а strike неизвестен —
+    // мы не были подписаны на RTDS до старта и пропустили opening price.
+    // Следующий scan подхватит пару с будущим startTime.
+    const nowMs = Date.now();
+    if (easyStrike === null && easyCryptoMeta?.eventStartTimeMs && easyCryptoMeta.eventStartTimeMs <= nowMs) {
+      logger.debug('Easy market already started without strike, skipping pair', {
+        easyQuestion: easyCandidate.question,
+        startedAt: new Date(easyCryptoMeta.eventStartTimeMs).toISOString(),
+      });
+      return false;
+    }
+    if (hardStrike === null && hardCryptoMeta?.eventStartTimeMs && hardCryptoMeta.eventStartTimeMs <= nowMs) {
+      logger.debug('Hard market already started without strike, skipping pair', {
+        hardQuestion: hardCandidate.question,
+        startedAt: new Date(hardCryptoMeta.eventStartTimeMs).toISOString(),
+      });
+      return false;
+    }
+
+    // ── Создание стратегии ──────────────────────────────────────────────
+    // Стратегия зарегистрирована на hard (5m) = slot market.
+    // Easy (15m) = peer market, читается из MarketDataStore.
+    // slotStrike = hard (5m) strike, peerStrike = easy (15m) strike.
+    // После получения обоих strikes стратегия сама назначит easy/hard по strike'ам.
+    const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
+    const fullArbConfig: CrossMarketArbConfig = {
+      peerInstrumentId: easyIId,
+      minSpreadAfterFees: arbConfig.minSpreadAfterFees ?? 0.005,
+      maxPositionUnits: arbConfig.maxPositionUnits ?? 50,
+      slotStrike: hardStrike,   // hard (5m) = slot market
+      peerStrike: easyStrike,   // easy (15m) = peer market
+      // feeModel по умолчанию = FEE_MODEL_CURRENT (в DivergenceDetector)
+    };
+
+    const arbStrategy = new CrossMarketArbStrategy(
+      fullArbConfig,
+      marketDataStore,  // ITopOfBookReader — MarketDataStore реализует getTopOfBook()
+      strategyId,
+      logger,
+    );
+
+    /**
+     * Атомарный callback: размещает обе ноги арбитража.
+     *
+     * @remarks
+     * Обе ноги размещаются параллельно. Если хотя бы одна отклонена:
+     * - Успешная нога отменяется через CancelOrderUseCase
+     * - Возвращается false → стратегия сбрасывает окно
+     *
+     * @returns true если обе ноги успешно размещены
+     */
+    // easyDown токен — нужен для DOWN направления (BUY easy_Down + BUY hard_Up)
+    const easyDownIndex = mc.outcomeIndex === 0 ? 1 : 0;
+    const easyDownTokenStr = easyCandidate.allTokenIds?.[easyDownIndex];
+    const easyDownIId = easyDownTokenStr ? asInstrumentId(easyDownTokenStr) : undefined;
+    const easyDownAst = easyDownTokenStr ? asPolymarketCtfToken(easyDownTokenStr) : undefined;
+
+    // Регистрируем easyDown и hardUp в exchangeClient (нужны для DOWN направления)
+    if (easyDownIId && easyDownAst) {
+      exchangeClient.registerMarket(easyDownIId, easyCandidate.marketId, accountId!, easyDownAst);
+    }
+
+    arbStrategy.setTradeCallback(async (easyPrice, hardPrice, size, direction) => {
+      const currentPortfolio = portfolioStore.get(accountId!);
+      if (!currentPortfolio) return false;
+
+      const easyOrderId = asOrderId(`arb-easy-${_arbOrderCounter++}-${Date.now()}`);
+      const hardOrderId = asOrderId(`arb-hard-${_arbOrderCounter++}-${Date.now()}`);
+      if (!easyOrderId || !hardOrderId) return false;
+
+      // Арбитраж ВСЕГДА покупает easy_Up + hard_Down — единственная safe-комбинация.
+      // direction не влияет на выбор токенов (только на маппинг цен в стратегии).
+      const easyLegAst = easyAst;
+      const easyLegIId = easyIId;
+      const hardLegAst = hardDownAst;
+      const hardLegIId = hardDownIId;
+
+      if (!easyLegAst || !easyLegIId || !hardLegAst || !hardLegIId) {
+        logger.error('Missing token IDs for arb direction', { direction });
+        return false;
+      }
+
+      // Размещаем обе ноги параллельно
+      const [easyResult, hardResult] = await Promise.all([
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: easyOrderId,
+          accountId: accountId!,
+          asset: easyLegAst,
+          instrumentId: easyLegIId,
+          side: 'BUY',
+          price: easyPrice,
+          size,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: hardOrderId,
+          accountId: accountId!,
+          asset: hardLegAst,
+          instrumentId: hardLegIId,
+          side: 'BUY',
+          price: hardPrice,
+          size,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+      ]);
+
+      const easyOk = easyResult.ok;
+      const hardOk = hardResult.ok;
+
+      if (easyOk && hardOk) {
+        logger.info('Both arb legs placed', {
+          easyOrderId: String(easyResult.value),
+          hardOrderId: String(hardResult.value),
+          easyPrice: easyPrice.value().toFixed(4),
+          hardPrice: hardPrice.value().toFixed(4),
+          size: size.value().toFixed(0),
+          direction,
+        });
+        return true;
+      }
+
+      // Частичный успех → отменяем успешную ногу
+      const easyErr = !easyResult.ok ? String(easyResult.error) : undefined;
+      const hardErr = !hardResult.ok ? String(hardResult.error) : undefined;
+
+      if (easyOk && !hardOk) {
+        logger.warn('Hard leg rejected, cancelling easy leg', {
+          easyOrderId: String(easyResult.value),
+          hardError: hardErr,
+        });
+        await orderUseCases.cancelOrderUseCase.execute({
+          orderId: easyResult.value,
+          accountId: accountId!,
+        });
+      } else if (!easyOk && hardOk) {
+        logger.warn('Easy leg rejected, cancelling hard leg', {
+          hardOrderId: String(hardResult.value),
+          easyError: easyErr,
+        });
+        await orderUseCases.cancelOrderUseCase.execute({
+          orderId: hardResult.value,
+          accountId: accountId!,
+        });
+      } else {
+        logger.warn('Both arb legs rejected', {
+          easyError: easyErr,
+          hardError: hardErr,
+        });
+      }
+
+      return false;
+    });
+
+    // ── Регистрация в инфраструктуре ──────────────────────────────────
+    // Регистрируем все 3 токена в exchangeClient для маршрутизации ордеров:
+    // easy_Up (BUY), hard_Up (orderbook reading), hard_Down (BUY)
+    exchangeClient.registerMarket(easyIId, easyCandidate.marketId, accountId!, easyAst);
+    exchangeClient.registerMarket(hardUpIId, hardCandidate.marketId, accountId!, hardUpAst);
+    exchangeClient.registerMarket(hardDownIId, hardCandidate.marketId, accountId!, hardDownAst);
+
+    const hardExpiresMs = hardCandidate.expiresAt.toNumber();
+
+    // Регистрируем easy в marketCatalog (для BookUpdateHandler → MarketDataStore)
+    const easyExpiresAtResult = TimestampService.create(easyCandidate.expiresAt.toNumber());
+    if (easyExpiresAtResult.ok) {
+      marketCatalog.register({
+        instrumentId: easyIId,
+        marketId: easyCandidate.marketId,
+        tickSize: Price.of(new Decimal('0.001')),
+        minOrderSize: Quantity.of(new Decimal('1')),
+        minOrderValue: Quantity.of(new Decimal('1')),
+        active: true,
+        expiresAt: easyExpiresAtResult.value,
+      });
+    }
+
+    // Подписка всех токенов на WS: easy_Up, hard_Up (orderbook), hard_Down, easy_Down (для fills)
+    await wsAdapter.subscribeToToken(easyUpTokenStr);
+    await wsAdapter.subscribeToToken(hardUpTokenStr);
+    if (easyDownTokenStr) await wsAdapter.subscribeToToken(easyDownTokenStr);
+    await wsAdapter.subscribeToToken(hardDownTokenStr);
+
+    // Подписка RTDS для крипто-цен (hard рынок — основной)
+    if (hardCryptoMeta) {
+      if (hardCryptoMeta.priceToBeat !== undefined) {
+        cryptoPriceStore.setTargetPrice(hardCryptoMeta.rtdsFilter, hardCryptoMeta.priceToBeat);
+      }
+      for (const sub of hardCryptoMeta.rtdsSubscriptions) {
+        rtdsClient.subscribe(sub.topic, sub.filter);
+      }
+    }
+    if (easyCryptoMeta) {
+      for (const sub of easyCryptoMeta.rtdsSubscriptions) {
+        rtdsClient.subscribe(sub.topic, sub.filter);
+      }
+    }
+
+    // Регистрируем hard_Down в marketCatalog (для BookUpdateHandler + fill routing)
+    const hardDownExpiresAtResult = TimestampService.create(hardExpiresMs);
+    if (hardDownExpiresAtResult.ok) {
+      marketCatalog.register({
+        instrumentId: hardDownIId,
+        marketId: hardCandidate.marketId,
+        tickSize: Price.of(new Decimal('0.001')),
+        minOrderSize: Quantity.of(new Decimal('1')),
+        minOrderValue: Quantity.of(new Decimal('1')),
+        active: true,
+        expiresAt: hardDownExpiresAtResult.value,
+      });
+    }
+
+    // Регистрируем easy_Down в marketCatalog (для BookUpdateHandler — нужен при DOWN направлении)
+    if (easyDownIId) {
+      const easyDownExpiresAtResult = TimestampService.create(easyCandidate.expiresAt.toNumber());
+      if (easyDownExpiresAtResult.ok) {
+        marketCatalog.register({
+          instrumentId: easyDownIId,
+          marketId: easyCandidate.marketId,
+          tickSize: Price.of(new Decimal('0.001')),
+          minOrderSize: Quantity.of(new Decimal('1')),
+          minOrderValue: Quantity.of(new Decimal('1')),
+          active: true,
+          expiresAt: easyDownExpiresAtResult.value,
+        });
+      }
+    }
+
+    // ── Hard Up слот → activeMarkets (со стратегией, читает hard_Up orderbook) ───
+    // additionalInstrumentIds: easy_Up — чтобы стратегия тикала при обновлении easy book тоже.
+    // Без этого стратегия тикает только при обновлении hard book и может пропустить
+    // расхождение, возникшее из-за движения easy книги.
+    const hardSlot: PaperMarketSlot = {
+      instrumentId: hardUpIId,
+      marketId: hardCandidate.marketId,
+      asset: hardUpAst,
+      tokenIdStr: hardUpTokenStr,
+      expiresAtMs: hardExpiresMs,
+      candidate: hardCandidate,
+      strategy: arbStrategy,
+      cryptoMeta: hardCryptoMeta,
+      additionalInstrumentIds: [easyIId],
+      outcomeIndex: mc.outcomeIndex,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    };
+
+    activeMarkets.set(hardUpTokenStr, hardSlot);
+    const regOk = await registerMarketAndStrategy(hardSlot);
+    if (!regOk) {
+      activeMarkets.delete(hardUpTokenStr);
+      return false;
+    }
+
+    // ── Easy слот → пассивный (без стратегии) ────────────────────────
+    const pairId = `arb-${easyUpTokenStr}-${hardUpTokenStr}`;
+    const easyStartMs = easyCryptoMeta?.eventStartTimeMs ?? 0;
+    const hardStartMs = hardCryptoMeta?.eventStartTimeMs ?? 0;
+
+    const arbPair: ArbPairSlot = {
+      pairId,
+      easySlot: {
+        instrumentId: easyIId,
+        marketId: easyCandidate.marketId,
+        asset: easyAst,
+        tokenIdStr: easyUpTokenStr,
+        candidate: easyCandidate,
+        cryptoMeta: easyCryptoMeta,
+      },
+      hardTokenIdStr: hardUpTokenStr,
+      hardDownTokenIdStr: hardDownTokenStr,
+      easyDownTokenIdStr: easyDownTokenStr,
+      expiresAtMs: hardExpiresMs,
+      strategy: arbStrategy,
+      easyStartMs,
+      hardStartMs,
+      easyStrikeLocked: easyStrike !== null,
+      hardStrikeLocked: hardStrike !== null,
+    };
+
+    activeArbPairs.set(pairId, arbPair);
+    hardTokenToArbPair.set(hardUpTokenStr, pairId);
+
+    logger.info('Arb pair opened', {
+      pairId,
+      easyQuestion: easyCandidate.question,
+      hardQuestion: hardCandidate.question,
+      easyUpToken: easyUpTokenStr.slice(0, 12) + '...',
+      hardUpToken: hardUpTokenStr.slice(0, 12) + '...',
+      hardDownToken: hardDownTokenStr.slice(0, 12) + '...',
+      easyStrike: easyStrike?.toFixed(2) ?? '-',
+      hardStrike: hardStrike?.toFixed(2) ?? '-',
+      expiresAt: new Date(hardExpiresMs).toISOString(),
+      easyStartMs,
+      hardStartMs,
+      easyStartTime: easyStartMs > 0 ? new Date(easyStartMs).toISOString() : 'N/A',
+      hardStartTime: hardStartMs > 0 ? new Date(hardStartMs).toISOString() : 'N/A',
+      easyCryptoMetaPresent: !!easyCryptoMeta,
+      hardCryptoMetaPresent: !!hardCryptoMeta,
+      easyRtdsFilter: easyCryptoMeta?.rtdsFilter ?? 'N/A',
+      hardRtdsFilter: hardCryptoMeta?.rtdsFilter ?? 'N/A',
+    });
+
+    return true;
+  }
+
+  /**
+   * Закрывает арбитражную пару: easy slot + hard slot.
+   *
+   * @param pairId - ID пары
+   * @param reason - Причина закрытия
+   */
+  async function closeArbPair(pairId: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+    const pair = activeArbPairs.get(pairId);
+    if (!pair) return;
+
+    logger.info('Closing arb pair', { pairId, reason });
+
+    // Собираем метрики ДО закрытия (closeMarket удалит hard слот)
+    const metrics = pair.strategy.getMetrics();
+    const hardSlot = activeMarkets.get(pair.hardTokenIdStr);
+    const easyQuestion = pair.easySlot.candidate?.question ?? pairId;
+    const hardQuestion = hardSlot?.candidate?.question ?? pair.hardTokenIdStr;
+    const openedAt = hardSlot?.openedAt ?? Date.now();
+    const durationMs = Date.now() - openedAt;
+    const durMin = Math.floor(durationMs / 60_000);
+    const durSec = Math.round((durationMs % 60_000) / 1000);
+
+    // Закрываем hard слот (через стандартный closeMarket — НЕ печатает отдельный summary)
+    // Сначала unregister стратегию и WS отписку без summary
+    if (hardSlot) {
+      await engine.scheduler.unregister(hardSlot.strategy.id);
+      await wsAdapter.unsubscribeFromToken(pair.hardTokenIdStr);
+      marketCatalog.remove(hardSlot.instrumentId);
+      if (hardSlot.cryptoMeta) {
+        // Не отписываемся от RTDS если warming/promoted пара использует тот же topic
+        const warmingUsesRtds = warmingArbPair?.hardCryptoMeta?.rtdsTopic === hardSlot.cryptoMeta.rtdsTopic;
+        if (!warmingUsesRtds) {
+          rtdsClient.unsubscribe(hardSlot.cryptoMeta.rtdsTopic, hardSlot.cryptoMeta.rtdsFilter);
+        }
+        pendingChainlinkStrike.delete(hardSlot.cryptoMeta.rtdsFilter);
+      }
+      for (const [orderId, slotKey] of orderToSlot) {
+        if (slotKey === pair.hardTokenIdStr) orderToSlot.delete(orderId);
+      }
+      if (reason === 'EXPIRED') closedMarkets.add(String(hardSlot.marketId));
+      activeMarkets.delete(pair.hardTokenIdStr);
+    }
+
+    // Закрываем easy слот + hardDown + easyDown: WS отписка + marketCatalog
+    await wsAdapter.unsubscribeFromToken(pair.easySlot.tokenIdStr);
+    await wsAdapter.unsubscribeFromToken(pair.hardDownTokenIdStr);
+    if (pair.easyDownTokenIdStr) await wsAdapter.unsubscribeFromToken(pair.easyDownTokenIdStr);
+    marketCatalog.remove(pair.easySlot.instrumentId);
+    const hardDownIIdForRemoval = asInstrumentId(pair.hardDownTokenIdStr);
+    if (hardDownIIdForRemoval) marketCatalog.remove(hardDownIIdForRemoval);
+    if (pair.easyDownTokenIdStr) {
+      const easyDownIIdForRemoval = asInstrumentId(pair.easyDownTokenIdStr);
+      if (easyDownIIdForRemoval) marketCatalog.remove(easyDownIIdForRemoval);
+    }
+
+    if (pair.easySlot.cryptoMeta) {
+      const warmingUsesEasyRtds = warmingArbPair?.easyCryptoMeta?.rtdsTopic === pair.easySlot.cryptoMeta.rtdsTopic;
+      if (!warmingUsesEasyRtds) {
+        rtdsClient.unsubscribe(pair.easySlot.cryptoMeta.rtdsTopic, pair.easySlot.cryptoMeta.rtdsFilter);
+      }
+    }
+
+    // ── Settlement: закрываем все арб-позиции и зачисляем settlement ────────
+    // Арбитраж покупает два токена. Каждый resolves по своему рынку:
+    // winning token = $1, losing = $0. В сумме гарантированно ≥$1 (≤$2 при windfall).
+    let totalSettlementCash = new Decimal(0);
+    let settledLegs = 0;
+    if (reason === 'EXPIRED') {
+      const portfolio = portfolioStore.get(accountId!);
+      if (portfolio) {
+        // Определяем исход каждого рынка по BTC цене vs per-market strike.
+        // CryptoPriceStore.getResolution() хранит ОДИН targetPrice per asset —
+        // не подходит для арбитража (два рынка, разные strikes, один актив).
+        // Берём strikes из стратегии и текущую Chainlink цену напрямую.
+        const arbStrikes = pair.strategy.getStrikes();
+        const cryptoSymbol = pair.easySlot.cryptoMeta?.rtdsFilter ?? hardSlot?.cryptoMeta?.rtdsFilter;
+        const btcSnap = cryptoSymbol ? cryptoPriceStore.get(cryptoSymbol) : undefined;
+        const btcPrice = btcSnap?.chainlink?.price ?? btcSnap?.currentPrice;
+
+        let easyResolution: 'UP' | 'DOWN' | undefined;
+        let hardResolution: 'UP' | 'DOWN' | undefined;
+        if (arbStrikes && btcPrice !== undefined) {
+          easyResolution = btcPrice >= arbStrikes.easyStrike ? 'UP' : 'DOWN';
+          hardResolution = btcPrice >= arbStrikes.hardStrike ? 'UP' : 'DOWN';
+          logger.info('Arb settlement resolution', {
+            btcPrice,
+            easyStrike: arbStrikes.easyStrike,
+            hardStrike: arbStrikes.hardStrike,
+            easyResolution,
+            hardResolution,
+          });
+        } else {
+          logger.warn('Cannot determine arb resolution — missing strikes or BTC price', {
+            hasStrikes: !!arbStrikes,
+            hasBtcPrice: btcPrice !== undefined,
+            cryptoSymbol,
+          });
+        }
+
+        // Список всех арб-токенов и их settlement:
+        // token resolves to $1 if market resolution matches token direction
+        const arbTokens: Array<{ instrumentId: InstrumentId; tokenIdStr: string; market: 'easy' | 'hard'; isUp: boolean; resolution: string | undefined }> = [
+          { instrumentId: pair.easySlot.instrumentId, tokenIdStr: pair.easySlot.tokenIdStr, market: 'easy', isUp: true, resolution: easyResolution },
+        ];
+        if (pair.easyDownTokenIdStr) {
+          const eDnId = asInstrumentId(pair.easyDownTokenIdStr);
+          if (eDnId) arbTokens.push({ instrumentId: eDnId, tokenIdStr: pair.easyDownTokenIdStr, market: 'easy', isUp: false, resolution: easyResolution });
+        }
+        const hUpId = hardSlot?.instrumentId;
+        if (hUpId) arbTokens.push({ instrumentId: hUpId, tokenIdStr: pair.hardTokenIdStr, market: 'hard', isUp: true, resolution: hardResolution });
+        const hDnId = asInstrumentId(pair.hardDownTokenIdStr);
+        if (hDnId) arbTokens.push({ instrumentId: hDnId, tokenIdStr: pair.hardDownTokenIdStr, market: 'hard', isUp: false, resolution: hardResolution });
+
+        let updated = portfolio;
+        for (const tok of arbTokens) {
+          const position = updated.getPosition(tok.instrumentId);
+          if (!position || position.isClosed()) continue;
+
+          const qty = position.quantity.value();
+          const isWinning = tok.resolution
+            ? (tok.isUp && tok.resolution === 'UP') || (!tok.isUp && tok.resolution === 'DOWN')
+            : false;
+          const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
+          const credit = qty.times(settlementPrice);
+
+          logger.info('Arb leg settlement', {
+            pairId: pairId.slice(0, 30) + '...',
+            tokenIdStr: tok.tokenIdStr.slice(0, 12) + '...',
+            market: tok.market,
+            isUp: tok.isUp,
+            resolution: tok.resolution ?? 'unknown',
+            isWinning,
+            qty: qty.toFixed(2),
+            credit: credit.toFixed(4),
+          });
+
+          // Закрываем позицию
+          const closedPosition = new SimplePosition({
+            instrumentId: tok.instrumentId,
+            quantity: new Decimal(0),
+            averageEntryPrice: position.averageEntryPrice.value(),
+            side: 'LONG' as const,
+          });
+          updated = updated.upsertPosition(closedPosition);
+
+          if (credit.gt(0)) {
+            const creditResult = updated.applyCredit(Money.of(credit, 'USDC'));
+            if (creditResult.ok) updated = creditResult.value;
+          }
+          totalSettlementCash = totalSettlementCash.plus(credit);
+          settledLegs++;
+        }
+
+        // Сохраняем portfolio
+        const ver = portfolioStore.getVersion(accountId!);
+        const saveRes = portfolioStore.save(updated, ver);
+        if (!saveRes.ok) {
+          logger.error('Arb settlement portfolio save failed', { expected: ver });
+        }
+      }
+    }
+
+    // Арб-парная сводка
+    logger.warn('=== Arb pair summary ===', {
+      pairId,
+      easy: easyQuestion,
+      hard: hardQuestion,
+      duration: `${durMin}m${durSec}s`,
+      assignment: metrics['assignment'] ?? 'unknown',
+      ticks: metrics['tickCount'] ?? 0,
+      divergences: metrics['divergenceCount'] ?? 0,
+      trades: metrics['tradeCount'] ?? 0,
+      estimatedPnl: typeof metrics['totalPnlEstimate'] === 'object'
+        ? (metrics['totalPnlEstimate'] as { toFixed: (n: number) => string }).toFixed(4)
+        : String(metrics['totalPnlEstimate'] ?? 0),
+      settlementCash: totalSettlementCash.toFixed(4),
+      settledLegs,
+      peerStrike: pair.easyStrikeLocked ? 'set' : 'pending',
+      slotStrike: pair.hardStrikeLocked ? 'set' : 'pending',
+      reason,
+    });
+
+    hardTokenToArbPair.delete(pair.hardTokenIdStr);
+    activeArbPairs.delete(pairId);
+  }
+
+  /**
+   * Очищает ресурсы warming-пары: WS-отписка, marketCatalog, RTDS.
+   *
+   * @param reason - Причина очистки (для логирования)
+   *
+   * @remarks
+   * Вызывается при shutdown, при протухании warming пары,
+   * или при замене на новую warming пару.
+   */
+  function cleanupWarmingPair(reason: string): void {
+    if (!warmingArbPair) return;
+    const w = warmingArbPair;
+
+    logger.debug('Cleaning up warming pair', { pairId: w.pairId, reason });
+
+    // WS отписка всех токенов
+    void wsAdapter.unsubscribeFromToken(w.easyUpTokenStr);
+    void wsAdapter.unsubscribeFromToken(w.hardUpTokenStr);
+    void wsAdapter.unsubscribeFromToken(w.hardDownTokenStr);
+    if (w.easyDownTokenStr) void wsAdapter.unsubscribeFromToken(w.easyDownTokenStr);
+
+    // marketCatalog cleanup
+    marketCatalog.remove(w.easyIId);
+    marketCatalog.remove(w.hardUpIId);
+    marketCatalog.remove(w.hardDownIId);
+    if (w.easyDownIId) marketCatalog.remove(w.easyDownIId);
+
+    // RTDS отписка
+    if (w.hardCryptoMeta) {
+      rtdsClient.unsubscribe(w.hardCryptoMeta.rtdsTopic, w.hardCryptoMeta.rtdsFilter);
+      pendingChainlinkStrike.delete(w.hardCryptoMeta.rtdsFilter);
+    }
+    if (w.easyCryptoMeta) {
+      rtdsClient.unsubscribe(w.easyCryptoMeta.rtdsTopic, w.easyCryptoMeta.rtdsFilter);
+    }
+
+    warmingArbPair = null;
+  }
+
+  /**
+   * Промоутит warming пару в активную: создаёт стратегию, callback, регистрирует в scheduler.
+   *
+   * @returns true если пара успешно промоутилась
+   *
+   * @remarks
+   * WS, marketCatalog, RTDS, exchangeClient уже настроены в warmNextArbPair().
+   * Здесь только: стратегия + trade callback + activeMarkets + activeArbPairs.
+   * Strikes из Chainlink уже могут быть назначены (warming пара получала их).
+   */
+  async function promoteWarmPair(): Promise<boolean> {
+    if (!warmingArbPair) return false;
+    const w = warmingArbPair;
+    warmingArbPair = null; // забираем ownership
+
+    const arbConfig = config.strategyParams as CrossMarketArbConfig;
+
+    // Проверяем что пара ещё жизнеспособна
+    const nowMs = Date.now();
+    if (w.expiresAtMs <= nowMs + MIN_VIABLE_TRADING_MS) {
+      logger.debug('Warming pair expired before promotion, discarding', { pairId: w.pairId });
+      // Очистка ресурсов — вручную, т.к. warmingArbPair уже null
+      void wsAdapter.unsubscribeFromToken(w.easyUpTokenStr);
+      void wsAdapter.unsubscribeFromToken(w.hardUpTokenStr);
+      void wsAdapter.unsubscribeFromToken(w.hardDownTokenStr);
+      if (w.easyDownTokenStr) void wsAdapter.unsubscribeFromToken(w.easyDownTokenStr);
+      marketCatalog.remove(w.easyIId);
+      marketCatalog.remove(w.hardUpIId);
+      marketCatalog.remove(w.hardDownIId);
+      if (w.easyDownIId) marketCatalog.remove(w.easyDownIId);
+      if (w.hardCryptoMeta) rtdsClient.unsubscribe(w.hardCryptoMeta.rtdsTopic, w.hardCryptoMeta.rtdsFilter);
+      if (w.easyCryptoMeta) rtdsClient.unsubscribe(w.easyCryptoMeta.rtdsTopic, w.easyCryptoMeta.rtdsFilter);
+      return false;
+    }
+
+    // Проверяем капитал
+    const portfolio = portfolioStore.get(accountId!);
+    if (portfolio) {
+      const available = portfolio.balance.available().value();
+      if (available.lt(minCapitalPerMarket)) {
+        logger.warn('Insufficient capital for promoting warm pair', {
+          available: available.toFixed(2), minCapitalPerMarket,
+        });
+        return false;
+      }
+    }
+
+    // ── Создание стратегии (strikes уже получены из Chainlink во время warming) ─
+    const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
+    const fullArbConfig: CrossMarketArbConfig = {
+      peerInstrumentId: w.easyIId,
+      minSpreadAfterFees: arbConfig.minSpreadAfterFees ?? 0.005,
+      maxPositionUnits: arbConfig.maxPositionUnits ?? 50,
+      slotStrike: w.hardStrike,
+      peerStrike: w.easyStrike,
+    };
+
+    const arbStrategy = new CrossMarketArbStrategy(
+      fullArbConfig,
+      marketDataStore,
+      strategyId,
+      logger,
+    );
+
+    // ── Trade callback (идентичен openArbPair) ──────────────────────────
+    const easyDownAst = w.easyDownTokenStr ? asPolymarketCtfToken(w.easyDownTokenStr) : undefined;
+    if (w.easyDownIId && easyDownAst) {
+      exchangeClient.registerMarket(w.easyDownIId, w.easyCandidate.marketId, accountId!, easyDownAst);
+    }
+
+    arbStrategy.setTradeCallback(async (easyPrice, hardPrice, size, direction) => {
+      const currentPortfolio = portfolioStore.get(accountId!);
+      if (!currentPortfolio) return false;
+
+      const easyOrderId = asOrderId(`arb-easy-${_arbOrderCounter++}-${Date.now()}`);
+      const hardOrderId = asOrderId(`arb-hard-${_arbOrderCounter++}-${Date.now()}`);
+      if (!easyOrderId || !hardOrderId) return false;
+
+      // Арбитраж ВСЕГДА покупает easy_Up + hard_Down — единственная safe-комбинация.
+      const easyLegAst = w.easyAst;
+      const easyLegIId = w.easyIId;
+      const hardLegAst = w.hardDownAst;
+      const hardLegIId = w.hardDownIId;
+
+      if (!easyLegAst || !easyLegIId || !hardLegAst || !hardLegIId) {
+        logger.error('Missing token IDs for arb direction', { direction });
+        return false;
+      }
+
+      const [easyResult, hardResult] = await Promise.all([
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: easyOrderId,
+          accountId: accountId!,
+          asset: easyLegAst,
+          instrumentId: easyLegIId,
+          side: 'BUY',
+          price: easyPrice,
+          size,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: hardOrderId,
+          accountId: accountId!,
+          asset: hardLegAst,
+          instrumentId: hardLegIId,
+          side: 'BUY',
+          price: hardPrice,
+          size,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+      ]);
+
+      const easyOk = easyResult.ok;
+      const hardOk = hardResult.ok;
+
+      if (easyOk && hardOk) {
+        logger.info('Both arb legs placed', {
+          easyOrderId: String(easyResult.value),
+          hardOrderId: String(hardResult.value),
+          easyPrice: easyPrice.value().toFixed(4),
+          hardPrice: hardPrice.value().toFixed(4),
+          size: size.value().toFixed(0),
+          direction,
+        });
+        return true;
+      }
+
+      const easyErr = !easyResult.ok ? String(easyResult.error) : undefined;
+      const hardErr = !hardResult.ok ? String(hardResult.error) : undefined;
+
+      if (easyOk && !hardOk) {
+        logger.warn('Hard leg rejected, cancelling easy leg', {
+          easyOrderId: String(easyResult.value),
+          hardError: hardErr,
+        });
+        await orderUseCases.cancelOrderUseCase.execute({
+          orderId: easyResult.value,
+          accountId: accountId!,
+        });
+      } else if (!easyOk && hardOk) {
+        logger.warn('Easy leg rejected, cancelling hard leg', {
+          hardOrderId: String(hardResult.value),
+          easyError: easyErr,
+        });
+        await orderUseCases.cancelOrderUseCase.execute({
+          orderId: hardResult.value,
+          accountId: accountId!,
+        });
+      } else {
+        logger.warn('Both arb legs rejected', {
+          easyError: easyErr,
+          hardError: hardErr,
+        });
+      }
+
+      return false;
+    });
+
+    // ── activeMarkets + activeArbPairs (WS/catalog/RTDS уже настроены) ──
+    const arbMc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const hardSlot: PaperMarketSlot = {
+      instrumentId: w.hardUpIId,
+      marketId: w.hardCandidate.marketId,
+      asset: w.hardUpAst,
+      tokenIdStr: w.hardUpTokenStr,
+      expiresAtMs: w.expiresAtMs,
+      candidate: w.hardCandidate,
+      strategy: arbStrategy,
+      cryptoMeta: w.hardCryptoMeta,
+      additionalInstrumentIds: [w.easyIId],
+      outcomeIndex: arbMc.outcomeIndex,
+      fillHistory: [],
+      partialAccum: new Map(),
+      openedAt: Date.now(),
+    };
+
+    activeMarkets.set(w.hardUpTokenStr, hardSlot);
+    const regOk = await registerMarketAndStrategy(hardSlot);
+    if (!regOk) {
+      activeMarkets.delete(w.hardUpTokenStr);
+      return false;
+    }
+
+    const arbPair: ArbPairSlot = {
+      pairId: w.pairId,
+      easySlot: {
+        instrumentId: w.easyIId,
+        marketId: w.easyCandidate.marketId,
+        asset: w.easyAst,
+        tokenIdStr: w.easyUpTokenStr,
+        candidate: w.easyCandidate,
+        cryptoMeta: w.easyCryptoMeta,
+      },
+      hardTokenIdStr: w.hardUpTokenStr,
+      hardDownTokenIdStr: w.hardDownTokenStr,
+      easyDownTokenIdStr: w.easyDownTokenStr,
+      expiresAtMs: w.expiresAtMs,
+      strategy: arbStrategy,
+      easyStartMs: w.easyStartMs,
+      hardStartMs: w.hardStartMs,
+      easyStrikeLocked: w.easyStrikeLocked,
+      hardStrikeLocked: w.hardStrikeLocked,
+    };
+
+    activeArbPairs.set(w.pairId, arbPair);
+    hardTokenToArbPair.set(w.hardUpTokenStr, w.pairId);
+
+    logger.info('Promoted warming pair to active', {
+      pairId: w.pairId,
+      easyQuestion: w.easyCandidate.question,
+      hardQuestion: w.hardCandidate.question,
+      easyStrike: w.easyStrike?.toFixed(2) ?? 'pending',
+      hardStrike: w.hardStrike?.toFixed(2) ?? 'pending',
+      easyStrikeLocked: w.easyStrikeLocked,
+      hardStrikeLocked: w.hardStrikeLocked,
+      ttlSec: Math.round((w.expiresAtMs - Date.now()) / 1000),
+    });
+
+    return true;
+  }
+
+  /**
+   * Прогревает следующую арб-пару: подписка WS + RTDS, регистрация в marketCatalog.
+   * Стратегия НЕ создаётся — это произойдёт в `promoteWarmPair()`.
+   *
+   * @returns true если warming пара успешно создана
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. Запрашиваем кандидатов из discovery кэша
+   * 2. Парсим тикеры, находим пары через MarketPairMatcher
+   * 3. Выбираем первую подходящую пару (не expired, не в blacklist, не активную)
+   * 4. Деривируем токены, подписываемся на WS + RTDS
+   * 5. Регистрируем в marketCatalog (BookUpdateHandler начнёт заполнять книги)
+   * 6. Chainlink callback будет назначать strikes для warming пары
+   *
+   * ### Что НЕ делаем:
+   * - Не создаём стратегию (нет расхода памяти на tick processing)
+   * - Не регистрируем в scheduler (нет CPU на пустые тики)
+   * - Не считаем как активный слот (не блокирует maxConcurrentMarkets)
+   */
+  async function warmNextArbPair(): Promise<boolean> {
+    if (warmingArbPair) return false; // уже есть warming пара
+    if (!discoveryAdapter || !isArbMode) return false;
+
+    let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
+    try {
+      candidates = await discoveryAdapter.findCandidates();
+    } catch (err) {
+      logger.error('Failed to read candidates for arb warming', {
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return false;
+    }
+
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const nowMs = Date.now();
+
+    // Конвертируем кандидатов в MarketInfo (тот же код что в fillArbSlots)
+    const marketInfos: (MarketInfo & { _candidate: import('@polymarket/ports').DiscoveredMarket })[] = [];
+    for (const c of candidates) {
+      const ticker = (c.rawMarket?.['events'] as readonly Record<string, unknown>[] | undefined)?.[0]?.['ticker'] as string | undefined;
+      if (!ticker) continue;
+
+      const parsed = MarketPairMatcher.parseTicker(ticker);
+      if (!parsed) continue;
+
+      const endDateStr = c.rawMarket?.['endDate'] as string | undefined;
+      if (!endDateStr) continue;
+      const endDateMs = new Date(endDateStr).getTime();
+      if (Number.isNaN(endDateMs)) continue;
+
+      const tStr = c.allTokenIds?.[mc.outcomeIndex] ?? String(c.instrumentId);
+      const iId = asInstrumentId(tStr);
+      if (!iId) continue;
+
+      const cryptoMeta = parseCryptoMeta(c.rawMarket);
+
+      marketInfos.push({
+        asset: parsed.asset,
+        recurrence: parsed.recurrence,
+        endDate: endDateStr,
+        endEpochMs: endDateMs,
+        instrumentId: iId,
+        filePath: '',
+        ticker,
+        priceToBeat: cryptoMeta?.priceToBeat,
+        _candidate: c,
+      });
+    }
+
+    if (marketInfos.length < 2) return false;
+
+    const pairs = pairMatcher.findPairs(marketInfos);
+    const activeHardTokens = new Set(hardTokenToArbPair.keys());
+
+    // Warming пара должна expires ПОСЛЕ всех текущих активных пар
+    let latestActiveExpiryMs = 0;
+    for (const ap of activeArbPairs.values()) {
+      if (ap.expiresAtMs > latestActiveExpiryMs) latestActiveExpiryMs = ap.expiresAtMs;
+    }
+
+    logger.debug('Warming: scanning pairs', {
+      pairsFound: pairs.length,
+      latestActiveExpiry: latestActiveExpiryMs > 0 ? new Date(latestActiveExpiryMs).toISOString() : 'none',
+      pairs: pairs.slice(0, 8).map(p => ({
+        type: p.pairType,
+        hardTicker: p.hard.ticker,
+        endDate: p.hard.endDate,
+        ttlSec: Math.round((p.hard.endEpochMs - nowMs) / 1000),
+      })),
+    });
+
+    for (const pair of pairs) {
+      // Warming пара должна иметь достаточно времени для торговли
+      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+
+      // Пропускаем пары которые expires до или одновременно с текущей активной
+      if (latestActiveExpiryMs > 0 && pair.hard.endEpochMs <= latestActiveExpiryMs) continue;
+
+      const easyCand = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
+      const hardCand = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
+      if (!easyCand || !hardCand) continue;
+
+      const hardTStr = hardCand.allTokenIds?.[mc.outcomeIndex] ?? String(hardCand.instrumentId);
+      // Не прогреваем уже активную или закрытую пару
+      if (activeHardTokens.has(hardTStr)) continue;
+      if (closedMarkets.has(String(hardCand.marketId))) continue;
+
+      // ── Деривация токенов (как в openArbPair) ─────────────────────────
+      const easyUpTokenStr = easyCand.allTokenIds?.[mc.outcomeIndex] ?? String(easyCand.instrumentId);
+      const hardUpTokenStr = hardTStr;
+      const hardDownIndex = mc.outcomeIndex === 0 ? 1 : 0;
+      const hardDownTokenStr = hardCand.allTokenIds?.[hardDownIndex];
+      if (!hardDownTokenStr) continue;
+
+      const easyDownTokenStr = easyCand.allTokenIds?.[hardDownIndex];
+
+      const easyIId = asInstrumentId(easyUpTokenStr);
+      const hardUpIId = asInstrumentId(hardUpTokenStr);
+      const hardDownIId = asInstrumentId(hardDownTokenStr);
+      const easyDownIId = easyDownTokenStr ? asInstrumentId(easyDownTokenStr) : undefined;
+      const easyAst = asPolymarketCtfToken(easyUpTokenStr);
+      const hardUpAst = asPolymarketCtfToken(hardUpTokenStr);
+      const hardDownAst = asPolymarketCtfToken(hardDownTokenStr);
+
+      if (!easyIId || !hardUpIId || !hardDownIId || !easyAst || !hardUpAst || !hardDownAst) continue;
+
+      const easyCryptoMeta = parseCryptoMeta(easyCand.rawMarket);
+      const hardCryptoMeta = parseCryptoMeta(hardCand.rawMarket);
+      const hardExpiresMs = hardCand.expiresAt.toNumber();
+      const easyStartMs = easyCryptoMeta?.eventStartTimeMs ?? 0;
+      const hardStartMs = hardCryptoMeta?.eventStartTimeMs ?? 0;
+
+      // ── WS подписка (книги начнут заполняться) ────────────────────────
+      await wsAdapter.subscribeToToken(easyUpTokenStr);
+      await wsAdapter.subscribeToToken(hardUpTokenStr);
+      await wsAdapter.subscribeToToken(hardDownTokenStr);
+      if (easyDownTokenStr) await wsAdapter.subscribeToToken(easyDownTokenStr);
+
+      // ── marketCatalog регистрация (BookUpdateHandler → MarketDataStore) ─
+      const easyExpiresAtResult = TimestampService.create(easyCand.expiresAt.toNumber());
+      if (easyExpiresAtResult.ok) {
+        marketCatalog.register({
+          instrumentId: easyIId,
+          marketId: easyCand.marketId,
+          tickSize: Price.of(new Decimal('0.001')),
+          minOrderSize: Quantity.of(new Decimal('1')),
+          minOrderValue: Quantity.of(new Decimal('1')),
+          active: true,
+          expiresAt: easyExpiresAtResult.value,
+        });
+      }
+      const hardUpExpiresAtResult = TimestampService.create(hardExpiresMs);
+      if (hardUpExpiresAtResult.ok) {
+        marketCatalog.register({
+          instrumentId: hardUpIId,
+          marketId: hardCand.marketId,
+          tickSize: Price.of(new Decimal('0.001')),
+          minOrderSize: Quantity.of(new Decimal('1')),
+          minOrderValue: Quantity.of(new Decimal('1')),
+          active: true,
+          expiresAt: hardUpExpiresAtResult.value,
+        });
+      }
+      const hardDownExpiresAtResult = TimestampService.create(hardExpiresMs);
+      if (hardDownExpiresAtResult.ok) {
+        marketCatalog.register({
+          instrumentId: hardDownIId,
+          marketId: hardCand.marketId,
+          tickSize: Price.of(new Decimal('0.001')),
+          minOrderSize: Quantity.of(new Decimal('1')),
+          minOrderValue: Quantity.of(new Decimal('1')),
+          active: true,
+          expiresAt: hardDownExpiresAtResult.value,
+        });
+      }
+      if (easyDownIId && easyDownTokenStr) {
+        const easyDownExpiresAtResult = TimestampService.create(easyCand.expiresAt.toNumber());
+        if (easyDownExpiresAtResult.ok) {
+          marketCatalog.register({
+            instrumentId: easyDownIId,
+            marketId: easyCand.marketId,
+            tickSize: Price.of(new Decimal('0.001')),
+            minOrderSize: Quantity.of(new Decimal('1')),
+            minOrderValue: Quantity.of(new Decimal('1')),
+            active: true,
+            expiresAt: easyDownExpiresAtResult.value,
+          });
+        }
+      }
+
+      // ── RTDS подписка для Chainlink strikes ───────────────────────────
+      if (hardCryptoMeta) {
+        for (const sub of hardCryptoMeta.rtdsSubscriptions) {
+          rtdsClient.subscribe(sub.topic, sub.filter);
+        }
+      }
+      if (easyCryptoMeta) {
+        for (const sub of easyCryptoMeta.rtdsSubscriptions) {
+          rtdsClient.subscribe(sub.topic, sub.filter);
+        }
+      }
+
+      // ── exchangeClient регистрация (для маршрутизации ордеров при promote) ─
+      exchangeClient.registerMarket(easyIId, easyCand.marketId, accountId!, easyAst);
+      exchangeClient.registerMarket(hardUpIId, hardCand.marketId, accountId!, hardUpAst);
+      exchangeClient.registerMarket(hardDownIId, hardCand.marketId, accountId!, hardDownAst);
+
+      // Сохраняем warming пару
+      const pairId = `arb-${easyUpTokenStr}-${hardUpTokenStr}`;
+      warmingArbPair = {
+        pairId,
+        easyCandidate: easyCand,
+        hardCandidate: hardCand,
+        easyUpTokenStr,
+        hardUpTokenStr,
+        hardDownTokenStr,
+        easyDownTokenStr,
+        easyIId,
+        hardUpIId,
+        hardDownIId,
+        easyDownIId,
+        easyAst,
+        hardUpAst,
+        hardDownAst,
+        easyCryptoMeta,
+        hardCryptoMeta,
+        expiresAtMs: hardExpiresMs,
+        easyStartMs,
+        hardStartMs,
+        easyStrikeLocked: false,
+        hardStrikeLocked: false,
+        easyStrike: easyCryptoMeta?.priceToBeat ?? null,
+        hardStrike: hardCryptoMeta?.priceToBeat ?? null,
+      };
+
+      // Если strike уже известен из API — отмечаем
+      if (warmingArbPair.easyStrike !== null) warmingArbPair.easyStrikeLocked = true;
+      if (warmingArbPair.hardStrike !== null) warmingArbPair.hardStrikeLocked = true;
+
+      logger.info('Warming next arb pair', {
+        pairId,
+        easyQuestion: easyCand.question,
+        hardQuestion: hardCand.question,
+        expiresAt: new Date(hardExpiresMs).toISOString(),
+        easyStartTime: easyStartMs > 0 ? new Date(easyStartMs).toISOString() : 'N/A',
+        hardStartTime: hardStartMs > 0 ? new Date(hardStartMs).toISOString() : 'N/A',
+        easyStrike: warmingArbPair.easyStrike?.toFixed(2) ?? 'pending',
+        hardStrike: warmingArbPair.hardStrike?.toFixed(2) ?? 'pending',
+      });
+
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Проверяет, есть ли более близкая пара для warming, и заменяет текущую.
+   *
+   * @remarks
+   * Вызывается из scheduleScanLoop после каждого discovery refresh.
+   * Если текущая warming пара далеко (>= 30 мин до expiry), а в кэше
+   * появилась более близкая — заменяем: cleanup старой → warm новой.
+   * Если warming пары нет вообще — вызываем warmNextArbPair().
+   */
+  async function tryUpgradeWarmingPair(): Promise<void> {
+    if (!warmingArbPair) {
+      // Нет warming — пробуем создать
+      await warmNextArbPair();
+      return;
+    }
+
+    const nowMs = Date.now();
+
+    // Если warming пара уже протухла — чистим и пробуем новую
+    if (warmingArbPair.expiresAtMs <= nowMs + MIN_VIABLE_TRADING_MS) {
+      logger.debug('Warming pair expired, replacing', { pairId: warmingArbPair.pairId });
+      cleanupWarmingPair('EXPIRED_BEFORE_PROMOTION');
+      await warmNextArbPair();
+      return;
+    }
+
+    // Если warming пара expires до активной — она бесполезна, заменяем
+    let latestActiveExpiryMs = 0;
+    for (const ap of activeArbPairs.values()) {
+      if (ap.expiresAtMs > latestActiveExpiryMs) latestActiveExpiryMs = ap.expiresAtMs;
+    }
+    if (latestActiveExpiryMs > 0 && warmingArbPair.expiresAtMs <= latestActiveExpiryMs) {
+      logger.debug('Warming pair expires before active pair, replacing', {
+        warmingExpires: new Date(warmingArbPair.expiresAtMs).toISOString(),
+        activeExpires: new Date(latestActiveExpiryMs).toISOString(),
+      });
+      cleanupWarmingPair('EXPIRES_BEFORE_ACTIVE');
+      await warmNextArbPair();
+      return;
+    }
+
+    // Если warming пара скоро стартует (< 5 мин до expiry) — не трогаем, уже оптимальная
+    if (warmingArbPair.expiresAtMs - nowMs < 20 * 60_000) return;
+
+    // Ищем более близкую пару в кэше
+    if (!discoveryAdapter) return;
+
+    let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
+    try {
+      candidates = await discoveryAdapter.findCandidates();
+    } catch { return; }
+
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const marketInfos: (MarketInfo & { _candidate: import('@polymarket/ports').DiscoveredMarket })[] = [];
+    for (const c of candidates) {
+      const ticker = (c.rawMarket?.['events'] as readonly Record<string, unknown>[] | undefined)?.[0]?.['ticker'] as string | undefined;
+      if (!ticker) continue;
+      const parsed = MarketPairMatcher.parseTicker(ticker);
+      if (!parsed) continue;
+      const endDateStr = c.rawMarket?.['endDate'] as string | undefined;
+      if (!endDateStr) continue;
+      const endDateMs = new Date(endDateStr).getTime();
+      if (Number.isNaN(endDateMs)) continue;
+      const tStr = c.allTokenIds?.[mc.outcomeIndex] ?? String(c.instrumentId);
+      const iId = asInstrumentId(tStr);
+      if (!iId) continue;
+      const cryptoMeta = parseCryptoMeta(c.rawMarket);
+      marketInfos.push({
+        asset: parsed.asset, recurrence: parsed.recurrence,
+        endDate: endDateStr, endEpochMs: endDateMs, instrumentId: iId,
+        filePath: '', ticker, priceToBeat: cryptoMeta?.priceToBeat, _candidate: c,
+      });
+    }
+
+    if (marketInfos.length < 2) return;
+
+    const pairs = pairMatcher.findPairs(marketInfos); // уже отсортированы по endEpochMs asc
+    const activeHardTokens = new Set(hardTokenToArbPair.keys());
+
+    for (const pair of pairs) {
+      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+      // Кандидат должен expires ПОСЛЕ активной пары (иначе warmNextArbPair его отфильтрует)
+      if (latestActiveExpiryMs > 0 && pair.hard.endEpochMs <= latestActiveExpiryMs) continue;
+
+      const hardCand = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
+      if (!hardCand) continue;
+      const hardTStr = hardCand.allTokenIds?.[mc.outcomeIndex] ?? String(hardCand.instrumentId);
+      if (activeHardTokens.has(hardTStr)) continue;
+      if (closedMarkets.has(String(hardCand.marketId))) continue;
+
+      // Нашли ближайшую доступную пару — ближе текущей warming?
+      if (pair.hard.endEpochMs < warmingArbPair!.expiresAtMs) {
+        // Проверяем что это действительно ДРУГАЯ пара
+        if (warmingArbPair!.hardUpTokenStr === hardTStr) {
+          // Та же пара — upgrade не нужен
+          return;
+        }
+        logger.info('Upgrading warming pair to closer one', {
+          oldPairId: warmingArbPair!.pairId,
+          oldExpiresAt: new Date(warmingArbPair!.expiresAtMs).toISOString(),
+          newEndDate: pair.hard.endDate,
+          newHardToken: hardTStr,
+        });
+        cleanupWarmingPair('UPGRADE');
+        await warmNextArbPair(); // подберёт ближайшую
+      }
+      return; // проверили первую подходящую — выходим
+    }
+  }
+
+  /**
+   * Заполняет слоты арбитражными парами из кэша discovery.
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. Получаем все кандидаты из discovery кэша
+   * 2. Парсим тикеры через MarketPairMatcher.parseTicker()
+   * 3. Группируем в MarketInfo[] и находим пары через pairMatcher.findPairs()
+   * 4. Для каждой пары проверяем: не открыта ли уже, не в blacklist, не истекла
+   * 5. Открываем пару через openArbPair()
+   */
+  async function fillArbSlots(): Promise<void> {
+    if (!discoveryAdapter || !isArbMode) return;
+
+    let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
+    try {
+      candidates = await discoveryAdapter.findCandidates();
+    } catch (err) {
+      logger.error('Failed to read candidates for arb discovery', {
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return;
+    }
+
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const nowMs = Date.now();
+
+    // Конвертируем кандидатов в MarketInfo через parseTicker
+    const marketInfos: (MarketInfo & { _candidate: import('@polymarket/ports').DiscoveredMarket })[] = [];
+    for (const c of candidates) {
+      const ticker = (c.rawMarket?.['events'] as readonly Record<string, unknown>[] | undefined)?.[0]?.['ticker'] as string | undefined;
+      if (!ticker) continue;
+
+      const parsed = MarketPairMatcher.parseTicker(ticker);
+      if (!parsed) continue;
+
+      // endDate берём из Gamma API (авторитетный источник), НЕ вычисляем из тикера.
+      // Тикер содержит startEpoch, а нам нужен endDate для матчинга пар.
+      const endDateStr = c.rawMarket?.['endDate'] as string | undefined;
+      if (!endDateStr) continue;
+      const endDateMs = new Date(endDateStr).getTime();
+      if (Number.isNaN(endDateMs)) continue;
+
+      const tStr = c.allTokenIds?.[mc.outcomeIndex] ?? String(c.instrumentId);
+      const iId = asInstrumentId(tStr);
+      if (!iId) continue;
+
+      const cryptoMeta = parseCryptoMeta(c.rawMarket);
+
+      marketInfos.push({
+        asset: parsed.asset,
+        recurrence: parsed.recurrence,
+        endDate: endDateStr,
+        endEpochMs: endDateMs,
+        instrumentId: iId,
+        filePath: '',
+        ticker,
+        priceToBeat: cryptoMeta?.priceToBeat,
+        _candidate: c,
+      });
+    }
+
+    if (marketInfos.length < 2) {
+      logger.debug('Arb discovery: not enough parseable candidates for pairing', {
+        totalCandidates: candidates.length,
+        parsedMarketInfos: marketInfos.length,
+      });
+      return;
+    }
+
+    const pairs = pairMatcher.findPairs(marketInfos);
+
+    // Диагностика: логируем все найденные пары для дебага выбора
+    logger.info('Arb pair candidates from discovery', {
+      totalCandidates: candidates.length,
+      parsedInfos: marketInfos.length,
+      pairsFound: pairs.length,
+      pairs: pairs.map(p => ({
+        type: p.pairType,
+        easyTicker: p.easy.ticker,
+        hardTicker: p.hard.ticker,
+        endDate: p.hard.endDate,
+        endEpochMs: p.hard.endEpochMs,
+        ttlSec: Math.round((p.hard.endEpochMs - nowMs) / 1000),
+      })),
+    });
+
+    // Текущие активные hard токены
+    const activeHardTokens = new Set(hardTokenToArbPair.keys());
+
+    let skippedExpired = 0;
+    let skippedActive = 0;
+    let skippedBlacklist = 0;
+    let skippedFull = 0;
+    let selectedPairEndDate: string | undefined;
+
+    for (const pair of pairs) {
+      if (activeMarkets.size >= maxConcurrentMarkets) { skippedFull++; continue; }
+
+      // Проверяем не истекла ли пара
+      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) { skippedExpired++; continue; }
+
+      // Ищем кандидатов по instrumentId
+      const easyCand = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
+      const hardCand = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
+      if (!easyCand || !hardCand) continue;
+
+      const hardTStr = hardCand.allTokenIds?.[mc.outcomeIndex] ?? String(hardCand.instrumentId);
+      if (activeHardTokens.has(hardTStr)) { skippedActive++; continue; }
+      if (closedMarkets.has(String(hardCand.marketId))) { skippedBlacklist++; continue; }
+
+      if (!selectedPairEndDate) {
+        selectedPairEndDate = pair.hard.endDate;
+        logger.info('Arb pair selected for activation', {
+          pairType: pair.pairType,
+          endDate: pair.hard.endDate,
+          ttlSec: Math.round((pair.hard.endEpochMs - nowMs) / 1000),
+          easyTicker: pair.easy.ticker,
+          hardTicker: pair.hard.ticker,
+        });
+      }
+
+      const opened = await openArbPair(easyCand, hardCand);
+      if (opened) {
+        activeHardTokens.add(hardTStr);
+      }
+    }
+
+    if (activeArbPairs.size === 0 && isArbMode) {
+      logger.warn('No arb pairs found in discovery cache', {
+        candidates: candidates.length,
+        parsedInfos: marketInfos.length,
+        pairsFound: pairs.length,
+        skippedExpired,
+        skippedActive,
+        skippedBlacklist,
+        skippedFull,
+        closedMarketsCount: closedMarkets.size,
+      });
     }
   }
 
@@ -967,6 +2640,22 @@ async function runPaper(): Promise<void> {
           if (!avgEntry) avgEntry = position.averageEntryPrice.value().toFixed(4);
         }
       }
+      // Арб-позиции: easy + hardDown инструменты (не в activeMarkets)
+      for (const pair of activeArbPairs.values()) {
+        const easyPos = portfolio.getPosition(pair.easySlot.instrumentId);
+        if (easyPos) {
+          totalQty = totalQty.plus(easyPos.quantity.value());
+          if (!avgEntry) avgEntry = easyPos.averageEntryPrice.value().toFixed(4);
+        }
+        const hardDownIId = asInstrumentId(pair.hardDownTokenIdStr);
+        if (hardDownIId) {
+          const hdPos = portfolio.getPosition(hardDownIId);
+          if (hdPos) {
+            totalQty = totalQty.plus(hdPos.quantity.value());
+            if (!avgEntry) avgEntry = hdPos.averageEntryPrice.value().toFixed(4);
+          }
+        }
+      }
       return {
         tokenQty: totalQty.toFixed(2),
         avgEntry,
@@ -984,6 +2673,19 @@ async function runPaper(): Promise<void> {
     const tokenIdStr = iId ? String(iId) : undefined;
     if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
       orderToSlot.set(String(event.orderId), tokenIdStr);
+      return;
+    }
+    // Арбитражные easy/down ноги: их токены не в activeMarkets,
+    // но ордер должен роутиться на hard slot (стратегия зарегистрирована там).
+    if (tokenIdStr) {
+      for (const pair of activeArbPairs.values()) {
+        if (pair.easySlot.tokenIdStr === tokenIdStr ||
+            pair.easyDownTokenIdStr === tokenIdStr ||
+            pair.hardDownTokenIdStr === tokenIdStr) {
+          orderToSlot.set(String(event.orderId), pair.hardTokenIdStr);
+          return;
+        }
+      }
     }
   });
 
@@ -1166,8 +2868,9 @@ async function runPaper(): Promise<void> {
     // Адаптер сам переподключится — это не фатальная ошибка
   }
 
-  // Подключаемся к RTDS для крипто-цен (если есть крипто-рынки)
-  const hasCryptoMarkets = Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
+  // Подключаемся к RTDS для крипто-цен.
+  // В арб-режиме всегда подключаемся (крипто-рынки будут открыты позже через fillArbSlots).
+  const hasCryptoMarkets = isArbMode || Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
   if (hasCryptoMarkets) {
     try {
       await rtdsClient.connect();
@@ -1193,8 +2896,11 @@ async function runPaper(): Promise<void> {
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
 
-    // Если maxConcurrentMarkets > 1, заполняем оставшиеся слоты
-    if (maxConcurrentMarkets > 1) {
+    if (isArbMode) {
+      // Арб-режим: ищем пары и заполняем слоты
+      void fillArbSlots();
+    } else if (maxConcurrentMarkets > 1) {
+      // Обычный режим: заполняем оставшиеся слоты
       void fillMarketSlots();
     }
 
@@ -1202,6 +2908,7 @@ async function runPaper(): Promise<void> {
       expiryCheckMs: 5_000,
       scanPauseMs: mc.scanPauseMs ?? 60_000,
       maxConcurrentMarkets,
+      arbMode: isArbMode,
     });
   }
 
@@ -1215,6 +2922,14 @@ async function runPaper(): Promise<void> {
     if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
 
     try {
+      // Очищаем warming пару (если есть)
+      cleanupWarmingPair('SHUTDOWN');
+
+      // Закрываем арб-пары (easy slot cleanup)
+      for (const pairId of [...activeArbPairs.keys()]) {
+        await closeArbPair(pairId, 'SHUTDOWN');
+      }
+
       // Закрываем все активные слоты: сводка + unregister стратегий
       for (const slot of activeMarkets.values()) {
         printMarketSummary(slot);
@@ -1311,7 +3026,7 @@ async function runBacktest(): Promise<void> {
   const repos = buildRepositories();
   const { portfolioStore, orderRepo } = repos;
 
-  const riskParams: RiskParams = buildRiskParams();
+  const riskParams: RiskParams = buildRiskParams(config);
 
   const accountId = parseAccountId(config.account.accountId);
   if (!accountId) {
@@ -1356,7 +3071,10 @@ async function runBacktest(): Promise<void> {
   const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore: backtestCryptoPriceStore });
 
   // Регистрируем инструмент в каталоге (нужен BookUpdateHandler для маппинга tokenId → marketId)
-  const expiresAtResult = TimestampService.create(Date.now() + 86400_000);
+  const rawEndDateForInstrument = snapshotRawMarket?.['endDate'] as string | undefined;
+  const parsedEndDateMs = rawEndDateForInstrument ? new Date(rawEndDateForInstrument).getTime() : NaN;
+  const realExpirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 86400_000;
+  const expiresAtResult = TimestampService.create(realExpirationMs);
   if (!expiresAtResult.ok) {
     logger.fatal('Failed to create expiresAt timestamp');
     process.exit(1);
@@ -1491,12 +3209,26 @@ async function runBacktest(): Promise<void> {
   });
 
   const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
-  const expirationMs = Date.now() + 24 * 60 * 60 * 1000;
+
+  // Извлекаем eventStartTime / endDate из rawMarket (Gamma API) — есть у любого рынка, не только крипто
+  const rawEventStart = snapshotRawMarket?.['eventStartTime'] as string | undefined;
+  const rawEndDate = snapshotRawMarket?.['endDate'] as string | undefined;
+  const snapshotEventStartMs = rawEventStart ? new Date(rawEventStart).getTime() : undefined;
+  const snapshotEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : undefined;
+
+  const expirationMs = snapshotEndDateMs && !Number.isNaN(snapshotEndDateMs)
+    ? snapshotEndDateMs
+    : Date.now() + 24 * 60 * 60 * 1000;
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+
+  const eventStartMs = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
+    ? snapshotEventStartMs
+    : undefined;
 
   const regResult = await engine.scheduler.register({
     strategy, instrumentId, asset, accountId, market: marketStub,
     cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
+    eventStartMs,
   });
   if (!regResult.ok) {
     logger.fatal('Failed to register strategy', { error: String(regResult.error) });
@@ -1802,6 +3534,12 @@ async function runLive(): Promise<void> {
     readonly strategy: IStrategy;
     /** Метаданные крипто-рынка (undefined для не-крипто) */
     readonly cryptoMeta: CryptoMarketMeta | undefined;
+    /** Дополнительные инструменты для триггера тика (арбитраж: easy book) */
+    readonly additionalInstrumentIds?: readonly InstrumentId[];
+    /** ID комплементарного токена (другой outcome) для dual-token стратегий */
+    readonly complementaryInstrumentId?: InstrumentId;
+    /** AssetId комплементарного токена (для auto-selection в PlaceIntent) */
+    readonly complementaryAsset?: AssetId;
     fillHistory: FillRecord[];
     partialAccum: Map<string, PartialAccum>;
     openedAt: number;
@@ -2051,7 +3789,7 @@ async function runLive(): Promise<void> {
 
   const repos = buildRepositories();
   const { portfolioStore } = repos;
-  const riskParams = buildRiskParams();
+  const riskParams = buildRiskParams(config);
 
   // ── Live инфраструктура ──────────────────────────────────────────────────
   //
@@ -2160,6 +3898,10 @@ async function runLive(): Promise<void> {
    * @returns true если регистрация успешна
    */
   async function registerMarketAndStrategy(slot: ActiveMarketSlot): Promise<boolean> {
+    // Подписка на WS комплементарного токена (для dual-token стратегий)
+    if (slot.complementaryInstrumentId) {
+      await marketWsAdapter.subscribeToToken(String(slot.complementaryInstrumentId));
+    }
     const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
       logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
@@ -2176,6 +3918,7 @@ async function runLive(): Promise<void> {
     });
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const compId = slot.complementaryInstrumentId;
     const regResult = await engine.scheduler.register({
       strategy: slot.strategy,
       instrumentId: slot.instrumentId,
@@ -2183,6 +3926,10 @@ async function runLive(): Promise<void> {
       accountId: accountId!,
       market: marketStub,
       cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
+      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
+      additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),
+      complementaryInstrumentId: compId,
+      complementaryAsset: slot.complementaryAsset,
     });
     if (!regResult.ok) {
       logger.error('Failed to register strategy', { error: String(regResult.error) });
@@ -2234,6 +3981,12 @@ async function runLive(): Promise<void> {
 
     const liveSlotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
+    // Комплементарный токен для dual-token стратегий (adaptive-entry)
+    const liveCompIndex = 1 - mc.outcomeIndex;
+    const liveCompTokenStr = candidate.allTokenIds?.[liveCompIndex];
+    const liveCompInstrumentId = liveCompTokenStr ? (asInstrumentId(liveCompTokenStr) ?? undefined) : undefined;
+    const liveCompAsset = liveCompTokenStr ? (asPolymarketCtfToken(liveCompTokenStr) ?? undefined) : undefined;
+
     const slot: ActiveMarketSlot = {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -2245,6 +3998,8 @@ async function runLive(): Promise<void> {
       candidate,
       strategy: slotStrategy,
       cryptoMeta: liveSlotCryptoMeta,
+      complementaryInstrumentId: liveCompInstrumentId,
+      complementaryAsset: liveCompAsset,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -2548,7 +4303,9 @@ async function runLive(): Promise<void> {
     const tokenIdStr = iId ? String(iId) : undefined;
     if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
       orderToSlot.set(String(event.orderId), tokenIdStr);
+      return;
     }
+    // TODO: арбитражные easy/down ноги → роутим на hard slot (когда live арб будет реализован)
   });
 
   /** Хелпер: найти слот по orderId через orderToSlot */
@@ -2947,14 +4704,35 @@ async function runLive(): Promise<void> {
  *
  * @returns Параметры риск-контроля
  */
-function buildRiskParams(): RiskParams {
+/**
+ * Строит параметры risk-чека на основе конфигурации бота.
+ *
+ * @param config - Конфигурация бота (стратегия + ресурсы)
+ * @returns RiskParams согласованные со стратегией
+ *
+ * @remarks
+ * Параметры вычисляются из конфига, чтобы risk checker не конфликтовал со стратегией:
+ * - `maxPositionSize` = qMax × orderSize (AS) или orderSize × 5 (dumb)
+ * - `maxOrderNotional` = orderSize × 1 (максимальная стоимость одного ордера)
+ * - `maxTotalExposure` = initialBalance × 2 (с запасом на нереализованные позиции)
+ * - `minTimeToExpiryMs` = hardStopSec × 1000 (синхронизировано с hard stop стратегии)
+ */
+function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): RiskParams {
+  const params = config?.strategyParams as unknown as Record<string, unknown> | undefined;
+  const orderSize = params?.['orderSize'] instanceof Decimal
+    ? (params['orderSize'] as Decimal).toNumber()
+    : 10;
+  const qMax = typeof params?.['qMax'] === 'number' ? (params['qMax'] as number) : 5;
+  const initialBalance = config?.resources.initialBalance ?? 100;
+
   return {
     maxOpenOrders: 2,
-    maxOrderNotional: new Decimal('100'),
-    maxPositionSize: new Decimal('20'),
-    maxTotalExposure: new Decimal('2000'),
+    maxOrderNotional: new Decimal(initialBalance),
+    maxPositionSize: new Decimal(qMax * orderSize),
+    maxTotalExposure: new Decimal(initialBalance * 2),
     minAvailableBalance: new Decimal('1'),
-    minTimeToExpiryMs: 30_000, // не открывать BUY за < 30 сек до экспирации
+    // Стратегия сама управляет timing (unwind phase), risk checker не блокирует по времени
+    minTimeToExpiryMs: 0,
   };
 }
 
@@ -3044,7 +4822,7 @@ function collectFiles(
     const full = path.join(dir, entry.name);
     if (entry.isDirectory() && recursive) {
       collectFiles(full, recursive, out, filter);
-    } else if (entry.isFile() && filter(full)) {
+    } else if ((entry.isFile() || entry.isSymbolicLink()) && filter(full)) {
       out.push(full);
     }
   }

@@ -393,7 +393,10 @@ export class ExecutionEngine {
    */
   private async _executePlace(ctx: ExecutionContext, intent: PlaceIntent): Promise<'placed' | 'skipped' | 'failed'> {
     const nowForCooldown = this._deps.clock.now().getTime();
-    const instrumentKey = String(ctx.instrumentId);
+    // Если intent указывает целевой инструмент (auto-selection) — используем его
+    const effectiveInstrumentId = intent.targetInstrumentId ?? ctx.instrumentId;
+    const effectiveAsset = intent.targetAsset ?? ctx.asset;
+    const instrumentKey = String(effectiveInstrumentId);
 
     // ── Post-cancel cooldown ────────────────────────────────
     // После cancel ордера ждём 20 секунд — on-chain fill может прийти
@@ -440,7 +443,7 @@ export class ExecutionEngine {
     // Валидация size по каталогу — reject без коррекции.
     // Стратегия должна сама адаптировать size используя constraints из snapshot
     // и helpers BaseStrategy.adjustBuySize() / adjustSellSize().
-    const info = this._deps.catalog.get(ctx.instrumentId);
+    const info = this._deps.catalog.get(effectiveInstrumentId);
     const effectiveSize = intent.size;
 
     if (info) {
@@ -450,7 +453,7 @@ export class ExecutionEngine {
       if (intent.side === 'BUY' && effectiveSize.value().lt(info.minOrderSize.value())) {
         this._logger.warn('ExecutionEngine: reject — size below minOrderSize (strategy must use constraints)', {
           strategyId: ctx.strategyId,
-          instrumentId: String(ctx.instrumentId),
+          instrumentId: instrumentKey,
           side: intent.side,
           size: effectiveSize.toNumber(),
           minOrderSize: info.minOrderSize.toNumber(),
@@ -464,7 +467,7 @@ export class ExecutionEngine {
         if (orderValue.lt(info.minOrderValue.value())) {
           this._logger.warn('ExecutionEngine: reject — order value below minOrderValue (strategy must use constraints)', {
             strategyId: ctx.strategyId,
-            instrumentId: String(ctx.instrumentId),
+            instrumentId: instrumentKey,
             price: intent.price.toNumber(),
             size: effectiveSize.toNumber(),
             orderValue: orderValue.toNumber(),
@@ -480,8 +483,8 @@ export class ExecutionEngine {
     const result = await this._deps.placeOrderUseCase.execute({
       orderId,
       accountId: ctx.accountId,
-      asset: ctx.asset,
-      instrumentId: ctx.instrumentId,
+      asset: effectiveAsset,
+      instrumentId: effectiveInstrumentId,
       side: intent.side,
       price: intent.price,
       size: effectiveSize,
@@ -499,9 +502,9 @@ export class ExecutionEngine {
       // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.
       const currentPortfolio = this._deps.portfolioStore.get(ctx.accountId);
       const portfolioTokenQty = currentPortfolio
-        ?.getPosition?.(ctx.instrumentId)?.quantity.value().toNumber();
+        ?.getPosition?.(effectiveInstrumentId)?.quantity.value().toNumber();
       const tokenReserved = currentPortfolio
-        ?.tokenReservations?.get(ctx.instrumentId)?.toNumber();
+        ?.tokenReservations?.get(effectiveInstrumentId)?.toNumber();
       this._logger.warn('ExecutionEngine: place failed — exchange rejection cooldown set', {
         orderId: String(orderId),
         strategyId: ctx.strategyId,
@@ -517,15 +520,15 @@ export class ExecutionEngine {
       // Диагностика: при SELL rejection проверяем реальный баланс токена на CLOB.
       // Позволяет отличить settlement lag от allowance проблемы.
       if (intent.side === 'SELL' && this._deps.tokenBalanceChecker) {
-        const rawTokenId = ctx.asset.type === 'POLYMARKET_CTF_TOKEN'
-          ? ctx.asset.tokenId
-          : String(ctx.instrumentId);
+        const rawTokenId = effectiveAsset.type === 'POLYMARKET_CTF_TOKEN'
+          ? effectiveAsset.tokenId
+          : String(effectiveInstrumentId);
         this._deps.tokenBalanceChecker.getTokenBalanceAllowance(rawTokenId)
           .then((clobBalance) => {
             if (clobBalance) {
               this._logger.warn('ExecutionEngine: CLOB token balance after SELL rejection', {
                 strategyId: ctx.strategyId,
-                instrumentId: String(ctx.instrumentId),
+                instrumentId: instrumentKey,
                 clobBalance: clobBalance.balance,
                 clobAllowance: clobBalance.allowance,
                 portfolioTokenQty,

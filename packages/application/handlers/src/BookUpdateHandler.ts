@@ -93,7 +93,7 @@ export class BookUpdateHandler {
 
     const instrument = this._catalog.get(tokenId);
     if (!instrument) {
-      this._logger.warn('Received snapshot for unregistered instrument, skipping', {
+      this._logger.debug('Received snapshot for unregistered instrument, skipping', {
         tokenId: String(tokenId),
       });
       return;

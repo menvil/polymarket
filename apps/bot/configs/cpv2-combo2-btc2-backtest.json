@@ -1,0 +1,17 @@
+{
+  "strategy": "crypto-prob",
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "strategyParams": {
+    "orderSize": 5, "qMax": 3,
+    "entryProb": 55, "exitProb": 35,
+    "minEdgeCents": 5, "exitTauSec": 110, "warmupSec": 10,
+    "exitDiscountCents": 1,
+    "minBidZoneCents": 55, "maxBidZoneCents": 73,
+    "minDeltaPct": 0.03,
+    "maxEntryTauSec": 210,
+    "minEntryProb": 70
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day2/*"], "outcomeIndex": 0 }
+}

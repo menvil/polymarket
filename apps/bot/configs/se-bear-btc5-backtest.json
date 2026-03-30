@@ -1,0 +1,17 @@
+{
+  "strategy": "smart-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "mode": "bearish",
+    "waitPct": 0.5,
+    "minEwmaCents": 55,
+    "minRiseCents": 3,
+    "warmupTrades": 10,
+    "bidOffsetCents": 1,
+    "maxSpreadCents": 15
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day5/*"], "outcomeIndex": 1 },
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+}

@@ -1,0 +1,34 @@
+{
+  "strategy": "prob-table",
+  "strategyParams": {
+    "probTablePath": "/tmp/prob-table-btc-only-day123.json",
+    "orderSize": 10,
+    "qMax": 5,
+    "minEdge": 3,
+    "minN": 50,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day4/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

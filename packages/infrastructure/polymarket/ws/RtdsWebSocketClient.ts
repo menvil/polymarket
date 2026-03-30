@@ -170,6 +170,7 @@ export class RtdsWebSocketClient {
     }
 
     this._connected = false;
+    this._lastEmitted.clear();
     this._logger.info('RTDS WebSocket disconnected intentionally');
   }
 
@@ -218,6 +219,9 @@ export class RtdsWebSocketClient {
       this._sendTopicUnsubscribe(topic);
       this._activeTopics.delete(topic);
     }
+
+    // Очищаем дедупликацию для отписанного символа
+    this._lastEmitted.delete(filter);
 
     this._logger.debug('RTDS subscription removed', { topic, filter });
   }
