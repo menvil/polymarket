@@ -82,9 +82,11 @@ interface DiscoveredToken {
 }
 
 async function discoverToken(): Promise<DiscoveredToken | null> {
-  const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=100&order=volume&ascending=false`, {
-    signal: AbortSignal.timeout(15_000),
-  });
+  // Ищем рынок с ближайшим завершением по keywords (активный, с ордерами в книге)
+  const resp = await fetch(
+    `${GAMMA_URL}/markets?closed=false&limit=200&order=endDate&ascending=true`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
   const markets = await resp.json() as Array<Record<string, unknown>>;
 
   const matchesKeywords = (q: string): boolean => {
@@ -93,9 +95,13 @@ async function discoverToken(): Promise<DiscoveredToken | null> {
     return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
   };
 
+  // Ищем ближайший по endDate рынок с нашими keywords
   for (const m of markets) {
     const question = (m['question'] as string) ?? '';
     if (!matchesKeywords(question)) continue;
+    // Проверяем что endDate в будущем
+    const endDate = m['endDate'] as string | undefined;
+    if (endDate && new Date(endDate).getTime() < Date.now()) continue;
     const raw = m['clobTokenIds'] as string | undefined;
     if (raw) {
       try {
@@ -232,23 +238,24 @@ async function measureRestLatency(rounds: number): Promise<number[]> {
 // ── Order placement test ─────────────────────────────────────────────────────
 
 async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ place: number[]; cancel: number[] }> {
-  // Динамический импорт — только если есть credentials
-  const { PolymarketRestClient } = await import('@polymarket/exchange/rest');
-  const { PolymarketOrderRestClient } = await import('@polymarket/exchange/rest');
-  const { PolymarketOrderBuilder } = await import('@polymarket/exchange/rest');
+  const { PolymarketRestClient, PolymarketOrderRestClient, PolymarketOrderBuilder, SignatureType } =
+    await import('@polymarket/exchange/rest');
 
+  const sigType = process.env['FUNDER_ADDRESS'] ? SignatureType.POLY_PROXY : SignatureType.EOA;
   const restClient = new PolymarketRestClient({
     baseUrl: REST_URL,
     privateKey: PRIVATE_KEY!,
     chainId: 137,
     timeout: 15_000,
     maxRetries: 1,
-    signatureType: process.env['FUNDER_ADDRESS'] ? 'POLY_PROXY' as 0 : 'EOA' as 0,
+    signatureType: sigType,
     funderAddress: process.env['FUNDER_ADDRESS'],
-    l2Credentials: { apiKey: API_KEY!, apiSecret: API_SECRET!, apiPassphrase: API_PASSPHRASE! },
+    l2Credentials: { apiKey: API_KEY!, secret: API_SECRET!, passphrase: API_PASSPHRASE! },
   }, logger);
 
-  const orderBuilder = new PolymarketOrderBuilder(PRIVATE_KEY!, 137, process.env['FUNDER_ADDRESS']);
+  const signer = restClient.getSigner();
+  const makerAddress = process.env['FUNDER_ADDRESS'] ?? signer.getAddress();
+  const orderBuilder = new PolymarketOrderBuilder(signer.getWallet(), 137, makerAddress, sigType, logger);
   const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
 
   const placeLat: number[] = [];
@@ -256,20 +263,21 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
 
   for (let i = 0; i < rounds; i++) {
     try {
-      // Place: BUY 1 token @ $0.01 (far from market, won't fill)
+      // Place: BUY 1 token @ $0.01 (далеко от рынка, не заполнится)
       const start = performance.now();
-      const result = await orderClient.placeOrder({
+      const result = await orderClient.createOrder({
         tokenId,
         side: 'BUY',
         price: 0.01,
         size: 1,
+        nonce: 0,
       });
       placeLat.push(performance.now() - start);
 
       // Cancel immediately
-      if (result?.id) {
+      if (result?.orderID) {
         const cancelStart = performance.now();
-        await orderClient.cancelOrder(result.id);
+        await orderClient.cancelOrder(result.orderID);
         cancelLat.push(performance.now() - cancelStart);
       }
     } catch (err) {
