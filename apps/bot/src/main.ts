@@ -3853,6 +3853,12 @@ async function runLive(): Promise<void> {
   // Chainlink strike price fallback (аналогично paper mode):
   // Map: rtdsFilter → eventStartTimeMs. Первая Chainlink цена с ts >= eventStartTime = strike.
   const livePendingChainlinkStrike = new Map<string, number>();
+
+  /**
+   * Ref-counting RTDS подписок: symbol → количество активных рынков использующих этот символ.
+   * Отписываемся от RTDS только когда счётчик падает до 0.
+   */
+  const liveRtdsRefCount = new Map<string, number>();
   let liveLastCryptoPriceLogMs = 0;
   const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
   // Recording: подключаем запись крипто-цен из RTDS
@@ -4066,6 +4072,7 @@ async function runLive(): Promise<void> {
       }
       for (const sub of liveInitialCryptoMeta.rtdsSubscriptions) {
         liveRtdsClient.subscribe(sub.topic, sub.filter);
+        liveRtdsRefCount.set(sub.filter, (liveRtdsRefCount.get(sub.filter) ?? 0) + 1);
       }
     }
 
@@ -4451,6 +4458,7 @@ async function runLive(): Promise<void> {
       }
       for (const sub of liveSlotCryptoMeta.rtdsSubscriptions) {
         liveRtdsClient.subscribe(sub.topic, sub.filter);
+        liveRtdsRefCount.set(sub.filter, (liveRtdsRefCount.get(sub.filter) ?? 0) + 1);
       }
     }
 
@@ -4504,10 +4512,9 @@ async function runLive(): Promise<void> {
     marketCatalog.remove(slot.instrumentId);
 
     // Очистка pending Chainlink strike.
-    // НЕ отписываемся от RTDS при ротации — следующий рынок обычно тот же символ,
-    // и unsubscribe/subscribe цикл может потерять подписку при race condition с WS reconnect.
-    // RTDS подписка остаётся активной; лишние символы (если переключимся на другой)
-    // будут просто игнорироваться в onPrice callback.
+    // НЕ отписываемся от RTDS здесь — новый рынок ещё не открыт,
+    // unsubscribe сломает подписку если следующий рынок использует тот же символ.
+    // Отписка лишних символов происходит после открытия нового рынка (deferred cleanup).
     if (slot.cryptoMeta) {
       livePendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
     }
@@ -4748,6 +4755,26 @@ async function runLive(): Promise<void> {
       }
       if (expiredTokens.length > 0) {
         await fillMarketSlots();
+
+        // Deferred RTDS cleanup: отписать символы которые больше не нужны.
+        // Собираем set нужных filter из активных рынков.
+        const neededFilters = new Set<string>();
+        for (const slot of activeMarkets.values()) {
+          if (slot.cryptoMeta) {
+            for (const sub of slot.cryptoMeta.rtdsSubscriptions) {
+              neededFilters.add(sub.filter);
+            }
+          }
+        }
+        // Отписываем ненужные
+        for (const [filter] of liveRtdsRefCount) {
+          if (!neededFilters.has(filter)) {
+            liveRtdsClient.unsubscribe('crypto_prices_chainlink', filter);
+            liveRtdsClient.unsubscribe('crypto_prices', filter);
+            liveRtdsRefCount.delete(filter);
+            logger.debug('RTDS deferred unsubscribe (symbol no longer needed)', { filter });
+          }
+        }
       }
     } finally {
       _rotationInProgress = false;
