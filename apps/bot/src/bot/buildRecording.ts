@@ -183,7 +183,17 @@ export function buildRecording(
       const orderToToken = new Map<string, string>();
       eventBus.subscribe('ORDER_CREATED', (event) => {
         const tokenId = String(event.asset ?? '');
-        if (tokenId) orderToToken.set(String(event.orderId), tokenId);
+        const orderId = String(event.orderId);
+        if (tokenId) orderToToken.set(orderId, tokenId);
+        // Записываем размещение ордера в journal (время placement для latency)
+        journal.recordOrder({
+          marketId: tokenId,
+          ts: Date.now(),
+          orderId,
+          side: event.side as 'BUY' | 'SELL',
+          price: event.price.value().toFixed(4),
+          size: event.size.value().toFixed(2),
+        });
       });
 
       // Записываем fill события в journal

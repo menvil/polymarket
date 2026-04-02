@@ -50,6 +50,7 @@ export type {
   IDecisionJournal,
   SessionMeta,
   DecisionEntry,
+  OrderEntry,
   FillEntry,
   ResolutionEntry,
 } from './IDecisionJournal.js';

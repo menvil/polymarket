@@ -88,6 +88,25 @@ export interface DecisionEntry {
 }
 
 /**
+ * Запись размещения ордера.
+ *
+ * @param marketId - ID рынка (tokenId для роутинга)
+ * @param ts - Timestamp размещения (epoch ms)
+ * @param orderId - ID ордера
+ * @param side - Сторона: BUY или SELL
+ * @param price - Цена ордера
+ * @param size - Размер
+ */
+export interface OrderEntry {
+  readonly marketId: string;
+  readonly ts: number;
+  readonly orderId: string;
+  readonly side: 'BUY' | 'SELL';
+  readonly price: string;
+  readonly size: string;
+}
+
+/**
  * Запись fill.
  *
  * @param marketId - ID рынка
@@ -154,6 +173,13 @@ export interface IDecisionJournal {
    * @param entry - Данные решения
    */
   recordDecision(entry: DecisionEntry): void;
+
+  /**
+   * Записывает размещение ордера (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные ордера
+   */
+  recordOrder(entry: OrderEntry): void;
 
   /**
    * Записывает fill (синхронно, fire-and-forget).

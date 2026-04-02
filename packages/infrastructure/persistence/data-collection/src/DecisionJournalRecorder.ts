@@ -43,6 +43,7 @@ import type {
   IDecisionJournal,
   SessionMeta,
   DecisionEntry,
+  OrderEntry,
   FillEntry,
   ResolutionEntry,
 } from '@polymarket/ports';
@@ -152,6 +153,15 @@ export class DecisionJournalRecorder implements IDecisionJournal {
    */
   public recordDecision(entry: DecisionEntry): void {
     this._appendRecord(entry.marketId, { t: 'decision', ...entry });
+  }
+
+  /**
+   * Записывает размещение ордера (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные ордера
+   */
+  public recordOrder(entry: OrderEntry): void {
+    this._appendRecord(entry.marketId, { t: 'order', ...entry });
   }
 
   /**
