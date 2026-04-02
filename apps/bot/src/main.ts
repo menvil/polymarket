@@ -1042,9 +1042,9 @@ async function runPaper(): Promise<void> {
     await wsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
 
-    // Отписка от RTDS для крипто-рынка + очистка pending Chainlink strike
+    // Очистка pending Chainlink strike.
+    // НЕ отписываемся от RTDS при ротации — тот же символ, unsubscribe/subscribe race condition.
     if (slot.cryptoMeta) {
-      rtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
       pendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
     }
 
@@ -4503,9 +4503,12 @@ async function runLive(): Promise<void> {
     await marketWsAdapter.unsubscribeFromToken(tokenIdStr);
     marketCatalog.remove(slot.instrumentId);
 
-    // Отписка от RTDS для крипто-рынка + очистка pending Chainlink strike
+    // Очистка pending Chainlink strike.
+    // НЕ отписываемся от RTDS при ротации — следующий рынок обычно тот же символ,
+    // и unsubscribe/subscribe цикл может потерять подписку при race condition с WS reconnect.
+    // RTDS подписка остаётся активной; лишние символы (если переключимся на другой)
+    // будут просто игнорироваться в onPrice callback.
     if (slot.cryptoMeta) {
-      liveRtdsClient.unsubscribe(slot.cryptoMeta.rtdsTopic, slot.cryptoMeta.rtdsFilter);
       livePendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
     }
 
