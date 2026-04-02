@@ -3,13 +3,14 @@
  * Latency Check — диагностика задержек к Polymarket.
  *
  * @remarks
- * Использует DnsOverride (как main.ts), PolymarketMarketDataRestClient для discovery.
- * Автоматически находит активный рынок и измеряет latency.
+ * Использует DnsOverride, читает конфиг бота для discovery keywords,
+ * находит активный рынок, измеряет WS/REST/order latency.
  *
  * @example
  * ```bash
  * cd apps/bot
- * npx tsx scripts/latency-check.ts
+ * CONFIG=configs/sel-paper-5min.json npx tsx scripts/latency-check.ts
+ * npx tsx scripts/latency-check.ts --config=configs/sel-paper-5min.json
  * npx tsx scripts/latency-check.ts --rounds=20
  * ```
  */
@@ -40,20 +41,23 @@ const REST_URL = 'https://clob.polymarket.com';
 const GAMMA_URL = 'https://gamma-api.polymarket.com';
 const ROUNDS = parseInt(process.argv.find(a => a.startsWith('--rounds='))?.split('=')[1] ?? '10');
 
-// Читаем конфиг бота для discovery фильтров
-const configPath = process.argv.find(a => a.startsWith('--config='))?.split('=')[1]
-  ?? process.env['CONFIG']
-  ?? 'configs/sel-paper-5min.json';
+// Конфиг бота: --config > CONFIG env > default
+const configArg = process.argv.find(a => a.startsWith('--config='))?.split('=')[1];
+const configPath = configArg ?? process.env['CONFIG'] ?? 'configs/sel-paper-5min.json';
 let discoveryKeywords: string[] = [];
 try {
-  const configContent = JSON.parse(readFileSync(resolve(import.meta.dirname ?? '.', '..', configPath), 'utf-8'));
-  discoveryKeywords = configContent?.market?.filter?.requiredKeywords ?? [];
-  if (discoveryKeywords.length > 0) {
-    console.log(`Config: ${configPath} (keywords: ${discoveryKeywords.join(', ')})`);
-  }
-} catch { /* config not found — use top volume */ }
+  const raw = JSON.parse(readFileSync(resolve(import.meta.dirname ?? '.', '..', configPath), 'utf-8'));
+  discoveryKeywords = raw?.market?.filter?.requiredKeywords ?? [];
+} catch { /* config not found */ }
 
 const logger = new ColorConsoleLogger(new LiveClock(), LogLevel.WARN);
+
+// Credentials для order test
+const PRIVATE_KEY = process.env['PRIVATE_KEY'];
+const API_KEY = process.env['POLYMARKET_API_KEY'];
+const API_SECRET = process.env['POLYMARKET_API_SECRET'];
+const API_PASSPHRASE = process.env['POLYMARKET_API_PASSPHRASE'];
+const hasCredentials = !!(PRIVATE_KEY && API_KEY && API_SECRET && API_PASSPHRASE);
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
 
@@ -62,50 +66,121 @@ function stats(values: number[]): { min: number; avg: number; p95: number; max: 
   const sorted = [...values].sort((a, b) => a - b);
   const sum = sorted.reduce((s, v) => s + v, 0);
   const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
-  return {
-    min: sorted[0]!,
-    avg: sum / sorted.length,
-    p95: sorted[p95idx]!,
-    max: sorted[sorted.length - 1]!,
-  };
+  return { min: sorted[0]!, avg: sum / sorted.length, p95: sorted[p95idx]!, max: sorted[sorted.length - 1]! };
 }
 
-function fmt(ms: number): string {
-  return ms < 1 ? '<1ms' : `${ms.toFixed(0)}ms`;
-}
-
+function fmt(ms: number): string { return ms < 1 ? '<1ms' : `${ms.toFixed(0)}ms`; }
 function fmtStats(s: ReturnType<typeof stats>): string {
   return `min=${fmt(s.min)} avg=${fmt(s.avg)} p95=${fmt(s.p95)} max=${fmt(s.max)}`;
 }
 
-// ── WS PING/PONG ────────────────────────────────────────────────────────────
+// ── Discover active market ───────────────────────────────────────────────────
 
-async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings: number[] }> {
+interface DiscoveredToken {
+  tokenId: string;
+  question: string;
+}
+
+async function discoverToken(): Promise<DiscoveredToken | null> {
+  const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=100&order=volume&ascending=false`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  const markets = await resp.json() as Array<Record<string, unknown>>;
+
+  const matchesKeywords = (q: string): boolean => {
+    if (discoveryKeywords.length === 0) return true;
+    const lower = q.toLowerCase();
+    return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
+  };
+
+  for (const m of markets) {
+    const question = (m['question'] as string) ?? '';
+    if (!matchesKeywords(question)) continue;
+    const raw = m['clobTokenIds'] as string | undefined;
+    if (raw) {
+      try {
+        const ids = JSON.parse(raw) as string[];
+        if (ids[0]) return { tokenId: ids[0], question };
+      } catch { /* skip */ }
+    }
+  }
+  return null;
+}
+
+// ── WS: connect + subscribe + measure staleness ──────────────────────────────
+
+interface WsResult {
+  connectMs: number;
+  subscribeMs: number;
+  pings: number[];
+  staleness: number[];
+}
+
+async function measureWs(tokenId: string, rounds: number): Promise<WsResult> {
   return new Promise((resolve, reject) => {
     const connectStart = performance.now();
     const ws = new WebSocket(WS_URL);
     let connectMs = 0;
+    let subscribeMs = 0;
+    let subscribeStart = 0;
+    let subscribed = false;
     const pings: number[] = [];
+    const staleness: number[] = [];
     let pingStart = 0;
-    let round = 0;
-    let connected = false;
+    let pingRound = 0;
+    let phase: 'connecting' | 'subscribing' | 'staleness' | 'pinging' | 'done' = 'connecting';
 
     ws.on('open', () => {
       connectMs = performance.now() - connectStart;
-      connected = true;
-      pingStart = performance.now();
-      ws.send('PING');
+      phase = 'subscribing';
+      subscribeStart = performance.now();
+      // Подписываемся на токен
+      ws.send(JSON.stringify({ type: 'market', assets_ids: [tokenId] }));
     });
 
     ws.on('message', (data) => {
       const msg = data.toString().trim();
+
+      // Subscription ack (массив с подтверждением)
+      if (!subscribed && (msg.startsWith('[') || msg === 'OK')) {
+        subscribeMs = performance.now() - subscribeStart;
+        subscribed = true;
+        phase = 'staleness';
+        return;
+      }
+
       if (msg === 'PONG') {
-        pings.push(performance.now() - pingStart);
-        round++;
-        if (round >= rounds) {
-          ws.close();
-          resolve({ connectMs, pings });
-        } else {
+        if (phase === 'pinging') {
+          pings.push(performance.now() - pingStart);
+          pingRound++;
+          if (pingRound >= rounds) {
+            phase = 'done';
+            ws.close();
+            resolve({ connectMs, subscribeMs, pings, staleness });
+          } else {
+            pingStart = performance.now();
+            ws.send('PING');
+          }
+        }
+        return;
+      }
+
+      // Book events — measure staleness
+      if (phase === 'staleness') {
+        try {
+          const events = JSON.parse(msg);
+          if (!Array.isArray(events)) return;
+          for (const evt of events as Record<string, unknown>[]) {
+            if (evt['event_type'] === 'book' && evt['timestamp']) {
+              const diff = Date.now() - Number(evt['timestamp']);
+              if (diff >= 0 && diff < 60_000) staleness.push(diff);
+            }
+          }
+        } catch { /* skip */ }
+
+        // После получения достаточно staleness readings — переходим к пингам
+        if (staleness.length >= rounds) {
+          phase = 'pinging';
           pingStart = performance.now();
           ws.send('PING');
         }
@@ -113,61 +188,23 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
     });
 
     ws.on('error', (err) => {
-      if (!connected) reject(new Error(`WS connect failed: ${err.message}`));
+      if (phase === 'connecting') reject(new Error(`WS connect failed: ${err.message}`));
     });
 
     ws.on('close', () => {
-      if (pings.length > 0) resolve({ connectMs, pings });
+      if (phase !== 'done' && (staleness.length > 0 || pings.length > 0)) {
+        resolve({ connectMs, subscribeMs, pings, staleness });
+      }
     });
 
     setTimeout(() => {
       ws.close();
-      if (pings.length > 0) resolve({ connectMs, pings });
-      else if (!connected) reject(new Error('WS connect timeout (30s)'));
-      else reject(new Error('WS PING timeout — server did not respond to text PING'));
-    }, 30_000);
-  });
-}
-
-// ── Market Data Staleness ────────────────────────────────────────────────────
-
-async function measureStaleness(tokenId: string, rounds: number): Promise<number[]> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(WS_URL);
-    const staleness: number[] = [];
-
-    ws.on('open', () => {
-      ws.send(JSON.stringify({ type: 'market', assets_ids: [tokenId] }));
-    });
-
-    ws.on('message', (data) => {
-      const msg = data.toString();
-      if (msg === 'PONG' || msg.startsWith('[')) return;
-
-      try {
-        const events: unknown[] = JSON.parse(msg);
-        if (!Array.isArray(events)) return;
-        for (const evt of events) {
-          const e = evt as Record<string, unknown>;
-          if (e['event_type'] === 'book' && e['timestamp']) {
-            const serverTs = Number(e['timestamp']);
-            const localTs = Date.now();
-            const diff = localTs - serverTs;
-            if (diff >= 0 && diff < 60_000) {
-              staleness.push(diff);
-            }
-          }
-        }
-      } catch { /* not JSON */ }
-
-      if (staleness.length >= rounds) {
-        ws.close();
-        resolve(staleness);
+      if (staleness.length > 0 || pings.length > 0) {
+        resolve({ connectMs, subscribeMs, pings, staleness });
+      } else {
+        reject(new Error(`WS timeout (phase: ${phase})`));
       }
-    });
-
-    ws.on('error', (err) => reject(err));
-    setTimeout(() => { ws.close(); resolve(staleness); }, 60_000);
+    }, 60_000);
   });
 }
 
@@ -184,8 +221,7 @@ async function measureRestLatency(rounds: number): Promise<number[]> {
     } catch {
       try {
         const start2 = performance.now();
-        const resp = await fetch(REST_URL, { method: 'GET', signal: AbortSignal.timeout(10_000) });
-        await resp.text();
+        await fetch(REST_URL, { method: 'GET', signal: AbortSignal.timeout(10_000) });
         latencies.push(performance.now() - start2);
       } catch { /* skip */ }
     }
@@ -193,55 +229,81 @@ async function measureRestLatency(rounds: number): Promise<number[]> {
   return latencies;
 }
 
-// ── Gamma API RTT ────────────────────────────────────────────────────────────
+// ── Order placement test ─────────────────────────────────────────────────────
 
-async function measureGammaLatency(rounds: number): Promise<number[]> {
-  const latencies: number[] = [];
+async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ place: number[]; cancel: number[] }> {
+  // Динамический импорт — только если есть credentials
+  const { PolymarketRestClient } = await import('@polymarket/exchange/rest');
+  const { PolymarketOrderRestClient } = await import('@polymarket/exchange/rest');
+  const { PolymarketOrderBuilder } = await import('@polymarket/exchange/rest');
+
+  const restClient = new PolymarketRestClient({
+    baseUrl: REST_URL,
+    privateKey: PRIVATE_KEY!,
+    chainId: 137,
+    timeout: 15_000,
+    maxRetries: 1,
+    signatureType: process.env['FUNDER_ADDRESS'] ? 'POLY_PROXY' as 0 : 'EOA' as 0,
+    funderAddress: process.env['FUNDER_ADDRESS'],
+    l2Credentials: { apiKey: API_KEY!, apiSecret: API_SECRET!, apiPassphrase: API_PASSPHRASE! },
+  }, logger);
+
+  const orderBuilder = new PolymarketOrderBuilder(PRIVATE_KEY!, 137, process.env['FUNDER_ADDRESS']);
+  const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
+
+  const placeLat: number[] = [];
+  const cancelLat: number[] = [];
+
   for (let i = 0; i < rounds; i++) {
-    const start = performance.now();
     try {
-      const resp = await fetch(`${GAMMA_URL}/markets?limit=1`, { method: 'GET', signal: AbortSignal.timeout(10_000) });
-      await resp.text();
-      latencies.push(performance.now() - start);
-    } catch { /* skip */ }
+      // Place: BUY 1 token @ $0.01 (far from market, won't fill)
+      const start = performance.now();
+      const result = await orderClient.placeOrder({
+        tokenId,
+        side: 'BUY',
+        price: 0.01,
+        size: 1,
+      });
+      placeLat.push(performance.now() - start);
+
+      // Cancel immediately
+      if (result?.id) {
+        const cancelStart = performance.now();
+        await orderClient.cancelOrder(result.id);
+        cancelLat.push(performance.now() - cancelStart);
+      }
+    } catch (err) {
+      console.log(`    Order test #${i + 1} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  return latencies;
+
+  return { place: placeLat, cancel: cancelLat };
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // DNS Override (как в main.ts)
-  console.log('Installing DNS override...');
+  console.log(`\nConfig: ${configPath}`);
+  if (discoveryKeywords.length > 0) console.log(`Keywords: ${discoveryKeywords.join(', ')}`);
+  console.log(`Credentials: ${hasCredentials ? 'YES (order test enabled)' : 'NO (order test skipped)'}`);
+
+  // DNS Override
+  console.log('\nInstalling DNS override...');
   const dnsOverride = new DnsOverride(logger);
   try {
     await dnsOverride.install([
-      'gamma-api.polymarket.com',
-      'clob.polymarket.com',
-      'data-api.polymarket.com',
-      'ws-subscriptions-clob.polymarket.com',
-      'ws-live-data.polymarket.com',
+      'gamma-api.polymarket.com', 'clob.polymarket.com',
+      'data-api.polymarket.com', 'ws-subscriptions-clob.polymarket.com',
     ]);
-    console.log('DNS override installed\n');
+    console.log('DNS override installed');
   } catch (err) {
-    console.log(`DNS override failed (using system DNS): ${err instanceof Error ? err.message : String(err)}\n`);
+    console.log(`DNS override failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  console.log(`=== POLYMARKET LATENCY CHECK (${ROUNDS} rounds) ===\n`);
+  console.log(`\n=== POLYMARKET LATENCY CHECK (${ROUNDS} rounds) ===\n`);
 
-  // 1. WS Ping
-  console.log('WS Connection:');
-  try {
-    const ws = await measureWsPing(ROUNDS);
-    const pingStats = stats(ws.pings);
-    console.log(`  Connect time:     ${fmt(ws.connectMs)}`);
-    console.log(`  PING/PONG (${ws.pings.length}x):  ${fmtStats(pingStats)}`);
-  } catch (err) {
-    console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  // 2. REST API
-  console.log('\nREST API (clob.polymarket.com):');
+  // 1. REST API
+  console.log('REST API (clob.polymarket.com):');
   const restLatencies = await measureRestLatency(ROUNDS);
   if (restLatencies.length > 0) {
     console.log(`  GET /time (${restLatencies.length}x):  ${fmtStats(stats(restLatencies))}`);
@@ -249,81 +311,71 @@ async function main(): Promise<void> {
     console.log('  ERROR: no successful requests');
   }
 
-  // 3. Gamma API
-  console.log('\nGamma API (gamma-api.polymarket.com):');
-  const gammaLatencies = await measureGammaLatency(Math.min(ROUNDS, 5));
-  if (gammaLatencies.length > 0) {
-    console.log(`  GET /markets (${gammaLatencies.length}x): ${fmtStats(stats(gammaLatencies))}`);
-  } else {
-    console.log('  ERROR: no successful requests');
-  }
-
-  // 4. Auto-discover active token (Gamma API, фильтр по keywords из конфига)
-  console.log('\nMarket Data Staleness:');
-  let tokenId: string | null = null;
+  // 2. Gamma API + discovery
+  console.log('\nGamma API (market discovery):');
+  let token: DiscoveredToken | null = null;
+  const gammaStart = performance.now();
   try {
-    console.log('  Discovering active market...');
-    // Загружаем рынки с Gamma API (limit=100 чтобы найти BTC Up/Down среди топ-объёмов)
-    const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=100&order=volume&ascending=false`, {
-      signal: AbortSignal.timeout(15_000),
-    });
-    const markets = await resp.json() as Array<Record<string, unknown>>;
-
-    // Фильтруем по keywords из конфига (все слова должны быть в question)
-    const matchesKeywords = (question: string): boolean => {
-      if (discoveryKeywords.length === 0) return true;
-      const lower = question.toLowerCase();
-      return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
-    };
-
-    for (const m of markets) {
-      const question = (m['question'] as string) ?? '';
-      if (!matchesKeywords(question)) continue;
-
-      const raw = m['clobTokenIds'] as string | undefined;
-      if (raw) {
-        try {
-          const ids = JSON.parse(raw) as string[];
-          if (ids.length > 0 && ids[0]) {
-            tokenId = ids[0];
-            console.log(`  Found: ${question.slice(0, 60)} (token: ${tokenId.slice(0, 16)}...)`);
-            break;
-          }
-        } catch { /* not JSON array */ }
-      }
-    }
-    if (!tokenId) {
-      console.log(`  No market found matching keywords: [${discoveryKeywords.join(', ')}]`);
+    token = await discoverToken();
+    const gammaMs = performance.now() - gammaStart;
+    if (token) {
+      console.log(`  Discovery (${gammaMs.toFixed(0)}ms): ${token.question.slice(0, 55)}`);
+      console.log(`  Token: ${token.tokenId.slice(0, 20)}...`);
+    } else {
+      console.log(`  No market found (keywords: [${discoveryKeywords.join(', ')}])`);
     }
   } catch (err) {
-    console.log(`  Discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (tokenId) {
+  // 3. WS: connect + subscribe + staleness + ping
+  if (token) {
+    console.log('\nWebSocket:');
     try {
-      const stale = await measureStaleness(tokenId, Math.min(ROUNDS, 20));
-      if (stale.length > 0) {
-        console.log(`  Book updates (${stale.length}x): ${fmtStats(stats(stale))}`);
-      } else {
-        console.log('  No book events received (market may be inactive)');
+      const wsResult = await measureWs(token.tokenId, ROUNDS);
+      console.log(`  Connect:          ${fmt(wsResult.connectMs)}`);
+      console.log(`  Subscribe ack:    ${fmt(wsResult.subscribeMs)}`);
+      if (wsResult.staleness.length > 0) {
+        console.log(`  Staleness (${wsResult.staleness.length}x):  ${fmtStats(stats(wsResult.staleness))}`);
+      }
+      if (wsResult.pings.length > 0) {
+        console.log(`  PING/PONG (${wsResult.pings.length}x):  ${fmtStats(stats(wsResult.pings))}`);
       }
     } catch (err) {
       console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
     }
-  } else {
-    console.log('  SKIPPED (no active market found)');
+  }
+
+  // 4. Order placement test (if credentials present)
+  if (hasCredentials && token) {
+    console.log('\nOrder Lifecycle:');
+    const orderRounds = Math.min(ROUNDS, 3); // max 3 to avoid rate limits
+    try {
+      const orderResult = await measureOrderLatency(token.tokenId, orderRounds);
+      if (orderResult.place.length > 0) {
+        console.log(`  Place (${orderResult.place.length}x):   ${fmtStats(stats(orderResult.place))}`);
+      }
+      if (orderResult.cancel.length > 0) {
+        console.log(`  Cancel (${orderResult.cancel.length}x):  ${fmtStats(stats(orderResult.cancel))}`);
+      }
+      if (orderResult.place.length === 0) {
+        console.log('  No successful orders (check credentials/balance)');
+      }
+    } catch (err) {
+      console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // Verdict
-  const allLatencies = [...restLatencies, ...gammaLatencies];
+  const allLatencies = [...restLatencies];
   const overall = stats(allLatencies);
   console.log('\n---');
   if (overall.p95 < 100) {
     console.log(`VERDICT: GOOD (REST p95=${fmt(overall.p95)})`);
   } else if (overall.p95 < 300) {
-    console.log(`VERDICT: OK (REST p95=${fmt(overall.p95)}, may affect 5-min markets)`);
+    console.log(`VERDICT: OK (REST p95=${fmt(overall.p95)})`);
   } else {
-    console.log(`VERDICT: SLOW (REST p95=${fmt(overall.p95)}, consider closer server)`);
+    console.log(`VERDICT: SLOW (REST p95=${fmt(overall.p95)})`);
   }
   console.log('');
 
