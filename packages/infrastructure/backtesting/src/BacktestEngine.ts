@@ -328,6 +328,12 @@ export class BacktestEngine {
     let marketId: MarketId | undefined;
     let instrumentId: InstrumentId | undefined;
     let complementaryInstrumentId: InstrumentId | undefined;
+    /** eventStartMs из meta — для определения strike по первой Chainlink цене */
+    let fileEventStartMs: number | undefined;
+    /** rtdsFilter из meta — символ для strike detection */
+    let fileCryptoSymbol: string | undefined;
+    /** Был ли strike уже lockнут (из priceToBeat или market_resolved) */
+    let strikeLocked = false;
 
     for (const filePath of filePaths) {
       this._logger.debug('Processing snapshot file', { filePath });
@@ -372,8 +378,14 @@ export class BacktestEngine {
             if (this._deps.cryptoPriceStore && meta.m) {
               const cryptoMeta = this._deps.parseCryptoMeta?.(meta.m as Record<string, unknown>);
               if (cryptoMeta) {
+                fileCryptoSymbol = cryptoMeta.rtdsFilter;
+                // eventStartTime из rawMarket
+                const rawEvtStart = (meta.m as Record<string, unknown>)['eventStartTime'] as string | undefined;
+                if (rawEvtStart) fileEventStartMs = new Date(rawEvtStart).getTime();
+
                 if (cryptoMeta.priceToBeat !== undefined) {
                   this._deps.cryptoPriceStore.lockTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
+                  strikeLocked = true;
                   this._logger.info('Strike price locked from meta (priceToBeat)', {
                     symbol: cryptoMeta.rtdsFilter,
                     strikePrice: cryptoMeta.priceToBeat,
@@ -426,6 +438,19 @@ export class BacktestEngine {
               // Формат Chainlink: 'btc/usd', Binance: 'btcusdt'.
               if (symbol.includes('/')) {
                 this._deps.cryptoPriceStore.setResolutionPrice(symbol, price);
+
+                // Авто-strike: первая Chainlink цена после eventStartTime = strike
+                // (тот же подход что pendingChainlinkStrike в paper mode)
+                if (!strikeLocked && fileEventStartMs && fileCryptoSymbol === symbol && ts >= fileEventStartMs) {
+                  this._deps.cryptoPriceStore.lockTargetPrice(symbol, price);
+                  strikeLocked = true;
+                  this._logger.info('Strike price auto-locked from first Chainlink price after eventStart', {
+                    symbol,
+                    strikePrice: price,
+                    eventStartMs: fileEventStartMs,
+                    priceTs: ts,
+                  });
+                }
               }
 
               cryptoPriceEvents++;
@@ -441,6 +466,7 @@ export class BacktestEngine {
             if (symbol && typeof strikePrice === 'number' && typeof resolutionPrice === 'number') {
               this._deps.cryptoPriceStore.lockTargetPrice(symbol, strikePrice);
               this._deps.cryptoPriceStore.lockResolutionPrice(symbol, resolutionPrice);
+              strikeLocked = true;
               this._logger.info('Market resolved event replayed (locked)', {
                 symbol,
                 strikePrice,
