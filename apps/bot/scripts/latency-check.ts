@@ -105,30 +105,50 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
   });
 }
 
+// ── Auto-discovery активного токена через Gamma API ──────────────────────────
+
+async function discoverActiveToken(): Promise<string | null> {
+  try {
+    // Ищем активный BTC Up/Down рынок (самый ликвидный)
+    const url = 'https://gamma-api.polymarket.com/markets?closed=false&limit=5&order=volume&ascending=false';
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const markets = await resp.json() as Array<Record<string, unknown>>;
+
+    for (const m of markets) {
+      // Ищем рынок с clobTokenIds (массив tokenId)
+      const clobTokenIds = m['clobTokenIds'] as string | undefined;
+      if (clobTokenIds) {
+        try {
+          const ids = JSON.parse(clobTokenIds) as string[];
+          if (ids.length > 0 && ids[0]) return ids[0];
+        } catch { /* not JSON array */ }
+      }
+      // Fallback: tokens поле
+      const tokens = m['tokens'] as Array<Record<string, unknown>> | undefined;
+      if (tokens && tokens.length > 0 && tokens[0]!['token_id']) {
+        return tokens[0]!['token_id'] as string;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Market Data Staleness ────────────────────────────────────────────────────
 
-async function measureStaleness(rounds: number): Promise<number[]> {
+async function measureStaleness(tokenId: string, rounds: number): Promise<number[]> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(WS_URL);
     const staleness: number[] = [];
 
     ws.on('open', () => {
-      // Подписываемся на любой активный токен (нужен хотя бы один)
-      // Используем market channel — он отправляет book snapshots для подписанных токенов
-      // Для теста подписка не нужна — просто слушаем heartbeat и book updates
-      // Но без подписки не будет book events. Пропускаем этот тест если нет tokenId.
-      const tokenId = process.env['TEST_TOKEN_ID'];
-      if (!tokenId) {
-        ws.close();
-        resolve([]);
-        return;
-      }
       ws.send(JSON.stringify({ type: 'market', assets_ids: [tokenId] }));
     });
 
     ws.on('message', (data) => {
       const msg = data.toString();
-      if (msg === 'PONG' || msg.startsWith('[')) return; // skip pong and ack arrays
+      if (msg === 'PONG' || msg.startsWith('[')) return;
 
       try {
         const events: unknown[] = JSON.parse(msg);
@@ -139,7 +159,7 @@ async function measureStaleness(rounds: number): Promise<number[]> {
             const serverTs = Number(e['timestamp']);
             const localTs = Date.now();
             const diff = localTs - serverTs;
-            if (diff >= 0 && diff < 60_000) { // sanity: < 60s
+            if (diff >= 0 && diff < 60_000) {
               staleness.push(diff);
             }
           }
@@ -235,11 +255,13 @@ async function main(): Promise<void> {
     console.log('  ERROR: no successful requests');
   }
 
-  // 4. Market data staleness
-  if (process.env['TEST_TOKEN_ID']) {
-    console.log('\nMarket Data Staleness:');
+  // 4. Market data staleness (auto-discover active token)
+  console.log('\nMarket Data Staleness:');
+  const tokenId = process.env['TEST_TOKEN_ID'] ?? await discoverActiveToken();
+  if (tokenId) {
+    console.log(`  Token: ${tokenId.slice(0, 20)}...`);
     try {
-      const stale = await measureStaleness(Math.min(ROUNDS, 20));
+      const stale = await measureStaleness(tokenId, Math.min(ROUNDS, 20));
       if (stale.length > 0) {
         console.log(`  Book updates (${stale.length}x): ${fmtStats(stats(stale))}`);
       } else {
@@ -249,7 +271,7 @@ async function main(): Promise<void> {
       console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else {
-    console.log('\nMarket Data Staleness: SKIPPED (set TEST_TOKEN_ID env to enable)');
+    console.log('  SKIPPED (no active market found)');
   }
 
   // Verdict
