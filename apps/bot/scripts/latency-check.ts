@@ -3,21 +3,23 @@
  * Latency Check — диагностика задержек к Polymarket.
  *
  * @remarks
- * Измеряет:
- * - WS PING/PONG RTT (текстовый heartbeat)
- * - REST API RTT (GET запросы к CLOB API)
- * - Market data staleness (разница server timestamp vs local time)
+ * Использует DnsOverride (как main.ts), PolymarketMarketDataRestClient для discovery.
+ * Автоматически находит активный рынок и измеряет latency.
  *
  * @example
  * ```bash
+ * cd apps/bot
  * npx tsx scripts/latency-check.ts
- * npx tsx scripts/latency-check.ts --rounds 20
+ * npx tsx scripts/latency-check.ts --rounds=20
  * ```
  */
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { performance } from 'perf_hooks';
 import WebSocket from 'ws';
+import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
+import { LiveClock } from '@polymarket/time';
+import { DnsOverride } from '@polymarket/exchange/dns';
 
 // ── .env загрузка ────────────────────────────────────────────────────────────
 try {
@@ -35,7 +37,10 @@ try {
 
 const WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const REST_URL = 'https://clob.polymarket.com';
+const GAMMA_URL = 'https://gamma-api.polymarket.com';
 const ROUNDS = parseInt(process.argv.find(a => a.startsWith('--rounds='))?.split('=')[1] ?? '10');
+
+const logger = new ColorConsoleLogger(new LiveClock(), LogLevel.WARN);
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +78,6 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
 
     ws.on('open', () => {
       connectMs = performance.now() - connectStart;
-      // Начинаем пинги
       pingStart = performance.now();
       ws.send('PING');
     });
@@ -87,7 +91,6 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
           ws.close();
           resolve({ connectMs, pings });
         } else {
-          // Следующий ping без паузы
           pingStart = performance.now();
           ws.send('PING');
         }
@@ -95,44 +98,12 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
     });
 
     ws.on('error', (err) => reject(err));
-
-    // Таймаут
     setTimeout(() => {
       ws.close();
       if (pings.length > 0) resolve({ connectMs, pings });
       else reject(new Error('WS ping timeout'));
     }, 30_000);
   });
-}
-
-// ── Auto-discovery активного токена через Gamma API ──────────────────────────
-
-async function discoverActiveToken(): Promise<string | null> {
-  try {
-    // Ищем активный BTC Up/Down рынок (самый ликвидный)
-    const url = 'https://gamma-api.polymarket.com/markets?closed=false&limit=5&order=volume&ascending=false';
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    const markets = await resp.json() as Array<Record<string, unknown>>;
-
-    for (const m of markets) {
-      // Ищем рынок с clobTokenIds (массив tokenId)
-      const clobTokenIds = m['clobTokenIds'] as string | undefined;
-      if (clobTokenIds) {
-        try {
-          const ids = JSON.parse(clobTokenIds) as string[];
-          if (ids.length > 0 && ids[0]) return ids[0];
-        } catch { /* not JSON array */ }
-      }
-      // Fallback: tokens поле
-      const tokens = m['tokens'] as Array<Record<string, unknown>> | undefined;
-      if (tokens && tokens.length > 0 && tokens[0]!['token_id']) {
-        return tokens[0]!['token_id'] as string;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 // ── Market Data Staleness ────────────────────────────────────────────────────
@@ -184,36 +155,29 @@ async function measureRestLatency(rounds: number): Promise<number[]> {
   for (let i = 0; i < rounds; i++) {
     const start = performance.now();
     try {
-      // Lightweight endpoint — server time
       const resp = await fetch(`${REST_URL}/time`, { method: 'GET', signal: AbortSignal.timeout(10_000) });
       await resp.text();
       latencies.push(performance.now() - start);
     } catch {
-      // Fallback: try root
       try {
         const start2 = performance.now();
         const resp = await fetch(REST_URL, { method: 'GET', signal: AbortSignal.timeout(10_000) });
         await resp.text();
         latencies.push(performance.now() - start2);
-      } catch {
-        // Network error — skip
-      }
+      } catch { /* skip */ }
     }
   }
   return latencies;
 }
 
-// ── Gamma API RTT (market discovery) ─────────────────────────────────────────
+// ── Gamma API RTT ────────────────────────────────────────────────────────────
 
 async function measureGammaLatency(rounds: number): Promise<number[]> {
   const latencies: number[] = [];
   for (let i = 0; i < rounds; i++) {
     const start = performance.now();
     try {
-      const resp = await fetch('https://gamma-api.polymarket.com/markets?limit=1', {
-        method: 'GET',
-        signal: AbortSignal.timeout(10_000),
-      });
+      const resp = await fetch(`${GAMMA_URL}/markets?limit=1`, { method: 'GET', signal: AbortSignal.timeout(10_000) });
       await resp.text();
       latencies.push(performance.now() - start);
     } catch { /* skip */ }
@@ -224,7 +188,23 @@ async function measureGammaLatency(rounds: number): Promise<number[]> {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log(`\n=== POLYMARKET LATENCY CHECK (${ROUNDS} rounds) ===\n`);
+  // DNS Override (как в main.ts)
+  console.log('Installing DNS override...');
+  const dnsOverride = new DnsOverride(logger);
+  try {
+    await dnsOverride.install([
+      'gamma-api.polymarket.com',
+      'clob.polymarket.com',
+      'data-api.polymarket.com',
+      'ws-subscriptions-clob.polymarket.com',
+      'ws-live-data.polymarket.com',
+    ]);
+    console.log('DNS override installed\n');
+  } catch (err) {
+    console.log(`DNS override failed (using system DNS): ${err instanceof Error ? err.message : String(err)}\n`);
+  }
+
+  console.log(`=== POLYMARKET LATENCY CHECK (${ROUNDS} rounds) ===\n`);
 
   // 1. WS Ping
   console.log('WS Connection:');
@@ -255,11 +235,34 @@ async function main(): Promise<void> {
     console.log('  ERROR: no successful requests');
   }
 
-  // 4. Market data staleness (auto-discover active token)
+  // 4. Auto-discover active token (один запрос к Gamma API, limit=5)
   console.log('\nMarket Data Staleness:');
-  const tokenId = process.env['TEST_TOKEN_ID'] ?? await discoverActiveToken();
+  let tokenId: string | null = null;
+  try {
+    console.log('  Discovering active market...');
+    const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=5&order=volume&ascending=false`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const markets = await resp.json() as Array<Record<string, unknown>>;
+    for (const m of markets) {
+      const raw = m['clobTokenIds'] as string | undefined;
+      if (raw) {
+        try {
+          const ids = JSON.parse(raw) as string[];
+          if (ids.length > 0 && ids[0]) {
+            tokenId = ids[0];
+            const question = (m['question'] as string ?? '?').slice(0, 50);
+            console.log(`  Found: ${question} (token: ${tokenId.slice(0, 16)}...)`);
+            break;
+          }
+        } catch { /* not JSON array */ }
+      }
+    }
+  } catch (err) {
+    console.log(`  Discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   if (tokenId) {
-    console.log(`  Token: ${tokenId.slice(0, 20)}...`);
     try {
       const stale = await measureStaleness(tokenId, Math.min(ROUNDS, 20));
       if (stale.length > 0) {
@@ -286,6 +289,8 @@ async function main(): Promise<void> {
     console.log(`VERDICT: SLOW (REST p95=${fmt(overall.p95)}, consider closer server)`);
   }
   console.log('');
+
+  dnsOverride.uninstall();
 }
 
 main().catch(console.error);
