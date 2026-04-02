@@ -80,10 +80,13 @@ export interface RecordingInfra {
   openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void;
 
   /**
-   * Подключает journal к EventBus для записи fill событий.
+   * Подключает journal к EventBus для записи order/fill событий.
    * Вызвать ОДИН раз при старте.
+   *
+   * @param eventBus - Шина событий
+   * @param assetToTokenId - Конвертер AssetId → tokenId string (для роутинга в journal)
    */
-  wireToEventBus(eventBus: IEventBus): void;
+  wireToEventBus(eventBus: IEventBus, assetToTokenId?: (asset: unknown) => string | undefined): void;
 
   /**
    * Записывает market_resolved event в snapshot (strike + resolution price).
@@ -178,11 +181,12 @@ export function buildRecording(
       log.debug('RTDS recording wired (crypto_price)');
     },
 
-    wireToEventBus(eventBus: IEventBus): void {
+    wireToEventBus(eventBus: IEventBus, assetToTokenId?: (asset: unknown) => string | undefined): void {
       // Маппинг orderId → tokenId для роутинга fills в journal
       const orderToToken = new Map<string, string>();
       eventBus.subscribe('ORDER_CREATED', (event) => {
-        const tokenId = String(event.asset ?? '');
+        // AssetId → tokenId: используем конвертер если передан, иначе String
+        const tokenId = assetToTokenId?.(event.asset) ?? String(event.asset ?? '');
         const orderId = String(event.orderId);
         if (tokenId) orderToToken.set(orderId, tokenId);
         // Записываем размещение ордера в journal (время placement для latency)
