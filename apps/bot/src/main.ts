@@ -297,6 +297,8 @@ async function runPaper(): Promise<void> {
   // Chainlink strike price fallback:
   // Map: rtdsFilter → eventStartTimeMs. Первая Chainlink цена с ts >= eventStartTime = strike.
   const pendingChainlinkStrike = new Map<string, number>(); // symbol → eventStartTimeMs
+  /** Трекинг RTDS подписок paper mode для deferred cleanup */
+  const paperRtdsSubscribed = new Set<string>();
   let lastCryptoPriceLogMs = 0;
   const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
   // Recording: подключаем запись крипто-цен из RTDS
@@ -902,6 +904,7 @@ async function runPaper(): Promise<void> {
       }
       for (const sub of slotCryptoMeta.rtdsSubscriptions) {
         rtdsClient.subscribe(sub.topic, sub.filter);
+        paperRtdsSubscribed.add(sub.filter);
       }
     }
 
@@ -1320,6 +1323,24 @@ async function runPaper(): Promise<void> {
           await warmNextArbPair();
         } else {
           await fillMarketSlots();
+
+          // Deferred RTDS cleanup (paper) — тот же принцип что в live mode
+          const neededFiltersPaper = new Set<string>();
+          for (const slot of activeMarkets.values()) {
+            if (slot.cryptoMeta) {
+              for (const sub of slot.cryptoMeta.rtdsSubscriptions) {
+                neededFiltersPaper.add(sub.filter);
+              }
+            }
+          }
+          for (const filter of paperRtdsSubscribed) {
+            if (!neededFiltersPaper.has(filter)) {
+              rtdsClient.unsubscribe('crypto_prices_chainlink', filter);
+              rtdsClient.unsubscribe('crypto_prices', filter);
+              paperRtdsSubscribed.delete(filter);
+              logger.debug('RTDS deferred unsubscribe (paper)', { filter });
+            }
+          }
         }
       }
 
@@ -3855,10 +3876,10 @@ async function runLive(): Promise<void> {
   const livePendingChainlinkStrike = new Map<string, number>();
 
   /**
-   * Ref-counting RTDS подписок: symbol → количество активных рынков использующих этот символ.
-   * Отписываемся от RTDS только когда счётчик падает до 0.
+   * Трекинг RTDS подписок: filter → true (символы на которые мы подписаны).
+   * Deferred cleanup после fillMarketSlots отписывает символы которые больше не нужны.
    */
-  const liveRtdsRefCount = new Map<string, number>();
+  const liveRtdsSubscribed = new Set<string>();
   let liveLastCryptoPriceLogMs = 0;
   const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
   // Recording: подключаем запись крипто-цен из RTDS
@@ -4072,7 +4093,7 @@ async function runLive(): Promise<void> {
       }
       for (const sub of liveInitialCryptoMeta.rtdsSubscriptions) {
         liveRtdsClient.subscribe(sub.topic, sub.filter);
-        liveRtdsRefCount.set(sub.filter, (liveRtdsRefCount.get(sub.filter) ?? 0) + 1);
+        liveRtdsSubscribed.add(sub.filter);
       }
     }
 
@@ -4458,7 +4479,7 @@ async function runLive(): Promise<void> {
       }
       for (const sub of liveSlotCryptoMeta.rtdsSubscriptions) {
         liveRtdsClient.subscribe(sub.topic, sub.filter);
-        liveRtdsRefCount.set(sub.filter, (liveRtdsRefCount.get(sub.filter) ?? 0) + 1);
+        liveRtdsSubscribed.add(sub.filter);
       }
     }
 
@@ -4757,7 +4778,7 @@ async function runLive(): Promise<void> {
         await fillMarketSlots();
 
         // Deferred RTDS cleanup: отписать символы которые больше не нужны.
-        // Собираем set нужных filter из активных рынков.
+        // Собираем set нужных filter из всех активных рынков.
         const neededFilters = new Set<string>();
         for (const slot of activeMarkets.values()) {
           if (slot.cryptoMeta) {
@@ -4766,12 +4787,12 @@ async function runLive(): Promise<void> {
             }
           }
         }
-        // Отписываем ненужные
-        for (const [filter] of liveRtdsRefCount) {
+        // Отписываем символы на которые подписаны но которые больше не нужны
+        for (const filter of liveRtdsSubscribed) {
           if (!neededFilters.has(filter)) {
             liveRtdsClient.unsubscribe('crypto_prices_chainlink', filter);
             liveRtdsClient.unsubscribe('crypto_prices', filter);
-            liveRtdsRefCount.delete(filter);
+            liveRtdsSubscribed.delete(filter);
             logger.debug('RTDS deferred unsubscribe (symbol no longer needed)', { filter });
           }
         }
