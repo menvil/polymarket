@@ -117,7 +117,10 @@ async function discoverToken(): Promise<DiscoveredToken | null> {
 
   await discoveryAdapter.refresh();
   const candidates = await discoveryAdapter.findCandidates();
-  const valid = candidates.filter(c => c.expiresAt.toNumber() > Date.now());
+  // Берём только рынки которые истекают минимум через 2 минуты (чтобы были book updates и ордера)
+  const minExpiryMs = Date.now() + 2 * 60 * 1000;
+  const valid = candidates.filter(c => c.expiresAt.toNumber() > minExpiryMs);
+  console.log(`  Candidates: ${candidates.length} total, ${valid.length} expiring in >2min`);
 
   if (valid.length === 0) return null;
 
@@ -284,6 +287,7 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
         price: 0.01,
         size: 1,
         nonce: 0,
+        feeRateBps: 1000,
       });
       placeLat.push(performance.now() - start);
 
