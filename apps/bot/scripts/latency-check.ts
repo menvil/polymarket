@@ -163,11 +163,6 @@ async function measureWs(tokenId: string, rounds: number): Promise<WsResult> {
     ws.on('message', (data) => {
       const msg = data.toString().trim();
 
-      // Логируем первые несколько сообщений для отладки
-      if (staleness.length === 0 && pings.length === 0) {
-        console.log(`    WS msg [${phase}]: ${msg.slice(0, 120)}${msg.length > 120 ? '...' : ''}`);
-      }
-
       // Subscription ack (массив с подтверждением)
       if (!subscribed && (msg.startsWith('[') || msg === 'OK')) {
         subscribeMs = performance.now() - subscribeStart;
@@ -192,18 +187,30 @@ async function measureWs(tokenId: string, rounds: number): Promise<WsResult> {
         return;
       }
 
-      // Book events — measure staleness
+      // Market events — measure staleness (price_changes, book, или любое с timestamp)
       if (phase === 'staleness') {
         try {
-          const events = JSON.parse(msg);
-          if (!Array.isArray(events)) return;
-          for (const evt of events as Record<string, unknown>[]) {
-            if (evt['event_type'] === 'book' && evt['timestamp']) {
-              const diff = Date.now() - Number(evt['timestamp']);
-              if (diff >= 0 && diff < 60_000) staleness.push(diff);
+          const parsed = JSON.parse(msg);
+          // Извлекаем timestamp из любого формата
+          let ts: number | null = null;
+          if (Array.isArray(parsed)) {
+            // Массив событий: [{ event_type: 'book', timestamp: ... }]
+            for (const evt of parsed as Record<string, unknown>[]) {
+              if (evt['timestamp']) { ts = Number(evt['timestamp']); break; }
             }
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            // Единичный объект: { market, price_changes, timestamp } или { market, asset_id, ... }
+            const obj = parsed as Record<string, unknown>;
+            if (obj['timestamp']) ts = Number(obj['timestamp']);
+            // price_changes содержат timestamp внутри
+            const changes = obj['price_changes'] as Array<Record<string, unknown>> | undefined;
+            if (!ts && changes?.[0]?.['timestamp']) ts = Number(changes[0]!['timestamp']);
           }
-        } catch { /* skip */ }
+          if (ts && ts > 1_000_000_000_000) { // sanity: must be epoch ms
+            const diff = Date.now() - ts;
+            if (diff >= 0 && diff < 60_000) staleness.push(diff);
+          }
+        } catch { /* skip non-JSON */ }
 
         // После получения достаточно staleness readings — переходим к пингам
         if (staleness.length >= rounds) {
