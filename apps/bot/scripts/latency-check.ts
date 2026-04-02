@@ -103,30 +103,44 @@ async function discoverToken(): Promise<DiscoveredToken | null> {
     return null;
   };
 
-  // Попытка 1: по keywords + ближайший endDate
+  // Фильтр: endDate должен быть в ближайшие 24 часа (реально активный рынок на CLOB)
+  const now = Date.now();
+  const maxEndDate = now + 24 * 60 * 60 * 1000; // +24h
+
+  const isLive = (m: Record<string, unknown>): boolean => {
+    const endDate = m['endDate'] as string | undefined;
+    if (!endDate) return false;
+    const endMs = new Date(endDate).getTime();
+    return endMs > now && endMs < maxEndDate;
+  };
+
+  // Попытка 1: по keywords + endDate в ближайшие 24h
   if (discoveryKeywords.length > 0) {
     console.log(`  Searching by keywords: [${discoveryKeywords.join(', ')}]`);
-    const resp = await fetch(
-      `${GAMMA_URL}/markets?closed=false&limit=200&order=endDate&ascending=true`,
-      { signal: AbortSignal.timeout(15_000) },
-    );
-    const markets = await resp.json() as Array<Record<string, unknown>>;
-    for (const m of markets) {
-      const question = (m['question'] as string) ?? '';
-      if (!matchesKeywords(question)) continue;
-      const tokenId = extractToken(m);
-      if (tokenId) return { tokenId, question };
-    }
-    console.log('  No keyword match, falling back to top volume...');
   }
 
-  // Попытка 2 (fallback): топ по объёму — гарантированно есть ордера
-  const resp2 = await fetch(
-    `${GAMMA_URL}/markets?closed=false&limit=10&order=volume&ascending=false`,
+  const resp = await fetch(
+    `${GAMMA_URL}/markets?closed=false&limit=500&order=endDate&ascending=true`,
     { signal: AbortSignal.timeout(15_000) },
   );
-  const markets2 = await resp2.json() as Array<Record<string, unknown>>;
-  for (const m of markets2) {
+  const markets = await resp.json() as Array<Record<string, unknown>>;
+
+  // Сначала ищем по keywords
+  for (const m of markets) {
+    if (!isLive(m)) continue;
+    const question = (m['question'] as string) ?? '';
+    if (!matchesKeywords(question)) continue;
+    const tokenId = extractToken(m);
+    if (tokenId) return { tokenId, question };
+  }
+
+  if (discoveryKeywords.length > 0) {
+    console.log('  No keyword match in live markets, trying any live market...');
+  }
+
+  // Fallback: любой живой рынок (endDate в ближайшие 24h)
+  for (const m of markets) {
+    if (!isLive(m)) continue;
     const tokenId = extractToken(m);
     if (tokenId) return { tokenId, question: (m['question'] as string) ?? '?' };
   }
