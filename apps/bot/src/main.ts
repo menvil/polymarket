@@ -302,6 +302,23 @@ async function runPaper(): Promise<void> {
   rtdsClient.onPrice((symbol, price, ts) => {
     cryptoPriceStore.updatePrice(symbol, price, ts);
 
+    // Recording: записываем crypto_price во все активные snapshot файлы
+    if (recording) {
+      const cryptoEvent = {
+        t: 'crypto_price' as const,
+        symbol,
+        price,
+        ts,
+        source: symbol.includes('/') ? 'chainlink' : 'binance',
+      };
+      // Записываем в каждый активный рынок с этим символом
+      for (const slot of activeMarkets.values()) {
+        if (slot.cryptoMeta?.rtdsFilter === symbol) {
+          recording.dataRecorder.recordEvent(slot.tokenIdStr, cryptoEvent);
+        }
+      }
+    }
+
     // Периодический лог крипто-цен (раз в 30с) — символ активного рынка или арб-пары
     if (symbol.includes('/')) {
       const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol)
@@ -674,6 +691,11 @@ async function runPaper(): Promise<void> {
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based fills в PaperFillSimulator)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   wsAdapter.onTradeEvent(async (dto) => {
+    // Recording: записываем trade event в snapshot файл (для replay)
+    recording?.dataRecorder.recordEvent(dto.asset_id, {
+      ...dto,
+      event_type: 'last_trade_price',
+    });
     if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
@@ -3842,6 +3864,22 @@ async function runLive(): Promise<void> {
   liveRtdsClient.onPrice((symbol, price, ts) => {
     liveCryptoPriceStore.updatePrice(symbol, price, ts);
 
+    // Recording: записываем crypto_price во все активные snapshot файлы
+    if (recording) {
+      const cryptoEvent = {
+        t: 'crypto_price' as const,
+        symbol,
+        price,
+        ts,
+        source: symbol.includes('/') ? 'chainlink' : 'binance',
+      };
+      for (const slot of activeMarkets.values()) {
+        if (slot.cryptoMeta?.rtdsFilter === symbol) {
+          recording.dataRecorder.recordEvent(slot.tokenIdStr, cryptoEvent);
+        }
+      }
+    }
+
     // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
     if (symbol.includes('/')) {
       const isActiveSymbol = Array.from(activeMarkets.values()).some(s => s.cryptoMeta?.rtdsFilter === symbol);
@@ -4163,6 +4201,11 @@ async function runLive(): Promise<void> {
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based аналитики)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   marketWsAdapter.onTradeEvent(async (dto) => {
+    // Recording: записываем trade event в snapshot файл
+    recording?.dataRecorder.recordEvent(dto.asset_id, {
+      ...dto,
+      event_type: 'last_trade_price',
+    });
     if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
