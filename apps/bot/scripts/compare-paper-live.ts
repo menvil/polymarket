@@ -28,9 +28,11 @@ interface MarketSummary {
   fillPrice: string | null;
   fillTs: number | null;
   fillLatencyMs: number | null;
+  fillSize: string | null;
   slippage: number | null; // fill price - order price (cents)
   resolution: string;
-  pnl: string;
+  cashCredit: string;      // gross settlement credit
+  realPnl: number;         // net PnL = cashCredit - cost
   diagnosticCount: number;
 }
 
@@ -45,9 +47,10 @@ function parseJournalFile(filePath: string): MarketSummary {
   let orderPrice: string | null = null;
   let orderTs: number | null = null;
   let fillPrice: string | null = null;
+  let fillSize: string | null = null;
   let fillTs: number | null = null;
   let resolution = 'UNKNOWN';
-  let pnl = '0';
+  let cashCredit = '0';
   let diagnosticCount = 0;
 
   for (const line of lines) {
@@ -72,11 +75,12 @@ function parseJournalFile(filePath: string): MarketSummary {
           break;
         case 'fill':
           fillPrice = r['price'] as string;
+          fillSize = r['size'] as string;
           fillTs = r['ts'] as number;
           break;
         case 'resolution':
           resolution = r['resolution'] as string;
-          pnl = r['pnl'] as string;
+          cashCredit = r['pnl'] as string; // this is actually cashCredit, not net PnL
           break;
       }
     } catch { /* skip */ }
@@ -87,7 +91,13 @@ function parseJournalFile(filePath: string): MarketSummary {
     ? Math.round((parseFloat(fillPrice) - parseFloat(orderPrice)) * 10000) / 100
     : null;
 
-  return { question, decision, orderPrice, orderTs, fillPrice, fillTs, fillLatencyMs, slippage, resolution, pnl, diagnosticCount };
+  // Real PnL = settlement cash credit - entry cost
+  // cost = fillPrice × fillSize
+  const cost = (fillPrice && fillSize) ? parseFloat(fillPrice) * parseFloat(fillSize) : 0;
+  const credit = parseFloat(cashCredit) || 0;
+  const realPnl = fillPrice ? credit - cost : 0;
+
+  return { question, decision, orderPrice, orderTs, fillPrice, fillSize, fillTs, fillLatencyMs, slippage, resolution, cashCredit, realPnl, diagnosticCount };
 }
 
 // ── Matching ─────────────────────────────────────────────────────────────────
@@ -155,8 +165,8 @@ function main(): void {
 
     if (p && !l) {
       paperOnlyCount++;
-      console.log(`  ${key}: PAPER_ONLY ${p.decision} → ${p.resolution} pnl=${p.pnl}`);
-      paperTotalPnl += parseFloat(p.pnl) || 0;
+      console.log(`  ${key}: PAPER_ONLY ${p.decision} → ${p.resolution} pnl=${p.realPnl.toFixed(2)}`);
+      paperTotalPnl += p.realPnl;
       if (p.decision !== 'NO_ENTRY') paperEntries++;
       if (p.fillPrice) paperFills++;
       continue;
@@ -164,8 +174,8 @@ function main(): void {
 
     if (!p && l) {
       liveOnlyCount++;
-      console.log(`  ${key}: LIVE_ONLY ${l.decision} → ${l.resolution} pnl=${l.pnl}`);
-      liveTotalPnl += parseFloat(l.pnl) || 0;
+      console.log(`  ${key}: LIVE_ONLY ${l.decision} → ${l.resolution} pnl=${l.realPnl.toFixed(2)}`);
+      liveTotalPnl += l.realPnl;
       if (l.decision !== 'NO_ENTRY') liveEntries++;
       if (l.fillPrice) liveFills++;
       continue;
@@ -174,8 +184,8 @@ function main(): void {
     // Both exist
     const pp = p!;
     const ll = l!;
-    paperTotalPnl += parseFloat(pp.pnl) || 0;
-    liveTotalPnl += parseFloat(ll.pnl) || 0;
+    paperTotalPnl += pp.realPnl;
+    liveTotalPnl += ll.realPnl;
     if (pp.decision !== 'NO_ENTRY') paperEntries++;
     if (ll.decision !== 'NO_ENTRY') liveEntries++;
     if (pp.fillPrice) paperFills++;
@@ -190,9 +200,9 @@ function main(): void {
       continue;
     }
 
-    const pPnl = (parseFloat(pp.pnl) || 0).toFixed(2);
-    const lPnl = (parseFloat(ll.pnl) || 0).toFixed(2);
-    const pnlDiff = ((parseFloat(ll.pnl) || 0) - (parseFloat(pp.pnl) || 0)).toFixed(2);
+    const pPnl = pp.realPnl.toFixed(2);
+    const lPnl = ll.realPnl.toFixed(2);
+    const pnlDiff = (ll.realPnl - pp.realPnl).toFixed(2);
 
     if (decisionMatch) {
       matchCount++;
