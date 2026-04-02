@@ -1112,8 +1112,21 @@ async function runPaper(): Promise<void> {
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
-    // Recording: resolution + финализация
+    // Recording: market_resolved event + journal resolution + финализация
     if (recording) {
+      // market_resolved в snapshot (для бектеста: strike + resolution price)
+      if (reason === 'EXPIRED' && slot.cryptoMeta) {
+        const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
+        if (cryptoSnap?.targetPrice && cryptoSnap?.currentPrice) {
+          recording.recordResolved(
+            slot.tokenIdStr,
+            slot.cryptoMeta.rtdsFilter,
+            cryptoSnap.targetPrice,
+            cryptoSnap.currentPrice,
+            settlementResult?.resolution ?? 'UNKNOWN',
+          );
+        }
+      }
       if (settlementResult) {
         recording.journal.recordResolution({
           marketId: String(slot.marketId), ts: Date.now(),
@@ -4575,8 +4588,20 @@ async function runLive(): Promise<void> {
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
-    // Recording: resolution + финализация
+    // Recording: market_resolved event + journal resolution + финализация
     if (recording) {
+      if (reason === 'EXPIRED' && slot.cryptoMeta) {
+        const liveCryptoSnap = liveCryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
+        if (liveCryptoSnap?.targetPrice && liveCryptoSnap?.currentPrice) {
+          recording.recordResolved(
+            slot.tokenIdStr,
+            slot.cryptoMeta.rtdsFilter,
+            liveCryptoSnap.targetPrice,
+            liveCryptoSnap.currentPrice,
+            settlementResult?.resolution ?? 'UNKNOWN',
+          );
+        }
+      }
       if (settlementResult) {
         recording.journal.recordResolution({
           marketId: String(slot.marketId), ts: Date.now(),

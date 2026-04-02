@@ -79,6 +79,12 @@ export interface RecordingInfra {
   openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void;
 
   /**
+   * Записывает market_resolved event в snapshot (strike + resolution price).
+   * Вызывать при settlement перед closeMarket.
+   */
+  recordResolved(tokenId: string, symbol: string, strikePrice: number, resolutionPrice: number, outcome: string): void;
+
+  /**
    * Финализирует рынок (flush + compress + journal endSession).
    * Вызывать при закрытии/истечении рынка.
    */
@@ -193,6 +199,17 @@ export function buildRecording(
         instrumentId: String(candidate.instrumentId),
         expiresAtMs: candidate.expiresAt.toNumber(),
         eventStartMs: cryptoMeta?.eventStartTimeMs,
+      });
+    },
+
+    recordResolved(tokenId: string, symbol: string, strikePrice: number, resolutionPrice: number, outcome: string): void {
+      dataRecorder.recordEvent(tokenId, {
+        t: 'market_resolved',
+        symbol,
+        strikePrice,
+        resolutionPrice,
+        outcome,
+        ts: Date.now(),
       });
     },
 
