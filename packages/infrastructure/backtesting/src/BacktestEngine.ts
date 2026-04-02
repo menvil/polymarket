@@ -452,7 +452,8 @@ export class BacktestEngine {
           }
 
           // ── Определяем тип события ──────────────────────────────────────
-          const eventType = raw['event_type'] as string | undefined;
+          // Поддерживаем оба формата: collect-data ('event_type') и raw WS ('type')
+          const eventType = (raw['event_type'] ?? raw['type']) as string | undefined;
 
           if (eventType === 'book' || eventType === 'last_trade_price') {
             // Формат collect-data
