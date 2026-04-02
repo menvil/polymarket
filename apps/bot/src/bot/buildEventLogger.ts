@@ -67,6 +67,11 @@ export interface EventLoggerOptions {
    * Если не задан — баланс в логах не выводится.
    */
   readonly getPortfolioSnapshot?: () => PortfolioSnapshot | undefined;
+  /**
+   * Колбэк для определения типа токена: 'UP', 'DOWN' или undefined.
+   * Получает tokenId строку из event.asset.
+   */
+  readonly getTokenLabel?: (asset: unknown) => string | undefined;
 }
 
 /**
@@ -112,8 +117,10 @@ export function subscribeToOrderEvents(
 
   const unsubCreated = eventBus.subscribe('ORDER_CREATED', (event) => {
     const snap = options.getPortfolioSnapshot?.();
+    const tokenLabel = options.getTokenLabel?.(event.asset);
     logger.info('>>> Order placed', {
       side: event.side,
+      ...(tokenLabel && { token: tokenLabel }),
       size: event.size.value().toFixed(2),
       price: event.price.value().toFixed(4),
       notional: event.price.value().times(event.size.value()).toFixed(2),

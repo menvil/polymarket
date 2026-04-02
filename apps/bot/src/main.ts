@@ -68,6 +68,9 @@ import {
 import { buildPaperInfra, buildPaperSimulator } from './bot/buildPaperMode.js';
 import { buildLiveInfra } from './bot/buildLiveInfra.js';
 import type { LiveCredentials } from './bot/buildLiveInfra.js';
+import { buildRecording } from './bot/buildRecording.js';
+import { PolymarketRedeemer } from './bot/PolymarketRedeemer.js';
+import { AutoRedeemer } from './bot/AutoRedeemer.js';
 import { buildMarketData } from './bot/buildMarketData.js';
 import { buildStrategyEngine } from './bot/buildStrategyEngine.js';
 import { readSnapshotMeta } from './bot/readSnapshotMeta.js';
@@ -76,6 +79,7 @@ import { FillOrchestrator } from '@polymarket/orchestrators';
 import { SimplePosition } from '@polymarket/use-cases';
 import { createStrategy } from './strategyFactory.js';
 import type { StrategyConfig } from './strategyFactory.js';
+import { selectStrategyForMarket } from './strategyRouter.js';
 import type { IStrategy } from '@polymarket/strategy';
 import type { RiskParams } from '@polymarket/risk';
 import type { InstrumentInfo } from '@polymarket/ports';
@@ -211,6 +215,9 @@ async function runPaper(): Promise<void> {
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
   const { clock, logger, eventBus } = infra;
 
+  // ── Recording (опциональная запись рыночных данных и журнала решений) ──────
+  const recording = buildRecording(config.recording, logger);
+
   // ── Типы для мульти-маркетных слотов (paper) ──────────────────────────────
 
   interface PaperFillRecord {
@@ -263,6 +270,8 @@ async function runPaper(): Promise<void> {
 
   /** Активные рыночные слоты: key = tokenIdStr */
   const activeMarkets = new Map<string, PaperMarketSlot>();
+  /** ID комплементарных токенов, чьи трейды тоже должны проходить через trade bridge */
+  const activeCompTokens = new Set<string>();
   /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
   const orderToSlot = new Map<string, string>();
   /** Счётчик для уникальных strategy ID */
@@ -441,9 +450,17 @@ async function runPaper(): Promise<void> {
       logger.fatal('Cannot derive instrumentId', { tokenIdStr: tStr });
       process.exit(1);
     }
+    const fixedSelection = selectStrategyForMarket(config, {
+      expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+    });
+    if (!fixedSelection) {
+      logger.fatal('No strategy rule matches fixed market');
+      process.exit(1);
+    }
     const fixedStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      { type: fixedSelection.strategy, id: `${fixedSelection.strategy}-slot-${_slotCounter++}`, params: fixedSelection.strategyParams } as StrategyConfig,
       logger,
+      recording?.journal,
     );
     activeMarkets.set(tStr, {
       instrumentId: iId,
@@ -507,12 +524,30 @@ async function runPaper(): Promise<void> {
         logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
         process.exit(1);
       }
-      const discoveryStrategy = createStrategy(
-        { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-        logger,
-      );
       const expiresMs = candidate.expiresAt.toNumber();
       const initialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+      const initSelection = selectStrategyForMarket(config, {
+        eventStartMs: initialCryptoMeta?.eventStartTimeMs,
+        expiresAtMs: expiresMs,
+        question: candidate.question,
+      });
+      if (!initSelection) {
+        logger.warn('No strategy rule matches initial market, will wait for rotation', {
+          question: candidate.question,
+          durationMin: initialCryptoMeta
+            ? ((initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
+            : 'unknown',
+        });
+      }
+      const discoveryStrategy = initSelection
+        ? createStrategy(
+            { type: initSelection.strategy, id: `${initSelection.strategy}-slot-${_slotCounter++}`, params: initSelection.strategyParams } as StrategyConfig,
+            logger,
+          )
+        : createStrategy(
+            { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+            logger,
+          );
       activeMarkets.set(tStr, {
         instrumentId: iId,
         marketId: candidate.marketId,
@@ -581,7 +616,8 @@ async function runPaper(): Promise<void> {
   const placeholderAsset = firstSlot?.asset ?? asPolymarketCtfToken('1')!;
 
   logger.info('Bot starting in paper mode', {
-    strategy: config.strategy,
+    strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
+    ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     marketId: firstSlot ? String(firstSlot.marketId) : '(arb: deferred)',
     maxConcurrentMarkets,
     initialBalance: config.resources.initialBalance,
@@ -633,12 +669,12 @@ async function runPaper(): Promise<void> {
   const wsAdapter = new PolymarketWsAdapter(wsManager, logger);
 
   // MarketDataFeedAdapter — маршрутизирует orderbook snapshots → BookUpdateHandler → BOOK_UPDATED
-  const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger);
+  const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger, recording?.dataRecorder);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based fills в PaperFillSimulator)
-  // Фильтруем только трейды по активным рынкам
+  // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   wsAdapter.onTradeEvent(async (dto) => {
-    if (!activeMarkets.has(dto.asset_id)) return;
+    if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
     const tsResult = TimestampService.create(Number(dto.timestamp));
@@ -681,7 +717,14 @@ async function runPaper(): Promise<void> {
   async function registerMarketAndStrategy(slot: PaperMarketSlot): Promise<boolean> {
     // Подписка на WS комплементарного токена (для dual-token стратегий)
     if (slot.complementaryInstrumentId) {
-      await wsAdapter.subscribeToToken(String(slot.complementaryInstrumentId));
+      const compTokenStr = String(slot.complementaryInstrumentId);
+      await wsAdapter.subscribeToToken(compTokenStr);
+      activeCompTokens.add(compTokenStr);
+      logger.info('Complementary token registered for trade bridge', {
+        compTokenId: compTokenStr,
+        primaryTokenId: String(slot.instrumentId),
+        activeCompTokens: activeCompTokens.size,
+      });
     }
     const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
@@ -708,6 +751,31 @@ async function runPaper(): Promise<void> {
         minOrderValue: Quantity.of(new Decimal('1')),
         active: true,
         expiresAt: expiresAtResult.value,
+      });
+    }
+
+    // Recording: регистрируем рынок в DataRecorder и журнале решений
+    if (recording) {
+      const tokenIds = slot.complementaryInstrumentId
+        ? [String(slot.instrumentId), String(slot.complementaryInstrumentId)]
+        : [String(slot.instrumentId)];
+      const question = slot.candidate?.question ?? String(slot.marketId);
+      recording.dataRecorder.registerMarket({
+        marketId: slot.marketId,
+        question,
+        tokenIds,
+        expiresAt: expiresAtResult.value,
+      });
+      recording.journal.startSession({
+        marketId: String(slot.marketId),
+        mode: mode as 'live' | 'paper',
+        strategyType: slot.strategy.name,
+        strategyConfig: {},
+        marketQuestion: question,
+        tokenIds,
+        instrumentId: String(slot.instrumentId),
+        expiresAtMs: slot.expiresAtMs,
+        eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
       });
     }
 
@@ -758,6 +826,46 @@ async function runPaper(): Promise<void> {
     const expiresMs = candidate.expiresAt.toNumber();
     const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
+    // Не занимаем слот если рынок ещё не начался (допускаем 30с запас)
+    if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + 30_000) {
+      logger.debug('Skipping market: event starts too far in the future', {
+        marketId: String(candidate.marketId),
+        eventStartMs: slotCryptoMeta.eventStartTimeMs,
+        startsInSec: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
+      });
+      return false;
+    }
+
+    // Проверка длительности рынка (второй уровень защиты — discovery filter может пропустить
+    // рынки без eventStartMs)
+    const dFilter = mc.filter;
+    if (dFilter?.minDurationMinutes !== undefined || dFilter?.maxDurationMinutes !== undefined) {
+      if (!slotCryptoMeta) {
+        logger.debug('Skipping market: no crypto meta, cannot verify duration', {
+          marketId: String(candidate.marketId),
+          question: candidate.question,
+        });
+        return false;
+      }
+      const durationMin = (slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs) / 60_000;
+      if (dFilter.minDurationMinutes !== undefined && durationMin < dFilter.minDurationMinutes) {
+        logger.debug('Skipping market: duration below filter minimum', {
+          marketId: String(candidate.marketId),
+          durationMin: durationMin.toFixed(1),
+          minDurationMinutes: dFilter.minDurationMinutes,
+        });
+        return false;
+      }
+      if (dFilter.maxDurationMinutes !== undefined && durationMin > dFilter.maxDurationMinutes) {
+        logger.debug('Skipping market: duration above filter maximum', {
+          marketId: String(candidate.marketId),
+          durationMin: durationMin.toFixed(1),
+          maxDurationMinutes: dFilter.maxDurationMinutes,
+        });
+        return false;
+      }
+    }
+
     // Fetch strike price и подписка RTDS для крипто-рынка (один раз на рынок)
     if (slotCryptoMeta) {
       if (slotCryptoMeta.priceToBeat !== undefined) {
@@ -798,6 +906,23 @@ async function runPaper(): Promise<void> {
       }
     }
 
+    // Маршрутизация стратегии по правилам
+    const marketSelection = selectStrategyForMarket(config, {
+      eventStartMs: slotCryptoMeta?.eventStartTimeMs,
+      expiresAtMs: expiresMs,
+      question: candidate.question,
+    });
+    if (!marketSelection) {
+      logger.debug('No strategy rule matches market, skipping', {
+        marketId: String(candidate.marketId),
+        question: candidate.question,
+        durationMin: slotCryptoMeta
+          ? ((slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
+          : 'unknown',
+      });
+      return false;
+    }
+
     // Определяем какие стороны открываем
     const sides: Array<{ outcomeIndex: 0 | 1; side: 'up' | 'down' }> = [
       { outcomeIndex: mc.outcomeIndex, side: mc.outcomeIndex === 0 ? 'up' : 'down' },
@@ -817,11 +942,12 @@ async function runPaper(): Promise<void> {
         continue;
       }
 
-      // Стратегия с нужным side
-      const sideParams = { ...config.strategyParams, side };
+      // Стратегия с нужным side (из маршрутизации)
+      const sideParams = { ...marketSelection.strategyParams, side };
       const slotStrategy = createStrategy(
-        { type: config.strategy, id: `${config.strategy}-${side}-slot-${_slotCounter++}`, params: sideParams } as unknown as StrategyConfig,
+        { type: marketSelection.strategy, id: `${marketSelection.strategy}-${side}-slot-${_slotCounter++}`, params: sideParams } as unknown as StrategyConfig,
         logger,
+        recording?.journal,
       );
 
       // Комплементарный токен для dual-token стратегий (adaptive-entry)
@@ -829,6 +955,14 @@ async function runPaper(): Promise<void> {
       const compTokenStr = candidate.allTokenIds?.[compIndex];
       const compInstrumentId = compTokenStr ? (asInstrumentId(compTokenStr) ?? undefined) : undefined;
       const compAsset = compTokenStr ? (asPolymarketCtfToken(compTokenStr) ?? undefined) : undefined;
+      if (!compTokenStr) {
+        logger.warn('No complementary token found (allTokenIds missing or incomplete)', {
+          allTokenIds: candidate.allTokenIds ?? 'undefined',
+          outcomeIndex,
+          compIndex,
+          marketId: String(candidate.marketId),
+        });
+      }
 
       const slot: PaperMarketSlot = {
         instrumentId: iId,
@@ -869,6 +1003,7 @@ async function runPaper(): Promise<void> {
         slug: slug ?? '(no slug)',
         marketId: String(candidate.marketId),
         tokenId: tStr,
+        compTokenId: compInstrumentId ? String(compInstrumentId) : 'none',
         side,
         outcomeIndex,
         activeSlots: activeMarkets.size,
@@ -907,13 +1042,26 @@ async function runPaper(): Promise<void> {
     }
 
     // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
+    // Проверяем позиции на обоих токенах (primary + comp) для auto-selection стратегий
     let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
     if (reason === 'EXPIRED' && slot.cryptoMeta) {
       const resolution = cryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
       const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
       const portfolio = portfolioStore.get(accountId!);
-      const position = portfolio?.getPosition(slot.instrumentId);
-      const hasTokens = position && !position.isClosed();
+
+      // Ищем позицию на primary и comp токенах
+      const primaryPosition = portfolio?.getPosition(slot.instrumentId);
+      const compPosition = slot.complementaryInstrumentId
+        ? portfolio?.getPosition(slot.complementaryInstrumentId)
+        : undefined;
+      const primaryHasTokens = primaryPosition && !primaryPosition.isClosed();
+      const compHasTokens = compPosition && !compPosition.isClosed();
+
+      // Определяем на каком токене мы сидим
+      const position = primaryHasTokens ? primaryPosition : compHasTokens ? compPosition : undefined;
+      const positionInstrumentId = primaryHasTokens ? slot.instrumentId : slot.complementaryInstrumentId!;
+      const positionIsComp = !primaryHasTokens && compHasTokens;
+      const hasTokens = !!position;
 
       logger.info('Settlement check', {
         hasCryptoMeta: true,
@@ -922,12 +1070,14 @@ async function runPaper(): Promise<void> {
         currentPrice: cryptoSnap?.currentPrice,
         resolution: resolution ?? 'unknown',
         hasTokens,
+        positionOn: positionIsComp ? 'complementary' : 'primary',
         tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
       });
 
-      if (resolution && portfolio && position && !position.isClosed()) {
+      if (resolution && portfolio && position && hasTokens) {
         const qty = position.quantity.value();
-        const oi = slot.outcomeIndex;
+        // outcomeIndex для позиции: primary = slot.outcomeIndex, comp = 1 - slot.outcomeIndex
+        const oi = positionIsComp ? (1 - slot.outcomeIndex) as 0 | 1 : slot.outcomeIndex;
         const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
         const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
         const cashCredit = qty.times(settlementPrice);
@@ -936,7 +1086,7 @@ async function runPaper(): Promise<void> {
 
         // Удаляем позицию (settled)
         const closedPosition = new SimplePosition({
-          instrumentId: slot.instrumentId,
+          instrumentId: positionInstrumentId,
           quantity: new Decimal(0),
           averageEntryPrice: position.averageEntryPrice.value(),
           side: 'LONG' as const,
@@ -986,6 +1136,13 @@ async function runPaper(): Promise<void> {
     // Очистить orderToSlot для этого слота
     for (const [orderId, slotKey] of orderToSlot) {
       if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
+    }
+
+    // Убрать комплементарный токен из active set + WS unsubscribe
+    if (slot.complementaryInstrumentId) {
+      const compTokenStr = String(slot.complementaryInstrumentId);
+      activeCompTokens.delete(compTokenStr);
+      await wsAdapter.unsubscribeFromToken(compTokenStr);
     }
 
     activeMarkets.delete(tokenIdStr);
@@ -1169,12 +1326,16 @@ async function runPaper(): Promise<void> {
       });
     }
 
-    // В арб-режиме: если есть свободные слоты — ищем новые пары
-    if (isArbMode && activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
+    // Если есть свободные слоты — ищем новые рынки/пары
+    if (activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
       try {
-        await fillArbSlots();
+        if (isArbMode) {
+          await fillArbSlots();
+        } else {
+          await fillMarketSlots();
+        }
       } catch (err) {
-        logger.error('Periodic arb slot filling failed', {
+        logger.error('Periodic slot filling failed', {
           err: err instanceof Error ? err : new Error(String(err)),
         });
       }
@@ -2660,6 +2821,14 @@ async function runPaper(): Promise<void> {
           totalQty = totalQty.plus(position.quantity.value());
           if (!avgEntry) avgEntry = position.averageEntryPrice.value().toFixed(4);
         }
+        // Позиция на комплементарном токене (auto-selection)
+        if (slot.complementaryInstrumentId) {
+          const compPos = portfolio.getPosition(slot.complementaryInstrumentId);
+          if (compPos) {
+            totalQty = totalQty.plus(compPos.quantity.value());
+            if (!avgEntry) avgEntry = compPos.averageEntryPrice.value().toFixed(4);
+          }
+        }
       }
       // Арб-позиции: easy + hardDown инструменты (не в activeMarkets)
       for (const pair of activeArbPairs.values()) {
@@ -2684,6 +2853,14 @@ async function runPaper(): Promise<void> {
         reserved: portfolio.balance.reserved().value().toFixed(2),
       };
     },
+    getTokenLabel: (asset: unknown) => {
+      const iId = assetIdToInstrumentId(asset as Parameters<typeof assetIdToInstrumentId>[0]);
+      if (!iId) return undefined;
+      const tokenIdStr = String(iId);
+      if (activeMarkets.has(tokenIdStr)) return 'UP';
+      if (activeCompTokens.has(tokenIdStr)) return 'DOWN';
+      return undefined;
+    },
   });
 
   // ── Трекинг fills для сводки по рынку (per-slot, paper) ───────────────────
@@ -2695,6 +2872,15 @@ async function runPaper(): Promise<void> {
     if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
       orderToSlot.set(String(event.orderId), tokenIdStr);
       return;
+    }
+    // Комплементарный токен (auto-selection): ордер роутится на primary slot
+    if (tokenIdStr && activeCompTokens.has(tokenIdStr)) {
+      for (const [primaryTokenId, slot] of activeMarkets) {
+        if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
+          orderToSlot.set(String(event.orderId), primaryTokenId);
+          return;
+        }
+      }
     }
     // Арбитражные easy/down ноги: их токены не в activeMarkets,
     // но ордер должен роутиться на hard slot (стратегия зарегистрирована там).
@@ -2796,7 +2982,12 @@ async function runPaper(): Promise<void> {
   ): void {
     const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
     if (slot.fillHistory.length === 0) {
-      logger.info('=== Market summary: no fills ===', { market: marketQuestion });
+      const noFillPortfolio = portfolioStore.get(accountId!);
+      logger.info('=== Market summary: no fills ===', {
+        market: marketQuestion,
+        usdcFree: noFillPortfolio?.balance.available().value().toFixed(2) ?? '-',
+        usdcReserved: noFillPortfolio?.balance.reserved().value().toFixed(2) ?? '-',
+      });
       return;
     }
 
@@ -2904,7 +3095,8 @@ async function runPaper(): Promise<void> {
 
   const activeSlotIds = Array.from(activeMarkets.values()).map(s => s.strategy.id);
   logger.info('Bot is running in paper mode', {
-    strategy: config.strategy,
+    strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
+    ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     strategyIds: activeSlotIds,
     activeSlots: activeMarkets.size,
     maxConcurrentMarkets,
@@ -2957,6 +3149,7 @@ async function runPaper(): Promise<void> {
         await engine.scheduler.unregister(slot.strategy.id);
       }
       activeMarkets.clear();
+      activeCompTokens.clear();
       orderToSlot.clear();
 
       engine.scheduler.stop();
@@ -2966,6 +3159,10 @@ async function runPaper(): Promise<void> {
       await wsAdapter.disconnect();
       rtdsClient.disconnect();
       marketDataStore.stop();
+      if (recording) {
+        await recording.journal.close();
+        await recording.dataRecorder.close();
+      }
       logger.info('Shutdown complete');
     } catch (err) {
       logger.error('Error during shutdown', { err: err instanceof Error ? err : new Error(String(err)) });
@@ -3387,7 +3584,13 @@ async function runBacktest(): Promise<void> {
     } : {}),
   });
 
-  logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
+  if (config.strategyRules?.length) {
+    logger.warn('Multi-strategy config', {
+      rules: config.strategyRules.map(r => ({ label: r.label, strategy: r.strategy, match: r.match })),
+    });
+  } else {
+    logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
+  }
 
   logger.warn('Orders placed (open at end)', {
     count: orders.length,
@@ -3518,6 +3721,32 @@ async function runLive(): Promise<void> {
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
   const { clock, logger, eventBus } = infra;
 
+  // ── Recording (опциональная запись рыночных данных и журнала решений) ──────
+  const recording = buildRecording(config.recording, logger);
+
+  // ── Авто-клейм (redeem) settled позиций через Builder Relayer (gasless) ──
+  let redeemer: PolymarketRedeemer | undefined;
+  try {
+    redeemer = PolymarketRedeemer.fromEnv(logger);
+    logger.info('Auto-redeemer initialized (gasless via Builder Relayer)');
+  } catch (err) {
+    logger.warn('Auto-redeemer not available (missing BUILDER_API_KEY/SECRET/PASSPHRASE)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // ── Фоновый авто-клейм всех settled рынков ──────────────────────────────
+  let autoRedeemer: AutoRedeemer | undefined;
+  try {
+    autoRedeemer = AutoRedeemer.fromEnv(logger);
+    autoRedeemer.start();
+    logger.info('Background auto-redeemer started (checks every 5 min)');
+  } catch (err) {
+    logger.warn('Background auto-redeemer not available', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // ── Типы для мульти-маркетных слотов ──────────────────────────────────────
 
   interface FillRecord {
@@ -3561,6 +3790,8 @@ async function runLive(): Promise<void> {
     readonly complementaryInstrumentId?: InstrumentId;
     /** AssetId комплементарного токена (для auto-selection в PlaceIntent) */
     readonly complementaryAsset?: AssetId;
+    /** Индекс outcome для этого слота (0=UP, 1=DOWN). Нужен для settlement. */
+    readonly outcomeIndex: 0 | 1;
     fillHistory: FillRecord[];
     partialAccum: Map<string, PartialAccum>;
     openedAt: number;
@@ -3570,6 +3801,8 @@ async function runLive(): Promise<void> {
 
   /** Активные рыночные слоты: key = tokenIdStr */
   const activeMarkets = new Map<string, ActiveMarketSlot>();
+  /** ID комплементарных токенов, чьи трейды тоже должны проходить через trade bridge */
+  const activeCompTokens = new Set<string>();
   /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
   const orderToSlot = new Map<string, string>();
   /** Счётчик для уникальных strategy ID (монотонно растёт, не уменьшается) */
@@ -3654,8 +3887,15 @@ async function runLive(): Promise<void> {
       logger.fatal('Cannot derive instrumentId', { tokenIdStr: tStr });
       process.exit(1);
     }
+    const liveFixedSelection = selectStrategyForMarket(config, {
+      expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+    });
+    if (!liveFixedSelection) {
+      logger.fatal('No strategy rule matches fixed market');
+      process.exit(1);
+    }
     const fixedStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+      { type: liveFixedSelection.strategy, id: `${liveFixedSelection.strategy}-slot-${_slotCounter++}`, params: liveFixedSelection.strategyParams } as StrategyConfig,
       logger,
     );
     activeMarkets.set(tStr, {
@@ -3669,6 +3909,7 @@ async function runLive(): Promise<void> {
       candidate: null,
       strategy: fixedStrategy,
       cryptoMeta: undefined,
+      outcomeIndex: (config.market as { outcomeIndex?: number }).outcomeIndex as 0 | 1 ?? 0,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -3714,12 +3955,27 @@ async function runLive(): Promise<void> {
       logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
       process.exit(1);
     }
-    const discoveryStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-      logger,
-    );
     const expiresMs = candidate.expiresAt.toNumber();
     const liveInitialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+    const liveInitSelection = selectStrategyForMarket(config, {
+      eventStartMs: liveInitialCryptoMeta?.eventStartTimeMs,
+      expiresAtMs: expiresMs,
+      question: candidate.question,
+    });
+    if (!liveInitSelection) {
+      logger.warn('No strategy rule matches initial live market, will wait for rotation', {
+        question: candidate.question,
+      });
+    }
+    const discoveryStrategy = liveInitSelection
+      ? createStrategy(
+          { type: liveInitSelection.strategy, id: `${liveInitSelection.strategy}-slot-${_slotCounter++}`, params: liveInitSelection.strategyParams } as StrategyConfig,
+          logger,
+        )
+      : createStrategy(
+          { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
+          logger,
+        );
     activeMarkets.set(tStr, {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -3731,6 +3987,7 @@ async function runLive(): Promise<void> {
       candidate,
       strategy: discoveryStrategy,
       cryptoMeta: liveInitialCryptoMeta,
+      outcomeIndex: mc.outcomeIndex,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -3796,7 +4053,8 @@ async function runLive(): Promise<void> {
 
   const firstSlot = activeMarkets.values().next().value!;
   logger.info('Bot starting in live mode', {
-    strategy: config.strategy,
+    strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
+    ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     marketId: String(firstSlot.marketId),
     maxConcurrentMarkets,
     funderAddress: credentials.funderAddress ?? '(signer)',
@@ -3886,12 +4144,12 @@ async function runLive(): Promise<void> {
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
-  const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger);
+  const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger, recording?.dataRecorder);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based аналитики)
-  // Фильтруем только трейды по активным рынкам
+  // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   marketWsAdapter.onTradeEvent(async (dto) => {
-    if (!activeMarkets.has(dto.asset_id)) return;
+    if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
     const tsResult = TimestampService.create(Number(dto.timestamp));
@@ -3921,7 +4179,9 @@ async function runLive(): Promise<void> {
   async function registerMarketAndStrategy(slot: ActiveMarketSlot): Promise<boolean> {
     // Подписка на WS комплементарного токена (для dual-token стратегий)
     if (slot.complementaryInstrumentId) {
-      await marketWsAdapter.subscribeToToken(String(slot.complementaryInstrumentId));
+      const compTokenStr = String(slot.complementaryInstrumentId);
+      await marketWsAdapter.subscribeToToken(compTokenStr);
+      activeCompTokens.add(compTokenStr);
     }
     const expiresAtResult = TimestampService.create(slot.expiresAtMs);
     if (!expiresAtResult.ok) {
@@ -4008,12 +4268,72 @@ async function runLive(): Promise<void> {
     }
 
     const expiresMs = candidate.expiresAt.toNumber();
-    const slotStrategy = createStrategy(
-      { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-      logger,
-    );
 
-    const liveSlotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
+    // Не занимаем слот если рынок ещё не начался (допускаем 30с запас)
+    const livePreCheckMeta = parseCryptoMeta(candidate.rawMarket);
+    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 30_000) {
+      logger.debug('Skipping market: event starts too far in the future', {
+        marketId: String(candidate.marketId),
+        eventStartMs: livePreCheckMeta.eventStartTimeMs,
+        startsInSec: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
+      });
+      return false;
+    }
+
+    const liveSlotCryptoMeta = livePreCheckMeta;
+
+    // Проверка длительности рынка (второй уровень защиты — discovery filter может пропустить
+    // рынки без eventStartMs)
+    const dFilter = mc.filter;
+    if (dFilter?.minDurationMinutes !== undefined || dFilter?.maxDurationMinutes !== undefined) {
+      if (!liveSlotCryptoMeta) {
+        logger.debug('Skipping market: no crypto meta, cannot verify duration', {
+          marketId: String(candidate.marketId),
+          question: candidate.question,
+        });
+        return false;
+      }
+      const durationMin = (liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs) / 60_000;
+      if (dFilter.minDurationMinutes !== undefined && durationMin < dFilter.minDurationMinutes) {
+        logger.debug('Skipping market: duration below filter minimum', {
+          marketId: String(candidate.marketId),
+          durationMin: durationMin.toFixed(1),
+          minDurationMinutes: dFilter.minDurationMinutes,
+        });
+        return false;
+      }
+      if (dFilter.maxDurationMinutes !== undefined && durationMin > dFilter.maxDurationMinutes) {
+        logger.debug('Skipping market: duration above filter maximum', {
+          marketId: String(candidate.marketId),
+          durationMin: durationMin.toFixed(1),
+          maxDurationMinutes: dFilter.maxDurationMinutes,
+        });
+        return false;
+      }
+    }
+
+    // Маршрутизация стратегии по правилам
+    const liveMarketSelection = selectStrategyForMarket(config, {
+      eventStartMs: liveSlotCryptoMeta?.eventStartTimeMs,
+      expiresAtMs: expiresMs,
+      question: candidate.question,
+    });
+    if (!liveMarketSelection) {
+      logger.debug('No strategy rule matches market, skipping', {
+        marketId: String(candidate.marketId),
+        question: candidate.question,
+        durationMin: liveSlotCryptoMeta
+          ? ((liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
+          : 'unknown',
+      });
+      return false;
+    }
+
+    const slotStrategy = createStrategy(
+      { type: liveMarketSelection.strategy, id: `${liveMarketSelection.strategy}-slot-${_slotCounter++}`, params: liveMarketSelection.strategyParams } as StrategyConfig,
+      logger,
+      recording?.journal,
+    );
 
     // Комплементарный токен для dual-token стратегий (adaptive-entry)
     const liveCompIndex = 1 - mc.outcomeIndex;
@@ -4034,6 +4354,7 @@ async function runLive(): Promise<void> {
       cryptoMeta: liveSlotCryptoMeta,
       complementaryInstrumentId: liveCompInstrumentId,
       complementaryAsset: liveCompAsset,
+      outcomeIndex: mc.outcomeIndex,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
@@ -4135,13 +4456,26 @@ async function runLive(): Promise<void> {
     }
 
     // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
+    // Проверяем позиции на обоих токенах (primary + comp) для auto-selection стратегий
     let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
     if (reason === 'EXPIRED' && slot.cryptoMeta) {
       const resolution = liveCryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
       const cryptoSnap = liveCryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
       const portfolio = portfolioStore.get(accountId!);
-      const position = portfolio?.getPosition(slot.instrumentId);
-      const hasTokens = position && !position.isClosed();
+
+      // Ищем позицию на primary и comp токенах
+      const primaryPosition = portfolio?.getPosition(slot.instrumentId);
+      const compPosition = slot.complementaryInstrumentId
+        ? portfolio?.getPosition(slot.complementaryInstrumentId)
+        : undefined;
+      const primaryHasTokens = primaryPosition && !primaryPosition.isClosed();
+      const compHasTokens = compPosition && !compPosition.isClosed();
+
+      // Определяем на каком токене мы сидим
+      const position = primaryHasTokens ? primaryPosition : compHasTokens ? compPosition : undefined;
+      const positionInstrumentId = primaryHasTokens ? slot.instrumentId : slot.complementaryInstrumentId!;
+      const positionIsComp = !primaryHasTokens && compHasTokens;
+      const hasTokens = !!position;
 
       logger.info('Settlement check (live)', {
         hasCryptoMeta: true,
@@ -4150,12 +4484,14 @@ async function runLive(): Promise<void> {
         currentPrice: cryptoSnap?.currentPrice,
         resolution: resolution ?? 'unknown',
         hasTokens,
+        positionOn: positionIsComp ? 'complementary' : 'primary',
         tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
       });
 
-      if (resolution && portfolio && position && !position.isClosed()) {
+      if (resolution && portfolio && position && hasTokens) {
         const qty = position.quantity.value();
-        const oi = (config.market as { outcomeIndex: number }).outcomeIndex ?? 0;
+        // outcomeIndex для позиции: primary = slot.outcomeIndex, comp = 1 - slot.outcomeIndex
+        const oi = positionIsComp ? (1 - slot.outcomeIndex) as 0 | 1 : slot.outcomeIndex;
         const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
         const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
         const cashCredit = qty.times(settlementPrice);
@@ -4164,7 +4500,7 @@ async function runLive(): Promise<void> {
 
         // Удаляем позицию (settled)
         const closedPosition = new SimplePosition({
-          instrumentId: slot.instrumentId,
+          instrumentId: positionInstrumentId,
           quantity: new Decimal(0),
           averageEntryPrice: position.averageEntryPrice.value(),
           side: 'LONG' as const,
@@ -4192,6 +4528,25 @@ async function runLive(): Promise<void> {
       }
     }
 
+    // Авто-клейм: gasless redeem winning токенов через Builder Relayer (fire-and-forget)
+    if (redeemer && settlementResult && settlementResult.cashCredit.gt(0)) {
+      const conditionId = String(slot.marketId);
+      void redeemer.redeem(conditionId).then((result) => {
+        if (result.success) {
+          logger.info('Auto-redeem successful', {
+            conditionId,
+            txHash: result.txHash,
+            cashCredit: settlementResult!.cashCredit.toFixed(4),
+          });
+        } else {
+          logger.warn('Auto-redeem failed (will be picked up by balance sync)', {
+            conditionId,
+            error: result.error,
+          });
+        }
+      });
+    }
+
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
@@ -4214,6 +4569,13 @@ async function runLive(): Promise<void> {
     // Очистить orderToSlot для этого слота
     for (const [orderId, slotKey] of orderToSlot) {
       if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
+    }
+
+    // Убрать комплементарный токен из active set + WS unsubscribe
+    if (slot.complementaryInstrumentId) {
+      const compTokenStr = String(slot.complementaryInstrumentId);
+      activeCompTokens.delete(compTokenStr);
+      await marketWsAdapter.unsubscribeFromToken(compTokenStr);
     }
 
     activeMarkets.delete(tokenIdStr);
@@ -4323,6 +4685,17 @@ async function runLive(): Promise<void> {
         err: err instanceof Error ? err : new Error(String(err)),
       });
     }
+    // Если есть свободные слоты — ищем новые рынки
+    if (activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
+      try {
+        await fillMarketSlots();
+      } catch (err) {
+        logger.error('Periodic slot filling failed', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
     if (!isShuttingDown) {
       const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
       scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
@@ -4338,6 +4711,15 @@ async function runLive(): Promise<void> {
     if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
       orderToSlot.set(String(event.orderId), tokenIdStr);
       return;
+    }
+    // Комплементарный токен (auto-selection): ордер роутится на primary slot
+    if (tokenIdStr && activeCompTokens.has(tokenIdStr)) {
+      for (const [primaryTokenId, slot] of activeMarkets) {
+        if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
+          orderToSlot.set(String(event.orderId), primaryTokenId);
+          return;
+        }
+      }
     }
     // TODO: арбитражные easy/down ноги → роутим на hard slot (когда live арб будет реализован)
   });
@@ -4403,7 +4785,12 @@ async function runLive(): Promise<void> {
   ): void {
     const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
     if (slot.fillHistory.length === 0) {
-      logger.info('=== Market summary: no fills ===', { market: marketQuestion });
+      const noFillPortfolio = portfolioStore.get(accountId!);
+      logger.info('=== Market summary: no fills ===', {
+        market: marketQuestion,
+        usdcFree: noFillPortfolio?.balance.available().value().toFixed(2) ?? '-',
+        usdcReserved: noFillPortfolio?.balance.reserved().value().toFixed(2) ?? '-',
+      });
       return;
     }
     const durationMs = Date.now() - slot.openedAt;
@@ -4488,6 +4875,14 @@ async function runLive(): Promise<void> {
         usdc: portfolio.balance.available().value().toFixed(2),
         reserved: portfolio.balance.reserved().value().toFixed(2),
       };
+    },
+    getTokenLabel: (asset: unknown) => {
+      const iId = assetIdToInstrumentId(asset as Parameters<typeof assetIdToInstrumentId>[0]);
+      if (!iId) return undefined;
+      const tokenIdStr = String(iId);
+      if (activeMarkets.has(tokenIdStr)) return 'UP';
+      if (activeCompTokens.has(tokenIdStr)) return 'DOWN';
+      return undefined;
     },
   });
 
@@ -4592,6 +4987,63 @@ async function runLive(): Promise<void> {
     });
   }, RECONCILE_INTERVAL_MS);
 
+  // ── Периодическая синхронизация USDC-баланса с venue ──────────────────
+  // Каждые 60 секунд запрашиваем актуальный баланс с venue (REST API).
+  // Учитывает settled позиции (claim) и внешние зачисления.
+  // Не трогает reserved — только корректирует available при расхождении.
+
+  const BALANCE_SYNC_INTERVAL_MS = 60_000;
+  const balanceSyncIntervalId = setInterval(() => {
+    void (async () => {
+      try {
+        const venueBalance = await liveInfra.currentBalanceProvider.getUsdcBalance(accountId);
+        const portfolio = portfolioStore.get(accountId);
+        if (!portfolio) return;
+
+        const localAvailable = portfolio.balance.available().value();
+        const localReserved = portfolio.balance.reserved().value();
+        // Venue возвращает total available (не включает reserved в ордерах).
+        // Наш local total = available + reserved.
+        // Если venue total > local available → зачислились средства (settlement/deposit).
+        // Корректируем: new_available = venue_balance - local_reserved
+        const expectedAvailable = venueBalance.minus(localReserved);
+        const diff = expectedAvailable.minus(localAvailable);
+
+        // Порог: игнорируем расхождения < 0.01 USDC (dust)
+        if (diff.abs().lte('0.01')) return;
+
+        const version = portfolioStore.getVersion?.(accountId) ?? 0;
+
+        if (diff.gt(0)) {
+          // Venue показывает больше → зачислились средства (settlement, deposit)
+          const creditResult = portfolio.applyCredit(Money.of(diff, 'USDC'));
+          if (creditResult.ok) {
+            portfolioStore.save(creditResult.value, version);
+            logger.info('Balance synced from venue: credited', {
+              venueTotalUsdc: venueBalance.toFixed(2),
+              localAvailable: localAvailable.toFixed(2),
+              localReserved: localReserved.toFixed(2),
+              credited: diff.toFixed(2),
+              newAvailable: expectedAvailable.toFixed(2),
+            });
+          }
+        } else {
+          // Venue показывает меньше → кто-то снял средства или venue ещё не обновился
+          // Только логируем, не корректируем (чтобы не сломать reserved)
+          logger.debug('Balance sync: venue < local (possible pending settlement)', {
+            venueTotalUsdc: venueBalance.toFixed(2),
+            localAvailable: localAvailable.toFixed(2),
+            diff: diff.toFixed(2),
+          });
+        }
+      } catch (err) {
+        logger.debug('Balance sync failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }, BALANCE_SYNC_INTERVAL_MS);
+
   // ── Token balance reconciliation (CLOB → Portfolio sync) ───────────────
   // ВРЕМЕННО ОТКЛЮЧЕНО: будет включено позже для тестирования трёх режимов:
   // 1. Только события (WS fills)
@@ -4662,7 +5114,8 @@ async function runLive(): Promise<void> {
 
   const activeSlotIds = Array.from(activeMarkets.values()).map(s => s.strategy.id);
   logger.info('Bot is running in live mode', {
-    strategy: config.strategy,
+    strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
+    ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     strategyIds: activeSlotIds,
     activeSlots: activeMarkets.size,
     maxConcurrentMarkets,
@@ -4700,7 +5153,9 @@ async function runLive(): Promise<void> {
     if (expiryCheckIntervalId) { clearInterval(expiryCheckIntervalId); expiryCheckIntervalId = null; }
     if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
     clearInterval(reconcileIntervalId);
+    clearInterval(balanceSyncIntervalId);
     // clearInterval(tokenBalanceSyncId); // DISABLED — token balance sync
+    autoRedeemer?.stop();
 
     try {
       // Закрываем все активные слоты: сводка + unregister стратегий
@@ -4709,6 +5164,7 @@ async function runLive(): Promise<void> {
         await engine.scheduler.unregister(slot.strategy.id);
       }
       activeMarkets.clear();
+      activeCompTokens.clear();
       orderToSlot.clear();
 
       engine.scheduler.stop();
@@ -4720,6 +5176,10 @@ async function runLive(): Promise<void> {
       await userWsAdapter.disconnect();
       liveRtdsClient.disconnect();
       marketDataStore.stop();
+      if (recording) {
+        await recording.journal.close();
+        await recording.dataRecorder.close();
+      }
       logger.info('Shutdown complete');
     } catch (err) {
       logger.error('Error during shutdown', { err: err instanceof Error ? err : new Error(String(err)) });

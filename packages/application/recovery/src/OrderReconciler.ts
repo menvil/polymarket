@@ -38,6 +38,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type { IOrderRepository } from '@polymarket/ports';
 import type { OrderUpdateHandler } from '@polymarket/handlers';
 import type { IVenueOrderProvider } from './IVenueOrderProvider.js';
@@ -82,13 +83,13 @@ export class OrderReconciler {
 
     if (localOrders.length === 0) {
       this._logger.info('No local orders to reconcile', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
       });
       return;
     }
 
     this._logger.info('Starting order reconciliation', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       localOrderCount: localOrders.length,
     });
 
@@ -99,7 +100,7 @@ export class OrderReconciler {
       venueOrderIds = new Set(ids);
     } catch (err) {
       this._logger.error('Failed to fetch open orders from venue, skipping reconciliation', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
         error: String(err),
       });
       return;
@@ -130,7 +131,7 @@ export class OrderReconciler {
 
     // Шаг 4: Залогировать статистику
     this._logger.info('Order reconciliation completed', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       total: localOrders.length,
       active: activeCount,
       cancelled: cancelledCount,

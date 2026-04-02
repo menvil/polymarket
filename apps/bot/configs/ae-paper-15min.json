@@ -20,7 +20,7 @@
   },
   "resources": {
     "initialBalance": 100,
-    "maxConcurrentMarkets": 3,
+    "maxConcurrentMarkets": 1,
     "minCapitalPerMarket": 10,
     "tradingBalanceRatio": 1.0
   },

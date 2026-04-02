@@ -103,6 +103,8 @@ export interface LiveInfra {
   readonly reconcileTradesUseCase: ReconcileTradesUseCase;
   /** Проверка баланса токена на CLOB (для диагностики SELL rejection) */
   readonly balanceRestClient: PolymarketBalanceRestClient;
+  /** Провайдер текущего USDC-баланса от venue (для периодической синхронизации) */
+  readonly currentBalanceProvider: ICurrentBalanceProvider;
 }
 
 // ── Реализация ────────────────────────────────────────────────────────────────
@@ -305,5 +307,6 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     orderReconciler,
     reconcileTradesUseCase,
     balanceRestClient,
+    currentBalanceProvider,
   };
 }

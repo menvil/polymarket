@@ -195,7 +195,7 @@ export class MarketFilter {
    * @param market - Рынок для проверки
    * @param minMinutes - Минимальная длительность (undefined = без ограничения)
    * @param maxMinutes - Максимальная длительность (undefined = без ограничения)
-   * @returns true если длительность в диапазоне или eventStartMs недоступен
+   * @returns true если длительность в диапазоне; false если eventStartMs недоступен (нельзя определить длительность)
    */
   private _passesDurationFilter(
     market: DiscoveredMarket,
@@ -203,7 +203,7 @@ export class MarketFilter {
     maxMinutes: number | undefined,
   ): boolean {
     if (minMinutes === undefined && maxMinutes === undefined) return true;
-    if (market.eventStartMs === undefined) return true; // нет данных — пропускаем
+    if (market.eventStartMs === undefined) return false; // нет данных — отклоняем (нельзя определить длительность)
 
     const durationMs = market.expiresAt.toNumber() - market.eventStartMs;
     const durationMin = durationMs / (1000 * 60);

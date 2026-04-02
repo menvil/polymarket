@@ -52,6 +52,7 @@ import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarke
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, AssetId } from '@polymarket/ids';
+import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
 // ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -75,6 +76,25 @@ export interface AdaptiveEntryConfig {
    * Ноль: BUY по EWMA.
    */
   readonly bidOffsetCents?: number;
+  /**
+   * Минимальный рост EWMA для комплементарного токена (центы).
+   * По умолчанию = minRiseCents.
+   *
+   * @remarks
+   * Позволяет задать отдельный порог rise для comp токена.
+   * Полезно когда comp уже дорогой (ewma > 50) но не показывает momentum —
+   * значение 0 разрешит вход при любом rise если ewma условия выполнены.
+   */
+  readonly compMinRiseCents?: number;
+  /**
+   * Максимальная EWMA для входа (центы). Без ограничения по умолчанию.
+   *
+   * @remarks
+   * Предотвращает покупку дорогих токенов с плохим risk/reward.
+   * Например, maxEwmaCents=75 запрещает покупку дороже 75¢
+   * (profit max 25¢ vs loss 75¢ = нужен WR > 75%).
+   */
+  readonly maxEwmaCents?: number;
 }
 
 // ── Внутренние типы ───────────────────────────────────────────────────────────
@@ -117,10 +137,13 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
   public readonly name = 'AdaptiveEntryStrategy';
 
   private readonly _logger: ILogger | undefined;
+  private readonly _journal: IDecisionJournal | undefined;
   private readonly _orderSize: Decimal;
   private readonly _waitPct: number;
   private readonly _minEwma: number;
   private readonly _minRise: number;
+  private readonly _compMinRise: number;
+  private readonly _maxEwma: number;
   private readonly _warmupTrades: number;
   private readonly _bidOffset: number;
 
@@ -146,22 +169,28 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
   private _currentExpirationMs = 0;
   private _marketEventStartMs = 0;
   private _marketDurationMs = 0;
+  private _currentMarketId = '';
 
-  constructor(config: AdaptiveEntryConfig, strategyId = 'adaptive-entry-1', logger?: ILogger) {
+  constructor(config: AdaptiveEntryConfig, strategyId = 'adaptive-entry-1', logger?: ILogger, journal?: IDecisionJournal) {
     super();
     this.id = strategyId;
     this._logger = logger;
+    this._journal = journal;
     this._orderSize = config.orderSize;
     this._waitPct = config.waitPct ?? 0.5;
     this._minEwma = config.minEwmaCents ?? 50;
     this._minRise = config.minRiseCents ?? 5;
+    this._compMinRise = config.compMinRiseCents ?? this._minRise;
+    this._maxEwma = config.maxEwmaCents ?? 99;
     this._warmupTrades = config.warmupTrades ?? 10;
     this._bidOffset = config.bidOffsetCents ?? 1;
 
     this._logger?.warn('AdaptiveEntry: init', {
       waitPct: this._waitPct,
       minEwma: this._minEwma,
+      maxEwma: this._maxEwma,
       minRise: this._minRise,
+      compMinRise: this._compMinRise,
       warmupTrades: this._warmupTrades,
       bidOffset: this._bidOffset,
     });
@@ -197,6 +226,7 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
       if (snapshot.eventStartMs) {
         this._marketEventStartMs = snapshot.eventStartMs;
         this._marketDurationMs = expiresMs - snapshot.eventStartMs;
+        this._currentMarketId = String(snapshot.instrumentId);
         this._logger?.info('AdaptiveEntry: new market', {
           durationSec: (this._marketDurationMs / 1000).toFixed(0),
           instrumentId: snapshot.instrumentId,
@@ -318,16 +348,18 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
     // Условия входа основного токена:
     // 1. EWMA >= minEwma (токен достаточно дорогой)
     // 2. EWMA > 50 (наш токен сильнее комплементарного: UP+DOWN≈100)
-    // 3. Rise >= minRise (momentum подтверждён)
-    const primaryQualifies = ewma >= this._minEwma && ewma > 50 && rise >= this._minRise;
+    // 3. EWMA <= maxEwma (risk/reward приемлемый)
+    // 4. Rise >= minRise (momentum подтверждён)
+    const primaryQualifies = ewma >= this._minEwma && ewma > 50 && ewma <= this._maxEwma && rise >= this._minRise;
 
     // Условия входа комплементарного токена (auto-selection):
+    // compMinRise может быть ниже minRise — comp уже дорогой, не обязателен сильный momentum
     const compEwma = data.compEwmaCents;
     const compRise = (compEwma !== null && data.compEwmaAt25 !== null)
       ? compEwma - data.compEwmaAt25
       : null;
     const hasCompData = compEwma !== null && compRise !== null && data.complementaryInstrumentId !== undefined && data.complementaryAsset !== undefined;
-    const compQualifies = hasCompData && compEwma! >= this._minEwma && compEwma! > 50 && compRise! >= this._minRise;
+    const compQualifies = hasCompData && compEwma! >= this._minEwma && compEwma! > 50 && compEwma! <= this._maxEwma && compRise! >= this._compMinRise;
 
     // Выбираем лучший токен (auto-selection)
     let chosen: 'primary' | 'complementary' | 'skip' = 'skip';
@@ -357,12 +389,33 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
       tau: data.tauSec.toFixed(0) + 's',
       checks: {
         'primary.ewma>=minEwma': `${ewma.toFixed(1)} >= ${this._minEwma}: ${ewma >= this._minEwma}`,
+        'primary.ewma<=maxEwma': `${ewma.toFixed(1)} <= ${this._maxEwma}: ${ewma <= this._maxEwma}`,
         'primary.ewma>50': `${ewma.toFixed(1)} > 50: ${ewma > 50}`,
         'primary.rise>=minRise': `${rise.toFixed(1)} >= ${this._minRise}: ${rise >= this._minRise}`,
         'comp.ewma>=minEwma': compEwma !== null ? `${compEwma.toFixed(1)} >= ${this._minEwma}: ${compEwma >= this._minEwma}` : 'n/a',
+        'comp.ewma<=maxEwma': compEwma !== null ? `${compEwma.toFixed(1)} <= ${this._maxEwma}: ${compEwma <= this._maxEwma}` : 'n/a',
         'comp.ewma>50': compEwma !== null ? `${compEwma.toFixed(1)} > 50: ${compEwma > 50}` : 'n/a',
-        'comp.rise>=minRise': compRise !== null ? `${compRise.toFixed(1)} >= ${this._minRise}: ${compRise >= this._minRise}` : 'n/a',
+        'comp.rise>=compMinRise': compRise !== null ? `${compRise.toFixed(1)} >= ${this._compMinRise}: ${compRise >= this._compMinRise}` : 'n/a',
       },
+    });
+
+    // Журнал: одноразовое решение (BUY или SKIP)
+    const journalAction = chosen === 'skip' ? 'SKIP' as const
+      : chosen === 'complementary' ? 'BUY_COMP' as const
+      : 'BUY' as const;
+    this._journal?.recordDecision({
+      marketId: this._currentMarketId, strategyId: this.id, ts: data.nowMs,
+      action: journalAction,
+      state: {
+        ewmaCents: ewma, ewmaAt25: data.ewmaAt25, rise,
+        compEwmaCents: compEwma, compEwmaAt25: data.compEwmaAt25, compRise,
+        pctElapsed: data.pctElapsed, tauSec: data.tauSec,
+        availableBalance: data.availableBalance.toFixed(2),
+        primaryQualifies, compQualifies, chosen,
+      },
+      bidPrice: chosen !== 'skip' ? buyPrice : undefined,
+      orderSize: chosen !== 'skip' ? this._orderSize.toString() : undefined,
+      effectiveSide: chosen === 'complementary' ? 'down' : chosen === 'primary' ? 'up' : undefined,
     });
 
     if (chosen === 'skip') {

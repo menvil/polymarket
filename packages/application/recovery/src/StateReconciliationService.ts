@@ -27,6 +27,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Timestamp } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/value-objects';
@@ -119,7 +120,7 @@ export class StateReconciliationService {
    */
   public async reconcileOnce(accountId: AccountId): Promise<void> {
     this._logger.debug('StateReconciliationService: starting reconciliation', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
     });
 
     // Шаг 1: Orders
@@ -145,7 +146,7 @@ export class StateReconciliationService {
     }
 
     this._logger.debug('StateReconciliationService: reconciliation complete', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
     });
   }
 }

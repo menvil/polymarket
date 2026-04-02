@@ -31,14 +31,18 @@ import type {
   BotConfig,
   BotMode,
   StrategyType,
+  StrategyRule,
+  StrategyMatchFilter,
   PaperConfig,
   ResourcesConfig,
   AccountConfig,
+  RecordingConfig,
 } from './BotConfig.js';
 import {
   DEFAULT_PAPER_CONFIG,
   DEFAULT_RESOURCES_CONFIG,
   DEFAULT_ACCOUNT_CONFIG,
+  DEFAULT_RECORDING_CONFIG,
 } from './BotConfig.js';
 
 // ── Результат парсинга ────────────────────────────────────────────────────────
@@ -90,7 +94,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -113,24 +117,61 @@ export function parseConfig(
     return { ok: false, errors };
   }
 
-  // ── Шаг 3: валидация стратегии ────────────────────────────────────────────
+  // ── Шаг 3: strategyRules (мульти-стратегия, опционально) ──────────────────
+
+  const rawRules = rawJson['strategyRules'] as unknown[] | undefined;
+  let strategyRules: StrategyRule[] | undefined;
+  if (rawRules && Array.isArray(rawRules) && rawRules.length > 0) {
+    strategyRules = [];
+    for (let i = 0; i < rawRules.length; i++) {
+      const r = rawRules[i] as Record<string, unknown>;
+      const ruleStrategy = r['strategy'] as StrategyType;
+      if (!ruleStrategy || !VALID_STRATEGIES.includes(ruleStrategy)) {
+        errors.push(`strategyRules[${i}].strategy is invalid: "${ruleStrategy}"`);
+        continue;
+      }
+      const ruleRawParams = r['strategyParams'] as Record<string, unknown>;
+      if (!ruleRawParams) {
+        errors.push(`strategyRules[${i}].strategyParams is required`);
+        continue;
+      }
+      const ruleParams = parseStrategyParams(ruleStrategy, ruleRawParams, errors);
+      const rawMatch = (r['match'] as Record<string, unknown>) ?? {};
+      const match: StrategyMatchFilter = {
+        minDurationMinutes: typeof rawMatch['minDurationMinutes'] === 'number' ? rawMatch['minDurationMinutes'] : undefined,
+        maxDurationMinutes: typeof rawMatch['maxDurationMinutes'] === 'number' ? rawMatch['maxDurationMinutes'] : undefined,
+        anyOfKeywords: Array.isArray(rawMatch['anyOfKeywords']) ? rawMatch['anyOfKeywords'] as string[] : undefined,
+        requiredKeywords: Array.isArray(rawMatch['requiredKeywords']) ? rawMatch['requiredKeywords'] as string[] : undefined,
+      };
+      strategyRules.push({
+        label: (r['label'] as string) ?? `rule-${i}`,
+        match,
+        strategy: ruleStrategy,
+        strategyParams: ruleParams as unknown as StrategyRule['strategyParams'],
+      });
+    }
+  }
+
+  const hasRules = strategyRules && strategyRules.length > 0;
+
+  // ── Шаг 4: валидация стратегии ────────────────────────────────────────────
 
   const strategy = strategyFromEnv ?? (rawJson['strategy'] as StrategyType | undefined);
-  if (!strategy) {
-    errors.push('strategy is required (in config file or STRATEGY env)');
-  } else if (!VALID_STRATEGIES.includes(strategy)) {
+  if (!strategy && !hasRules) {
+    errors.push('strategy is required (in config file, STRATEGY env, or strategyRules[])');
+  } else if (strategy && !VALID_STRATEGIES.includes(strategy)) {
     errors.push(`Invalid strategy="${strategy}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
 
-  // ── Шаг 4: валидация strategyParams ──────────────────────────────────────
+  // ── Шаг 5: валидация strategyParams ──────────────────────────────────────
 
   const rawParams = rawJson['strategyParams'] as Record<string, unknown> | undefined;
-  if (!rawParams) {
-    errors.push('strategyParams is required in config file');
+  if (!rawParams && !hasRules) {
+    errors.push('strategyParams is required in config file (or use strategyRules[])');
   }
   const strategyParams = rawParams ? parseStrategyParams(strategy ?? 'dumb', rawParams, errors) : {};
 
-  // ── Шаг 5: валидация market ───────────────────────────────────────────────
+  // ── Шаг 6: валидация market ───────────────────────────────────────────────
 
   const rawMarket = rawJson['market'] as Record<string, unknown> | undefined;
   if (!rawMarket) {
@@ -138,12 +179,12 @@ export function parseConfig(
   }
   const market = rawMarket ? parseMarketConfig(rawMarket, errors, env) : undefined;
 
-  // ── Шаг 6: resources (с дефолтами) ───────────────────────────────────────
+  // ── Шаг 7: resources (с дефолтами) ───────────────────────────────────────
 
   const rawResources = rawJson['resources'] as Partial<ResourcesConfig> | undefined;
   const resources = parseResources(rawResources ?? {}, errors);
 
-  // ── Шаг 7: paper (с дефолтами) ───────────────────────────────────────────
+  // ── Шаг 8: paper (с дефолтами) ───────────────────────────────────────────
 
   const rawPaper = rawJson['paper'] as Partial<PaperConfig> | undefined;
   const paper: PaperConfig = {
@@ -152,30 +193,48 @@ export function parseConfig(
     fillAtOrderPrice: rawPaper?.fillAtOrderPrice ?? DEFAULT_PAPER_CONFIG.fillAtOrderPrice,
   };
 
-  // ── Шаг 8: account (с дефолтами) ─────────────────────────────────────────
+  // ── Шаг 9: account (с дефолтами) ─────────────────────────────────────────
 
   const rawAccount = rawJson['account'] as Partial<AccountConfig> | undefined;
   const account: AccountConfig = {
     accountId: rawAccount?.accountId ?? DEFAULT_ACCOUNT_CONFIG.accountId,
   };
 
-  // ── Шаг 9: итог ──────────────────────────────────────────────────────────
+  // ── Шаг 10: recording (с дефолтами) ───────────────────────────────────────
+
+  const rawRecording = rawJson['recording'] as Partial<RecordingConfig> | undefined;
+  const recording: RecordingConfig = {
+    enabled: rawRecording?.enabled ?? DEFAULT_RECORDING_CONFIG.enabled,
+    outputDir: rawRecording?.outputDir ?? DEFAULT_RECORDING_CONFIG.outputDir,
+    journalDir: rawRecording?.journalDir ?? DEFAULT_RECORDING_CONFIG.journalDir,
+    compression: rawRecording?.compression ?? DEFAULT_RECORDING_CONFIG.compression,
+  };
+
+  // ── Шаг 11: итог ─────────────────────────────────────────────────────────
 
   if (errors.length > 0) {
     return { ok: false, errors };
   }
+
+  // Fallback стратегия: первое правило если нет top-level
+  const effectiveStrategy = strategy ?? (hasRules ? strategyRules![0]!.strategy : 'dumb');
+  const effectiveParams = rawParams
+    ? (strategyParams as unknown as BotConfig['strategyParams'])
+    : (hasRules ? strategyRules![0]!.strategyParams : ({} as unknown as BotConfig['strategyParams']));
 
   return {
     ok: true,
     value: {
       mode: mode!,
       config: {
-        strategy: strategy!,
-        strategyParams: strategyParams as unknown as BotConfig['strategyParams'],
+        strategy: effectiveStrategy,
+        strategyParams: effectiveParams,
+        ...(strategyRules && strategyRules.length > 0 ? { strategyRules } : {}),
         market: market!,
         resources,
         paper,
         account,
+        recording,
       },
     },
   };
@@ -268,10 +327,11 @@ function parseStrategyParams(
 
     case 'selective-entry':
       if (!result['orderSize']) errors.push('strategyParams.orderSize is required for selective-entry strategy');
-      for (const numField of ['minZoneCents', 'maxZoneCents', 'minDeltaPct', 'maxDeltaPct', 'minTauSec', 'maxTauSec', 'maxSpreadCents', 'warmupSec', 'bidOffsetCents']) {
+      for (const numField of ['minZoneCents', 'maxZoneCents', 'minDeltaPct', 'maxDeltaPct', 'minTauSec', 'maxTauSec', 'maxSpreadCents', 'warmupSec', 'bidOffsetCents', 'minRiseCents', 'waitPct', 'compMaxDiscrepancyCents']) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
-      if (raw['side'] === 'up' || raw['side'] === 'down') result['side'] = raw['side'];
+      if (raw['side'] === 'up' || raw['side'] === 'down' || raw['side'] === 'auto') result['side'] = raw['side'];
+      if (raw['requireDeltaAccel'] === true || raw['requireDeltaAccel'] === false) result['requireDeltaAccel'] = raw['requireDeltaAccel'];
       break;
 
     case 'oscillation-mm':
@@ -298,7 +358,20 @@ function parseStrategyParams(
 
     case 'adaptive-entry':
       if (!result['orderSize']) errors.push('strategyParams.orderSize is required for adaptive-entry strategy');
-      for (const numField of ['waitPct', 'minEwmaCents', 'minRiseCents', 'warmupTrades', 'bidOffsetCents']) {
+      for (const numField of ['waitPct', 'minEwmaCents', 'maxEwmaCents', 'minRiseCents', 'compMinRiseCents', 'warmupTrades', 'bidOffsetCents']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      break;
+
+    case 'fair-value-mm':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for fair-value-mm strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for fair-value-mm strategy');
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      for (const numField of [
+        'sigmaAnnual', 'minEdgeCents', 'inventorySkew', 'baseSpreadCents',
+        'maxSpreadCents', 'flowThreshold', 'jumpThresholdCents', 'warmupSec',
+        'ewmaAlpha', 'minTradesForMid', 'unwindSec', 'dynSizeDecay', 'minFairCents',
+      ]) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       break;

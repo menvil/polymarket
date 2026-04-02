@@ -46,6 +46,13 @@ export type {
 export type { IMarketCatalog, InstrumentInfo } from './IMarketCatalog.js';
 export type { IBalanceAllocator, AllocationResult, AllocationStats } from './IBalanceAllocator.js';
 export type { IMarketDataRecorder, MarketMeta } from './IMarketDataRecorder.js';
+export type {
+  IDecisionJournal,
+  SessionMeta,
+  DecisionEntry,
+  FillEntry,
+  ResolutionEntry,
+} from './IDecisionJournal.js';
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
 export type { IOrderStateStore } from './IOrderStateStore.js';

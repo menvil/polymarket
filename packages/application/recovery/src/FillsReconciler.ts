@@ -34,6 +34,7 @@
 import type { Result } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, VenueTradeSnapshot } from '@polymarket/ports';
 import type { IProcessedFillRepository } from '@polymarket/ports';
@@ -109,7 +110,7 @@ export class FillsReconciler {
     const tradesResult = await this._deps.exchangeClient.getTrades(accountId, since);
     if (!tradesResult.ok) {
       this._logger.error('FillsReconciler: failed to fetch trades from venue', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
         error: tradesResult.error.message,
       });
       return { totalFromVenue: 0, alreadyProcessed: 0, newlyProcessed: 0, errors: 1 };
@@ -121,7 +122,7 @@ export class FillsReconciler {
     let errors = 0;
 
     this._logger.info('FillsReconciler: fetched trades from venue', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       count: trades.length,
     });
 

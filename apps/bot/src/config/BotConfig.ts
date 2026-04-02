@@ -40,7 +40,7 @@ import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -160,15 +160,98 @@ export interface AccountConfig {
   readonly accountId: string;
 }
 
+// ── Мульти-стратегия ────────────────────────────────────────────────────────
+
+/** Тип параметров стратегии (union всех возможных конфигов) */
+export type AnyStrategyParams = DumbStrategyConfig | ASStrategyConfig | CrossMarketArbConfig | ProbTableConfig | OscillationMMConfig | MomentumScalpConfig | SmartEntryConfig | AdaptiveEntryConfig;
+
+/**
+ * Фильтр для маршрутизации рынка на конкретную стратегию.
+ *
+ * @remarks
+ * Используется в `strategyRules` для определения какая стратегия обслуживает рынок.
+ * Все поля опциональны — пустой фильтр матчит все рынки (catch-all).
+ */
+export interface StrategyMatchFilter {
+  /** Минимальная длительность рынка в минутах */
+  readonly minDurationMinutes?: number;
+  /** Максимальная длительность рынка в минутах */
+  readonly maxDurationMinutes?: number;
+  /** Рынок должен содержать хотя бы одно из этих слов (в question) */
+  readonly anyOfKeywords?: string[];
+  /** Рынок должен содержать все эти слова (в question) */
+  readonly requiredKeywords?: string[];
+}
+
+/**
+ * Правило маршрутизации: фильтр рынка → стратегия + параметры.
+ *
+ * @remarks
+ * Правила проверяются в порядке массива, первое совпадение побеждает.
+ * Рынок, не попавший ни в одно правило, пропускается.
+ */
+export interface StrategyRule {
+  /** Человекочитаемая метка (для логов) */
+  readonly label: string;
+  /** Фильтр рынка */
+  readonly match: StrategyMatchFilter;
+  /** Тип стратегии */
+  readonly strategy: StrategyType;
+  /** Параметры стратегии */
+  readonly strategyParams: AnyStrategyParams;
+}
+
+// ── Запись данных (live/paper observability) ────────────────────────────────
+
+/**
+ * Конфигурация записи рыночных данных и журнала решений.
+ *
+ * @remarks
+ * Включается в live/paper режимах для:
+ * - Записи сырых WS-событий (orderbook, trades) в `.jsonl.gz` — можно прогнать бектест
+ * - Ведения журнала решений стратегии — отдельный файл с контекстом каждого решения
+ * - Последующей сверки live vs backtest через replay-compare.ts
+ *
+ * @param enabled - Включить запись (default false)
+ * @param outputDir - Директория для рыночных данных (default './data/recordings')
+ * @param journalDir - Директория для журналов решений (default './data/journals')
+ * @param compression - Сжатие: 'gzip' или 'none' (default 'gzip')
+ */
+export interface RecordingConfig {
+  /** Включить запись рыночных данных и журнала решений */
+  readonly enabled: boolean;
+  /** Директория для записи рыночных данных (.jsonl.gz) */
+  readonly outputDir: string;
+  /** Директория для журналов решений (.journal.jsonl) */
+  readonly journalDir: string;
+  /** Сжатие рыночных данных */
+  readonly compression: 'none' | 'gzip';
+}
+
 // ── Корневой конфиг ──────────────────────────────────────────────────────────
 
-/** Полная конфигурация бота, читаемая из JSON файла */
+/**
+ * Полная конфигурация бота, читаемая из JSON файла.
+ *
+ * @remarks
+ * Поддерживает два режима:
+ * - **Одна стратегия**: `strategy` + `strategyParams` (обратная совместимость)
+ * - **Мульти-стратегия**: `strategyRules[]` — массив правил маршрутизации.
+ *   Когда `strategyRules` задан, `strategy`/`strategyParams` игнорируются.
+ */
 export interface BotConfig {
   /** Тип стратегии (можно переопределить через env STRATEGY) */
   readonly strategy: StrategyType;
 
   /** Параметры конкретной стратегии (зависят от strategy) */
-  readonly strategyParams: DumbStrategyConfig | ASStrategyConfig | CrossMarketArbConfig | ProbTableConfig | OscillationMMConfig | MomentumScalpConfig | SmartEntryConfig | AdaptiveEntryConfig;
+  readonly strategyParams: AnyStrategyParams;
+
+  /**
+   * Массив правил маршрутизации (мульти-стратегия).
+   * Когда задан, `strategy`/`strategyParams` используются как fallback.
+   * Первое совпадение побеждает. Рынок без совпадения пропускается.
+   */
+  readonly strategyRules?: readonly StrategyRule[];
 
   /** Источник и конфигурация рынка */
   readonly market: MarketConfig;
@@ -181,6 +264,9 @@ export interface BotConfig {
 
   /** Параметры аккаунта */
   readonly account: AccountConfig;
+
+  /** Запись рыночных данных и журнала решений (live/paper) */
+  readonly recording?: RecordingConfig;
 }
 
 // ── Дефолты ──────────────────────────────────────────────────────────────────
@@ -203,4 +289,12 @@ export const DEFAULT_RESOURCES_CONFIG: ResourcesConfig = {
 /** Дефолтный аккаунт для paper режима */
 export const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
   accountId: 'venue:POLYMARKET:paper-account',
+};
+
+/** Дефолтные значения для записи данных */
+export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
+  enabled: false,
+  outputDir: './data/recordings',
+  journalDir: './data/journals',
+  compression: 'gzip',
 };

@@ -15,6 +15,7 @@
 import Decimal from 'decimal.js';
 import type { IStrategy } from '@polymarket/strategy';
 import type { ILogger } from '@polymarket/logger';
+import type { IDecisionJournal } from '@polymarket/ports';
 import { DumbStrategy } from './strategies/DumbStrategy.js';
 import type { DumbStrategyConfig } from './strategies/DumbStrategy.js';
 import { AvellanedaStoikovStrategy } from './strategies/AvellanedaStoikovStrategy.js';
@@ -35,6 +36,8 @@ import { SmartEntryStrategy } from './strategies/SmartEntryStrategy.js';
 import type { SmartEntryConfig } from './strategies/SmartEntryStrategy.js';
 import { AdaptiveEntryStrategy } from './strategies/AdaptiveEntryStrategy.js';
 import type { AdaptiveEntryConfig } from './strategies/AdaptiveEntryStrategy.js';
+import { FairValueMMStrategy } from './strategies/FairValueMMStrategy.js';
+import type { FairValueMMConfig } from './strategies/FairValueMMStrategy.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -49,7 +52,8 @@ export type StrategyConfig =
   | { readonly type: 'oscillation-mm'; readonly id?: string; readonly params: OscillationMMConfig }
   | { readonly type: 'momentum-scalp'; readonly id?: string; readonly params: MomentumScalpConfig }
   | { readonly type: 'smart-entry'; readonly id?: string; readonly params: SmartEntryConfig }
-  | { readonly type: 'adaptive-entry'; readonly id?: string; readonly params: AdaptiveEntryConfig };
+  | { readonly type: 'adaptive-entry'; readonly id?: string; readonly params: AdaptiveEntryConfig }
+  | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig };
 
 // ── Фабрика ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +66,7 @@ export type StrategyConfig =
  *
  * @throws {Error} Если тип стратегии неизвестен
  */
-export function createStrategy(config: StrategyConfig, logger?: ILogger): IStrategy {
+export function createStrategy(config: StrategyConfig, logger?: ILogger, journal?: IDecisionJournal): IStrategy {
   switch (config.type) {
     case 'dumb':
       return new DumbStrategy(config.params, config.id, logger);
@@ -80,7 +84,7 @@ export function createStrategy(config: StrategyConfig, logger?: ILogger): IStrat
       return new CryptoProbStrategy(config.params, config.id, logger);
 
     case 'selective-entry':
-      return new SelectiveEntryStrategy(config.params, config.id, logger);
+      return new SelectiveEntryStrategy(config.params, config.id, logger, journal);
 
     case 'oscillation-mm':
       return new OscillationMMStrategy(config.params, config.id, logger);
@@ -92,7 +96,10 @@ export function createStrategy(config: StrategyConfig, logger?: ILogger): IStrat
       return new SmartEntryStrategy(config.params, config.id, logger);
 
     case 'adaptive-entry':
-      return new AdaptiveEntryStrategy(config.params, config.id, logger);
+      return new AdaptiveEntryStrategy(config.params, config.id, logger, journal);
+
+    case 'fair-value-mm':
+      return new FairValueMMStrategy(config.params, config.id, logger);
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);

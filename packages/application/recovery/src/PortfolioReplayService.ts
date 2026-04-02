@@ -41,7 +41,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
-import { KnownVenues } from '@polymarket/ids';
+import { KnownVenues, accountIdToString } from '@polymarket/ids';
 import { Balance, Money } from '@polymarket/value-objects';
 import { asPortfolioId } from '@polymarket/portfolio';
 import { Portfolio } from '@polymarket/portfolio';
@@ -86,7 +86,7 @@ export class PortfolioReplayService {
     const existing = this._deps.portfolioStore.get(accountId);
     if (existing) {
       this._logger.info('Portfolio already initialized, skipping replay', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
       });
       return;
     }
@@ -97,14 +97,14 @@ export class PortfolioReplayService {
       usdcBalance = await this._deps.balanceProvider.getUsdcBalance(accountId);
     } catch (err) {
       this._logger.error('Failed to fetch USDC balance from venue', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
         error: String(err),
       });
       return;
     }
 
     // Шаг 3: Создать Portfolio
-    const portfolioId = asPortfolioId(`portfolio-${String(accountId)}`);
+    const portfolioId = asPortfolioId(`portfolio-${accountIdToString(accountId)}`);
     const balance = Balance.withZeroReserved(
       Money.of(usdcBalance, 'USDC'),
       accountId,
@@ -114,7 +114,7 @@ export class PortfolioReplayService {
     const portfolioResult = Portfolio.create({ id: portfolioId, accountId, balance });
     if (!portfolioResult.ok) {
       this._logger.error('Failed to create portfolio', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
         error: portfolioResult.error.message,
       });
       return;
@@ -124,14 +124,14 @@ export class PortfolioReplayService {
     const saveResult = this._deps.portfolioStore.save(portfolioResult.value, 0);
     if (!saveResult.ok) {
       this._logger.error('Failed to save portfolio to store', {
-        accountId: String(accountId),
+        accountId: accountIdToString(accountId),
         error: saveResult.error.message,
       });
       return;
     }
 
     this._logger.info('Portfolio initialized from venue balance', {
-      accountId: String(accountId),
+      accountId: accountIdToString(accountId),
       usdcBalance: usdcBalance.toString(),
     });
   }

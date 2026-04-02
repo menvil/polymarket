@@ -11,6 +11,8 @@
  */
 
 export { DataRecorder } from './DataRecorder.js';
+export { DecisionJournalRecorder } from './DecisionJournalRecorder.js';
+export type { DecisionJournalConfig } from './DecisionJournalRecorder.js';
 export { NDJSONFormatter } from './formatters/NDJSONFormatter.js';
 export { GzipCompressor } from './compression/GzipCompressor.js';
 export type { IFormatter } from './formatters/IFormatter.js';
