@@ -291,7 +291,7 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
 
   for (let i = 0; i < rounds; i++) {
     try {
-      // Place: BUY 1 token @ $0.01 (далеко от рынка, не заполнится)
+      // Place: BUY 5 tokens @ $0.01 (далеко от рынка, не заполнится)
       const start = performance.now();
       const result = await orderClient.createOrder({
         tokenId,
@@ -301,16 +301,31 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
         nonce: 0,
         feeRateBps: 1000,
       });
-      placeLat.push(performance.now() - start);
+      const placeMs = performance.now() - start;
+
+      if (!result?.success || !result?.orderID) {
+        console.log(`    Place #${i + 1}: FAILED (${placeMs.toFixed(0)}ms) error="${result?.errorMsg ?? 'no orderID'}"`);
+        continue;
+      }
+
+      placeLat.push(placeMs);
+      console.log(`    Place #${i + 1}: OK (${placeMs.toFixed(0)}ms) orderID=${result.orderID.slice(0, 16)}... status=${result.status}`);
 
       // Cancel immediately
-      if (result?.orderID) {
-        const cancelStart = performance.now();
-        await orderClient.cancelOrder(result.orderID);
-        cancelLat.push(performance.now() - cancelStart);
+      const cancelStart = performance.now();
+      const cancelResult = await orderClient.cancelOrder(result.orderID);
+      const cancelMs = performance.now() - cancelStart;
+
+      const canceled = cancelResult?.canceled?.includes(result.orderID);
+      if (canceled) {
+        cancelLat.push(cancelMs);
+        console.log(`    Cancel #${i + 1}: OK (${cancelMs.toFixed(0)}ms)`);
+      } else {
+        const reason = cancelResult?.not_canceled?.[result.orderID] ?? 'unknown';
+        console.log(`    Cancel #${i + 1}: FAILED (${cancelMs.toFixed(0)}ms) reason="${reason}"`);
       }
     } catch (err) {
-      console.log(`    Order test #${i + 1} failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.log(`    Order test #${i + 1} error: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
