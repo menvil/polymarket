@@ -103,31 +103,46 @@ async function discoverToken(): Promise<DiscoveredToken | null> {
     return null;
   };
 
-  // Фильтр: endDate должен быть в ближайшие 24 часа (реально активный рынок на CLOB)
   const now = Date.now();
-  const maxEndDate = now + 24 * 60 * 60 * 1000; // +24h
 
   const isLive = (m: Record<string, unknown>): boolean => {
+    // active, не closed, есть orderbook, endDate в будущем
+    if (m['closed'] === true || m['active'] === false || m['enableOrderBook'] === false) return false;
     const endDate = m['endDate'] as string | undefined;
     if (!endDate) return false;
-    const endMs = new Date(endDate).getTime();
-    return endMs > now && endMs < maxEndDate;
+    return new Date(endDate).getTime() > now;
   };
 
-  // Попытка 1: по keywords + endDate в ближайшие 24h
   if (discoveryKeywords.length > 0) {
     console.log(`  Searching by keywords: [${discoveryKeywords.join(', ')}]`);
   }
 
-  const resp = await fetch(
-    `${GAMMA_URL}/markets?closed=false&limit=500&order=endDate&ascending=true`,
-    { signal: AbortSignal.timeout(15_000) },
-  );
-  const markets = await resp.json() as Array<Record<string, unknown>>;
+  // Загружаем все активные рынки (пагинация по 500, макс 3 страницы)
+  const allMarkets: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < 1500; offset += 500) {
+    const resp = await fetch(
+      `${GAMMA_URL}/markets?closed=false&active=true&limit=500&offset=${offset}`,
+      { signal: AbortSignal.timeout(20_000) },
+    );
+    const batch = await resp.json() as Array<Record<string, unknown>>;
+    allMarkets.push(...batch);
+    if (batch.length < 500) break;
+  }
+  console.log(`  Loaded ${allMarkets.length} markets from Gamma API`);
 
-  // Сначала ищем по keywords
-  for (const m of markets) {
-    if (!isLive(m)) continue;
+  // Фильтруем: live + keywords → сортируем по endDate (ближайший первым)
+  const live = allMarkets
+    .filter(isLive)
+    .sort((a, b) => {
+      const aEnd = new Date((a['endDate'] as string) ?? '').getTime();
+      const bEnd = new Date((b['endDate'] as string) ?? '').getTime();
+      return aEnd - bEnd;
+    });
+
+  console.log(`  Live markets: ${live.length}`);
+
+  // Сначала ищем по keywords (ближайший endDate)
+  for (const m of live) {
     const question = (m['question'] as string) ?? '';
     if (!matchesKeywords(question)) continue;
     const tokenId = extractToken(m);
@@ -135,12 +150,11 @@ async function discoverToken(): Promise<DiscoveredToken | null> {
   }
 
   if (discoveryKeywords.length > 0) {
-    console.log('  No keyword match in live markets, trying any live market...');
+    console.log('  No keyword match, falling back to nearest live market...');
   }
 
-  // Fallback: любой живой рынок (endDate в ближайшие 24h)
-  for (const m of markets) {
-    if (!isLive(m)) continue;
+  // Fallback: ближайший живой рынок
+  for (const m of live) {
     const tokenId = extractToken(m);
     if (tokenId) return { tokenId, question: (m['question'] as string) ?? '?' };
   }
