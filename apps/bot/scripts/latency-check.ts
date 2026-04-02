@@ -82,34 +82,55 @@ interface DiscoveredToken {
 }
 
 async function discoverToken(): Promise<DiscoveredToken | null> {
-  // Ищем рынок с ближайшим завершением по keywords (активный, с ордерами в книге)
-  const resp = await fetch(
-    `${GAMMA_URL}/markets?closed=false&limit=200&order=endDate&ascending=true`,
-    { signal: AbortSignal.timeout(15_000) },
-  );
-  const markets = await resp.json() as Array<Record<string, unknown>>;
-
   const matchesKeywords = (q: string): boolean => {
     if (discoveryKeywords.length === 0) return true;
     const lower = q.toLowerCase();
     return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
   };
 
-  // Ищем ближайший по endDate рынок с нашими keywords
-  for (const m of markets) {
-    const question = (m['question'] as string) ?? '';
-    if (!matchesKeywords(question)) continue;
-    // Проверяем что endDate в будущем
-    const endDate = m['endDate'] as string | undefined;
-    if (endDate && new Date(endDate).getTime() < Date.now()) continue;
+  const extractToken = (m: Record<string, unknown>): string | null => {
+    // clobTokenIds = JSON string массива
     const raw = m['clobTokenIds'] as string | undefined;
     if (raw) {
       try {
         const ids = JSON.parse(raw) as string[];
-        if (ids[0]) return { tokenId: ids[0], question };
+        if (ids[0]) return ids[0];
       } catch { /* skip */ }
     }
+    // Fallback: tokens массив объектов
+    const tokens = m['tokens'] as Array<Record<string, unknown>> | undefined;
+    if (tokens?.[0]?.['token_id']) return tokens[0]!['token_id'] as string;
+    return null;
+  };
+
+  // Попытка 1: по keywords + ближайший endDate
+  if (discoveryKeywords.length > 0) {
+    console.log(`  Searching by keywords: [${discoveryKeywords.join(', ')}]`);
+    const resp = await fetch(
+      `${GAMMA_URL}/markets?closed=false&limit=200&order=endDate&ascending=true`,
+      { signal: AbortSignal.timeout(15_000) },
+    );
+    const markets = await resp.json() as Array<Record<string, unknown>>;
+    for (const m of markets) {
+      const question = (m['question'] as string) ?? '';
+      if (!matchesKeywords(question)) continue;
+      const tokenId = extractToken(m);
+      if (tokenId) return { tokenId, question };
+    }
+    console.log('  No keyword match, falling back to top volume...');
   }
+
+  // Попытка 2 (fallback): топ по объёму — гарантированно есть ордера
+  const resp2 = await fetch(
+    `${GAMMA_URL}/markets?closed=false&limit=10&order=volume&ascending=false`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
+  const markets2 = await resp2.json() as Array<Record<string, unknown>>;
+  for (const m of markets2) {
+    const tokenId = extractToken(m);
+    if (tokenId) return { tokenId, question: (m['question'] as string) ?? '?' };
+  }
+
   return null;
 }
 
