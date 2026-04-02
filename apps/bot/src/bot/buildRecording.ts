@@ -25,6 +25,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { IMarketDataRecorder, IDecisionJournal, MarketMeta, DiscoveredMarket } from '@polymarket/ports';
+import type { IEventBus } from '@polymarket/event-bus';
 import type { MarketId } from '@polymarket/ids';
 import type { RecordingConfig } from '../config/BotConfig.js';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
@@ -77,6 +78,12 @@ export interface RecordingInfra {
    * @param mode - Режим работы (для journal)
    */
   openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void;
+
+  /**
+   * Подключает journal к EventBus для записи fill событий.
+   * Вызвать ОДИН раз при старте.
+   */
+  wireToEventBus(eventBus: IEventBus): void;
 
   /**
    * Записывает market_resolved event в snapshot (strike + resolution price).
@@ -169,6 +176,48 @@ export function buildRecording(
         }
       });
       log.debug('RTDS recording wired (crypto_price)');
+    },
+
+    wireToEventBus(eventBus: IEventBus): void {
+      // Маппинг orderId → tokenId для роутинга fills в journal
+      const orderToToken = new Map<string, string>();
+      eventBus.subscribe('ORDER_CREATED', (event) => {
+        const tokenId = String(event.asset ?? '');
+        if (tokenId) orderToToken.set(String(event.orderId), tokenId);
+      });
+
+      // Записываем fill события в journal
+      eventBus.subscribe('ORDER_FILLED', (event) => {
+        const price = event.fill.price.value();
+        const size = event.fill.size.value();
+        const tokenId = orderToToken.get(String(event.orderId)) ?? '';
+        journal.recordFill({
+          marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
+          ts: Date.now(),
+          orderId: String(event.orderId),
+          side: event.fill.side as 'BUY' | 'SELL',
+          price: price.toFixed(4),
+          size: size.toFixed(2),
+          notional: price.times(size).toFixed(4),
+          partial: false,
+        });
+      });
+      eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
+        const price = event.fill.price.value();
+        const size = event.fill.size.value();
+        const tokenId = orderToToken.get(String(event.orderId)) ?? '';
+        journal.recordFill({
+          marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
+          ts: Date.now(),
+          orderId: String(event.orderId),
+          side: event.fill.side as 'BUY' | 'SELL',
+          price: price.toFixed(4),
+          size: size.toFixed(2),
+          notional: price.times(size).toFixed(4),
+          partial: true,
+        });
+      });
+      log.debug('EventBus recording wired (fills)');
     },
 
     openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void {

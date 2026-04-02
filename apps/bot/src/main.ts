@@ -676,6 +676,7 @@ async function runPaper(): Promise<void> {
 
   // Recording: подключаем запись ВС сырых WS-сообщений (тот же подход что collect-data)
   recording?.wireToWs(wsAdapter);
+  recording?.wireToEventBus(eventBus);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based fills в PaperFillSimulator)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
@@ -4169,6 +4170,7 @@ async function runLive(): Promise<void> {
 
   // Recording: подключаем запись всех сырых WS-сообщений
   recording?.wireToWs(marketWsAdapter);
+  recording?.wireToEventBus(eventBus);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based аналитики)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
