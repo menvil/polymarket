@@ -787,6 +787,7 @@ async function runPaper(): Promise<void> {
         question,
         tokenIds,
         expiresAt: expiresAtResult.value,
+        rawMarket: slot.candidate?.rawMarket,
       });
       recording.journal.startSession({
         marketId: String(slot.marketId),
