@@ -78,6 +78,8 @@ const FLUSH_INTERVAL_MS = 5_000;
 export class DecisionJournalRecorder implements IDecisionJournal {
   private readonly _logger: ILogger;
   private readonly _writers = new Map<string, JournalWriter>();
+  /** Обратный индекс: instrumentId → marketId (для стратегий которые знают только instrumentId) */
+  private readonly _instrumentIndex = new Map<string, string>();
   private _flushTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -128,6 +130,12 @@ export class DecisionJournalRecorder implements IDecisionJournal {
         stream,
         eventsRecorded: 0,
       });
+
+      // Обратный индекс: instrumentId и все tokenIds → marketId
+      if (meta.instrumentId) this._instrumentIndex.set(meta.instrumentId, key);
+      for (const tokenId of meta.tokenIds) {
+        this._instrumentIndex.set(tokenId, key);
+      }
 
       this._logger.debug('Journal session started', { marketId: key, filePath });
     } catch (err) {
@@ -215,7 +223,12 @@ export class DecisionJournalRecorder implements IDecisionJournal {
   // ── Приватные методы ─────────────────────────────────────────────────────
 
   private _appendRecord(marketId: string, record: Record<string, unknown>): void {
-    const writer = this._writers.get(marketId);
+    // Поиск: сначала по marketId (conditionId), потом по instrumentId/tokenId через индекс
+    let writer = this._writers.get(marketId);
+    if (!writer) {
+      const resolvedKey = this._instrumentIndex.get(marketId);
+      if (resolvedKey) writer = this._writers.get(resolvedKey);
+    }
     if (!writer) return;
 
     try {
