@@ -299,25 +299,11 @@ async function runPaper(): Promise<void> {
   const pendingChainlinkStrike = new Map<string, number>(); // symbol → eventStartTimeMs
   let lastCryptoPriceLogMs = 0;
   const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
+  // Recording: подключаем запись крипто-цен из RTDS
+  recording?.wireToRtds(rtdsClient);
+
   rtdsClient.onPrice((symbol, price, ts) => {
     cryptoPriceStore.updatePrice(symbol, price, ts);
-
-    // Recording: записываем crypto_price во все активные snapshot файлы
-    if (recording) {
-      const cryptoEvent = {
-        t: 'crypto_price' as const,
-        symbol,
-        price,
-        ts,
-        source: symbol.includes('/') ? 'chainlink' : 'binance',
-      };
-      // Записываем в каждый активный рынок с этим символом
-      for (const slot of activeMarkets.values()) {
-        if (slot.cryptoMeta?.rtdsFilter === symbol) {
-          recording.dataRecorder.recordEvent(slot.tokenIdStr, cryptoEvent);
-        }
-      }
-    }
 
     // Периодический лог крипто-цен (раз в 30с) — символ активного рынка или арб-пары
     if (symbol.includes('/')) {
@@ -686,16 +672,14 @@ async function runPaper(): Promise<void> {
   const wsAdapter = new PolymarketWsAdapter(wsManager, logger);
 
   // MarketDataFeedAdapter — маршрутизирует orderbook snapshots → BookUpdateHandler → BOOK_UPDATED
-  const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger, recording?.dataRecorder);
+  const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger);
+
+  // Recording: подключаем запись ВС сырых WS-сообщений (тот же подход что collect-data)
+  recording?.wireToWs(wsAdapter);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based fills в PaperFillSimulator)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   wsAdapter.onTradeEvent(async (dto) => {
-    // Recording: записываем trade event в snapshot файл (для replay)
-    recording?.dataRecorder.recordEvent(dto.asset_id, {
-      ...dto,
-      event_type: 'last_trade_price',
-    });
     if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
@@ -776,30 +760,18 @@ async function runPaper(): Promise<void> {
       });
     }
 
-    // Recording: регистрируем рынок в DataRecorder и журнале решений
-    if (recording) {
+    // Recording: регистрируем рынок (WS events + crypto prices + journal)
+    if (recording && slot.candidate) {
       const tokenIds = slot.complementaryInstrumentId
         ? [String(slot.instrumentId), String(slot.complementaryInstrumentId)]
         : [String(slot.instrumentId)];
-      const question = slot.candidate?.question ?? String(slot.marketId);
-      recording.dataRecorder.registerMarket({
+      recording.openMarket(slot.candidate, {
         marketId: slot.marketId,
-        question,
+        question: slot.candidate.question ?? String(slot.marketId),
         tokenIds,
         expiresAt: expiresAtResult.value,
-        rawMarket: slot.candidate?.rawMarket,
-      });
-      recording.journal.startSession({
-        marketId: String(slot.marketId),
-        mode: mode as 'live' | 'paper',
-        strategyType: slot.strategy.name,
-        strategyConfig: {},
-        marketQuestion: question,
-        tokenIds,
-        instrumentId: String(slot.instrumentId),
-        expiresAtMs: slot.expiresAtMs,
-        eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
-      });
+        rawMarket: slot.candidate.rawMarket,
+      }, mode as 'live' | 'paper');
     }
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
@@ -1140,7 +1112,7 @@ async function runPaper(): Promise<void> {
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
-    // Recording: финализируем рынок (flush + compress + journal endSession)
+    // Recording: resolution + финализация
     if (recording) {
       if (settlementResult) {
         recording.journal.recordResolution({
@@ -1150,8 +1122,7 @@ async function runPaper(): Promise<void> {
           settlementPrice: settlementResult.settlementPrice.toFixed(2),
         });
       }
-      await recording.journal.endSession(slot.marketId, reason);
-      await recording.dataRecorder.finalizeMarket(slot.marketId, reason);
+      await recording.closeMarket(slot.marketId, reason);
     }
 
     // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
@@ -3196,10 +3167,7 @@ async function runPaper(): Promise<void> {
       await wsAdapter.disconnect();
       rtdsClient.disconnect();
       marketDataStore.stop();
-      if (recording) {
-        await recording.journal.close();
-        await recording.dataRecorder.close();
-      }
+      await recording?.close();
       logger.info('Shutdown complete');
     } catch (err) {
       logger.error('Error during shutdown', { err: err instanceof Error ? err : new Error(String(err)) });
@@ -3862,24 +3830,11 @@ async function runLive(): Promise<void> {
   const livePendingChainlinkStrike = new Map<string, number>();
   let liveLastCryptoPriceLogMs = 0;
   const CRYPTO_PRICE_LOG_INTERVAL_MS = 30_000;
+  // Recording: подключаем запись крипто-цен из RTDS
+  recording?.wireToRtds(liveRtdsClient);
+
   liveRtdsClient.onPrice((symbol, price, ts) => {
     liveCryptoPriceStore.updatePrice(symbol, price, ts);
-
-    // Recording: записываем crypto_price во все активные snapshot файлы
-    if (recording) {
-      const cryptoEvent = {
-        t: 'crypto_price' as const,
-        symbol,
-        price,
-        ts,
-        source: symbol.includes('/') ? 'chainlink' : 'binance',
-      };
-      for (const slot of activeMarkets.values()) {
-        if (slot.cryptoMeta?.rtdsFilter === symbol) {
-          recording.dataRecorder.recordEvent(slot.tokenIdStr, cryptoEvent);
-        }
-      }
-    }
 
     // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
     if (symbol.includes('/')) {
@@ -4197,16 +4152,14 @@ async function runLive(): Promise<void> {
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
-  const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger, recording?.dataRecorder);
+  const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger);
+
+  // Recording: подключаем запись всех сырых WS-сообщений
+  recording?.wireToWs(marketWsAdapter);
 
   // Trade bridge — публичные трейды → TRADE_RECEIVED (для tape-based аналитики)
   // Фильтруем трейды по активным рынкам и комплементарным токенам (для dual-token стратегий)
   marketWsAdapter.onTradeEvent(async (dto) => {
-    // Recording: записываем trade event в snapshot файл
-    recording?.dataRecorder.recordEvent(dto.asset_id, {
-      ...dto,
-      event_type: 'last_trade_price',
-    });
     if (!activeMarkets.has(dto.asset_id) && !activeCompTokens.has(dto.asset_id)) return;
     const tradeInstrumentId = asInstrumentId(dto.asset_id);
     if (!tradeInstrumentId) return;
@@ -4267,6 +4220,20 @@ async function runLive(): Promise<void> {
         active: true,
         expiresAt: expiresAtResult.value,
       });
+    }
+
+    // Recording: регистрируем рынок (WS events + crypto prices + journal)
+    if (recording && slot.candidate) {
+      const tokenIds = slot.complementaryInstrumentId
+        ? [String(slot.instrumentId), String(slot.complementaryInstrumentId)]
+        : [String(slot.instrumentId)];
+      recording.openMarket(slot.candidate, {
+        marketId: slot.marketId,
+        question: slot.candidate.question ?? String(slot.marketId),
+        tokenIds,
+        expiresAt: expiresAtResult.value,
+        rawMarket: slot.candidate.rawMarket,
+      }, 'live');
     }
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
@@ -4608,7 +4575,7 @@ async function runLive(): Promise<void> {
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
-    // Recording: финализируем рынок (flush + compress + journal endSession)
+    // Recording: resolution + финализация
     if (recording) {
       if (settlementResult) {
         recording.journal.recordResolution({
@@ -4618,8 +4585,7 @@ async function runLive(): Promise<void> {
           settlementPrice: settlementResult.settlementPrice.toFixed(2),
         });
       }
-      await recording.journal.endSession(slot.marketId, reason);
-      await recording.dataRecorder.finalizeMarket(slot.marketId, reason);
+      await recording.closeMarket(slot.marketId, reason);
     }
 
     // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
@@ -5248,10 +5214,7 @@ async function runLive(): Promise<void> {
       await userWsAdapter.disconnect();
       liveRtdsClient.disconnect();
       marketDataStore.stop();
-      if (recording) {
-        await recording.journal.close();
-        await recording.dataRecorder.close();
-      }
+      await recording?.close();
       logger.info('Shutdown complete');
     } catch (err) {
       logger.error('Error during shutdown', { err: err instanceof Error ? err : new Error(String(err)) });

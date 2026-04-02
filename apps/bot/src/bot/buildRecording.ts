@@ -1,24 +1,33 @@
 /**
- * Builder: создание инфраструктуры записи данных (DataRecorder + DecisionJournal).
+ * Builder: создание и подключение инфраструктуры записи данных.
  *
  * @remarks
- * Создаёт `DataRecorder` для записи сырых WS-событий и `DecisionJournalRecorder`
- * для журнала решений стратегии. Оба создаются только если `recording.enabled = true`.
+ * Использует тот же подход что `packages/apps/collect-data`:
+ * - `wsAdapter.onRawMessage` → `recorder.recordEvent` для ВСЕХ WS-событий
+ * - RTDS `onPrice` → `recorder.recordEvent` для crypto_price событий
+ * - `recorder.registerMarket` с `rawMarket` для meta-строки
+ *
+ * Единый модуль для paper и live режимов.
  *
  * @example
  * ```typescript
  * const recording = buildRecording(config.recording, logger);
  * if (recording) {
- *   // Передать recording.dataRecorder в MarketDataFeedAdapter
- *   // Передать recording.journal в стратегии через strategyFactory
+ *   recording.wireToWs(wsAdapter);
+ *   recording.wireToRtds(rtdsClient);
+ *   // При открытии рынка:
+ *   recording.openMarket(candidate);
+ *   // При закрытии:
+ *   await recording.closeMarket(marketId, 'EXPIRED');
  * }
  * ```
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { IMarketDataRecorder } from '@polymarket/ports';
-import type { IDecisionJournal } from '@polymarket/ports';
+import type { IMarketDataRecorder, IDecisionJournal, MarketMeta, DiscoveredMarket } from '@polymarket/ports';
+import type { MarketId } from '@polymarket/ids';
 import type { RecordingConfig } from '../config/BotConfig.js';
+import { parseCryptoMeta } from '@polymarket/exchange/adapters';
 import {
   DataRecorder,
   NDJSONFormatter,
@@ -27,14 +36,58 @@ import {
 } from '@polymarket/data-collection';
 
 /**
+ * Интерфейс WS-адаптера для recording (минимальный).
+ */
+interface WsEmitterForRecording {
+  onRawMessage(cb: (tokenId: string, rawMsg: unknown) => void): () => void;
+}
+
+/**
+ * Интерфейс RTDS-клиента для recording (минимальный).
+ */
+interface RtdsClientForRecording {
+  onPrice(cb: (symbol: string, price: number, ts: number) => void): void;
+}
+
+/**
  * Результат создания инфраструктуры записи.
- *
- * @param dataRecorder - Рекордер сырых WS-событий (для MarketDataFeedAdapter)
- * @param journal - Журнал решений стратегии (для стратегий)
  */
 export interface RecordingInfra {
   readonly dataRecorder: IMarketDataRecorder;
   readonly journal: IDecisionJournal;
+
+  /**
+   * Подключает запись к WS-адаптеру (onRawMessage → recordEvent).
+   * Вызвать ОДИН раз после создания wsAdapter.
+   */
+  wireToWs(wsAdapter: WsEmitterForRecording): void;
+
+  /**
+   * Подключает запись к RTDS-клиенту (onPrice → recordEvent для crypto_price).
+   * Вызвать ОДИН раз после создания rtdsClient.
+   */
+  wireToRtds(rtdsClient: RtdsClientForRecording): void;
+
+  /**
+   * Регистрирует рынок для записи (meta + WS routing + RTDS routing).
+   * Вызывать при открытии рынка.
+   *
+   * @param candidate - Рынок из discovery (с rawMarket, allTokenIds, etc.)
+   * @param meta - Метаданные для DataRecorder.registerMarket
+   * @param mode - Режим работы (для journal)
+   */
+  openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void;
+
+  /**
+   * Финализирует рынок (flush + compress + journal endSession).
+   * Вызывать при закрытии/истечении рынка.
+   */
+  closeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void>;
+
+  /**
+   * Закрывает все сессии и recorder.
+   */
+  close(): Promise<void>;
 }
 
 /**
@@ -53,7 +106,7 @@ export function buildRecording(
     return undefined;
   }
 
-  const recorderLogger = logger.child({ component: 'Recording' });
+  const log = logger.child({ component: 'Recording' });
 
   const formatter = new NDJSONFormatter();
   const compressor = config.compression === 'gzip' ? new GzipCompressor() : null;
@@ -67,19 +120,92 @@ export function buildRecording(
     },
     formatter,
     compressor,
-    recorderLogger,
+    log,
   );
 
   const journal = new DecisionJournalRecorder(
     { journalDir: config.journalDir },
-    recorderLogger,
+    log,
   );
 
-  recorderLogger.warn('Recording enabled', {
+  /**
+   * RTDS symbol → Set<tokenId> для маршрутизации записи крипто-цен.
+   * Несколько рынков могут следить за одним символом (BTC 430-445 и BTC 435-440).
+   */
+  const symbolToTokenIds = new Map<string, Set<string>>();
+
+  log.warn('Recording enabled', {
     outputDir: config.outputDir,
     journalDir: config.journalDir,
     compression: config.compression,
   });
 
-  return { dataRecorder, journal };
+  return {
+    dataRecorder,
+    journal,
+
+    wireToWs(wsAdapter: WsEmitterForRecording): void {
+      // Записываем ВСЕ сырые WS-сообщения (тот же подход что collect-data)
+      wsAdapter.onRawMessage((tokenId, rawMsg) => {
+        dataRecorder.recordEvent(tokenId, rawMsg);
+      });
+      log.debug('WS recording wired (onRawMessage)');
+    },
+
+    wireToRtds(rtdsClient: RtdsClientForRecording): void {
+      // Записываем крипто-цены в snapshot файл каждого рынка с этим символом
+      rtdsClient.onPrice((symbol, price, ts) => {
+        const tokenIds = symbolToTokenIds.get(symbol);
+        if (!tokenIds || tokenIds.size === 0) return;
+        const source = symbol.includes('/') ? 'chainlink' : 'binance';
+        for (const tokenId of tokenIds) {
+          dataRecorder.recordEvent(tokenId, { t: 'crypto_price', symbol, price, ts, source });
+        }
+      });
+      log.debug('RTDS recording wired (crypto_price)');
+    },
+
+    openMarket(candidate: DiscoveredMarket, meta: MarketMeta, mode: 'live' | 'paper'): void {
+      // Регистрируем рынок в DataRecorder
+      dataRecorder.registerMarket(meta);
+
+      // RTDS маршрутизация для крипто-рынков
+      const cryptoMeta = parseCryptoMeta(candidate.rawMarket);
+      if (cryptoMeta) {
+        const primaryTokenId = meta.tokenIds[0];
+        if (primaryTokenId) {
+          for (const sub of cryptoMeta.rtdsSubscriptions) {
+            let ids = symbolToTokenIds.get(sub.filter);
+            if (!ids) { ids = new Set(); symbolToTokenIds.set(sub.filter, ids); }
+            ids.add(primaryTokenId);
+          }
+        }
+      }
+
+      // Журнал решений
+      journal.startSession({
+        marketId: String(meta.marketId),
+        mode,
+        strategyType: '',
+        strategyConfig: {},
+        marketQuestion: meta.question,
+        tokenIds: Array.from(meta.tokenIds),
+        instrumentId: String(candidate.instrumentId),
+        expiresAtMs: candidate.expiresAt.toNumber(),
+        eventStartMs: cryptoMeta?.eventStartTimeMs,
+      });
+    },
+
+    async closeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+      await journal.endSession(marketId, reason);
+      await dataRecorder.finalizeMarket(marketId, reason);
+
+      // RTDS маршрутизация очищается на стороне caller'а (main.ts отписывает от RTDS)
+    },
+
+    async close(): Promise<void> {
+      await journal.close();
+      await dataRecorder.close();
+    },
+  };
 }
