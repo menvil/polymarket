@@ -923,8 +923,10 @@ async function runPaper(): Promise<void> {
     }
 
     // Определяем какие стороны открываем
-    const sides: Array<{ outcomeIndex: 0 | 1; side: 'up' | 'down' }> = [
-      { outcomeIndex: mc.outcomeIndex, side: mc.outcomeIndex === 0 ? 'up' : 'down' },
+    // bidirectional: два слота (UP + DOWN) с фиксированным side
+    // non-bidirectional: один слот, side из конфига (default "auto" — стратегия сама выбирает)
+    const sides: Array<{ outcomeIndex: 0 | 1; side: 'up' | 'down' | undefined }> = [
+      { outcomeIndex: mc.outcomeIndex, side: mc.bidirectional ? (mc.outcomeIndex === 0 ? 'up' : 'down') : undefined },
     ];
     if (mc.bidirectional) {
       const oppositeIndex: 0 | 1 = mc.outcomeIndex === 0 ? 1 : 0;
@@ -941,10 +943,16 @@ async function runPaper(): Promise<void> {
         continue;
       }
 
-      // Стратегия с нужным side (из маршрутизации)
-      const sideParams = { ...marketSelection.strategyParams, side };
+      // Стратегия: side из конфига. При bidirectional — перезаписываем на фиксированный up/down.
+      // При non-bidirectional — оставляем как есть (auto или что задал пользователь).
+      const sideParams = side !== undefined
+        ? { ...marketSelection.strategyParams, side }
+        : { ...marketSelection.strategyParams };
+      const slotId = side !== undefined
+        ? `${marketSelection.strategy}-${side}-slot-${_slotCounter++}`
+        : `${marketSelection.strategy}-slot-${_slotCounter++}`;
       const slotStrategy = createStrategy(
-        { type: marketSelection.strategy, id: `${marketSelection.strategy}-${side}-slot-${_slotCounter++}`, params: sideParams } as unknown as StrategyConfig,
+        { type: marketSelection.strategy, id: slotId, params: sideParams } as unknown as StrategyConfig,
         logger,
         recording?.journal,
       );
