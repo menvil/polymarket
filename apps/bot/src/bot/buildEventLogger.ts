@@ -93,8 +93,46 @@ export function subscribeToOrderEvents(
 
   let bookCount = 0;
 
+  // ── WS staleness tracking ──────────────────────────────────────────────
+  const stalenessReadings: number[] = [];
+  let lastStalenessLogMs = Date.now();
+  const STALENESS_LOG_INTERVAL_MS = 60_000;
+  const STALENESS_MAX_READINGS = 500;
+
   const unsubBook = eventBus.subscribe('BOOK_UPDATED', (event) => {
     bookCount++;
+
+    // Staleness: localTime - serverTimestamp (только для live/paper, не backtest)
+    if (event.timestamp) {
+      const serverTs = event.timestamp.toNumber();
+      const localTs = Date.now();
+      const staleness = localTs - serverTs;
+      // Sanity: только разумные значения (0-60s, не отрицательные из-за clock drift в backtest)
+      if (staleness >= 0 && staleness < 60_000) {
+        stalenessReadings.push(staleness);
+        if (stalenessReadings.length > STALENESS_MAX_READINGS) {
+          stalenessReadings.splice(0, stalenessReadings.length - STALENESS_MAX_READINGS);
+        }
+      }
+    }
+
+    // Периодический staleness лог
+    const now = Date.now();
+    if (stalenessReadings.length > 0 && now - lastStalenessLogMs >= STALENESS_LOG_INTERVAL_MS) {
+      lastStalenessLogMs = now;
+      const sorted = [...stalenessReadings].sort((a, b) => a - b);
+      const avg = sorted.reduce((s, v) => s + v, 0) / sorted.length;
+      const p95 = sorted[Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1)]!;
+      const max = sorted[sorted.length - 1]!;
+      logger.info('WS staleness (60s)', {
+        n: sorted.length,
+        avg: avg.toFixed(0) + 'ms',
+        p95: p95.toFixed(0) + 'ms',
+        max: max.toFixed(0) + 'ms',
+      });
+      stalenessReadings.length = 0;
+    }
+
     if (logBook && bookCount % bookLogEvery === 0) {
       const { bestBid, bestAsk } = event.topOfBook;
       logger.info('Book tick', {

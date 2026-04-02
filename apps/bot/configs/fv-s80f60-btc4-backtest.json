@@ -1,0 +1,13 @@
+{
+  "strategy": "fair-value-mm",
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "strategyParams": {
+    "orderSize": 5, "qMax": 1, "sigmaAnnual": 0.80, "minEdgeCents": 2, "minFairCents": 60,
+    "inventorySkew": 1.0, "baseSpreadCents": 1, "maxSpreadCents": 5,
+    "flowThreshold": 0.8, "jumpThresholdCents": 3, "warmupSec": 10,
+    "ewmaAlpha": 0.3, "minTradesForMid": 5, "unwindSec": 30, "dynSizeDecay": 0.2
+  },
+  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day4/*"], "outcomeIndex": 0 }
+}
