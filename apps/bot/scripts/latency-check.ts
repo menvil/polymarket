@@ -163,6 +163,11 @@ async function measureWs(tokenId: string, rounds: number): Promise<WsResult> {
     ws.on('message', (data) => {
       const msg = data.toString().trim();
 
+      // Логируем первые несколько сообщений для отладки
+      if (staleness.length === 0 && pings.length === 0) {
+        console.log(`    WS msg [${phase}]: ${msg.slice(0, 120)}${msg.length > 120 ? '...' : ''}`);
+      }
+
       // Subscription ack (массив с подтверждением)
       if (!subscribed && (msg.startsWith('[') || msg === 'OK')) {
         subscribeMs = performance.now() - subscribeStart;
@@ -285,7 +290,7 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
         tokenId,
         side: 'BUY',
         price: 0.01,
-        size: 1,
+        size: 5,
         nonce: 0,
         feeRateBps: 1000,
       });
