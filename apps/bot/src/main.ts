@@ -1117,6 +1117,20 @@ async function runPaper(): Promise<void> {
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
 
+    // Recording: финализируем рынок (flush + compress + journal endSession)
+    if (recording) {
+      if (settlementResult) {
+        recording.journal.recordResolution({
+          marketId: String(slot.marketId), ts: Date.now(),
+          resolution: settlementResult.resolution as 'UP' | 'DOWN' | 'UNKNOWN',
+          pnl: settlementResult.cashCredit.toFixed(4),
+          settlementPrice: settlementResult.settlementPrice.toFixed(2),
+        });
+      }
+      await recording.journal.endSession(slot.marketId, reason);
+      await recording.dataRecorder.finalizeMarket(slot.marketId, reason);
+    }
+
     // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
     const closeTimestamp = TimestampService.create(Date.now());
     if (closeTimestamp.ok) {
@@ -4549,6 +4563,20 @@ async function runLive(): Promise<void> {
 
     // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
     printMarketSummary(slot, settlementResult);
+
+    // Recording: финализируем рынок (flush + compress + journal endSession)
+    if (recording) {
+      if (settlementResult) {
+        recording.journal.recordResolution({
+          marketId: String(slot.marketId), ts: Date.now(),
+          resolution: settlementResult.resolution as 'UP' | 'DOWN' | 'UNKNOWN',
+          pnl: settlementResult.cashCredit.toFixed(4),
+          settlementPrice: settlementResult.settlementPrice.toFixed(2),
+        });
+      }
+      await recording.journal.endSession(slot.marketId, reason);
+      await recording.dataRecorder.finalizeMarket(slot.marketId, reason);
+    }
 
     // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
     const liveCloseTimestamp = TimestampService.create(Date.now());
