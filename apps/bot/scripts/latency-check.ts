@@ -21,6 +21,10 @@ import WebSocket from 'ws';
 import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { DnsOverride } from '@polymarket/exchange/dns';
+import { PolymarketMarketDiscoveryAdapter } from '@polymarket/exchange/adapters';
+import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
+import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
+import type { IMarketFilterConfig } from '@polymarket/ports';
 
 // ── .env загрузка ────────────────────────────────────────────────────────────
 try {
@@ -44,11 +48,11 @@ const ROUNDS = parseInt(process.argv.find(a => a.startsWith('--rounds='))?.split
 // Конфиг бота: --config > CONFIG env > default
 const configArg = process.argv.find(a => a.startsWith('--config='))?.split('=')[1];
 const configPath = configArg ?? process.env['CONFIG'] ?? 'configs/sel-paper-5min.json';
-let discoveryKeywords: string[] = [];
+let botConfigRaw: Record<string, unknown> = {};
 try {
-  const raw = JSON.parse(readFileSync(resolve(import.meta.dirname ?? '.', '..', configPath), 'utf-8'));
-  discoveryKeywords = raw?.market?.filter?.requiredKeywords ?? [];
+  botConfigRaw = JSON.parse(readFileSync(resolve(import.meta.dirname ?? '.', '..', configPath), 'utf-8'));
 } catch { /* config not found */ }
+const marketFilter = (botConfigRaw['market'] as Record<string, unknown>)?.['filter'] as Record<string, unknown> | undefined;
 
 const logger = new ColorConsoleLogger(new LiveClock(), LogLevel.WARN);
 
@@ -74,7 +78,7 @@ function fmtStats(s: ReturnType<typeof stats>): string {
   return `min=${fmt(s.min)} avg=${fmt(s.avg)} p95=${fmt(s.p95)} max=${fmt(s.max)}`;
 }
 
-// ── Discover active market ───────────────────────────────────────────────────
+// ── Discover active market (тот же код что в main.ts runPaper/runLive) ────────
 
 interface DiscoveredToken {
   tokenId: string;
@@ -82,84 +86,44 @@ interface DiscoveredToken {
 }
 
 async function discoverToken(): Promise<DiscoveredToken | null> {
-  const matchesKeywords = (q: string): boolean => {
-    if (discoveryKeywords.length === 0) return true;
-    const lower = q.toLowerCase();
-    return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
+  const clock = new LiveClock();
+  const mc = marketFilter ?? {};
+
+  const filterConfig: IMarketFilterConfig = {
+    minTimeToExpiryHours: (mc['minTimeToExpiryHours'] as number) ?? 0,
+    minSpread: 0,
+    minLiquidity: (mc['minLiquidity'] as number) ?? 0,
+    maxMarketsToReturn: 5,
+    anyOfKeywords: mc['anyOfKeywords'] as string[] | undefined,
+    requiredKeywords: mc['requiredKeywords'] as string[] | undefined,
+    excludedKeywords: mc['excludedKeywords'] as string[] | undefined,
+    minDurationMinutes: mc['minDurationMinutes'] as number | undefined,
+    maxDurationMinutes: mc['maxDurationMinutes'] as number | undefined,
   };
 
-  const extractToken = (m: Record<string, unknown>): string | null => {
-    // clobTokenIds = JSON string массива
-    const raw = m['clobTokenIds'] as string | undefined;
-    if (raw) {
-      try {
-        const ids = JSON.parse(raw) as string[];
-        if (ids[0]) return ids[0];
-      } catch { /* skip */ }
-    }
-    // Fallback: tokens массив объектов
-    const tokens = m['tokens'] as Array<Record<string, unknown>> | undefined;
-    if (tokens?.[0]?.['token_id']) return tokens[0]!['token_id'] as string;
-    return null;
-  };
+  console.log(`  Filter: ${JSON.stringify(filterConfig)}`);
 
-  const now = Date.now();
+  const marketDataClient = new PolymarketMarketDataRestClient(
+    { baseUrl: GAMMA_URL },
+    logger,
+  );
+  const discoveryAdapter = new PolymarketMarketDiscoveryAdapter(
+    marketDataClient,
+    new MarketFilter(),
+    new MarketScorer(clock),
+    filterConfig,
+    logger,
+  );
 
-  const isLive = (m: Record<string, unknown>): boolean => {
-    // active, не closed, есть orderbook, endDate в будущем
-    if (m['closed'] === true || m['active'] === false || m['enableOrderBook'] === false) return false;
-    const endDate = m['endDate'] as string | undefined;
-    if (!endDate) return false;
-    return new Date(endDate).getTime() > now;
-  };
+  await discoveryAdapter.refresh();
+  const candidates = await discoveryAdapter.findCandidates();
+  const valid = candidates.filter(c => c.expiresAt.toNumber() > Date.now());
 
-  if (discoveryKeywords.length > 0) {
-    console.log(`  Searching by keywords: [${discoveryKeywords.join(', ')}]`);
-  }
+  if (valid.length === 0) return null;
 
-  // Загружаем все активные рынки (пагинация по 500, макс 3 страницы)
-  const allMarkets: Array<Record<string, unknown>> = [];
-  for (let offset = 0; offset < 1500; offset += 500) {
-    const resp = await fetch(
-      `${GAMMA_URL}/markets?closed=false&active=true&limit=500&offset=${offset}`,
-      { signal: AbortSignal.timeout(20_000) },
-    );
-    const batch = await resp.json() as Array<Record<string, unknown>>;
-    allMarkets.push(...batch);
-    if (batch.length < 500) break;
-  }
-  console.log(`  Loaded ${allMarkets.length} markets from Gamma API`);
-
-  // Фильтруем: live + keywords → сортируем по endDate (ближайший первым)
-  const live = allMarkets
-    .filter(isLive)
-    .sort((a, b) => {
-      const aEnd = new Date((a['endDate'] as string) ?? '').getTime();
-      const bEnd = new Date((b['endDate'] as string) ?? '').getTime();
-      return aEnd - bEnd;
-    });
-
-  console.log(`  Live markets: ${live.length}`);
-
-  // Сначала ищем по keywords (ближайший endDate)
-  for (const m of live) {
-    const question = (m['question'] as string) ?? '';
-    if (!matchesKeywords(question)) continue;
-    const tokenId = extractToken(m);
-    if (tokenId) return { tokenId, question };
-  }
-
-  if (discoveryKeywords.length > 0) {
-    console.log('  No keyword match, falling back to nearest live market...');
-  }
-
-  // Fallback: ближайший живой рынок
-  for (const m of live) {
-    const tokenId = extractToken(m);
-    if (tokenId) return { tokenId, question: (m['question'] as string) ?? '?' };
-  }
-
-  return null;
+  const first = valid[0]!;
+  const tokenId = first.allTokenIds?.[0] ?? String(first.instrumentId);
+  return { tokenId, question: first.question };
 }
 
 // ── WS: connect + subscribe + measure staleness ──────────────────────────────
@@ -341,7 +305,6 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
 
 async function main(): Promise<void> {
   console.log(`\nConfig: ${configPath}`);
-  if (discoveryKeywords.length > 0) console.log(`Keywords: ${discoveryKeywords.join(', ')}`);
   console.log(`Credentials: ${hasCredentials ? 'YES (order test enabled)' : 'NO (order test skipped)'}`);
 
   // DNS Override
@@ -379,7 +342,7 @@ async function main(): Promise<void> {
       console.log(`  Discovery (${gammaMs.toFixed(0)}ms): ${token.question.slice(0, 55)}`);
       console.log(`  Token: ${token.tokenId.slice(0, 20)}...`);
     } else {
-      console.log(`  No market found (keywords: [${discoveryKeywords.join(', ')}])`);
+      console.log('  No market found matching config filter');
     }
   } catch (err) {
     console.log(`  ERROR: ${err instanceof Error ? err.message : String(err)}`);
