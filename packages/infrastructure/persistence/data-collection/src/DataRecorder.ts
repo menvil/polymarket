@@ -467,17 +467,14 @@ export class DataRecorder implements IMarketDataRecorder {
    * @param writer - Внутреннее состояние рынка
    *
    * @remarks
-   * Сортирует события по timestamp перед записью, чтобы crypto_price
-   * и book/trade были перемешаны в хронологическом порядке.
-   * При реплее в бектесте события приходят так же, как в реальном времени.
+   * Записывает события в порядке прихода (без сортировки по timestamp).
+   * Это гарантирует что бектест replay получит события в той же последовательности
+   * что и paper/live — идентичные EWMA, delta, и решения стратегии.
    *
    * @throws При ошибке записи в поток
    */
   private async _flushWriter(writer: MarketWriter): Promise<void> {
     if (writer.buffer.length === 0 || !writer.stream) return;
-
-    // Сортируем по timestamp для хронологического порядка в файле
-    writer.buffer.sort((a, b) => a.ts - b.ts);
 
     const data = writer.buffer.map((e) => e.line).join('');
     writer.buffer = [];
