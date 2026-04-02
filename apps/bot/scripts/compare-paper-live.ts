@@ -47,7 +47,8 @@ function parseJournalFile(filePath: string): MarketSummary {
   let orderPrice: string | null = null;
   let orderTs: number | null = null;
   let fillPrice: string | null = null;
-  let fillSize: string | null = null;
+  let fillTotalSize = 0;
+  let fillTotalNotional = 0;
   let fillTs: number | null = null;
   let resolution = 'UNKNOWN';
   let cashCredit = '0';
@@ -75,7 +76,8 @@ function parseJournalFile(filePath: string): MarketSummary {
           break;
         case 'fill':
           fillPrice = r['price'] as string;
-          fillSize = r['size'] as string;
+          fillTotalSize += parseFloat(r['size'] as string) || 0;
+          fillTotalNotional += parseFloat(r['notional'] as string) || 0;
           fillTs = r['ts'] as number;
           break;
         case 'resolution':
@@ -91,11 +93,12 @@ function parseJournalFile(filePath: string): MarketSummary {
     ? Math.round((parseFloat(fillPrice) - parseFloat(orderPrice)) * 10000) / 100
     : null;
 
-  // Real PnL = settlement cash credit - entry cost
-  // cost = fillPrice × fillSize
-  const cost = (fillPrice && fillSize) ? parseFloat(fillPrice) * parseFloat(fillSize) : 0;
+  // Real PnL = settlement cash credit - total entry cost
+  // Use accumulated notional from all fills (handles partial fills correctly)
+  const cost = fillTotalNotional > 0 ? fillTotalNotional : 0;
   const credit = parseFloat(cashCredit) || 0;
   const realPnl = fillPrice ? credit - cost : 0;
+  const fillSize = fillTotalSize > 0 ? fillTotalSize.toFixed(2) : null;
 
   return { question, decision, orderPrice, orderTs, fillPrice, fillSize, fillTs, fillLatencyMs, slippage, resolution, cashCredit, realPnl, diagnosticCount };
 }
