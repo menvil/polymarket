@@ -40,6 +40,19 @@ const REST_URL = 'https://clob.polymarket.com';
 const GAMMA_URL = 'https://gamma-api.polymarket.com';
 const ROUNDS = parseInt(process.argv.find(a => a.startsWith('--rounds='))?.split('=')[1] ?? '10');
 
+// Читаем конфиг бота для discovery фильтров
+const configPath = process.argv.find(a => a.startsWith('--config='))?.split('=')[1]
+  ?? process.env['CONFIG']
+  ?? 'configs/sel-paper-5min.json';
+let discoveryKeywords: string[] = [];
+try {
+  const configContent = JSON.parse(readFileSync(resolve(import.meta.dirname ?? '.', '..', configPath), 'utf-8'));
+  discoveryKeywords = configContent?.market?.filter?.requiredKeywords ?? [];
+  if (discoveryKeywords.length > 0) {
+    console.log(`Config: ${configPath} (keywords: ${discoveryKeywords.join(', ')})`);
+  }
+} catch { /* config not found — use top volume */ }
+
 const logger = new ColorConsoleLogger(new LiveClock(), LogLevel.WARN);
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
@@ -75,15 +88,17 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
     const pings: number[] = [];
     let pingStart = 0;
     let round = 0;
+    let connected = false;
 
     ws.on('open', () => {
       connectMs = performance.now() - connectStart;
+      connected = true;
       pingStart = performance.now();
       ws.send('PING');
     });
 
     ws.on('message', (data) => {
-      const msg = data.toString();
+      const msg = data.toString().trim();
       if (msg === 'PONG') {
         pings.push(performance.now() - pingStart);
         round++;
@@ -97,11 +112,19 @@ async function measureWsPing(rounds: number): Promise<{ connectMs: number; pings
       }
     });
 
-    ws.on('error', (err) => reject(err));
+    ws.on('error', (err) => {
+      if (!connected) reject(new Error(`WS connect failed: ${err.message}`));
+    });
+
+    ws.on('close', () => {
+      if (pings.length > 0) resolve({ connectMs, pings });
+    });
+
     setTimeout(() => {
       ws.close();
       if (pings.length > 0) resolve({ connectMs, pings });
-      else reject(new Error('WS ping timeout'));
+      else if (!connected) reject(new Error('WS connect timeout (30s)'));
+      else reject(new Error('WS PING timeout — server did not respond to text PING'));
     }, 30_000);
   });
 }
@@ -235,28 +258,42 @@ async function main(): Promise<void> {
     console.log('  ERROR: no successful requests');
   }
 
-  // 4. Auto-discover active token (один запрос к Gamma API, limit=5)
+  // 4. Auto-discover active token (Gamma API, фильтр по keywords из конфига)
   console.log('\nMarket Data Staleness:');
   let tokenId: string | null = null;
   try {
     console.log('  Discovering active market...');
-    const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=5&order=volume&ascending=false`, {
-      signal: AbortSignal.timeout(10_000),
+    // Загружаем рынки с Gamma API (limit=100 чтобы найти BTC Up/Down среди топ-объёмов)
+    const resp = await fetch(`${GAMMA_URL}/markets?closed=false&limit=100&order=volume&ascending=false`, {
+      signal: AbortSignal.timeout(15_000),
     });
     const markets = await resp.json() as Array<Record<string, unknown>>;
+
+    // Фильтруем по keywords из конфига (все слова должны быть в question)
+    const matchesKeywords = (question: string): boolean => {
+      if (discoveryKeywords.length === 0) return true;
+      const lower = question.toLowerCase();
+      return discoveryKeywords.every(kw => lower.includes(kw.toLowerCase()));
+    };
+
     for (const m of markets) {
+      const question = (m['question'] as string) ?? '';
+      if (!matchesKeywords(question)) continue;
+
       const raw = m['clobTokenIds'] as string | undefined;
       if (raw) {
         try {
           const ids = JSON.parse(raw) as string[];
           if (ids.length > 0 && ids[0]) {
             tokenId = ids[0];
-            const question = (m['question'] as string ?? '?').slice(0, 50);
-            console.log(`  Found: ${question} (token: ${tokenId.slice(0, 16)}...)`);
+            console.log(`  Found: ${question.slice(0, 60)} (token: ${tokenId.slice(0, 16)}...)`);
             break;
           }
         } catch { /* not JSON array */ }
       }
+    }
+    if (!tokenId) {
+      console.log(`  No market found matching keywords: [${discoveryKeywords.join(', ')}]`);
     }
   } catch (err) {
     console.log(`  Discovery failed: ${err instanceof Error ? err.message : String(err)}`);
