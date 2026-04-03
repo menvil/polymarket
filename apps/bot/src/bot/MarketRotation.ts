@@ -250,16 +250,8 @@ export const CANCEL_BEFORE_EXPIRY_MS = 5_000;
  */
 export const MIN_VIABLE_TRADING_MS = 30_000;
 
-/**
- * Максимальное время в будущем для eventStart (мс).
- *
- * @remarks
- * 10 минут — достаточно для подхвата следующего 5-мин рынка при ротации.
- * Polymarket создаёт рынки за 5-10 мин до eventStart.
- * Если порог слишком мал (30с), бот не может открыть следующий рынок
- * после закрытия текущего — все кандидаты отклоняются.
- */
-const MAX_EVENT_START_AHEAD_MS = 10 * 60_000;
+// eventStart порог убран — fillMarketSlots сортирует по ближайшему eventStart.
+// Discovery filter отсеивает неподходящие рынки. Бот берёт ближайший.
 
 // ── Счётчик слотов (глобальный, не зависит от экземпляра) ────────────────
 
@@ -306,7 +298,6 @@ export class MarketRotation {
   private _discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
   private _isShuttingDown = false;
   private _rotationInProgress = false;
-  private _retryingFill = false;
   private _expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
   private _scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -475,17 +466,9 @@ export class MarketRotation {
     const expiresMs = candidate.expiresAt.toNumber();
     const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
-    // Не занимаем слот если eventStart > 10 мин вперёд
-    if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + MAX_EVENT_START_AHEAD_MS) {
-      logger.info('Skipping market: event starts too far in the future', {
-        marketId: String(candidate.marketId),
-        question: candidate.question,
-        eventStart: new Date(slotCryptoMeta.eventStartTimeMs).toISOString(),
-        startsInMin: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
-        maxAheadMin: (MAX_EVENT_START_AHEAD_MS / 60_000).toFixed(0),
-      });
-      return false;
-    }
+    // eventStart проверка убрана — fillMarketSlots сортирует по ближайшему eventStart.
+    // Discovery filter уже отсеивает неподходящие рынки (duration, keywords).
+    // Бот откроет ближайший незанятый рынок и дождётся warmup.
 
     // Fetch strike price и подписка RTDS для крипто-рынка
     if (slotCryptoMeta) {
@@ -773,9 +756,9 @@ export class MarketRotation {
 
     const { logger } = this._deps;
 
-    let candidates: readonly DiscoveredMarket[];
+    let rawCandidates: readonly DiscoveredMarket[];
     try {
-      candidates = await this._discoveryAdapter.findCandidates();
+      rawCandidates = await this._discoveryAdapter.findCandidates();
     } catch (err) {
       logger.error('Failed to read candidates from discovery cache', {
         err: err instanceof Error ? err : new Error(String(err)),
@@ -790,57 +773,48 @@ export class MarketRotation {
 
     const nowMs = Date.now();
 
-    // Диагностика: первые 5 кандидатов с причиной пропуска
-    if (candidates.length > 0) {
-      const diag = candidates.slice(0, 5).map((c) => {
-        const key = String(c.marketId);
+    // Фильтруем: closed, active, expired
+    const viable = rawCandidates.filter((c) => {
+      const key = String(c.marketId);
+      if (this.closedMarkets.has(key)) return false;
+      if (activeMarketIds.has(key)) return false;
+      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) return false;
+      return true;
+    });
+
+    // Сортируем по ближайшему eventStart — берём рынок который начнётся раньше всех.
+    // Рынки без eventStart (не крипто) идут первыми (eventStartMs = 0).
+    const sorted = [...viable].sort((a, b) => {
+      const aStart = a.eventStartMs ?? 0;
+      const bStart = b.eventStartMs ?? 0;
+      return aStart - bStart;
+    });
+
+    // Диагностика: первые 3 кандидата после сортировки
+    if (sorted.length > 0) {
+      const diag = sorted.slice(0, 3).map((c) => {
         const exMs = c.expiresAt.toNumber();
-        const minLeft = ((exMs - nowMs) / 60000).toFixed(1);
-        let skip = '';
-        if (this.closedMarkets.has(key)) skip = 'closed';
-        else if (activeMarketIds.has(key)) skip = 'active';
-        else if (exMs <= nowMs + MIN_VIABLE_TRADING_MS) skip = 'tooSoon';
-        return `${c.question?.slice(-20) ?? key.slice(0, 10)} ${minLeft}m ${skip || 'OK'}`;
+        const startMs = c.eventStartMs ?? 0;
+        return `${c.question?.slice(-25) ?? String(c.marketId).slice(0, 10)} start=${startMs > 0 ? new Date(startMs).toISOString().slice(11, 19) : 'n/a'} exp=${((exMs - nowMs) / 60000).toFixed(1)}m`;
       });
-      logger.debug('fillMarketSlots candidates', { top5: diag });
+      logger.info('fillMarketSlots: top candidates (by eventStart)', { top: diag, total: rawCandidates.length, viable: sorted.length });
     }
 
-    for (const c of candidates) {
+    for (const c of sorted) {
       if (activeMarketIds.size >= this._deps.maxConcurrentMarkets) break;
 
-      const key = String(c.marketId);
-      if (this.closedMarkets.has(key)) continue;
-      if (activeMarketIds.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
-
       const opened = await this.openMarket(c);
-      if (opened) activeMarketIds.add(key);
+      if (opened) {
+        activeMarketIds.add(String(c.marketId));
+      }
     }
 
-    if (this.activeMarkets.size === 0 && !this._retryingFill) {
-      const reasons = { total: candidates.length, closed: 0, active: 0, tooSoon: 0, openFailed: 0 };
-      for (const c of candidates) {
-        const key = String(c.marketId);
-        if (this.closedMarkets.has(key)) { reasons.closed++; continue; }
-        if (activeMarketIds.has(key)) { reasons.active++; continue; }
-        if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) { reasons.tooSoon++; continue; }
-        reasons.openFailed++;
-      }
-      logger.warn('No candidates from cache — forcing discovery refresh', reasons);
-
-      // Принудительный refresh и повторная попытка (один раз, без рекурсии)
-      this._retryingFill = true;
-      try {
-        await this._discoveryAdapter!.refresh();
-        logger.info('Discovery force-refreshed after failed fillMarketSlots');
-        await this.fillMarketSlots();
-      } catch (err) {
-        logger.error('Force discovery refresh failed', {
-          err: err instanceof Error ? err : new Error(String(err)),
-        });
-      } finally {
-        this._retryingFill = false;
-      }
+    if (this.activeMarkets.size === 0) {
+      logger.warn('No market opened from candidates', {
+        total: rawCandidates.length,
+        viable: sorted.length,
+        closed: rawCandidates.length - viable.length - sorted.length,
+      });
     }
   }
 
