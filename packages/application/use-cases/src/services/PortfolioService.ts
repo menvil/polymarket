@@ -294,12 +294,28 @@ export class PortfolioService {
       }
     }
 
+    // Диагностика: состояние портфеля до дебита
+    this._logger.info('Portfolio before fill debit', {
+      fillId: String(fill.id),
+      side: fill.side,
+      debitAmount: notional.toString(),
+      available: portfolioAfterTokenRelease.balance.available().value().toString(),
+      reserved: portfolioAfterTokenRelease.balance.reserved().value().toString(),
+      storeVersion: version,
+    });
+
     // Обновить баланс
     const balanceResult = fill.side === 'BUY'
       ? portfolioAfterTokenRelease.applyDebit(money)
       : portfolioAfterTokenRelease.applyCredit(money);
 
     if (!balanceResult.ok) {
+      this._logger.error('Balance change failed', {
+        fillId: String(fill.id),
+        side: fill.side,
+        debitAmount: notional.toString(),
+        error: balanceResult.error.message,
+      });
       return Err(new TradingError(
         `Failed to apply balance change: ${balanceResult.error.message}`,
         { context: { fillId: String(fill.id), side: fill.side } },
@@ -316,13 +332,22 @@ export class PortfolioService {
     }
 
     const saveResult = this._store.save(positionResult.value, version);
-    if (!saveResult.ok) return saveResult;
+    if (!saveResult.ok) {
+      this._logger.error('Portfolio save after fill failed (version conflict)', {
+        fillId: String(fill.id),
+        expectedVersion: version,
+        currentVersion: this._store.getVersion?.(fill.accountId) ?? -1,
+      });
+      return saveResult;
+    }
 
-    this._logger.debug('Fill applied to portfolio', {
+    this._logger.info('Fill applied to portfolio', {
       accountId: accountIdToString(fill.accountId),
       fillId: String(fill.id),
       side: fill.side,
       notional: notional.toString(),
+      newAvailable: positionResult.value.balance.available().value().toString(),
+      newReserved: positionResult.value.balance.reserved().value().toString(),
     });
     return Ok(undefined);
   }

@@ -78,7 +78,7 @@ export interface DecisionEntry {
   readonly marketId: string;
   readonly strategyId: string;
   readonly ts: number;
-  readonly action: 'BUY' | 'BUY_COMP' | 'HOLD' | 'SKIP';
+  readonly action: 'BUY' | 'BUY_COMP' | 'HOLD' | 'SKIP' | 'CANCEL';
   readonly state: Record<string, unknown>;
   readonly rejectReason?: string;
   readonly rejectCounts?: Record<string, number>;

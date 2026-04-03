@@ -108,6 +108,10 @@ export class AutoRedeemer {
   private readonly _config: AutoRedeemerConfig;
   private readonly _walletAddress: string;
   private readonly _redeemedConditions = new Set<string>();
+  /** Рынки с ошибками: conditionId → timestamp следующей попытки */
+  private readonly _failedCooldowns = new Map<string, number>();
+  /** Счётчик последовательных ошибок connection — для экспоненциального backoff всего цикла */
+  private _consecutiveConnectionErrors = 0;
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _running = false;
 
@@ -251,8 +255,15 @@ export class AutoRedeemer {
       this._logger.debug('Checking markets for settlement', { count: conditionIds.length });
 
       // 2. Проверяем каждый рынок
+      const now = Date.now();
+      let connectionErrorsThisCycle = 0;
+
       for (const conditionId of conditionIds) {
         if (this._redeemedConditions.has(conditionId)) continue;
+
+        // Cooldown: пропускаем рынки с недавними ошибками
+        const cooldownUntil = this._failedCooldowns.get(conditionId);
+        if (cooldownUntil && now < cooldownUntil) continue;
 
         try {
           const isSettled = await this._isMarketSettled(conditionId);
@@ -266,15 +277,18 @@ export class AutoRedeemer {
           if (success) {
             result.redeemed++;
             this._redeemedConditions.add(conditionId);
+            this._failedCooldowns.delete(conditionId);
+            this._consecutiveConnectionErrors = 0;
             this._logger.info('Successfully redeemed', { conditionId });
           } else {
             result.errors++;
           }
         } catch (err) {
-          const errStr = err instanceof Error ? err.message : String(err);
+          // Error.message содержит полезную инфу; JSON.stringify(Error) даёт "{}"
+          const errMsg = err instanceof Error ? err.message : String(err);
 
           // 429 Rate Limit — прекращаем цикл, ждём следующего интервала
-          if (errStr.includes('429') || errStr.includes('quota exceeded') || errStr.includes('Too Many Requests')) {
+          if (errMsg.includes('429') || errMsg.includes('quota exceeded') || errMsg.includes('Too Many Requests')) {
             this._logger.warn('Relayer rate limit hit, pausing until next cycle', {
               conditionId,
               redeemed: result.redeemed,
@@ -283,16 +297,39 @@ export class AutoRedeemer {
             break;
           }
 
+          // Connection error — backoff для этого рынка + прекращаем цикл при 3+ подряд
+          if (errMsg.includes('connection error') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT')) {
+            connectionErrorsThisCycle++;
+            this._consecutiveConnectionErrors++;
+            // Экспоненциальный cooldown: 5m, 10m, 20m, 40m, max 60m
+            const backoffMs = Math.min(60 * 60_000, 5 * 60_000 * Math.pow(2, this._consecutiveConnectionErrors - 1));
+            this._failedCooldowns.set(conditionId, now + backoffMs);
+
+            if (connectionErrorsThisCycle >= 3) {
+              this._logger.warn('Relayer connection errors — pausing cycle', {
+                errors: connectionErrorsThisCycle,
+                nextRetryMin: Math.round(backoffMs / 60_000),
+              });
+              break;
+            }
+            result.errors++;
+            continue;
+          }
+
           result.errors++;
+          // Cooldown 10 минут для неизвестных ошибок
+          this._failedCooldowns.set(conditionId, now + 10 * 60_000);
           this._logger.error('Error processing market', {
             conditionId,
-            error: errStr,
+            error: errMsg,
           });
         }
       }
 
       if (result.redeemed > 0) {
         this._logger.info('Redeem cycle complete', result);
+      } else if (result.errors > 0 && result.redeemed === 0) {
+        this._logger.debug('Redeem cycle: no success', { errors: result.errors, settled: result.marketsSettled });
       }
     } catch (err) {
       this._logger.error('Auto-redeem check failed', {
@@ -385,12 +422,13 @@ export class AutoRedeemer {
 
       return receipt.state === 'STATE_MINED' || receipt.state === 'STATE_CONFIRMED';
     } catch (err) {
+      // Error.message содержит JSON от relay client: {"error":"request error","status":429,...}
+      // JSON.stringify(Error) даёт "{}" — используем message для проверок
       const msg = err instanceof Error ? err.message : String(err);
-      const errStr = typeof err === 'object' && err !== null ? JSON.stringify(err) : msg;
 
       // 429 Rate Limit — пробрасываем наверх для остановки цикла
-      if (errStr.includes('429') || errStr.includes('quota exceeded') || errStr.includes('Too Many Requests')) {
-        throw new Error(`Rate limit: ${errStr}`);
+      if (msg.includes('429') || msg.includes('quota exceeded') || msg.includes('Too Many Requests')) {
+        throw new Error(`Rate limit: ${msg}`);
       }
 
       if (msg.includes('revert') || msg.includes('execution reverted')) {

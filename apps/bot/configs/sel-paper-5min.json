@@ -39,8 +39,8 @@
   },
   "recording": {
     "enabled": true,
-    "outputDir": "./data/recordings",
-    "journalDir": "./data/journals",
+    "outputDir": "./data/paper-recordings",
+    "journalDir": "./data/paper-journals",
     "compression": "gzip"
   }
 }

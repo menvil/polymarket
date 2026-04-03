@@ -53,6 +53,9 @@ tmp/
 temp/
 src_bundle.md
 
+# Bot data (recordings, journals, paper/live data)
+apps/bot/data/
+
 #Snapshots
 snapshots/
 # Исключение: папка snapshots в collect-data отслеживается (содержимое игнорируется локальным .gitignore)

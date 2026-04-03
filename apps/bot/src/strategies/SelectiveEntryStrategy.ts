@@ -2,9 +2,12 @@
  * SelectiveEntryStrategy — buy-and-hold до settlement на основе delta% и zone filter.
  *
  * @remarks
- * Простейшая стратегия: один раз решить — покупать или нет.
- * Купить limit BUY (maker) и **держать до settlement**.
- * Без exit logic, без trail stop, без market making.
+ * Стратегия непрерывно оценивает рынок и управляет ордером:
+ * - Если условия входа выполняются и нет ордера → ставим BUY
+ * - Если условия ухудшились и ордер стоит → снимаем (CANCEL)
+ * - Если условия вернулись → ставим снова
+ * - Если получили fill (полный или partial) → держим до settlement
+ * - Если partial fill + ордер стоит + условия плохие → cancel остаток
  *
  * ### Алгоритм:
  * 1. Ждём warmup (60s по умолчанию), накапливаем EWMA mid обоих токенов (alpha=0.3 per trade)
@@ -21,7 +24,8 @@
  *    - (optional) UP+DOWN discrepancy <= compMaxDiscrepancyCents — оба токена согласованы
  *    - (optional) Delta acceleration > 0 — BTC уходит от strike
  * 4. Ставим limit BUY по mid - 1¢ (maker)
- * 5. Держим до settlement. Нет exit logic.
+ * 5. На каждом тике переоцениваем: если ордер стоит и фильтры не проходят → CANCEL
+ * 6. Держим позицию до settlement. Нет exit logic.
  *
  * ### Почему это работает:
  * При mid=62¢ и P(UP)≈75%, EV = 0.75×38 - 0.25×62 = +13¢/trade.
@@ -118,8 +122,12 @@ interface SEData {
   readonly spreadCents: number;
   readonly deltaPct: number | undefined;
   readonly tauSec: number;
+  /** Есть позиция (full или partial fill получен) */
   readonly hasPosition: boolean;
-  readonly hasPendingOrder: boolean;
+  /** Есть отменяемый ордер на бирже (LIVE status) */
+  readonly hasOpenOrder: boolean;
+  /** Fill в пути (MATCHED/MINED) — нельзя отменить, ждём */
+  readonly hasInFlightFill: boolean;
   readonly availableBalance: Decimal;
   readonly nowMs: number;
   readonly cryptoPrice: number | undefined;
@@ -148,7 +156,8 @@ type SEAction =
       /** Если покупаем комплементарный токен — AssetId целевого инструмента */
       readonly targetAsset?: AssetId;
     }
-  | { readonly type: 'HOLD' };
+  | { readonly type: 'HOLD' }
+  | { readonly type: 'CANCEL' };
 
 // ── Реализация ────────────────────────────────────────────────────────────────
 
@@ -197,8 +206,12 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   /** ID текущего рынка (для журнала) */
   private _currentMarketId = '';
 
-  /** Вошли ли мы в этот рынок (поставили ордер) */
-  private _entered = false;
+  /**
+   * Guard от double-entry: ставится в true когда decide() возвращает BUY,
+   * сбрасывается когда ордер появляется в snapshot (hasOpenOrder) или fill получен.
+   * Закрывает окно между решением BUY и появлением ордера в repo (~600ms HTTP roundtrip).
+   */
+  private _pendingPlace = false;
 
   /** Время последнего диагностического лога (throttle) */
   private _lastDiagMs = 0;
@@ -262,7 +275,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       this._ewmaAtWarmup = null;
       this._deltaAtWarmup = null;
       this._warmupSnapshotCaptured = false;
-      this._entered = false;
+      this._pendingPlace = false;
       this._lastDiagMs = 0;
       this._rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, compDiscrep: 0, deltaAccel: 0 };
 
@@ -426,7 +439,8 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       deltaPct,
       tauSec,
       hasPosition: primaryQty.gt(0) || compQty.gt(0),
-      hasPendingOrder: snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0,
+      hasOpenOrder: snapshot.openOrders.length > 0,
+      hasInFlightFill: snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0,
       availableBalance,
       nowMs: snapshot.nowMs,
       cryptoPrice,
@@ -443,8 +457,28 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   // ── decide ──────────────────────────────────────────────────────────────────
 
   protected decide(data: SEData, _reasons: ReadonlySet<TriggerReason>): SEAction[] {
-    // Уже вошли или есть позиция/ордер → держим до settlement
-    if (this._entered || data.hasPosition || data.hasPendingOrder) {
+    // Fill в пути (MATCHED/MINED) → ждём, ничего не делаем
+    if (data.hasInFlightFill) {
+      return [{ type: 'HOLD' }];
+    }
+
+    // Ордер появился в snapshot → сбрасываем pending guard
+    if (data.hasOpenOrder || data.hasPosition) {
+      this._pendingPlace = false;
+    }
+
+    // Есть открытый ордер → переоцениваем фильтры, cancel если условия ушли
+    if (data.hasOpenOrder) {
+      return this._evaluateOpenOrder(data);
+    }
+
+    // Есть позиция (fill получен), нет открытого ордера → hold до settlement
+    if (data.hasPosition) {
+      return [{ type: 'HOLD' }];
+    }
+
+    // Guard: BUY уже решён, ждём пока ордер появится в snapshot (~600ms HTTP roundtrip)
+    if (this._pendingPlace) {
       return [{ type: 'HOLD' }];
     }
 
@@ -534,15 +568,15 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     }
 
     // ── ENTRY: все фильтры пройдены ──
+    this._pendingPlace = true;
 
     if (buyingComp) {
       // Покупаем комплементарный (DOWN) токен
       if (!data.complementaryInstrumentId || !data.complementaryAsset) {
+        this._pendingPlace = false;
         this._logger?.warn('SelectiveEntry: SKIP comp (no comp instrument data)');
         return [{ type: 'HOLD' }];
       }
-
-      this._entered = true;
 
       this._logger?.warn('SelectiveEntry: BUY_COMPLEMENTARY', {
         compMid: mid,
@@ -571,8 +605,6 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     }
 
     // Покупаем основной (UP) токен
-    this._entered = true;
-
     this._logger?.warn('SelectiveEntry: BUY', {
       mid,
       bidPrice,
@@ -591,6 +623,85 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     });
 
     return [{ type: 'BUY', price: bidPrice, size: this._orderSize }];
+  }
+
+  /**
+   * Переоценивает фильтры для открытого ордера.
+   *
+   * @remarks
+   * Вызывается когда ордер стоит на бирже (open или partial fill с остатком).
+   * Проверяем ключевые фильтры (zone, delta range, tau, spread, deltaAccel).
+   * Если хотя бы один не проходит → CANCEL.
+   * Баланс не проверяем (ордер уже размещён).
+   * Rise и compDiscrepancy не проверяем (мягкие фильтры, не стоит мигать из-за них).
+   */
+  private _evaluateOpenOrder(data: SEData): SEAction[] {
+    // Определяем направление (аналогично decide)
+    let effectiveSide: 'up' | 'down';
+    if (this._side === 'auto') {
+      if (data.deltaPct === undefined) return [{ type: 'HOLD' }]; // нет данных — не отменяем
+      effectiveSide = data.deltaPct > 0 ? 'up' : 'down';
+    } else {
+      effectiveSide = this._side;
+    }
+
+    const buyingComp = effectiveSide === 'down';
+    const mid = buyingComp
+      ? (data.compMidCents !== null
+          ? Math.round(Math.max(2, Math.min(98, data.compMidCents)))
+          : null)
+      : Math.round(Math.max(2, Math.min(98, data.midCents)));
+
+    if (mid === null) return [{ type: 'HOLD' }]; // нет данных — не отменяем
+
+    // Проверяем жёсткие фильтры
+    const absDelta = data.deltaPct !== undefined ? Math.abs(data.deltaPct) : undefined;
+    let cancelReason = '';
+
+    if (data.deltaPct === undefined) {
+      // Нет delta — не отменяем, данные могут восстановиться
+    } else if (this._side !== 'auto') {
+      const wrongSign = this._side === 'up' ? data.deltaPct <= 0 : data.deltaPct >= 0;
+      if (wrongSign) cancelReason = `delta_sign_reversed(${data.deltaPct.toFixed(4)}%)`;
+    }
+
+    if (!cancelReason) {
+      if (mid < this._minZone || mid > this._maxZone) {
+        cancelReason = `zone_exit(mid=${mid},need=${this._minZone}-${this._maxZone})`;
+      } else if (absDelta !== undefined && (absDelta < this._minDelta || absDelta > this._maxDelta)) {
+        cancelReason = `delta_exit(${absDelta.toFixed(4)}%,need=${this._minDelta}-${this._maxDelta})`;
+      } else if (data.tauSec < this._minTau) {
+        // Только нижняя граница tau: рынок заканчивается слишком скоро
+        cancelReason = `tau_exit(${data.tauSec.toFixed(0)}s,min=${this._minTau})`;
+      } else if (data.spreadCents > this._maxSpread * 2) {
+        // Spread: cancel только при 2x порога (иначе шум)
+        cancelReason = `spread_exit(${data.spreadCents.toFixed(1)},max=${this._maxSpread * 2})`;
+      } else if (this._requireDeltaAccel && data.deltaAccel !== null && data.deltaAccel < -0.01) {
+        // DeltaAccel: cancel если BTC разворачивается к strike (с запасом -0.01)
+        cancelReason = `deltaAccel_reversal(${data.deltaAccel.toFixed(4)})`;
+      }
+    }
+
+    if (cancelReason) {
+      this._logger?.warn('SelectiveEntry: CANCEL open order — conditions deteriorated', {
+        cancelReason,
+        mid,
+        delta: data.deltaPct?.toFixed(4),
+        tau: data.tauSec.toFixed(0),
+        spread: data.spreadCents.toFixed(1),
+        dAccel: data.deltaAccel?.toFixed(4),
+        hasPosition: data.hasPosition,
+      });
+      this._journal?.recordDecision({
+        marketId: this._currentMarketId, strategyId: this.id, ts: data.nowMs,
+        action: 'CANCEL', state: this._serializeState(data),
+        rejectReason: cancelReason, rejectCounts: { ...this._rejectCounts },
+        effectiveSide,
+      });
+      return [{ type: 'CANCEL' }];
+    }
+
+    return [{ type: 'HOLD' }];
   }
 
   /**
@@ -652,6 +763,12 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     for (const action of actions) {
       if (action.type === 'HOLD') continue;
 
+      if (action.type === 'CANCEL') {
+        intents.push({ type: 'CANCEL_ALL' });
+        continue;
+      }
+
+      // BUY: cancel existing + place new
       intents.push({ type: 'CANCEL_ALL' });
       intents.push({
         type: 'PLACE',

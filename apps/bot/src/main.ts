@@ -161,6 +161,8 @@ const { mode, config } = configResult.value;
       'data-api.polymarket.com',
       'ws-subscriptions-clob.polymarket.com',
       'ws-live-data.polymarket.com',
+      'relayer-v2.polymarket.com',
+      'polygon-bor-rpc.publicnode.com',
     ]);
   } catch (err) {
     _dnsLogger.warn('DNS override install failed, continuing with system DNS', {
@@ -4555,6 +4557,15 @@ async function runLive(): Promise<void> {
         const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
         const cashCredit = qty.times(settlementPrice);
 
+        // Диагностика: состояние портфеля до settlement credit
+        logger.info('Settlement: portfolio state before credit (live)', {
+          available: portfolio.balance.available().value().toFixed(4),
+          reserved: portfolio.balance.reserved().value().toFixed(4),
+          positionQty: qty.toFixed(4),
+          cashCredit: cashCredit.toFixed(4),
+          resolution,
+        });
+
         settlementResult = { resolution, settlementPrice, cashCredit, qty };
 
         // Удаляем позицию (settled)
@@ -4583,6 +4594,7 @@ async function runLive(): Promise<void> {
           settlementPrice: settlementPrice.toFixed(2),
           cashCredit: cashCredit.toFixed(4),
           outcomeIndex: oi,
+          newAvailable: updated.balance.available().value().toFixed(4),
         });
       }
     }
@@ -5105,23 +5117,50 @@ async function runLive(): Promise<void> {
           // Venue показывает больше → зачислились средства (settlement, deposit)
           const creditResult = portfolio.applyCredit(Money.of(diff, 'USDC'));
           if (creditResult.ok) {
-            portfolioStore.save(creditResult.value, version);
-            logger.info('Balance synced from venue: credited', {
+            const saveRes = portfolioStore.save(creditResult.value, version);
+            if (saveRes.ok) {
+              logger.info('Balance synced from venue: credited', {
+                venueTotalUsdc: venueBalance.toFixed(2),
+                localAvailable: localAvailable.toFixed(2),
+                localReserved: localReserved.toFixed(2),
+                credited: diff.toFixed(2),
+                newAvailable: expectedAvailable.toFixed(2),
+              });
+            } else {
+              logger.debug('Balance sync credit: version conflict (will retry next cycle)', {
+                diff: diff.toFixed(2),
+              });
+            }
+          }
+        } else {
+          // Venue показывает меньше → local portfolio завышен.
+          // Причины: fill cost не списался (version conflict в applyFill),
+          // или venue ещё не обновился после settlement/deposit.
+          //
+          // Корректируем прямой установкой available = venue - reserved,
+          // но только если нет открытых ордеров (reserved=0) — иначе venue
+          // не учитывает in-flight fills и корректировать рано.
+          if (localReserved.isZero()) {
+            const debitResult = portfolio.applyDirectDebit(Money.of(diff.abs(), 'USDC'));
+            if (debitResult.ok) {
+              const saveRes = portfolioStore.save(debitResult.value, version);
+              if (saveRes.ok) {
+                logger.warn('Balance synced from venue: debited (local was inflated)', {
+                  venueTotalUsdc: venueBalance.toFixed(2),
+                  localAvailable: localAvailable.toFixed(2),
+                  debited: diff.abs().toFixed(2),
+                  newAvailable: expectedAvailable.toFixed(2),
+                });
+              }
+            }
+          } else {
+            logger.debug('Balance sync: venue < local, skipping (has reserved)', {
               venueTotalUsdc: venueBalance.toFixed(2),
               localAvailable: localAvailable.toFixed(2),
               localReserved: localReserved.toFixed(2),
-              credited: diff.toFixed(2),
-              newAvailable: expectedAvailable.toFixed(2),
+              diff: diff.toFixed(2),
             });
           }
-        } else {
-          // Venue показывает меньше → кто-то снял средства или venue ещё не обновился
-          // Только логируем, не корректируем (чтобы не сломать reserved)
-          logger.debug('Balance sync: venue < local (possible pending settlement)', {
-            venueTotalUsdc: venueBalance.toFixed(2),
-            localAvailable: localAvailable.toFixed(2),
-            diff: diff.toFixed(2),
-          });
         }
       } catch (err) {
         logger.debug('Balance sync failed', {

@@ -192,6 +192,15 @@ export class ProcessFillUseCase {
     // Шаг 5: Обновить Portfolio (sync)
     // Передаём цену ордера, чтобы точно совпасть с зарезервированной суммой
     // (fill.price может быть округлена биржей: 0.829 → 0.83, что вызывает «Cannot unfreeze/consume»).
+    this._logger.info('Applying fill to portfolio', {
+      fillId: String(fill.id),
+      orderId: String(fill.orderId),
+      side: fill.side,
+      fillPrice: fill.price.value().toNumber(),
+      orderPrice: order.price.value().toNumber(),
+      fillSize: fill.size.value().toNumber(),
+      notional: order.price.value().times(fill.size.value()).toNumber(),
+    });
     const portfolioResult = this._deps.portfolioService.applyFill(fill, order.price.value());
     if (!portfolioResult.ok) {
       this._logger.error('Failed to apply fill to portfolio', {
