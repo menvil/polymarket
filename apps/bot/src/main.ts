@@ -431,7 +431,7 @@ async function runPaper(): Promise<void> {
       minTimeToExpiryHours: mc.filter.minTimeToExpiryHours ?? 0,
       minSpread: 0,
       minLiquidity: mc.filter.minLiquidity ?? 0,
-      maxMarketsToReturn: 50,  // берём несколько кандидатов для ротации
+      maxMarketsToReturn: 100,  // берём несколько кандидатов для ротации
       anyOfKeywords: mc.filter.anyOfKeywords,
       requiredKeywords: mc.filter.requiredKeywords,
       excludedKeywords: mc.filter.excludedKeywords,
@@ -2974,7 +2974,7 @@ async function runLive(): Promise<void> {
       minTimeToExpiryHours: mc.filter.minTimeToExpiryHours ?? 0,
       minSpread: 0,
       minLiquidity: mc.filter.minLiquidity ?? 0,
-      maxMarketsToReturn: 50,
+      maxMarketsToReturn: 100,
       anyOfKeywords: mc.filter.anyOfKeywords,
       requiredKeywords: mc.filter.requiredKeywords,
       excludedKeywords: mc.filter.excludedKeywords,
