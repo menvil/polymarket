@@ -3986,6 +3986,20 @@ async function runLive(): Promise<void> {
     await discoveryAdapter.refresh();
     const candidates = await discoveryAdapter.findCandidates();
     const validCandidates = candidates.filter(c => c.expiresAt.toNumber() > Date.now());
+
+    // Диагностика: первые 5 кандидатов при старте (live)
+    const _liveNow = Date.now();
+    for (let i = 0; i < Math.min(5, validCandidates.length); i++) {
+      const vc = validCandidates[i]!;
+      logger.info(`Initial candidate #${i} (live)`, {
+        question: vc.question,
+        expiresAt: new Date(vc.expiresAt.toNumber()).toISOString(),
+        minToExpiry: ((vc.expiresAt.toNumber() - _liveNow) / 60000).toFixed(1),
+        eventStartMs: vc.eventStartMs,
+        liquidity: vc.liquidity.toFixed(0),
+      });
+    }
+
     if (validCandidates.length === 0) {
       logger.fatal('No markets found matching discovery filter', { filter: filterConfig });
       process.exit(1);
