@@ -306,6 +306,7 @@ export class MarketRotation {
   private _discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
   private _isShuttingDown = false;
   private _rotationInProgress = false;
+  private _retryingFill = false;
   private _expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
   private _scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -474,12 +475,14 @@ export class MarketRotation {
     const expiresMs = candidate.expiresAt.toNumber();
     const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
-    // Единый порог: не занимаем слот если eventStart > 30 сек вперёд
+    // Не занимаем слот если eventStart > 10 мин вперёд
     if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + MAX_EVENT_START_AHEAD_MS) {
-      logger.debug('Skipping market: event starts too far in the future', {
+      logger.info('Skipping market: event starts too far in the future', {
         marketId: String(candidate.marketId),
-        eventStartMs: slotCryptoMeta.eventStartTimeMs,
-        startsInSec: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
+        question: candidate.question,
+        eventStart: new Date(slotCryptoMeta.eventStartTimeMs).toISOString(),
+        startsInMin: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
+        maxAheadMin: (MAX_EVENT_START_AHEAD_MS / 60_000).toFixed(0),
       });
       return false;
     }
@@ -814,7 +817,7 @@ export class MarketRotation {
       if (opened) activeMarketIds.add(key);
     }
 
-    if (this.activeMarkets.size === 0) {
+    if (this.activeMarkets.size === 0 && !this._retryingFill) {
       const reasons = { total: candidates.length, closed: 0, active: 0, tooSoon: 0, openFailed: 0 };
       for (const c of candidates) {
         const key = String(c.marketId);
@@ -823,7 +826,21 @@ export class MarketRotation {
         if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) { reasons.tooSoon++; continue; }
         reasons.openFailed++;
       }
-      logger.warn('No valid market candidates in cache, waiting for next scan', reasons);
+      logger.warn('No candidates from cache — forcing discovery refresh', reasons);
+
+      // Принудительный refresh и повторная попытка (один раз, без рекурсии)
+      this._retryingFill = true;
+      try {
+        await this._discoveryAdapter!.refresh();
+        logger.info('Discovery force-refreshed after failed fillMarketSlots');
+        await this.fillMarketSlots();
+      } catch (err) {
+        logger.error('Force discovery refresh failed', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      } finally {
+        this._retryingFill = false;
+      }
     }
   }
 
