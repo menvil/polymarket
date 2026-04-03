@@ -267,26 +267,22 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Убирает tokenId из набора отслеживаемых токенов и переподключается.
+   * Убирает tokenId из набора отслеживаемых токенов.
    *
    * @param tokenId - Token ID для отписки
    *
    * @remarks
-   * Удаляет tokenId из внутреннего set и планирует reconnect (debounce 500ms),
-   * чтобы сервер перестал слать snapshots по удалённым токенам.
-   * Без reconnect сервер продолжал бы слать данные → BookUpdateHandler
-   * логировал бы «Received snapshot for unregistered instrument» для каждого snapshot.
+   * Удаляет tokenId из внутреннего set, но НЕ инициирует reconnect.
+   * Сервер продолжит слать данные по удалённому токену до следующего reconnect
+   * (инициированного subscribeToToken). Это безвредно — данные игнорируются.
    *
-   * Несколько быстрых вызовов unsubscribe (закрытие арб-пары = 3-4 токена)
-   * коллапсируются в один reconnect через debounce в `_scheduleReconnectForSubscription()`.
+   * Причина: reconnect при unsubscribe вызывал race condition при ротации рынков.
+   * closeMarket → unsubscribe → reconnect fires BEFORE openMarket → subscribe.
+   * Reconnect захватывал stale token set → новый рынок не получал данных.
    */
   async unsubscribeFromToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
-    const wasPresent = this._subscribedTokens.has(tokenId);
     this._subscribedTokens.delete(tokenId);
-    if (wasPresent && this._hasEverConnected && this._isConnected) {
-      this._scheduleReconnectForSubscription();
-    }
   }
 
   /**
