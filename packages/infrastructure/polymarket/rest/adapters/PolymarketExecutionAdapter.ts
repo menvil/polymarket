@@ -453,8 +453,8 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * Делегирует в `PolymarketOrderRestClient.getFilledOrders()`,
    * автоматически передавая MAKER-адрес (фандер) если он задан.
    */
-  async getFilledOrders(tokenId?: string): Promise<TradeResponse[]> {
-    return this.orderClient.getFilledOrders(tokenId, this.orderClient.getMakerAddress());
+  async getFilledOrders(tokenId?: string, options?: { onlyFirstPage?: boolean }): Promise<TradeResponse[]> {
+    return this.orderClient.getFilledOrders(tokenId, this.orderClient.getMakerAddress(), 100, options);
   }
 
   /**

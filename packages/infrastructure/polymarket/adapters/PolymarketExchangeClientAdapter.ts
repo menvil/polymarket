@@ -244,7 +244,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     since?: Timestamp,
   ): Promise<Result<VenueTradeSnapshot[], ExchangeError>> {
     try {
-      const trades = await this._executionAdapter.getFilledOrders();
+      const trades = await this._executionAdapter.getFilledOrders(undefined, { onlyFirstPage: true });
       const snapshots: VenueTradeSnapshot[] = [];
 
       for (const t of trades) {

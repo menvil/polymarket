@@ -574,10 +574,12 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       isReconnect,
     });
 
-    // При reconnect BaseWebSocket уже послал market subscription из кэша
-    // (кэш обновлён в _reconnectForSubscription() до вызова connect()).
-    // При первом подключении кэш пуст — посылаем здесь.
-    if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
+    // Всегда посылаем актуальную подписку из _subscribedTokens.
+    // При subscription-change reconnect: BaseWebSocket мог послать stale кэш
+    // (токены добавленные openMarket между cache update и connect не попали в кэш).
+    // _sendAllSubscriptions обновляет кэш BaseWebSocket и шлёт актуальный список.
+    // Если BaseWebSocket уже послал ту же подписку — INVALID OPERATION (обрабатывается в router).
+    if (hasMarket) await this._sendAllSubscriptions();
     if (hasUser) await this._sendUserChannelSubscription();
   }
 
