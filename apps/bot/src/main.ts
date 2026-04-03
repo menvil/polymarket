@@ -3961,11 +3961,13 @@ async function runLive(): Promise<void> {
     const filterConfig: IMarketFilterConfig = {
       minTimeToExpiryHours: mc.filter.minTimeToExpiryHours ?? 0,
       minSpread: 0,
-      minLiquidity: mc.filter.minLiquidity ?? 0,
+      minLiquidity: mc.filter.minLiquidity ?? 500,
       maxMarketsToReturn: 10,
       anyOfKeywords: mc.filter.anyOfKeywords,
       requiredKeywords: mc.filter.requiredKeywords,
       excludedKeywords: mc.filter.excludedKeywords,
+      minDurationMinutes: mc.filter.minDurationMinutes,
+      maxDurationMinutes: mc.filter.maxDurationMinutes,
     };
     logger.info('Starting market discovery', { filter: filterConfig });
 
