@@ -183,7 +183,7 @@ export class PolymarketMarketDataRestClient {
     const allMarkets: GammaMarketDto[] = [];
     let offset = 0;
     const limit = 500;
-    const maxPages = 20; // ~10 000 маркетов (с end_date_max=2d этого достаточно)
+    const maxPages = 50; // ~10 000 маркетов (с end_date_max=2d этого достаточно)
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
