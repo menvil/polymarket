@@ -183,7 +183,7 @@ export class PolymarketMarketDataRestClient {
     const allMarkets: GammaMarketDto[] = [];
     let offset = 0;
     const limit = 500;
-    const maxPages = 100; // Максимум 50 000 маркетов
+    const maxPages = 20; // ~10 000 маркетов (с end_date_max=2d этого достаточно)
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -193,8 +193,11 @@ export class PolymarketMarketDataRestClient {
         url.searchParams.set('closed', 'false');
         url.searchParams.set('limit', limit.toString());
         url.searchParams.set('offset', offset.toString());
-        url.searchParams.set('order', 'volume'); // Сортировка по объёму
-        url.searchParams.set('ascending', 'false'); // По убыванию (наибольший объём первым)
+        url.searchParams.set('order', 'endDate'); // Сортировка по дате окончания
+        url.searchParams.set('ascending', 'true'); // По возрастанию (ближайшие первыми)
+        // Ограничиваем 2 днями — отсекаем долгосрочные рынки на стороне API
+        const endDateMax = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+        url.searchParams.set('end_date_max', endDateMax);
 
         const batch = await this.fetch<GammaMarketDto[]>(url.toString(), true);
 
