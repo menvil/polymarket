@@ -3961,7 +3961,7 @@ async function runLive(): Promise<void> {
     const filterConfig: IMarketFilterConfig = {
       minTimeToExpiryHours: mc.filter.minTimeToExpiryHours ?? 0,
       minSpread: 0,
-      minLiquidity: mc.filter.minLiquidity ?? 500,
+      minLiquidity: mc.filter.minLiquidity ?? 0,
       maxMarketsToReturn: 10,
       anyOfKeywords: mc.filter.anyOfKeywords,
       requiredKeywords: mc.filter.requiredKeywords,
