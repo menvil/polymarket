@@ -4383,13 +4383,13 @@ async function runLive(): Promise<void> {
 
     const expiresMs = candidate.expiresAt.toNumber();
 
-    // Не занимаем слот если event ещё не начался (допускаем 2 мин запас для pre-warmup)
+    // Не занимаем слот если event ещё не начался (допускаем 30с запас)
     const livePreCheckMeta = parseCryptoMeta(candidate.rawMarket);
-    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 2 * 60_000) {
+    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 30_000) {
       logger.debug('Skipping market: event starts too far in the future', {
         marketId: String(candidate.marketId),
         eventStartMs: livePreCheckMeta.eventStartTimeMs,
-        startsInMin: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
+        startsInSec: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
       });
       return false;
     }
