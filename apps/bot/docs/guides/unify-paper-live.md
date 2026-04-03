@@ -126,30 +126,32 @@ Paper и live используют одинаковый `PolymarketWsAdapter`. �
 
 ## Порядок реализации
 
-### Phase 1: Extract shared functions
-1. Создать `apps/bot/src/bot/MarketRotation.ts`
-2. Определить `MarketSlot` и `MarketRotationDeps`
-3. Перенести `openMarket`, `closeMarket`, `fillMarketSlots`, `checkExpiredMarkets`
-4. Обе mode вызывают shared functions с разными deps
+### Phase 1: Extract shared functions — DONE
+1. ✅ Создать `apps/bot/src/bot/MarketRotation.ts`
+2. ✅ Определить `MarketSlot` и `MarketRotationDeps`
+3. ✅ Перенести `openMarket`, `closeMarket`, `fillMarketSlots`, `checkExpiredMarkets`
+4. ✅ Обе mode вызывают shared functions с разными deps
 
-### Phase 2: Unify initial setup
-1. Initial market setup → вызов `openMarket()` вместо inline кода
-2. Убрать дублированный initial setup из paper и live
+### Phase 2: Unify initial setup — PARTIAL
+1. Initial setup: слоты создаются в `initialSlots` Map, затем копируются в `rotation.activeMarkets`
+2. Начальный inline discovery код оставлен (создаёт первый слот до engine) — future: refactor в `rotation.openMarket()`
 
-### Phase 3: Cleanup
-1. Убрать дублированные типы (PaperMarketSlot, ActiveMarketSlot)
-2. Убрать дублированные helpers (registerMarketAndStrategy)
-3. Удалить мёртвый код
+### Phase 3: Cleanup — DONE
+1. ✅ Убраны дублированные типы (PaperMarketSlot, ActiveMarketSlot, PaperFillRecord, PaperPartialAccum)
+2. ✅ Убраны дублированные helpers (registerMarketAndStrategy, printMarketSummary)
+3. ✅ Удалён мёртвый код (~1550 строк)
 
-### Phase 4: Test
+### Phase 4: Test — TODO
 1. Paper: запуск, ротация 3+ рынков, BUY/settlement
 2. Live: запуск, ротация 3+ рынков, BUY/fill/settlement
 3. compare-paper-live: 100% decision match
 4. Backtest: результаты совпадают с pre-refactor
 
-## Оценка
+## Результат
 
-- ~500 строк нового кода (MarketRotation.ts)
-- ~1000 строк удалённого дублированного кода
-- main.ts уменьшится на ~500 строк
-- Риск: высокий (много moved code), но тесты покроют
+- 1287 строк нового кода (MarketRotation.ts)
+- ~1550 строк удалённого дублированного кода
+- main.ts: 5475 → 3899 строк (-1576)
+- TypeScript компилируется без новых ошибок
+- Арб-режим (paper only): кастомный expiry check сохранён inline
+- Единый eventStart порог: 30 сек для paper и live (было: paper 10 мин, live 30 сек)

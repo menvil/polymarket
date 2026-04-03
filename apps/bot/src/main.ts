@@ -81,13 +81,14 @@ import { SimplePosition } from '@polymarket/use-cases';
 import { createStrategy } from './strategyFactory.js';
 import type { StrategyConfig } from './strategyFactory.js';
 import { selectStrategyForMarket } from './strategyRouter.js';
-import type { IStrategy } from '@polymarket/strategy';
 import type { RiskParams } from '@polymarket/risk';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { MarketPairMatcher } from '@polymarket/cross-market';
 import type { MarketInfo } from '@polymarket/cross-market';
 import type { CrossMarketArbConfig } from './strategies/CrossMarketArbStrategy.js';
 import { CrossMarketArbStrategy } from './strategies/CrossMarketArbStrategy.js';
+import { MarketRotation, MIN_VIABLE_TRADING_MS } from './bot/MarketRotation.js';
+import type { MarketSlot } from './bot/MarketRotation.js';
 
 // ── SimpleBookRegistry ─────────────────────────────────────────────────────────
 
@@ -221,67 +222,15 @@ async function runPaper(): Promise<void> {
   // ── Recording (опциональная запись рыночных данных и журнала решений) ──────
   const recording = buildRecording(config.recording, logger);
 
-  // ── Типы для мульти-маркетных слотов (paper) ──────────────────────────────
-
-  interface PaperFillRecord {
-    side: 'BUY' | 'SELL';
-    size: string;
-    price: string;
-    notional: string;
-    at: string;
-    partial?: boolean;
-  }
-
-  interface PaperPartialAccum {
-    side: 'BUY' | 'SELL';
-    totalSize: Decimal;
-    totalNotional: Decimal;
-    firstAt: string;
-  }
-
-  /**
-   * Слот активного рынка в paper-режиме.
-   *
-   * @remarks
-   * Аналогичен ActiveMarketSlot в runLive, но без tickSize/minOrderSize
-   * (paper использует дефолты).
-   */
-  interface PaperMarketSlot {
-    readonly instrumentId: InstrumentId;
-    readonly marketId: MarketId;
-    readonly asset: AssetId;
-    readonly tokenIdStr: string;
-    readonly expiresAtMs: number;
-    readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
-    readonly strategy: IStrategy;
-    /** Метаданные крипто-рынка (undefined для не-крипто) */
-    readonly cryptoMeta: CryptoMarketMeta | undefined;
-    /** Дополнительные инструменты для триггера тика (арбитраж: easy book) */
-    readonly additionalInstrumentIds?: readonly InstrumentId[];
-    /** ID комплементарного токена (другой outcome) для dual-token стратегий */
-    readonly complementaryInstrumentId?: InstrumentId;
-    /** AssetId комплементарного токена (для auto-selection в PlaceIntent) */
-    readonly complementaryAsset?: AssetId;
-    /** Индекс outcome для этого слота (0=UP, 1=DOWN). Нужен для settlement. */
-    readonly outcomeIndex: 0 | 1;
-    fillHistory: PaperFillRecord[];
-    partialAccum: Map<string, PaperPartialAccum>;
-    openedAt: number;
-  }
-
   // ── Мульти-маркетное состояние (paper) ──────────────────────────────────────
-
-  /** Активные рыночные слоты: key = tokenIdStr */
-  const activeMarkets = new Map<string, PaperMarketSlot>();
-  /** ID комплементарных токенов, чьи трейды тоже должны проходить через trade bridge */
-  const activeCompTokens = new Set<string>();
-  /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
-  const orderToSlot = new Map<string, string>();
-  /** Счётчик для уникальных strategy ID */
-  let _slotCounter = 0;
-
+  // MarketRotation создаётся после buildStrategyEngine (нужен engine).
+  // Промежуточные коллекции для initial market setup (до создания rotation).
   const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
   const minCapitalPerMarket = config.resources.minCapitalPerMarket;
+  let _slotCounter = 0;
+  const initialSlots = new Map<string, MarketSlot>();
+  const initialCompTokens = new Set<string>();
+  let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
   // ── Crypto price infrastructure (paper) ────────────────────────────────
   const cryptoPriceStore = new CryptoPriceStore();
@@ -431,15 +380,6 @@ async function runPaper(): Promise<void> {
     }
   });
 
-  // Discovery-специфичное состояние
-  type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
-  let discoveryAdapter: DiscoveryAdapter | null = null;
-  const closedMarkets = new Set<string>();
-  let isShuttingDown = false;
-  let expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
-  let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let _rotationInProgress = false;
-
   if (config.market.source === 'fixed') {
     const mc = config.market;
     const mid = asMarketId(mc.marketId);
@@ -470,7 +410,7 @@ async function runPaper(): Promise<void> {
       logger,
       recording?.journal,
     );
-    activeMarkets.set(tStr, {
+    initialSlots.set(tStr, {
       instrumentId: iId,
       marketId: mid,
       asset: ast,
@@ -562,7 +502,7 @@ async function runPaper(): Promise<void> {
       const initCompInstrumentId = initCompTokenStr ? (asInstrumentId(initCompTokenStr) ?? undefined) : undefined;
       const initCompAsset = initCompTokenStr ? (asPolymarketCtfToken(initCompTokenStr) ?? undefined) : undefined;
 
-      activeMarkets.set(tStr, {
+      initialSlots.set(tStr, {
         instrumentId: iId,
         marketId: candidate.marketId,
         asset: ast,
@@ -581,11 +521,11 @@ async function runPaper(): Promise<void> {
 
       // Регистрация comp token для paper exchange + trade bridge
       if (initCompInstrumentId && initCompAsset) {
-        activeCompTokens.add(String(initCompInstrumentId));
+        initialCompTokens.add(String(initCompInstrumentId));
         logger.info('Complementary token registered for trade bridge', {
           compTokenId: String(initCompInstrumentId),
           primaryTokenId: tStr,
-          activeCompTokens: activeCompTokens.size,
+          activeCompTokens: initialCompTokens.size,
         });
       }
 
@@ -636,7 +576,7 @@ async function runPaper(): Promise<void> {
   }
 
   // Для non-arb: firstSlot обязателен. Для arb: placeholder — будет перезаписан через registerMarket().
-  const firstSlot = activeMarkets.values().next().value;
+  const firstSlot = initialSlots.values().next().value;
   const placeholderInstrumentId = firstSlot?.instrumentId ?? asInstrumentId('1')!;
   const placeholderMarketId = firstSlot?.marketId ?? asMarketId('0x0000000000000000000000000000000000000000000000000000000000000001')!;
   const placeholderAsset = firstSlot?.asset ?? asPolymarketCtfToken('1')!;
@@ -694,6 +634,36 @@ async function runPaper(): Promise<void> {
   );
   const wsAdapter = new PolymarketWsAdapter(wsManager, logger);
 
+  // ── MarketRotation (единый модуль ротации для paper) ───────────────────
+  const rotation = new MarketRotation({
+    logger,
+    clock,
+    eventBus,
+    portfolioStore,
+    accountId: accountId!,
+    wsAdapter,
+    cryptoPriceStore,
+    cryptoSubs: paperCryptoSubs,
+    pendingChainlinkStrike,
+    binanceClient,
+    engine,
+    marketCatalog,
+    recording,
+    config,
+    maxConcurrentMarkets,
+    minCapitalPerMarket,
+    mode: 'paper',
+    exchangeClient,
+  });
+  // Переносим initial slots в rotation
+  for (const [key, slot] of initialSlots) rotation.activeMarkets.set(key, slot);
+  for (const compToken of initialCompTokens) rotation.activeCompTokens.add(compToken);
+  if (discoveryAdapter) rotation.setDiscoveryAdapter(discoveryAdapter);
+  const activeMarkets = rotation.activeMarkets;
+  const activeCompTokens = rotation.activeCompTokens;
+  const closedMarkets = rotation.closedMarkets;
+  const orderToSlot = rotation.orderToSlot;
+
   // MarketDataFeedAdapter — маршрутизирует orderbook snapshots → BookUpdateHandler → BOOK_UPDATED
   const marketDataFeedAdapter = new MarketDataFeedAdapter(wsAdapter, bookUpdateHandler, logger);
 
@@ -739,657 +709,11 @@ async function runPaper(): Promise<void> {
   }
   portfolioStore.save(portfolioResult.value, 0);
 
-  // ── Хелперы ротации рынков ──────────────────────────────────────────────
 
-  /**
-   * Регистрирует инструмент в каталоге и стратегию в планировщике.
-   *
-   * @param slot - Слот активного рынка
-   * @returns true если регистрация успешна
-   */
-  async function registerMarketAndStrategy(slot: PaperMarketSlot): Promise<boolean> {
-    // Подписка на WS комплементарного токена (для dual-token стратегий)
-    if (slot.complementaryInstrumentId) {
-      const compTokenStr = String(slot.complementaryInstrumentId);
-      await wsAdapter.subscribeToToken(compTokenStr);
-      activeCompTokens.add(compTokenStr);
-      logger.info('Complementary token registered for trade bridge', {
-        compTokenId: compTokenStr,
-        primaryTokenId: String(slot.instrumentId),
-        activeCompTokens: activeCompTokens.size,
-      });
-    }
-    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
-    if (!expiresAtResult.ok) {
-      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
-      return false;
-    }
-    marketCatalog.register({
-      instrumentId: slot.instrumentId,
-      marketId: slot.marketId,
-      tickSize: Price.of(new Decimal('0.001')),
-      minOrderSize: Quantity.of(new Decimal('1')),
-      minOrderValue: Quantity.of(new Decimal('1')),
-      active: true,
-      expiresAt: expiresAtResult.value,
-    });
+  // ── Ротация рынков — управляется через MarketRotation ──────────────────
+  // registerMarketAndStrategy, openMarket, closeMarket, fillMarketSlots,
+  // checkExpiredMarkets, scheduleScanLoop — все в rotation.
 
-    // Регистрируем комплементарный инструмент в каталоге (для ExecutionEngine routing)
-    if (slot.complementaryInstrumentId) {
-      marketCatalog.register({
-        instrumentId: slot.complementaryInstrumentId,
-        marketId: slot.marketId,
-        tickSize: Price.of(new Decimal('0.001')),
-        minOrderSize: Quantity.of(new Decimal('1')),
-        minOrderValue: Quantity.of(new Decimal('1')),
-        active: true,
-        expiresAt: expiresAtResult.value,
-      });
-    }
-
-    // Recording: регистрируем рынок (WS events + crypto prices + journal)
-    if (recording && slot.candidate) {
-      const tokenIds = slot.complementaryInstrumentId
-        ? [String(slot.instrumentId), String(slot.complementaryInstrumentId)]
-        : [String(slot.instrumentId)];
-      recording.openMarket(slot.candidate, {
-        marketId: slot.marketId,
-        question: slot.candidate.question ?? String(slot.marketId),
-        tokenIds,
-        expiresAt: expiresAtResult.value,
-        rawMarket: slot.candidate.rawMarket,
-      }, mode as 'live' | 'paper');
-    }
-
-    const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
-    const compId = slot.complementaryInstrumentId;
-    const regResult = await engine.scheduler.register({
-      strategy: slot.strategy,
-      instrumentId: slot.instrumentId,
-      asset: slot.asset,
-      accountId: accountId!,
-      market: marketStub,
-      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
-      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
-      additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),
-      complementaryInstrumentId: compId,
-      complementaryAsset: slot.complementaryAsset,
-    });
-    if (!regResult.ok) {
-      logger.error('Failed to register strategy', { error: String(regResult.error) });
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Открывает новый рыночный слот из discovery-кандидата (paper).
-   *
-   * @param candidate - Кандидат рынка
-   * @returns true если рынок успешно открыт
-   */
-  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<boolean> {
-    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-
-    // Проверяем доступный капитал
-    const portfolio = portfolioStore.get(accountId!);
-    if (portfolio) {
-      const available = portfolio.balance.available().value();
-      if (available.lt(minCapitalPerMarket)) {
-        logger.warn('Insufficient capital for new market slot', {
-          available: available.toFixed(2),
-          minCapitalPerMarket,
-          marketId: String(candidate.marketId),
-        });
-        return false;
-      }
-    }
-
-    const expiresMs = candidate.expiresAt.toNumber();
-    const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
-
-    // Не занимаем слот если рынок начинается слишком далеко в будущем (> 10 мин).
-    // Допускаем рынки с eventStart до 10 мин вперёд — бот подождёт warmup.
-    if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + 10 * 60_000) {
-      logger.debug('Skipping market: event starts too far in the future', {
-        marketId: String(candidate.marketId),
-        eventStartMs: slotCryptoMeta.eventStartTimeMs,
-        startsInMin: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
-      });
-      return false;
-    }
-
-    // Duration filter уже применён в MarketFilter при discovery.
-    // Второй чек здесь не нужен — убран чтобы не блокировать рынки без crypto meta.
-    if (false) {
-    }
-
-    // Fetch strike price и подписка RTDS для крипто-рынка (один раз на рынок)
-    if (slotCryptoMeta) {
-      if (slotCryptoMeta.priceToBeat !== undefined) {
-        cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, slotCryptoMeta.priceToBeat);
-        logger.info('Strike price from API (priceToBeat)', {
-          symbol: slotCryptoMeta.rtdsFilter,
-          strikePrice: slotCryptoMeta.priceToBeat,
-        });
-      } else {
-        const eventStarted = Date.now() > slotCryptoMeta.eventStartTimeMs;
-
-        if (eventStarted) {
-          try {
-            const interval = computeInterval(slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs);
-            const kline = await binanceClient.getKline(slotCryptoMeta.binanceSymbol, slotCryptoMeta.eventStartTimeMs, interval);
-            cryptoPriceStore.setTargetPrice(slotCryptoMeta.rtdsFilter, kline.open);
-            logger.info('Strike price from Binance kline (event already started)', {
-              symbol: slotCryptoMeta.rtdsFilter,
-              strikePrice: kline.open,
-            });
-          } catch (err) {
-            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS', {
-              symbol: slotCryptoMeta.binanceSymbol,
-              err: err instanceof Error ? err.message : String(err),
-            });
-            pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
-          }
-        } else {
-          pendingChainlinkStrike.set(slotCryptoMeta.rtdsFilter, slotCryptoMeta.eventStartTimeMs);
-          logger.info('Waiting for first Chainlink price after event start as strike', {
-            symbol: slotCryptoMeta.rtdsFilter,
-            eventStartTime: new Date(slotCryptoMeta.eventStartTimeMs).toISOString(),
-          });
-        }
-      }
-      paperCryptoSubs.subscribeMarket(String(candidate.instrumentId), slotCryptoMeta);
-    }
-
-    // Маршрутизация стратегии по правилам
-    const marketSelection = selectStrategyForMarket(config, {
-      eventStartMs: slotCryptoMeta?.eventStartTimeMs,
-      expiresAtMs: expiresMs,
-      question: candidate.question,
-    });
-    if (!marketSelection) {
-      logger.debug('No strategy rule matches market, skipping', {
-        marketId: String(candidate.marketId),
-        question: candidate.question,
-        durationMin: slotCryptoMeta
-          ? ((slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
-          : 'unknown',
-      });
-      return false;
-    }
-
-    // Определяем какие стороны открываем
-    // bidirectional: два слота (UP + DOWN) с фиксированным side
-    // non-bidirectional: один слот, side из конфига (default "auto" — стратегия сама выбирает)
-    const sides: Array<{ outcomeIndex: 0 | 1; side: 'up' | 'down' | undefined }> = [
-      { outcomeIndex: mc.outcomeIndex, side: mc.bidirectional ? (mc.outcomeIndex === 0 ? 'up' : 'down') : undefined },
-    ];
-    if (mc.bidirectional) {
-      const oppositeIndex: 0 | 1 = mc.outcomeIndex === 0 ? 1 : 0;
-      sides.push({ outcomeIndex: oppositeIndex, side: oppositeIndex === 0 ? 'up' : 'down' });
-    }
-
-    let anyOpened = false;
-    for (const { outcomeIndex, side } of sides) {
-      const tStr = candidate.allTokenIds?.[outcomeIndex] ?? String(candidate.instrumentId);
-      const iId = asInstrumentId(tStr);
-      const ast = asPolymarketCtfToken(tStr);
-      if (!iId || !ast) {
-        logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId), side });
-        continue;
-      }
-
-      // Стратегия: side из конфига. При bidirectional — перезаписываем на фиксированный up/down.
-      // При non-bidirectional — оставляем как есть (auto или что задал пользователь).
-      const sideParams = side !== undefined
-        ? { ...marketSelection.strategyParams, side }
-        : { ...marketSelection.strategyParams };
-      const slotId = side !== undefined
-        ? `${marketSelection.strategy}-${side}-slot-${_slotCounter++}`
-        : `${marketSelection.strategy}-slot-${_slotCounter++}`;
-      const slotStrategy = createStrategy(
-        { type: marketSelection.strategy, id: slotId, params: sideParams } as unknown as StrategyConfig,
-        logger,
-        recording?.journal,
-      );
-
-      // Комплементарный токен для dual-token стратегий (adaptive-entry)
-      const compIndex = 1 - outcomeIndex;
-      const compTokenStr = candidate.allTokenIds?.[compIndex];
-      const compInstrumentId = compTokenStr ? (asInstrumentId(compTokenStr) ?? undefined) : undefined;
-      const compAsset = compTokenStr ? (asPolymarketCtfToken(compTokenStr) ?? undefined) : undefined;
-      if (!compTokenStr) {
-        logger.warn('No complementary token found (allTokenIds missing or incomplete)', {
-          allTokenIds: candidate.allTokenIds ?? 'undefined',
-          outcomeIndex,
-          compIndex,
-          marketId: String(candidate.marketId),
-        });
-      }
-
-      const slot: PaperMarketSlot = {
-        instrumentId: iId,
-        marketId: candidate.marketId,
-        asset: ast,
-        tokenIdStr: tStr,
-        expiresAtMs: expiresMs,
-        candidate,
-        strategy: slotStrategy,
-        cryptoMeta: slotCryptoMeta,
-        complementaryInstrumentId: compInstrumentId,
-        complementaryAsset: compAsset,
-        outcomeIndex,
-        fillHistory: [],
-        partialAccum: new Map(),
-        openedAt: Date.now(),
-      };
-
-      exchangeClient.registerMarket(iId, candidate.marketId, accountId!, ast);
-
-      // Регистрируем комплементарный токен для auto-selection (fills на DOWN ордера)
-      if (compInstrumentId && compAsset) {
-        exchangeClient.registerMarket(compInstrumentId, candidate.marketId, accountId!, compAsset);
-      }
-
-      activeMarkets.set(tStr, slot);
-      await wsAdapter.subscribeToToken(tStr);
-
-      const ok = await registerMarketAndStrategy(slot);
-      if (!ok) {
-        activeMarkets.delete(tStr);
-        continue;
-      }
-
-      const slug = candidate.rawMarket?.['slug'] as string | undefined;
-      logger.info('Market opened', {
-        question: candidate.question,
-        slug: slug ?? '(no slug)',
-        marketId: String(candidate.marketId),
-        tokenId: tStr,
-        compTokenId: compInstrumentId ? String(compInstrumentId) : 'none',
-        side,
-        outcomeIndex,
-        activeSlots: activeMarkets.size,
-        maxSlots: maxConcurrentMarkets,
-        expiresAt: new Date(expiresMs).toISOString(),
-        hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-      });
-      anyOpened = true;
-    }
-
-    return anyOpened;
-  }
-
-  /**
-   * Закрывает конкретный рыночный слот (paper).
-   *
-   * @param tokenIdStr - Ключ слота
-   * @param reason - Причина закрытия
-   */
-  async function closeMarket(tokenIdStr: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
-    const slot = activeMarkets.get(tokenIdStr);
-    if (!slot) return;
-
-    logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
-
-    // Снимаем стратегию → автоматически отменяет все открытые ордера через CANCEL_ALL
-    await engine.scheduler.unregister(slot.strategy.id);
-
-    await wsAdapter.unsubscribeFromToken(tokenIdStr);
-    marketCatalog.remove(slot.instrumentId);
-
-    // Очистка pending Chainlink strike.
-    // НЕ отписываемся от RTDS при ротации — тот же символ, unsubscribe/subscribe race condition.
-    if (slot.cryptoMeta) {
-      pendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
-    }
-
-    // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
-    // Проверяем позиции на обоих токенах (primary + comp) для auto-selection стратегий
-    let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
-    if (reason === 'EXPIRED' && slot.cryptoMeta) {
-      const resolution = cryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
-      const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
-      const portfolio = portfolioStore.get(accountId!);
-
-      // Ищем позицию на primary и comp токенах
-      const primaryPosition = portfolio?.getPosition(slot.instrumentId);
-      const compPosition = slot.complementaryInstrumentId
-        ? portfolio?.getPosition(slot.complementaryInstrumentId)
-        : undefined;
-      const primaryHasTokens = primaryPosition && !primaryPosition.isClosed();
-      const compHasTokens = compPosition && !compPosition.isClosed();
-
-      // Определяем на каком токене мы сидим
-      const position = primaryHasTokens ? primaryPosition : compHasTokens ? compPosition : undefined;
-      const positionInstrumentId = primaryHasTokens ? slot.instrumentId : slot.complementaryInstrumentId!;
-      const positionIsComp = !primaryHasTokens && compHasTokens;
-      const hasTokens = !!position;
-
-      logger.info('Settlement check', {
-        hasCryptoMeta: true,
-        symbol: slot.cryptoMeta.rtdsFilter,
-        targetPrice: cryptoSnap?.targetPrice,
-        currentPrice: cryptoSnap?.currentPrice,
-        resolution: resolution ?? 'unknown',
-        hasTokens,
-        positionOn: positionIsComp ? 'complementary' : 'primary',
-        tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
-      });
-
-      if (resolution && portfolio && position && hasTokens) {
-        const qty = position.quantity.value();
-        // outcomeIndex для позиции: primary = slot.outcomeIndex, comp = 1 - slot.outcomeIndex
-        const oi = positionIsComp ? (1 - slot.outcomeIndex) as 0 | 1 : slot.outcomeIndex;
-        const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
-        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
-        const cashCredit = qty.times(settlementPrice);
-
-        settlementResult = { resolution, settlementPrice, cashCredit, qty };
-
-        // Удаляем позицию (settled)
-        const closedPosition = new SimplePosition({
-          instrumentId: positionInstrumentId,
-          quantity: new Decimal(0),
-          averageEntryPrice: position.averageEntryPrice.value(),
-          side: 'LONG' as const,
-        });
-        let updated = portfolio.upsertPosition(closedPosition);
-
-        // Зачисляем settlement cash
-        if (cashCredit.gt(0)) {
-          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
-          if (creditResult.ok) updated = creditResult.value;
-        }
-
-        const ver = portfolioStore.getVersion(accountId!);
-        const saveRes = portfolioStore.save(updated, ver);
-        if (!saveRes.ok) {
-          logger.error('Settlement portfolio save failed (version conflict)', { expected: ver });
-        }
-        logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens`, {
-          symbol: slot.cryptoMeta.rtdsFilter,
-          resolution,
-          settlementPrice: settlementPrice.toFixed(2),
-          cashCredit: cashCredit.toFixed(4),
-          outcomeIndex: oi,
-        });
-      }
-    }
-
-    // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
-    printMarketSummary(slot, settlementResult);
-
-    // Recording: market_resolved event + journal resolution + финализация
-    if (recording) {
-      // market_resolved в snapshot (для бектеста: strike + resolution price)
-      if (reason === 'EXPIRED' && slot.cryptoMeta) {
-        const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
-        if (cryptoSnap?.targetPrice && cryptoSnap?.currentPrice) {
-          recording.recordResolved(
-            slot.tokenIdStr,
-            slot.cryptoMeta.rtdsFilter,
-            cryptoSnap.targetPrice,
-            cryptoSnap.currentPrice,
-            settlementResult?.resolution ?? 'UNKNOWN',
-          );
-        }
-      }
-      if (settlementResult) {
-        recording.journal.recordResolution({
-          marketId: String(slot.marketId), ts: Date.now(),
-          resolution: settlementResult.resolution as 'UP' | 'DOWN' | 'UNKNOWN',
-          pnl: settlementResult.cashCredit.toFixed(4),
-          settlementPrice: settlementResult.settlementPrice.toFixed(2),
-        });
-      }
-      await recording.closeMarket(slot.marketId, reason);
-    }
-
-    // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
-    const closeTimestamp = TimestampService.create(Date.now());
-    if (closeTimestamp.ok) {
-      await eventBus.publish({
-        type: 'MARKET_CLOSED',
-        marketId: slot.marketId,
-        reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
-        realizedPnL: Money.of(new Decimal(0), 'USDC'),
-        timestamp: closeTimestamp.value,
-      });
-    }
-
-    if (reason === 'EXPIRED') {
-      closedMarkets.add(String(slot.marketId));
-    }
-
-    // Очистить orderToSlot для этого слота
-    for (const [orderId, slotKey] of orderToSlot) {
-      if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
-    }
-
-    // Убрать комплементарный токен из active set + WS unsubscribe
-    if (slot.complementaryInstrumentId) {
-      const compTokenStr = String(slot.complementaryInstrumentId);
-      activeCompTokens.delete(compTokenStr);
-      await wsAdapter.unsubscribeFromToken(compTokenStr);
-    }
-
-    activeMarkets.delete(tokenIdStr);
-    logger.info('Market closed', { reason, marketId: String(slot.marketId), activeSlots: activeMarkets.size });
-  }
-
-  /**
-   * Заполняет свободные слоты рынками из кэша discovery (paper).
-   *
-   * @remarks
-   * Открывает кандидатов пока количество уникальных рынков < maxConcurrentMarkets.
-   * При bidirectional один рынок занимает 2 слота (UP + DOWN).
-   * Не делает новый API-запрос — читает из кэша.
-   */
-  async function fillMarketSlots(): Promise<void> {
-    if (!discoveryAdapter) return;
-
-    let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
-    try {
-      candidates = await discoveryAdapter.findCandidates();
-    } catch (err) {
-      logger.error('Failed to read candidates from discovery cache', {
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-      return;
-    }
-
-    const activeMarketIds = new Set<string>();
-    for (const slot of activeMarkets.values()) {
-      activeMarketIds.add(String(slot.marketId));
-    }
-
-    const nowMs = Date.now();
-    for (const c of candidates) {
-      if (activeMarketIds.size >= maxConcurrentMarkets) break;
-
-      const key = String(c.marketId);
-      if (closedMarkets.has(key)) continue;
-      if (activeMarketIds.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
-
-      const opened = await openMarket(c);
-      if (opened) activeMarketIds.add(key);
-    }
-
-    if (activeMarkets.size === 0) {
-      logger.warn('No valid market candidates in cache, waiting for next scan');
-    }
-  }
-
-  /**
-   * Количество миллисекунд до истечения рынка, при котором начинаем закрытие.
-   *
-   * @remarks
-   * 5 сек достаточно чтобы CancelOrderUseCase успел снять все ордера до реального expiry.
-   * BUY и SELL ордера отменяются через CANCEL_ALL при scheduler.unregister().
-   */
-  const CANCEL_BEFORE_EXPIRY_MS = 5_000;
-
-  /**
-   * Минимальное время жизни рынка (мс) для переключения.
-   *
-   * @remarks
-   * Рынки с остатком < 30 сек не имеют смысла: ротация + подписка WS + первый тик
-   * занимают ~5 сек, плюс CANCEL_BEFORE_EXPIRY_MS=5 сек на закрытие.
-   * Без фильтра fillMarketSlot() может открыть рынок с 3 сек жизни,
-   * который сразу истечёт → бесполезный цикл ротации.
-   */
-  const MIN_VIABLE_TRADING_MS = 30_000;
-
-  /**
-   * Проверяет истечение всех активных рынков и заполняет освободившиеся слоты (paper).
-   *
-   * @remarks
-   * Reentrancy guard: `_rotationInProgress` предотвращает параллельные вызовы.
-   * В арб-режиме дополнительно проверяет арб-пары и вызывает fillArbSlots().
-   */
-  /** Счётчик для throttle арб-статуса (логируем каждые ~30с = 6 × 5с) */
-  let _arbStatusCounter = 0;
-
-  async function checkExpiredMarkets(): Promise<void> {
-    if (isShuttingDown || _rotationInProgress) return;
-    _rotationInProgress = true;
-    try {
-      const nowMs = Date.now();
-
-      // Периодический лог состояния арб-пар (каждые ~30с)
-      if (isArbMode && ++_arbStatusCounter % 6 === 0) {
-        for (const [pairId, pair] of activeArbPairs) {
-          const easyBook = marketDataStore.getTopOfBook(pair.easySlot.instrumentId);
-          const hardSlot = activeMarkets.get(pair.hardTokenIdStr);
-          const hardInstrumentId = hardSlot?.instrumentId;
-          const hardBook = hardInstrumentId ? marketDataStore.getTopOfBook(hardInstrumentId) : undefined;
-          const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
-          const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
-          logger.info('Arb pair status', {
-            pairId,
-            ttlSec,
-            ticks: metrics?.['tickCount'] ?? 0,
-            divergences: metrics?.['divergenceCount'] ?? 0,
-            trades: metrics?.['tradeCount'] ?? 0,
-            easyBid: easyBook?.bestBid?.value().toFixed(2) ?? '-',
-            easyAsk: easyBook?.bestAsk?.value().toFixed(2) ?? '-',
-            hardBid: hardBook?.bestBid?.value().toFixed(2) ?? '-',
-            hardAsk: hardBook?.bestAsk?.value().toFixed(2) ?? '-',
-            peerStrike: pair.easyStrikeLocked ? 'set' : 'pending',
-            slotStrike: pair.hardStrikeLocked ? 'set' : 'pending',
-          });
-        }
-      }
-
-      const expiredTokens: string[] = [];
-      for (const [tokenIdStr, slot] of activeMarkets) {
-        if (!slot.candidate) continue; // fixed-рынки не истекают
-        if (slot.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS) {
-          logger.info('Market expiring soon, closing early to cancel orders', {
-            marketId: String(slot.marketId),
-            expiresAt: new Date(slot.expiresAtMs).toISOString(),
-            msTillExpiry: Math.max(0, slot.expiresAtMs - nowMs),
-          });
-          expiredTokens.push(tokenIdStr);
-        }
-      }
-      for (const tokenIdStr of expiredTokens) {
-        // Если это hard нога арб-пары — закрываем всю пару
-        const arbPairId = hardTokenToArbPair.get(tokenIdStr);
-        if (arbPairId) {
-          await closeArbPair(arbPairId, 'EXPIRED');
-        } else {
-          await closeMarket(tokenIdStr, 'EXPIRED');
-        }
-      }
-      if (expiredTokens.length > 0) {
-        if (isArbMode) {
-          // Промоутим warming пару (если есть) — мгновенное переключение
-          const promoted = await promoteWarmPair();
-          if (!promoted) {
-            // Fallback: ищем пару с нуля (как раньше)
-            await fillArbSlots();
-          }
-          // Прогреваем следующую пару для следующего цикла
-          await warmNextArbPair();
-        } else {
-          await fillMarketSlots();
-
-          // Deferred RTDS cleanup — отписать символы которые больше не нужны
-          paperCryptoSubs.cleanupUnused(new Set(activeMarkets.keys()));
-        }
-      }
-
-      // Арб: если до expiry активной пары < WARM_AHEAD_MS и нет warming → прогреваем
-      if (isArbMode && !warmingArbPair && activeArbPairs.size > 0) {
-        let earliestExpiryMs = Infinity;
-        for (const pair of activeArbPairs.values()) {
-          if (pair.expiresAtMs < earliestExpiryMs) earliestExpiryMs = pair.expiresAtMs;
-        }
-        const ttlMs = earliestExpiryMs - nowMs;
-        if (ttlMs <= WARM_AHEAD_MS && ttlMs > 0) {
-          await warmNextArbPair();
-        }
-      }
-    } finally {
-      _rotationInProgress = false;
-    }
-  }
-
-  /**
-   * Периодически обновляет кэш discovery (пауза после завершения запроса).
-   *
-   * @remarks
-   * Не знает о текущем рынке — просто обновляет кэш.
-   * fillMarketSlot() читает из этого кэша при смене рынка.
-   * В арб-режиме после обновления кэша проверяет свободные слоты
-   * и запускает fillArbSlots() для поиска новых пар.
-   */
-  async function scheduleScanLoop(): Promise<void> {
-    if (isShuttingDown || !discoveryAdapter) return;
-    try {
-      await discoveryAdapter.refresh();
-      logger.debug('Discovery cache refreshed');
-    } catch (err) {
-      logger.error('Market discovery refresh failed', {
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-    }
-
-    // Если есть свободные слоты — ищем новые рынки/пары
-    if (activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
-      try {
-        if (isArbMode) {
-          await fillArbSlots();
-        } else {
-          await fillMarketSlots();
-        }
-      } catch (err) {
-        logger.error('Periodic slot filling failed', {
-          err: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    // Арб: попытка обновить warming — может появилась более близкая пара
-    if (isArbMode && !isShuttingDown && activeArbPairs.size > 0) {
-      try {
-        await tryUpgradeWarmingPair();
-      } catch (err) {
-        logger.error('Warming pair upgrade failed', {
-          err: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (!isShuttingDown) {
-      const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-      scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
-    }
-  }
 
   // ── Кросс-маркетный арбитраж (paper) ────────────────────────────────────
 
@@ -1482,8 +806,7 @@ async function runPaper(): Promise<void> {
   const hardTokenToArbPair = new Map<string, string>();
   /** Пара в зоне прогрева (максимум одна) — WS/RTDS подписки активны, стратегии нет */
   let warmingArbPair: WarmingArbPair | null = null;
-  /** За сколько мс до expiry начинать прогрев следующей пары */
-  const WARM_AHEAD_MS = 60_000;
+  /** За сколько мс до expiry начинать прогрев следующей пары (используется в custom arb check) */
   /** Счётчик для easy leg ордеров */
   let _arbOrderCounter = 0;
   const isArbMode = config.strategy === 'cross-market-arb';
@@ -1798,7 +1121,7 @@ async function runPaper(): Promise<void> {
     // additionalInstrumentIds: easy_Up — чтобы стратегия тикала при обновлении easy book тоже.
     // Без этого стратегия тикает только при обновлении hard book и может пропустить
     // расхождение, возникшее из-за движения easy книги.
-    const hardSlot: PaperMarketSlot = {
+    const hardSlot: MarketSlot = {
       instrumentId: hardUpIId,
       marketId: hardCandidate.marketId,
       asset: hardUpAst,
@@ -1815,7 +1138,7 @@ async function runPaper(): Promise<void> {
     };
 
     activeMarkets.set(hardUpTokenStr, hardSlot);
-    const regOk = await registerMarketAndStrategy(hardSlot);
+    const regOk = await rotation.registerMarketAndStrategy(hardSlot);
     if (!regOk) {
       activeMarkets.delete(hardUpTokenStr);
       return false;
@@ -2262,7 +1585,7 @@ async function runPaper(): Promise<void> {
 
     // ── activeMarkets + activeArbPairs (WS/catalog/RTDS уже настроены) ──
     const arbMc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-    const hardSlot: PaperMarketSlot = {
+    const hardSlot: MarketSlot = {
       instrumentId: w.hardUpIId,
       marketId: w.hardCandidate.marketId,
       asset: w.hardUpAst,
@@ -2279,7 +1602,7 @@ async function runPaper(): Promise<void> {
     };
 
     activeMarkets.set(w.hardUpTokenStr, hardSlot);
-    const regOk = await registerMarketAndStrategy(hardSlot);
+    const regOk = await rotation.registerMarketAndStrategy(hardSlot);
     if (!regOk) {
       activeMarkets.delete(w.hardUpTokenStr);
       return false;
@@ -2689,6 +2012,9 @@ async function runPaper(): Promise<void> {
       return; // проверили первую подходящую — выходим
     }
   }
+  // Ссылка на tryUpgradeWarmingPair — вызывается из scheduleScanLoop (для арб-режима).
+  // TODO: Восстановить вызов из scan loop после полной миграции арб-кода в MarketRotation.
+  void tryUpgradeWarmingPair;
 
   /**
    * Заполняет слоты арбитражными парами из кэша discovery.
@@ -2896,204 +2222,14 @@ async function runPaper(): Promise<void> {
     },
   });
 
-  // ── Трекинг fills для сводки по рынку (per-slot, paper) ───────────────────
 
-  /** Роутинг ORDER_CREATED → orderToSlot для привязки ордера к слоту */
-  eventBus.subscribe('ORDER_CREATED', (event) => {
-    const iId = assetIdToInstrumentId(event.asset);
-    const tokenIdStr = iId ? String(iId) : undefined;
-    if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
-      orderToSlot.set(String(event.orderId), tokenIdStr);
-      return;
-    }
-    // Комплементарный токен (auto-selection): ордер роутится на primary slot
-    if (tokenIdStr && activeCompTokens.has(tokenIdStr)) {
-      for (const [primaryTokenId, slot] of activeMarkets) {
-        if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
-          orderToSlot.set(String(event.orderId), primaryTokenId);
-          return;
-        }
-      }
-    }
-    // Арбитражные easy/down ноги: их токены не в activeMarkets,
-    // но ордер должен роутиться на hard slot (стратегия зарегистрирована там).
-    if (tokenIdStr) {
-      for (const pair of activeArbPairs.values()) {
-        if (pair.easySlot.tokenIdStr === tokenIdStr ||
-            pair.easyDownTokenIdStr === tokenIdStr ||
-            pair.hardDownTokenIdStr === tokenIdStr) {
-          orderToSlot.set(String(event.orderId), pair.hardTokenIdStr);
-          return;
-        }
-      }
-    }
-  });
+  // Fill tracking — управляется через MarketRotation
+  rotation.registerFillTracking();
 
-  /** Хелпер: найти слот по orderId через orderToSlot */
-  function findSlotByOrderId(orderId: string): PaperMarketSlot | undefined {
-    const tokenIdStr = orderToSlot.get(orderId);
-    return tokenIdStr ? activeMarkets.get(tokenIdStr) : undefined;
-  }
-
-  eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const existing = slot.partialAccum.get(id);
-    const fillSize = event.fill.size.value();
-    const fillNotional = fillSize.times(event.fill.price.value());
-    if (existing) {
-      existing.totalSize = existing.totalSize.plus(fillSize);
-      existing.totalNotional = existing.totalNotional.plus(fillNotional);
-    } else {
-      slot.partialAccum.set(id, {
-        side: event.fill.side as 'BUY' | 'SELL',
-        totalSize: fillSize,
-        totalNotional: fillNotional,
-        firstAt: clock.now().toISOString().slice(11, 19),
-      });
-    }
-  });
-
-  eventBus.subscribe('ORDER_FILLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const accum = slot.partialAccum.get(id);
-    slot.partialAccum.delete(id);
-    const lastSize = event.fill.size.value();
-    const totalSize = (accum?.totalSize ?? new Decimal(0)).plus(lastSize);
-    const totalNotional = (accum?.totalNotional ?? new Decimal(0))
-      .plus(lastSize.times(event.fill.price.value()));
-    const avgPrice = totalNotional.div(totalSize);
-    slot.fillHistory.push({
-      side: event.fill.side as 'BUY' | 'SELL',
-      size: totalSize.toFixed(2),
-      price: avgPrice.toFixed(4),
-      notional: totalNotional.toFixed(2),
-      at: accum?.firstAt ?? clock.now().toISOString().slice(11, 19),
-    });
-  });
-
-  eventBus.subscribe('ORDER_CANCELLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const accum = slot.partialAccum.get(id);
-    if (!accum || accum.totalSize.lte(0)) return;
-    slot.partialAccum.delete(id);
-    const avgPrice = accum.totalNotional.div(accum.totalSize);
-    slot.fillHistory.push({
-      side: accum.side,
-      size: accum.totalSize.toFixed(2),
-      price: avgPrice.toFixed(4),
-      notional: accum.totalNotional.toFixed(2),
-      at: accum.firstAt,
-      partial: true,
-    });
-  });
-
-  /**
-   * Выводит сводку по всем fills конкретного рыночного слота (paper).
-   *
-   * @param slot - Слот активного рынка
-   */
-  /**
-   * Печатает сводку по рынку с учётом settlement.
-   *
-   * @param slot - Слот рынка
-   * @param settlement - Результат settlement (если был): resolution, settlementPrice, cashCredit, qty
-   *
-   * @remarks
-   * Открытые циклы (buy без sell) получают settlement PnL:
-   * settlementPrice × qty - entryPrice × qty.
-   * Это даёт полную картину PnL включая unsold токены.
-   */
-  function printMarketSummary(
-    slot: PaperMarketSlot,
-    settlement?: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal },
-  ): void {
-    const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
-    if (slot.fillHistory.length === 0) {
-      const noFillPortfolio = portfolioStore.get(accountId!);
-      logger.info('=== Market summary: no fills ===', {
-        market: marketQuestion,
-        usdcFree: noFillPortfolio?.balance.available().value().toFixed(2) ?? '-',
-        usdcReserved: noFillPortfolio?.balance.reserved().value().toFixed(2) ?? '-',
-      });
-      return;
-    }
-
-    const durationMs = Date.now() - slot.openedAt;
-    const durMin = Math.floor(durationMs / 60_000);
-    const durSec = Math.round((durationMs % 60_000) / 1000);
-
-    const buys  = slot.fillHistory.filter(f => f.side === 'BUY');
-    const sells = slot.fillHistory.filter(f => f.side === 'SELL');
-
-    const cycles = buys.map((buy, i) => {
-      const sell = sells[i];
-      const buyLabel = `${buy.size}@${buy.price}${buy.partial ? '(partial)' : ''} [${buy.at}]`;
-      if (!sell) {
-        // Открытый цикл — показываем settlement PnL если есть
-        if (settlement) {
-          const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
-          const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
-          return {
-            buy: buyLabel,
-            sell: `(settled@${settlement.settlementPrice} ${settlement.resolution})`,
-            pnl: (settlePnl.gte(0) ? '+' : '') + settlePnl.toFixed(4) + ' USDC',
-          };
-        }
-        return { buy: buyLabel, sell: '(open)', pnl: '-' };
-      }
-      const pnl = new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(buy.size));
-      const sellLabel = `${sell.size}@${sell.price}${sell.partial ? '(partial)' : ''} [${sell.at}]`;
-      return {
-        buy:  buyLabel,
-        sell: sellLabel,
-        pnl:  (pnl.gte(0) ? '+' : '') + pnl.toFixed(4) + ' USDC',
-      };
-    });
-
-    // PnL от завершённых циклов
-    let totalPnl = sells.reduce((acc, sell, i) => {
-      const buy = buys[i];
-      if (!buy) return acc;
-      return acc.plus(new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(sell.size)));
-    }, new Decimal(0));
-
-    // PnL от settlement открытых циклов
-    if (settlement) {
-      for (let i = sells.length; i < buys.length; i++) {
-        const buy = buys[i];
-        const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
-        const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
-        totalPnl = totalPnl.plus(settlePnl);
-      }
-    }
-
-    const portfolio = portfolioStore.get(accountId!);
-    const position  = portfolio?.getPosition(slot.instrumentId);
-
-    logger.warn('=== Market summary ===', {
-      market:       marketQuestion,
-      duration:     `${durMin}m${durSec}s`,
-      buys:         buys.length,
-      sells:        sells.length,
-      openCycles:   settlement ? 0 : buys.length - sells.length,
-      totalPnl:     (totalPnl.gte(0) ? '+' : '') + totalPnl.toFixed(4) + ' USDC',
-      settlement:   settlement ? `${settlement.resolution} @${settlement.settlementPrice}` : undefined,
-      cycles,
-      finalTokens:  position?.quantity.value().toFixed(2) ?? '0.00',
-      finalUsdcFree:    portfolio?.balance.available().value().toFixed(2) ?? '-',
-      finalUsdcReserved: portfolio?.balance.reserved().value().toFixed(2) ?? '-',
-    });
-  }
 
   // Регистрируем все начальные слоты
   for (const slot of activeMarkets.values()) {
-    const ok = await registerMarketAndStrategy(slot);
+    const ok = await rotation.registerMarketAndStrategy(slot);
     if (!ok) {
       logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
       process.exit(1);
@@ -3137,18 +2273,78 @@ async function runPaper(): Promise<void> {
   });
 
   // Запускаем ротацию только для discovery режима
-  if (discoveryAdapter) {
-    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarkets(); }, 5_000);
-    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-    scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
-
+  if (rotation.discoveryAdapter) {
     if (isArbMode) {
-      // Арб-режим: ищем пары и заполняем слоты
+      // Арб-режим: кастомный expiry check (arb pair → closeArbPair)
+      let _arbRotationInProgress = false;
+      let _arbStatusCounter = 0;
+      const CANCEL_BEFORE_EXPIRY_MS = 5_000;
+      const WARM_AHEAD_MS = 60_000;
+      setInterval(() => {
+        if (rotation.isShuttingDown || _arbRotationInProgress) return;
+        _arbRotationInProgress = true;
+        void (async () => {
+          try {
+            const nowMs = Date.now();
+            // Арб-статус (каждые ~30с = 6 × 5с)
+            if (++_arbStatusCounter % 6 === 0) {
+              for (const [pairId, pair] of activeArbPairs) {
+                const easyBook = marketDataStore.getTopOfBook(pair.easySlot.instrumentId);
+                const hardSlot = activeMarkets.get(pair.hardTokenIdStr);
+                const hardBook = hardSlot ? marketDataStore.getTopOfBook(hardSlot.instrumentId) : undefined;
+                const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
+                const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
+                logger.info('Arb pair status', {
+                  pairId, ttlSec,
+                  ticks: metrics?.['tickCount'] ?? 0,
+                  divergences: metrics?.['divergenceCount'] ?? 0,
+                  trades: metrics?.['tradeCount'] ?? 0,
+                  easyBid: easyBook?.bestBid?.value().toFixed(2) ?? '-',
+                  easyAsk: easyBook?.bestAsk?.value().toFixed(2) ?? '-',
+                  hardBid: hardBook?.bestBid?.value().toFixed(2) ?? '-',
+                  hardAsk: hardBook?.bestAsk?.value().toFixed(2) ?? '-',
+                });
+              }
+            }
+            const expiredTokens: string[] = [];
+            for (const [tokenIdStr, slot] of activeMarkets) {
+              if (!slot.candidate) continue;
+              if (slot.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS) expiredTokens.push(tokenIdStr);
+            }
+            for (const tokenIdStr of expiredTokens) {
+              const arbPairId = hardTokenToArbPair.get(tokenIdStr);
+              if (arbPairId) {
+                await closeArbPair(arbPairId, 'EXPIRED');
+              } else {
+                await rotation.closeMarket(tokenIdStr, 'EXPIRED');
+              }
+            }
+            if (expiredTokens.length > 0) {
+              const promoted = await promoteWarmPair();
+              if (!promoted) await fillArbSlots();
+              await warmNextArbPair();
+            }
+            // Прогреваем если до expiry < WARM_AHEAD_MS
+            if (!warmingArbPair && activeArbPairs.size > 0) {
+              let earliestExpiryMs = Infinity;
+              for (const pair of activeArbPairs.values()) {
+                if (pair.expiresAtMs < earliestExpiryMs) earliestExpiryMs = pair.expiresAtMs;
+              }
+              if (earliestExpiryMs - nowMs <= WARM_AHEAD_MS && earliestExpiryMs - nowMs > 0) {
+                await warmNextArbPair();
+              }
+            }
+          } finally { _arbRotationInProgress = false; }
+        })();
+      }, 5_000);
       void fillArbSlots();
-    } else if (maxConcurrentMarkets > 1) {
-      // Обычный режим: заполняем оставшиеся слоты
-      void fillMarketSlots();
+    } else {
+      rotation.startExpiryCheck();
+      if (maxConcurrentMarkets > 1) void rotation.fillMarketSlots();
     }
+
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    void rotation.scheduleScanLoop();
 
     logger.info('Market rotation enabled', {
       expiryCheckMs: 5_000,
@@ -3160,12 +2356,11 @@ async function runPaper(): Promise<void> {
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────
   async function shutdown(signal: string): Promise<void> {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
+    if (rotation.isShuttingDown) return;
+    rotation.isShuttingDown = true;
     logger.info(`Received ${signal}, shutting down`);
 
-    if (expiryCheckIntervalId) { clearInterval(expiryCheckIntervalId); expiryCheckIntervalId = null; }
-    if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
+    rotation.stopTimers();
 
     try {
       // Очищаем warming пару (если есть)
@@ -3176,14 +2371,10 @@ async function runPaper(): Promise<void> {
         await closeArbPair(pairId, 'SHUTDOWN');
       }
 
-      // Закрываем все активные слоты: сводка + unregister стратегий
-      for (const slot of activeMarkets.values()) {
-        printMarketSummary(slot);
-        await engine.scheduler.unregister(slot.strategy.id);
+      // Закрываем все активные слоты через rotation
+      for (const tokenIdStr of [...activeMarkets.keys()]) {
+        await rotation.closeMarket(tokenIdStr, 'SHUTDOWN');
       }
-      activeMarkets.clear();
-      activeCompTokens.clear();
-      orderToSlot.clear();
 
       engine.scheduler.stop();
       engine.orderEventBridge.stop();
@@ -3777,69 +2968,14 @@ async function runLive(): Promise<void> {
     });
   }
 
-  // ── Типы для мульти-маркетных слотов ──────────────────────────────────────
-
-  interface FillRecord {
-    side: 'BUY' | 'SELL';
-    size: string;
-    price: string;
-    notional: string;
-    at: string;
-    partial?: boolean;
-  }
-
-  interface PartialAccum {
-    side: 'BUY' | 'SELL';
-    totalSize: Decimal;
-    totalNotional: Decimal;
-    firstAt: string;
-  }
-
-  /**
-   * Слот активного рынка — хранит всё состояние, привязанное к конкретному рынку.
-   *
-   * @remarks
-   * Каждый рынок получает свой слот при открытии и удаляется из Map при закрытии.
-   * Стратегия создаётся индивидуально для каждого слота с уникальным ID.
-   */
-  interface ActiveMarketSlot {
-    readonly instrumentId: InstrumentId;
-    readonly marketId: MarketId;
-    readonly asset: AssetId;
-    readonly tokenIdStr: string;
-    readonly expiresAtMs: number;
-    readonly tickSize: Price;
-    readonly minOrderSize: Quantity;
-    readonly candidate: import('@polymarket/ports').DiscoveredMarket | null;
-    readonly strategy: IStrategy;
-    /** Метаданные крипто-рынка (undefined для не-крипто) */
-    readonly cryptoMeta: CryptoMarketMeta | undefined;
-    /** Дополнительные инструменты для триггера тика (арбитраж: easy book) */
-    readonly additionalInstrumentIds?: readonly InstrumentId[];
-    /** ID комплементарного токена (другой outcome) для dual-token стратегий */
-    readonly complementaryInstrumentId?: InstrumentId;
-    /** AssetId комплементарного токена (для auto-selection в PlaceIntent) */
-    readonly complementaryAsset?: AssetId;
-    /** Индекс outcome для этого слота (0=UP, 1=DOWN). Нужен для settlement. */
-    readonly outcomeIndex: 0 | 1;
-    fillHistory: FillRecord[];
-    partialAccum: Map<string, PartialAccum>;
-    openedAt: number;
-  }
-
-  // ── Мульти-маркетное состояние ──────────────────────────────────────────────
-
-  /** Активные рыночные слоты: key = tokenIdStr */
-  const activeMarkets = new Map<string, ActiveMarketSlot>();
-  /** ID комплементарных токенов, чьи трейды тоже должны проходить через trade bridge */
-  const activeCompTokens = new Set<string>();
-  /** Маппинг orderId → tokenIdStr для роутинга fill-событий в правильный слот */
-  const orderToSlot = new Map<string, string>();
-  /** Счётчик для уникальных strategy ID (монотонно растёт, не уменьшается) */
-  let _slotCounter = 0;
-
+  // ── Мульти-маркетное состояние (live) ──────────────────────────────────────
+  // MarketRotation создаётся после engine. Промежуточные переменные для early setup.
   const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
   const minCapitalPerMarket = config.resources.minCapitalPerMarket;
+  let _slotCounter = 0;
+  const initialSlots = new Map<string, MarketSlot>();
+  const initialCompTokens = new Set<string>();
+  let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
   // ── Crypto price infrastructure (live) ─────────────────────────────────
   const liveCryptoPriceStore = new CryptoPriceStore();
@@ -3898,15 +3034,6 @@ async function runLive(): Promise<void> {
     }
   });
 
-  // Discovery-специфичное состояние
-  type DiscoveryAdapter = PolymarketMarketDiscoveryAdapter;
-  let discoveryAdapter: DiscoveryAdapter | null = null;
-  const closedMarkets = new Set<string>();
-  let isShuttingDown = false;
-  let expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
-  let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let _rotationInProgress = false;
-
   if (config.market.source === 'fixed') {
     const mc = config.market;
     const mid = asMarketId(mc.marketId);
@@ -3934,7 +3061,7 @@ async function runLive(): Promise<void> {
       { type: liveFixedSelection.strategy, id: `${liveFixedSelection.strategy}-slot-${_slotCounter++}`, params: liveFixedSelection.strategyParams } as StrategyConfig,
       logger,
     );
-    activeMarkets.set(tStr, {
+    initialSlots.set(tStr, {
       instrumentId: iId,
       marketId: mid,
       asset: ast,
@@ -4034,7 +3161,7 @@ async function runLive(): Promise<void> {
     const liveInitCompInstrumentId = liveInitCompTokenStr ? (asInstrumentId(liveInitCompTokenStr) ?? undefined) : undefined;
     const liveInitCompAsset = liveInitCompTokenStr ? (asPolymarketCtfToken(liveInitCompTokenStr) ?? undefined) : undefined;
 
-    activeMarkets.set(tStr, {
+    initialSlots.set(tStr, {
       instrumentId: iId,
       marketId: candidate.marketId,
       asset: ast,
@@ -4055,11 +3182,11 @@ async function runLive(): Promise<void> {
 
     // Регистрация comp token для trade bridge
     if (liveInitCompInstrumentId && liveInitCompAsset) {
-      activeCompTokens.add(String(liveInitCompInstrumentId));
+      initialCompTokens.add(String(liveInitCompInstrumentId));
       logger.info('Complementary token registered for trade bridge', {
         compTokenId: String(liveInitCompInstrumentId),
         primaryTokenId: tStr,
-        activeCompTokens: activeCompTokens.size,
+        activeCompTokens: initialCompTokens.size,
       });
     }
 
@@ -4119,7 +3246,7 @@ async function runLive(): Promise<void> {
     process.exit(1);
   }
 
-  const firstSlot = activeMarkets.values().next().value!;
+  const firstSlot = initialSlots.values().next().value!;
   logger.info('Bot starting in live mode', {
     strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
     ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
@@ -4210,6 +3337,35 @@ async function runLive(): Promise<void> {
 
   const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker, cryptoPriceStore: liveCryptoPriceStore });
 
+  // ── MarketRotation (единый модуль ротации для live) ────────────────────
+  const rotation = new MarketRotation({
+    logger,
+    clock,
+    eventBus,
+    portfolioStore,
+    accountId,
+    wsAdapter: marketWsAdapter,
+    cryptoPriceStore: liveCryptoPriceStore,
+    cryptoSubs: liveCryptoSubs,
+    pendingChainlinkStrike: livePendingChainlinkStrike,
+    binanceClient: liveBinanceClient,
+    engine,
+    marketCatalog,
+    recording,
+    config,
+    maxConcurrentMarkets,
+    minCapitalPerMarket,
+    mode: 'live',
+    orderReconciler: liveInfra.orderReconciler,
+    redeemer,
+  });
+  // Переносим initial slots в rotation
+  for (const [key, slot] of initialSlots) rotation.activeMarkets.set(key, slot);
+  for (const compToken of initialCompTokens) rotation.activeCompTokens.add(compToken);
+  if (discoveryAdapter) rotation.setDiscoveryAdapter(discoveryAdapter);
+  const activeMarkets = rotation.activeMarkets;
+  const activeCompTokens = rotation.activeCompTokens;
+
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
   const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger);
@@ -4243,738 +3399,12 @@ async function runLive(): Promise<void> {
     }
   });
 
-  // ── Хелперы ротации рынков ───────────────────────────────────────────────
 
-  /**
-   * Регистрирует инструмент в каталоге и стратегию в планировщике.
-   *
-   * @param slot - Слот активного рынка с торговыми параметрами и стратегией
-   * @returns true если регистрация успешна
-   */
-  async function registerMarketAndStrategy(slot: ActiveMarketSlot): Promise<boolean> {
-    // Подписка на WS комплементарного токена (для dual-token стратегий)
-    if (slot.complementaryInstrumentId) {
-      const compTokenStr = String(slot.complementaryInstrumentId);
-      await marketWsAdapter.subscribeToToken(compTokenStr);
-      activeCompTokens.add(compTokenStr);
-    }
-    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
-    if (!expiresAtResult.ok) {
-      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
-      return false;
-    }
-    marketCatalog.register({
-      instrumentId: slot.instrumentId,
-      marketId: slot.marketId,
-      tickSize: slot.tickSize,
-      minOrderSize: slot.minOrderSize,
-      minOrderValue: Quantity.of(new Decimal('1')), // Polymarket: BUY-ордера >= $1
-      active: true,
-      expiresAt: expiresAtResult.value,
-    });
+  // ── Ротация рынков — управляется через MarketRotation ──────────────────
+  // registerMarketAndStrategy, openMarket, closeMarket, fillMarketSlots,
+  // checkExpiredMarkets, scheduleScanLoop, printMarketSummary — все в rotation.
+  rotation.registerFillTracking();
 
-    // Регистрируем комплементарный инструмент в каталоге (для ExecutionEngine routing)
-    if (slot.complementaryInstrumentId) {
-      marketCatalog.register({
-        instrumentId: slot.complementaryInstrumentId,
-        marketId: slot.marketId,
-        tickSize: slot.tickSize,
-        minOrderSize: slot.minOrderSize,
-        minOrderValue: Quantity.of(new Decimal('1')),
-        active: true,
-        expiresAt: expiresAtResult.value,
-      });
-    }
-
-    // Recording: регистрируем рынок (WS events + crypto prices + journal)
-    if (recording && slot.candidate) {
-      const tokenIds = slot.complementaryInstrumentId
-        ? [String(slot.instrumentId), String(slot.complementaryInstrumentId)]
-        : [String(slot.instrumentId)];
-      recording.openMarket(slot.candidate, {
-        marketId: slot.marketId,
-        question: slot.candidate.question ?? String(slot.marketId),
-        tokenIds,
-        expiresAt: expiresAtResult.value,
-        rawMarket: slot.candidate.rawMarket,
-      }, 'live');
-    }
-
-    const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
-    const compId = slot.complementaryInstrumentId;
-    const regResult = await engine.scheduler.register({
-      strategy: slot.strategy,
-      instrumentId: slot.instrumentId,
-      asset: slot.asset,
-      accountId: accountId!,
-      market: marketStub,
-      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
-      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
-      additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),
-      complementaryInstrumentId: compId,
-      complementaryAsset: slot.complementaryAsset,
-    });
-    if (!regResult.ok) {
-      logger.error('Failed to register strategy', { error: String(regResult.error) });
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Открывает новый рыночный слот из discovery-кандидата.
-   *
-   * @remarks
-   * Создаёт стратегию с уникальным ID, добавляет слот в activeMarkets,
-   * подписывается на WS и регистрирует в каталоге + планировщике.
-   * Не заменяет глобальные переменные — каждый слот автономен.
-   *
-   * @param candidate - Обнаруженный кандидат рынка
-   * @returns true если рынок успешно открыт
-   */
-  async function openMarket(candidate: import('@polymarket/ports').DiscoveredMarket): Promise<boolean> {
-    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-    const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
-    const iId = asInstrumentId(tStr);
-    const ast = asPolymarketCtfToken(tStr);
-    if (!iId || !ast) {
-      logger.error('Cannot create instrument for candidate', { tokenIdStr: tStr, marketId: String(candidate.marketId) });
-      return false;
-    }
-
-    // Проверяем доступный капитал
-    const portfolio = portfolioStore.get(accountId!);
-    if (portfolio) {
-      const available = portfolio.balance.available().value();
-      if (available.lt(minCapitalPerMarket)) {
-        logger.warn('Insufficient capital for new market slot', {
-          available: available.toFixed(2),
-          minCapitalPerMarket,
-          marketId: String(candidate.marketId),
-        });
-        return false;
-      }
-    }
-
-    const expiresMs = candidate.expiresAt.toNumber();
-
-    // Не занимаем слот если event ещё не начался (допускаем 30с запас)
-    const livePreCheckMeta = parseCryptoMeta(candidate.rawMarket);
-    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 30_000) {
-      logger.debug('Skipping market: event starts too far in the future', {
-        marketId: String(candidate.marketId),
-        eventStartMs: livePreCheckMeta.eventStartTimeMs,
-        startsInSec: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
-      });
-      return false;
-    }
-
-    const liveSlotCryptoMeta = livePreCheckMeta;
-
-    // Duration filter уже применён в MarketFilter при discovery.
-    // Второй чек здесь не нужен — убран чтобы не блокировать рынки без crypto meta.
-
-    // Маршрутизация стратегии по правилам
-    const liveMarketSelection = selectStrategyForMarket(config, {
-      eventStartMs: liveSlotCryptoMeta?.eventStartTimeMs,
-      expiresAtMs: expiresMs,
-      question: candidate.question,
-    });
-    if (!liveMarketSelection) {
-      logger.debug('No strategy rule matches market, skipping', {
-        marketId: String(candidate.marketId),
-        question: candidate.question,
-        durationMin: liveSlotCryptoMeta
-          ? ((liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
-          : 'unknown',
-      });
-      return false;
-    }
-
-    const slotStrategy = createStrategy(
-      { type: liveMarketSelection.strategy, id: `${liveMarketSelection.strategy}-slot-${_slotCounter++}`, params: liveMarketSelection.strategyParams } as StrategyConfig,
-      logger,
-      recording?.journal,
-    );
-
-    // Комплементарный токен для dual-token стратегий (adaptive-entry)
-    const liveCompIndex = 1 - mc.outcomeIndex;
-    const liveCompTokenStr = candidate.allTokenIds?.[liveCompIndex];
-    const liveCompInstrumentId = liveCompTokenStr ? (asInstrumentId(liveCompTokenStr) ?? undefined) : undefined;
-    const liveCompAsset = liveCompTokenStr ? (asPolymarketCtfToken(liveCompTokenStr) ?? undefined) : undefined;
-
-    const slot: ActiveMarketSlot = {
-      instrumentId: iId,
-      marketId: candidate.marketId,
-      asset: ast,
-      tokenIdStr: tStr,
-      expiresAtMs: expiresMs,
-      tickSize: candidate.tickSize,
-      minOrderSize: candidate.minOrderSize,
-      candidate,
-      strategy: slotStrategy,
-      cryptoMeta: liveSlotCryptoMeta,
-      complementaryInstrumentId: liveCompInstrumentId,
-      complementaryAsset: liveCompAsset,
-      outcomeIndex: mc.outcomeIndex,
-      fillHistory: [],
-      partialAccum: new Map(),
-      openedAt: Date.now(),
-    };
-
-    // Fetch strike price и подписка RTDS для крипто-рынка
-    if (liveSlotCryptoMeta) {
-      if (liveSlotCryptoMeta.priceToBeat !== undefined) {
-        liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.priceToBeat);
-        logger.info('Strike price from API (priceToBeat, live)', {
-          symbol: liveSlotCryptoMeta.rtdsFilter,
-          strikePrice: liveSlotCryptoMeta.priceToBeat,
-        });
-      } else {
-        const eventStarted = Date.now() > liveSlotCryptoMeta.eventStartTimeMs;
-
-        if (eventStarted) {
-          try {
-            const interval = computeInterval(liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs);
-            const kline = await liveBinanceClient.getKline(liveSlotCryptoMeta.binanceSymbol, liveSlotCryptoMeta.eventStartTimeMs, interval);
-            liveCryptoPriceStore.setTargetPrice(liveSlotCryptoMeta.rtdsFilter, kline.open);
-            logger.info('Strike price from Binance kline (event already started, live)', {
-              symbol: liveSlotCryptoMeta.rtdsFilter,
-              strikePrice: kline.open,
-            });
-          } catch (err) {
-            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS (live)', {
-              symbol: liveSlotCryptoMeta.binanceSymbol,
-              err: err instanceof Error ? err.message : String(err),
-            });
-            livePendingChainlinkStrike.set(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.eventStartTimeMs);
-          }
-        } else {
-          livePendingChainlinkStrike.set(liveSlotCryptoMeta.rtdsFilter, liveSlotCryptoMeta.eventStartTimeMs);
-          logger.info('Waiting for first Chainlink price after event start as strike (live)', {
-            symbol: liveSlotCryptoMeta.rtdsFilter,
-            eventStartTime: new Date(liveSlotCryptoMeta.eventStartTimeMs).toISOString(),
-          });
-        }
-      }
-      liveCryptoSubs.subscribeMarket(tStr, liveSlotCryptoMeta);
-    }
-
-    activeMarkets.set(tStr, slot);
-    await marketWsAdapter.subscribeToToken(tStr);
-
-    const ok = await registerMarketAndStrategy(slot);
-    if (!ok) {
-      activeMarkets.delete(tStr);
-      return false;
-    }
-
-    // Сверяем ордера с биржей после открытия нового рынка
-    try {
-      await liveInfra.orderReconciler.reconcile(accountId!);
-    } catch (err) {
-      logger.warn('Order reconciliation after market open failed', {
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-    }
-
-    const slug = candidate.rawMarket?.['slug'] as string | undefined;
-    logger.info('Market opened', {
-      question: candidate.question,
-      slug: slug ?? '(no slug)',
-      marketId: String(candidate.marketId),
-      tokenId: tStr,
-      activeSlots: activeMarkets.size,
-      maxSlots: maxConcurrentMarkets,
-      expiresAt: new Date(expiresMs).toISOString(),
-      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-    });
-    return true;
-  }
-
-  /**
-   * Закрывает конкретный рыночный слот: отменяет ордера, отписывается от WS, удаляет из каталога.
-   *
-   * @param tokenIdStr - Ключ слота (tokenIdStr)
-   * @param reason - Причина закрытия
-   */
-  async function closeMarket(tokenIdStr: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
-    const slot = activeMarkets.get(tokenIdStr);
-    if (!slot) return;
-
-    logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
-
-    await engine.scheduler.unregister(slot.strategy.id);
-
-    await marketWsAdapter.unsubscribeFromToken(tokenIdStr);
-    marketCatalog.remove(slot.instrumentId);
-
-    // Очистка pending Chainlink strike.
-    // НЕ отписываемся от RTDS здесь — новый рынок ещё не открыт,
-    // unsubscribe сломает подписку если следующий рынок использует тот же символ.
-    // Отписка лишних символов происходит после открытия нового рынка (deferred cleanup).
-    if (slot.cryptoMeta) {
-      livePendingChainlinkStrike.delete(slot.cryptoMeta.rtdsFilter);
-    }
-
-    // Settlement при экспирации крипто-рынка: winning token = $1.00, losing = $0.00
-    // Проверяем позиции на обоих токенах (primary + comp) для auto-selection стратегий
-    let settlementResult: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined;
-    if (reason === 'EXPIRED' && slot.cryptoMeta) {
-      const resolution = liveCryptoPriceStore.getResolution(slot.cryptoMeta.rtdsFilter);
-      const cryptoSnap = liveCryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
-      const portfolio = portfolioStore.get(accountId!);
-
-      // Ищем позицию на primary и comp токенах
-      const primaryPosition = portfolio?.getPosition(slot.instrumentId);
-      const compPosition = slot.complementaryInstrumentId
-        ? portfolio?.getPosition(slot.complementaryInstrumentId)
-        : undefined;
-      const primaryHasTokens = primaryPosition && !primaryPosition.isClosed();
-      const compHasTokens = compPosition && !compPosition.isClosed();
-
-      // Определяем на каком токене мы сидим
-      const position = primaryHasTokens ? primaryPosition : compHasTokens ? compPosition : undefined;
-      const positionInstrumentId = primaryHasTokens ? slot.instrumentId : slot.complementaryInstrumentId!;
-      const positionIsComp = !primaryHasTokens && compHasTokens;
-      const hasTokens = !!position;
-
-      logger.info('Settlement check (live)', {
-        hasCryptoMeta: true,
-        symbol: slot.cryptoMeta.rtdsFilter,
-        targetPrice: cryptoSnap?.targetPrice,
-        currentPrice: cryptoSnap?.currentPrice,
-        resolution: resolution ?? 'unknown',
-        hasTokens,
-        positionOn: positionIsComp ? 'complementary' : 'primary',
-        tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
-      });
-
-      if (resolution && portfolio && position && hasTokens) {
-        const qty = position.quantity.value();
-        // outcomeIndex для позиции: primary = slot.outcomeIndex, comp = 1 - slot.outcomeIndex
-        const oi = positionIsComp ? (1 - slot.outcomeIndex) as 0 | 1 : slot.outcomeIndex;
-        const isWinning = (oi === 0 && resolution === 'UP') || (oi === 1 && resolution === 'DOWN');
-        const settlementPrice = isWinning ? new Decimal(1) : new Decimal(0);
-        const cashCredit = qty.times(settlementPrice);
-
-        // Диагностика: состояние портфеля до settlement credit
-        logger.info('Settlement: portfolio state before credit (live)', {
-          available: portfolio.balance.available().value().toFixed(4),
-          reserved: portfolio.balance.reserved().value().toFixed(4),
-          positionQty: qty.toFixed(4),
-          cashCredit: cashCredit.toFixed(4),
-          resolution,
-        });
-
-        settlementResult = { resolution, settlementPrice, cashCredit, qty };
-
-        // Удаляем позицию (settled)
-        const closedPosition = new SimplePosition({
-          instrumentId: positionInstrumentId,
-          quantity: new Decimal(0),
-          averageEntryPrice: position.averageEntryPrice.value(),
-          side: 'LONG' as const,
-        });
-        let updated = portfolio.upsertPosition(closedPosition);
-
-        // Зачисляем settlement cash
-        if (cashCredit.gt(0)) {
-          const creditResult = updated.applyCredit(Money.of(cashCredit, 'USDC'));
-          if (creditResult.ok) updated = creditResult.value;
-        }
-
-        const ver = portfolioStore.getVersion(accountId!);
-        const saveRes = portfolioStore.save(updated, ver);
-        if (!saveRes.ok) {
-          logger.error('Settlement portfolio save failed (version conflict, live)', { expected: ver });
-        }
-        logger.info(`Market resolved ${resolution} — settlement @ $${settlementPrice} for ${qty.toFixed(2)} tokens (live)`, {
-          symbol: slot.cryptoMeta.rtdsFilter,
-          resolution,
-          settlementPrice: settlementPrice.toFixed(2),
-          cashCredit: cashCredit.toFixed(4),
-          outcomeIndex: oi,
-          newAvailable: updated.balance.available().value().toFixed(4),
-        });
-      }
-    }
-
-    // Авто-клейм: gasless redeem winning токенов через Builder Relayer (fire-and-forget)
-    if (redeemer && settlementResult && settlementResult.cashCredit.gt(0)) {
-      const conditionId = String(slot.marketId);
-      void redeemer.redeem(conditionId).then((result) => {
-        if (result.success) {
-          logger.info('Auto-redeem successful', {
-            conditionId,
-            txHash: result.txHash,
-            cashCredit: settlementResult!.cashCredit.toFixed(4),
-          });
-        } else {
-          logger.warn('Auto-redeem failed (will be picked up by balance sync)', {
-            conditionId,
-            error: result.error,
-          });
-        }
-      });
-    }
-
-    // Сводка ПОСЛЕ settlement чтобы итоговый PnL включал settlement результат
-    printMarketSummary(slot, settlementResult);
-
-    // Recording: market_resolved event + journal resolution + финализация
-    if (recording) {
-      if (reason === 'EXPIRED' && slot.cryptoMeta) {
-        const liveCryptoSnap = liveCryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
-        if (liveCryptoSnap?.targetPrice && liveCryptoSnap?.currentPrice) {
-          recording.recordResolved(
-            slot.tokenIdStr,
-            slot.cryptoMeta.rtdsFilter,
-            liveCryptoSnap.targetPrice,
-            liveCryptoSnap.currentPrice,
-            settlementResult?.resolution ?? 'UNKNOWN',
-          );
-        }
-      }
-      if (settlementResult) {
-        recording.journal.recordResolution({
-          marketId: String(slot.marketId), ts: Date.now(),
-          resolution: settlementResult.resolution as 'UP' | 'DOWN' | 'UNKNOWN',
-          pnl: settlementResult.cashCredit.toFixed(4),
-          settlementPrice: settlementResult.settlementPrice.toFixed(2),
-        });
-      }
-      await recording.closeMarket(slot.marketId, reason);
-    }
-
-    // Публикуем MARKET_CLOSED → очищает OrderBookHistory, TradeTape, BookUpdateHandler
-    const liveCloseTimestamp = TimestampService.create(Date.now());
-    if (liveCloseTimestamp.ok) {
-      await eventBus.publish({
-        type: 'MARKET_CLOSED',
-        marketId: slot.marketId,
-        reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
-        realizedPnL: Money.of(new Decimal(0), 'USDC'),
-        timestamp: liveCloseTimestamp.value,
-      });
-    }
-
-    if (reason === 'EXPIRED') {
-      closedMarkets.add(String(slot.marketId));
-    }
-
-    // Очистить orderToSlot для этого слота
-    for (const [orderId, slotKey] of orderToSlot) {
-      if (slotKey === tokenIdStr) orderToSlot.delete(orderId);
-    }
-
-    // Убрать комплементарный токен из active set + WS unsubscribe
-    if (slot.complementaryInstrumentId) {
-      const compTokenStr = String(slot.complementaryInstrumentId);
-      activeCompTokens.delete(compTokenStr);
-      await marketWsAdapter.unsubscribeFromToken(compTokenStr);
-    }
-
-    activeMarkets.delete(tokenIdStr);
-    logger.info('Market closed', { reason, marketId: String(slot.marketId), activeSlots: activeMarkets.size });
-  }
-
-  /**
-   * Заполняет свободные слоты рынками из кэша discovery.
-   *
-   * @remarks
-   * Открывает кандидатов пока `activeMarkets.size < maxConcurrentMarkets`.
-   * Пропускает уже активные (по marketId), закрытые и истёкшие рынки.
-   */
-  async function fillMarketSlots(): Promise<void> {
-    if (!discoveryAdapter) return;
-
-    let candidates: readonly import('@polymarket/ports').DiscoveredMarket[];
-    try {
-      candidates = await discoveryAdapter.findCandidates();
-    } catch (err) {
-      logger.error('Failed to read candidates from discovery cache', {
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-      return;
-    }
-
-    // Собираем marketId всех активных слотов для дедупликации
-    const activeMarketIds = new Set<string>();
-    for (const slot of activeMarkets.values()) {
-      activeMarketIds.add(String(slot.marketId));
-    }
-
-    const nowMs = Date.now();
-
-    // Диагностика: логируем первые 5 кандидатов с причиной пропуска
-    if (candidates.length > 0) {
-      const diag = candidates.slice(0, 5).map((c) => {
-        const key = String(c.marketId);
-        const exMs = c.expiresAt.toNumber();
-        const minLeft = ((exMs - nowMs) / 60000).toFixed(1);
-        let skip = '';
-        if (closedMarkets.has(key)) skip = 'closed';
-        else if (activeMarketIds.has(key)) skip = 'active';
-        else if (exMs <= nowMs + MIN_VIABLE_TRADING_MS) skip = 'tooSoon';
-        return `${c.question?.slice(-20) ?? key.slice(0,10)} ${minLeft}m ${skip || 'OK'}`;
-      });
-      logger.debug('fillMarketSlots candidates', { top5: diag });
-    }
-
-    for (const c of candidates) {
-      if (activeMarkets.size >= maxConcurrentMarkets) break;
-
-      const key = String(c.marketId);
-      if (closedMarkets.has(key)) continue;
-      if (activeMarketIds.has(key)) continue;
-      if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
-
-      const opened = await openMarket(c);
-      if (opened) activeMarketIds.add(key);
-    }
-
-    if (activeMarkets.size === 0) {
-      // Диагностика: почему ни один кандидат не подошёл
-      const reasons = { total: candidates.length, closed: 0, active: 0, tooSoon: 0, openFailed: 0 };
-      for (const c of candidates) {
-        const key = String(c.marketId);
-        if (closedMarkets.has(key)) { reasons.closed++; continue; }
-        if (activeMarketIds.has(key)) { reasons.active++; continue; }
-        if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) { reasons.tooSoon++; continue; }
-        reasons.openFailed++;
-      }
-      logger.warn('No valid market candidates in cache, waiting for next scan', reasons);
-    }
-  }
-
-  /** Закрываем рынок за 5 сек до истечения чтобы успеть снять ордера. */
-  const CANCEL_BEFORE_EXPIRY_MS = 5_000;
-
-  /**
-   * Минимальное время жизни рынка (мс) для переключения.
-   *
-   * @remarks
-   * Рынки с остатком < 30 сек не имеют смысла: ротация + подписка WS + первый тик
-   * занимают ~5 сек, плюс CANCEL_BEFORE_EXPIRY_MS=5 сек на закрытие.
-   */
-  const MIN_VIABLE_TRADING_MS = 30_000;
-
-  /**
-   * Проверяет истечение всех активных рынков и заполняет освободившиеся слоты.
-   *
-   * @remarks
-   * Reentrancy guard: `_rotationInProgress` предотвращает параллельные вызовы.
-   */
-  async function checkExpiredMarkets(): Promise<void> {
-    if (isShuttingDown || _rotationInProgress) return;
-    _rotationInProgress = true;
-    try {
-      const nowMs = Date.now();
-      const expiredTokens: string[] = [];
-      for (const [tokenIdStr, slot] of activeMarkets) {
-        if (!slot.candidate) continue; // fixed-рынки не истекают
-        if (slot.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS) {
-          logger.info('Market expiring soon, closing early to cancel orders', {
-            marketId: String(slot.marketId),
-            expiresAt: new Date(slot.expiresAtMs).toISOString(),
-            msTillExpiry: Math.max(0, slot.expiresAtMs - nowMs),
-          });
-          expiredTokens.push(tokenIdStr);
-        }
-      }
-      for (const tokenIdStr of expiredTokens) {
-        await closeMarket(tokenIdStr, 'EXPIRED');
-      }
-      if (expiredTokens.length > 0) {
-        await fillMarketSlots();
-
-        // Deferred RTDS cleanup — отписать символы которые больше не нужны
-        liveCryptoSubs.cleanupUnused(new Set(activeMarkets.keys()));
-      }
-    } finally {
-      _rotationInProgress = false;
-    }
-  }
-
-  /**
-   * Периодически обновляет кэш discovery (пауза после завершения запроса).
-   */
-  async function scheduleScanLoop(): Promise<void> {
-    if (isShuttingDown || !discoveryAdapter) return;
-    try {
-      await discoveryAdapter.refresh();
-      logger.debug('Discovery cache refreshed');
-    } catch (err) {
-      logger.error('Market discovery refresh failed', {
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-    }
-    // Если есть свободные слоты — ищем новые рынки
-    if (activeMarkets.size < maxConcurrentMarkets && !isShuttingDown) {
-      try {
-        await fillMarketSlots();
-      } catch (err) {
-        logger.error('Periodic slot filling failed', {
-          err: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (!isShuttingDown) {
-      const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-      scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
-    }
-  }
-
-  // ── Трекинг fills для сводки по рынку (per-slot) ─────────────────────────
-
-  /** Роутинг ORDER_CREATED → orderToSlot для привязки ордера к слоту */
-  eventBus.subscribe('ORDER_CREATED', (event) => {
-    const iId = assetIdToInstrumentId(event.asset);
-    const tokenIdStr = iId ? String(iId) : undefined;
-    if (tokenIdStr && activeMarkets.has(tokenIdStr)) {
-      orderToSlot.set(String(event.orderId), tokenIdStr);
-      return;
-    }
-    // Комплементарный токен (auto-selection): ордер роутится на primary slot
-    if (tokenIdStr && activeCompTokens.has(tokenIdStr)) {
-      for (const [primaryTokenId, slot] of activeMarkets) {
-        if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
-          orderToSlot.set(String(event.orderId), primaryTokenId);
-          return;
-        }
-      }
-    }
-    // TODO: арбитражные easy/down ноги → роутим на hard slot (когда live арб будет реализован)
-  });
-
-  /** Хелпер: найти слот по orderId через orderToSlot */
-  function findSlotByOrderId(orderId: string): ActiveMarketSlot | undefined {
-    const tokenIdStr = orderToSlot.get(orderId);
-    return tokenIdStr ? activeMarkets.get(tokenIdStr) : undefined;
-  }
-
-  eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const existing = slot.partialAccum.get(id);
-    const fillSize = event.fill.size.value();
-    const fillNotional = fillSize.times(event.fill.price.value());
-    if (existing) {
-      existing.totalSize = existing.totalSize.plus(fillSize);
-      existing.totalNotional = existing.totalNotional.plus(fillNotional);
-    } else {
-      slot.partialAccum.set(id, { side: event.fill.side as 'BUY' | 'SELL', totalSize: fillSize, totalNotional: fillNotional, firstAt: clock.now().toISOString().slice(11, 19) });
-    }
-  });
-
-  eventBus.subscribe('ORDER_FILLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const accum = slot.partialAccum.get(id);
-    slot.partialAccum.delete(id);
-    const lastSize = event.fill.size.value();
-    const totalSize = (accum?.totalSize ?? new Decimal(0)).plus(lastSize);
-    const totalNotional = (accum?.totalNotional ?? new Decimal(0)).plus(lastSize.times(event.fill.price.value()));
-    const avgPrice = totalNotional.div(totalSize);
-    slot.fillHistory.push({ side: event.fill.side as 'BUY' | 'SELL', size: totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: totalNotional.toFixed(2), at: accum?.firstAt ?? clock.now().toISOString().slice(11, 19) });
-  });
-
-  eventBus.subscribe('ORDER_CANCELLED', (event) => {
-    const id = String(event.orderId);
-    const slot = findSlotByOrderId(id);
-    if (!slot) return;
-    const accum = slot.partialAccum.get(id);
-    if (!accum || accum.totalSize.lte(0)) return;
-    slot.partialAccum.delete(id);
-    const avgPrice = accum.totalNotional.div(accum.totalSize);
-    slot.fillHistory.push({ side: accum.side, size: accum.totalSize.toFixed(2), price: avgPrice.toFixed(4), notional: accum.totalNotional.toFixed(2), at: accum.firstAt, partial: true });
-  });
-
-  /**
-   * Выводит сводку по всем fills конкретного рыночного слота с учётом settlement.
-   *
-   * @param slot - Слот активного рынка
-   * @param settlement - Результат settlement (если был): resolution, settlementPrice, cashCredit, qty
-   *
-   * @remarks
-   * Открытые циклы (buy без sell) получают settlement PnL:
-   * settlementPrice × qty - entryPrice × qty.
-   */
-  function printMarketSummary(
-    slot: ActiveMarketSlot,
-    settlement?: { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal },
-  ): void {
-    const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
-    if (slot.fillHistory.length === 0) {
-      const noFillPortfolio = portfolioStore.get(accountId!);
-      logger.info('=== Market summary: no fills ===', {
-        market: marketQuestion,
-        usdcFree: noFillPortfolio?.balance.available().value().toFixed(2) ?? '-',
-        usdcReserved: noFillPortfolio?.balance.reserved().value().toFixed(2) ?? '-',
-      });
-      return;
-    }
-    const durationMs = Date.now() - slot.openedAt;
-    const durMin = Math.floor(durationMs / 60_000);
-    const durSec = Math.round((durationMs % 60_000) / 1000);
-    const buys  = slot.fillHistory.filter(f => f.side === 'BUY');
-    const sells = slot.fillHistory.filter(f => f.side === 'SELL');
-    const cycles = buys.map((buy, i) => {
-      const sell = sells[i];
-      const buyLabel = `${buy.size}@${buy.price}${buy.partial ? '(partial)' : ''} [${buy.at}]`;
-      if (!sell) {
-        if (settlement) {
-          const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
-          const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
-          return {
-            buy: buyLabel,
-            sell: `(settled@${settlement.settlementPrice} ${settlement.resolution})`,
-            pnl: (settlePnl.gte(0) ? '+' : '') + settlePnl.toFixed(4) + ' USDC',
-          };
-        }
-        return { buy: buyLabel, sell: '(open)', pnl: '-' };
-      }
-      const pnl = new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(buy.size));
-      return { buy: buyLabel, sell: `${sell.size}@${sell.price}${sell.partial ? '(partial)' : ''} [${sell.at}]`, pnl: (pnl.gte(0) ? '+' : '') + pnl.toFixed(4) + ' USDC' };
-    });
-
-    // PnL от завершённых циклов
-    let totalPnl = sells.reduce((acc, sell, i) => {
-      const buy = buys[i];
-      if (!buy) return acc;
-      return acc.plus(new Decimal(sell.price).minus(new Decimal(buy.price)).times(new Decimal(sell.size)));
-    }, new Decimal(0));
-
-    // PnL от settlement открытых циклов
-    if (settlement) {
-      for (let i = sells.length; i < buys.length; i++) {
-        const buy = buys[i];
-        const entryNotional = new Decimal(buy.price).times(new Decimal(buy.size));
-        const settlePnl = settlement.settlementPrice.times(new Decimal(buy.size)).minus(entryNotional);
-        totalPnl = totalPnl.plus(settlePnl);
-      }
-    }
-
-    const portfolio = portfolioStore.get(accountId!);
-    const position  = portfolio?.getPosition(slot.instrumentId);
-    logger.warn('=== Market summary ===', {
-      market: marketQuestion,
-      duration: `${durMin}m${durSec}s`,
-      buys: buys.length,
-      sells: sells.length,
-      openCycles: settlement ? 0 : buys.length - sells.length,
-      totalPnl: (totalPnl.gte(0) ? '+' : '') + totalPnl.toFixed(4) + ' USDC',
-      settlement: settlement ? `${settlement.resolution} @${settlement.settlementPrice}` : undefined,
-      cycles,
-      finalTokens: position?.quantity.value().toFixed(2) ?? '0.00',
-      finalUsdcFree: portfolio?.balance.available().value().toFixed(2) ?? '-',
-      finalUsdcReserved: portfolio?.balance.reserved().value().toFixed(2) ?? '-',
-    });
-  }
 
   // ── Real-time logging ─────────────────────────────────────────────────────
 
@@ -5051,7 +3481,7 @@ async function runLive(): Promise<void> {
 
   // Регистрируем все начальные слоты
   for (const slot of activeMarkets.values()) {
-    const ok = await registerMarketAndStrategy(slot);
+    const ok = await rotation.registerMarketAndStrategy(slot);
     if (!ok) {
       logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
       process.exit(1);
@@ -5278,16 +3708,15 @@ async function runLive(): Promise<void> {
 
   // ── Ротация рынков (только для discovery) ────────────────────────────────
 
-  if (discoveryAdapter) {
-    expiryCheckIntervalId = setInterval(() => { void checkExpiredMarkets(); }, 5_000);
-    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
-    scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, mc.scanPauseMs ?? 60_000);
+  if (rotation.discoveryAdapter) {
+    rotation.startExpiryCheck();
+    void rotation.scheduleScanLoop();
 
-    // Если maxConcurrentMarkets > 1, заполняем оставшиеся слоты после WS connect
     if (maxConcurrentMarkets > 1) {
-      void fillMarketSlots();
+      void rotation.fillMarketSlots();
     }
 
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
     logger.info('Market rotation enabled', {
       expiryCheckMs: 5_000,
       scanPauseMs: mc.scanPauseMs ?? 60_000,
@@ -5298,26 +3727,21 @@ async function runLive(): Promise<void> {
   // ── Graceful shutdown ────────────────────────────────────────────────────
 
   async function shutdown(signal: string): Promise<void> {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
+    if (rotation.isShuttingDown) return;
+    rotation.isShuttingDown = true;
     logger.info(`Received ${signal}, shutting down`);
 
-    if (expiryCheckIntervalId) { clearInterval(expiryCheckIntervalId); expiryCheckIntervalId = null; }
-    if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
+    rotation.stopTimers();
     clearInterval(reconcileIntervalId);
     clearInterval(balanceSyncIntervalId);
     // clearInterval(tokenBalanceSyncId); // DISABLED — token balance sync
     autoRedeemer?.stop();
 
     try {
-      // Закрываем все активные слоты: сводка + unregister стратегий
-      for (const slot of activeMarkets.values()) {
-        printMarketSummary(slot);
-        await engine.scheduler.unregister(slot.strategy.id);
+      // Закрываем все активные слоты через rotation
+      for (const tokenIdStr of [...activeMarkets.keys()]) {
+        await rotation.closeMarket(tokenIdStr, 'SHUTDOWN');
       }
-      activeMarkets.clear();
-      activeCompTokens.clear();
-      orderToSlot.clear();
 
       engine.scheduler.stop();
       engine.orderEventBridge.stop();

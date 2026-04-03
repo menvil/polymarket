@@ -140,6 +140,7 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     orderService,
     portfolioService,
     exchangeClient,
+    orderStateStore: orderRepo,
     eventBus,
     clock,
     logger,

@@ -22,6 +22,7 @@ import type { ILogger } from '@polymarket/logger';
 import type {
   IExchangeClient,
   SubmitOrderParams,
+  SubmitOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   ExchangeError,
@@ -91,7 +92,7 @@ export class InstrumentedExchangeClient implements IExchangeClient {
 
   // ── Instrumented methods ─────────────────────────────────────────────────
 
-  async submitOrder(params: SubmitOrderParams): Promise<Result<OrderId, ExchangeError>> {
+  async submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>> {
     const start = performance.now();
     const result = await this._inner.submitOrder(params);
     const elapsed = performance.now() - start;

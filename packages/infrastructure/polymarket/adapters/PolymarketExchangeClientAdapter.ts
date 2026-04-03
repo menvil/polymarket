@@ -45,7 +45,7 @@ import { asOrderId, assetIdToString, isPolymarketCtfToken, asFillId, asMarketId,
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import { calculatePolymarketTakerFee } from '@polymarket/fill';
 import type { Timestamp } from '@polymarket/value-objects';
-import type { IExchangeClient, SubmitOrderParams, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
+import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
 
@@ -88,7 +88,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    *
    * Все exceptions из PolymarketExecutionAdapter оборачиваются в ExchangeError.
    */
-  public async submitOrder(params: SubmitOrderParams): Promise<Result<OrderId, ExchangeError>> {
+  public async submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>> {
     const tokenId = this._extractTokenId(params);
 
     try {
@@ -108,14 +108,22 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         ));
       }
 
+      // Polymarket CLOB может мгновенно исполнить ордер (status=matched).
+      // Обнаруживаем это чтобы вызывающий код пометил ордер через markMatchedOnExchange
+      // и не пытался отменять уже исполненный ордер.
+      const immediatelyMatched =
+        (response.status === 'matched' || response.status === 'filled') &&
+        response.sizeRemaining === 0;
+
       this._logger.info('Order submitted to exchange', {
         orderId: response.orderId,
         tokenId,
         side: params.side,
         strategyId: params.strategyId,
+        ...(immediatelyMatched ? { immediatelyMatched: true, responseStatus: response.status } : {}),
       });
 
-      return Ok(orderId);
+      return Ok({ orderId, immediatelyMatched });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Exchange submitOrder failed', {

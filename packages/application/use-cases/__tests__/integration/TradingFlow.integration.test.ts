@@ -144,7 +144,7 @@ function makePassRiskChecker(): IOrderRiskChecker {
  * @param submitResult - Результат submitOrder (по умолчанию Ok(ORDER_ID))
  */
 function makeExchangeClient(
-  submitResult: Result<OrderId, ExchangeError> = Ok(ORDER_ID),
+  submitResult: Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError> = Ok({ orderId: ORDER_ID, immediatelyMatched: false }),
 ): IExchangeClient {
   return {
     submitOrder: () => Promise.resolve(submitResult),
@@ -213,6 +213,7 @@ describe('TradingFlow (integration)', () => {
       orderService,
       portfolioService,
       exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
       eventBus,
       clock: makeClock(),
       logger: LOGGER,
@@ -287,6 +288,7 @@ describe('TradingFlow (integration)', () => {
       orderService,
       portfolioService,
       exchangeClient: makeExchangeClient(Err(exchangeError)),
+      orderStateStore: orderRepo,
       eventBus,
       clock: makeClock(),
       logger: LOGGER,
@@ -331,6 +333,7 @@ describe('TradingFlow (integration)', () => {
       orderService,
       portfolioService,
       exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
       eventBus,
       clock: makeClock(),
       logger: LOGGER,

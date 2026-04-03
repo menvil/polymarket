@@ -48,6 +48,7 @@ import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import type { IExchangeClient } from '@polymarket/ports';
+import type { IOrderStateStore } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
@@ -89,6 +90,7 @@ export interface PlaceOrderDeps {
   readonly orderService: OrderService;
   readonly portfolioService: PortfolioService;
   readonly exchangeClient: IExchangeClient;
+  readonly orderStateStore: IOrderStateStore;
   readonly eventBus: IEventBus;
   readonly clock: IClock;
   readonly logger: ILogger;
@@ -208,7 +210,7 @@ export class PlaceOrderUseCase {
     // venueOrderId — реальный ID от биржи (0xa928...).
     // Именно этот ID используется в WS-событиях (fills, order updates).
     // Order entity создаётся с этим ID, чтобы lookups в OrderUpdateHandler работали.
-    const venueOrderId = submitResult.value;
+    const { orderId: venueOrderId, immediatelyMatched } = submitResult.value;
 
     // Шаг 4: Создание Order aggregate с venueOrderId
     const timestampResult = TimestampService.fromDate(this._deps.clock.now());
@@ -316,6 +318,18 @@ export class PlaceOrderUseCase {
         `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
         { context: { venueOrderId: String(venueOrderId) } },
       ));
+    }
+
+    // Если ордер мгновенно matched — помечаем чтобы CancelOrderUseCase не пытался отменять.
+    // Fill придёт через WS (FillEventHandler) или REST (ReconcileTradesUseCase).
+    if (immediatelyMatched) {
+      this._deps.orderStateStore.markMatchedOnExchange(venueOrderId);
+      this._logger.warn('Order immediately matched on exchange — awaiting fill via WS/reconciliation', {
+        venueOrderId: String(venueOrderId),
+        side: input.side,
+        price: input.price.value().toString(),
+        size: input.size.value().toString(),
+      });
     }
 
     this._logger.info('Order placed successfully', {

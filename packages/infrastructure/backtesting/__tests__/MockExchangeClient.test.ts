@@ -54,8 +54,9 @@ describe('MockExchangeClient', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(typeof result.value).toBe('string');
-        expect(result.value.length).toBeGreaterThan(0);
+        expect(typeof result.value.orderId).toBe('string');
+        expect(String(result.value.orderId).length).toBeGreaterThan(0);
+        expect(result.value.immediatelyMatched).toBe(false);
       }
     });
 
@@ -95,7 +96,7 @@ describe('MockExchangeClient', () => {
 
       if (result.ok) {
         const submitted = client.getSubmittedOrders();
-        expect(submitted[0].orderId).toBe(result.value);
+        expect(submitted[0].orderId).toBe(result.value.orderId);
       }
     });
   });
@@ -108,7 +109,7 @@ describe('MockExchangeClient', () => {
       expect(submitResult.ok).toBe(true);
 
       if (submitResult.ok) {
-        const cancelResult = await client.cancelOrder(submitResult.value);
+        const cancelResult = await client.cancelOrder(submitResult.value.orderId);
         expect(cancelResult.ok).toBe(true);
         if (cancelResult.ok) {
           expect(cancelResult.value).toBeUndefined();
@@ -121,7 +122,7 @@ describe('MockExchangeClient', () => {
       expect(submitResult.ok).toBe(true);
 
       if (submitResult.ok) {
-        const orderId = submitResult.value;
+        const orderId = submitResult.value.orderId;
         expect(client.isCancelled(orderId)).toBe(false);
 
         await client.cancelOrder(orderId);
@@ -211,14 +212,14 @@ describe('MockExchangeClient', () => {
     it('сбрасывает отменённые ордера', async () => {
       const result = await client.submitOrder(makeOrderParams());
       if (result.ok) {
-        await client.cancelOrder(result.value);
-        expect(client.isCancelled(result.value)).toBe(true);
+        await client.cancelOrder(result.value.orderId);
+        expect(client.isCancelled(result.value.orderId)).toBe(true);
       }
 
       client.reset();
 
       if (result.ok) {
-        expect(client.isCancelled(result.value)).toBe(false);
+        expect(client.isCancelled(result.value.orderId)).toBe(false);
       }
     });
 
@@ -231,9 +232,9 @@ describe('MockExchangeClient', () => {
       const r2 = await client.submitOrder(makeOrderParams());
 
       if (r1.ok && r2.ok) {
-        expect(r1.value).not.toBe(r2.value);
+        expect(r1.value.orderId).not.toBe(r2.value.orderId);
         // После сброса счётчик начинается заново — суффикс -1
-        expect(r1.value).toMatch(/-1$/);
+        expect(String(r1.value.orderId)).toMatch(/-1$/);
       }
     });
   });

@@ -39,6 +39,7 @@ export { ExchangeError } from './IExchangeClient.js';
 export type {
   IExchangeClient,
   SubmitOrderParams,
+  SubmitOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   FeeSnapshot,

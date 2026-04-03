@@ -152,8 +152,8 @@ describe('ReconcileTradesUseCase', () => {
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(2);
   });
 
-  it('пропускает fills со статусами MINED / MATCHED / RETRYING / undefined без вызова markIfNotExists', async () => {
-    const statuses = ['MINED', 'MATCHED', 'RETRYING', undefined] as const;
+  it('пропускает fills со статусами MINED / RETRYING / undefined без вызова markIfNotExists', async () => {
+    const statuses = ['MINED', 'RETRYING', undefined] as const;
     for (const status of statuses) {
       const snapshot = { ...makeTradeSnapshot(`fill-${status ?? 'undef'}`), status };
       (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
@@ -165,6 +165,20 @@ describe('ReconcileTradesUseCase', () => {
       expect(result.ok).toBe(true);
       expect(processedFillRepo.markIfNotExists).not.toHaveBeenCalled();
     }
+  });
+
+  it('обрабатывает fills со статусом MATCHED (мгновенное исполнение)', async () => {
+    const snapshot = { ...makeTradeSnapshot('fill-matched'), status: 'MATCHED' as const };
+    (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+      .mockResolvedValue(Ok([snapshot]));
+    processedFillRepo.markIfNotExists.mockResolvedValue(true);
+    processFillUseCase.execute.mockResolvedValue(Ok(undefined));
+
+    const result = await useCase.execute({ accountId: ACCOUNT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(processedFillRepo.markIfNotExists).toHaveBeenCalledTimes(1);
+    expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
   });
 
   it('передаёт since в getTrades если указан', async () => {

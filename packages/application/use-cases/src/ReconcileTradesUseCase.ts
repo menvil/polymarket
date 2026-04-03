@@ -124,16 +124,18 @@ export class ReconcileTradesUseCase {
       const fillIdStr = String(trade.fillId);
 
       // Фильтрация по on-chain статусу.
-      // MATCHED / MINED / RETRYING / FAILED → пропускаем без markIfNotExists,
-      // чтобы CONFIRMED-версия того же fill не была заблокирована idempotency-check'ом.
+      // Принимаем CONFIRMED (finality) и MATCHED (мгновенное исполнение).
+      // MATCHED обрабатываем чтобы не потерять fill при WS race condition:
+      // REST может вернуть matched, но WS fill event не прийти.
+      // processedFillRepo предотвращает дубли: если WS уже обработал fill,
+      // markIfNotExists вернёт false и повторной обработки не будет.
       //
-      // Почему не обрабатываем MINED:
-      // Cross-outcome MINT fills (обе стороны BUY) — CLOB отклоняет SELL до CONFIRMED,
-      // так как свежеминченные токены не доступны до finality.
-      // Для обычных transfer fills задержка 2–5 секунд до CONFIRMED несущественна
-      // на 5-минутных маркетах. Следующий reconciliation-цикл (5 с) подхватит CONFIRMED.
-      if (trade.status !== 'CONFIRMED') {
-        this._logger.debug('Trade not yet confirmed, skipping portfolio update', {
+      // MINED / RETRYING / FAILED / undefined → пропускаем.
+      // MINED: cross-outcome MINT fills — CLOB отклоняет SELL до CONFIRMED.
+      // FAILED: FillEventHandler через WS обработает reversal.
+      const PROCESSABLE_STATUSES = new Set(['CONFIRMED', 'MATCHED']);
+      if (!PROCESSABLE_STATUSES.has(trade.status ?? '')) {
+        this._logger.debug('Trade not in processable status, skipping', {
           fillId: fillIdStr,
           status: trade.status ?? 'undefined',
         });

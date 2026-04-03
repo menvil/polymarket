@@ -120,7 +120,7 @@ function makeExchangeClient(
   trades: VenueTradeSnapshot[] = [],
 ): IExchangeClient {
   return {
-    submitOrder: () => Promise.resolve(Ok(asOrderId('order-mock')!)),
+    submitOrder: () => Promise.resolve(Ok({ orderId: asOrderId('order-mock')!, immediatelyMatched: false })),
     cancelOrder: () => Promise.resolve(Ok(undefined)),
     getOpenOrders: () => Promise.resolve(Ok(openOrders)),
     getTrades: () => Promise.resolve(Ok(trades)),

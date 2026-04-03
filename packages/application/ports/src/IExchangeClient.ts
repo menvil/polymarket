@@ -53,6 +53,23 @@ export interface SubmitOrderParams {
 }
 
 /**
+ * Результат размещения ордера на бирже.
+ *
+ * @param orderId - ID ордера на бирже
+ * @param immediatelyMatched - true если ордер мгновенно исполнен (status=matched, sizeRemaining=0)
+ *
+ * @remarks
+ * Polymarket CLOB может вернуть status "matched" прямо из REST-ответа.
+ * Это значит ордер мгновенно исполнен и cancel невозможен.
+ * Если `immediatelyMatched=true`, вызывающий код должен пометить ордер через
+ * `orderStateStore.markMatchedOnExchange()` чтобы CancelOrderUseCase не пытался отменить.
+ */
+export interface SubmitOrderResult {
+  readonly orderId: OrderId;
+  readonly immediatelyMatched: boolean;
+}
+
+/**
  * Порт: клиент торговой площадки.
  *
  * @example
@@ -67,7 +84,7 @@ export interface SubmitOrderParams {
  *   logger.error('Failed to submit order', { error: result.error.message });
  *   return;
  * }
- * const orderId = result.value;
+ * const { orderId, immediatelyMatched } = result.value;
  * ```
  */
 export interface IExchangeClient {
@@ -75,9 +92,9 @@ export interface IExchangeClient {
    * Размещает лимитный ордер на бирже.
    *
    * @param params - Параметры ордера
-   * @returns OrderId при успехе, ExchangeError при отказе биржи
+   * @returns SubmitOrderResult при успехе, ExchangeError при отказе биржи
    */
-  submitOrder(params: SubmitOrderParams): Promise<Result<OrderId, ExchangeError>>;
+  submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>>;
 
   /**
    * Отменяет ордер на бирже.

@@ -169,14 +169,14 @@ export class PaperExchangeClient implements IExchangeClient {
    */
   public async submitOrder(
     params: SubmitOrderParams,
-  ): Promise<Result<OrderId, ExchangeError>> {
+  ): Promise<Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError>> {
     const result = await this._deps.mock.submitOrder(params);
 
     if (result.ok) {
       const ctx = this._marketContexts.get(assetIdToString(params.asset));
 
       this._deps.simulator.trackOrder({
-        orderId: result.value,
+        orderId: result.value.orderId,
         instrumentId: ctx?.instrumentId ?? this._instrumentId,
         marketId: ctx?.marketId ?? this._marketId,
         side: params.side,

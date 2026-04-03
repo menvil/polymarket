@@ -6,7 +6,7 @@ import type { PlaceOrderInput, PlaceOrderDeps } from '../src/PlaceOrderUseCase.j
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IExchangeClient, IPortfolioStore } from '@polymarket/ports';
+import type { IOrderRepository, IExchangeClient, IPortfolioStore, IOrderStateStore } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
@@ -101,7 +101,7 @@ function makeOrderRepo(): IOrderRepository {
 function makeExchangeClient(orderId?: OrderId): IExchangeClient {
   const id = orderId ?? ('exchange-order-1' as unknown as OrderId);
   return {
-    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok(id)),
+    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok({ orderId: id, immediatelyMatched: false })),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
     getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
     getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
@@ -169,6 +169,14 @@ describe('PlaceOrderUseCase', () => {
       orderService,
       portfolioService,
       exchangeClient,
+      orderStateStore: {
+        markMatchedOnExchange: jest.fn(),
+        isMatchedOnExchange: jest.fn().mockReturnValue(false),
+        getOpenOrdersByInstrument: jest.fn().mockReturnValue([]),
+        hasInFlightFills: jest.fn().mockReturnValue(false),
+        setHasInFlightFills: jest.fn(),
+        clearInFlightFills: jest.fn(),
+      } as unknown as IOrderStateStore,
       eventBus,
       clock,
       logger,

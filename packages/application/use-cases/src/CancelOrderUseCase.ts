@@ -185,12 +185,24 @@ export class CancelOrderUseCase {
 
     // Шаг 4: Best-effort отмена на бирже
     const exchangeResult = await this._deps.exchangeClient.cancelOrder(input.orderId);
+    let matchedOnExchange = false;
     if (!exchangeResult.ok) {
-      this._logger.warn('Exchange cancel failed (best effort)', {
-        orderId: String(input.orderId),
-        error: exchangeResult.error.message,
-      });
-      // Не прерываем — продолжаем публикацию событий
+      // Парсим: "matched orders can't be canceled" → ордер уже matched на бирже.
+      // Помечаем чтобы fill был подхвачен через WS или ReconcileTradesUseCase.
+      const errMsg = exchangeResult.error.message.toLowerCase();
+      if (errMsg.includes('matched') || errMsg.includes("can't be canceled") || errMsg.includes('cannot be canceled')) {
+        matchedOnExchange = true;
+        this._deps.orderStateStore.markMatchedOnExchange(input.orderId);
+        this._logger.warn('Cancel rejected — order was matched on exchange, awaiting fill via WS/reconciliation', {
+          orderId: String(input.orderId),
+          error: exchangeResult.error.message,
+        });
+      } else {
+        this._logger.warn('Exchange cancel failed (best effort)', {
+          orderId: String(input.orderId),
+          error: exchangeResult.error.message,
+        });
+      }
     }
 
     // Шаг 5: Публикация событий
@@ -208,10 +220,17 @@ export class CancelOrderUseCase {
       ));
     }
 
-    this._logger.info('Order cancelled successfully', {
-      orderId: String(input.orderId),
-      reason: input.reason ?? 'User cancelled',
-    });
+    if (matchedOnExchange) {
+      this._logger.warn('Order locally cancelled but matched on exchange — fill expected', {
+        orderId: String(input.orderId),
+        reason: input.reason ?? 'User cancelled',
+      });
+    } else {
+      this._logger.info('Order cancelled successfully', {
+        orderId: String(input.orderId),
+        reason: input.reason ?? 'User cancelled',
+      });
+    }
 
     return Ok(undefined);
   }

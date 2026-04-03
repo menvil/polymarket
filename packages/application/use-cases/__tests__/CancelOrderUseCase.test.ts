@@ -130,7 +130,7 @@ function makeOrderStateStore(order?: Order, matchedOrderIds: string[] = []): IOr
 
 function makeExchangeClient(success = true): IExchangeClient {
   return {
-    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok(ORDER_ID)),
+    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok({ orderId: ORDER_ID, immediatelyMatched: false })),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
       success ? Ok(undefined) : Err(new TradingError('Exchange error') as never),
     ),

@@ -43,6 +43,7 @@ import type { Timestamp } from '@polymarket/value-objects';
 import type {
   IExchangeClient,
   SubmitOrderParams,
+  SubmitOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   ExchangeError,
@@ -100,7 +101,7 @@ export class MockExchangeClient implements IExchangeClient {
    */
   public async submitOrder(
     params: SubmitOrderParams,
-  ): Promise<Result<OrderId, ExchangeError>> {
+  ): Promise<Result<SubmitOrderResult, ExchangeError>> {
     this._counter += 1;
     const now = this._clock.now();
     const orderId = (params.clientOrderId ?? `order-${now.getTime()}-${this._counter}`) as OrderId;
@@ -111,7 +112,7 @@ export class MockExchangeClient implements IExchangeClient {
       submittedAt: now,
     });
 
-    return Ok(orderId);
+    return Ok({ orderId, immediatelyMatched: false });
   }
 
   /**
