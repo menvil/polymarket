@@ -4720,7 +4720,16 @@ async function runLive(): Promise<void> {
     }
 
     if (activeMarkets.size === 0) {
-      logger.warn('No valid market candidates in cache, waiting for next scan');
+      // Диагностика: почему ни один кандидат не подошёл
+      const reasons = { total: candidates.length, closed: 0, active: 0, tooSoon: 0, openFailed: 0 };
+      for (const c of candidates) {
+        const key = String(c.marketId);
+        if (closedMarkets.has(key)) { reasons.closed++; continue; }
+        if (activeMarketIds.has(key)) { reasons.active++; continue; }
+        if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) { reasons.tooSoon++; continue; }
+        reasons.openFailed++;
+      }
+      logger.warn('No valid market candidates in cache, waiting for next scan', reasons);
     }
   }
 
