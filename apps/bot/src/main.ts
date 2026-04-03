@@ -4383,10 +4383,9 @@ async function runLive(): Promise<void> {
 
     const expiresMs = candidate.expiresAt.toNumber();
 
-    // Не занимаем слот если рынок начинается слишком далеко в будущем (> 10 мин).
-    // Допускаем рынки с eventStart до 10 мин вперёд — бот подождёт warmup.
+    // Не занимаем слот если event ещё не начался (допускаем 2 мин запас для pre-warmup)
     const livePreCheckMeta = parseCryptoMeta(candidate.rawMarket);
-    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 10 * 60_000) {
+    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 2 * 60_000) {
       logger.debug('Skipping market: event starts too far in the future', {
         marketId: String(candidate.marketId),
         eventStartMs: livePreCheckMeta.eventStartTimeMs,
