@@ -788,13 +788,34 @@ export class MarketRotation {
       return a.expiresAt.toNumber() - b.expiresAt.toNumber();
     });
 
-    // Диагностика: первые 3 кандидата после сортировки
+    // Диагностика: первые 5 кандидатов + статистика фильтрации
     if (sorted.length > 0) {
-      const diag = sorted.slice(0, 3).map((c) => {
+      const diag = sorted.slice(0, 5).map((c) => {
         const exMs = c.expiresAt.toNumber();
-        return `${c.question?.slice(-25) ?? String(c.marketId).slice(0, 10)} exp=${new Date(exMs).toISOString().slice(11, 19)} (${((exMs - nowMs) / 60000).toFixed(1)}m)`;
+        return `${c.question?.slice(-30) ?? String(c.marketId).slice(0, 10)} exp=${new Date(exMs).toISOString().slice(11, 19)} (${((exMs - nowMs) / 60000).toFixed(1)}m)`;
       });
-      logger.info('fillMarketSlots: top candidates (by eventStart)', { top: diag, total: rawCandidates.length, viable: sorted.length });
+      logger.info('fillMarketSlots: top candidates (by expiresAt)', {
+        top: diag,
+        total: rawCandidates.length,
+        viable: sorted.length,
+        closedCount: this.closedMarkets.size,
+      });
+    } else {
+      // Почему viable пуст?
+      let closedCount = 0, activeCount = 0, expiredCount = 0;
+      for (const c of rawCandidates) {
+        const key = String(c.marketId);
+        if (this.closedMarkets.has(key)) closedCount++;
+        else if (activeMarketIds.has(key)) activeCount++;
+        else if (c.expiresAt.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) expiredCount++;
+      }
+      logger.warn('fillMarketSlots: no viable candidates', {
+        total: rawCandidates.length,
+        closed: closedCount,
+        active: activeCount,
+        expired: expiredCount,
+        closedMarketIds: [...this.closedMarkets].slice(0, 5),
+      });
     }
 
     for (const c of sorted) {
