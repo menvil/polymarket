@@ -387,6 +387,10 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       if (typeof message !== 'object' || message === null) return;
       const tokenId = (message as Record<string, unknown>)['asset_id'];
       if (typeof tokenId === 'string' && tokenId.length > 0) {
+        // Игнорируем данные от unsubscribed токенов.
+        // После unsubscribeFromToken сервер продолжает слать данные
+        // до следующего reconnect — фильтруем их здесь.
+        if (!this._subscribedTokens.has(tokenId)) return;
         for (const cb of this._onRawMessage) {
           cb(tokenId, message);
         }
@@ -397,11 +401,17 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
     // parseWsMessage читает поле 'type', поэтому добавляем его явно при dispatch.
     this._router.on('orderbook', (message: unknown) => {
       if (typeof message !== 'object' || message === null) return;
+      // Фильтруем по _subscribedTokens
+      const tokenId = (message as Record<string, unknown>)['asset_id'];
+      if (typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
       void this._dispatchParsed({ ...(message as object), type: 'book' });
     });
 
     this._router.on('trade', (message: unknown) => {
       if (typeof message !== 'object' || message === null) return;
+      // Фильтруем по _subscribedTokens (market trades, не user fills)
+      const tokenId = (message as Record<string, unknown>)['asset_id'];
+      if (typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
       // parseWsMessage различит market trade и user fill по наличию taker_order_id
       void this._dispatchParsed({ ...(message as object), type: 'trade' });
     });
