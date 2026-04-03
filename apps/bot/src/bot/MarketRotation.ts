@@ -782,20 +782,17 @@ export class MarketRotation {
       return true;
     });
 
-    // Сортируем по ближайшему eventStart — берём рынок который начнётся раньше всех.
-    // Рынки без eventStart (не крипто) идут первыми (eventStartMs = 0).
+    // Сортируем по ближайшему expiresAt — берём рынок который завершится раньше всех.
+    // Текущий идущий рынок (уже начался, ещё не истёк) будет первым.
     const sorted = [...viable].sort((a, b) => {
-      const aStart = a.eventStartMs ?? 0;
-      const bStart = b.eventStartMs ?? 0;
-      return aStart - bStart;
+      return a.expiresAt.toNumber() - b.expiresAt.toNumber();
     });
 
     // Диагностика: первые 3 кандидата после сортировки
     if (sorted.length > 0) {
       const diag = sorted.slice(0, 3).map((c) => {
         const exMs = c.expiresAt.toNumber();
-        const startMs = c.eventStartMs ?? 0;
-        return `${c.question?.slice(-25) ?? String(c.marketId).slice(0, 10)} start=${startMs > 0 ? new Date(startMs).toISOString().slice(11, 19) : 'n/a'} exp=${((exMs - nowMs) / 60000).toFixed(1)}m`;
+        return `${c.question?.slice(-25) ?? String(c.marketId).slice(0, 10)} exp=${new Date(exMs).toISOString().slice(11, 19)} (${((exMs - nowMs) / 60000).toFixed(1)}m)`;
       });
       logger.info('fillMarketSlots: top candidates (by eventStart)', { top: diag, total: rawCandidates.length, viable: sorted.length });
     }
