@@ -556,6 +556,12 @@ async function runPaper(): Promise<void> {
             { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
             logger,
           );
+      // Complementary token для initial market (auto-selection UP/DOWN)
+      const initCompIndex = 1 - mc.outcomeIndex;
+      const initCompTokenStr = candidate.allTokenIds?.[initCompIndex];
+      const initCompInstrumentId = initCompTokenStr ? (asInstrumentId(initCompTokenStr) ?? undefined) : undefined;
+      const initCompAsset = initCompTokenStr ? (asPolymarketCtfToken(initCompTokenStr) ?? undefined) : undefined;
+
       activeMarkets.set(tStr, {
         instrumentId: iId,
         marketId: candidate.marketId,
@@ -565,11 +571,23 @@ async function runPaper(): Promise<void> {
         candidate,
         strategy: discoveryStrategy,
         cryptoMeta: initialCryptoMeta,
+        complementaryInstrumentId: initCompInstrumentId,
+        complementaryAsset: initCompAsset,
         outcomeIndex: mc.outcomeIndex,
         fillHistory: [],
         partialAccum: new Map(),
         openedAt: Date.now(),
       });
+
+      // Регистрация comp token для paper exchange + trade bridge
+      if (initCompInstrumentId && initCompAsset) {
+        activeCompTokens.add(String(initCompInstrumentId));
+        logger.info('Complementary token registered for trade bridge', {
+          compTokenId: String(initCompInstrumentId),
+          primaryTokenId: tStr,
+          activeCompTokens: activeCompTokens.size,
+        });
+      }
 
       // Fetch strike price и подписка RTDS для начального рынка
       if (initialCryptoMeta) {
@@ -830,12 +848,13 @@ async function runPaper(): Promise<void> {
     const expiresMs = candidate.expiresAt.toNumber();
     const slotCryptoMeta = parseCryptoMeta(candidate.rawMarket);
 
-    // Не занимаем слот если рынок ещё не начался (допускаем 30с запас)
-    if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + 30_000) {
+    // Не занимаем слот если рынок начинается слишком далеко в будущем (> 10 мин).
+    // Допускаем рынки с eventStart до 10 мин вперёд — бот подождёт warmup.
+    if (slotCryptoMeta && slotCryptoMeta.eventStartTimeMs > Date.now() + 10 * 60_000) {
       logger.debug('Skipping market: event starts too far in the future', {
         marketId: String(candidate.marketId),
         eventStartMs: slotCryptoMeta.eventStartTimeMs,
-        startsInSec: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
+        startsInMin: ((slotCryptoMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
       });
       return false;
     }
@@ -4034,6 +4053,12 @@ async function runLive(): Promise<void> {
           { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
           logger,
         );
+    // Complementary token для initial market (auto-selection UP/DOWN)
+    const liveInitCompIndex = 1 - mc.outcomeIndex;
+    const liveInitCompTokenStr = candidate.allTokenIds?.[liveInitCompIndex];
+    const liveInitCompInstrumentId = liveInitCompTokenStr ? (asInstrumentId(liveInitCompTokenStr) ?? undefined) : undefined;
+    const liveInitCompAsset = liveInitCompTokenStr ? (asPolymarketCtfToken(liveInitCompTokenStr) ?? undefined) : undefined;
+
     activeMarkets.set(tStr, {
       instrumentId: iId,
       marketId: candidate.marketId,
@@ -4045,11 +4070,23 @@ async function runLive(): Promise<void> {
       candidate,
       strategy: discoveryStrategy,
       cryptoMeta: liveInitialCryptoMeta,
+      complementaryInstrumentId: liveInitCompInstrumentId,
+      complementaryAsset: liveInitCompAsset,
       outcomeIndex: mc.outcomeIndex,
       fillHistory: [],
       partialAccum: new Map(),
       openedAt: Date.now(),
     });
+
+    // Регистрация comp token для trade bridge
+    if (liveInitCompInstrumentId && liveInitCompAsset) {
+      activeCompTokens.add(String(liveInitCompInstrumentId));
+      logger.info('Complementary token registered for trade bridge', {
+        compTokenId: String(liveInitCompInstrumentId),
+        primaryTokenId: tStr,
+        activeCompTokens: activeCompTokens.size,
+      });
+    }
 
     // Fetch strike price и подписка RTDS для начального крипто-рынка
     if (liveInitialCryptoMeta) {
@@ -4346,13 +4383,14 @@ async function runLive(): Promise<void> {
 
     const expiresMs = candidate.expiresAt.toNumber();
 
-    // Не занимаем слот если рынок ещё не начался (допускаем 30с запас)
+    // Не занимаем слот если рынок начинается слишком далеко в будущем (> 10 мин).
+    // Допускаем рынки с eventStart до 10 мин вперёд — бот подождёт warmup.
     const livePreCheckMeta = parseCryptoMeta(candidate.rawMarket);
-    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 30_000) {
+    if (livePreCheckMeta && livePreCheckMeta.eventStartTimeMs > Date.now() + 10 * 60_000) {
       logger.debug('Skipping market: event starts too far in the future', {
         marketId: String(candidate.marketId),
         eventStartMs: livePreCheckMeta.eventStartTimeMs,
-        startsInSec: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 1000).toFixed(0),
+        startsInMin: ((livePreCheckMeta.eventStartTimeMs - Date.now()) / 60_000).toFixed(1),
       });
       return false;
     }
