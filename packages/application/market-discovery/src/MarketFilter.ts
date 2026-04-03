@@ -203,7 +203,7 @@ export class MarketFilter {
     maxMinutes: number | undefined,
   ): boolean {
     if (minMinutes === undefined && maxMinutes === undefined) return true;
-    if (market.eventStartMs === undefined) return false; // нет данных — отклоняем (нельзя определить длительность)
+    if (market.eventStartMs === undefined) return true; // нет данных — пропускаем фильтр (не отклоняем)
 
     const durationMs = market.expiresAt.toNumber() - market.eventStartMs;
     const durationMin = durationMs / (1000 * 60);
