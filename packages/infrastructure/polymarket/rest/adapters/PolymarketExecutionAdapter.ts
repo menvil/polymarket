@@ -450,11 +450,16 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Делегирует в `PolymarketOrderRestClient.getFilledOrders()`,
-   * автоматически передавая MAKER-адрес (фандер) если он задан.
+   * Делегирует в `PolymarketOrderRestClient.getFilledOrders()`.
+   *
+   * @remarks
+   * НЕ передаём maker_address — API с maker_address возвращает только trades
+   * где мы были maker. Мгновенно matched ордера (taker fills) не попадут
+   * в выборку и reconciliation их не найдёт. Без фильтра API возвращает
+   * все наши trades (и maker и taker).
    */
   async getFilledOrders(tokenId?: string, options?: { onlyFirstPage?: boolean }): Promise<TradeResponse[]> {
-    return this.orderClient.getFilledOrders(tokenId, this.orderClient.getMakerAddress(), 100, options);
+    return this.orderClient.getFilledOrders(tokenId, undefined, 100, options);
   }
 
   /**
