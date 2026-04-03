@@ -237,7 +237,12 @@ export class AutoRedeemer {
   // ── Private ────────────────────────────────────────────────────────────────
 
   /**
-   * Основной цикл: получить trades → найти settled рынки → redeem.
+   * Основной цикл: получить trades → найти settled рынки → batch redeem.
+   *
+   * @remarks
+   * Собирает все settled conditionIds в один batch и выполняет
+   * один `relayClient.execute([tx1, tx2, ...])` — multicall через proxy.
+   * Один HTTP запрос = один unit квоты, вместо N запросов = N units.
    */
   private async _checkAndRedeem(): Promise<CheckResult> {
     const result = { marketsChecked: 0, marketsSettled: 0, redeemed: 0, errors: 0 };
@@ -252,11 +257,10 @@ export class AutoRedeemer {
         return result;
       }
 
-      this._logger.debug('Checking markets for settlement', { count: conditionIds.length });
-
-      // 2. Проверяем каждый рынок
       const now = Date.now();
-      let connectionErrorsThisCycle = 0;
+
+      // 2. Собираем settled рынки для batch redeem
+      const settledConditions: string[] = [];
 
       for (const conditionId of conditionIds) {
         if (this._redeemedConditions.has(conditionId)) continue;
@@ -267,69 +271,74 @@ export class AutoRedeemer {
 
         try {
           const isSettled = await this._isMarketSettled(conditionId);
-          if (!isSettled) continue;
-
-          result.marketsSettled++;
-          this._logger.info('Found settled market, attempting redeem', { conditionId });
-
-          // 3. Redeem
-          const success = await this._redeemCondition(conditionId);
-          if (success) {
-            result.redeemed++;
-            this._redeemedConditions.add(conditionId);
-            this._failedCooldowns.delete(conditionId);
-            this._consecutiveConnectionErrors = 0;
-            this._logger.info('Successfully redeemed', { conditionId });
-          } else {
-            result.errors++;
+          if (isSettled) {
+            settledConditions.push(conditionId);
           }
         } catch (err) {
-          // Error.message содержит полезную инфу; JSON.stringify(Error) даёт "{}"
           const errMsg = err instanceof Error ? err.message : String(err);
-
-          // 429 Rate Limit — прекращаем цикл, ждём следующего интервала
-          if (errMsg.includes('429') || errMsg.includes('quota exceeded') || errMsg.includes('Too Many Requests')) {
-            this._logger.warn('Relayer rate limit hit, pausing until next cycle', {
-              conditionId,
-              redeemed: result.redeemed,
-              remaining: conditionIds.length - conditionIds.indexOf(conditionId) - 1,
-            });
-            break;
-          }
-
-          // Connection error — backoff для этого рынка + прекращаем цикл при 3+ подряд
-          if (errMsg.includes('connection error') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT')) {
-            connectionErrorsThisCycle++;
-            this._consecutiveConnectionErrors++;
-            // Экспоненциальный cooldown: 5m, 10m, 20m, 40m, max 60m
-            const backoffMs = Math.min(60 * 60_000, 5 * 60_000 * Math.pow(2, this._consecutiveConnectionErrors - 1));
-            this._failedCooldowns.set(conditionId, now + backoffMs);
-
-            if (connectionErrorsThisCycle >= 3) {
-              this._logger.warn('Relayer connection errors — pausing cycle', {
-                errors: connectionErrorsThisCycle,
-                nextRetryMin: Math.round(backoffMs / 60_000),
-              });
-              break;
-            }
-            result.errors++;
-            continue;
-          }
-
-          result.errors++;
-          // Cooldown 10 минут для неизвестных ошибок
+          // API ошибки при проверке — cooldown 10 минут
           this._failedCooldowns.set(conditionId, now + 10 * 60_000);
-          this._logger.error('Error processing market', {
-            conditionId,
+          this._logger.debug('Failed to check market settlement', { conditionId, error: errMsg });
+        }
+      }
+
+      result.marketsSettled = settledConditions.length;
+
+      if (settledConditions.length === 0) {
+        this._logger.debug('No settled markets to redeem', { checked: conditionIds.length });
+        return result;
+      }
+
+      // 3. Batch redeem: все settled рынки одним запросом к Relayer
+      this._logger.info('Batch redeem: submitting', { count: settledConditions.length });
+
+      try {
+        const success = await this._batchRedeem(settledConditions);
+        if (success) {
+          result.redeemed = settledConditions.length;
+          for (const cid of settledConditions) {
+            this._redeemedConditions.add(cid);
+            this._failedCooldowns.delete(cid);
+          }
+          this._consecutiveConnectionErrors = 0;
+          this._logger.info('Batch redeem successful', { count: settledConditions.length });
+        } else {
+          result.errors = settledConditions.length;
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+
+        if (errMsg.includes('429') || errMsg.includes('quota exceeded') || errMsg.includes('Too Many Requests')) {
+          this._logger.warn('Relayer rate limit hit on batch redeem', {
+            count: settledConditions.length,
             error: errMsg,
           });
+        } else if (errMsg.includes('connection error') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT')) {
+          this._consecutiveConnectionErrors++;
+          const backoffMs = Math.min(60 * 60_000, 5 * 60_000 * Math.pow(2, this._consecutiveConnectionErrors - 1));
+          for (const cid of settledConditions) {
+            this._failedCooldowns.set(cid, now + backoffMs);
+          }
+          this._logger.warn('Relayer connection error on batch redeem', {
+            nextRetryMin: Math.round(backoffMs / 60_000),
+          });
+        } else if (errMsg.includes('revert') || errMsg.includes('execution reverted')) {
+          // Batch revert: некоторые уже redeemed. Fallback на по-одному.
+          this._logger.warn('Batch redeem reverted — falling back to individual redeem', {
+            count: settledConditions.length,
+          });
+          await this._fallbackIndividualRedeem(settledConditions, result, now);
+        } else {
+          for (const cid of settledConditions) {
+            this._failedCooldowns.set(cid, now + 10 * 60_000);
+          }
+          this._logger.error('Batch redeem failed', { error: errMsg });
         }
+        result.errors++;
       }
 
       if (result.redeemed > 0) {
         this._logger.info('Redeem cycle complete', result);
-      } else if (result.errors > 0 && result.redeemed === 0) {
-        this._logger.debug('Redeem cycle: no success', { errors: result.errors, settled: result.marketsSettled });
       }
     } catch (err) {
       this._logger.error('Auto-redeem check failed', {
@@ -338,6 +347,36 @@ export class AutoRedeemer {
     }
 
     return result;
+  }
+
+  /**
+   * Fallback: redeem по одному если batch revert (часть рынков уже redeemed).
+   */
+  private async _fallbackIndividualRedeem(
+    conditionIds: string[],
+    result: CheckResult & { redeemed: number; errors: number },
+    now: number,
+  ): Promise<void> {
+    for (const conditionId of conditionIds) {
+      try {
+        const success = await this._redeemCondition(conditionId);
+        if (success) {
+          result.redeemed++;
+          this._redeemedConditions.add(conditionId);
+        } else {
+          // revert = already redeemed or no tokens
+          this._redeemedConditions.add(conditionId);
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('429') || errMsg.includes('quota exceeded')) {
+          this._logger.warn('Rate limit during fallback, stopping', { redeemed: result.redeemed });
+          break;
+        }
+        this._failedCooldowns.set(conditionId, now + 10 * 60_000);
+        result.errors++;
+      }
+    }
   }
 
   /**
@@ -391,7 +430,44 @@ export class AutoRedeemer {
   }
 
   /**
-   * Выполняет gasless redeem через Builder Relayer.
+   * Batch redeem: все conditionIds одним multicall запросом к Relayer.
+   *
+   * @param conditionIds - Массив conditionIds для redeem
+   * @returns true если batch redeem успешен
+   *
+   * @remarks
+   * RelayClient.execute() принимает массив транзакций и кодирует их
+   * в один proxy multicall. Один HTTP запрос = один unit квоты.
+   */
+  private async _batchRedeem(conditionIds: string[]): Promise<boolean> {
+    const txns = conditionIds.map((conditionId) => {
+      const calldata = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
+        USDC_E_ADDRESS,
+        ethers.ZeroHash,
+        conditionId,
+        [1, 2],
+      ]);
+      return { to: CTF_ADDRESS, data: calldata, value: '0x0' };
+    });
+
+    const response = await this._relayClient.execute(
+      txns,
+      `AutoRedeem batch: ${conditionIds.length} markets`,
+    );
+
+    this._logger.info('Batch redeem submitted to relayer', {
+      count: conditionIds.length,
+      transactionID: response.transactionID,
+    });
+
+    const receipt = await response.wait();
+    if (!receipt) return false;
+
+    return receipt.state === 'STATE_MINED' || receipt.state === 'STATE_CONFIRMED';
+  }
+
+  /**
+   * Выполняет gasless redeem через Builder Relayer (одиночный).
    *
    * @param conditionId - ID условия рынка
    * @returns true если redeem успешен
