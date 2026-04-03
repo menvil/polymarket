@@ -108,6 +108,9 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   /** Таймер дебаунса для subscription-change reconnect */
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Время последнего connect (для подавления INVALID OPERATION сразу после reconnect) */
+  private _lastConnectMs = 0;
+
 
   /**
    * Создаёт PolymarketWsAdapter.
@@ -425,12 +428,18 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       if (error.message === 'INVALID OPERATION') {
         // Polymarket отвечает INVALID OPERATION если subscription message отправлен
         // на уже существующем соединении (после первоначальной подписки).
-        // Единственное решение — переподключиться с актуальным списком токенов.
-        this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION, scheduling reconnect', {
-          tokenCount: this._subscribedTokens.size,
-          reconnectPending: this._reconnectForSubscriptionPending,
-        });
-        if (this._isConnected && !this._reconnectForSubscriptionPending) {
+        // Игнорируем в первые 3с после connect: user channel subscription
+        // посылается ПОСЛЕ market subscription — это ожидаемый INVALID OPERATION.
+        const msSinceConnect = Date.now() - this._lastConnectMs;
+        if (msSinceConnect < 3000) {
+          this._logger.debug('[PolymarketWsAdapter] INVALID OPERATION ignored (within 3s of connect, likely user channel)', {
+            msSinceConnect,
+          });
+        } else if (this._isConnected && !this._reconnectForSubscriptionPending) {
+          this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION, scheduling reconnect', {
+            tokenCount: this._subscribedTokens.size,
+            reconnectPending: this._reconnectForSubscriptionPending,
+          });
           this._scheduleReconnectForSubscription();
         }
       } else {
@@ -453,6 +462,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       const isReconnect = this._hasEverConnected;
       this._isConnected = true;
       this._hasEverConnected = true;
+      this._lastConnectMs = Date.now();
 
       if (isReconnect) {
         // Reconnect — инвалидируем кэши стаканов у подписчиков
@@ -574,12 +584,10 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
       isReconnect,
     });
 
-    // Всегда посылаем актуальную подписку из _subscribedTokens.
-    // При subscription-change reconnect: BaseWebSocket мог послать stale кэш
-    // (токены добавленные openMarket между cache update и connect не попали в кэш).
-    // _sendAllSubscriptions обновляет кэш BaseWebSocket и шлёт актуальный список.
-    // Если BaseWebSocket уже послал ту же подписку — INVALID OPERATION (обрабатывается в router).
-    if (hasMarket) await this._sendAllSubscriptions();
+    // При reconnect BaseWebSocket уже послал market subscription из кэша
+    // (кэш обновлён в _reconnectForSubscription() прямо перед connect()).
+    // При первом подключении кэш пуст — посылаем здесь.
+    if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
     if (hasUser) await this._sendUserChannelSubscription();
   }
 
@@ -658,15 +666,20 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
       if (this._isDestroyed) return;
 
-      // Шаг 3: Обновляем кэш подписки ПОКА disconnected — BaseWebSocket не шлёт, только кэширует
-      if (this._subscribedTokens.size > 0) {
+      // Шаг 3+4: Обновляем кэш и подключаемся АТОМАРНО.
+      // Захватываем _subscribedTokens прямо перед connect() чтобы включить
+      // токены добавленные openMarket() во время disconnect/sleep окна.
+      // Без этого: openMarket добавляет токен ПОСЛЕ cache update → BaseWebSocket
+      // шлёт stale кэш → стратегия не получает данных.
+      const currentTokens = Array.from(this._subscribedTokens);
+      if (currentTokens.length > 0) {
         await this._client.subscribe('market', {
-          assets_ids: Array.from(this._subscribedTokens),
+          assets_ids: currentTokens,
           type: 'market',
         });
       }
 
-      // Шаг 4: Переподключаемся — BaseWebSocket пошлёт актуальную подписку из кэша
+      // connect() → BaseWebSocket шлёт из только что обновлённого кэша
       await this._client.connect();
 
     } catch (err) {
