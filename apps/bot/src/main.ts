@@ -859,34 +859,9 @@ async function runPaper(): Promise<void> {
       return false;
     }
 
-    // Проверка длительности рынка (второй уровень защиты — discovery filter может пропустить
-    // рынки без eventStartMs)
-    const dFilter = mc.filter;
-    if (dFilter?.minDurationMinutes !== undefined || dFilter?.maxDurationMinutes !== undefined) {
-      if (!slotCryptoMeta) {
-        logger.debug('Skipping market: no crypto meta, cannot verify duration', {
-          marketId: String(candidate.marketId),
-          question: candidate.question,
-        });
-        return false;
-      }
-      const durationMin = (slotCryptoMeta.endDateMs - slotCryptoMeta.eventStartTimeMs) / 60_000;
-      if (dFilter.minDurationMinutes !== undefined && durationMin < dFilter.minDurationMinutes) {
-        logger.debug('Skipping market: duration below filter minimum', {
-          marketId: String(candidate.marketId),
-          durationMin: durationMin.toFixed(1),
-          minDurationMinutes: dFilter.minDurationMinutes,
-        });
-        return false;
-      }
-      if (dFilter.maxDurationMinutes !== undefined && durationMin > dFilter.maxDurationMinutes) {
-        logger.debug('Skipping market: duration above filter maximum', {
-          marketId: String(candidate.marketId),
-          durationMin: durationMin.toFixed(1),
-          maxDurationMinutes: dFilter.maxDurationMinutes,
-        });
-        return false;
-      }
+    // Duration filter уже применён в MarketFilter при discovery.
+    // Второй чек здесь не нужен — убран чтобы не блокировать рынки без crypto meta.
+    if (false) {
     }
 
     // Fetch strike price и подписка RTDS для крипто-рынка (один раз на рынок)
@@ -4396,35 +4371,8 @@ async function runLive(): Promise<void> {
 
     const liveSlotCryptoMeta = livePreCheckMeta;
 
-    // Проверка длительности рынка (второй уровень защиты — discovery filter может пропустить
-    // рынки без eventStartMs)
-    const dFilter = mc.filter;
-    if (dFilter?.minDurationMinutes !== undefined || dFilter?.maxDurationMinutes !== undefined) {
-      if (!liveSlotCryptoMeta) {
-        logger.debug('Skipping market: no crypto meta, cannot verify duration', {
-          marketId: String(candidate.marketId),
-          question: candidate.question,
-        });
-        return false;
-      }
-      const durationMin = (liveSlotCryptoMeta.endDateMs - liveSlotCryptoMeta.eventStartTimeMs) / 60_000;
-      if (dFilter.minDurationMinutes !== undefined && durationMin < dFilter.minDurationMinutes) {
-        logger.debug('Skipping market: duration below filter minimum', {
-          marketId: String(candidate.marketId),
-          durationMin: durationMin.toFixed(1),
-          minDurationMinutes: dFilter.minDurationMinutes,
-        });
-        return false;
-      }
-      if (dFilter.maxDurationMinutes !== undefined && durationMin > dFilter.maxDurationMinutes) {
-        logger.debug('Skipping market: duration above filter maximum', {
-          marketId: String(candidate.marketId),
-          durationMin: durationMin.toFixed(1),
-          maxDurationMinutes: dFilter.maxDurationMinutes,
-        });
-        return false;
-      }
-    }
+    // Duration filter уже применён в MarketFilter при discovery.
+    // Второй чек здесь не нужен — убран чтобы не блокировать рынки без crypto meta.
 
     // Маршрутизация стратегии по правилам
     const liveMarketSelection = selectStrategyForMarket(config, {
