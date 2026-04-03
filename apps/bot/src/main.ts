@@ -452,10 +452,13 @@ async function runPaper(): Promise<void> {
       logger,
     );
 
-    // Начальный discovery
+    // Начальный discovery — сортируем по ближайшему eventStart
     await discoveryAdapter.refresh();
     const candidates = await discoveryAdapter.findCandidates();
-    const validCandidates = candidates.filter(c => c.expiresAt.toNumber() > Date.now());
+    const validCandidates = candidates
+      .filter(c => c.expiresAt.toNumber() > Date.now() + 30_000)
+      .slice()
+      .sort((a, b) => (a.eventStartMs ?? 0) - (b.eventStartMs ?? 0));
     if (validCandidates.length === 0) {
       logger.fatal('No markets found matching discovery filter', { filter: filterConfig });
       process.exit(1);
@@ -3106,7 +3109,11 @@ async function runLive(): Promise<void> {
 
     await discoveryAdapter.refresh();
     const candidates = await discoveryAdapter.findCandidates();
-    const validCandidates = candidates.filter(c => c.expiresAt.toNumber() > Date.now());
+    // Сортируем по ближайшему eventStart — берём рынок который начнётся/начался раньше всех
+    const validCandidates = candidates
+      .filter(c => c.expiresAt.toNumber() > Date.now() + 30_000) // минимум 30 сек до expiry
+      .slice()
+      .sort((a, b) => (a.eventStartMs ?? 0) - (b.eventStartMs ?? 0));
 
     // Диагностика: первые 5 кандидатов при старте (live)
     const _liveNow = Date.now();
