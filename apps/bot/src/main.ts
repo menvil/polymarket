@@ -452,130 +452,9 @@ async function runPaper(): Promise<void> {
       logger,
     );
 
-    // Начальный discovery — сортируем по ближайшему eventStart
+    // Initial market будет открыт через rotation.fillMarketSlots() после создания rotation.
     await discoveryAdapter.refresh();
-    const candidates = await discoveryAdapter.findCandidates();
-    const validCandidates = candidates
-      .filter(c => c.expiresAt.toNumber() > Date.now() + 30_000)
-      .slice()
-      .sort((a, b) => (a.eventStartMs ?? 0) - (b.eventStartMs ?? 0));
-    if (validCandidates.length === 0) {
-      logger.fatal('No markets found matching discovery filter', { filter: filterConfig });
-      process.exit(1);
-    }
 
-    // Арб-режим: не создаём начальный single-market слот.
-    // Пары будут открыты позже через fillArbSlots() → openArbPair().
-    if (config.strategy !== 'cross-market-arb') {
-      const candidate = validCandidates[0]!;
-      const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
-      const iId = asInstrumentId(tStr);
-      const ast = asPolymarketCtfToken(tStr);
-      if (!iId || !ast) {
-        logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
-        process.exit(1);
-      }
-      const expiresMs = candidate.expiresAt.toNumber();
-      const initialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
-      const initSelection = selectStrategyForMarket(config, {
-        eventStartMs: initialCryptoMeta?.eventStartTimeMs,
-        expiresAtMs: expiresMs,
-        question: candidate.question,
-      });
-      if (!initSelection) {
-        logger.warn('No strategy rule matches initial market, will wait for rotation', {
-          question: candidate.question,
-          durationMin: initialCryptoMeta
-            ? ((initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs) / 60_000).toFixed(1)
-            : 'unknown',
-        });
-      }
-      const discoveryStrategy = initSelection
-        ? createStrategy(
-            { type: initSelection.strategy, id: `${initSelection.strategy}-slot-${_slotCounter++}`, params: initSelection.strategyParams } as StrategyConfig,
-            logger,
-          )
-        : createStrategy(
-            { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-            logger,
-          );
-      // Complementary token для initial market (auto-selection UP/DOWN)
-      const initCompIndex = 1 - mc.outcomeIndex;
-      const initCompTokenStr = candidate.allTokenIds?.[initCompIndex];
-      const initCompInstrumentId = initCompTokenStr ? (asInstrumentId(initCompTokenStr) ?? undefined) : undefined;
-      const initCompAsset = initCompTokenStr ? (asPolymarketCtfToken(initCompTokenStr) ?? undefined) : undefined;
-
-      initialSlots.set(tStr, {
-        instrumentId: iId,
-        marketId: candidate.marketId,
-        asset: ast,
-        tokenIdStr: tStr,
-        expiresAtMs: expiresMs,
-        candidate,
-        strategy: discoveryStrategy,
-        cryptoMeta: initialCryptoMeta,
-        complementaryInstrumentId: initCompInstrumentId,
-        complementaryAsset: initCompAsset,
-        outcomeIndex: mc.outcomeIndex,
-        fillHistory: [],
-        partialAccum: new Map(),
-        openedAt: Date.now(),
-      });
-
-      // Регистрация comp token для paper exchange + trade bridge
-      if (initCompInstrumentId && initCompAsset) {
-        initialCompTokens.add(String(initCompInstrumentId));
-        logger.info('Complementary token registered for trade bridge', {
-          compTokenId: String(initCompInstrumentId),
-          primaryTokenId: tStr,
-          activeCompTokens: initialCompTokens.size,
-        });
-      }
-
-      // Fetch strike price и подписка RTDS для начального рынка
-      if (initialCryptoMeta) {
-        if (initialCryptoMeta.priceToBeat !== undefined) {
-          cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, initialCryptoMeta.priceToBeat);
-          logger.info('Strike price from API (priceToBeat)', {
-            symbol: initialCryptoMeta.rtdsFilter,
-            strikePrice: initialCryptoMeta.priceToBeat,
-          });
-        } else {
-          try {
-            const interval = computeInterval(initialCryptoMeta.endDateMs - initialCryptoMeta.eventStartTimeMs);
-            const kline = await binanceClient.getKline(initialCryptoMeta.binanceSymbol, initialCryptoMeta.eventStartTimeMs, interval);
-            cryptoPriceStore.setTargetPrice(initialCryptoMeta.rtdsFilter, kline.open);
-            logger.info('Strike price from Binance kline (fallback)', {
-              symbol: initialCryptoMeta.rtdsFilter,
-              strikePrice: kline.open,
-            });
-          } catch (err) {
-            logger.warn('Failed to fetch strike price for initial market', {
-              symbol: initialCryptoMeta.binanceSymbol,
-              err: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-        for (const sub of initialCryptoMeta.rtdsSubscriptions) {
-          rtdsClient.subscribe(sub.topic, sub.filter);
-        }
-      }
-
-      const slug = candidate.rawMarket?.['slug'] as string | undefined;
-      logger.info('Initial market discovered', {
-        question: candidate.question,
-        slug: slug ?? '(no slug)',
-        marketId: String(candidate.marketId),
-        tokenId: tStr,
-        liquidity: candidate.liquidity.toFixed(0),
-        expiresAt: new Date(expiresMs).toISOString(),
-        hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-      });
-    } else {
-      logger.info('Arb mode: skipping initial single-market slot, pairs will be opened via fillArbSlots()', {
-        candidatesAvailable: validCandidates.length,
-      });
-    }
   }
 
   // Для non-arb: firstSlot обязателен. Для arb: placeholder — будет перезаписан через registerMarket().
@@ -658,10 +537,19 @@ async function runPaper(): Promise<void> {
     mode: 'paper',
     exchangeClient,
   });
-  // Переносим initial slots в rotation
+  // Fixed market: переносим initial slot; Discovery: rotation сам откроет через fillMarketSlots
   for (const [key, slot] of initialSlots) rotation.activeMarkets.set(key, slot);
   for (const compToken of initialCompTokens) rotation.activeCompTokens.add(compToken);
-  if (discoveryAdapter) rotation.setDiscoveryAdapter(discoveryAdapter);
+  if (discoveryAdapter) {
+    rotation.setDiscoveryAdapter(discoveryAdapter);
+    if (config.strategy !== 'cross-market-arb') {
+      await rotation.fillMarketSlots();
+      if (rotation.activeMarkets.size === 0) {
+        logger.fatal('No markets found matching discovery filter at startup');
+        process.exit(1);
+      }
+    }
+  }
   const activeMarkets = rotation.activeMarkets;
   const activeCompTokens = rotation.activeCompTokens;
   const closedMarkets = rotation.closedMarkets;
@@ -3106,158 +2994,18 @@ async function runLive(): Promise<void> {
       filterConfig,
       logger,
     );
+    // Initial market будет открыт через rotation.fillMarketSlots() после создания rotation.
 
-    await discoveryAdapter.refresh();
-    const candidates = await discoveryAdapter.findCandidates();
-    // Сортируем по ближайшему eventStart — берём рынок который начнётся/начался раньше всех
-    const validCandidates = candidates
-      .filter(c => c.expiresAt.toNumber() > Date.now() + 30_000) // минимум 30 сек до expiry
-      .slice()
-      .sort((a, b) => (a.eventStartMs ?? 0) - (b.eventStartMs ?? 0));
-
-    // Диагностика: первые 5 кандидатов при старте (live)
-    const _liveNow = Date.now();
-    for (let i = 0; i < Math.min(5, validCandidates.length); i++) {
-      const vc = validCandidates[i]!;
-      logger.info(`Initial candidate #${i} (live)`, {
-        question: vc.question,
-        expiresAt: new Date(vc.expiresAt.toNumber()).toISOString(),
-        minToExpiry: ((vc.expiresAt.toNumber() - _liveNow) / 60000).toFixed(1),
-        eventStartMs: vc.eventStartMs,
-        liquidity: vc.liquidity.toFixed(0),
-      });
-    }
-
-    if (validCandidates.length === 0) {
-      logger.fatal('No markets found matching discovery filter', { filter: filterConfig });
-      process.exit(1);
-    }
-
-    const candidate = validCandidates[0]!;
-    const tStr = candidate.allTokenIds?.[mc.outcomeIndex] ?? String(candidate.instrumentId);
-    const iId = asInstrumentId(tStr);
-    const ast = asPolymarketCtfToken(tStr);
-    if (!iId || !ast) {
-      logger.fatal('Cannot create instrument from discovered market', { tokenIdStr: tStr });
-      process.exit(1);
-    }
-    const expiresMs = candidate.expiresAt.toNumber();
-    const liveInitialCryptoMeta = parseCryptoMeta(candidate.rawMarket);
-    const liveInitSelection = selectStrategyForMarket(config, {
-      eventStartMs: liveInitialCryptoMeta?.eventStartTimeMs,
-      expiresAtMs: expiresMs,
-      question: candidate.question,
-    });
-    if (!liveInitSelection) {
-      logger.warn('No strategy rule matches initial live market, will wait for rotation', {
-        question: candidate.question,
-      });
-    }
-    const discoveryStrategy = liveInitSelection
-      ? createStrategy(
-          { type: liveInitSelection.strategy, id: `${liveInitSelection.strategy}-slot-${_slotCounter++}`, params: liveInitSelection.strategyParams } as StrategyConfig,
-          logger,
-        )
-      : createStrategy(
-          { type: config.strategy, id: `${config.strategy}-slot-${_slotCounter++}`, params: config.strategyParams } as StrategyConfig,
-          logger,
-        );
-    // Complementary token для initial market (auto-selection UP/DOWN)
-    const liveInitCompIndex = 1 - mc.outcomeIndex;
-    const liveInitCompTokenStr = candidate.allTokenIds?.[liveInitCompIndex];
-    const liveInitCompInstrumentId = liveInitCompTokenStr ? (asInstrumentId(liveInitCompTokenStr) ?? undefined) : undefined;
-    const liveInitCompAsset = liveInitCompTokenStr ? (asPolymarketCtfToken(liveInitCompTokenStr) ?? undefined) : undefined;
-
-    initialSlots.set(tStr, {
-      instrumentId: iId,
-      marketId: candidate.marketId,
-      asset: ast,
-      tokenIdStr: tStr,
-      expiresAtMs: expiresMs,
-      tickSize: candidate.tickSize,
-      minOrderSize: candidate.minOrderSize,
-      candidate,
-      strategy: discoveryStrategy,
-      cryptoMeta: liveInitialCryptoMeta,
-      complementaryInstrumentId: liveInitCompInstrumentId,
-      complementaryAsset: liveInitCompAsset,
-      outcomeIndex: mc.outcomeIndex,
-      fillHistory: [],
-      partialAccum: new Map(),
-      openedAt: Date.now(),
-    });
-
-    // Регистрация comp token для trade bridge
-    if (liveInitCompInstrumentId && liveInitCompAsset) {
-      initialCompTokens.add(String(liveInitCompInstrumentId));
-      logger.info('Complementary token registered for trade bridge', {
-        compTokenId: String(liveInitCompInstrumentId),
-        primaryTokenId: tStr,
-        activeCompTokens: initialCompTokens.size,
-      });
-    }
-
-    // Fetch strike price и подписка RTDS для начального крипто-рынка
-    if (liveInitialCryptoMeta) {
-      if (liveInitialCryptoMeta.priceToBeat !== undefined) {
-        liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.priceToBeat);
-        logger.info('Strike price from API (priceToBeat, live)', {
-          symbol: liveInitialCryptoMeta.rtdsFilter,
-          strikePrice: liveInitialCryptoMeta.priceToBeat,
-        });
-      } else {
-        const eventStarted = Date.now() > liveInitialCryptoMeta.eventStartTimeMs;
-
-        if (eventStarted) {
-          // Рынок уже начался давно — Binance kline open как fallback
-          try {
-            const interval = computeInterval(liveInitialCryptoMeta.endDateMs - liveInitialCryptoMeta.eventStartTimeMs);
-            const kline = await liveBinanceClient.getKline(liveInitialCryptoMeta.binanceSymbol, liveInitialCryptoMeta.eventStartTimeMs, interval);
-            liveCryptoPriceStore.setTargetPrice(liveInitialCryptoMeta.rtdsFilter, kline.open);
-            logger.info('Strike price from Binance kline (event already started, live)', {
-              symbol: liveInitialCryptoMeta.rtdsFilter,
-              strikePrice: kline.open,
-            });
-          } catch (err) {
-            // Binance тоже не смог → ждём первую Chainlink цену из RTDS
-            logger.warn('Binance kline fallback failed, waiting for Chainlink RTDS (live)', {
-              symbol: liveInitialCryptoMeta.binanceSymbol,
-              err: err instanceof Error ? err.message : String(err),
-            });
-            livePendingChainlinkStrike.set(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.eventStartTimeMs);
-          }
-        } else {
-          // Рынок ещё не начался — ждём первую Chainlink цену после eventStartTime
-          livePendingChainlinkStrike.set(liveInitialCryptoMeta.rtdsFilter, liveInitialCryptoMeta.eventStartTimeMs);
-          logger.info('Waiting for first Chainlink price after event start as strike (live)', {
-            symbol: liveInitialCryptoMeta.rtdsFilter,
-            eventStartTime: new Date(liveInitialCryptoMeta.eventStartTimeMs).toISOString(),
-          });
-        }
-      }
-      liveCryptoSubs.subscribeMarket(tStr, liveInitialCryptoMeta);
-    }
-
-    const slug = candidate.rawMarket?.['slug'] as string | undefined;
-    logger.info('Initial market discovered', {
-      question: candidate.question,
-      slug: slug ?? '(no slug)',
-      marketId: String(candidate.marketId),
-      tokenId: tStr,
-      liquidity: candidate.liquidity.toFixed(0),
-      expiresAt: new Date(expiresMs).toISOString(),
-      hoursToExpiry: ((expiresMs - Date.now()) / 3_600_000).toFixed(2),
-    });
   } else {
     console.error('[Bot] live mode supports market.source=fixed or market.source=discovery');
     process.exit(1);
   }
 
-  const firstSlot = initialSlots.values().next().value!;
+  const firstSlot = initialSlots.values().next().value;
   logger.info('Bot starting in live mode', {
     strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
     ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
-    marketId: String(firstSlot.marketId),
+    marketId: firstSlot ? String(firstSlot.marketId) : '(discovery: deferred)',
     maxConcurrentMarkets,
     funderAddress: credentials.funderAddress ?? '(signer)',
   });
@@ -3366,10 +3114,18 @@ async function runLive(): Promise<void> {
     orderReconciler: liveInfra.orderReconciler,
     redeemer,
   });
-  // Переносим initial slots в rotation
+  // Fixed market: переносим initial slot; Discovery: rotation сам откроет через fillMarketSlots
   for (const [key, slot] of initialSlots) rotation.activeMarkets.set(key, slot);
   for (const compToken of initialCompTokens) rotation.activeCompTokens.add(compToken);
-  if (discoveryAdapter) rotation.setDiscoveryAdapter(discoveryAdapter);
+  if (discoveryAdapter) {
+    rotation.setDiscoveryAdapter(discoveryAdapter);
+    // Открываем первый рынок через единый код rotation.fillMarketSlots()
+    await rotation.fillMarketSlots();
+    if (rotation.activeMarkets.size === 0) {
+      logger.fatal('No markets found matching discovery filter at startup');
+      process.exit(1);
+    }
+  }
   const activeMarkets = rotation.activeMarkets;
   const activeCompTokens = rotation.activeCompTokens;
 
