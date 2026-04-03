@@ -4707,6 +4707,22 @@ async function runLive(): Promise<void> {
     }
 
     const nowMs = Date.now();
+
+    // Диагностика: логируем первые 5 кандидатов с причиной пропуска
+    if (candidates.length > 0) {
+      const diag = candidates.slice(0, 5).map((c) => {
+        const key = String(c.marketId);
+        const exMs = c.expiresAt.toNumber();
+        const minLeft = ((exMs - nowMs) / 60000).toFixed(1);
+        let skip = '';
+        if (closedMarkets.has(key)) skip = 'closed';
+        else if (activeMarketIds.has(key)) skip = 'active';
+        else if (exMs <= nowMs + MIN_VIABLE_TRADING_MS) skip = 'tooSoon';
+        return `${c.question?.slice(-20) ?? key.slice(0,10)} ${minLeft}m ${skip || 'OK'}`;
+      });
+      logger.debug('fillMarketSlots candidates', { top5: diag });
+    }
+
     for (const c of candidates) {
       if (activeMarkets.size >= maxConcurrentMarkets) break;
 
