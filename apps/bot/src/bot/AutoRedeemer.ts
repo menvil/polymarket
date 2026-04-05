@@ -282,6 +282,7 @@ export class AutoRedeemer {
             const hasBalance = await this._hasTokenBalance(conditionId);
             if (hasBalance) {
               settledConditions.push(conditionId);
+              this._logger.debug('Market has token balance, will redeem', { conditionId: conditionId.slice(0, 20) });
             } else {
               // Нет токенов — помечаем как redeemed (уже claimed или проиграл)
               this._redeemedConditions.add(conditionId);
@@ -503,12 +504,12 @@ export class AutoRedeemer {
 
       return bal0 > 0n || bal1 > 0n;
     } catch (err) {
-      // RPC ошибка — не блокируем, пусть попытается redeem
-      this._logger.debug('Failed to check token balance', {
+      // RPC ошибка — пропускаем, попробуем в следующем цикле
+      this._logger.warn('Failed to check token balance (RPC error), skipping', {
         conditionId: conditionId.slice(0, 20),
         error: err instanceof Error ? err.message : String(err),
       });
-      return true; // fallback: пусть попробует
+      return false;
     }
   }
 
