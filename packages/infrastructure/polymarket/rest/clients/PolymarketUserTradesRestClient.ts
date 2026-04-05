@@ -185,12 +185,15 @@ export class PolymarketUserTradesRestClient {
     }
 
     // Вызываем аутентифицированный endpoint
-    const fills = await this.restClient.get<UserFillResponse[]>(
+    // API может вернуть массив или пагинированный объект { data: [...], next_cursor: "..." }
+    const raw = await this.restClient.get<UserFillResponse[] | { data: UserFillResponse[]; next_cursor?: string }>(
       '/data/trades',
       queryParams
     );
 
-    this.logger.debug('User fills retrieved', {
+    const fills = Array.isArray(raw) ? raw : (raw?.data ?? []);
+
+    this.logger.info('User fills retrieved', {
       count: fills.length,
       params,
     });
