@@ -48,6 +48,7 @@ import {
   PolymarketOrderMapper,
   PolymarketBalanceProvider,
   PolymarketOrderBuilder,
+  PolymarketUserTradesRestClient,
   SignatureType,
 } from '@polymarket/exchange/rest';
 import type { DnsOverride } from '@polymarket/exchange/dns';
@@ -163,9 +164,11 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
 
   // ── 2. IExchangeClient ────────────────────────────────────────────────────
 
+  const userTradesClient = new PolymarketUserTradesRestClient(restClient, logger);
   const exchangeClient: IExchangeClient = new PolymarketExchangeClientAdapter(
     executionAdapter,
     logger,
+    userTradesClient,
   );
 
   // ── 3. Баланс для recovery ────────────────────────────────────────────────

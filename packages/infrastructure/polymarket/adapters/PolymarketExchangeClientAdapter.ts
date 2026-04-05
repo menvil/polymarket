@@ -61,16 +61,20 @@ import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExec
  */
 export class PolymarketExchangeClientAdapter implements IExchangeClient {
   private readonly _logger: ILogger;
+  private readonly _userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient;
 
   /**
    * @param _executionAdapter - Low-level HTTP адаптер исполнения
    * @param logger - Logger
+   * @param userTradesClient - L2-аутентифицированный клиент user trades (опционально)
    */
   constructor(
     private readonly _executionAdapter: PolymarketExecutionAdapter,
     logger: ILogger,
+    userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient,
   ) {
     this._logger = logger.child({ component: 'PolymarketExchangeClientAdapter' });
+    this._userTradesClient = userTradesClient;
   }
 
   /**
@@ -252,7 +256,28 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     since?: Timestamp,
   ): Promise<Result<VenueTradeSnapshot[], ExchangeError>> {
     try {
-      const trades = await this._executionAdapter.getFilledOrders(undefined, { onlyFirstPage: true });
+      // Используем L2-аутентифицированный endpoint для user-specific trades
+      // (публичный endpoint без maker_address возвращает все trades всех пользователей)
+      let trades: Array<{ id: string; order_id?: string; market?: string; asset_id: string; side: string; price: string; size: string; fee_rate_bps?: string; trader_side?: string; match_time?: string; status?: string }>;
+      if (this._userTradesClient) {
+        const userFills = await this._userTradesClient.getUserFills({ limit: 100 });
+        trades = userFills.map(f => ({
+          id: f.id,
+          order_id: f.order_id,
+          market: f.market,
+          asset_id: f.asset_id,
+          side: f.side,
+          price: f.price,
+          size: f.size,
+          fee_rate_bps: f.fee_rate_bps,
+          trader_side: undefined,
+          match_time: f.timestamp ? new Date(f.timestamp).toISOString() : undefined,
+          status: 'CONFIRMED', // user trades endpoint возвращает confirmed fills
+        }));
+        this._logger.info('User fills retrieved via L2 auth', { count: trades.length });
+      } else {
+        trades = await this._executionAdapter.getFilledOrders(undefined, { onlyFirstPage: true });
+      }
       const snapshots: VenueTradeSnapshot[] = [];
 
       for (const t of trades) {
@@ -310,7 +335,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
             accountId,
             marketId,
             asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: t.asset_id } as AssetId,
-            side: t.side,
+            side: t.side as 'BUY' | 'SELL',
             price,
             size,
             fee: {
