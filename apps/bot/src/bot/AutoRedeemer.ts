@@ -289,19 +289,43 @@ export class AutoRedeemer {
         return result;
       }
 
-      // 3. Batch redeem: все settled рынки одним запросом к Relayer
-      this._logger.info('Batch redeem: submitting', { count: settledConditions.length });
+      // 3. Batch redeem: разбиваем на chunk'и по 10 чтобы не исчерпать relayer quota
+      const BATCH_CHUNK_SIZE = 10;
+      const chunks: string[][] = [];
+      for (let i = 0; i < settledConditions.length; i += BATCH_CHUNK_SIZE) {
+        chunks.push(settledConditions.slice(i, i + BATCH_CHUNK_SIZE));
+      }
+      this._logger.info('Batch redeem: submitting in chunks', {
+        total: settledConditions.length,
+        chunks: chunks.length,
+        chunkSize: BATCH_CHUNK_SIZE,
+      });
 
       try {
-        const success = await this._batchRedeem(settledConditions);
-        if (success) {
-          result.redeemed = settledConditions.length;
-          for (const cid of settledConditions) {
-            this._redeemedConditions.add(cid);
-            this._failedCooldowns.delete(cid);
+        let totalRedeemed = 0;
+        for (const chunk of chunks) {
+          const success = await this._batchRedeem(chunk);
+          if (success) {
+            totalRedeemed += chunk.length;
+            for (const cid of chunk) {
+              this._redeemedConditions.add(cid);
+              this._failedCooldowns.delete(cid);
+            }
+          } else {
+            // Chunk failed — ставим cooldown на оставшиеся и прерываем
+            for (const cid of chunk) {
+              this._failedCooldowns.set(cid, now + 10 * 60_000);
+            }
+            break;
           }
+        }
+        if (totalRedeemed > 0) {
+          result.redeemed = totalRedeemed;
           this._consecutiveConnectionErrors = 0;
-          this._logger.info('Batch redeem successful', { count: settledConditions.length });
+          this._logger.info('Batch redeem completed', {
+            redeemed: totalRedeemed,
+            total: settledConditions.length,
+          });
         } else {
           result.errors = settledConditions.length;
         }
