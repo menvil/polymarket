@@ -309,8 +309,17 @@ export class AutoRedeemer {
         const errMsg = err instanceof Error ? err.message : String(err);
 
         if (errMsg.includes('429') || errMsg.includes('quota exceeded') || errMsg.includes('Too Many Requests')) {
-          this._logger.warn('Relayer rate limit hit on batch redeem', {
+          // Парсим "resets in N seconds" из ответа relayer
+          const resetMatch = errMsg.match(/resets in (\d+) seconds/);
+          const cooldownMs = resetMatch
+            ? parseInt(resetMatch[1], 10) * 1000 + 60_000 // +1 мин запас
+            : 60 * 60_000; // fallback: 1 час
+          for (const cid of settledConditions) {
+            this._failedCooldowns.set(cid, now + cooldownMs);
+          }
+          this._logger.warn('Relayer rate limit hit on batch redeem — cooldown set', {
             count: settledConditions.length,
+            cooldownMin: Math.round(cooldownMs / 60_000),
             error: errMsg,
           });
         } else if (errMsg.includes('connection error') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT')) {
