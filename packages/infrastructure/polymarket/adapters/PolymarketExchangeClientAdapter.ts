@@ -271,7 +271,10 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
           size: f.size,
           fee_rate_bps: f.fee_rate_bps,
           trader_side: undefined,
-          match_time: f.timestamp ? new Date(f.timestamp).toISOString() : undefined,
+          // timestamp может быть в секундах (10 цифр) или миллисекундах (13 цифр)
+          match_time: f.timestamp
+            ? new Date(f.timestamp < 1e12 ? f.timestamp * 1000 : f.timestamp).toISOString()
+            : undefined,
           status: 'CONFIRMED', // user trades endpoint возвращает confirmed fills
         }));
         this._logger.info('User fills retrieved via L2 auth', { count: trades.length });
