@@ -119,8 +119,13 @@ export class ReconcileTradesUseCase {
     let skippedCount = 0;
     let errorCount = 0;
 
-    // Шаг 2: Обработать каждый trade
+    this._logger.debug('Reconciliation: processing trades', { count: trades.length });
+
+    // Шаг 2: Обработать каждый trade (макс 50 за цикл чтобы не блокировать event loop)
+    const maxPerCycle = 50;
+    let processed = 0;
     for (const trade of trades) {
+      if (processed >= maxPerCycle) break;
       const fillIdStr = String(trade.fillId);
 
       // Фильтрация по on-chain статусу.
@@ -145,9 +150,9 @@ export class ReconcileTradesUseCase {
 
       // Проверка idempotency — markIfNotExists атомарна
       const isNew = await this._deps.processedFillRepo.markIfNotExists(trade.fillId);
+      processed++;
 
       if (!isNew) {
-        this._logger.debug('Trade already processed, skipping', { fillId: fillIdStr });
         skippedCount++;
         continue;
       }
@@ -177,7 +182,7 @@ export class ReconcileTradesUseCase {
       }
 
       processedCount++;
-      this._logger.debug('Reconciled fill processed', { fillId: fillIdStr, status: trade.status });
+      this._logger.info('Reconciled fill processed', { fillId: fillIdStr, orderId: String(trade.orderId), status: trade.status });
     }
 
     this._logger.info('Trade reconciliation complete', {
