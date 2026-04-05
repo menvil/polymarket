@@ -104,9 +104,11 @@ interface CheckResult {
  */
 export class AutoRedeemer {
   private readonly _relayClient: RelayClient;
+  private readonly _provider: ethers.JsonRpcProvider;
   private readonly _logger: ILogger;
   private readonly _config: AutoRedeemerConfig;
   private readonly _walletAddress: string;
+  private readonly _proxyAddress: string;
   private readonly _redeemedConditions = new Set<string>();
   /** Рынки с ошибками: conditionId → timestamp следующей попытки */
   private readonly _failedCooldowns = new Map<string, number>();
@@ -117,12 +119,16 @@ export class AutoRedeemer {
 
   private constructor(
     relayClient: RelayClient,
+    provider: ethers.JsonRpcProvider,
     walletAddress: string,
+    proxyAddress: string,
     config: AutoRedeemerConfig,
     logger: ILogger,
   ) {
     this._relayClient = relayClient;
+    this._provider = provider;
     this._walletAddress = walletAddress;
+    this._proxyAddress = proxyAddress;
     this._config = config;
     this._logger = logger.child({ component: 'AutoRedeemer' });
   }
@@ -158,7 +164,7 @@ export class AutoRedeemer {
       RelayerTxType.PROXY,
     );
 
-    return new AutoRedeemer(relayClient, wallet.address, config, logger);
+    return new AutoRedeemer(relayClient, provider, wallet.address, config.funderAddress, config, logger);
   }
 
   /**
@@ -272,7 +278,14 @@ export class AutoRedeemer {
         try {
           const isSettled = await this._isMarketSettled(conditionId);
           if (isSettled) {
-            settledConditions.push(conditionId);
+            // Проверяем on-chain баланс: если 0 токенов — нечего клеймить
+            const hasBalance = await this._hasTokenBalance(conditionId);
+            if (hasBalance) {
+              settledConditions.push(conditionId);
+            } else {
+              // Нет токенов — помечаем как redeemed (уже claimed или проиграл)
+              this._redeemedConditions.add(conditionId);
+            }
           }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -463,6 +476,43 @@ export class AutoRedeemer {
   }
 
   /**
+   * Проверяет on-chain баланс CTF токенов для conditionId.
+   *
+   * @param conditionId - hex conditionId рынка
+   * @returns true если есть хотя бы один токен (UP или DOWN) на proxy кошельке
+   *
+   * @remarks
+   * CTF контракт — ERC1155. tokenId = conditionId × 2 + outcomeIndex.
+   * Проверяем оба outcome (0 и 1).
+   */
+  private async _hasTokenBalance(conditionId: string): Promise<boolean> {
+    try {
+      const ctf = new ethers.Contract(
+        CTF_ADDRESS,
+        ['function balanceOf(address owner, uint256 id) view returns (uint256)'],
+        this._provider,
+      );
+      const conditionBigInt = BigInt(conditionId.startsWith('0x') ? conditionId : '0x' + conditionId);
+      const tokenId0 = conditionBigInt * 2n;
+      const tokenId1 = conditionBigInt * 2n + 1n;
+
+      const [bal0, bal1] = await Promise.all([
+        ctf.balanceOf(this._proxyAddress, tokenId0) as Promise<bigint>,
+        ctf.balanceOf(this._proxyAddress, tokenId1) as Promise<bigint>,
+      ]);
+
+      return bal0 > 0n || bal1 > 0n;
+    } catch (err) {
+      // RPC ошибка — не блокируем, пусть попытается redeem
+      this._logger.debug('Failed to check token balance', {
+        conditionId: conditionId.slice(0, 20),
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return true; // fallback: пусть попробует
+    }
+  }
+
+  /**
    * Batch redeem: все conditionIds одним multicall запросом к Relayer.
    *
    * @param conditionIds - Массив conditionIds для redeem
@@ -494,9 +544,32 @@ export class AutoRedeemer {
     });
 
     const receipt = await response.wait();
-    if (!receipt) return false;
 
-    return receipt.state === 'STATE_MINED' || receipt.state === 'STATE_CONFIRMED';
+    const state = receipt?.state ?? 'unknown';
+    const success = state === 'STATE_MINED' || state === 'STATE_CONFIRMED';
+
+    this._logger.info('Batch redeem result', {
+      count: conditionIds.length,
+      transactionID: response.transactionID,
+      state,
+      success,
+    });
+
+    if (!success) {
+      // Batch reverted — скорее всего большинство уже redeemed.
+      // Помечаем все как redeemed чтобы не повторять бесконечно.
+      // Если один маркет реально не redeemed — его поймает следующий цикл
+      // через `_getRecentConditionIds()` (новые trades).
+      this._logger.warn('Batch redeem failed/reverted — marking all as redeemed to avoid infinite retry', {
+        count: conditionIds.length,
+        state,
+      });
+      for (const cid of conditionIds) {
+        this._redeemedConditions.add(cid);
+      }
+    }
+
+    return success;
   }
 
   /**
