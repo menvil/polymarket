@@ -426,8 +426,12 @@ export class AutoRedeemer {
     }
   }
 
+  /** Маппинг conditionId → Set<tokenId> (asset_id из trades) */
+  private readonly _conditionTokenIds = new Map<string, Set<string>>();
+
   /**
    * Получает уникальные conditionIds из недавних trades пользователя.
+   * Также запоминает tokenIds для каждого conditionId (для balance check).
    *
    * @returns Массив conditionIds
    */
@@ -450,6 +454,15 @@ export class AutoRedeemer {
     for (const trade of trades) {
       if (trade.market) {
         conditionIds.add(trade.market);
+        // Запоминаем tokenId для balance check
+        if (trade.asset_id) {
+          let tokens = this._conditionTokenIds.get(trade.market);
+          if (!tokens) {
+            tokens = new Set<string>();
+            this._conditionTokenIds.set(trade.market, tokens);
+          }
+          tokens.add(trade.asset_id);
+        }
       }
     }
 
@@ -479,30 +492,33 @@ export class AutoRedeemer {
   /**
    * Проверяет on-chain баланс CTF токенов для conditionId.
    *
-   * @param conditionId - hex conditionId рынка
-   * @returns true если есть хотя бы один токен (UP или DOWN) на proxy кошельке
+   * @param conditionId - conditionId рынка
+   * @returns true если есть хотя бы один токен на proxy кошельке
    *
    * @remarks
-   * CTF контракт — ERC1155. tokenId = conditionId × 2 + outcomeIndex.
-   * Проверяем оба outcome (0 и 1).
+   * Использует tokenIds (asset_id) из trades API, не вычисляет из conditionId.
+   * CTF контракт — ERC1155, balanceOf(address, uint256 tokenId).
    */
   private async _hasTokenBalance(conditionId: string): Promise<boolean> {
+    const tokenIds = this._conditionTokenIds.get(conditionId);
+    if (!tokenIds || tokenIds.size === 0) {
+      // Нет tokenIds — не можем проверить, пропускаем
+      return false;
+    }
+
     try {
       const ctf = new ethers.Contract(
         CTF_ADDRESS,
         ['function balanceOf(address owner, uint256 id) view returns (uint256)'],
         this._provider,
       );
-      const conditionBigInt = BigInt(conditionId.startsWith('0x') ? conditionId : '0x' + conditionId);
-      const tokenId0 = conditionBigInt * 2n;
-      const tokenId1 = conditionBigInt * 2n + 1n;
 
-      const [bal0, bal1] = await Promise.all([
-        ctf.balanceOf(this._proxyAddress, tokenId0) as Promise<bigint>,
-        ctf.balanceOf(this._proxyAddress, tokenId1) as Promise<bigint>,
-      ]);
+      for (const tokenId of tokenIds) {
+        const balance = await ctf.balanceOf(this._proxyAddress, tokenId) as bigint;
+        if (balance > 0n) return true;
+      }
 
-      return bal0 > 0n || bal1 > 0n;
+      return false;
     } catch (err) {
       // RPC ошибка — пропускаем, попробуем в следующем цикле
       this._logger.warn('Failed to check token balance (RPC error), skipping', {
