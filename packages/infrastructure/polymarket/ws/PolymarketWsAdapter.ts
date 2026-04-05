@@ -409,10 +409,13 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
 
     this._router.on('trade', (message: unknown) => {
       if (typeof message !== 'object' || message === null) return;
-      // Фильтруем по _subscribedTokens (market trades, не user fills)
-      const tokenId = (message as Record<string, unknown>)['asset_id'];
-      if (typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
-      // parseWsMessage различит market trade и user fill по наличию taker_order_id
+      // Фильтруем market trades по _subscribedTokens, но пропускаем user fills.
+      // User fills (из user channel) имеют taker_order_id — не фильтруем их,
+      // т.к. user WS не имеет subscribedTokens.
+      const msg = message as Record<string, unknown>;
+      const tokenId = msg['asset_id'];
+      const isUserFill = 'taker_order_id' in msg;
+      if (!isUserFill && typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
       void this._dispatchParsed({ ...(message as object), type: 'trade' });
     });
 
