@@ -353,7 +353,13 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         }
       }
 
-      this._logger.debug('Trades fetched from exchange', { count: snapshots.length });
+      this._logger.info('Trades converted to snapshots', {
+        rawCount: trades.length,
+        snapshotCount: snapshots.length,
+        firstTradeId: trades[0]?.id?.slice(0, 20),
+        firstMatchTime: trades[0]?.match_time?.slice(0, 25),
+        firstStatus: trades[0]?.status,
+      });
       return Ok(snapshots);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
