@@ -66,6 +66,21 @@ export interface CexExchangeConfig {
    * @defaultValue 7_200_000 (2 часа)
    */
   readonly restartIntervalMs?: number;
+
+  /**
+   * Метод получения ордербука.
+   * - `'watch'` — WebSocket (`watchOrderBook`), минимальная задержка
+   * - `'fetch'` — REST polling (`fetchOrderBook`), для бирж без WS поддержки
+   * - не задан — авто-детект: `watch` если биржа поддерживает, иначе `fetch`
+   *
+   * ccxt управляет rate limits автоматически при `fetch` (enableRateLimit=true).
+   *
+   * @example
+   * ```json
+   * { "okx": { "obMethod": "fetch", ... } }
+   * ```
+   */
+  readonly obMethod?: 'watch' | 'fetch';
 }
 
 /**

@@ -73,6 +73,13 @@ export interface CcxtSymbolWatcherParams {
   readonly watchTrades: boolean;
   /** Интервал принудительного restart в мс */
   readonly restartIntervalMs: number;
+  /**
+   * Метод получения ордербука.
+   * - `'watch'` — WebSocket (watchOrderBook)
+   * - `'fetch'` — REST polling (fetchOrderBook), ccxt управляет rate limits
+   * - не задан — авто-детект через `instance.has['watchOrderBook']`
+   */
+  readonly obMethod?: 'watch' | 'fetch';
   /** Коллбэк для каждого события (ob или trade) */
   readonly onRecord: (record: object) => void;
   readonly logger: ILogger;
@@ -132,13 +139,27 @@ export class CcxtSymbolWatcher {
    * @remarks
    * Алгоритм:
    * 1. Создаёт ccxt.pro инстанс
-   * 2. Вызывает `watchOrderBook(symbol, depth)` в цикле
-   * 3. Hung detection: `asks[0][0] < bids[0][0]` → restart
-   * 4. Плановый restart по `restartIntervalMs`
-   * 5. Любая ошибка → закрыть клиент, пересоздать, продолжить
+   * 2. Определяет метод один раз: `watch` (WS) или `fetch` (REST polling)
+   *    - Явный `obMethod` из конфига имеет приоритет
+   *    - Авто-детект: `instance.has['watchOrderBook']` → watch, иначе fetch
+   * 3. watch: `watchOrderBook` с 30s staleness timeout
+   *    fetch: `fetchOrderBook` без timeout, ccxt управляет rate limits
+   * 4. Hung detection: `asks[0][0] < bids[0][0]` → restart
+   * 5. Плановый restart по `restartIntervalMs`
+   * 6. Любая ошибка → закрыть клиент, пересоздать, продолжить
    */
   private async _runObLoop(): Promise<void> {
     let instance = await this._makeInstance();
+
+    // Определяем метод один раз — capability не меняется между инстансами одной биржи
+    const useWatch = this._params.obMethod === 'fetch'
+      ? false
+      : (this._params.obMethod === 'watch' || !!instance.has?.['watchOrderBook']);
+
+    this._logger.info('OB loop starting', {
+      method: useWatch ? 'watchOrderBook' : 'fetchOrderBook',
+      exchange: this._params.exchangeId,
+    });
 
     while (!this._stopped) {
       try {
@@ -152,12 +173,16 @@ export class CcxtSymbolWatcher {
           continue;
         }
 
-        const ob = await Promise.race([
-          instance.watchOrderBook(this._params.symbol, this._params.depth),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS)
-          ),
-        ]);
+        // watch: блокирует до обновления, stale timeout защищает от зависания
+        // fetch: возвращает сразу, ccxt (enableRateLimit=true) сам держит паузу
+        const ob = useWatch
+          ? await Promise.race([
+              instance.watchOrderBook(this._params.symbol, this._params.depth),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS)
+              ),
+            ])
+          : await instance.fetchOrderBook(this._params.symbol, this._params.depth);
 
         if (!ob.bids.length || !ob.asks.length) continue;
 
@@ -261,6 +286,7 @@ export class CcxtSymbolWatcher {
     }
 
     const instance = new ExchangeClass({
+      enableRateLimit: true, // нужен для fetchOrderBook fallback — ccxt сам держит паузу
       options: {
         defaultType: this._params.exchangeType,
         timeout: 30_000,
