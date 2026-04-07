@@ -526,6 +526,9 @@ async function fillMarketSlots(): Promise<void> {
     return;
   }
 
+  const nowMs = Date.now();
+  const MIN_TIME_TO_START_MS = 2 * 60_000; // минимум 2 минуты до начала рынка
+
   let opened = 0;
   for (const candidate of candidates) {
     if (opened >= remaining) break;
@@ -534,7 +537,30 @@ async function fillMarketSlots(): Promise<void> {
 
     if (subscribedTokens.has(tokenId)) continue;
     if (closedMarkets.has(marketKey)) continue;
-    if (candidate.expiresAt.toNumber() <= Date.now()) continue;
+
+    const expiresAtMs = candidate.expiresAt.toNumber();
+    if (expiresAtMs <= nowMs) continue; // уже истёк
+
+    // Определяем длительность рынка из eventStartMs (если есть)
+    // Для крипто-рынков это обычно 5 или 15 минут
+    const durationMs = candidate.eventStartMs
+      ? expiresAtMs - candidate.eventStartMs
+      : 15 * 60_000; // fallback: 15 минут
+
+    // Вычисляем примерное время начала: expiresAt - duration
+    const estimatedStartMs = expiresAtMs - durationMs;
+    const timeToStartMs = estimatedStartMs - nowMs;
+
+    // Пропускаем рынки, которые уже начались или начнутся слишком скоро
+    if (timeToStartMs < MIN_TIME_TO_START_MS) {
+      logger.debug('Skipping market (already started or starts too soon)', {
+        question: candidate.question,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        estimatedStart: new Date(estimatedStartMs).toISOString(),
+        timeToStartMin: (timeToStartMs / 60_000).toFixed(1),
+      });
+      continue;
+    }
 
     await openMarket(candidate);
     opened++;
