@@ -585,6 +585,11 @@ async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
+  // Удерживаем event loop живым пока идёт async cleanup.
+  // Без этого Node.js может выйти сразу после очистки таймеров —
+  // до того как file I/O в finalizeMarket успеет выполниться.
+  const keepAlive = setInterval(() => {}, 500);
+
   logger.info(`Received ${signal}, shutting down...`);
 
   if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
@@ -632,6 +637,7 @@ async function shutdown(signal: string): Promise<void> {
   rtdsClient.disconnect();
   dnsOverride.uninstall();
 
+  clearInterval(keepAlive);
   logger.info('Shutdown complete');
   process.exit(0);
 }

@@ -145,6 +145,8 @@ const cexService = cexConfig ? new CexCollectorService(cexConfig, logger) : null
  * @param signal - Имя сигнала (SIGINT или SIGTERM)
  */
 async function shutdown(signal: string): Promise<void> {
+  // Удерживаем event loop живым пока идёт async cleanup.
+  const keepAlive = setInterval(() => {}, 500);
   logger.info(`Received ${signal}, shutting down`);
   try {
     if (cexService) {
@@ -158,6 +160,7 @@ async function shutdown(signal: string): Promise<void> {
       err: err instanceof Error ? err : new Error(String(err)),
     });
   }
+  clearInterval(keepAlive);
   process.exit(0);
 }
 
