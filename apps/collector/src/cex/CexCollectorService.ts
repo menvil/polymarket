@@ -151,7 +151,7 @@ export class CexCollectorService {
           watchTrades: exchangeConfig.trades,
           restartIntervalMs: exchangeConfig.restartIntervalMs ?? DEFAULT_RESTART_INTERVAL_MS,
           obMethod: exchangeConfig.obMethod,
-          onRecord: (record) => this._rotator.write(exchangeId, symbol, record),
+          onRecord: (record) => this._rotator.write(exchangeId, symbol, exchangeConfig.type, record),
           logger: this._logger,
         });
 

@@ -146,14 +146,14 @@ export class CexFileRotator {
    * Игнорирует вызовы до выравнивания по первой границе окна.
    * O(1) — поиск писателя по Map.
    */
-  public write(exchange: string, symbol: string, record: object): void {
+  public write(exchange: string, symbol: string, marketType: string, record: object): void {
     if (!this._active) return;
 
-    const key = this._makeKey(exchange, symbol);
+    const key = this._makeKey(exchange, symbol, marketType);
     let writer = this._writers.get(key);
 
     if (!writer) {
-      writer = this._createWriter(exchange, symbol);
+      writer = this._createWriter(exchange, symbol, marketType);
       this._writers.set(key, writer);
     }
 
@@ -362,8 +362,8 @@ export class CexFileRotator {
    * @param symbol - Символ ccxt
    * @returns Новый SymbolWriter с открытым WriteStream
    */
-  private _createWriter(exchange: string, symbol: string): SymbolWriter {
-    const filePath = this._buildFilePath(exchange, symbol, this._windowStart);
+  private _createWriter(exchange: string, symbol: string, marketType: string): SymbolWriter {
+    const filePath = this._buildFilePath(exchange, symbol, marketType, this._windowStart);
 
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -453,17 +453,17 @@ export class CexFileRotator {
    * @example
    * ```typescript
    * // windowStart = 2026-04-06 02:30 ET
-   * // → 'snapshots/2026-04-06/binance/binance_BTC-USDT_2026-April-06_230AM-235AM_ET.jsonl'
+   * // → 'snapshots/2026-04-06/binance/binance_BTC-USDT_spot_2026-April-06_230AM-235AM_ET.jsonl'
    * ```
    */
-  private _buildFilePath(exchange: string, symbol: string, windowStart: number): string {
-    const utcDate   = new Date(windowStart).toISOString().slice(0, 10); // YYYY-MM-DD (UTC, для директории)
-    const windowEnd = windowStart + this._windowMs;
+  private _buildFilePath(exchange: string, symbol: string, marketType: string, windowStart: number): string {
+    const utcDate    = new Date(windowStart).toISOString().slice(0, 10); // YYYY-MM-DD (UTC, для директории)
+    const windowEnd  = windowStart + this._windowMs;
     const dateLabel  = this._formatDateET(windowStart);  // "2026-April-06"
     const startLabel = this._formatTimeET(windowStart);  // "230AM"
     const endLabel   = this._formatTimeET(windowEnd);    // "235AM"
     const safeSymbol = symbol.replace('/', '-');          // BTC/USDT → BTC-USDT
-    const fileName   = `${exchange}_${safeSymbol}_${dateLabel}_${startLabel}-${endLabel}_ET.jsonl`;
+    const fileName   = `${exchange}_${safeSymbol}_${marketType}_${dateLabel}_${startLabel}-${endLabel}_ET.jsonl`;
     return path.join(this._config.outputDir, utcDate, exchange, fileName);
   }
 
@@ -519,9 +519,9 @@ export class CexFileRotator {
    *
    * @param exchange - ID биржи
    * @param symbol - Символ ccxt
-   * @returns Строка вида `'binance__BTC-USDT'`
+   * @returns Строка вида `'binance__BTC-USDT__spot'`
    */
-  private _makeKey(exchange: string, symbol: string): string {
-    return `${exchange}__${symbol.replace('/', '-')}`;
+  private _makeKey(exchange: string, symbol: string, marketType: string): string {
+    return `${exchange}__${symbol.replace('/', '-')}__${marketType}`;
   }
 }
