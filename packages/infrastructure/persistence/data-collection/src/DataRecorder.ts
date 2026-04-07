@@ -299,51 +299,12 @@ export class DataRecorder implements IMarketDataRecorder {
       this._tokenIndex.delete(tokenId);
     }
 
-    await this._flushWriter(writer);
-
-    // Закрываем стрим. При ошибке force-destroy чтобы освободить file handle.
-    // Не бросаем — unlink должен выполниться даже если close не удался.
-    try {
-      await new Promise<void>((resolve, reject) => {
-        if (!writer.stream) { resolve(); return; }
-        writer.stream.end((err?: Error | null) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-    } catch (err) {
-      this._logger.warn('Error closing write stream, destroying', {
-        marketId: key,
-        filePath: writer.filePath,
-        err: err instanceof Error ? err.message : String(err),
-      });
+    if (reason === 'SHUTDOWN') {
+      // При shutdown файл всё равно удаляется — флашить и ждать close бессмысленно.
+      // Сразу уничтожаем стрим (не ждём drain, не зависаем) и удаляем файл.
       try { writer.stream?.destroy(); } catch { /* ignore */ }
       writer.stream = null;
-    }
 
-    if (reason === 'EXPIRED') {
-      // Рынок истёк — данные валидны, сжимаем если включено
-      if (this._config.compression === 'gzip' && this._compressor) {
-        try {
-          const gzPath = await this._compressor.compressFile(writer.filePath);
-          this._logger.debug('Market file compressed', { marketId: key, gzPath });
-        } catch (err) {
-          this._logger.warn('Failed to compress market file', {
-            marketId: key,
-            filePath: writer.filePath,
-            err: err instanceof Error ? err : new Error(String(err)),
-          });
-        }
-      }
-
-      this._logger.info('Market finalized (expired)', {
-        marketId: key,
-        eventsRecorded: writer.eventsRecorded,
-        filePath: writer.filePath,
-      });
-    } else {
-      // Рынок не истёк (shutdown) — удаляем незаконченный файл.
-      // Неполные данные бесполезны для бэктеста и занимают место.
       try {
         await fs.promises.unlink(writer.filePath);
         this._logger.info('Incomplete market file deleted on shutdown', {
@@ -358,7 +319,38 @@ export class DataRecorder implements IMarketDataRecorder {
           err: err instanceof Error ? err : new Error(String(err)),
         });
       }
+      return;
     }
+
+    // EXPIRED: данные нужны — флашим буфер и корректно закрываем стрим перед сжатием.
+    await this._flushWriter(writer);
+
+    await new Promise<void>((resolve, reject) => {
+      if (!writer.stream) { resolve(); return; }
+      writer.stream.end((err?: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    if (this._config.compression === 'gzip' && this._compressor) {
+      try {
+        const gzPath = await this._compressor.compressFile(writer.filePath);
+        this._logger.debug('Market file compressed', { marketId: key, gzPath });
+      } catch (err) {
+        this._logger.warn('Failed to compress market file', {
+          marketId: key,
+          filePath: writer.filePath,
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    this._logger.info('Market finalized (expired)', {
+      marketId: key,
+      eventsRecorded: writer.eventsRecorded,
+      filePath: writer.filePath,
+    });
   }
 
   /**

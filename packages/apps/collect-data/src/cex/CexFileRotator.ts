@@ -255,13 +255,13 @@ export class CexFileRotator {
 
     this._active = false;
 
-    // Флашим что есть и закрываем стримы
-    await this._flushAll();
-    await this._closeAllStreams();
-
-    // Удаляем незавершённые файлы
+    // При close (shutdown) файлы всё равно удаляются — не ждём drain, сразу destroy.
+    // Это предотвращает зависание если стрим находится в errored-состоянии.
     let deleted = 0;
     for (const writer of this._writers.values()) {
+      try { writer.stream?.destroy(); } catch { /* ignore */ }
+      writer.stream = null;
+
       try {
         if (fs.existsSync(writer.filePath)) {
           await fs.promises.unlink(writer.filePath);
