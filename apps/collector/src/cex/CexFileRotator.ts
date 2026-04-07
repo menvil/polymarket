@@ -167,6 +167,73 @@ export class CexFileRotator {
   }
 
   /**
+   * Удаляет незавершённые `.jsonl` файлы от предыдущего краш-запуска.
+   *
+   * @param exchangeIds - Список ID бирж из конфига (сканируем только их папки)
+   *
+   * @remarks
+   * Вызывается при старте — до первого `write()`. Поэтому любой `.jsonl`
+   * файл в папках бирж гарантированно от упавшего прошлого запуска.
+   *
+   * `.jsonl.gz` не трогаются — завершённые архивы.
+   *
+   * ⚠️ Не запускать два коллектора с одинаковым `outputDir`.
+   *
+   * @example
+   * ```typescript
+   * await rotator.cleanup(['binance', 'okx']);
+   * rotator.start();
+   * ```
+   */
+  public async cleanup(exchangeIds: string[]): Promise<void> {
+    if (!fs.existsSync(this._config.outputDir)) return;
+
+    let dateDirs: fs.Dirent[];
+    try {
+      dateDirs = await fs.promises.readdir(this._config.outputDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    let deleted = 0;
+    for (const dateEntry of dateDirs) {
+      if (!dateEntry.isDirectory()) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEntry.name)) continue;
+
+      for (const exchangeId of exchangeIds) {
+        const exchangeDir = path.join(this._config.outputDir, dateEntry.name, exchangeId);
+        if (!fs.existsSync(exchangeDir)) continue;
+
+        let files: fs.Dirent[];
+        try {
+          files = await fs.promises.readdir(exchangeDir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+
+        for (const file of files) {
+          if (!file.isFile()) continue;
+          if (file.name.endsWith('.jsonl') && !file.name.endsWith('.jsonl.gz')) {
+            try {
+              await fs.promises.unlink(path.join(exchangeDir, file.name));
+              deleted++;
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+
+    if (deleted > 0) {
+      this._logger.info('CexFileRotator: cleaned up incomplete files from previous crash', {
+        deleted,
+        exchanges: exchangeIds,
+      });
+    }
+  }
+
+  /**
    * Останавливает ротатор, удаляет незавершённые файлы текущего окна.
    *
    * @remarks

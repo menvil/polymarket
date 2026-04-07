@@ -76,6 +76,23 @@ export class CexCollectorService {
   }
 
   /**
+   * Удаляет незавершённые `.jsonl` файлы от предыдущего краш-запуска.
+   *
+   * @remarks
+   * Вызывать **до** `start()` — при старте процесса.
+   * Делегирует в `CexFileRotator.cleanup()` передавая список бирж из конфига.
+   *
+   * @example
+   * ```typescript
+   * await cexService.cleanup();
+   * cexService.start();
+   * ```
+   */
+  public async cleanup(): Promise<void> {
+    await this._rotator.cleanup(Object.keys(this._config.exchanges));
+  }
+
+  /**
    * Запускает ротатор файлов и все watcher'ы.
    *
    * @remarks

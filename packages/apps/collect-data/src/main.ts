@@ -79,6 +79,8 @@ if (config.cexConfig) {
     };
     cexService = new CexCollectorService(cexCollectorConfig, logger);
     logger.info('CEX collector configured', { exchanges: Object.keys(exchanges) });
+    // Чистим артефакты от предыдущего краш-запуска до старта
+    await cexService.cleanup();
     // Запускаем сразу — CEX независим от Polymarket инициализации
     cexService.start();
   } catch (err) {

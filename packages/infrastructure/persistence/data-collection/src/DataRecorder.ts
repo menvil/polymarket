@@ -356,32 +356,62 @@ export class DataRecorder implements IMarketDataRecorder {
    * Очищает артефакты от предыдущих запусков.
    *
    * @remarks
-   * Незаконченные файлы рынков теперь удаляются сразу при graceful shutdown.
-   * Файлы оставшиеся от краш-сценариев (SIGKILL) удаляются в `registerMarket()`
-   * при следующем старте через delete-if-exists логику.
+   * ### Два механизма очистки:
    *
-   * Метод оставлен для совместимости и на случай оставшихся .incomplete/ папок
-   * от старых версий коллектора.
+   * 1. **Legacy `.incomplete/`** — папка от старой версии коллектора.
+   *    Удаляется если существует (обратная совместимость).
+   *
+   * 2. **Scan незавершённых `.jsonl`** — основной механизм для краш-сценариев.
+   *    При SIGKILL/OOM graceful shutdown не выполняется, `.jsonl` файлы остаются
+   *    на диске. `cleanup()` вызывается при следующем старте (до создания любых
+   *    новых файлов), поэтому все `.jsonl` на диске гарантированно от упавшего
+   *    прошлого запуска.
+   *
+   * ### Структура сканирования:
+   * - С `sourceSubDir`: `outputDir/YYYY-MM-DD/{sourceSubDir}/*.jsonl`
+   * - Без `sourceSubDir`: `outputDir/YYYY-MM-DD/*.jsonl`
+   *
+   * `.jsonl.gz` не трогаются — это завершённые архивы.
+   *
+   * @remarks
+   * ⚠️ Не запускать два коллектора с одинаковым `outputDir` —
+   * `cleanup()` удалит активные файлы параллельного инстанса.
    */
   public async cleanup(): Promise<void> {
+    // 1. Legacy .incomplete/ (обратная совместимость со старыми версиями)
     const incompleteDir = path.join(this._config.outputDir, '.incomplete');
-    if (!fs.existsSync(incompleteDir)) return;
-
-    const files = await fs.promises.readdir(incompleteDir);
-    for (const file of files) {
+    if (fs.existsSync(incompleteDir)) {
+      const files = await fs.promises.readdir(incompleteDir);
+      for (const file of files) {
+        try {
+          await fs.promises.unlink(path.join(incompleteDir, file));
+        } catch {
+          // ignore
+        }
+      }
       try {
-        await fs.promises.unlink(path.join(incompleteDir, file));
+        await fs.promises.rmdir(incompleteDir);
       } catch {
         // ignore
       }
+      if (files.length > 0) {
+        this._logger.info('Cleaned up legacy .incomplete market files', { count: files.length });
+      }
     }
-    try {
-      await fs.promises.rmdir(incompleteDir);
-    } catch {
-      // ignore
+
+    // 2. Scan незавершённых .jsonl от предыдущего краш-запуска
+    const jsonlFiles = await this._findLeftoverJsonlFiles();
+    for (const filePath of jsonlFiles) {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch {
+        // ignore — файл мог быть удалён между scan и unlink
+      }
     }
-    if (files.length > 0) {
-      this._logger.info('Cleaned up legacy .incomplete market files', { count: files.length });
+    if (jsonlFiles.length > 0) {
+      this._logger.info('Cleaned up incomplete market files from previous crash', {
+        count: jsonlFiles.length,
+      });
     }
   }
 
@@ -415,6 +445,56 @@ export class DataRecorder implements IMarketDataRecorder {
     await this._removeEmptyDateDirs();
 
     this._logger.info('DataRecorder closed');
+  }
+
+  /**
+   * Ищет незавершённые `.jsonl` файлы от предыдущего краш-запуска.
+   *
+   * @returns Массив абсолютных путей к `.jsonl` файлам (без `.gz`)
+   *
+   * @remarks
+   * Сканирует структуру `outputDir/YYYY-MM-DD/[sourceSubDir]/`.
+   * `.jsonl.gz` пропускаются — это завершённые архивы.
+   */
+  private async _findLeftoverJsonlFiles(): Promise<string[]> {
+    const result: string[] = [];
+    if (!fs.existsSync(this._config.outputDir)) return result;
+
+    let dateDirs: fs.Dirent[];
+    try {
+      dateDirs = await fs.promises.readdir(this._config.outputDir, { withFileTypes: true });
+    } catch {
+      return result;
+    }
+
+    for (const dateEntry of dateDirs) {
+      if (!dateEntry.isDirectory()) continue;
+      // Игнорируем .incomplete/ и прочие служебные папки — только YYYY-MM-DD
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEntry.name)) continue;
+
+      const scanDir = this._config.sourceSubDir
+        ? path.join(this._config.outputDir, dateEntry.name, this._config.sourceSubDir)
+        : path.join(this._config.outputDir, dateEntry.name);
+
+      if (!fs.existsSync(scanDir)) continue;
+
+      let files: fs.Dirent[];
+      try {
+        files = await fs.promises.readdir(scanDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const file of files) {
+        if (!file.isFile()) continue;
+        // Только .jsonl без .gz — .jsonl.gz это завершённые архивы
+        if (file.name.endsWith('.jsonl') && !file.name.endsWith('.jsonl.gz')) {
+          result.push(path.join(scanDir, file.name));
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

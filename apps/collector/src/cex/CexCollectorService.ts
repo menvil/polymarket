@@ -88,6 +88,17 @@ export class CexCollectorService {
    * ротатор их игнорирует до выравнивания — данные не теряются,
    * просто первые секунды/минуты до границы не записываются.
    */
+  /**
+   * Удаляет незавершённые `.jsonl` файлы от предыдущего краш-запуска.
+   *
+   * @remarks
+   * Вызывать **до** `start()` — при старте процесса.
+   * Делегирует в `CexFileRotator.cleanup()` передавая список бирж из конфига.
+   */
+  public async cleanup(): Promise<void> {
+    await this._rotator.cleanup(Object.keys(this._config.exchanges));
+  }
+
   public start(): void {
     this._logger.info('CexCollectorService starting', {
       exchanges: Object.keys(this._config.exchanges),

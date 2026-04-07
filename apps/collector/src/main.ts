@@ -177,8 +177,9 @@ try {
     logger.info('Polymarket collector running', { tokenCount: tokenIds.length });
   }
 
-  // CEX: запускаем независимо (выравнивание по 5-мин границе — внутри сервиса)
+  // CEX: чистим артефакты от предыдущего краш-запуска, затем запускаем
   if (cexService) {
+    await cexService.cleanup();
     cexService.start();
     logger.info('CEX collector running', {
       exchanges: Object.keys(cexConfig!.exchanges),
