@@ -444,8 +444,7 @@ export class DataRecorder implements IMarketDataRecorder {
     const marketIds = [...this._writers.keys()];
     this._logger.info('Closing DataRecorder', { activeMarkets: marketIds.length });
 
-    // allSettled — один сбой не отменяет остальные рынки
-    await Promise.allSettled(
+    await Promise.all(
       marketIds.map((id) =>
         this.finalizeMarket(id as unknown as MarketId, 'SHUTDOWN'),
       ),
