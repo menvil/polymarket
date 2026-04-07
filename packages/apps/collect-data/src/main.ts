@@ -660,17 +660,6 @@ async function shutdown(signal: string): Promise<void> {
 
     rtdsClient.disconnect();
     dnsOverride.uninstall();
-
-    // Страховочное сканирование: удаляем любые .jsonl файлы которые
-    // не были удалены через штатный путь (например, stream.end() завершился
-    // с ошибкой до вызова unlink). Тот же механизм что работает при старте.
-    try {
-      await recorder.cleanup();
-    } catch (err) {
-      logger.warn('Error in final cleanup scan', {
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
   } finally {
     clearInterval(keepAlive);
     logger.info('Shutdown complete');
