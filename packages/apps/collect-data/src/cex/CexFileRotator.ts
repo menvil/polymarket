@@ -424,19 +424,28 @@ export class CexFileRotator {
 
   /**
    * Закрывает все WriteStream'ы.
+   *
+   * @remarks
+   * Всегда резолвит — никогда не реджектит.
+   * Ошибка закрытия отдельного стрима не должна ломать весь shutdown.
    */
   private async _closeAllStreams(): Promise<void> {
     await Promise.all(
       [...this._writers.values()].map(
         (writer) =>
-          new Promise<void>((resolve, reject) => {
+          new Promise<void>((resolve) => {
             if (!writer.stream) {
               resolve();
               return;
             }
             writer.stream.end((err?: Error | null) => {
-              if (err) reject(err);
-              else resolve();
+              if (err) {
+                this._logger.warn('Failed to close CEX write stream', {
+                  filePath: writer.filePath,
+                  error: err.message,
+                });
+              }
+              resolve(); // всегда resolve — ошибка не ломает shutdown
             });
             writer.stream = null;
           }),

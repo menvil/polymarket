@@ -631,7 +631,15 @@ async function shutdown(signal: string): Promise<void> {
     }
   }
 
-  if (cexService) await cexService.stop();
+  if (cexService) {
+    try {
+      await cexService.stop();
+    } catch (err) {
+      logger.warn('Error stopping CEX service', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   await recorder.close();
   await ws.disconnect();
   rtdsClient.disconnect();
