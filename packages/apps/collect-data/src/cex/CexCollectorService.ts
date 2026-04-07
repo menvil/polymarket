@@ -89,7 +89,11 @@ export class CexCollectorService {
    * ```
    */
   public async cleanup(): Promise<void> {
-    await this._rotator.cleanup(Object.keys(this._config.exchanges));
+    // Передаём уникальные реальные exchange IDs (не метки конфига)
+    const exchangeIds = [...new Set(
+      Object.entries(this._config.exchanges).map(([key, cfg]) => cfg.exchangeId ?? key),
+    )];
+    await this._rotator.cleanup(exchangeIds);
   }
 
   /**
@@ -146,7 +150,9 @@ export class CexCollectorService {
    * Создаёт и запускает watcher'ы для всех сконфигурированных бирж и символов.
    */
   private _createAndStartWatchers(): void {
-    for (const [exchangeId, exchangeConfig] of Object.entries(this._config.exchanges)) {
+    for (const [configKey, exchangeConfig] of Object.entries(this._config.exchanges)) {
+      // exchangeId — реальное имя биржи в ccxt; configKey — просто метка (может быть 'binance_spot')
+      const exchangeId = exchangeConfig.exchangeId ?? configKey;
       for (const symbol of exchangeConfig.symbols) {
         const watcher = new CcxtSymbolWatcher({
           exchangeId,

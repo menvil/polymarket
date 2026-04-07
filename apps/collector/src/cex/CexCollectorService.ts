@@ -96,7 +96,10 @@ export class CexCollectorService {
    * Делегирует в `CexFileRotator.cleanup()` передавая список бирж из конфига.
    */
   public async cleanup(): Promise<void> {
-    await this._rotator.cleanup(Object.keys(this._config.exchanges));
+    const exchangeIds = [...new Set(
+      Object.entries(this._config.exchanges).map(([key, cfg]) => cfg.exchangeId ?? key),
+    )];
+    await this._rotator.cleanup(exchangeIds);
   }
 
   public start(): void {
@@ -140,7 +143,8 @@ export class CexCollectorService {
    * Создаёт и запускает watcher'ы для всех сконфигурированных бирж и символов.
    */
   private _createAndStartWatchers(): void {
-    for (const [exchangeId, exchangeConfig] of Object.entries(this._config.exchanges)) {
+    for (const [configKey, exchangeConfig] of Object.entries(this._config.exchanges)) {
+      const exchangeId = exchangeConfig.exchangeId ?? configKey;
       for (const symbol of exchangeConfig.symbols) {
         const watcher = new CcxtSymbolWatcher({
           exchangeId,

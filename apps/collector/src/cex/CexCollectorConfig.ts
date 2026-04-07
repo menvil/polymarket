@@ -35,6 +35,24 @@
  */
 export interface CexExchangeConfig {
   /**
+   * ID биржи в ccxt (например `'binance'`, `'okx'`).
+   *
+   * Если не задан — используется ключ из `exchanges` объекта.
+   * Задавать когда нужно собирать несколько типов рынка одной биржи
+   * (spot + futures) — ключи должны быть уникальными, а `exchangeId`
+   * указывает на реальную биржу в ccxt.
+   *
+   * @example
+   * ```json
+   * {
+   *   "binance_spot":    { "exchangeId": "binance", "type": "spot",    ... },
+   *   "binance_futures": { "exchangeId": "binance", "type": "futures", ... }
+   * }
+   * ```
+   */
+  readonly exchangeId?: string;
+
+  /**
    * Тип рынка биржи.
    * - `'spot'` — спотовый рынок
    * - `'futures'` — фьючерсы
