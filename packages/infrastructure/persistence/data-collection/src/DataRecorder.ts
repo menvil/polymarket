@@ -300,10 +300,15 @@ export class DataRecorder implements IMarketDataRecorder {
     }
 
     if (reason === 'SHUTDOWN') {
-      // При shutdown файл всё равно удаляется — флашить и ждать close бессмысленно.
-      // Сразу уничтожаем стрим (не ждём drain, не зависаем) и удаляем файл.
-      try { writer.stream?.destroy(); } catch { /* ignore */ }
-      writer.stream = null;
+      // При shutdown файл удаляется — неполные данные бесполезны.
+      // Ждём события 'close' от stream перед удалением файла — гарантирует освобождение FD.
+      if (writer.stream) {
+        await new Promise<void>((resolve) => {
+          writer.stream!.once('close', () => resolve());
+          writer.stream!.destroy();
+        });
+        writer.stream = null;
+      }
 
       try {
         await fs.promises.unlink(writer.filePath);
