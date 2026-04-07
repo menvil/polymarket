@@ -41,8 +41,21 @@ export interface UserFillResponse {
   /** Идентификатор сделки */
   id: string;
 
-  /** Идентификатор ордера, который был исполнен */
-  order_id: string;
+  /**
+   * ID ордера тейкера.
+   * Реальный Polymarket API возвращает `taker_order_id`, а не `order_id`.
+   * Если пользователь был тейкером — это наш ордер.
+   */
+  taker_order_id?: string;
+
+  /**
+   * ID ордера мейкера.
+   * Если пользователь был мейкером — это наш ордер.
+   */
+  maker_order_id?: string;
+
+  /** Роль пользователя в сделке: 'TAKER' или 'MAKER' */
+  trader_side?: string;
 
   /** Condition ID маркета */
   market: string;
@@ -65,8 +78,17 @@ export interface UserFillResponse {
   /** Ставка комиссии в базисных пунктах */
   fee_rate_bps?: string;
 
-  /** Временная метка исполнения (Unix миллисекунды) */
-  timestamp: number;
+  /**
+   * Timestamp исполнения как Unix epoch в секундах (numeric string): "1775457709".
+   * НЕ ISO строка — требует явной конвертации: `new Date(Number(match_time) * 1000)`.
+   */
+  match_time?: string;
+
+  /** Ордера мейкеров (массив). Используется когда trader_side === 'MAKER'. */
+  maker_orders?: Array<{ order_id: string; matched_amount: string; fee_rate_bps: string }>;
+
+  /** Последнее обновление (Unix epoch, строка) */
+  last_update?: string;
 
   /** Адрес мейкера */
   maker_address?: string;

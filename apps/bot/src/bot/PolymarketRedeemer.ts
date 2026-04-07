@@ -53,6 +53,9 @@ const CTF_INTERFACE = new ethers.Interface([
 /** Polygon RPC по умолчанию (PublicNode — бесплатный, без API key) */
 const DEFAULT_POLYGON_RPC = 'https://polygon-bor-rpc.publicnode.com';
 
+/** Сообщение об ошибке оракула CTF (результат ещё не записан on-chain) */
+const ORACLE_NOT_READY_MSG = 'result for condition not received yet';
+
 // ── Типы ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -97,10 +100,19 @@ export interface RedeemResult {
  */
 export class PolymarketRedeemer {
   private readonly _relayClient: RelayClient;
+  private readonly _provider: ethers.JsonRpcProvider;
+  private readonly _funderAddress: string;
   private readonly _logger: ILogger;
 
-  private constructor(relayClient: RelayClient, logger: ILogger) {
+  private constructor(
+    relayClient: RelayClient,
+    provider: ethers.JsonRpcProvider,
+    funderAddress: string,
+    logger: ILogger,
+  ) {
     this._relayClient = relayClient;
+    this._provider = provider;
+    this._funderAddress = funderAddress;
     this._logger = logger.child({ component: 'PolymarketRedeemer' });
   }
 
@@ -137,7 +149,7 @@ export class PolymarketRedeemer {
       RelayerTxType.PROXY,
     );
 
-    return new PolymarketRedeemer(relayClient, logger);
+    return new PolymarketRedeemer(relayClient, provider, config.funderAddress, logger);
   }
 
   /**
@@ -179,10 +191,12 @@ export class PolymarketRedeemer {
    * indexSets `[1, 2]` — обе стороны binary рынка.
    * Отправляет через Relayer с типом PROXY.
    *
-   * Безопасно вызывать если:
-   * - Рынок ещё не resolved (транзакция revert-нется — noop)
-   * - Нет токенов (0 × $1 = $0 — noop)
-   * - Уже был redeem (токенов нет — noop)
+   * Pre-check перед отправкой:
+   * - Если оракул не готов (`"result for condition not received yet"`) — возвращает
+   *   `{ success: false, error: 'Oracle not ready yet' }` без отправки транзакции.
+   *   AutoRedeemer подхватит клейм когда оракул опубликует результат on-chain
+   *   (Chainlink задерживается до 30-90 мин после истечения рынка).
+   * - Нет токенов / уже claimed — on-chain noop, relayer возвращает reverted receipt.
    */
   public async redeem(conditionId: string): Promise<RedeemResult> {
     const parentCollectionId = ethers.ZeroHash;
@@ -200,6 +214,28 @@ export class PolymarketRedeemer {
         conditionId,
         [1, 2],
       ]);
+
+      // Pre-check: проверяем что оракул уже записал результат on-chain.
+      // Это предотвращает отправку транзакции которая гарантированно упадёт с revert
+      // "result for condition not received yet" — оракул Chainlink ещё не опубликовал
+      // результат в CTF контракт. Chainlink может задерживаться на 30-90 минут после
+      // истечения рынка. AutoRedeemer подхватит клейм когда оракул будет готов.
+      try {
+        await this._provider.estimateGas({
+          to: CTF_ADDRESS,
+          data: calldata,
+          from: this._funderAddress,
+        });
+      } catch (preCheckErr) {
+        const preMsg = preCheckErr instanceof Error ? preCheckErr.message : String(preCheckErr);
+        if (preMsg.includes(ORACLE_NOT_READY_MSG)) {
+          this._logger.info('Oracle not ready — skipping immediate redeem, AutoRedeemer will handle', {
+            conditionId,
+          });
+          return { success: false, error: 'Oracle not ready yet' };
+        }
+        // Другие ошибки estimateGas — продолжаем, relayer сам решит
+      }
 
       const tx = {
         to: CTF_ADDRESS,

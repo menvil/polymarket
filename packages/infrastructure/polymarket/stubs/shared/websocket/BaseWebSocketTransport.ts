@@ -124,6 +124,16 @@ export abstract class BaseWebSocketTransport extends EventEmitter {
           this.emit('error', err);
           if (this._status === 'connecting') {
             reject(err);
+            // Страховка: если onclose не сработает (undici может пропустить close-event
+            // при ошибке TCP/TLS handshake до открытия соединения), планируем reconnect вручную.
+            // Задержка 200ms даёт onclose шанс сработать первым — двойной вызов _handleClose
+            // безопасен (повторный _scheduleReconnect очищает предыдущий таймер).
+            setTimeout(() => {
+              if (this._status !== 'connected' && this._status !== 'reconnecting' && !this._isShuttingDown) {
+                this.logger.debug('onerror fallback: onclose did not fire, scheduling reconnect manually');
+                this._handleClose();
+              }
+            }, 200);
           }
         };
       } catch (err) {

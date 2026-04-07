@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "ccxt": "^4.5.46",
     "@polymarket/logger": "workspace:*",
     "@polymarket/ids": "workspace:*",
     "@polymarket/time": "workspace:*",

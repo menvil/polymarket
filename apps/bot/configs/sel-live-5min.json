@@ -35,7 +35,7 @@
   "recording": {
     "enabled": true,
     "outputDir": "./data/live-recordings",
-    "journalDir": "./data/live-journals",
+    "journalDir": "./data/journals",
     "compression": "gzip"
   }
 }

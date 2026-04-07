@@ -294,7 +294,7 @@ export const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
 /** Дефолтные значения для записи данных */
 export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   enabled: false,
-  outputDir: './data/recordings',
+  outputDir: './data/live-recordings',
   journalDir: './data/journals',
   compression: 'gzip',
 };

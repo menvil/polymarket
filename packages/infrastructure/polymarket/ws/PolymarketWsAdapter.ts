@@ -696,6 +696,22 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         err: err instanceof Error ? err : new Error(String(err)),
         tokenCount: this._subscribedTokens.size,
       });
+      // Гарантированный retry-connect через 3s — страховка на случай если BaseWebSocket
+      // не запланирует reconnect самостоятельно (onclose не сработал при ошибке handshake).
+      // Подписка уже обновлена в кэше BaseWebSocket — просто переподключаемся.
+      if (!this._isDestroyed) {
+        setTimeout(() => {
+          if (this._isDestroyed || this._isConnected) return;
+          this._logger.info('[PolymarketWsAdapter] Forcing reconnect after subscription-change failure', {
+            tokenCount: this._subscribedTokens.size,
+          });
+          this._client.connect().catch((retryErr) => {
+            this._logger.warn('[PolymarketWsAdapter] Forced reconnect also failed (BaseWebSocket will retry)', {
+              err: retryErr instanceof Error ? retryErr.message : String(retryErr),
+            });
+          });
+        }, 3_000);
+      }
     } finally {
       this._reconnectForSubscriptionPending = false;
     }

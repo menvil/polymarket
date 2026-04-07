@@ -1,21 +1,37 @@
 /**
- * Точка входа сервиса сбора рыночных данных Polymarket.
+ * Точка входа сервиса сбора рыночных данных.
  *
  * @remarks
- * Читает конфигурацию из переменных окружения, создаёт `CollectorService`
- * и управляет его жизненным циклом (SIGINT/SIGTERM → graceful shutdown).
+ * Запускает два независимых коллектора в одном процессе:
  *
- * ### Переменные окружения:
+ * 1. **Polymarket коллектор** (`CollectorService`) — WS подписка на ордербуки
+ *    Polymarket, запись в `outputDir/YYYY-MM-DD/polymarket/{market}.jsonl`
+ *
+ * 2. **CEX коллектор** (`CexCollectorService`) — ccxt.pro подписка на
+ *    ордербуки и трейды CEX бирж, запись в
+ *    `outputDir/YYYY-MM-DD/{exchange}/{symbol}__{HHMM}.jsonl(.gz)`
+ *    с ротацией по 5-минутным UTC-окнам.
+ *
+ * ### Переменные окружения (Polymarket):
+ * - `TOKEN_IDS` — список token ID через запятую
+ * - `WS_URL` — Polymarket WS endpoint (опционально)
+ *
+ * ### Переменные окружения (CEX):
+ * - `CEX_CONFIG` — JSON строка конфигурации бирж (опционально)
+ *   Пример: `'{"binance":{"type":"spot","symbols":["BTC/USDT"],"orderbook":true,"trades":true}}'`
+ * - `CEX_COMPRESSION` — `'none'` | `'gzip'` (по умолчанию: совпадает с COMPRESSION)
+ *
+ * ### Общие переменные:
  * - `OUTPUT_DIR` — директория для записи файлов (по умолчанию: `./data`)
  * - `COMPRESSION` — режим сжатия: `none` | `gzip` (по умолчанию: `none`)
- * - `TOKEN_IDS` — список token ID через запятую (обязательно для подписки)
- * - `WS_URL` — Polymarket WS endpoint (по умолчанию: официальный market-channel)
- * - `BUFFER_SIZE` — количество событий в буфере (по умолчанию: 100)
- * - `FLUSH_INTERVAL_MS` — интервал сброса буфера в мс (по умолчанию: 10000)
  *
  * @example
  * ```bash
- * TOKEN_IDS="0xabc,0xdef" OUTPUT_DIR=./data node --loader ts-node/esm src/main.ts
+ * # Polymarket + Binance BTC/USDT
+ * TOKEN_IDS="0xabc" \
+ * CEX_CONFIG='{"binance":{"type":"spot","symbols":["BTC/USDT"],"orderbook":true,"trades":true,"obDepth":10}}' \
+ * OUTPUT_DIR=./data \
+ * node --loader ts-node/esm src/main.ts
  * ```
  */
 
@@ -25,18 +41,35 @@ import { PolymarketWebSocketManager } from '@polymarket/exchange/ws';
 import { PolymarketWsAdapter } from '@polymarket/exchange/ws';
 import { CollectorService } from './CollectorService.js';
 import type { CollectorConfig } from './CollectorConfig.js';
+import { CexCollectorService } from './cex/CexCollectorService.js';
+import type { CexCollectorConfig } from './cex/CexCollectorConfig.js';
 
 /** Официальный Polymarket market-channel WebSocket URL */
 const DEFAULT_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-// ── Считываем конфигурацию из переменных окружения ────────────────────────────
+// ── Инициализация логгера ─────────────────────────────────────────────────────
+
+const clock = new LiveClock();
+const logger = new ConsoleLogger(clock, LogLevel.INFO);
+
+// ── Общие настройки ───────────────────────────────────────────────────────────
+
+// Корневая директория данных — все источники пишут сюда
+// Polymarket: outputDir/snapshots/YYYY-MM-DD/polymarket/
+// CEX:        outputDir/snapshots/YYYY-MM-DD/{exchange}/
+// По умолчанию outputDir=. чтобы data/ создавалась рядом с процессом
+const outputDir = process.env['OUTPUT_DIR'] ?? '.';
+const compression = (process.env['COMPRESSION'] as 'none' | 'gzip') ?? 'none';
+
+// ── Polymarket конфиг ─────────────────────────────────────────────────────────
 
 const tokenIdsRaw = process.env['TOKEN_IDS'] ?? '';
 const tokenIds = tokenIdsRaw.split(',').filter(Boolean);
 
-const config: CollectorConfig = {
-  outputDir: process.env['OUTPUT_DIR'] ?? './data',
-  compression: (process.env['COMPRESSION'] as 'none' | 'gzip') ?? 'none',
+const polymarketConfig: CollectorConfig = {
+  outputDir: `${outputDir}/data/snapshots`,
+  sourceSubDir: 'polymarket',
+  compression,
   bufferSize: process.env['BUFFER_SIZE'] ? Number(process.env['BUFFER_SIZE']) : undefined,
   flushIntervalMs: process.env['FLUSH_INTERVAL_MS']
     ? Number(process.env['FLUSH_INTERVAL_MS'])
@@ -45,45 +78,79 @@ const config: CollectorConfig = {
   tokenIds,
 };
 
-// ── Инициализация логгера ─────────────────────────────────────────────────────
+// ── CEX конфиг ────────────────────────────────────────────────────────────────
 
-const clock = new LiveClock();
-const logger = new ConsoleLogger(clock, LogLevel.INFO);
+/**
+ * Парсит CEX конфигурацию из переменной окружения CEX_CONFIG.
+ *
+ * @returns CexCollectorConfig или null если CEX_CONFIG не задан
+ */
+function parseCexConfig(): CexCollectorConfig | null {
+  const cexConfigRaw = process.env['CEX_CONFIG'];
+  if (!cexConfigRaw) return null;
 
-logger.info('Collector starting', {
-  outputDir: config.outputDir,
-  compression: config.compression,
-  tokenCount: config.tokenIds.length,
-  wsUrl: config.wsUrl,
-});
-
-if (config.tokenIds.length === 0) {
-  logger.warn('TOKEN_IDS is empty — no tokens will be tracked', {});
+  try {
+    const exchanges = JSON.parse(cexConfigRaw);
+    const config: CexCollectorConfig = {
+      exchanges,
+      outputDir: `${outputDir}/data/snapshots`,
+      compression: (process.env['CEX_COMPRESSION'] as 'none' | 'gzip') ?? compression,
+      windowMinutes: process.env['CEX_WINDOW_MINUTES']
+        ? Number(process.env['CEX_WINDOW_MINUTES'])
+        : undefined,
+    };
+    return config;
+  } catch (err) {
+    logger.error('Failed to parse CEX_CONFIG — CEX collector disabled', {
+      err: err instanceof Error ? err : new Error(String(err)),
+      cexConfigRaw: cexConfigRaw.slice(0, 100),
+    });
+    return null;
+  }
 }
 
-// ── Создаём WS инфраструктуру ─────────────────────────────────────────────────
+const cexConfig = parseCexConfig();
 
+// ── Логируем план ─────────────────────────────────────────────────────────────
+
+logger.info('Collector starting', {
+  outputDir,
+  compression,
+  polymarketTokens: tokenIds.length,
+  cexEnabled: cexConfig !== null,
+  cexExchanges: cexConfig ? Object.keys(cexConfig.exchanges) : [],
+});
+
+if (tokenIds.length === 0 && !cexConfig) {
+  logger.warn('Nothing to collect: TOKEN_IDS is empty and CEX_CONFIG is not set');
+}
+
+// ── Создаём сервисы ───────────────────────────────────────────────────────────
+
+// Polymarket WS инфраструктура
 const wsManager = new PolymarketWebSocketManager(
-  { url: config.wsUrl ?? DEFAULT_WS_URL },
+  { url: polymarketConfig.wsUrl ?? DEFAULT_WS_URL },
   logger,
 );
 const wsAdapter = new PolymarketWsAdapter(wsManager, logger);
 
-// ── Создаём сервис сбора данных ───────────────────────────────────────────────
-
-const service = new CollectorService(wsAdapter, config, logger);
+const polymarketService = new CollectorService(wsAdapter, polymarketConfig, logger);
+const cexService = cexConfig ? new CexCollectorService(cexConfig, logger) : null;
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 
 /**
- * Выполняет graceful shutdown: останавливает сервис и отключает WS.
+ * Выполняет graceful shutdown: останавливает все сервисы.
  *
  * @param signal - Имя сигнала (SIGINT или SIGTERM)
  */
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down`);
   try {
-    await service.stop();
+    if (cexService) {
+      await cexService.stop();
+    }
+    await polymarketService.stop();
     await wsAdapter.disconnect();
     logger.info('Shutdown complete');
   } catch (err) {
@@ -100,16 +167,23 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 // ── Запуск ────────────────────────────────────────────────────────────────────
 
 try {
-  // Подписываемся на токены до запуска сервиса
-  for (const tokenId of config.tokenIds) {
-    await wsAdapter.subscribeToToken(tokenId);
+  // Polymarket: подписываемся на токены и запускаем
+  if (tokenIds.length > 0) {
+    for (const tokenId of tokenIds) {
+      await wsAdapter.subscribeToToken(tokenId);
+    }
+    polymarketService.start();
+    await wsAdapter.connect();
+    logger.info('Polymarket collector running', { tokenCount: tokenIds.length });
   }
 
-  // Запускаем маршрутизацию (регистрирует рынки, подписывается на WS-события)
-  service.start();
-
-  // Подключаемся к WebSocket (инициирует соединение и переподписки)
-  await wsAdapter.connect();
+  // CEX: запускаем независимо (выравнивание по 5-мин границе — внутри сервиса)
+  if (cexService) {
+    cexService.start();
+    logger.info('CEX collector running', {
+      exchanges: Object.keys(cexConfig!.exchanges),
+    });
+  }
 
   logger.info('Collector is running — press Ctrl+C to stop');
 } catch (err) {

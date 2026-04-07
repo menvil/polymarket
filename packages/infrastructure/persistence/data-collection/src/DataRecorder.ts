@@ -445,20 +445,40 @@ export class DataRecorder implements IMarketDataRecorder {
 
   /**
    * Строит путь к файлу для рынка.
-   * Формат: `outputDir/YYYY-MM-DD/{sanitizedQuestion}___{marketId}.{ext}`
+   * Формат: `outputDir/YYYY-MM-DD/{sourceSubDir?}/polymarket_{sanitizedQuestion_with_year}___{marketId}.{ext}`
    *
    * @param meta - Метаданные рынка
    * @returns Абсолютный путь к файлу
+   *
+   * @remarks
+   * Год вставляется прямо перед датой в вопросе: паттерн `_-_` (из ` - `) заменяется на `_-{YYYY}_`.
+   * Пример: `Bitcoin_Up_or_Down_-_March_22` → `Bitcoin_Up_or_Down_-2026_March_22`
+   *
+   * @example
+   * ```typescript
+   * // question = "Will Bitcoin go up or down - March 22 1:30PM-1:45PM ET?"
+   * // → 'snapshots/2026-03-22/polymarket/polymarket_Bitcoin_Up_or_Down_-2026_March_22_130PM-145PM_ET___0xabc.jsonl'
+   * ```
    */
   private _buildFilePath(meta: MarketMeta): string {
-    const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const now  = new Date();
+    const date = now.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const year = now.getUTCFullYear();
     const safeQuestion = meta.question
       .replace(/[^\w\s-]/g, '')   // оставляем буквы, цифры, дефис, пробелы
       .replace(/\s+/g, '_')       // пробелы → _
       .slice(0, 80);              // ограничение длины
+    // Вставляем год перед датой: "Bitcoin_Up_or_Down_-_March_22" → "Bitcoin_Up_or_Down_-2026_March_22"
+    // Паттерн "_-_" возникает из " - " в вопросах вида "... up or down - March 22 ..."
+    const safeQuestionWithYear = safeQuestion.includes('_-_')
+      ? safeQuestion.replace('_-_', `_-${year}_`)
+      : `${safeQuestion}_${year}`;
     const marketId = String(meta.marketId).slice(0, 40);
-    const fileName = `${safeQuestion}___${marketId}.${this._formatter.extension}`;
-    return path.join(this._config.outputDir, date, fileName);
+    const fileName = `polymarket_${safeQuestionWithYear}___${marketId}.${this._formatter.extension}`;
+    const segments = [this._config.outputDir, date];
+    if (this._config.sourceSubDir) segments.push(this._config.sourceSubDir);
+    segments.push(fileName);
+    return path.join(...segments);
   }
 
   /**

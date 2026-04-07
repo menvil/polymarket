@@ -64,4 +64,11 @@ export interface CollectorConfig {
    * Каждый token ID — это YES или NO outcome token конкретного рынка.
    */
   readonly tokenIds: readonly string[];
+
+  /**
+   * Поддиректория источника внутри date-папки.
+   * @defaultValue `'polymarket'`
+   * @example `'polymarket'` → `outputDir/YYYY-MM-DD/polymarket/`
+   */
+  readonly sourceSubDir?: string;
 }

@@ -133,6 +133,7 @@ export class CollectorService {
     this._recorder = new DataRecorder(
       {
         outputDir: _config.outputDir,
+        sourceSubDir: _config.sourceSubDir ?? 'polymarket',
         bufferSize: _config.bufferSize ?? 100,
         flushIntervalMs: _config.flushIntervalMs ?? 10_000,
         compression: _config.compression,

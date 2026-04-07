@@ -39,6 +39,8 @@ import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import type { MarketId } from '@polymarket/ids';
 import { loadConfig } from './config.js';
+import { CexCollectorService } from './cex/CexCollectorService.js';
+import type { CexCollectorConfig } from './cex/CexCollectorConfig.js';
 
 // ─── Запуск ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +63,30 @@ logger.info('Starting Polymarket data collector', {
   maxMarkets:  config.maxMarkets,
   compression: config.compression,
   wsUrl:       config.wsUrl,
+  cexEnabled:  config.cexConfig !== null,
 });
+
+// ─── CEX коллектор (опционально) ────────────────────────────────────────────
+let cexService: CexCollectorService | null = null;
+
+if (config.cexConfig) {
+  try {
+    const exchanges = JSON.parse(config.cexConfig) as CexCollectorConfig['exchanges'];
+    const cexCollectorConfig: CexCollectorConfig = {
+      exchanges,
+      outputDir: config.outputDir,
+      compression: config.compression,
+    };
+    cexService = new CexCollectorService(cexCollectorConfig, logger);
+    logger.info('CEX collector configured', { exchanges: Object.keys(exchanges) });
+    // Запускаем сразу — CEX независим от Polymarket инициализации
+    cexService.start();
+  } catch (err) {
+    logger.error('Failed to parse CEX_CONFIG — CEX collector disabled', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 // ─── DNS Override ─────────────────────────────────────────────────────────────
 // Опционально: патчим dns.lookup ДО любых сетевых вызовов.
@@ -92,6 +117,7 @@ if (config.dnsOverrideEnabled) {
 const recorder = new DataRecorder(
   {
     outputDir:      config.outputDir,
+    sourceSubDir:   config.sourceSubDir,
     bufferSize:     config.bufferSize,
     flushIntervalMs: config.flushIntervalMs,
     compression:    config.compression,
@@ -549,6 +575,9 @@ async function checkExpiredMarkets(): Promise<void> {
 
 let isShuttingDown = false;
 let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let expiryInterval: ReturnType<typeof setInterval> | null = null;
+let enrichmentInterval: ReturnType<typeof setInterval> | null = null;
+let closedMarketsCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
@@ -557,9 +586,9 @@ async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down...`);
 
   if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
-  clearInterval(expiryInterval);
-  clearInterval(enrichmentInterval);
-  clearInterval(closedMarketsCleanupInterval);
+  if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+  if (enrichmentInterval) { clearInterval(enrichmentInterval); enrichmentInterval = null; }
+  if (closedMarketsCleanupInterval) { clearInterval(closedMarketsCleanupInterval); closedMarketsCleanupInterval = null; }
 
   // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
   // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
@@ -595,6 +624,7 @@ async function shutdown(signal: string): Promise<void> {
     }
   }
 
+  if (cexService) await cexService.stop();
   await recorder.close();
   await ws.disconnect();
   rtdsClient.disconnect();
@@ -642,6 +672,7 @@ logger.info('Feed started, collecting data', {
   markets: subscribedMarkets.size,
 });
 
+
 // Процесс 1: обновление кэша дискавери (пауза ПОСЛЕ завершения).
 // Не знает о слотах — просто обновляет кэш каждые ~30с.
 async function scheduleScanLoop(): Promise<void> {
@@ -655,17 +686,17 @@ scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, config.marketScan
 
 // Процесс 2: закрытие истёкших + заполнение слотов из кэша (каждые 5 сек).
 // Не знает о сканировании — только читает кэш и управляет слотами.
-const expiryInterval = setInterval(() => {
+expiryInterval = setInterval(() => {
   void checkExpiredMarkets();
 }, 5_000);
 
 // Background enrichment: проверяем priceToBeat каждые 30 сек
-const enrichmentInterval = setInterval(() => {
+enrichmentInterval = setInterval(() => {
   void processEnrichmentQueue();
 }, ENRICHMENT_INTERVAL_MS);
 
 // Очистка closedMarkets от записей старше 24ч (каждый час)
-const closedMarketsCleanupInterval = setInterval(() => {
+closedMarketsCleanupInterval = setInterval(() => {
   const now = Date.now();
   let removed = 0;
   for (const [key, closedAt] of closedMarkets) {

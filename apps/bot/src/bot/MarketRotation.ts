@@ -567,13 +567,18 @@ export class MarketRotation {
       }
 
       this.activeMarkets.set(tStr, slot);
-      await wsAdapter.subscribeToToken(tStr);
 
+      // Сначала регистрируем в marketCatalog, ПОТОМ подписываемся на WS.
+      // BookUpdateHandler.handleSnapshot() дропает снапшоты для незарегистрированных токенов.
+      // WS присылает первый book snapshot сразу после подписки — если catalog пустой, snapshot теряется.
+      // На неактивных рынках следующего snapshot не будет → ewma:null на весь маркет.
       const ok = await this.registerMarketAndStrategy(slot);
       if (!ok) {
         this.activeMarkets.delete(tStr);
         continue;
       }
+
+      await wsAdapter.subscribeToToken(tStr);
 
       // Live: сверяем ордера с биржей
       if (orderReconciler) {

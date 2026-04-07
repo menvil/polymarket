@@ -263,18 +263,29 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         const userFills = await this._userTradesClient.getUserFills({ limit: 100 });
         trades = userFills.map(f => ({
           id: f.id,
-          order_id: f.order_id,
+          // Polymarket API возвращает taker_order_id/maker_order_id, не order_id.
+          // Если пользователь был TAKER — его ордер в taker_order_id.
+          // Если MAKER — в maker_order_id.
+          order_id: f.trader_side === 'MAKER' ? f.maker_order_id : f.taker_order_id,
           market: f.market,
           asset_id: f.asset_id,
           side: f.side,
           price: f.price,
           size: f.size,
           fee_rate_bps: f.fee_rate_bps,
-          trader_side: undefined,
-          // timestamp может быть в секундах (10 цифр) или миллисекундах (13 цифр)
-          match_time: f.timestamp
-            ? new Date(f.timestamp < 1e12 ? f.timestamp * 1000 : f.timestamp).toISOString()
-            : undefined,
+          trader_side: f.trader_side,
+          // Polymarket API возвращает match_time как numeric string (Unix секунды): "1775457709".
+          // Date.parse() не понимает такой формат — нужно конвертировать явно.
+          // Fallback на числовой timestamp если match_time отсутствует.
+          match_time: (() => {
+            const raw = f.match_time;
+            if (!raw) return undefined;
+            const numVal = Number(raw);
+            if (!isNaN(numVal) && numVal > 0) {
+              return new Date(numVal < 1e12 ? numVal * 1000 : numVal).toISOString();
+            }
+            return raw; // уже ISO строка — возвращаем как есть
+          })(),
           status: 'CONFIRMED', // user trades endpoint возвращает confirmed fills
         }));
         this._logger.info('User fills retrieved via L2 auth', { count: trades.length });

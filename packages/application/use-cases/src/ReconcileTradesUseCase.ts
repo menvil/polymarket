@@ -121,11 +121,10 @@ export class ReconcileTradesUseCase {
 
     this._logger.debug('Reconciliation: processing trades', { count: trades.length });
 
-    // Шаг 2: Обработать каждый trade (макс 50 за цикл чтобы не блокировать event loop)
-    const maxPerCycle = 50;
-    let processed = 0;
+    // Шаг 2: Обработать все trades за один цикл.
+    // Лимит убран: API возвращает ~97-300 trades, все async, не блокируют event loop.
+    // Лимит 50 вызывал баг: первые 50 всегда skipped → оставшиеся никогда не достигались.
     for (const trade of trades) {
-      if (processed >= maxPerCycle) break;
       const fillIdStr = String(trade.fillId);
 
       // Фильтрация по on-chain статусу.
@@ -150,7 +149,6 @@ export class ReconcileTradesUseCase {
 
       // Проверка idempotency — markIfNotExists атомарна
       const isNew = await this._deps.processedFillRepo.markIfNotExists(trade.fillId);
-      processed++;
 
       if (!isNew) {
         skippedCount++;

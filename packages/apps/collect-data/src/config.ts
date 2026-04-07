@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 /**
  * Конфигурация скрипта сбора данных.
  *
@@ -56,8 +58,14 @@ export interface CollectorConfig {
   /** Интервал пересканирования рынков (мс) */
   readonly marketScanPauseMs: number;
 
-  /** Директория для записи снапшотов */
+  /** Директория для записи снапшотов (например `./data/snapshots`) */
   readonly outputDir: string;
+
+  /**
+   * Поддиректория источника внутри date-папки.
+   * @example `'polymarket'` → `data/snapshots/YYYY-MM-DD/polymarket/`
+   */
+  readonly sourceSubDir: string;
 
   /** Сжатие файла при финализации */
   readonly compression: 'none' | 'gzip';
@@ -67,6 +75,13 @@ export interface CollectorConfig {
 
   /** Интервал периодического сброса буфера (мс) */
   readonly flushIntervalMs: number;
+
+  /**
+   * JSON-конфигурация CEX бирж (опционально).
+   * Если не задан — CEX коллектор не запускается.
+   * @example `'{"binance":{"type":"spot","symbols":["BTC/USDT"],"orderbook":true,"trades":true}}'`
+   */
+  readonly cexConfig: string | null;
 }
 
 /**
@@ -100,6 +115,22 @@ export function loadConfig(): CollectorConfig {
     return val.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   }
 
+  /**
+   * Читает CEX конфиг: сначала ищет CEX_CONFIG_FILE (JSON файл),
+   * затем CEX_CONFIG (inline JSON строка). Возвращает null если не задан.
+   */
+  function parseCexConfig(): string | null {
+    const filePath = process.env['CEX_CONFIG_FILE'];
+    if (filePath) {
+      try {
+        return readFileSync(filePath, 'utf-8').trim();
+      } catch (err) {
+        throw new Error(`Cannot read CEX_CONFIG_FILE="${filePath}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return process.env['CEX_CONFIG'] ?? null;
+  }
+
   function parseCompression(name: string): 'none' | 'gzip' {
     const val = optional(name, 'none');
     if (val !== 'none' && val !== 'gzip') {
@@ -121,7 +152,9 @@ export function loadConfig(): CollectorConfig {
     anyOfKeywords:        parseKeywords('MARKET_DISCOVERY_ANY_OF_KEYWORDS'),
     excludedKeywords:     parseKeywords('MARKET_DISCOVERY_EXCLUDED_KEYWORDS'),
     marketScanPauseMs:    optionalNumber('MARKET_SCAN_PAUSE_MS', 30_000),
-    outputDir:            optional('DATA_COLLECTION_OUTPUT_DIR', './snapshots'),
+    outputDir:            optional('DATA_COLLECTION_OUTPUT_DIR', './data/snapshots'),
+    sourceSubDir:         optional('DATA_COLLECTION_SOURCE_SUBDIR', 'polymarket'),
+    cexConfig:            parseCexConfig(),
     compression:          parseCompression('DATA_COLLECTION_COMPRESSION'),
     bufferSize:           optionalNumber('DATA_COLLECTION_BUFFER_SIZE', 100),
     flushIntervalMs:      optionalNumber('DATA_COLLECTION_FLUSH_INTERVAL_MS', 10_000),

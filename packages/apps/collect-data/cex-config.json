@@ -1,0 +1,42 @@
+{
+  "binance": {
+    "type": "spot",
+    "symbols": ["BTC/USD"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 10,
+    "restartIntervalMs": 7200000
+  },
+  "coinbase": {
+    "type": "spot",
+    "symbols": ["BTC/USD"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 10,
+    "restartIntervalMs": 7200000
+  },
+  "kraken": {
+    "type": "spot",
+    "symbols": ["BTC/USD"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 10,
+    "restartIntervalMs": 7200000
+  },
+  "cryptocom": {
+    "type": "spot",
+    "symbols": ["BTC/USD"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 10,
+    "restartIntervalMs": 7200000
+  },
+  "okx": {
+    "type": "spot",
+    "symbols": ["BTC/USD"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 10,
+    "restartIntervalMs": 7200000
+  }
+}
