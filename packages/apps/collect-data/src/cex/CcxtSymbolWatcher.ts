@@ -175,13 +175,22 @@ export class CcxtSymbolWatcher {
 
         // watch: блокирует до обновления, stale timeout защищает от зависания
         // fetch: возвращает сразу, ccxt (enableRateLimit=true) сам держит паузу
+        //
+        // ВАЖНО: stale promise помечается .catch(()=>{}) чтобы предотвратить
+        // unhandled rejection. Когда watchOrderBook выигрывает гонку, stale promise
+        // остаётся висеть и через 30с отклоняется без обработчика — это приводит к
+        // unhandledRejection и досрочному process.exit(1) в Node.js 15+.
         const ob = useWatch
-          ? await Promise.race([
-              instance.watchOrderBook(this._params.symbol, this._params.depth),
-              new Promise<never>((_, reject) =>
+          ? await (() => {
+              const stale = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS)
-              ),
-            ])
+              );
+              stale.catch(() => {}); // подавляем orphaned rejection
+              return Promise.race([
+                instance.watchOrderBook(this._params.symbol, this._params.depth),
+                stale,
+              ]);
+            })()
           : await instance.fetchOrderBook(this._params.symbol, this._params.depth);
 
         if (!ob.bids.length || !ob.asks.length) continue;
@@ -239,11 +248,13 @@ export class CcxtSymbolWatcher {
           continue;
         }
 
+        const stale = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Trades stale: no update in 30s')), STALE_TIMEOUT_MS)
+        );
+        stale.catch(() => {}); // подавляем orphaned rejection
         const trades = await Promise.race([
           instance.watchTrades(this._params.symbol),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Trades stale: no update in 30s')), STALE_TIMEOUT_MS)
-          ),
+          stale,
         ]);
 
         for (const trade of trades) {

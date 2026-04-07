@@ -182,6 +182,12 @@ async function shutdown(signal: string): Promise<void> {
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
+process.on('unhandledRejection', (reason) => {
+  logger.warn('Unhandled promise rejection (suppressed to allow clean shutdown)', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
+});
+
 // ── Запуск ────────────────────────────────────────────────────────────────────
 
 try {

@@ -670,6 +670,15 @@ async function shutdown(signal: string): Promise<void> {
 process.on('SIGINT',  () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
+// Подавляем автоматический process.exit(1) от unhandled rejections во время shutdown.
+// Источник: orphaned stale-timeout promises из CcxtSymbolWatcher — когда watchOrderBook
+// выигрывает Promise.race, stale timeout остаётся без обработчика и стреляет через 30с.
+process.on('unhandledRejection', (reason) => {
+  logger.warn('Unhandled promise rejection (suppressed to allow clean shutdown)', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
+});
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 // Удаляем незавершённые файлы от предыдущего запуска
