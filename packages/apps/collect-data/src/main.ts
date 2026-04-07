@@ -361,8 +361,8 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
   }
   subscribedMarkets.set(marketKey, candidate);
 
-  // Если startsAt не задан (старые рынки без events[0].startDate) — записываем сразу
-  const startsAt = candidate.startsAt ?? Timestamp.of(new Decimal(Date.now()));
+  // startsAt = момент вызова openMarket() — начинаем запись СЕЙЧАС при переключении на рынок
+  const startsAt = Timestamp.of(new Decimal(Date.now()));
 
   recorder.registerMarket({
     marketId:  candidate.marketId,
