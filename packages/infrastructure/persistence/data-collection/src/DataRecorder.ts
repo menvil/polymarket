@@ -301,16 +301,25 @@ export class DataRecorder implements IMarketDataRecorder {
 
     await this._flushWriter(writer);
 
-    await new Promise<void>((resolve, reject) => {
-      if (!writer.stream) {
-        resolve();
-        return;
-      }
-      writer.stream.end((err?: Error | null) => {
-        if (err) reject(err);
-        else resolve();
+    // Закрываем стрим. При ошибке force-destroy чтобы освободить file handle.
+    // Не бросаем — unlink должен выполниться даже если close не удался.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        if (!writer.stream) { resolve(); return; }
+        writer.stream.end((err?: Error | null) => {
+          if (err) reject(err);
+          else resolve();
+        });
       });
-    });
+    } catch (err) {
+      this._logger.warn('Error closing write stream, destroying', {
+        marketId: key,
+        filePath: writer.filePath,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      try { writer.stream?.destroy(); } catch { /* ignore */ }
+      writer.stream = null;
+    }
 
     if (reason === 'EXPIRED') {
       // Рынок истёк — данные валидны, сжимаем если включено
@@ -435,7 +444,8 @@ export class DataRecorder implements IMarketDataRecorder {
     const marketIds = [...this._writers.keys()];
     this._logger.info('Closing DataRecorder', { activeMarkets: marketIds.length });
 
-    await Promise.all(
+    // allSettled — один сбой не отменяет остальные рынки
+    await Promise.allSettled(
       marketIds.map((id) =>
         this.finalizeMarket(id as unknown as MarketId, 'SHUTDOWN'),
       ),
