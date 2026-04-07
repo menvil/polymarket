@@ -240,6 +240,11 @@ export class CexFileRotator {
    * @remarks
    * Незавершённые `.jsonl` файлы (без gzip) — неполные данные, удаляем.
    * Завершённые `.jsonl.gz` файлы уже записаны, не трогаем.
+   *
+   * Теперь **асинхронный** метод: ждём закрытия всех stream'ов перед удалением файлов.
+   * Это гарантирует что файловые дескрипторы освобождены в ОС перед `unlink()`.
+   *
+   * @returns Promise который резолвится после удаления всех незавершённых файлов
    */
   public async close(): Promise<void> {
     this._logger.info('CexFileRotator closing — deleting incomplete window files');
@@ -255,27 +260,42 @@ export class CexFileRotator {
 
     this._active = false;
 
-    // При close (shutdown) файлы всё равно удаляются — не ждём drain, сразу destroy.
-    // Это предотвращает зависание если стрим находится в errored-состоянии.
-    let deleted = 0;
-    for (const writer of this._writers.values()) {
-      try { writer.stream?.destroy(); } catch { /* ignore */ }
-      writer.stream = null;
-
-      try {
-        if (fs.existsSync(writer.filePath)) {
-          await fs.promises.unlink(writer.filePath);
-          deleted++;
-        }
-      } catch (err) {
-        this._logger.warn('Failed to delete incomplete CEX file', {
-          filePath: writer.filePath,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
+    // Снимаем snapshot путей до любых операций — защита от конкурентного _writers.clear()
+    const writersSnapshot = [...this._writers.values()];
     this._writers.clear();
+
+    // Шаг 1: закрываем все stream'ы и ЖДЁМ пока они реально закроются
+    await Promise.all(
+      writersSnapshot.map((writer) =>
+        new Promise<void>((resolve) => {
+          if (!writer.stream) {
+            resolve();
+            return;
+          }
+          // destroy() закрывает stream немедленно, событие 'close' гарантирует освобождение FD
+          writer.stream.once('close', () => resolve());
+          writer.stream.destroy();
+        }),
+      ),
+    );
+
+    // Шаг 2: теперь безопасно удаляем файлы (FD освобождены)
+    let deleted = 0;
+    await Promise.all(
+      writersSnapshot.map(async (writer) => {
+        try {
+          if (fs.existsSync(writer.filePath)) {
+            await fs.promises.unlink(writer.filePath);
+            deleted++;
+          }
+        } catch (err) {
+          this._logger.warn('Failed to delete incomplete CEX file', {
+            filePath: writer.filePath,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }),
+    );
 
     this._logger.info('CexFileRotator closed', { deletedFiles: deleted });
   }

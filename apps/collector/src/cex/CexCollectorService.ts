@@ -129,7 +129,7 @@ export class CexCollectorService {
       watcher.stop();
     }
 
-    // Закрываем ротатор (удаляет незавершённые файлы)
+    // Закрываем ротатор (удаляет незавершённые файлы) — теперь асинхронно
     await this._rotator.close();
 
     this._watchers.length = 0;
