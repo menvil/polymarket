@@ -134,40 +134,6 @@ export class DataRecorder implements IMarketDataRecorder {
     const filePath = this._buildFilePath(meta);
 
     try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-      // Если файл уже существует от предыдущего запуска — удаляем.
-      // Это предотвращает дублирование meta-записей при повторном старте без graceful shutdown.
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        this._logger.warn('Existing market file deleted (previous run, no graceful shutdown)', {
-          marketId: key,
-          filePath,
-        });
-      }
-
-      // Синхронно записываем meta-событие: файл гарантированно появляется на диске
-      // до создания WriteStream. Это позволяет тестам и мониторингу сразу видеть файл.
-      const metaRecord: Record<string, unknown> = {
-        t: 'meta',
-        ts: Date.now(),
-        marketId: key,
-        question: meta.question,
-        tokenIds: Array.from(meta.tokenIds),
-      };
-      if (meta.rawMarket) {
-        metaRecord['m'] = meta.rawMarket;
-      }
-      const metaLine = this._formatter.formatRecord(metaRecord);
-      fs.writeFileSync(filePath, metaLine, { flag: 'a' });
-
-      // Открываем поток в режиме append после того, как файл создан синхронно
-      const stream = fs.createWriteStream(filePath, { flags: 'a' });
-
-      stream.on('error', (err) => {
-        this._logger.error('Write stream error', { marketId: key, filePath, err });
-      });
-
       // Вычисляем: активен ли рынок сразу или нужно ждать startsAt
       const now = Date.now();
       const hasStartsAt = !!meta.startsAt;
@@ -178,23 +144,22 @@ export class DataRecorder implements IMarketDataRecorder {
         meta,
         filePath,
         buffer: [],
-        stream,
+        stream: null, // НЕ создаём stream до активации
         lastFlushTime: now,
         eventsRecorded: 0,
         active: alreadyStarted,
         activationTimer: null,
       };
 
-      // Если рынок ещё не начался — планируем активацию на startsAt
-      if (hasStartsAt && !alreadyStarted) {
+      // Если рынок уже начался — создаём файл и stream сразу
+      if (alreadyStarted) {
+        this._activateMarket(writer);
+      } else if (hasStartsAt) {
+        // Рынок ещё не начался — планируем активацию на startsAt
         const delayMs = startsAtMs - now;
         writer.activationTimer = setTimeout(() => {
-          writer.active = true;
+          this._activateMarket(writer);
           writer.activationTimer = null;
-          this._logger.info('Market recording activated (startsAt reached)', {
-            marketId: key,
-            startsAt: new Date(startsAtMs).toISOString(),
-          });
         }, delayMs);
 
         // unref чтобы таймер не удерживал процесс при shutdown
@@ -206,13 +171,6 @@ export class DataRecorder implements IMarketDataRecorder {
           startsAt: new Date(startsAtMs).toISOString(),
           delayMs,
         });
-      } else {
-        this._logger.debug('Market registered for recording (already started)', {
-          marketId: key,
-          question: meta.question,
-          tokenCount: meta.tokenIds.length,
-          filePath,
-        });
       }
 
       this._writers.set(key, writer);
@@ -223,6 +181,66 @@ export class DataRecorder implements IMarketDataRecorder {
       this._logger.error('Failed to register market', {
         marketId: key,
         filePath,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
+
+  /**
+   * Активирует запись рынка: создаёт файл, пишет meta, открывает stream.
+   *
+   * @param writer - Writer рынка
+   *
+   * @remarks
+   * Вызывается либо сразу при `registerMarket()` (если рынок уже начался),
+   * либо по таймеру когда достигаем `startsAt`.
+   */
+  private _activateMarket(writer: MarketWriter): void {
+    const key = String(writer.meta.marketId);
+
+    try {
+      fs.mkdirSync(path.dirname(writer.filePath), { recursive: true });
+
+      // Если файл уже существует от предыдущего запуска — удаляем
+      if (fs.existsSync(writer.filePath)) {
+        fs.unlinkSync(writer.filePath);
+        this._logger.warn('Existing market file deleted (previous run, no graceful shutdown)', {
+          marketId: key,
+          filePath: writer.filePath,
+        });
+      }
+
+      // Синхронно записываем meta-событие
+      const metaRecord: Record<string, unknown> = {
+        t: 'meta',
+        ts: Date.now(),
+        marketId: key,
+        question: writer.meta.question,
+        tokenIds: Array.from(writer.meta.tokenIds),
+      };
+      if (writer.meta.rawMarket) {
+        metaRecord['m'] = writer.meta.rawMarket;
+      }
+      const metaLine = this._formatter.formatRecord(metaRecord);
+      fs.writeFileSync(writer.filePath, metaLine, { flag: 'a' });
+
+      // Открываем поток в режиме append
+      writer.stream = fs.createWriteStream(writer.filePath, { flags: 'a' });
+      writer.stream.on('error', (err) => {
+        this._logger.error('Write stream error', { marketId: key, filePath: writer.filePath, err });
+      });
+
+      writer.active = true;
+
+      this._logger.info('Market recording activated', {
+        marketId: key,
+        question: writer.meta.question,
+        filePath: writer.filePath,
+      });
+    } catch (err) {
+      this._logger.error('Failed to activate market recording', {
+        marketId: key,
+        filePath: writer.filePath,
         err: err instanceof Error ? err : new Error(String(err)),
       });
     }
