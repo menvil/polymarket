@@ -45,7 +45,7 @@
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
-import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient, GammaMarketDto } from '../rest/clients/PolymarketMarketDataRestClient.js';
 import type { MarketFilter } from '@polymarket/market-discovery';
@@ -381,6 +381,24 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       ? Date.parse(raw.eventStartTime)
       : undefined;
 
+    // Извлекаем startDate из events[0].startDate для выравнивания записи
+    let startsAt: Timestamp | undefined;
+    try {
+      const rawAsAny = raw as any;
+      const startDateStr = rawAsAny?.events?.[0]?.startDate;
+      if (startDateStr && typeof startDateStr === 'string') {
+        const startDateMs = Date.parse(startDateStr);
+        if (!isNaN(startDateMs)) {
+          const startsAtResult = TimestampService.create(startDateMs);
+          if (startsAtResult.ok) {
+            startsAt = startsAtResult.value;
+          }
+        }
+      }
+    } catch {
+      // Не критично — просто не будет выравнивания по startDate
+    }
+
     return {
       marketId,
       instrumentId,
@@ -396,6 +414,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       allTokenIds: tokenIds,
       rawMarket: raw as unknown as Record<string, unknown>,
       eventStartMs: eventStartMs && !isNaN(eventStartMs) ? eventStartMs : undefined,
+      startsAt,
     };
   }
 }

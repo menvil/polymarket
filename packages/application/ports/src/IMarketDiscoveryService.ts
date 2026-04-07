@@ -20,6 +20,7 @@
  */
 import type Decimal from 'decimal.js';
 import type { InstrumentInfo } from './IMarketCatalog.js';
+import type { Timestamp } from '@polymarket/value-objects';
 
 /**
  * Обнаруженный рынок — кандидат для торговли.
@@ -64,6 +65,11 @@ export interface DiscoveredMarket extends InstrumentInfo {
    * Используется вместе с `expiresAt` для вычисления длительности рынка.
    */
   readonly eventStartMs?: number;
+  /**
+   * Время начала рынка (когда начинается запись данных). Timestamp из `events[0].startDate`.
+   * Используется для выравнивания по границе начала рынка (аналог CEX window alignment).
+   */
+  readonly startsAt?: Timestamp;
 }
 
 /**

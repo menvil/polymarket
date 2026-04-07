@@ -70,6 +70,10 @@ interface MarketWriter {
   stream: fs.WriteStream | null;
   lastFlushTime: number;
   eventsRecorded: number;
+  /** true когда достигли startsAt — начали запись */
+  active: boolean;
+  /** Таймер активации (ожидание startsAt) */
+  activationTimer: ReturnType<typeof setTimeout> | null;
 }
 
 /**
@@ -164,26 +168,57 @@ export class DataRecorder implements IMarketDataRecorder {
         this._logger.error('Write stream error', { marketId: key, filePath, err });
       });
 
+      // Вычисляем: активен ли рынок сразу или нужно ждать startsAt
+      const now = Date.now();
+      const hasStartsAt = !!meta.startsAt;
+      const startsAtMs = hasStartsAt ? meta.startsAt!.toNumber() : now;
+      const alreadyStarted = now >= startsAtMs;
+
       const writer: MarketWriter = {
         meta,
         filePath,
         buffer: [],
         stream,
-        lastFlushTime: Date.now(),
+        lastFlushTime: now,
         eventsRecorded: 0,
+        active: alreadyStarted,
+        activationTimer: null,
       };
+
+      // Если рынок ещё не начался — планируем активацию на startsAt
+      if (hasStartsAt && !alreadyStarted) {
+        const delayMs = startsAtMs - now;
+        writer.activationTimer = setTimeout(() => {
+          writer.active = true;
+          writer.activationTimer = null;
+          this._logger.info('Market recording activated (startsAt reached)', {
+            marketId: key,
+            startsAt: new Date(startsAtMs).toISOString(),
+          });
+        }, delayMs);
+
+        // unref чтобы таймер не удерживал процесс при shutdown
+        if (writer.activationTimer.unref) writer.activationTimer.unref();
+
+        this._logger.info('Market registered, waiting for startsAt', {
+          marketId: key,
+          question: meta.question,
+          startsAt: new Date(startsAtMs).toISOString(),
+          delayMs,
+        });
+      } else {
+        this._logger.debug('Market registered for recording (already started)', {
+          marketId: key,
+          question: meta.question,
+          tokenCount: meta.tokenIds.length,
+          filePath,
+        });
+      }
 
       this._writers.set(key, writer);
       for (const tokenId of meta.tokenIds) {
         this._tokenIndex.set(tokenId, writer);
       }
-
-      this._logger.debug('Market registered for recording', {
-        marketId: key,
-        question: meta.question,
-        tokenCount: meta.tokenIds.length,
-        filePath,
-      });
     } catch (err) {
       this._logger.error('Failed to register market', {
         marketId: key,
@@ -258,10 +293,14 @@ export class DataRecorder implements IMarketDataRecorder {
    * Никогда не бросает. O(1) поиск через tokenIndex.
    * Извлекает timestamp из события для сортировки при flush.
    * Поддерживаемые поля: `timestamp` (string|number), `ts` (number).
+   * Если рынок ещё не достиг `startsAt` — события игнорируются (не записываются).
    */
   public recordEvent(tokenId: string, rawEvent: unknown): void {
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
+
+    // Игнорируем события до startsAt (аналог CEX window alignment)
+    if (!writer.active) return;
 
     try {
       const line = this._formatter.formatRecord(rawEvent as object);
@@ -297,6 +336,12 @@ export class DataRecorder implements IMarketDataRecorder {
     this._writers.delete(key);
     for (const tokenId of writer.meta.tokenIds) {
       this._tokenIndex.delete(tokenId);
+    }
+
+    // Отменяем таймер активации если рынок не успел начаться
+    if (writer.activationTimer) {
+      clearTimeout(writer.activationTimer);
+      writer.activationTimer = null;
     }
 
     if (reason === 'SHUTDOWN') {

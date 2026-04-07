@@ -26,6 +26,7 @@
  * ```
  */
 
+import Decimal from 'decimal.js';
 import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
@@ -38,6 +39,7 @@ import { DnsOverride } from '@polymarket/exchange/dns';
 import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import type { MarketId } from '@polymarket/ids';
+import { Timestamp } from '@polymarket/value-objects';
 import { loadConfig } from './config.js';
 import { CexCollectorService } from './cex/CexCollectorService.js';
 import type { CexCollectorConfig } from './cex/CexCollectorConfig.js';
@@ -359,10 +361,14 @@ async function openMarket(candidate: DiscoveredMarket): Promise<void> {
   }
   subscribedMarkets.set(marketKey, candidate);
 
+  // Если startsAt не задан (старые рынки без events[0].startDate) — записываем сразу
+  const startsAt = candidate.startsAt ?? Timestamp.of(new Decimal(Date.now()));
+
   recorder.registerMarket({
     marketId:  candidate.marketId,
     question:  candidate.question,
     tokenIds:  allTokenIds,
+    startsAt,
     expiresAt: candidate.expiresAt,
     rawMarket: candidate.rawMarket,
   });

@@ -55,6 +55,8 @@ export interface MarketMeta {
   readonly question: string;
   /** Список token ID (UP/DOWN) для маршрутизации событий */
   readonly tokenIds: readonly string[];
+  /** Время начала рынка (запись событий начинается с этого момента). Если не задано — записываем сразу. */
+  readonly startsAt?: Timestamp;
   /** Время истечения рынка */
   readonly expiresAt: Timestamp;
   /**
