@@ -366,20 +366,27 @@ export class DataRecorder implements IMarketDataRecorder {
       // При shutdown файл удаляется — неполные данные бесполезны.
       // Ждём события 'close' от stream перед удалением файла — гарантирует освобождение FD.
       if (writer.stream) {
-        await new Promise<void>((resolve) => {
-          writer.stream!.once('close', () => resolve());
-          writer.stream!.destroy();
-        });
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            writer.stream!.once('close', () => resolve());
+            writer.stream!.destroy();
+          }),
+          // Таймаут 5 секунд — если stream не закрылся, продолжаем shutdown
+          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        ]);
         writer.stream = null;
       }
 
       try {
-        await fs.promises.unlink(writer.filePath);
-        this._logger.info('Incomplete market file deleted on shutdown', {
-          marketId: key,
-          eventsRecorded: writer.eventsRecorded,
-          filePath: writer.filePath,
-        });
+        // Проверяем существование файла перед удалением (файл может не существовать если рынок не успел активироваться)
+        if (fs.existsSync(writer.filePath)) {
+          await fs.promises.unlink(writer.filePath);
+          this._logger.info('Incomplete market file deleted on shutdown', {
+            marketId: key,
+            eventsRecorded: writer.eventsRecorded,
+            filePath: writer.filePath,
+          });
+        }
       } catch (err) {
         this._logger.warn('Failed to delete incomplete market file', {
           marketId: key,

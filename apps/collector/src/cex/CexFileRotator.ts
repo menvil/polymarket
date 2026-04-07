@@ -266,15 +266,19 @@ export class CexFileRotator {
     // Шаг 1: закрываем все stream'ы и ЖДЁМ пока они реально закроются
     await Promise.all(
       writersSnapshot.map((writer) =>
-        new Promise<void>((resolve) => {
-          if (!writer.stream) {
-            resolve();
-            return;
-          }
-          // destroy() закрывает stream немедленно, событие 'close' гарантирует освобождение FD
-          writer.stream.once('close', () => resolve());
-          writer.stream.destroy();
-        }),
+        Promise.race([
+          new Promise<void>((resolve) => {
+            if (!writer.stream) {
+              resolve();
+              return;
+            }
+            // destroy() закрывает stream немедленно, событие 'close' гарантирует освобождение FD
+            writer.stream.once('close', () => resolve());
+            writer.stream.destroy();
+          }),
+          // Таймаут 5 секунд — если stream не закрылся, продолжаем shutdown
+          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        ]),
       ),
     );
 
