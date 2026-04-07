@@ -592,62 +592,79 @@ async function shutdown(signal: string): Promise<void> {
 
   logger.info(`Received ${signal}, shutting down...`);
 
-  if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
-  if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
-  if (enrichmentInterval) { clearInterval(enrichmentInterval); enrichmentInterval = null; }
-  if (closedMarketsCleanupInterval) { clearInterval(closedMarketsCleanupInterval); closedMarketsCleanupInterval = null; }
+  try {
+    if (scanTimeoutId) { clearTimeout(scanTimeoutId); scanTimeoutId = null; }
+    if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+    if (enrichmentInterval) { clearInterval(enrichmentInterval); enrichmentInterval = null; }
+    if (closedMarketsCleanupInterval) { clearInterval(closedMarketsCleanupInterval); closedMarketsCleanupInterval = null; }
 
-  // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
-  // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
-  for (const [marketKey, pe] of pendingEnrichment) {
+    // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
+    // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
+    for (const [marketKey, pe] of pendingEnrichment) {
+      try {
+        await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
+        logger.info('Pending enrichment archived on shutdown', {
+          marketKey,
+          priceToBeat: pe.lastPriceToBeat,
+          finalPrice: pe.lastFinalPrice,
+          attempts: pe.attempts,
+        });
+      } catch (err) {
+        logger.warn('Error finalizing pending enrichment', {
+          marketKey,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    pendingEnrichment.clear();
+
+    feed.stop();
+
+    // Финализируем все активные рынки (SHUTDOWN — не сжимаем)
+    for (const candidate of [...subscribedMarkets.values()]) {
+      try {
+        await closeMarket(candidate, 'SHUTDOWN');
+      } catch (err) {
+        logger.warn('Error closing market on shutdown', {
+          marketId: String(candidate.marketId),
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    if (cexService) {
+      try {
+        await cexService.stop();
+      } catch (err) {
+        logger.warn('Error stopping CEX service', {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     try {
-      await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
-      logger.info('Pending enrichment archived on shutdown', {
-        marketKey,
-        priceToBeat: pe.lastPriceToBeat,
-        finalPrice: pe.lastFinalPrice,
-        attempts: pe.attempts,
-      });
+      await recorder.close();
     } catch (err) {
-      logger.warn('Error finalizing pending enrichment', {
-        marketKey,
+      logger.warn('Error closing recorder', {
         err: err instanceof Error ? err.message : String(err),
       });
     }
-  }
-  pendingEnrichment.clear();
 
-  feed.stop();
-
-  // Финализируем все активные рынки (SHUTDOWN — не сжимаем)
-  for (const candidate of [...subscribedMarkets.values()]) {
     try {
-      await closeMarket(candidate, 'SHUTDOWN');
+      await ws.disconnect();
     } catch (err) {
-      logger.warn('Error closing market on shutdown', {
-        marketId: String(candidate.marketId),
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-    }
-  }
-
-  if (cexService) {
-    try {
-      await cexService.stop();
-    } catch (err) {
-      logger.warn('Error stopping CEX service', {
+      logger.warn('Error disconnecting WS', {
         err: err instanceof Error ? err.message : String(err),
       });
     }
-  }
-  await recorder.close();
-  await ws.disconnect();
-  rtdsClient.disconnect();
-  dnsOverride.uninstall();
 
-  clearInterval(keepAlive);
-  logger.info('Shutdown complete');
-  process.exit(0);
+    rtdsClient.disconnect();
+    dnsOverride.uninstall();
+  } finally {
+    clearInterval(keepAlive);
+    logger.info('Shutdown complete');
+    process.exit(0);
+  }
 }
 
 process.on('SIGINT',  () => void shutdown('SIGINT'));

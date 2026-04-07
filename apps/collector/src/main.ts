@@ -148,26 +148,35 @@ async function shutdown(signal: string): Promise<void> {
   // Удерживаем event loop живым пока идёт async cleanup.
   const keepAlive = setInterval(() => {}, 500);
   logger.info(`Received ${signal}, shutting down`);
-  if (cexService) {
+  try {
+    if (cexService) {
+      try {
+        await cexService.stop();
+      } catch (err) {
+        logger.warn('Error stopping CEX service', {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     try {
-      await cexService.stop();
+      await polymarketService.stop();
     } catch (err) {
-      logger.warn('Error stopping CEX service', {
+      logger.warn('Error stopping Polymarket service', {
         err: err instanceof Error ? err.message : String(err),
       });
     }
-  }
-  try {
-    await polymarketService.stop();
-    await wsAdapter.disconnect();
+    try {
+      await wsAdapter.disconnect();
+    } catch (err) {
+      logger.warn('Error disconnecting WS adapter', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } finally {
+    clearInterval(keepAlive);
     logger.info('Shutdown complete');
-  } catch (err) {
-    logger.error('Error during shutdown', {
-      err: err instanceof Error ? err : new Error(String(err)),
-    });
+    process.exit(0);
   }
-  clearInterval(keepAlive);
-  process.exit(0);
 }
 
 process.on('SIGINT', () => void shutdown('SIGINT'));
