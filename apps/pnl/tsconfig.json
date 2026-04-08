@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/logger":        ["../../packages/foundation/logger/src/index.ts"],
+      "@polymarket/time":          ["../../packages/foundation/time/src/index.ts"],
+      "@polymarket/exchange/rest": ["../../packages/infrastructure/polymarket/rest/index.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}
