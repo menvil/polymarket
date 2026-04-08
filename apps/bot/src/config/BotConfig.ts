@@ -33,6 +33,8 @@ import type { OscillationMMConfig } from '../strategies/OscillationMMStrategy.js
 import type { MomentumScalpConfig } from '../strategies/MomentumScalpStrategy.js';
 import type { SmartEntryConfig } from '../strategies/SmartEntryStrategy.js';
 import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js';
+import type { FairValueMMConfig } from '../strategies/FairValueMMStrategy.js';
+import type { BinanceProbMMConfig } from '../strategies/BinanceProbMMStrategy.js';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
 
@@ -40,7 +42,7 @@ import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -96,6 +98,8 @@ export interface SnapshotMarketConfig {
    * Можно указать несколько рынков для последовательного прогона.
    */
   readonly paths: string[];
+  /** Опциональный фильтр snapshot-рынков по question и длительности. */
+  readonly filter?: MarketDiscoveryFilter;
   /**
    * Индекс outcome для торговли (0 = YES, 1 = NO).
    * Читается из заголовка снапшота (meta-строка).
@@ -163,7 +167,17 @@ export interface AccountConfig {
 // ── Мульти-стратегия ────────────────────────────────────────────────────────
 
 /** Тип параметров стратегии (union всех возможных конфигов) */
-export type AnyStrategyParams = DumbStrategyConfig | ASStrategyConfig | CrossMarketArbConfig | ProbTableConfig | OscillationMMConfig | MomentumScalpConfig | SmartEntryConfig | AdaptiveEntryConfig;
+export type AnyStrategyParams =
+  | DumbStrategyConfig
+  | ASStrategyConfig
+  | CrossMarketArbConfig
+  | ProbTableConfig
+  | OscillationMMConfig
+  | MomentumScalpConfig
+  | SmartEntryConfig
+  | AdaptiveEntryConfig
+  | FairValueMMConfig
+  | BinanceProbMMConfig;
 
 /**
  * Фильтр для маршрутизации рынка на конкретную стратегию.

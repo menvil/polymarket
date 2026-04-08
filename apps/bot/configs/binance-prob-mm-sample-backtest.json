@@ -1,0 +1,33 @@
+{
+  "strategy": "binance-prob-mm",
+  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 3,
+    "lookbackDays": 5,
+    "maxHorizonMinutes": 15,
+    "useDrift": false,
+    "minEdgeCents": 2,
+    "baseSpreadCents": 1,
+    "maxSpreadCents": 5,
+    "inventorySkew": 1,
+    "unwindSec": 30,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 5
+  },
+  "market": {
+    "source": "snapshots",
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "paths": [
+      "../../packages/apps/collect-data/snapshots/2026-03-23/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

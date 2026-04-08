@@ -94,7 +94,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -375,6 +375,22 @@ function parseStrategyParams(
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       break;
+
+    case 'binance-prob-mm':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for binance-prob-mm strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for binance-prob-mm strategy');
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      if (typeof raw['binanceSymbol'] === 'string') result['binanceSymbol'] = raw['binanceSymbol'];
+      if (typeof raw['binanceBaseUrl'] === 'string') result['binanceBaseUrl'] = raw['binanceBaseUrl'];
+      for (const numField of [
+        'lookbackDays', 'maxHorizonMinutes', 'minEdgeCents', 'baseSpreadCents',
+        'maxSpreadCents', 'inventorySkew', 'unwindSec', 'warmupSec', 'ewmaAlpha',
+        'minTradesForMid', 'minModelSamples',
+      ]) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['useDrift'] === true || raw['useDrift'] === false) result['useDrift'] = raw['useDrift'];
+      break;
   }
 
   return result;
@@ -476,12 +492,26 @@ function parseMarketConfig(
       if (!paths || paths.length === 0) {
         errors.push('market.paths is required and must be non-empty when source=snapshots');
       }
+      const filter = (raw['filter'] as Record<string, unknown> | undefined) ?? {};
       const rawOutcomeIdx = raw['outcomeIndex'] as number | undefined;
       const outcomeIndex = rawOutcomeIdx ?? 1;
       if (outcomeIndex !== 0 && outcomeIndex !== 1) {
         errors.push('market.outcomeIndex must be 0 or 1');
       }
-      return { source: 'snapshots', paths: paths ?? [], outcomeIndex: outcomeIndex as 0 | 1 };
+      return {
+        source: 'snapshots',
+        paths: paths ?? [],
+        outcomeIndex: outcomeIndex as 0 | 1,
+        filter: {
+          minLiquidity: typeof filter['minLiquidity'] === 'number' ? filter['minLiquidity'] : undefined,
+          minTimeToExpiryHours: typeof filter['minTimeToExpiryHours'] === 'number' ? filter['minTimeToExpiryHours'] : undefined,
+          anyOfKeywords: Array.isArray(filter['anyOfKeywords']) ? filter['anyOfKeywords'] as string[] : undefined,
+          requiredKeywords: Array.isArray(filter['requiredKeywords']) ? filter['requiredKeywords'] as string[] : undefined,
+          excludedKeywords: Array.isArray(filter['excludedKeywords']) ? filter['excludedKeywords'] as string[] : undefined,
+          minDurationMinutes: typeof filter['minDurationMinutes'] === 'number' ? filter['minDurationMinutes'] : undefined,
+          maxDurationMinutes: typeof filter['maxDurationMinutes'] === 'number' ? filter['maxDurationMinutes'] : undefined,
+        },
+      };
     }
 
     default:

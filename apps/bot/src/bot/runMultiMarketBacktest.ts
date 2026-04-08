@@ -64,6 +64,7 @@ import type { RiskParams } from '@polymarket/risk';
 /** Результат бэктеста одного рынка */
 interface MarketBacktestResult {
   readonly file: string;
+  readonly question?: string;
   readonly marketId: string;
   readonly instrumentId: string;
   readonly cryptoSymbol?: string;
@@ -78,6 +79,43 @@ interface MarketBacktestResult {
   readonly tradeEvents: number;
   readonly errors: number;
   readonly durationMs: number;
+}
+
+function matchesSnapshotFilter(
+  rawMarket: Record<string, unknown> | undefined,
+  config: BotConfig,
+): boolean {
+  if (config.market.source !== 'snapshots' || !config.market.filter) {
+    return true;
+  }
+
+  const filter = config.market.filter;
+  const question = typeof rawMarket?.['question'] === 'string' ? rawMarket['question'].toLowerCase() : '';
+  const eventStartRaw = typeof rawMarket?.['eventStartTime'] === 'string' ? rawMarket['eventStartTime'] : undefined;
+  const endDateRaw = typeof rawMarket?.['endDate'] === 'string' ? rawMarket['endDate'] : undefined;
+  const eventStartMs = eventStartRaw ? new Date(eventStartRaw).getTime() : NaN;
+  const endDateMs = endDateRaw ? new Date(endDateRaw).getTime() : NaN;
+  const durationMinutes = !Number.isNaN(eventStartMs) && !Number.isNaN(endDateMs)
+    ? (endDateMs - eventStartMs) / 60_000
+    : undefined;
+
+  if (filter.requiredKeywords?.length) {
+    if (!filter.requiredKeywords.every(keyword => question.includes(keyword.toLowerCase()))) return false;
+  }
+  if (filter.anyOfKeywords?.length) {
+    if (!filter.anyOfKeywords.some(keyword => question.includes(keyword.toLowerCase()))) return false;
+  }
+  if (filter.excludedKeywords?.length) {
+    if (filter.excludedKeywords.some(keyword => question.includes(keyword.toLowerCase()))) return false;
+  }
+  if (filter.minDurationMinutes !== undefined) {
+    if (durationMinutes === undefined || durationMinutes < filter.minDurationMinutes) return false;
+  }
+  if (filter.maxDurationMinutes !== undefined) {
+    if (durationMinutes === undefined || durationMinutes > filter.maxDurationMinutes) return false;
+  }
+
+  return true;
 }
 
 // ── SimpleBookRegistry (дубль из main.ts, нужен для BookUpdateHandler) ──────
@@ -180,6 +218,13 @@ async function runSingleMarketBacktest(
   }
 
   const { marketId, instrumentId, asset, rawMarket, complementaryInstrumentId } = meta;
+  if (!matchesSnapshotFilter(rawMarket, config)) {
+    parentLogger.debug('Skipping snapshot by filter', {
+      file: fileName,
+      question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] : undefined,
+    });
+    return null;
+  }
 
   // 2. Создаём изолированную инфраструктуру
   const replayClock = new ReplayClock(new Date(0));
@@ -423,6 +468,7 @@ async function runSingleMarketBacktest(
 
   return {
     file: fileName,
+    question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] as string : undefined,
     marketId: String(marketId),
     instrumentId: String(instrumentId).slice(0, 12) + '…',
     cryptoSymbol: cryptoSnap?.symbol,
@@ -486,6 +532,19 @@ export async function runMultiMarketBacktest(
       const result = await runSingleMarketBacktest(filePath, config, outcomeIndex, logger);
       if (result) {
         results.push(result);
+        const cumulativePnl = results.reduce((acc, item) => acc.plus(item.pnl), new Decimal(0));
+        logger.warn('Market result', {
+          file: result.file,
+          question: result.question ?? 'unknown',
+          resolution: result.resolution ?? 'unknown',
+          strikePrice: result.strikePrice,
+          resolutionPrice: result.resolutionPrice,
+          pnl: `${result.pnl.gte(0) ? '+' : ''}${result.pnl.toFixed(4)} USDC`,
+          cumulativePnl: `${cumulativePnl.gte(0) ? '+' : ''}${cumulativePnl.toFixed(4)} USDC`,
+          fills: `${result.buys}B/${result.sells}S`,
+          cycles: result.completedCycles,
+          errors: result.errors,
+        });
       } else {
         skipped++;
       }

@@ -38,6 +38,8 @@ import { AdaptiveEntryStrategy } from './strategies/AdaptiveEntryStrategy.js';
 import type { AdaptiveEntryConfig } from './strategies/AdaptiveEntryStrategy.js';
 import { FairValueMMStrategy } from './strategies/FairValueMMStrategy.js';
 import type { FairValueMMConfig } from './strategies/FairValueMMStrategy.js';
+import { BinanceProbMMStrategy } from './strategies/BinanceProbMMStrategy.js';
+import type { BinanceProbMMConfig } from './strategies/BinanceProbMMStrategy.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -53,7 +55,8 @@ export type StrategyConfig =
   | { readonly type: 'momentum-scalp'; readonly id?: string; readonly params: MomentumScalpConfig }
   | { readonly type: 'smart-entry'; readonly id?: string; readonly params: SmartEntryConfig }
   | { readonly type: 'adaptive-entry'; readonly id?: string; readonly params: AdaptiveEntryConfig }
-  | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig };
+  | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig }
+  | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig };
 
 // ── Фабрика ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +103,9 @@ export function createStrategy(config: StrategyConfig, logger?: ILogger, journal
 
     case 'fair-value-mm':
       return new FairValueMMStrategy(config.params, config.id, logger);
+
+    case 'binance-prob-mm':
+      return new BinanceProbMMStrategy(config.params, config.id, logger);
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);
