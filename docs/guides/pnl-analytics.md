@@ -40,10 +40,14 @@ npx tsx --env-file=.env src/main.ts --from 2026-03-01 --json
 
 ## Источники данных
 
-| Источник                            | Использование                          |
-|-------------------------------------|----------------------------------------|
-| CLOB API `/data/trades`             | История сделок пользователя (L2 auth) |
-| Gamma API `/markets?conditionId=..` | Метаданные рынков (public)            |
+| Источник                            | Использование                                      |
+|-------------------------------------|----------------------------------------------------|
+| CLOB API `/data/trades`             | История сделок пользователя (L2 auth)             |
+| CLOB API `/markets/{conditionId}`   | Метаданные рынков: resolved-статус, winners (public) |
+
+> **Важно:** Gamma API не поддерживает lookup по `conditionId` — игнорирует параметр.
+> CLOB API `/markets/{conditionId}` — единственный надёжный способ получить
+> `tokens[].winner` для определения resolved-статуса.
 
 ## Почему только resolved рынки?
 
@@ -93,11 +97,11 @@ roi           = net_pnl / entry_cost × 100%
 
 [WIN]  Bitcoin Up or Down — Mar 1, 1:05–1:10 PM ET
        Token: UP  →  Resolved: UP ✓  (won $1.00)
-  ┌──────────────────────────────────────────────────────────────┐
-  │  #  TIME      SIDE   SIZE    PRICE   NOTIONAL   FEE          │
-  │  1  13:04:22  BUY   100.0   0.620    $62.00   $0.02         │
-  │  2  13:04:45  BUY    50.0   0.640    $32.00   $0.01         │
-  └──────────────────────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  #  TIME      OUTCOME  SIDE   SIZE    PRICE   NOTIONAL   FEE          │
+  │  1  13:04:22  Up       BUY   100.0   0.620    $62.00   $0.02         │
+  │  2  13:04:45  Up       BUY    50.0   0.640    $32.00   $0.01         │
+  └────────────────────────────────────────────────────────────────────────┘
   Entry:   150.0 shares × avg 0.627  =  -$94.00
   Redeem:  150.0 shares × $1.00      =  +$150.00  (winner)
   Fees:                                  -$0.03
@@ -106,11 +110,11 @@ roi           = net_pnl / entry_cost × 100%
 
 [LOSS]  Bitcoin Up or Down — Mar 1, 1:15–1:20 PM ET
         Token: DOWN  →  Resolved: DOWN ✗  (lost $0.00)
-  ┌──────────────────────────────────────────────────────────────┐
-  │  #  TIME      SIDE   SIZE    PRICE   NOTIONAL   FEE          │
-  │  1  13:14:10  BUY    80.0   0.590    $47.20   $0.01         │
-  │  2  13:14:55  SELL   20.0   0.560   +$11.20   $0.00   [!]   │
-  └──────────────────────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  #  TIME      OUTCOME  SIDE   SIZE    PRICE   NOTIONAL   FEE          │
+  │  1  13:14:10  Down     BUY    80.0   0.590    $47.20   $0.01         │
+  │  2  13:14:55  Down     SELL   20.0   0.560   +$11.20   $0.00   [!]   │
+  └────────────────────────────────────────────────────────────────────────┘
   Entry:   80.0 shares × avg 0.590   =  -$47.20
   Sold:    20.0 shares × avg 0.560   =  +$11.20  (early exit)
   Redeem:  60.0 shares × $0.00       =   $0.00   (loser)
@@ -122,16 +126,32 @@ roi           = net_pnl / entry_cost × 100%
   Day: 4 markets │ 3W / 1L (75%) │ Entry: $142.50 │ PnL: +$18.07 (+12.7%)
 ```
 
+## Нормализация fills
+
+Polymarket CLOB API возвращает трейды с точки зрения тейкера. В prediction markets
+возможен **cross-outcome matching**: покупка Down-токена может совпасть с покупкой
+Up-токена контрагента. В этом случае:
+
+- Верхний уровень трейда: данные тейкера (BUY Up @ 0.63)
+- `maker_orders[i]`: наши данные (BUY Down @ 0.37), где `maker_orders[i].maker_address == ourAddress`
+
+`TradesFetcher` автоматически нормализует каждый трейд:
+
+1. Если `trader_side === 'TAKER'` → берём верхний уровень
+2. Иначе → ищем наш адрес в `maker_orders[i].maker_address`, берём `asset_id`, `side`, `matched_amount`, `price` оттуда
+
+Результат: `NormalizedFill[]` — массив наших реальных fills.
+
 ## Архитектура
 
 ```
 apps/pnl/src/
 ├── main.ts                  ← CLI: аргументы, оркестрация
 ├── PnlConfig.ts             ← парсинг ENV + CLI-аргументов
-├── types.ts                 ← все интерфейсы (RawTrade, MarketMeta, MarketPnl, ...)
+├── types.ts                 ← все интерфейсы (RawTrade, NormalizedFill, MarketMeta, ...)
 ├── core/
-│   ├── TradesFetcher.ts     ← пагинация /data/trades (CLOB API, L2 auth)
-│   ├── MarketEnricher.ts    ← метаданные рынков (Gamma API, public)
+│   ├── TradesFetcher.ts     ← пагинация /data/trades + нормализация fills (CLOB API, L2 auth)
+│   ├── MarketEnricher.ts    ← метаданные рынков (CLOB API /markets/{id}, public)
 │   └── PnlCalculator.ts     ← расчёт PnL, группировка по дням
 └── renderers/
     ├── format.ts            ← вспомогательные функции форматирования

@@ -26,7 +26,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { RawTrade, MarketMeta, FillRecord, MarketPnl, DailyPnl, PnlReport } from '../types.js';
+import type { NormalizedFill, MarketMeta, FillRecord, MarketPnl, DailyPnl, PnlReport } from '../types.js';
 
 /**
  * Параметры для compute().
@@ -45,7 +45,7 @@ export class PnlCalculator {
   /**
    * Рассчитывает PnL по всем resolved рынкам за период.
    *
-   * @param trades - Все сделки пользователя за период
+   * @param fills - Нормализованные fills пользователя за период
    * @param marketMetas - Метаданные рынков (conditionId → MarketMeta | null)
    * @param params - Даты периода для отчёта
    * @returns Полный отчёт PnL
@@ -56,24 +56,24 @@ export class PnlCalculator {
    * создаются отдельные MarketPnl-записи для каждого токена.
    */
   compute(
-    trades: RawTrade[],
+    fills: NormalizedFill[],
     marketMetas: Map<string, MarketMeta | null>,
     params: ComputeParams
   ): PnlReport {
-    // Группируем сделки по conditionId + asset_id
+    // Группируем fills по conditionId + asset_id
     // (один рынок может иметь несколько токенов; мы могли торговать разные)
-    const byMarketToken = new Map<string, RawTrade[]>();
+    const byMarketToken = new Map<string, NormalizedFill[]>();
 
-    for (const trade of trades) {
-      const key = `${trade.market}::${trade.asset_id}`;
+    for (const fill of fills) {
+      const key = `${fill.market}::${fill.asset_id}`;
       const list = byMarketToken.get(key) ?? [];
-      list.push(trade);
+      list.push(fill);
       byMarketToken.set(key, list);
     }
 
     const marketResults: MarketPnl[] = [];
 
-    for (const [key, marketTrades] of byMarketToken) {
+    for (const [key, marketFills] of byMarketToken) {
       const [conditionId, assetId] = key.split('::') as [string, string];
       const meta = marketMetas.get(conditionId);
 
@@ -91,7 +91,7 @@ export class PnlCalculator {
       const resolvedPrice = meta.outcomePrices[tokenIndex] ?? 0;
       const outcomeName   = meta.outcomes[tokenIndex] ?? 'UNKNOWN';
 
-      const fills = this.buildFills(marketTrades);
+      const fills = this.buildFills(marketFills, outcomeName);
       const result = this.computeMarketPnl({
         conditionId,
         question: meta.question,
@@ -113,32 +113,34 @@ export class PnlCalculator {
   }
 
   /**
-   * Строит массив FillRecord из сырых сделок, отсортированных по времени.
+   * Строит массив FillRecord из нормализованных fills, отсортированных по времени.
    *
-   * @param trades - Сырые сделки одного рынка/токена
+   * @param fills - Нормализованные fills одного рынка/токена
+   * @param outcomeName - Название outcome (UP/DOWN/YES/NO) для этого токена
    * @returns Отсортированные FillRecord
    */
-  private buildFills(trades: RawTrade[]): FillRecord[] {
-    return trades
+  private buildFills(fills: NormalizedFill[], outcomeName: string): FillRecord[] {
+    return fills
       .slice()
       .sort((a, b) => Number(a.match_time ?? 0) - Number(b.match_time ?? 0))
-      .map(t => {
-        const size  = parseFloat(t.size);
-        const price = parseFloat(t.price);
+      .map(f => {
+        const size  = parseFloat(f.size);
+        const price = parseFloat(f.price);
         const notional = size * price;
 
         // Комиссия = notional × fee_rate_bps / 10_000
-        const feeRateBps = parseFloat(t.fee_rate_bps ?? '0');
+        const feeRateBps = parseFloat(f.fee_rate_bps ?? '0');
         const fee = notional * feeRateBps / 10_000;
 
-        const matchTs = Number(t.match_time ?? 0) * 1000;
+        const matchTs = Number(f.match_time ?? 0) * 1000;
         const d       = new Date(matchTs);
         const matchDate = d.toISOString().slice(0, 10);
         const matchTime = d.toISOString().slice(11, 19);
 
         return {
-          id: t.id,
-          side: t.side,
+          id: f.id,
+          side: f.side,
+          outcomeName,
           size,
           price,
           notional,

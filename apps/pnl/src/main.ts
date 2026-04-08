@@ -94,21 +94,21 @@ async function main(): Promise<void> {
   // Проверяем что signer отдаёт правильный адрес (для диагностики)
   logger.info(`Wallet address: ${signer.getAddress()}`);
 
-  // ── Шаг 1: Загрузка сделок ───────────────────────────────────────────────────
+  // ── Шаг 1: Загрузка и нормализация сделок ───────────────────────────────────
   const fetcher = new TradesFetcher(restClient, logger);
-  const trades  = await fetcher.fetchAll({
+  const fills   = await fetcher.fetchAll({
     makerAddress: config.makerAddress,
     fromTs: config.fromTs,
     toTs:   config.toTs,
   });
 
-  if (trades.length === 0) {
+  if (fills.length === 0) {
     console.log('\nNo trades found for the given period.\n');
     return;
   }
 
   // ── Шаг 2: Обогащение метаданными рынков ─────────────────────────────────────
-  const conditionIds = [...new Set(trades.map(t => t.market))];
+  const conditionIds = [...new Set(fills.map(f => f.market))];
   const enricher     = new MarketEnricher(logger);
   const marketMetas  = await enricher.fetchMetas(conditionIds);
 
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
   const calc   = new PnlCalculator(logger);
   const fromDate = new Date(config.fromTs * 1000).toISOString().slice(0, 10);
   const toDate   = new Date(config.toTs   * 1000).toISOString().slice(0, 10);
-  const report = calc.compute(trades, marketMetas, { fromDate, toDate });
+  const report = calc.compute(fills, marketMetas, { fromDate, toDate });
 
   // ── Шаг 4: Вывод ─────────────────────────────────────────────────────────────
   if (config.jsonOutput) {

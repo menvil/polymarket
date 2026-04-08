@@ -36,15 +36,51 @@ export interface RawTrade {
   transaction_hash?: string;
   /** Роль в сделке: TAKER или MAKER */
   trader_side?: string;
-  /** Ордера мейкеров (когда мы — тейкер) */
+  /** Адрес мейкера (верхний уровень, при необходимости) */
+  maker_address?: string;
+  /** Ордера мейкеров (когда мы — тейкер или суб-мейкер) */
   maker_orders?: Array<{
     order_id: string;
     matched_amount: string;
     fee_rate_bps: string;
+    /** Адрес мейкера в этом ордере (для определения наших fills) */
+    maker_address?: string;
     asset_id?: string;
     outcome?: string;
     side?: 'BUY' | 'SELL';
+    /** Цена исполнения в этом maker ордере */
+    price?: string;
   }>;
+}
+
+/**
+ * Нормализованный fill — наша реальная сделка, извлечённая из сырого трейда.
+ *
+ * @remarks
+ * Polymarket CLOB API возвращает трейды с точки зрения тейкера.
+ * Когда мы являемся суб-мейкером (наш адрес в `maker_orders[i].maker_address`),
+ * настоящие параметры нашей сделки (токен, сторона, размер, цена) берутся из
+ * `maker_orders[i]`, а не из верхнего уровня.
+ */
+export interface NormalizedFill {
+  /** Идентификатор трейда */
+  id: string;
+  /** Condition ID рынка */
+  market: string;
+  /** ID нашего токена */
+  asset_id: string;
+  /** Наша сторона */
+  side: 'BUY' | 'SELL';
+  /** Размер нашей позиции (строка) */
+  size: string;
+  /** Наша цена исполнения (строка) */
+  price: string;
+  /** Ставка комиссии */
+  fee_rate_bps?: string;
+  /** Timestamp в секундах Unix */
+  match_time?: string;
+  /** Название нашего outcome (UP/DOWN/YES/NO) */
+  outcome?: string;
 }
 
 /**
@@ -91,6 +127,8 @@ export interface FillRecord {
   id: string;
   /** BUY — открытие, SELL — досрочный выход */
   side: 'BUY' | 'SELL';
+  /** Название нашего outcome (UP/DOWN/YES/NO) */
+  outcomeName: string;
   /** Количество акций */
   size: number;
   /** Цена исполнения */

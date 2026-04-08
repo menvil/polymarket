@@ -32,7 +32,7 @@
 import type { PnlReport, MarketPnl, FillRecord } from '../types.js';
 import { fmtMoney, fmtPnl, fmtRoi, fmtNum, hline, truncate } from './format.js';
 
-const FILL_TABLE_WIDTH = 62;
+const FILL_TABLE_WIDTH = 72;
 const QUESTION_MAX_LEN = 68;
 
 /**
@@ -146,7 +146,7 @@ export class DetailedRenderer {
   private renderFillTable(fills: FillRecord[]): string[] {
     const lines: string[] = [];
     const border = `  ┌${hline(FILL_TABLE_WIDTH, '─')}┐`;
-    const header = `  │  ${'#'.padEnd(3)} ${'TIME'.padEnd(9)} ${'SIDE'.padEnd(6)} ${'SIZE'.padEnd(7)} ${'PRICE'.padEnd(7)} ${'NOTIONAL'.padEnd(9)} ${'FEE'.padEnd(6)}│`;
+    const header = `  │  ${'#'.padEnd(3)} ${'TIME'.padEnd(9)} ${'OUTCOME'.padEnd(8)} ${'SIDE'.padEnd(6)} ${'SIZE'.padEnd(7)} ${'PRICE'.padEnd(7)} ${'NOTIONAL'.padEnd(9)} ${'FEE'.padEnd(6)}│`;
     const divider = `  │${hline(FILL_TABLE_WIDTH, '─')}│`;
     const footer = `  └${hline(FILL_TABLE_WIDTH, '─')}┘`;
 
@@ -157,6 +157,7 @@ export class DetailedRenderer {
     fills.forEach((fill, idx) => {
       const num      = String(idx + 1).padEnd(3);
       const time     = fill.matchTime.padEnd(9);
+      const outcome  = fill.outcomeName.padEnd(8);
       const side     = fill.side.padEnd(6);
       const size     = fmtNum(fill.size, 1).padEnd(7);
       const price    = fmtNum(fill.price, 3).padEnd(7);
@@ -164,7 +165,7 @@ export class DetailedRenderer {
       const fee      = fmtMoney(fill.fee).padEnd(6);
       const earlyTag = fill.side === 'SELL' ? ' [!]' : '    ';
 
-      lines.push(`  │  ${num} ${time} ${side} ${size} ${price} ${notional} ${fee}${earlyTag}│`);
+      lines.push(`  │  ${num} ${time} ${outcome} ${side} ${size} ${price} ${notional} ${fee}${earlyTag}│`);
     });
 
     lines.push(footer);
