@@ -59,6 +59,50 @@ export class TradesFetcher {
   ) {}
 
   /**
+   * Загружает сырые трейды из API без нормализации (для диагностики).
+   *
+   * @param params - Параметры запроса
+   * @returns Массив сырых трейдов как пришли из API
+   *
+   * @example
+   * ```typescript
+   * const raw = await fetcher.fetchRaw({ makerAddress, fromTs, toTs });
+   * console.log(JSON.stringify(raw[0], null, 2));
+   * ```
+   */
+  async fetchRaw(params: FetchTradesParams): Promise<RawTrade[]> {
+    const all: RawTrade[] = [];
+    let nextCursor: string | undefined;
+    let page = 0;
+
+    do {
+      page++;
+      const queryParams: Record<string, string> = {
+        maker_address: params.makerAddress,
+        after: params.fromTs.toString(),
+        before: params.toTs.toString(),
+      };
+      if (nextCursor) queryParams['next_cursor'] = nextCursor;
+
+      const raw = await this.restClient.get<TradesPageResponse | RawTrade[]>(
+        '/data/trades',
+        queryParams
+      );
+
+      if (Array.isArray(raw)) { all.push(...raw); break; }
+
+      const batch = raw.data ?? [];
+      all.push(...batch);
+
+      const cursor = raw.next_cursor;
+      nextCursor = (cursor && cursor !== NO_MORE_PAGES) ? cursor : undefined;
+      if (batch.length === 0) break;
+    } while (nextCursor);
+
+    return all;
+  }
+
+  /**
    * Загружает все сделки за период, нормализует их до наших реальных fills.
    *
    * @param params - Параметры запроса

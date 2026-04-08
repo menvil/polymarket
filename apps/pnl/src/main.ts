@@ -60,7 +60,8 @@ async function main(): Promise<void> {
   }
 
   const clock  = new LiveClock();
-  const logger = new ColorConsoleLogger(clock, LogLevel.INFO);
+  // В режиме --raw логи заглушаем чтобы stdout был чистым JSON
+  const logger = new ColorConsoleLogger(clock, config.rawOutput ? LogLevel.ERROR : LogLevel.INFO);
 
   logger.info('PnL analytics started', {
     from: new Date(config.fromTs * 1000).toISOString().slice(0, 10),
@@ -95,12 +96,21 @@ async function main(): Promise<void> {
   logger.info(`Wallet address: ${signer.getAddress()}`);
 
   // ── Шаг 1: Загрузка и нормализация сделок ───────────────────────────────────
-  const fetcher = new TradesFetcher(restClient, logger);
-  const fills   = await fetcher.fetchAll({
+  const fetcher  = new TradesFetcher(restClient, logger);
+  const fetchParams = {
     makerAddress: config.makerAddress,
     fromTs: config.fromTs,
     toTs:   config.toTs,
-  });
+  };
+
+  // Режим --raw: вывод сырых трейдов из API и выход
+  if (config.rawOutput) {
+    const rawTrades = await fetcher.fetchRaw(fetchParams);
+    console.log(JSON.stringify(rawTrades, null, 2));
+    return;
+  }
+
+  const fills = await fetcher.fetchAll(fetchParams);
 
   if (fills.length === 0) {
     console.log('\nNo trades found for the given period.\n');

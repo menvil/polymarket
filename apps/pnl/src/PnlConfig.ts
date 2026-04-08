@@ -54,6 +54,8 @@ export interface PnlConfig {
   readonly mode: ReportMode;
   /** Выводить JSON вместо форматированного текста */
   readonly jsonOutput: boolean;
+  /** Вывести сырые трейды из API (до нормализации) и выйти */
+  readonly rawOutput: boolean;
 }
 
 // ── Вспомогательные функции ───────────────────────────────────────────────────
@@ -170,6 +172,7 @@ export function parseConfig(): PnlConfig {
 
   const mode: ReportMode = modeArg === 'detailed' ? 'detailed' : 'daily';
   const jsonOutput        = hasFlag('--json');
+  const rawOutput         = hasFlag('--raw');
 
   return {
     privateKey,
@@ -182,5 +185,6 @@ export function parseConfig(): PnlConfig {
     toTs,
     mode,
     jsonOutput,
+    rawOutput,
   };
 }
