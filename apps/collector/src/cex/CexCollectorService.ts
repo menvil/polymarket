@@ -129,8 +129,12 @@ export class CexCollectorService {
       watcher.stop();
     }
 
-    // Закрываем ротатор (удаляет незавершённые файлы) — теперь асинхронно
+    // Закрываем ротатор (удаляет незавершённые файлы из snapshot) — теперь асинхронно
     await this._rotator.close();
+
+    // Disk-scan: удаляем любые .jsonl файлы оставшиеся из-за race condition с _rotate()
+    // (аналогично cleanup() при старте — один и тот же код)
+    await this.cleanup();
 
     this._watchers.length = 0;
 

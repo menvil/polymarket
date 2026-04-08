@@ -111,6 +111,41 @@ for await (const line of reader.readLines()) {
 await reader.close();
 ```
 
+## Graceful Shutdown: алгоритм очистки
+
+### Проблема
+
+При Ctrl+C (SIGINT) незавершённые `.jsonl` файлы текущей сессии должны быть удалены
+(неполные данные бесполезны для бектеста). Ранее `DataRecorder.close()` вызывал
+`stream.destroy()` без ожидания закрытия файловых дескрипторов, после чего сразу
+запускал `cleanup()`. Это создавало race condition: `unlink()` срабатывал до того,
+как ОС полностью освобождала fd.
+
+### Решение (аналог CexFileRotator)
+
+`DataRecorder.close()` теперь использует тот же паттерн что и `CexFileRotator.close()`:
+
+1. `stream.destroy()` + ожидание события `'close'` (или 5-секундный таймаут)
+2. Только после закрытия всех fd → `cleanup()` (disk-scan + `unlink()`)
+
+```typescript
+// Ждём реального закрытия FD перед disk-scan
+await Promise.all(writersSnapshot.map((writer) =>
+  Promise.race([
+    new Promise<void>((resolve) => {
+      writer.stream!.once('close', () => resolve());
+      writer.stream!.destroy();
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+  ])
+));
+// Теперь safe: все FD освобождены, unlink() гарантированно работает
+await this.cleanup();
+```
+
+`cleanup()` — тот же код что и при startup: сканирует диск, находит все `.jsonl`
+файлы и удаляет их. При наличии архивов `.jsonl.gz` они не затрагиваются.
+
 ## Почему такое решение?
 
 1. **Optional dependency**: рекордер необязателен — система работает без него.

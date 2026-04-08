@@ -236,6 +236,7 @@ interface PendingEnrichment {
   lastFinalPrice: number | undefined;
 }
 const pendingEnrichment = new Map<string, PendingEnrichment>();
+let enrichmentRun: Promise<void> | null = null;
 
 const ENRICHMENT_MAX_WAIT_MS = 15 * 60_000; // 15 минут
 const ENRICHMENT_INTERVAL_MS = 30_000;      // проверяем каждые 30 сек
@@ -251,14 +252,17 @@ const ENRICHMENT_INTERVAL_MS = 30_000;      // проверяем каждые 3
  * 4. Если timeout → finalizeMarket с тем что есть (бэктест fallback)
  */
 async function processEnrichmentQueue(): Promise<void> {
+  if (isShuttingDown) return;
   if (pendingEnrichment.size === 0) return;
 
   for (const [marketKey, pe] of [...pendingEnrichment]) {
+    if (isShuttingDown) return;
     pe.attempts++;
     const elapsed = Date.now() - pe.startedAt;
 
     try {
       const updatedMarket = await marketDataClient.getMarketInfo(pe.slug);
+      if (isShuttingDown) return;
       const updatedCrypto = parseCryptoMeta(updatedMarket as unknown as Record<string, unknown>);
 
       // Всегда перезаписываем meta свежими данными API
@@ -313,6 +317,28 @@ async function processEnrichmentQueue(): Promise<void> {
       });
     }
   }
+}
+
+function runEnrichmentQueueOnce(): void {
+  if (enrichmentRun) return;
+  enrichmentRun = processEnrichmentQueue()
+    .catch((err) => {
+      logger.warn('Enrichment queue pass failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    })
+    .finally(() => {
+      enrichmentRun = null;
+    });
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
 }
 
 // ─── Хелперы ──────────────────────────────────────────────────────────────────
@@ -451,8 +477,11 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
   }
 
   if (reason === 'SHUTDOWN' || !closeCryptoMeta) {
-    // Не-крипто рынок или shutdown — финализируем сразу
-    await recorder.finalizeMarket(candidate.marketId, reason);
+    // SHUTDOWN: файлы удалит recorder.close() — здесь только снимаем подписки.
+    // Не-крипто EXPIRED: финализируем сразу (нет нужды в обогащении).
+    if (reason !== 'SHUTDOWN') {
+      await recorder.finalizeMarket(candidate.marketId, reason);
+    }
     logger.info('Market closed', { question: candidate.question, marketId: marketKey, reason });
     return;
   }
@@ -613,7 +642,7 @@ let expiryInterval: ReturnType<typeof setInterval> | null = null;
 let enrichmentInterval: ReturnType<typeof setInterval> | null = null;
 let closedMarketsCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
@@ -630,27 +659,32 @@ async function shutdown(signal: string): Promise<void> {
     if (enrichmentInterval) { clearInterval(enrichmentInterval); enrichmentInterval = null; }
     if (closedMarketsCleanupInterval) { clearInterval(closedMarketsCleanupInterval); closedMarketsCleanupInterval = null; }
 
-    // Финализируем pending enrichment как EXPIRED — архивируем с текущими данными.
-    // Meta уже перезаписывалась на каждом retry, данные максимально актуальны.
-    for (const [marketKey, pe] of pendingEnrichment) {
+    // Сначала останавливаем ingestion новых данных, чтобы не было новых записей
+    // в recorder пока завершаем pending enrichment и закрываем рынки.
+    feed.stop();
+
+    // Если enrichment-pass уже идёт в фоне, не конфликтуем с ним по тем же файлам.
+    if (enrichmentRun) {
       try {
-        await recorder.finalizeMarket(pe.marketId, 'EXPIRED');
-        logger.info('Pending enrichment archived on shutdown', {
-          marketKey,
-          priceToBeat: pe.lastPriceToBeat,
-          finalPrice: pe.lastFinalPrice,
-          attempts: pe.attempts,
-        });
+        await withTimeout(enrichmentRun, 15_000, 'in-flight enrichment pass');
       } catch (err) {
-        logger.warn('Error finalizing pending enrichment', {
-          marketKey,
+        logger.warn('Timed out waiting for in-flight enrichment pass during shutdown', {
           err: err instanceof Error ? err.message : String(err),
         });
       }
     }
-    pendingEnrichment.clear();
 
-    feed.stop();
+    // Pending enrichment рынки уже сняты с WS/RTDS, но их writer'ы остаются открыты.
+    // На shutdown не архивируем их по одному: этот path может зависнуть внутри
+    // finalizeMarket()/gzip и заблокировать весь shutdown. Вместо этого оставляем
+    // удаление на общий recorder.close(), который закроет stream'ы и удалит все
+    // незавершённые .jsonl файлы disk-scan'ом.
+    if (pendingEnrichment.size > 0) {
+      logger.info('Dropping pending enrichment on shutdown — incomplete files will be deleted by recorder.close()', {
+        count: pendingEnrichment.size,
+      });
+      pendingEnrichment.clear();
+    }
 
     // Финализируем все активные рынки (SHUTDOWN — не сжимаем)
     for (const candidate of [...subscribedMarkets.values()]) {
@@ -664,23 +698,33 @@ async function shutdown(signal: string): Promise<void> {
       }
     }
 
+    const shutdownTasks: Array<Promise<void>> = [];
+
     if (cexService) {
+      shutdownTasks.push((async () => {
+        try {
+          await withTimeout(cexService.stop(), 15_000, 'cexService.stop');
+          logger.info('CEX service stop complete');
+        } catch (err) {
+          logger.warn('Error stopping CEX service', {
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })());
+    }
+
+    shutdownTasks.push((async () => {
       try {
-        await cexService.stop();
+        await withTimeout(recorder.close(), 15_000, 'recorder.close');
+        logger.info('Recorder close complete');
       } catch (err) {
-        logger.warn('Error stopping CEX service', {
+        logger.warn('Error closing recorder', {
           err: err instanceof Error ? err.message : String(err),
         });
       }
-    }
+    })());
 
-    try {
-      await recorder.close();
-    } catch (err) {
-      logger.warn('Error closing recorder', {
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await Promise.allSettled(shutdownTasks);
 
     try {
       await ws.disconnect();
@@ -695,12 +739,12 @@ async function shutdown(signal: string): Promise<void> {
   } finally {
     clearInterval(keepAlive);
     logger.info('Shutdown complete');
-    process.exit(0);
+    process.exit(exitCode);
   }
 }
 
-process.on('SIGINT',  () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT',  () => void shutdown('SIGINT', 0));
+process.on('SIGTERM', () => void shutdown('SIGTERM', 0));
 
 // Подавляем автоматический process.exit(1) от unhandled rejections во время shutdown.
 // Источник: orphaned stale-timeout promises из CcxtSymbolWatcher — когда watchOrderBook
@@ -709,6 +753,16 @@ process.on('unhandledRejection', (reason) => {
   logger.warn('Unhandled promise rejection (suppressed to allow clean shutdown)', {
     reason: reason instanceof Error ? reason.message : String(reason),
   });
+});
+
+// Если процесс падает через uncaughtException, обычный SIGINT/SIGTERM shutdown
+// не запускается и незавершённые .jsonl останутся до следующего старта.
+// Пытаемся выполнить тот же cleanup best-effort, затем выходим с code=1.
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception — attempting graceful shutdown', {
+    err: error,
+  });
+  void shutdown('UNCAUGHT_EXCEPTION', 1);
 });
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -766,7 +820,7 @@ expiryInterval = setInterval(() => {
 
 // Background enrichment: проверяем priceToBeat каждые 30 сек
 enrichmentInterval = setInterval(() => {
-  void processEnrichmentQueue();
+  runEnrichmentQueueOnce();
 }, ENRICHMENT_INTERVAL_MS);
 
 // Очистка closedMarkets от записей старше 24ч (каждый час)

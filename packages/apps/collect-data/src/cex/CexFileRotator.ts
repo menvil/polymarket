@@ -88,6 +88,8 @@ export class CexFileRotator {
 
   private _rotationTimer: ReturnType<typeof setTimeout> | null = null;
   private _flushTimer: ReturnType<typeof setInterval> | null = null;
+  /** true после вызова close() — предотвращает создание новых таймеров ротации */
+  private _closed = false;
 
   /**
    * @param _config - Конфигурация ротатора
@@ -247,6 +249,7 @@ export class CexFileRotator {
    * @returns Promise который резолвится после удаления всех незавершённых файлов
    */
   public async close(): Promise<void> {
+    this._closed = true;
     this._logger.info('CexFileRotator closing — deleting incomplete window files');
 
     if (this._rotationTimer) {
@@ -308,8 +311,12 @@ export class CexFileRotator {
 
   /**
    * Планирует следующую ротацию точно на границу окна.
+   *
+   * @remarks
+   * No-op если `close()` уже был вызван — предотвращает утечку таймеров.
    */
   private _scheduleNextRotation(): void {
+    if (this._closed) return;
     const nextBoundary = this._windowStart + this._windowMs;
     const delay = nextBoundary - Date.now();
 
@@ -324,6 +331,7 @@ export class CexFileRotator {
    * @param newWindowStart - Начало нового окна (Unix ms)
    */
   private async _rotate(newWindowStart: number): Promise<void> {
+    if (this._closed) return;
     const oldWindowStart = this._windowStart;
     this._logger.info('Rotating CEX window', {
       closedWindowUTC: new Date(oldWindowStart).toISOString(),

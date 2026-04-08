@@ -112,10 +112,18 @@ export class CcxtSymbolWatcher {
   public start(): void {
     this._stopped = false;
     if (this._params.watchOrderbook) {
-      void this._runObLoop();
+      void this._runObLoop().catch((err) => {
+        this._logger.error('OB loop crashed unexpectedly', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
     if (this._params.watchTrades) {
-      void this._runTradesLoop();
+      void this._runTradesLoop().catch((err) => {
+        this._logger.error('Trades loop crashed unexpectedly', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
     this._logger.info('Watcher started');
   }

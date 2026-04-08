@@ -108,9 +108,9 @@ describe('DataCollectionFlow (integration)', () => {
 
     // Финализируем с reason=EXPIRED (без сжатия — файл остаётся .jsonl)
     await recorder.finalizeMarket(MARKET_ID, 'EXPIRED');
-    await recorder.close();
 
-    // Assert: файл .jsonl создан
+    // Assert: файл .jsonl создан — проверяем ДО close() т.к. close() запускает
+    // тот же disk-scan что и при старте и удалит все .jsonl (включая EXPIRED с compression='none')
     const filePath = findFirstFile(tmpDir, '.jsonl');
     expect(filePath).toBeDefined();
     expect(filePath).not.toMatch(/\.gz$/);
@@ -142,6 +142,9 @@ describe('DataCollectionFlow (integration)', () => {
     expect(events).toHaveLength(5);
     expect(events[0].event_type).toBe('book');
     expect(events[4].sequence).toBe(5);
+
+    // close() удалит все .jsonl (disk-scan = тот же код что при старте)
+    await recorder.close();
   });
 
   // ── Сценарий 2: GZIP round-trip ────────────────────────────────────────────

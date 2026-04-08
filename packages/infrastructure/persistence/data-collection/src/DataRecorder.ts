@@ -338,11 +338,18 @@ export class DataRecorder implements IMarketDataRecorder {
    * Завершает запись рынка: сбрасывает буфер, закрывает поток, сжимает файл.
    *
    * @param marketId - ID рынка
-   * @param reason - Причина завершения
+   * @param reason - Причина завершения (только 'EXPIRED', SHUTDOWN обрабатывается в close())
+   *
+   * @remarks
+   * При EXPIRED:
+   * - Флашит буфер
+   * - Корректно закрывает stream через .end()
+   * - Сжимает файл в .jsonl.gz
+   * - Удаляет оригинальный .jsonl
    *
    * @throws При ошибке I/O
    */
-  public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+  public async finalizeMarket(marketId: MarketId, _reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
     const key = String(marketId);
     const writer = this._writers.get(key);
     if (!writer) {
@@ -360,41 +367,6 @@ export class DataRecorder implements IMarketDataRecorder {
     if (writer.activationTimer) {
       clearTimeout(writer.activationTimer);
       writer.activationTimer = null;
-    }
-
-    if (reason === 'SHUTDOWN') {
-      // При shutdown файл удаляется — неполные данные бесполезны.
-      // Ждём события 'close' от stream перед удалением файла — гарантирует освобождение FD.
-      if (writer.stream) {
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            writer.stream!.once('close', () => resolve());
-            writer.stream!.destroy();
-          }),
-          // Таймаут 5 секунд — если stream не закрылся, продолжаем shutdown
-          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-        ]);
-        writer.stream = null;
-      }
-
-      try {
-        // Проверяем существование файла перед удалением (файл может не существовать если рынок не успел активироваться)
-        if (fs.existsSync(writer.filePath)) {
-          await fs.promises.unlink(writer.filePath);
-          this._logger.info('Incomplete market file deleted on shutdown', {
-            marketId: key,
-            eventsRecorded: writer.eventsRecorded,
-            filePath: writer.filePath,
-          });
-        }
-      } catch (err) {
-        this._logger.warn('Failed to delete incomplete market file', {
-          marketId: key,
-          filePath: writer.filePath,
-          err: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-      return;
     }
 
     // EXPIRED: данные нужны — флашим буфер и корректно закрываем стрим перед сжатием.
@@ -489,6 +461,9 @@ export class DataRecorder implements IMarketDataRecorder {
         count: jsonlFiles.length,
       });
     }
+
+    // 3. Удаляем пустые date-директории после удаления файлов
+    await this._removeEmptyDateDirs();
   }
 
   /**
@@ -501,24 +476,60 @@ export class DataRecorder implements IMarketDataRecorder {
   }
 
   /**
-   * Завершает работу: финализирует все рынки, останавливает таймеры.
+   * Завершает работу: закрывает streams, удаляет незавершённые файлы.
+   *
+   * @remarks
+   * ### Алгоритм shutdown:
+   * 1. Останавливаем flush таймер
+   * 2. Отменяем таймеры активации для неначавшихся рынков
+   * 3. Закрываем все активные WriteStream'ы — destroy() + ждём 'close' event (5с таймаут)
+   * 4. Очищаем Map'ы (новые события игнорируются)
+   * 5. Вызываем `cleanup()` — тот же disk-scan что и при запуске
+   *
+   * Использует тот же `cleanup()` что и при старте коллектора: сканирует диск и
+   * удаляет все `.jsonl` файлы. Это гарантирует удаление ВСЕХ незавершённых файлов
+   * независимо от состояния Map'ов (race condition между активными таймерами и shutdown).
+   *
+   * Ожидание 'close' event (паттерн из `CexFileRotator.close()`) гарантирует что
+   * файловые дескрипторы освобождены ОС **до** того как `cleanup()` вызывает `unlink()`.
    *
    * @throws При ошибке I/O
    */
   public async close(): Promise<void> {
     this._stopFlushTimer();
 
-    const marketIds = [...this._writers.keys()];
-    this._logger.info('Closing DataRecorder', { activeMarkets: marketIds.length });
+    const writersSnapshot = [...this._writers.values()];
+    this._logger.info('Closing DataRecorder', { activeMarkets: writersSnapshot.length });
 
+    // Отменяем таймеры активации и ждём закрытия всех stream'ов.
+    // Ожидание 'close' event гарантирует освобождение FD до disk-scan в cleanup().
     await Promise.all(
-      marketIds.map((id) =>
-        this.finalizeMarket(id as unknown as MarketId, 'SHUTDOWN'),
-      ),
+      writersSnapshot.map((writer) => {
+        if (writer.activationTimer) {
+          clearTimeout(writer.activationTimer);
+          writer.activationTimer = null;
+        }
+
+        if (!writer.stream) return Promise.resolve();
+
+        return Promise.race([
+          new Promise<void>((resolve) => {
+            // destroy() закрывает stream немедленно, 'close' event гарантирует освобождение FD
+            writer.stream!.once('close', () => resolve());
+            writer.stream!.destroy();
+          }),
+          // Таймаут 5 секунд — если stream не закрылся, продолжаем shutdown
+          new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+        ]);
+      }),
     );
 
-    // Удаляем пустые date-директории после удаления незаконченных файлов
-    await this._removeEmptyDateDirs();
+    // Очищаем Map'ы (новые события будут игнорироваться)
+    this._writers.clear();
+    this._tokenIndex.clear();
+
+    // Тот же disk-scan что и при старте: сканируем outputDir и удаляем все .jsonl файлы
+    await this.cleanup();
 
     this._logger.info('DataRecorder closed');
   }
@@ -647,6 +658,10 @@ export class DataRecorder implements IMarketDataRecorder {
    * Это гарантирует что бектест replay получит события в той же последовательности
    * что и paper/live — идентичные EWMA, delta, и решения стратегии.
    *
+   * Ожидает write callback — это гарантирует что данные переданы в kernel buffer
+   * и будут видны при последующем `fs.readFileSync()`. Без ожидания callback данные
+   * могут остаться в Node.js internal stream buffer.
+   *
    * @throws При ошибке записи в поток
    */
   private async _flushWriter(writer: MarketWriter): Promise<void> {
@@ -656,16 +671,19 @@ export class DataRecorder implements IMarketDataRecorder {
     writer.buffer = [];
     writer.lastFlushTime = Date.now();
 
-    const canContinue = writer.stream!.write(data, (err) => {
-      if (err) this._logger.error('Stream write error', { error: err.message });
-    });
-
-    // Backpressure: если внутренний буфер потока переполнен — ждём drain
-    if (!canContinue) {
-      await new Promise<void>((resolve) => {
-        writer.stream!.once('drain', resolve);
+    // Ожидаем write callback: он гарантирует передачу данных в kernel buffer.
+    // write() возвращает false при backpressure — callback всё равно срабатывает
+    // когда данные фактически записаны, поэтому drain отдельно не нужен.
+    await new Promise<void>((resolve, reject) => {
+      writer.stream!.write(data, (err) => {
+        if (err) {
+          this._logger.error('Stream write error', { error: err.message });
+          reject(err);
+        } else {
+          resolve();
+        }
       });
-    }
+    });
   }
 
   /**
