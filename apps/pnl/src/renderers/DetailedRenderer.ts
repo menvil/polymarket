@@ -32,7 +32,8 @@
 import type { PnlReport, MarketPnl, FillRecord } from '../types.js';
 import { fmtMoney, fmtPnl, fmtRoi, fmtNum, hline, truncate } from './format.js';
 
-const FILL_TABLE_WIDTH = 72;
+// Ширина рассчитана точно: 2 (отступ) + 3+1+9+1+8+1+6+1+7+1+7+1+9+1+6 (колонки) + 4 (earlyTag)
+const FILL_TABLE_WIDTH = 68;
 const QUESTION_MAX_LEN = 68;
 
 /**
@@ -145,10 +146,11 @@ export class DetailedRenderer {
    */
   private renderFillTable(fills: FillRecord[]): string[] {
     const lines: string[] = [];
-    const border = `  ┌${hline(FILL_TABLE_WIDTH, '─')}┐`;
-    const header = `  │  ${'#'.padEnd(3)} ${'TIME'.padEnd(9)} ${'OUTCOME'.padEnd(8)} ${'SIDE'.padEnd(6)} ${'SIZE'.padEnd(7)} ${'PRICE'.padEnd(7)} ${'NOTIONAL'.padEnd(9)} ${'FEE'.padEnd(6)}│`;
-    const divider = `  │${hline(FILL_TABLE_WIDTH, '─')}│`;
-    const footer = `  └${hline(FILL_TABLE_WIDTH, '─')}┘`;
+    const border  = `  ┌${hline(FILL_TABLE_WIDTH, '─')}┐`;
+    // В заголовке 4 пробела в конце — заглушка для колонки earlyTag в строках данных
+    const header  = `  │  ${'#'.padEnd(3)} ${'TIME'.padEnd(9)} ${'OUTCOME'.padEnd(8)} ${'SIDE'.padEnd(6)} ${'SIZE'.padEnd(7)} ${'PRICE'.padEnd(7)} ${'NOTIONAL'.padEnd(9)} ${'FEE'.padEnd(6)}    │`;
+    const divider = `  ├${hline(FILL_TABLE_WIDTH, '─')}┤`;
+    const footer  = `  └${hline(FILL_TABLE_WIDTH, '─')}┘`;
 
     lines.push(border);
     lines.push(header);
