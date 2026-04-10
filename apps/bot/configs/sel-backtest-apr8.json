@@ -11,20 +11,11 @@
     "maxSpreadCents": 4,
     "warmupSec": 60,
     "bidOffsetCents": 1,
-    "requireDeltaAccel": true,
-    "makerRepriceAfterSec": 3
-  },
-  "execution": {
-    "postOnly": true
+    "requireDeltaAccel": true
   },
   "market": {
-    "source": "discovery",
-    "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
-      "minDurationMinutes": 4,
-      "maxDurationMinutes": 6
-    },
-    "scanPauseMs": 30000,
+    "source": "snapshots",
+    "paths": ["data/paper-recordings/2026-04-08/*"],
     "outcomeIndex": 0
   },
   "resources": {
@@ -40,11 +31,5 @@
   },
   "account": {
     "accountId": "venue:POLYMARKET:paper-account"
-  },
-  "recording": {
-    "enabled": false,
-    "outputDir": "./data/paper-recordings",
-    "journalDir": "./data/paper-journals",
-    "compression": "gzip"
   }
 }

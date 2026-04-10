@@ -159,6 +159,21 @@ describe('OrderEventBridge', () => {
 
       expect((deps.scheduler as any).onOrderChanged).toHaveBeenCalledWith(STRATEGY_ID, 'ORDER_UPDATE');
     });
+
+    it('should notify scheduler via strategyId when order is absent in repo', () => {
+      bridge = new OrderEventBridge(deps);
+      bridge.start();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('ORDER_REJECTED', {
+        type: 'ORDER_REJECTED',
+        orderId: ORDER_1,
+        strategyId: STRATEGY_ID,
+        reason: 'Rejected',
+      });
+
+      expect((deps.scheduler as any).onOrderChanged).toHaveBeenCalledWith(STRATEGY_ID, 'ORDER_UPDATE');
+    });
   });
 
   // ── ORDER_CANCELLED ─────────────────────────────────

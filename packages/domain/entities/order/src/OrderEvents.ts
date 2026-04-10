@@ -36,6 +36,7 @@ export interface OrderRejectedEvent {
   readonly type: 'ORDER_REJECTED';
   readonly orderId: OrderId;
   readonly reason: string;
+  readonly strategyId?: string;
 }
 
 export interface OrderCancelledEvent {

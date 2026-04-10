@@ -42,6 +42,7 @@ import {
   DEFAULT_PAPER_CONFIG,
   DEFAULT_RESOURCES_CONFIG,
   DEFAULT_ACCOUNT_CONFIG,
+  DEFAULT_EXECUTION_CONFIG,
   DEFAULT_RECORDING_CONFIG,
 } from './BotConfig.js';
 
@@ -200,7 +201,14 @@ export function parseConfig(
     accountId: rawAccount?.accountId ?? DEFAULT_ACCOUNT_CONFIG.accountId,
   };
 
-  // ── Шаг 10: recording (с дефолтами) ───────────────────────────────────────
+  // ── Шаг 10: execution (с дефолтами) ───────────────────────────────────────
+
+  const rawExecution = rawJson['execution'] as Partial<{ postOnly: boolean }> | undefined;
+  const execution = {
+    postOnly: rawExecution?.postOnly ?? DEFAULT_EXECUTION_CONFIG.postOnly,
+  };
+
+  // ── Шаг 11: recording (с дефолтами) ───────────────────────────────────────
 
   const rawRecording = rawJson['recording'] as Partial<RecordingConfig> | undefined;
   const recording: RecordingConfig = {
@@ -210,7 +218,7 @@ export function parseConfig(
     compression: rawRecording?.compression ?? DEFAULT_RECORDING_CONFIG.compression,
   };
 
-  // ── Шаг 11: итог ─────────────────────────────────────────────────────────
+  // ── Шаг 12: итог ─────────────────────────────────────────────────────────
 
   if (errors.length > 0) {
     return { ok: false, errors };
@@ -234,6 +242,7 @@ export function parseConfig(
         resources,
         paper,
         account,
+        execution,
         recording,
       },
     },
@@ -332,6 +341,10 @@ function parseStrategyParams(
       }
       if (raw['side'] === 'up' || raw['side'] === 'down' || raw['side'] === 'auto') result['side'] = raw['side'];
       if (raw['requireDeltaAccel'] === true || raw['requireDeltaAccel'] === false) result['requireDeltaAccel'] = raw['requireDeltaAccel'];
+      if (raw['useBookAnchoredMakerPricing'] === true || raw['useBookAnchoredMakerPricing'] === false) {
+        result['useBookAnchoredMakerPricing'] = raw['useBookAnchoredMakerPricing'];
+      }
+      if (raw['postOnly'] === true || raw['postOnly'] === false) result['postOnly'] = raw['postOnly'];
       break;
 
     case 'oscillation-mm':
@@ -452,6 +465,7 @@ function parseMarketConfig(
 
     case 'discovery': {
       const filter = (raw['filter'] as Record<string, unknown> | undefined) ?? {};
+      const paths = Array.isArray(raw['paths']) ? raw['paths'] as string[] : undefined;
       const scanPauseMs = (raw['scanPauseMs'] as number | undefined) ?? 30_000;
       const outcomeIndex = (raw['outcomeIndex'] as number | undefined) ?? 0;
 
@@ -473,6 +487,7 @@ function parseMarketConfig(
 
       return {
         source: 'discovery',
+        ...(paths && paths.length > 0 ? { paths } : {}),
         filter: {
           minLiquidity: envMinLiquidity ?? (filter['minLiquidity'] as number | undefined),
           minTimeToExpiryHours: envMinTimeToExpiry ?? (filter['minTimeToExpiryHours'] as number | undefined),

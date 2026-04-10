@@ -47,6 +47,7 @@ import type { DnsOverride } from '../dns/DnsOverride.js';
 import { PolymarketRestClient } from './PolymarketRestClient.js';
 import { PolymarketDataApiClient } from './PolymarketDataApiClient.js';
 import { PolymarketOrderRestClient } from './clients/PolymarketOrderRestClient.js';
+import { PolymarketOrderbookRestClient } from './clients/PolymarketOrderbookRestClient.js';
 import { PolymarketBalanceRestClient } from './clients/PolymarketBalanceRestClient.js';
 import { PolymarketPositionsRestClient } from './clients/PolymarketPositionsRestClient.js';
 import { PolymarketMarketDataRestClient } from './clients/PolymarketMarketDataRestClient.js';
@@ -151,6 +152,7 @@ export class PolymarketRestAdapterFactory {
 
     // REST клиенты
     const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
+    const orderbookClient = new PolymarketOrderbookRestClient(restClient, logger);
     const balanceClient = new PolymarketBalanceRestClient(restClient, logger);
     // КРИТИЧНО: Используем адрес MAKER (funder), НЕ адрес SIGNER (proxy)
     // При использовании proxy-кошелька позиции принадлежат MAKER, не SIGNER
@@ -197,6 +199,7 @@ export class PolymarketRestAdapterFactory {
     // Адаптеры (ExecutionAdapter теперь требует EventBus)
     const executionAdapter = new PolymarketExecutionAdapter(
       orderClient,
+      orderbookClient,
       orderMapper,
       eventBus,
       logger,

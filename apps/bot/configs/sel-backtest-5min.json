@@ -11,11 +11,7 @@
     "maxSpreadCents": 4,
     "warmupSec": 60,
     "bidOffsetCents": 1,
-    "requireDeltaAccel": true,
-    "makerRepriceAfterSec": 3
-  },
-  "execution": {
-    "postOnly": true
+    "requireDeltaAccel": true
   },
   "market": {
     "source": "discovery",
@@ -24,7 +20,8 @@
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
-    "scanPauseMs": 30000,
+    "source": "snapshots",
+    "paths": ["/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-23/*"],
     "outcomeIndex": 0
   },
   "resources": {
@@ -40,11 +37,5 @@
   },
   "account": {
     "accountId": "venue:POLYMARKET:paper-account"
-  },
-  "recording": {
-    "enabled": false,
-    "outputDir": "./data/paper-recordings",
-    "journalDir": "./data/paper-journals",
-    "compression": "gzip"
   }
 }

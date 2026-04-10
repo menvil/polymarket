@@ -34,13 +34,15 @@
  * ```
  */
 
-import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, ExchangeError, SubmitOrderParams } from '@polymarket/ports';
+import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, SubmitOrderParams } from '@polymarket/ports';
 import type { MockExchangeClient } from '@polymarket/backtesting';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
+import { Err } from '@polymarket/result';
+import { ExchangeError } from '@polymarket/ports';
 import type { PaperFillSimulator } from './PaperFillSimulator.js';
 
 /**
@@ -170,14 +172,22 @@ export class PaperExchangeClient implements IExchangeClient {
   public async submitOrder(
     params: SubmitOrderParams,
   ): Promise<Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError>> {
+    const ctx = this._marketContexts.get(assetIdToString(params.asset));
+    const instrumentId = ctx?.instrumentId ?? this._instrumentId;
+
+    if (
+      params.postOnly === true &&
+      this._deps.simulator.wouldCrossImmediately(instrumentId, params.side, params.price)
+    ) {
+      return Err(new ExchangeError('post-only order would execute immediately (marketable)'));
+    }
+
     const result = await this._deps.mock.submitOrder(params);
 
     if (result.ok) {
-      const ctx = this._marketContexts.get(assetIdToString(params.asset));
-
       this._deps.simulator.trackOrder({
         orderId: result.value.orderId,
-        instrumentId: ctx?.instrumentId ?? this._instrumentId,
+        instrumentId,
         marketId: ctx?.marketId ?? this._marketId,
         side: params.side,
         price: params.price,
@@ -185,6 +195,7 @@ export class PaperExchangeClient implements IExchangeClient {
         remainingSize: params.size.value(),
         accountId: ctx?.accountId ?? this._accountId,
         asset: ctx?.asset ?? this._asset,
+        postOnly: params.postOnly === true,
         placedAtMs: this._deps.clock.now().getTime(),
       });
     }

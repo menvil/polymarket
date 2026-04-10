@@ -4,6 +4,7 @@
   "private": true,
   "description": "Polymarket trading system monorepo",
   "workspaces": [
+    "apps/*",
     "packages/foundation/*",
     "packages/domain/*",
     "packages/infrastructure/*",

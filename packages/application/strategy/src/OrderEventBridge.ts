@@ -83,6 +83,10 @@ export class OrderEventBridge {
     // ORDER_REJECTED → notify scheduler
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_REJECTED', (event) => {
+        if ('strategyId' in event && typeof event.strategyId === 'string' && event.strategyId.length > 0) {
+          this._deps.scheduler.onOrderChanged(event.strategyId, 'ORDER_UPDATE');
+          return;
+        }
         this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
       }),
     );

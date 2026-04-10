@@ -227,6 +227,36 @@ export interface StrategySnapshot {
   readonly complementaryAsset?: AssetId;
 
   /**
+   * Лучшие bid/ask комплементарного токена.
+   *
+   * @remarks
+   * Нужен стратегиям, которые реально размещают ордера на complementaryInstrumentId.
+   * Без этого стратегия видит только primary top-of-book и может вычислить
+   * marketable цену для комплементарного токена по синтетике `100 - x`.
+   */
+  readonly complementaryTopOfBook?: TopOfBook;
+
+  /**
+   * Открытые ордера стратегии на комплементарном токене.
+   *
+   * @remarks
+   * Нужен стратегиям с auto-selection между primary и complementary outcome.
+   * Без этого стратегия не видит собственный comp-ордер и не может корректно
+   * делать cancel/reprice после переключения стороны.
+   */
+  readonly complementaryOpenOrders?: readonly Order[];
+
+  /**
+   * MATCHED-ордера стратегии на комплементарном токене.
+   */
+  readonly complementaryMatchedOrders?: readonly Order[];
+
+  /**
+   * true если на комплементарном инструменте есть in-flight fills.
+   */
+  readonly hasComplementaryInFlightFills?: boolean;
+
+  /**
    * Rolling лента публичных трейдов комплементарного токена.
    *
    * @remarks

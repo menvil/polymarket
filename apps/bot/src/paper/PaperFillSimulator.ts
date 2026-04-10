@@ -83,13 +83,17 @@ export interface PendingPaperOrder {
   remainingSize: Decimal;
   readonly accountId: AccountId;
   readonly asset: AssetId;
+  /** Accepted post-only order can only fill as maker. */
+  readonly postOnly: boolean;
   /**
    * Время размещения ордера (epoch ms от clock).
    *
    * @remarks
-   * Используется для определения maker/taker:
-   * - fill на том же тике (fillTime === placedAtMs) → taker (пересёк спред)
-   * - fill позже → maker (стоял в стакане, рынок пришёл)
+   * Fallback для обычных лимитных ордеров:
+   * - fill на том же тике (fillTime === placedAtMs) → taker
+   * - fill позже → maker
+   *
+   * Для принятых `postOnly` ордеров liquidity фиксируется как maker.
    */
   readonly placedAtMs: number;
 }
@@ -115,6 +119,8 @@ export interface PaperFillSimulatorDeps {
 export class PaperFillSimulator {
   /** Ожидающие исполнения ордера: orderId → PendingPaperOrder */
   private readonly _pending = new Map<string, PendingPaperOrder>();
+  /** Последний известный top of book: instrumentId → best bid / ask */
+  private readonly _topOfBook = new Map<string, { bestBid?: Decimal; bestAsk?: Decimal }>();
   /** Функции отписки от EventBus */
   private readonly _unsubscribers: Array<() => void> = [];
 
@@ -209,6 +215,25 @@ export class PaperFillSimulator {
     return this._pending.size;
   }
 
+  /**
+   * Проверяет, исполнится ли post-only ордер немедленно по последнему известному стакану.
+   */
+  public wouldCrossImmediately(
+    instrumentId: InstrumentId,
+    side: Side,
+    price: Price,
+  ): boolean {
+    const top = this._topOfBook.get(String(instrumentId));
+    if (!top) return false;
+
+    const orderPrice = price.value();
+    if (side === 'BUY') {
+      return top.bestAsk !== undefined && top.bestAsk.lte(orderPrice);
+    }
+
+    return top.bestBid !== undefined && top.bestBid.gte(orderPrice);
+  }
+
   // ── Приватные обработчики событий ──────────────────────────────────────────
 
   /**
@@ -228,6 +253,8 @@ export class PaperFillSimulator {
     bestBid: Decimal | undefined,
     bestAsk: Decimal | undefined,
   ): Promise<void> {
+    this._topOfBook.set(String(instrumentId), { bestBid, bestAsk });
+
     for (const order of this._pending.values()) {
       if (String(order.instrumentId) !== String(instrumentId)) continue;
 
@@ -250,7 +277,7 @@ export class PaperFillSimulator {
 
       if (fillPrice !== undefined) {
         const nowMs = this._deps.clock.now().getTime();
-        const isTaker = nowMs === order.placedAtMs;
+        const isTaker = !order.postOnly && nowMs === order.placedAtMs;
         await this._applyFill(order, fillPrice, order.remainingSize, isTaker);
       }
     }
@@ -297,7 +324,7 @@ export class PaperFillSimulator {
           ? (order.side === 'BUY' ? Decimal.min(orderPrice, tradePrice) : Decimal.max(orderPrice, tradePrice))
           : tradePrice;
         const nowMs = this._deps.clock.now().getTime();
-        const isTaker = nowMs === order.placedAtMs;
+        const isTaker = !order.postOnly && nowMs === order.placedAtMs;
         await this._applyFill(order, fillPrice, fillSize, isTaker);
       }
     }
@@ -313,7 +340,7 @@ export class PaperFillSimulator {
    * 4. Вызывает ProcessFillUseCase.execute(fill)
    *
    * ### Комиссия Polymarket (crypto-рынки):
-   * - **Taker**: `feeUSDC = size × price × 0.25 × (price × (1 - price))^2`
+   * - **Taker**: `feeUSDC = round5(size × 0.072 × price × (1 - price))`
    * - **Maker**: fee = 0 (taker-only fee model)
    *
    * ProcessFillUseCase:
@@ -369,7 +396,6 @@ export class PaperFillSimulator {
     }
 
     // Комиссия: taker платит, maker — нет (Polymarket taker-only fee model)
-    // Формула: feeUSDC = size × price × 0.25 × (price × (1 - price))^2
     const feeAmount = isTaker
       ? calculatePolymarketTakerFee(fillSize, fillPrice)
       : new Decimal(0);

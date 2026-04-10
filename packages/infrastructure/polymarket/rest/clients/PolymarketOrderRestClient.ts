@@ -32,6 +32,8 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import { OrderType } from '@polymarket/clob-client';
+import { orderToJson } from '@polymarket/clob-client/dist/utilities.js';
 import { ApiError } from '../PolymarketRestClient.js';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 import type { PolymarketOrderBuilder } from '../auth/PolymarketOrderBuilder.js';
@@ -52,6 +54,9 @@ export interface CreateOrderRequest {
   /** Размер (количество акций) */
   size: number;
 
+  /** true = post-only order; exchange rejects instead of matching immediately */
+  postOnly?: boolean;
+
   /** Ставка комиссии в базисных пунктах (по умолчанию: 0) */
   feeRateBps?: number;
 
@@ -60,6 +65,9 @@ export interface CreateOrderRequest {
 
   /** Шаг цены для округления (необязательно, по умолчанию: 0.01) */
   priceTick?: number;
+
+  /** true если рынок использует negRisk exchange contract */
+  negRisk?: boolean;
 }
 
 /**
@@ -76,7 +84,7 @@ export interface CreateOrderResponse {
   orderID: string;
 
   /** Статус ордера */
-  status: 'pending' | 'live' | 'filled' | 'cancelled';
+  status: 'pending' | 'live' | 'filled' | 'cancelled' | 'matched' | 'delayed' | 'unmatched';
 
   /** Сумма к получению */
   takingAmount: string;
@@ -284,6 +292,7 @@ export class PolymarketOrderRestClient {
       nonce: exchangeNonce,
       expiration: 0, // Без истечения
       priceTick: request.priceTick, // Передаём шаг цены для округления
+      negRisk: request.negRisk,
     });
 
     this.logger.debug('Order signed', {
@@ -297,15 +306,23 @@ export class PolymarketOrderRestClient {
     // Отправляем ордер в API (POST /order ожидает конкретный формат)
     // КРИТИЧНО: owner ДОЛЖЕН быть строкой API KEY (UUID), НЕ адресом кошелька!
     // Референс SDK: orderToJson(order, this.creds?.key, orderType, deferExec)
-    const response = await this.restClient.post<CreateOrderResponse>(
-      '/order',
-      {
-        order: signedOrder,
-        owner: this.restClient.getApiKey(), // Строка API ключа (UUID)
-        orderType: 'GTC', // Good Till Cancel
-      },
-      { requireSignature: false } // Ордер уже подписан через EIP-712
+    const payload = orderToJson(
+      signedOrder as any,
+      this.restClient.getApiKey(),
+      OrderType.GTC,
+      request.postOnly === true,
+      request.postOnly === true,
     );
+
+    const response = await this.restClient.post<CreateOrderResponse>('/order', payload, {
+      requireSignature: false,
+    });
+
+    if (response.success === false) {
+      throw new ApiError(
+        `Create order rejected by exchange: ${response.errorMsg || 'unknown error'}`,
+      );
+    }
 
     this.logger.info('Order created successfully', {
       orderID: response.orderID,

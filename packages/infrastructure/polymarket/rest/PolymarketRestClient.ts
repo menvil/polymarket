@@ -184,7 +184,11 @@ export class PolymarketRestClient {
    * ```
    */
   async post<T>(endpoint: string, body: unknown, options?: RequestOptions): Promise<T> {
-    return this.request<T>('POST', endpoint, { ...options, body, requireSignature: true });
+    return this.request<T>('POST', endpoint, {
+      ...options,
+      body,
+      requireSignature: options?.requireSignature ?? true,
+    });
   }
 
   /**
@@ -205,7 +209,11 @@ export class PolymarketRestClient {
    * ```
    */
   async delete<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {
-    return this.request<T>('DELETE', endpoint, { ...options, body, requireSignature: true });
+    return this.request<T>('DELETE', endpoint, {
+      ...options,
+      body,
+      requireSignature: options?.requireSignature ?? true,
+    });
   }
 
   /**

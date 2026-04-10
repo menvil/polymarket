@@ -101,6 +101,8 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         side: params.side.toLowerCase() as 'buy' | 'sell',
         price: params.price.value().toNumber(),
         size: params.size.value().toNumber(),
+        postOnly: params.postOnly,
+        clientOrderId: params.clientOrderId,
         strategyId: params.strategyId,
       });
 

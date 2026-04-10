@@ -12,8 +12,10 @@ export interface PlaceOrderParams {
   side: 'buy' | 'sell';
   price: number;
   size: number;
+  postOnly?: boolean;
   priceTick?: number;
   feeRateBps?: number;
+  clientOrderId?: string;
   /** ID стратегии для изоляции multi-strategy */
   strategyId?: string;
 }

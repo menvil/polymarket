@@ -43,6 +43,7 @@ import {
   PolymarketRestClient,
   PolymarketExecutionAdapter,
   PolymarketOrderRestClient,
+  PolymarketOrderbookRestClient,
   PolymarketBalanceRestClient,
   PolymarketBalanceMapper,
   PolymarketOrderMapper,
@@ -153,10 +154,12 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   );
 
   const orderRestClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
+  const orderbookRestClient = new PolymarketOrderbookRestClient(restClient, logger);
   const orderMapper = new PolymarketOrderMapper(logger);
 
   const executionAdapter = new PolymarketExecutionAdapter(
     orderRestClient,
+    orderbookRestClient,
     orderMapper,
     eventBus,
     logger,

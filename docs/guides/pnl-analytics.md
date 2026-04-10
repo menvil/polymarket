@@ -10,7 +10,7 @@ cd apps/pnl
 # Краткая сводка по дням за март
 npx tsx --env-file=.env src/main.ts --from 2026-03-01 --to 2026-03-31
 
-# Детальный отчёт за сегодня
+# Детальный отчёт за 2026-04-08
 npx tsx --env-file=.env src/main.ts --from 2026-04-08 --mode detailed
 
 # JSON для дальнейшей обработки
@@ -64,11 +64,25 @@ entry_cost    = Σ (BUY.size × BUY.price)
 sell_proceeds = Σ (SELL.size × SELL.price)    # досрочный выход до резолюции
 net_shares    = Σ BUY.size − Σ SELL.size      # акции ушедшие в settlement
 redeem_value  = net_shares × resolvedPrice    # 0.0 или 1.0
-fees          = Σ (notional × fee_rate_bps / 10_000)
+fee_usdc_eq   = Σ round5(size × feeRate × price × (1 - price))
+buy_fee_shares = fee_usdc_eq / price          # только для BUY taker
+sell_proceeds = Σ (SELL.notional - SELL.fee)  # только SELL taker fee уходит в USDC
+net_shares    = Σ BUY.effectiveSize − Σ SELL.size
 
-net_pnl       = sell_proceeds + redeem_value − entry_cost − fees
+net_pnl       = sell_proceeds + redeem_value − entry_cost
 roi           = net_pnl / entry_cost × 100%
 ```
+
+Где:
+
+- `isTaker` определяется по `trader_side === 'TAKER'`
+- `feeRate` берётся из публичного fee schedule Polymarket по категории рынка
+- `fee_rate_bps` из трейда не используется для расчёта фактической комиссии fill
+- `taker_base_fee` из market object не используется для PnL-расчёта
+- maker fills всегда имеют fee = 0
+- комиссия округляется до 5 знаков после запятой; значения меньше `0.00001` становятся `0`
+- BUY taker: комиссия удерживается shares, поэтому уменьшает полученные shares
+- SELL taker: комиссия удерживается в USDC, поэтому уменьшает `sellProceeds`
 
 ## Пример вывода `--mode daily`
 

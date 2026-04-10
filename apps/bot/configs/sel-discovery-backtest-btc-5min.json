@@ -14,8 +14,16 @@
     "requireDeltaAccel": true
   },
   "market": {
-    "source": "snapshots",
-    "paths": ["data/paper-recordings/2026-04-03/*"],
+    "source": "discovery",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-21/*"
+    ],
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
     "outcomeIndex": 0
   },
   "resources": {

@@ -12,19 +12,18 @@
     "warmupSec": 60,
     "bidOffsetCents": 1,
     "requireDeltaAccel": true,
-    "makerRepriceAfterSec": 3
-  },
-  "execution": {
-    "postOnly": true
+    "useBookAnchoredMakerPricing": false
   },
   "market": {
-    "source": "discovery",
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-23/*"
+    ],
     "filter": {
       "requiredKeywords": ["bitcoin", "up or down"],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
-    "scanPauseMs": 30000,
     "outcomeIndex": 0
   },
   "resources": {
@@ -41,10 +40,7 @@
   "account": {
     "accountId": "venue:POLYMARKET:paper-account"
   },
-  "recording": {
-    "enabled": false,
-    "outputDir": "./data/paper-recordings",
-    "journalDir": "./data/paper-journals",
-    "compression": "gzip"
+  "execution": {
+    "postOnly": false
   }
 }

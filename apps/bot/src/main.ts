@@ -87,6 +87,7 @@ import { MarketPairMatcher } from '@polymarket/cross-market';
 import type { MarketInfo } from '@polymarket/cross-market';
 import type { CrossMarketArbConfig } from './strategies/CrossMarketArbStrategy.js';
 import { CrossMarketArbStrategy } from './strategies/CrossMarketArbStrategy.js';
+import { SelectiveEntryStrategy } from './strategies/SelectiveEntryStrategy.js';
 import { MarketRotation, MIN_VIABLE_TRADING_MS } from './bot/MarketRotation.js';
 import type { MarketSlot } from './bot/MarketRotation.js';
 
@@ -409,6 +410,7 @@ async function runPaper(): Promise<void> {
       { type: fixedSelection.strategy, id: `${fixedSelection.strategy}-slot-${_slotCounter++}`, params: fixedSelection.strategyParams } as StrategyConfig,
       logger,
       recording?.journal,
+      config.execution,
     );
     initialSlots.set(tStr, {
       instrumentId: iId,
@@ -2297,28 +2299,30 @@ async function runPaper(): Promise<void> {
  * Market.source должен быть 'snapshots'.
  */
 async function runBacktest(): Promise<void> {
-  if (config.market.source !== 'snapshots') {
-    console.error('[Bot] backtest mode requires market.source=snapshots');
+  if (config.market.source !== 'snapshots' && config.market.source !== 'discovery') {
+    console.error('[Bot] backtest mode requires market.source=snapshots or market.source=discovery');
     process.exit(1);
   }
 
   const marketConfig = config.market;
   const outcomeIndex = marketConfig.outcomeIndex ?? 1;
 
-  if (!marketConfig.paths || marketConfig.paths.length === 0) {
+  const snapshotPaths = 'paths' in marketConfig ? marketConfig.paths : undefined;
+  if (!snapshotPaths || snapshotPaths.length === 0) {
     console.error('[Bot] market.paths must be non-empty for backtest mode');
     process.exit(1);
   }
 
   // Резолв glob-паттернов в paths (поддержка *, **, и конкретных файлов)
-  const resolvedPaths = await resolveSnapshotPaths(marketConfig.paths);
+  const resolvedPaths = await resolveSnapshotPaths(snapshotPaths);
   if (resolvedPaths.length === 0) {
-    console.error('[Bot] No snapshot files found for paths:', marketConfig.paths);
+    console.error('[Bot] No snapshot files found for paths:', snapshotPaths);
     process.exit(1);
   }
 
-  // Multi-market mode: каждый файл — изолированный бэктест + агрегация
-  if (resolvedPaths.length > 1) {
+  // Discovery-over-snapshots и multi-market mode используют единый runner,
+  // чтобы filter применялся одинаково ко всем snapshot-файлам.
+  if (config.market.source === 'discovery' || resolvedPaths.length > 1) {
     await runMultiMarketBacktest(resolvedPaths, config, outcomeIndex as 0 | 1);
     return;
   }
@@ -2538,7 +2542,12 @@ async function runBacktest(): Promise<void> {
     });
   });
 
-  const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
+  const strategy = createStrategy(
+    { type: config.strategy, params: config.strategyParams } as StrategyConfig,
+    logger,
+    undefined,
+    config.execution,
+  );
 
   // Извлекаем eventStartTime / endDate из rawMarket (Gamma API) — есть у любого рынка, не только крипто
   const rawEventStart = snapshotRawMarket?.['eventStartTime'] as string | undefined;
@@ -2701,7 +2710,7 @@ async function runBacktest(): Promise<void> {
       rules: config.strategyRules.map(r => ({ label: r.label, strategy: r.strategy, match: r.match })),
     });
   } else {
-    logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
+    logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams, execution: config.execution });
   }
 
   logger.warn('Orders placed (open at end)', {
@@ -2754,11 +2763,20 @@ async function runBacktest(): Promise<void> {
 
   const buyCount = buys.length;
   const sellCount = sells.length;
+  const selectiveStats = strategy instanceof SelectiveEntryStrategy
+    ? strategy.stats
+    : { buyAttempts: 0, cancelAfterPlace: 0 };
+  const executionStats = engine.executionEngine.stats ?? {
+    benignPostOnlyRejects: (engine.executionEngine as unknown as { _benignPostOnlyRejects?: number })._benignPostOnlyRejects ?? 0,
+  };
 
   logger.warn('Executed cycles', {
     totalFills: executedFills.length,
     buys: buyCount,
     sells: sellCount,
+    buyAttempts: selectiveStats.buyAttempts,
+    postOnlyRejects: executionStats.benignPostOnlyRejects,
+    cancelAfterPlace: selectiveStats.cancelAfterPlace,
     partialFills: partialFills.length,
     totalBooks: bookSnapshotCount,
     cycles,
@@ -2951,6 +2969,8 @@ async function runLive(): Promise<void> {
     const fixedStrategy = createStrategy(
       { type: liveFixedSelection.strategy, id: `${liveFixedSelection.strategy}-slot-${_slotCounter++}`, params: liveFixedSelection.strategyParams } as StrategyConfig,
       logger,
+      undefined,
+      config.execution,
     );
     initialSlots.set(tStr, {
       instrumentId: iId,
@@ -3659,4 +3679,3 @@ function collectFiles(
 }
 
 // readSnapshotMeta() извлечена в ./bot/readSnapshotMeta.ts
-

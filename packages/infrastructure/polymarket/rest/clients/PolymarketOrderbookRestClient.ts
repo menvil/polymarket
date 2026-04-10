@@ -41,8 +41,14 @@ export interface OrderbookLevelResponse {
  * Ответ со стаканом заявок (сырой формат API)
  */
 export interface OrderbookResponse {
+  /** Condition ID / market id */
+  market?: string;
+
   /** Идентификатор токена */
   tokenId: string;
+
+  /** Альтернативное имя идентификатора токена из official client */
+  asset_id?: string;
 
   /** Заявки на покупку (отсортированы по убыванию цены) */
   bids: OrderbookLevelResponse[];
@@ -52,6 +58,12 @@ export interface OrderbookResponse {
 
   /** Временная метка снимка */
   timestamp: number;
+
+  /** Минимальный шаг цены */
+  tick_size?: string;
+
+  /** Является ли рынок neg-risk */
+  neg_risk?: boolean;
 }
 
 /**

@@ -11,7 +11,11 @@
     "maxSpreadCents": 4,
     "warmupSec": 60,
     "bidOffsetCents": 1,
-    "requireDeltaAccel": true
+    "requireDeltaAccel": true,
+    "makerRepriceAfterSec": 3
+  },
+  "execution": {
+    "postOnly": true
   },
   "market": {
     "source": "discovery",
@@ -33,7 +37,7 @@
     "accountId": "venue:POLYMARKET:live"
   },
   "recording": {
-    "enabled": true,
+    "enabled": false,
     "outputDir": "./data/live-recordings",
     "journalDir": "./data/journals",
     "compression": "gzip"

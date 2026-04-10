@@ -57,6 +57,7 @@ import { buildStrategyEngine } from './buildStrategyEngine.js';
 import { readSnapshotMeta } from './readSnapshotMeta.js';
 import { createStrategy } from '../strategyFactory.js';
 import type { StrategyConfig } from '../strategyFactory.js';
+import { SelectiveEntryStrategy } from '../strategies/SelectiveEntryStrategy.js';
 import type { RiskParams } from '@polymarket/risk';
 
 // ── Типы ────────────────────────────────────────────────────────────────────
@@ -79,13 +80,19 @@ interface MarketBacktestResult {
   readonly tradeEvents: number;
   readonly errors: number;
   readonly durationMs: number;
+  readonly buyAttempts: number;
+  readonly cancelAfterPlace: number;
+  readonly postOnlyRejects: number;
 }
 
 function matchesSnapshotFilter(
   rawMarket: Record<string, unknown> | undefined,
   config: BotConfig,
 ): boolean {
-  if (config.market.source !== 'snapshots' || !config.market.filter) {
+  if (
+    (config.market.source !== 'snapshots' && config.market.source !== 'discovery') ||
+    !config.market.filter
+  ) {
     return true;
   }
 
@@ -323,7 +330,12 @@ async function runSingleMarketBacktest(
   });
 
   // 12. Создаём и регистрируем стратегию
-  const strategy = createStrategy({ type: config.strategy, params: config.strategyParams } as StrategyConfig, logger);
+  const strategy = createStrategy(
+    { type: config.strategy, params: config.strategyParams } as StrategyConfig,
+    logger,
+    undefined,
+    config.execution,
+  );
 
   // Извлекаем eventStartTime / endDate из rawMarket (Gamma API)
   const rawEventStart = rawMarket?.['eventStartTime'] as string | undefined;
@@ -378,6 +390,13 @@ async function runSingleMarketBacktest(
   engine.orderEventBridge.stop();
   simulator.stop();
   marketDataStore.stop();
+
+  const selectiveStats = strategy instanceof SelectiveEntryStrategy
+    ? strategy.stats
+    : { buyAttempts: 0, cancelAfterPlace: 0 };
+  const executionStats = engine.executionEngine.stats ?? {
+    benignPostOnlyRejects: (engine.executionEngine as unknown as { _benignPostOnlyRejects?: number })._benignPostOnlyRejects ?? 0,
+  };
 
   // 15. Settlement
   // Auto-selection: позиция может быть на primary ИЛИ complementary инструменте.
@@ -483,6 +502,9 @@ async function runSingleMarketBacktest(
     tradeEvents: replayResult.tradeEvents,
     errors: replayResult.errors,
     durationMs: replayResult.durationMs,
+    buyAttempts: selectiveStats.buyAttempts,
+    cancelAfterPlace: selectiveStats.cancelAfterPlace,
+    postOnlyRejects: executionStats.benignPostOnlyRejects,
   };
 }
 
@@ -585,6 +607,9 @@ export async function runMultiMarketBacktest(
   const avgPnl = totalPnl.div(results.length);
   const totalFills = results.reduce((acc, r) => acc + r.buys + r.sells, 0);
   const totalCycles = results.reduce((acc, r) => acc + r.completedCycles, 0);
+  const buyAttempts = results.reduce((acc, r) => acc + r.buyAttempts, 0);
+  const cancelAfterPlace = results.reduce((acc, r) => acc + r.cancelAfterPlace, 0);
+  const postOnlyRejects = results.reduce((acc, r) => acc + r.postOnlyRejects, 0);
 
   // Сортировка по PnL для best/worst
   const sorted = [...results].sort((a, b) => b.pnl.minus(a.pnl).toNumber());
@@ -609,6 +634,9 @@ export async function runMultiMarketBacktest(
     avgPnl: `${avgPnl.gte(0) ? '+' : ''}${avgPnl.toFixed(4)} USDC`,
     bestPnl: `${best.pnl.gte(0) ? '+' : ''}${best.pnl.toFixed(4)} (${best.file.slice(0, 50)})`,
     worstPnl: `${worst.pnl.gte(0) ? '+' : ''}${worst.pnl.toFixed(4)} (${worst.file.slice(0, 50)})`,
+    buyAttempts,
+    postOnlyRejects,
+    cancelAfterPlace,
     totalFills,
     totalCycles,
     totalDuration: `${(totalDurationMs / 1000).toFixed(1)}s`,
@@ -616,7 +644,11 @@ export async function runMultiMarketBacktest(
   });
 
   // Strategy config
-  logger.warn('Strategy config', { type: config.strategy, ...config.strategyParams });
+  logger.warn('Strategy config', {
+    type: config.strategy,
+    ...config.strategyParams,
+    execution: config.execution,
+  });
 
   // Per-market results (sorted by PnL, top 10 + bottom 10)
   const topN = 10;

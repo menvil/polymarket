@@ -39,6 +39,21 @@ import type { MarketMeta } from '../types.js';
 
 const CLOB_API_BASE = 'https://clob.polymarket.com';
 
+const FEE_RATES_BY_CATEGORY: Record<string, number> = {
+  crypto: 0.072,
+  sports: 0.03,
+  finance: 0.04,
+  politics: 0.04,
+  mentions: 0.04,
+  tech: 0.04,
+  economics: 0.05,
+  culture: 0.05,
+  weather: 0.05,
+  other: 0.05,
+  general: 0.05,
+  geopolitics: 0,
+};
+
 /**
  * Ответ CLOB API для одного рынка.
  */
@@ -46,6 +61,8 @@ interface ClobMarketResponse {
   condition_id: string;
   question?: string;
   closed?: boolean;
+  taker_base_fee?: number;
+  tags?: string[];
   tokens?: Array<{
     token_id: string;
     outcome?: string;
@@ -150,10 +167,15 @@ export class MarketEnricher {
     const outcomePrices: number[] = tokens.map(t => (t.winner === true ? 1 : 0));
 
     const question = data.question ?? conditionId;
+    const tags = data.tags ?? [];
+    const feeCategory = this.detectFeeCategory(question, tags);
+    const takerFeeRate = FEE_RATES_BY_CATEGORY[feeCategory] ?? 0;
 
     if (resolved) {
       this.logger.debug(`Market resolved: "${question}"`, {
         conditionId,
+        feeCategory,
+        takerFeeRate,
         outcomes,
         outcomePrices,
       });
@@ -162,10 +184,32 @@ export class MarketEnricher {
     return {
       conditionId,
       question,
+      tags,
       outcomes,
       clobTokenIds,
+      feeCategory,
+      takerFeeRate,
+      takerBaseFeeBps: data.taker_base_fee ?? 0,
       outcomePrices: resolved ? outcomePrices : [],
       resolved,
     };
+  }
+
+  private detectFeeCategory(question: string, tags: string[]): string {
+    const normalizedTags = tags.map(tag => tag.trim().toLowerCase());
+
+    for (const tag of normalizedTags) {
+      if (tag in FEE_RATES_BY_CATEGORY) {
+        return tag;
+      }
+      if (tag.includes('general')) return 'general';
+      if (tag.includes('other')) return 'other';
+    }
+
+    if (question.toLowerCase().includes(' up or down ')) {
+      return 'crypto';
+    }
+
+    return 'general';
   }
 }

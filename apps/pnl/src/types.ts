@@ -77,6 +77,8 @@ export interface NormalizedFill {
   price: string;
   /** Ставка комиссии */
   fee_rate_bps?: string;
+  /** Наша роль по ликвидности в трейде */
+  liquidityRole: 'MAKER' | 'TAKER';
   /** Timestamp в секундах Unix */
   match_time?: string;
   /** Название нашего outcome (UP/DOWN/YES/NO) */
@@ -103,10 +105,18 @@ export interface MarketMeta {
   conditionId: string;
   /** Текст вопроса маркета */
   question: string;
+  /** Теги рынка из CLOB API */
+  tags: string[];
   /** Названия исходов, например ["Yes","No"] или ["UP","DOWN"] */
   outcomes: string[];
   /** ID CLOB-токенов, индекс совпадает с outcomes[] */
   clobTokenIds: string[];
+  /** Категория fee schedule */
+  feeCategory: string;
+  /** Taker fee rate из публичного fee schedule */
+  takerFeeRate: number;
+  /** Базовая ставка из market object; хранится только для диагностики */
+  takerBaseFeeBps: number;
   /**
    * Цены исходов после резолюции.
    * Для solved рынка: [1, 0] или [0, 1].
@@ -127,6 +137,8 @@ export interface FillRecord {
   id: string;
   /** BUY — открытие, SELL — досрочный выход */
   side: 'BUY' | 'SELL';
+  /** Роль ликвидности для этого fill */
+  liquidityRole: 'MAKER' | 'TAKER';
   /** Название нашего outcome (UP/DOWN/YES/NO) */
   outcomeName: string;
   /** Количество акций */
@@ -135,8 +147,14 @@ export interface FillRecord {
   price: number;
   /** Номинал = size × price */
   notional: number;
-  /** Комиссия в USDC */
+  /** Комиссия в USDC-equivalent */
   fee: number;
+  /** Комиссия, удержанная в shares на BUY taker fills */
+  feeShares: number;
+  /** Эффективное изменение количества shares после удержания комиссии */
+  effectiveSize: number;
+  /** Эффективный cashflow в USDC после комиссии */
+  cashFlow: number;
   /** Timestamp в миллисекундах */
   matchTs: number;
   /** Дата в формате YYYY-MM-DD */
@@ -166,15 +184,17 @@ export interface MarketPnl {
   fills: FillRecord[];
   /** Σ notional по BUY-fills */
   entryCost: number;
-  /** Σ notional по SELL-fills (досрочные выходы) */
+  /** Σ cashflow по SELL-fills (после sell-side fee) */
   sellProceeds: number;
-  /** Количество акций ушедших в settlement = Σ BUY.size − Σ SELL.size */
+  /** Количество акций ушедших в settlement = Σ BUY.effectiveSize − Σ SELL.size */
   netShares: number;
   /** Стоимость settlement = netShares × resolvedPrice */
   redeemValue: number;
-  /** Σ всех комиссий */
+  /** Σ всех комиссий в USDC-equivalent (информационно) */
   fees: number;
-  /** Итоговый PnL = sellProceeds + redeemValue − entryCost − fees */
+  /** Σ buy-side fees, удержанных в shares */
+  feeSharesPaid: number;
+  /** Итоговый PnL = sellProceeds + redeemValue − entryCost */
   netPnl: number;
   /** ROI в процентах = netPnl / entryCost × 100 */
   roi: number;

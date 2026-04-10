@@ -29,6 +29,8 @@ import type { DumbStrategyConfig } from '../strategies/DumbStrategy.js';
 import type { ASStrategyConfig } from '../strategies/AvellanedaStoikovStrategy.js';
 import type { CrossMarketArbConfig } from '../strategies/CrossMarketArbStrategy.js';
 import type { ProbTableConfig } from '../strategies/ProbTableStrategy.js';
+import type { CryptoProbConfig } from '../strategies/CryptoProbStrategy.js';
+import type { SelectiveEntryConfig } from '../strategies/SelectiveEntryStrategy.js';
 import type { OscillationMMConfig } from '../strategies/OscillationMMStrategy.js';
 import type { MomentumScalpConfig } from '../strategies/MomentumScalpStrategy.js';
 import type { SmartEntryConfig } from '../strategies/SmartEntryStrategy.js';
@@ -75,6 +77,14 @@ export interface MarketDiscoveryFilter {
 export interface DiscoveryMarketConfig {
   readonly source: 'discovery';
   readonly filter: MarketDiscoveryFilter;
+  /**
+   * Опциональные snapshot paths для backtest.
+   *
+   * @remarks
+   * Если MODE=backtest и paths заданы, discovery filter применяется
+   * к метаданным snapshot-файлов вместо live Gamma discovery.
+   */
+  readonly paths?: string[];
   /** Пауза между циклами поиска (мс) */
   readonly scanPauseMs: number;
   /**
@@ -164,6 +174,19 @@ export interface AccountConfig {
   readonly accountId: string;
 }
 
+/** Execution-level toggles for strategies that support them. */
+export interface ExecutionConfig {
+  /**
+   * true = post-only order; exchange rejects marketable orders.
+   *
+   * @remarks
+   * Currently consumed by SelectiveEntryStrategy to allow A/B backtests
+   * between maker-only and non-post-only entry behaviour.
+   * @defaultValue true
+   */
+  readonly postOnly: boolean;
+}
+
 // ── Мульти-стратегия ────────────────────────────────────────────────────────
 
 /** Тип параметров стратегии (union всех возможных конфигов) */
@@ -172,6 +195,8 @@ export type AnyStrategyParams =
   | ASStrategyConfig
   | CrossMarketArbConfig
   | ProbTableConfig
+  | CryptoProbConfig
+  | SelectiveEntryConfig
   | OscillationMMConfig
   | MomentumScalpConfig
   | SmartEntryConfig
@@ -279,6 +304,9 @@ export interface BotConfig {
   /** Параметры аккаунта */
   readonly account: AccountConfig;
 
+  /** Execution policy toggles shared by supported strategies. */
+  readonly execution: ExecutionConfig;
+
   /** Запись рыночных данных и журнала решений (live/paper) */
   readonly recording?: RecordingConfig;
 }
@@ -303,6 +331,11 @@ export const DEFAULT_RESOURCES_CONFIG: ResourcesConfig = {
 /** Дефолтный аккаунт для paper режима */
 export const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
   accountId: 'venue:POLYMARKET:paper-account',
+};
+
+/** Дефолтные execution toggles */
+export const DEFAULT_EXECUTION_CONFIG: ExecutionConfig = {
+  postOnly: true,
 };
 
 /** Дефолтные значения для записи данных */

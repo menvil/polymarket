@@ -43,6 +43,8 @@ export interface PlaceIntent {
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
+  /** true = post-only order; exchange must reject if order would execute immediately */
+  readonly postOnly?: boolean;
   /**
    * Целевой инструмент для размещения ордера. Если указан — ордер размещается
    * на этом инструменте вместо основного из ExecutionContext.

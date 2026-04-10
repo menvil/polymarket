@@ -788,8 +788,31 @@ export class StrategyScheduler {
       }
     }
 
-    // Комплементарный токен: trade tape для стратегий, сравнивающих оба outcome.
     const compId = entry.complementaryInstrumentId;
+    let complementaryOpenOrders: import('@polymarket/order').Order[] | undefined;
+    let complementaryMatchedOrders: import('@polymarket/order').Order[] | undefined;
+    let hasComplementaryInFlightFills = false;
+
+    if (compId) {
+      const allCompOpen = this._deps.orderStateStore.getOpenOrdersByInstrument(entry.strategy.id, compId);
+      complementaryOpenOrders = [];
+      complementaryMatchedOrders = [];
+      for (const o of allCompOpen) {
+        if (this._deps.orderStateStore.isMatchedOnExchange(o.id)) {
+          complementaryMatchedOrders.push(o);
+        } else {
+          complementaryOpenOrders.push(o);
+        }
+      }
+
+      hasComplementaryInFlightFills = this._deps.orderStateStore.hasInFlightFills(compId);
+      if (hasComplementaryInFlightFills && complementaryMatchedOrders.length === 0) {
+        this._deps.logger.debug('Complementary instrument has in-flight fills (no matched orders in repo)', {
+          strategyId: entry.strategy.id,
+          instrumentId: String(compId),
+        });
+      }
+    }
 
     return {
       instrumentId: id,
@@ -807,6 +830,10 @@ export class StrategyScheduler {
       eventStartMs: entry.eventStartMs,
       complementaryInstrumentId: compId,
       complementaryAsset: entry.complementaryAsset,
+      complementaryTopOfBook: compId ? this._deps.marketDataStore.getTopOfBook(compId) : undefined,
+      complementaryOpenOrders,
+      complementaryMatchedOrders,
+      hasComplementaryInFlightFills,
       complementaryTradeTape: compId ? this._deps.marketDataStore.getTradeTape(compId) : undefined,
     };
   }

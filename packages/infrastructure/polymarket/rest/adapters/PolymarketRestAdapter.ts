@@ -244,7 +244,7 @@ export class PolymarketRestAdapter {
    */
   async getOrderById(orderId: string): Promise<{
     orderID: string;
-    status: 'pending' | 'live' | 'filled' | 'cancelled';
+    status: 'pending' | 'live' | 'filled' | 'cancelled' | 'matched' | 'delayed' | 'unmatched';
     filledSize?: string;
     size?: string;
   }> {

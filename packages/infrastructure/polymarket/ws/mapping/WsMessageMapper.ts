@@ -189,11 +189,41 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
 
   const makerOrders = Array.isArray(msg['maker_orders'])
     ? (msg['maker_orders'] as unknown[]).filter(
-        (entry): entry is { order_id: string; matched_amount: string } =>
-          typeof entry === 'object' && entry !== null &&
-          typeof (entry as Record<string, unknown>)['order_id'] === 'string' &&
-          typeof (entry as Record<string, unknown>)['matched_amount'] === 'string'
-      )
+        (
+          entry,
+        ): entry is {
+          order_id: string;
+          matched_amount: string;
+          asset_id?: string;
+          owner?: string;
+          price?: string;
+          side?: 'BUY' | 'SELL';
+          maker_address?: string;
+        } => {
+          if (typeof entry !== 'object' || entry === null) return false;
+          const record = entry as Record<string, unknown>;
+          return (
+            typeof record['order_id'] === 'string' &&
+            typeof record['matched_amount'] === 'string'
+          );
+        }
+      ).map((entry) => {
+        const record = entry as Record<string, unknown>;
+        const sideRaw = record['side'];
+        const side: 'BUY' | 'SELL' | undefined =
+          sideRaw === 'BUY' || sideRaw === 'SELL' ? sideRaw : undefined;
+        return {
+          order_id: record['order_id'] as string,
+          matched_amount: record['matched_amount'] as string,
+          asset_id: typeof record['asset_id'] === 'string' ? record['asset_id'] : undefined,
+          owner: typeof record['owner'] === 'string' ? record['owner'] : undefined,
+          price: typeof record['price'] === 'string' ? record['price'] : undefined,
+          side,
+          maker_address: typeof record['maker_address'] === 'string'
+            ? record['maker_address']
+            : undefined,
+        };
+      })
     : [];
 
   // WsFillStatus: MATCHED | MINED | CONFIRMED | RETRYING | FAILED
@@ -206,8 +236,7 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
   // price и size обязательны для user fill — возвращаем null если отсутствуют
   if (typeof msg['price'] !== 'string' || typeof msg['size'] !== 'string') return null;
 
-  // trader_side: Polymarket шлёт 'TAKER' или 'MAKER' (роль трейдера, НЕ сторона BUY/SELL)
-  const normalizedTraderSide: 'TAKER' | 'MAKER' = traderSide === 'MAKER' ? 'MAKER' : 'TAKER';
+  const normalizedTraderSide = inferUserTraderSide(msg, traderSide, makerOrders);
 
   return {
     id,
@@ -223,6 +252,40 @@ function parseUserFillDto(msg: Record<string, unknown>): WsUserFillDto | null {
     maker_orders: makerOrders,
     timestamp: typeof msg['timestamp'] === 'string' ? msg['timestamp'] : String(msg['timestamp'] ?? ''),
   };
+}
+
+function inferUserTraderSide(
+  msg: Record<string, unknown>,
+  traderSide: unknown,
+  makerOrders: ReadonlyArray<{
+    readonly owner?: string;
+    readonly maker_address?: string;
+  }>,
+): 'TAKER' | 'MAKER' {
+  if (traderSide === 'TAKER' || traderSide === 'MAKER') {
+    return traderSide;
+  }
+
+  const owner = typeof msg['owner'] === 'string' ? msg['owner'] : undefined;
+  if (owner && makerOrders.some((entry) => entry.owner === owner)) {
+    return 'MAKER';
+  }
+
+  const makerAddress = typeof msg['maker_address'] === 'string'
+    ? msg['maker_address'].toLowerCase()
+    : undefined;
+  if (
+    makerAddress &&
+    makerOrders.some(
+      (entry) =>
+        typeof entry.maker_address === 'string' &&
+        entry.maker_address.toLowerCase() === makerAddress,
+    )
+  ) {
+    return 'MAKER';
+  }
+
+  return 'TAKER';
 }
 
 /**

@@ -13,8 +13,11 @@
  * sell_proceeds = Σ (SELL.size × SELL.price)    // досрочный выход
  * net_shares    = Σ BUY.size − Σ SELL.size
  * redeem_value  = net_shares × resolvedPrice     // 0.0 или 1.0
- * fees          = Σ (notional × fee_rate_bps / 10000)
- * net_pnl       = sell_proceeds + redeem_value − entry_cost − fees
+ * fee_usdc_eq   = Σ round5(size × feeRate × price × (1 - price))
+ * buy_fee_shares = fee_usdc_eq / price          // BUY taker only
+ * sell_proceeds = Σ (SELL.notional - SELL.fee)  // SELL taker fee stays in USDC
+ * net_shares    = Σ BUY.effectiveSize − Σ SELL.size
+ * net_pnl       = sell_proceeds + redeem_value − entry_cost
  * ```
  *
  * @example
@@ -91,7 +94,7 @@ export class PnlCalculator {
       const resolvedPrice = meta.outcomePrices[tokenIndex] ?? 0;
       const outcomeName   = meta.outcomes[tokenIndex] ?? 'UNKNOWN';
 
-      const fills = this.buildFills(marketFills, outcomeName);
+      const fills = this.buildFills(marketFills, outcomeName, meta.takerFeeRate);
       const result = this.computeMarketPnl({
         conditionId,
         question: meta.question,
@@ -119,7 +122,11 @@ export class PnlCalculator {
    * @param outcomeName - Название outcome (UP/DOWN/YES/NO) для этого токена
    * @returns Отсортированные FillRecord
    */
-  private buildFills(fills: NormalizedFill[], outcomeName: string): FillRecord[] {
+  private buildFills(
+    fills: NormalizedFill[],
+    outcomeName: string,
+    takerFeeRate: number
+  ): FillRecord[] {
     return fills
       .slice()
       .sort((a, b) => Number(a.match_time ?? 0) - Number(b.match_time ?? 0))
@@ -127,10 +134,19 @@ export class PnlCalculator {
         const size  = parseFloat(f.size);
         const price = parseFloat(f.price);
         const notional = size * price;
-
-        // Комиссия = notional × fee_rate_bps / 10_000
-        const feeRateBps = parseFloat(f.fee_rate_bps ?? '0');
-        const fee = notional * feeRateBps / 10_000;
+        const fee = this.calculateFillFee({
+          size,
+          price,
+          liquidityRole: f.liquidityRole,
+          takerFeeRate,
+        });
+        const feeShares = this.calculateFeeShares({
+          side: f.side,
+          price,
+          fee,
+        });
+        const effectiveSize = f.side === 'BUY' ? size - feeShares : size;
+        const cashFlow = f.side === 'SELL' ? notional - fee : notional;
 
         const matchTs = Number(f.match_time ?? 0) * 1000;
         const d       = new Date(matchTs);
@@ -140,16 +156,65 @@ export class PnlCalculator {
         return {
           id: f.id,
           side: f.side,
+          liquidityRole: f.liquidityRole,
           outcomeName,
           size,
           price,
           notional,
           fee,
+          feeShares,
+          effectiveSize,
+          cashFlow,
           matchTs,
           matchDate,
           matchTime,
         };
       });
+  }
+
+  /**
+   * Polymarket fee model:
+   * - maker fee = 0
+   * - taker fee = C × feeRate × p × (1 - p)
+   * - fee округляется до 5 знаков; всё меньше 0.00001 → 0
+   */
+  private calculateFillFee(args: {
+    size: number;
+    price: number;
+    liquidityRole: 'MAKER' | 'TAKER';
+    takerFeeRate: number;
+  }): number {
+    if (args.liquidityRole !== 'TAKER') {
+      return 0;
+    }
+
+    if (args.takerFeeRate <= 0 || args.size <= 0 || args.price <= 0 || args.price >= 1) {
+      return 0;
+    }
+
+    const rawFee = args.size * args.takerFeeRate * args.price * (1 - args.price);
+    return this.roundFeeUsdc(rawFee);
+  }
+
+  private roundFeeUsdc(fee: number): number {
+    const rounded = Number(fee.toFixed(5));
+    return rounded >= 0.00001 ? rounded : 0;
+  }
+
+  /**
+   * BUY taker fees are collected in shares, so we convert the USDC-equivalent
+   * fee into shares at the execution price. SELL fees stay in USDC.
+   */
+  private calculateFeeShares(args: {
+    side: 'BUY' | 'SELL';
+    price: number;
+    fee: number;
+  }): number {
+    if (args.side !== 'BUY' || args.fee <= 0 || args.price <= 0) {
+      return 0;
+    }
+
+    return args.fee / args.price;
   }
 
   /**
@@ -171,15 +236,16 @@ export class PnlCalculator {
     const sellFills = fills.filter(f => f.side === 'SELL');
 
     const entryCost    = buyFills.reduce((s, f) => s + f.notional, 0);
-    const sellProceeds = sellFills.reduce((s, f) => s + f.notional, 0);
+    const sellProceeds = sellFills.reduce((s, f) => s + f.cashFlow, 0);
     const fees         = fills.reduce((s, f) => s + f.fee, 0);
+    const feeSharesPaid = buyFills.reduce((s, f) => s + f.feeShares, 0);
 
-    const buyShares  = buyFills.reduce((s, f) => s + f.size, 0);
+    const buyShares  = buyFills.reduce((s, f) => s + f.effectiveSize, 0);
     const sellShares = sellFills.reduce((s, f) => s + f.size, 0);
     const netShares  = buyShares - sellShares;
 
     const redeemValue = Math.max(0, netShares) * resolvedPrice;
-    const netPnl      = sellProceeds + redeemValue - entryCost - fees;
+    const netPnl      = sellProceeds + redeemValue - entryCost;
     const roi         = entryCost > 0 ? (netPnl / entryCost) * 100 : 0;
     const entryDate   = fills[0]?.matchDate ?? '';
 
@@ -195,6 +261,7 @@ export class PnlCalculator {
       netShares,
       redeemValue,
       fees,
+      feeSharesPaid,
       netPnl,
       roi,
       entryDate,

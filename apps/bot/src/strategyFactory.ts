@@ -58,6 +58,10 @@ export type StrategyConfig =
   | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig }
   | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig };
 
+export interface StrategyExecutionOverrides {
+  readonly postOnly?: boolean;
+}
+
 // ── Фабрика ──────────────────────────────────────────────────────────────────
 
 /**
@@ -69,7 +73,12 @@ export type StrategyConfig =
  *
  * @throws {Error} Если тип стратегии неизвестен
  */
-export function createStrategy(config: StrategyConfig, logger?: ILogger, journal?: IDecisionJournal): IStrategy {
+export function createStrategy(
+  config: StrategyConfig,
+  logger?: ILogger,
+  journal?: IDecisionJournal,
+  execution?: StrategyExecutionOverrides,
+): IStrategy {
   switch (config.type) {
     case 'dumb':
       return new DumbStrategy(config.params, config.id, logger);
@@ -87,7 +96,15 @@ export function createStrategy(config: StrategyConfig, logger?: ILogger, journal
       return new CryptoProbStrategy(config.params, config.id, logger);
 
     case 'selective-entry':
-      return new SelectiveEntryStrategy(config.params, config.id, logger, journal);
+      return new SelectiveEntryStrategy(
+        {
+          ...config.params,
+          postOnly: execution?.postOnly ?? config.params.postOnly,
+        },
+        config.id,
+        logger,
+        journal,
+      );
 
     case 'oscillation-mm':
       return new OscillationMMStrategy(config.params, config.id, logger);

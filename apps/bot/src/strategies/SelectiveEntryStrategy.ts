@@ -113,6 +113,12 @@ export interface SelectiveEntryConfig {
    * Default false.
    */
   readonly requireDeltaAccel?: boolean;
+  /** true = price from live orderbook, false = legacy mid-offset pricing. Default true. */
+  readonly useBookAnchoredMakerPricing?: boolean;
+  /** true = place entry orders as post-only. Default true. */
+  readonly postOnly?: boolean;
+  /** Reprice stale maker order after N seconds by cancelling and re-entering on the next tick. Default 5. */
+  readonly makerRepriceAfterSec?: number;
 }
 
 // ── Внутренние типы ───────────────────────────────────────────────────────────
@@ -120,6 +126,12 @@ export interface SelectiveEntryConfig {
 interface SEData {
   readonly midCents: number;
   readonly spreadCents: number;
+  readonly bestBidCents: number | null;
+  readonly bestAskCents: number | null;
+  readonly compSpreadCents: number | null;
+  readonly compBestBidCents: number | null;
+  readonly compBestAskCents: number | null;
+  readonly tickSizeCents: number;
   readonly deltaPct: number | undefined;
   readonly tauSec: number;
   /** Есть позиция (full или partial fill получен) */
@@ -144,6 +156,12 @@ interface SEData {
   readonly deltaAccel: number | null;
   /** Дискрепанция UP+DOWN: |upMid + downMid - 100|. null если нет comp data. */
   readonly compDiscrepancy: number | null;
+  /** Текущая цена открытого ордера стратегии (центы). */
+  readonly openOrderPriceCents: number | null;
+  /** Возраст открытого ордера стратегии в секундах. */
+  readonly openOrderAgeSec: number | null;
+  /** true если видимый открытый ордер стоит на комплементарном токене. */
+  readonly openOrderOnComplementary: boolean;
 }
 
 type SEAction =
@@ -182,6 +200,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private readonly _waitPct: number | undefined;
   private readonly _compMaxDiscrep: number | undefined;
   private readonly _requireDeltaAccel: boolean;
+  private readonly _useBookAnchoredMakerPricing: boolean;
+  private readonly _postOnly: boolean;
+  private readonly _makerRepriceAfterSec: number;
 
   /** EWMA mid-price (центы) — основной токен */
   private _ewma: number | null = null;
@@ -221,6 +242,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
 
   /** Счётчики фильтров (за текущий рынок) */
   private _rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, compDiscrep: 0, deltaAccel: 0 };
+  private _buyAttempts = 0;
+  private _cancelAfterPlace = 0;
+  private _repricePending = false;
 
   constructor(config: SelectiveEntryConfig, strategyId = 'selective-entry-1', logger?: ILogger, journal?: IDecisionJournal) {
     super();
@@ -242,6 +266,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     this._waitPct = config.waitPct;
     this._compMaxDiscrep = config.compMaxDiscrepancyCents;
     this._requireDeltaAccel = config.requireDeltaAccel ?? false;
+    this._useBookAnchoredMakerPricing = config.useBookAnchoredMakerPricing ?? true;
+    this._postOnly = config.postOnly ?? true;
+    this._makerRepriceAfterSec = config.makerRepriceAfterSec ?? 5;
 
     this._logger?.warn('SelectiveEntry: init', {
       side: this._side,
@@ -255,7 +282,17 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       waitPct: this._waitPct ?? 'off',
       compMaxDiscrep: this._compMaxDiscrep ?? 'off',
       deltaAccel: this._requireDeltaAccel ? 'on' : 'off',
+      bookAnchoredMakerPricing: this._useBookAnchoredMakerPricing ? 'on' : 'off',
+      postOnly: this._postOnly ? 'on' : 'off',
+      makerRepriceAfterSec: this._makerRepriceAfterSec,
     });
+  }
+
+  public get stats(): { buyAttempts: number; cancelAfterPlace: number } {
+    return {
+      buyAttempts: this._buyAttempts,
+      cancelAfterPlace: this._cancelAfterPlace,
+    };
   }
 
   // ── gather ──────────────────────────────────────────────────────────────────
@@ -278,6 +315,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       this._pendingPlace = false;
       this._lastDiagMs = 0;
       this._rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, compDiscrep: 0, deltaAccel: 0 };
+      this._buyAttempts = 0;
+      this._cancelAfterPlace = 0;
+      this._repricePending = false;
 
       if (snapshot.eventStartMs) {
         this._marketEventStartMs = snapshot.eventStartMs;
@@ -361,13 +401,30 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
 
     // Spread из book
     let spreadCents = 99;
+    let bestBidCents: number | null = null;
+    let bestAskCents: number | null = null;
     if (snapshot.topOfBook) {
       const bid = snapshot.topOfBook.bestBid?.value().toNumber();
       const ask = snapshot.topOfBook.bestAsk?.value().toNumber();
       if (bid !== undefined && ask !== undefined) {
         spreadCents = (ask - bid) * 100;
+        bestBidCents = bid * 100;
+        bestAskCents = ask * 100;
       }
     }
+    let compSpreadCents: number | null = null;
+    let compBestBidCents: number | null = null;
+    let compBestAskCents: number | null = null;
+    if (snapshot.complementaryTopOfBook) {
+      const bid = snapshot.complementaryTopOfBook.bestBid?.value().toNumber();
+      const ask = snapshot.complementaryTopOfBook.bestAsk?.value().toNumber();
+      if (bid !== undefined && ask !== undefined) {
+        compSpreadCents = (ask - bid) * 100;
+        compBestBidCents = bid * 100;
+        compBestAskCents = ask * 100;
+      }
+    }
+    const tickSizeCents = (snapshot.constraints?.tickSize.value().toNumber() ?? 0.01) * 100;
 
     // Delta% из crypto price
     let deltaPct: number | undefined;
@@ -432,15 +489,33 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     const primaryQty = primaryPos?.quantity.value() ?? new Decimal(0);
     const compQty = compPos?.quantity.value() ?? new Decimal(0);
     const availableBalance = snapshot.portfolio?.balance.available().value() ?? new Decimal(0);
+    const openOrder = snapshot.openOrders[0] ?? snapshot.complementaryOpenOrders?.[0];
+    const openOrderOnComplementary =
+      snapshot.openOrders.length === 0 &&
+      (snapshot.complementaryOpenOrders?.length ?? 0) > 0;
+    const openOrderPriceCents = openOrder ? openOrder.price.value().toNumber() * 100 : null;
+    const openOrderAgeSec = openOrder
+      ? Math.max(0, (snapshot.nowMs - openOrder.timestamp.toNumber()) / 1000)
+      : null;
 
     return {
       midCents: this._ewma,
       spreadCents,
+      bestBidCents,
+      bestAskCents,
+      compSpreadCents,
+      compBestBidCents,
+      compBestAskCents,
+      tickSizeCents,
       deltaPct,
       tauSec,
       hasPosition: primaryQty.gt(0) || compQty.gt(0),
-      hasOpenOrder: snapshot.openOrders.length > 0,
-      hasInFlightFill: snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0,
+      hasOpenOrder: snapshot.openOrders.length > 0 || (snapshot.complementaryOpenOrders?.length ?? 0) > 0,
+      hasInFlightFill:
+        snapshot.hasInFlightFills ||
+        snapshot.matchedOrders.length > 0 ||
+        (snapshot.hasComplementaryInFlightFills ?? false) ||
+        ((snapshot.complementaryMatchedOrders?.length ?? 0) > 0),
       availableBalance,
       nowMs: snapshot.nowMs,
       cryptoPrice,
@@ -451,6 +526,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       riseCents,
       deltaAccel,
       compDiscrepancy,
+      openOrderPriceCents,
+      openOrderAgeSec,
+      openOrderOnComplementary,
     };
   }
 
@@ -465,6 +543,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     // Ордер появился в snapshot → сбрасываем pending guard
     if (data.hasOpenOrder || data.hasPosition) {
       this._pendingPlace = false;
+    }
+    if (!data.hasOpenOrder) {
+      this._repricePending = false;
     }
 
     // Есть открытый ордер → переоцениваем фильтры, cancel если условия ушли
@@ -514,6 +595,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
 
     // ── Проверяем каждый фильтр ──
     const absDelta = data.deltaPct !== undefined ? Math.abs(data.deltaPct) : undefined;
+    const effectiveSpread = buyingComp
+      ? (data.compSpreadCents ?? data.spreadCents)
+      : data.spreadCents;
     let rejectReason = '';
 
     if (data.deltaPct === undefined) {
@@ -531,7 +615,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     }
 
     if (!rejectReason) {
-      if (mid < this._minZone || mid > this._maxZone) {
+      if (buyingComp && this._postOnly && (data.compBestBidCents === null || data.compBestAskCents === null)) {
+        rejectReason = 'no_comp_book_for_post_only';
+      } else if (mid < this._minZone || mid > this._maxZone) {
         this._rejectCounts.zone++;
         rejectReason = `zone(mid=${mid},need=${this._minZone}-${this._maxZone})`;
       } else if (absDelta! < this._minDelta || absDelta! > this._maxDelta) {
@@ -540,9 +626,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       } else if (data.tauSec < this._minTau || data.tauSec > this._maxTau) {
         this._rejectCounts.tau++;
         rejectReason = `tau(${data.tauSec.toFixed(0)}s,need=${this._minTau}-${this._maxTau})`;
-      } else if (data.spreadCents > this._maxSpread) {
+      } else if (effectiveSpread > this._maxSpread) {
         this._rejectCounts.spread++;
-        rejectReason = `spread(${data.spreadCents.toFixed(1)},max=${this._maxSpread})`;
+        rejectReason = `spread(${effectiveSpread.toFixed(1)},max=${this._maxSpread})`;
       } else if (this._minRise !== undefined && (data.riseCents === null || data.riseCents < this._minRise)) {
         this._rejectCounts.rise++;
         rejectReason = `rise(${data.riseCents?.toFixed(1) ?? '?'},need>=${this._minRise})`;
@@ -560,7 +646,10 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     if (rejectReason) return [{ type: 'HOLD' }];
 
     // Balance check
-    const bidPrice = Math.max(1, mid - this._bidOffset);
+    const bidPrice = this._computeEntryBidPrice(data, buyingComp, mid);
+    if (bidPrice === null) {
+      return [{ type: 'HOLD' }];
+    }
     const cost = this._orderSize.mul(bidPrice).div(100);
     if (data.availableBalance.lt(cost)) {
       this._rejectCounts.balance++;
@@ -594,6 +683,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
         rejectCounts: { ...this._rejectCounts },
         bidPrice, orderSize: this._orderSize.toString(), effectiveSide: 'down',
       });
+      this._buyAttempts++;
 
       return [{
         type: 'BUY',
@@ -621,6 +711,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       rejectCounts: { ...this._rejectCounts },
       bidPrice, orderSize: this._orderSize.toString(), effectiveSide: 'up',
     });
+    this._buyAttempts++;
 
     return [{ type: 'BUY', price: bidPrice, size: this._orderSize }];
   }
@@ -634,6 +725,8 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
    * Если хотя бы один не проходит → CANCEL.
    * Баланс не проверяем (ордер уже размещён).
    * Rise и compDiscrepancy не проверяем (мягкие фильтры, не стоит мигать из-за них).
+   * Если условия по-прежнему хорошие, ордер "старый" и можно улучшить maker-цену,
+   * то возвращаем CANCEL. Новый BUY будет поставлен уже на следующем тике.
    */
   private _evaluateOpenOrder(data: SEData): SEAction[] {
     // Определяем направление (аналогично decide)
@@ -656,11 +749,18 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
 
     // Проверяем жёсткие фильтры
     const absDelta = data.deltaPct !== undefined ? Math.abs(data.deltaPct) : undefined;
+    const effectiveSpread = buyingComp
+      ? (data.compSpreadCents ?? data.spreadCents)
+      : data.spreadCents;
     let cancelReason = '';
+
+    if (data.openOrderOnComplementary !== buyingComp) {
+      cancelReason = `open_order_wrong_side(${data.openOrderOnComplementary ? 'comp' : 'primary'}->${buyingComp ? 'comp' : 'primary'})`;
+    }
 
     if (data.deltaPct === undefined) {
       // Нет delta — не отменяем, данные могут восстановиться
-    } else if (this._side !== 'auto') {
+    } else if (!cancelReason && this._side !== 'auto') {
       const wrongSign = this._side === 'up' ? data.deltaPct <= 0 : data.deltaPct >= 0;
       if (wrongSign) cancelReason = `delta_sign_reversed(${data.deltaPct.toFixed(4)}%)`;
     }
@@ -673,9 +773,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       } else if (data.tauSec < this._minTau) {
         // Только нижняя граница tau: рынок заканчивается слишком скоро
         cancelReason = `tau_exit(${data.tauSec.toFixed(0)}s,min=${this._minTau})`;
-      } else if (data.spreadCents > this._maxSpread * 2) {
+      } else if (effectiveSpread > this._maxSpread * 2) {
         // Spread: cancel только при 2x порога (иначе шум)
-        cancelReason = `spread_exit(${data.spreadCents.toFixed(1)},max=${this._maxSpread * 2})`;
+        cancelReason = `spread_exit(${effectiveSpread.toFixed(1)},max=${this._maxSpread * 2})`;
       } else if (this._requireDeltaAccel && data.deltaAccel !== null && data.deltaAccel < -0.01) {
         // DeltaAccel: cancel если BTC разворачивается к strike (с запасом -0.01)
         cancelReason = `deltaAccel_reversal(${data.deltaAccel.toFixed(4)})`;
@@ -683,6 +783,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     }
 
     if (cancelReason) {
+      this._cancelAfterPlace++;
       this._logger?.warn('SelectiveEntry: CANCEL open order — conditions deteriorated', {
         cancelReason,
         mid,
@@ -701,6 +802,38 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       return [{ type: 'CANCEL' }];
     }
 
+    if (
+      !this._repricePending &&
+      data.openOrderPriceCents !== null &&
+      data.openOrderAgeSec !== null &&
+      data.openOrderAgeSec >= this._makerRepriceAfterSec
+    ) {
+      const targetBidPrice = this._computeEntryBidPrice(data, buyingComp, mid);
+      const tick = Math.max(1, Math.round(data.tickSizeCents));
+
+      if (targetBidPrice !== null && targetBidPrice >= data.openOrderPriceCents + tick) {
+        this._repricePending = true;
+        this._logger?.warn('SelectiveEntry: CANCEL open order — maker reprice', {
+          currentPrice: data.openOrderPriceCents,
+          targetPrice: targetBidPrice,
+          ageSec: data.openOrderAgeSec.toFixed(1),
+          mid,
+          delta: data.deltaPct?.toFixed(4),
+          tau: data.tauSec.toFixed(0),
+          spread: data.spreadCents.toFixed(1),
+          effectiveSide,
+        });
+        this._journal?.recordDecision({
+          marketId: this._currentMarketId, strategyId: this.id, ts: data.nowMs,
+          action: 'CANCEL', state: this._serializeState(data),
+          rejectReason: `reprice(${data.openOrderPriceCents}->${targetBidPrice},age=${data.openOrderAgeSec.toFixed(1)}s)`,
+          rejectCounts: { ...this._rejectCounts },
+          effectiveSide,
+        });
+        return [{ type: 'CANCEL' }];
+      }
+    }
+
     return [{ type: 'HOLD' }];
   }
 
@@ -717,6 +850,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       delta: data.deltaPct !== undefined ? data.deltaPct.toFixed(4) + '%' : '?',
       tau: data.tauSec.toFixed(0) + 's',
       spread: data.spreadCents.toFixed(1),
+      compSpread: data.compSpreadCents?.toFixed(1) ?? 'n/a',
       rise: data.riseCents?.toFixed(1) ?? 'n/a',
       dAccel: data.deltaAccel?.toFixed(4) ?? 'n/a',
       cDisc: data.compDiscrepancy?.toFixed(1) ?? 'n/a',
@@ -752,7 +886,43 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       deltaAccel: data.deltaAccel,
       compDiscrepancy: data.compDiscrepancy,
       availableBalance: data.availableBalance.toFixed(2),
+      bestBidCents: data.bestBidCents,
+      bestAskCents: data.bestAskCents,
+      compBestBidCents: data.compBestBidCents,
+      compBestAskCents: data.compBestAskCents,
+      compSpreadCents: data.compSpreadCents,
+      tickSizeCents: data.tickSizeCents,
+      openOrderPriceCents: data.openOrderPriceCents,
+      openOrderAgeSec: data.openOrderAgeSec,
+      openOrderOnComplementary: data.openOrderOnComplementary,
     };
+  }
+
+  private _computeEntryBidPrice(data: SEData, buyingComp: boolean, strategyCapPrice: number): number | null {
+    if (!this._useBookAnchoredMakerPricing) {
+      return Math.max(1, strategyCapPrice - this._bidOffset);
+    }
+
+    const tick = Math.max(1, Math.round(data.tickSizeCents));
+    const bestBid = buyingComp ? data.compBestBidCents : data.bestBidCents;
+    const bestAsk = buyingComp ? data.compBestAskCents : data.bestAskCents;
+
+    if (bestBid === null || bestAsk === null) {
+      return Math.max(1, strategyCapPrice);
+    }
+
+    const spread = bestAsk - bestBid;
+    if (spread <= 0) {
+      return Math.max(1, Math.min(bestBid, strategyCapPrice));
+    }
+
+    if (spread <= tick) {
+      return Math.max(1, Math.min(bestBid, strategyCapPrice));
+    }
+
+    const improvedBid = bestBid + tick;
+    const makerSafeBid = bestAsk - tick;
+    return Math.max(1, Math.min(improvedBid, makerSafeBid, strategyCapPrice));
   }
 
   // ── toIntents ───────────────────────────────────────────────────────────────
@@ -775,6 +945,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
         side: 'BUY',
         price: Price.of(new Decimal(action.price).div(100)),
         size: Quantity.of(action.size),
+        postOnly: this._postOnly,
         targetInstrumentId: action.targetInstrumentId,
         targetAsset: action.targetAsset,
       });

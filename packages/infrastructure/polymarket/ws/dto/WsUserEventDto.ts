@@ -67,6 +67,11 @@ export interface WsUserFillDto {
   readonly maker_orders: Array<{
     readonly order_id: string;
     readonly matched_amount: string;
+    readonly asset_id?: string;
+    readonly owner?: string;
+    readonly price?: string;
+    readonly side?: 'BUY' | 'SELL';
+    readonly maker_address?: string;
   }>;
   /** Timestamp события (Unix ms, строка) */
   readonly timestamp: string;

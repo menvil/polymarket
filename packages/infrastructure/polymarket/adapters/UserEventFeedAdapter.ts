@@ -245,7 +245,15 @@ export class UserEventFeedAdapter {
     readonly asset_id: string;
     readonly owner?: string;
     readonly market?: string;
-    readonly maker_orders: Array<{ readonly order_id: string; readonly matched_amount: string }>;
+    readonly maker_orders: Array<{
+      readonly order_id: string;
+      readonly matched_amount: string;
+      readonly asset_id?: string;
+      readonly owner?: string;
+      readonly price?: string;
+      readonly side?: 'BUY' | 'SELL';
+      readonly maker_address?: string;
+    }>;
     readonly timestamp: string;
   }): Record<string, unknown> {
     return {

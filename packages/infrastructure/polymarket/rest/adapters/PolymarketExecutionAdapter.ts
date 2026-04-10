@@ -49,12 +49,12 @@ import type {
   FillResponse,
 } from '../../ports/IExecutionAdapter.js';
 import type { PolymarketOrderRestClient, TradeResponse } from '../clients/PolymarketOrderRestClient.js';
+import type { PolymarketOrderbookRestClient } from '../clients/PolymarketOrderbookRestClient.js';
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
 import type { IEventBus } from '../../ports/IEventBus.js';
 import type {
   OrderAccepted,
   OrderCancelled,
-  OrderRejected,
 } from '../../events/ExecutionEvent.js';
 import type { ExecutionContext } from '../../events/ExecutionContext.js';
 import { createProductionEnvelope } from '../../events/EventEnvelope.js';
@@ -75,6 +75,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
 
   constructor(
     private readonly orderClient: PolymarketOrderRestClient,
+    private readonly orderbookClient: PolymarketOrderbookRestClient,
     private readonly mapper: PolymarketOrderMapper,
     private readonly eventBus: IEventBus,
     private readonly logger: ILogger,
@@ -169,18 +170,24 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       side: params.side,
       price: params.price,
       size: params.size,
+      postOnly: params.postOnly === true,
       priceTick: params.priceTick,
     });
 
     try {
+      const book = await this.orderbookClient.getOrderbook(params.tokenId, 1);
+      const negRisk = book.neg_risk === true;
+
       // Конвертируем параметры домена в формат API
       const apiRequest = this.mapper.toApiRequest({
         tokenId: params.tokenId,
         side: params.side,
         price: params.price,
         size: params.size,
+        postOnly: params.postOnly,
         priceTick: params.priceTick,
         feeRateBps: params.feeRateBps, // Используем изученную или дефолтную ставку комиссии
+        negRisk,
       });
 
       // Выполняем API вызов
@@ -295,13 +302,14 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         err: error instanceof Error ? error : new Error(String(error)),
       });
 
-      // Публикуем событие OrderRejected (ExecutionErrorEvent)
-      const orderRejectedEvent: OrderRejected = {
-        type: 'OrderRejected',
-        orderId: undefined, // Ордер не создан на бирже
+      // Публикуем application-level ORDER_REJECTED.
+      // В этом path ордер может отсутствовать в repo, поэтому strategyId нужен
+      // для прямой маршрутизации в OrderEventBridge.
+      const orderRejectedEvent = {
+        type: 'ORDER_REJECTED' as const,
+        orderId: params.clientOrderId ?? 'exchange-rejected',
         reason: error instanceof Error ? error.message : 'Unknown error',
-        errorCode: (error as any).code || 'API_ERROR',
-        timestamp: new Date(),
+        strategyId: params.strategyId,
       };
 
       const envelope = createProductionEnvelope(
@@ -312,6 +320,8 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       this.eventBus.publish(envelope);
 
       this.logger.debug('Published OrderRejected event', {
+        orderId: orderRejectedEvent.orderId,
+        strategyId: orderRejectedEvent.strategyId,
         reason: orderRejectedEvent.reason,
       });
 
@@ -484,7 +494,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    */
   async getOrderById(orderId: string): Promise<{
     orderID: string;
-    status: 'pending' | 'live' | 'filled' | 'cancelled';
+    status: 'pending' | 'live' | 'filled' | 'cancelled' | 'matched' | 'delayed' | 'unmatched';
     filledSize?: string;
     size?: string;
   }> {

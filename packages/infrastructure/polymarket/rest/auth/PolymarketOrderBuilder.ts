@@ -39,7 +39,13 @@
 import type { Wallet } from 'ethers';
 import type { SignatureType } from '../types.js';
 import type { ILogger } from '@polymarket/logger';
-import { USDC_MULTIPLIER, DEFAULT_PRICE_TICK } from '../constants.js';
+import { DEFAULT_PRICE_TICK } from '../constants.js';
+import {
+  OrderBuilder as OfficialOrderBuilder,
+  Side as OfficialSide,
+  SignatureType as OfficialSignatureType,
+  type TickSize as OfficialTickSize,
+} from '@polymarket/clob-client';
 
 /**
  * Параметры для построения ордера
@@ -68,13 +74,16 @@ export interface BuildOrderParams {
 
   /** Шаг цены для округления (по умолчанию: 0.01) */
   priceTick?: number;
+
+  /** true если рынок использует negRisk exchange contract */
+  negRisk?: boolean;
 }
 
 /**
  * Подписанный ордер (готов для API)
  */
 export interface SignedOrder {
-  salt: number; // Число (не строка!)
+  salt: string | number;
   maker: string;
   signer: string;
   taker: string;
@@ -84,44 +93,16 @@ export interface SignedOrder {
   expiration: string;
   nonce: string;
   feeRateBps: string;
-  side: 'BUY' | 'SELL'; // Строка "BUY"/"SELL" (не "0"/"1"!)
-  signatureType: number; // Число (не строка!)
+  side: number | 'BUY' | 'SELL';
+  signatureType: number;
   signature: string;
 }
-
-/**
- * Адреса контрактов по идентификатору цепочки
- */
-const CONTRACT_ADDRESSES: Record<number, string> = {
-  137: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E', // Polygon Mainnet (основная сеть)
-  80002: '0xdFE02Eb6733538f8Ea35D585af8DE5958AD99E40', // Amoy Testnet (тестовая сеть)
-};
-
-/**
- * Тип ордера EIP-712
- */
-const ORDER_TYPE = {
-  Order: [
-    { name: 'salt', type: 'uint256' },
-    { name: 'maker', type: 'address' },
-    { name: 'signer', type: 'address' },
-    { name: 'taker', type: 'address' },
-    { name: 'tokenId', type: 'uint256' },
-    { name: 'makerAmount', type: 'uint256' },
-    { name: 'takerAmount', type: 'uint256' },
-    { name: 'expiration', type: 'uint256' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'feeRateBps', type: 'uint256' },
-    { name: 'side', type: 'uint8' },
-    { name: 'signatureType', type: 'uint8' },
-  ],
-};
 
 /**
  * Построитель ордеров Polymarket
  */
 export class PolymarketOrderBuilder {
-  private readonly ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+  private readonly _officialBuilder: OfficialOrderBuilder;
 
   constructor(
     private readonly signer: Wallet,
@@ -129,7 +110,28 @@ export class PolymarketOrderBuilder {
     private readonly makerAddress: string,
     private readonly signatureType: SignatureType,
     private readonly logger: ILogger
-  ) {}
+  ) {
+    const signerBridge = {
+      getAddress: async (): Promise<string> => this.signer.address,
+      _signTypedData: async (
+        domain: Record<string, unknown>,
+        types: Record<string, Array<{ name: string; type: string }>>,
+        value: Record<string, unknown>,
+      ): Promise<string> =>
+        this.signer.signTypedData(
+          domain as any,
+          types as any,
+          value as any,
+        ),
+    };
+
+    this._officialBuilder = new OfficialOrderBuilder(
+      signerBridge as any,
+      this.chainId as any,
+      this.signatureType as unknown as OfficialSignatureType,
+      this.makerAddress,
+    );
+  }
 
   /**
    * Построить и подписать ордер
@@ -150,58 +152,39 @@ export class PolymarketOrderBuilder {
    * ```
    */
   async buildOrder(params: BuildOrderParams): Promise<SignedOrder> {
-    // Генерируем случайный salt
-    const salt = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-
-    // КРИТИЧНО: Определяем шаг цены
-    // Если не передан — используем безопасный дефолт (DEFAULT_PRICE_TICK = 0.01)
     const priceTick = params.priceTick ?? this.inferPriceTick(params.price);
-
-    // Округляем цену до шага (избегаем ошибок плавающей точки)
-    // Требование API: "Price (0.588) breaks minimum tick size rule: 0.01"
-    const tickMultiplier = 1 / priceTick; // 0.001 → 1000, 0.01 → 100
-    const priceRounded = Math.round(params.price * tickMultiplier) / tickMultiplier;
+    const priceRounded = this.roundNormal(
+      params.price,
+      this.getRoundConfig(priceTick).price,
+    );
 
     this.logger.debug('Price calculation', {
       inputPrice: params.price,
       priceTick,
-      tickMultiplier,
       priceRounded,
       size: params.size,
       expectedUSDC: (params.price * params.size).toFixed(4),
       roundedUSDC: (priceRounded * params.size).toFixed(4),
+      negRisk: params.negRisk === true,
     });
 
-    // Вычисляем суммы в минимальных единицах
-    const { makerAmount, takerAmount } = this.calculateAmounts(
-      params.side,
-      priceRounded,
-      params.size
+    const signedOrder = await this._officialBuilder.buildOrder(
+      {
+        tokenID: params.tokenId,
+        side: params.side === 'BUY' ? OfficialSide.BUY : OfficialSide.SELL,
+        price: priceRounded,
+        size: params.size,
+        feeRateBps: params.feeRateBps,
+        nonce: params.nonce,
+        expiration: params.expiration,
+      },
+      {
+        tickSize: this.toOfficialTickSize(priceTick),
+        negRisk: params.negRisk === true,
+      },
     );
 
-    // Строим объект ордера (для API)
-    const order = {
-      salt, // Число
-      maker: this.makerAddress,
-      signer: this.signer.address,
-      taker: this.ZERO_ADDRESS, // Любой может принять
-      tokenId: params.tokenId,
-      makerAmount: makerAmount.toString(),
-      takerAmount: takerAmount.toString(),
-      expiration: (params.expiration || 0).toString(),
-      nonce: params.nonce.toString(),
-      feeRateBps: params.feeRateBps.toString(),
-      side: params.side, // Строка 'BUY' или 'SELL'
-      signatureType: this.signatureType, // Число
-    };
-
-    // Подписываем ордер с EIP-712
-    const signature = await this.signOrder(order);
-
-    return {
-      ...order,
-      signature,
-    };
+    return signedOrder as unknown as SignedOrder;
   }
 
   /**
@@ -248,110 +231,28 @@ export class PolymarketOrderBuilder {
    * - Maker тратит: size (токены исходов)
    * - Taker получает: price * size (USDC)
    */
-  private calculateAmounts(
-    side: 'BUY' | 'SELL',
-    price: number,
-    size: number
-  ): { makerAmount: number; takerAmount: number } {
-    const multiplier = USDC_MULTIPLIER;
-
-    // КРИТИЧНО: Цена уже округлена до priceTick в buildOrder()!
-    // API вычисляет: makerAmount / takerAmount и проверяет против priceTick.
-    // НЕ округлять повторно — использовать цену как есть (уже округлена до нужного шага).
-    const usdcAmount = price * size;
-
-    if (side === 'BUY') {
-      // BUY: Maker тратит USDC, taker предоставляет outcome токены
-      // API требует ТОЧНОЕ значение makerAmount
-      // Проблема: ошибки точности плавающей точки!
-      //
-      // Пример 1: price × size = 0.459 × 5.05 = 2.31795
-      //   → Math.floor(23179.5) / 10000 = 2.3179 ✅
-      //
-      // Пример 2: price × size = 0.31 × 5.05 = 1.5655
-      //   → НО в JS: 0.31 * 5.05 = 1.56549999999999995 (float precision!)
-      //   → Math.floor(15654.999...) / 10000 = 1.5654 ❌ API хочет 1.5655!
-      //
-      // РЕШЕНИЕ: Используем Math.round() вместо Math.floor() для корректной обработки float errors!
-      const usdcRounded = Math.round(usdcAmount * 10000) / 10000;
-      const makerAmount = Math.round(usdcRounded * multiplier);
-      const takerAmount = Math.round(size * multiplier);
-
-      this.logger.debug('Amount calculation (BUY)', {
-        price,
-        size,
-        usdcAmount,
-        usdcRounded,
-        makerAmount,
-        makerAmountUSDC: (makerAmount / multiplier).toFixed(4),
-        takerAmount,
-        calculatedPrice: (makerAmount / takerAmount).toFixed(4),
-      });
-
-      return { makerAmount, takerAmount };
-    } else {
-      // SELL: Maker тратит outcome токены, taker предоставляет USDC.
-      // Polymarket API ограничения точности для SELL:
-      //   makerAmount (токены) — макс 2 знака после запятой
-      //   takerAmount (USDC)   — макс 4 знака после запятой
-      //
-      // В минимальных единицах (1e6):
-      //   makerAmount должен быть кратен 10000 (1e6 / 1e2)
-      //   takerAmount должен быть кратен 100   (1e6 / 1e4)
-      //
-      // КРИТИЧНО: takerAmount ДОЛЖЕН использовать усечённый size (после truncation до 2 знаков),
-      // а НЕ оригинальный size! API проверяет: takerAmount === truncated_size × rounded_price.
-      // Если использовать оригинальный size → рассогласование → "invalid amounts" ошибка.
-      //
-      // Math.floor для makerAmount — не продать больше, чем имеем на балансе.
-      const truncatedSize = Math.floor(size * 100) / 100; // 6.8907... → 6.89
-      const makerAmount = truncatedSize * multiplier; // 6.89 * 1e6 = 6890000
-      const sellUsdcAmount = truncatedSize * price; // Используем усечённый size!
-      const takerAmount = Math.round(sellUsdcAmount * 10000) * 100;
-      return { makerAmount, takerAmount };
-    }
+  private getRoundConfig(priceTick: number): { price: number; size: number; amount: number } {
+    if (priceTick >= 0.1) return { price: 1, size: 2, amount: 3 };
+    if (priceTick >= 0.01) return { price: 2, size: 2, amount: 4 };
+    if (priceTick >= 0.001) return { price: 3, size: 2, amount: 5 };
+    return { price: 4, size: 2, amount: 6 };
   }
 
-  /**
-   * Подписать ордер с EIP-712
-   *
-   * @param order - Объект ордера (без подписи)
-   * @returns Подпись в hex-формате
-   */
-  private async signOrder(order: Omit<SignedOrder, 'signature'>): Promise<string> {
-    // Получаем адрес верифицирующего контракта для этой цепочки
-    const verifyingContract = CONTRACT_ADDRESSES[this.chainId];
-    if (!verifyingContract) {
-      throw new Error(`No contract address for chain ID ${this.chainId}`);
-    }
+  private decimalPlaces(num: number): number {
+    if (Number.isInteger(num)) return 0;
+    const arr = num.toString().split('.');
+    return arr.length <= 1 ? 0 : arr[1]!.length;
+  }
 
-    // Создаём домен типизированных данных EIP-712
-    const domain = {
-      name: 'Polymarket CTF Exchange',
-      version: '1',
-      chainId: this.chainId,
-      verifyingContract,
-    };
+  private roundNormal(num: number, decimals: number): number {
+    if (this.decimalPlaces(num) <= decimals) return num;
+    return Math.round((num + Number.EPSILON) * 10 ** decimals) / 10 ** decimals;
+  }
 
-    // Конвертируем поля в правильные типы для подписи EIP-712
-    const message = {
-      salt: BigInt(order.salt),
-      maker: order.maker,
-      signer: order.signer,
-      taker: order.taker,
-      tokenId: BigInt(order.tokenId),
-      makerAmount: BigInt(order.makerAmount),
-      takerAmount: BigInt(order.takerAmount),
-      expiration: BigInt(order.expiration),
-      nonce: BigInt(order.nonce),
-      feeRateBps: BigInt(order.feeRateBps),
-      side: order.side === 'BUY' ? 0 : 1, // Конвертируем "BUY"/"SELL" в 0/1 для подписи
-      signatureType: order.signatureType, // Уже число
-    };
-
-    // Подписываем с EIP-712
-    const signature = await this.signer.signTypedData(domain, ORDER_TYPE, message);
-
-    return signature;
+  private toOfficialTickSize(priceTick: number): OfficialTickSize {
+    if (priceTick >= 0.1) return '0.1';
+    if (priceTick >= 0.01) return '0.01';
+    if (priceTick >= 0.001) return '0.001';
+    return '0.0001';
   }
 }

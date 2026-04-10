@@ -2,6 +2,7 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
+    "allowImportingTsExtensions": true,
     "paths": {
       "@polymarket/logger":           ["../../foundation/logger/src/index.ts"],
       "@polymarket/ids":              ["../../foundation/ids/src/index.ts"],

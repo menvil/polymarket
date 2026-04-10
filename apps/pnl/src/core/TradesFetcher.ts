@@ -237,6 +237,7 @@ export class TradesFetcher {
         size: mo.matched_amount,
         price: mo.price ?? trade.price,
         fee_rate_bps: mo.fee_rate_bps,
+        liquidityRole: 'MAKER',
         match_time: trade.match_time,
         outcome: mo.outcome,
       });
@@ -264,6 +265,7 @@ export class TradesFetcher {
       size: trade.size,
       price: trade.price,
       fee_rate_bps: trade.fee_rate_bps,
+      liquidityRole: trade.trader_side === 'TAKER' ? 'TAKER' : 'MAKER',
       match_time: trade.match_time,
       outcome: trade.outcome,
     };

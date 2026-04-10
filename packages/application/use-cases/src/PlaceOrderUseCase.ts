@@ -76,6 +76,8 @@ export interface PlaceOrderInput {
   readonly price: Price;
   /** Размер ордера */
   readonly size: Quantity;
+  /** true = post-only order; exchange must reject if order would execute immediately */
+  readonly postOnly?: boolean;
   /** ID стратегии (опционально) */
   readonly strategyId?: string;
   /** Текущий portfolio (для риск-проверки) */
@@ -173,9 +175,10 @@ export class PlaceOrderUseCase {
       side: input.side,
       price: input.price,
       size: input.size,
+      postOnly: input.postOnly,
       clientOrderId: input.orderId as unknown as string,
       strategyId: input.strategyId,
-    });
+    } as any);
 
     if (!submitResult.ok) {
       // Откат: снять резервацию

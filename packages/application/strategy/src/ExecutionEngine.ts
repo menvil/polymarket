@@ -127,6 +127,7 @@ import type { IOrderRepository } from '@polymarket/ports';
 
 export class ExecutionEngine {
   private readonly _logger: ILogger;
+  private _benignPostOnlyRejects = 0;
 
   /**
    * Cooldown per `${instrumentId}:${side}` после отклонения ордера биржей.
@@ -216,6 +217,12 @@ export class ExecutionEngine {
         instrumentId: key,
       });
     }
+  }
+
+  public get stats(): { benignPostOnlyRejects: number } {
+    return {
+      benignPostOnlyRejects: this._benignPostOnlyRejects,
+    };
   }
 
   /**
@@ -488,12 +495,26 @@ export class ExecutionEngine {
       side: intent.side,
       price: intent.price,
       size: effectiveSize,
+      postOnly: intent.postOnly,
       strategyId: ctx.strategyId,
       portfolio,
       openOrdersCount,
-    });
+    } as any);
 
     if (!result.ok) {
+      if (intent.postOnly === true && this._isBenignPostOnlyReject(result.error.message)) {
+        this._benignPostOnlyRejects++;
+        this._logger.info('ExecutionEngine: skip — benign post-only reject', {
+          strategyId: ctx.strategyId,
+          instrumentId: instrumentKey,
+          side: intent.side,
+          price: intent.price.toNumber(),
+          size: intent.size.toNumber(),
+          error: result.error.message,
+        });
+        return 'skipped';
+      }
+
       // Устанавливаем cooldown чтобы не спамить биржу при стабильном rejection.
       // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (30s).
       this._exchangeRejectionCooldowns.set(rejectionKey, this._deps.clock.now().getTime());
@@ -551,6 +572,17 @@ export class ExecutionEngine {
     });
 
     return 'placed';
+  }
+
+  private _isBenignPostOnlyReject(message: string): boolean {
+    const text = message.toLowerCase();
+    return (
+      text.includes('post only') ||
+      text.includes('post-only') ||
+      text.includes('defer') ||
+      text.includes('marketable') ||
+      text.includes('would execute immediately')
+    );
   }
 }
 

@@ -46,6 +46,8 @@ export interface SubmitOrderParams {
   readonly price: Price;
   /** Объём ордера */
   readonly size: Quantity;
+  /** true = post-only order; exchange must reject marketable order instead of matching it */
+  readonly postOnly?: boolean;
   /** Клиентский ID ордера для идемпотентного retry (опционально) */
   readonly clientOrderId?: string;
   /** ID стратегии для трекинга (опционально) */
