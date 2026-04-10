@@ -111,11 +111,8 @@ interface DataApiPosition {
  */
 export class AutoRedeemer {
   private readonly _relayClient: RelayClient;
-  private readonly _provider: ethers.JsonRpcProvider;
   private readonly _logger: ILogger;
   private readonly _config: AutoRedeemerConfig;
-  /** EOA адрес (для создания Wallet), не используется напрямую в логике */
-  private readonly _walletAddress: string;
   /** Proxy-кошелёк Polymarket — здесь хранятся CTF токены */
   private readonly _proxyAddress: string;
   private _timer: ReturnType<typeof setInterval> | null = null;
@@ -123,15 +120,13 @@ export class AutoRedeemer {
 
   private constructor(
     relayClient: RelayClient,
-    provider: ethers.JsonRpcProvider,
-    walletAddress: string,
+    _provider: ethers.JsonRpcProvider,
+    _walletAddress: string,
     proxyAddress: string,
     config: AutoRedeemerConfig,
     logger: ILogger,
   ) {
     this._relayClient = relayClient;
-    this._provider = provider;
-    this._walletAddress = walletAddress;
     this._proxyAddress = proxyAddress;
     this._config = config;
     this._logger = logger.child({ component: 'AutoRedeemer' });

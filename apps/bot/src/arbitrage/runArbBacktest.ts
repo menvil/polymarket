@@ -54,7 +54,7 @@ import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { CrossMarketBacktestEngine } from '@polymarket/backtesting';
 import { FEE_MODEL_CURRENT, FEE_MODEL_MARCH30 } from '@polymarket/cross-market';
-import type { PairResult, PairSimulationResult, SharedBalanceSimulationResult, SimulatedTrade, OpportunityWindow } from '@polymarket/backtesting';
+import type { PairResult, PairSimulationResult, SharedBalanceSimulationResult } from '@polymarket/backtesting';
 
 // ── Парсинг аргументов ──────────────────────────────────────────────────────
 
@@ -514,6 +514,8 @@ function printSimulationSummary(results: PairSimulationResult[]): void {
   console.log(`  Total P&L:               $${totalPnl.toFixed(2)}`);
   console.log(`  Avg ROI per pair:         ${totalInitial > 0 ? ((totalPnl / totalInitial) * 100).toFixed(2) : '0'}%`);
 }
+
+void printSimulationSummary;
 
 /**
  * Печатает сводку по shared balance симуляции.

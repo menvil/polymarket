@@ -3,26 +3,38 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./rest":     { "types": "./dist/rest/index.d.ts",     "import": "./dist/rest/index.js" },
-    "./ws":       { "types": "./dist/ws/index.d.ts",       "import": "./dist/ws/index.js" },
-    "./adapters": { "types": "./dist/adapters/index.d.ts", "import": "./dist/adapters/index.js" },
-    "./dns":      { "types": "./dist/dns/index.d.ts",      "import": "./dist/dns/index.js" }
+    "./rest": {
+      "types": "./dist/rest/index.d.ts",
+      "import": "./dist/rest/index.js"
+    },
+    "./ws": {
+      "types": "./dist/ws/index.d.ts",
+      "import": "./dist/ws/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    },
+    "./dns": {
+      "types": "./dist/dns/index.d.ts",
+      "import": "./dist/dns/index.js"
+    }
   },
   "scripts": {
-    "build":     "tsc -p tsconfig.build.json",
+    "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint":      "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts"
   },
   "dependencies": {
-    "@polymarket/logger":        "0.1.0",
-    "@polymarket/ids":           "0.1.0",
-    "@polymarket/result":        "0.1.0",
-    "@polymarket/errors":        "0.1.0",
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/result": "0.1.0",
+    "@polymarket/errors": "0.1.0",
     "@polymarket/value-objects": "0.1.0",
-    "@polymarket/order-book":    "0.1.0",
-    "@polymarket/trade":         "0.1.0",
-    "@polymarket/ports":         "0.1.0",
-    "@polymarket/handlers":      "0.1.0",
+    "@polymarket/order-book": "0.1.0",
+    "@polymarket/trade": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/handlers": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
     "@polymarket/clob-client": "^5.8.1",
     "decimal.js": "^10.6.0",

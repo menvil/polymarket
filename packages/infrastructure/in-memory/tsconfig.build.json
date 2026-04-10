@@ -30,19 +30,16 @@
       "path": "../../foundation/ids/tsconfig.build.json"
     },
     {
+      "path": "../../foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/errors/tsconfig.build.json"
+    },
+    {
       "path": "../../domain/value-objects/tsconfig.build.json"
     },
     {
       "path": "../../application/ports/tsconfig.build.json"
-    },
-    {
-      "path": "../../application/market-discovery/tsconfig.build.json"
-    },
-    {
-      "path": "../../infrastructure/persistence/data-collection/tsconfig.build.json"
-    },
-    {
-      "path": "../../infrastructure/polymarket/tsconfig.build.json"
     }
   ]
 }

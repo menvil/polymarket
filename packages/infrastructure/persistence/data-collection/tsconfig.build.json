@@ -3,24 +3,13 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "composite": true,
     "declaration": true,
     "declarationMap": true,
-    "composite": true,
-    "paths": {
-      "@polymarket/logger": [
-        "../../../foundation/logger/dist/index.d.ts"
-      ],
-      "@polymarket/ids": [
-        "../../../foundation/ids/dist/index.d.ts"
-      ],
-      "@polymarket/value-objects": [
-        "../../../domain/value-objects/dist/index.d.ts"
-      ],
-      "@polymarket/ports": [
-        "../../../application/ports/dist/index.d.ts"
-      ]
-    },
-    "noEmit": false
+    "noEmit": false,
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "src/**/*"
@@ -28,6 +17,23 @@
   "exclude": [
     "node_modules",
     "dist",
-    "__tests__"
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ],
+  "references": [
+    {
+      "path": "../../../foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../../../foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../../domain/value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../../../application/ports/tsconfig.build.json"
+    }
   ]
 }

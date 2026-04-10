@@ -1,11 +1,15 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
+    "outDir": "./dist",
     "rootDir": "./src",
+    "composite": true,
     "declaration": true,
     "declarationMap": true,
-    "composite": true,
-    "noEmit": false
+    "noEmit": false,
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "src/**/*"
@@ -13,6 +17,41 @@
   "exclude": [
     "node_modules",
     "dist",
-    "__tests__"
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ],
+  "references": [
+    {
+      "path": "../../foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/errors/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../ports/tsconfig.build.json"
+    },
+    {
+      "path": "../event-bus/tsconfig.build.json"
+    },
+    {
+      "path": "../balance-allocator/tsconfig.build.json"
+    },
+    {
+      "path": "../strategy/tsconfig.build.json"
+    }
   ]
 }

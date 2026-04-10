@@ -9,8 +9,8 @@ import {
   parseCexEvents,
   parseChainlinkTicks,
   pruneTrades,
-} from './analyzeChainlinkLeadLag.ts';
-import type { Venue, WindowBundle } from './analyzeChainlinkLeadLag.ts';
+} from './analyzeChainlinkLeadLag.js';
+import type { Venue, WindowBundle } from './analyzeChainlinkLeadLag.js';
 
 const DEFAULT_HORIZONS_MS = [1_000, 5_000];
 const DEFAULT_VENUE_STALENESS_MS = 2_000;

@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "npx tsx --env-file=.env src/main.ts",
-    "dev":   "npx tsx --env-file=.env src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "dev": "npx tsx --env-file=.env src/main.ts",
+    "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint src --ext .ts"
