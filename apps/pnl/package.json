@@ -9,9 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polymarket/logger":   "workspace:*",
-    "@polymarket/time":     "workspace:*",
-    "@polymarket/exchange": "workspace:*"
+    "@polymarket/logger":   "0.1.0",
+    "@polymarket/time":     "0.1.0",
+    "@polymarket/exchange": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

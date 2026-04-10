@@ -15,14 +15,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polymarket/logger":       "workspace:*",
-    "@polymarket/ids":          "workspace:*",
-    "@polymarket/value-objects": "workspace:*",
-    "@polymarket/ports":        "workspace:*",
-    "@polymarket/event-bus":    "workspace:*",
-    "@polymarket/fill":         "workspace:*",
-    "@polymarket/order":        "workspace:*",
-    "@polymarket/order-book":   "workspace:*"
+    "@polymarket/logger":       "0.1.0",
+    "@polymarket/ids":          "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/ports":        "0.1.0",
+    "@polymarket/event-bus":    "0.1.0",
+    "@polymarket/fill":         "0.1.0",
+    "@polymarket/order":        "0.1.0",
+    "@polymarket/order-book":   "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

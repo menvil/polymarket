@@ -9,14 +9,14 @@
   },
   "dependencies": {
     "ccxt": "^4.5.46",
-    "@polymarket/logger": "workspace:*",
-    "@polymarket/ids": "workspace:*",
-    "@polymarket/time": "workspace:*",
-    "@polymarket/value-objects": "workspace:*",
-    "@polymarket/ports": "workspace:*",
-    "@polymarket/handlers": "workspace:*",
-    "@polymarket/order-book": "workspace:*",
-    "@polymarket/data-collection": "workspace:*",
-    "@polymarket/exchange": "workspace:*"
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/time": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/handlers": "0.1.0",
+    "@polymarket/order-book": "0.1.0",
+    "@polymarket/data-collection": "0.1.0",
+    "@polymarket/exchange": "0.1.0"
   }
 }

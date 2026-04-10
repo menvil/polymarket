@@ -15,12 +15,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polymarket/errors":       "workspace:*",
-    "@polymarket/ids":          "workspace:*",
-    "@polymarket/result":       "workspace:*",
-    "@polymarket/order":        "workspace:*",
-    "@polymarket/portfolio":    "workspace:*",
-    "@polymarket/value-objects": "workspace:*",
+    "@polymarket/errors":       "0.1.0",
+    "@polymarket/ids":          "0.1.0",
+    "@polymarket/result":       "0.1.0",
+    "@polymarket/order":        "0.1.0",
+    "@polymarket/portfolio":    "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
     "decimal.js":               "^10.4.3"
   }
 }

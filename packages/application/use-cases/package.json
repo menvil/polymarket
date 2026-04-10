@@ -15,19 +15,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polymarket/logger":        "workspace:*",
-    "@polymarket/ids":           "workspace:*",
-    "@polymarket/value-objects": "workspace:*",
-    "@polymarket/result":        "workspace:*",
-    "@polymarket/errors":        "workspace:*",
-    "@polymarket/time":          "workspace:*",
-    "@polymarket/ports":         "workspace:*",
-    "@polymarket/event-bus":     "workspace:*",
-    "@polymarket/fill":          "workspace:*",
-    "@polymarket/order":         "workspace:*",
-    "@polymarket/portfolio":     "workspace:*",
-    "@polymarket/ledger":        "workspace:*",
-    "@polymarket/risk":          "workspace:*"
+    "@polymarket/logger":        "0.1.0",
+    "@polymarket/ids":           "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/result":        "0.1.0",
+    "@polymarket/errors":        "0.1.0",
+    "@polymarket/time":          "0.1.0",
+    "@polymarket/ports":         "0.1.0",
+    "@polymarket/event-bus":     "0.1.0",
+    "@polymarket/fill":          "0.1.0",
+    "@polymarket/order":         "0.1.0",
+    "@polymarket/portfolio":     "0.1.0",
+    "@polymarket/ledger":        "0.1.0",
+    "@polymarket/risk":          "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

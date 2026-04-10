@@ -14,13 +14,13 @@
     "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts"
   },
   "dependencies": {
-    "@polymarket/logger":           "workspace:*",
-    "@polymarket/ids":              "workspace:*",
-    "@polymarket/value-objects":    "workspace:*",
-    "@polymarket/ports":            "workspace:*",
-    "@polymarket/market-discovery": "workspace:*",
-    "@polymarket/data-collection":  "workspace:*",
-    "@polymarket/exchange":         "workspace:*"
+    "@polymarket/logger":           "0.1.0",
+    "@polymarket/ids":              "0.1.0",
+    "@polymarket/value-objects":    "0.1.0",
+    "@polymarket/ports":            "0.1.0",
+    "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/data-collection":  "0.1.0",
+    "@polymarket/exchange":         "0.1.0"
   },
   "devDependencies": {}
 }
