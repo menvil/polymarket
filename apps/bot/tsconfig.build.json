@@ -69,6 +69,9 @@
       "path": "../../packages/application/market-discovery/tsconfig.build.json"
     },
     {
+      "path": "../../packages/application/recovery/tsconfig.build.json"
+    },
+    {
       "path": "../../packages/infrastructure/backtesting/tsconfig.build.json"
     },
     {
@@ -76,6 +79,9 @@
     },
     {
       "path": "../../packages/infrastructure/in-memory/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"
     },
     {
       "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"

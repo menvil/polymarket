@@ -39,7 +39,13 @@
       "path": "../event-bus/tsconfig.build.json"
     },
     {
+      "path": "../../domain/entities/market/tsconfig.build.json"
+    },
+    {
       "path": "../ports/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/market-data/trade-tape/tsconfig.build.json"
     },
     {
       "path": "../use-cases/tsconfig.build.json"
