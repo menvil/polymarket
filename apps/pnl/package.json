@@ -14,6 +14,7 @@
     "@polymarket/exchange": "0.1.0"
   },
   "devDependencies": {
+    "tsx": "^4.20.3",
     "typescript": "^5.4.0"
   }
 }

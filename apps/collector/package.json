@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node --loader ts-node/esm src/main.ts",
+    "start": "npx tsx --env-file=.env src/main.ts",
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "dev": "node --loader ts-node/esm src/main.ts"
+    "dev": "npx tsx --env-file=.env src/main.ts"
   },
   "dependencies": {
     "ccxt": "^4.5.46",
@@ -19,5 +19,8 @@
     "@polymarket/order-book": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/exchange": "0.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
   }
 }
