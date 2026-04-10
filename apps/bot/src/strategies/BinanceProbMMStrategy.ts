@@ -509,7 +509,8 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
       ? snapshot.market.outcomes
       : [];
     const matchedOutcome = outcomes.find(
-      outcome => String(outcome.token) === String(snapshot.instrumentId),
+      (outcome: { token: unknown; name: string; index: number }) =>
+        String(outcome.token) === String(snapshot.instrumentId),
     );
 
     if (matchedOutcome) {

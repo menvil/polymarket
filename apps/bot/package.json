@@ -26,10 +26,12 @@
     "@polymarket/risk": "0.1.0",
     "@polymarket/market-state": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/recovery": "0.1.0",
     "@polymarket/backtesting": "0.1.0",
     "@polymarket/cross-market": "0.1.0",
     "@polymarket/in-memory": "0.1.0",
     "@polymarket/exchange": "0.1.0",
+    "@polymarket/data-collection": "0.1.0",
     "@polymarket/builder-relayer-client": "^0.0.8",
     "@polymarket/builder-signing-sdk": "^1.0.0",
     "decimal.js": "^10.4.3"
