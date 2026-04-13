@@ -12,23 +12,76 @@ async function getCcxt(): Promise<typeof import('ccxt')> {
 
 const STALE_TIMEOUT_MS = 30_000;
 
+/**
+ * Параметры инициализации `CcxtSymbolWatcher`.
+ */
 export interface CcxtSymbolWatcherParams {
+  /** Идентификатор биржи в ccxt.pro (напр. "binance"). */
   readonly exchangeId: string;
+  /** Тип рынка: spot, futures или swap. */
   readonly exchangeType: 'spot' | 'futures' | 'swap';
+  /** Символ торговой пары (напр. "BTC/USD"). */
   readonly symbol: string;
+  /** Глубина стакана (кол-во уровней). */
   readonly depth: number;
+  /** Подписываться на обновления стакана. */
   readonly watchOrderbook: boolean;
+  /** Подписываться на поток сделок. */
   readonly watchTrades: boolean;
+  /** Интервал планового перезапуска соединения (ms). */
   readonly restartIntervalMs: number;
+  /**
+   * Метод получения стакана: `watch` (WebSocket) или `fetch` (REST).
+   * Если не задан — автоопределение по ccxt.pro capabilities.
+   */
   readonly obMethod?: 'watch' | 'fetch';
+  /** Callback при получении новой записи (стакан или сделка). */
   readonly onRecord: (record: CexRawRecord) => void;
   readonly logger: ILogger;
 }
 
+/**
+ * Наблюдатель за рыночными данными одного символа на одной бирже.
+ *
+ * @remarks
+ * Запускает отдельные асинхронные петли для стакана и сделок.
+ * Каждая петля:
+ * 1. Создаёт ccxt.pro-инстанс.
+ * 2. Подписывается на WebSocket (или делает REST-polling для стакана).
+ * 3. При ошибке — логирует, пересоздаёт инстанс и продолжает.
+ * 4. При плановом `restartIntervalMs` — перезапускает инстанс без паузы.
+ * 5. Обнаруживает «зависший» стакан (ask < bid) и перезапускается.
+ *
+ * ### Защита от staleness
+ * Каждая операция watch обёрнута в `Promise.race` со stale-таймаутом
+ * (`STALE_TIMEOUT_MS = 30s`). Если обновлений не поступало 30 секунд —
+ * инстанс пересоздаётся.
+ *
+ * @example
+ * ```typescript
+ * const watcher = new CcxtSymbolWatcher({
+ *   exchangeId: 'binance',
+ *   exchangeType: 'futures',
+ *   symbol: 'BTC/USD',
+ *   depth: 10,
+ *   watchOrderbook: true,
+ *   watchTrades: true,
+ *   restartIntervalMs: 2 * 60 * 60 * 1000,
+ *   onRecord: (record) => handleRecord(record),
+ *   logger,
+ * });
+ * watcher.start();
+ * // ...
+ * watcher.stop();
+ * ```
+ */
 export class CcxtSymbolWatcher {
   private _stopped = false;
   private readonly _logger: ILogger;
 
+  /**
+   * @param _params - Параметры наблюдателя
+   */
   constructor(private readonly _params: CcxtSymbolWatcherParams) {
     this._logger = _params.logger.child({
       component: 'CcxtSymbolWatcher',
@@ -37,6 +90,13 @@ export class CcxtSymbolWatcher {
     });
   }
 
+  /**
+   * Запускает петли наблюдения (стакан и/или сделки).
+   *
+   * @remarks
+   * Сбрасывает флаг `_stopped` и запускает петли через `void ... .catch(...)`.
+   * Метод синхронный, петли работают в фоне.
+   */
   public start(): void {
     this._stopped = false;
     if (this._params.watchOrderbook) {
@@ -56,11 +116,26 @@ export class CcxtSymbolWatcher {
     this._logger.info('Watcher started');
   }
 
+  /**
+   * Останавливает петли наблюдения.
+   *
+   * @remarks
+   * Устанавливает `_stopped = true`. Петли завершатся при следующей итерации.
+   * Не ждёт полного завершения — используйте `await` при необходимости.
+   */
   public stop(): void {
     this._stopped = true;
     this._logger.info('Watcher stop requested');
   }
 
+  /**
+   * Асинхронная петля чтения стакана ордеров.
+   *
+   * @remarks
+   * Автоматически определяет метод (watchOrderBook vs fetchOrderBook).
+   * При обнаружении «перевёрнутого» стакана (ask < bid) перезапускает инстанс.
+   * Записи передаются в `_params.onRecord` как `CexOrderbookRecord`.
+   */
   private async _runObLoop(): Promise<void> {
     let instance = await this._makeInstance();
 
@@ -129,6 +204,13 @@ export class CcxtSymbolWatcher {
     this._logger.info('OB loop stopped');
   }
 
+  /**
+   * Асинхронная петля чтения потока сделок.
+   *
+   * @remarks
+   * Использует `watchTrades` из ccxt.pro с stale-таймаутом 30 секунд.
+   * Каждая сделка передаётся в `_params.onRecord` как `CexTradeRecord`.
+   */
   private async _runTradesLoop(): Promise<void> {
     let instance = await this._makeInstance();
 
@@ -173,6 +255,16 @@ export class CcxtSymbolWatcher {
     this._logger.info('Trades loop stopped');
   }
 
+  /**
+   * Создаёт новый ccxt.pro инстанс для биржи.
+   *
+   * @remarks
+   * Добавляет `_createdAt` timestamp для отслеживания времени жизни инстанса.
+   * Инстанс использует `defaultType` из `_params.exchangeType`.
+   *
+   * @returns Инстанс ccxt.pro биржи
+   * @throws {Error} Если биржа не найдена в ccxt.pro
+   */
   private async _makeInstance(): Promise<any> {
     const { default: ccxt } = await getCcxt();
     const pro = (ccxt as any).pro as Record<string, new (opts: object) => any>;
@@ -195,6 +287,14 @@ export class CcxtSymbolWatcher {
     return instance;
   }
 
+  /**
+   * Закрывает ccxt.pro инстанс, закрывая все WebSocket-клиенты.
+   *
+   * @remarks
+   * Ошибки закрытия логируются как debug (ожидаемы при перезапуске).
+   *
+   * @param instance - ccxt.pro инстанс для закрытия
+   */
   private async _closeInstance(instance: any): Promise<void> {
     try {
       if (instance?.clients) {
@@ -221,6 +321,11 @@ export class CcxtSymbolWatcher {
     }
   }
 
+  /**
+   * Вспомогательный метод паузы.
+   *
+   * @param ms - Длительность паузы (ms)
+   */
   private _sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

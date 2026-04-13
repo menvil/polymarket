@@ -1,3 +1,36 @@
+/**
+ * CLI-инструмент валидации и диагностики CEX JSONL.GZ снапшотов.
+ *
+ * @remarks
+ * ### Назначение
+ * Проверяет качество данных в снапшотах CEX-бирж, собранных `CexCollectorService`.
+ * Используется для:
+ * - Обнаружения проблем после сбора данных (gap'ы, frozen book, crossed book).
+ * - Оценки покрытия символа сделками (zero-trade files).
+ * - Быстрой проверки перед запуском анализа lead-lag.
+ *
+ * ### Проверки
+ * - **Структура**: невалидный JSON, отсутствующий `t`/`ts`.
+ * - **Стакан**: crossed orderbook (ask < bid), пустые стороны,
+ *   нарушение сортировки уровней, non-monotonic timestamp.
+ * - **Сделки**: нулевые/отрицательные price/size, unexpected side.
+ * - **Временны́е паттерны**: large OB gaps (эвристический порог),
+ *   long full-book freeze (стакан не менялся > 60 секунд).
+ * - **Согласованность**: цены сделок вне конверта bid/ask.
+ *
+ * ### Запуск
+ * ```bash
+ * # Один файл
+ * node src/checkCexSnapshot.ts snapshots/2026-04-08/binance/file.jsonl.gz
+ * # Директория (рекурсивно)
+ * node src/checkCexSnapshot.ts snapshots/2026-04-08/binance
+ * # JSON-вывод
+ * node src/checkCexSnapshot.ts snapshots/2026-04-08/binance --json --output report.json
+ * ```
+ *
+ * ### Выход с ошибкой
+ * Process exit code = 1 если найдены записи с severity = "error".
+ */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline';

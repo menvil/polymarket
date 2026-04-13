@@ -4,6 +4,12 @@ import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import Decimal from 'decimal.js';
 
+/**
+ * Одна OHLCV-свеча с Binance API.
+ *
+ * @remarks
+ * Структура совпадает с ответом `/api/v3/klines`.
+ */
 interface Kline {
   readonly openTime: number;
   readonly closeTime: number;
@@ -14,47 +20,101 @@ interface Kline {
   readonly volume: number;
 }
 
+/**
+ * Параметры лог-нормального распределения доходностей для одного горизонта.
+ *
+ * @remarks
+ * Вычисляются из исторических log-returns по свечам Binance за `lookbackDays` перед событием.
+ */
 interface HorizonStats {
+  /** Среднее лог-доходности (дрейф) за горизонт. */
   readonly mu: number;
+  /** Стандартное отклонение лог-доходности за горизонт. */
   readonly sigma: number;
 }
 
+/**
+ * Конфигурация стратегии BinanceProbMM.
+ *
+ * @remarks
+ * Все параметры кроме `orderSize` и `qMax` имеют разумные значения по умолчанию.
+ */
 export interface BinanceProbMMConfig {
+  /** Размер одного ордера в токенах. */
   readonly orderSize: Decimal;
+  /** Максимальное количество единиц в позиции (в orderSize). */
   readonly qMax: number;
+  /** Количество дней истории Binance для построения модели. Default: 5. */
   readonly lookbackDays?: number;
+  /** Максимальный горизонт прогноза в минутах. Default: 15. */
   readonly maxHorizonMinutes?: number;
+  /** Учитывать дрейф (mu) при вычислении вероятности. Default: false. */
   readonly useDrift?: boolean;
+  /** Минимальное превышение fair value над mid для открытия позиции (¢). Default: 2. */
   readonly minEdgeCents?: number;
+  /** Базовый спред маркет-мейкинга (¢). Default: 1. */
   readonly baseSpreadCents?: number;
+  /** Максимальный спред маркет-мейкинга (¢). Default: 8. */
   readonly maxSpreadCents?: number;
+  /** Коэффициент скоса котировок по инвентарю. Default: 1. */
   readonly inventorySkew?: number;
+  /** Секунды до экспирации для принудительного закрытия позиции. Default: 30. */
   readonly unwindSec?: number;
+  /** Секунды прогрева после начала торговли. Default: 10. */
   readonly warmupSec?: number;
+  /** Alpha EWMA для расчёта mid по тредам. Default: 0.3. */
   readonly ewmaAlpha?: number;
+  /** Минимальное кол-во трейдов перед выставлением котировок. Default: 5. */
   readonly minTradesForMid?: number;
+  /** Минимальное кол-во samples для признания модели готовой. Default: 200. */
   readonly minModelSamples?: number;
+  /** Явный символ Binance (напр. "BTCUSD"). Default: выводится из asset. */
   readonly binanceSymbol?: string;
+  /** Base URL Binance REST API. Default: "https://api.binance.com". */
   readonly binanceBaseUrl?: string;
 }
 
+/**
+ * Данные одного тика, собранные методом `gather()`.
+ */
 interface BPMMData {
+  /** Fair value в центах из лог-нормальной модели, или null если модель не готова. */
   readonly fairValueCents: number | null;
+  /** Вероятность исхода для нашего токена [0, 1], или null если модель не готова. */
   readonly probToken: number | null;
+  /** EWMA цена последних трейдов (¢). */
   readonly midCents: number;
+  /** Секунды до экспирации рынка. */
   readonly tauSec: number;
+  /** Текущий инвентарь в единицах orderSize. */
   readonly inventoryUnits: number;
+  /** Текущая позиция в токенах (Decimal). */
   readonly positionQty: Decimal;
+  /** Доступные для продажи токены. */
   readonly availableTokenQty: Decimal;
+  /** Доступный баланс USDC. */
   readonly availableBalance: Decimal;
+  /** Есть ли незавершённые fills. */
   readonly hasInFlightFills: boolean;
+  /** Минимальный размер ордера из торговых ограничений. */
   readonly minOrderSize: Decimal | undefined;
+  /** Минимальная стоимость ордера из торговых ограничений. */
   readonly minOrderValue: Decimal | undefined;
+  /** Текущая цена базового актива. */
   readonly currentPrice: number;
+  /** Страйк бинарного события. */
   readonly targetPrice: number;
+  /** Флаг: модель построена и готова к использованию. */
   readonly modelReady: boolean;
 }
 
+/**
+ * Торговые действия стратегии.
+ *
+ * - `QUOTE` — выставить двусторонние котировки (bid + ask).
+ * - `UNWIND` — только sell для ликвидации позиции перед экспирацией.
+ * - `STOP` — снять все ордера, не торговать.
+ */
 type BPMMAction =
   | { readonly type: 'QUOTE'; readonly bid: number; readonly ask: number; readonly bidSize: Decimal; readonly askSize: Decimal }
   | { readonly type: 'UNWIND'; readonly ask: number; readonly askSize: Decimal }
@@ -63,6 +123,22 @@ type BPMMAction =
 const DEFAULT_TIMEOUT_MS = 15_000;
 const BINANCE_LIMIT = 1000;
 
+/**
+ * Аппроксимация функции нормального распределения (CDF) по Абрамовицу-Стегуну.
+ *
+ * @remarks
+ * Полиномиальное приближение с ошибкой < 7.5×10⁻⁸.
+ * Насыщается при |x| > 8 (возвращает 0 или 1).
+ *
+ * @param x - Стандартизированный z-score
+ * @returns Вероятность P(Z ≤ x) ∈ [0, 1]
+ *
+ * @example
+ * ```typescript
+ * normalCdf(0)    // ≈ 0.5
+ * normalCdf(1.96) // ≈ 0.975
+ * ```
+ */
 function normalCdf(x: number): number {
   if (x < -8) return 0;
   if (x > 8) return 1;
@@ -78,6 +154,23 @@ function normalCdf(x: number): number {
   return 0.5 * (1 + sign * y);
 }
 
+/**
+ * Вычисляет логарифмические доходности по массиву цен с шагом `step`.
+ *
+ * @remarks
+ * Пропускает записи с нулевыми/отрицательными ценами.
+ * Возвращает `log(prices[i] / prices[i - step])` для каждого допустимого `i`.
+ *
+ * @param prices - Массив цен закрытия
+ * @param step - Шаг (горизонт) в элементах массива
+ * @returns Массив лог-доходностей
+ *
+ * @example
+ * ```typescript
+ * calcLogReturns([100, 102, 101], 1)
+ * // ≈ [0.0198, -0.0099]
+ * ```
+ */
 function calcLogReturns(prices: readonly number[], step: number): number[] {
   const returns: number[] = [];
   for (let i = step; i < prices.length; i++) {
@@ -89,6 +182,13 @@ function calcLogReturns(prices: readonly number[], step: number): number[] {
   return returns;
 }
 
+/**
+ * Вычисляет среднее арифметическое массива.
+ *
+ * @param values - Непустой числовой массив
+ * @returns Среднее значение
+ * @throws {Error} Если массив пустой
+ */
 function calcMean(values: readonly number[]): number {
   if (values.length === 0) {
     throw new Error('cannot calculate mean of empty array');
@@ -96,6 +196,13 @@ function calcMean(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+/**
+ * Вычисляет стандартное отклонение (популяционное) массива.
+ *
+ * @param values - Массив из минимум 2 элементов
+ * @returns Положительное стандартное отклонение
+ * @throws {Error} Если элементов < 2 или sigma не конечна/равна нулю
+ */
 function calcSigma(values: readonly number[]): number {
   if (values.length < 2) {
     throw new Error('not enough data to calculate sigma');
@@ -109,6 +216,26 @@ function calcSigma(values: readonly number[]): number {
   return sigma;
 }
 
+/**
+ * Загружает OHLCV-свечи с Binance REST API с поддержкой пагинации.
+ *
+ * @remarks
+ * Запрашивает батчи по `BINANCE_LIMIT` (1000) свечей, пока не покроет весь диапазон.
+ * Использует AbortSignal.timeout для ограничения времени каждого запроса.
+ *
+ * @param baseUrl - Base URL Binance API (напр. "https://api.binance.com")
+ * @param symbol - Символ (напр. "BTCUSD")
+ * @param interval - Таймфрейм (напр. "1m")
+ * @param fromMs - Начало диапазона (Unix ms, включительно)
+ * @param toMs - Конец диапазона (Unix ms, включительно)
+ * @returns Массив Kline объектов, упорядоченных по времени
+ * @throws {Error} При HTTP-ошибке Binance API
+ *
+ * @example
+ * ```typescript
+ * const klines = await fetchKlines('https://api.binance.com', 'BTCUSD', '1m', fromMs, toMs);
+ * ```
+ */
 async function fetchKlines(
   baseUrl: string,
   symbol: string,
@@ -164,6 +291,16 @@ async function fetchKlines(
   return klines;
 }
 
+/**
+ * Пытается вывести Binance-символ из названия базового актива.
+ *
+ * @remarks
+ * Строит символ по шаблону `{ASSET}USD` (напр. `BTC` → `BTCUSD`).
+ * Возвращает `undefined`, если `asset` не задан или пустой.
+ *
+ * @param asset - Название актива из `snapshot.cryptoPrice.asset`
+ * @returns Binance-символ или `undefined`
+ */
 function inferBinanceSymbol(asset: string | undefined): string | undefined {
   if (!asset) return undefined;
   const normalized = asset.trim().toUpperCase();
@@ -171,16 +308,61 @@ function inferBinanceSymbol(asset: string | undefined): string | undefined {
   return `${normalized}USD`;
 }
 
+/**
+ * Проверяет, является ли исход «UP-like» (up или yes).
+ *
+ * @param name - Название исхода (регистронезависимо)
+ * @returns `true` если исход UP-like
+ */
 function isUpLikeOutcome(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return normalized === 'up' || normalized === 'yes';
 }
 
+/**
+ * Проверяет, является ли исход «DOWN-like» (down или no).
+ *
+ * @param name - Название исхода (регистронезависимо)
+ * @returns `true` если исход DOWN-like
+ */
 function isDownLikeOutcome(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return normalized === 'down' || normalized === 'no';
 }
 
+/**
+ * Вероятностный маркет-мейкер на основе лог-нормальной модели цены BTC (Binance).
+ *
+ * @remarks
+ * ### Алгоритм
+ *
+ * **Построение модели (один раз на рынок):**
+ * 1. При обнаружении нового рынка запускает асинхронную загрузку 1-минутных свечей
+ *    с Binance за последние `lookbackDays` дней до начала события.
+ * 2. Для каждого горизонта `h ∈ [1..maxHorizonMinutes]` вычисляет `mu` и `sigma`
+ *    лог-доходностей с шагом `h` свечей.
+ *
+ * **Котирование (каждый тик):**
+ * 1. Вычисляет текущий горизонт `h = ceil(tauSec / 60)`.
+ * 2. Берёт `{mu, sigma}` для горизонта `h` и считает вероятность
+ *    `P(close ≥ strike)` или `P(close < strike)` в зависимости от типа токена.
+ * 3. Fair value = вероятность × 100¢.
+ * 4. Применяет Avellaneda-Stoikov инвентарный скос:
+ *    `reservation = fair - inventorySkew × inventoryUnits`
+ *    `bid = floor(reservation - halfSpread)`
+ *    `ask = ceil(reservation + halfSpread)`
+ * 5. За `unwindSec` секунд до экспирации переключается в режим UNWIND
+ *    (только sell по текущему mid).
+ *
+ * @example
+ * ```typescript
+ * const strategy = new BinanceProbMMStrategy(
+ *   { orderSize: new Decimal(5), qMax: 3 },
+ *   'btc-prob-mm',
+ *   logger,
+ * );
+ * ```
+ */
 export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
   public readonly id: string;
   public readonly name = 'BinanceProbMMStrategy';
@@ -217,6 +399,11 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
   private _modelLogSuppressed = false;
   private _currentQuestion = '';
 
+  /**
+   * @param config - Конфигурация стратегии
+   * @param strategyId - Уникальный идентификатор экземпляра. Default: "binance-prob-mm-1"
+   * @param logger - Опциональный логгер
+   */
   constructor(config: BinanceProbMMConfig, strategyId = 'binance-prob-mm-1', logger?: ILogger) {
     super();
     this.id = strategyId;
@@ -253,6 +440,18 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     });
   }
 
+  /**
+   * Собирает данные тика из снапшота рынка.
+   *
+   * @remarks
+   * - При обнаружении нового рынка вызывает `_resetForNewMarket` и `_startModelBuild`.
+   * - Обновляет EWMA mid по новым трейдам из TradeTape.
+   * - Возвращает `undefined` (пропускает тик), если модель ещё не готова
+   *   или не прошёл прогрев.
+   *
+   * @param snapshot - Снапшот состояния рынка
+   * @returns Данные тика или `undefined`
+   */
   protected gather(snapshot: StrategySnapshot): BPMMData | undefined {
     if (!snapshot.cryptoPrice) return undefined;
     if (!snapshot.eventStartMs) return undefined;
@@ -344,6 +543,21 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     };
   }
 
+  /**
+   * Принимает торговые решения на основе данных тика.
+   *
+   * @remarks
+   * Логика:
+   * - Есть in-flight fills → ничего не делаем.
+   * - Модель не готова → STOP.
+   * - `tauSec ≤ unwindSec` → UNWIND (только sell по mid).
+   * - `|edge| < minEdgeCents` и нет токенов → STOP.
+   * - Иначе → QUOTE с инвентарным скосом.
+   *
+   * @param data - Данные тика из `gather()`
+   * @param _reasons - Причины триггера (не используются)
+   * @returns Список действий
+   */
   protected decide(data: BPMMData, _reasons: ReadonlySet<TriggerReason>): BPMMAction[] {
     if (data.hasInFlightFills) return [];
 
@@ -439,6 +653,18 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     }];
   }
 
+  /**
+   * Преобразует действия в торговые интенты.
+   *
+   * @remarks
+   * Каждое действие предваряется `CANCEL_ALL`.
+   * - `STOP` → только отмена.
+   * - `UNWIND` → отмена + SELL ask.
+   * - `QUOTE` → отмена + BUY bid + SELL ask (если размеры > 0).
+   *
+   * @param actions - Список действий из `decide()`
+   * @returns Список интентов для исполнения
+   */
   protected toIntents(actions: BPMMAction[]): StrategyIntent[] {
     const intents: StrategyIntent[] = [];
 
@@ -483,6 +709,11 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     return intents;
   }
 
+  /**
+   * Возвращает метрики состояния модели для мониторинга.
+   *
+   * @returns Объект с флагами модели и статистикой
+   */
   public getMetrics(): Record<string, unknown> {
     return {
       modelReady: this._modelReady,
@@ -493,6 +724,16 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     };
   }
 
+  /**
+   * Сбрасывает состояние при переходе к новому рынку.
+   *
+   * @remarks
+   * Определяет тип токена (UP/DOWN) по названию исхода из market.outcomes.
+   * Если совпадение не найдено, считает токен UP-like по умолчанию.
+   *
+   * @param snapshot - Снапшот нового рынка
+   * @param marketKey - Ключ нового рынка для логирования
+   */
   private _resetForNewMarket(snapshot: StrategySnapshot, marketKey: string): void {
     this._currentMarketKey = marketKey;
     this._currentQuestion = snapshot.market.question;
@@ -536,6 +777,18 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     });
   }
 
+  /**
+   * Запускает асинхронное построение лог-нормальной модели по Binance-данным.
+   *
+   * @remarks
+   * Запускается один раз на рынок через `void (async () => {...})()`.
+   * После завершения устанавливает `_modelReady = true` и заполняет `_statsByHorizon`.
+   * При ошибке — сохраняет текст в `_modelError`.
+   * Если рынок сменился пока строилась модель — результат игнорируется.
+   *
+   * @param snapshot - Снапшот для получения символа и периода
+   * @param marketKey - Ключ текущего рынка (для проверки актуальности)
+   */
   private _startModelBuild(snapshot: StrategySnapshot, marketKey: string): void {
     if (this._modelLoading || this._modelReady) return;
 
@@ -622,6 +875,20 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     })();
   }
 
+  /**
+   * Вычисляет вероятность закрытия цены на уровне или ниже страйка.
+   *
+   * @remarks
+   * Использует лог-нормальное распределение:
+   * `z = (log(strike / current) - mu) / sigma`
+   * `P(close ≤ strike) = Φ(z)`
+   *
+   * @param currentPrice - Текущая цена базового актива
+   * @param targetPrice - Страйк бинарного события
+   * @param mu - Дрейф лог-доходности (0 если `useDrift = false`)
+   * @param sigma - Стандартное отклонение лог-доходности
+   * @returns Вероятность P(close ≤ strike) ∈ [0, 1]
+   */
   private _probabilityCloseAtOrBelowTarget(
     currentPrice: number,
     targetPrice: number,
@@ -633,6 +900,14 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     return normalCdf(z);
   }
 
+  /**
+   * Проверяет, что ордер проходит минимальную стоимость.
+   *
+   * @param priceCents - Цена ордера в центах
+   * @param size - Размер ордера
+   * @param minOrderValue - Минимальная стоимость ордера (USDC) или undefined
+   * @returns `true` если ордер проходит порог или ограничение не задано
+   */
   private _passesMinOrderValue(priceCents: number, size: Decimal, minOrderValue: Decimal | undefined): boolean {
     if (!minOrderValue || size.lte(0)) return size.gt(0);
     return size.mul(priceCents).div(100).gte(minOrderValue);

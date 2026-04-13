@@ -8,11 +8,44 @@ import { CcxtSymbolWatcher } from './CcxtSymbolWatcher.js';
 const DEFAULT_OB_DEPTH = 10;
 const DEFAULT_RESTART_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Сервис сбора рыночных данных с CEX-бирж через ccxt.pro.
+ *
+ * @remarks
+ * ### Архитектура
+ *
+ * `CexCollectorService` объединяет:
+ * - **`CcxtSymbolWatcher`** — один watcher на каждую пару (биржа × символ),
+ *   читает WebSocket-потоки стаканов и сделок.
+ * - **`CexFileRotator`** (опционально) — записывает сырые записи в JSONL-файлы
+ *   с ротацией по временным окнам и gzip-сжатием.
+ * - **`sinks`** (опционально) — callback-функции для downstream потребителей
+ *   (напр. `CryptoMarketDataStore`).
+ *
+ * ### Жизненный цикл
+ * ```
+ * constructor → start() → [работа] → stop()
+ * ```
+ * При `stop()` все watcher'ы останавливаются, файловый ротатор закрывается
+ * и незавершённые файлы текущего окна удаляются.
+ *
+ * @example
+ * ```typescript
+ * const service = new CexCollectorService(config, logger);
+ * service.start();
+ * // ...
+ * await service.stop();
+ * ```
+ */
 export class CexCollectorService {
   private readonly _logger: ILogger;
   private readonly _rotator: CexFileRotator | null;
   private readonly _watchers: CcxtSymbolWatcher[] = [];
 
+  /**
+   * @param _config - Конфигурация коллектора
+   * @param logger - Логгер (получает child с компонентом 'CexCollectorService')
+   */
   constructor(
     private readonly _config: CexCollectorConfig,
     logger: ILogger,
@@ -32,6 +65,13 @@ export class CexCollectorService {
       : null;
   }
 
+  /**
+   * Удаляет незавершённые JSONL-файлы (без .gz) для всех бирж.
+   *
+   * @remarks
+   * Вызывается автоматически в `stop()`.
+   * Может использоваться при запуске для очистки остатков предыдущей сессии.
+   */
   public async cleanup(): Promise<void> {
     if (!this._rotator) return;
     const exchangeIds = [...new Set(
@@ -40,6 +80,13 @@ export class CexCollectorService {
     await this._rotator.cleanup(exchangeIds);
   }
 
+  /**
+   * Запускает ротатор файлов и все watcher'ы.
+   *
+   * @remarks
+   * Метод синхронный: watcher'ы запускают асинхронные петли через `void`.
+   * Ошибки в петлях логируются, но не останавливают сервис.
+   */
   public start(): void {
     this._logger.info('CexCollectorService starting', {
       exchanges: Object.keys(this._config.exchanges),
@@ -55,6 +102,12 @@ export class CexCollectorService {
     });
   }
 
+  /**
+   * Останавливает все watcher'ы, закрывает ротатор и очищает незавершённые файлы.
+   *
+   * @remarks
+   * Ждёт завершения всех операций записи перед возвратом.
+   */
   public async stop(): Promise<void> {
     this._logger.info('CexCollectorService stopping');
 
@@ -69,6 +122,10 @@ export class CexCollectorService {
     this._logger.info('CexCollectorService stopped');
   }
 
+  /**
+   * Создаёт и запускает `CcxtSymbolWatcher` для каждой пары (биржа × символ)
+   * из конфигурации.
+   */
   private _createAndStartWatchers(): void {
     for (const [configKey, exchangeConfig] of Object.entries(this._config.exchanges)) {
       const exchangeId = exchangeConfig.exchangeId ?? configKey;
@@ -101,6 +158,17 @@ export class CexCollectorService {
     }
   }
 
+  /**
+   * Обрабатывает новую сырую запись: записывает в ротатор и вызывает sinks.
+   *
+   * @remarks
+   * Ошибки в отдельных sinks логируются и не прерывают обработку.
+   *
+   * @param exchangeId - Идентификатор биржи
+   * @param symbol - Символ торговой пары
+   * @param marketType - Тип рынка
+   * @param record - Сырая запись (стакан или сделка)
+   */
   private _handleRecord(
     exchangeId: string,
     symbol: string,

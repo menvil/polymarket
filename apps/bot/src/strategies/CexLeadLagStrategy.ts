@@ -13,66 +13,139 @@ import Decimal from 'decimal.js';
 
 const SECONDS_PER_YEAR = 365.25 * 24 * 3600;
 
+/**
+ * Режим работы стратегии CEX Lead-Lag.
+ *
+ * - `defensive` — сигнал не влияет на fair value; входим только если
+ *   модель даёт edge без учёта CEX-сигнала.
+ * - `skewed` — сигнал смещает fair value на `signalImpactCents`; позволяет
+ *   котировать агрессивнее при сильном сигнале.
+ * - `hybrid` — аналог skewed, но может использоваться с доп. логикой.
+ */
 export type CexLeadLagMode = 'defensive' | 'skewed' | 'hybrid';
+
+/**
+ * Направление ставки: UP-токен (цена вырастет) или DOWN-токен (цена упадёт).
+ */
 export type CexLeadLagSide = 'up' | 'down';
 
+/**
+ * Конфигурация стратегии CexLeadLag.
+ *
+ * @remarks
+ * Стратегия входит в позицию по UP или DOWN токену бинарного рынка,
+ * используя:
+ * 1. Fair value из формулы бинарного опциона (GBM без дивидендов).
+ * 2. Опциональный CEX lead-lag сигнал для корректировки fair value.
+ */
 export interface CexLeadLagConfig {
+  /** Размер одного ордера в токенах. */
   readonly orderSize: Decimal;
+  /** Максимальное кол-во единиц инвентаря (в orderSize). */
   readonly qMax: number;
+  /** Торгуем UP или DOWN токен. Default: "up". */
   readonly side?: CexLeadLagSide;
+  /**
+   * Режим влияния сигнала на котировки.
+   * Default: "skewed".
+   */
   readonly mode?: CexLeadLagMode;
+  /** ID сигнала в CryptoSignalRegistry. Default: "cex_chainlink_lead_lag". */
   readonly signalId?: string;
+  /** Список CEX-бирж для сигнала. Default: ['binance', 'coinbase', 'okx']. */
   readonly venues?: readonly CexVenue[];
+  /** Веса бирж для взвешенного сигнала. */
   readonly weights?: Readonly<Record<string, number>>;
+  /** Статический базис (USD) для каждой биржи. Вычитается из residual. */
   readonly basisByVenue?: Readonly<Record<string, number>>;
+  /** Офлайн-калиброванный hit rate по score-бакетам [1..10]. */
   readonly confidenceByScore?: Readonly<Record<string, number>>;
+  /** Минимальный порог сигнала в bps для признания direction != flat. Default: 0.5. */
   readonly signalThresholdBps?: number;
+  /** Окно истории для momentum компоненты сигнала (ms). Default: 1000. */
   readonly signalLookbackMs?: number;
+  /** Максимальный возраст данных биржи для признания сигнала свежим (ms). Default: 2000. */
   readonly signalStaleMs?: number;
+  /** Минимальное кол-во активных бирж для сигнала. */
   readonly minVenueCount?: number;
+  /** Максимальный спред на бирже (bps). Биржа с более широким спредом игнорируется. */
   readonly maxSpreadBps?: number;
+  /** Минимальная сила сигнала [0..10] для входа. Default: 6. */
   readonly minSignalStrength?: number;
+  /** Минимальная уверенность сигнала [0..1] для входа. Default: 0.55. */
   readonly minSignalConfidence?: number;
+  /** Базовое смещение fair value при сигнале (¢). Default: 5. */
   readonly signalImpactCents?: number;
+  /** Максимальное смещение fair value при сигнале (¢). Default: 10. */
   readonly maxSignalImpactCents?: number;
+  /** Порог репрайса maker-ордера (¢). Default: 1. */
   readonly makerRepriceThresholdCents?: number;
+  /** Требовать сигнал для входа. Default: true. */
   readonly requireSignalForEntry?: boolean;
+  /** Разрешить taker-ордера (пересекать спред). Default: false. */
   readonly allowTaker?: boolean;
+  /** Годовая волатильность для GBM fair value. Default: 0.60. */
   readonly sigmaAnnual?: number;
+  /** Минимальное преимущество fair value над mid для входа (¢). Default: 2. */
   readonly minEdgeCents?: number;
+  /** Минимальное преимущество для удержания позиции (¢). Default: 1. */
   readonly exitEdgeCents?: number;
+  /** Базовый спред для расчёта bid-цены входа (¢). Default: 1. */
   readonly baseSpreadCents?: number;
+  /** Скидка к mid при выходе — sell ниже mid на эту величину (¢). Default: 1. */
   readonly exitDiscountCents?: number;
+  /** Секунды прогрева после начала рынка. Default: 10. */
   readonly warmupSec?: number;
+  /** Alpha EWMA для расчёта mid по трейдам. Default: 0.3. */
   readonly ewmaAlpha?: number;
+  /** Минимальное кол-во трейдов перед активацией. Default: 3. */
   readonly minTradesForMid?: number;
+  /** Секунды до экспирации для принудительного выхода. Default: 20. */
   readonly exitTauSec?: number;
+  /** Максимальный горизонт для входа (секунды). Default: 300. */
   readonly maxEntryTauSec?: number;
+  /** Минимальный допустимый fair value (¢). Default: 1. */
   readonly minFairCents?: number;
+  /** Максимальный допустимый fair value (¢). Default: 99. */
   readonly maxFairCents?: number;
 }
 
+/**
+ * Данные тика для принятия торговых решений.
+ */
 interface CexLeadLagData {
   readonly side: CexLeadLagSide;
   readonly mode: CexLeadLagMode;
+  /** Результат CEX-сигнала из registry, или undefined если сигнал недоступен. */
   readonly signal: CryptoSignalResult | undefined;
+  /** Направление сигнала применительно к нашему токену (inverted для DOWN). */
   readonly signalDirectionForToken: CryptoSignalDirection;
+  /** Сигнал достаточно сильный и уверенный. */
   readonly signalStrong: boolean;
+  /** Сигнал благоприятен для входа (сторона совпадает с нашим токеном). */
   readonly signalFavorable: boolean;
+  /** Сигнал направлен против позиции — нужно выходить. */
   readonly signalAdverse: boolean;
+  /** Итоговое смещение fair value от сигнала (¢), со знаком. */
   readonly signalImpactCents: number;
+  /** Fair value из GBM-формулы без учёта сигнала (¢). */
   readonly baseFairCents: number;
+  /** Fair value с поправкой на сигнал (¢). */
   readonly adjustedFairCents: number;
+  /** EWMA mid по трейдам (¢). */
   readonly midCents: number;
   readonly bestBidCents: number | undefined;
   readonly bestAskCents: number | undefined;
+  /** Цена открытого BUY-ордера, если есть. */
   readonly openBuyPriceCents: number | undefined;
+  /** Секунды до экспирации. */
   readonly tauSec: number;
   readonly positionQty: Decimal;
   readonly availableTokenQty: Decimal;
   readonly availableBalance: Decimal;
   readonly minOrderSize: Decimal;
   readonly minOrderValue: Decimal;
+  /** Инвентарь в единицах orderSize. */
   readonly inventoryUnits: number;
   readonly hasInFlightFills: boolean;
   readonly nowMs: number;
@@ -80,11 +153,24 @@ interface CexLeadLagData {
   readonly targetPrice: number;
 }
 
+/**
+ * Торговые действия стратегии.
+ *
+ * - `BUY` — открыть/добавить позицию.
+ * - `SELL` — закрыть позицию (выход).
+ * - `CANCEL` — снять все активные ордера.
+ */
 type CexLeadLagAction =
   | { readonly type: 'BUY'; readonly price: number; readonly size: Decimal }
   | { readonly type: 'SELL'; readonly price: number; readonly size: Decimal }
   | { readonly type: 'CANCEL' };
 
+/**
+ * Аппроксимация CDF нормального распределения по Абрамовицу-Стегуну.
+ *
+ * @param x - z-score
+ * @returns P(Z ≤ x) ∈ [0, 1]
+ */
 function normalCdf(x: number): number {
   if (x < -8) return 0;
   if (x > 8) return 1;
@@ -100,6 +186,19 @@ function normalCdf(x: number): number {
   return 0.5 * (1 + sign * y);
 }
 
+/**
+ * Вычисляет fair value UP-токена бинарного события по формуле GBM.
+ *
+ * @remarks
+ * `P(S_T ≥ K) ≈ Φ(d)`
+ * где `d = log(S / K) / (σ × √T)` — без дрейфа (упрощённая вероятная мера).
+ *
+ * @param price - Текущая цена базового актива
+ * @param strike - Страйк события
+ * @param sigmaAnnual - Годовая волатильность (напр. 0.60 = 60%)
+ * @param tauSec - Секунды до экспирации
+ * @returns Fair value в центах [1, 99]
+ */
 function binaryUpFairCents(price: number, strike: number, sigmaAnnual: number, tauSec: number): number {
   if (tauSec <= 0) return price >= strike ? 99 : 1;
   if (price <= 0 || strike <= 0 || sigmaAnnual <= 0) return 50;
@@ -108,25 +207,94 @@ function binaryUpFairCents(price: number, strike: number, sigmaAnnual: number, t
   return clamp(normalCdf(d) * 100, 1, 99);
 }
 
+/**
+ * Зажимает значение в диапазон [lower, upper].
+ *
+ * @param value - Входное значение
+ * @param lower - Нижняя граница
+ * @param upper - Верхняя граница
+ * @returns Зажатое значение
+ */
 function clamp(value: number, lower: number, upper: number): number {
   return Math.max(lower, Math.min(upper, value));
 }
 
+/**
+ * Безопасно извлекает число из number или Decimal.
+ *
+ * @param value - Число, Decimal или undefined
+ * @param fallback - Значение по умолчанию при невалидном input
+ * @returns Числовое значение
+ */
 function toNumber(value: number | Decimal | undefined, fallback: number): number {
   if (value instanceof Decimal) return value.toNumber();
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+/**
+ * Возвращает `true`, если направление сигнала — UP.
+ *
+ * @param direction - Направление сигнала
+ */
 function isUpDirection(direction: CryptoSignalDirection): boolean {
   return direction === 'up';
 }
 
+/**
+ * Инвертирует направление сигнала.
+ *
+ * @remarks
+ * Используется при работе с DOWN-токеном: favorable CEX-рост
+ * означает неблагоприятный сигнал для DOWN.
+ *
+ * @param direction - Исходное направление
+ * @returns Инвертированное направление
+ */
 function invertDirection(direction: CryptoSignalDirection): CryptoSignalDirection {
   if (direction === 'up') return 'down';
   if (direction === 'down') return 'up';
   return 'flat';
 }
 
+/**
+ * Стратегия, использующая CEX lead-lag сигнал для торговли
+ * бинарными токенами Polymarket.
+ *
+ * @remarks
+ * ### Принцип работы
+ *
+ * 1. **Fair value** вычисляется по упрощённой формуле бинарного опциона GBM:
+ *    `P(S_T ≥ K) = Φ(log(S/K) / (σ √T))`.
+ *    Chainlink-цена используется как предпочтительный источник (если доступна).
+ *
+ * 2. **CEX lead-lag сигнал** (`cex_chainlink_lead_lag`) отражает опережение
+ *    futures/spot-рынков относительно Chainlink. При режиме `skewed`/`hybrid`
+ *    сигнал смещает fair value на `[0..maxSignalImpactCents]` в сторону сигнала.
+ *
+ * 3. **Вход** — limit BUY ниже adjusted fair value на `minEdgeCents`.
+ *    Требует `signalFavorable = true` при `requireSignalForEntry = true`.
+ *
+ * 4. **Удержание** — позиция держится пока `edge ≥ exitEdgeCents`
+ *    и сигнал не adverse.
+ *
+ * 5. **Выход** — limit SELL по `mid - exitDiscountCents`.
+ *    Триггеры: adverse сигнал, падение edge < exitEdgeCents, `tauSec < exitTauSec`.
+ *
+ * @example
+ * ```typescript
+ * const strategy = new CexLeadLagStrategy(
+ *   {
+ *     orderSize: new Decimal(10),
+ *     qMax: 2,
+ *     side: 'up',
+ *     mode: 'skewed',
+ *     requireSignalForEntry: true,
+ *   },
+ *   'cex-ll-btc',
+ *   logger,
+ * );
+ * ```
+ */
 export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagAction> {
   public readonly id: string;
   public readonly name = 'CexLeadLagStrategy';
@@ -173,6 +341,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private _marketEventStartMs = 0;
   private _lastDiagMs = 0;
 
+  /**
+   * @param config - Конфигурация стратегии
+   * @param strategyId - Уникальный идентификатор экземпляра. Default: "cex-lead-lag-1"
+   * @param logger - Опциональный логгер
+   */
   constructor(config: CexLeadLagConfig, strategyId = 'cex-lead-lag-1', logger?: ILogger) {
     super();
     this.id = strategyId;
@@ -224,6 +397,18 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     });
   }
 
+  /**
+   * Собирает данные тика из снапшота.
+   *
+   * @remarks
+   * - При смене рынка (новый expirationMs) сбрасывает EWMA и счётчики.
+   * - Обновляет EWMA mid по трейдам через `_updateEwma()`.
+   * - Вычисляет `baseFairCents` из GBM и `adjustedFairCents` с поправкой сигнала.
+   * - Возвращает `undefined` до прогрева или при недостатке трейдов.
+   *
+   * @param snapshot - Снапшот рынка
+   * @returns Данные тика или `undefined`
+   */
   protected gather(snapshot: StrategySnapshot): CexLeadLagData | undefined {
     if (!snapshot.cryptoPrice || !snapshot.eventStartMs) return undefined;
 
@@ -315,6 +500,20 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     };
   }
 
+  /**
+   * Принимает торговые решения.
+   *
+   * @remarks
+   * Логика:
+   * - Есть in-flight fills → CANCEL.
+   * - Есть позиция → проверить выход через `_checkExit()`.
+   * - Нет позиции → проверить вход через `_checkEntry()`.
+   * - Если BUY-ордер стоит и условия не ухудшились → не трогать (return []).
+   *
+   * @param data - Данные тика
+   * @param _reasons - Причины триггера (не используются)
+   * @returns Список действий
+   */
   protected decide(data: CexLeadLagData, _reasons: ReadonlySet<TriggerReason>): CexLeadLagAction[] {
     if (data.hasInFlightFills) return [{ type: 'CANCEL' }];
 
@@ -332,6 +531,17 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     return [{ type: 'CANCEL' }];
   }
 
+  /**
+   * Преобразует действия в торговые интенты.
+   *
+   * @remarks
+   * Каждое действие предваряется `CANCEL_ALL`.
+   * - `CANCEL` → только отмена.
+   * - `BUY`/`SELL` → отмена + PLACE.
+   *
+   * @param actions - Список действий
+   * @returns Список интентов
+   */
   protected toIntents(actions: CexLeadLagAction[]): StrategyIntent[] {
     const intents: StrategyIntent[] = [];
 
@@ -350,6 +560,24 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     return intents;
   }
 
+  /**
+   * Проверяет условия входа в позицию.
+   *
+   * @remarks
+   * Условия входа:
+   * - `tauSec ∈ (exitTauSec + 5, maxEntryTauSec]`
+   * - `inventoryUnits < qMax`
+   * - Нет adverse сигнала
+   * - При `requireSignalForEntry = true` — нужен favorable сигнал
+   * - `adjustedFairCents ∈ [minFairCents, maxFairCents]`
+   * - `edge = adjustedFair - mid ≥ minEdgeCents`
+   *
+   * Если открытый BUY-ордер уже стоит близко к целевой цене
+   * (в пределах `makerRepriceThresholdCents`) — не выставляем новый.
+   *
+   * @param data - Данные тика
+   * @returns BUY-действие или `undefined`
+   */
   private _checkEntry(data: CexLeadLagData): CexLeadLagAction | undefined {
     if (data.tauSec < this._exitTauSec + 5) return undefined;
     if (data.tauSec > this._maxEntryTauSec) return undefined;
@@ -400,6 +628,17 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     return { type: 'BUY', price: bidPrice, size: buySize };
   }
 
+  /**
+   * Вычисляет размер BUY-ордера с учётом ограничений.
+   *
+   * @remarks
+   * Итоговый размер = `max(orderSize, minOrderSize, minSizeForMinValue)`.
+   * Если размер превышает оставшийся инвентарь до `qMax` — возвращает `undefined`.
+   *
+   * @param data - Данные тика
+   * @param priceCents - Цена BUY-ордера (¢)
+   * @returns Размер ордера или `undefined` если невозможно
+   */
   private _buySizeForPrice(data: CexLeadLagData, priceCents: number): Decimal | undefined {
     const maxPositionQty = this._orderSize.mul(this._qMax);
     const remainingQty = maxPositionQty.minus(data.positionQty);
@@ -416,6 +655,21 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     return effectiveSize;
   }
 
+  /**
+   * Проверяет условия выхода из позиции.
+   *
+   * @remarks
+   * Выход происходит при любом из:
+   * - Adverse сигнал
+   * - `fairEdge < -exitEdgeCents` (fair value упал ниже mid)
+   * - `tauSec < exitTauSec`
+   *
+   * При `allowTaker = true` — sell по best bid (taker).
+   * Иначе — sell по `mid - exitDiscountCents` (maker).
+   *
+   * @param data - Данные тика
+   * @returns SELL-действие или `undefined`
+   */
   private _checkExit(data: CexLeadLagData): CexLeadLagAction | undefined {
     const fairEdge = data.adjustedFairCents - data.midCents;
     const shouldExit =
@@ -439,6 +693,14 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     return { type: 'SELL', price: askPrice, size };
   }
 
+  /**
+   * Обновляет EWMA mid на основе новых трейдов из TradeTape.
+   *
+   * @remarks
+   * Если трейдов ещё нет, инициализирует EWMA из mid топбука.
+   *
+   * @param snapshot - Снапшот рынка
+   */
   private _updateEwma(snapshot: StrategySnapshot): void {
     const tapeRecords = snapshot.tradeTape?.getAll();
     if (tapeRecords && tapeRecords.length > 0) {
@@ -463,21 +725,46 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     }
   }
 
+  /**
+   * Возвращает лучший bid из топбука в центах.
+   *
+   * @param snapshot - Снапшот рынка
+   * @returns Цена bid (¢) или `undefined`
+   */
   private _bestBidCents(snapshot: StrategySnapshot): number | undefined {
     const value = snapshot.topOfBook?.bestBid?.value().toNumber();
     return value === undefined ? undefined : value * 100;
   }
 
+  /**
+   * Возвращает лучший ask из топбука в центах.
+   *
+   * @param snapshot - Снапшот рынка
+   * @returns Цена ask (¢) или `undefined`
+   */
   private _bestAskCents(snapshot: StrategySnapshot): number | undefined {
     const value = snapshot.topOfBook?.bestAsk?.value().toNumber();
     return value === undefined ? undefined : value * 100;
   }
 
+  /**
+   * Возвращает цену открытого BUY-ордера в центах, если есть.
+   *
+   * @param snapshot - Снапшот рынка
+   * @returns Цена открытого BUY-ордера (¢) или `undefined`
+   */
   private _openBuyPriceCents(snapshot: StrategySnapshot): number | undefined {
     const order = snapshot.openOrders.find((item) => item.side === 'BUY');
     return order ? order.price.value().toNumber() * 100 : undefined;
   }
 
+  /**
+   * Логирует диагностику тика не чаще чем раз в 5 секунд.
+   *
+   * @param data - Данные тика
+   * @param action - Метка действия (BUY, HOLD, EXIT и т.д.)
+   * @param extra - Дополнительные поля для лога
+   */
   private _logDiag(data: CexLeadLagData, action: string, extra?: Record<string, unknown>): void {
     if (data.nowMs - this._lastDiagMs < 5_000) return;
     this._lastDiagMs = data.nowMs;

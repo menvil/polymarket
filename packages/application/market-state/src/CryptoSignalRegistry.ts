@@ -6,35 +6,83 @@ import type {
   CryptoVenueStateView,
 } from './CryptoMarketDataStore.js';
 
+/**
+ * Направление торгового сигнала относительно базового актива.
+ *
+ * - `up` — цена актива растёт относительно опорного значения.
+ * - `down` — цена актива падает.
+ * - `flat` — нет значимого движения (ниже порога `thresholdBps`).
+ */
 export type CryptoSignalDirection = 'up' | 'down' | 'flat';
 
+/**
+ * Результат вычисления торгового сигнала.
+ *
+ * @remarks
+ * Возвращается методами `CryptoSignalRegistry.evaluate()` и
+ * `CryptoSignalRegistryView.evaluate()`.
+ */
 export interface CryptoSignalResult {
+  /** Идентификатор сигнала (напр. "cex_chainlink_lead_lag"). */
   readonly id: string;
+  /** Символ базового актива (напр. "BTC"). */
   readonly asset: string;
+  /** Timestamp вычисления сигнала (Unix ms). */
   readonly tsMs: number;
+  /** Числовое значение сигнала в единицах `unit`. */
   readonly value: number;
+  /** Единица измерения значения. */
   readonly unit: 'bps' | 'price' | 'score';
+  /** Направление: up, down или flat. */
   readonly direction: CryptoSignalDirection;
+  /**
+   * Нормированная сила сигнала [0..10]:
+   * 0 — нет сигнала, 10 — максимальная сила.
+   */
   readonly strength: number;
+  /**
+   * Уверенность в направлении [0..1].
+   * 0 — данные устаревшие или нет согласия бирж,
+   * 1 — максимальная уверенность.
+   */
   readonly confidence: number;
+  /**
+   * Флаг: данные устарели (возраст > `staleMs`).
+   * При `stale = true` `confidence = 0`.
+   */
   readonly stale: boolean;
+  /** Диагностические компоненты для отладки (venue prices, age и т.д.). */
   readonly components: Readonly<Record<string, number | string | boolean>>;
 }
 
+/**
+ * Контекст для вычисления сигнала — рыночные данные на момент вызова.
+ */
 export interface CryptoSignalContext {
+  /** Символ базового актива. */
   readonly asset: string;
+  /** Текущее время (Unix ms). */
   readonly nowMs: number;
+  /** История цен по источникам (Chainlink, CEX). */
   readonly priceHistory?: CryptoPriceHistoryView;
+  /** Текущее состояние стаканов по биржам. */
   readonly venueState?: CryptoVenueStateView;
+  /** История microprice по биржам. */
   readonly venueHistory?: CryptoVenueHistoryView;
 }
 
+/**
+ * Параметры запроса сигнала — фильтры и настройки агрегации.
+ */
 export interface CryptoSignalRequest {
+  /** Список CEX-бирж для агрегации. Default: ['binance', 'coinbase', 'okx']. */
   readonly venues?: readonly CexVenue[];
+  /** Источники цен (напр. 'polymarket_chainlink'). */
   readonly sources?: readonly CryptoPriceSource[];
+  /** Веса бирж для взвешенной агрегации. */
   readonly weights?: Readonly<Record<string, number>>;
   /**
-   * Per-venue static basis in USD, usually estimated offline as
+   * Per-venue статический базис в USD, обычно вычисляется офлайн как
    * `median(venueMicroprice - chainlinkPrice)`.
    */
   readonly basisByVenue?: Readonly<Record<string, number>>;
@@ -44,32 +92,101 @@ export interface CryptoSignalRequest {
   readonly maxSpreadBps?: number;
   /** Optional offline-calibrated direction hit rate by score bucket `1..10`. */
   readonly confidenceByScore?: Readonly<Record<string, number>>;
+  /** Окно истории для momentum компоненты (ms). Default: 1000. */
   readonly lookbackMs?: number;
+  /** Максимальный возраст данных биржи (ms). Default: 2000. */
   readonly staleMs?: number;
+  /** Минимальный порог значения для direction != flat (bps). Default: 0.5. */
   readonly thresholdBps?: number;
 }
 
+/**
+ * Неизменяемый view реестра сигналов, привязанный к конкретному контексту.
+ *
+ * @remarks
+ * Создаётся через `CryptoSignalRegistry.createView(context)`.
+ * Передаётся в стратегии через `StrategySnapshot.cryptoSignals`.
+ */
 export interface CryptoSignalRegistryView {
+  /** Возвращает список зарегистрированных идентификаторов сигналов. */
   list(): readonly string[];
+  /**
+   * Вычисляет сигнал по ID с заданными параметрами.
+   *
+   * @param signalId - Идентификатор сигнала
+   * @param request - Параметры запроса
+   * @returns Результат сигнала или `undefined` если данных недостаточно
+   */
   evaluate(signalId: string, request?: CryptoSignalRequest): CryptoSignalResult | undefined;
 }
 
+/**
+ * Функция вычисления одного сигнала.
+ *
+ * @param context - Рыночные данные на момент вычисления
+ * @param request - Параметры запроса (фильтры, веса, пороги)
+ * @returns Результат сигнала или `undefined` если данных недостаточно
+ */
 export type CryptoSignalCalculator = (
   context: CryptoSignalContext,
   request: CryptoSignalRequest,
 ) => CryptoSignalResult | undefined;
 
+/**
+ * Реестр торговых сигналов на основе крипто-рыночных данных.
+ *
+ * @remarks
+ * Хранит словарь `id → CryptoSignalCalculator`.
+ * Каждый calculator получает рыночный контекст и параметры запроса,
+ * возвращает типизированный результат с направлением, силой и уверенностью.
+ *
+ * ### Встроенные сигналы (через `createDefaultCryptoSignalRegistry()`):
+ * - **`cex_weighted_microprice_momentum`** — взвешенный momentum microprice
+ *   CEX-бирж за период `lookbackMs`.
+ * - **`cex_vs_chainlink_basis`** — отклонение CEX microprice от Chainlink (bps).
+ * - **`cex_chainlink_lead_lag`** — комбинированный lead-lag сигнал:
+ *   residual (CEX vs Chainlink) + momentum + trade pressure,
+ *   взвешенные по quality (возраст, спред).
+ *
+ * @example
+ * ```typescript
+ * const registry = createDefaultCryptoSignalRegistry();
+ * const view = registry.createView({ asset: 'BTC', nowMs: Date.now(), venueState, priceHistory });
+ * const signal = view.evaluate('cex_chainlink_lead_lag', { venues: ['binance', 'coinbase'] });
+ * ```
+ */
 export class CryptoSignalRegistry {
   private readonly _calculators = new Map<string, CryptoSignalCalculator>();
 
+  /**
+   * Регистрирует новый сигнал.
+   *
+   * @param id - Уникальный идентификатор сигнала
+   * @param calculator - Функция вычисления
+   */
   register(id: string, calculator: CryptoSignalCalculator): void {
     this._calculators.set(id, calculator);
   }
 
+  /**
+   * Возвращает список зарегистрированных идентификаторов.
+   *
+   * @returns Массив строк — IDs всех сигналов
+   */
   list(): readonly string[] {
     return [...this._calculators.keys()];
   }
 
+  /**
+   * Создаёт view реестра, привязанный к конкретному рыночному контексту.
+   *
+   * @remarks
+   * View передаётся в стратегии: `snapshot.cryptoSignals = registry.createView(ctx)`.
+   * Позволяет вызывать `evaluate()` без явной передачи контекста.
+   *
+   * @param context - Рыночные данные на момент создания view
+   * @returns Неизменяемый `CryptoSignalRegistryView`
+   */
   createView(context: CryptoSignalContext): CryptoSignalRegistryView {
     return {
       list: () => this.list(),
@@ -77,6 +194,15 @@ export class CryptoSignalRegistry {
     };
   }
 
+  /**
+   * Вычисляет сигнал по ID с явным контекстом и параметрами.
+   *
+   * @param signalId - Идентификатор сигнала
+   * @param context - Рыночные данные
+   * @param request - Параметры запроса
+   * @returns Результат сигнала или `undefined` если calculator не найден
+   *   или данных недостаточно
+   */
   evaluate(
     signalId: string,
     context: CryptoSignalContext,
@@ -86,6 +212,17 @@ export class CryptoSignalRegistry {
   }
 }
 
+/**
+ * Создаёт реестр с тремя встроенными сигналами.
+ *
+ * @remarks
+ * Регистрирует:
+ * - `cex_weighted_microprice_momentum`
+ * - `cex_vs_chainlink_basis`
+ * - `cex_chainlink_lead_lag`
+ *
+ * @returns Готовый к использованию `CryptoSignalRegistry`
+ */
 export function createDefaultCryptoSignalRegistry(): CryptoSignalRegistry {
   const registry = new CryptoSignalRegistry();
   registry.register('cex_weighted_microprice_momentum', weightedMicropriceMomentum);
@@ -94,6 +231,17 @@ export function createDefaultCryptoSignalRegistry(): CryptoSignalRegistry {
   return registry;
 }
 
+/**
+ * Сигнал: взвешенный momentum microprice CEX-бирж.
+ *
+ * @remarks
+ * Вычисляет изменение взвешенного microprice за период `lookbackMs`:
+ * `value = (current - previous) / previous × 10000` (bps).
+ *
+ * @param context - Рыночный контекст
+ * @param request - Параметры запроса
+ * @returns Результат сигнала или `undefined` при недостатке данных
+ */
 function weightedMicropriceMomentum(
   context: CryptoSignalContext,
   request: CryptoSignalRequest,
@@ -146,6 +294,17 @@ function weightedMicropriceMomentum(
   });
 }
 
+/**
+ * Сигнал: отклонение CEX microprice от Chainlink (basis bps).
+ *
+ * @remarks
+ * `value = (cex - chainlink) / chainlink × 10000` (bps).
+ * Положительное значение — CEX торгуется выше Chainlink (bullish).
+ *
+ * @param context - Рыночный контекст
+ * @param request - Параметры запроса
+ * @returns Результат сигнала или `undefined` при недостатке данных
+ */
 function cexVsChainlinkBasis(
   context: CryptoSignalContext,
   request: CryptoSignalRequest,
@@ -183,6 +342,27 @@ function cexVsChainlinkBasis(
   });
 }
 
+/**
+ * Сигнал: комбинированный CEX lead-lag относительно Chainlink.
+ *
+ * @remarks
+ * Агрегирует три компоненты с quality-взвешиванием (возраст + спред):
+ * - **residualBps** — отклонение microprice от Chainlink за вычетом basis.
+ * - **momentumBps** — изменение microprice за `lookbackMs`.
+ * - **tradePressure** — агрегированное давление сделок.
+ *
+ * Итоговое значение:
+ * `valueBps = residual + momentum × 0.25 + tradePressure × threshold × 0.5`
+ *
+ * **Уверенность** (`confidence`):
+ * - Если задан `confidenceByScore` — использует калиброванное значение по bucket.
+ * - Иначе — `(strength / 10) × (0.5 + agreement / 2)`, где agreement —
+ *   доля бирж, согласных с направлением.
+ *
+ * @param context - Рыночный контекст
+ * @param request - Параметры запроса
+ * @returns Результат сигнала или `undefined` при недостатке данных
+ */
 function cexChainlinkLeadLag(
   context: CryptoSignalContext,
   request: CryptoSignalRequest,
@@ -306,6 +486,14 @@ function cexChainlinkLeadLag(
   };
 }
 
+/**
+ * Вычисляет взвешенный microprice по набору CEX-бирж.
+ *
+ * @param venueState - Текущее состояние стаканов
+ * @param venues - Список бирж
+ * @param weights - Веса бирж (optional)
+ * @returns Взвешенная цена, timestamp и количество бирж, или `undefined`
+ */
 function weightedVenuePrice(
   venueState: CryptoVenueStateView,
   venues: readonly CexVenue[],
@@ -331,6 +519,18 @@ function weightedVenuePrice(
   return { price: numerator / denominator, lastTsMs, venueCount };
 }
 
+/**
+ * Строит `CryptoSignalResult` из сырых компонент.
+ *
+ * @remarks
+ * Вычисляет direction, strength и confidence по стандартной формуле:
+ * - `direction = flat / up / down` по `|value| vs threshold`.
+ * - `strength = min(10, |value| / threshold)`.
+ * - `confidence = stale ? 0 : min(1, strength / 10)`.
+ *
+ * @param input - Параметры для построения результата
+ * @returns Готовый `CryptoSignalResult`
+ */
 function makeSignalResult(input: {
   readonly id: string;
   readonly asset: string;
@@ -364,6 +564,12 @@ function makeSignalResult(input: {
   };
 }
 
+/**
+ * Конвертирует CexVenue в CryptoPriceSource для обращения к истории цен.
+ *
+ * @param venue - Идентификатор биржи (напр. "binance")
+ * @returns Строка вида "cex_binance"
+ */
 function cexVenueToPriceSource(venue: CexVenue): CryptoPriceSource {
   return `cex_${venue}` as CryptoPriceSource;
 }

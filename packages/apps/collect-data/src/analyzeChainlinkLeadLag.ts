@@ -1,9 +1,38 @@
+/**
+ * CLI-инструмент и библиотека функций для анализа lead-lag эффекта
+ * между CEX-биржами и Chainlink-ценой BTC на Polymarket.
+ *
+ * @remarks
+ * ### Назначение
+ * Оценивает предсказательную силу microprice различных CEX-бирж (и их комбинаций)
+ * относительно будущей Chainlink-цены. Используется для:
+ * - Калибровки сигнала `cex_chainlink_lead_lag` в `CryptoSignalRegistry`.
+ * - Выбора оптимального набора бирж и `basisByVenue` для каждой.
+ * - Оценки горизонта предсказания (horizonMs) для стратегии.
+ *
+ * ### Входные данные
+ * Снапшоты в формате JSONL.GZ, сгруппированные по временным окнам:
+ * ```
+ * {snapshotDir}/polymarket/{symbol}_*.jsonl.gz  — Chainlink цены
+ * {snapshotDir}/{venue}/{venue}_{symbol}_spot_*.jsonl.gz — CEX стаканы/сделки
+ * ```
+ *
+ * ### Запуск
+ * ```bash
+ * node src/analyzeChainlinkLeadLag.ts snapshots/2026-04-08 --horizons 0,1000,2000,5000 --top 15
+ * ```
+ *
+ * ### Экспорт
+ * Многие функции экспортируются для использования в `fitChainlinkLinearModels.ts`.
+ */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
+/** Список поддерживаемых CEX-бирж. */
 export const ALL_VENUES = ['binance', 'coinbase', 'cryptocom', 'kraken', 'okx'] as const;
+/** Тип идентификатора биржи. */
 export type Venue = (typeof ALL_VENUES)[number];
 
 const DEFAULT_HORIZONS_MS = [0, 1_000, 2_000, 5_000];
@@ -31,14 +60,29 @@ interface SymbolConfig {
   readonly cexPrefix: string;
 }
 
+/**
+ * Пара снапшот-файлов (Polymarket + CEX) для одного временного окна.
+ *
+ * @remarks
+ * Возвращается функцией `discoverWindows()`. Временное окно определяется
+ * по временно́му диапазону в именах файлов (напр. `0955AM-1000AM`).
+ */
 export interface WindowBundle {
+  /** Метка временного окна из имени файла (напр. "0955AM-1000AM"). */
   readonly label: string;
+  /** Путь к Polymarket JSONL.GZ файлу с Chainlink-ценами. */
   readonly polymarketFile: string;
+  /** Пути к CEX JSONL.GZ файлам по биржам (только доступные). */
   readonly cexFiles: Partial<Record<Venue, string>>;
 }
 
+/**
+ * Один тик Chainlink-цены.
+ */
 export interface ChainlinkTick {
+  /** Timestamp тика (Unix ms). */
   readonly ts: number;
+  /** Цена BTC (USD). */
   readonly price: number;
 }
 
@@ -62,6 +106,7 @@ interface TradeEvent {
   readonly notional: number;
 }
 
+/** Нормализованное событие от CEX-биржи: стакан или сделка. */
 export type CexEvent = OrderbookEvent | TradeEvent;
 
 interface TradeContribution {
@@ -70,6 +115,12 @@ interface TradeContribution {
   readonly notional: number;
 }
 
+/**
+ * Изменяемое состояние одной биржи в потоковой обработке событий.
+ *
+ * @remarks
+ * Обновляется через `applyEvent()`, очищается через `pruneTrades()`.
+ */
 export interface VenueState {
   bid: number | null;
   ask: number | null;
@@ -82,9 +133,15 @@ export interface VenueState {
   notionalSum: number;
 }
 
+/**
+ * Снапшот состояния биржи в момент времени для построения предикторов.
+ */
 export interface VenueSignalSnapshot {
+  /** Microprice: взвешенное среднее bid/ask по размерам. */
   readonly micro: number;
+  /** Спред в базисных пунктах. */
   readonly spreadBps: number;
+  /** Возраст последнего обновления стакана (ms). */
   readonly ageMs: number;
 }
 
@@ -321,6 +378,18 @@ function compareTimeRangeLabels(a: string, b: string): number {
   return parseTimeTokenToMinutes(aStart) - parseTimeTokenToMinutes(bStart);
 }
 
+/**
+ * Сканирует директорию снапшотов и возвращает список временны́х окон
+ * с совпадающими Polymarket + CEX файлами.
+ *
+ * @remarks
+ * Окно включается только если для него есть хотя бы один CEX-файл.
+ * Сортировка по времени начала окна.
+ *
+ * @param options - Параметры: директория снапшотов, символ и список бирж
+ * @returns Массив `WindowBundle`, отсортированных по времени
+ * @throws {Error} Если директория `polymarket/` не найдена
+ */
 export function discoverWindows(options: Pick<CliOptions, 'snapshotDir' | 'symbol' | 'venues'>): WindowBundle[] {
   const symbol = getSymbolConfig(options.symbol);
   const polymarketDir = path.join(options.snapshotDir, 'polymarket');
@@ -391,6 +460,17 @@ function readJsonLinesGz(filePath: string): unknown[] {
     .map((line) => JSON.parse(line));
 }
 
+/**
+ * Читает JSONL.GZ файл Polymarket и возвращает Chainlink-тики.
+ *
+ * @remarks
+ * Фильтрует записи с `t = "crypto_price"` и `source = "chainlink"`.
+ * Дедуплицирует по timestamp (оставляет последнюю цену для каждого ts).
+ * Результат отсортирован по времени.
+ *
+ * @param filePath - Путь к .jsonl.gz файлу
+ * @returns Массив `ChainlinkTick`, отсортированных по ts
+ */
 export function parseChainlinkTicks(filePath: string): ChainlinkTick[] {
   const rows = readJsonLinesGz(filePath);
   const lastByTs = new Map<number, number>();
@@ -414,6 +494,17 @@ export function parseChainlinkTicks(filePath: string): ChainlinkTick[] {
     .map(([ts, price]) => ({ ts, price }));
 }
 
+/**
+ * Читает JSONL.GZ файл CEX-биржи и возвращает нормализованные события.
+ *
+ * @remarks
+ * Парсит записи с `t = "ob"` (стаканы) и `t = "trade"` (сделки).
+ * Вычисляет `signedNotional` для сделок (знак зависит от `side`).
+ * Результат отсортирован: сначала по ts, затем ob перед trade, затем по order.
+ *
+ * @param filePath - Путь к .jsonl.gz файлу
+ * @returns Массив `CexEvent`, отсортированных по времени
+ */
 export function parseCexEvents(filePath: string): CexEvent[] {
   const rows = readJsonLinesGz(filePath);
   const events: CexEvent[] = [];
@@ -515,6 +606,18 @@ function asFiniteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Строит массив индексов «будущего» тика для каждого тика Chainlink.
+ *
+ * @remarks
+ * Для каждого тика `i` находит наименьший индекс `j > i`, такой что
+ * `ticks[j].ts >= ticks[i].ts + horizonMs`. При `horizonMs = 0` — `j = i`.
+ * Если будущего тика нет — значение `-1`.
+ *
+ * @param ticks - Массив тиков, отсортированных по ts
+ * @param horizonMs - Горизонт прогноза (ms)
+ * @returns Массив индексов длиной `ticks.length`
+ */
 export function buildFutureIndices(ticks: readonly ChainlinkTick[], horizonMs: number): number[] {
   const result = new Array<number>(ticks.length).fill(-1);
   if (horizonMs === 0) {
@@ -541,6 +644,11 @@ export function buildFutureIndices(ticks: readonly ChainlinkTick[], horizonMs: n
   return result;
 }
 
+/**
+ * Создаёт пустое начальное состояние биржи.
+ *
+ * @returns Новый `VenueState` с null bid/ask и пустыми массивами
+ */
 export function createVenueState(): VenueState {
   return {
     bid: null,
@@ -555,6 +663,16 @@ export function createVenueState(): VenueState {
   };
 }
 
+/**
+ * Применяет CEX-событие к состоянию биржи (мутирует `state`).
+ *
+ * @remarks
+ * - `ob` → обновляет bid/ask/sizes и `lastObTs`.
+ * - `trade` → добавляет в `recentTrades`, обновляет `signedNotionalSum`.
+ *
+ * @param state - Изменяемое состояние биржи
+ * @param event - Событие для применения
+ */
 export function applyEvent(state: VenueState, event: CexEvent): void {
   if (event.kind === 'ob') {
     state.bid = event.bid;
@@ -574,6 +692,17 @@ export function applyEvent(state: VenueState, event: CexEvent): void {
   state.notionalSum += event.notional;
 }
 
+/**
+ * Удаляет устаревшие сделки из состояния биржи (мутирует `state`).
+ *
+ * @remarks
+ * Сдвигает `tradeHead` вперёд, обновляя `signedNotionalSum` и `notionalSum`.
+ * Периодически компактирует массив сделок (при `tradeHead > 128` и `tradeHead * 2 >= length`).
+ *
+ * @param state - Изменяемое состояние биржи
+ * @param nowTs - Текущий timestamp (ms)
+ * @param lookbackMs - Глубина истории сделок (ms)
+ */
 export function pruneTrades(state: VenueState, nowTs: number, lookbackMs: number): void {
   const cutoffTs = nowTs - lookbackMs;
   while (state.tradeHead < state.recentTrades.length && state.recentTrades[state.tradeHead].ts < cutoffTs) {
@@ -593,6 +722,13 @@ function clamp(value: number, lower: number, upper: number): number {
   return Math.max(lower, Math.min(upper, value));
 }
 
+/**
+ * Вычисляет медиану массива.
+ *
+ * @param values - Непустой числовой массив
+ * @returns Медианное значение
+ * @throws {Error} Если массив пустой
+ */
 export function median(values: readonly number[]): number {
   if (values.length === 0) {
     throw new Error('Cannot compute median of an empty array.');
@@ -603,6 +739,23 @@ export function median(values: readonly number[]): number {
   return sorted[index];
 }
 
+/**
+ * Вычисляет предикторы (признаки) для одной биржи в момент времени.
+ *
+ * @remarks
+ * Возвращает три предиктора:
+ * - `{venue}::mid` — среднее bid/ask.
+ * - `{venue}::micro` — microprice: взвешенное среднее bid/ask по размерам.
+ * - `{venue}::micro_trade` — microprice, скорректированный на давление сделок.
+ *
+ * Возвращает пустой объект если стакан отсутствует, crossed или устарел.
+ *
+ * @param venue - Идентификатор биржи
+ * @param state - Текущее состояние биржи
+ * @param nowTs - Текущий timestamp (ms)
+ * @param stalenessMs - Максимальный допустимый возраст стакана (ms)
+ * @returns Словарь предикторов и опциональный снапшот для диагностики
+ */
 export function buildVenuePredictors(
   venue: Venue,
   state: VenueState,

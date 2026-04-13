@@ -1,3 +1,34 @@
+/**
+ * CLI-инструмент для подбора линейных регрессионных моделей (Ridge) предсказания
+ * будущей Chainlink-цены BTC по microprice CEX-бирж.
+ *
+ * @remarks
+ * ### Назначение
+ * Дополняет `analyzeChainlinkLeadLag.ts`: вместо простой корреляции строит
+ * линейные модели (одно-venue, комбо-venue, aggregate) с Ridge-регуляризацией.
+ * Используется для:
+ * - Получения весов бирж для weighted microprice.
+ * - Оценки стабильности коэффициентов по временны́м окнам (out-of-sample).
+ * - Выбора оптимального горизонта предсказания.
+ *
+ * ### Входные данные
+ * Те же снапшоты что и в `analyzeChainlinkLeadLag.ts` (через `discoverWindows`).
+ *
+ * ### Запуск
+ * ```bash
+ * node src/fitChainlinkLinearModels.ts snapshots/2026-04-08 --horizons 1000,5000
+ * ```
+ *
+ * ### Алгоритм
+ * Для каждого временного окна:
+ * 1. Строит матрицу признаков (microprice бирж) и вектор таргетов (будущий Chainlink).
+ * 2. Вычитает basis (медиана residual) для каждой биржи.
+ * 3. Решает Ridge regression: `(X'X + λI)w = X'y`.
+ * 4. Оценивает MAE, RMSE, hit-rate на out-of-sample окнах.
+ *
+ * ### Константа регуляризации
+ * `RIDGE_LAMBDA = 1` — умеренная регуляризация предотвращает переобучение на малых выборках.
+ */
 import {
   ALL_VENUES,
   applyEvent,
