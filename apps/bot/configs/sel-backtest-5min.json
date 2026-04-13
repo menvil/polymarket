@@ -11,17 +11,18 @@
     "maxSpreadCents": 4,
     "warmupSec": 60,
     "bidOffsetCents": 1,
-    "requireDeltaAccel": true
+    "requireDeltaAccel": true,
+    "minDeltaAccel": 0.02,
+    "makerRepriceAfterSec": 3
   },
   "market": {
-    "source": "discovery",
+    "source": "snapshots",
+    "paths": ["/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-23/*"],
     "filter": {
       "requiredKeywords": ["bitcoin", "up or down"],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
-    "source": "snapshots",
-    "paths": ["/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-23/*"],
     "outcomeIndex": 0
   },
   "resources": {

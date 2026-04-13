@@ -22,7 +22,8 @@
  *    - Spread < maxSpread (default 4¢)
  *    - (optional) Rise >= minRiseCents — momentum: EWMA растёт с момента warmup
  *    - (optional) UP+DOWN discrepancy <= compMaxDiscrepancyCents — оба токена согласованы
- *    - (optional) Delta acceleration > 0 — BTC уходит от strike
+ *    - (optional) Direction-aware delta acceleration > minDeltaAccel — BTC уходит от strike
+ *    - (optional) Veto если rise ниже vetoRiseBelowCents или comp discrepancy выше vetoCompDiscrepancyAboveCents
  * 4. Ставим limit BUY по mid - 1¢ (maker)
  * 5. На каждом тике переоцениваем: если ордер стоит и фильтры не проходят → CANCEL
  * 6. Держим позицию до settlement. Нет exit logic.
@@ -110,9 +111,26 @@ export interface SelectiveEntryConfig {
 
   /**
    * Требовать delta acceleration > 0 (BTC уходит от strike, а не возвращается).
+   * Для нового числового порога используйте minDeltaAccel.
    * Default false.
    */
   readonly requireDeltaAccel?: boolean;
+  /**
+   * Минимальное direction-aware delta acceleration для входа:
+   * UP использует delta_now - delta_at_warmup, DOWN использует обратный знак.
+   * Undefined + requireDeltaAccel=true сохраняет старое raw-поведение: deltaAccel > 0.
+   */
+  readonly minDeltaAccel?: number;
+  /**
+   * Мягкий veto: если rise известен и ниже порога, вход запрещён.
+   * В отличие от minRiseCents, отсутствие rise не блокирует вход.
+   */
+  readonly vetoRiseBelowCents?: number;
+  /**
+   * Мягкий veto: если comp discrepancy известна и выше порога, вход запрещён.
+   * В отличие от compMaxDiscrepancyCents, отсутствие comp-data не блокирует вход.
+   */
+  readonly vetoCompDiscrepancyAboveCents?: number;
   /** true = price from live orderbook, false = legacy mid-offset pricing. Default true. */
   readonly useBookAnchoredMakerPricing?: boolean;
   /** true = place entry orders as post-only. Default true. */
@@ -199,7 +217,11 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private readonly _minRise: number | undefined;
   private readonly _waitPct: number | undefined;
   private readonly _compMaxDiscrep: number | undefined;
-  private readonly _requireDeltaAccel: boolean;
+  private readonly _minDeltaAccel: number | undefined;
+  private readonly _useDirectionalDeltaAccel: boolean;
+  private readonly _deltaAccelCancelThreshold: number | undefined;
+  private readonly _vetoRiseBelow: number | undefined;
+  private readonly _vetoCompDiscrepancyAbove: number | undefined;
   private readonly _useBookAnchoredMakerPricing: boolean;
   private readonly _postOnly: boolean;
   private readonly _makerRepriceAfterSec: number;
@@ -241,7 +263,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private _lastGatherDiagMs = 0;
 
   /** Счётчики фильтров (за текущий рынок) */
-  private _rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, compDiscrep: 0, deltaAccel: 0 };
+  private _rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, riseVeto: 0, compDiscrep: 0, compDiscrepVeto: 0, deltaAccel: 0 };
   private _buyAttempts = 0;
   private _cancelAfterPlace = 0;
   private _repricePending = false;
@@ -265,7 +287,14 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     this._minRise = config.minRiseCents;
     this._waitPct = config.waitPct;
     this._compMaxDiscrep = config.compMaxDiscrepancyCents;
-    this._requireDeltaAccel = config.requireDeltaAccel ?? false;
+    const requireDeltaAccel = config.requireDeltaAccel ?? false;
+    this._useDirectionalDeltaAccel = config.minDeltaAccel !== undefined;
+    this._minDeltaAccel = config.minDeltaAccel ?? (requireDeltaAccel ? 0 : undefined);
+    this._deltaAccelCancelThreshold = this._minDeltaAccel !== undefined
+      ? this._minDeltaAccel - 0.01
+      : undefined;
+    this._vetoRiseBelow = config.vetoRiseBelowCents;
+    this._vetoCompDiscrepancyAbove = config.vetoCompDiscrepancyAboveCents;
     this._useBookAnchoredMakerPricing = config.useBookAnchoredMakerPricing ?? true;
     this._postOnly = config.postOnly ?? true;
     this._makerRepriceAfterSec = config.makerRepriceAfterSec ?? 5;
@@ -279,9 +308,15 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       warmup: this._warmupSec,
       bidOffset: this._bidOffset,
       minRise: this._minRise ?? 'off',
+      vetoRiseBelow: this._vetoRiseBelow ?? 'off',
       waitPct: this._waitPct ?? 'off',
       compMaxDiscrep: this._compMaxDiscrep ?? 'off',
-      deltaAccel: this._requireDeltaAccel ? 'on' : 'off',
+      vetoCompDiscrepAbove: this._vetoCompDiscrepancyAbove ?? 'off',
+      deltaAccel: this._minDeltaAccel !== undefined ? `>${this._minDeltaAccel}` : 'off',
+      deltaAccelMode: this._minDeltaAccel !== undefined
+        ? (this._useDirectionalDeltaAccel ? 'directional' : 'legacy_raw')
+        : 'off',
+      deltaAccelCancelBelow: this._deltaAccelCancelThreshold ?? 'off',
       bookAnchoredMakerPricing: this._useBookAnchoredMakerPricing ? 'on' : 'off',
       postOnly: this._postOnly ? 'on' : 'off',
       makerRepriceAfterSec: this._makerRepriceAfterSec,
@@ -314,7 +349,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       this._warmupSnapshotCaptured = false;
       this._pendingPlace = false;
       this._lastDiagMs = 0;
-      this._rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, compDiscrep: 0, deltaAccel: 0 };
+      this._rejectCounts = { noDelta: 0, deltaSign: 0, zone: 0, deltaRange: 0, tau: 0, spread: 0, balance: 0, rise: 0, riseVeto: 0, compDiscrep: 0, compDiscrepVeto: 0, deltaAccel: 0 };
       this._buyAttempts = 0;
       this._cancelAfterPlace = 0;
       this._repricePending = false;
@@ -598,6 +633,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     const effectiveSpread = buyingComp
       ? (data.compSpreadCents ?? data.spreadCents)
       : data.spreadCents;
+    const effectiveDeltaAccel = this._effectiveDeltaAccel(data, effectiveSide);
     let rejectReason = '';
 
     if (data.deltaPct === undefined) {
@@ -632,12 +668,18 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       } else if (this._minRise !== undefined && (data.riseCents === null || data.riseCents < this._minRise)) {
         this._rejectCounts.rise++;
         rejectReason = `rise(${data.riseCents?.toFixed(1) ?? '?'},need>=${this._minRise})`;
+      } else if (this._vetoRiseBelow !== undefined && data.riseCents !== null && data.riseCents < this._vetoRiseBelow) {
+        this._rejectCounts.riseVeto++;
+        rejectReason = `rise_veto(${data.riseCents.toFixed(1)},min=${this._vetoRiseBelow})`;
       } else if (this._compMaxDiscrep !== undefined && (data.compDiscrepancy === null || data.compDiscrepancy > this._compMaxDiscrep)) {
         this._rejectCounts.compDiscrep++;
         rejectReason = `compDiscrep(${data.compDiscrepancy?.toFixed(1) ?? '?'},max=${this._compMaxDiscrep})`;
-      } else if (this._requireDeltaAccel && (data.deltaAccel === null || data.deltaAccel <= 0)) {
+      } else if (this._vetoCompDiscrepancyAbove !== undefined && data.compDiscrepancy !== null && data.compDiscrepancy > this._vetoCompDiscrepancyAbove) {
+        this._rejectCounts.compDiscrepVeto++;
+        rejectReason = `compDiscrep_veto(${data.compDiscrepancy.toFixed(1)},max=${this._vetoCompDiscrepancyAbove})`;
+      } else if (this._minDeltaAccel !== undefined && (effectiveDeltaAccel === null || effectiveDeltaAccel <= this._minDeltaAccel)) {
         this._rejectCounts.deltaAccel++;
-        rejectReason = `deltaAccel(${data.deltaAccel?.toFixed(4) ?? '?'},need>0)`;
+        rejectReason = `deltaAccel(${effectiveDeltaAccel?.toFixed(4) ?? '?'},need>${this._minDeltaAccel})`;
       }
     }
 
@@ -675,6 +717,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
         spread: data.spreadCents.toFixed(1),
         rise: data.riseCents?.toFixed(1),
         dAccel: data.deltaAccel?.toFixed(4),
+        dAccelEffective: effectiveDeltaAccel?.toFixed(4),
         rejects: this._rejectCounts,
       });
       this._journal?.recordDecision({
@@ -703,6 +746,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       spread: data.spreadCents.toFixed(1),
       rise: data.riseCents?.toFixed(1),
       dAccel: data.deltaAccel?.toFixed(4),
+      dAccelEffective: effectiveDeltaAccel?.toFixed(4),
       rejects: this._rejectCounts,
     });
     this._journal?.recordDecision({
@@ -724,7 +768,8 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
    * Проверяем ключевые фильтры (zone, delta range, tau, spread, deltaAccel).
    * Если хотя бы один не проходит → CANCEL.
    * Баланс не проверяем (ордер уже размещён).
-   * Rise и compDiscrepancy не проверяем (мягкие фильтры, не стоит мигать из-за них).
+   * Жёсткие minRise/compMaxDiscrepancy не перепроверяем; мягкие veto-фильтры
+   * проверяем только когда данные известны.
    * Если условия по-прежнему хорошие, ордер "старый" и можно улучшить maker-цену,
    * то возвращаем CANCEL. Новый BUY будет поставлен уже на следующем тике.
    */
@@ -752,6 +797,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
     const effectiveSpread = buyingComp
       ? (data.compSpreadCents ?? data.spreadCents)
       : data.spreadCents;
+    const effectiveDeltaAccel = this._effectiveDeltaAccel(data, effectiveSide);
     let cancelReason = '';
 
     if (data.openOrderOnComplementary !== buyingComp) {
@@ -776,9 +822,12 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       } else if (effectiveSpread > this._maxSpread * 2) {
         // Spread: cancel только при 2x порога (иначе шум)
         cancelReason = `spread_exit(${effectiveSpread.toFixed(1)},max=${this._maxSpread * 2})`;
-      } else if (this._requireDeltaAccel && data.deltaAccel !== null && data.deltaAccel < -0.01) {
-        // DeltaAccel: cancel если BTC разворачивается к strike (с запасом -0.01)
-        cancelReason = `deltaAccel_reversal(${data.deltaAccel.toFixed(4)})`;
+      } else if (this._vetoRiseBelow !== undefined && data.riseCents !== null && data.riseCents < this._vetoRiseBelow) {
+        cancelReason = `rise_veto_exit(${data.riseCents.toFixed(1)},min=${this._vetoRiseBelow})`;
+      } else if (this._vetoCompDiscrepancyAbove !== undefined && data.compDiscrepancy !== null && data.compDiscrepancy > this._vetoCompDiscrepancyAbove) {
+        cancelReason = `compDiscrep_veto_exit(${data.compDiscrepancy.toFixed(1)},max=${this._vetoCompDiscrepancyAbove})`;
+      } else if (this._deltaAccelCancelThreshold !== undefined && effectiveDeltaAccel !== null && effectiveDeltaAccel < this._deltaAccelCancelThreshold) {
+        cancelReason = `deltaAccel_reversal(${effectiveDeltaAccel.toFixed(4)},min=${this._deltaAccelCancelThreshold})`;
       }
     }
 
@@ -843,6 +892,9 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private _logDiag(data: SEData, effectiveSide: string, rejectReason: string, mid?: number | null): void {
     if (data.nowMs - this._lastDiagMs < 10_000) return;
     this._lastDiagMs = data.nowMs;
+    const effectiveDeltaAccel = effectiveSide === 'up' || effectiveSide === 'down'
+      ? this._effectiveDeltaAccel(data, effectiveSide)
+      : null;
     this._logger?.info('SelectiveEntry: tick', {
       side: this._side === 'auto' ? `auto→${effectiveSide}` : this._side,
       mid: mid ?? Math.round(data.midCents),
@@ -853,6 +905,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       compSpread: data.compSpreadCents?.toFixed(1) ?? 'n/a',
       rise: data.riseCents?.toFixed(1) ?? 'n/a',
       dAccel: data.deltaAccel?.toFixed(4) ?? 'n/a',
+      dAccelEffective: effectiveDeltaAccel?.toFixed(4) ?? 'n/a',
       cDisc: data.compDiscrepancy?.toFixed(1) ?? 'n/a',
       reject: rejectReason || 'PASS',
       rejects: this._rejectCounts,
@@ -896,6 +949,16 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       openOrderAgeSec: data.openOrderAgeSec,
       openOrderOnComplementary: data.openOrderOnComplementary,
     };
+  }
+
+  private _effectiveDeltaAccel(data: SEData, effectiveSide: 'up' | 'down'): number | null {
+    if (data.deltaAccel === null) return null;
+
+    if (!this._useDirectionalDeltaAccel) {
+      return data.deltaAccel;
+    }
+
+    return effectiveSide === 'up' ? data.deltaAccel : -data.deltaAccel;
   }
 
   private _computeEntryBidPrice(data: SEData, buyingComp: boolean, strategyCapPrice: number): number | null {

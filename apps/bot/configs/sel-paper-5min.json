@@ -12,6 +12,7 @@
     "warmupSec": 60,
     "bidOffsetCents": 1,
     "requireDeltaAccel": true,
+    "minDeltaAccel": 0.02,
     "makerRepriceAfterSec": 3
   },
   "execution": {

@@ -51,14 +51,13 @@ describe('GzipJsonlSnapshotReader', () => {
     expect(JSON.parse(lines[0])).toEqual({ a: 1 });
   });
 
-  it('удаляет временный файл после close()', async () => {
+  it('не создаёт временный распакованный файл', async () => {
     const gzPath = await writeGzFile('{"x":1}\n');
     const reader = new GzipJsonlSnapshotReader(gzPath, makeLogger());
     const lines: string[] = [];
     for await (const line of reader.readLines()) lines.push(line);
     await reader.close();
 
-    // Временный файл должен быть удалён
     const decompressedPath = gzPath.replace(/\.gz$/, '') + `.decompressed.${process.pid}.tmp`;
     expect(fs.existsSync(decompressedPath)).toBe(false);
   });

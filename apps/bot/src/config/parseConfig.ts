@@ -343,7 +343,7 @@ function parseStrategyParams(
 
     case 'selective-entry':
       if (!result['orderSize']) errors.push('strategyParams.orderSize is required for selective-entry strategy');
-      for (const numField of ['minZoneCents', 'maxZoneCents', 'minDeltaPct', 'maxDeltaPct', 'minTauSec', 'maxTauSec', 'maxSpreadCents', 'warmupSec', 'bidOffsetCents', 'minRiseCents', 'waitPct', 'compMaxDiscrepancyCents']) {
+      for (const numField of ['minZoneCents', 'maxZoneCents', 'minDeltaPct', 'maxDeltaPct', 'minTauSec', 'maxTauSec', 'maxSpreadCents', 'warmupSec', 'bidOffsetCents', 'minRiseCents', 'waitPct', 'compMaxDiscrepancyCents', 'minDeltaAccel', 'vetoRiseBelowCents', 'vetoCompDiscrepancyAboveCents', 'makerRepriceAfterSec']) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       if (raw['side'] === 'up' || raw['side'] === 'down' || raw['side'] === 'auto') result['side'] = raw['side'];

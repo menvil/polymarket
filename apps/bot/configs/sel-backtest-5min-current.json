@@ -12,7 +12,9 @@
     "warmupSec": 60,
     "bidOffsetCents": 1,
     "requireDeltaAccel": true,
-    "useBookAnchoredMakerPricing": true
+    "minDeltaAccel": 0.02,
+    "useBookAnchoredMakerPricing": true,
+    "makerRepriceAfterSec": 3
   },
   "market": {
     "source": "snapshots",
