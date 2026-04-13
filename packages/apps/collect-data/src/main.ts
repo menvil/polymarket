@@ -41,8 +41,8 @@ import type { DiscoveredMarket } from '@polymarket/ports';
 import type { MarketId } from '@polymarket/ids';
 import { Timestamp } from '@polymarket/value-objects';
 import { loadConfig } from './config.js';
-import { CexCollectorService } from './cex/CexCollectorService.js';
-import type { CexCollectorConfig } from './cex/CexCollectorConfig.js';
+import { CexCollectorService } from '@polymarket/cex-market-data';
+import type { CexCollectorConfig } from '@polymarket/cex-market-data';
 
 // ─── Запуск ──────────────────────────────────────────────────────────────────
 

@@ -37,6 +37,7 @@ import type {
   ResourcesConfig,
   AccountConfig,
   RecordingConfig,
+  CexFeedConfig,
 } from './BotConfig.js';
 import {
   DEFAULT_PAPER_CONFIG,
@@ -44,6 +45,7 @@ import {
   DEFAULT_ACCOUNT_CONFIG,
   DEFAULT_EXECUTION_CONFIG,
   DEFAULT_RECORDING_CONFIG,
+  DEFAULT_CEX_FEED_CONFIG,
 } from './BotConfig.js';
 
 // ── Результат парсинга ────────────────────────────────────────────────────────
@@ -218,6 +220,10 @@ export function parseConfig(
     compression: rawRecording?.compression ?? DEFAULT_RECORDING_CONFIG.compression,
   };
 
+  // ── Шаг 11.5: CEX feed (опционально) ─────────────────────────────────────
+
+  const cex = parseCexFeed(rawJson['cex'] as Partial<CexFeedConfig> | undefined, errors);
+
   // ── Шаг 12: итог ─────────────────────────────────────────────────────────
 
   if (errors.length > 0) {
@@ -244,6 +250,7 @@ export function parseConfig(
         account,
         execution,
         recording,
+        ...(cex ? { cex } : {}),
       },
     },
   };
@@ -561,5 +568,29 @@ function parseResources(
     maxConcurrentMarkets: raw.maxConcurrentMarkets ?? DEFAULT_RESOURCES_CONFIG.maxConcurrentMarkets,
     minCapitalPerMarket: raw.minCapitalPerMarket ?? DEFAULT_RESOURCES_CONFIG.minCapitalPerMarket,
     tradingBalanceRatio,
+  };
+}
+
+function parseCexFeed(
+  raw: Partial<CexFeedConfig> | undefined,
+  errors: string[],
+): CexFeedConfig | undefined {
+  if (!raw) return undefined;
+
+  const enabled = raw.enabled ?? DEFAULT_CEX_FEED_CONFIG.enabled;
+  const exchanges = raw.exchanges ?? DEFAULT_CEX_FEED_CONFIG.exchanges;
+
+  if (enabled && Object.keys(exchanges).length === 0) {
+    errors.push('cex.exchanges must be non-empty when cex.enabled=true');
+  }
+
+  return {
+    enabled,
+    exchanges,
+    outputDir: raw.outputDir,
+    compression: raw.compression,
+    windowMinutes: raw.windowMinutes,
+    bufferSize: raw.bufferSize,
+    flushIntervalMs: raw.flushIntervalMs,
   };
 }

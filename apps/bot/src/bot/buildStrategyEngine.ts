@@ -31,7 +31,12 @@
  */
 
 import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
-import type { ITokenBalanceChecker, ICryptoPriceStore } from '@polymarket/strategy';
+import type {
+  ITokenBalanceChecker,
+  ICryptoPriceStore,
+  ICryptoMarketDataStore,
+  ICryptoSignalRegistry,
+} from '@polymarket/strategy';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
@@ -50,6 +55,10 @@ export interface BuildStrategyEngineParams {
   readonly tokenBalanceChecker?: ITokenBalanceChecker;
   /** Опциональный: store крипто-цен для StrategyScheduler */
   readonly cryptoPriceStore?: ICryptoPriceStore;
+  /** Опциональный: long-lived history/state store для CEX/crypto market data */
+  readonly cryptoMarketDataStore?: ICryptoMarketDataStore;
+  /** Опциональный: shared crypto signal calculator registry */
+  readonly cryptoSignalRegistry?: ICryptoSignalRegistry;
 }
 
 /** Результат построения стратегического движка */
@@ -73,7 +82,17 @@ export interface StrategyEngine {
  * ```
  */
 export function buildStrategyEngine(params: BuildStrategyEngineParams): StrategyEngine {
-  const { infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker, cryptoPriceStore } = params;
+  const {
+    infra,
+    repos,
+    useCases,
+    marketDataStore,
+    marketCatalog,
+    tokenBalanceChecker,
+    cryptoPriceStore,
+    cryptoMarketDataStore,
+    cryptoSignalRegistry,
+  } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
@@ -98,6 +117,8 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     clock,
     logger,
     cryptoPriceStore,
+    cryptoMarketDataStore,
+    cryptoSignalRegistry,
   });
 
   const orderEventBridge = new OrderEventBridge({

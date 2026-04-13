@@ -20,7 +20,8 @@
     "@polymarket/ports": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
-    "@polymarket/exchange": "0.1.0"
+    "@polymarket/exchange": "0.1.0",
+    "@polymarket/cex-market-data": "0.1.0"
   },
   "devDependencies": {}
 }

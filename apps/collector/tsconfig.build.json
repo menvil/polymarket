@@ -48,6 +48,9 @@
       "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"
     },
     {
+      "path": "../../packages/infrastructure/cex-market-data/tsconfig.build.json"
+    },
+    {
       "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"
     }
   ]

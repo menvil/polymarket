@@ -52,7 +52,22 @@ export type {
   CancelIntent,
   CancelAllIntent,
 } from './types/index.js';
-export type { StrategySnapshot } from './types/index.js';
+export type {
+  CexBookTick,
+  CexTradeTick,
+  CexVenue,
+  CexVenueState,
+  CryptoSignalDirection,
+  CryptoSignalRegistryView,
+  CryptoSignalRequest,
+  CryptoSignalResult,
+  CryptoPriceHistoryView,
+  CryptoPricePoint,
+  CryptoPriceSource,
+  CryptoVenueHistoryView,
+  CryptoVenueStateView,
+  StrategySnapshot,
+} from './types/index.js';
 export type { InstrumentConstraints } from './types/index.js';
 export type { ScheduleConfig } from './types/index.js';
 export { DEFAULT_SCHEDULE_CONFIG } from './types/index.js';
@@ -70,7 +85,9 @@ export type {
   StrategySchedulerDeps,
   StrategyRegistration,
   IMarketDataStore,
+  ICryptoMarketDataStore,
   ICryptoPriceStore,
+  ICryptoSignalRegistry,
 } from './StrategyScheduler.js';
 // IOrderStateStore re-exported from ports for backward compatibility
 export type { IOrderStateStore } from '@polymarket/ports';

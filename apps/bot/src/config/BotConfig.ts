@@ -37,6 +37,7 @@ import type { SmartEntryConfig } from '../strategies/SmartEntryStrategy.js';
 import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js';
 import type { FairValueMMConfig } from '../strategies/FairValueMMStrategy.js';
 import type { BinanceProbMMConfig } from '../strategies/BinanceProbMMStrategy.js';
+import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
 
@@ -267,6 +268,18 @@ export interface RecordingConfig {
   readonly compression: 'none' | 'gzip';
 }
 
+// ── CEX market data feed ───────────────────────────────────────────────────
+
+export interface CexFeedConfig {
+  readonly enabled: boolean;
+  readonly exchanges: Readonly<Record<string, CexExchangeConfig>>;
+  readonly outputDir?: string;
+  readonly compression?: 'none' | 'gzip';
+  readonly windowMinutes?: number;
+  readonly bufferSize?: number;
+  readonly flushIntervalMs?: number;
+}
+
 // ── Корневой конфиг ──────────────────────────────────────────────────────────
 
 /**
@@ -309,6 +322,9 @@ export interface BotConfig {
 
   /** Запись рыночных данных и журнала решений (live/paper) */
   readonly recording?: RecordingConfig;
+
+  /** Live/paper CEX orderbook/trades feed. */
+  readonly cex?: CexFeedConfig;
 }
 
 // ── Дефолты ──────────────────────────────────────────────────────────────────
@@ -344,4 +360,9 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   outputDir: './data/live-recordings',
   journalDir: './data/journals',
   compression: 'gzip',
+};
+
+export const DEFAULT_CEX_FEED_CONFIG: CexFeedConfig = {
+  enabled: false,
+  exchanges: {},
 };

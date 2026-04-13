@@ -81,6 +81,9 @@
       "path": "../../packages/infrastructure/in-memory/tsconfig.build.json"
     },
     {
+      "path": "../../packages/infrastructure/cex-market-data/tsconfig.build.json"
+    },
+    {
       "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"
     },
     {

@@ -10,8 +10,9 @@
  *
  * ### Изоляция между рынками:
  * Каждый рынок получает свежие: ReplayClock, EventBus, Repositories,
- * PaperSimulator, Strategy, Portfolio, CryptoPriceStore.
- * Это гарантирует отсутствие state leaks между рынками.
+ * PaperSimulator, Strategy, Portfolio, CryptoPriceStore. CEX/crypto market
+ * history intentionally shared между рынками в хронологическом порядке, чтобы
+ * continuous backtest видел тот же rolling context, что paper/live.
  *
  * ### Binance fallback:
  * В multi-market режиме Binance klines fallback **пропускается** —
@@ -29,7 +30,11 @@ import { LogLevel } from '@polymarket/logger';
 import type { ILogger } from '@polymarket/logger';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
-import { CryptoPriceStore } from '@polymarket/market-state';
+import {
+  createDefaultCryptoSignalRegistry,
+  CryptoMarketDataStore,
+  CryptoPriceStore,
+} from '@polymarket/market-state';
 import { BookUpdateHandler } from '@polymarket/handlers';
 import type { IBookRegistry } from '@polymarket/handlers';
 import { OrderBook } from '@polymarket/order-book';
@@ -78,6 +83,8 @@ interface MarketBacktestResult {
   readonly completedCycles: number;
   readonly bookEvents: number;
   readonly tradeEvents: number;
+  readonly cexBookEvents: number;
+  readonly cexTradeEvents: number;
   readonly errors: number;
   readonly durationMs: number;
   readonly buyAttempts: number;
@@ -194,6 +201,51 @@ function buildInitialBalance(
   );
 }
 
+interface SnapshotReplayOrderEntry {
+  readonly filePath: string;
+  readonly index: number;
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/**
+ * Сортирует snapshot файлы по фактическому времени рынка, а не по файловому
+ * порядку. Это важно для continuous CEX history: общий store не должен получать
+ * будущие CEX события до более ранних рынков.
+ */
+async function sortSnapshotPathsForContinuousReplay(
+  filePaths: readonly string[],
+  outcomeIndex: 0 | 1,
+): Promise<string[]> {
+  const entries = await Promise.all(filePaths.map(async (filePath, index): Promise<SnapshotReplayOrderEntry> => {
+    const meta = await readSnapshotMeta(filePath, outcomeIndex);
+    const rawStart = typeof meta?.rawMarket?.['eventStartTime'] === 'string'
+      ? meta.rawMarket['eventStartTime']
+      : undefined;
+    const rawEnd = typeof meta?.rawMarket?.['endDate'] === 'string'
+      ? meta.rawMarket['endDate']
+      : undefined;
+    const startMs = rawStart ? new Date(rawStart).getTime() : NaN;
+    const endMs = rawEnd ? new Date(rawEnd).getTime() : NaN;
+
+    return {
+      filePath,
+      index,
+      startMs: Number.isFinite(startMs) ? startMs : Number.POSITIVE_INFINITY,
+      endMs: Number.isFinite(endMs) ? endMs : Number.POSITIVE_INFINITY,
+    };
+  }));
+
+  entries.sort((a, b) => {
+    if (a.startMs !== b.startMs) return a.startMs - b.startMs;
+    if (a.endMs !== b.endMs) return a.endMs - b.endMs;
+    const byPath = a.filePath.localeCompare(b.filePath);
+    return byPath !== 0 ? byPath : a.index - b.index;
+  });
+
+  return entries.map(entry => entry.filePath);
+}
+
 // ── Single-market бэктест ───────────────────────────────────────────────────
 
 /**
@@ -214,6 +266,7 @@ async function runSingleMarketBacktest(
   config: BotConfig,
   outcomeIndex: 0 | 1,
   parentLogger: ILogger,
+  sharedCryptoMarketDataStore: CryptoMarketDataStore,
 ): Promise<MarketBacktestResult | null> {
   const fileName = path.basename(filePath);
 
@@ -276,10 +329,21 @@ async function runSingleMarketBacktest(
 
   // 5. Crypto price store
   const cryptoPriceStore = new CryptoPriceStore();
+  const cryptoMarketDataStore = sharedCryptoMarketDataStore;
+  const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const cryptoMeta = parseCryptoMeta(rawMarket);
 
   // 6. Strategy engine
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore });
+  const engine = buildStrategyEngine({
+    infra,
+    repos,
+    useCases,
+    marketDataStore,
+    marketCatalog,
+    cryptoPriceStore,
+    cryptoMarketDataStore,
+    cryptoSignalRegistry,
+  });
 
   // 7. Регистрация инструмента в каталоге
   const rawEndDateForInstrument = rawMarket?.['endDate'] as string | undefined;
@@ -380,7 +444,7 @@ async function runSingleMarketBacktest(
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
     { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary },
-    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, parseCryptoMeta },
+    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, cryptoMarketDataStore, parseCryptoMeta },
   );
   const replayResult = await backtestEngine.run();
 
@@ -500,6 +564,8 @@ async function runSingleMarketBacktest(
     completedCycles: Math.min(buyCount, sellCount),
     bookEvents: replayResult.bookEvents,
     tradeEvents: replayResult.tradeEvents,
+    cexBookEvents: replayResult.cexBookEvents,
+    cexTradeEvents: replayResult.cexTradeEvents,
     errors: replayResult.errors,
     durationMs: replayResult.durationMs,
     buyAttempts: selectiveStats.buyAttempts,
@@ -518,9 +584,9 @@ async function runSingleMarketBacktest(
  * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
  *
  * @remarks
- * Каждый файл прогоняется как изолированный рынок с чистым состоянием.
- * Binance klines fallback пропускается — meta из collect-data содержит
- * priceToBeat и finalPrice.
+ * Каждый файл прогоняется как изолированный рынок с чистым торговым состоянием,
+ * но общим rolling crypto/CEX history store. Binance klines fallback
+ * пропускается — meta из collect-data содержит priceToBeat и finalPrice.
  *
  * @example
  * ```typescript
@@ -538,20 +604,30 @@ export async function runMultiMarketBacktest(
   const rootInfra = buildCoreInfra({ logLevel: LogLevel.WARN });
   const logger = rootInfra.logger;
 
+  const orderedPaths = await sortSnapshotPathsForContinuousReplay(resolvedPaths, outcomeIndex);
+  const sharedCryptoMarketDataStore = new CryptoMarketDataStore();
+
   logger.warn('=== MULTI-MARKET BACKTEST ===', {
-    totalFiles: resolvedPaths.length,
+    totalFiles: orderedPaths.length,
     strategy: config.strategy,
     outcomeIndex,
     initialBalance: config.resources.initialBalance,
+    continuousCryptoHistory: true,
   });
 
   const results: MarketBacktestResult[] = [];
   let skipped = 0;
   let failed = 0;
 
-  for (const [i, filePath] of resolvedPaths.entries()) {
+  for (const [i, filePath] of orderedPaths.entries()) {
     try {
-      const result = await runSingleMarketBacktest(filePath, config, outcomeIndex, logger);
+      const result = await runSingleMarketBacktest(
+        filePath,
+        config,
+        outcomeIndex,
+        logger,
+        sharedCryptoMarketDataStore,
+      );
       if (result) {
         results.push(result);
         const cumulativePnl = results.reduce((acc, item) => acc.plus(item.pnl), new Decimal(0));
@@ -579,10 +655,10 @@ export async function runMultiMarketBacktest(
     }
 
     // Progress log каждые 25 рынков
-    if ((i + 1) % 25 === 0 || i === resolvedPaths.length - 1) {
+    if ((i + 1) % 25 === 0 || i === orderedPaths.length - 1) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       logger.warn('Progress', {
-        completed: `${i + 1}/${resolvedPaths.length}`,
+        completed: `${i + 1}/${orderedPaths.length}`,
         elapsed: `${elapsed}s`,
         wins: results.filter(r => r.pnl.gt(0)).length,
         losses: results.filter(r => r.pnl.lt(0)).length,
@@ -607,6 +683,8 @@ export async function runMultiMarketBacktest(
   const avgPnl = totalPnl.div(results.length);
   const totalFills = results.reduce((acc, r) => acc + r.buys + r.sells, 0);
   const totalCycles = results.reduce((acc, r) => acc + r.completedCycles, 0);
+  const totalCexBookEvents = results.reduce((acc, r) => acc + r.cexBookEvents, 0);
+  const totalCexTradeEvents = results.reduce((acc, r) => acc + r.cexTradeEvents, 0);
   const buyAttempts = results.reduce((acc, r) => acc + r.buyAttempts, 0);
   const cancelAfterPlace = results.reduce((acc, r) => acc + r.cancelAfterPlace, 0);
   const postOnlyRejects = results.reduce((acc, r) => acc + r.postOnlyRejects, 0);
@@ -639,6 +717,8 @@ export async function runMultiMarketBacktest(
     cancelAfterPlace,
     totalFills,
     totalCycles,
+    totalCexBookEvents,
+    totalCexTradeEvents,
     totalDuration: `${(totalDurationMs / 1000).toFixed(1)}s`,
     avgPerMarket: `${(totalDurationMs / results.length).toFixed(0)}ms`,
   });

@@ -15,7 +15,22 @@ export type {
   CancelIntent,
   CancelAllIntent,
 } from './StrategyIntent.js';
-export type { StrategySnapshot } from './StrategySnapshot.js';
+export type {
+  CexBookTick,
+  CexTradeTick,
+  CexVenue,
+  CexVenueState,
+  CryptoSignalDirection,
+  CryptoSignalRegistryView,
+  CryptoSignalRequest,
+  CryptoSignalResult,
+  CryptoPriceHistoryView,
+  CryptoPricePoint,
+  CryptoPriceSource,
+  CryptoVenueHistoryView,
+  CryptoVenueStateView,
+  StrategySnapshot,
+} from './StrategySnapshot.js';
 export type { InstrumentConstraints } from './InstrumentConstraints.js';
 export type { ScheduleConfig } from './ScheduleConfig.js';
 export { DEFAULT_SCHEDULE_CONFIG } from './ScheduleConfig.js';

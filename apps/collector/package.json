@@ -18,7 +18,8 @@
     "@polymarket/handlers": "0.1.0",
     "@polymarket/order-book": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
-    "@polymarket/exchange": "0.1.0"
+    "@polymarket/exchange": "0.1.0",
+    "@polymarket/cex-market-data": "0.1.0"
   },
   "devDependencies": {
     "tsx": "^4.20.3"

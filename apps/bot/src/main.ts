@@ -29,12 +29,20 @@ import path from 'node:path';
 import * as fs from 'node:fs';
 import Decimal from 'decimal.js';
 import { LogLevel } from '@polymarket/logger';
+import type { ILogger } from '@polymarket/logger';
 import { PolymarketWsAdapter, PolymarketWebSocketManager } from '@polymarket/exchange/ws';
 import { MarketDataFeedAdapter, PolymarketMarketDiscoveryAdapter, parseCryptoMeta, computeInterval, BinanceKlinesClient } from '@polymarket/exchange/adapters';
 import type { CryptoMarketMeta } from '@polymarket/exchange/adapters';
 import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
 import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
-import { CryptoPriceStore } from '@polymarket/market-state';
+import {
+  createDefaultCryptoSignalRegistry,
+  CryptoMarketDataStore,
+  CryptoPriceStore,
+} from '@polymarket/market-state';
+import type { CexVenue as StoreCexVenue } from '@polymarket/market-state';
+import { CexCollectorService } from '@polymarket/cex-market-data';
+import type { CexCollectorConfig, CexNormalizedEvent } from '@polymarket/cex-market-data';
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import type { IMarketFilterConfig } from '@polymarket/ports';
 import {
@@ -58,6 +66,7 @@ import type { OrderBook as OrderBookType } from '@polymarket/order-book';
 
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
+import type { BotConfig } from './config/BotConfig.js';
 import { buildCoreInfra } from './bot/buildCoreInfra.js';
 import { subscribeToOrderEvents } from './bot/buildEventLogger.js';
 import { buildRepositories } from './bot/buildRepositories.js';
@@ -235,6 +244,9 @@ async function runPaper(): Promise<void> {
 
   // ── Crypto price infrastructure (paper) ────────────────────────────────
   const cryptoPriceStore = new CryptoPriceStore();
+  const cryptoMarketDataStore = new CryptoMarketDataStore();
+  const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
+  const paperCexService = createBotCexService(config, logger, cryptoMarketDataStore);
   const binanceClient = new BinanceKlinesClient(logger);
   const rtdsClient = new RtdsWebSocketClient(
     { url: 'wss://ws-live-data.polymarket.com' },
@@ -259,6 +271,7 @@ async function runPaper(): Promise<void> {
 
   rtdsClient.onPrice((symbol, price, ts) => {
     cryptoPriceStore.updatePrice(symbol, price, ts);
+    cryptoMarketDataStore.updatePrice({ symbol, price, timestampMs: ts, receivedTsMs: Date.now() });
 
     // Периодический лог крипто-цен (раз в 30с) — символ активного рынка или арб-пары
     if (symbol.includes('/')) {
@@ -505,7 +518,21 @@ async function runPaper(): Promise<void> {
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore });
+  const engine = buildStrategyEngine({
+    infra,
+    repos,
+    useCases,
+    marketDataStore,
+    marketCatalog,
+    cryptoPriceStore,
+    cryptoMarketDataStore,
+    cryptoSignalRegistry,
+  });
+
+  if (paperCexService) {
+    await paperCexService.cleanup();
+    paperCexService.start();
+  }
 
   // BookUpdateHandler — конвертирует WS snapshots в BOOK_UPDATED события
   const bookRegistry = new SimpleBookRegistry();
@@ -2275,6 +2302,7 @@ async function runPaper(): Promise<void> {
       marketDataFeedAdapter.stop();
       await wsAdapter.disconnect();
       rtdsClient.disconnect();
+      await paperCexService?.stop();
       marketDataStore.stop();
       await recording?.close();
       logger.info('Shutdown complete');
@@ -2392,6 +2420,8 @@ async function runBacktest(): Promise<void> {
 
   // ── Crypto price infrastructure (backtest) ──────────────────────────────
   const backtestCryptoPriceStore = new CryptoPriceStore();
+  const backtestCryptoMarketDataStore = new CryptoMarketDataStore();
+  const backtestCryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const backtestCryptoMeta = parseCryptoMeta(snapshotRawMarket);
 
   if (backtestCryptoMeta) {
@@ -2402,7 +2432,16 @@ async function runBacktest(): Promise<void> {
     });
   }
 
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, cryptoPriceStore: backtestCryptoPriceStore });
+  const engine = buildStrategyEngine({
+    infra,
+    repos,
+    useCases,
+    marketDataStore,
+    marketCatalog,
+    cryptoPriceStore: backtestCryptoPriceStore,
+    cryptoMarketDataStore: backtestCryptoMarketDataStore,
+    cryptoSignalRegistry: backtestCryptoSignalRegistry,
+  });
 
   // Регистрируем инструмент в каталоге (нужен BookUpdateHandler для маппинга tokenId → marketId)
   const rawEndDateForInstrument = snapshotRawMarket?.['endDate'] as string | undefined;
@@ -2576,7 +2615,15 @@ async function runBacktest(): Promise<void> {
 
   const backtestEngine = new BacktestEngine(
     { filePaths: resolvedPaths, outcomeIndex },
-    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore: backtestCryptoPriceStore, parseCryptoMeta },
+    {
+      bookUpdateHandler,
+      eventBus,
+      replayClock,
+      logger,
+      cryptoPriceStore: backtestCryptoPriceStore,
+      cryptoMarketDataStore: backtestCryptoMarketDataStore,
+      parseCryptoMeta,
+    },
   );
 
   const replayResult = await backtestEngine.run();
@@ -2695,6 +2742,8 @@ async function runBacktest(): Promise<void> {
     bookEvents: replayResult.bookEvents,
     tradeEvents: replayResult.tradeEvents,
     cryptoPriceEvents: replayResult.cryptoPriceEvents,
+    cexBookEvents: replayResult.cexBookEvents,
+    cexTradeEvents: replayResult.cexTradeEvents,
     errors: replayResult.errors,
     durationMs: replayResult.durationMs,
     ...(cryptoSnap ? {
@@ -2888,6 +2937,9 @@ async function runLive(): Promise<void> {
 
   // ── Crypto price infrastructure (live) ─────────────────────────────────
   const liveCryptoPriceStore = new CryptoPriceStore();
+  const liveCryptoMarketDataStore = new CryptoMarketDataStore();
+  const liveCryptoSignalRegistry = createDefaultCryptoSignalRegistry();
+  const liveCexService = createBotCexService(config, logger, liveCryptoMarketDataStore);
   const liveBinanceClient = new BinanceKlinesClient(logger);
   const liveRtdsClient = new RtdsWebSocketClient(
     { url: 'wss://ws-live-data.polymarket.com' },
@@ -2908,6 +2960,7 @@ async function runLive(): Promise<void> {
 
   liveRtdsClient.onPrice((symbol, price, ts) => {
     liveCryptoPriceStore.updatePrice(symbol, price, ts);
+    liveCryptoMarketDataStore.updatePrice({ symbol, price, timestampMs: ts, receivedTsMs: Date.now() });
 
     // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
     if (symbol.includes('/')) {
@@ -3110,7 +3163,22 @@ async function runLive(): Promise<void> {
     },
   };
 
-  const engine = buildStrategyEngine({ infra, repos, useCases, marketDataStore, marketCatalog, tokenBalanceChecker, cryptoPriceStore: liveCryptoPriceStore });
+  const engine = buildStrategyEngine({
+    infra,
+    repos,
+    useCases,
+    marketDataStore,
+    marketCatalog,
+    tokenBalanceChecker,
+    cryptoPriceStore: liveCryptoPriceStore,
+    cryptoMarketDataStore: liveCryptoMarketDataStore,
+    cryptoSignalRegistry: liveCryptoSignalRegistry,
+  });
+
+  if (liveCexService) {
+    await liveCexService.cleanup();
+    liveCexService.start();
+  }
 
   // ── MarketRotation (единый модуль ротации для live) ────────────────────
   const rotation = new MarketRotation({
@@ -3534,6 +3602,7 @@ async function runLive(): Promise<void> {
       await marketWsAdapter.disconnect();
       await userWsAdapter.disconnect();
       liveRtdsClient.disconnect();
+      await liveCexService?.stop();
       marketDataStore.stop();
       await recording?.close();
       logger.info('Shutdown complete');
@@ -3548,6 +3617,82 @@ async function runLive(): Promise<void> {
 }
 
 // ── Вспомогательные функции ────────────────────────────────────────────────────
+
+function createBotCexService(
+  botConfig: BotConfig,
+  logger: ILogger,
+  cryptoMarketDataStore: CryptoMarketDataStore,
+): CexCollectorService | null {
+  const cexConfig = botConfig.cex;
+  if (!cexConfig?.enabled) return null;
+
+  const outputDir = cexConfig.outputDir
+    ?? (botConfig.recording?.enabled ? botConfig.recording.outputDir : undefined);
+
+  const collectorConfig: CexCollectorConfig = {
+    exchanges: cexConfig.exchanges,
+    outputDir,
+    compression: cexConfig.compression ?? botConfig.recording?.compression ?? 'gzip',
+    windowMinutes: cexConfig.windowMinutes,
+    bufferSize: cexConfig.bufferSize,
+    flushIntervalMs: cexConfig.flushIntervalMs,
+    sinks: [
+      (event) => routeCexEventToCryptoStore(event, cryptoMarketDataStore),
+    ],
+  };
+
+  logger.info('CEX feed configured for bot', {
+    exchanges: Object.keys(cexConfig.exchanges),
+    memorySink: true,
+    diskRecording: outputDir !== undefined,
+    outputDir: outputDir ?? '-',
+  });
+
+  return new CexCollectorService(collectorConfig, logger);
+}
+
+function routeCexEventToCryptoStore(
+  event: CexNormalizedEvent,
+  store: CryptoMarketDataStore,
+): void {
+  const venue = toStoreCexVenue(event.venue);
+  if (!venue) return;
+
+  if (event.t === 'cex_ob') {
+    store.updateCexBook({
+      venue,
+      symbol: event.symbol,
+      exchangeTsMs: event.exchangeTs,
+      receivedTsMs: event.receivedTs,
+      bids: event.bids,
+      asks: event.asks,
+    });
+    return;
+  }
+
+  store.updateCexTrade({
+    venue,
+    symbol: event.symbol,
+    exchangeTsMs: event.exchangeTs,
+    receivedTsMs: event.receivedTs,
+    price: event.price,
+    size: event.size,
+    side: event.side,
+  });
+}
+
+function toStoreCexVenue(venue: string): StoreCexVenue | undefined {
+  if (
+    venue === 'binance' ||
+    venue === 'coinbase' ||
+    venue === 'okx' ||
+    venue === 'cryptocom' ||
+    venue === 'kraken'
+  ) {
+    return venue;
+  }
+  return undefined;
+}
 
 /**
  * Строит RiskParams с параметрами по умолчанию для paper/backtest режима.

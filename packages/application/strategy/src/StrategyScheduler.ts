@@ -79,6 +79,8 @@ export interface StrategyRegistration {
   readonly config?: Partial<ScheduleConfig>;
   /** Символ крипто-актива для привязки к CryptoPriceStore (e.g. 'btcusdt') */
   readonly cryptoSymbol?: string;
+  /** Базовый крипто-актив для asset-scoped history/state (e.g. 'btc'). */
+  readonly cryptoAsset?: string;
   /** Время начала торговли на рынке (epoch ms). Из Gamma API eventStartTime. */
   readonly eventStartMs?: number;
   /**
@@ -151,6 +153,25 @@ export interface ICryptoPriceStore {
   setOnChange(cb: (asset: string) => void): void;
 }
 
+export type CryptoMarketDataReason = Extract<TriggerReason, 'CRYPTO_PRICE' | 'CRYPTO_MARKET_DATA'>;
+
+export interface ICryptoMarketDataStore {
+  getPriceHistory(symbolOrAsset: string): StrategySnapshot['cryptoPriceHistory'];
+  getVenueState(symbolOrAsset: string): StrategySnapshot['cryptoVenueState'];
+  getVenueHistory(symbolOrAsset: string): StrategySnapshot['cryptoVenueHistory'];
+  setOnChange(cb: (asset: string, reason: CryptoMarketDataReason) => void): void;
+}
+
+export interface ICryptoSignalRegistry {
+  createView(context: {
+    readonly asset: string;
+    readonly nowMs: number;
+    readonly priceHistory?: StrategySnapshot['cryptoPriceHistory'];
+    readonly venueState?: StrategySnapshot['cryptoVenueState'];
+    readonly venueHistory?: StrategySnapshot['cryptoVenueHistory'];
+  }): StrategySnapshot['cryptoSignals'];
+}
+
 /**
  * Зависимости StrategyScheduler.
  */
@@ -165,6 +186,10 @@ export interface StrategySchedulerDeps {
   readonly logger: ILogger;
   /** Опциональный store крипто-цен (для крипто-рынков) */
   readonly cryptoPriceStore?: ICryptoPriceStore;
+  /** Опциональный long-lived store истории и состояния CEX/crypto market data. */
+  readonly cryptoMarketDataStore?: ICryptoMarketDataStore;
+  /** Опциональный registry reusable signal calculators. */
+  readonly cryptoSignalRegistry?: ICryptoSignalRegistry;
 }
 
 // ── Внутренние типы ────────────────────────────────────────
@@ -178,6 +203,8 @@ interface StrategyEntry {
   readonly config: ScheduleConfig;
   /** Символ крипто-актива (e.g. 'btcusdt') — для CryptoPriceStore lookup */
   readonly cryptoSymbol?: string;
+  /** Базовый crypto asset (e.g. 'btc') — для долгоживущей истории. */
+  readonly cryptoAsset?: string;
   /** Время начала торговли на рынке (epoch ms) */
   readonly eventStartMs?: number;
   /** Дополнительные инструменты для триггера тика */
@@ -204,6 +231,8 @@ export class StrategyScheduler {
   private readonly _instrumentToStrategies = new Map<string, Set<string>>();
   /** cryptoSymbol → Set<strategyId> */
   private readonly _symbolToStrategies = new Map<string, Set<string>>();
+  /** normalized asset → Set<strategyId> */
+  private readonly _assetToStrategies = new Map<string, Set<string>>();
 
   /** Event-driven queue: стратегии ожидающие tick */
   private readonly _queue: string[] = [];
@@ -224,6 +253,11 @@ export class StrategyScheduler {
     if (_deps.cryptoPriceStore) {
       _deps.cryptoPriceStore.setOnChange((symbol) => {
         this._onCryptoPriceChanged(symbol);
+      });
+    }
+    if (_deps.cryptoMarketDataStore) {
+      _deps.cryptoMarketDataStore.setOnChange((asset, reason) => {
+        this._onCryptoMarketDataChanged(asset, reason);
       });
     }
   }
@@ -309,6 +343,7 @@ export class StrategyScheduler {
       market: reg.market,
       config,
       cryptoSymbol: reg.cryptoSymbol,
+      cryptoAsset: reg.cryptoAsset ?? normalizeCryptoAsset(reg.cryptoSymbol),
       eventStartMs: reg.eventStartMs,
       additionalInstrumentIds: reg.additionalInstrumentIds,
       complementaryInstrumentId: reg.complementaryInstrumentId,
@@ -351,6 +386,16 @@ export class StrategyScheduler {
         this._symbolToStrategies.set(reg.cryptoSymbol, symSet);
       }
       symSet.add(strategyId);
+    }
+
+    const cryptoAsset = entry.cryptoAsset;
+    if (cryptoAsset) {
+      let assetSet = this._assetToStrategies.get(cryptoAsset);
+      if (assetSet === undefined) {
+        assetSet = new Set<string>();
+        this._assetToStrategies.set(cryptoAsset, assetSet);
+      }
+      assetSet.add(strategyId);
     }
 
     // Запуск heartbeat
@@ -514,13 +559,42 @@ export class StrategyScheduler {
    * помечает их dirty с reason 'CRYPTO_PRICE' и ставит в очередь.
    */
   private _onCryptoPriceChanged(symbol: string): void {
-    const strategyIds = this._symbolToStrategies.get(symbol);
-    if (!strategyIds) return;
+    const strategyIds = this._collectCryptoStrategyIds(symbol);
+    if (strategyIds.size === 0) return;
 
     for (const id of strategyIds) {
       this._dirtyTracker.markDirty(id, 'CRYPTO_PRICE');
       this._enqueue(id);
     }
+  }
+
+  private _onCryptoMarketDataChanged(asset: string, reason: CryptoMarketDataReason): void {
+    const strategyIds = this._collectCryptoStrategyIds(asset);
+    if (strategyIds.size === 0) return;
+
+    for (const id of strategyIds) {
+      this._dirtyTracker.markDirty(id, reason);
+      this._enqueue(id);
+    }
+  }
+
+  private _collectCryptoStrategyIds(symbolOrAsset: string): Set<string> {
+    const result = new Set<string>();
+
+    const exact = this._symbolToStrategies.get(symbolOrAsset);
+    if (exact) {
+      for (const id of exact) result.add(id);
+    }
+
+    const asset = normalizeCryptoAsset(symbolOrAsset);
+    if (asset) {
+      const byAsset = this._assetToStrategies.get(asset);
+      if (byAsset) {
+        for (const id of byAsset) result.add(id);
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -788,6 +862,27 @@ export class StrategyScheduler {
       }
     }
 
+    const cryptoLookupKey = entry.cryptoAsset ?? entry.cryptoSymbol;
+    const cryptoPriceHistory = cryptoLookupKey && this._deps.cryptoMarketDataStore
+      ? this._deps.cryptoMarketDataStore.getPriceHistory(cryptoLookupKey)
+      : undefined;
+    const cryptoVenueState = cryptoLookupKey && this._deps.cryptoMarketDataStore
+      ? this._deps.cryptoMarketDataStore.getVenueState(cryptoLookupKey)
+      : undefined;
+    const cryptoVenueHistory = cryptoLookupKey && this._deps.cryptoMarketDataStore
+      ? this._deps.cryptoMarketDataStore.getVenueHistory(cryptoLookupKey)
+      : undefined;
+    const nowMs = this._deps.clock.now().getTime();
+    const cryptoSignals = cryptoLookupKey && this._deps.cryptoSignalRegistry
+      ? this._deps.cryptoSignalRegistry.createView({
+          asset: normalizeCryptoAsset(cryptoLookupKey) ?? cryptoLookupKey,
+          nowMs,
+          priceHistory: cryptoPriceHistory,
+          venueState: cryptoVenueState,
+          venueHistory: cryptoVenueHistory,
+        })
+      : undefined;
+
     const compId = entry.complementaryInstrumentId;
     let complementaryOpenOrders: import('@polymarket/order').Order[] | undefined;
     let complementaryMatchedOrders: import('@polymarket/order').Order[] | undefined;
@@ -825,8 +920,12 @@ export class StrategyScheduler {
       hasInFlightFills,
       constraints,
       cryptoPrice,
+      cryptoPriceHistory,
+      cryptoVenueState,
+      cryptoVenueHistory,
+      cryptoSignals,
       portfolio: this._deps.portfolioStore.get(entry.accountId),
-      nowMs: this._deps.clock.now().getTime(),
+      nowMs,
       eventStartMs: entry.eventStartMs,
       complementaryInstrumentId: compId,
       complementaryAsset: entry.complementaryAsset,
@@ -901,6 +1000,16 @@ export class StrategyScheduler {
       }
     }
 
+    if (entry.cryptoAsset) {
+      const assetSet = this._assetToStrategies.get(entry.cryptoAsset);
+      if (assetSet) {
+        assetSet.delete(strategyId);
+        if (assetSet.size === 0) {
+          this._assetToStrategies.delete(entry.cryptoAsset);
+        }
+      }
+    }
+
     // Remove from queue
     this._queued.delete(strategyId);
 
@@ -910,4 +1019,13 @@ export class StrategyScheduler {
     // Remove entry
     this._entries.delete(strategyId);
   }
+}
+
+function normalizeCryptoAsset(symbolOrAsset: string | undefined): string | undefined {
+  if (!symbolOrAsset) return undefined;
+  const normalized = symbolOrAsset.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized.includes('/')) return normalized.split('/')[0] || undefined;
+  if (normalized.includes('-')) return normalized.split('-')[0] || undefined;
+  return normalized.replace(/usd[tc]?$/i, '') || undefined;
 }

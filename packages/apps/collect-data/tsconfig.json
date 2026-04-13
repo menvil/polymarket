@@ -12,6 +12,7 @@
       "@polymarket/ports":            ["../../application/ports/src/index.ts"],
       "@polymarket/market-discovery": ["../../application/market-discovery/src/index.ts"],
       "@polymarket/data-collection":  ["../../infrastructure/persistence/data-collection/src/index.ts"],
+      "@polymarket/cex-market-data":  ["../../infrastructure/cex-market-data/src/index.ts"],
       "@polymarket/exchange/ws":       ["../../infrastructure/polymarket/ws/index.ts"],
       "@polymarket/exchange/adapters": ["../../infrastructure/polymarket/adapters/index.ts"],
       "@polymarket/exchange/rest":     ["../../infrastructure/polymarket/rest/index.ts"],

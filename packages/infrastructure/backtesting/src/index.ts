@@ -27,7 +27,13 @@
  */
 
 export { BacktestEngine } from './BacktestEngine.js';
-export type { BacktestConfig, BacktestDeps, BacktestResult, IBacktestCryptoPriceStore } from './BacktestEngine.js';
+export type {
+  BacktestConfig,
+  BacktestDeps,
+  BacktestResult,
+  IBacktestCryptoMarketDataStore,
+  IBacktestCryptoPriceStore,
+} from './BacktestEngine.js';
 
 export { CrossMarketBacktestEngine } from './CrossMarketBacktestEngine.js';
 export type {

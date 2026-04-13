@@ -41,8 +41,8 @@ import { PolymarketWebSocketManager } from '@polymarket/exchange/ws';
 import { PolymarketWsAdapter } from '@polymarket/exchange/ws';
 import { CollectorService } from './CollectorService.js';
 import type { CollectorConfig } from './CollectorConfig.js';
-import { CexCollectorService } from './cex/CexCollectorService.js';
-import type { CexCollectorConfig } from './cex/CexCollectorConfig.js';
+import { CexCollectorService } from '@polymarket/cex-market-data';
+import type { CexCollectorConfig } from '@polymarket/cex-market-data';
 
 /** Официальный Polymarket market-channel WebSocket URL */
 const DEFAULT_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';

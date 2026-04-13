@@ -58,6 +58,8 @@
  * console.log(`book=${result.bookEvents}, trades=${result.tradeEvents}, errors=${result.errors}`);
  * ```
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
@@ -141,6 +143,37 @@ interface LegacySnapshotRecord {
   readonly event?: RawLegacyOrderbookEvent;
 }
 
+type ReplayCexVenue = 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken';
+type ReplayCexSide = 'buy' | 'sell';
+
+interface ReplayCexFileMeta {
+  readonly venue: ReplayCexVenue;
+  readonly symbol: string;
+  readonly windowStartMs: number;
+  readonly windowEndMs: number;
+}
+
+interface ReplayCexBookEvent {
+  readonly kind: 'book';
+  readonly venue: ReplayCexVenue;
+  readonly symbol: string;
+  readonly ts: number;
+  readonly bids: readonly (readonly [number, number])[];
+  readonly asks: readonly (readonly [number, number])[];
+}
+
+interface ReplayCexTradeEvent {
+  readonly kind: 'trade';
+  readonly venue: ReplayCexVenue;
+  readonly symbol: string;
+  readonly ts: number;
+  readonly price: number;
+  readonly size: number;
+  readonly side?: ReplayCexSide;
+}
+
+type ReplayCexEvent = ReplayCexBookEvent | ReplayCexTradeEvent;
+
 // ── Конфигурация и зависимости ────────────────────────────────────────────────
 
 /**
@@ -180,6 +213,24 @@ export interface BacktestConfig {
    * @defaultValue false
    */
   readonly replayComplementaryTrades?: boolean;
+  /**
+   * Реплеить соседние CEX файлы из структуры `date/{binance,okx,...}` рядом
+   * с `date/polymarket/*.jsonl.gz`.
+   *
+   * @remarks
+   * Старые collect-data CEX файлы хранят venue/symbol в имени файла, а записи
+   * внутри имеют `t: "ob"` / `t: "trade"`. Этот режим превращает их в поток
+   * `cryptoVenueState/cryptoVenueHistory` для стратегии.
+   *
+   * @defaultValue true
+   */
+  readonly replayCexSidecars?: boolean;
+  /**
+   * Сколько истории CEX загрузить до начала окна рынка.
+   *
+   * @defaultValue 30 минут
+   */
+  readonly cexWarmupMs?: number;
 }
 
 /**
@@ -197,6 +248,39 @@ export interface IBacktestCryptoPriceStore {
   lockTargetPrice(symbolOrAsset: string, price: number): void;
   /** Устанавливает и блокирует resolutionPrice (finalPrice из meta) от перезаписи */
   lockResolutionPrice(symbolOrAsset: string, price: number): void;
+}
+
+export interface IBacktestCryptoMarketDataStore {
+  updatePrice(
+    input: {
+      readonly symbol: string;
+      readonly price: number;
+      readonly timestampMs: number;
+      readonly receivedTsMs?: number;
+      readonly source?: 'polymarket_chainlink' | 'polymarket_binance' | 'chainlink' | 'binance';
+    },
+  ): void;
+  updateCexBook(
+    input: {
+      readonly venue: 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken';
+      readonly symbol: string;
+      readonly exchangeTsMs: number;
+      readonly receivedTsMs?: number;
+      readonly bids: readonly (readonly [number, number])[];
+      readonly asks: readonly (readonly [number, number])[];
+    },
+  ): void;
+  updateCexTrade(
+    input: {
+      readonly venue: 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken';
+      readonly symbol: string;
+      readonly exchangeTsMs: number;
+      readonly receivedTsMs?: number;
+      readonly price: number;
+      readonly size: number;
+      readonly side?: 'buy' | 'sell';
+    },
+  ): void;
 }
 
 /**
@@ -222,6 +306,8 @@ export interface BacktestDeps {
   readonly replayClock?: ReplayClock;
   /** Опциональный store крипто-цен для реплея crypto_price событий */
   readonly cryptoPriceStore?: IBacktestCryptoPriceStore;
+  /** Опциональный rolling history/state store для crypto/CEX replay. */
+  readonly cryptoMarketDataStore?: IBacktestCryptoMarketDataStore;
   /**
    * Парсер крипто-метаданных из rawMarket.
    *
@@ -251,6 +337,10 @@ export interface BacktestResult {
   readonly durationMs: number;
   /** Количество обработанных crypto_price событий */
   readonly cryptoPriceEvents: number;
+  /** Количество обработанных CEX orderbook событий */
+  readonly cexBookEvents: number;
+  /** Количество обработанных CEX trade событий */
+  readonly cexTradeEvents: number;
   /** Количество ошибок (невалидный JSON, невалидные данные, и т.д.) */
   readonly errors: number;
   /** marketId из последнего обработанного файла */
@@ -324,6 +414,8 @@ export class BacktestEngine {
     let bookEvents = 0;
     let tradeEvents = 0;
     let cryptoPriceEvents = 0;
+    let cexBookEvents = 0;
+    let cexTradeEvents = 0;
     let errors = 0;
     let marketId: MarketId | undefined;
     let instrumentId: InstrumentId | undefined;
@@ -343,6 +435,40 @@ export class BacktestEngine {
       let fileMarketId: MarketId | undefined;
       let fileInstrumentId: InstrumentId | undefined;
       let fileComplementaryId: InstrumentId | undefined;
+      let fileCexEvents: ReplayCexEvent[] = [];
+      let fileCexIndex = 0;
+      let fileCexLoaded = false;
+      const fileWindow = parsePolymarketSnapshotWindow(filePath);
+
+      const drainCexUntil = (ts: number): void => {
+        if (!this._deps.cryptoMarketDataStore || fileCexEvents.length === 0) return;
+        while (fileCexIndex < fileCexEvents.length && fileCexEvents[fileCexIndex].ts <= ts) {
+          const event = fileCexEvents[fileCexIndex++];
+          this._advanceClock(new Date(event.ts));
+          if (event.kind === 'book') {
+            this._deps.cryptoMarketDataStore.updateCexBook({
+              venue: event.venue,
+              symbol: event.symbol,
+              exchangeTsMs: event.ts,
+              receivedTsMs: event.ts,
+              bids: event.bids,
+              asks: event.asks,
+            });
+            cexBookEvents += 1;
+          } else {
+            this._deps.cryptoMarketDataStore.updateCexTrade({
+              venue: event.venue,
+              symbol: event.symbol,
+              exchangeTsMs: event.ts,
+              receivedTsMs: event.ts,
+              price: event.price,
+              size: event.size,
+              side: event.side,
+            });
+            cexTradeEvents += 1;
+          }
+        }
+      };
 
       try {
         for await (const line of reader.readLines()) {
@@ -401,12 +527,26 @@ export class BacktestEngine {
               }
             }
 
+            if (
+              !fileCexLoaded &&
+              this._deps.cryptoMarketDataStore &&
+              (this._config.replayCexSidecars ?? true)
+            ) {
+              fileCexEvents = await this._loadCexSidecarEvents(filePath, fileWindow, fileEventStartMs);
+              fileCexLoaded = true;
+            }
+
             this._logger.info('Meta loaded', {
               marketId: meta.marketId,
               tokenId,
               outcomeIndex,
             });
             continue;
+          }
+
+          const rawEventTs = extractReplayTimestamp(raw);
+          if (rawEventTs !== undefined) {
+            drainCexUntil(rawEventTs);
           }
 
           // ── strike_price событие (обратная совместимость со старыми снапшотами) ──
@@ -425,24 +565,31 @@ export class BacktestEngine {
 
           // ── crypto_price события (записанные collect-data) ──────────────
           // Реплеим ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
-          if (raw['t'] === 'crypto_price' && this._deps.cryptoPriceStore) {
+          if (raw['t'] === 'crypto_price' && (this._deps.cryptoPriceStore || this._deps.cryptoMarketDataStore)) {
             const symbol = raw['symbol'] as string;
             const price = raw['price'] as number;
             const ts = raw['ts'] as number;
             if (symbol && typeof price === 'number' && typeof ts === 'number') {
               this._advanceClock(new Date(ts));
-              this._deps.cryptoPriceStore.updatePrice(symbol, price, ts);
+              this._deps.cryptoPriceStore?.updatePrice(symbol, price, ts);
+              this._deps.cryptoMarketDataStore?.updatePrice({
+                symbol,
+                price,
+                timestampMs: ts,
+                receivedTsMs: typeof raw['receivedTs'] === 'number' ? raw['receivedTs'] : ts,
+                source: normalizeReplayCryptoSource(raw['source']),
+              });
 
               // Обновляем resolution price только от Chainlink (Polymarket резолвит по нему).
               // Binance цена НЕ используется для определения исхода рынка.
               // Формат Chainlink: 'btc/usd', Binance: 'btcusdt'.
-              if (symbol.includes('/')) {
-                this._deps.cryptoPriceStore.setResolutionPrice(symbol, price);
+              if (symbol.includes('/') && this._deps.cryptoPriceStore) {
+                this._deps.cryptoPriceStore?.setResolutionPrice(symbol, price);
 
                 // Авто-strike: первая Chainlink цена после eventStartTime = strike
                 // (тот же подход что pendingChainlinkStrike в paper mode)
                 if (!strikeLocked && fileEventStartMs && fileCryptoSymbol === symbol && ts >= fileEventStartMs) {
-                  this._deps.cryptoPriceStore.lockTargetPrice(symbol, price);
+                  this._deps.cryptoPriceStore?.lockTargetPrice(symbol, price);
                   strikeLocked = true;
                   this._logger.info('Strike price auto-locked from first Chainlink price after eventStart', {
                     symbol,
@@ -454,6 +601,48 @@ export class BacktestEngine {
               }
 
               cryptoPriceEvents++;
+              continue;
+            }
+          }
+
+          if (raw['t'] === 'cex_ob' && this._deps.cryptoMarketDataStore) {
+            const venue = normalizeReplayVenue(raw['venue']);
+            const symbol = raw['symbol'] as string;
+            const exchangeTsMs = (raw['exchangeTs'] ?? raw['ts']) as number;
+            const bids = raw['bids'] as readonly (readonly [number, number])[] | undefined;
+            const asks = raw['asks'] as readonly (readonly [number, number])[] | undefined;
+            if (venue && symbol && typeof exchangeTsMs === 'number' && bids && asks) {
+              this._advanceClock(new Date(exchangeTsMs));
+              this._deps.cryptoMarketDataStore.updateCexBook({
+                venue,
+                symbol,
+                exchangeTsMs,
+                receivedTsMs: typeof raw['receivedTs'] === 'number' ? raw['receivedTs'] : exchangeTsMs,
+                bids,
+                asks,
+              });
+              continue;
+            }
+          }
+
+          if (raw['t'] === 'cex_trade' && this._deps.cryptoMarketDataStore) {
+            const venue = normalizeReplayVenue(raw['venue']);
+            const symbol = raw['symbol'] as string;
+            const exchangeTsMs = (raw['exchangeTs'] ?? raw['ts']) as number;
+            const price = raw['price'] as number;
+            const size = raw['size'] as number;
+            const side = normalizeReplayTradeSide(raw['side']);
+            if (venue && symbol && typeof exchangeTsMs === 'number' && typeof price === 'number' && typeof size === 'number') {
+              this._advanceClock(new Date(exchangeTsMs));
+              this._deps.cryptoMarketDataStore.updateCexTrade({
+                venue,
+                symbol,
+                exchangeTsMs,
+                receivedTsMs: typeof raw['receivedTs'] === 'number' ? raw['receivedTs'] : exchangeTsMs,
+                price,
+                size,
+                side,
+              });
               continue;
             }
           }
@@ -532,6 +721,12 @@ export class BacktestEngine {
           }
         }
 
+        if (fileWindow) {
+          drainCexUntil(fileWindow.windowEndMs);
+        } else if (fileCexEvents.length > 0) {
+          drainCexUntil(fileCexEvents[fileCexEvents.length - 1].ts);
+        }
+
         marketId = fileMarketId ?? marketId;
         instrumentId = fileInstrumentId ?? instrumentId;
         complementaryInstrumentId = fileComplementaryId ?? complementaryInstrumentId;
@@ -555,6 +750,8 @@ export class BacktestEngine {
       bookEvents,
       tradeEvents,
       cryptoPriceEvents,
+      cexBookEvents,
+      cexTradeEvents,
       errors,
       durationMs,
     });
@@ -564,6 +761,8 @@ export class BacktestEngine {
       bookEvents,
       tradeEvents,
       cryptoPriceEvents,
+      cexBookEvents,
+      cexTradeEvents,
       processedEvents,
       durationMs,
       errors,
@@ -603,6 +802,142 @@ export class BacktestEngine {
     });
 
     return scanResult.files.map((f) => f.filePath);
+  }
+
+  /**
+   * Загружает CEX sidecar-файлы, соответствующие polymarket snapshot-окну.
+   *
+   * @remarks
+   * Не меняет состояние само по себе: только читает, нормализует и сортирует
+   * события. Подача в store происходит через `drainCexUntil()` во время replay,
+   * чтобы не было lookahead.
+   */
+  private async _loadCexSidecarEvents(
+    polymarketFilePath: string,
+    fileWindow: SnapshotWindow | undefined,
+    eventStartMs: number | undefined,
+  ): Promise<ReplayCexEvent[]> {
+    const sidecarPlan = this._resolveCexSidecarPlan(polymarketFilePath, fileWindow, eventStartMs);
+    if (!sidecarPlan) return [];
+
+    const { snapshotDateDir, asset, fromMs, toMs } = sidecarPlan;
+    const files = await this._findCexSidecarFiles(snapshotDateDir, asset, fromMs, toMs);
+    if (files.length === 0) return [];
+
+    const events: ReplayCexEvent[] = [];
+    const readerFactory = new SnapshotReaderFactory(this._logger);
+
+    for (const file of files) {
+      const reader = readerFactory.create(file.filePath);
+      try {
+        for await (const line of reader.readLines()) {
+          let raw: Record<string, unknown>;
+          try {
+            raw = JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
+
+          const event = normalizeCexSidecarRecord(raw, file.meta);
+          if (!event) continue;
+          if (event.ts < fromMs || event.ts > toMs) continue;
+          events.push(event);
+        }
+      } catch (err) {
+        this._logger.warn('Failed to read CEX sidecar file', {
+          filePath: file.filePath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        await reader.close();
+      }
+    }
+
+    events.sort((a, b) => a.ts !== b.ts ? a.ts - b.ts : cexEventOrder(a) - cexEventOrder(b));
+
+    this._logger.debug('CEX sidecars loaded', {
+      polymarketFile: path.basename(polymarketFilePath),
+      asset,
+      files: files.length,
+      events: events.length,
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString(),
+    });
+
+    return events;
+  }
+
+  private _resolveCexSidecarPlan(
+    polymarketFilePath: string,
+    fileWindow: SnapshotWindow | undefined,
+    eventStartMs: number | undefined,
+  ): { readonly snapshotDateDir: string; readonly asset: string; readonly fromMs: number; readonly toMs: number } | undefined {
+    const polymarketDir = path.dirname(polymarketFilePath);
+    if (path.basename(polymarketDir) !== 'polymarket') return undefined;
+
+    const asset = inferCryptoAssetFromPolymarketFile(polymarketFilePath);
+    if (!asset) return undefined;
+
+    const snapshotDateDir = path.dirname(polymarketDir);
+    const startMs = eventStartMs ?? fileWindow?.windowStartMs;
+    const endMs = fileWindow?.windowEndMs;
+    if (startMs === undefined || endMs === undefined) return undefined;
+
+    const warmupMs = this._config.cexWarmupMs ?? 30 * 60 * 1000;
+    return {
+      snapshotDateDir,
+      asset,
+      fromMs: startMs - warmupMs,
+      toMs: endMs,
+    };
+  }
+
+  private async _findCexSidecarFiles(
+    snapshotDateDir: string,
+    asset: string,
+    fromMs: number,
+    toMs: number,
+  ): Promise<Array<{ readonly filePath: string; readonly meta: ReplayCexFileMeta }>> {
+    if (!fs.existsSync(snapshotDateDir)) return [];
+
+    const result: Array<{ readonly filePath: string; readonly meta: ReplayCexFileMeta }> = [];
+    const entries = await fs.promises.readdir(snapshotDateDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === 'polymarket') continue;
+      const venue = normalizeReplayVenue(entry.name);
+      if (!venue) continue;
+
+      const venueDir = path.join(snapshotDateDir, entry.name);
+      let files: fs.Dirent[];
+      try {
+        files = await fs.promises.readdir(venueDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const file of files) {
+        if (!file.isFile()) continue;
+        if (!file.name.endsWith('.jsonl') && !file.name.endsWith('.jsonl.gz')) continue;
+
+        const meta = parseCexSidecarFileName(file.name);
+        if (!meta) continue;
+        if (meta.venue !== venue) continue;
+        if (assetFromCexSymbol(meta.symbol) !== asset) continue;
+        if (!windowsOverlap(meta.windowStartMs, meta.windowEndMs, fromMs, toMs)) continue;
+
+        result.push({ filePath: path.join(venueDir, file.name), meta });
+      }
+    }
+
+    result.sort((a, b) =>
+      a.meta.windowStartMs !== b.meta.windowStartMs
+        ? a.meta.windowStartMs - b.meta.windowStartMs
+        : a.filePath.localeCompare(b.filePath),
+    );
+
+    return result;
   }
 
   /**
@@ -779,4 +1114,259 @@ export class BacktestEngine {
     if (raw === 'BUY' || raw === 'SELL') return raw;
     return undefined;
   }
+}
+
+function normalizeReplayCryptoSource(
+  source: unknown,
+): 'polymarket_chainlink' | 'polymarket_binance' | 'chainlink' | 'binance' | undefined {
+  if (source === 'polymarket_chainlink' || source === 'polymarket_binance') return source;
+  if (source === 'chainlink' || source === 'binance') return source;
+  return undefined;
+}
+
+function normalizeReplayVenue(
+  venue: unknown,
+): 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken' | undefined {
+  if (
+    venue === 'binance' ||
+    venue === 'coinbase' ||
+    venue === 'okx' ||
+    venue === 'cryptocom' ||
+    venue === 'kraken'
+  ) {
+    return venue;
+  }
+  return undefined;
+}
+
+function normalizeReplayTradeSide(side: unknown): 'buy' | 'sell' | undefined {
+  if (side === 'buy' || side === 'sell') return side;
+  if (side === 'BUY') return 'buy';
+  if (side === 'SELL') return 'sell';
+  return undefined;
+}
+
+interface SnapshotWindow {
+  readonly windowStartMs: number;
+  readonly windowEndMs: number;
+}
+
+const MONTHS: Record<string, number> = {
+  january: 0,
+  february: 1,
+  march: 2,
+  april: 3,
+  may: 4,
+  june: 5,
+  july: 6,
+  august: 7,
+  september: 8,
+  october: 9,
+  november: 10,
+  december: 11,
+};
+
+function extractReplayTimestamp(raw: Record<string, unknown>): number | undefined {
+  const ts = raw['ts'];
+  if (typeof ts === 'number' && Number.isFinite(ts)) return ts;
+
+  const exchangeTs = raw['exchangeTs'];
+  if (typeof exchangeTs === 'number' && Number.isFinite(exchangeTs)) return exchangeTs;
+
+  const timestamp = raw['timestamp'];
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return timestamp;
+  if (typeof timestamp === 'string') {
+    const parsed = Number(timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return undefined;
+}
+
+function parsePolymarketSnapshotWindow(filePath: string): SnapshotWindow | undefined {
+  const fileName = path.basename(filePath);
+  const match = fileName.match(/[-_](\d{4})_([A-Za-z]+)_(\d{1,2})_(\d{1,4}(?:AM|PM))-(\d{1,4}(?:AM|PM))_ET___/);
+  if (!match) return undefined;
+
+  const year = Number(match[1]);
+  const month = MONTHS[match[2]!.toLowerCase()];
+  const day = Number(match[3]);
+  const start = parseEtClock(match[4]!);
+  const end = parseEtClock(match[5]!);
+  if (month === undefined || !start || !end) return undefined;
+
+  const windowStartMs = zonedDateTimeToUtcMs(year, month, day, start.hour, start.minute);
+  let windowEndMs = zonedDateTimeToUtcMs(year, month, day, end.hour, end.minute);
+  if (windowEndMs <= windowStartMs) windowEndMs += 24 * 60 * 60 * 1000;
+
+  return { windowStartMs, windowEndMs };
+}
+
+function parseCexSidecarFileName(fileName: string): ReplayCexFileMeta | undefined {
+  const match = fileName.match(/^([a-z0-9]+)_([A-Za-z0-9-]+)_(?:spot|futures|swap)_(\d{4})-([A-Za-z]+)-(\d{1,2})_(\d{1,4}(?:AM|PM))-(\d{1,4}(?:AM|PM))_ET\.jsonl(?:\.gz)?$/);
+  if (!match) return undefined;
+
+  const venue = normalizeReplayVenue(match[1]);
+  const symbol = match[2]?.replace('-', '/');
+  const year = Number(match[3]);
+  const month = MONTHS[match[4]!.toLowerCase()];
+  const day = Number(match[5]);
+  const start = parseEtClock(match[6]!);
+  const end = parseEtClock(match[7]!);
+  if (!venue || !symbol || month === undefined || !start || !end) return undefined;
+
+  const windowStartMs = zonedDateTimeToUtcMs(year, month, day, start.hour, start.minute);
+  let windowEndMs = zonedDateTimeToUtcMs(year, month, day, end.hour, end.minute);
+  if (windowEndMs <= windowStartMs) windowEndMs += 24 * 60 * 60 * 1000;
+
+  return {
+    venue,
+    symbol,
+    windowStartMs,
+    windowEndMs,
+  };
+}
+
+function normalizeCexSidecarRecord(raw: Record<string, unknown>, meta: ReplayCexFileMeta): ReplayCexEvent | undefined {
+  const ts = raw['ts'];
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return undefined;
+
+  if (raw['t'] === 'ob') {
+    const bids = normalizeCexLevels(raw['bids']);
+    const asks = normalizeCexLevels(raw['asks']);
+    if (!bids || !asks) return undefined;
+
+    return {
+      kind: 'book',
+      venue: meta.venue,
+      symbol: meta.symbol,
+      ts,
+      bids,
+      asks,
+    };
+  }
+
+  if (raw['t'] === 'trade') {
+    const price = typeof raw['p'] === 'number' ? raw['p'] : typeof raw['price'] === 'number' ? raw['price'] : undefined;
+    const size = typeof raw['sz'] === 'number' ? raw['sz'] : typeof raw['size'] === 'number' ? raw['size'] : undefined;
+    if (price === undefined || size === undefined || !Number.isFinite(price) || !Number.isFinite(size)) return undefined;
+
+    return {
+      kind: 'trade',
+      venue: meta.venue,
+      symbol: meta.symbol,
+      ts,
+      price,
+      size,
+      side: normalizeReplayTradeSide(raw['side']),
+    };
+  }
+
+  return undefined;
+}
+
+function normalizeCexLevels(raw: unknown): readonly (readonly [number, number])[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+
+  const levels: Array<readonly [number, number]> = [];
+  for (const value of raw) {
+    if (!Array.isArray(value) || value.length < 2) return undefined;
+    const price = typeof value[0] === 'number' ? value[0] : Number(value[0]);
+    const size = typeof value[1] === 'number' ? value[1] : Number(value[1]);
+    if (!Number.isFinite(price) || !Number.isFinite(size)) return undefined;
+    levels.push([price, size]);
+  }
+
+  return levels;
+}
+
+function inferCryptoAssetFromPolymarketFile(filePath: string): string | undefined {
+  const lower = path.basename(filePath).toLowerCase();
+  if (lower.includes('bitcoin') || lower.includes('_btc_')) return 'btc';
+  if (lower.includes('ethereum') || lower.includes('_eth_')) return 'eth';
+  if (lower.includes('solana') || lower.includes('_sol_')) return 'sol';
+  if (lower.includes('xrp')) return 'xrp';
+  return undefined;
+}
+
+function assetFromCexSymbol(symbol: string): string {
+  const base = symbol.toLowerCase().split(/[/-]/)[0] ?? '';
+  if (base === 'xbt') return 'btc';
+  return base;
+}
+
+function windowsOverlap(leftStartMs: number, leftEndMs: number, rightStartMs: number, rightEndMs: number): boolean {
+  return leftStartMs <= rightEndMs && leftEndMs >= rightStartMs;
+}
+
+function cexEventOrder(event: ReplayCexEvent): number {
+  return event.kind === 'book' ? 0 : 1;
+}
+
+function parseEtClock(raw: string): { readonly hour: number; readonly minute: number } | undefined {
+  const suffix = raw.slice(-2);
+  const digits = raw.slice(0, -2);
+  if ((suffix !== 'AM' && suffix !== 'PM') || !/^\d{1,4}$/.test(digits)) return undefined;
+
+  const minute = digits.length > 2 ? Number(digits.slice(-2)) : 0;
+  let hour = digits.length > 2 ? Number(digits.slice(0, -2)) : Number(digits);
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return undefined;
+
+  if (suffix === 'AM') {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+
+  return { hour, minute };
+}
+
+function zonedDateTimeToUtcMs(
+  year: number,
+  monthIndex: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone = 'America/New_York',
+): number {
+  let utcMs = Date.UTC(year, monthIndex, day, hour, minute);
+  const targetAsUtc = Date.UTC(year, monthIndex, day, hour, minute);
+
+  for (let iteration = 0; iteration < 4; iteration++) {
+    const zoned = getZonedParts(utcMs, timeZone);
+    const zonedAsUtc = Date.UTC(zoned.year, zoned.month - 1, zoned.day, zoned.hour, zoned.minute);
+    const delta = targetAsUtc - zonedAsUtc;
+    if (delta === 0) break;
+    utcMs += delta;
+  }
+
+  return utcMs;
+}
+
+function getZonedParts(
+  utcMs: number,
+  timeZone: string,
+): { readonly year: number; readonly month: number; readonly day: number; readonly hour: number; readonly minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(utcMs));
+
+  const get = (type: string): number => {
+    const value = parts.find((part) => part.type === type)?.value;
+    return value === undefined ? NaN : Number(value);
+  };
+
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+  };
 }

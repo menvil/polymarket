@@ -42,3 +42,34 @@ export type { MarketDataStoreDeps, MarketDataReason } from './MarketDataStore.js
 
 export { CryptoPriceStore } from './CryptoPriceStore.js';
 export type { CryptoPriceSnapshot } from './CryptoPriceStore.js';
+
+export { CryptoMarketDataStore } from './CryptoMarketDataStore.js';
+export type {
+  CexBookTick,
+  CexTradeTick,
+  CexVenue,
+  CexVenueState,
+  CryptoMarketDataReason,
+  CryptoMarketDataStoreConfig,
+  CryptoPriceHistoryView,
+  CryptoPricePoint,
+  CryptoPriceSource,
+  CryptoVenueHistoryView,
+  CryptoVenueStateView,
+  UpdateCexBookInput,
+  UpdateCexTradeInput,
+  UpdateCryptoPriceInput,
+} from './CryptoMarketDataStore.js';
+
+export {
+  CryptoSignalRegistry,
+  createDefaultCryptoSignalRegistry,
+} from './CryptoSignalRegistry.js';
+export type {
+  CryptoSignalCalculator,
+  CryptoSignalContext,
+  CryptoSignalDirection,
+  CryptoSignalRegistryView,
+  CryptoSignalRequest,
+  CryptoSignalResult,
+} from './CryptoSignalRegistry.js';
