@@ -40,6 +40,8 @@ import { FairValueMMStrategy } from './strategies/FairValueMMStrategy.js';
 import type { FairValueMMConfig } from './strategies/FairValueMMStrategy.js';
 import { BinanceProbMMStrategy } from './strategies/BinanceProbMMStrategy.js';
 import type { BinanceProbMMConfig } from './strategies/BinanceProbMMStrategy.js';
+import { CexLeadLagStrategy } from './strategies/CexLeadLagStrategy.js';
+import type { CexLeadLagConfig } from './strategies/CexLeadLagStrategy.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -56,7 +58,8 @@ export type StrategyConfig =
   | { readonly type: 'smart-entry'; readonly id?: string; readonly params: SmartEntryConfig }
   | { readonly type: 'adaptive-entry'; readonly id?: string; readonly params: AdaptiveEntryConfig }
   | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig }
-  | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig };
+  | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig }
+  | { readonly type: 'cex-lead-lag'; readonly id?: string; readonly params: CexLeadLagConfig };
 
 export interface StrategyExecutionOverrides {
   readonly postOnly?: boolean;
@@ -123,6 +126,9 @@ export function createStrategy(
 
     case 'binance-prob-mm':
       return new BinanceProbMMStrategy(config.params, config.id, logger);
+
+    case 'cex-lead-lag':
+      return new CexLeadLagStrategy(config.params, config.id, logger);
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);

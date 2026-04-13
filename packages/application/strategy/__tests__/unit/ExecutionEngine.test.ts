@@ -76,6 +76,7 @@ function makeDeps(overrides: Partial<ExecutionEngineDeps> = {}): ExecutionEngine
       get: fn().mockReturnValue(makePortfolio()),
     } as any,
     catalog: makeCatalog(),
+    clock: { now: jest.fn().mockReturnValue(new Date(0)) } as any,
     logger: makeLogger() as any,
     ...overrides,
   };

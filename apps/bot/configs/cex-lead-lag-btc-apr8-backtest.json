@@ -1,0 +1,61 @@
+{
+  "strategy": "cex-lead-lag",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 2,
+    "side": "up",
+    "mode": "skewed",
+    "venues": ["binance", "coinbase", "okx"],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "signalImpactCents": 6,
+    "maxSignalImpactCents": 8,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minFairCents": 5,
+    "maxFairCents": 95
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-04-08/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": ["Bitcoin"]
+    },
+    "outcomeIndex": 0
+  }
+}

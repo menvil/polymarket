@@ -3780,7 +3780,10 @@ async function resolveSnapshotPaths(patterns: string[]): Promise<string[]> {
       // Берём часть пути до первого *
       const dir = path.resolve(pattern.substring(0, pattern.indexOf('*')));
       if (!fs.existsSync(dir)) continue;
-      collectFiles(dir, recursive, results, isSnapshotFile);
+      const candidates: string[] = [];
+      const patternRegex = globPatternToRegex(path.resolve(pattern));
+      collectFiles(dir, recursive, candidates, isSnapshotFile);
+      results.push(...candidates.filter(filePath => patternRegex.test(filePath)));
     } else {
       const resolved = path.resolve(pattern);
       if (!fs.existsSync(resolved)) continue;
@@ -3796,6 +3799,27 @@ async function resolveSnapshotPaths(patterns: string[]): Promise<string[]> {
 
   results.sort();
   return results;
+}
+
+function globPatternToRegex(pattern: string): RegExp {
+  const normalized = pattern.split(path.sep).join('/');
+  let source = '^';
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i]!;
+    if (char === '*') {
+      if (normalized[i + 1] === '*') {
+        source += '.*';
+        i++;
+      } else {
+        source += '[^/]*';
+      }
+      continue;
+    }
+    source += char.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+
+  return new RegExp(`${source}$`);
 }
 
 /**

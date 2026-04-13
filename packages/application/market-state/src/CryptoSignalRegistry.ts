@@ -33,6 +33,17 @@ export interface CryptoSignalRequest {
   readonly venues?: readonly CexVenue[];
   readonly sources?: readonly CryptoPriceSource[];
   readonly weights?: Readonly<Record<string, number>>;
+  /**
+   * Per-venue static basis in USD, usually estimated offline as
+   * `median(venueMicroprice - chainlinkPrice)`.
+   */
+  readonly basisByVenue?: Readonly<Record<string, number>>;
+  /** Minimum number of fresh venues required to emit a signal. */
+  readonly minVenueCount?: number;
+  /** Ignore venue books wider than this spread. */
+  readonly maxSpreadBps?: number;
+  /** Optional offline-calibrated direction hit rate by score bucket `1..10`. */
+  readonly confidenceByScore?: Readonly<Record<string, number>>;
   readonly lookbackMs?: number;
   readonly staleMs?: number;
   readonly thresholdBps?: number;
@@ -79,6 +90,7 @@ export function createDefaultCryptoSignalRegistry(): CryptoSignalRegistry {
   const registry = new CryptoSignalRegistry();
   registry.register('cex_weighted_microprice_momentum', weightedMicropriceMomentum);
   registry.register('cex_vs_chainlink_basis', cexVsChainlinkBasis);
+  registry.register('cex_chainlink_lead_lag', cexChainlinkLeadLag);
   return registry;
 }
 
@@ -169,6 +181,129 @@ function cexVsChainlinkBasis(
       ageMs,
     },
   });
+}
+
+function cexChainlinkLeadLag(
+  context: CryptoSignalContext,
+  request: CryptoSignalRequest,
+): CryptoSignalResult | undefined {
+  const priceHistory = context.priceHistory;
+  const venueState = context.venueState;
+  if (!priceHistory || !venueState) return undefined;
+
+  const chainlink = priceHistory.getLatest('polymarket_chainlink');
+  if (!chainlink || !Number.isFinite(chainlink.price) || chainlink.price <= 0) return undefined;
+
+  const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
+  const staleMs = request.staleMs ?? 2_000;
+  const lookbackMs = request.lookbackMs ?? 1_000;
+  const thresholdBps = request.thresholdBps ?? 0.5;
+  const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
+  const maxSpreadBps = request.maxSpreadBps ?? 10;
+
+  let residualNumerator = 0;
+  let momentumNumerator = 0;
+  let tradePressureNumerator = 0;
+  let denominator = 0;
+  let lastTsMs = 0;
+  let venueCount = 0;
+  let agreeingVenues = 0;
+  let positiveVenues = 0;
+  let negativeVenues = 0;
+  let maxAgeMs = 0;
+  let avgSpreadBps = 0;
+
+  for (const venue of venues) {
+    const state = venueState.get(venue);
+    if (!state) continue;
+
+    const ageMs = context.nowMs - state.lastBookTsMs;
+    if (ageMs < 0 || ageMs > staleMs) continue;
+    if (state.spreadBps > maxSpreadBps) continue;
+
+    const configuredWeight = request.weights?.[venue] ?? 1;
+    if (!Number.isFinite(configuredWeight) || configuredWeight <= 0) continue;
+
+    const basisUsd = request.basisByVenue?.[venue] ?? 0;
+    const residualUsd = state.microprice - basisUsd - chainlink.price;
+    const residualBps = residualUsd / chainlink.price * 10_000;
+
+    const previous = priceHistory.getRecent(cexVenueToPriceSource(venue), lookbackMs)[0];
+    const momentumBps = previous && previous.price > 0
+      ? (state.microprice - previous.price) / previous.price * 10_000
+      : 0;
+
+    const qualityWeight =
+      configuredWeight
+      / (1 + ageMs / Math.max(staleMs, 1))
+      / (1 + state.spreadBps / Math.max(maxSpreadBps, 0.01));
+
+    residualNumerator += residualBps * qualityWeight;
+    momentumNumerator += momentumBps * qualityWeight;
+    tradePressureNumerator += state.recentTradePressure * qualityWeight;
+    denominator += qualityWeight;
+    lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    maxAgeMs = Math.max(maxAgeMs, ageMs);
+    avgSpreadBps += state.spreadBps;
+    venueCount++;
+
+    if (Math.abs(residualBps) >= thresholdBps) {
+      if (residualBps > 0) positiveVenues++;
+      if (residualBps < 0) negativeVenues++;
+    }
+  }
+
+  if (denominator <= 0 || venueCount < minVenueCount) return undefined;
+
+  const residualBps = residualNumerator / denominator;
+  const momentumBps = momentumNumerator / denominator;
+  const tradePressure = tradePressureNumerator / denominator;
+  const valueBps = residualBps + momentumBps * 0.25 + tradePressure * thresholdBps * 0.5;
+  const direction: CryptoSignalDirection = Math.abs(valueBps) < thresholdBps
+    ? 'flat'
+    : valueBps > 0
+      ? 'up'
+      : 'down';
+
+  if (direction === 'up') agreeingVenues = positiveVenues;
+  if (direction === 'down') agreeingVenues = negativeVenues;
+  const agreement = direction === 'flat' ? 0 : agreeingVenues / venueCount;
+  const strength = Math.max(0, Math.min(10, Math.abs(valueBps) / Math.max(thresholdBps, 0.0001)));
+  const scoreBucket = Math.max(0, Math.min(10, Math.ceil(strength)));
+  const calibratedConfidence = request.confidenceByScore?.[String(scoreBucket)];
+  const stale = maxAgeMs > staleMs;
+  const confidence = stale
+    ? 0
+    : calibratedConfidence ?? Math.max(0, Math.min(1, (strength / 10) * (0.5 + agreement / 2)));
+
+  return {
+    id: 'cex_chainlink_lead_lag',
+    asset: context.asset,
+    tsMs: Math.max(lastTsMs, chainlink.exchangeTsMs),
+    value: valueBps,
+    unit: 'bps',
+    direction,
+    strength,
+    confidence,
+    stale,
+    components: {
+      venues: venues.join(','),
+      venueCount,
+      minVenueCount,
+      chainlinkPrice: chainlink.price,
+      residualBps,
+      momentumBps,
+      tradePressure,
+      agreement,
+      positiveVenues,
+      negativeVenues,
+      scoreBucket,
+      thresholdBps,
+      maxAgeMs,
+      avgSpreadBps: avgSpreadBps / venueCount,
+      calibrated: calibratedConfidence !== undefined,
+    },
+  };
 }
 
 function weightedVenuePrice(

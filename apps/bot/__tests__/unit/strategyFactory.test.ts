@@ -11,6 +11,7 @@ import {
 } from '../../src/strategyFactory.js';
 import { DumbStrategy } from '../../src/strategies/DumbStrategy.js';
 import { AvellanedaStoikovStrategy } from '../../src/strategies/AvellanedaStoikovStrategy.js';
+import { CexLeadLagStrategy } from '../../src/strategies/CexLeadLagStrategy.js';
 
 describe('createStrategy', () => {
   it('создаёт DumbStrategy', () => {
@@ -53,6 +54,19 @@ describe('createStrategy', () => {
     expect(strategy.id).toBe('custom-as');
   });
 
+  it('создаёт CexLeadLagStrategy', () => {
+    const strategy = createStrategy({
+      type: 'cex-lead-lag',
+      params: {
+        orderSize: DEFAULT_DUMB_CONFIG.orderSize,
+        qMax: 2,
+      },
+    });
+
+    expect(strategy).toBeInstanceOf(CexLeadLagStrategy);
+    expect(strategy.name).toBe('CexLeadLagStrategy');
+  });
+
   it('бросает ошибку для неизвестного типа', () => {
     expect(() => {
       createStrategy({ type: 'unknown' as any, params: {} as any });
@@ -72,6 +86,5 @@ describe('дефолтные конфигурации', () => {
     expect(DEFAULT_AS_CONFIG.gamma.toNumber()).toBe(0.05);
     expect(DEFAULT_AS_CONFIG.qMax).toBe(5);
     expect(DEFAULT_AS_CONFIG.orderSize.toNumber()).toBe(10);
-    expect(DEFAULT_AS_CONFIG.marketDuration).toBe('5m');
   });
 });

@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -410,6 +410,35 @@ function parseStrategyParams(
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       if (raw['useDrift'] === true || raw['useDrift'] === false) result['useDrift'] = raw['useDrift'];
+      break;
+
+    case 'cex-lead-lag':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for cex-lead-lag strategy');
+      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for cex-lead-lag strategy');
+      if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
+      if (raw['side'] === 'up' || raw['side'] === 'down') result['side'] = raw['side'];
+      if (raw['mode'] === 'defensive' || raw['mode'] === 'skewed' || raw['mode'] === 'hybrid') result['mode'] = raw['mode'];
+      if (typeof raw['signalId'] === 'string') result['signalId'] = raw['signalId'];
+      if (Array.isArray(raw['venues'])) result['venues'] = raw['venues'];
+      if (raw['weights'] && typeof raw['weights'] === 'object') result['weights'] = raw['weights'];
+      if (raw['basisByVenue'] && typeof raw['basisByVenue'] === 'object') result['basisByVenue'] = raw['basisByVenue'];
+      if (raw['confidenceByScore'] && typeof raw['confidenceByScore'] === 'object') result['confidenceByScore'] = raw['confidenceByScore'];
+      for (const numField of [
+        'signalThresholdBps', 'signalLookbackMs', 'signalStaleMs', 'minVenueCount',
+        'maxSpreadBps', 'minSignalStrength', 'minSignalConfidence', 'signalImpactCents',
+        'maxSignalImpactCents', 'makerRepriceThresholdCents', 'sigmaAnnual',
+        'minEdgeCents', 'exitEdgeCents', 'baseSpreadCents', 'exitDiscountCents',
+        'warmupSec', 'ewmaAlpha', 'minTradesForMid', 'exitTauSec',
+        'maxEntryTauSec', 'minFairCents', 'maxFairCents',
+      ]) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['requireSignalForEntry'] === true || raw['requireSignalForEntry'] === false) {
+        result['requireSignalForEntry'] = raw['requireSignalForEntry'];
+      }
+      if (raw['allowTaker'] === true || raw['allowTaker'] === false) {
+        result['allowTaker'] = raw['allowTaker'];
+      }
       break;
   }
 

@@ -131,6 +131,10 @@ export interface CryptoSignalRequest {
   readonly venues?: readonly CexVenue[];
   readonly sources?: readonly CryptoPriceSource[];
   readonly weights?: Readonly<Record<string, number>>;
+  readonly basisByVenue?: Readonly<Record<string, number>>;
+  readonly minVenueCount?: number;
+  readonly maxSpreadBps?: number;
+  readonly confidenceByScore?: Readonly<Record<string, number>>;
   readonly lookbackMs?: number;
   readonly staleMs?: number;
   readonly thresholdBps?: number;
