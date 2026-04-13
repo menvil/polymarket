@@ -1,0 +1,101 @@
+{
+  "strategy": "cex-lead-lag",
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 2,
+    "side": "up",
+    "mode": "skewed",
+    "venues": ["binance", "coinbase", "okx"],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "signalImpactCents": 6,
+    "maxSignalImpactCents": 8,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minFairCents": 5,
+    "maxFairCents": 95
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:live"
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings",
+    "journalDir": "./data/journals",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}
