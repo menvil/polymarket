@@ -35,6 +35,9 @@ export interface MarketDataClientConfig {
 
   /** Таймаут запроса в миллисекундах */
   timeout?: number;
+
+  /** Максимальное количество страниц /markets для одного refresh */
+  maxPages?: number;
 }
 
 /**
@@ -158,6 +161,7 @@ export class PolymarketMarketDataRestClient {
     this.config = {
       ...config,
       timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
+      maxPages: config.maxPages ?? 12,
     };
 
     this.logger = logger.child({ component: 'PolymarketMarketDataRestClient' });
@@ -183,7 +187,7 @@ export class PolymarketMarketDataRestClient {
     const allMarkets: GammaMarketDto[] = [];
     let offset = 0;
     const limit = 500;
-    const maxPages = 50; // ~10 000 маркетов (с end_date_max=2d этого достаточно)
+    const maxPages = this.config.maxPages;
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -199,7 +203,25 @@ export class PolymarketMarketDataRestClient {
         const endDateMax = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
         url.searchParams.set('end_date_max', endDateMax);
 
-        const batch = await this.fetch<GammaMarketDto[]>(url.toString(), true);
+        let batch: GammaMarketDto[];
+        try {
+          batch = await this.fetch<GammaMarketDto[]>(url.toString(), true);
+        } catch (error) {
+          // Gamma occasionally returns HTTP 500 on deep pagination even when
+          // earlier pages succeeded. Since pages are sorted by nearest expiry
+          // first, partial results are still useful for discovery.
+          if (allMarkets.length > 0) {
+            this.logger.warn('[Gamma API] Stopping pagination after page fetch failure; using partial market list', {
+              page,
+              offset,
+              collected: allMarkets.length,
+              err: error instanceof Error ? error.message : String(error),
+            });
+            break;
+          }
+
+          throw error;
+        }
 
         if (batch.length === 0) {
           break;

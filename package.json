@@ -30,7 +30,8 @@
   },
   "devDependencies": {
     "markdownlint-cli2": "^0.20.0",
-    "markdownlint-cli2-formatter-pretty": "^0.0.9"
+    "markdownlint-cli2-formatter-pretty": "^0.0.9",
+    "tsx": "^4.21.0"
   },
   "engines": {
     "node": ">=18.0.0",
