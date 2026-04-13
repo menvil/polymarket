@@ -88,6 +88,15 @@ export interface CryptoMarketDataStoreConfig {
   readonly bookRetentionMs?: number;
   readonly tradeRetentionMs?: number;
   readonly tradePressureLookbackMs?: number;
+  /**
+   * Emit CRYPTO_MARKET_DATA changes for raw CEX book/trade updates.
+   *
+   * @remarks
+   * Default is false because raw CEX streams can produce thousands of updates
+   * per minute. Strategies should normally react to material derived signals,
+   * while still reading fresh CEX history/state from this store.
+   */
+  readonly notifyCexChanges?: boolean;
 }
 
 export interface UpdateCryptoPriceInput {
@@ -128,6 +137,7 @@ export class CryptoMarketDataStore {
   private readonly _bookRetentionMs: number;
   private readonly _tradeRetentionMs: number;
   private readonly _tradePressureLookbackMs: number;
+  private readonly _notifyCexChanges: boolean;
 
   private readonly _prices = new Map<string, Map<CryptoPriceSource, CryptoPricePoint[]>>();
   private readonly _books = new Map<string, Map<CexVenue, CexBookTick[]>>();
@@ -140,6 +150,7 @@ export class CryptoMarketDataStore {
     this._bookRetentionMs = config.bookRetentionMs ?? DEFAULT_RETENTION_MS;
     this._tradeRetentionMs = config.tradeRetentionMs ?? DEFAULT_RETENTION_MS;
     this._tradePressureLookbackMs = config.tradePressureLookbackMs ?? DEFAULT_TRADE_PRESSURE_LOOKBACK_MS;
+    this._notifyCexChanges = config.notifyCexChanges ?? false;
   }
 
   setOnChange(cb: (asset: string, reason: CryptoMarketDataReason) => void): void {
@@ -229,7 +240,7 @@ export class CryptoMarketDataStore {
     });
 
     this._recordVenuePrice(asset, input.venue, microprice, input.exchangeTsMs, receivedTsMs);
-    if (isLatest) {
+    if (isLatest && this._notifyCexChanges) {
       this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
     }
   }
@@ -267,7 +278,7 @@ export class CryptoMarketDataStore {
       });
     }
 
-    if (isLatest) {
+    if (isLatest && this._notifyCexChanges) {
       this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
     }
   }

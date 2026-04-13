@@ -267,6 +267,7 @@ async function runSingleMarketBacktest(
   outcomeIndex: 0 | 1,
   parentLogger: ILogger,
   sharedCryptoMarketDataStore: CryptoMarketDataStore,
+  cexWarmupMs: number,
 ): Promise<MarketBacktestResult | null> {
   const fileName = path.basename(filePath);
 
@@ -443,7 +444,7 @@ async function runSingleMarketBacktest(
 
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
-    { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary },
+    { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary, cexWarmupMs },
     { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, cryptoMarketDataStore, parseCryptoMeta },
   );
   const replayResult = await backtestEngine.run();
@@ -627,6 +628,7 @@ export async function runMultiMarketBacktest(
         outcomeIndex,
         logger,
         sharedCryptoMarketDataStore,
+        i === 0 ? 30 * 60_000 : 0,
       );
       if (result) {
         results.push(result);

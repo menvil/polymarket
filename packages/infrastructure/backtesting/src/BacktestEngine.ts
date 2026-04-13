@@ -904,12 +904,13 @@ export class BacktestEngine {
     const entries = await fs.promises.readdir(snapshotDateDir, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      const entryPath = path.join(snapshotDateDir, entry.name);
+      if (!entry.isDirectory() && !(await isDirectoryLike(entryPath, entry))) continue;
       if (entry.name === 'polymarket') continue;
       const venue = normalizeReplayVenue(entry.name);
       if (!venue) continue;
 
-      const venueDir = path.join(snapshotDateDir, entry.name);
+      const venueDir = entryPath;
       let files: fs.Dirent[];
       try {
         files = await fs.promises.readdir(venueDir, { withFileTypes: true });
@@ -918,7 +919,8 @@ export class BacktestEngine {
       }
 
       for (const file of files) {
-        if (!file.isFile()) continue;
+        const filePath = path.join(venueDir, file.name);
+        if (!file.isFile() && !(await isFileLike(filePath, file))) continue;
         if (!file.name.endsWith('.jsonl') && !file.name.endsWith('.jsonl.gz')) continue;
 
         const meta = parseCexSidecarFileName(file.name);
@@ -927,7 +929,7 @@ export class BacktestEngine {
         if (assetFromCexSymbol(meta.symbol) !== asset) continue;
         if (!windowsOverlap(meta.windowStartMs, meta.windowEndMs, fromMs, toMs)) continue;
 
-        result.push({ filePath: path.join(venueDir, file.name), meta });
+        result.push({ filePath, meta });
       }
     }
 
@@ -1301,6 +1303,24 @@ function windowsOverlap(leftStartMs: number, leftEndMs: number, rightStartMs: nu
 
 function cexEventOrder(event: ReplayCexEvent): number {
   return event.kind === 'book' ? 0 : 1;
+}
+
+async function isDirectoryLike(filePath: string, entry: fs.Dirent): Promise<boolean> {
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    return (await fs.promises.stat(filePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function isFileLike(filePath: string, entry: fs.Dirent): Promise<boolean> {
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    return (await fs.promises.stat(filePath)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function parseEtClock(raw: string): { readonly hour: number; readonly minute: number } | undefined {
