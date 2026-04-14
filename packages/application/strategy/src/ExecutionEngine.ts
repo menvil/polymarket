@@ -409,8 +409,8 @@ export class ExecutionEngine {
     // После cancel ордера ждём 20 секунд — on-chain fill может прийти
     // на отменённый ордер (cancel CLOB ≠ cancel on-chain MINT).
     // Без этого: cancel → place → fill(старый) → двойная/тройная покупка.
-    const lastCancelMs = this._postCancelCooldowns.get(instrumentKey) ?? 0;
-    if (nowForCooldown - lastCancelMs < ExecutionEngine._POST_CANCEL_COOLDOWN_MS) {
+    const lastCancelMs = this._postCancelCooldowns.get(instrumentKey);
+    if (lastCancelMs !== undefined && nowForCooldown - lastCancelMs < ExecutionEngine._POST_CANCEL_COOLDOWN_MS) {
       this._logger.debug('ExecutionEngine: skip — post-cancel cooldown active', {
         strategyId: ctx.strategyId,
         instrumentId: instrumentKey,
@@ -425,8 +425,8 @@ export class ExecutionEngine {
     // пропускаем размещение до истечения cooldown.
     // Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
     const rejectionKey = `${instrumentKey}:${intent.side}`;
-    const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey) ?? 0;
-    if (nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
+    const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey);
+    if (lastRejectedMs !== undefined && nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
       this._logger.info('ExecutionEngine: skip — exchange rejection cooldown active', {
         strategyId: ctx.strategyId,
         instrumentId: instrumentKey,
@@ -452,6 +452,18 @@ export class ExecutionEngine {
     // и helpers BaseStrategy.adjustBuySize() / adjustSellSize().
     const info = this._deps.catalog.get(effectiveInstrumentId);
     const effectiveSize = intent.size;
+    const effectivePrice = intent.price;
+
+    if (!effectiveSize.value().gt(0) || !effectivePrice.value().gt(0)) {
+      this._logger.warn('ExecutionEngine: reject — non-positive order price or size', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        side: intent.side,
+        price: effectivePrice.toNumber(),
+        size: effectiveSize.toNumber(),
+      });
+      return 'skipped';
+    }
 
     if (info) {
       // 1. Reject BUY если size < minOrderSize.

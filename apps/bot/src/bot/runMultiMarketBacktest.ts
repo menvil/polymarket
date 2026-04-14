@@ -305,6 +305,7 @@ async function runSingleMarketBacktest(
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
     processFillUseCase,
+    portfolioStore: repos.portfolioStore,
     eventBus,
     clock: replayClock,
     logger,
@@ -412,8 +413,8 @@ async function runSingleMarketBacktest(
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
   const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
 
-  // Определяем нужен ли dual-token режим (для стратегий типа adaptive-entry)
-  const needsComplementary = config.strategy === 'adaptive-entry';
+  // Определяем нужен ли dual-token режим (стратегии, которые могут выбирать UP/DOWN).
+  const needsComplementary = config.strategy === 'adaptive-entry' || config.strategy === 'selective-entry';
   const complementaryAsset = needsComplementary && complementaryInstrumentId
     ? asPolymarketCtfToken(String(complementaryInstrumentId))
     : undefined;

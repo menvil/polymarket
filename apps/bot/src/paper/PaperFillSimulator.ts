@@ -53,6 +53,7 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
+import type { IPortfolioStore } from '@polymarket/ports';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
 import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
@@ -104,6 +105,8 @@ export interface PendingPaperOrder {
 export interface PaperFillSimulatorDeps {
   /** Use case для применения fill к портфелю и ордерам */
   readonly processFillUseCase: ProcessFillUseCase;
+  /** Store портфеля для defensive-проверки SELL fills */
+  readonly portfolioStore?: IPortfolioStore;
   /** EventBus для подписки на BOOK_UPDATED и TRADE_RECEIVED */
   readonly eventBus: IEventBus;
   /** Источник времени */
@@ -360,6 +363,8 @@ export class PaperFillSimulator {
     fillSize: Decimal,
     isTaker: boolean,
   ): Promise<void> {
+    if (!this._canApplySellFill(order, fillSize)) return;
+
     // Обновляем remainingSize
     order.remainingSize = order.remainingSize.minus(fillSize);
     const isFull = order.remainingSize.lte(0);
@@ -435,5 +440,34 @@ export class PaperFillSimulator {
         orderId: order.orderId,
       });
     }
+  }
+
+  /**
+   * Проверяет, что SELL fill не продаёт больше фактической позиции.
+   *
+   * @remarks
+   * Здесь нельзя использовать availableTokenQuantity(): при нормальном SELL-ордере
+   * токены уже зарезервированы под этот же ордер, поэтому available может быть 0.
+   */
+  private _canApplySellFill(order: PendingPaperOrder, fillSize: Decimal): boolean {
+    if (order.side !== 'SELL') return true;
+
+    const portfolioStore = this._deps.portfolioStore;
+    if (!portfolioStore) return true;
+
+    const portfolio = portfolioStore.get(order.accountId);
+    const positionQty = portfolio
+      ?.getPosition(order.instrumentId)
+      ?.quantity.value() ?? new Decimal(0);
+
+    if (positionQty.gte(fillSize)) return true;
+
+    this._deps.logger.warn('Paper SELL fill blocked: insufficient token position', {
+      orderId: String(order.orderId),
+      instrumentId: String(order.instrumentId),
+      fillSize: fillSize.toString(),
+      positionQty: positionQty.toString(),
+    });
+    return false;
   }
 }

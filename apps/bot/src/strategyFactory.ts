@@ -128,7 +128,7 @@ export function createStrategy(
       return new BinanceProbMMStrategy(config.params, config.id, logger);
 
     case 'cex-lead-lag':
-      return new CexLeadLagStrategy(config.params, config.id, logger);
+      return new CexLeadLagStrategy(config.params, config.id, logger, journal);
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);

@@ -145,6 +145,7 @@ export class OrderEventBridge {
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_CONFIRMED', (event) => {
         for (const fill of event.fills) {
+          this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
           const instrumentId = assetIdToInstrumentId(fill.tokenId);
           if (instrumentId) {
             this._deps.orderStateStore.clearInFlightFills(instrumentId);

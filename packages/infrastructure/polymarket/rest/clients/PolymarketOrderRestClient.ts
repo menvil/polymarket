@@ -303,6 +303,12 @@ export class PolymarketOrderRestClient {
       takerAmount: signedOrder.takerAmount,
     });
 
+    if (!this.isPositiveIntegerAmount(signedOrder.makerAmount) || !this.isPositiveIntegerAmount(signedOrder.takerAmount)) {
+      throw new ApiError(
+        `Refusing to submit invalid signed order amounts: makerAmount=${signedOrder.makerAmount}, takerAmount=${signedOrder.takerAmount}, side=${request.side}, price=${request.price}, size=${request.size}`,
+      );
+    }
+
     // Отправляем ордер в API (POST /order ожидает конкретный формат)
     // КРИТИЧНО: owner ДОЛЖЕН быть строкой API KEY (UUID), НЕ адресом кошелька!
     // Референс SDK: orderToJson(order, this.creds?.key, orderType, deferExec)
@@ -332,6 +338,14 @@ export class PolymarketOrderRestClient {
     });
 
     return response;
+  }
+
+  private isPositiveIntegerAmount(value: string): boolean {
+    try {
+      return BigInt(value) > 0n;
+    } catch {
+      return false;
+    }
   }
 
   /**

@@ -67,6 +67,22 @@ function makeLogger() {
   };
 }
 
+/** Создаёт mock PortfolioStore с заданной позицией по instr-abc */
+function makePortfolioStore(positionQty: Decimal) {
+  return {
+    get: jest.fn().mockReturnValue({
+      getPosition: jest.fn().mockReturnValue(
+        positionQty.gt(0)
+          ? {
+              quantity: { value: () => positionQty },
+            }
+          : undefined,
+      ),
+    }),
+    save: jest.fn(),
+  };
+}
+
 /** Создаёт PendingPaperOrder для тестов */
 function makeOrder(overrides: Partial<PendingPaperOrder> = {}): PendingPaperOrder {
   return {
@@ -79,6 +95,8 @@ function makeOrder(overrides: Partial<PendingPaperOrder> = {}): PendingPaperOrde
     remainingSize: new Decimal('10'),
     accountId: 'venue:POLYMARKET:test' as any,
     asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: 'abc' } as any,
+    postOnly: false,
+    placedAtMs: 1_000_000,
     ...overrides,
   };
 }
@@ -237,6 +255,61 @@ describe('PaperFillSimulator', () => {
 
       expect(processFillUseCase.execute).not.toHaveBeenCalled();
     });
+
+    it('не исполняет SELL если в портфеле нет позиции', async () => {
+      simulator.stop();
+      const logger = makeLogger();
+      const sim = new PaperFillSimulator({
+        processFillUseCase: processFillUseCase as any,
+        portfolioStore: makePortfolioStore(new Decimal(0)) as any,
+        eventBus: eventBus as any,
+        clock: makeClock(),
+        logger: logger as any,
+        config: { fillOnBookCrossing: true, fillOnTape: true, fillAtOrderPrice: true },
+      });
+      sim.start();
+      sim.trackOrder(makeOrder({
+        side: 'SELL',
+        price: Price.of(new Decimal('0.55')),
+        totalSize: Quantity.of(new Decimal('10')),
+      }));
+
+      eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.56, 0.58));
+      await tick();
+
+      expect(processFillUseCase.execute).not.toHaveBeenCalled();
+      expect(sim.pendingCount).toBe(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Paper SELL fill blocked'),
+        expect.objectContaining({ positionQty: '0', fillSize: '10' }),
+      );
+      sim.stop();
+    });
+
+    it('исполняет SELL с зарезервированными токенами когда общей позиции достаточно', async () => {
+      simulator.stop();
+      const sim = new PaperFillSimulator({
+        processFillUseCase: processFillUseCase as any,
+        portfolioStore: makePortfolioStore(new Decimal(10)) as any,
+        eventBus: eventBus as any,
+        clock: makeClock(),
+        logger: makeLogger() as any,
+        config: { fillOnBookCrossing: true, fillOnTape: true, fillAtOrderPrice: true },
+      });
+      sim.start();
+      sim.trackOrder(makeOrder({
+        side: 'SELL',
+        price: Price.of(new Decimal('0.55')),
+        totalSize: Quantity.of(new Decimal('10')),
+      }));
+
+      eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.56, 0.58));
+      await tick();
+
+      expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(sim.pendingCount).toBe(0);
+      sim.stop();
+    });
   });
 
   // ── Tape matching: BUY ────────────────────────────────────────────────────
@@ -344,6 +417,37 @@ describe('PaperFillSimulator', () => {
 
       expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
       expect(simulator.pendingCount).toBe(1); // ещё 7 осталось
+    });
+
+    it('не исполняет tape SELL если размер fill превышает позицию', async () => {
+      simulator.stop();
+      const logger = makeLogger();
+      const sim = new PaperFillSimulator({
+        processFillUseCase: processFillUseCase as any,
+        portfolioStore: makePortfolioStore(new Decimal(2)) as any,
+        eventBus: eventBus as any,
+        clock: makeClock(),
+        logger: logger as any,
+        config: { fillOnBookCrossing: true, fillOnTape: true, fillAtOrderPrice: true },
+      });
+      sim.start();
+      sim.trackOrder(makeOrder({
+        side: 'SELL',
+        price: Price.of(new Decimal('0.55')),
+        totalSize: Quantity.of(new Decimal('10')),
+        remainingSize: new Decimal('10'),
+      }));
+
+      eventBus.emit('TRADE_RECEIVED', makeTradeEvent('instr-abc', 0.56, 3));
+      await tick();
+
+      expect(processFillUseCase.execute).not.toHaveBeenCalled();
+      expect(sim.pendingCount).toBe(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Paper SELL fill blocked'),
+        expect.objectContaining({ positionQty: '2', fillSize: '3' }),
+      );
+      sim.stop();
     });
   });
 

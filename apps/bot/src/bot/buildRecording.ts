@@ -184,6 +184,7 @@ export function buildRecording(
     wireToEventBus(eventBus: IEventBus, assetToTokenId?: (asset: unknown) => string | undefined): void {
       // Маппинг orderId → tokenId для роутинга fills в journal
       const orderToToken = new Map<string, string>();
+      const recordedFillIds = new Set<string>();
       eventBus.subscribe('ORDER_CREATED', (event) => {
         // AssetId → tokenId: используем конвертер если передан, иначе String
         const tokenId = assetToTokenId?.(event.asset) ?? String(event.asset ?? '');
@@ -200,8 +201,38 @@ export function buildRecording(
         });
       });
 
-      // Записываем fill события в journal
+      // FILL_RECEIVED fallback покрывает direct fills на уже terminal/cancelled ордера,
+      // где ORDER_FILLED не публикуется. Откладываем на следующий tick, чтобы обычный
+      // ORDER_FILLED/ORDER_PARTIALLY_FILLED успел записать точный partial/full статус.
+      eventBus.subscribe('FILL_RECEIVED', (event) => {
+        const fillId = String(event.fill.id);
+        setTimeout(() => {
+          if (recordedFillIds.has(fillId)) return;
+          recordedFillIds.add(fillId);
+
+          const price = event.fill.price.value();
+          const size = event.fill.size.value();
+          const tokenId = assetToTokenId?.(event.fill.tokenId) ?? String(event.fill.tokenId ?? '');
+          journal.recordFill({
+            marketId: tokenId,
+            ts: Date.now(),
+            orderId: String(event.fill.orderId),
+            side: event.fill.side as 'BUY' | 'SELL',
+            price: price.toFixed(4),
+            size: size.toFixed(2),
+            notional: price.times(size).toFixed(4),
+            partial: false,
+          });
+        }, 0);
+      });
+
+      // ORDER_* остаются fallback для synthetic/test flows, но dedupe защищает
+      // normal live path от дублей после FILL_RECEIVED.
       eventBus.subscribe('ORDER_FILLED', (event) => {
+        const fillId = String(event.fill.id);
+        if (recordedFillIds.has(fillId)) return;
+        recordedFillIds.add(fillId);
+
         const price = event.fill.price.value();
         const size = event.fill.size.value();
         const tokenId = orderToToken.get(String(event.orderId)) ?? '';
@@ -217,6 +248,10 @@ export function buildRecording(
         });
       });
       eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
+        const fillId = String(event.fill.id);
+        if (recordedFillIds.has(fillId)) return;
+        recordedFillIds.add(fillId);
+
         const price = event.fill.price.value();
         const size = event.fill.size.value();
         const tokenId = orderToToken.get(String(event.orderId)) ?? '';

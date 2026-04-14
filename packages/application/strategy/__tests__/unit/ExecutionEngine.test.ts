@@ -188,6 +188,19 @@ describe('ExecutionEngine', () => {
       expect(report.placed).toBe(0);
       expect(report.errors).toHaveLength(1);
     });
+
+    it('should skip non-positive PLACE size before calling use case', async () => {
+      const intents: StrategyIntent[] = [
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.ZERO },
+      ];
+
+      const report = await engine.execute(ctx, intents);
+
+      expect(report.placed).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(report.errors).toHaveLength(0);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
   });
 
   // ── CANCEL ───────────────────────────────────────────

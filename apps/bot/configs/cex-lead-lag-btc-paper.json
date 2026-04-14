@@ -13,8 +13,6 @@
     "maxSpreadBps": 10,
     "minSignalStrength": 6,
     "minSignalConfidence": 0.45,
-    "signalImpactCents": 6,
-    "maxSignalImpactCents": 8,
     "makerRepriceThresholdCents": 1,
     "requireSignalForEntry": true,
     "allowTaker": false,
@@ -27,9 +25,7 @@
     "ewmaAlpha": 0.3,
     "minTradesForMid": 3,
     "exitTauSec": 20,
-    "maxEntryTauSec": 300,
-    "minFairCents": 5,
-    "maxFairCents": 95
+    "maxEntryTauSec": 300
   },
   "execution": {
     "postOnly": true

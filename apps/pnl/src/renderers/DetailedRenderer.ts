@@ -92,7 +92,7 @@ export class DetailedRenderer {
       : '0.0';
     const avgPnl = report.totalMarkets > 0 ? report.netPnl / report.totalMarkets : 0;
 
-    lines.push(`  Markets:      ${report.totalMarkets}  │  Won: ${report.wins}  │  Lost: ${report.losses}  │  Win rate: ${winRate}%`);
+    lines.push(`  Markets:      ${report.totalMarkets}  │  Profitable: ${report.wins}  │  Losing: ${report.losses}  │  Win rate: ${winRate}%`);
     lines.push(`  Entry cost:   ${fmtMoney(report.entryCost)}`);
     lines.push(`  Return value: ${fmtMoney(report.totalReturn)}`);
     lines.push(`  Fees paid:    ${fmtPnl(-report.fees)}`);
@@ -120,13 +120,13 @@ export class DetailedRenderer {
    */
   private renderMarket(market: MarketPnl): string[] {
     const lines: string[] = [];
-    const tag   = market.won ? '[WIN] ' : '[LOSS]';
+    const tag   = market.profitable ? '[WIN] ' : '[LOSS]';
     const check = market.won ? '✓' : '✗';
 
     lines.push(`  ${tag}  ${truncate(market.question, QUESTION_MAX_LEN)}`);
     lines.push(
       `         Token: ${market.outcomeName}  →  Resolved: ${market.outcomeName} ${check}` +
-      `  (${market.won ? 'won $1.00' : 'lost $0.00'})`
+      `  (${market.won ? 'redeems $1.00' : 'redeems $0.00'})`
     );
 
     if (market.fills.length > 0) {
@@ -202,7 +202,7 @@ export class DetailedRenderer {
       );
     }
 
-    const redeemLabel = market.won ? '(winner)' : '(loser)';
+    const redeemLabel = market.won ? '(token won)' : '(token lost)';
     lines.push(
       `  Redeem:  ${fmtNum(Math.max(0, market.netShares), 1)} shares` +
       ` × $${fmtNum(market.resolvedPrice, 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`

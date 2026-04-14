@@ -170,6 +170,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     const { simulator, exchangeClient } = buildPaperSimulator({
       mockClient,
       processFillUseCase,
+      portfolioStore: repos.portfolioStore,
       eventBus,
       clock: replayClock,
       logger,

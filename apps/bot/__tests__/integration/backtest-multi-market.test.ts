@@ -211,6 +211,7 @@ describe('Backtest — два рынка одновременно', () => {
     const { simulator, exchangeClient } = buildPaperSimulator({
       mockClient,
       processFillUseCase,
+      portfolioStore: repos.portfolioStore,
       eventBus,
       clock: replayClock,
       logger,

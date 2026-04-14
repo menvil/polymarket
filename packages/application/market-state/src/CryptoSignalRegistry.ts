@@ -320,8 +320,10 @@ function cexVsChainlinkBasis(
   const chainlink = priceHistory.getLatest('polymarket_chainlink');
   if (!current || !chainlink) return undefined;
 
-  const tsMs = Math.max(current.lastTsMs, chainlink.exchangeTsMs);
-  const ageMs = context.nowMs - tsMs;
+  const cexAgeMs = context.nowMs - current.lastTsMs;
+  const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
+  const tsMs = Math.min(current.lastTsMs, chainlink.exchangeTsMs);
+  const ageMs = Math.max(cexAgeMs, chainlinkAgeMs);
   const valueBps = ((current.price - chainlink.price) / chainlink.price) * 10_000;
 
   return makeSignalResult({
@@ -337,6 +339,8 @@ function cexVsChainlinkBasis(
       cexPrice: current.price,
       chainlinkPrice: chainlink.price,
       venueCount: current.venueCount,
+      cexAgeMs,
+      chainlinkAgeMs,
       ageMs,
     },
   });
@@ -376,6 +380,9 @@ function cexChainlinkLeadLag(
 
   const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
   const staleMs = request.staleMs ?? 2_000;
+  const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
+  if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
+
   const lookbackMs = request.lookbackMs ?? 1_000;
   const thresholdBps = request.thresholdBps ?? 0.5;
   const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
@@ -451,7 +458,7 @@ function cexChainlinkLeadLag(
   const strength = Math.max(0, Math.min(10, Math.abs(valueBps) / Math.max(thresholdBps, 0.0001)));
   const scoreBucket = Math.max(0, Math.min(10, Math.ceil(strength)));
   const calibratedConfidence = request.confidenceByScore?.[String(scoreBucket)];
-  const stale = maxAgeMs > staleMs;
+  const stale = maxAgeMs > staleMs || chainlinkAgeMs > staleMs;
   const confidence = stale
     ? 0
     : calibratedConfidence ?? Math.max(0, Math.min(1, (strength / 10) * (0.5 + agreement / 2)));
@@ -459,7 +466,7 @@ function cexChainlinkLeadLag(
   return {
     id: 'cex_chainlink_lead_lag',
     asset: context.asset,
-    tsMs: Math.max(lastTsMs, chainlink.exchangeTsMs),
+    tsMs: Math.min(lastTsMs, chainlink.exchangeTsMs),
     value: valueBps,
     unit: 'bps',
     direction,
@@ -480,6 +487,7 @@ function cexChainlinkLeadLag(
       scoreBucket,
       thresholdBps,
       maxAgeMs,
+      chainlinkAgeMs,
       avgSpreadBps: avgSpreadBps / venueCount,
       calibrated: calibratedConfidence !== undefined,
     },

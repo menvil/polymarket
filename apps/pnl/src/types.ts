@@ -178,8 +178,10 @@ export interface MarketPnl {
   outcomeName: string;
   /** Цена резолюции: 1.0 (победа) или 0.0 (поражение) */
   resolvedPrice: number;
-  /** true — наш токен выиграл */
+  /** true — наш токен выиграл на резолюции */
   won: boolean;
+  /** true — торговый результат по этому рынку неотрицательный */
+  profitable: boolean;
   /** Все исполнения по этому рынку (sorted by time) */
   fills: FillRecord[];
   /** Σ notional по BUY-fills */

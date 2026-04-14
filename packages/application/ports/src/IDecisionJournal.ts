@@ -66,23 +66,25 @@ export interface SessionMeta {
  * @param marketId - ID рынка
  * @param strategyId - ID экземпляра стратегии
  * @param ts - Timestamp решения (epoch ms)
- * @param action - Действие: BUY, BUY_COMP, HOLD, SKIP
+ * @param action - Действие: BUY, BUY_COMP, SELL, HOLD, SKIP, CANCEL
  * @param state - Полное состояние стратегии (SEData/AEData)
  * @param rejectReason - Причина отказа (если HOLD/SKIP)
  * @param rejectCounts - Счётчики фильтров
  * @param bidPrice - Цена BUY ордера (если BUY)
- * @param orderSize - Размер ордера (если BUY)
+ * @param askPrice - Цена SELL ордера (если SELL)
+ * @param orderSize - Размер ордера (если BUY/SELL)
  * @param effectiveSide - Выбранное направление (up/down)
  */
 export interface DecisionEntry {
   readonly marketId: string;
   readonly strategyId: string;
   readonly ts: number;
-  readonly action: 'BUY' | 'BUY_COMP' | 'HOLD' | 'SKIP' | 'CANCEL';
+  readonly action: 'BUY' | 'BUY_COMP' | 'SELL' | 'HOLD' | 'SKIP' | 'CANCEL';
   readonly state: Record<string, unknown>;
   readonly rejectReason?: string;
   readonly rejectCounts?: Record<string, number>;
   readonly bidPrice?: number;
+  readonly askPrice?: number;
   readonly orderSize?: string;
   readonly effectiveSide?: string;
 }

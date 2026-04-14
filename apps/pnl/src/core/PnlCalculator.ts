@@ -255,6 +255,7 @@ export class PnlCalculator {
       outcomeName,
       resolvedPrice,
       won: resolvedPrice >= 0.99,
+      profitable: netPnl >= 0,
       fills,
       entryCost,
       sellProceeds,
@@ -286,8 +287,8 @@ export class PnlCalculator {
     return [...byDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, dayMarkets]) => {
-        const wins      = dayMarkets.filter(m => m.won).length;
-        const losses    = dayMarkets.filter(m => !m.won).length;
+        const wins      = dayMarkets.filter(m => m.profitable).length;
+        const losses    = dayMarkets.filter(m => !m.profitable).length;
         const entryCost = dayMarkets.reduce((s, m) => s + m.entryCost, 0);
         const totalReturn = dayMarkets.reduce((s, m) => s + m.redeemValue + m.sellProceeds, 0);
         const fees      = dayMarkets.reduce((s, m) => s + m.fees, 0);
@@ -307,8 +308,8 @@ export class PnlCalculator {
    * @returns PnlReport
    */
   private buildReport(markets: MarketPnl[], dailyBreakdown: DailyPnl[], params: ComputeParams): PnlReport {
-    const wins       = markets.filter(m => m.won).length;
-    const losses     = markets.filter(m => !m.won).length;
+    const wins       = markets.filter(m => m.profitable).length;
+    const losses     = markets.filter(m => !m.profitable).length;
     const entryCost  = markets.reduce((s, m) => s + m.entryCost, 0);
     const totalReturn = markets.reduce((s, m) => s + m.redeemValue + m.sellProceeds, 0);
     const fees       = markets.reduce((s, m) => s + m.fees, 0);

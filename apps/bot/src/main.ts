@@ -504,6 +504,7 @@ async function runPaper(): Promise<void> {
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
     processFillUseCase,
+    portfolioStore,
     eventBus,
     clock,
     logger,
@@ -2403,6 +2404,7 @@ async function runBacktest(): Promise<void> {
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
     processFillUseCase,
+    portfolioStore,
     eventBus,
     clock: replayClock,
     logger,

@@ -46,6 +46,7 @@ import type { ProcessFillUseCase } from '@polymarket/use-cases';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { IPortfolioStore } from '@polymarket/ports';
 import type { InstrumentId, MarketId, AccountId, AssetId } from '@polymarket/ids';
 import type { PaperConfig } from '../config/BotConfig.js';
 
@@ -82,6 +83,7 @@ export function buildPaperInfra(params: BuildPaperInfraParams): PaperInfra {
 export interface BuildPaperSimulatorParams {
   readonly mockClient: MockExchangeClient;
   readonly processFillUseCase: ProcessFillUseCase;
+  readonly portfolioStore?: IPortfolioStore;
   readonly eventBus: IEventBus;
   readonly clock: IClock;
   readonly logger: ILogger;
@@ -109,10 +111,11 @@ export interface PaperSimulator {
  * @returns Объект с simulator и exchangeClient
  */
 export function buildPaperSimulator(params: BuildPaperSimulatorParams): PaperSimulator {
-  const { mockClient, processFillUseCase, eventBus, clock, logger, config, ...ids } = params;
+  const { mockClient, processFillUseCase, portfolioStore, eventBus, clock, logger, config, ...ids } = params;
 
   const simulator = new PaperFillSimulator({
     processFillUseCase,
+    portfolioStore,
     eventBus,
     clock,
     logger,

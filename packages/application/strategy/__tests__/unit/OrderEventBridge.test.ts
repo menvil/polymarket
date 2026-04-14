@@ -285,10 +285,11 @@ describe('OrderEventBridge', () => {
       const eventBus = deps.eventBus as any;
       eventBus._emit('FILL_CONFIRMED', {
         type: 'FILL_CONFIRMED',
-        fills: [{ tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
+        fills: [{ orderId: ORDER_1, tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
         receivedAt: {},
       });
 
+      expect((deps.orderStateStore as any).clearMatchedOnExchange).toHaveBeenCalledWith(ORDER_1);
       expect((deps.orderStateStore as any).clearInFlightFills).toHaveBeenCalled();
       expect((deps.executionEngine as any).clearExchangeRejectionCooldown).toHaveBeenCalled();
       expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
