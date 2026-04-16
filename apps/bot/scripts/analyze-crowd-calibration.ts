@@ -1,33 +1,38 @@
 /**
- * Анализ калибровки толпы: насколько стакан (order book) ошибается
- * относительно реальности (Chainlink price vs strike).
+ * Анализ калибровки толпы Polymarket.
+ *
+ * @see {@link ../docs/research/crowd-calibration-analysis.md} — полная документация, примеры
+ * таблиц, расшифровка ячеек, сигналы и рекомендованные сценарии использования.
  *
  * @remarks
- * ### Идея:
- * В каждый момент времени у нас есть:
- * - **Реальность**: Chainlink price vs strike → дельта в $ (BTC выше/ниже страйка)
- * - **Мнение толпы**: mid-price стакана (= implied probability UP)
- * - **Время**: tau (секунды до экспирации)
- *
- * Группируем по бакетам (deltaBucket × tauBucket) и считаем:
- * - Средний mid-price толпы (= crowd implied P(UP))
- * - Реальный P(UP) (= доля рынков с resolution UP)
- * - Ошибка = crowd - reality
- *
- * ### Бакеты:
- * - **Delta**: разница (chainlinkPrice - strikePrice) в $, шаг $25
- *   Пример: [-100, -75, -50, -25, 0, +25, +50, +75, +100]
- * - **Tau**: секунды до экспирации, шаг 30 сек
- *   Пример: [0, 30, 60, 90, 120, ..., 300]
- *
- * ### Выход:
- * Таблица: delta × tau → { crowdProb, realProb, error, sampleSize }
+ * ### Режимы вывода (--show):
+ * - `a`     — TABLE A: delta × tau
+ * - `b`     — TABLE B: crowd¢ × tau
+ * - `top`   — топ-20 ошибок
+ * - `curve` — кривая калибровки
+ * - `1`     — tau-срезы: delta × crowd¢ для каждого окна
+ * - `2`     — edge score table: crowd¢ × tau (edge = real − crowd)
+ * - `3`     — point lookup: поиск по (delta, tau, crowd)
+ * - `4`     — ASCII heatmap: delta × crowd¢ с Unicode-блоками
+ * - `all`   — всё вышеперечисленное
  *
  * @example
  * ```bash
- * npx tsx scripts/analyze-crowd-calibration.ts /path/to/snapshots/2026-03-25 /path/to/snapshots/2026-03-26
- * npx tsx scripts/analyze-crowd-calibration.ts /path/to/snapshots --delta-step 25 --tau-step 30
- * npx tsx scripts/analyze-crowd-calibration.ts /path/to/snapshots --out calibration.json
+ * # Стандартный анализ 5-мин рынков:
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
+ *   --duration 5min --token up --show a,b,top,curve
+ *
+ * # Все 4 новых варианта:
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
+ *   --duration 5min --show 1,2,3,4 --tau-windows "0:90,90:180,180:300"
+ *
+ * # Точечный поиск:
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
+ *   --duration 5min --show 3 --point "delta=50,tau=120,crowd=72"
+ *
+ * # Тепловая карта для среднего tau-окна:
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
+ *   --duration 5min --show 4 --heatmap-tau "90:180"
  * ```
  */
 
@@ -36,48 +41,156 @@ import { createGunzip } from 'zlib';
 import { createInterface } from 'readline';
 import { join } from 'path';
 
+// ── ANSI ──────────────────────────────────────────────────────────────────────
+
+const RESET  = '\x1b[0m';
+const BOLD   = '\x1b[1m';
+const DIM    = '\x1b[2m';
+const GREEN  = '\x1b[32m';
+const YELLOW = '\x1b[33m';
+const RED    = '\x1b[31m';
+const CYAN   = '\x1b[36m';
+const WHITE  = '\x1b[37m';
+
+/**
+ * Окрашивает ячейку по bias (crowd − real).
+ * Положительный = толпа завышает; отрицательный = недооценивает.
+ */
+function colorBias(text: string, bias: number): string {
+  if (bias <= -0.10) return `${BOLD}${GREEN}${text}${RESET}`;
+  if (bias <= -0.05) return `${YELLOW}${text}${RESET}`;
+  if (bias >= +0.10) return `${DIM}${RED}${text}${RESET}`;
+  if (bias >= +0.05) return `${DIM}${text}${RESET}`;
+  return text;
+}
+
+/**
+ * Окрашивает ячейку по edge (real − crowd = -bias).
+ * Положительный = есть преимущество покупки UP.
+ */
+function colorEdge(text: string, edge: number): string {
+  if (edge >= +0.10) return `${BOLD}${GREEN}${text}${RESET}`;
+  if (edge >= +0.05) return `${GREEN}${text}${RESET}`;
+  if (edge <= -0.10) return `${BOLD}${RED}${text}${RESET}`;
+  if (edge <= -0.05) return `${RED}${text}${RESET}`;
+  return text;
+}
+
+/** Убирает ANSI escape-последовательности для подсчёта визуальной ширины. */
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/** Дополняет строку (с ANSI-кодами внутри) до визуальной ширины width пробелами. */
+function padEndRaw(text: string, width: number): string {
+  const vis = stripAnsi(text).length;
+  return vis < width ? text + ' '.repeat(width - vis) : text;
+}
+
 // ── Конфигурация ──────────────────────────────────────────────────────────────
 
 interface Config {
-  dirs: string[];
-  deltaStep: number;   // Шаг бакета по дельте ($)
-  tauStep: number;     // Шаг бакета по tau (сек)
-  maxDelta: number;    // Максимальная дельта для анализа ($)
-  maxTau: number;      // Максимальный tau (сек)
-  outFile: string;
-  asset: string;       // Фильтр по активу (bitcoin, bnb, etc.), пустая строка = все
+  dirs:        string[];
+  deltaStep:   number;
+  tauStep:     number;
+  maxDelta:    number;
+  maxTau:      number;
+  outFile:     string;
+  asset:       string;
+  duration:    'all' | '5min' | '15min';
+  token:       'up' | 'down' | 'both';
+  minMarkets:  number;
+  /** Варианты вывода: 'a','b','top','curve','1','2','3','4','all' */
+  show:        Set<string>;
+  /** Tau-окна для variant 1: [[from,to], ...] */
+  tauWindows:  Array<[number, number]>;
+  /** Tau-окно для variant 4 heatmap */
+  heatmapTau:  [number, number] | null;
+  /** Точка для variant 3 lookup */
+  point:       { delta: number; tau: number; crowd: number } | null;
 }
 
+/**
+ * Разбирает аргументы CLI в Config.
+ *
+ * @returns Конфигурация
+ *
+ * @example
+ * ```bash
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
+ *   --duration 5min --show 1,2,3,4 --point "delta=50,tau=120,crowd=72"
+ * ```
+ */
 function parseArgs(): Config {
   const args = process.argv.slice(2);
   const config: Config = {
-    dirs: [],
-    deltaStep: 25,
-    tauStep: 30,
-    maxDelta: 200,
-    maxTau: 900,
-    outFile: '',
-    asset: '',
+    dirs:       [],
+    deltaStep:  25,
+    tauStep:    30,
+    maxDelta:   200,
+    maxTau:     900,
+    outFile:    '',
+    asset:      '',
+    duration:   'all',
+    token:      'up',
+    minMarkets: 5,
+    show:       new Set(['a', 'b', 'top', 'curve']),
+    tauWindows: [],
+    heatmapTau: null,
+    point:      null,
   };
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--delta-step') { config.deltaStep = Number(args[++i]); }
-    else if (args[i] === '--tau-step') { config.tauStep = Number(args[++i]); }
-    else if (args[i] === '--max-delta') { config.maxDelta = Number(args[++i]); }
-    else if (args[i] === '--max-tau') { config.maxTau = Number(args[++i]); }
-    else if (args[i] === '--out') { config.outFile = args[++i]; }
-    else if (args[i] === '--asset') { config.asset = args[++i].toLowerCase(); }
-    else { config.dirs.push(args[i]); }
+    const arg = args[i];
+    if      (arg === '--delta-step')   { config.deltaStep  = Number(args[++i]); }
+    else if (arg === '--tau-step')     { config.tauStep    = Number(args[++i]); }
+    else if (arg === '--max-delta')    { config.maxDelta   = Number(args[++i]); }
+    else if (arg === '--max-tau')      { config.maxTau     = Number(args[++i]); }
+    else if (arg === '--out')          { config.outFile    = args[++i]; }
+    else if (arg === '--asset')        { config.asset      = args[++i].toLowerCase(); }
+    else if (arg === '--duration')     { config.duration   = args[++i] as Config['duration']; }
+    else if (arg === '--token')        { config.token      = args[++i] as Config['token']; }
+    else if (arg === '--min-markets')  { config.minMarkets = Number(args[++i]); }
+    else if (arg === '--show') {
+      const parts = args[++i].split(',').map(s => s.trim());
+      config.show = new Set(parts);
+    }
+    else if (arg === '--tau-windows') {
+      config.tauWindows = args[++i].split(',').map(s => {
+        const [a, b] = s.trim().split(':').map(Number);
+        return [a, b] as [number, number];
+      });
+    }
+    else if (arg === '--heatmap-tau') {
+      const [a, b] = args[++i].split(':').map(Number);
+      config.heatmapTau = [a, b];
+    }
+    else if (arg === '--point') {
+      const kv: Record<string, number> = {};
+      args[++i].split(',').forEach(p => {
+        const [k, v] = p.trim().split('=');
+        kv[k] = Number(v);
+      });
+      if (kv.delta !== undefined && kv.tau !== undefined && kv.crowd !== undefined) {
+        config.point = { delta: kv.delta, tau: kv.tau, crowd: kv.crowd };
+      }
+    }
+    else { config.dirs.push(arg); }
   }
 
   if (config.dirs.length === 0) {
     console.error('Usage: npx tsx scripts/analyze-crowd-calibration.ts <dir1> [dir2...] [options]');
     console.error('Options:');
-    console.error('  --delta-step 25   Delta bucket step in $ (default: 25)');
-    console.error('  --tau-step 30     Tau bucket step in seconds (default: 30)');
-    console.error('  --max-delta 200   Max absolute delta to track (default: 200)');
-    console.error('  --max-tau 900     Max tau in seconds (default: 900)');
-    console.error('  --out file.json   Write JSON output (default: stdout only)');
+    console.error('  --show a,b,top,curve,1,2,3,4,all  Sections to display (default: a,b,top,curve)');
+    console.error('  --token up|down|both               Order book to use (default: up)');
+    console.error('  --duration 5min|15min|all');
+    console.error('  --tau-step 30                      Tau bucket step in seconds (default: 30)');
+    console.error('  --delta-step 25                    Delta bucket step in $ (default: 25)');
+    console.error('  --max-tau 900  --max-delta 200  --min-markets 5  --asset bitcoin');
+    console.error('  --tau-windows "0:90,90:180,180:300"  Tau windows for variant 1');
+    console.error('  --heatmap-tau "90:180"               Tau window for variant 4 heatmap');
+    console.error('  --point "delta=50,tau=120,crowd=72"  Point lookup for variant 3');
+    console.error('  --out file.json');
     process.exit(1);
   }
   return config;
@@ -85,642 +198,969 @@ function parseArgs(): Config {
 
 // ── Типы ──────────────────────────────────────────────────────────────────────
 
-/** Ключ бакета: (deltaBucket, tauBucket) */
-interface BucketKey {
-  /** Нижняя граница дельты ($). Пример: -50 означает [-50, -25) */
-  deltaBucket: number;
-  /** Нижняя граница tau (сек). Пример: 60 означает [60, 90) */
-  tauBucket: number;
-}
-
-/** Аккумулированная статистика одного бакета */
 interface BucketAccum {
-  /** Сумма crowd mid-prices (для среднего) */
-  crowdProbSum: number;
-  /** Количество наблюдений */
-  observations: number;
-  /** Количество рынков с resolution UP */
-  upCount: number;
-  /** Количество рынков с resolution DOWN */
-  downCount: number;
-  /** Множество уникальных рынков (для подсчёта upCount/downCount по рынкам) */
+  crowdProbSum:      number;
+  observations:      number;
+  upCount:           number;
+  downCount:         number;
   marketResolutions: Map<string, 'UP' | 'DOWN'>;
-  /** Сумма спредов (для среднего) */
-  spreadSum: number;
+  spreadSum:         number;
 }
 
-/** Наблюдение: момент в рынке с book + crypto price */
 interface Observation {
-  midPriceCents: number;  // Mid price стакана (0-100 центов)
-  bestBid: number;        // Best bid (центы)
-  bestAsk: number;        // Best ask (центы)
-  spreadCents: number;    // Spread (центы)
-  delta: number;          // chainlinkPrice - strikePrice ($)
-  tauSec: number;         // Секунды до экспирации
-  chainlinkPrice: number; // Текущая цена Chainlink
-  strikePrice: number;    // Strike price (priceToBeat)
+  midPriceCents: number;
+  spreadCents:   number;
+  delta:         number;
+  tauSec:        number;
 }
 
-/** Данные одного рынка */
-/** Длительность рынка */
 type MarketDuration = '5min' | '15min' | 'other';
 
-/** Данные одного рынка */
 interface MarketData {
-  slug: string;
-  resolution: 'UP' | 'DOWN';
-  strikePrice: number;
-  endDateMs: number;
-  durationMin: number;
-  duration: MarketDuration;
+  slug:         string;
+  resolution:   'UP' | 'DOWN';
+  strikePrice:  number;
+  endDateMs:    number;
+  durationMin:  number;
+  duration:     MarketDuration;
   observations: Observation[];
 }
 
-// ── Парсинг snapshot файла ────────────────────────────────────────────────────
+// ── Парсинг snapshot ──────────────────────────────────────────────────────────
 
-async function parseSnapshot(filePath: string, maxTau: number): Promise<MarketData | null> {
+/**
+ * Читает один JSONL/JSONL.GZ снапшот и возвращает данные рынка.
+ *
+ * @param filePath - путь к файлу
+ * @param maxTau   - максимальный tau (сек), наблюдения позже отсекаются
+ * @param token    - режим использования книги ордеров
+ * @returns MarketData или null если файл неполный
+ *
+ * @remarks
+ * Strike price:
+ * 1. Из `events[0].eventMetadata.priceToBeat` (старый формат данных).
+ * 2. Фоллбэк: Chainlink-цена ближайшая к `events[0].startTime` (новый формат).
+ */
+async function parseSnapshot(
+  filePath: string,
+  maxTau:   number,
+  token:    'up' | 'down' | 'both',
+): Promise<MarketData | null> {
   return new Promise((resolve) => {
     let resolution: 'UP' | 'DOWN' | null = null;
-    let strikePrice = 0;
-    let endDateMs = 0;
-    let startTimeMs = 0;
-    let slug = '';
-    let upTokenId: string | null = null;
+    let strikePrice = 0, endDateMs = 0, startTimeMs = 0;
+    let slug = '', upTokenId: string | null = null, downTokenId: string | null = null;
 
-    // Последние известные значения
-    let lastChainlinkPrice = 0;
-    let lastChainlinkTs = 0;
-    let lastBestBid = 0;   // центы
-    let lastBestAsk = 0;   // центы
-    let lastBookTs = 0;
+    let lastChainlinkPrice = 0, lastChainlinkTs = 0;
+    let upBid = 0, upAsk = 100, upBookTs = 0;
+    let downBid = 0, downAsk = 100, downBookTs = 0;
 
+    const chainlinkHistory: Array<{ ts: number; price: number }> = [];
     const observations: Observation[] = [];
 
-    const isGz = filePath.endsWith('.gz');
-    const raw = createReadStream(filePath);
-    const stream = isGz ? raw.pipe(createGunzip()) : raw;
+    const stream = filePath.endsWith('.gz')
+      ? createReadStream(filePath).pipe(createGunzip())
+      : createReadStream(filePath);
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
     rl.on('line', (line) => {
       try {
         const d = JSON.parse(line);
 
-        // Meta event
         if (d.t === 'meta' && d.m) {
           const m = d.m;
-          const outcomePrices = JSON.parse(m.outcomePrices || '[]');
-          const tokenIds = d.tokenIds || JSON.parse(m.clobTokenIds || '[]');
-
-          if (outcomePrices.length >= 2) {
-            if (Number(outcomePrices[0]) === 1) resolution = 'UP';
-            else if (Number(outcomePrices[1]) === 1) resolution = 'DOWN';
+          const op = JSON.parse(m.outcomePrices || '[]');
+          const ids = d.tokenIds || JSON.parse(m.clobTokenIds || '[]');
+          if (op.length >= 2) {
+            if      (Number(op[0]) === 1) resolution = 'UP';
+            else if (Number(op[1]) === 1) resolution = 'DOWN';
           }
-
-          upTokenId = tokenIds[0] || null;
+          upTokenId = ids[0] || null; downTokenId = ids[1] || null;
           endDateMs = new Date(m.endDate).getTime();
           slug = m.slug || m.question || '';
-
-          // Strike price и startTime из eventMetadata
-          const events = m.events as Array<Record<string, unknown>> | undefined;
-          if (events?.[0]) {
-            const meta = events[0].eventMetadata as Record<string, unknown> | undefined;
-            if (meta?.priceToBeat) {
-              strikePrice = Number(meta.priceToBeat);
-            }
-            if (events[0].startTime) {
-              startTimeMs = new Date(events[0].startTime as string).getTime();
-            }
+          const ev = (m.events as Array<Record<string, unknown>> | undefined)?.[0];
+          if (ev) {
+            const meta = ev.eventMetadata as Record<string, unknown> | undefined;
+            if (meta?.priceToBeat) strikePrice = Number(meta.priceToBeat);
+            if (ev.startTime) startTimeMs = new Date(ev.startTime as string).getTime();
           }
-          // Fallback: eventStartTime из m
-          if (!startTimeMs && m.eventStartTime) {
-            startTimeMs = new Date(m.eventStartTime as string).getTime();
-          }
+          if (!startTimeMs && m.eventStartTime) startTimeMs = new Date(m.eventStartTime as string).getTime();
           return;
         }
 
-        // Crypto price event (Chainlink)
         if (d.t === 'crypto_price' && d.source === 'chainlink' && typeof d.price === 'number') {
           lastChainlinkPrice = d.price;
-          lastChainlinkTs = Number(d.ts);
-          tryEmitObservation();
-          return;
+          lastChainlinkTs    = Number(d.ts);
+          chainlinkHistory.push({ ts: lastChainlinkTs, price: lastChainlinkPrice });
+          tryEmit(); return;
         }
 
-        // Orderbook event (book snapshot для UP токена)
         if (d.event_type === 'book' && d.bids && d.asks) {
-          // Только UP token
-          if (upTokenId && d.asset_id !== upTokenId) return;
-
           const bids = d.bids as Array<{ price: string; size: string }>;
           const asks = d.asks as Array<{ price: string; size: string }>;
-
-          // Best bid: максимальная цена среди bids с size > 0
-          // (bids отсортированы по возрастанию — best bid последний)
-          let bestBid = 0;
-          for (const b of bids) {
-            if (Number(b.size) > 0) {
-              const p = Number(b.price);
-              if (p > bestBid) bestBid = p;
-            }
-          }
-          lastBestBid = Math.round(bestBid * 100);
-
-          // Best ask: минимальная цена среди asks с size > 0
-          // (asks отсортированы по убыванию — best ask последний)
-          let bestAsk = 100;
-          for (const a of asks) {
-            if (Number(a.size) > 0) {
-              const p = Number(a.price);
-              if (p < bestAsk) bestAsk = p;
-            }
-          }
-          lastBestAsk = Math.round(bestAsk * 100);
-
-          lastBookTs = Number(d.timestamp);
-          if (lastBookTs < 1e12) lastBookTs *= 1000;
-          tryEmitObservation();
-          return;
+          const bb = bids.reduce((m, b) => Number(b.size) > 0 ? Math.max(m, Number(b.price)) : m, 0);
+          const ba = asks.reduce((m, a) => Number(a.size) > 0 ? Math.min(m, Number(a.price)) : m, 1);
+          let ts = Number(d.timestamp); if (ts < 1e12) ts *= 1000;
+          if (d.asset_id === upTokenId)   { upBid   = Math.round(bb * 100); upAsk   = Math.round(ba * 100); upBookTs   = ts; }
+          if (d.asset_id === downTokenId) { downBid  = Math.round(bb * 100); downAsk  = Math.round(ba * 100); downBookTs  = ts; }
+          tryEmit();
         }
-      } catch {
-        // Skip malformed lines
-      }
+      } catch { /* skip */ }
     });
 
-    /** Пытаемся создать наблюдение если есть свежие данные по обоим каналам */
-    function tryEmitObservation(): void {
-      if (!strikePrice || !endDateMs || !lastChainlinkPrice || !lastBestBid || !lastBestAsk) return;
-      // Берём timestamp от последнего обновления (book или chainlink)
-      const tsMs = Math.max(lastBookTs, lastChainlinkTs);
-      if (tsMs === 0) return;
+    function tryEmit(): void {
+      if (!strikePrice || !endDateMs || !lastChainlinkPrice) return;
+      const hasUp = upBid > 0 && upAsk > 0, hasDown = downBid > 0 && downAsk > 0;
+      if (token === 'up' && !hasUp) return;
+      if (token === 'down' && !hasDown) return;
+      if (token === 'both' && (!hasUp || !hasDown)) return;
 
+      const bookTs = token === 'down' ? downBookTs : token === 'up' ? upBookTs : Math.max(upBookTs, downBookTs);
+      const tsMs = Math.max(bookTs, lastChainlinkTs);
+      if (tsMs === 0) return;
       const tauSec = Math.max(0, (endDateMs - tsMs) / 1000);
       if (tauSec > maxTau) return;
+      if (bookTs > 0 && lastChainlinkTs > 0 && Math.abs(bookTs - lastChainlinkTs) > 30_000) return;
 
-      // Проверка стейл: book и chainlink не должны отличаться > 30 сек
-      if (lastBookTs > 0 && lastChainlinkTs > 0 && Math.abs(lastBookTs - lastChainlinkTs) > 30_000) return;
-
-      const midPriceCents = Math.round((lastBestBid + lastBestAsk) / 2);
-      const spreadCents = lastBestAsk - lastBestBid;
-      const delta = lastChainlinkPrice - strikePrice;
-
-      // Не записываем бессмысленные данные
-      if (midPriceCents < 1 || midPriceCents > 99) return;
-      if (spreadCents > 50) return; // Слишком широкий спред — книга не информативна
-
-      observations.push({
-        midPriceCents,
-        bestBid: lastBestBid,
-        bestAsk: lastBestAsk,
-        spreadCents,
-        delta,
-        tauSec,
-        chainlinkPrice: lastChainlinkPrice,
-        strikePrice,
-      });
+      let mid: number, spread: number;
+      if      (token === 'up')   { mid = Math.round((upBid + upAsk) / 2);   spread = upAsk - upBid; }
+      else if (token === 'down') { mid = 100 - Math.round((downBid + downAsk) / 2); spread = downAsk - downBid; }
+      else {
+        mid    = Math.round(((upBid + upAsk) / 2 + (100 - (downBid + downAsk) / 2)) / 2);
+        spread = Math.round(((upAsk - upBid) + (downAsk - downBid)) / 2);
+      }
+      if (mid < 1 || mid > 99 || spread > 50) return;
+      observations.push({ midPriceCents: mid, spreadCents: spread, delta: lastChainlinkPrice - strikePrice, tauSec });
     }
 
     rl.on('close', () => {
-      if (!resolution || !strikePrice || observations.length === 0) {
-        resolve(null);
-        return;
+      if (!strikePrice && startTimeMs > 0 && chainlinkHistory.length > 0) {
+        let best = chainlinkHistory[0];
+        for (const p of chainlinkHistory) if (Math.abs(p.ts - startTimeMs) < Math.abs(best.ts - startTimeMs)) best = p;
+        strikePrice = best.price;
       }
-      const durationMin = startTimeMs && endDateMs ? (endDateMs - startTimeMs) / 60_000 : 0;
-      let duration: MarketDuration = 'other';
-      if (durationMin >= 4 && durationMin <= 6) duration = '5min';
-      else if (durationMin >= 13 && durationMin <= 17) duration = '15min';
-      resolve({ slug, resolution, strikePrice, endDateMs, durationMin, duration, observations });
+      if (!resolution || !strikePrice || observations.length === 0) { resolve(null); return; }
+      const dMin = startTimeMs && endDateMs ? (endDateMs - startTimeMs) / 60_000 : 0;
+      const duration: MarketDuration = dMin >= 4 && dMin <= 6 ? '5min' : dMin >= 13 && dMin <= 17 ? '15min' : 'other';
+      resolve({ slug, resolution, strikePrice, endDateMs, durationMin: dMin, duration, observations });
     });
-
     rl.on('error', () => resolve(null));
     stream.on('error', () => resolve(null));
   });
 }
 
-// ── Бакетирование ─────────────────────────────────────────────────────────────
+// ── Вспомогательные функции ───────────────────────────────────────────────────
 
-function bucketKey(deltaBucket: number, tauBucket: number): string {
-  return `${deltaBucket}:${tauBucket}`;
+function bucketKey(a: number, b: number): string { return `${a}:${b}`; }
+function toBucket(v: number, step: number): number { return Math.floor(v / step) * step; }
+function crowdBucket5(cents: number): number { return Math.round(cents / 5) * 5; }
+function crowdBucket10(cents: number): number { return Math.max(10, Math.min(90, Math.round(cents / 10) * 10)); }
+
+function newBucket(): BucketAccum {
+  return { crowdProbSum: 0, observations: 0, upCount: 0, downCount: 0, marketResolutions: new Map(), spreadSum: 0 };
 }
 
-function toBucket(value: number, step: number): number {
-  return Math.floor(value / step) * step;
+function accumulate(b: BucketAccum, midCents: number, spread: number, slug: string, res: 'UP' | 'DOWN'): void {
+  b.crowdProbSum += midCents / 100; b.observations++; b.spreadSum += spread;
+  if (!b.marketResolutions.has(slug)) {
+    b.marketResolutions.set(slug, res);
+    if (res === 'UP') b.upCount++; else b.downCount++;
+  }
+}
+
+/**
+ * Объединяет массив бакетов с правильной дедупликацией рынков по slug.
+ *
+ * @param buckets - бакеты для объединения
+ * @returns Новый BucketAccum с дедуплицированными рынками
+ *
+ * @remarks
+ * `crowdProbSum` и `observations` суммируются напрямую (статистика наблюдений).
+ * `upCount`/`downCount` пересчитываются из merged `marketResolutions` (уникальные рынки).
+ */
+function mergeBuckets(buckets: BucketAccum[]): BucketAccum {
+  const m = newBucket();
+  for (const b of buckets) {
+    m.crowdProbSum += b.crowdProbSum;
+    m.observations += b.observations;
+    m.spreadSum    += b.spreadSum;
+    for (const [slug, res] of b.marketResolutions) {
+      if (!m.marketResolutions.has(slug)) {
+        m.marketResolutions.set(slug, res);
+        if (res === 'UP') m.upCount++; else m.downCount++;
+      }
+    }
+  }
+  return m;
+}
+
+/**
+ * Генерирует 3 равных tau-окна для заданного maxTau.
+ *
+ * @param maxTau  - максимальный tau в секундах
+ * @param tauStep - шаг бакета
+ * @returns Три окна [[0,a],[a,b],[b,maxTau]]
+ */
+function defaultTauWindows(maxTau: number, tauStep: number): Array<[number, number]> {
+  const step = Math.ceil(maxTau / 3 / tauStep) * tauStep;
+  return [[0, step], [step, step * 2], [step * 2, maxTau + tauStep]];
+}
+
+/** Символ блока по абсолютной величине edge. */
+function blockChar(absEdge: number): string {
+  if (absEdge >= 0.15) return '█';
+  if (absEdge >= 0.10) return '▓';
+  if (absEdge >= 0.06) return '▒';
+  if (absEdge >= 0.03) return '░';
+  return '·';
+}
+
+/** Форматирует и окрашивает ячейку edge score. */
+function edgeCell(edge: number, n: number, minN: number, w: number): string {
+  if (n < minN) return ' '.repeat(w);
+  const sign = edge >= 0 ? '+' : '';
+  const txt  = `${sign}${(edge * 100).toFixed(0)}% n=${n}`;
+  return colorEdge(txt.padStart(w), edge);
+}
+
+// ── Рендер TABLE A / B (существующие) ────────────────────────────────────────
+
+const CELL_W  = 14;
+const LABEL_W = 10;
+
+/**
+ * Печатает двухмерную калибровочную таблицу с ANSI-цветами.
+ *
+ * @param title        - заголовок
+ * @param rowKeys      - значения строк
+ * @param colKeys      - значения tau-столбцов
+ * @param tauStep      - шаг tau в секундах
+ * @param rowLabel     - заголовок левой колонки
+ * @param getLabel     - rowKey → строка для левой колонки
+ * @param getBucket    - (row, col) → BucketAccum | undefined
+ * @param getCrowdProb - (row, bucket) → crowd probability [0..1]
+ * @param minMarkets   - мин. рынков для отображения ячейки
+ */
+function printCalibrationTable(
+  title:        string,
+  rowKeys:      number[],
+  colKeys:      number[],
+  tauStep:      number,
+  rowLabel:     string,
+  getLabel:     (k: number) => string,
+  getBucket:    (r: number, c: number) => BucketAccum | undefined,
+  getCrowdProb: (r: number, b: BucketAccum) => number,
+  minMarkets:   number,
+): void {
+  const W = LABEL_W + colKeys.length * CELL_W;
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  ${title}${RESET}`);
+  console.log(`${BOLD}${CYAN}  Ячейка: real%(bias) n=рынков  ${GREEN}■${RESET} недооценка  ${YELLOW}■${RESET} слабая  ${DIM}■${RESET} переоценка${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+  console.log(`${BOLD}${WHITE}${rowLabel.padEnd(LABEL_W)}${colKeys.map(t => `${t}-${t + tauStep}s`.padStart(CELL_W)).join('')}${RESET}`);
+  console.log(`${DIM}${'─'.repeat(W)}${RESET}`);
+
+  for (const row of rowKeys) {
+    const cells: string[] = [];
+    for (const col of colKeys) {
+      const b = getBucket(row, col);
+      const n = b ? b.upCount + b.downCount : 0;
+      if (!b || n < minMarkets) { cells.push(' '.repeat(CELL_W)); continue; }
+      const real  = b.upCount / n;
+      const crowd = getCrowdProb(row, b);
+      const bias  = crowd - real;
+      const sign  = (bias * 100) >= 0 ? '+' : '';
+      cells.push(colorBias(`${(real * 100).toFixed(0).padStart(3)}%(${sign}${(bias * 100).toFixed(0)}) n=${n}`.padStart(CELL_W), bias));
+    }
+    console.log(getLabel(row).padEnd(LABEL_W) + cells.join(''));
+  }
+}
+
+/**
+ * Печатает авто-инсайты под таблицей.
+ *
+ * @param rowKeys      - значения строк
+ * @param colKeys      - значения tau-столбцов
+ * @param getBucket    - (row, col) → BucketAccum | undefined
+ * @param getCrowdProb - (row, bucket) → crowd probability [0..1]
+ * @param getLabel     - rowKey → строка для вывода
+ * @param tauStep      - шаг tau
+ * @param minMarkets   - мин. рынков
+ *
+ * @remarks
+ * Выводит до 5 выводов: лучшая зона входа, зона переоценки,
+ * систематические строки и тренд по tau.
+ */
+function printInsights(
+  rowKeys:      number[],
+  colKeys:      number[],
+  getBucket:    (r: number, c: number) => BucketAccum | undefined,
+  getCrowdProb: (r: number, b: BucketAccum) => number,
+  getLabel:     (r: number) => string,
+  tauStep:      number,
+  minMarkets:   number,
+): void {
+  interface C { row: number; col: number; bias: number; n: number; real: number; crowd: number; }
+  const cells: C[] = [];
+  for (const row of rowKeys) for (const col of colKeys) {
+    const b = getBucket(row, col); const n = b ? b.upCount + b.downCount : 0;
+    if (!b || n < minMarkets) continue;
+    const real = b.upCount / n, crowd = getCrowdProb(row, b);
+    cells.push({ row, col, bias: crowd - real, n, real, crowd });
+  }
+  if (cells.length === 0) return;
+
+  const rowAgg = new Map<number, { bs: number; ns: number }>();
+  for (const c of cells) { const r = rowAgg.get(c.row) ?? { bs: 0, ns: 0 }; r.bs += c.bias * c.n; r.ns += c.n; rowAgg.set(c.row, r); }
+  const rowBiases = [...rowAgg.entries()].map(([row, { bs, ns }]) => ({ row, avg: bs / ns, n: ns })).sort((a, b) => a.avg - b.avg);
+
+  const colAgg = new Map<number, { bs: number; ns: number }>();
+  for (const c of cells) { const r = colAgg.get(c.col) ?? { bs: 0, ns: 0 }; r.bs += c.bias * c.n; r.ns += c.n; colAgg.set(c.col, r); }
+  const colBiases = [...colAgg.entries()].map(([col, { bs, ns }]) => ({ col, avg: bs / ns })).sort((a, b) => a.col - b.col);
+
+  const sorted   = [...cells].sort((a, b) => a.bias - b.bias);
+  const bestU    = sorted[0];
+  const bestO    = sorted[sorted.length - 1];
+  const sysUnder = rowBiases.filter(r => r.avg < -0.05 && r.n >= minMarkets * 3);
+  const sysOver  = rowBiases.slice().reverse().filter(r => r.avg > 0.05 && r.n >= minMarkets * 3);
+
+  const bullets: string[] = [];
+
+  if (bestU?.bias < -0.05)
+    bullets.push(`${GREEN}${BOLD}●${RESET} Лучшая зона (недооценка): ${BOLD}${getLabel(bestU.row)}, tau ${bestU.col}−${bestU.col + tauStep}s${RESET} — crowd ${(bestU.crowd * 100).toFixed(0)}¢ → ${(bestU.real * 100).toFixed(0)}%, ошибка ${GREEN}${BOLD}${(bestU.bias * 100).toFixed(1)}%${RESET} (n=${bestU.n})`);
+
+  if (bestO?.bias > 0.05)
+    bullets.push(`${DIM}${RED}●${RESET} Зона переоценки: ${getLabel(bestO.row)}, tau ${bestO.col}−${bestO.col + tauStep}s — crowd ${(bestO.crowd * 100).toFixed(0)}¢ → ${(bestO.real * 100).toFixed(0)}%, +${(bestO.bias * 100).toFixed(1)}% (n=${bestO.n})`);
+
+  if (sysUnder.length > 0)
+    bullets.push(`${GREEN}●${RESET} Систематич. недооценка: ${sysUnder.slice(0, 4).map(r => `${GREEN}${getLabel(r.row)}${RESET}(avg ${GREEN}${(r.avg * 100).toFixed(1)}%${RESET},n=${r.n})`).join('  ')}`);
+
+  if (sysOver.length > 0)
+    bullets.push(`${DIM}${RED}●${RESET} Систематич. переоценка: ${sysOver.slice(0, 3).map(r => `${DIM}${getLabel(r.row)}${RESET}(+${(r.avg * 100).toFixed(1)}%,n=${r.n})`).join('  ')}`);
+
+  if (colBiases.length >= 4) {
+    const near = (colBiases[0].avg + colBiases[1].avg) / 2;
+    const far  = (colBiases[colBiases.length - 1].avg + colBiases[colBiases.length - 2].avg) / 2;
+    if (Math.abs(near - far) > 0.03) {
+      const nLabel = `${colBiases[0].col}−${colBiases[1].col + tauStep}s`;
+      const fLabel = `${colBiases[colBiases.length - 2].col}−${colBiases[colBiases.length - 1].col + tauStep}s`;
+      const desc   = near < far
+        ? `чем ближе к экспирации, тем ${GREEN}сильнее недооценка${RESET}`
+        : `при большом tau ${GREEN}недооценка сильнее${RESET}`;
+      bullets.push(`${CYAN}●${RESET} Тренд по tau: ${desc} (near ${nLabel}: ${(near * 100).toFixed(1)}% vs far ${fLabel}: ${(far * 100).toFixed(1)}%)`);
+    }
+  }
+
+  if (bullets.length === 0) return;
+  console.log(); console.log(`${BOLD}  ▸ INSIGHTS${RESET}`); console.log(`${DIM}  ${'─'.repeat(78)}${RESET}`);
+  bullets.forEach((b, i) => console.log(`  ${DIM}${i + 1}.${RESET} ${b}`));
+}
+
+// ── Variant 1: Tau-sliced delta × crowd tables ────────────────────────────────
+
+/**
+ * Вариант 1 — таблицы delta × crowd¢ для каждого tau-окна.
+ *
+ * @param tripleMap  - Map ключ "delta:tau:crowd10"
+ * @param tauWindows - массив tau-окон [[from,to], ...]
+ * @param sortedTaus - все tau-бакеты из tripleMap (отсортированные)
+ * @param config     - конфигурация
+ *
+ * @remarks
+ * Для каждого окна объединяет все tau-бакеты через mergeBuckets,
+ * обеспечивая корректную дедупликацию рынков по slug.
+ */
+function printTauSliced(
+  tripleMap:   Map<string, BucketAccum>,
+  tauWindows:  Array<[number, number]>,
+  sortedTaus:  number[],
+  config:      Config,
+): void {
+  const allDeltas = new Set<number>();
+  for (const key of tripleMap.keys()) allDeltas.add(Number(key.split(':')[0]));
+  const sortedDeltas = [...allDeltas].sort((a, b) => a - b);
+  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const CW = 13;
+
+  for (const [winFrom, winTo] of tauWindows) {
+    const winTaus = sortedTaus.filter(t => t >= winFrom && t < winTo);
+    if (winTaus.length === 0) continue;
+
+    const W = LABEL_W + CROWDS.length * CW;
+    console.log();
+    console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+    console.log(`${BOLD}${CYAN}  VARIANT 1 — DELTA × CROWD¢ | tau ${winFrom}−${winTo}s | ${config.duration.toUpperCase()} | ${config.token.toUpperCase()} book${RESET}`);
+    console.log(`${BOLD}${CYAN}  Ячейка: real%(bias) n=рынков${RESET}`);
+    console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+    console.log(`${BOLD}${WHITE}${'Delta'.padEnd(LABEL_W)}${CROWDS.map(c => `${c}¢`.padStart(CW)).join('')}${RESET}`);
+    console.log(`${DIM}${'─'.repeat(W)}${RESET}`);
+
+    // Prepare (delta, crowd) → merged bucket for this window
+    const merged = new Map<string, BucketAccum>();
+    for (const db of sortedDeltas) {
+      for (const cb of CROWDS) {
+        const parts = winTaus.map(tb => tripleMap.get(`${db}:${tb}:${cb}`)).filter((b): b is BucketAccum => b !== undefined);
+        if (parts.length > 0) merged.set(`${db}:${cb}`, mergeBuckets(parts));
+      }
+    }
+
+    for (const db of sortedDeltas) {
+      const cells: string[] = [];
+      for (const cb of CROWDS) {
+        const b = merged.get(`${db}:${cb}`);
+        const n = b ? b.upCount + b.downCount : 0;
+        if (!b || n < config.minMarkets) { cells.push(' '.repeat(CW)); continue; }
+        const real  = b.upCount / n;
+        const crowd = b.crowdProbSum / b.observations;
+        const bias  = crowd - real;
+        const sign  = (bias * 100) >= 0 ? '+' : '';
+        cells.push(colorBias(`${(real * 100).toFixed(0).padStart(3)}%(${sign}${(bias * 100).toFixed(0)}) n=${n}`.padStart(CW), bias));
+      }
+      const lbl = db >= 0 ? `+$${db}` : `-$${Math.abs(db)}`;
+      console.log(lbl.padEnd(LABEL_W) + cells.join(''));
+    }
+
+    // Insights for this window
+    printInsights(
+      sortedDeltas, CROWDS,
+      (db, cb) => merged.get(`${db}:${cb}`),
+      (_r, b) => b.crowdProbSum / b.observations,
+      d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
+      winTo - winFrom, config.minMarkets,
+    );
+  }
+}
+
+// ── Variant 2: Edge Score table ───────────────────────────────────────────────
+
+/**
+ * Вариант 2 — таблица edge score (crowd¢ × tau), агрегированная по delta.
+ *
+ * @param tripleMap  - Map ключ "delta:tau:crowd10"
+ * @param sortedTaus - все tau-бакеты
+ * @param config     - конфигурация
+ *
+ * @remarks
+ * Edge = real − crowd (инверсия bias).
+ * Положительный edge = crowd недооценивает UP → есть преимущество покупки.
+ */
+function printEdgeTable(
+  tripleMap:  Map<string, BucketAccum>,
+  sortedTaus: number[],
+  config:     Config,
+): void {
+  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const EW = 12;
+  const W  = LABEL_W + sortedTaus.length * EW;
+
+  // For each (crowd, tau): aggregate all delta buckets
+  const edgeMap = new Map<string, BucketAccum>();
+  for (const key of tripleMap.keys()) {
+    const [, tb, cb] = key.split(':').map(Number);
+    const ek = `${cb}:${tb}`;
+    const b  = tripleMap.get(key)!;
+    if (!edgeMap.has(ek)) edgeMap.set(ek, newBucket());
+    const m = edgeMap.get(ek)!;
+    m.crowdProbSum += b.crowdProbSum; m.observations += b.observations; m.spreadSum += b.spreadSum;
+    for (const [slug, res] of b.marketResolutions) {
+      if (!m.marketResolutions.has(slug)) { m.marketResolutions.set(slug, res); if (res === 'UP') m.upCount++; else m.downCount++; }
+    }
+  }
+
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 2 — EDGE SCORE: crowd¢ × tau | edge = real P(UP) − crowd price${RESET}`);
+  console.log(`${BOLD}${CYAN}  ${GREEN}■${RESET} edge > 0 = crowd недооценивает UP (выгодно покупать)  ${RED}■${RESET} edge < 0 = переоценка${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+  console.log(`${BOLD}${WHITE}${'Crowd¢'.padEnd(LABEL_W)}${sortedTaus.map(t => `${t}-${t + config.tauStep}s`.padStart(EW)).join('')}${RESET}`);
+  console.log(`${DIM}${'─'.repeat(W)}${RESET}`);
+
+  const topEdges: Array<{ crowd: number; tau: number; edge: number; n: number; real: number }> = [];
+
+  for (const cb of CROWDS) {
+    const cells: string[] = [];
+    for (const tb of sortedTaus) {
+      const b = edgeMap.get(`${cb}:${tb}`);
+      const n = b ? b.upCount + b.downCount : 0;
+      cells.push(edgeCell(b ? b.upCount / n - cb / 100 : 0, n, config.minMarkets, EW));
+      if (b && n >= config.minMarkets) {
+        const edge = b.upCount / n - cb / 100;
+        topEdges.push({ crowd: cb, tau: tb, edge, n, real: b.upCount / n });
+      }
+    }
+    console.log(`${(cb + '¢').padEnd(LABEL_W)}${cells.join('')}`);
+  }
+
+  // Top positive edge zones
+  topEdges.sort((a, b) => b.edge - a.edge);
+  const top = topEdges.filter(e => e.edge > 0.05).slice(0, 5);
+  if (top.length > 0) {
+    console.log();
+    console.log(`${BOLD}  ▸ ТОП-5 ЗОН С ПОЗИТИВНЫМ EDGE (выгодно покупать UP)${RESET}`);
+    console.log(`${DIM}  ${'─'.repeat(60)}${RESET}`);
+    console.log(`  ${BOLD}${'Crowd¢'.padEnd(10)} ${'Tau'.padEnd(12)} ${'Real%'.padEnd(8)} ${'Edge'.padEnd(8)} n${RESET}`);
+    for (const e of top) {
+      console.log(
+        `  ${(e.crowd + '¢').padEnd(10)} ${(e.tau + '-' + (e.tau + config.tauStep) + 's').padEnd(12)} ` +
+        `${(e.real * 100).toFixed(1).padStart(5)}%   ${colorEdge(`+${(e.edge * 100).toFixed(1)}%`.padStart(7), e.edge)}   ${e.n}`,
+      );
+    }
+  }
+}
+
+// ── Variant 3: Point lookup ───────────────────────────────────────────────────
+
+/**
+ * Вариант 3 — поиск калибровки для конкретной точки (delta, tau, crowd).
+ *
+ * @param tripleMap - Map ключ "delta:tau:crowd10"
+ * @param config    - конфигурация
+ *
+ * @remarks
+ * Если `config.point` задан — ищет ближайший бакет с расширяющимся радиусом.
+ * Если не задан — показывает топ-5 зон с наибольшим позитивным edge.
+ *
+ * Сигнал: STRONG BUY (edge ≥ 15%), BUY (7-15%), NEUTRAL (±7%), SELL (7-15%), STRONG SELL (≥ 15%).
+ */
+function printPointLookup(
+  tripleMap: Map<string, BucketAccum>,
+  config:    Config,
+): void {
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(70)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 3 — POINT LOOKUP${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(70)}${RESET}`);
+
+  if (!config.point) {
+    // Show top-5 zones
+    const zones: Array<{ db: number; tb: number; cb: number; edge: number; n: number; real: number; crowd: number }> = [];
+    for (const [key, b] of tripleMap) {
+      const n = b.upCount + b.downCount;
+      if (n < config.minMarkets) continue;
+      const [db, tb, cb] = key.split(':').map(Number);
+      const real  = b.upCount / n;
+      const crowd = cb / 100;
+      zones.push({ db, tb, cb, edge: real - crowd, n, real, crowd });
+    }
+    zones.sort((a, b) => b.edge - a.edge);
+    console.log(`  ${DIM}--point не задан. Топ-5 зон с максимальным edge:${RESET}`);
+    console.log();
+    console.log(`  ${BOLD}${'Delta'.padEnd(10)} ${'Tau'.padEnd(12)} ${'Crowd'.padEnd(8)} ${'Real%'.padEnd(8)} ${'Edge'.padEnd(8)} ${'n'.padEnd(6)} Сигнал${RESET}`);
+    console.log(`  ${DIM}${'─'.repeat(65)}${RESET}`);
+    for (const z of zones.filter(z => z.edge > 0).slice(0, 5)) {
+      const dStr = z.db >= 0 ? `+$${z.db}` : `-$${Math.abs(z.db)}`;
+      const tStr = `${z.tb}-${z.tb + config.tauStep}s`;
+      const sig  = z.edge >= 0.15 ? `${GREEN}${BOLD}STRONG BUY${RESET}` : z.edge >= 0.07 ? `${GREEN}BUY${RESET}` : 'NEUTRAL';
+      console.log(`  ${dStr.padEnd(10)} ${tStr.padEnd(12)} ${(z.cb + '¢').padEnd(8)} ${(z.real * 100).toFixed(1).padStart(5)}%   ${colorEdge(`+${(z.edge * 100).toFixed(1)}%`.padStart(7), z.edge)}   ${z.n}  ${sig}`);
+    }
+    return;
+  }
+
+  const { delta, tau, crowd } = config.point;
+  const db = toBucket(delta, config.deltaStep);
+  const tb = toBucket(tau, config.tauStep);
+  const cb = crowdBucket10(crowd);
+
+  // Nearest-neighbor search with expanding radius
+  let result: BucketAccum | null = null;
+  let radius = 0;
+  while (radius <= 2 && !result) {
+    const candidates: BucketAccum[] = [];
+    for (let dd = -radius; dd <= radius; dd++) for (let dt = -radius; dt <= radius; dt++) for (let dc = -radius; dc <= radius; dc++) {
+      const key = `${db + dd * config.deltaStep}:${tb + dt * config.tauStep}:${Math.max(10, Math.min(90, cb + dc * 10))}`;
+      const b   = tripleMap.get(key);
+      if (b) candidates.push(b);
+    }
+    if (candidates.length > 0) {
+      const merged = mergeBuckets(candidates);
+      if (merged.upCount + merged.downCount >= config.minMarkets) { result = merged; break; }
+    }
+    radius++;
+  }
+
+  const dStr = db >= 0 ? `+$${db}` : `-$${Math.abs(db)}`;
+  console.log();
+  console.log(`  Запрос: delta=${dStr} (input: ${delta >= 0 ? '+' : ''}$${delta}), tau=${tb}-${tb + config.tauStep}s (input: ${tau}s), crowd=${cb}¢ (input: ${crowd}¢)`);
+  if (radius > 0) console.log(`  ${DIM}Точного совпадения нет, использован радиус поиска ${radius}${RESET}`);
+  console.log();
+
+  if (!result) {
+    console.log(`  ${RED}Недостаточно данных в базе калибровки для этой зоны.${RESET}`);
+    return;
+  }
+
+  const n     = result.upCount + result.downCount;
+  const real  = result.upCount / n;
+  const edge  = real - crowd / 100;
+  const bias  = crowd / 100 - real;
+
+  const signal = edge >= 0.15 ? `${GREEN}${BOLD}● STRONG BUY UP${RESET}  (crowd сильно недооценивает)` :
+                 edge >= 0.07 ? `${GREEN}● BUY UP${RESET}  (crowd недооценивает)` :
+                 edge >= -0.07 ? `${DIM}◯ NEUTRAL${RESET}` :
+                 edge >= -0.15 ? `${RED}● SELL / FADE UP${RESET}  (crowd переоценивает)` :
+                                 `${RED}${BOLD}● STRONG SELL / FADE UP${RESET}  (crowd сильно переоценивает)`;
+
+  const bar = Array(40).fill('░');
+  const realPos  = Math.round(real * 40);
+  const crowdPos = Math.round((crowd / 100) * 40);
+  for (let i = 0; i < realPos; i++) bar[i] = '█';
+  if (crowdPos >= 0 && crowdPos < 40) bar[crowdPos] = '│';
+
+  console.log(`  ${'Показатель'.padEnd(22)} ${'Значение'.padEnd(12)} Бар`);
+  console.log(`  ${DIM}${'─'.repeat(60)}${RESET}`);
+  console.log(`  ${'Crowd price'.padEnd(22)} ${(crowd + '¢').padEnd(12)} (implied P(UP) по рынку)`);
+  console.log(`  ${'Calibrated P(UP)'.padEnd(22)} ${(real * 100).toFixed(1).padStart(5)}%       ${bar.join('')}`);
+  console.log(`  ${'Edge (real−crowd)'.padEnd(22)} ${colorEdge((edge >= 0 ? '+' : '') + (edge * 100).toFixed(1) + '%', edge)}`);
+  console.log(`  ${'Bias (crowd−real)'.padEnd(22)} ${colorBias((bias >= 0 ? '+' : '') + (bias * 100).toFixed(1) + '%', bias)}`);
+  console.log(`  ${'Исторических рынков'.padEnd(22)} ${n}`);
+  console.log();
+  console.log(`  Сигнал: ${signal}`);
+}
+
+// ── Variant 4: ASCII Heatmap ──────────────────────────────────────────────────
+
+/**
+ * Вариант 4 — ASCII тепловая карта delta × crowd¢ для заданного tau-окна.
+ *
+ * @param tripleMap - Map ключ "delta:tau:crowd10"
+ * @param tauWindow - tau-окно [from, to]
+ * @param sortedTaus - все tau-бакеты
+ * @param config    - конфигурация
+ *
+ * @remarks
+ * Символы блоков по |edge|:
+ * · < 3%   ░ < 6%   ▒ < 10%   ▓ < 15%   █ ≥ 15%
+ *
+ * Цвет: зелёный = edge > 0 (недооценка), красный = edge < 0 (переоценка).
+ * ANSI-коды не влияют на выравнивание: padding строится ДО добавления цвета.
+ */
+function printHeatmap(
+  tripleMap:  Map<string, BucketAccum>,
+  tauWindow:  [number, number],
+  sortedTaus: number[],
+  config:     Config,
+): void {
+  const allDeltas = new Set<number>();
+  for (const key of tripleMap.keys()) allDeltas.add(Number(key.split(':')[0]));
+  const sortedDeltas = [...allDeltas].sort((a, b) => b - a); // top-down: max delta first
+  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const CW = 5; // visual width per cell: "██  " = block(1) + space(1) + sep(1) = 3... use 4
+
+  const [winFrom, winTo] = tauWindow;
+  const winTaus = sortedTaus.filter(t => t >= winFrom && t < winTo);
+  if (winTaus.length === 0) {
+    console.log(`  ${DIM}Нет данных для tau-окна ${winFrom}-${winTo}s${RESET}`); return;
+  }
+
+  // Build (delta, crowd) → merged bucket
+  const hm = new Map<string, BucketAccum>();
+  for (const db of sortedDeltas) for (const cb of CROWDS) {
+    const parts = winTaus.map(tb => tripleMap.get(`${db}:${tb}:${cb}`)).filter((b): b is BucketAccum => b !== undefined);
+    if (parts.length > 0) hm.set(`${db}:${cb}`, mergeBuckets(parts));
+  }
+
+  const W = LABEL_W + CROWDS.length * CW;
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 4 — HEATMAP: delta × crowd¢ | tau ${winFrom}−${winTo}s${RESET}`);
+  console.log(`${BOLD}${CYAN}  Символ = |edge|: · <3%  ░ <6%  ▒ <10%  ▓ <15%  █ ≥15%  Цвет: ${GREEN}зелёный${RESET}=недооценка  ${RED}красный${RESET}=переоценка${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(W)}${RESET}`);
+
+  // Header (no ANSI — pure padding)
+  const header = 'Delta'.padEnd(LABEL_W) + CROWDS.map(c => `${c}¢`.padStart(CW)).join('');
+  console.log(`${BOLD}${WHITE}${header}${RESET}`);
+  console.log(`${DIM}${'─'.repeat(W)}${RESET}`);
+
+  for (const db of sortedDeltas) {
+    const dStr  = (db >= 0 ? `+$${db}` : `-$${Math.abs(db)}`).padEnd(LABEL_W);
+    const cells = CROWDS.map(cb => {
+      const b = hm.get(`${db}:${cb}`);
+      const n = b ? b.upCount + b.downCount : 0;
+      if (!b || n < config.minMarkets) return ' '.repeat(CW);
+      const real  = b.upCount / n;
+      const edge  = real - cb / 100;
+      const char  = blockChar(Math.abs(edge));
+      // pad first (CW-1 spaces before char), then color
+      const padded = (char + ' ').padStart(CW);
+      return colorEdge(padded, edge);
+    });
+    // Use padEndRaw-safe join: each colored cell is already CW visual chars
+    console.log(dStr + cells.join(''));
+  }
+
+  // Legend with edge values
+  console.log();
+  console.log(`  ${DIM}n<${config.minMarkets} показывается пустым. Ниже — значения edge по знаковым ячейкам:${RESET}`);
+  console.log();
+
+  // Mini summary: best and worst cells
+  const summary: Array<{ db: number; cb: number; edge: number; n: number; real: number }> = [];
+  for (const [key, b] of hm) {
+    const [db, cb] = key.split(':').map(Number);
+    const n = b.upCount + b.downCount;
+    if (n < config.minMarkets) continue;
+    summary.push({ db, cb, edge: b.upCount / n - cb / 100, n, real: b.upCount / n });
+  }
+  summary.sort((a, b) => b.edge - a.edge);
+
+  if (summary.length > 0) {
+    console.log(`  ${BOLD}${'Delta'.padEnd(10)} ${'Crowd¢'.padEnd(8)} ${'Real%'.padEnd(8)} ${'Edge'.padEnd(10)} n${RESET}`);
+    console.log(`  ${DIM}${'─'.repeat(45)}${RESET}`);
+    const show = [...summary.slice(0, 3), ...summary.slice(-3).reverse()];
+    let shownSep = false;
+    for (const s of show) {
+      if (!shownSep && s.edge < 0) { console.log(`  ${DIM}${'·'.repeat(45)}${RESET}`); shownSep = true; }
+      const dS = s.db >= 0 ? `+$${s.db}` : `-$${Math.abs(s.db)}`;
+      const eS = (s.edge >= 0 ? '+' : '') + (s.edge * 100).toFixed(1) + '%';
+      console.log(`  ${dS.padEnd(10)} ${(s.cb + '¢').padEnd(8)} ${(s.real * 100).toFixed(1).padStart(5)}%   ${colorEdge(eS.padStart(8), s.edge)}   ${s.n}`);
+    }
+  }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
   const config = parseArgs();
-  const buckets = new Map<string, BucketAccum>();
+  const show   = config.show;
+  const showAll = show.has('all');
 
-  // Собираем все файлы
   const files: string[] = [];
   for (const dir of config.dirs) {
     let entries = readdirSync(dir).filter(f => f.endsWith('.jsonl.gz') || f.endsWith('.jsonl'));
-    // Фильтр по активу (по имени файла)
-    if (config.asset) {
-      entries = entries.filter(f => f.toLowerCase().includes(config.asset));
-    }
-    for (const entry of entries) {
-      files.push(join(dir, entry));
-    }
+    if (config.asset) entries = entries.filter(f => f.toLowerCase().includes(config.asset));
+    for (const e of entries) files.push(join(dir, e));
   }
-  console.error(`Found ${files.length} snapshot files in ${config.dirs.length} dirs`);
 
-  let processed = 0;
-  let skipped = 0;
-  let totalObservations = 0;
+  const tokenLabel = config.token === 'both' ? 'UP+DOWN avg' : `${config.token.toUpperCase()} book`;
+  console.error(`Found ${files.length} files | token: ${tokenLabel} | duration: ${config.duration}`);
+  console.error(`Show: ${showAll ? 'all' : [...show].join(',')}`);
 
-  /** Бакеты crowd_price × tau, по длительности: ключ = "duration:crowdCents:tauBucket" */
-  const crowdTauBuckets = new Map<string, BucketAccum>();
-  /** Счётчик рынков по длительности */
-  const durationCounts = { '5min': 0, '15min': 0, 'other': 0 };
+  let processed = 0, skipped = 0, totalObs = 0;
+  const deltaBuckets    = new Map<string, BucketAccum>(); // "delta:tau"
+  const crowdTauBuckets = new Map<string, BucketAccum>(); // "dur:crowd5:tau"
+  const tripleMap       = new Map<string, BucketAccum>(); // "delta:tau:crowd10"
+  const durationCounts  = { '5min': 0, '15min': 0, 'other': 0 };
 
   for (const file of files) {
-    const data = await parseSnapshot(file, config.maxTau);
-    if (!data) {
-      skipped++;
-      continue;
-    }
+    const data = await parseSnapshot(file, config.maxTau, config.token);
+    if (!data) { skipped++; continue; }
     processed++;
-    totalObservations += data.observations.length;
+    totalObs += data.observations.length;
     durationCounts[data.duration]++;
 
     for (const obs of data.observations) {
-      // Ограничиваем дельту
       if (Math.abs(obs.delta) > config.maxDelta) continue;
+      const tb  = toBucket(obs.tauSec, config.tauStep);
+      const cb5 = crowdBucket5(obs.midPriceCents);
 
-      const db = toBucket(obs.delta, config.deltaStep);
-      const tb = toBucket(obs.tauSec, config.tauStep);
-      const key = bucketKey(db, tb);
+      if (config.duration === 'all' || data.duration === config.duration) {
+        const db  = toBucket(obs.delta, config.deltaStep);
 
-      let bucket = buckets.get(key);
-      if (!bucket) {
-        bucket = {
-          crowdProbSum: 0,
-          observations: 0,
-          upCount: 0,
-          downCount: 0,
-          marketResolutions: new Map(),
-          spreadSum: 0,
-        };
-        buckets.set(key, bucket);
+        // Existing: delta×tau
+        const dKey = bucketKey(db, tb);
+        if (!deltaBuckets.has(dKey)) deltaBuckets.set(dKey, newBucket());
+        accumulate(deltaBuckets.get(dKey)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
+
+        // New: delta×tau×crowd (10¢ buckets)
+        const cb10  = crowdBucket10(obs.midPriceCents);
+        const tKey  = `${db}:${tb}:${cb10}`;
+        if (!tripleMap.has(tKey)) tripleMap.set(tKey, newBucket());
+        accumulate(tripleMap.get(tKey)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
       }
 
-      bucket.crowdProbSum += obs.midPriceCents / 100;
-      bucket.observations++;
-      bucket.spreadSum += obs.spreadCents;
-
-      if (!bucket.marketResolutions.has(data.slug)) {
-        bucket.marketResolutions.set(data.slug, data.resolution);
-        if (data.resolution === 'UP') bucket.upCount++;
-        else bucket.downCount++;
-      }
-
-      // ── Аккумуляция для crowd_price × tau, split по duration ──
-      const crowdCentsBucket = Math.round(obs.midPriceCents / 5) * 5;
-
-      // Для каждой duration + "all"
+      // Existing: crowd5×tau (all durations)
       for (const dur of [data.duration, 'all'] as const) {
-        const ctKey = `${dur}:${crowdCentsBucket}:${tb}`;
-        let ctBucket = crowdTauBuckets.get(ctKey);
-        if (!ctBucket) {
-          ctBucket = {
-            crowdProbSum: 0,
-            observations: 0,
-            upCount: 0,
-            downCount: 0,
-            marketResolutions: new Map(),
-            spreadSum: 0,
-          };
-          crowdTauBuckets.set(ctKey, ctBucket);
-        }
-        ctBucket.crowdProbSum += obs.midPriceCents / 100;
-        ctBucket.observations++;
-        ctBucket.spreadSum += obs.spreadCents;
-        if (!ctBucket.marketResolutions.has(data.slug)) {
-          ctBucket.marketResolutions.set(data.slug, data.resolution);
-          if (data.resolution === 'UP') ctBucket.upCount++;
-          else ctBucket.downCount++;
-        }
+        const ck = `${dur}:${cb5}:${tb}`;
+        if (!crowdTauBuckets.has(ck)) crowdTauBuckets.set(ck, newBucket());
+        accumulate(crowdTauBuckets.get(ck)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
       }
     }
 
-    if (processed % 50 === 0) {
-      console.error(`  Processed ${processed}/${files.length} files, ${totalObservations} observations...`);
-    }
+    if (processed % 50 === 0) console.error(`  Processed ${processed}/${files.length}, obs: ${totalObs}...`);
   }
 
-  console.error(`\nDone: ${processed} markets processed, ${skipped} skipped, ${totalObservations} total observations`);
+  const dLabel = config.duration === 'all' ? 'ALL MARKETS' : `${config.duration.toUpperCase()} MARKETS`;
+  console.error(`\nDone: ${processed} markets | ${skipped} skipped | ${totalObs} obs`);
   console.error(`  5-min: ${durationCounts['5min']}, 15-min: ${durationCounts['15min']}, other: ${durationCounts['other']}\n`);
 
-  // ── Вывод результатов ─────────────────────────────────────────────────────
+  // ── Оси ──────────────────────────────────────────────────────────────────
 
-  // Собираем все уникальные бакеты и сортируем
-  const allDeltas = new Set<number>();
-  const allTaus = new Set<number>();
-  for (const [key] of buckets) {
-    const [d, t] = key.split(':').map(Number);
-    allDeltas.add(d);
-    allTaus.add(t);
+  const allDeltas = new Set<number>(), allTaus = new Set<number>();
+  for (const key of deltaBuckets.keys()) {
+    const [d, t] = key.split(':').map(Number); allDeltas.add(d); allTaus.add(t);
   }
   const sortedDeltas = [...allDeltas].sort((a, b) => a - b);
-  const sortedTaus = [...allTaus].sort((a, b) => a - b);
+  const sortedTaus   = [...allTaus].sort((a, b) => a - b);
 
-  // ── 1. Сводная таблица: delta × tau ─────────────────────────────────────
+  // ── TABLE A ───────────────────────────────────────────────────────────────
 
-  console.log('='.repeat(120));
-  console.log('CROWD CALIBRATION: crowd implied P(UP) vs realized P(UP)');
-  console.log('='.repeat(120));
-  console.log(`Delta step: $${config.deltaStep}, Tau step: ${config.tauStep}s, Markets: ${processed}, Observations: ${totalObservations}`);
-  console.log();
-
-  // Результаты для JSON
-  const results: Array<{
-    deltaBucket: number;
-    tauBucket: number;
-    crowdProb: number;
-    realProb: number;
-    error: number;
-    absError: number;
-    markets: number;
-    observations: number;
-    avgSpread: number;
-  }> = [];
-
-  // Header
-  const tauHeader = sortedTaus.map(t => `${t}-${t + config.tauStep}s`.padStart(12));
-  console.log(`${'Delta ($)'.padEnd(14)}${tauHeader.join('')}`);
-  console.log('-'.repeat(14 + sortedTaus.length * 12));
-
-  for (const delta of sortedDeltas) {
-    const row: string[] = [];
-    const deltaLabel = delta >= 0 ? `+$${delta}` : `-$${Math.abs(delta)}`;
-
-    for (const tau of sortedTaus) {
-      const key = bucketKey(delta, tau);
-      const b = buckets.get(key);
-
-      if (!b || b.upCount + b.downCount < 3) {
-        row.push('   ---   '.padStart(12));
-        continue;
-      }
-
-      const crowdProb = b.crowdProbSum / b.observations;
-      const totalMarkets = b.upCount + b.downCount;
-      const realProb = b.upCount / totalMarkets;
-      const error = crowdProb - realProb;
-
-      results.push({
-        deltaBucket: delta,
-        tauBucket: tau,
-        crowdProb: Math.round(crowdProb * 1000) / 1000,
-        realProb: Math.round(realProb * 1000) / 1000,
-        error: Math.round(error * 1000) / 1000,
-        absError: Math.round(Math.abs(error) * 1000) / 1000,
-        markets: totalMarkets,
-        observations: b.observations,
-        avgSpread: Math.round(b.spreadSum / b.observations * 10) / 10,
-      });
-
-      // Форматируем: crowd→real (err)
-      const c = (crowdProb * 100).toFixed(0).padStart(2);
-      const r = (realProb * 100).toFixed(0).padStart(2);
-      const e = (error * 100).toFixed(0);
-      const sign = Number(e) > 0 ? '+' : '';
-      row.push(`${c}→${r}(${sign}${e})`.padStart(12));
-    }
-
-    console.log(`${deltaLabel.padEnd(14)}${row.join('')}`);
-  }
-
-  // ── 2. Топ ошибок толпы ────────────────────────────────────────────────
-
-  console.log();
-  console.log('='.repeat(80));
-  console.log('TOP CROWD ERRORS (where crowd is most wrong)');
-  console.log('='.repeat(80));
-
-  const significantResults = results.filter(r => r.markets >= 5);
-  significantResults.sort((a, b) => b.absError - a.absError);
-
-  console.log(`${'Delta'.padEnd(10)} ${'Tau'.padEnd(10)} ${'Crowd%'.padEnd(8)} ${'Real%'.padEnd(8)} ${'Error'.padEnd(8)} ${'Markets'.padEnd(8)} ${'Spread¢'.padEnd(8)}`);
-  console.log('-'.repeat(70));
-
-  for (const r of significantResults.slice(0, 20)) {
-    const d = r.deltaBucket >= 0 ? `+$${r.deltaBucket}` : `-$${Math.abs(r.deltaBucket)}`;
-    const errStr = r.error > 0 ? `+${(r.error * 100).toFixed(1)}%` : `${(r.error * 100).toFixed(1)}%`;
-    console.log(
-      `${d.padEnd(10)} ${(r.tauBucket + 's').padEnd(10)} ${(r.crowdProb * 100).toFixed(1).padStart(5)}%  ${(r.realProb * 100).toFixed(1).padStart(5)}%  ${errStr.padStart(7)}  ${String(r.markets).padStart(5)}    ${r.avgSpread.toFixed(1).padStart(5)}`,
+  if (showAll || show.has('a')) {
+    printCalibrationTable(
+      `TABLE A — DELTA × TAU | ${dLabel} | ${tokenLabel}`,
+      sortedDeltas, sortedTaus, config.tauStep,
+      'Delta ($)', d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
+      (d, t) => deltaBuckets.get(bucketKey(d, t)),
+      (_, b) => b.crowdProbSum / b.observations,
+      config.minMarkets,
+    );
+    printInsights(
+      sortedDeltas, sortedTaus,
+      (d, t) => deltaBuckets.get(bucketKey(d, t)),
+      (_, b) => b.crowdProbSum / b.observations,
+      d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
+      config.tauStep, config.minMarkets,
     );
   }
 
-  // ── 3. Калибровка по crowd price ───────────────────────────────────────
-  // Для каждого crowd price bucket (5¢ шаг): реальный P(UP)
+  // ── TABLE B ───────────────────────────────────────────────────────────────
 
-  console.log();
-  console.log('='.repeat(80));
-  console.log('CALIBRATION CURVE: crowd price → realized P(UP)');
-  console.log('='.repeat(80));
-
-  const crowdBuckets = new Map<number, { upCount: number; downCount: number; markets: Set<string> }>();
-
-  for (const [key, b] of buckets) {
-    for (const [slug, res] of b.marketResolutions) {
-      // Нужен crowd price для этого рынка — берём средний по наблюдениям
-      // Упрощение: используем средний crowd prob бакета
-      const crowdCentsBucket = Math.round((b.crowdProbSum / b.observations) * 100 / 5) * 5; // 5¢ шаг
-      let cb = crowdBuckets.get(crowdCentsBucket);
-      if (!cb) {
-        cb = { upCount: 0, downCount: 0, markets: new Set() };
-        crowdBuckets.set(crowdCentsBucket, cb);
-      }
-      if (!cb.markets.has(`${slug}:${key}`)) {
-        cb.markets.add(`${slug}:${key}`);
-        if (res === 'UP') cb.upCount++;
-        else cb.downCount++;
-      }
+  function printCrowdTable(durFilter: string, label: string): void {
+    const ctTaus = new Set<number>(), ctCrowds = new Set<number>();
+    for (const key of crowdTauBuckets.keys()) {
+      const [dur, crowd, tau] = key.split(':');
+      if (dur !== durFilter) continue;
+      ctCrowds.add(Number(crowd)); ctTaus.add(Number(tau));
     }
-  }
-
-  const crowdPriceBuckets = [...crowdBuckets.entries()]
-    .filter(([, v]) => v.upCount + v.downCount >= 5)
-    .sort(([a], [b]) => a - b);
-
-  console.log(`${'Crowd¢'.padEnd(10)} ${'Real P(UP)'.padEnd(12)} ${'Error'.padEnd(10)} ${'Markets'.padEnd(10)} ${'Bar'}`);
-  console.log('-'.repeat(70));
-
-  for (const [cents, data] of crowdPriceBuckets) {
-    const total = data.upCount + data.downCount;
-    const realProb = data.upCount / total;
-    const crowdProb = cents / 100;
-    const error = crowdProb - realProb;
-    const errStr = error > 0 ? `+${(error * 100).toFixed(1)}%` : `${(error * 100).toFixed(1)}%`;
-
-    const barLen = Math.round(realProb * 40);
-    const bar = '█'.repeat(barLen) + '░'.repeat(40 - barLen);
-    const marker = Math.round(crowdProb * 40);
-    const barArr = bar.split('');
-    if (marker >= 0 && marker < 40) barArr[marker] = '│';
-
-    console.log(
-      `${(cents + '¢').padEnd(10)} ${(realProb * 100).toFixed(1).padStart(5)}%      ${errStr.padStart(7)}    ${String(total).padStart(5)}     ${barArr.join('')}`,
+    if (ctTaus.size === 0) return;
+    const sTaus   = [...ctTaus].sort((a, b) => a - b);
+    const sCrowds = [...ctCrowds].sort((a, b) => a - b).filter(c => c >= 10 && c <= 95);
+    printCalibrationTable(
+      `TABLE B — CROWD PRICE × TAU | ${label} | ${tokenLabel}`,
+      sCrowds, sTaus, config.tauStep,
+      'Crowd¢', c => `${c}¢`,
+      (c, t) => crowdTauBuckets.get(`${durFilter}:${c}:${t}`),
+      (c, _) => c / 100,
+      config.minMarkets,
+    );
+    printInsights(
+      sCrowds, sTaus,
+      (c, t) => crowdTauBuckets.get(`${durFilter}:${c}:${t}`),
+      (c, _) => c / 100,
+      c => `${c}¢`,
+      config.tauStep, config.minMarkets,
     );
   }
 
-  // ── 4. Crowd Price × Tau матрица (split по duration) ─────────────────
-  // Для каждого crowd price bucket (5¢) × tau bucket (30s): реальный P(UP)
+  if (showAll || show.has('b')) {
+    if (config.duration === 'all') {
+      if (durationCounts['5min']  > 0) printCrowdTable('5min',  '5-MIN MARKETS');
+      if (durationCounts['15min'] > 0) printCrowdTable('15min', '15-MIN MARKETS');
+      printCrowdTable('all', 'ALL MARKETS');
+    } else {
+      printCrowdTable(config.duration, dLabel);
+    }
+  }
 
-  function printCrowdTauMatrix(durationFilter: string, label: string): void {
-    // Собираем уникальные tau и crowd price бакеты для этого duration
-    const ctTaus = new Set<number>();
-    const ctCrowds = new Set<number>();
-    for (const [key] of crowdTauBuckets) {
-      const parts = key.split(':');
-      if (parts[0] !== durationFilter) continue;
-      ctCrowds.add(Number(parts[1]));
-      ctTaus.add(Number(parts[2]));
+  // ── TOP ERRORS ────────────────────────────────────────────────────────────
+
+  if (showAll || show.has('top')) {
+    const results: Array<{ d: number; t: number; crowdP: number; realP: number; bias: number; n: number; spread: number }> = [];
+    for (const [key, b] of deltaBuckets) {
+      const [d, t] = key.split(':').map(Number);
+      const n = b.upCount + b.downCount;
+      if (n < config.minMarkets) continue;
+      const cp = b.crowdProbSum / b.observations, rp = b.upCount / n;
+      results.push({ d, t, crowdP: cp, realP: rp, bias: cp - rp, n, spread: b.spreadSum / b.observations });
     }
-    if (ctTaus.size === 0) {
-      console.log(`\n(No data for ${label})\n`);
-      return;
-    }
-    const sTaus = [...ctTaus].sort((a, b) => a - b);
-    const sCrowds = [...ctCrowds].sort((a, b) => a - b)
-      .filter(c => c >= 10 && c <= 95); // Интересный диапазон
+    results.sort((a, b) => Math.abs(b.bias) - Math.abs(a.bias));
 
     console.log();
-    console.log('='.repeat(14 + sTaus.length * 14));
-    console.log(`CROWD PRICE × TAU: real P(UP) | ${label}`);
-    console.log('='.repeat(14 + sTaus.length * 14));
-    console.log(`Формат: crowd¢ → real%(ошибка) | Минимум 5 рынков в бакете`);
+    console.log(`${BOLD}${CYAN}${'═'.repeat(75)}${RESET}`);
+    console.log(`${BOLD}${CYAN}  TOP-20 CROWD ERRORS (DELTA×TAU) — ${dLabel}${RESET}`);
+    console.log(`${BOLD}${CYAN}${'═'.repeat(75)}${RESET}`);
+    console.log(`${BOLD}${'Delta'.padEnd(10)} ${'Tau'.padEnd(12)} ${'Crowd%'.padEnd(8)} ${'Real%'.padEnd(8)} ${'Bias'.padEnd(10)} ${'n'.padEnd(6)} Spread¢${RESET}`);
+    console.log(`${DIM}${'─'.repeat(68)}${RESET}`);
+    for (const r of results.slice(0, 20)) {
+      const d  = r.d >= 0 ? `+$${r.d}` : `-$${Math.abs(r.d)}`;
+      const bs = r.bias > 0 ? `${DIM}+${(r.bias * 100).toFixed(1)}%${RESET}` : `${BOLD}${GREEN}-${Math.abs(r.bias * 100).toFixed(1)}%${RESET}`;
+      console.log(`${d.padEnd(10)} ${(r.t + 's').padEnd(12)} ${(r.crowdP * 100).toFixed(1).padStart(5)}%   ${(r.realP * 100).toFixed(1).padStart(5)}%   ${bs}    ${String(r.n).padStart(4)}    ${r.spread.toFixed(1).padStart(5)}`);
+    }
+  }
+
+  // ── CALIBRATION CURVE ─────────────────────────────────────────────────────
+
+  if (showAll || show.has('curve')) {
+    const curveKey = config.duration === 'all' ? 'all' : config.duration;
+    const curveTaus = new Set<number>(), curveCrowds = new Set<number>();
+    for (const key of crowdTauBuckets.keys()) {
+      const [dur, crowd, tau] = key.split(':');
+      if (dur !== curveKey) continue;
+      curveCrowds.add(Number(crowd)); curveTaus.add(Number(tau));
+    }
+    const curveData = new Map<number, { up: number; down: number }>();
+    for (const crowd of curveCrowds) for (const tau of curveTaus) {
+      const b = crowdTauBuckets.get(`${curveKey}:${crowd}:${tau}`);
+      if (!b) continue;
+      const c = curveData.get(crowd) ?? { up: 0, down: 0 };
+      c.up += b.upCount; c.down += b.downCount; curveData.set(crowd, c);
+    }
+    const entries = [...curveData.entries()].filter(([, v]) => v.up + v.down >= config.minMarkets).sort(([a], [b]) => a - b);
+
     console.log();
+    console.log(`${BOLD}${CYAN}${'═'.repeat(78)}${RESET}`);
+    console.log(`${BOLD}${CYAN}  CALIBRATION CURVE — crowd price → realized P(UP)${RESET}`);
+    console.log(`${BOLD}${CYAN}${'═'.repeat(78)}${RESET}`);
+    console.log(`${BOLD}${'Crowd¢'.padEnd(8)} ${'Real%'.padEnd(8)} ${'Bias'.padEnd(10)} ${'n'.padEnd(7)} Bar (│ = crowd price)${RESET}`);
+    console.log(`${DIM}${'─'.repeat(70)}${RESET}`);
 
-    const tHeader = sTaus.map(t => `${t}-${t + config.tauStep}s`.padStart(14));
-    console.log(`${'Crowd¢'.padEnd(14)}${tHeader.join('')}`);
-    console.log('-'.repeat(14 + sTaus.length * 14));
-
-    for (const crowd of sCrowds) {
-      const row: string[] = [];
-      for (const tau of sTaus) {
-        const ctKey = `${durationFilter}:${crowd}:${tau}`;
-        const b = crowdTauBuckets.get(ctKey);
-        const totalMkts = b ? b.upCount + b.downCount : 0;
-        if (!b || totalMkts < 5) {
-          row.push('  ---  '.padStart(14));
-          continue;
-        }
-        const realProb = b.upCount / totalMkts;
-        const crowdProb = crowd / 100;
-        const error = crowdProb - realProb;
-        const r = (realProb * 100).toFixed(0).padStart(3);
-        const e = (error * 100).toFixed(0);
-        const sign = Number(e) > 0 ? '+' : '';
-        row.push(`${r}%(${sign}${e}) n=${totalMkts}`.padStart(14));
-      }
-      console.log(`${(crowd + '¢').padEnd(14)}${row.join('')}`);
+    let biasSum = 0, totalN = 0;
+    for (const [cents, d] of entries) {
+      const n = d.up + d.down, real = d.up / n, crowd = cents / 100, bias = crowd - real;
+      biasSum += bias * n; totalN += n;
+      const bar = ('█'.repeat(Math.round(real * 40)) + '░'.repeat(40 - Math.round(real * 40))).split('');
+      const m   = Math.round(crowd * 40); if (m >= 0 && m < 40) bar[m] = '│';
+      const bs  = bias > 0 ? `${DIM}+${(bias * 100).toFixed(1)}%${RESET}` : `${BOLD}${GREEN}-${Math.abs(bias * 100).toFixed(1)}%${RESET}`;
+      console.log(`${(cents + '¢').padEnd(8)} ${(real * 100).toFixed(1).padStart(5)}%   ${bs}    ${String(n).padStart(5)}   ${bar.join('')}`);
+    }
+    if (totalN > 0) {
+      const avg = biasSum / totalN;
+      const dir = avg > 0.01 ? `${DIM}переоценивает${RESET}` : avg < -0.01 ? `${GREEN}${BOLD}недооценивает${RESET}` : 'хорошо откалибрована';
+      console.log(); console.log(`  ${DIM}▸ Итог:${RESET} толпа в среднем ${dir} UP на ${Math.abs(avg * 100).toFixed(1)}% (n=${totalN})`);
     }
   }
 
-  // Печатаем для 5-мин, 15-мин и всех
-  if (durationCounts['5min'] > 0) printCrowdTauMatrix('5min', '5-MINUTE MARKETS');
-  if (durationCounts['15min'] > 0) printCrowdTauMatrix('15min', '15-MINUTE MARKETS');
-  printCrowdTauMatrix('all', 'ALL MARKETS');
+  // ── VARIANT 1: Tau-sliced ─────────────────────────────────────────────────
 
-  // ── 5. Дискордантные моменты ───────────────────────────────────────────
-  // Когда стакан > 55¢ (crowd thinks UP) но BTC < strike (delta < 0)
-
-  console.log();
-  console.log('='.repeat(80));
-  console.log('DISCORDANT MOMENTS: crowd says UP (mid>55¢) but BTC < strike (delta<0)');
-  console.log('='.repeat(80));
-
-  let discordUpCount = 0;
-  let discordDownCount = 0;
-  let discordTotal = 0;
-  const discordByTau = new Map<number, { up: number; down: number }>();
-
-  for (const [key, b] of buckets) {
-    const [d, t] = key.split(':').map(Number);
-    const crowdProb = b.crowdProbSum / b.observations;
-
-    // Дискордантный: crowd > 55% но дельта < 0 (BTC ниже strike)
-    if (crowdProb > 0.55 && d < 0) {
-      for (const [, res] of b.marketResolutions) {
-        discordTotal++;
-        if (res === 'UP') discordUpCount++;
-        else discordDownCount++;
-
-        let byTau = discordByTau.get(t);
-        if (!byTau) { byTau = { up: 0, down: 0 }; discordByTau.set(t, byTau); }
-        if (res === 'UP') byTau.up++; else byTau.down++;
-      }
-    }
+  if (showAll || show.has('1')) {
+    const windows = config.tauWindows.length > 0 ? config.tauWindows : defaultTauWindows(config.maxTau, config.tauStep);
+    const triTaus = new Set<number>();
+    for (const key of tripleMap.keys()) triTaus.add(Number(key.split(':')[1]));
+    printTauSliced(tripleMap, windows, [...triTaus].sort((a, b) => a - b), config);
   }
 
-  if (discordTotal > 0) {
-    console.log(`Total discordant: ${discordTotal} (UP: ${discordUpCount}, DOWN: ${discordDownCount})`);
-    console.log(`Crowd was RIGHT (actually UP): ${(discordUpCount / discordTotal * 100).toFixed(1)}%`);
-    console.log(`Crowd was WRONG (actually DOWN): ${(discordDownCount / discordTotal * 100).toFixed(1)}%`);
-    console.log();
-    console.log('By tau:');
-    for (const [tau, data] of [...discordByTau].sort(([a], [b]) => a - b)) {
-      const total = data.up + data.down;
-      if (total < 2) continue;
-      console.log(`  ${tau}-${tau + config.tauStep}s: crowd right ${(data.up / total * 100).toFixed(0)}%, wrong ${(data.down / total * 100).toFixed(0)}% (n=${total})`);
-    }
-  } else {
-    console.log('No discordant moments found');
+  // ── VARIANT 2: Edge Score ─────────────────────────────────────────────────
+
+  if (showAll || show.has('2')) {
+    printEdgeTable(tripleMap, sortedTaus, config);
   }
 
-  // ── 5. Обратный дискорданс: crowd < 45¢ (DOWN) но BTC > strike ────────
+  // ── VARIANT 3: Point Lookup ───────────────────────────────────────────────
 
-  console.log();
-  console.log('='.repeat(80));
-  console.log('REVERSE DISCORDANT: crowd says DOWN (mid<45¢) but BTC > strike (delta>0)');
-  console.log('='.repeat(80));
-
-  let revDiscordUpCount = 0;
-  let revDiscordDownCount = 0;
-  let revDiscordTotal = 0;
-
-  for (const [key, b] of buckets) {
-    const [d] = key.split(':').map(Number);
-    const crowdProb = b.crowdProbSum / b.observations;
-
-    if (crowdProb < 0.45 && d > 0) {
-      for (const [, res] of b.marketResolutions) {
-        revDiscordTotal++;
-        if (res === 'UP') revDiscordUpCount++;
-        else revDiscordDownCount++;
-      }
-    }
+  if (showAll || show.has('3')) {
+    printPointLookup(tripleMap, config);
   }
 
-  if (revDiscordTotal > 0) {
-    console.log(`Total reverse discordant: ${revDiscordTotal} (UP: ${revDiscordUpCount}, DOWN: ${revDiscordDownCount})`);
-    console.log(`Crowd was RIGHT (actually DOWN): ${(revDiscordDownCount / revDiscordTotal * 100).toFixed(1)}%`);
-    console.log(`Crowd was WRONG (actually UP): ${(revDiscordUpCount / revDiscordTotal * 100).toFixed(1)}%`);
-  } else {
-    console.log('No reverse discordant moments found');
+  // ── VARIANT 4: Heatmap ────────────────────────────────────────────────────
+
+  if (showAll || show.has('4')) {
+    const triTaus = new Set<number>();
+    for (const key of tripleMap.keys()) triTaus.add(Number(key.split(':')[1]));
+    const sTaus   = [...triTaus].sort((a, b) => a - b);
+    const window  = config.heatmapTau ?? defaultTauWindows(config.maxTau, config.tauStep)[1];
+    printHeatmap(tripleMap, window, sTaus, config);
   }
 
-  // ── JSON output ────────────────────────────────────────────────────────
+  // ── JSON ──────────────────────────────────────────────────────────────────
 
   if (config.outFile) {
-    writeFileSync(config.outFile, JSON.stringify({
-      config: { deltaStep: config.deltaStep, tauStep: config.tauStep },
-      summary: { markets: processed, totalObservations, skipped },
-      buckets: results,
-      discordant: {
-        crowdSaysUpButBtcBelow: { total: discordTotal, upCount: discordUpCount, downCount: discordDownCount },
-        crowdSaysDownButBtcAbove: { total: revDiscordTotal, upCount: revDiscordUpCount, downCount: revDiscordDownCount },
-      },
-    }, null, 2));
-    console.error(`\nJSON output: ${config.outFile}`);
+    const out: Record<string, unknown> = {
+      config: { deltaStep: config.deltaStep, tauStep: config.tauStep, duration: config.duration, token: config.token },
+      summary: { markets: processed, totalObservations: totalObs, skipped },
+    };
+    writeFileSync(config.outFile, JSON.stringify(out, null, 2));
+    console.error(`\nJSON: ${config.outFile}`);
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
