@@ -88,6 +88,7 @@ function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, active =
     marketId,
     tickSize: {} as any,
     minOrderSize: {} as any,
+    minOrderValue: {} as any,
     expiresAt: makeTimestamp(),
     active,
   };
@@ -234,6 +235,7 @@ describe('MarketDiscoveryPublisher', () => {
         expiresAt: makeTimestamp(),
         tickSize: {} as any,
         minOrderSize: {} as any,
+        minOrderValue: {} as any,
         active: true as true,
         spread: new Decimal('0.05'),
         liquidity: new Decimal('10000'),

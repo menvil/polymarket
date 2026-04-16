@@ -396,9 +396,9 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(action).toBeUndefined();
   });
 
-  it('выходит при signalAdverse = true', () => {
+  it('НЕ выходит при signalAdverse = true (отключено: удерживаем до hard/trailing stop)', () => {
     const action = strategy._checkExitSignalFirst(makeData({ signalAdverse: true }));
-    expect(action?.type).toBe('SELL');
+    expect(action).toBeUndefined();
   });
 
   it('выходит при tauSec < exitTauSec', () => {
@@ -406,25 +406,24 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(action?.type).toBe('SELL');
   });
 
-  it('выходит при signal collapse (signalStrong = false)', () => {
+  it('НЕ выходит при signal collapse (signalStrong = false) — удерживаем до stop/tau', () => {
     const action = strategy._checkExitSignalFirst(makeData({ signalStrong: false }));
-    expect(action?.type).toBe('SELL');
+    expect(action).toBeUndefined();
   });
 
-  it('выходит при signal collapse (signalPersistenceMs < 150)', () => {
+  it('НЕ выходит при signal collapse (signalPersistenceMs < 150) — удерживаем до stop/tau', () => {
     const action = strategy._checkExitSignalFirst(makeData({ signalPersistenceMs: 100 }));
-    expect(action?.type).toBe('SELL');
+    expect(action).toBeUndefined();
   });
 
-  it('выходит при signal collapse (venueAgreement < 0.5)', () => {
+  it('НЕ выходит при signal collapse (venueAgreement < 0.5) — удерживаем до stop/tau', () => {
     const action = strategy._checkExitSignalFirst(makeData({ venueAgreement: 0.4 }));
-    expect(action?.type).toBe('SELL');
+    expect(action).toBeUndefined();
   });
 
-  it('выходит при netExpectedEdgeCents <= -exitEdgeCents', () => {
-    // exitEdgeCents = 1, поэтому выход при netEdge <= -1
+  it('НЕ выходит при netExpectedEdgeCents <= -exitEdgeCents — удерживаем до stop/tau', () => {
     const action = strategy._checkExitSignalFirst(makeData({ netExpectedEdgeCents: -1.5 }));
-    expect(action?.type).toBe('SELL');
+    expect(action).toBeUndefined();
   });
 
   it('выходит при stop-loss: tradeEwma < entryPrice - stopLossCents', () => {

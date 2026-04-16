@@ -82,6 +82,8 @@ function makeSnapshot(overrides: Partial<{
     matchedOrders: [],
     portfolio: mockPortfolio as any,
     nowMs: Date.now(),
+    hasInFlightFills: false,
+    constraints: undefined,
   };
 }
 
@@ -117,6 +119,8 @@ describe('DumbStrategy', () => {
       openOrders: [],
       matchedOrders: [],
       portfolio: undefined,
+      hasInFlightFills: false,
+      constraints: undefined,
       nowMs: Date.now(),
     };
 
@@ -277,7 +281,7 @@ describe('DumbStrategy', () => {
       expect(intent.price.value().toNumber()).toBeCloseTo(0.504, 8);
     });
 
-    it('продаёт не больше orderSize', () => {
+    it('продаёт всю позицию (DumbStrategy не дробит SELL по orderSize)', () => {
       const snapshot = makeSnapshot({
         positionQty: new Decimal('100'),
         entryPrice: new Decimal('0.40'),
@@ -285,8 +289,8 @@ describe('DumbStrategy', () => {
 
       const intents = strategy.tick(snapshot, REASONS);
       const intent = intents[0] as { size: Quantity };
-      // min(100, 5) = 5
-      expect(intent.size.value().toNumber()).toBe(5);
+      // DumbStrategy продаёт всю позицию целиком (orderSize ограничивает только BUY)
+      expect(intent.size.value().toNumber()).toBe(100);
     });
 
     it('продаёт оставшийся размер если позиция < orderSize', () => {

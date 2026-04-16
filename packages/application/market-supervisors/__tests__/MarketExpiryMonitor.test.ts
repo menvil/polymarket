@@ -82,6 +82,7 @@ function makeInstrument(marketId: MarketId, instrumentId: InstrumentId, expiresA
     marketId,
     tickSize: {} as any,
     minOrderSize: {} as any,
+    minOrderValue: {} as any,
     expiresAt: makeTimestamp(expiresAtMs),
     active: true,
   };

@@ -159,7 +159,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     // ── Chicken-and-egg ─────────────────────────────────────────────────
 
     const { mockClient } = buildPaperInfra({ clock: replayClock });
-    const { processFillUseCase } = buildProcessFillUseCase({ infra, repos });
+    const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
 
     const paperConfig = {
       fillOnBookCrossing: true,
@@ -191,7 +191,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     };
 
     const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
-    const useCases = { processFillUseCase, ...orderUseCases };
+    const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
     // ── Market data + Engine ────────────────────────────────────────────
 
