@@ -341,6 +341,7 @@ export class PortfolioService {
       return saveResult;
     }
 
+    const updatedPosition = positionResult.value.getPosition(instrumentId);
     this._logger.info('Fill applied to portfolio', {
       accountId: accountIdToString(fill.accountId),
       fillId: String(fill.id),
@@ -348,6 +349,16 @@ export class PortfolioService {
       notional: notional.toString(),
       newAvailable: positionResult.value.balance.available().value().toString(),
       newReserved: positionResult.value.balance.reserved().value().toString(),
+    });
+    // Лог позиции после обновления — для диагностики live reconciliation
+    this._logger.info('Position after fill', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      instrumentId: String(instrumentId),
+      side: fill.side,
+      positionQty: updatedPosition?.quantity.value().toString() ?? '0',
+      positionClosed: updatedPosition?.isClosed() ?? true,
+      avgEntryPrice: updatedPosition?.averageEntryPrice.value().toString() ?? 'none',
     });
     return Ok(undefined);
   }
@@ -439,6 +450,7 @@ export class PortfolioService {
     const saveResult = this._store.save(finalPortfolio, version);
     if (!saveResult.ok) return saveResult;
 
+    const directUpdatedPosition = finalPortfolio.getPosition(instrumentId);
     this._logger.info('Direct fill applied to portfolio', {
       accountId: accountIdToString(fill.accountId),
       fillId: String(fill.id),
@@ -446,6 +458,16 @@ export class PortfolioService {
       size: fillQty.toString(),
       price: fill.price.toNumber(),
       notional: notional.toString(),
+    });
+    // Лог позиции после direct fill — для диагностики live reconciliation
+    this._logger.info('Position after direct fill', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      instrumentId: String(instrumentId),
+      side: fill.side,
+      positionQty: directUpdatedPosition?.quantity.value().toString() ?? '0',
+      positionClosed: directUpdatedPosition?.isClosed() ?? true,
+      avgEntryPrice: directUpdatedPosition?.averageEntryPrice.value().toString() ?? 'none',
     });
     return Ok(undefined);
   }

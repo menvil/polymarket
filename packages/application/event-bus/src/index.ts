@@ -24,6 +24,7 @@ export type { ApplicationEvent } from './events/index.js';
 export type {
   FillReceivedEvent,
   FillFailedEvent,
+  DirectFillAppliedEvent,
 } from './events/domain-events.js';
 export type {
   TopOfBook,

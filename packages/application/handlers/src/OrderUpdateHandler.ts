@@ -113,17 +113,28 @@ export class OrderUpdateHandler {
 
     if (!result.ok) {
       // Дублирующее WS-событие (ACCEPTED на уже OPEN ордере и т.п.) — idempotent, debug уровень.
-      // Реальная ошибка (ACCEPTED на CANCELLED/FILLED) — error уровень.
       const isIdempotent =
         (update.type === 'ACCEPTED' && order.status === 'OPEN') ||
         (update.type === 'CANCELLED' && order.status === 'CANCELED') ||
         (update.type === 'EXPIRED' && order.status === 'EXPIRED');
+
+      // Race condition: CancelOrderUseCase отменил ордер локально ДО прихода WS PLACEMENT.
+      // Биржа присылает ACCEPTED, но ордер уже CANCELED/FILLED/EXPIRED на нашей стороне.
+      // Это не ошибка — просто гонка между REST-cancel и WS-confirmation. Логируем warn.
+      const isCancelRace =
+        update.type === 'ACCEPTED' && order.isTerminal;
 
       if (isIdempotent) {
         this._logger.debug('Ignoring duplicate venue update (already in target state)', {
           orderId: String(update.orderId),
           updateType: update.type,
           currentStatus: order.status,
+        });
+      } else if (isCancelRace) {
+        this._logger.warn('ACCEPTED event arrived after order already terminal (cancel/fill race) — ignoring', {
+          orderId: String(update.orderId),
+          currentStatus: order.status,
+          updateType: update.type,
         });
       } else {
         this._logger.error('Failed to apply order update', {

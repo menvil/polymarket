@@ -9,6 +9,8 @@
  * ```
  * startSession(meta)            ← при открытии рынка
  * recordDecision(entry)         ← при каждом решении стратегии (BUY/HOLD/SKIP)
+ * recordSignalEvent(entry)      ← при появлении/исчезновении/смене сигнала
+ * recordCancel(entry)           ← при снятии ордера с контекстом drift
  * recordFill(entry)             ← при fill через EventBus
  * recordResolution(entry)       ← при разрешении рынка
  * endSession(marketId, reason)  ← при закрытии рынка
@@ -16,7 +18,8 @@
  * ```
  *
  * ### Гарантии:
- * - `recordDecision`, `recordFill` — синхронные, fire-and-forget, не блокируют trading path
+ * - `recordDecision`, `recordSignalEvent`, `recordCancel`, `recordFill` — синхронные,
+ *   fire-and-forget, не блокируют trading path
  * - `startSession`, `endSession`, `close` — асинхронные (I/O)
  *
  * Реализация: `DecisionJournalRecorder` в `@polymarket/data-collection`.
@@ -98,6 +101,9 @@ export interface DecisionEntry {
  * @param side - Сторона: BUY или SELL
  * @param price - Цена ордера
  * @param size - Размер
+ * @param midCentsAtPlacement - EWMA mid (¢) в момент выставления ордера
+ * @param signalResidualBps - Residual сигнала (bps) в момент выставления
+ * @param netExpectedEdgeCents - Ожидаемый edge (¢) в момент выставления
  */
 export interface OrderEntry {
   readonly marketId: string;
@@ -106,6 +112,12 @@ export interface OrderEntry {
   readonly side: 'BUY' | 'SELL';
   readonly price: string;
   readonly size: string;
+  /** EWMA mid (¢) в момент выставления ордера — для последующего drift-анализа */
+  readonly midCentsAtPlacement?: number;
+  /** Residual CEX vs Chainlink (bps) в момент выставления */
+  readonly signalResidualBps?: number;
+  /** Итоговый ожидаемый edge (¢) в момент выставления */
+  readonly netExpectedEdgeCents?: number;
 }
 
 /**
@@ -119,6 +131,8 @@ export interface OrderEntry {
  * @param size - Размер
  * @param notional - Объём (price × size)
  * @param partial - Partial fill или full
+ * @param orderPriceCents - Плановая цена ордера (¢) — для расчёта slippage
+ * @param slippageCents - Разница fill vs order price (¢): положительная = улучшение цены
  */
 export interface FillEntry {
   readonly marketId: string;
@@ -129,6 +143,138 @@ export interface FillEntry {
   readonly size: string;
   readonly notional: string;
   readonly partial: boolean;
+  /** Плановая цена ордера (¢) — для расчёта slippage по сравнению с fill price */
+  readonly orderPriceCents?: number;
+  /**
+   * Slippage (¢) = fillPrice*100 − orderPrice*100.
+   * Для BUY: отрицательный = цена ниже плановой (хорошо), положительный = выше (плохо).
+   * Для SELL: положительный = цена выше плановой (хорошо), отрицательный = ниже (плохо).
+   */
+  readonly slippageCents?: number;
+}
+
+/**
+ * Событие жизненного цикла торгового сигнала.
+ *
+ * @remarks
+ * Записывается при каждом переходе состояния сигнала:
+ * - `SIGNAL_ON`      — сигнал появился (flat/adverse → favorable)
+ * - `SIGNAL_OFF`     — сигнал пропал (favorable → flat)
+ * - `SIGNAL_ADVERSE` — сигнал стал против позиции (favorable/flat → adverse с позицией)
+ *
+ * Позволяет offline-анализировать:
+ * - Как долго сигнал держался до первого входа
+ * - Был ли сигнал реальным: закрыл ли Chainlink gap к CEX (`gapClosedBps`, `gapClosedPct`)
+ * - Как часто сигнал появлялся но вход блокировался
+ * - Куда двинулся Chainlink за время жизни сигнала
+ *
+ * ### Метрики качества сигнала (только в SIGNAL_OFF / SIGNAL_ADVERSE):
+ * - `gapClosedBps` = residualAtOn − residualNow: > 0 Chainlink догнал CEX (сигнал реальный)
+ * - `gapClosedPct` = gapClosedBps / residualAtOn: 1.0 = gap полностью закрыт
+ * - `chainlinkMoveUsd` = chainlinkNow − chainlinkAtOn: абсолютное движение Chainlink
+ * - `chainlinkMoveBps` = движение Chainlink в bps (нормировано)
+ *
+ * @param marketId - ID рынка
+ * @param ts - Timestamp события (epoch ms)
+ * @param event - Тип перехода сигнала
+ * @param direction - Текущее направление сигнала для токена
+ * @param residualBps - Residual CEX vs Chainlink (bps) в текущий момент
+ * @param signalStrength - Сила сигнала [0..10]
+ * @param signalConfidence - Уверенность сигнала [0..1]
+ * @param persistenceMs - Длительность сигнала в текущем направлении (ms)
+ * @param midCents - EWMA mid Polymarket (¢) в момент события
+ * @param chainlinkPrice - Цена Chainlink (USD) в момент события
+ * @param netExpectedEdgeCents - Edge (¢) в момент события
+ * @param openOrderPriceCents - Цена открытого BUY-ордера (¢), если есть
+ * @param driftSinceOrderCents - mid_now − mid_at_placement (¢), если есть ордер
+ * @param residualAtOn - Residual (bps) в момент SIGNAL_ON (только в OFF/ADVERSE)
+ * @param chainlinkAtOn - Chainlink (USD) в момент SIGNAL_ON (только в OFF/ADVERSE)
+ * @param gapClosedBps - residualAtOn − residualNow: > 0 = Chainlink догнал CEX
+ * @param gapClosedPct - gapClosedBps / residualAtOn ∈ [-∞, 1]: 1.0 = gap полностью закрыт
+ * @param chainlinkMoveUsd - chainlinkNow − chainlinkAtOn: движение Chainlink в USD
+ * @param chainlinkMoveBps - то же в bps (нормировано на chainlinkAtOn)
+ * @param durationMs - время жизни сигнала от ON до OFF (ms)
+ */
+export interface SignalEntry {
+  readonly marketId: string;
+  readonly ts: number;
+  readonly event: 'SIGNAL_ON' | 'SIGNAL_OFF' | 'SIGNAL_ADVERSE';
+  readonly direction: 'up' | 'down' | 'flat';
+  readonly residualBps: number;
+  readonly signalStrength: number;
+  readonly signalConfidence: number;
+  readonly persistenceMs: number;
+  readonly midCents: number;
+  /** Цена Chainlink (USD) в момент события — для gap-анализа */
+  readonly chainlinkPrice: number;
+  readonly netExpectedEdgeCents: number;
+  /** Цена открытого BUY-ордера (¢) в момент события, если ордер был выставлен */
+  readonly openOrderPriceCents?: number;
+  /** mid_now − mid_at_placement (¢): дрейф рынка за время жизни ордера */
+  readonly driftSinceOrderCents?: number;
+
+  // ── Поля только для SIGNAL_OFF и SIGNAL_ADVERSE ───────────────────────────
+  /** Residual (bps) в момент SIGNAL_ON — для расчёта закрытия gap */
+  readonly residualAtOn?: number;
+  /** Chainlink (USD) в момент SIGNAL_ON — для расчёта движения цены */
+  readonly chainlinkAtOn?: number;
+  /**
+   * residualAtOn − residualNow (bps).
+   * > 0 = Chainlink двинулся к CEX (сигнал реальный).
+   * < 0 = Chainlink двинулся от CEX (ложный сигнал или разворот).
+   */
+  readonly gapClosedBps?: number;
+  /**
+   * gapClosedBps / residualAtOn ∈ (-∞, 1].
+   * 1.0 = gap полностью закрыт, 0.5 = половина gap закрыта, < 0 = gap расширился.
+   */
+  readonly gapClosedPct?: number;
+  /** Абсолютное движение Chainlink (USD) за время жизни сигнала */
+  readonly chainlinkMoveUsd?: number;
+  /** Движение Chainlink (bps) нормированное на начальную цену */
+  readonly chainlinkMoveBps?: number;
+  /** Время от SIGNAL_ON до SIGNAL_OFF (ms) */
+  readonly durationMs?: number;
+}
+
+/**
+ * Запись снятия ордера с контекстом drift.
+ *
+ * @remarks
+ * Записывается при каждом CANCEL открытого BUY-ордера.
+ * Позволяет анализировать:
+ * - Куда ушёл рынок пока ордер стоял (driftCents)
+ * - При каком состоянии сигнала ордер снимался
+ * - Насколько цена ордера была актуальна к моменту снятия
+ *
+ * @param marketId - ID рынка
+ * @param ts - Timestamp снятия (epoch ms)
+ * @param orderId - ID снятого ордера
+ * @param reason - Причина снятия (STALE_CHAINLINK, NO_ENTRY, IN_FLIGHT_FILLS, ...)
+ * @param orderPriceCents - Цена ордера при выставлении (¢)
+ * @param midAtPlacementCents - EWMA mid при выставлении ордера (¢)
+ * @param midAtCancelCents - EWMA mid в момент снятия (¢)
+ * @param driftCents - midAtCancel − midAtPlacement (¢): дрейф за время жизни ордера
+ * @param signalAtCancel - Состояние сигнала в момент снятия
+ * @param netEdgeAtCancel - Edge (¢) в момент снятия
+ */
+export interface CancelEntry {
+  readonly marketId: string;
+  readonly ts: number;
+  readonly orderId: string;
+  readonly reason: string;
+  /** Цена ордера при размещении (¢) */
+  readonly orderPriceCents: number;
+  /** EWMA mid в момент выставления ордера (¢) */
+  readonly midAtPlacementCents: number;
+  /** EWMA mid в момент снятия ордера (¢) */
+  readonly midAtCancelCents: number;
+  /** midAtCancel − midAtPlacement (¢): дрейф рынка за время жизни ордера */
+  readonly driftCents: number;
+  /** Состояние сигнала в момент снятия */
+  readonly signalAtCancel: 'favorable' | 'adverse' | 'flat' | 'stale';
+  /** Ожидаемый edge (¢) в момент снятия */
+  readonly netEdgeAtCancel: number;
 }
 
 /**
@@ -182,6 +328,20 @@ export interface IDecisionJournal {
    * @param entry - Данные ордера
    */
   recordOrder(entry: OrderEntry): void;
+
+  /**
+   * Записывает событие жизненного цикла сигнала (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные события сигнала
+   */
+  recordSignalEvent(entry: SignalEntry): void;
+
+  /**
+   * Записывает снятие ордера с контекстом drift (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные снятия ордера
+   */
+  recordCancel(entry: CancelEntry): void;
 
   /**
    * Записывает fill (синхронно, fire-and-forget).

@@ -47,7 +47,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore } from '@polymarket/ports';
-import type { IEventBus } from '@polymarket/event-bus';
+import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
 import { assetIdToInstrumentId } from '@polymarket/ids';
@@ -147,6 +147,13 @@ export class ProcessFillUseCase {
           netTokens: fill.size.value().minus(feeInTokens).toNumber(),
         });
       }
+
+      // Публикуем DIRECT_FILL_APPLIED чтобы MarketRotation мог учесть этот fill
+      // в fillHistory (для корректной сводки рынка). Без этого события fills на
+      // отменённых ордерах не отображаются в market summary.
+      await this._deps.eventBus.publishAll([
+        { type: 'DIRECT_FILL_APPLIED', fill } as ApplicationEvent,
+      ]);
 
       return Ok(undefined);
     }

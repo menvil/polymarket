@@ -54,6 +54,8 @@ export type {
   OrderEntry,
   FillEntry,
   ResolutionEntry,
+  SignalEntry,
+  CancelEntry,
 } from './IDecisionJournal.js';
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';

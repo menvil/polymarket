@@ -46,6 +46,8 @@ import type {
   OrderEntry,
   FillEntry,
   ResolutionEntry,
+  SignalEntry,
+  CancelEntry,
 } from '@polymarket/ports';
 
 // ── Конфигурация ─────────────────────────────────────────────────────────────
@@ -162,6 +164,24 @@ export class DecisionJournalRecorder implements IDecisionJournal {
    */
   public recordOrder(entry: OrderEntry): void {
     this._appendRecord(entry.marketId, { t: 'order', ...entry });
+  }
+
+  /**
+   * Записывает событие жизненного цикла сигнала (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные события сигнала
+   */
+  public recordSignalEvent(entry: SignalEntry): void {
+    this._appendRecord(entry.marketId, { t: 'signal_event', ...entry });
+  }
+
+  /**
+   * Записывает снятие ордера с контекстом drift (синхронно, fire-and-forget).
+   *
+   * @param entry - Данные снятия ордера
+   */
+  public recordCancel(entry: CancelEntry): void {
+    this._appendRecord(entry.marketId, { t: 'cancel', ...entry });
   }
 
   /**

@@ -10,7 +10,7 @@
  * - Handlers зависят от @polymarket/event-bus для получения типов событий
  * - Никакой другой пакет не определяет application-level события
  */
-export type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent } from './domain-events.js';
+export type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
 export type {
   TopOfBook,
   BookUpdatedEvent,
@@ -46,7 +46,7 @@ export type { OrderEvent } from '@polymarket/order';
  * - MARKET_CLOSED — рынок закрыт, баланс освобождён, остановить стратегию
  *
  */
-import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent } from './domain-events.js';
+import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
 import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
 import type { RiskLimitBreachedEvent } from './risk-events.js';
 import type { StrategySignalEvent } from './strategy-events.js';
@@ -57,6 +57,7 @@ export type ApplicationEvent =
   | FillReceivedEvent
   | FillConfirmedEvent
   | FillFailedEvent
+  | DirectFillAppliedEvent
   | BookUpdatedEvent
   | BookDepthEvent
   | TradeReceivedEvent
