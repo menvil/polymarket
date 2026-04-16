@@ -192,6 +192,14 @@ export class CcxtSymbolWatcher {
           bids: ob.bids.slice(0, this._params.depth),
           asks: ob.asks.slice(0, this._params.depth),
         });
+
+        // Очищаем trades-кеш OB-инстанса (ccxt.pro накапливает trades даже в OB-петле).
+        // orderbooks[symbol] НЕ трогаем — ccxt.pro использует его для дельт.
+        const obTradesCache = instance.trades?.[this._params.symbol];
+        if (obTradesCache && typeof obTradesCache.length === 'number') {
+          obTradesCache.length = 0;
+        }
+
       } catch (err) {
         if (this._stopped) break;
         const msg = err instanceof Error ? err.message : String(err);
@@ -246,6 +254,13 @@ export class CcxtSymbolWatcher {
           });
         }
 
+        // После записи на диск очищаем внутренний буфер ccxt.pro.
+        // instance.trades[symbol] — это ArrayCache (extends Array), поэтому
+        // обнуляем через .length = 0 (не заменяем ссылку, иначе .append сломается).
+        const tradesCache = instance.trades?.[this._params.symbol];
+        if (tradesCache && typeof tradesCache.length === 'number') {
+          tradesCache.length = 0;
+        }
 
       } catch (err) {
         if (this._stopped) break;
