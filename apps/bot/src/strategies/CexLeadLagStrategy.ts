@@ -219,6 +219,15 @@ export interface CexLeadLagConfig {
   readonly exitTauSec?: number;
   /** Максимальный горизонт для входа (секунды). Default: 300. */
   readonly maxEntryTauSec?: number;
+  /**
+   * Минимальная длительность сигнала (ms) перед входом.
+   *
+   * @remarks
+   * Фильтрует тиковый шум: одиночный всплеск residual на одном тике не даёт вход.
+   * Снижение до 0 означает вход при первом сильном сигнале без ожидания persistence.
+   * Default: 150.
+   */
+  readonly minSignalPersistenceMs?: number;
 }
 
 /**
@@ -268,7 +277,17 @@ interface CexLeadLagData {
   readonly minOrderValue: Decimal;
   /** Инвентарь в единицах orderSize. */
   readonly inventoryUnits: number;
+  /**
+   * Fill прилетел по WS, но ещё не обработан локально.
+   * CANCEL оправдан — снимаем открытые ордера пока не видим актуальное состояние.
+   */
   readonly hasInFlightFills: boolean;
+  /**
+   * BUY-ордер MATCHED на бирже — fill неизбежен, ждём его.
+   * CANCEL бессмысленен: ордер уже исполнен, cancel будет проигнорирован
+   * CancelOrderUseCase и только выставит ненужный cooldown в ExecutionEngine.
+   */
+  readonly hasMatchedOrders: boolean;
 
   readonly nowMs: number;
   readonly currentPrice: number;
@@ -619,6 +638,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _minTradesForMid: number;
   private readonly _exitTauSec: number;
   private readonly _maxEntryTauSec: number;
+  private readonly _minSignalPersistenceMs: number;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
   private _ewma: number | null = null;
@@ -662,6 +682,35 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private _lastSignalDirection: CryptoSignalDirection = 'flat';
   /** Знаковый residual bps на предыдущем тике. */
   private _lastResidualBps = 0;
+
+  /**
+   * Был ли сигнал favorable на предыдущем тике decide().
+   * Используется для определения перехода SIGNAL_ON/SIGNAL_OFF.
+   */
+  private _prevSignalFavorable = false;
+  /**
+   * Был ли сигнал adverse на предыдущем тике decide().
+   * Используется для определения перехода SIGNAL_ADVERSE.
+   */
+  private _prevSignalAdverse = false;
+  /**
+   * EWMA mid (¢) в момент последнего выставления BUY-ордера.
+   * Используется для расчёта drift при снятии ордера.
+   */
+  private _lastPlacedMidCents: number | null = null;
+  /**
+   * Residual (bps) в момент SIGNAL_ON — для расчёта gapClosedBps при SIGNAL_OFF.
+   * Всегда абсолютная величина (> 0).
+   */
+  private _signalOnResidualBps: number | null = null;
+  /**
+   * Цена Chainlink (USD) в момент SIGNAL_ON — для расчёта chainlinkMoveUsd при SIGNAL_OFF.
+   */
+  private _signalOnChainlinkPrice: number | null = null;
+  /**
+   * Timestamp SIGNAL_ON (ms) — для расчёта durationMs при SIGNAL_OFF.
+   */
+  private _signalOnTs: number | null = null;
 
   /** Пиковая EWMA mid со времени входа (¢). null если нет позиции. */
   private _peakPriceCents: number | null = null;
@@ -720,15 +769,15 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._exitDiscountCents = toNumber(config.exitDiscountCents, 1);
     this._emergencyExitSlippageCents = Math.max(0, toNumber(config.emergencyExitSlippageCents, 2));
     this._maxChaseAboveExitCents = toNumber(config.maxChaseAboveExitCents, 5);
-    this._stopLossCents = toNumber(config.stopLossCents, 10);
+    this._stopLossCents = toNumber(config.stopLossCents, 5);
     this._stopLossCooldownMs = toNumber(config.stopLossCooldownMs, 60_000);
-    this._breakEvenTriggerCents = toNumber(config.breakEvenTriggerCents, 3);
-    this._breakEvenOffsetCents = toNumber(config.breakEvenOffsetCents, 0.5);
+    this._breakEvenTriggerCents = toNumber(config.breakEvenTriggerCents, 2);
+    this._breakEvenOffsetCents = toNumber(config.breakEvenOffsetCents, 1);
     this._trailingStartMultiplier = toNumber(config.trailingStartMultiplier, 0.5);
     this._minTrailingDistanceCents = Math.max(0.5, toNumber(config.minTrailingDistanceCents, 2));
     this._tauTighteningStartSec = toNumber(config.tauTighteningStartSec, 60);
     this._tauTighteningMinMultiplier = clampNumber(toNumber(config.tauTighteningMinMultiplier, 0.4), 0.1, 1);
-    this._signalTighteningOnCollapse = config.signalTighteningOnCollapse ?? true;
+    this._signalTighteningOnCollapse = config.signalTighteningOnCollapse ?? false;
     this._signalTighteningOnAdverse = config.signalTighteningOnAdverse ?? true;
     this._signalTighteningMultiplier = clampNumber(toNumber(config.signalTighteningMultiplier, 0.7), 0.1, 1);
     this._profitProtectTrailingEnabled = config.profitProtectTrailingEnabled ?? true;
@@ -737,6 +786,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._minTradesForMid = toNumber(config.minTradesForMid, 3);
     this._exitTauSec = toNumber(config.exitTauSec, 20);
     this._maxEntryTauSec = toNumber(config.maxEntryTauSec, 300);
+    this._minSignalPersistenceMs = Math.max(0, toNumber(config.minSignalPersistenceMs, 1));
 
     this._logger?.warn('CexLeadLag: init (signal-first)', {
       strategyId: this.id,
@@ -804,6 +854,12 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._signalStartedAtMs = null;
       this._lastSignalDirection = 'flat';
       this._lastResidualBps = 0;
+      this._prevSignalFavorable = false;
+      this._prevSignalAdverse = false;
+      this._lastPlacedMidCents = null;
+      this._signalOnResidualBps = null;
+      this._signalOnChainlinkPrice = null;
+      this._signalOnTs = null;
       this._peakPriceCents = null;
       this._peakNetExpectedEdgeCents = null;
       this._peakResidualMagnitudeBps = null;
@@ -984,7 +1040,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       minOrderSize,
       minOrderValue,
       inventoryUnits,
-      hasInFlightFills: snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0,
+      hasInFlightFills: snapshot.hasInFlightFills,
+      hasMatchedOrders: snapshot.matchedOrders.length > 0,
 
       nowMs: snapshot.nowMs,
       currentPrice,
@@ -1017,10 +1074,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    * @remarks
    * Порядок проверок:
    * 1. Stale Chainlink → CANCEL (no new info for decision).
-   * 2. In-flight fills → CANCEL (нельзя размещать пока fill в пути).
-   * 3. Отслеживаем переходы позиции для фиксации entry/exit price.
-   * 4. Есть позиция → проверяем exit через `_checkExitSignalFirst()`.
-   * 5. Нет позиции → проверяем entry через `_checkEntrySignalFirst()`.
+   * 2. Matched orders → HOLD (ордер исполнен, ждём fill — CANCEL бессмысленен).
+   * 3. In-flight fills → CANCEL (fill прилетел по WS, ещё не обработан).
+   * 4. Отслеживаем переходы позиции для фиксации entry/exit price.
+   * 5. Есть позиция → проверяем exit через `_checkExitSignalFirst()`.
+   * 6. Нет позиции → проверяем entry через `_checkEntrySignalFirst()`.
    *
    * @param data - Данные тика
    * @param _reasons - Причины триггера (не используются)
@@ -1030,15 +1088,50 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     data: CexLeadLagData,
     _reasons: ReadonlySet<TriggerReason>,
   ): CexLeadLagAction[] {
+    // Отслеживаем переходы сигнала (SIGNAL_ON / SIGNAL_OFF / SIGNAL_ADVERSE)
+    // до любых торговых решений, чтобы зафиксировать состояние в момент перехода.
+    this._emitSignalTransitions(data);
+
     if (data.chainlinkStale) {
-      this._logDiag(data, 'CANCEL', { reason: 'STALE_CHAINLINK' }, true);
+      this._logDiag(data, 'CANCEL', {
+        reason: 'STALE_CHAINLINK',
+        chainlinkAgeMs: data.chainlinkAgeMs,
+        chainlinkStaleThresholdMs: this._chainlinkStaleMs,
+        chainlinkTs: new Date(data.chainlinkTimestampMs).toISOString(),
+        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        hasPosition: data.positionQty.gt(0),
+        positionQty: data.positionQty.toString(),
+      });
       this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'STALE_CHAINLINK' });
+      this._emitCancelAnalytics(data, 'STALE_CHAINLINK');
       return [{ type: 'CANCEL' }];
     }
 
+    // MATCHED ордер: fill неизбежен — CANCEL бессмысленен и выставит cooldown
+    // в ExecutionEngine. Просто ждём WS fill event.
+    if (data.hasMatchedOrders) {
+      this._logDiag(data, 'HOLD', {
+        reason: 'MATCHED_ORDER_AWAITING_FILL',
+        note: 'BUY order is MATCHED on exchange — fill is guaranteed, waiting for WS event',
+        positionQty: data.positionQty.toString(),
+        availableTokenQty: data.availableTokenQty.toString(),
+        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+      });
+      return [];
+    }
+
     if (data.hasInFlightFills) {
-      this._logDiag(data, 'CANCEL', { reason: 'IN_FLIGHT_FILLS' });
+      this._logDiag(data, 'CANCEL', {
+        reason: 'IN_FLIGHT_FILLS',
+        note: 'Fill received via WS but not yet processed locally — cancelling open orders',
+        positionQty: data.positionQty.toString(),
+        availableTokenQty: data.availableTokenQty.toString(),
+        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+      }, true);
       this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'IN_FLIGHT_FILLS' });
+      this._emitCancelAnalytics(data, 'IN_FLIGHT_FILLS');
       return [{ type: 'CANCEL' }];
     }
 
@@ -1083,9 +1176,37 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
       this._logDiag(data, 'HOLD', {
         reason: 'POSITION_HELD_SIGNAL_FIRST',
-        netExpectedEdgeCents: data.netExpectedEdgeCents.toFixed(2),
-        residualBps: data.residualBps.toFixed(2),
-        signalPersistenceMs: data.signalPersistenceMs,
+        // Почему не выходим (stop levels vs current price)
+        stopGuards: {
+          hardStopLevel: this._entryPriceCents !== null
+            ? (this._entryPriceCents - this._stopLossCents).toFixed(2)
+            : 'none',
+          trailingStop: this._trailingStopCents?.toFixed(2) ?? 'none',
+          ewmaVsEntry: this._entryPriceCents !== null
+            ? (data.tradeEwmaCents - this._entryPriceCents).toFixed(2)
+            : 'none',
+          ewmaVsTrailing: this._trailingStopCents !== null
+            ? (data.tradeEwmaCents - this._trailingStopCents).toFixed(2)
+            : 'none',
+          tauSec: data.tauSec.toFixed(0),
+          exitTauSec: this._exitTauSec,
+        },
+        signalEdge: {
+          netExpectedEdgeCents: data.netExpectedEdgeCents.toFixed(2),
+          residualBps: data.residualBps.toFixed(2),
+          signalPersistenceMs: data.signalPersistenceMs,
+          signalStrong: data.signalStrong,
+          signalAdverse: data.signalAdverse,
+        },
+        position: {
+          qty: data.positionQty.toString(),
+          availableTokenQty: data.availableTokenQty.toString(),
+          entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
+          peakPriceCents: this._peakPriceCents?.toFixed(2) ?? 'none',
+          pnlFromEntryCents: this._entryPriceCents !== null
+            ? (data.tradeEwmaCents - this._entryPriceCents).toFixed(2)
+            : 'none',
+        },
       });
       this._recordJournalDecision(data, 'HOLD', {
         reason: 'POSITION_HELD_SIGNAL_FIRST',
@@ -1116,8 +1237,24 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       return [];
     }
 
-    this._logDiag(data, 'CANCEL', { reason: 'NO_ENTRY', blockers });
+    this._logDiag(data, 'CANCEL', {
+      reason: 'NO_ENTRY',
+      blockers,
+      openBuy: {
+        priceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        driftFromEwmaCents: data.openBuyPriceCents !== undefined
+          ? (data.tradeEwmaCents - data.openBuyPriceCents).toFixed(2)
+          : 'none',
+      },
+      signalEdge: {
+        signalFavorable: data.signalFavorable,
+        signalStrong: data.signalStrong,
+        netExpectedEdgeCents: data.netExpectedEdgeCents.toFixed(2),
+        residualBps: data.residualBps.toFixed(2),
+      },
+    }, true);
     this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'NO_ENTRY', blockers });
+    this._emitCancelAnalytics(data, 'NO_ENTRY');
     return [{ type: 'CANCEL' }];
   }
 
@@ -1556,7 +1693,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     if (this._requireSignalForEntry && !data.signalFavorable) return undefined;
     if (!data.signalStrong) return undefined;
-    if (data.signalPersistenceMs < 300) return undefined;
+    if (data.signalPersistenceMs < this._minSignalPersistenceMs) return undefined;
     if (data.venueAgreement < 0.66) return undefined;
     if (data.netExpectedEdgeCents < this._minEdgeCents) return undefined;
 
@@ -1615,6 +1752,15 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       orderSize: buySize.toString(),
       effectiveSide: data.side,
     });
+
+    // Сохраняем mid в момент выставления BUY-ордера для последующего drift-анализа
+    // при снятии ордера (_emitCancelAnalytics) и signal-event tracking.
+    this._lastPlacedMidCents = data.tradeEwmaCents;
+
+    // Если делаем selective reprice — записываем cancel старого ордера
+    if (data.openBuyOrderId !== undefined && data.openBuyPriceCents !== undefined) {
+      this._emitCancelAnalytics(data, 'REPRICE');
+    }
 
     return {
       type: 'BUY',
@@ -1748,15 +1894,22 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    *
    * @remarks
    * Гипотеза выхода:
-   * Удержание позиции обосновано только пока текущий EV положительный.
+   * Удержание позиции обосновано только пока текущи�� EV положительный.
    * Бумажная прибыль сама по себе не основание держать позицию.
    *
-   * Триггеры выхода:
-   * - `STOP_LOSS` — tradeEwma < entryPrice − stopLossCents
-   * - `ADVERSE_SIGNAL` — сильный сигнал против нашей позиции
-   * - `SIGNAL_COLLAPSE` — сигнал ослаб или persistence < 150ms или agreement < 0.5
-   * - `NEGATIVE_NET_EDGE` — netExpectedEdgeCents <= −exitEdgeCents
+   * ### Активные триггеры выхода:
+   * - `HARD_STOP` — tradeEwma < entryPrice − stopLossCents
+   * - `TRAILING_STOP` — tradeEwma < trailingStopCents
    * - `TAU_EXIT` — tauSec < exitTauSec
+   *
+   * ### Выключенные триггеры (намеренно):
+   * - `ADVERSE_SIGNAL` — закомментирован: позиция держится до stop/tau
+   * - `SIGNAL_COLLAPSE` — закомментирован: позиция держится до stop/tau
+   * - `NEGATIVE_NET_EDGE` — закомментирован: позиция держится до stop/tau
+   *
+   * ### SELL_IN_FLIGHT:
+   * Если shouldExit=true, но `availableTokenQty=0` — SELL ордер уже выставлен,
+   * токены зарезервированы. Стратегия логирует HOLD(SELL_IN_FLIGHT) и ждёт fill.
    *
    * @param data - Данные тика
    * @returns SELL-действие или undefined если выход не нужен
@@ -1774,29 +1927,49 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._trailingStopCents !== null &&
       data.tradeEwmaCents < this._trailingStopCents;
 
-    const signalCollapsed =
-      !data.signalStrong ||
-      data.signalPersistenceMs < 150 ||
-      data.venueAgreement < 0.5;
+    // signalCollapsed / signalAdverse / negativeEdge — выключены намеренно:
+    // стратегия удерживает позицию до hard/trailing stop или tau exit.
+    // const signalCollapsed = !data.signalStrong || data.signalPersistenceMs < 150 || data.venueAgreement < 0.5;
 
     const shouldExit =
       hardStopHit ||
       trailingStopHit ||
-      data.signalAdverse ||
-      data.netExpectedEdgeCents <= -this._exitEdgeCents ||
-      signalCollapsed ||
+      // data.signalAdverse ||
+      // data.netExpectedEdgeCents <= -this._exitEdgeCents ||
+      // signalCollapsed ||
       data.tauSec < this._exitTauSec;
 
-    if (!shouldExit || !data.positionQty.gt(0) || !data.availableTokenQty.gt(0)) {
+    if (!shouldExit) {
+      return undefined;
+    }
+
+    // SELL ордер уже выставлен — токены зарезервированы, ждём fill
+    if (!data.availableTokenQty.gt(0)) {
+      if (data.positionQty.gt(0)) {
+        this._logDiag(data, 'HOLD', {
+          reason: 'SELL_IN_FLIGHT',
+          note: 'Exit condition met but tokens are reserved (SELL order pending fill)',
+          positionQty: data.positionQty.toString(),
+          availableTokenQty: data.availableTokenQty.toString(),
+          exitTrigger: hardStopHit ? 'HARD_STOP' : trailingStopHit ? 'TRAILING_STOP' : 'TAU_EXIT',
+          entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
+          trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
+          tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+        });
+      }
+      return undefined;
+    }
+
+    if (!data.positionQty.gt(0)) {
       return undefined;
     }
 
     const exitReason =
       hardStopHit ? 'HARD_STOP' :
       trailingStopHit ? 'TRAILING_STOP' :
-      data.signalAdverse ? 'ADVERSE_SIGNAL' :
+      // data.signalAdverse ? 'ADVERSE_SIGNAL' :
       data.tauSec < this._exitTauSec ? 'TAU_EXIT' :
-      signalCollapsed ? 'SIGNAL_COLLAPSE' :
+      // signalCollapsed ? 'SIGNAL_COLLAPSE' :
       'NEGATIVE_NET_EDGE';
 
     let askPrice = Math.floor(data.tradeEwmaCents - this._exitDiscountCents);
@@ -1804,7 +1977,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const emergencyExit =
       exitReason === 'HARD_STOP' ||
       exitReason === 'TRAILING_STOP' ||
-      exitReason === 'ADVERSE_SIGNAL' ||
+      // exitReason === 'ADVERSE_SIGNAL' ||  // закомментировано вместе с ADVERSE_SIGNAL exit
       exitReason === 'TAU_EXIT';
 
     if (emergencyExit && data.bestBidCents !== undefined) {
@@ -1830,18 +2003,39 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._logDiag(data, 'SELL', {
       reason: exitReason,
       ask: askPrice,
-      residualBps: data.residualBps.toFixed(2),
-      signalPersistenceMs: data.signalPersistenceMs,
-      venueAgreement: data.venueAgreement.toFixed(3),
-      signalExpectedMoveCents: data.signalExpectedMoveCents.toFixed(2),
-      executionPenaltyCents: data.executionPenaltyCents.toFixed(2),
-      netExpectedEdgeCents: data.netExpectedEdgeCents.toFixed(2),
-      entryPrice: this._entryPriceCents ?? null,
-      peakPriceCents: this._peakPriceCents ?? null,
-      trailingStopCents: this._trailingStopCents ?? null,
-      emergencyExit,
       size: size.toString(),
-    }, true);
+      emergencyExit,
+      // Детали триггера выхода
+      exitConditions: {
+        hardStopHit,
+        trailingStopHit,
+        tauExit: data.tauSec < this._exitTauSec,
+      },
+      // Уровни стопов для диагностики
+      stopLevels: {
+        entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
+        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+        peakPriceCents: this._peakPriceCents?.toFixed(2) ?? 'none',
+        trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
+        hardStopLevelCents: this._entryPriceCents !== null
+          ? (this._entryPriceCents - this._stopLossCents).toFixed(2)
+          : 'none',
+        pnlFromEntryCents: this._entryPriceCents !== null
+          ? (data.tradeEwmaCents - this._entryPriceCents).toFixed(2)
+          : 'none',
+        pnlFromPeakCents: this._peakPriceCents !== null
+          ? (data.tradeEwmaCents - this._peakPriceCents).toFixed(2)
+          : 'none',
+      },
+      signalEdge: {
+        residualBps: data.residualBps.toFixed(2),
+        signalPersistenceMs: data.signalPersistenceMs,
+        venueAgreement: data.venueAgreement.toFixed(3),
+        signalExpectedMoveCents: data.signalExpectedMoveCents.toFixed(2),
+        executionPenaltyCents: data.executionPenaltyCents.toFixed(2),
+        netExpectedEdgeCents: data.netExpectedEdgeCents.toFixed(2),
+      },
+    });
 
     this._recordJournalDecision(data, 'SELL', {
       reason: exitReason,
@@ -2085,6 +2279,173 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       askPrice: extra?.askPrice,
       orderSize: extra?.orderSize,
       effectiveSide: extra?.effectiveSide,
+    });
+  }
+
+  /**
+   * Отслеживает и записывает переходы состояния сигнала.
+   *
+   * @remarks
+   * Алгоритм:
+   * 1. Если сигнал стал favorable (был нет) → SIGNAL_ON, сохраняем snapshot (residual, chainlink, ts).
+   * 2. Если сигнал был favorable но перестал (не adverse) → SIGNAL_OFF с gap-метриками:
+   *    - `gapClosedBps` = residualAtOn − residualNow: > 0 = Chainlink догнал CEX (сигнал реальный)
+   *    - `gapClosedPct` = gapClosedBps / residualAtOn
+   *    - `chainlinkMoveUsd` / `chainlinkMoveBps` = движение Chainlink за жизнь сигнала
+   *    - `durationMs` = время от ON до OFF
+   * 3. Если сигнал стал adverse при открытой позиции → SIGNAL_ADVERSE с теми же gap-метриками.
+   * 4. Обновляет `_prevSignalFavorable` / `_prevSignalAdverse` для следующего тика.
+   *
+   * Вызывается в начале decide() до любых торговых решений.
+   *
+   * @param data - Данные тика
+   */
+  private _emitSignalTransitions(data: CexLeadLagData): void {
+    if (!this._journal) return;
+
+    const openOrderPriceCents = data.openBuyPriceCents;
+    const driftSinceOrderCents =
+      openOrderPriceCents !== undefined && this._lastPlacedMidCents !== null
+        ? data.tradeEwmaCents - this._lastPlacedMidCents
+        : undefined;
+
+    const base = {
+      marketId: data.marketId,
+      ts: data.nowMs,
+      direction: data.signalDirectionForToken as 'up' | 'down' | 'flat',
+      residualBps: data.residualBps,
+      signalStrength: data.signal?.strength ?? 0,
+      signalConfidence: data.signal?.confidence ?? 0,
+      persistenceMs: data.signalPersistenceMs,
+      midCents: data.tradeEwmaCents,
+      chainlinkPrice: data.chainlinkPrice,
+      netExpectedEdgeCents: data.netExpectedEdgeCents,
+      openOrderPriceCents,
+      driftSinceOrderCents,
+    };
+
+    if (!this._prevSignalFavorable && data.signalFavorable) {
+      // Сохраняем snapshot SIGNAL_ON для последующего gap-анализа в SIGNAL_OFF
+      this._signalOnResidualBps = Math.abs(data.residualBps);
+      this._signalOnChainlinkPrice = data.chainlinkPrice;
+      this._signalOnTs = data.nowMs;
+      this._journal.recordSignalEvent({ ...base, event: 'SIGNAL_ON' });
+
+    } else if (this._prevSignalFavorable && !data.signalFavorable && !data.signalAdverse) {
+      this._journal.recordSignalEvent({
+        ...base,
+        event: 'SIGNAL_OFF',
+        ...this._buildGapMetrics(data),
+      });
+      // Сбрасываем snapshot после закрытия сигнала
+      this._signalOnResidualBps = null;
+      this._signalOnChainlinkPrice = null;
+      this._signalOnTs = null;
+    }
+
+    if (!this._prevSignalAdverse && data.signalAdverse && data.positionQty.gt(0)) {
+      this._journal.recordSignalEvent({
+        ...base,
+        event: 'SIGNAL_ADVERSE',
+        ...this._buildGapMetrics(data),
+      });
+    }
+
+    this._prevSignalFavorable = data.signalFavorable;
+    this._prevSignalAdverse = data.signalAdverse;
+  }
+
+  /**
+   * Вычисляет gap-метрики для SIGNAL_OFF / SIGNAL_ADVERSE.
+   *
+   * @remarks
+   * Показывает насколько Chainlink реально двинулся к CEX за время жизни сигнала.
+   * Используется для оценки качества сигнала: был ли он реальным lead-lag или шумом.
+   *
+   * Алгоритм:
+   * 1. `gapClosedBps` = residualAtOn − |residualNow|:
+   *    - > 0: Chainlink закрыл часть gap (сигнал реальный)
+   *    - < 0: gap расширился (ложный сигнал или разворот)
+   * 2. `gapClosedPct` = gapClosedBps / residualAtOn (0..1 = частичное/полное закрытие)
+   * 3. `chainlinkMoveUsd` = chainlinkNow − chainlinkAtOn
+   * 4. `chainlinkMoveBps` = нормировано на начальную Chainlink-цену
+   * 5. `durationMs` = ts_now − ts_on
+   *
+   * @param data - Данные текущего тика
+   * @returns Объект с gap-метриками, или пустой объект если нет snapshot SIGNAL_ON
+   */
+  private _buildGapMetrics(
+    data: CexLeadLagData,
+  ): {
+    residualAtOn?: number;
+    chainlinkAtOn?: number;
+    gapClosedBps?: number;
+    gapClosedPct?: number;
+    chainlinkMoveUsd?: number;
+    chainlinkMoveBps?: number;
+    durationMs?: number;
+  } {
+    if (
+      this._signalOnResidualBps === null ||
+      this._signalOnChainlinkPrice === null ||
+      this._signalOnTs === null
+    ) {
+      return {};
+    }
+
+    const residualNow = Math.abs(data.residualBps);
+    const gapClosedBps = this._signalOnResidualBps - residualNow;
+    const gapClosedPct = this._signalOnResidualBps > 0
+      ? gapClosedBps / this._signalOnResidualBps
+      : 0;
+    const chainlinkMoveUsd = data.chainlinkPrice - this._signalOnChainlinkPrice;
+    const chainlinkMoveBps = this._signalOnChainlinkPrice > 0
+      ? (chainlinkMoveUsd / this._signalOnChainlinkPrice) * 10_000
+      : 0;
+
+    return {
+      residualAtOn: this._signalOnResidualBps,
+      chainlinkAtOn: this._signalOnChainlinkPrice,
+      gapClosedBps,
+      gapClosedPct,
+      chainlinkMoveUsd,
+      chainlinkMoveBps,
+      durationMs: data.nowMs - this._signalOnTs,
+    };
+  }
+
+  /**
+   * Записывает снятие открытого BUY-ордера с контекстом drift.
+   *
+   * @remarks
+   * Вызывается перед каждым `return [{ type: 'CANCEL' }]` в decide()
+   * если на момент снятия есть открытый BUY-ордер.
+   *
+   * @param data - Данные тика
+   * @param reason - Причина снятия (STALE_CHAINLINK, NO_ENTRY, IN_FLIGHT_FILLS)
+   */
+  private _emitCancelAnalytics(data: CexLeadLagData, reason: string): void {
+    if (!this._journal || data.openBuyOrderId === undefined || data.openBuyPriceCents === undefined) {
+      return;
+    }
+
+    const midAtPlacement = this._lastPlacedMidCents ?? data.openBuyPriceCents;
+    const signalAtCancel: 'favorable' | 'adverse' | 'flat' | 'stale' =
+      data.chainlinkStale ? 'stale' :
+      data.signalFavorable ? 'favorable' :
+      data.signalAdverse ? 'adverse' : 'flat';
+
+    this._journal.recordCancel({
+      marketId: data.marketId,
+      ts: data.nowMs,
+      orderId: String(data.openBuyOrderId),
+      reason,
+      orderPriceCents: data.openBuyPriceCents,
+      midAtPlacementCents: midAtPlacement,
+      midAtCancelCents: data.tradeEwmaCents,
+      driftCents: data.tradeEwmaCents - midAtPlacement,
+      signalAtCancel,
+      netEdgeAtCancel: data.netExpectedEdgeCents,
     });
   }
 

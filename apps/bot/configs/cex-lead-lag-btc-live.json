@@ -27,8 +27,9 @@
     "exitTauSec": 20,
     "maxEntryTauSec": 300,
     "maxChaseAboveExitCents": 5,
-    "stopLossCents": 10,
-    "stopLossCooldownMs": 60000
+    "stopLossCents": 5,
+    "stopLossCooldownMs": 60000,
+    "minSignalPersistenceMs": 0
   },
   "execution": {
     "postOnly": true

@@ -268,6 +268,8 @@ describe('_checkEntrySignalFirst — entry gating', () => {
         minEdgeCents: 2,
         exitTauSec: 20,
         maxEntryTauSec: 300,
+        // Явно задаём 300ms для совместимости с тестом persistence < 300
+        minSignalPersistenceMs: 300,
       },
       'test-entry',
     );
