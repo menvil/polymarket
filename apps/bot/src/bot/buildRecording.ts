@@ -2,9 +2,10 @@
  * Builder: создание и подключение инфраструктуры записи данных.
  *
  * @remarks
- * Использует тот же подход что `packages/apps/collect-data`:
+ * Использует тот же подход что `apps/collect-data`:
  * - `wsAdapter.onRawMessage` → `recorder.recordEvent` для ВСЕХ WS-событий
  * - RTDS `onPrice` → `recorder.recordEvent` для crypto_price событий
+ * - CEX `recordCexEvent` → `recorder.recordEvent` для cex_ob/cex_trade событий
  * - `recorder.registerMarket` с `rawMarket` для meta-строки
  *
  * Единый модуль для paper и live режимов.
@@ -27,6 +28,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IMarketDataRecorder, IDecisionJournal, MarketMeta, DiscoveredMarket } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { MarketId } from '@polymarket/ids';
+import type { CexNormalizedEvent } from '@polymarket/cex-market-data';
 import type { RecordingConfig } from '../config/BotConfig.js';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
 import {
@@ -68,6 +70,18 @@ export interface RecordingInfra {
    * Вызвать ОДИН раз после создания rtdsClient.
    */
   wireToRtds(rtdsClient: RtdsClientForRecording): void;
+
+  /**
+   * Записывает нормализованное CEX-событие в snapshot соответствующего рынка.
+   *
+   * @remarks
+   * Передаётся как sink в `CexCollectorService` при его создании.
+   * Нормализует символ CCXT (напр. "BTC/USDT") в формат RTDS-фильтра ("btcusdt")
+   * для поиска связанных tokenIds в `symbolToTokenIds`.
+   *
+   * @param event - Нормализованное CEX-событие (cex_ob или cex_trade)
+   */
+  recordCexEvent(event: CexNormalizedEvent): void;
 
   /**
    * Регистрирует рынок для записи (meta + WS routing + RTDS routing).
@@ -179,6 +193,17 @@ export function buildRecording(
         }
       });
       log.debug('RTDS recording wired (crypto_price)');
+    },
+
+    recordCexEvent(event: CexNormalizedEvent): void {
+      // Нормализуем символ CCXT → формат RTDS-фильтра для поиска tokenIds.
+      // "BTC/USDT" (binance CCXT) → "btcusdt" (binance RTDS filter)
+      const normalizedSymbol = event.symbol.replace('/', '').toLowerCase();
+      const tokenIds = symbolToTokenIds.get(normalizedSymbol);
+      if (!tokenIds || tokenIds.size === 0) return;
+      for (const tokenId of tokenIds) {
+        dataRecorder.recordEvent(tokenId, event);
+      }
     },
 
     wireToEventBus(eventBus: IEventBus, assetToTokenId?: (asset: unknown) => string | undefined): void {

@@ -77,7 +77,7 @@ import {
 import { buildPaperInfra, buildPaperSimulator } from './bot/buildPaperMode.js';
 import { buildLiveInfra } from './bot/buildLiveInfra.js';
 import type { LiveCredentials } from './bot/buildLiveInfra.js';
-import { buildRecording } from './bot/buildRecording.js';
+import { buildRecording, type RecordingInfra } from './bot/buildRecording.js';
 import { CryptoSubscriptionManager } from './bot/CryptoSubscriptionManager.js';
 import { PolymarketRedeemer } from './bot/PolymarketRedeemer.js';
 import { AutoRedeemer } from './bot/AutoRedeemer.js';
@@ -246,7 +246,7 @@ async function runPaper(): Promise<void> {
   const cryptoPriceStore = new CryptoPriceStore();
   const cryptoMarketDataStore = new CryptoMarketDataStore();
   const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
-  const paperCexService = createBotCexService(config, logger, cryptoMarketDataStore);
+  const paperCexService = createBotCexService(config, logger, cryptoMarketDataStore, recording ?? undefined);
   const binanceClient = new BinanceKlinesClient(logger);
   const rtdsClient = new RtdsWebSocketClient(
     { url: 'wss://ws-live-data.polymarket.com' },
@@ -2944,7 +2944,7 @@ async function runLive(): Promise<void> {
   const liveCryptoPriceStore = new CryptoPriceStore();
   const liveCryptoMarketDataStore = new CryptoMarketDataStore();
   const liveCryptoSignalRegistry = createDefaultCryptoSignalRegistry();
-  const liveCexService = createBotCexService(config, logger, liveCryptoMarketDataStore);
+  const liveCexService = createBotCexService(config, logger, liveCryptoMarketDataStore, recording ?? undefined);
   const liveBinanceClient = new BinanceKlinesClient(logger);
   const liveRtdsClient = new RtdsWebSocketClient(
     { url: 'wss://ws-live-data.polymarket.com' },
@@ -3628,6 +3628,7 @@ function createBotCexService(
   botConfig: BotConfig,
   logger: ILogger,
   cryptoMarketDataStore: CryptoMarketDataStore,
+  recording?: RecordingInfra,
 ): CexCollectorService | null {
   const cexConfig = botConfig.cex;
   if (!cexConfig?.enabled) return null;
@@ -3644,12 +3645,14 @@ function createBotCexService(
     flushIntervalMs: cexConfig.flushIntervalMs,
     sinks: [
       (event) => routeCexEventToCryptoStore(event, cryptoMarketDataStore),
+      ...(recording ? [(event: CexNormalizedEvent) => recording.recordCexEvent(event)] : []),
     ],
   };
 
   logger.info('CEX feed configured for bot', {
     exchanges: Object.keys(cexConfig.exchanges),
     memorySink: true,
+    snapshotRecording: recording !== undefined,
     diskRecording: outputDir !== undefined,
     outputDir: outputDir ?? '-',
   });

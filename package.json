@@ -5,7 +5,6 @@
   "description": "Polymarket trading system monorepo",
   "workspaces": [
     "apps/*",
-    "packages/apps/*",
     "packages/foundation/*",
     "packages/domain/*",
     "packages/domain/accounting/*",

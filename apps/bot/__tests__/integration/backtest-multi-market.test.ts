@@ -37,7 +37,7 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import { BacktestEngine } from '@polymarket/backtesting';
-import { JsonlSnapshotReader } from '@polymarket/snapshot-readers';
+import { SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';
 import { buildProcessFillUseCase, buildOrderUseCases } from '../../src/bot/buildUseCases.js';
 import { buildPaperInfra, buildPaperSimulator } from '../../src/bot/buildPaperMode.js';
@@ -55,19 +55,19 @@ jest.setTimeout(120_000);
 
 const SNAPSHOTS_DIR = path.resolve(
   __dirname,
-  '../../../../packages/apps/collect-data/snapshots/2026-03-11',
+  '../../../collect-data/snapshots/2026-03-11',
 );
 
 /** Рынок A: BTC 6:15PM-6:30PM */
 const SNAPSHOT_A = path.join(
   SNAPSHOTS_DIR,
-  'Bitcoin_Up_or_Down_-_March_11_615PM-630PM_ET___0x947e16d2f707b2d66cbf3d603b59f2e81a124d.jsonl',
+  'Bitcoin_Up_or_Down_-_March_11_615PM-630PM_ET___0x947e16d2f707b2d66cbf3d603b59f2e81a124d.jsonl.gz',
 );
 
 /** Рынок B: BTC 6:35PM-6:40PM */
 const SNAPSHOT_B = path.join(
   SNAPSHOTS_DIR,
-  'Bitcoin_Up_or_Down_-_March_11_635PM-640PM_ET___0xd63862dcb53670f87c4dda7bf5b9a014703b56.jsonl',
+  'Bitcoin_Up_or_Down_-_March_11_635PM-640PM_ET___0xd63862dcb53670f87c4dda7bf5b9a014703b56.jsonl.gz',
 );
 
 const OUTCOME_INDEX = 1 as 0 | 1; // NO token
@@ -125,7 +125,8 @@ interface SnapshotMeta {
 }
 
 async function readMeta(filePath: string, outcomeIndex: 0 | 1): Promise<SnapshotMeta> {
-  const reader = new JsonlSnapshotReader(filePath);
+  const factory = new SnapshotReaderFactory(new ConsoleLogger(new ReplayClock(new Date(0)), LogLevel.WARN));
+  const reader = factory.create(filePath);
   try {
     for await (const line of reader.readLines()) {
       const raw = JSON.parse(line) as Record<string, unknown>;

@@ -30,19 +30,13 @@
       "path": "../../packages/foundation/ids/tsconfig.build.json"
     },
     {
-      "path": "../../packages/foundation/time/tsconfig.build.json"
-    },
-    {
       "path": "../../packages/domain/value-objects/tsconfig.build.json"
     },
     {
       "path": "../../packages/application/ports/tsconfig.build.json"
     },
     {
-      "path": "../../packages/application/handlers/tsconfig.build.json"
-    },
-    {
-      "path": "../../packages/domain/market-data/order-book/tsconfig.build.json"
+      "path": "../../packages/application/market-discovery/tsconfig.build.json"
     },
     {
       "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"

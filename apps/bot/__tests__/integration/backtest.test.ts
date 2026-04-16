@@ -49,7 +49,7 @@ jest.setTimeout(120_000); // бектест может занять до 2 ми�
 
 const DEFAULT_SNAPSHOT = path.resolve(
   __dirname,
-  '../../../../packages/apps/collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_6PM_ET___0xd01482826c00487c99c59e43f27f8d2f5cccc3.jsonl',
+  '../../../collect-data/snapshots/2026-03-11/Bitcoin_Up_or_Down_-_March_11_6PM_ET___0xd01482826c00487c99c59e43f27f8d2f5cccc3.jsonl',
 );
 
 const SNAPSHOT_PATH = process.env['SNAPSHOT'] ?? DEFAULT_SNAPSHOT;
