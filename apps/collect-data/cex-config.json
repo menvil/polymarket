@@ -5,7 +5,7 @@
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
-    "restartIntervalMs": 1800000,
+    "restartIntervalMs": 900000,
     "obMethod": "watch"
   },
   "coinbase": {
@@ -14,7 +14,7 @@
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
-    "restartIntervalMs": 1800000,
+    "restartIntervalMs": 900000,
     "obMethod": "watch"
   },
   "kraken": {
@@ -23,7 +23,7 @@
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
-    "restartIntervalMs": 1800000,
+    "restartIntervalMs": 900000,
     "obMethod": "watch"
   },
   "cryptocom": {
@@ -32,7 +32,7 @@
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
-    "restartIntervalMs": 1800000,
+    "restartIntervalMs": 900000,
     "obMethod": "watch"
   },
   "okx": {
@@ -41,7 +41,7 @@
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
-    "restartIntervalMs": 1800000,
+    "restartIntervalMs": 900000,
     "obMethod": "watch"
   }
 }

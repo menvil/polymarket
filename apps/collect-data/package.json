@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node --max-old-space-size=1536 --env-file=.env dist/main.js",
+    "start": "node --max-old-space-size=3072 --env-file=.env dist/main.js",
     "predev": "find ../.. -not -path '*/dist/*' -not -path '*/node_modules/*' -not -path '*/stubs/ethers*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) | grep -v '\\.config\\.' | xargs rm -f 2>/dev/null; true",
     "dev": "npx tsx --env-file=.env src/main.ts",
     "build": "tsc -b tsconfig.build.json",
