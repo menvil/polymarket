@@ -641,6 +641,7 @@ let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let expiryInterval: ReturnType<typeof setInterval> | null = null;
 let enrichmentInterval: ReturnType<typeof setInterval> | null = null;
 let closedMarketsCleanupInterval: ReturnType<typeof setInterval> | null = null;
+let expiryRunInProgress = false;
 
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (isShuttingDown) return;
@@ -815,7 +816,21 @@ scanTimeoutId = setTimeout(() => { void scheduleScanLoop(); }, config.marketScan
 // Процесс 2: закрытие истёкших + заполнение слотов из кэша (каждые 5 сек).
 // Не знает о сканировании — только читает кэш и управляет слотами.
 expiryInterval = setInterval(() => {
-  void checkExpiredMarkets();
+  if (expiryRunInProgress) {
+    logger.debug('Skipping expired markets check: previous run is still in progress');
+    return;
+  }
+
+  expiryRunInProgress = true;
+  void checkExpiredMarkets()
+    .catch((err) => {
+      logger.warn('Expired markets check failed', {
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    })
+    .finally(() => {
+      expiryRunInProgress = false;
+    });
 }, 5_000);
 
 // Background enrichment: проверяем priceToBeat каждые 30 сек

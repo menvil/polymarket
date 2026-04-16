@@ -45,6 +45,8 @@ import type { DataRecorderConfig } from './config/DataRecorderConfig.js';
 import type { IFormatter } from './formatters/IFormatter.js';
 import type { GzipCompressor } from './compression/GzipCompressor.js';
 
+const META_RESERVED_BYTES = 16 * 1024;
+
 /**
  * Буферизированное событие с timestamp для сортировки перед записью.
  *
@@ -221,7 +223,7 @@ export class DataRecorder implements IMarketDataRecorder {
       if (writer.meta.rawMarket) {
         metaRecord['m'] = writer.meta.rawMarket;
       }
-      const metaLine = this._formatter.formatRecord(metaRecord);
+      const metaLine = this._formatReservedMetaLine(metaRecord);
       fs.writeFileSync(writer.filePath, metaLine, { flag: 'a' });
 
       // Открываем поток в режиме append
@@ -253,31 +255,19 @@ export class DataRecorder implements IMarketDataRecorder {
    * @param updatedRawMarket - Обновлённый rawMarket из Gamma API
    *
    * @remarks
-   * Перезаписывает первую строку файла. Нужно вызывать после flush буфера,
-   * но до закрытия stream. Используется для записи `eventMetadata.priceToBeat`
-   * и `eventMetadata.finalPrice` которые появляются в API после старта/завершения рынка.
+   * Перезаписывает фиксированный first-line meta block без чтения всего файла.
+   * Используется для записи `eventMetadata.priceToBeat` и `eventMetadata.finalPrice`,
+   * которые появляются в API после старта/завершения рынка.
    */
   public async updateMarketMeta(marketId: MarketId, updatedRawMarket: Record<string, unknown>): Promise<void> {
     const key = String(marketId);
     const writer = this._writers.get(key);
     if (!writer) return;
 
-    // Сбрасываем буфер перед перезаписью
+    if (!writer.active) return;
+
     await this._flushWriter(writer);
 
-    // Закрываем текущий stream
-    if (writer.stream) {
-      await new Promise<void>((resolve, reject) => {
-        writer.stream!.end((err?: Error | null) => {
-          if (err) reject(err); else resolve();
-        });
-      });
-      writer.stream = null;
-    }
-
-    // Читаем файл, заменяем первую строку
-    const content = fs.readFileSync(writer.filePath, 'utf-8');
-    const lines = content.split('\n');
     const newMeta: Record<string, unknown> = {
       t: 'meta',
       ts: Date.now(),
@@ -286,14 +276,36 @@ export class DataRecorder implements IMarketDataRecorder {
       tokenIds: Array.from(writer.meta.tokenIds),
       m: updatedRawMarket,
     };
-    lines[0] = this._formatter.formatRecord(newMeta).replace(/\n$/, '');
-    fs.writeFileSync(writer.filePath, lines.join('\n'));
 
-    // Переоткрываем stream для append
-    writer.stream = fs.createWriteStream(writer.filePath, { flags: 'a' });
-    writer.stream.on('error', (err) => {
-      this._logger.error('Write stream error', { marketId: key, filePath: writer.filePath, err });
-    });
+    let metaLine: Buffer;
+    try {
+      metaLine = this._formatReservedMetaLine(newMeta);
+    } catch (err) {
+      this._logger.warn('Market meta update skipped: meta exceeds reserved first-line block', {
+        marketId: key,
+        filePath: writer.filePath,
+        reservedBytes: META_RESERVED_BYTES,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    if (!this._hasReservedMetaBlock(writer.filePath)) {
+      this._logger.warn('Market meta update skipped: file does not use reserved first-line block', {
+        marketId: key,
+        filePath: writer.filePath,
+        reservedBytes: META_RESERVED_BYTES,
+      });
+      return;
+    }
+
+    const fd = await fs.promises.open(writer.filePath, 'r+');
+    try {
+      await fd.write(metaLine, 0, metaLine.length, 0);
+      await fd.sync();
+    } finally {
+      await fd.close();
+    }
 
     this._logger.info('Market meta updated with API data', {
       marketId: key,
@@ -646,6 +658,47 @@ export class DataRecorder implements IMarketDataRecorder {
     if (this._config.sourceSubDir) segments.push(this._config.sourceSubDir);
     segments.push(fileName);
     return path.join(...segments);
+  }
+
+  /**
+   * Форматирует meta-запись в fixed-width first-line block.
+   *
+   * @remarks
+   * Padding делается пробелами: `JSON.parse(line)` принимает trailing whitespace,
+   * а бектесты продолжают читать первую строку как обычный JSON.
+   */
+  private _formatReservedMetaLine(metaRecord: Record<string, unknown>): Buffer {
+    const jsonLine = this._formatter.formatRecord(metaRecord).replace(/\r?\n$/, '');
+    const jsonBytes = Buffer.byteLength(jsonLine, 'utf8');
+    if (jsonBytes > META_RESERVED_BYTES - 1) {
+      throw new Error(`Meta line is ${jsonBytes} bytes, max ${META_RESERVED_BYTES - 1}`);
+    }
+
+    const buffer = Buffer.alloc(META_RESERVED_BYTES, 0x20);
+    buffer.write(jsonLine, 0, 'utf8');
+    buffer[META_RESERVED_BYTES - 1] = 0x0a;
+    return buffer;
+  }
+
+  /**
+   * Проверяет, что файл был создан новым fixed-width meta форматом.
+   */
+  private _hasReservedMetaBlock(filePath: string): boolean {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size < META_RESERVED_BYTES) return false;
+
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        const header = Buffer.alloc(META_RESERVED_BYTES);
+        fs.readSync(fd, header, 0, META_RESERVED_BYTES, 0);
+        return header.indexOf(0x0a) === META_RESERVED_BYTES - 1;
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return false;
+    }
   }
 
   /**

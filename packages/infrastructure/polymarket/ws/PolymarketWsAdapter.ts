@@ -31,8 +31,8 @@
  * ### Unsubscribe (истечение рынков):
  * `unsubscribeFromToken()` только удаляет токен из внутреннего set — НЕ посылает
  * subscription update на сервер. Сервер продолжает слать данные по удалённому токену,
- * но в collect-data режиме `recorder.recordEvent()` безвредно их игнорирует
- * (рынок уже финализирован). Это предотвращает INVALID OPERATION при истечении рынков.
+ * но Adapter фильтрует их по `_subscribedTokens`. Controlled reconnect через 10 секунд
+ * применяет актуальный полный список токенов на сервере.
  *
  * @example
  * ```typescript
@@ -58,6 +58,9 @@ import type { PolymarketWebSocketManager, SubscriptionParams } from './Polymarke
 import { PolymarketWsClient } from './PolymarketWsClient.js';
 import { PolymarketMessageRouter } from './PolymarketMessageRouter.js';
 import { parseWsMessage } from './mapping/WsMessageMapper.js';
+
+const SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS = 500;
+const SUBSCRIPTION_REFRESH_RECONNECT_DEBOUNCE_MS = 10_000;
 
 /**
  * PolymarketWsAdapter — реализация IPolymarketWsEmitter.
@@ -250,7 +253,8 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    * будут отправлены в `_resubscribeAll()` по событию 'connected'.
    *
    * Несколько последовательных вызовов (например, при открытии рынка с 2 токенами)
-   * коллапсируются в один reconnect через 500ms дебаунс.
+   * коллапсируются в один быстрый reconnect. Если уже запланирован delayed refresh
+   * после unsubscribe, новый токен попадёт в тот же полный reconnect.
    *
    * ### Почему reconnect, а не subscription update:
    * Polymarket WS принимает только ОДНО subscription-сообщение на соединение.
@@ -273,16 +277,18 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
    *
    * @remarks
    * Удаляет tokenId из внутреннего set, но НЕ инициирует reconnect.
-   * Сервер продолжит слать данные по удалённому токену до следующего reconnect
-   * (инициированного subscribeToToken). Это безвредно — данные игнорируются.
-   *
-   * Причина: reconnect при unsubscribe вызывал race condition при ротации рынков.
-   * closeMarket → unsubscribe → reconnect fires BEFORE openMarket → subscribe.
-   * Reconnect захватывал stale token set → новый рынок не получал данных.
+   * Сервер продолжит слать данные по удалённому токену до controlled reconnect;
+   * локально эти сообщения фильтруются по `_subscribedTokens`.
    */
   async unsubscribeFromToken(tokenId: string): Promise<void> {
     this._checkDestroyed();
-    this._subscribedTokens.delete(tokenId);
+    const wasDeleted = this._subscribedTokens.delete(tokenId);
+    if (wasDeleted && this._hasEverConnected && this._isConnected) {
+      this._scheduleReconnectForSubscription(
+        SUBSCRIPTION_REFRESH_RECONNECT_DEBOUNCE_MS,
+        'token_unsubscribed',
+      );
+    }
   }
 
   /**
@@ -449,7 +455,10 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
             tokenCount: this._subscribedTokens.size,
             reconnectPending: this._reconnectForSubscriptionPending,
           });
-          this._scheduleReconnectForSubscription();
+          this._scheduleReconnectForSubscription(
+            SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS,
+            'invalid_operation',
+          );
         }
       } else {
         this._logger.error('[PolymarketWsAdapter] Router error', {
@@ -601,16 +610,25 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   }
 
   /**
-   * Планирует reconnect для применения изменений подписки (дебаунс 500ms).
+   * Планирует reconnect для применения изменений подписки.
    *
    * @remarks
    * Несколько быстрых вызовов (открытие рынка с 2 токенами = 2 subscribeToToken за ~0ms)
    * коллапсируются в один reconnect. `_reconnectForSubscriptionPending` гарантирует
    * единственный запланированный reconnect в каждый момент времени.
    */
-  private _scheduleReconnectForSubscription(): void {
+  private _scheduleReconnectForSubscription(
+    delayMs = SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS,
+    reason = 'subscription_changed',
+  ): void {
     if (this._reconnectForSubscriptionPending) return;
     this._reconnectForSubscriptionPending = true;
+
+    this._logger.info('[PolymarketWsAdapter] Scheduling subscription refresh reconnect', {
+      delayMs,
+      reason,
+      tokenCount: this._subscribedTokens.size,
+    });
 
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
@@ -624,7 +642,7 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
         });
         this._reconnectForSubscriptionPending = false;
       });
-    }, 500);
+    }, delayMs);
   }
 
   /**

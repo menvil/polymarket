@@ -18,16 +18,12 @@
  * - `disconnected` — WS закрыт
  * - `reconnecting` — начало попытки переподключения
  * - `error` — ошибка
- * - `message` — raw данные (Buffer/string, эмитируется ПЕРВЫМ)
- * - `raw` — распарсенный объект
- * - `orderbook` — payload события типа 'orderbook'
- * - `trade` — payload события типа 'trade'
+ * - `message` — raw данные (Buffer/string)
  */
 import { EventEmitter } from 'events';
 import type { ILogger } from '@polymarket/logger';
 import type { BaseWebSocketConfig, ConnectionStatus, SubscriptionParams } from './types.js';
 import type { IMessageFormatter } from './IMessageFormatter.js';
-import type { IMessageParser } from './IMessageParser.js';
 
 /**
  * Базовый WebSocket транспорт — конкретный класс (не абстрактный).
@@ -55,7 +51,6 @@ export abstract class BaseWebSocketTransport extends EventEmitter {
   constructor(
     config: BaseWebSocketConfig,
     protected readonly formatter: IMessageFormatter,
-    protected readonly parser: IMessageParser,
     logger: ILogger
   ) {
     super();
@@ -301,60 +296,7 @@ export abstract class BaseWebSocketTransport extends EventEmitter {
   }
 
   private _handleMessage(data: unknown): void {
-    // Эмитируем сырые данные ПЕРВЫМИ (для DataCollector)
     this.emit('message', data);
-
-    try {
-      const rawStr = typeof data === 'string' ? data : String(data);
-      const trimmed = rawStr.trim();
-
-      if (trimmed === '') return;
-
-      // Текстовые ответы сервера (не JSON)
-      const knownTextResponses = ['INVALID OPERATION', 'ERROR', 'PONG', 'OK', 'UNAUTHORIZED', 'TOO MANY REQUESTS'];
-      if (knownTextResponses.includes(trimmed)) {
-        this.logger.debug('Text response from server', { message: trimmed });
-        return;
-      }
-
-      const parsed = JSON.parse(rawStr);
-      const messages = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const msg of messages) {
-        this._processMessage(msg);
-      }
-    } catch (err) {
-      this.logger.error('Failed to parse WebSocket message', {
-        err: err instanceof Error ? err.message : String(err),
-        preview: String(data).substring(0, 200),
-      });
-    }
-  }
-
-  private _processMessage(message: unknown): void {
-    try {
-      if (this.parser.isPong?.(message)) {
-        this.logger.debug('Pong received');
-        return;
-      }
-
-      if (this.parser.isError?.(message)) {
-        const errText = this.parser.getErrorText?.(message) ?? 'Unknown WS error';
-        this.logger.error('WS error message', { error: errText });
-        this.emit('error', new Error(errText));
-        return;
-      }
-
-      const result = this.parser.parseMessage(message);
-      if (!result) return;
-
-      this.emit('raw', message);
-      this.emit(result.type, message);
-    } catch (err) {
-      this.logger.error('Failed to process message', {
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   private _resubscribeAll(): void {

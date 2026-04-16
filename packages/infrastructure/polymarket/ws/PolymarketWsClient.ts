@@ -26,9 +26,9 @@
  * // Подключение
  * await client.connect();
  *
- * // Подписка на события
- * client.on('orderbook', (rawData) => {
- *   console.log('Raw orderbook:', rawData);
+ * // Подписка на raw frames
+ * client.on('message', (rawData) => {
+ *   console.log('Raw WS frame:', rawData);
  * });
  *
  * // Подписка на маркет
@@ -53,17 +53,14 @@ import type { ILogger } from '@polymarket/logger';
  * Типы событий PolymarketWsClient
  *
  * @remarks
- * Все события пересылают raw данные от WebSocketManager без трансформации.
+ * Все события пересылаются от WebSocketManager без трансформации.
  */
 export type WsClientEvent =
   | 'connected'
   | 'disconnected'
   | 'reconnecting'
   | 'error'
-  | 'orderbook'
-  | 'trade'
-  | 'message'
-  | 'raw';
+  | 'message';
 
 /**
  * PolymarketWsClient
@@ -247,7 +244,7 @@ export class PolymarketWsClient extends EventEmitter {
    * Использует формат Polymarket: { assets_ids: [...], type: 'market' }
    *
    * **Не ждёт подтверждения** - подписка асинхронная.
-   * События придут через 'orderbook'/'trade' события.
+   * Входящие raw frames придут через событие `message`; их парсит PolymarketWsAdapter.
    *
    * @example
    * ```typescript
@@ -407,10 +404,7 @@ export class PolymarketWsClient extends EventEmitter {
    * - disconnected
    * - reconnecting
    * - error
-   * - orderbook
-   * - trade
    * - message
-   * - raw
    */
   private setupEventForwarding(): void {
     const events: WsClientEvent[] = [
@@ -418,10 +412,7 @@ export class PolymarketWsClient extends EventEmitter {
       'disconnected',
       'reconnecting',
       'error',
-      'orderbook',
-      'trade',
       'message',
-      'raw',
     ];
 
     events.forEach((event) => {

@@ -3,7 +3,8 @@
  *
  * @remarks
  * Отвечает за форматирование ИСХОДЯЩИХ сообщений subscribe/unsubscribe в формате Polymarket.
- * Это ИСХОДЯЩАЯ половина (в паре с PolymarketMessageParser для входящих).
+ * Это ИСХОДЯЩАЯ половина transport слоя. Входящие сообщения парсит
+ * PolymarketMessageRouter внутри PolymarketWsAdapter.
  *
  * Формат подписки Polymarket:
  * ```json

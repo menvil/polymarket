@@ -13,13 +13,6 @@ export interface SubscriptionParams {
   [key: string]: unknown;
 }
 
-/** Распарсенное сообщение */
-export interface ParsedMessage {
-  type: string;
-  channelId: string;
-  payload: unknown;
-}
-
 /** Базовая конфигурация WebSocket транспорта */
 export interface BaseWebSocketConfig {
   url: string;
