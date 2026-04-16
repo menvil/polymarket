@@ -10,10 +10,10 @@
     ],
     "paths": {
       "@polymarket/fill": [
-        "../../entities/fill/src/index.ts"
+        "../../entities/fill/dist/index.d.ts"
       ],
       "@polymarket/fill/*": [
-        "../../entities/fill/src/*"
+        "../../entities/fill/dist/*"
       ]
     }
   },
