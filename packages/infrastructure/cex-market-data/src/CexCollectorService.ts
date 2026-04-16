@@ -6,7 +6,10 @@ import { CexFileRotator } from './CexFileRotator.js';
 import { CcxtSymbolWatcher } from './CcxtSymbolWatcher.js';
 
 const DEFAULT_OB_DEPTH = 10;
-const DEFAULT_RESTART_INTERVAL_MS = 2 * 60 * 60 * 1000;
+// Плановый перезапуск ccxt.pro-инстансов каждые 30 мин:
+// освобождает накопленный внутренний стейт (WS-буферы, кэши, GC-фрагментацию).
+// 2 часа было слишком долго — приводило к росту RSS до 4 GB.
+const DEFAULT_RESTART_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
  * Сервис сбора рыночных данных с CEX-бирж через ccxt.pro.

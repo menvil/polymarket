@@ -161,12 +161,14 @@ export class CcxtSymbolWatcher {
 
         const ob = useWatch
           ? await (() => {
-              const stale = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS)
-              );
+              let staleTimer: ReturnType<typeof setTimeout>;
+              const stale = new Promise<never>((_, reject) => {
+                staleTimer = setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS);
+              });
               stale.catch(() => {});
               return Promise.race([
-                instance.watchOrderBook(this._params.symbol, this._params.depth),
+                instance.watchOrderBook(this._params.symbol, this._params.depth)
+                  .then((result: unknown) => { clearTimeout(staleTimer); return result; }),
                 stale,
               ]);
             })()
@@ -223,12 +225,14 @@ export class CcxtSymbolWatcher {
           continue;
         }
 
-        const stale = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Trades stale: no update in 30s')), STALE_TIMEOUT_MS)
-        );
+        let staleTimer: ReturnType<typeof setTimeout>;
+        const stale = new Promise<never>((_, reject) => {
+          staleTimer = setTimeout(() => reject(new Error('Trades stale: no update in 30s')), STALE_TIMEOUT_MS);
+        });
         stale.catch(() => {});
         const trades = await Promise.race([
-          instance.watchTrades(this._params.symbol),
+          instance.watchTrades(this._params.symbol)
+            .then((result: unknown) => { clearTimeout(staleTimer); return result; }),
           stale,
         ]);
 
@@ -240,6 +244,13 @@ export class CcxtSymbolWatcher {
             sz: trade.amount,
             side: trade.side,
           });
+        }
+
+        // Очищаем внутренний кэш ccxt.pro: instance.trades[symbol] хранит
+        // raw-объекты с полем `info` (дубликат JSON-ответа биржи).
+        // Без очистки кэш растёт до tradesLimit (1000) и создаёт GC-давление.
+        if (instance.trades?.[this._params.symbol]) {
+          instance.trades[this._params.symbol] = [];
         }
       } catch (err) {
         if (this._stopped) break;
