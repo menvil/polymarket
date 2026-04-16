@@ -58,6 +58,4 @@ apps/bot/data/
 
 #Snapshots
 snapshots/
-# Исключение: папка snapshots в collect-data отслеживается (содержимое игнорируется локальным .gitignore)
-!packages/apps/collect-data/snapshots/
 *.zip
