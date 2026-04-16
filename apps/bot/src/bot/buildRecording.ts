@@ -184,12 +184,18 @@ export function buildRecording(
     wireToEventBus(eventBus: IEventBus, assetToTokenId?: (asset: unknown) => string | undefined): void {
       // Маппинг orderId → tokenId для роутинга fills в journal
       const orderToToken = new Map<string, string>();
+      // Маппинг orderId → price (¢) для расчёта slippage при fill
+      const orderToPriceCents = new Map<string, number>();
       const recordedFillIds = new Set<string>();
+
       eventBus.subscribe('ORDER_CREATED', (event) => {
         // AssetId → tokenId: используем конвертер если передан, иначе String
         const tokenId = assetToTokenId?.(event.asset) ?? String(event.asset ?? '');
         const orderId = String(event.orderId);
+        const priceCents = event.price.value().toNumber() * 100;
         if (tokenId) orderToToken.set(orderId, tokenId);
+        // Сохраняем цену ордера для последующего расчёта slippage при fill
+        orderToPriceCents.set(orderId, priceCents);
         // Записываем размещение ордера в journal (время placement для latency)
         journal.recordOrder({
           marketId: tokenId,
@@ -200,6 +206,27 @@ export function buildRecording(
           size: event.size.value().toFixed(2),
         });
       });
+
+      /**
+       * Вычисляет slippage (¢) между ценой fill и ценой ордера.
+       *
+       * @remarks
+       * Знак конвенция: slippage = fillPrice − orderPrice (в центах).
+       * - BUY: отрицательный → цена ниже плановой (улучшение); положительный → выше (ухудшение).
+       * - SELL: положительный → цена выше плановой (улучшение); отрицательный → ниже (ухудшение).
+       *
+       * @param orderId - ID ордера
+       * @param fillPriceCents - Цена исполнения (¢)
+       * @returns { orderPriceCents, slippageCents } или undefined если ордер не найден
+       */
+      function computeSlippage(
+        orderId: string,
+        fillPriceCents: number,
+      ): { orderPriceCents: number; slippageCents: number } | undefined {
+        const orderPrice = orderToPriceCents.get(orderId);
+        if (orderPrice === undefined) return undefined;
+        return { orderPriceCents: orderPrice, slippageCents: fillPriceCents - orderPrice };
+      }
 
       // FILL_RECEIVED fallback покрывает direct fills на уже terminal/cancelled ордера,
       // где ORDER_FILLED не публикуется. Откладываем на следующий tick, чтобы обычный
@@ -213,15 +240,18 @@ export function buildRecording(
           const price = event.fill.price.value();
           const size = event.fill.size.value();
           const tokenId = assetToTokenId?.(event.fill.tokenId) ?? String(event.fill.tokenId ?? '');
+          const orderId = String(event.fill.orderId);
+          const slippage = computeSlippage(orderId, price.toNumber() * 100);
           journal.recordFill({
             marketId: tokenId,
             ts: Date.now(),
-            orderId: String(event.fill.orderId),
+            orderId,
             side: event.fill.side as 'BUY' | 'SELL',
             price: price.toFixed(4),
             size: size.toFixed(2),
             notional: price.times(size).toFixed(4),
             partial: false,
+            ...slippage,
           });
         }, 0);
       });
@@ -235,18 +265,24 @@ export function buildRecording(
 
         const price = event.fill.price.value();
         const size = event.fill.size.value();
-        const tokenId = orderToToken.get(String(event.orderId)) ?? '';
+        const orderId = String(event.orderId);
+        const tokenId = orderToToken.get(orderId) ?? '';
+        const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
           marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
           ts: Date.now(),
-          orderId: String(event.orderId),
+          orderId,
           side: event.fill.side as 'BUY' | 'SELL',
           price: price.toFixed(4),
           size: size.toFixed(2),
           notional: price.times(size).toFixed(4),
           partial: false,
+          ...slippage,
         });
+        // Очищаем price-кэш после полного fill — ордер больше не нужен
+        orderToPriceCents.delete(orderId);
       });
+
       eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
         const fillId = String(event.fill.id);
         if (recordedFillIds.has(fillId)) return;
@@ -254,18 +290,23 @@ export function buildRecording(
 
         const price = event.fill.price.value();
         const size = event.fill.size.value();
-        const tokenId = orderToToken.get(String(event.orderId)) ?? '';
+        const orderId = String(event.orderId);
+        const tokenId = orderToToken.get(orderId) ?? '';
+        const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
           marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
           ts: Date.now(),
-          orderId: String(event.orderId),
+          orderId,
           side: event.fill.side as 'BUY' | 'SELL',
           price: price.toFixed(4),
           size: size.toFixed(2),
           notional: price.times(size).toFixed(4),
           partial: true,
+          ...slippage,
         });
+        // Не удаляем из price-кэша — ордер может быть заполнен частично ещё раз
       });
+
       log.debug('EventBus recording wired (fills)');
     },
 

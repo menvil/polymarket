@@ -132,6 +132,14 @@ export interface MarketSlot {
   readonly outcomeIndex: 0 | 1;
   fillHistory: FillRecord[];
   partialAccum: Map<string, PartialAccum>;
+  /**
+   * Аккумулятор partial fills для ордеров на direct-fill пути.
+   *
+   * @remarks
+   * Заполняется при DIRECT_FILL_APPLIED (fill на уже CANCELLED/terminal ордере).
+   * Флашится в fillHistory в _printMarketSummary() перед выводом сводки.
+   */
+  directPartialAccum: Map<string, PartialAccum>;
   openedAt: number;
 }
 
@@ -555,6 +563,7 @@ export class MarketRotation {
         outcomeIndex,
         fillHistory: [],
         partialAccum: new Map(),
+        directPartialAccum: new Map(),
         openedAt: Date.now(),
       };
 
@@ -976,7 +985,13 @@ export class MarketRotation {
    *
    * @remarks
    * Подписывается на ORDER_CREATED, ORDER_PARTIALLY_FILLED, ORDER_FILLED,
-   * ORDER_CANCELLED. Роутит события в правильный MarketSlot через orderToSlot.
+   * ORDER_CANCELLED, DIRECT_FILL_APPLIED. Роутит события в правильный
+   * MarketSlot через orderToSlot.
+   *
+   * ### DIRECT_FILL_APPLIED
+   * Приходит когда fill обработан через applyDirectFill (ордер CANCELLED или
+   * не найден). Fills накапливаются в `slot.directPartialAccum` и флашатся
+   * в `fillHistory` при закрытии рынка в `_printMarketSummary`.
    *
    * @example
    * ```typescript
@@ -1064,6 +1079,33 @@ export class MarketRotation {
         at: accum.firstAt,
         partial: true,
       });
+    });
+
+    // DIRECT_FILL_APPLIED → накапливаем в directPartialAccum (flush в _printMarketSummary)
+    //
+    // Приходит когда fill обработан через applyDirectFill (ордер terminal/не найден).
+    // Типичный сценарий: стратегия отменила ордер через REST, но биржа уже MATCHED —
+    // fill приходит по WS на CANCELLED ордер. Без этого обработчика такие fills
+    // не попадают в fillHistory и не видны в market summary.
+    eventBus.subscribe('DIRECT_FILL_APPLIED', (event) => {
+      const orderId = String(event.fill.orderId);
+      const slot = this._findSlotByOrderId(orderId);
+      if (!slot) return;
+      const fillSize = event.fill.size.value();
+      const fillNotional = fillSize.times(event.fill.price.value());
+      const existing = slot.directPartialAccum.get(orderId);
+      if (existing) {
+        existing.totalSize = existing.totalSize.plus(fillSize);
+        existing.totalNotional = existing.totalNotional.plus(fillNotional);
+      } else {
+        const at = new Date(event.fill.timestamp.toNumber()).toISOString().slice(11, 19);
+        slot.directPartialAccum.set(orderId, {
+          side: event.fill.side as 'BUY' | 'SELL',
+          totalSize: fillSize,
+          totalNotional: fillNotional,
+          firstAt: at,
+        });
+      }
     });
   }
 
@@ -1224,6 +1266,22 @@ export class MarketRotation {
   ): void {
     const { logger, portfolioStore, accountId } = this._deps;
     const marketQuestion = slot.candidate?.question ?? String(slot.marketId);
+
+    // Флашим накопленные direct fills (fills на отменённых ордерах) в fillHistory.
+    // directPartialAccum заполняется по DIRECT_FILL_APPLIED, но не имеет сигнала
+    // завершения — флашим при закрытии рынка.
+    for (const [, accum] of slot.directPartialAccum) {
+      if (accum.totalSize.lte(0)) continue;
+      const avgPrice = accum.totalNotional.div(accum.totalSize);
+      slot.fillHistory.push({
+        side: accum.side,
+        size: accum.totalSize.toFixed(2),
+        price: avgPrice.toFixed(4),
+        notional: accum.totalNotional.toFixed(2),
+        at: accum.firstAt,
+      });
+    }
+    slot.directPartialAccum.clear();
 
     if (slot.fillHistory.length === 0) {
       const noFillPortfolio = portfolioStore.get(accountId);

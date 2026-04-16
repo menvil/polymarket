@@ -437,6 +437,7 @@ async function runPaper(): Promise<void> {
       outcomeIndex: (config.market as { outcomeIndex?: number }).outcomeIndex as 0 | 1 ?? 0,
       fillHistory: [],
       partialAccum: new Map(),
+        directPartialAccum: new Map(),
       openedAt: Date.now(),
     });
   } else {
@@ -1055,6 +1056,7 @@ async function runPaper(): Promise<void> {
       outcomeIndex: mc.outcomeIndex,
       fillHistory: [],
       partialAccum: new Map(),
+        directPartialAccum: new Map(),
       openedAt: Date.now(),
     };
 
@@ -1519,6 +1521,7 @@ async function runPaper(): Promise<void> {
       outcomeIndex: arbMc.outcomeIndex,
       fillHistory: [],
       partialAccum: new Map(),
+        directPartialAccum: new Map(),
       openedAt: Date.now(),
     };
 
@@ -3041,6 +3044,7 @@ async function runLive(): Promise<void> {
       outcomeIndex: (config.market as { outcomeIndex?: number }).outcomeIndex as 0 | 1 ?? 0,
       fillHistory: [],
       partialAccum: new Map(),
+        directPartialAccum: new Map(),
       openedAt: Date.now(),
     });
   } else if (config.market.source === 'discovery') {
