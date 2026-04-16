@@ -246,12 +246,7 @@ export class CcxtSymbolWatcher {
           });
         }
 
-        // Очищаем внутренний кэш ccxt.pro: instance.trades[symbol] хранит
-        // raw-объекты с полем `info` (дубликат JSON-ответа биржи).
-        // Без очистки кэш растёт до tradesLimit (1000) и создаёт GC-давление.
-        if (instance.trades?.[this._params.symbol]) {
-          instance.trades[this._params.symbol] = [];
-        }
+
       } catch (err) {
         if (this._stopped) break;
         const msg = err instanceof Error ? err.message : String(err);
