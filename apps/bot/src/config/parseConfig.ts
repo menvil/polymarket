@@ -426,10 +426,18 @@ function parseStrategyParams(
       for (const numField of [
         'signalThresholdBps', 'signalLookbackMs', 'signalStaleMs', 'minVenueCount',
         'maxSpreadBps', 'minSignalStrength', 'minSignalConfidence', 'signalImpactCents',
-        'maxSignalImpactCents', 'makerRepriceThresholdCents', 'sigmaAnnual',
+        'maxSignalImpactCents', 'makerRepriceThresholdCents', 'chainlinkStaleMs',
+        'sigmaAnnual',
         'minEdgeCents', 'exitEdgeCents', 'baseSpreadCents', 'exitDiscountCents',
+        'emergencyExitSlippageCents', 'maxChaseAboveExitCents', 'stopLossCents',
+        'stopLossCooldownMs', 'breakEvenTriggerCents', 'breakEvenOffsetCents',
+        'trailingStartMultiplier', 'minTrailingDistanceCents',
+        'tauTighteningStartSec', 'tauTighteningMinMultiplier',
+        'signalTighteningMultiplier', 'trailingExitRatio',
+        'signalExitGraceMs', 'signalExitMinProfitCents', 'signalExitRatio',
+        'adverseExitGraceMs', 'adverseExitRatio',
         'warmupSec', 'ewmaAlpha', 'minTradesForMid', 'exitTauSec',
-        'maxEntryTauSec', 'minFairCents', 'maxFairCents',
+        'maxEntryTauSec', 'minSignalPersistenceMs', 'minFairCents', 'maxFairCents',
       ]) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
@@ -438,6 +446,18 @@ function parseStrategyParams(
       }
       if (raw['allowTaker'] === true || raw['allowTaker'] === false) {
         result['allowTaker'] = raw['allowTaker'];
+      }
+      if (raw['signalTighteningOnCollapse'] === true || raw['signalTighteningOnCollapse'] === false) {
+        result['signalTighteningOnCollapse'] = raw['signalTighteningOnCollapse'];
+      }
+      if (raw['signalTighteningOnAdverse'] === true || raw['signalTighteningOnAdverse'] === false) {
+        result['signalTighteningOnAdverse'] = raw['signalTighteningOnAdverse'];
+      }
+      if (raw['profitProtectTrailingEnabled'] === true || raw['profitProtectTrailingEnabled'] === false) {
+        result['profitProtectTrailingEnabled'] = raw['profitProtectTrailingEnabled'];
+      }
+      if (raw['signalExitEnabled'] === true || raw['signalExitEnabled'] === false) {
+        result['signalExitEnabled'] = raw['signalExitEnabled'];
       }
       break;
   }

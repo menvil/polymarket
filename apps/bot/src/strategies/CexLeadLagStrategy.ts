@@ -209,6 +209,30 @@ export interface CexLeadLagConfig {
    * При false используется только hard stop-loss без trailing logic.
    */
   readonly profitProtectTrailingEnabled?: boolean;
+  /**
+   * Доля доступной позиции, продаваемая при первом trailing stop.
+   *
+   * @remarks
+   * 1 = старое поведение: trailing stop закрывает всю доступную позицию.
+   * <1 = partial scale-out: продаём указанную долю, остаток становится runner
+   * и больше не закрывается обычным trailing stop; hard stop и tau exit
+   * продолжают работать.
+   *
+   * Default: 1.
+   */
+  readonly trailingExitRatio?: number;
+  /** Включить выход при исчезновении favorable lead-lag edge. Default: false. */
+  readonly signalExitEnabled?: boolean;
+  /** Сколько мс ждать после исчезновения сигнала перед signal-exit. Default: 500. */
+  readonly signalExitGraceMs?: number;
+  /** Минимальная прибыль от входа (¢), при которой signal-exit разрешён. Default: 2. */
+  readonly signalExitMinProfitCents?: number;
+  /** Доля доступной позиции, продаваемая при signal-exit. Default: 0.5. */
+  readonly signalExitRatio?: number;
+  /** Сколько мс adverse signal должен продержаться перед выходом. Default: 300. */
+  readonly adverseExitGraceMs?: number;
+  /** Доля доступной позиции, продаваемая при adverse-exit. Default: 1. */
+  readonly adverseExitRatio?: number;
   /** Секунды прогрева после начала рынка. Default: 10. */
   readonly warmupSec?: number;
   /** Alpha EWMA для расчёта mid по трейдам. Default: 0.3. */
@@ -271,6 +295,7 @@ interface CexLeadLagData {
   /** Секунды до экспирации. */
   readonly tauSec: number;
   readonly positionQty: Decimal;
+  readonly avgEntryPriceCents: number | undefined;
   readonly availableTokenQty: Decimal;
   readonly availableBalance: Decimal;
   readonly minOrderSize: Decimal;
@@ -633,6 +658,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _signalTighteningOnAdverse: boolean;
   private readonly _signalTighteningMultiplier: number;
   private readonly _profitProtectTrailingEnabled: boolean;
+  private readonly _trailingExitRatio: number;
+  private readonly _signalExitEnabled: boolean;
+  private readonly _signalExitGraceMs: number;
+  private readonly _signalExitMinProfitCents: number;
+  private readonly _signalExitRatio: number;
+  private readonly _adverseExitGraceMs: number;
+  private readonly _adverseExitRatio: number;
   private readonly _warmupSec: number;
   private readonly _ewmaAlpha: number;
   private readonly _minTradesForMid: number;
@@ -725,6 +757,16 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    * Монотонно возрастает — trailing stop может только подниматься, но не опускаться.
    */
   private _trailingStopCents: number | null = null;
+  /** Первый trailing scale-out уже выставлен; остаток позиции держится как runner. */
+  private _trailingScaleOutDone = false;
+  /** Начало периода исчезнувшего favorable edge. */
+  private _signalExitStartedAtMs: number | null = null;
+  /** Signal-exit уже сделал partial scale-out для текущей позиции. */
+  private _signalExitDone = false;
+  /** Начало периода adverse signal. */
+  private _adverseExitStartedAtMs: number | null = null;
+  /** Adverse-exit уже сделал partial scale-out для текущей позиции. */
+  private _adverseExitDone = false;
 
   /**
    * @param config - Конфигурация стратегии
@@ -781,6 +823,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._signalTighteningOnAdverse = config.signalTighteningOnAdverse ?? true;
     this._signalTighteningMultiplier = clampNumber(toNumber(config.signalTighteningMultiplier, 0.7), 0.1, 1);
     this._profitProtectTrailingEnabled = config.profitProtectTrailingEnabled ?? true;
+    this._trailingExitRatio = clampNumber(toNumber(config.trailingExitRatio, 1), 0.05, 1);
+    this._signalExitEnabled = config.signalExitEnabled ?? false;
+    this._signalExitGraceMs = Math.max(0, toNumber(config.signalExitGraceMs, 500));
+    this._signalExitMinProfitCents = toNumber(config.signalExitMinProfitCents, 2);
+    this._signalExitRatio = clampNumber(toNumber(config.signalExitRatio, 0.5), 0.05, 1);
+    this._adverseExitGraceMs = Math.max(0, toNumber(config.adverseExitGraceMs, 300));
+    this._adverseExitRatio = clampNumber(toNumber(config.adverseExitRatio, 1), 0.05, 1);
     this._warmupSec = toNumber(config.warmupSec, 10);
     this._ewmaAlpha = toNumber(config.ewmaAlpha, 0.3);
     this._minTradesForMid = toNumber(config.minTradesForMid, 3);
@@ -864,6 +913,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._peakNetExpectedEdgeCents = null;
       this._peakResidualMagnitudeBps = null;
       this._trailingStopCents = null;
+      this._trailingScaleOutDone = false;
+      this._signalExitStartedAtMs = null;
+      this._signalExitDone = false;
+      this._adverseExitStartedAtMs = null;
+      this._adverseExitDone = false;
     }
 
     this._updateEwma(snapshot);
@@ -1007,6 +1061,10 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     // ── Portfolio / constraints ─────────────────────────────────────────────
     const position = snapshot.portfolio?.getPosition(snapshot.instrumentId);
     const positionQty = position?.quantity.value() ?? new Decimal(0);
+    const avgEntryPriceCents =
+      position && !position.isClosed()
+        ? position.averageEntryPrice.value().toNumber() * 100
+        : undefined;
     const availableTokenQty =
       snapshot.portfolio?.availableTokenQuantity(snapshot.instrumentId) ?? new Decimal(0);
     const availableBalance =
@@ -1035,6 +1093,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
       tauSec,
       positionQty,
+      avgEntryPriceCents,
       availableTokenQty,
       availableBalance,
       minOrderSize,
@@ -1148,13 +1207,25 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const isFlat = !hasPosition;
 
     if (wasFlat && hasPosition) {
-      this._entryPriceCents = this._pendingEntryPriceCents ?? data.tradeEwmaCents;
+      const recoveredExistingPosition = this._pendingEntryPriceCents === null;
+      this._entryPriceCents =
+        this._pendingEntryPriceCents ??
+        data.avgEntryPriceCents ??
+        data.tradeEwmaCents;
       this._pendingEntryPriceCents = null;
       // Инициализируем peak-state в момент входа
       this._peakPriceCents = data.tradeEwmaCents;
       this._peakNetExpectedEdgeCents = data.netExpectedEdgeCents;
       this._peakResidualMagnitudeBps = data.residualMagnitudeBps;
       this._trailingStopCents = null;
+      // После рестарта mutable state потерян. Если позиция уже была в портфеле
+      // и не связана с нашим pending BUY, не включаем trailing заново: такая
+      // позиция может быть runner-остатком после partial scale-out.
+      this._trailingScaleOutDone = recoveredExistingPosition;
+      this._signalExitStartedAtMs = null;
+      this._signalExitDone = recoveredExistingPosition;
+      this._adverseExitStartedAtMs = null;
+      this._adverseExitDone = false;
     } else if (!wasFlat && isFlat) {
       this._lastExitPriceCents = data.tradeEwmaCents;
       this._entryPriceCents = null;
@@ -1164,6 +1235,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._peakNetExpectedEdgeCents = null;
       this._peakResidualMagnitudeBps = null;
       this._trailingStopCents = null;
+      this._trailingScaleOutDone = false;
+      this._signalExitStartedAtMs = null;
+      this._signalExitDone = false;
+      this._adverseExitStartedAtMs = null;
+      this._adverseExitDone = false;
     }
 
     this._prevPositionQty = data.positionQty;
@@ -1202,6 +1278,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           qty: data.positionQty.toString(),
           availableTokenQty: data.availableTokenQty.toString(),
           entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
+          avgEntryPriceCents: data.avgEntryPriceCents?.toFixed(2) ?? 'none',
           peakPriceCents: this._peakPriceCents?.toFixed(2) ?? 'none',
           pnlFromEntryCents: this._entryPriceCents !== null
             ? (data.tradeEwmaCents - this._entryPriceCents).toFixed(2)
@@ -1899,12 +1976,12 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    *
    * ### Активные триггеры выхода:
    * - `HARD_STOP` — tradeEwma < entryPrice − stopLossCents
+   * - `ADVERSE_SIGNAL` — signal развернулся против позиции и продержался grace
+   * - `SIGNAL_COLLAPSE` — favorable edge исчез и позиция уже в прибыли
    * - `TRAILING_STOP` — tradeEwma < trailingStopCents
    * - `TAU_EXIT` — tauSec < exitTauSec
    *
    * ### Выключенные триггеры (намеренно):
-   * - `ADVERSE_SIGNAL` — закомментирован: позиция держится до stop/tau
-   * - `SIGNAL_COLLAPSE` — закомментирован: позиция держится до stop/tau
    * - `NEGATIVE_NET_EDGE` — закомментирован: позиция держится до stop/tau
    *
    * ### SELL_IN_FLIGHT:
@@ -1925,19 +2002,65 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const trailingStopHit =
       this._profitProtectTrailingEnabled &&
       this._trailingStopCents !== null &&
+      !this._trailingScaleOutDone &&
       data.tradeEwmaCents < this._trailingStopCents;
 
-    // signalCollapsed / signalAdverse / negativeEdge — выключены намеренно:
-    // стратегия удерживает позицию до hard/trailing stop или tau exit.
-    // const signalCollapsed = !data.signalStrong || data.signalPersistenceMs < 150 || data.venueAgreement < 0.5;
+    const tauExit = data.tauSec < this._exitTauSec;
+
+    const pnlFromEntryCents =
+      this._entryPriceCents !== null
+        ? data.tradeEwmaCents - this._entryPriceCents
+        : 0;
+
+    const adverseCandidate =
+      this._signalExitEnabled &&
+      !this._adverseExitDone &&
+      data.signalAdverse;
+
+    if (adverseCandidate) {
+      this._adverseExitStartedAtMs ??= data.nowMs;
+    } else {
+      this._adverseExitStartedAtMs = null;
+    }
+
+    const adverseExitHit =
+      adverseCandidate &&
+      this._adverseExitStartedAtMs !== null &&
+      data.nowMs - this._adverseExitStartedAtMs >= this._adverseExitGraceMs;
+
+    const signalCollapsed =
+      !data.signalFavorable &&
+      !data.signalAdverse &&
+      (
+        !data.signalStrong ||
+        data.signalPersistenceMs < 150 ||
+        data.venueAgreement < 0.5
+      );
+
+    const signalExitCandidate =
+      this._signalExitEnabled &&
+      !this._signalExitDone &&
+      signalCollapsed &&
+      pnlFromEntryCents >= this._signalExitMinProfitCents;
+
+    if (signalExitCandidate) {
+      this._signalExitStartedAtMs ??= data.nowMs;
+    } else {
+      this._signalExitStartedAtMs = null;
+    }
+
+    const signalExitHit =
+      signalExitCandidate &&
+      this._signalExitStartedAtMs !== null &&
+      data.nowMs - this._signalExitStartedAtMs >= this._signalExitGraceMs;
 
     const shouldExit =
       hardStopHit ||
+      adverseExitHit ||
+      signalExitHit ||
       trailingStopHit ||
-      // data.signalAdverse ||
       // data.netExpectedEdgeCents <= -this._exitEdgeCents ||
-      // signalCollapsed ||
-      data.tauSec < this._exitTauSec;
+      tauExit;
 
     if (!shouldExit) {
       return undefined;
@@ -1951,7 +2074,10 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           note: 'Exit condition met but tokens are reserved (SELL order pending fill)',
           positionQty: data.positionQty.toString(),
           availableTokenQty: data.availableTokenQty.toString(),
-          exitTrigger: hardStopHit ? 'HARD_STOP' : trailingStopHit ? 'TRAILING_STOP' : 'TAU_EXIT',
+          exitTrigger: hardStopHit ? 'HARD_STOP' :
+            adverseExitHit ? 'ADVERSE_SIGNAL' :
+            signalExitHit ? 'SIGNAL_COLLAPSE' :
+            trailingStopHit ? 'TRAILING_STOP' : 'TAU_EXIT',
           entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
           trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
           tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
@@ -1966,18 +2092,18 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     const exitReason =
       hardStopHit ? 'HARD_STOP' :
+      adverseExitHit ? 'ADVERSE_SIGNAL' :
+      signalExitHit ? 'SIGNAL_COLLAPSE' :
       trailingStopHit ? 'TRAILING_STOP' :
-      // data.signalAdverse ? 'ADVERSE_SIGNAL' :
-      data.tauSec < this._exitTauSec ? 'TAU_EXIT' :
-      // signalCollapsed ? 'SIGNAL_COLLAPSE' :
+      tauExit ? 'TAU_EXIT' :
       'NEGATIVE_NET_EDGE';
 
     let askPrice = Math.floor(data.tradeEwmaCents - this._exitDiscountCents);
 
     const emergencyExit =
       exitReason === 'HARD_STOP' ||
+      exitReason === 'ADVERSE_SIGNAL' ||
       exitReason === 'TRAILING_STOP' ||
-      // exitReason === 'ADVERSE_SIGNAL' ||  // закомментировано вместе с ADVERSE_SIGNAL exit
       exitReason === 'TAU_EXIT';
 
     if (emergencyExit && data.bestBidCents !== undefined) {
@@ -1988,8 +2114,44 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     askPrice = Math.floor(clampNumber(askPrice, 1, 99));
 
-    const size = Decimal.min(this._orderSize, data.availableTokenQty)
+    const trailingScaleOut =
+      exitReason === 'TRAILING_STOP' && this._trailingExitRatio < 1;
+    const signalScaleOut =
+      exitReason === 'SIGNAL_COLLAPSE' && this._signalExitRatio < 1;
+    const adverseScaleOut =
+      exitReason === 'ADVERSE_SIGNAL' && this._adverseExitRatio < 1;
+    const partialScaleOut = trailingScaleOut || signalScaleOut || adverseScaleOut;
+    const exitRatio =
+      trailingScaleOut ? this._trailingExitRatio :
+      signalScaleOut ? this._signalExitRatio :
+      adverseScaleOut ? this._adverseExitRatio :
+      1;
+
+    let size = data.availableTokenQty.mul(exitRatio)
       .toDecimalPlaces(2, Decimal.ROUND_DOWN);
+
+    if (partialScaleOut) {
+      const runnerQty = data.availableTokenQty.minus(size);
+      const splitViolatesMinSize =
+        size.lt(data.minOrderSize) || runnerQty.lt(data.minOrderSize);
+
+      if (splitViolatesMinSize) {
+        if (exitReason === 'SIGNAL_COLLAPSE' || exitReason === 'ADVERSE_SIGNAL') {
+          size = data.availableTokenQty.toDecimalPlaces(2, Decimal.ROUND_DOWN);
+        } else {
+          this._logDiag(data, 'HOLD', {
+            reason: 'TRAILING_SCALE_OUT_TOO_SMALL',
+            note: 'Partial trailing would create an invalid sell size or runner dust',
+            availableTokenQty: data.availableTokenQty.toString(),
+            desiredSellQty: size.toString(),
+            runnerQty: runnerQty.toString(),
+            minOrderSize: data.minOrderSize.toString(),
+            exitRatio,
+          }, true);
+          return undefined;
+        }
+      }
+    }
 
     if (!size.gt(0)) {
       this._logDiag(data, 'EXIT_SKIP_DUST', {
@@ -1999,6 +2161,14 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     }
 
     if (hardStopHit) this._stopLossTriggeredAtMs = data.nowMs;
+    if (trailingScaleOut) this._trailingScaleOutDone = true;
+    if (signalScaleOut || exitReason === 'SIGNAL_COLLAPSE') {
+      this._signalExitDone = true;
+      this._trailingScaleOutDone = true;
+    }
+    if (adverseScaleOut || exitReason === 'ADVERSE_SIGNAL') {
+      this._adverseExitDone = true;
+    }
 
     this._logDiag(data, 'SELL', {
       reason: exitReason,
@@ -2008,8 +2178,21 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       // Детали триггера выхода
       exitConditions: {
         hardStopHit,
+        adverseExitHit,
+        signalExitHit,
         trailingStopHit,
-        tauExit: data.tauSec < this._exitTauSec,
+        tauExit,
+        signalCollapsed,
+        pnlFromEntryCents: pnlFromEntryCents.toFixed(2),
+        adverseExitGraceMs: this._adverseExitGraceMs,
+        signalExitGraceMs: this._signalExitGraceMs,
+        trailingScaleOut,
+        signalScaleOut,
+        adverseScaleOut,
+        exitRatio,
+        runnerQtyAfterExit: partialScaleOut
+          ? data.availableTokenQty.minus(size).toString()
+          : '0',
       },
       // Уровни стопов для диагностики
       stopLevels: {
@@ -2223,11 +2406,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       },
       position: {
         entryPriceCents: this._entryPriceCents,
+        avgEntryPriceCents: data.avgEntryPriceCents ?? null,
         lastExitCents: this._lastExitPriceCents,
         peakPriceCents: this._peakPriceCents,
         peakNetExpectedEdgeCents: this._peakNetExpectedEdgeCents,
         peakResidualMagnitudeBps: this._peakResidualMagnitudeBps,
         trailingStopCents: this._trailingStopCents,
+        trailingScaleOutDone: this._trailingScaleOutDone,
         qty: data.positionQty.toString(),
         availableTokenQty: data.availableTokenQty.toString(),
         inventoryUnits: data.inventoryUnits,
@@ -2471,6 +2656,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       emergencyExitSlippageCents: this._emergencyExitSlippageCents,
       chainlinkStaleMs: this._chainlinkStaleMs,
       profitProtectTrailingEnabled: this._profitProtectTrailingEnabled,
+      trailingExitRatio: this._trailingExitRatio,
+      signalExitEnabled: this._signalExitEnabled,
+      signalExitGraceMs: this._signalExitGraceMs,
+      signalExitMinProfitCents: this._signalExitMinProfitCents,
+      signalExitRatio: this._signalExitRatio,
+      adverseExitGraceMs: this._adverseExitGraceMs,
+      adverseExitRatio: this._adverseExitRatio,
       breakEvenTriggerCents: this._breakEvenTriggerCents,
       breakEvenOffsetCents: this._breakEvenOffsetCents,
       trailingStartMultiplier: this._trailingStartMultiplier,

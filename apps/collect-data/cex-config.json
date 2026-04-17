@@ -1,7 +1,7 @@
 {
   "binance": {
     "type": "spot",
-    "symbols": ["BTC/USD"],
+    "symbols": ["BTC/USD","ETH/USD","BNB/USD","DOGE/USD","SOL/USD","XRP/USD"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,

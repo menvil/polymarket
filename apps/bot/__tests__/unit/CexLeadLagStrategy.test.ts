@@ -340,6 +340,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
   const makeData = (overrides: Record<string, unknown> = {}) => ({
     tauSec: 60,
     positionQty: new Decimal(5),
+    avgEntryPriceCents: 50,
     availableTokenQty: new Decimal(5),
     signalAdverse: false,
     signalStrong: true,
@@ -364,6 +365,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     openBuyOrderId: undefined,
     inventoryUnits: 1,
     hasInFlightFills: false,
+    hasMatchedOrders: false,
     nowMs: 1_700_000_000_000,
     currentPrice: 100_000,
     targetPrice: 100_000,
@@ -447,6 +449,184 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(action?.type).toBe('SELL');
     // emergencyExitSlippageCents = 2 (default), bestBid - 2 = 35
     expect((action as any)?.price).toBe(35);
+  });
+
+  it('partial trailing stop продаёт только configured долю и больше не трейлит runner', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(3),
+        qMax: 2,
+        exitTauSec: 20,
+        stopLossCents: 10,
+        trailingExitRatio: 0.6,
+      },
+      'test-partial-trailing',
+    );
+    strategy._entryPriceCents = 40;
+    strategy._trailingStopCents = 63;
+
+    const first = strategy._checkExitSignalFirst(makeData({
+      positionQty: new Decimal(6),
+      availableTokenQty: new Decimal(6),
+      tradeEwmaCents: 62,
+      bestBidCents: 62,
+    }));
+
+    expect(first?.type).toBe('SELL');
+    expect((first as any)?.size.toString()).toBe('3.6');
+    expect(strategy._trailingScaleOutDone).toBe(true);
+
+    const second = strategy._checkExitSignalFirst(makeData({
+      positionQty: new Decimal(2.4),
+      availableTokenQty: new Decimal(2.4),
+      tradeEwmaCents: 61,
+      bestBidCents: 61,
+    }));
+
+    expect(second).toBeUndefined();
+  });
+
+  it('не делает partial trailing, если split создаёт sell/runner меньше minOrderSize', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(5),
+        qMax: 1,
+        exitTauSec: 20,
+        stopLossCents: 10,
+        trailingExitRatio: 0.5,
+      },
+      'test-partial-min-size',
+    );
+    strategy._entryPriceCents = 40;
+    strategy._trailingStopCents = 63;
+
+    const action = strategy._checkExitSignalFirst(makeData({
+      positionQty: new Decimal(5),
+      availableTokenQty: new Decimal(5),
+      minOrderSize: new Decimal(5),
+      tradeEwmaCents: 62,
+      bestBidCents: 62,
+    }));
+
+    expect(action).toBeUndefined();
+    expect(strategy._trailingScaleOutDone).toBe(false);
+  });
+
+  it('signal collapse после grace продаёт configured долю прибыльной позиции', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(10),
+        qMax: 1,
+        exitTauSec: 20,
+        stopLossCents: 10,
+        signalExitEnabled: true,
+        signalExitGraceMs: 500,
+        signalExitMinProfitCents: 2,
+        signalExitRatio: 0.5,
+      },
+      'test-signal-exit',
+    );
+    strategy._entryPriceCents = 40;
+
+    const first = strategy._checkExitSignalFirst(makeData({
+      nowMs: 1_000,
+      positionQty: new Decimal(10),
+      availableTokenQty: new Decimal(10),
+      minOrderSize: new Decimal(5),
+      tradeEwmaCents: 45,
+      signalFavorable: false,
+      signalStrong: false,
+      signalPersistenceMs: 0,
+      venueAgreement: 0,
+    }));
+    expect(first).toBeUndefined();
+
+    const second = strategy._checkExitSignalFirst(makeData({
+      nowMs: 1_500,
+      positionQty: new Decimal(10),
+      availableTokenQty: new Decimal(10),
+      minOrderSize: new Decimal(5),
+      tradeEwmaCents: 45,
+      signalFavorable: false,
+      signalStrong: false,
+      signalPersistenceMs: 0,
+      venueAgreement: 0,
+    }));
+
+    expect(second?.type).toBe('SELL');
+    expect((second as any)?.size.toString()).toBe('5');
+    expect(strategy._signalExitDone).toBe(true);
+    expect(strategy._trailingScaleOutDone).toBe(true);
+  });
+
+  it('adverse signal после grace закрывает доступную позицию', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(10),
+        qMax: 1,
+        exitTauSec: 20,
+        stopLossCents: 10,
+        signalExitEnabled: true,
+        adverseExitGraceMs: 300,
+        adverseExitRatio: 1,
+      },
+      'test-adverse-exit',
+    );
+    strategy._entryPriceCents = 40;
+
+    const first = strategy._checkExitSignalFirst(makeData({
+      nowMs: 2_000,
+      positionQty: new Decimal(10),
+      availableTokenQty: new Decimal(10),
+      tradeEwmaCents: 42,
+      signalFavorable: false,
+      signalAdverse: true,
+      signalStrong: true,
+      signalDirectionForToken: 'down',
+    }));
+    expect(first).toBeUndefined();
+
+    const second = strategy._checkExitSignalFirst(makeData({
+      nowMs: 2_300,
+      positionQty: new Decimal(10),
+      availableTokenQty: new Decimal(10),
+      tradeEwmaCents: 42,
+      signalFavorable: false,
+      signalAdverse: true,
+      signalStrong: true,
+      signalDirectionForToken: 'down',
+    }));
+
+    expect(second?.type).toBe('SELL');
+    expect((second as any)?.size.toString()).toBe('10');
+    expect(strategy._adverseExitDone).toBe(true);
+  });
+
+  it('позиция, найденная после рестарта, не получает новый trailing stop', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(3),
+        qMax: 2,
+        exitTauSec: 20,
+        stopLossCents: 10,
+        trailingExitRatio: 0.6,
+      },
+      'test-restart-runner',
+    );
+
+    const actions = strategy.decide(makeData({
+      positionQty: new Decimal(2.4),
+      availableTokenQty: new Decimal(2.4),
+      avgEntryPriceCents: 40,
+      tradeEwmaCents: 62,
+      bestBidCents: 62,
+      tauSec: 60,
+    }), new Set());
+
+    expect(actions).toEqual([]);
+    expect(strategy._entryPriceCents).toBe(40);
+    expect(strategy._trailingScaleOutDone).toBe(true);
+    expect(strategy._signalExitDone).toBe(true);
   });
 });
 
