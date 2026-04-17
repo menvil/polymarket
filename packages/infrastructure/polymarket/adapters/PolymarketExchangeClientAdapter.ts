@@ -48,6 +48,7 @@ import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
+import type { PolymarketBalancePolicy } from '../rest/policies/PolymarketBalancePolicy.js';
 
 /**
  * Реализует IExchangeClient через PolymarketExecutionAdapter.
@@ -62,19 +63,41 @@ import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExec
 export class PolymarketExchangeClientAdapter implements IExchangeClient {
   private readonly _logger: ILogger;
   private readonly _userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient;
+  private readonly _balancePolicy?: PolymarketBalancePolicy;
+  private _sellDustAdjustCount = 0;
 
   /**
    * @param _executionAdapter - Low-level HTTP адаптер исполнения
    * @param logger - Logger
    * @param userTradesClient - L2-аутентифицированный клиент user trades (опционально)
+   * @param balancePolicy - Политика проверки баланса (опционально, для SELL pre-check по on-chain балансу)
+   *
+   * @remarks
+   * Если передан `balancePolicy` — перед каждым SELL вызывается `checkBalance()`
+   * с on-chain балансом как источником истины (должен быть инстанс БЕЗ
+   * `portfolioProjector`, иначе проверка будет по event-sourced кешу).
+   * При дефиците < 1% policy возвращает `suggestedSize` равный реальному
+   * балансу, округлённому вниз до 2 знаков — используем его вместо исходного
+   * `params.size`, предотвращая отказ API `not enough balance / allowance`.
    */
   constructor(
     private readonly _executionAdapter: PolymarketExecutionAdapter,
     logger: ILogger,
     userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient,
+    balancePolicy?: PolymarketBalancePolicy,
   ) {
     this._logger = logger.child({ component: 'PolymarketExchangeClientAdapter' });
     this._userTradesClient = userTradesClient;
+    this._balancePolicy = balancePolicy;
+  }
+
+  /**
+   * Возвращает диагностические счётчики адаптера.
+   *
+   * @returns Статистика: сколько раз SELL size был скорректирован по on-chain балансу
+   */
+  public get stats(): { sellDustAdjustCount: number } {
+    return { sellDustAdjustCount: this._sellDustAdjustCount };
   }
 
   /**
@@ -95,12 +118,22 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
   public async submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>> {
     const tokenId = this._extractTokenId(params);
 
+    // Pre-flight balance check для SELL: on-chain балансе как источнике истины.
+    // Защищает от рассинхрона event-sourced Portfolio ↔ фактический on-chain баланс
+    // (типичный случай: dust-потеря 0.001-0.01% после BUY settlement).
+    // При дефиците < 1% policy возвращает suggestedSize = floor(onChain*100)/100 → адаптируем size.
+    const adjustedSize = await this._preflightSellCheck(params, tokenId);
+    if (!adjustedSize.ok) {
+      return Err(adjustedSize.error);
+    }
+    const effectiveSize = adjustedSize.value;
+
     try {
       const response = await this._executionAdapter.postOrder({
         tokenId,
         side: params.side.toLowerCase() as 'buy' | 'sell',
         price: params.price.value().toNumber(),
-        size: params.size.value().toNumber(),
+        size: effectiveSize.value().toNumber(),
         postOnly: params.postOnly,
         clientOrderId: params.clientOrderId,
         strategyId: params.strategyId,
@@ -392,6 +425,94 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * Для POLYMARKET_CTF_TOKEN — используем `.tokenId` напрямую.
    * Для других типов — fallback через `assetIdToString()`.
    */
+  /**
+   * Предварительная проверка баланса для SELL-ордера по on-chain источнику истины.
+   *
+   * @param params - Параметры исходного ордера
+   * @param tokenId - Raw tokenId для Balance API
+   * @returns Ok(size для отправки в postOrder) или Err(ExchangeError) если балансa нет
+   *
+   * @remarks
+   * Алгоритм:
+   * 1. Если side=BUY или balancePolicy не сконфигурирован — возвращаем исходный size.
+   * 2. Вызываем `balancePolicy.checkBalance()` (уходит в Balance API, zero-cache).
+   * 3. Если `check.ok === false` — возвращаем Err, submitOrder не вызывает постордер.
+   * 4. Если `check.suggestedSize` меньше исходного — создаём новый Quantity
+   *    из suggestedSize (уже округлён вниз до 2 знаков policy'ей) и логируем WARN.
+   * 5. Иначе возвращаем исходный size.
+   *
+   * Ошибка создания Quantity из suggestedSize (например, 0 при полном обнулении)
+   * возвращается как Err — нельзя отправлять zero-size ордер.
+   */
+  private async _preflightSellCheck(
+    params: SubmitOrderParams,
+    tokenId: string,
+  ): Promise<Result<Quantity, ExchangeError>> {
+    if (params.side !== 'SELL' || !this._balancePolicy) {
+      return Ok(params.size);
+    }
+
+    const originalSize = params.size.value().toNumber();
+    const check = await this._balancePolicy.checkBalance({
+      tokenId,
+      side: 'sell',
+      price: params.price.value().toNumber(),
+      size: originalSize,
+    });
+
+    if (!check.ok) {
+      this._logger.warn('SELL pre-flight balance check failed', {
+        tokenId,
+        reason: check.reason,
+        required: check.required,
+        available: check.available,
+        strategyId: params.strategyId,
+      });
+      return Err(new ExchangeErrorClass(
+        `SELL pre-flight balance check failed: ${check.reason ?? 'unknown'}`,
+        {
+          context: {
+            tokenId,
+            strategyId: params.strategyId,
+            required: check.required,
+            available: check.available,
+          },
+        },
+      ));
+    }
+
+    if (check.suggestedSize === undefined || check.suggestedSize >= originalSize) {
+      return Ok(params.size);
+    }
+
+    // Tiny deficit обработан policy: suggestedSize — фактический on-chain остаток,
+    // округлённый вниз до 2 знаков (требование API: makerAmount ≤ 2 dp для SELL).
+    try {
+      const adjusted = Quantity.of(new Decimal(check.suggestedSize));
+      this._sellDustAdjustCount++;
+      this._logger.warn('SELL size adjusted to on-chain balance (tiny deficit)', {
+        tokenId,
+        originalSize,
+        adjustedSize: check.suggestedSize,
+        deltaTokens: originalSize - check.suggestedSize,
+        deficitPercent: ((originalSize - check.suggestedSize) / originalSize * 100).toFixed(3),
+        strategyId: params.strategyId,
+      });
+      return Ok(adjusted);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._logger.warn('Failed to construct adjusted Quantity, rejecting SELL', {
+        tokenId,
+        suggestedSize: check.suggestedSize,
+        error: message,
+      });
+      return Err(new ExchangeErrorClass(
+        `SELL suggested size is invalid: ${check.suggestedSize}`,
+        { context: { tokenId, strategyId: params.strategyId } },
+      ));
+    }
+  }
+
   private _extractTokenId(params: SubmitOrderParams): string {
     if (isPolymarketCtfToken(params.asset)) {
       return params.asset.tokenId;

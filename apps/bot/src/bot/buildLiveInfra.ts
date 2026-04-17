@@ -46,6 +46,7 @@ import {
   PolymarketOrderbookRestClient,
   PolymarketBalanceRestClient,
   PolymarketBalanceMapper,
+  PolymarketBalancePolicy,
   PolymarketOrderMapper,
   PolymarketBalanceProvider,
   PolymarketOrderBuilder,
@@ -165,20 +166,26 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     logger,
   );
 
-  // ── 2. IExchangeClient ────────────────────────────────────────────────────
+  // ── 2. Balance infrastructure (нужна ДО exchangeClient для pre-flight SELL check) ──
+
+  const balanceMapper = new PolymarketBalanceMapper(logger);
+  const balanceRestClient = new PolymarketBalanceRestClient(restClient, logger);
+  const balanceProvider = new PolymarketBalanceProvider(balanceRestClient, balanceMapper, logger, false);
+
+  // Policy БЕЗ portfolioProjector — для SELL проверок использует Balance API (on-chain truth).
+  // Другой инстанс с portfolioProjector используется для стратегий (event-sourced, zero-lag),
+  // но здесь нам нужен on-chain источник, чтобы ловить рассинхрон проекции и реального баланса.
+  const onChainBalancePolicy = new PolymarketBalancePolicy(balanceProvider, logger);
+
+  // ── 3. IExchangeClient ────────────────────────────────────────────────────
 
   const userTradesClient = new PolymarketUserTradesRestClient(restClient, logger);
   const exchangeClient: IExchangeClient = new PolymarketExchangeClientAdapter(
     executionAdapter,
     logger,
     userTradesClient,
+    onChainBalancePolicy,
   );
-
-  // ── 3. Баланс для recovery ────────────────────────────────────────────────
-
-  const balanceMapper = new PolymarketBalanceMapper(logger);
-  const balanceRestClient = new PolymarketBalanceRestClient(restClient, logger);
-  const balanceProvider = new PolymarketBalanceProvider(balanceRestClient, balanceMapper, logger, false);
 
   // Inline adapter: ICurrentBalanceProvider → PolymarketBalanceProvider.getAvailableBalance()
   const currentBalanceProvider: ICurrentBalanceProvider = {

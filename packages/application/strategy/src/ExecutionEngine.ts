@@ -39,10 +39,12 @@
  * ```
  */
 import { randomUUID } from 'node:crypto';
+import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
 import { asOrderId } from '@polymarket/ids';
+import { Quantity } from '@polymarket/value-objects';
 import type { PlaceOrderUseCase } from '@polymarket/use-cases';
 import type { CancelOrderUseCase } from '@polymarket/use-cases';
 import type { IPortfolioStore, IMarketCatalog } from '@polymarket/ports';
@@ -128,6 +130,17 @@ import type { IOrderRepository } from '@polymarket/ports';
 export class ExecutionEngine {
   private readonly _logger: ILogger;
   private _benignPostOnlyRejects = 0;
+  private _sellDustRetryCount = 0;
+
+  /**
+   * Максимально допустимый дефицит для автоматического retry при SELL-rejection.
+   *
+   * @remarks
+   * 1% — эвристика: типичный dust от settlement (0.01-0.1%) легко укладывается,
+   * реальная нехватка токенов (ошибка позиции, отсутствие allowance) — нет.
+   * Выше 1% — это скорее всего настоящий рассинхрон, retry только маскировал бы баг.
+   */
+  private static readonly _SELL_DUST_RETRY_MAX_DEFICIT = 0.01;
 
   /**
    * Cooldown per `${instrumentId}:${side}` после отклонения ордера биржей.
@@ -219,9 +232,10 @@ export class ExecutionEngine {
     }
   }
 
-  public get stats(): { benignPostOnlyRejects: number } {
+  public get stats(): { benignPostOnlyRejects: number; sellDustRetryCount: number } {
     return {
       benignPostOnlyRejects: this._benignPostOnlyRejects,
+      sellDustRetryCount: this._sellDustRetryCount,
     };
   }
 
@@ -499,19 +513,85 @@ export class ExecutionEngine {
 
     const openOrdersCount = await this._deps.orderRepo.countByStrategyId(ctx.strategyId);
 
-    const result = await this._deps.placeOrderUseCase.execute({
-      orderId,
+    let activeSize = effectiveSize;
+    let activeOrderId = orderId;
+
+    let result = await this._deps.placeOrderUseCase.execute({
+      orderId: activeOrderId,
       accountId: ctx.accountId,
       asset: effectiveAsset,
       instrumentId: effectiveInstrumentId,
       side: intent.side,
       price: intent.price,
-      size: effectiveSize,
+      size: activeSize,
       postOnly: intent.postOnly,
       strategyId: ctx.strategyId,
       portfolio,
       openOrdersCount,
     } as any);
+
+    // L2 safety net: при SELL rejection с dust-дефицитом (<1%) парсим on-chain balance
+    // из текста ошибки и повторяем ОДИН раз с adjusted size. Страхует случаи,
+    // когда L1 pre-check в адаптере не сконфигурирован или проигнорировал race condition
+    // (баланс упал между pre-check и postOrder).
+    if (!result.ok && intent.side === 'SELL') {
+      const retryHint = this._parseBalanceRejection(result.error.message);
+      if (retryHint) {
+        const { onChainBalance, orderAmount } = retryHint;
+        const deficit = orderAmount - onChainBalance;
+        const deficitPct = orderAmount > 0 ? deficit / orderAmount : 1;
+
+        if (deficit > 0 && deficitPct < ExecutionEngine._SELL_DUST_RETRY_MAX_DEFICIT) {
+          // Polymarket маскшабирует amounts в микроединицах (1e6). Округляем вниз до 2 dp
+          // (требование API для SELL makerAmount).
+          const adjustedTokens = Math.floor((onChainBalance / 1e6) * 100) / 100;
+
+          if (adjustedTokens > 0) {
+            try {
+              const adjustedQty = Quantity.of(new Decimal(adjustedTokens));
+              const newOrderId = asOrderId(randomUUID())!;
+              this._sellDustRetryCount++;
+              this._logger.warn('ExecutionEngine: SELL retry with on-chain adjusted size', {
+                strategyId: ctx.strategyId,
+                instrumentId: instrumentKey,
+                originalSize: activeSize.toNumber(),
+                adjustedSize: adjustedTokens,
+                deficitPct: deficitPct.toFixed(4),
+                newOrderId: String(newOrderId),
+                previousError: result.error.message,
+              });
+
+              const refreshedPortfolio = this._deps.portfolioStore.get(ctx.accountId);
+              if (refreshedPortfolio) {
+                const retryOpenOrdersCount = await this._deps.orderRepo.countByStrategyId(ctx.strategyId);
+                activeOrderId = newOrderId;
+                activeSize = adjustedQty;
+                result = await this._deps.placeOrderUseCase.execute({
+                  orderId: activeOrderId,
+                  accountId: ctx.accountId,
+                  asset: effectiveAsset,
+                  instrumentId: effectiveInstrumentId,
+                  side: intent.side,
+                  price: intent.price,
+                  size: activeSize,
+                  postOnly: intent.postOnly,
+                  strategyId: ctx.strategyId,
+                  portfolio: refreshedPortfolio,
+                  openOrdersCount: retryOpenOrdersCount,
+                } as any);
+              }
+            } catch (err) {
+              this._logger.warn('ExecutionEngine: SELL retry skipped — invalid adjusted size', {
+                strategyId: ctx.strategyId,
+                instrumentId: instrumentKey,
+                adjustedTokens,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
+      }
+    }
 
     if (!result.ok) {
       if (intent.postOnly === true && this._isBenignPostOnlyReject(result.error.message)) {
@@ -580,10 +660,33 @@ export class ExecutionEngine {
       strategyId: ctx.strategyId,
       side: intent.side,
       price: intent.price.toNumber(),
-      size: effectiveSize.toNumber(),
+      size: activeSize.toNumber(),
+      ...(activeOrderId !== orderId ? { retriedAfterDust: true, originalSize: effectiveSize.toNumber() } : {}),
     });
 
     return 'placed';
+  }
+
+  /**
+   * Парсит сообщение rejection от Polymarket CLOB для извлечения фактического баланса.
+   *
+   * @param message - Текст ошибки от биржи (обычно обёрнут в TradingError)
+   * @returns Числа в микроединицах (1e6) или null если формат не распознан
+   *
+   * @remarks
+   * Ожидаемый формат (стабильный на текущей версии CLOB):
+   * `not enough balance / allowance: the balance is not enough -> balance: 9557200, order amount: 9560000`
+   *
+   * Значения в микроединицах USDC/token (6 dp). Парсер толерантен к префиксу: ищет
+   * подстроку `balance: X, order amount: Y` в любом месте сообщения.
+   */
+  private _parseBalanceRejection(message: string): { onChainBalance: number; orderAmount: number } | null {
+    const match = message.match(/balance:\s*(\d+),\s*order amount:\s*(\d+)/i);
+    if (!match) return null;
+    const onChainBalance = Number(match[1]);
+    const orderAmount = Number(match[2]);
+    if (!Number.isFinite(onChainBalance) || !Number.isFinite(orderAmount)) return null;
+    return { onChainBalance, orderAmount };
   }
 
   private _isBenignPostOnlyReject(message: string): boolean {
