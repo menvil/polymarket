@@ -1,5 +1,6 @@
 import type { ILogger } from '@polymarket/logger';
 import type { CexRawRecord } from './CexTypes.js';
+import { RestartingTask } from './RestartingTask.js';
 
 let ccxtModule: typeof import('ccxt') | null = null;
 
@@ -11,6 +12,9 @@ async function getCcxt(): Promise<typeof import('ccxt')> {
 }
 
 const STALE_TIMEOUT_MS = 30_000;
+const CLOSE_TIMEOUT_MS = 10_000;
+
+type CcxtExchangeInstance = any;
 
 /**
  * Параметры инициализации `CcxtSymbolWatcher`.
@@ -38,6 +42,8 @@ export interface CcxtSymbolWatcherParams {
   /** Callback при получении новой записи (стакан или сделка). */
   readonly onRecord: (record: CexRawRecord) => void;
   readonly logger: ILogger;
+  /** @internal Test hook for injecting a fake ccxt.pro exchange instance. */
+  readonly exchangeFactory?: () => CcxtExchangeInstance | Promise<CcxtExchangeInstance>;
 }
 
 /**
@@ -76,8 +82,11 @@ export interface CcxtSymbolWatcherParams {
  * ```
  */
 export class CcxtSymbolWatcher {
-  private _stopped = false;
   private readonly _logger: ILogger;
+  private readonly _obTask: RestartingTask | null;
+  private readonly _tradesTask: RestartingTask | null;
+  private readonly _closePromises = new WeakMap<object, Promise<void>>();
+  private _started = false;
 
   /**
    * @param _params - Параметры наблюдателя
@@ -88,91 +97,106 @@ export class CcxtSymbolWatcher {
       exchange: _params.exchangeId,
       symbol: _params.symbol,
     });
+    this._obTask = _params.watchOrderbook
+      ? new RestartingTask({
+          name: `${_params.exchangeId}:${_params.symbol}:orderbook`,
+          run: (signal) => this._runObSession(signal),
+          logger: this._logger.child({ stream: 'orderbook' }),
+        })
+      : null;
+    this._tradesTask = _params.watchTrades
+      ? new RestartingTask({
+          name: `${_params.exchangeId}:${_params.symbol}:trades`,
+          run: (signal) => this._runTradesSession(signal),
+          logger: this._logger.child({ stream: 'trades' }),
+        })
+      : null;
   }
 
   /**
-   * Запускает петли наблюдения (стакан и/или сделки).
+   * Запускает supervised-петли наблюдения (стакан и/или сделки).
    *
    * @remarks
-   * Сбрасывает флаг `_stopped` и запускает петли через `void ... .catch(...)`.
-   * Метод синхронный, петли работают в фоне.
+   * Метод синхронный, петли работают в фоне. Повторный start() не создаёт
+   * дублирующие фоновые задачи.
    */
   public start(): void {
-    this._stopped = false;
-    if (this._params.watchOrderbook) {
-      void this._runObLoop().catch((err) => {
-        this._logger.error('OB loop crashed unexpectedly', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
+    if (this._started) {
+      this._logger.debug('Watcher already started');
+      return;
     }
-    if (this._params.watchTrades) {
-      void this._runTradesLoop().catch((err) => {
-        this._logger.error('Trades loop crashed unexpectedly', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    }
+
+    this._started = true;
+    this._obTask?.start();
+    this._tradesTask?.start();
     this._logger.info('Watcher started');
   }
 
   /**
-   * Останавливает петли наблюдения.
+   * Останавливает supervised-петли наблюдения.
    *
    * @remarks
-   * Устанавливает `_stopped = true`. Петли завершатся при следующей итерации.
-   * Не ждёт полного завершения — используйте `await` при необходимости.
+   * Запрашивает остановку активных session и ждёт завершения bounded close.
    */
-  public stop(): void {
-    this._stopped = true;
+  public async stop(): Promise<void> {
+    if (!this._started) return;
+    this._started = false;
     this._logger.info('Watcher stop requested');
+    const stops: Promise<void>[] = [];
+    if (this._obTask) stops.push(this._obTask.stop());
+    if (this._tradesTask) stops.push(this._tradesTask.stop());
+    await Promise.all(stops);
+    this._logger.info('Watcher stopped');
   }
 
   /**
-   * Асинхронная петля чтения стакана ордеров.
+   * Асинхронная session чтения стакана ордеров.
    *
    * @remarks
-   * Автоматически определяет метод (watchOrderBook vs fetchOrderBook).
-   * При обнаружении «перевёрнутого» стакана (ask < bid) перезапускает инстанс.
+   * Владеет ровно одним ccxt instance. Возврат без ошибки означает
+   * controlled restart, например плановый restart или hung orderbook.
    * Записи передаются в `_params.onRecord` как `CexOrderbookRecord`.
    */
-  private async _runObLoop(): Promise<void> {
-    let instance = await this._makeInstance();
+  private async _runObSession(signal: AbortSignal): Promise<void> {
+    const instance = await this._makeInstance();
+    const closeOnAbort = (): void => {
+      void this._closeInstance(instance);
+    };
+    signal.addEventListener('abort', closeOnAbort, { once: true });
 
-    const useWatch = this._params.obMethod === 'fetch'
-      ? false
-      : (this._params.obMethod === 'watch' || !!instance.has?.['watchOrderBook']);
+    try {
+      const useWatch = this._params.obMethod === 'fetch'
+        ? false
+        : (this._params.obMethod === 'watch' || !!instance.has?.['watchOrderBook']);
 
-    this._logger.info('OB loop starting', {
-      method: useWatch ? 'watchOrderBook' : 'fetchOrderBook',
-      exchange: this._params.exchangeId,
-    });
+      this._logger.info('OB session starting', {
+        method: useWatch ? 'watchOrderBook' : 'fetchOrderBook',
+        exchange: this._params.exchangeId,
+      });
 
-    while (!this._stopped) {
-      try {
+      while (!signal.aborted) {
         if (Date.now() - instance._createdAt > this._params.restartIntervalMs) {
           this._logger.info('Planned restart (restartInterval exceeded)', {
             intervalMs: this._params.restartIntervalMs,
           });
-          await this._closeInstance(instance);
-          instance = await this._makeInstance();
-          continue;
+          return;
         }
 
         const ob = useWatch
-          ? await (() => {
-              let staleTimer: ReturnType<typeof setTimeout>;
-              const stale = new Promise<never>((_, reject) => {
-                staleTimer = setTimeout(() => reject(new Error('OB stale: no update in 30s')), STALE_TIMEOUT_MS);
-              });
-              stale.catch(() => {});
-              return Promise.race([
-                instance.watchOrderBook(this._params.symbol, this._params.depth)
-                  .then((result: unknown) => { clearTimeout(staleTimer); return result; }),
-                stale,
-              ]);
-            })()
-          : await instance.fetchOrderBook(this._params.symbol, this._params.depth);
+          ? await this._withWatchTimeout<any>(
+              () => instance.watchOrderBook(this._params.symbol, this._params.depth),
+              STALE_TIMEOUT_MS,
+              'OB stale: no update in 30s',
+              signal,
+            )
+          : await this._withWatchTimeout<any>(
+              () => instance.fetchOrderBook(this._params.symbol, this._params.depth),
+              STALE_TIMEOUT_MS,
+              'OB fetch stale: no response in 30s',
+              signal,
+            );
+
+        if (signal.aborted) break;
 
         if (!ob.bids.length || !ob.asks.length) continue;
 
@@ -181,9 +205,7 @@ export class CcxtSymbolWatcher {
             bid: ob.bids[0][0],
             ask: ob.asks[0][0],
           });
-          await this._closeInstance(instance);
-          instance = await this._makeInstance();
-          continue;
+          return;
         }
 
         this._params.onRecord({
@@ -195,54 +217,47 @@ export class CcxtSymbolWatcher {
 
         // Очищаем trades-кеш OB-инстанса (ccxt.pro накапливает trades даже в OB-петле).
         // orderbooks[symbol] НЕ трогаем — ccxt.pro использует его для дельт.
-        const obTradesCache = instance.trades?.[this._params.symbol];
-        if (obTradesCache && typeof obTradesCache.length === 'number') {
-          obTradesCache.length = 0;
-        }
-
-      } catch (err) {
-        if (this._stopped) break;
-        const msg = err instanceof Error ? err.message : String(err);
-        this._logger.warn('OB watcher error, restarting', { error: msg.slice(0, 150) });
-        await this._closeInstance(instance);
-        await this._sleep(1000);
-        instance = await this._makeInstance();
+        this._clearTradesCache(instance);
       }
+    } finally {
+      signal.removeEventListener('abort', closeOnAbort);
+      await this._closeInstance(instance);
+      this._logger.info('OB session stopped');
     }
-
-    await this._closeInstance(instance);
-    this._logger.info('OB loop stopped');
   }
 
   /**
-   * Асинхронная петля чтения потока сделок.
+   * Асинхронная session чтения потока сделок.
    *
    * @remarks
-   * Использует `watchTrades` из ccxt.pro с stale-таймаутом 30 секунд.
+   * Владеет ровно одним ccxt instance. Ошибки выходят наружу в supervisor,
+   * который перезапускает только эту session.
    * Каждая сделка передаётся в `_params.onRecord` как `CexTradeRecord`.
    */
-  private async _runTradesLoop(): Promise<void> {
-    let instance = await this._makeInstance();
+  private async _runTradesSession(signal: AbortSignal): Promise<void> {
+    const instance = await this._makeInstance();
+    const closeOnAbort = (): void => {
+      void this._closeInstance(instance);
+    };
+    signal.addEventListener('abort', closeOnAbort, { once: true });
 
-    while (!this._stopped) {
-      try {
+    try {
+      this._logger.info('Trades session starting');
+
+      while (!signal.aborted) {
         if (Date.now() - instance._createdAt > this._params.restartIntervalMs) {
           this._logger.info('Planned restart (restartInterval exceeded), trades loop');
-          await this._closeInstance(instance);
-          instance = await this._makeInstance();
-          continue;
+          return;
         }
 
-        let staleTimer: ReturnType<typeof setTimeout>;
-        const stale = new Promise<never>((_, reject) => {
-          staleTimer = setTimeout(() => reject(new Error('Trades stale: no update in 30s')), STALE_TIMEOUT_MS);
-        });
-        stale.catch(() => {});
-        const trades = await Promise.race([
-          instance.watchTrades(this._params.symbol)
-            .then((result: unknown) => { clearTimeout(staleTimer); return result; }),
-          stale,
-        ]);
+        const trades = await this._withWatchTimeout<any[]>(
+          () => instance.watchTrades(this._params.symbol),
+          STALE_TIMEOUT_MS,
+          'Trades stale: no update in 30s',
+          signal,
+        );
+
+        if (signal.aborted) break;
 
         for (const trade of trades) {
           this._params.onRecord({
@@ -257,23 +272,13 @@ export class CcxtSymbolWatcher {
         // После записи на диск очищаем внутренний буфер ccxt.pro.
         // instance.trades[symbol] — это ArrayCache (extends Array), поэтому
         // обнуляем через .length = 0 (не заменяем ссылку, иначе .append сломается).
-        const tradesCache = instance.trades?.[this._params.symbol];
-        if (tradesCache && typeof tradesCache.length === 'number') {
-          tradesCache.length = 0;
-        }
-
-      } catch (err) {
-        if (this._stopped) break;
-        const msg = err instanceof Error ? err.message : String(err);
-        this._logger.warn('Trades watcher error, restarting', { error: msg.slice(0, 150) });
-        await this._closeInstance(instance);
-        await this._sleep(1000);
-        instance = await this._makeInstance();
+        this._clearTradesCache(instance);
       }
+    } finally {
+      signal.removeEventListener('abort', closeOnAbort);
+      await this._closeInstance(instance);
+      this._logger.info('Trades session stopped');
     }
-
-    await this._closeInstance(instance);
-    this._logger.info('Trades loop stopped');
   }
 
   /**
@@ -286,7 +291,14 @@ export class CcxtSymbolWatcher {
    * @returns Инстанс ccxt.pro биржи
    * @throws {Error} Если биржа не найдена в ccxt.pro
    */
-  private async _makeInstance(): Promise<any> {
+  private async _makeInstance(): Promise<CcxtExchangeInstance> {
+    if (this._params.exchangeFactory) {
+      const instance = await this._params.exchangeFactory();
+      instance._createdAt = Date.now();
+      this._logger.debug('ccxt.pro instance created from injected factory');
+      return instance;
+    }
+
     const { default: ccxt } = await getCcxt();
     const pro = (ccxt as any).pro as Record<string, new (opts: object) => any>;
     const ExchangeClass = pro[this._params.exchangeId];
@@ -316,7 +328,55 @@ export class CcxtSymbolWatcher {
    *
    * @param instance - ccxt.pro инстанс для закрытия
    */
-  private async _closeInstance(instance: any): Promise<void> {
+  private async _closeInstance(instance: CcxtExchangeInstance): Promise<void> {
+    if (!instance) return;
+
+    if (typeof instance === 'object' || typeof instance === 'function') {
+      const existing = this._closePromises.get(instance);
+      if (existing) {
+        await existing;
+        return;
+      }
+
+      const closePromise = this._closeInstanceWithTimeout(instance)
+        .finally(() => this._clearClosedInstanceState(instance));
+      this._closePromises.set(instance, closePromise);
+      await closePromise;
+      return;
+    }
+
+    await this._closeInstanceWithTimeout(instance);
+  }
+
+  private async _closeInstanceWithTimeout(instance: CcxtExchangeInstance): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const closeOperation = this._closeInstanceOnce(instance).catch((err) => {
+      this._logger.debug('Error closing ccxt instance (expected on restart)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), CLOSE_TIMEOUT_MS);
+      timer.unref?.();
+    });
+
+    const result = await Promise.race([
+      closeOperation.then(() => 'closed' as const),
+      timeout,
+    ]);
+
+    if (timer) clearTimeout(timer);
+
+    if (result === 'timeout') {
+      this._logger.warn('Timed out closing ccxt instance', {
+        timeoutMs: CLOSE_TIMEOUT_MS,
+      });
+      closeOperation.catch(() => undefined);
+    }
+  }
+
+  private async _closeInstanceOnce(instance: CcxtExchangeInstance): Promise<void> {
     try {
       if (instance?.clients) {
         for (const clientKey of Object.keys(instance.clients)) {
@@ -336,18 +396,66 @@ export class CcxtSymbolWatcher {
         await instance.close();
       }
     } catch (err) {
-      this._logger.debug('Error closing ccxt instance (expected on restart)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      throw err;
     }
   }
 
-  /**
-   * Вспомогательный метод паузы.
-   *
-   * @param ms - Длительность паузы (ms)
-   */
-  private _sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private async _withWatchTimeout<T>(
+    operationFactory: () => Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+    signal: AbortSignal,
+  ): Promise<T> {
+    if (signal.aborted) {
+      throw new Error(`${timeoutMessage}: aborted`);
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let abortHandler: (() => void) | null = null;
+
+    const operation = Promise.resolve().then(operationFactory);
+    operation.catch(() => undefined);
+
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      timer.unref?.();
+    });
+
+    const aborted = new Promise<never>((_, reject) => {
+      abortHandler = () => reject(new Error(`${timeoutMessage}: aborted`));
+      signal.addEventListener('abort', abortHandler, { once: true });
+    });
+
+    try {
+      return await Promise.race([operation, timeout, aborted]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (abortHandler) signal.removeEventListener('abort', abortHandler);
+    }
+  }
+
+  private _clearTradesCache(instance: CcxtExchangeInstance): void {
+    const tradesCache = instance.trades?.[this._params.symbol];
+    if (tradesCache && typeof tradesCache.length === 'number') {
+      tradesCache.length = 0;
+    }
+  }
+
+  private _clearClosedInstanceState(instance: CcxtExchangeInstance): void {
+    for (const prop of ['trades', 'orderbooks', 'myTrades', 'orders']) {
+      this._clearCacheObject(instance?.[prop]);
+    }
+  }
+
+  private _clearCacheObject(value: unknown): void {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.length = 0;
+      return;
+    }
+
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      delete (value as Record<string, unknown>)[key];
+    }
   }
 }

@@ -748,8 +748,8 @@ process.on('SIGINT',  () => void shutdown('SIGINT', 0));
 process.on('SIGTERM', () => void shutdown('SIGTERM', 0));
 
 // Подавляем автоматический process.exit(1) от unhandled rejections во время shutdown.
-// Источник: orphaned stale-timeout promises из CcxtSymbolWatcher — когда watchOrderBook
-// выигрывает Promise.race, stale timeout остаётся без обработчика и стреляет через 30с.
+// CcxtSymbolWatcher now consumes late watch rejections internally; this remains
+// as a defensive shutdown guard for other background tasks.
 process.on('unhandledRejection', (reason) => {
   logger.warn('Unhandled promise rejection (suppressed to allow clean shutdown)', {
     reason: reason instanceof Error ? reason.message : String(reason),

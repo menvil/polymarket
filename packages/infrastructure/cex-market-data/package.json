@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
+    "test": "jest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "ccxt": "^4.5.46"
   },
   "devDependencies": {
+    "@jest/globals": "^29.0.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   }

@@ -114,9 +114,7 @@ export class CexCollectorService {
   public async stop(): Promise<void> {
     this._logger.info('CexCollectorService stopping');
 
-    for (const watcher of this._watchers) {
-      watcher.stop();
-    }
+    await Promise.all(this._watchers.map((watcher) => watcher.stop()));
 
     await this._rotator?.close();
     await this.cleanup();
