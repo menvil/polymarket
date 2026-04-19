@@ -11,8 +11,10 @@ async function getCcxt(): Promise<typeof import('ccxt')> {
   return ccxtModule;
 }
 
-const STALE_TIMEOUT_MS = 30_000;
+const OB_STALE_TIMEOUT_MS = 30_000;
+const TRADES_STALE_TIMEOUT_MS = 120_000;
 const CLOSE_TIMEOUT_MS = 10_000;
+const PLANNED_RESTART_JITTER_RATIO = 0.1;
 
 type CcxtExchangeInstance = any;
 
@@ -44,6 +46,8 @@ export interface CcxtSymbolWatcherParams {
   readonly logger: ILogger;
   /** @internal Test hook for injecting a fake ccxt.pro exchange instance. */
   readonly exchangeFactory?: () => CcxtExchangeInstance | Promise<CcxtExchangeInstance>;
+  /** @internal Test hook for deterministic jitter. */
+  readonly random?: () => number;
 }
 
 /**
@@ -59,8 +63,8 @@ export interface CcxtSymbolWatcherParams {
  * 5. Обнаруживает «зависший» стакан (ask < bid) и перезапускается.
  *
  * ### Защита от staleness
- * Каждая операция watch обёрнута в `Promise.race` со stale-таймаутом
- * (`STALE_TIMEOUT_MS = 30s`). Если обновлений не поступало 30 секунд —
+ * Каждая операция watch обёрнута в `Promise.race` со stale-таймаутом:
+ * 30s для стакана и 120s для сделок. Если обновлений не поступало вовремя,
  * инстанс пересоздаётся.
  *
  * @example
@@ -175,9 +179,10 @@ export class CcxtSymbolWatcher {
       });
 
       while (!signal.aborted) {
-        if (Date.now() - instance._createdAt > this._params.restartIntervalMs) {
+        if (this._isPlannedRestartDue(instance)) {
           this._logger.info('Planned restart (restartInterval exceeded)', {
-            intervalMs: this._params.restartIntervalMs,
+            intervalMs: instance._restartIntervalMs,
+            baseIntervalMs: this._params.restartIntervalMs,
           });
           return;
         }
@@ -185,13 +190,13 @@ export class CcxtSymbolWatcher {
         const ob = useWatch
           ? await this._withWatchTimeout<any>(
               () => instance.watchOrderBook(this._params.symbol, this._params.depth),
-              STALE_TIMEOUT_MS,
+              OB_STALE_TIMEOUT_MS,
               'OB stale: no update in 30s',
               signal,
             )
           : await this._withWatchTimeout<any>(
               () => instance.fetchOrderBook(this._params.symbol, this._params.depth),
-              STALE_TIMEOUT_MS,
+              OB_STALE_TIMEOUT_MS,
               'OB fetch stale: no response in 30s',
               signal,
             );
@@ -245,15 +250,18 @@ export class CcxtSymbolWatcher {
       this._logger.info('Trades session starting');
 
       while (!signal.aborted) {
-        if (Date.now() - instance._createdAt > this._params.restartIntervalMs) {
-          this._logger.info('Planned restart (restartInterval exceeded), trades loop');
+        if (this._isPlannedRestartDue(instance)) {
+          this._logger.info('Planned restart (restartInterval exceeded), trades loop', {
+            intervalMs: instance._restartIntervalMs,
+            baseIntervalMs: this._params.restartIntervalMs,
+          });
           return;
         }
 
         const trades = await this._withWatchTimeout<any[]>(
           () => instance.watchTrades(this._params.symbol),
-          STALE_TIMEOUT_MS,
-          'Trades stale: no update in 30s',
+          TRADES_STALE_TIMEOUT_MS,
+          'Trades stale: no update in 120s',
           signal,
         );
 
@@ -294,7 +302,7 @@ export class CcxtSymbolWatcher {
   private async _makeInstance(): Promise<CcxtExchangeInstance> {
     if (this._params.exchangeFactory) {
       const instance = await this._params.exchangeFactory();
-      instance._createdAt = Date.now();
+      this._initializeInstanceLifecycle(instance);
       this._logger.debug('ccxt.pro instance created from injected factory');
       return instance;
     }
@@ -315,9 +323,35 @@ export class CcxtSymbolWatcher {
       },
     });
 
-    instance._createdAt = Date.now();
+    this._initializeInstanceLifecycle(instance);
     this._logger.debug('ccxt.pro instance created');
     return instance;
+  }
+
+  private _initializeInstanceLifecycle(instance: CcxtExchangeInstance): void {
+    const createdAt = Date.now();
+    const restartIntervalMs = this._jitterRestartIntervalMs(this._params.restartIntervalMs);
+
+    instance._createdAt = createdAt;
+    instance._restartIntervalMs = restartIntervalMs;
+    instance._plannedRestartAt = createdAt + restartIntervalMs;
+  }
+
+  private _isPlannedRestartDue(instance: CcxtExchangeInstance): boolean {
+    if (typeof instance?._plannedRestartAt === 'number') {
+      return Date.now() >= instance._plannedRestartAt;
+    }
+
+    return Date.now() - instance._createdAt > this._params.restartIntervalMs;
+  }
+
+  private _jitterRestartIntervalMs(baseIntervalMs: number): number {
+    if (baseIntervalMs <= 0) return baseIntervalMs;
+
+    const random = this._params.random ?? Math.random;
+    const jitterRange = baseIntervalMs * PLANNED_RESTART_JITTER_RATIO;
+    const jitter = ((random() * 2) - 1) * jitterRange;
+    return Math.max(1, Math.round(baseIntervalMs + jitter));
   }
 
   /**
