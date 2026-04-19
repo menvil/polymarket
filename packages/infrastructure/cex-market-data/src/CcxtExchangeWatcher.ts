@@ -33,6 +33,30 @@ const SPOT_DEPTH_WHITELIST: Readonly<Record<string, readonly number[]>> = {
   coinbase: [50],
 };
 
+/**
+ * Переопределения keep-alive параметров для бирж с агрессивными дефолтами ccxt.pro.
+ *
+ * @remarks
+ * ccxt.pro базовый `Client` таймаутит WS по формуле
+ * `lastPong + keepAlive * maxPingPongMisses < now`.
+ * Дефолты: `keepAlive=18000`, `maxPingPongMisses=2` → 36s до таймаута.
+ * На нестабильной сети или при CPU-stall это приводит к ложным реконнектам.
+ *
+ * Эти override'ы передаются через `options.ws` и попадают в `WsClient` —
+ * см. `ccxt/js/src/base/Exchange.js:1023`.
+ */
+interface KeepAliveOverride {
+  /** Интервал между ping-ами клиента (ms). */
+  readonly keepAlive?: number;
+  /** Множитель таймаута на потерянные pong-и. Таймаут = keepAlive * maxPingPongMisses. */
+  readonly maxPingPongMisses?: number;
+}
+
+const KEEP_ALIVE_OVERRIDES: Readonly<Record<string, KeepAliveOverride>> = {
+  bybit: { keepAlive: 20_000, maxPingPongMisses: 3 },
+  okx: { keepAlive: 20_000, maxPingPongMisses: 3 },
+};
+
 function normalizeDepth(exchangeId: string, marketType: string, depth: number): number {
   if (marketType !== 'spot') return depth;
   const allowed = SPOT_DEPTH_WHITELIST[exchangeId];
@@ -436,17 +460,32 @@ export class CcxtExchangeWatcher {
       throw new Error(`Exchange '${this._params.exchangeId}' not found in ccxt.pro`);
     }
 
+    const keepAlive = KEEP_ALIVE_OVERRIDES[this._params.exchangeId];
+    const wsOptions: Record<string, unknown> = {};
+    if (keepAlive?.keepAlive !== undefined) wsOptions['keepAlive'] = keepAlive.keepAlive;
+    if (keepAlive?.maxPingPongMisses !== undefined) {
+      wsOptions['maxPingPongMisses'] = keepAlive.maxPingPongMisses;
+    }
+
+    const options: Record<string, unknown> = {
+      defaultType: this._params.exchangeType,
+      timeout: 30_000,
+      watchOrderBook: { checksum: false, limit: this._effectiveDepth },
+    };
+    if (Object.keys(wsOptions).length > 0) options['ws'] = wsOptions;
+
     const instance = new ExchangeClass({
       enableRateLimit: true,
-      options: {
-        defaultType: this._params.exchangeType,
-        timeout: 30_000,
-        watchOrderBook: { checksum: false, limit: this._effectiveDepth },
-      },
+      options,
     });
 
     this._initializeInstanceLifecycle(instance);
-    this._logger.debug('ccxt.pro instance created');
+    if (keepAlive) {
+      this._logger.debug('Applied WS keep-alive override', {
+        exchange: this._params.exchangeId,
+        ...wsOptions,
+      });
+    }
     return instance;
   }
 
