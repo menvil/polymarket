@@ -641,6 +641,7 @@ let scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let expiryInterval: ReturnType<typeof setInterval> | null = null;
 let enrichmentInterval: ReturnType<typeof setInterval> | null = null;
 let closedMarketsCleanupInterval: ReturnType<typeof setInterval> | null = null;
+let memoryLogInterval: ReturnType<typeof setInterval> | null = null;
 let expiryRunInProgress = false;
 
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
@@ -659,6 +660,7 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
     if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
     if (enrichmentInterval) { clearInterval(enrichmentInterval); enrichmentInterval = null; }
     if (closedMarketsCleanupInterval) { clearInterval(closedMarketsCleanupInterval); closedMarketsCleanupInterval = null; }
+    if (memoryLogInterval) { clearInterval(memoryLogInterval); memoryLogInterval = null; }
 
     // Сначала останавливаем ingestion новых данных, чтобы не было новых записей
     // в recorder пока завершаем pending enrichment и закрываем рынки.
@@ -837,6 +839,39 @@ expiryInterval = setInterval(() => {
 enrichmentInterval = setInterval(() => {
   runEnrichmentQueueOnce();
 }, ENRICHMENT_INTERVAL_MS);
+
+// Периодический лог потребления памяти (каждую минуту).
+// Помогает ловить утечки и видеть эффект плановых рестартов ccxt-инстансов.
+// Дополнительно: по SIGUSR2 пишем heap snapshot в cwd для офлайн-анализа.
+const MEMORY_LOG_INTERVAL_MS = 60_000;
+const MB = 1024 * 1024;
+memoryLogInterval = setInterval(() => {
+  const m = process.memoryUsage();
+  logger.info('Memory usage', {
+    rssMb:          +(m.rss / MB).toFixed(1),
+    heapUsedMb:     +(m.heapUsed / MB).toFixed(1),
+    heapTotalMb:    +(m.heapTotal / MB).toFixed(1),
+    externalMb:     +(m.external / MB).toFixed(1),
+    arrayBuffersMb: +(m.arrayBuffers / MB).toFixed(1),
+    markets:        subscribedMarkets.size,
+    pendingEnrich:  pendingEnrichment.size,
+  });
+}, MEMORY_LOG_INTERVAL_MS);
+
+process.on('SIGUSR2', () => {
+  void (async () => {
+    try {
+      const { writeHeapSnapshot } = await import('v8');
+      const file = `heap-${Date.now()}.heapsnapshot`;
+      writeHeapSnapshot(file);
+      logger.info('Heap snapshot written', { file });
+    } catch (err) {
+      logger.warn('Failed to write heap snapshot', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
+});
 
 // Очистка closedMarkets от записей старше 24ч (каждый час)
 closedMarketsCleanupInterval = setInterval(() => {

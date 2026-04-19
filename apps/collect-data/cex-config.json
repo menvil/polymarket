@@ -1,7 +1,7 @@
 {
   "binance": {
     "type": "spot",
-    "symbols": ["BTC/USD","ETH/USD","BNB/USD","DOGE/USD","SOL/USD","XRP/USD"],
+    "symbols": ["BTC/USD","ETH/USD","BNB/USD","SOL/USD","BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
@@ -10,7 +10,7 @@
   },
   "coinbase": {
     "type": "spot",
-    "symbols": ["BTC/USD"],
+    "symbols": ["BTC/USD","ETH/USD","BNB/USD","SOL/USD","XRP/USD","DOGE/USD","BTC/USDT","ETH/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
@@ -19,7 +19,7 @@
   },
   "kraken": {
     "type": "spot",
-    "symbols": ["BTC/USD"],
+    "symbols": ["BTC/USD","ETH/USD","BNB/USD","SOL/USD","XRP/USD","DOGE/USD","BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
@@ -28,7 +28,7 @@
   },
   "cryptocom": {
     "type": "spot",
-    "symbols": ["BTC/USD"],
+    "symbols": ["BTC/USD","ETH/USD","SOL/USD","XRP/USD","DOGE/USD","BTC/USDT","ETH/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
@@ -37,10 +37,19 @@
   },
   "okx": {
     "type": "spot",
-    "symbols": ["BTC/USD"],
+    "symbols": ["BTC/USD","ETH/USD","BNB/USD","SOL/USD","XRP/USD","DOGE/USD","BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
     "orderbook": true,
     "trades": true,
     "obDepth": 10,
+    "restartIntervalMs": 900000,
+    "obMethod": "watch"
+  },
+  "bybit": {
+    "type": "spot",
+    "symbols": ["BTC/USD","ETH/USD","BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],
+    "orderbook": true,
+    "trades": true,
+    "obDepth": 50,
     "restartIntervalMs": 900000,
     "obMethod": "watch"
   }

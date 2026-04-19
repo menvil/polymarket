@@ -3,7 +3,7 @@ import type { CexCollectorConfig } from './CexCollectorConfig.js';
 import type { CexMarketType, CexRawRecord } from './CexTypes.js';
 import { normalizeCexRawRecord } from './CexTypes.js';
 import { CexFileRotator } from './CexFileRotator.js';
-import { CcxtSymbolWatcher } from './CcxtSymbolWatcher.js';
+import { CcxtExchangeWatcher } from './CcxtExchangeWatcher.js';
 
 const DEFAULT_OB_DEPTH = 10;
 // Плановый перезапуск ccxt.pro-инстансов каждые 30 мин:
@@ -43,7 +43,7 @@ const DEFAULT_RESTART_INTERVAL_MS = 30 * 60 * 1000;
 export class CexCollectorService {
   private readonly _logger: ILogger;
   private readonly _rotator: CexFileRotator | null;
-  private readonly _watchers: CcxtSymbolWatcher[] = [];
+  private readonly _watchers: CcxtExchangeWatcher[] = [];
 
   /**
    * @param _config - Конфигурация коллектора
@@ -124,38 +124,44 @@ export class CexCollectorService {
   }
 
   /**
-   * Создаёт и запускает `CcxtSymbolWatcher` для каждой пары (биржа × символ)
-   * из конфигурации.
+   * Создаёт и запускает `CcxtExchangeWatcher` — один на биржу, с мультиплексной
+   * подпиской на все символы.
+   *
+   * @remarks
+   * Один ccxt.pro-инстанс на поток (orderbook/trades) на биржу вместо одного
+   * на символ. Это снимает rate-limit ошибки подписки (OKX 50011, bybit spot
+   * depth-валидация) и уменьшает количество WebSocket-соединений в 2N раз.
    */
   private _createAndStartWatchers(): void {
     for (const [configKey, exchangeConfig] of Object.entries(this._config.exchanges)) {
       const exchangeId = exchangeConfig.exchangeId ?? configKey;
-      for (const symbol of exchangeConfig.symbols) {
-        const watcher = new CcxtSymbolWatcher({
-          exchangeId,
-          exchangeType: exchangeConfig.type,
-          symbol,
-          depth: exchangeConfig.obDepth ?? DEFAULT_OB_DEPTH,
-          watchOrderbook: exchangeConfig.orderbook,
-          watchTrades: exchangeConfig.trades,
-          restartIntervalMs: exchangeConfig.restartIntervalMs ?? DEFAULT_RESTART_INTERVAL_MS,
-          obMethod: exchangeConfig.obMethod,
-          onRecord: (record) => this._handleRecord(exchangeId, symbol, exchangeConfig.type, record),
-          logger: this._logger,
-        });
+      if (exchangeConfig.symbols.length === 0) continue;
 
-        watcher.start();
-        this._watchers.push(watcher);
+      const watcher = new CcxtExchangeWatcher({
+        exchangeId,
+        exchangeType: exchangeConfig.type,
+        symbols: exchangeConfig.symbols,
+        depth: exchangeConfig.obDepth ?? DEFAULT_OB_DEPTH,
+        watchOrderbook: exchangeConfig.orderbook,
+        watchTrades: exchangeConfig.trades,
+        restartIntervalMs: exchangeConfig.restartIntervalMs ?? DEFAULT_RESTART_INTERVAL_MS,
+        obMethod: exchangeConfig.obMethod,
+        onRecord: (symbol, record) =>
+          this._handleRecord(exchangeId, symbol, exchangeConfig.type, record),
+        logger: this._logger,
+      });
 
-        this._logger.info('Watcher started', {
-          exchange: exchangeId,
-          symbol,
-          type: exchangeConfig.type,
-          orderbook: exchangeConfig.orderbook,
-          trades: exchangeConfig.trades,
-          obDepth: exchangeConfig.obDepth ?? DEFAULT_OB_DEPTH,
-        });
-      }
+      watcher.start();
+      this._watchers.push(watcher);
+
+      this._logger.info('Exchange watcher started', {
+        exchange: exchangeId,
+        type: exchangeConfig.type,
+        symbols: exchangeConfig.symbols.length,
+        orderbook: exchangeConfig.orderbook,
+        trades: exchangeConfig.trades,
+        obDepth: exchangeConfig.obDepth ?? DEFAULT_OB_DEPTH,
+      });
     }
   }
 
