@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'calibrated-crowd'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -459,6 +459,43 @@ function parseStrategyParams(
       if (raw['signalExitEnabled'] === true || raw['signalExitEnabled'] === false) {
         result['signalExitEnabled'] = raw['signalExitEnabled'];
       }
+      break;
+
+    case 'calibrated-crowd':
+      if (typeof raw['edgeTablePath'] !== 'string') {
+        errors.push('strategyParams.edgeTablePath is required for calibrated-crowd strategy');
+      } else {
+        result['edgeTablePath'] = raw['edgeTablePath'];
+      }
+      for (const numField of [
+        'relaxedMinN', 'relaxedMinEdge', 'relaxedMinCiEdge', 'orderShares',
+        'minComposite', 'maxPositionFraction', 'maxSharesPerMarket', 'warmupSec',
+        'regimeMinPoints', 'regimeThresholdPerMin', 'regimeWindowMs',
+        'weightDropThreshold', 'exitTauSec', 'edgeClosureCents', 'panicTauSec',
+        'cexThresholdBps', 'cexLookbackMs', 'cexStaleMs', 'cexMinVenueCount', 'cexMaxSpreadBps',
+      ]) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      for (const boolField of [
+        'relaxedRequireOos',
+        'exitOnRegimeFlip', 'exitOnWeightDrop', 'exitOnTauTimeout',
+        'exitOnEdgeClosure', 'allowPanicTaker', 'cexRequireFresh',
+      ]) {
+        if (raw[boolField] === true || raw[boolField] === false) {
+          result[boolField] = raw[boolField];
+        }
+      }
+      if (raw['crowdGate'] === 'strict' || raw['crowdGate'] === 'relaxed') {
+        result['crowdGate'] = raw['crowdGate'];
+      }
+      if (raw['cexFilterMode'] === 'off' || raw['cexFilterMode'] === 'agree' || raw['cexFilterMode'] === 'not-adverse') {
+        result['cexFilterMode'] = raw['cexFilterMode'];
+      }
+      if (typeof raw['cexSignalId'] === 'string') result['cexSignalId'] = raw['cexSignalId'];
+      if (Array.isArray(raw['cexVenues'])) result['cexVenues'] = raw['cexVenues'];
+      if (raw['cexWeights'] && typeof raw['cexWeights'] === 'object') result['cexWeights'] = raw['cexWeights'];
+      if (raw['cexBasisByVenue'] && typeof raw['cexBasisByVenue'] === 'object') result['cexBasisByVenue'] = raw['cexBasisByVenue'];
+      if (raw['cexConfidenceByScore'] && typeof raw['cexConfidenceByScore'] === 'object') result['cexConfidenceByScore'] = raw['cexConfidenceByScore'];
       break;
   }
 

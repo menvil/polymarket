@@ -38,6 +38,7 @@ import type { AdaptiveEntryConfig } from '../strategies/AdaptiveEntryStrategy.js
 import type { FairValueMMConfig } from '../strategies/FairValueMMStrategy.js';
 import type { BinanceProbMMConfig } from '../strategies/BinanceProbMMStrategy.js';
 import type { CexLeadLagConfig } from '../strategies/CexLeadLagStrategy.js';
+import type { CalibratedCrowdConfig } from '../strategies/calibrated-crowd/index.js';
 import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag' | 'calibrated-crowd';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -205,7 +206,8 @@ export type AnyStrategyParams =
   | AdaptiveEntryConfig
   | FairValueMMConfig
   | BinanceProbMMConfig
-  | CexLeadLagConfig;
+  | CexLeadLagConfig
+  | CalibratedCrowdConfig;
 
 /**
  * Фильтр для маршрутизации рынка на конкретную стратегию.

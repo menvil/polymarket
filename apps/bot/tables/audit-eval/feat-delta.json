@@ -1,0 +1,542 @@
+{
+  "meta": {
+    "generatedAt": "2026-04-21T19:24:40.039Z",
+    "duration": "5min",
+    "token": "up",
+    "sampleMode": "markets",
+    "fillMode": "fill-sim",
+    "strictOos": false,
+    "features": {
+      "delta": true,
+      "tau": false,
+      "crowd": false,
+      "regime": false
+    },
+    "bucketing": {
+      "deltaStep": 25,
+      "tauStep": 30,
+      "crowdStep": 10,
+      "regimeThreshold": 10,
+      "maxDelta": 200,
+      "maxTau": 300
+    },
+    "gates": {
+      "minN": 30,
+      "minEdge": 0.03,
+      "minCiEdge": 0.02,
+      "fracKelly": 0.25
+    },
+    "training": {
+      "marketCount": 269,
+      "endDateMaxMs": 1776643200000,
+      "effectiveSamples": 1275,
+      "marketZoneSamples": 1454,
+      "observationCount": 2560149
+    },
+    "validation": {
+      "marketCount": 437,
+      "method": "temporal-holdout",
+      "effectiveSamples": 1927,
+      "marketZoneSamples": 2177,
+      "observationCount": 3259336
+    }
+  },
+  "zones": [
+    {
+      "key": {
+        "delta": 0,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 242,
+        "upCount": 118,
+        "nMarkets": 263,
+        "upMarkets": 139,
+        "nObservations": 626138,
+        "upObservations": 416620,
+        "obsPerSample": 2587.3471074380163,
+        "crowdAvg": 0.5034710743801654,
+        "pHat": 0.48760330578512395,
+        "pLow": 0.425313289834696,
+        "pHigh": 0.5502807512063645,
+        "edge": -0.01586776859504141,
+        "spreadAvg": 1.3091791626064277,
+        "fillRate": 0.9201520912547528,
+        "attempts": 263
+      },
+      "oos": {
+        "n": 384,
+        "nMarkets": 422,
+        "nObservations": 806467,
+        "pHat": 0.4739583333333333,
+        "edge": -0.021666666666666667,
+        "passes": true,
+        "fillRate": 0.909952606635071,
+        "attempts": 422
+      },
+      "weights": {
+        "nWeight": 1,
+        "ciWeight": 1,
+        "oosWeight": 1,
+        "regimeWeight": 1,
+        "composite": 1
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -25,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 236,
+        "upCount": 107,
+        "nMarkets": 248,
+        "upMarkets": 119,
+        "nObservations": 555759,
+        "upObservations": 232998,
+        "obsPerSample": 2354.9110169491523,
+        "crowdAvg": 0.4841101694915253,
+        "pHat": 0.4533898305084746,
+        "pLow": 0.3911279107852452,
+        "pHigh": 0.517144882591717,
+        "edge": -0.03072033898305071,
+        "spreadAvg": 1.4833008447686808,
+        "fillRate": 0.9516129032258065,
+        "attempts": 248
+      },
+      "oos": {
+        "n": 371,
+        "nMarkets": 392,
+        "nObservations": 750738,
+        "pHat": 0.4555256064690027,
+        "edge": -0.017196765498652344,
+        "passes": true,
+        "fillRate": 0.9464285714285714,
+        "attempts": 392
+      },
+      "weights": {
+        "nWeight": 1,
+        "ciWeight": 1,
+        "oosWeight": 0.5597843665768236,
+        "regimeWeight": 1,
+        "composite": 0.5597843665768236
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": 25,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 135,
+        "upCount": 97,
+        "nMarkets": 172,
+        "upMarkets": 134,
+        "nObservations": 352733,
+        "upObservations": 302082,
+        "obsPerSample": 2612.837037037037,
+        "crowdAvg": 0.6684444444444446,
+        "pHat": 0.7185185185185186,
+        "pLow": 0.637421759536917,
+        "pHigh": 0.7875229256294886,
+        "edge": 0.05007407407407394,
+        "spreadAvg": 0.7274406888916446,
+        "fillRate": 0.7848837209302325,
+        "attempts": 172
+      },
+      "oos": {
+        "n": 230,
+        "nMarkets": 271,
+        "nObservations": 475813,
+        "pHat": 0.6521739130434783,
+        "edge": -0.021173913043478043,
+        "passes": false,
+        "fillRate": 0.8487084870848709,
+        "attempts": 271
+      },
+      "weights": {
+        "nWeight": 0.675,
+        "ciWeight": 0.6195358672361293,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": 50,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 85,
+        "upCount": 68,
+        "nMarkets": 121,
+        "upMarkets": 104,
+        "nObservations": 178802,
+        "upObservations": 164308,
+        "obsPerSample": 2103.5529411764705,
+        "crowdAvg": 0.784,
+        "pHat": 0.8,
+        "pLow": 0.7028443198871105,
+        "pHigh": 0.8712110775843444,
+        "edge": 0.016000000000000014,
+        "spreadAvg": 0.6161960966770714,
+        "fillRate": 0.7024793388429752,
+        "attempts": 121
+      },
+      "oos": {
+        "n": 134,
+        "nMarkets": 172,
+        "nObservations": 229414,
+        "pHat": 0.7611940298507462,
+        "edge": -0.021268656716417977,
+        "passes": false,
+        "fillRate": 0.7790697674418605,
+        "attempts": 172
+      },
+      "weights": {
+        "nWeight": 0.425,
+        "ciWeight": 1,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": 75,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 51,
+        "upCount": 47,
+        "nMarkets": 72,
+        "upMarkets": 68,
+        "nObservations": 93776,
+        "upObservations": 92207,
+        "obsPerSample": 1838.7450980392157,
+        "crowdAvg": 0.8690196078431373,
+        "pHat": 0.9215686274509803,
+        "pLow": 0.8149980177513917,
+        "pHigh": 0.9690783038730685,
+        "edge": 0.052549019607843084,
+        "spreadAvg": -0.05609668395230264,
+        "fillRate": 0.7083333333333334,
+        "attempts": 72
+      },
+      "oos": {
+        "n": 82,
+        "nMarkets": 108,
+        "nObservations": 100342,
+        "pHat": 0.8902439024390244,
+        "edge": 0.03939024390243906,
+        "passes": true,
+        "fillRate": 0.7592592592592593,
+        "attempts": 108
+      },
+      "weights": {
+        "nWeight": 0.255,
+        "ciWeight": 1,
+        "oosWeight": 0.7495904623225351,
+        "regimeWeight": 1,
+        "composite": 0.19114556789224646
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -50,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 175,
+        "upCount": 51,
+        "nMarkets": 188,
+        "upMarkets": 63,
+        "nObservations": 342047,
+        "upObservations": 74130,
+        "obsPerSample": 1954.5542857142857,
+        "crowdAvg": 0.3352571428571428,
+        "pHat": 0.2914285714285714,
+        "pLow": 0.22915742509840473,
+        "pHigh": 0.36266013860042146,
+        "edge": -0.04382857142857138,
+        "spreadAvg": 1.3002753796306403,
+        "fillRate": 0.9308510638297872,
+        "attempts": 188
+      },
+      "oos": {
+        "n": 252,
+        "nMarkets": 264,
+        "nObservations": 393970,
+        "pHat": 0.2857142857142857,
+        "edge": -0.03404761904761916,
+        "passes": true,
+        "fillRate": 0.9545454545454546,
+        "attempts": 264
+      },
+      "weights": {
+        "nWeight": 0.875,
+        "ciWeight": 0.6252313239991875,
+        "oosWeight": 0.7768361581920937,
+        "regimeWeight": 1,
+        "composite": 0.4249895122522743
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -100,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 79,
+        "upCount": 8,
+        "nMarkets": 81,
+        "upMarkets": 8,
+        "nObservations": 87507,
+        "upObservations": 5688,
+        "obsPerSample": 1107.6835443037974,
+        "crowdAvg": 0.15531645569620262,
+        "pHat": 0.10126582278481013,
+        "pLow": 0.05221118365843358,
+        "pHigh": 0.1873013317927407,
+        "edge": -0.05405063291139249,
+        "spreadAvg": 0.6649001559895732,
+        "fillRate": 0.9753086419753086,
+        "attempts": 81
+      },
+      "oos": {
+        "n": 105,
+        "nMarkets": 107,
+        "nObservations": 99229,
+        "pHat": 0.14285714285714285,
+        "edge": -0.012761904761904808,
+        "passes": false,
+        "fillRate": 0.9813084112149533,
+        "attempts": 107
+      },
+      "weights": {
+        "nWeight": 0.395,
+        "ciWeight": 0.59175766080246,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -125,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 49,
+        "upCount": 3,
+        "nMarkets": 54,
+        "upMarkets": 4,
+        "nObservations": 46900,
+        "upObservations": 3595,
+        "obsPerSample": 957.1428571428571,
+        "crowdAvg": 0.10469387755102039,
+        "pHat": 0.061224489795918366,
+        "pLow": 0.021039764955529186,
+        "pHigh": 0.16520743422087725,
+        "edge": -0.04346938775510202,
+        "spreadAvg": 1.2776710383363654,
+        "fillRate": 0.9074074074074074,
+        "attempts": 54
+      },
+      "oos": {
+        "n": 62,
+        "nMarkets": 67,
+        "nObservations": 54328,
+        "pHat": 0.11290322580645161,
+        "edge": -0.017580645161290334,
+        "passes": false,
+        "fillRate": 0.9253731343283582,
+        "attempts": 67
+      },
+      "weights": {
+        "nWeight": 0.245,
+        "ciWeight": 1,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -75,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 121,
+        "upCount": 20,
+        "nMarkets": 123,
+        "upMarkets": 21,
+        "nObservations": 186425,
+        "upObservations": 20217,
+        "obsPerSample": 1540.702479338843,
+        "crowdAvg": 0.23256198347107432,
+        "pHat": 0.1652892561983471,
+        "pLow": 0.10962203759241997,
+        "pHigh": 0.24155577493161046,
+        "edge": -0.0672727272727272,
+        "spreadAvg": 0.887450836345658,
+        "fillRate": 0.983739837398374,
+        "attempts": 123
+      },
+      "oos": {
+        "n": 164,
+        "nMarkets": 168,
+        "nObservations": 214720,
+        "pHat": 0.20121951219512196,
+        "edge": -0.016463414634146384,
+        "passes": false,
+        "fillRate": 0.9761904761904762,
+        "attempts": 168
+      },
+      "weights": {
+        "nWeight": 0.605,
+        "ciWeight": 0.13369149468364544,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    },
+    {
+      "key": {
+        "delta": -150,
+        "tau": 0,
+        "crowd": 0,
+        "regime": "flat"
+      },
+      "train": {
+        "n": 32,
+        "upCount": 3,
+        "nMarkets": 34,
+        "upMarkets": 3,
+        "nObservations": 20854,
+        "upObservations": 1606,
+        "obsPerSample": 651.6875,
+        "crowdAvg": 0.06375,
+        "pHat": 0.09375,
+        "pLow": 0.032400962626319516,
+        "pHigh": 0.24218499335778831,
+        "edge": 0.03,
+        "spreadAvg": 1.2758450208203589,
+        "fillRate": 0.9411764705882353,
+        "attempts": 34
+      },
+      "oos": {
+        "n": 31,
+        "nMarkets": 36,
+        "nObservations": 24983,
+        "pHat": 0.06451612903225806,
+        "edge": -0.030322580645161287,
+        "passes": false,
+        "fillRate": 0.8611111111111112,
+        "attempts": 36
+      },
+      "weights": {
+        "nWeight": 0.16,
+        "ciWeight": 1,
+        "oosWeight": 0,
+        "regimeWeight": 1,
+        "composite": 0
+      },
+      "kelly": {
+        "side": "NONE",
+        "size": 0
+      },
+      "signal": "SKIP"
+    }
+  ],
+  "backtest": {
+    "hold": {
+      "policy": "hold",
+      "trades": 0,
+      "winRate": 0,
+      "avgPnLPerTrade": 0,
+      "totalPnL": 0,
+      "maxDrawdown": 0
+    },
+    "risk": {
+      "policy": "risk",
+      "trades": 0,
+      "winRate": 0,
+      "avgPnLPerTrade": 0,
+      "totalPnL": 0,
+      "maxDrawdown": 0
+    },
+    "full": {
+      "policy": "full",
+      "trades": 0,
+      "winRate": 0,
+      "avgPnLPerTrade": 0,
+      "totalPnL": 0,
+      "maxDrawdown": 0
+    }
+  }
+}
