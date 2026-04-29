@@ -1,0 +1,70 @@
+{
+  "strategy": "calibrated-crowd-cex",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min.json",
+    "crowdGate": "relaxed",
+    "relaxedEntrySide": "up",
+    "relaxedMinN": 20,
+    "relaxedMinEdge": 0,
+    "relaxedMinCiEdge": -1,
+    "relaxedRequireOos": false,
+    "minComposite": 0,
+    "orderShares": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitMode": "signal-normalized",
+    "normalizeThresholdBps": 0.25,
+    "maxSignalHoldMs": 60000,
+    "exitOnSignalStale": true,
+    "exitOnSignalFlip": true,
+    "tokenAvailabilityDelayMs": 5000,
+    "hedgeWhenUnavailable": true,
+    "minLockedProfitCents": 0,
+    "cexFilterMode": "agree",
+    "cexSignalId": "cex_chainlink_rolling_divergence",
+    "cexVenues": ["binance", "coinbase", "okx"],
+    "cexThresholdBps": 0.5,
+    "cexLookbackMs": 60000,
+    "minBasisSamples": 3,
+    "cexStaleMs": 2000,
+    "cexMinVenueCount": 2,
+    "cexMaxSpreadBps": 10,
+    "cexRequireFresh": true,
+    "logEntries": true
+  },
+  "execution": {
+    "postOnly": false
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings",
+    "journalDir": "./data/paper-journals",
+    "compression": "gzip"
+  }
+}

@@ -14,6 +14,12 @@
  * - `2`     — edge score table: crowd¢ × tau (edge = real − crowd)
  * - `3`     — point lookup: поиск по (delta, tau, crowd)
  * - `4`     — ASCII heatmap: delta × crowd¢ с Unicode-блоками
+ * - `5`     — edge × regime × crowd¢
+ * - `6`     — tail analysis: распределение отклонений внутри ячейки
+ * - `7`     — policy table: fair state + entry/exit edge + BUY/SELL/HOLD
+ * - `8`     — macro policy table: как V7, но ключ состояния = (delta, tau, macroTrend), где macroTrend = bull/bear/neutral по slope за N часов
+ * - `9`     — structural zones: состояния с fair < structuralFair или > (100-structuralFair) — почти-определённые исходы независимо от периода
+ * - `10`    — crowd failure zones: state fair против crowd/ask/bid внутри delta×tau×regime×crowd
  * - `all`   — всё вышеперечисленное
  *
  * @example
@@ -28,7 +34,7 @@
  *
  * # Точечный поиск:
  * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
- *   --duration 5min --show 3 --point "delta=50,tau=120,crowd=72"
+ *   --duration 5min --show 3 --point "delta=50,tau=120,crowd=75"
  *
  * # Тепловая карта для среднего tau-окна:
  * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
@@ -100,7 +106,7 @@ interface Config {
   duration:    'all' | '5min' | '15min';
   token:       'up' | 'down' | 'both';
   minMarkets:  number;
-  /** Варианты вывода: 'a','b','top','curve','1','2','3','4','all' */
+  /** Варианты вывода: 'a','b','top','curve','1','2','3','4','5','6','7','8','9','10','all' */
   show:        Set<string>;
   /** Tau-окна для variant 1: [[from,to], ...] */
   tauWindows:  Array<[number, number]>;
@@ -132,6 +138,33 @@ interface Config {
   regime:          'up' | 'flat' | 'down' | 'all';
   /** Порог slope ($/min) для классификации режима. */
   regimeThreshold: number;
+  /** Порог экстремального отклонения для Variant 6, в центах. */
+  tailThreshold:   number;
+  /** Сколько строк показывать в топах Variant 6. */
+  tailTop:         number;
+  /** Минимальный исполнимый edge в центах для BUY/SELL policy. */
+  tradeThreshold:  number;
+  /** Минимальная доля наблюдений для классификации BUY/SELL. */
+  policyMinShare:  number;
+  /** Сколько строк выводить в Variant 7 / 8 / 9. */
+  policyTop:       number;
+  /**
+   * Окно для макро-тренда (Variant 8) в минутах.
+   * Slope BTC за это окно определяет: bull / bear / neutral.
+   * По умолчанию 240 (4 часа).
+   */
+  macroWindowMin:  number;
+  /**
+   * Порог slope ($/min) для классификации макро-тренда.
+   * По умолчанию 2.0 (если BTC движется ≥$2/мин суммарно за период = ≥$480 за 4ч → bull/bear).
+   */
+  macroThreshold:  number;
+  /**
+   * Порог fair value (центы) для структурных зон (Variant 9).
+   * Состояния с fair < structuralFair или > (100 - structuralFair) считаются структурными.
+   * По умолчанию 30¢.
+   */
+  structuralFair:  number;
 }
 
 /** Режим рынка по slope Chainlink за 60s. */
@@ -147,6 +180,52 @@ export function classifyRegime(slope: number, threshold: number): Regime {
   if (slope >  threshold) return 'up';
   if (slope < -threshold) return 'down';
   return 'flat';
+}
+
+/** Макро-тренд BTC за длинное окно (1-8ч). */
+export type MacroTrend = 'bull' | 'bear' | 'neutral';
+
+/**
+ * Классифицирует slope ($/min) за длинное окно в макро-тренд `bull | bear | neutral`.
+ *
+ * @param slope      - наклон Chainlink за окно macroWindowMs, $/min.
+ * @param threshold  - порог, |slope| ≤ threshold ⇒ neutral.
+ */
+export function classifyMacroTrend(slope: number, threshold: number): MacroTrend {
+  if (slope >  threshold) return 'bull';
+  if (slope < -threshold) return 'bear';
+  return 'neutral';
+}
+
+/**
+ * Наклон Chainlink за произвольное окно `windowMs` назад.
+ * Использует бинарный поиск по отсортированной глобальной истории.
+ *
+ * @param history      - глобальная отсортированная по ts история Chainlink (весь день).
+ * @param currentTs    - момент наблюдения (ms).
+ * @param currentPrice - цена Chainlink в момент `currentTs`.
+ * @param windowMs     - окно назад (ms).
+ * @returns Slope в $/min; 0 если истории недостаточно или dt=0.
+ */
+export function computeSlopeWindow(
+  history: Array<{ ts: number; price: number }>,
+  currentTs: number,
+  currentPrice: number,
+  windowMs: number,
+): number {
+  if (history.length < 2) return 0;
+  const targetTs = currentTs - windowMs;
+  let lo = 0, hi = history.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (history[mid].ts <= targetTs) lo = mid;
+    else hi = mid - 1;
+  }
+  const found = history[lo];
+  if (found.ts > currentTs) return 0;
+  const dtMin = (currentTs - found.ts) / 60_000;
+  if (dtMin < 5) return 0;
+  return (currentPrice - found.price) / dtMin;
 }
 
 /**
@@ -182,14 +261,14 @@ export function computeTrendSlope(
  * @example
  * ```bash
  * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots \
- *   --duration 5min --show 1,2,3,4 --point "delta=50,tau=120,crowd=72"
+ *   --duration 5min --show 1,2,3,4 --point "delta=50,tau=120,crowd=75"
  * ```
  */
 function parseArgs(): Config {
   const args = process.argv.slice(2);
   const config: Config = {
     dirs:       [],
-    deltaStep:  25,
+    deltaStep:  10,
     tauStep:    30,
     maxDelta:   200,
     maxTau:     900,
@@ -203,9 +282,17 @@ function parseArgs(): Config {
     heatmapTau: null,
     point:      null,
     countBy:    'markets',
-    approxResolution: false,
+    approxResolution: true,
     regime:          'all',
     regimeThreshold: 10,
+    tailThreshold:   5,
+    tailTop:         20,
+    tradeThreshold:  3,
+    policyMinShare:  0.10,
+    policyTop:       25,
+    macroWindowMin:  240,
+    macroThreshold:  2.0,
+    structuralFair:  30,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -227,6 +314,7 @@ function parseArgs(): Config {
       config.countBy = v;
     }
     else if (arg === '--approx-resolution') { config.approxResolution = true; }
+    else if (arg === '--no-approx-resolution') { config.approxResolution = false; }
     else if (arg === '--regime') {
       const v = args[++i];
       if (v !== 'up' && v !== 'flat' && v !== 'down' && v !== 'all') {
@@ -235,6 +323,14 @@ function parseArgs(): Config {
       config.regime = v;
     }
     else if (arg === '--regime-threshold') { config.regimeThreshold = Number(args[++i]); }
+    else if (arg === '--tail-threshold') { config.tailThreshold = Number(args[++i]); }
+    else if (arg === '--tail-top') { config.tailTop = Number(args[++i]); }
+    else if (arg === '--trade-threshold') { config.tradeThreshold = Number(args[++i]); }
+    else if (arg === '--policy-min-share') { config.policyMinShare = Number(args[++i]); }
+    else if (arg === '--policy-top') { config.policyTop = Number(args[++i]); }
+    else if (arg === '--macro-window') { config.macroWindowMin = Number(args[++i]); }
+    else if (arg === '--macro-threshold') { config.macroThreshold = Number(args[++i]); }
+    else if (arg === '--structural-fair') { config.structuralFair = Number(args[++i]); }
     else if (arg === '--show') {
       const parts = args[++i].split(',').map(s => s.trim());
       config.show = new Set(parts);
@@ -265,19 +361,29 @@ function parseArgs(): Config {
   if (config.dirs.length === 0) {
     console.error('Usage: npx tsx scripts/analyze-crowd-calibration.ts <dir1> [dir2...] [options]');
     console.error('Options:');
-    console.error('  --show a,b,top,curve,1,2,3,4,all  Sections to display (default: a,b,top,curve)');
+    console.error('  --show a,b,top,curve,1,2,3,4,5,6,7,all  Sections to display (default: a,b,top,curve)');
     console.error('  --token up|down|both               Order book to use (default: up)');
     console.error('  --duration 5min|15min|all');
     console.error('  --tau-step 30                      Tau bucket step in seconds (default: 30)');
-    console.error('  --delta-step 25                    Delta bucket step in $ (default: 25)');
+    console.error('  --delta-step 10                    Delta bucket step in $ (default: 10)');
     console.error('  --max-tau 900  --max-delta 200  --min-markets 5  --asset bitcoin');
     console.error('  --tau-windows "0:90,90:180,180:300"  Tau windows for variant 1');
     console.error('  --heatmap-tau "90:180"               Tau window for variant 4 heatmap');
-    console.error('  --point "delta=50,tau=120,crowd=72"  Point lookup for variant 3');
+    console.error('  --point "delta=50,tau=120,crowd=75"  Point lookup for variant 3');
     console.error('  --count-by markets|observations      (default: markets) unit of "n" in cells');
-    console.error('  --approx-resolution                   infer UP/DOWN from last Chainlink price near endDate when meta is not enriched');
+    console.error('  --approx-resolution                   infer UP/DOWN from last Chainlink price near endDate when meta is not enriched (default: ON)');
+    console.error('  --no-approx-resolution                disable Chainlink-based fallback resolution');
     console.error('  --regime up|flat|down|all             filter observations by BTC trend regime (slope over 60s; default: all)');
     console.error('  --regime-threshold 10                 $/min threshold for up/down classification (default: 10)');
+    console.error('  --tail-threshold 5                    extreme deviation threshold in cents for variant 6');
+    console.error('  --tail-top 20                         number of rows in variant 6 tables');
+    console.error('  --trade-threshold 3                   executable edge threshold in cents for variant 7/8/9');
+    console.error('  --policy-min-share 0.10               min share of observations for BUY/SELL in variant 7/8/9');
+    console.error('  --policy-top 25                       number of rows in variant 7/8/9 tables');
+    console.error('  --macro-window 240                    macro trend window in minutes (default 240 = 4h) for variant 8');
+    console.error('  --macro-threshold 2.0                 $/min slope threshold for bull/bear/neutral in variant 8');
+    console.error('  --structural-fair 30                  fair value threshold in cents for structural zones in variant 9');
+    console.error('  --show 10                             crowd failure zones: state fair vs crowd/ask/bid');
     console.error('  --out file.json');
     process.exit(1);
   }
@@ -289,6 +395,7 @@ function parseArgs(): Config {
 interface BucketAccum {
   crowdProbSum:      number;
   observations:      number;
+  crowdProbMarketSum:number;
   /** Уникальные рынки (dedup по slug) с резолюцией UP. */
   upCount:           number;
   /** Уникальные рынки (dedup по slug) с резолюцией DOWN. */
@@ -298,7 +405,24 @@ interface BucketAccum {
   /** Наблюдения (каждый ордербук-снапшот) с резолюцией DOWN. Не дедуплицируется. */
   downObs:           number;
   marketResolutions: Map<string, 'UP' | 'DOWN'>;
+  marketCrowd:       Map<string, number>;
   spreadSum:         number;
+  spreadMarketSum:   number;
+  marketSpread:      Map<string, number>;
+  midPricesCents:    number[];
+}
+
+interface PolicyAccum {
+  upCount:           number;
+  downCount:         number;
+  upObs:             number;
+  downObs:           number;
+  marketResolutions: Map<string, 'UP' | 'DOWN'>;
+  bidPricesCents:    number[];
+  askPricesCents:    number[];
+  midPricesCents:    number[];
+  spreadCents:       number[];
+  crowdProbSum:      number;
 }
 
 export interface Observation {
@@ -311,6 +435,8 @@ export interface Observation {
   tauSec:        number;
   /** Наклон Chainlink за последние 60s в $/min (0 если истории < 2 точек). */
   trendSlope:    number;
+  /** Макро-тренд BTC за N-часовое окно. Только если в parseSnapshot передана globalHistory. */
+  macroTrend?:   MacroTrend;
 }
 
 export type MarketDuration = '5min' | '15min' | 'other';
@@ -393,6 +519,11 @@ export async function parseSnapshot(
   maxTau:   number,
   token:    'up' | 'down' | 'both',
   approxResolution: boolean,
+  macroOpts?: {
+    globalHistory: Array<{ ts: number; price: number }>;
+    windowMs:      number;
+    threshold:     number;
+  },
 ): Promise<ParseResult> {
   return new Promise((resolve) => {
     let resolution: 'UP' | 'DOWN' | null = null;
@@ -540,11 +671,19 @@ export async function parseSnapshot(
       }
       if (mid < 1 || mid > 99 || spread > 50) { rejectCounts.invalid_mid++; return; }
       const trendSlope = computeTrendSlope(chainlinkHistory, tsMs, lastChainlinkPrice);
+      let macroTrend: MacroTrend | undefined;
+      if (macroOpts && macroOpts.globalHistory.length >= 2) {
+        const macroSlope = computeSlopeWindow(
+          macroOpts.globalHistory, tsMs, lastChainlinkPrice, macroOpts.windowMs,
+        );
+        macroTrend = classifyMacroTrend(macroSlope, macroOpts.threshold);
+      }
       observations.push({
         tsMs,
         midPriceCents: mid, spreadCents: spread,
         bestBidCents, bestAskCents,
         delta: lastChainlinkPrice - strikePrice, tauSec, trendSlope,
+        macroTrend,
       });
     }
 
@@ -660,19 +799,63 @@ export async function parseSnapshot(
 function bucketKey(a: number, b: number): string { return `${a}:${b}`; }
 function toBucket(v: number, step: number): number { return Math.floor(v / step) * step; }
 function crowdBucket5(cents: number): number { return Math.round(cents / 5) * 5; }
-function crowdBucket10(cents: number): number { return Math.max(10, Math.min(90, Math.round(cents / 10) * 10)); }
+function crowdBucket(cents: number): number { return Math.max(5, Math.min(95, Math.round(cents / 5) * 5)); }
 
 function newBucket(): BucketAccum {
   return {
     crowdProbSum: 0, observations: 0,
+    crowdProbMarketSum: 0,
     upCount: 0, downCount: 0,
     upObs: 0, downObs: 0,
-    marketResolutions: new Map(), spreadSum: 0,
+    marketResolutions: new Map(),
+    marketCrowd: new Map(),
+    spreadSum: 0,
+    spreadMarketSum: 0,
+    marketSpread: new Map(),
+    midPricesCents: [],
+  };
+}
+
+function newPolicyAccum(): PolicyAccum {
+  return {
+    upCount: 0,
+    downCount: 0,
+    upObs: 0,
+    downObs: 0,
+    marketResolutions: new Map(),
+    bidPricesCents: [],
+    askPricesCents: [],
+    midPricesCents: [],
+    spreadCents: [],
+    crowdProbSum: 0,
   };
 }
 
 function accumulate(b: BucketAccum, midCents: number, spread: number, slug: string, res: 'UP' | 'DOWN'): void {
   b.crowdProbSum += midCents / 100; b.observations++; b.spreadSum += spread;
+  b.midPricesCents.push(midCents);
+  if (res === 'UP') b.upObs++; else b.downObs++;
+  if (!b.marketResolutions.has(slug)) {
+    b.marketResolutions.set(slug, res);
+    b.marketCrowd.set(slug, midCents / 100);
+    b.crowdProbMarketSum += midCents / 100;
+    b.marketSpread.set(slug, spread);
+    b.spreadMarketSum += spread;
+    if (res === 'UP') b.upCount++; else b.downCount++;
+  }
+}
+
+function accumulatePolicy(
+  b: PolicyAccum,
+  obs: Observation,
+  slug: string,
+  res: 'UP' | 'DOWN',
+): void {
+  b.bidPricesCents.push(obs.bestBidCents);
+  b.askPricesCents.push(obs.bestAskCents);
+  b.midPricesCents.push(obs.midPriceCents);
+  b.spreadCents.push(obs.spreadCents);
+  b.crowdProbSum += obs.midPriceCents / 100;
   if (res === 'UP') b.upObs++; else b.downObs++;
   if (!b.marketResolutions.has(slug)) {
     b.marketResolutions.set(slug, res);
@@ -701,6 +884,22 @@ function bucketDown(b: BucketAccum): number {
   return COUNT_BY === 'observations' ? b.downObs : b.downCount;
 }
 
+function bucketCrowd(b: BucketAccum): number {
+  if (COUNT_BY === 'observations') {
+    return b.observations > 0 ? b.crowdProbSum / b.observations : 0;
+  }
+  const nMarkets = b.upCount + b.downCount;
+  return nMarkets > 0 ? b.crowdProbMarketSum / nMarkets : 0;
+}
+
+function bucketSpread(b: BucketAccum): number {
+  if (COUNT_BY === 'observations') {
+    return b.observations > 0 ? b.spreadSum / b.observations : 0;
+  }
+  const nMarkets = b.upCount + b.downCount;
+  return nMarkets > 0 ? b.spreadMarketSum / nMarkets : 0;
+}
+
 /**
  * Объединяет массив бакетов с правильной дедупликацией рынков по slug.
  *
@@ -719,14 +918,44 @@ function mergeBuckets(buckets: BucketAccum[]): BucketAccum {
     m.spreadSum    += b.spreadSum;
     m.upObs        += b.upObs;
     m.downObs      += b.downObs;
+    for (const mid of b.midPricesCents) m.midPricesCents.push(mid);
     for (const [slug, res] of b.marketResolutions) {
       if (!m.marketResolutions.has(slug)) {
         m.marketResolutions.set(slug, res);
+        const crowd = b.marketCrowd.get(slug);
+        if (crowd !== undefined) {
+          m.marketCrowd.set(slug, crowd);
+          m.crowdProbMarketSum += crowd;
+        }
+        const spread = b.marketSpread.get(slug);
+        if (spread !== undefined) {
+          m.marketSpread.set(slug, spread);
+          m.spreadMarketSum += spread;
+        }
         if (res === 'UP') m.upCount++; else m.downCount++;
       }
     }
   }
   return m;
+}
+
+function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  const weight = pos - lo;
+  return sorted[lo] * (1 - weight) + sorted[hi] * weight;
+}
+
+function policyN(b: PolicyAccum): number {
+  return COUNT_BY === 'observations' ? b.upObs + b.downObs : b.upCount + b.downCount;
+}
+
+function policyUp(b: PolicyAccum): number {
+  return COUNT_BY === 'observations' ? b.upObs : b.upCount;
 }
 
 /**
@@ -897,7 +1126,7 @@ function printInsights(
 /**
  * Вариант 1 — таблицы delta × crowd¢ для каждого tau-окна.
  *
- * @param tripleMap  - Map ключ "delta:tau:crowd10"
+ * @param tripleMap  - Map ключ "delta:tau:crowd5"
  * @param tauWindows - массив tau-окон [[from,to], ...]
  * @param sortedTaus - все tau-бакеты из tripleMap (отсортированные)
  * @param config     - конфигурация
@@ -915,7 +1144,7 @@ function printTauSliced(
   const allDeltas = new Set<number>();
   for (const key of tripleMap.keys()) allDeltas.add(Number(key.split(':')[0]));
   const sortedDeltas = [...allDeltas].sort((a, b) => a - b);
-  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const CROWDS = Array.from({ length: 19 }, (_, i) => 5 + i * 5);
   const CW = 13;
 
   for (const [winFrom, winTo] of tauWindows) {
@@ -947,7 +1176,7 @@ function printTauSliced(
         const n = b ? bucketN(b) : 0;
         if (!b || n < config.minMarkets) { cells.push(' '.repeat(CW)); continue; }
         const real  = bucketUp(b) / n;
-        const crowd = b.crowdProbSum / b.observations;
+        const crowd = bucketCrowd(b);
         const bias  = crowd - real;
         const sign  = (bias * 100) >= 0 ? '+' : '';
         cells.push(colorBias(`${(real * 100).toFixed(0).padStart(3)}%(${sign}${(bias * 100).toFixed(0)}) n=${n}`.padStart(CW), bias));
@@ -960,7 +1189,7 @@ function printTauSliced(
     printInsights(
       sortedDeltas, CROWDS,
       (db, cb) => merged.get(`${db}:${cb}`),
-      (_r, b) => b.crowdProbSum / b.observations,
+      (_r, b) => bucketCrowd(b),
       d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
       winTo - winFrom, config.minMarkets,
     );
@@ -972,7 +1201,7 @@ function printTauSliced(
 /**
  * Вариант 2 — таблица edge score (crowd¢ × tau), агрегированная по delta.
  *
- * @param tripleMap  - Map ключ "delta:tau:crowd10"
+ * @param tripleMap  - Map ключ "delta:tau:crowd5"
  * @param sortedTaus - все tau-бакеты
  * @param config     - конфигурация
  *
@@ -985,7 +1214,7 @@ function printEdgeTable(
   sortedTaus: number[],
   config:     Config,
 ): void {
-  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const CROWDS = Array.from({ length: 19 }, (_, i) => 5 + i * 5);
   const EW = 12;
   const W  = LABEL_W + sortedTaus.length * EW;
 
@@ -997,10 +1226,25 @@ function printEdgeTable(
     const b  = tripleMap.get(key)!;
     if (!edgeMap.has(ek)) edgeMap.set(ek, newBucket());
     const m = edgeMap.get(ek)!;
-    m.crowdProbSum += b.crowdProbSum; m.observations += b.observations; m.spreadSum += b.spreadSum;
+    m.crowdProbSum += b.crowdProbSum;
+    m.observations += b.observations;
+    m.spreadSum += b.spreadSum;
     m.upObs += b.upObs; m.downObs += b.downObs;
     for (const [slug, res] of b.marketResolutions) {
-      if (!m.marketResolutions.has(slug)) { m.marketResolutions.set(slug, res); if (res === 'UP') m.upCount++; else m.downCount++; }
+      if (!m.marketResolutions.has(slug)) {
+        m.marketResolutions.set(slug, res);
+        const crowd = b.marketCrowd.get(slug);
+        if (crowd !== undefined) {
+          m.marketCrowd.set(slug, crowd);
+          m.crowdProbMarketSum += crowd;
+        }
+        const spread = b.marketSpread.get(slug);
+        if (spread !== undefined) {
+          m.marketSpread.set(slug, spread);
+          m.spreadMarketSum += spread;
+        }
+        if (res === 'UP') m.upCount++; else m.downCount++;
+      }
     }
   }
 
@@ -1050,7 +1294,7 @@ function printEdgeTable(
 /**
  * Вариант 3 — поиск калибровки для конкретной точки (delta, tau, crowd).
  *
- * @param tripleMap - Map ключ "delta:tau:crowd10"
+ * @param tripleMap - Map ключ "delta:tau:crowd5"
  * @param config    - конфигурация
  *
  * @remarks
@@ -1096,7 +1340,7 @@ function printPointLookup(
   const { delta, tau, crowd } = config.point;
   const db = toBucket(delta, config.deltaStep);
   const tb = toBucket(tau, config.tauStep);
-  const cb = crowdBucket10(crowd);
+  const cb = crowdBucket(crowd);
 
   // Nearest-neighbor search with expanding radius
   let result: BucketAccum | null = null;
@@ -1104,7 +1348,7 @@ function printPointLookup(
   while (radius <= 2 && !result) {
     const candidates: BucketAccum[] = [];
     for (let dd = -radius; dd <= radius; dd++) for (let dt = -radius; dt <= radius; dt++) for (let dc = -radius; dc <= radius; dc++) {
-      const key = `${db + dd * config.deltaStep}:${tb + dt * config.tauStep}:${Math.max(10, Math.min(90, cb + dc * 10))}`;
+      const key = `${db + dd * config.deltaStep}:${tb + dt * config.tauStep}:${Math.max(5, Math.min(95, cb + dc * 5))}`;
       const b   = tripleMap.get(key);
       if (b) candidates.push(b);
     }
@@ -1159,7 +1403,7 @@ function printPointLookup(
 /**
  * Вариант 4 — ASCII тепловая карта delta × crowd¢ для заданного tau-окна.
  *
- * @param tripleMap - Map ключ "delta:tau:crowd10"
+ * @param tripleMap - Map ключ "delta:tau:crowd5"
  * @param tauWindow - tau-окно [from, to]
  * @param sortedTaus - все tau-бакеты
  * @param config    - конфигурация
@@ -1180,7 +1424,7 @@ function printHeatmap(
   const allDeltas = new Set<number>();
   for (const key of tripleMap.keys()) allDeltas.add(Number(key.split(':')[0]));
   const sortedDeltas = [...allDeltas].sort((a, b) => b - a); // top-down: max delta first
-  const CROWDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const CROWDS = Array.from({ length: 19 }, (_, i) => 5 + i * 5);
   const CW = 5; // visual width per cell: "██  " = block(1) + space(1) + sep(1) = 3... use 4
 
   const [winFrom, winTo] = tauWindow;
@@ -1288,7 +1532,7 @@ function printRegimeTable(
 
   const crowds = new Set<number>();
   for (const key of regimeCrowdMap.keys()) crowds.add(Number(key.split(':')[1]));
-  const sortedCrowds = [...crowds].sort((a, b) => a - b).filter(c => c >= 10 && c <= 95);
+  const sortedCrowds = [...crowds].sort((a, b) => a - b).filter(c => c >= 5 && c <= 95);
 
   const CW = 20;
   const header = 'Crowd¢'.padEnd(10) + ['DOWN', 'FLAT', 'UP'].map(r => r.padStart(CW)).join('');
@@ -1346,6 +1590,719 @@ function printRegimeTable(
   }
 }
 
+type TailRow = {
+  delta: number;
+  tau: number;
+  crowd: number;
+  nMarkets: number;
+  nObs: number;
+  fairCents: number;
+  meanDev: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  tailUpShare: number;
+  tailDownShare: number;
+};
+
+function printTailAnalysis(
+  tripleMap: Map<string, BucketAccum>,
+  config: Config,
+): void {
+  const rows: TailRow[] = [];
+  for (const [key, b] of tripleMap) {
+    const nMarkets = b.upCount + b.downCount;
+    if (nMarkets < config.minMarkets || b.midPricesCents.length === 0) continue;
+    const [delta, tau, crowd] = key.split(':').map(Number);
+    const fairCents = (bucketUp(b) / bucketN(b)) * 100;
+    const deviations = b.midPricesCents
+      .map((mid) => mid - fairCents)
+      .sort((a, c) => a - c);
+    const nObs = deviations.length;
+    const meanDev = deviations.reduce((sum, value) => sum + value, 0) / nObs;
+    const tailUpCount = deviations.filter((value) => value >= config.tailThreshold).length;
+    const tailDownCount = deviations.filter((value) => value <= -config.tailThreshold).length;
+    rows.push({
+      delta,
+      tau,
+      crowd,
+      nMarkets,
+      nObs,
+      fairCents,
+      meanDev,
+      p10: quantile(deviations, 0.10),
+      p50: quantile(deviations, 0.50),
+      p90: quantile(deviations, 0.90),
+      p95: quantile(deviations, 0.95),
+      tailUpShare: tailUpCount / nObs,
+      tailDownShare: tailDownCount / nObs,
+    });
+  }
+
+  rows.sort((a, b) => Math.max(b.tailUpShare, b.tailDownShare) - Math.max(a.tailUpShare, a.tailDownShare));
+
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(136)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 6 — TAIL ANALYSIS: deviation = mid price − fair value within cell | threshold = ${config.tailThreshold}¢${RESET}`);
+  console.log(`${BOLD}${CYAN}  fair value = realized P(UP) for (delta, tau, crowd) cell; tails below are observation-weighted${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(136)}${RESET}`);
+
+  if (rows.length === 0) {
+    console.log(`${DIM}  нет ячеек, проходящих фильтр min-markets${RESET}`);
+    return;
+  }
+
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Crowd'.padEnd(6)} ${'nMkt'.padEnd(6)} ${'nObs'.padEnd(7)} ${'Fair'.padEnd(7)} ${'Mean'.padEnd(7)} ${'p10'.padEnd(7)} ${'p50'.padEnd(7)} ${'p90'.padEnd(7)} ${'p95'.padEnd(7)} ${('tail+≥' + config.tailThreshold + '¢').padEnd(10)} ${('tail-≤-' + config.tailThreshold + '¢').padEnd(11)}${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(130)}${RESET}`);
+  for (const row of rows.slice(0, config.tailTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+    console.log(
+      `  ${delta.padEnd(8)} ${tau.padEnd(10)} ${(`${row.crowd}¢`).padEnd(6)} ${String(row.nMarkets).padEnd(6)} ${String(row.nObs).padEnd(7)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.meanDev.toFixed(1).padStart(6)}¢ ${row.p10.toFixed(1).padStart(6)}¢ ${row.p50.toFixed(1).padStart(6)}¢ ${row.p90.toFixed(1).padStart(6)}¢ ${row.p95.toFixed(1).padStart(6)}¢ ${(`${(row.tailUpShare * 100).toFixed(1)}%`).padStart(9)} ${(`${(row.tailDownShare * 100).toFixed(1)}%`).padStart(11)}`,
+    );
+  }
+
+  const topOver = [...rows]
+    .filter((row) => row.tailUpShare > 0)
+    .sort((a, b) => b.tailUpShare - a.tailUpShare || b.p95 - a.p95)
+    .slice(0, config.tailTop);
+  const topUnder = [...rows]
+    .filter((row) => row.tailDownShare > 0)
+    .sort((a, b) => b.tailDownShare - a.tailDownShare || a.p10 - b.p10)
+    .slice(0, config.tailTop);
+
+  if (topOver.length > 0) {
+    console.log();
+    console.log(`  ${BOLD}▸ TOP OVERPRICED TAILS (sell / reduce long candidates)${RESET}`);
+    console.log(`  ${DIM}${'─'.repeat(94)}${RESET}`);
+    console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Crowd'.padEnd(6)} ${'Fair'.padEnd(7)} ${'p90'.padEnd(7)} ${'p95'.padEnd(7)} ${('tail+≥' + config.tailThreshold + '¢').padEnd(10)} nObs${RESET}`);
+    for (const row of topOver) {
+      const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+      const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+      console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${(`${row.crowd}¢`).padEnd(6)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.p90.toFixed(1).padStart(6)}¢ ${row.p95.toFixed(1).padStart(6)}¢ ${(`${(row.tailUpShare * 100).toFixed(1)}%`).padStart(9)} ${row.nObs}`);
+    }
+  }
+
+  if (topUnder.length > 0) {
+    console.log();
+    console.log(`  ${BOLD}▸ TOP UNDERPRICED TAILS (buy / hold-long candidates)${RESET}`);
+    console.log(`  ${DIM}${'─'.repeat(94)}${RESET}`);
+    console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Crowd'.padEnd(6)} ${'Fair'.padEnd(7)} ${'p10'.padEnd(7)} ${'p50'.padEnd(7)} ${('tail-≤-' + config.tailThreshold + '¢').padEnd(11)} nObs${RESET}`);
+    for (const row of topUnder) {
+      const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+      const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+      console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${(`${row.crowd}¢`).padEnd(6)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.p10.toFixed(1).padStart(6)}¢ ${row.p50.toFixed(1).padStart(6)}¢ ${(`${(row.tailDownShare * 100).toFixed(1)}%`).padStart(10)} ${row.nObs}`);
+    }
+  }
+}
+
+type PolicyRow = {
+  delta: number;
+  tau: number;
+  regime: Regime;
+  nMarkets: number;
+  nObs: number;
+  fairCents: number;
+  avgCrowdCents: number;
+  avgBidCents: number;
+  avgAskCents: number;
+  avgSpreadCents: number;
+  buyMeanEdge: number;
+  buyP50: number;
+  buyP90: number;
+  buyShare: number;
+  sellMeanEdge: number;
+  sellP50: number;
+  sellP90: number;
+  sellShare: number;
+  action: 'BUY' | 'SELL' | 'HOLD';
+  actionScore: number;
+  certainty?: number;
+};
+
+function printPolicyTable(
+  policyMap: Map<string, PolicyAccum>,
+  config: Config,
+): void {
+  const rows: PolicyRow[] = [];
+  for (const [key, b] of policyMap) {
+    const nMarkets = b.upCount + b.downCount;
+    if (nMarkets < config.minMarkets || b.midPricesCents.length === 0) continue;
+    const [delta, tau, regimeRaw] = key.split(':');
+    const fairCents = (policyUp(b) / policyN(b)) * 100;
+    const buyEdges = b.askPricesCents.map((ask) => fairCents - ask).sort((a, c) => a - c);
+    const sellEdges = b.bidPricesCents.map((bid) => bid - fairCents).sort((a, c) => a - c);
+    const nObs = b.midPricesCents.length;
+    const buyMeanEdge = buyEdges.reduce((sum, value) => sum + value, 0) / nObs;
+    const sellMeanEdge = sellEdges.reduce((sum, value) => sum + value, 0) / nObs;
+    const buyShare = buyEdges.filter((value) => value >= config.tradeThreshold).length / nObs;
+    const sellShare = sellEdges.filter((value) => value >= config.tradeThreshold).length / nObs;
+    let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+    let actionScore = 0;
+    if (buyShare >= config.policyMinShare && buyP90Score(buyEdges) >= config.tradeThreshold && buyShare >= sellShare) {
+      action = 'BUY';
+      actionScore = buyShare * Math.max(0, quantile(buyEdges, 0.90));
+    } else if (sellShare >= config.policyMinShare && buyP90Score(sellEdges) >= config.tradeThreshold && sellShare > buyShare) {
+      action = 'SELL';
+      actionScore = sellShare * Math.max(0, quantile(sellEdges, 0.90));
+    }
+    rows.push({
+      delta: Number(delta),
+      tau: Number(tau),
+      regime: regimeRaw as Regime,
+      nMarkets,
+      nObs,
+      fairCents,
+      avgCrowdCents: (b.crowdProbSum / nObs) * 100,
+      avgBidCents: b.bidPricesCents.reduce((sum, value) => sum + value, 0) / nObs,
+      avgAskCents: b.askPricesCents.reduce((sum, value) => sum + value, 0) / nObs,
+      avgSpreadCents: b.spreadCents.reduce((sum, value) => sum + value, 0) / nObs,
+      buyMeanEdge,
+      buyP50: quantile(buyEdges, 0.50),
+      buyP90: quantile(buyEdges, 0.90),
+      buyShare,
+      sellMeanEdge,
+      sellP50: quantile(sellEdges, 0.50),
+      sellP90: quantile(sellEdges, 0.90),
+      sellShare,
+      action,
+      actionScore,
+    });
+  }
+
+  const sortedByCoverage = [...rows].sort((a, b) => b.nMarkets - a.nMarkets || b.nObs - a.nObs);
+  const actionable = rows
+    .filter((row) => row.action !== 'HOLD')
+    .sort((a, b) => b.actionScore - a.actionScore || b.nMarkets - a.nMarkets);
+
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(146)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 7 — POLICY TABLE: fair state + executable edge + BUY/SELL/HOLD | trade threshold = ${config.tradeThreshold}¢${RESET}`);
+  console.log(`${BOLD}${CYAN}  state key = (delta, tau, regime), fair = realized P(UP), execution = ask/bid against fair${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(146)}${RESET}`);
+
+  if (rows.length === 0) {
+    console.log(`${DIM}  нет ячеек, проходящих фильтр min-markets${RESET}`);
+    return;
+  }
+
+  console.log(`  ${BOLD}SPEC${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(100)}${RESET}`);
+  console.log(`  1. FAIR STATE: historical fair value by (delta, tau, regime), independent of current crowd bucket.`);
+  console.log(`  2. EXECUTION EDGE: buy edge = fair - ask, sell edge = bid - fair.`);
+  console.log(`  3. POLICY: BUY if buy tail is large enough, SELL if sell tail is large enough, else HOLD.`);
+
+  console.log();
+  console.log(`  ${BOLD}▸ FAIR STATE (largest / most stable states)${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(116)}${RESET}`);
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Regime'.padEnd(6)} ${'nMkt'.padEnd(6)} ${'nObs'.padEnd(7)} ${'Fair'.padEnd(7)} ${'AvgCrowd'.padEnd(9)} ${'Bid'.padEnd(7)} ${'Ask'.padEnd(7)} ${'Spr'.padEnd(6)}${RESET}`);
+  for (const row of sortedByCoverage.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+    console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${row.regime.padEnd(6)} ${String(row.nMarkets).padEnd(6)} ${String(row.nObs).padEnd(7)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.avgCrowdCents.toFixed(1).padStart(7)}¢ ${row.avgBidCents.toFixed(1).padStart(5)}¢ ${row.avgAskCents.toFixed(1).padStart(5)}¢ ${row.avgSpreadCents.toFixed(1).padStart(4)}¢`);
+  }
+
+  console.log();
+  console.log(`  ${BOLD}▸ EXECUTION EDGE (best BUY/SELL states)${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(140)}${RESET}`);
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Regime'.padEnd(6)} ${'Fair'.padEnd(7)} ${'BuyMean'.padEnd(8)} ${'BuyP90'.padEnd(8)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${'SellMean'.padEnd(9)} ${'SellP90'.padEnd(8)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'nMkt'.padEnd(6)}${RESET}`);
+  const bestEdges = [...rows].sort((a, b) => Math.max(b.buyP90, b.sellP90) - Math.max(a.buyP90, a.sellP90));
+  for (const row of bestEdges.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+    console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${row.regime.padEnd(6)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.buyMeanEdge.toFixed(1).padStart(6)}¢ ${row.buyP90.toFixed(1).padStart(6)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${row.sellMeanEdge.toFixed(1).padStart(7)}¢ ${row.sellP90.toFixed(1).padStart(6)}¢ ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${String(row.nMarkets).padEnd(6)}`);
+  }
+
+  console.log();
+  console.log(`  ${BOLD}▸ POLICY ACTIONS${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(128)}${RESET}`);
+  console.log(`  ${BOLD}${'Action'.padEnd(6)} ${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Regime'.padEnd(6)} ${'Fair'.padEnd(7)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'BuyP90'.padEnd(8)} ${'SellP90'.padEnd(8)} ${'Score'.padEnd(7)} ${'nMkt'.padEnd(6)}${RESET}`);
+  for (const row of actionable.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+    console.log(`  ${row.action.padEnd(6)} ${delta.padEnd(8)} ${tau.padEnd(10)} ${row.regime.padEnd(6)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${row.buyP90.toFixed(1).padStart(6)}¢ ${row.sellP90.toFixed(1).padStart(6)}¢ ${row.actionScore.toFixed(2).padStart(6)} ${String(row.nMarkets).padEnd(6)}`);
+  }
+}
+
+function buyP90Score(edges: number[]): number {
+  return quantile(edges, 0.90);
+}
+
+// ── Macro trend helpers ───────────────────────────────────────────────────────
+
+/**
+ * Быстрый pre-pass: читает только `crypto_price` строки из каждого файла
+ * и собирает глобальную отсортированную историю Chainlink.
+ *
+ * @param files - список файлов снапшотов (уже отфильтрованных по asset)
+ * @returns Отсортированный дедуплицированный массив {ts, price}
+ *
+ * @remarks
+ * Обрабатывает файлы батчами по 50 для ограничения параллелизма I/O.
+ * Дедупликация по ts: при конфликте оставляем первое значение.
+ */
+async function buildGlobalChainlinkHistory(
+  files: string[],
+): Promise<Array<{ ts: number; price: number }>> {
+  const tsMap = new Map<number, number>();
+
+  function readFile(filePath: string): Promise<void> {
+    return new Promise((resolve) => {
+      const stream = filePath.endsWith('.gz')
+        ? createReadStream(filePath).pipe(createGunzip())
+        : createReadStream(filePath);
+      const rl = createInterface({ input: stream, crlfDelay: Infinity });
+      rl.on('line', (line) => {
+        try {
+          if (!line.includes('crypto_price')) return;
+          const d = JSON.parse(line) as Record<string, unknown>;
+          if (d.t === 'crypto_price' && d.source === 'chainlink' && typeof d.price === 'number') {
+            const ts = Number(d.ts);
+            if (!tsMap.has(ts)) tsMap.set(ts, d.price);
+          }
+        } catch { /* skip */ }
+      });
+      rl.on('close', resolve);
+      rl.on('error', () => resolve());
+      stream.on('error', () => resolve());
+    });
+  }
+
+  const BATCH = 50;
+  for (let i = 0; i < files.length; i += BATCH) {
+    await Promise.all(files.slice(i, i + BATCH).map(readFile));
+  }
+
+  return Array.from(tsMap.entries())
+    .map(([ts, price]) => ({ ts, price }))
+    .sort((a, b) => a.ts - b.ts);
+}
+
+// ── Variant 8: Macro Policy Table ─────────────────────────────────────────────
+
+type MacroPolicyRow = {
+  delta:         number;
+  tau:           number;
+  macroTrend:    MacroTrend;
+  nMarkets:      number;
+  nObs:          number;
+  fairCents:     number;
+  avgCrowdCents: number;
+  avgBidCents:   number;
+  avgAskCents:   number;
+  avgSpreadCents:number;
+  buyMeanEdge:   number;
+  buyP90:        number;
+  buyShare:      number;
+  sellMeanEdge:  number;
+  sellP90:       number;
+  sellShare:     number;
+  action:        'BUY' | 'SELL' | 'HOLD';
+  actionScore:   number;
+};
+
+/**
+ * Выводит таблицу политики с макро-трендом (bull/bear/neutral) вместо 60s-режима.
+ *
+ * @param macroMap  - Map с ключом "delta:tau:macroTrend"
+ * @param config    - конфигурация анализа
+ *
+ * @remarks
+ * Вариант A: проверяем гипотезу что fair values стабилизируются при добавлении
+ * N-часового макро-контекста. Если таблица показывает стабильные fair values
+ * для одних и тех же (delta, tau, macroTrend) состояний в разные периоды — гипотеза подтверждена.
+ */
+function printMacroPolicyTable(
+  macroMap: Map<string, PolicyAccum>,
+  config: Config,
+): void {
+  const rows: MacroPolicyRow[] = [];
+  for (const [key, b] of macroMap) {
+    const nMarkets = b.upCount + b.downCount;
+    if (nMarkets < config.minMarkets || b.midPricesCents.length === 0) continue;
+    const parts = key.split(':');
+    const delta = Number(parts[0]);
+    const tau   = Number(parts[1]);
+    const macroTrend = parts[2] as MacroTrend;
+    const nObs = b.midPricesCents.length;
+    const fairCents = (policyUp(b) / policyN(b)) * 100;
+    const buyEdges  = b.askPricesCents.map(ask  => fairCents - ask).sort((a, c) => a - c);
+    const sellEdges = b.bidPricesCents.map(bid  => bid - fairCents).sort((a, c) => a - c);
+    const buyMeanEdge  = buyEdges.reduce((s, v) => s + v, 0) / nObs;
+    const sellMeanEdge = sellEdges.reduce((s, v) => s + v, 0) / nObs;
+    const buyShare  = buyEdges.filter(v  => v >= config.tradeThreshold).length / nObs;
+    const sellShare = sellEdges.filter(v => v >= config.tradeThreshold).length / nObs;
+    let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+    let actionScore = 0;
+    if (buyShare >= config.policyMinShare && buyP90Score(buyEdges) >= config.tradeThreshold && buyShare >= sellShare) {
+      action = 'BUY';
+      actionScore = buyShare * Math.max(0, quantile(buyEdges, 0.90));
+    } else if (sellShare >= config.policyMinShare && buyP90Score(sellEdges) >= config.tradeThreshold && sellShare > buyShare) {
+      action = 'SELL';
+      actionScore = sellShare * Math.max(0, quantile(sellEdges, 0.90));
+    }
+    rows.push({
+      delta, tau, macroTrend, nMarkets, nObs, fairCents,
+      avgCrowdCents:  (b.crowdProbSum / nObs) * 100,
+      avgBidCents:    b.bidPricesCents.reduce((s, v) => s + v, 0) / nObs,
+      avgAskCents:    b.askPricesCents.reduce((s, v) => s + v, 0) / nObs,
+      avgSpreadCents: b.spreadCents.reduce((s, v) => s + v, 0) / nObs,
+      buyMeanEdge, buyP90: quantile(buyEdges, 0.90), buyShare,
+      sellMeanEdge, sellP90: quantile(sellEdges, 0.90), sellShare,
+      action, actionScore,
+    });
+  }
+
+  const sortedByCoverage = [...rows].sort((a, b) => b.nMarkets - a.nMarkets || b.nObs - a.nObs);
+  const actionable = rows
+    .filter(r => r.action !== 'HOLD')
+    .sort((a, b) => b.actionScore - a.actionScore || b.nMarkets - a.nMarkets);
+
+  const macroLabel = `${config.macroWindowMin}min (${(config.macroWindowMin / 60).toFixed(0)}h) window, threshold ±${config.macroThreshold}$/min`;
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 8 — MACRO POLICY TABLE: state key = (delta, tau, macroTrend) | macro: ${macroLabel}${RESET}`);
+  console.log(`${BOLD}${CYAN}  macroTrend = slope BTC за ${config.macroWindowMin}min: bull (>${config.macroThreshold}$/min) | neutral | bear (<-${config.macroThreshold}$/min)${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+
+  if (rows.length === 0) {
+    console.log(`${DIM}  нет ячеек — убедитесь что запуск с --show 8 и данные охватывают ≥${config.macroWindowMin}min истории Chainlink${RESET}`);
+    return;
+  }
+
+  console.log(`  ${BOLD}SPEC${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(100)}${RESET}`);
+  console.log(`  1. MACRO TREND: slope BTC за ${config.macroWindowMin}min → bull / bear / neutral (независимо от 60s micro-regime).`);
+  console.log(`  2. FAIR STATE: реализованный P(UP) по (delta, tau, macroTrend).`);
+  console.log(`  3. Если fair values одинаковы в разные торговые дни для одного macroTrend → гипотеза подтверждена.`);
+
+  console.log();
+  console.log(`  ${BOLD}▸ FAIR STATE (крупнейшие состояния)${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(118)}${RESET}`);
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Macro'.padEnd(7)} ${'nMkt'.padEnd(6)} ${'nObs'.padEnd(7)} ${'Fair'.padEnd(7)} ${'AvgCrowd'.padEnd(9)} ${'Bid'.padEnd(7)} ${'Ask'.padEnd(7)} ${'Spr'.padEnd(6)}${RESET}`);
+  for (const row of sortedByCoverage.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau   = `${row.tau}-${row.tau + config.tauStep}s`;
+    const mLabel = row.macroTrend === 'bull' ? `${GREEN}bull${RESET}` : row.macroTrend === 'bear' ? `${RED}bear${RESET}` : 'neut';
+    console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${padEndRaw(mLabel, 7)} ${String(row.nMarkets).padEnd(6)} ${String(row.nObs).padEnd(7)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.avgCrowdCents.toFixed(1).padStart(7)}¢ ${row.avgBidCents.toFixed(1).padStart(5)}¢ ${row.avgAskCents.toFixed(1).padStart(5)}¢ ${row.avgSpreadCents.toFixed(1).padStart(4)}¢`);
+  }
+
+  console.log();
+  console.log(`  ${BOLD}▸ EXECUTION EDGE${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(142)}${RESET}`);
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Macro'.padEnd(7)} ${'Fair'.padEnd(7)} ${'BuyMean'.padEnd(8)} ${'BuyP90'.padEnd(8)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${'SellMean'.padEnd(9)} ${'SellP90'.padEnd(8)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'nMkt'.padEnd(6)}${RESET}`);
+  const bestEdges = [...rows].sort((a, b) => Math.max(b.buyP90, b.sellP90) - Math.max(a.buyP90, a.sellP90));
+  for (const row of bestEdges.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau   = `${row.tau}-${row.tau + config.tauStep}s`;
+    const mLabel = row.macroTrend === 'bull' ? `${GREEN}bull${RESET}` : row.macroTrend === 'bear' ? `${RED}bear${RESET}` : 'neut';
+    console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${padEndRaw(mLabel, 7)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${row.buyMeanEdge.toFixed(1).padStart(6)}¢ ${row.buyP90.toFixed(1).padStart(6)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${row.sellMeanEdge.toFixed(1).padStart(7)}¢ ${row.sellP90.toFixed(1).padStart(6)}¢ ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${String(row.nMarkets).padEnd(6)}`);
+  }
+
+  console.log();
+  console.log(`  ${BOLD}▸ POLICY ACTIONS${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(130)}${RESET}`);
+  console.log(`  ${BOLD}${'Action'.padEnd(6)} ${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Macro'.padEnd(7)} ${'Fair'.padEnd(7)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'BuyP90'.padEnd(8)} ${'SellP90'.padEnd(8)} ${'Score'.padEnd(7)} ${'nMkt'.padEnd(6)}${RESET}`);
+  for (const row of actionable.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau   = `${row.tau}-${row.tau + config.tauStep}s`;
+    const mLabel = row.macroTrend === 'bull' ? `${GREEN}bull${RESET}` : row.macroTrend === 'bear' ? `${RED}bear${RESET}` : 'neut';
+    const aColor = row.action === 'BUY' ? GREEN : RED;
+    console.log(`  ${BOLD}${aColor}${row.action}${RESET}   ${delta.padEnd(8)} ${tau.padEnd(10)} ${padEndRaw(mLabel, 7)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${row.buyP90.toFixed(1).padStart(6)}¢ ${row.sellP90.toFixed(1).padStart(6)}¢ ${row.actionScore.toFixed(2).padStart(6)} ${String(row.nMarkets).padEnd(6)}`);
+  }
+}
+
+// ── Variant 9: Structural Zones ────────────────────────────────────────────────
+
+/**
+ * Выводит структурные зоны — состояния где P(UP) математически далеко от 50%
+ * (fair < structuralFair или > 100-structuralFair).
+ *
+ * @param policyMap     - Map "delta:tau:regime" из Variant 7
+ * @param config        - конфигурация анализа
+ *
+ * @remarks
+ * Вариант B: структурные зоны не зависят от макро-режима периода.
+ * Их fair value должен быть стабильным между периодами потому что он определяется
+ * физическими ограничениями (BTC слишком далеко от страйка, мало времени до экспирации).
+ * Проверяем: crowd систематически ошибается в этих зонах?
+ *
+ * @example
+ * ```bash
+ * npx tsx scripts/analyze-crowd-calibration.ts ./snapshots --show 9 --structural-fair 25
+ * ```
+ */
+function printStructuralTable(
+  policyMap: Map<string, PolicyAccum>,
+  config: Config,
+): void {
+  // Собираем все строки из policyStateMap с фильтром по fair value
+  const allRows: Array<PolicyRow & { certainty: number }> = [];
+  for (const [key, b] of policyMap) {
+    const nMarkets = b.upCount + b.downCount;
+    if (nMarkets < config.minMarkets || b.midPricesCents.length === 0) continue;
+    const [deltaStr, tauStr, regimeRaw] = key.split(':');
+    const nObs = b.midPricesCents.length;
+    const fairCents = (policyUp(b) / policyN(b)) * 100;
+    // Фильтр: структурные зоны — только сильно перекошенные состояния
+    if (fairCents >= config.structuralFair && fairCents <= (100 - config.structuralFair)) continue;
+    const buyEdges  = b.askPricesCents.map(ask => fairCents - ask).sort((a, c) => a - c);
+    const sellEdges = b.bidPricesCents.map(bid => bid - fairCents).sort((a, c) => a - c);
+    const buyMeanEdge  = buyEdges.reduce((s, v) => s + v, 0) / nObs;
+    const sellMeanEdge = sellEdges.reduce((s, v) => s + v, 0) / nObs;
+    const buyShare  = buyEdges.filter(v => v >= config.tradeThreshold).length / nObs;
+    const sellShare = sellEdges.filter(v => v >= config.tradeThreshold).length / nObs;
+    let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+    let actionScore = 0;
+    if (buyShare >= config.policyMinShare && buyP90Score(buyEdges) >= config.tradeThreshold && buyShare >= sellShare) {
+      action = 'BUY'; actionScore = buyShare * Math.max(0, quantile(buyEdges, 0.90));
+    } else if (sellShare >= config.policyMinShare && buyP90Score(sellEdges) >= config.tradeThreshold && sellShare > buyShare) {
+      action = 'SELL'; actionScore = sellShare * Math.max(0, quantile(sellEdges, 0.90));
+    }
+    // certainty: насколько fair value далеко от 50%
+    const certainty = Math.abs(fairCents - 50) / 50;
+    allRows.push({
+      delta: Number(deltaStr), tau: Number(tauStr), regime: regimeRaw as Regime,
+      nMarkets, nObs, fairCents,
+      avgCrowdCents:  (b.crowdProbSum / nObs) * 100,
+      avgBidCents:    b.bidPricesCents.reduce((s, v) => s + v, 0) / nObs,
+      avgAskCents:    b.askPricesCents.reduce((s, v) => s + v, 0) / nObs,
+      avgSpreadCents: b.spreadCents.reduce((s, v) => s + v, 0) / nObs,
+      buyMeanEdge, buyP50: quantile(buyEdges, 0.50), buyP90: quantile(buyEdges, 0.90), buyShare,
+      sellMeanEdge, sellP50: quantile(sellEdges, 0.50), sellP90: quantile(sellEdges, 0.90), sellShare,
+      action, actionScore, certainty,
+    });
+  }
+
+  // Сортируем по убыванию уверенности (ближайшие к 0% или 100% fair — самые структурные)
+  allRows.sort((a, b) => b.certainty - a.certainty || b.nMarkets - a.nMarkets);
+  const actionable = allRows.filter(r => r.action !== 'HOLD').sort((a, b) => b.actionScore - a.actionScore);
+
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 9 — STRUCTURAL ZONES: fair < ${config.structuralFair}¢ или > ${100 - config.structuralFair}¢ | threshold = ${config.tradeThreshold}¢${RESET}`);
+  console.log(`${BOLD}${CYAN}  Структурные зоны: P(UP) математически определён независимо от макро-периода${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+
+  if (allRows.length === 0) {
+    console.log(`${DIM}  нет структурных зон с fair < ${config.structuralFair}¢ или > ${100 - config.structuralFair}¢ при min-markets=${config.minMarkets}${RESET}`);
+    console.log(`${DIM}  Попробуйте --structural-fair 35 или --min-markets 50${RESET}`);
+    return;
+  }
+
+  console.log(`  ${BOLD}SPEC${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(100)}${RESET}`);
+  console.log(`  Структурные зоны: состояния (delta, tau, regime) где P(UP) < ${config.structuralFair}% или > ${100 - config.structuralFair}%.`);
+  console.log(`  Crowd ошибается в этих зонах систематически? → смотри Buy≥/Sell≥ колонки.`);
+  console.log(`  Эти сигналы должны работать независимо от того, bull/bear/flat был период.`);
+
+  console.log();
+  console.log(`  ${BOLD}▸ ВСЕ СТРУКТУРНЫЕ ЗОНЫ (sorted by P(UP) extremity)${RESET}`);
+  console.log(`  ${DIM}${'─'.repeat(148)}${RESET}`);
+  console.log(`  ${BOLD}${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Regime'.padEnd(6)} ${'nMkt'.padEnd(6)} ${'Fair'.padEnd(7)} ${'AvgCrowd'.padEnd(9)} ${'BuyEdge'.padEnd(8)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${'SellEdge'.padEnd(9)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'Action'.padEnd(6)} ${'Score'.padEnd(7)} ${'Certain'.padEnd(8)}${RESET}`);
+  for (const row of allRows.slice(0, config.policyTop)) {
+    const delta   = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau     = `${row.tau}-${row.tau + config.tauStep}s`;
+    const aColor  = row.action === 'BUY' ? GREEN : row.action === 'SELL' ? RED : DIM;
+    const fColor  = row.fairCents < 30 ? RED : row.fairCents > 70 ? GREEN : '';
+    const fStr    = `${fColor}${row.fairCents.toFixed(1)}¢${RESET}`;
+    console.log(`  ${delta.padEnd(8)} ${tau.padEnd(10)} ${row.regime.padEnd(6)} ${String(row.nMarkets).padEnd(6)} ${padEndRaw(fStr, 7)} ${row.avgCrowdCents.toFixed(1).padStart(7)}¢ ${row.buyMeanEdge.toFixed(1).padStart(6)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${row.sellMeanEdge.toFixed(1).padStart(7)}¢ ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${padEndRaw(`${aColor}${row.action}${RESET}`, 6)} ${row.actionScore.toFixed(2).padStart(6)} ${(row.certainty * 100).toFixed(0).padStart(6)}%`);
+  }
+
+  if (actionable.length > 0) {
+    console.log();
+    console.log(`  ${BOLD}▸ ACTIONABLE STRUCTURAL SIGNALS (sorted by score)${RESET}`);
+    console.log(`  ${DIM}${'─'.repeat(130)}${RESET}`);
+    console.log(`  ${BOLD}${'Action'.padEnd(6)} ${'Delta'.padEnd(8)} ${'Tau'.padEnd(10)} ${'Regime'.padEnd(6)} ${'Fair'.padEnd(7)} ${('Buy≥' + config.tradeThreshold + '¢').padEnd(9)} ${('Sell≥' + config.tradeThreshold + '¢').padEnd(10)} ${'BuyP90'.padEnd(8)} ${'SellP90'.padEnd(8)} ${'Score'.padEnd(7)} ${'nMkt'.padEnd(6)}${RESET}`);
+    for (const row of actionable.slice(0, config.policyTop)) {
+      const delta  = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+      const tau    = `${row.tau}-${row.tau + config.tauStep}s`;
+      const aColor = row.action === 'BUY' ? GREEN : RED;
+      console.log(`  ${BOLD}${aColor}${row.action}${RESET}   ${delta.padEnd(8)} ${tau.padEnd(10)} ${row.regime.padEnd(6)} ${row.fairCents.toFixed(1).padStart(5)}¢ ${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(8)} ${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(9)} ${row.buyP90.toFixed(1).padStart(6)}¢ ${row.sellP90.toFixed(1).padStart(6)}¢ ${row.actionScore.toFixed(2).padStart(6)} ${String(row.nMarkets).padEnd(6)}`);
+    }
+  }
+}
+
+type CrowdFailureRow = {
+  delta: number;
+  tau: number;
+  regime: Regime;
+  crowd: number;
+  stateMarkets: number;
+  nMarkets: number;
+  nObs: number;
+  stateFairCents: number;
+  bucketRealCents: number;
+  avgMidCents: number;
+  avgBidCents: number;
+  avgAskCents: number;
+  stateGapCents: number;
+  buyMeanEdge: number;
+  sellMeanEdge: number;
+  buyP90: number;
+  sellP90: number;
+  buyShare: number;
+  sellShare: number;
+  action: 'BUY' | 'SELL';
+  score: number;
+};
+
+function printCrowdFailureZones(
+  stateMap: Map<string, PolicyAccum>,
+  stateCrowdMap: Map<string, PolicyAccum>,
+  config: Config,
+): void {
+  const rows: CrowdFailureRow[] = [];
+
+  for (const [key, b] of stateCrowdMap) {
+    const [deltaRaw, tauRaw, regimeRaw, crowdRaw] = key.split(':');
+    const delta = Number(deltaRaw);
+    const tau = Number(tauRaw);
+    const regime = regimeRaw as Regime;
+    const crowd = Number(crowdRaw);
+    const state = stateMap.get(`${delta}:${tau}:${regime}`);
+    if (!state) continue;
+
+    const stateMarkets = state.upCount + state.downCount;
+    const nMarkets = b.upCount + b.downCount;
+    const nObs = b.upObs + b.downObs;
+    if (stateMarkets < config.minMarkets || nMarkets < config.minMarkets || nObs === 0) continue;
+
+    const stateFairCents = (policyUp(state) / policyN(state)) * 100;
+    const bucketRealCents = (policyUp(b) / policyN(b)) * 100;
+    const avgMidCents = b.midPricesCents.reduce((sum, value) => sum + value, 0) / b.midPricesCents.length;
+    const avgBidCents = b.bidPricesCents.reduce((sum, value) => sum + value, 0) / b.bidPricesCents.length;
+    const avgAskCents = b.askPricesCents.reduce((sum, value) => sum + value, 0) / b.askPricesCents.length;
+    const buyEdges = b.askPricesCents.map((ask) => bucketRealCents - ask).sort((a, c) => a - c);
+    const sellEdges = b.bidPricesCents.map((bid) => bid - bucketRealCents).sort((a, c) => a - c);
+    const buyMeanEdge = buyEdges.reduce((sum, value) => sum + value, 0) / buyEdges.length;
+    const sellMeanEdge = sellEdges.reduce((sum, value) => sum + value, 0) / sellEdges.length;
+    const buyP90 = quantile(buyEdges, 0.90);
+    const sellP90 = quantile(sellEdges, 0.90);
+    const buyShare = buyEdges.filter((edge) => edge >= config.tradeThreshold).length / buyEdges.length;
+    const sellShare = sellEdges.filter((edge) => edge >= config.tradeThreshold).length / sellEdges.length;
+    const buyScore = buyP90 * buyShare;
+    const sellScore = sellP90 * sellShare;
+    const action = buyScore >= sellScore ? 'BUY' : 'SELL';
+    const score = Math.max(buyScore, sellScore);
+    const chosenShare = action === 'BUY' ? buyShare : sellShare;
+    const chosenP90 = action === 'BUY' ? buyP90 : sellP90;
+    if (chosenShare < config.policyMinShare || chosenP90 < config.tradeThreshold) continue;
+
+    rows.push({
+      delta,
+      tau,
+      regime,
+      crowd,
+      stateMarkets,
+      nMarkets,
+      nObs,
+      stateFairCents,
+      bucketRealCents,
+      avgMidCents,
+      avgBidCents,
+      avgAskCents,
+      stateGapCents: stateFairCents - avgMidCents,
+      buyMeanEdge,
+      sellMeanEdge,
+      buyP90,
+      sellP90,
+      buyShare,
+      sellShare,
+      action,
+      score,
+    });
+  }
+
+  rows.sort((a, b) => b.score - a.score);
+
+  console.log();
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+  console.log(`${BOLD}${CYAN}  VARIANT 10 — CROWD FAILURE ZONES: state fair vs bucket real | threshold = ${config.tradeThreshold}¢${RESET}`);
+  console.log(`${BOLD}${CYAN}  StateFair = P(UP|delta,tau,regime); BucketReal = P(UP|delta,tau,regime,crowd); execution uses BucketReal vs ask/bid${RESET}`);
+  console.log(`${BOLD}${CYAN}${'═'.repeat(150)}${RESET}`);
+
+  if (rows.length === 0) {
+    console.log(`${DIM}  нет зон, проходящих min-markets=${config.minMarkets}, policy-min-share=${config.policyMinShare}, threshold=${config.tradeThreshold}¢${RESET}`);
+    return;
+  }
+
+  const widths = {
+    act: 5,
+    delta: 8,
+    tau: 10,
+    regime: 5,
+    crowd: 6,
+    state: 8,
+    real: 8,
+    mid: 6,
+    gap: 7,
+    buyMean: 8,
+    sellMean: 9,
+    buyShare: 8,
+    sellShare: 8,
+    buyP90: 7,
+    sellP90: 8,
+    score: 6,
+    nMkt: 6,
+    stateN: 6,
+  };
+  const header =
+    `  ${BOLD}` +
+    `${'Act'.padEnd(widths.act)} ` +
+    `${'Delta'.padEnd(widths.delta)} ` +
+    `${'Tau'.padEnd(widths.tau)} ` +
+    `${'Reg'.padEnd(widths.regime)} ` +
+    `${'Crowd'.padEnd(widths.crowd)} ` +
+    `${'State'.padEnd(widths.state)} ` +
+    `${'Real'.padEnd(widths.real)} ` +
+    `${'Mid'.padEnd(widths.mid)} ` +
+    `${'SGap'.padEnd(widths.gap)} ` +
+    `${'BuyMean'.padEnd(widths.buyMean)} ` +
+    `${'SellMean'.padEnd(widths.sellMean)} ` +
+    `${('Buy≥' + config.tradeThreshold).padEnd(widths.buyShare)} ` +
+    `${('Sell≥' + config.tradeThreshold).padEnd(widths.sellShare)} ` +
+    `${'BuyP90'.padEnd(widths.buyP90)} ` +
+    `${'SellP90'.padEnd(widths.sellP90)} ` +
+    `${'Score'.padEnd(widths.score)} ` +
+    `${'nMkt'.padEnd(widths.nMkt)} ` +
+    `${'StateN'.padEnd(widths.stateN)}` +
+    `${RESET}`;
+  console.log(header);
+  console.log(`  ${DIM}${'─'.repeat(stripAnsi(header).length - 2)}${RESET}`);
+
+  for (const row of rows.slice(0, config.policyTop)) {
+    const delta = row.delta >= 0 ? `+$${row.delta}` : `-$${Math.abs(row.delta)}`;
+    const tau = `${row.tau}-${row.tau + config.tauStep}s`;
+    const aColor = row.action === 'BUY' ? GREEN : RED;
+    const action = padEndRaw(`${BOLD}${aColor}${row.action}${RESET}`, widths.act);
+    const stateGap = `${row.stateGapCents >= 0 ? '+' : ''}${row.stateGapCents.toFixed(1)}¢`;
+    const buyMean = `${row.buyMeanEdge >= 0 ? '+' : ''}${row.buyMeanEdge.toFixed(1)}¢`;
+    const sellMean = `${row.sellMeanEdge >= 0 ? '+' : ''}${row.sellMeanEdge.toFixed(1)}¢`;
+    console.log(
+      `  ${action} ` +
+      `${delta.padEnd(widths.delta)} ` +
+      `${tau.padEnd(widths.tau)} ` +
+      `${row.regime.padEnd(widths.regime)} ` +
+      `${(`${row.crowd}¢`).padEnd(widths.crowd)} ` +
+      `${(`${row.stateFairCents.toFixed(1)}¢`).padStart(widths.state)} ` +
+      `${(`${row.bucketRealCents.toFixed(1)}¢`).padStart(widths.real)} ` +
+      `${(`${row.avgMidCents.toFixed(1)}¢`).padStart(widths.mid)} ` +
+      `${stateGap.padStart(widths.gap)} ` +
+      `${buyMean.padStart(widths.buyMean)} ` +
+      `${sellMean.padStart(widths.sellMean)} ` +
+      `${(`${(row.buyShare * 100).toFixed(1)}%`).padStart(widths.buyShare)} ` +
+      `${(`${(row.sellShare * 100).toFixed(1)}%`).padStart(widths.sellShare)} ` +
+      `${(`${row.buyP90.toFixed(1)}¢`).padStart(widths.buyP90)} ` +
+      `${(`${row.sellP90.toFixed(1)}¢`).padStart(widths.sellP90)} ` +
+      `${row.score.toFixed(2).padStart(widths.score)} ` +
+      `${String(row.nMarkets).padStart(widths.nMkt)} ` +
+      `${String(row.stateMarkets).padStart(widths.stateN)}`,
+    );
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1365,11 +2322,30 @@ async function main() {
   console.error(`Found ${files.length} files | token: ${tokenLabel} | duration: ${config.duration} | count-by: ${config.countBy} | regime: ${config.regime} (±$${config.regimeThreshold}/min)`);
   console.error(`Show: ${showAll ? 'all' : [...show].join(',')}`);
 
+  // ── Pre-pass для макро-тренда (Variant 8) ────────────────────────────────────
+  let globalChainlinkHistory: Array<{ ts: number; price: number }> = [];
+  if (showAll || show.has('8')) {
+    console.error(`Building global Chainlink history for macro trend (window ${config.macroWindowMin}min)...`);
+    globalChainlinkHistory = await buildGlobalChainlinkHistory(files);
+    console.error(`  ${globalChainlinkHistory.length} Chainlink samples | span: ${globalChainlinkHistory.length > 0
+      ? `${new Date(globalChainlinkHistory[0].ts).toISOString()} → ${new Date(globalChainlinkHistory[globalChainlinkHistory.length - 1].ts).toISOString()}`
+      : 'n/a'}`);
+  }
+
+  const macroOpts = globalChainlinkHistory.length > 0 ? {
+    globalHistory: globalChainlinkHistory,
+    windowMs:      config.macroWindowMin * 60_000,
+    threshold:     config.macroThreshold,
+  } : undefined;
+
   let processed = 0, skipped = 0, totalObs = 0;
   const deltaBuckets    = new Map<string, BucketAccum>(); // "delta:tau"
   const crowdTauBuckets = new Map<string, BucketAccum>(); // "dur:crowd5:tau"
-  const tripleMap       = new Map<string, BucketAccum>(); // "delta:tau:crowd10"
-  const regimeCrowdMap  = new Map<string, BucketAccum>(); // "regime:crowd10"
+  const tripleMap       = new Map<string, BucketAccum>(); // "delta:tau:crowd5"
+  const regimeCrowdMap  = new Map<string, BucketAccum>(); // "regime:crowd5"
+  const policyStateMap  = new Map<string, PolicyAccum>(); // "delta:tau:regime"
+  const stateCrowdMap   = new Map<string, PolicyAccum>(); // "delta:tau:regime:crowd5"
+  const macroStateMap   = new Map<string, PolicyAccum>(); // "delta:tau:macroTrend"
   const regimeCounts: Record<Regime, number> = { up: 0, flat: 0, down: 0 };
   const durationCounts  = { '5min': 0, '15min': 0, 'other': 0 };
   const skipCounts: Record<SkipReason, number> = {
@@ -1399,7 +2375,7 @@ async function main() {
   };
 
   for (const file of files) {
-    const result = await parseSnapshot(file, config.maxTau, config.token, config.approxResolution);
+    const result = await parseSnapshot(file, config.maxTau, config.token, config.approxResolution, macroOpts);
     if (result.hasPriceToBeat === false) missingPriceToBeat++;
     if (result.hasFinalPrice === false)  missingFinalPrice++;
     if (result.data && result.approxStrike)     approxStrikeCount++;
@@ -1424,10 +2400,10 @@ async function main() {
       const regime = classifyRegime(obs.trendSlope, config.regimeThreshold);
       regimeCounts[regime]++;
 
-      // V5 (regime × crowd10) не зависит от --regime фильтра: показываем все три.
+      // V5 (regime × crowd5) не зависит от --regime фильтра: показываем все три.
       if (config.duration === 'all' || data.duration === config.duration) {
-        const cb10R = crowdBucket10(obs.midPriceCents);
-        const rKey  = `${regime}:${cb10R}`;
+        const cbR = crowdBucket(obs.midPriceCents);
+        const rKey  = `${regime}:${cbR}`;
         if (!regimeCrowdMap.has(rKey)) regimeCrowdMap.set(rKey, newBucket());
         accumulate(regimeCrowdMap.get(rKey)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
       }
@@ -1437,15 +2413,29 @@ async function main() {
 
       if (config.duration === 'all' || data.duration === config.duration) {
         const db  = toBucket(obs.delta, config.deltaStep);
+        const pKey = `${db}:${tb}:${regime}`;
+        if (!policyStateMap.has(pKey)) policyStateMap.set(pKey, newPolicyAccum());
+        accumulatePolicy(policyStateMap.get(pKey)!, obs, data.slug, data.resolution);
+
+        const cb = crowdBucket(obs.midPriceCents);
+        const scKey = `${db}:${tb}:${regime}:${cb}`;
+        if (!stateCrowdMap.has(scKey)) stateCrowdMap.set(scKey, newPolicyAccum());
+        accumulatePolicy(stateCrowdMap.get(scKey)!, obs, data.slug, data.resolution);
+
+        // Variant 8: macro trend state map
+        if (obs.macroTrend) {
+          const mKey = `${db}:${tb}:${obs.macroTrend}`;
+          if (!macroStateMap.has(mKey)) macroStateMap.set(mKey, newPolicyAccum());
+          accumulatePolicy(macroStateMap.get(mKey)!, obs, data.slug, data.resolution);
+        }
 
         // Existing: delta×tau
         const dKey = bucketKey(db, tb);
         if (!deltaBuckets.has(dKey)) deltaBuckets.set(dKey, newBucket());
         accumulate(deltaBuckets.get(dKey)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
 
-        // New: delta×tau×crowd (10¢ buckets)
-        const cb10  = crowdBucket10(obs.midPriceCents);
-        const tKey  = `${db}:${tb}:${cb10}`;
+        // New: delta×tau×crowd (5¢ buckets)
+        const tKey  = `${db}:${tb}:${cb}`;
         if (!tripleMap.has(tKey)) tripleMap.set(tKey, newBucket());
         accumulate(tripleMap.get(tKey)!, obs.midPriceCents, obs.spreadCents, data.slug, data.resolution);
       }
@@ -1514,13 +2504,13 @@ async function main() {
       sortedDeltas, sortedTaus, config.tauStep,
       'Delta ($)', d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
       (d, t) => deltaBuckets.get(bucketKey(d, t)),
-      (_, b) => b.crowdProbSum / b.observations,
+      (_, b) => bucketCrowd(b),
       config.minMarkets,
     );
     printInsights(
       sortedDeltas, sortedTaus,
       (d, t) => deltaBuckets.get(bucketKey(d, t)),
-      (_, b) => b.crowdProbSum / b.observations,
+      (_, b) => bucketCrowd(b),
       d => d >= 0 ? `+$${d}` : `-$${Math.abs(d)}`,
       config.tauStep, config.minMarkets,
     );
@@ -1537,7 +2527,7 @@ async function main() {
     }
     if (ctTaus.size === 0) return;
     const sTaus   = [...ctTaus].sort((a, b) => a - b);
-    const sCrowds = [...ctCrowds].sort((a, b) => a - b).filter(c => c >= 10 && c <= 95);
+    const sCrowds = [...ctCrowds].sort((a, b) => a - b).filter(c => c >= 5 && c <= 95);
     printCalibrationTable(
       `TABLE B — CROWD PRICE × TAU | ${label} | ${tokenLabel}`,
       sCrowds, sTaus, config.tauStep,
@@ -1573,8 +2563,8 @@ async function main() {
       const [d, t] = key.split(':').map(Number);
       const n = bucketN(b);
       if (n < config.minMarkets) continue;
-      const cp = b.crowdProbSum / b.observations, rp = bucketUp(b) / n;
-      results.push({ d, t, crowdP: cp, realP: rp, bias: cp - rp, n, spread: b.spreadSum / b.observations });
+      const cp = bucketCrowd(b), rp = bucketUp(b) / n;
+      results.push({ d, t, crowdP: cp, realP: rp, bias: cp - rp, n, spread: bucketSpread(b) });
     }
     results.sort((a, b) => Math.abs(b.bias) - Math.abs(a.bias));
 
@@ -1664,7 +2654,9 @@ async function main() {
     const triTaus = new Set<number>();
     for (const key of tripleMap.keys()) triTaus.add(Number(key.split(':')[1]));
     const sTaus   = [...triTaus].sort((a, b) => a - b);
-    const window  = config.heatmapTau ?? defaultTauWindows(config.maxTau, config.tauStep)[1];
+    const window  = config.heatmapTau
+      ?? (config.tauWindows.length > 0 ? config.tauWindows[config.tauWindows.length - 1]! : null)
+      ?? defaultTauWindows(config.maxTau, config.tauStep)[1];
     printHeatmap(tripleMap, window, sTaus, config);
   }
 
@@ -1672,6 +2664,42 @@ async function main() {
 
   if (showAll || show.has('5')) {
     printRegimeTable(regimeCrowdMap, regimeCounts, config);
+  }
+
+  // ── VARIANT 6: Tail Analysis ──────────────────────────────────────────────
+
+  if (showAll || show.has('6')) {
+    printTailAnalysis(tripleMap, config);
+  }
+
+  // ── VARIANT 7: Policy Table ───────────────────────────────────────────────
+
+  if (showAll || show.has('7')) {
+    printPolicyTable(policyStateMap, config);
+  }
+
+  // ── VARIANT 8: Macro Policy Table ─────────────────────────────────────────
+
+  if (showAll || show.has('8')) {
+    if (macroStateMap.size > 0) {
+      printMacroPolicyTable(macroStateMap, config);
+    } else {
+      console.log();
+      console.log(`${BOLD}${CYAN}  VARIANT 8 — нет данных макро-тренда.${RESET}`);
+      console.log(`${DIM}  Убедитесь что данные охватывают ≥${config.macroWindowMin}min истории Chainlink до первого рынка.${RESET}`);
+    }
+  }
+
+  // ── VARIANT 9: Structural Zones ───────────────────────────────────────────
+
+  if (showAll || show.has('9')) {
+    printStructuralTable(policyStateMap, config);
+  }
+
+  // ── VARIANT 10: Crowd Failure Zones ───────────────────────────────────────
+
+  if (showAll || show.has('10')) {
+    printCrowdFailureZones(policyStateMap, stateCrowdMap, config);
   }
 
   // ── JSON ──────────────────────────────────────────────────────────────────

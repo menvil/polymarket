@@ -11,7 +11,8 @@
   "dependencies": {
     "@polymarket/logger": "0.1.0",
     "@polymarket/time": "0.1.0",
-    "@polymarket/exchange": "0.1.0"
+    "@polymarket/exchange": "0.1.0",
+    "@polymarket/fill": "0.1.0"
   },
   "devDependencies": {
     "tsx": "^4.20.3",

@@ -42,8 +42,14 @@ import { BinanceProbMMStrategy } from './strategies/BinanceProbMMStrategy.js';
 import type { BinanceProbMMConfig } from './strategies/BinanceProbMMStrategy.js';
 import { CexLeadLagStrategy } from './strategies/CexLeadLagStrategy.js';
 import type { CexLeadLagConfig } from './strategies/CexLeadLagStrategy.js';
-import { CalibratedCrowdStrategy } from './strategies/calibrated-crowd/index.js';
-import type { CalibratedCrowdConfig } from './strategies/calibrated-crowd/index.js';
+import { CalibrationRulesStrategy } from './strategies/CalibrationRulesStrategy.js';
+import type { CalibrationRulesConfig } from './strategies/CalibrationRulesStrategy.js';
+import { PairedCexCrowdStrategy } from './strategies/PairedCexCrowdStrategy.js';
+import type { PairedCexCrowdConfig } from './strategies/PairedCexCrowdStrategy.js';
+import { BaselinePairedOverlayStrategy } from './strategies/BaselinePairedOverlayStrategy.js';
+import type { BaselinePairedOverlayConfig } from './strategies/BaselinePairedOverlayStrategy.js';
+import { CalibratedCrowdStrategy, CexCrowdNotAdverseStrategy } from './strategies/calibrated-crowd/index.js';
+import type { CalibratedCrowdConfig, CexCrowdNotAdverseConfig } from './strategies/calibrated-crowd/index.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -62,7 +68,11 @@ export type StrategyConfig =
   | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig }
   | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig }
   | { readonly type: 'cex-lead-lag'; readonly id?: string; readonly params: CexLeadLagConfig }
-  | { readonly type: 'calibrated-crowd'; readonly id?: string; readonly params: CalibratedCrowdConfig };
+  | { readonly type: 'calibration-rules'; readonly id?: string; readonly params: CalibrationRulesConfig }
+  | { readonly type: 'calibrated-crowd'; readonly id?: string; readonly params: CalibratedCrowdConfig }
+  | { readonly type: 'calibrated-crowd-cex'; readonly id?: string; readonly params: CexCrowdNotAdverseConfig }
+  | { readonly type: 'paired-cex-crowd'; readonly id?: string; readonly params: PairedCexCrowdConfig }
+  | { readonly type: 'baseline-paired-overlay'; readonly id?: string; readonly params: BaselinePairedOverlayConfig };
 
 export interface StrategyExecutionOverrides {
   readonly postOnly?: boolean;
@@ -133,8 +143,28 @@ export function createStrategy(
     case 'cex-lead-lag':
       return new CexLeadLagStrategy(config.params, config.id, logger, journal);
 
+    case 'calibration-rules':
+      return new CalibrationRulesStrategy(
+        {
+          ...config.params,
+          postOnly: execution?.postOnly ?? config.params.postOnly,
+        },
+        config.id,
+        logger,
+        journal,
+      );
+
     case 'calibrated-crowd':
       return new CalibratedCrowdStrategy(config.params, config.id, logger, journal);
+
+    case 'calibrated-crowd-cex':
+      return new CexCrowdNotAdverseStrategy(config.params, config.id, logger, journal);
+
+    case 'paired-cex-crowd':
+      return new PairedCexCrowdStrategy(config.params, config.id, logger, journal);
+
+    case 'baseline-paired-overlay':
+      return new BaselinePairedOverlayStrategy(config.params, config.id, logger, journal);
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);

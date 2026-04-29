@@ -203,7 +203,7 @@ export interface DepthLevel {
  * Содержит оптимальную глубину исполнения и расчётный P&L.
  *
  * ### Стратегия исполнения:
- * 1. BUY easy_Up (taker, ~1.56% fee)
+ * 1. BUY easy_Up (taker fee by Polymarket crypto formula)
  * 2. BUY hard_Down ≡ SELL hard_Up (maker, 0% fee)
  * 3. При settlement один из двух токенов = $1, другой = $0
  * 4. Гарантированный доход: $1, стоимость: easy_Up_ask + (1 - hard_Up_bid) < $1
@@ -246,9 +246,8 @@ export interface ArbitrageSignal {
  * Модель комиссий Polymarket.
  *
  * @remarks
- * Формула: `fee = price × feeRate × (price × (1 - price))^exponent`
- * - current (до 30 марта 2026): rate=0.25, exponent=2, peak≈1.56% при p=0.50
- * - march30 (после 30 марта 2026): rate=0.072, exponent=1, peak≈1.80% при p=0.50
+ * Текущая формула: `fee = round5(size × feeRate × (price × (1 - price))^exponent)`.
+ * Для crypto-рынков Polymarket: feeRate=0.072, exponent=1.
  */
 export interface FeeModel {
   /** Множитель в формуле комиссии */
@@ -257,11 +256,11 @@ export interface FeeModel {
   readonly exponent: number;
 }
 
-/** Текущая модель комиссий (до 30 марта 2026) */
-export const FEE_MODEL_CURRENT: FeeModel = { feeRate: 0.25, exponent: 2 };
+/** Текущая модель комиссий для crypto-рынков Polymarket. */
+export const FEE_MODEL_CURRENT: FeeModel = { feeRate: 0.072, exponent: 1 };
 
-/** Новая модель комиссий (после 30 марта 2026) */
-export const FEE_MODEL_MARCH30: FeeModel = { feeRate: 0.072, exponent: 1 };
+/** @deprecated Use FEE_MODEL_CURRENT. Kept for older configs/scripts. */
+export const FEE_MODEL_MARCH30: FeeModel = FEE_MODEL_CURRENT;
 
 /**
  * Конфигурация детектора расхождений.

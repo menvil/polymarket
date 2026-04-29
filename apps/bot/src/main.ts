@@ -3786,8 +3786,11 @@ async function resolveSnapshotPaths(patterns: string[]): Promise<string[]> {
     // Паттерн с * → определяем директорию и рекурсивность
     if (pattern.includes('*')) {
       const recursive = pattern.includes('**');
-      // Берём часть пути до первого *
-      const dir = path.resolve(pattern.substring(0, pattern.indexOf('*')));
+      // Берём директорию как часть пути до последнего / перед первым *
+      const firstStar = pattern.indexOf('*');
+      const prefix = pattern.substring(0, firstStar);
+      const lastSep = prefix.lastIndexOf(path.sep) >= 0 ? prefix.lastIndexOf(path.sep) : prefix.lastIndexOf('/');
+      const dir = path.resolve(lastSep >= 0 ? prefix.substring(0, lastSep) : '.');
       if (!fs.existsSync(dir)) continue;
       const candidates: string[] = [];
       const patternRegex = globPatternToRegex(path.resolve(pattern));

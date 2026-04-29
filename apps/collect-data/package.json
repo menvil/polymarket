@@ -10,6 +10,7 @@
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "check:snapshot": "node --disable-warning=ExperimentalWarning src/checkCexSnapshot.ts",
+    "backfill:polymarket": "node --import tsx --env-file=.env src/backfillPolymarketMeta.ts",
     "analyze:chainlink": "node --disable-warning=ExperimentalWarning src/analyzeChainlinkLeadLag.ts",
     "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts"
   },

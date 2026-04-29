@@ -11,6 +11,7 @@
  */
 
 export { DataRecorder } from './DataRecorder.js';
+export { ArchivedMarketMetaRewriter } from './ArchivedMarketMetaRewriter.js';
 export { DecisionJournalRecorder } from './DecisionJournalRecorder.js';
 export type { DecisionJournalConfig } from './DecisionJournalRecorder.js';
 export { NDJSONFormatter } from './formatters/NDJSONFormatter.js';

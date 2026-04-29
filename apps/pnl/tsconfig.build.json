@@ -30,6 +30,9 @@
       "path": "../../packages/foundation/time/tsconfig.build.json"
     },
     {
+      "path": "../../packages/domain/entities/fill/tsconfig.build.json"
+    },
+    {
       "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"
     }
   ]

@@ -19,6 +19,15 @@
 
 ## Работающие стратегии
 
+### PairedCexCrowdStrategy
+
+**Файл**: `src/strategies/PairedCexCrowdStrategy.ts`
+**Документация**: [paired-cex-crowd.md](paired-cex-crowd.md)
+
+Pair-aware развитие `calibrated-crowd-cex`: использует `UP/DOWN` как связанную пару,
+реагирует на `no-fill` как на сигнал, умеет opportunistic switch на opposite side и
+ищет `paired lock` через покупку комплементарного токена при выгодном payout spread.
+
 ### 1. AdaptiveEntryStrategy (рекомендуется)
 
 **Файл**: `src/strategies/AdaptiveEntryStrategy.ts`
@@ -44,6 +53,97 @@ Buy-and-hold на основе zone filter (55-68¢) и delta% (0.03-0.12%). П�
 - +13.75 USDC на 252 рынках, 69.1% WR
 - 4/4 дней прибыльные — самая стабильная
 - Зависит от Chainlink delta% (требует crypto price данные)
+
+### 3. CalibratedCrowdStrategy
+
+**Файл**: `src/strategies/calibrated-crowd/CalibratedCrowdStrategy.ts`
+**Конфиг**: `configs/cc-paper-5min.json`
+**Таблица**: `tables/edge-table-5min-v9-loose.json`
+**Исследование хвостов**: [calibrated-crowd-tail-zones-apr23-27.md](../research/calibrated-crowd-tail-zones-apr23-27.md)
+
+Maker-first стратегия на основе 3D edge-таблицы `(delta, tau, regime)`. На каждом тике
+вычисляет `delta = chainlink − strike` ($), `tau` (секунды до экспирации) и `regime`
+(slope BTC $/min → up / flat / down), ищет зону в таблице и входит если `zone.signal`
+и `zone.weights.composite ≥ minComposite`.
+
+#### Текущая таблица: edge-table-5min-v9-loose.json
+
+| Параметр | Значение |
+|---|---|
+| Тренировочный период | Apr 6–25 2026 (1510 рынков) |
+| OOS holdout | Apr 26–27 2026 (288 рынков) |
+| Зон в таблице | 355 (57 actionable: 27 BUY + 30 SELL) |
+| OOS WR | 60.4% (217 сделок) |
+| OOS total PnL | +42.67 USDC (на 100 USDC капитале) |
+| Bucketing | deltaStep=10$, tauStep=30s, no crowd |
+| Режим калибровки | `--legacy-fill --loose-ci` (unconditional pHat) |
+
+**Топ сигналы по composite**:
+
+| Действие | Delta | Tau | Regime | n | OOS | Composite |
+|---|---|---|---|---|---|---|
+| BUY | +$30 | 150–180s | up | 219 | ✓ | 0.998 |
+| SELL | -$10 | 210–240s | up | 155 | ✓ | 0.655 |
+| SELL | -$40 | 0–30s | flat | 130 | ✓ | 0.505 |
+| BUY | +$10 | 60–90s | up | 162 | ✓ | 0.489 |
+| SELL | +$30 | 210–240s | up | 141 | ✓ | 0.464 |
+
+**Экономическая логика**:
+- BUY в `up` + короткий tau (30–90s): crowd недооценивает краткосрочный momentum
+- SELL в `up` + длинный tau (180–270s): crowd чрезмерно оптимистичен при сильном росте
+- SELL в `down` + средний tau: crowd не верит в продолжение снижения
+
+#### История таблиц
+
+| Файл | Описание | Причина устаревания |
+|---|---|---|
+| `edge-table-5min.json` | fill-sim strict | 0 BUY-зон из-за adverse selection в fill-sim |
+| `edge-table-5min-delta-regime.json` | observation-weighted | n раздут 100-1000x, fake signals |
+| `edge-table-5min-v9-loose.json` | **текущая** market-weighted legacy-fill | — |
+
+#### Постмортем 2026-04-21 (obs-weighted → −$16.67)
+
+Observation-weighted калибровка считала каждый тик как независимый сэмпл → n раздут в
+100–1000x → 221 BUY-зоны с composite ≥ 0.3 → все оказались шумом. Переход на
+`market-weighted + --legacy-fill` даёт честную оценку: 57 зон, OOS подтверждённые.
+
+#### Tail-zone experiment (Apr 23-27 2026, relaxed gate)
+
+Отдельно проверили гипотезу, что при сильно ослабленном gate `minComposite=0.05`
+стратегия начинает ловить не средние системные зоны, а редкие хвостовые mispricing-состояния.
+
+Эксперимент считался через `scripts/backtest-calibrated-crowd.ts` с таблицей
+`tables/edge-table-5min-market-weighted-train-through-20260420.json` на днях
+`2026-04-23` ... `2026-04-27`.
+
+| Дата | Сделки | Hold PnL | Tau-only PnL | Regime-flip PnL | Full-risk PnL |
+|:--|--:|--:|--:|--:|--:|
+| 2026-04-23 | 28 | +29.46 | -2.23 | -2.23 | +6.64 |
+| 2026-04-24 | 20 | +45.11 | +8.71 | +8.71 | +1.96 |
+| 2026-04-25 | 39 | -1.78 | +4.79 | +4.79 | +10.10 |
+| 2026-04-26 | 20 | +18.27 | +23.09 | +23.09 | +21.14 |
+| 2026-04-27 | 10 | -20.04 | +0.86 | +0.86 | +5.18 |
+| **Итого** | **117** | **+71.02** | **+35.22** | **+35.22** | **+45.02** |
+
+Как читать эти итоги:
+
+- это сумма пяти независимых дневных backtest’ов
+- каждый день стартовал заново с капиталом `1000`
+- это не один непрерывный compounded-run
+
+Ключевые наблюдения:
+
+- при `minComposite=0.3` на `2026-04-23` не было ни одного входа
+- при `minComposite=0.05` стратегия начинает торговать заметные хвосты
+- все входы в этих прогонах пришли из `down` regime
+- `hold` дал лучший total PnL, но `full-risk` оказался ровнее по дням
+
+Для воспроизводимости добавлены config-профили:
+
+- `configs/cc-backtest-apr23-27-mc005-hold.json`
+- `configs/cc-backtest-apr23-27-mc005-tau-only.json`
+- `configs/cc-backtest-apr23-27-mc005-regime-flip.json`
+- `configs/cc-backtest-apr23-27-mc005-full-risk.json`
 
 ---
 

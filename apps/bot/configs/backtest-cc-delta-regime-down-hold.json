@@ -1,0 +1,25 @@
+{
+  "snapshots": [
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-06/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-08/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-09/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-16/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-17/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-19/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-20/polymarket",
+    "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket"
+  ],
+  "trainUntil": "2026-04-21",
+  "table": "tables/edge-table-5min-delta-regime.json",
+  "asset": "bitcoin",
+  "entrySide": "down",
+  "token": "down",
+  "shares": 5,
+  "crowdGate": "strict",
+  "minComposite": 0.3,
+  "cexModel": "rolling-divergence",
+  "entryMode": "maker",
+  "exitMode": "expiry",
+  "makerCancelPolicy": "conditions",
+  "showTradesMode": "crowd_only"
+}

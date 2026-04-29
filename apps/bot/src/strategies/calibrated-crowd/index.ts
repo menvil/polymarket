@@ -20,3 +20,5 @@ export { RegimeDetector } from './RegimeDetector.js';
 export type { RegimeDetectorConfig, RegimeClassification } from './RegimeDetector.js';
 export { CalibratedCrowdStrategy } from './CalibratedCrowdStrategy.js';
 export type { CalibratedCrowdConfig } from './CalibratedCrowdStrategy.js';
+export { CexCrowdNotAdverseStrategy } from './CexCrowdNotAdverseStrategy.js';
+export type { CexCrowdNotAdverseConfig } from './CexCrowdNotAdverseStrategy.js';

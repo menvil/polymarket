@@ -44,6 +44,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
+import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
 import { EdgeTable, type EdgeZone, type Regime } from './EdgeTable.js';
 import { RegimeDetector } from './RegimeDetector.js';
 
@@ -79,9 +80,23 @@ export interface CalibratedCrowdConfig {
 
   /** Relaxed: требовать OOS passes=true, если OOS есть (default false). */
   readonly relaxedRequireOos?: boolean;
+  /**
+   * Relaxed: какие стороны можно выбирать по raw edge.
+   * `table` сохраняет старое поведение: только zone.signal/kelly.side.
+   */
+  readonly relaxedEntrySide?: 'table' | 'up' | 'down' | 'both';
 
   /** Фиксированный размер ордера в shares; если задан, Kelly используется только как диагностика. */
   readonly orderShares?: number;
+
+  /**
+   * Максимально допустимое превышение текущей цены входа над историческим средним `crowdAvg` зоны (в центах).
+   * Защита от входа когда рынок значительно дороже/дешевле, чем при калибровке сигнала.
+   * Для UP-входа: `entryBid ≤ crowdAvg*100 + maxPremiumCents`.
+   * Для DOWN-входа: `entryBid ≤ (100 - crowdAvg*100) + maxPremiumCents`.
+   * `undefined` — фильтр отключён (default).
+   */
+  readonly maxPremiumCents?: number;
 
   /** Минимальный composite-вес зоны для торговли (default 0.3). */
   readonly minComposite?: number;
@@ -124,6 +139,22 @@ export interface CalibratedCrowdConfig {
   readonly allowPanicTaker?: boolean;
   /** Порог для паник-тейкера (default 5 сек). */
   readonly panicTauSec?: number;
+  /** Режим выхода: hold (default) | signal-normalized. */
+  readonly exitMode?: 'hold' | 'signal-normalized';
+  /** Для signal-normalized: выход если |predBps| <= threshold. */
+  readonly normalizeThresholdBps?: number;
+  /** Максимальное время удержания сигнальной позиции. */
+  readonly maxSignalHoldMs?: number;
+  /** Выходить если CEX signal стал stale / unavailable. */
+  readonly exitOnSignalStale?: boolean;
+  /** Выходить если CEX signal перевернулся против позиции. */
+  readonly exitOnSignalFlip?: boolean;
+  /** Пока токен ещё не доступен для продажи, после этого delay hedge уже не делаем. */
+  readonly tokenAvailabilityDelayMs?: number;
+  /** Если основной токен ещё недоступен — разрешить hedge противоположным токеном. */
+  readonly hedgeWhenUnavailable?: boolean;
+  /** Минимальный locked profit на share для hedge. */
+  readonly minLockedProfitCents?: number;
 
   /** CEX-фильтр входа: off | agree | not-adverse (default off). */
   readonly cexFilterMode?: 'off' | 'agree' | 'not-adverse';
@@ -133,6 +164,8 @@ export interface CalibratedCrowdConfig {
   readonly cexVenues?: readonly CexVenue[];
   /** Optional weights для CEX signal registry. */
   readonly cexWeights?: Readonly<Record<string, number>>;
+  /** Optional intercept in USD for offline linear CEX signal registry models. */
+  readonly cexLinearInterceptUsd?: number;
   /** Optional basisByVenue для CEX signal registry. */
   readonly cexBasisByVenue?: Readonly<Record<string, number>>;
   /** Optional offline confidence buckets для CEX signal registry. */
@@ -141,6 +174,8 @@ export interface CalibratedCrowdConfig {
   readonly cexThresholdBps?: number;
   /** Lookback окна CEX momentum в ms (default 1000). */
   readonly cexLookbackMs?: number;
+  /** Минимум samples для rolling-basis CEX signal. */
+  readonly minBasisSamples?: number;
   /** Максимальный возраст CEX/Chainlink данных в ms (default 2000). */
   readonly cexStaleMs?: number;
   /** Минимальное число свежих venues. */
@@ -149,6 +184,8 @@ export interface CalibratedCrowdConfig {
   readonly cexMaxSpreadBps?: number;
   /** Если true, stale/absent CEX блокирует вход (default true для включенного фильтра). */
   readonly cexRequireFresh?: boolean;
+  /** Логировать каждое ENTRY-решение в application logger (default true). */
+  readonly logEntries?: boolean;
 }
 
 // ── Внутренние типы ───────────────────────────────────────────────────────────
@@ -173,8 +210,12 @@ interface SideData {
   readonly hasInFlightFills: boolean;
   readonly openBuyAtCents: number | undefined;
   readonly openSellAtCents: number | undefined;
+  readonly matchedBuyAtCents: number | undefined;
+  readonly matchedSellAtCents: number | undefined;
   readonly openOrderIds: readonly OrderId[];
   readonly hasOpenOrders: boolean;
+  readonly hasMatchedBuy: boolean;
+  readonly hasMatchedSell: boolean;
 }
 
 interface CCData {
@@ -205,6 +246,7 @@ type CCAction =
       readonly type: 'POST_BID';
       readonly bidCents: number;
       readonly size: Decimal;
+      readonly postOnly: boolean;
       readonly targetInstrumentId?: InstrumentId;
       readonly targetAsset?: AssetId;
     }
@@ -233,6 +275,8 @@ function round(value: number, digits: number): number {
   return Math.round(value * factor) / factor;
 }
 
+const PENDING_ORDER_GRACE_MS = 5_000;
+
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
@@ -249,7 +293,9 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
   private readonly _relaxedMinEdge: number;
   private readonly _relaxedMinCiEdge: number;
   private readonly _relaxedRequireOos: boolean;
+  private readonly _relaxedEntrySide: 'table' | 'up' | 'down' | 'both';
   private readonly _orderShares: number | undefined;
+  private readonly _maxPremiumCents: number | undefined;
   private readonly _minComposite: number;
   private readonly _maxPositionFraction: number;
   private readonly _maxSharesPerMarket: number | undefined;
@@ -265,19 +311,30 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
 
   private readonly _allowPanicTaker: boolean;
   private readonly _panicTauSec: number;
+  private readonly _exitMode: 'hold' | 'signal-normalized';
+  private readonly _normalizeThresholdBps: number;
+  private readonly _maxSignalHoldMs: number;
+  private readonly _exitOnSignalStale: boolean;
+  private readonly _exitOnSignalFlip: boolean;
+  private readonly _tokenAvailabilityDelayMs: number;
+  private readonly _hedgeWhenUnavailable: boolean;
+  private readonly _minLockedProfitCents: number;
 
   private readonly _cexFilterMode: 'off' | 'agree' | 'not-adverse';
   private readonly _cexSignalId: string;
   private readonly _cexVenues: readonly CexVenue[];
   private readonly _cexWeights: Readonly<Record<string, number>> | undefined;
+  private readonly _cexLinearInterceptUsd: number | undefined;
   private readonly _cexBasisByVenue: Readonly<Record<string, number>> | undefined;
   private readonly _cexConfidenceByScore: Readonly<Record<string, number>> | undefined;
   private readonly _cexThresholdBps: number;
   private readonly _cexLookbackMs: number;
+  private readonly _cexMinBasisSamples: number;
   private readonly _cexStaleMs: number;
   private readonly _cexMinVenueCount: number | undefined;
   private readonly _cexMaxSpreadBps: number | undefined;
   private readonly _cexRequireFresh: boolean;
+  private readonly _logEntries: boolean;
 
   // ── per-market state ────────────────────────────────────────────────────────
   private _currentExpirationMs = 0;
@@ -291,6 +348,16 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
    * Фиксируется при ENTRY, используется при EXIT чтобы не перепутать инструмент.
    */
   private _entrySide: EntrySide | undefined;
+  private _entryPlacedAtMs = 0;
+  private _entryPriceCents = 0;
+  private _entrySize = new Decimal(0);
+  private _entryPostOnly = true;
+  private _pendingEntryAtMs = 0;
+  private _pendingEntryPriceCents = 0;
+  private _pendingEntrySide: EntrySide | undefined;
+  private _pendingExitAtMs = 0;
+  private _pendingExitPriceCents = 0;
+  private _pendingExitSide: EntrySide | undefined;
 
   constructor(
     config: CalibratedCrowdConfig,
@@ -315,7 +382,9 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     this._relaxedMinEdge = config.relaxedMinEdge ?? 0.03;
     this._relaxedMinCiEdge = config.relaxedMinCiEdge ?? 0.02;
     this._relaxedRequireOos = config.relaxedRequireOos ?? false;
+    this._relaxedEntrySide = config.relaxedEntrySide ?? 'table';
     this._orderShares = config.orderShares;
+    this._maxPremiumCents = config.maxPremiumCents;
     this._minComposite = config.minComposite ?? 0.3;
     this._maxPositionFraction = config.maxPositionFraction ?? 0.1;
     this._maxSharesPerMarket = config.maxSharesPerMarket;
@@ -331,19 +400,30 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
 
     this._allowPanicTaker = config.allowPanicTaker ?? false;
     this._panicTauSec = config.panicTauSec ?? 5;
+    this._exitMode = config.exitMode ?? 'hold';
+    this._normalizeThresholdBps = config.normalizeThresholdBps ?? 0.25;
+    this._maxSignalHoldMs = config.maxSignalHoldMs ?? 60_000;
+    this._exitOnSignalStale = config.exitOnSignalStale ?? true;
+    this._exitOnSignalFlip = config.exitOnSignalFlip ?? true;
+    this._tokenAvailabilityDelayMs = config.tokenAvailabilityDelayMs ?? 0;
+    this._hedgeWhenUnavailable = config.hedgeWhenUnavailable ?? false;
+    this._minLockedProfitCents = config.minLockedProfitCents ?? 0;
 
     this._cexFilterMode = config.cexFilterMode ?? 'off';
     this._cexSignalId = config.cexSignalId ?? 'cex_chainlink_lead_lag';
     this._cexVenues = config.cexVenues ?? ['binance', 'coinbase', 'okx'];
     this._cexWeights = config.cexWeights;
+    this._cexLinearInterceptUsd = config.cexLinearInterceptUsd;
     this._cexBasisByVenue = config.cexBasisByVenue;
     this._cexConfidenceByScore = config.cexConfidenceByScore;
     this._cexThresholdBps = config.cexThresholdBps ?? 0.5;
     this._cexLookbackMs = config.cexLookbackMs ?? 1_000;
+    this._cexMinBasisSamples = config.minBasisSamples ?? 3;
     this._cexStaleMs = config.cexStaleMs ?? 2_000;
     this._cexMinVenueCount = config.cexMinVenueCount;
     this._cexMaxSpreadBps = config.cexMaxSpreadBps;
     this._cexRequireFresh = config.cexRequireFresh ?? this._cexFilterMode !== 'off';
+    this._logEntries = config.logEntries ?? true;
 
     this._logger?.warn('CalibratedCrowd: loaded', {
       path: config.edgeTablePath,
@@ -354,6 +434,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         minEdge: this._relaxedMinEdge,
         minCiEdge: this._relaxedMinCiEdge,
         requireOos: this._relaxedRequireOos,
+        entrySide: this._relaxedEntrySide,
       },
       minComposite: this._minComposite,
       orderShares: this._orderShares,
@@ -366,10 +447,16 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         staleMs: this._cexStaleMs,
       },
       exits: {
+        mode: this._exitMode,
         regimeFlip: this._exitOnRegimeFlip,
         weightDrop: this._exitOnWeightDrop,
         tauTimeout: this._exitOnTauTimeout,
         edgeClosure: this._exitOnEdgeClosure,
+        normalizeThresholdBps: this._normalizeThresholdBps,
+        maxSignalHoldMs: this._maxSignalHoldMs,
+        tokenAvailabilityDelayMs: this._tokenAvailabilityDelayMs,
+        hedgeWhenUnavailable: this._hedgeWhenUnavailable,
+        minLockedProfitCents: this._minLockedProfitCents,
       },
     });
   }
@@ -387,6 +474,16 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       this._entryRegime = undefined;
       this._entryEdgeCents = 0;
       this._entrySide = undefined;
+      this._entryPlacedAtMs = 0;
+      this._entryPriceCents = 0;
+      this._entrySize = new Decimal(0);
+      this._entryPostOnly = true;
+      this._pendingEntryAtMs = 0;
+      this._pendingEntryPriceCents = 0;
+      this._pendingEntrySide = undefined;
+      this._pendingExitAtMs = 0;
+      this._pendingExitPriceCents = 0;
+      this._pendingExitSide = undefined;
 
       if (snapshot.eventStartMs) {
         this._marketEventStartMs = snapshot.eventStartMs;
@@ -453,6 +550,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       bestAskCents,
       portfolio,
       snapshot.openOrders,
+      snapshot.matchedOrders,
       snapshot.hasInFlightFills,
     );
 
@@ -471,6 +569,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         compBestAsk !== undefined ? compBestAsk * 100 : undefined,
         portfolio,
         snapshot.complementaryOpenOrders ?? [],
+        snapshot.complementaryMatchedOrders ?? [],
         snapshot.hasComplementaryInFlightFills ?? false,
       );
     }
@@ -483,6 +582,9 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     if (anyPosition) {
       this._inPosition = true;
       this._hasFilledEntryThisMarket = true;
+      this._pendingEntryAtMs = 0;
+      this._pendingEntryPriceCents = 0;
+      this._pendingEntrySide = undefined;
       // Если _entrySide ещё не известен (перезагрузка/warmup с уже открытой позицией) — восстановим.
       if (this._entrySide === undefined) {
         if (primary.positionQty.gt(0) || primary.availableTokenQty.gt(0) || primary.hasInFlightFills) {
@@ -491,16 +593,26 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
           this._entrySide = 'DOWN';
         }
       }
-    }
-
-    // _inPosition сбрасываем только когда НЕТ ни позиции, ни открытых ордеров,
-    // ни in-flight fills ни на одной стороне — иначе при пустой позиции и висящем
-    // maker-ордере будет churn CANCEL+PLACE каждый тик.
-    const anyOpenOrFlight = primary.hasOpenOrders || primary.hasInFlightFills
-      || (complementary?.hasOpenOrders ?? false)
-      || (complementary?.hasInFlightFills ?? false);
-    if (!anyPosition && !anyOpenOrFlight) {
+    } else {
+      // В signal-normalized режиме pending maker-ордер не должен считаться позицией:
+      // иначе начнём крутить EXIT-логику до реального fill.
       this._inPosition = false;
+      if (
+        !primary.hasOpenOrders
+        && !primary.hasMatchedBuy
+        && !primary.hasMatchedSell
+        && !(complementary?.hasOpenOrders ?? false)
+        && !(complementary?.hasMatchedBuy ?? false)
+        && !(complementary?.hasMatchedSell ?? false)
+        && (this._pendingEntryAtMs <= 0 || (snapshot.nowMs - this._pendingEntryAtMs) >= PENDING_ORDER_GRACE_MS)
+      ) {
+        this._pendingEntryAtMs = 0;
+        this._pendingEntryPriceCents = 0;
+        this._pendingEntrySide = undefined;
+      }
+      this._pendingExitAtMs = 0;
+      this._pendingExitPriceCents = 0;
+      this._pendingExitSide = undefined;
     }
 
     return {
@@ -548,6 +660,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     bestAskCents: number | undefined,
     portfolio: StrategySnapshot['portfolio'],
     openOrders: StrategySnapshot['openOrders'],
+    matchedOrders: readonly import('@polymarket/order').Order[],
     hasInFlightFills: boolean,
   ): SideData {
     const positionQty = portfolio?.getPosition(instrumentId)?.quantity?.value() ?? new Decimal(0);
@@ -555,12 +668,19 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
 
     let openBuyAtCents: number | undefined;
     let openSellAtCents: number | undefined;
+    let matchedBuyAtCents: number | undefined;
+    let matchedSellAtCents: number | undefined;
     const openOrderIds: OrderId[] = [];
     for (const o of openOrders) {
       openOrderIds.push(o.id);
       const cents = Math.round(o.price.value().toNumber() * 100);
       if (o.side === 'BUY') openBuyAtCents = cents;
       else if (o.side === 'SELL') openSellAtCents = cents;
+    }
+    for (const o of matchedOrders) {
+      const cents = Math.round(o.price.value().toNumber() * 100);
+      if (o.side === 'BUY') matchedBuyAtCents = cents;
+      else if (o.side === 'SELL') matchedSellAtCents = cents;
     }
 
     return {
@@ -575,8 +695,12 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       hasInFlightFills,
       openBuyAtCents,
       openSellAtCents,
+      matchedBuyAtCents,
+      matchedSellAtCents,
       openOrderIds,
       hasOpenOrders: openOrders.length > 0,
+      hasMatchedBuy: matchedBuyAtCents !== undefined,
+      hasMatchedSell: matchedSellAtCents !== undefined,
     };
   }
 
@@ -585,6 +709,84 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
   protected decide(data: CCData): CCAction[] {
     // Любой in-flight fill на обеих сторонах → не трогаем.
     const anyInFlight = data.primary.hasInFlightFills || (data.complementary?.hasInFlightFills ?? false);
+
+    // ── Режим EXIT: мы в позиции ─────────────────────────────────────────────
+    // Используем сторону которую зафиксировали при входе.
+    const exitTarget = this._resolveExitTarget(data);
+    if (this._inPosition && exitTarget) {
+      const exitReason = this._checkExitConditions(data);
+      if (exitReason) {
+        if (exitTarget.availableTokenQty.gt(0)) {
+          const takerExit = this._exitMode === 'signal-normalized'
+            || (this._allowPanicTaker && data.tauSec < this._panicTauSec);
+          const ask = this._computeExitPriceCents(exitTarget, takerExit);
+          if (ask === undefined) {
+            this._recordDecision(data, 'CANCEL', 'exit-price-unavailable');
+            return [{ type: 'STOP' }];
+          }
+
+          let size = this._ensureMinSize(exitTarget.availableTokenQty, ask, data.minOrderValue);
+          if (size === undefined) {
+            this._recordDecision(data, 'CANCEL', 'exit-size-unavailable', { askCents: ask });
+            return [{ type: 'STOP' }];
+          }
+          size = Decimal.min(size, exitTarget.availableTokenQty);
+
+          if (exitTarget.openSellAtCents === ask) {
+            this._recordDecision(data, 'HOLD', 'open-sell-same-price', { askCents: ask, size, taker: takerExit });
+            return [];
+          }
+          if (exitTarget.hasMatchedSell) {
+            this._recordDecision(data, 'HOLD', 'matched-sell-pending', { askCents: exitTarget.matchedSellAtCents, size, taker: takerExit });
+            return [];
+          }
+          if (
+            takerExit
+            && this._pendingExitSide === exitTarget.side
+            && (data.nowMs - this._pendingExitAtMs) < PENDING_ORDER_GRACE_MS
+          ) {
+            this._recordDecision(data, 'HOLD', 'exit-pending', {
+              askCents: this._pendingExitPriceCents || ask,
+              size,
+              taker: takerExit,
+            });
+            return [];
+          }
+
+          this._logger?.warn('CalibratedCrowd: EXIT', {
+            side: exitTarget.side,
+            reason: exitReason,
+            ask,
+            taker: takerExit,
+            tau: data.tauSec.toFixed(0),
+            compositeNow: data.zone?.weights.composite.toFixed(2) ?? 'n/a',
+            regimeNow: data.regime ?? 'n/a',
+            regimeEntry: this._entryRegime ?? 'n/a',
+            cexDirection: data.cexDirectionForToken,
+            cexValueBps: data.cexSignal?.value.toFixed(3),
+          });
+
+          this._pendingExitAtMs = data.nowMs;
+          this._pendingExitPriceCents = ask;
+          this._pendingExitSide = exitTarget.side;
+          this._recordDecision(data, 'SELL', exitReason, { askCents: ask, size, taker: takerExit });
+          return [{
+            type: 'POST_ASK',
+            askCents: ask,
+            size,
+            taker: takerExit,
+            targetInstrumentId: exitTarget.targetInstrumentId,
+            targetAsset: exitTarget.targetAsset,
+          }];
+        }
+
+        const hedgeExit = this._buildHedgeExit(data, exitReason);
+        if (hedgeExit) return hedgeExit;
+      }
+      this._recordDecision(data, 'HOLD', exitTarget.availableTokenQty.gt(0) ? 'hold-to-expiry' : 'token-unavailable');
+      return [{ type: 'STOP' }];
+    }
+
     if (anyInFlight) {
       const cancelIds: OrderId[] = [
         ...data.primary.openOrderIds,
@@ -596,58 +798,6 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       }
       this._recordDecision(data, 'HOLD', 'in-flight-fills');
       return [];
-    }
-
-    // ── Режим EXIT: мы в позиции ─────────────────────────────────────────────
-    // Используем сторону которую зафиксировали при входе.
-    const exitTarget = this._resolveExitTarget(data);
-    if (this._inPosition && exitTarget && exitTarget.availableTokenQty.gt(0)) {
-      const exitReason = this._checkExitConditions(data);
-      if (exitReason) {
-        const panic = this._allowPanicTaker && data.tauSec < this._panicTauSec;
-        const ask = this._computeExitPriceCents(exitTarget, panic);
-        if (ask === undefined) {
-          this._recordDecision(data, 'CANCEL', 'exit-price-unavailable');
-          return [{ type: 'STOP' }];
-        }
-
-        let size = this._ensureMinSize(exitTarget.availableTokenQty, ask, data.minOrderValue);
-        if (size === undefined) {
-          this._recordDecision(data, 'CANCEL', 'exit-size-unavailable', { askCents: ask });
-          return [{ type: 'STOP' }];
-        }
-        size = Decimal.min(size, exitTarget.availableTokenQty);
-
-        // Если уже стоит SELL на этой же цене — ничего не делаем (нет churn).
-        if (exitTarget.openSellAtCents === ask) {
-          this._recordDecision(data, 'HOLD', 'open-sell-same-price', { askCents: ask, size });
-          return [];
-        }
-
-        this._logger?.warn('CalibratedCrowd: EXIT', {
-          side: exitTarget.side,
-          reason: exitReason,
-          ask,
-          taker: panic,
-          tau: data.tauSec.toFixed(0),
-          compositeNow: data.zone?.weights.composite.toFixed(2) ?? 'n/a',
-          regimeNow: data.regime ?? 'n/a',
-          regimeEntry: this._entryRegime ?? 'n/a',
-        });
-
-        this._recordDecision(data, 'SELL', exitReason, { askCents: ask, size });
-        return [{
-          type: 'POST_ASK',
-          askCents: ask,
-          size,
-          taker: panic,
-          targetInstrumentId: exitTarget.targetInstrumentId,
-          targetAsset: exitTarget.targetAsset,
-        }];
-      }
-      // Иначе HOLD — ничего не делаем.
-      this._recordDecision(data, 'HOLD', 'hold-to-expiry');
-      return [{ type: 'STOP' }];
     }
 
     // ── Режим ENTRY: нет позиции ─────────────────────────────────────────────
@@ -680,6 +830,14 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       this._recordDecision(data, 'SKIP', zoneRejectReason);
       return [{ type: 'STOP' }];
     }
+    if (this._maxPremiumCents !== undefined) {
+      const crowdAvgCents = zone.train.crowdAvg * 100;
+      const historicalBid = entryTarget.side === 'UP' ? crowdAvgCents : (100 - crowdAvgCents);
+      if (bid > historicalBid + this._maxPremiumCents) {
+        this._recordDecision(data, 'SKIP', 'price-above-crowd-avg');
+        return [{ type: 'STOP' }];
+      }
+    }
     if (zone.weights.composite < this._minComposite) {
       this._recordDecision(data, 'SKIP', 'composite-below-min');
       return [{ type: 'STOP' }];
@@ -689,10 +847,15 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       return [{ type: 'STOP' }];
     }
 
-    const cexRejectReason = this._cexEntryRejectReason(data);
+    const cexRejectReason = this._cexEntryRejectReason(data, entryTarget.side);
     if (cexRejectReason) {
       this._recordDecision(data, 'SKIP', cexRejectReason);
       return [{ type: 'STOP' }];
+    }
+
+    if (entryTarget.hasMatchedBuy) {
+      this._recordDecision(data, 'HOLD', 'matched-buy-pending', { bidCents: entryTarget.matchedBuyAtCents });
+      return [];
     }
 
     let size: Decimal;
@@ -752,16 +915,23 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
 
     // Если уже стоит BUY на этой же цене — держим ордер, ничего не делаем.
     if (entryTarget.openBuyAtCents === bid) {
-      this._inPosition = true;
-      this._entrySide ??= entryTarget.side;
-      this._entryRegime ??= data.regime;
+      this._rememberPendingEntry(entryTarget.side, bid, data.nowMs, size, data.regime);
       this._recordDecision(data, 'HOLD', 'open-buy-same-price', { bidCents: bid, size });
       return [];
     }
 
-    this._inPosition = true;
-    this._entrySide = entryTarget.side;
-    this._entryRegime = data.regime;
+    if (
+      this._pendingEntrySide === entryTarget.side
+      && (data.nowMs - this._pendingEntryAtMs) < PENDING_ORDER_GRACE_MS
+    ) {
+      this._recordDecision(data, 'HOLD', 'entry-pending', {
+        bidCents: this._pendingEntryPriceCents || bid,
+        size,
+      });
+      return [];
+    }
+
+    this._rememberPendingEntry(entryTarget.side, bid, data.nowMs, size, data.regime);
     this._entryEdgeCents = zone.train.edge * 100;
     void this._entryEdgeCents; // сохраняем для будущей диагностики/метрик
 
@@ -769,29 +939,32 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     const effPHat = entryTarget.side === 'UP' ? zone.train.pHat : 1 - zone.train.pHat;
     const effEntryEdgeCents = (effPHat - bid / 100) * 100;
 
-    this._logger?.warn('CalibratedCrowd: ENTRY', {
-      side: entryTarget.side,
-      signal: zone.signal,
-      bid,
-      size: size.toFixed(0),
-      delta: data.deltaDollars?.toFixed(1),
-      tau: data.tauSec.toFixed(0),
-      mid: data.midCents.toFixed(1),
-      regime: data.regime,
-      composite: zone.weights.composite.toFixed(2),
-      kellySize: zone.kelly.size.toFixed(3),
-      edgeCents: (zone.train.edge * 100).toFixed(1),
-      entryEdgeCents: effEntryEdgeCents.toFixed(1),
-      n: zone.train.n,
-      cexDirection: data.cexDirectionForToken,
-      cexValueBps: data.cexSignal?.value.toFixed(3),
-    });
+    if (this._logEntries) {
+      this._logger?.warn('CalibratedCrowd: ENTRY', {
+        side: entryTarget.side,
+        signal: zone.signal,
+        bid,
+        size: size.toFixed(0),
+        delta: data.deltaDollars?.toFixed(1),
+        tau: data.tauSec.toFixed(0),
+        mid: data.midCents.toFixed(1),
+        regime: data.regime,
+        composite: zone.weights.composite.toFixed(2),
+        kellySize: zone.kelly.size.toFixed(3),
+        edgeCents: (zone.train.edge * 100).toFixed(1),
+        entryEdgeCents: effEntryEdgeCents.toFixed(1),
+        n: zone.train.n,
+        cexDirection: data.cexDirectionForToken,
+        cexValueBps: data.cexSignal?.value.toFixed(3),
+      });
+    }
 
     this._recordDecision(data, 'BUY', undefined, { bidCents: bid, size });
     return [{
       type: 'POST_BID',
       bidCents: bid,
       size,
+      postOnly: true,
       targetInstrumentId: entryTarget.targetInstrumentId,
       targetAsset: entryTarget.targetAsset,
     }];
@@ -806,6 +979,10 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
    * @param zone - кандидат зона
    */
   private _resolveEntryTarget(data: CCData, zone: EdgeZone): SideData | undefined {
+    if (this._crowdGate === 'relaxed' && this._relaxedEntrySide !== 'table') {
+      return this._resolveRelaxedEntryTarget(data, zone);
+    }
+
     if (zone.signal === 'BUY' && zone.kelly.side === 'UP') return data.primary;
     if (zone.signal === 'SELL' && zone.kelly.side === 'DOWN') {
       const comp = data.complementary;
@@ -815,6 +992,31 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       return comp;
     }
     return undefined;
+  }
+
+  private _resolveRelaxedEntryTarget(data: CCData, zone: EdgeZone): SideData | undefined {
+    let best: { readonly side: SideData; readonly edgeHat: number } | undefined;
+
+    const consider = (side: SideData | undefined): void => {
+      if (!side || side.bestBidCents === undefined || side.bestAskCents === undefined) return;
+      const bid = this._computeEntryBidCents(side);
+      if (bid === undefined) return;
+      if (this._entryZoneRejectReason(zone, bid, side.side)) return;
+
+      const edgeHat = this._entryEdgeHat(zone, bid, side.side);
+      if (!best || edgeHat > best.edgeHat) {
+        best = { side, edgeHat };
+      }
+    };
+
+    if (this._relaxedEntrySide === 'up' || this._relaxedEntrySide === 'both') {
+      consider(data.primary);
+    }
+    if (this._relaxedEntrySide === 'down' || this._relaxedEntrySide === 'both') {
+      consider(data.complementary);
+    }
+
+    return best?.side;
   }
 
   /**
@@ -879,10 +1081,32 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       availableTokenQty: side.availableTokenQty.toString(),
       openBuyAtCents: side.openBuyAtCents,
       openSellAtCents: side.openSellAtCents,
+      matchedBuyAtCents: side.matchedBuyAtCents,
+      matchedSellAtCents: side.matchedSellAtCents,
       openOrderIds: side.openOrderIds.map(String),
       hasOpenOrders: side.hasOpenOrders,
       hasInFlightFills: side.hasInFlightFills,
+      hasMatchedBuy: side.hasMatchedBuy,
+      hasMatchedSell: side.hasMatchedSell,
     };
+  }
+
+  private _rememberPendingEntry(
+    side: EntrySide,
+    bid: number,
+    nowMs: number,
+    size: Decimal,
+    regime: Regime | undefined,
+  ): void {
+    this._entrySide = side;
+    this._entryRegime = regime;
+    this._entryPlacedAtMs = nowMs;
+    this._entryPriceCents = bid;
+    this._entrySize = size;
+    this._entryPostOnly = true;
+    this._pendingEntryAtMs = nowMs;
+    this._pendingEntryPriceCents = bid;
+    this._pendingEntrySide = side;
   }
 
   private _serializeDecisionState(
@@ -925,6 +1149,14 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         maxPositionFraction: this._maxPositionFraction,
         maxSharesPerMarket: sharesCap,
         cexFilterMode: this._cexFilterMode,
+        exitMode: this._exitMode,
+        normalizeThresholdBps: this._normalizeThresholdBps,
+        maxSignalHoldMs: this._maxSignalHoldMs,
+        exitOnSignalStale: this._exitOnSignalStale,
+        exitOnSignalFlip: this._exitOnSignalFlip,
+        tokenAvailabilityDelayMs: this._tokenAvailabilityDelayMs,
+        hedgeWhenUnavailable: this._hedgeWhenUnavailable,
+        minLockedProfitCents: this._minLockedProfitCents,
       },
       zone: z ? {
         key: z.key,
@@ -1008,14 +1240,21 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     return undefined;
   }
 
+  private _entryEdgeHat(zone: EdgeZone, entryBidCents: number, side: EntrySide): number {
+    const pHat = side === 'UP' ? zone.train.pHat : 1 - zone.train.pHat;
+    return pHat - entryBidCents / 100;
+  }
+
   private _evaluateCexSignal(snapshot: StrategySnapshot): CryptoSignalResult | undefined {
     if (this._cexFilterMode === 'off') return undefined;
     return snapshot.cryptoSignals?.evaluate(this._cexSignalId, {
       venues: this._cexVenues,
       weights: this._cexWeights,
+      linearInterceptUsd: this._cexLinearInterceptUsd,
       basisByVenue: this._cexBasisByVenue,
       confidenceByScore: this._cexConfidenceByScore,
       lookbackMs: this._cexLookbackMs,
+      minBasisSamples: this._cexMinBasisSamples,
       staleMs: this._cexStaleMs,
       thresholdBps: this._cexThresholdBps,
       minVenueCount: this._cexMinVenueCount,
@@ -1023,20 +1262,29 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     });
   }
 
-  private _cexEntryRejectReason(data: CCData): string | undefined {
+  private _cexEntryRejectReason(data: CCData, side: EntrySide): string | undefined {
     if (this._cexFilterMode === 'off') return undefined;
     if (!data.cexSignal) return 'cex-signal-unavailable';
     if (this._cexRequireFresh && !data.cexFresh) return 'cex-signal-stale';
 
-    const direction = data.cexDirectionForToken;
+    const direction = this._cexDirectionForEntrySide(data.cexSignal.direction, side);
     if (this._cexFilterMode === 'agree') {
-      return direction === 'up' ? undefined : 'cex-not-agree-up';
+      return direction === 'up' ? undefined : 'cex-not-agree';
     }
-    return direction === 'down' ? 'cex-adverse-down' : undefined;
+    return direction === 'down' ? 'cex-adverse' : undefined;
+  }
+
+  private _cexDirectionForEntrySide(direction: CryptoSignalDirection, side: EntrySide): CryptoSignalDirection {
+    if (side === 'UP' || direction === 'flat') return direction;
+    return direction === 'up' ? 'down' : 'up';
   }
 
   /** Проверить все opt-in exit-условия. */
   private _checkExitConditions(data: CCData): string | undefined {
+    if (this._exitMode === 'signal-normalized') {
+      const signalExit = this._checkSignalNormalizedExit(data);
+      if (signalExit) return signalExit;
+    }
     if (this._exitOnTauTimeout && data.tauSec < this._exitTauSec) {
       return 'tau-timeout';
     }
@@ -1051,6 +1299,24 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     if (this._exitOnEdgeClosure && data.zone) {
       const edgeCentsNow = data.zone.train.edge * 100;
       if (Math.abs(edgeCentsNow) < this._edgeClosureCents) return 'edge-closure';
+    }
+    return undefined;
+  }
+
+  private _checkSignalNormalizedExit(data: CCData): string | undefined {
+    const elapsedMs = this._entryPlacedAtMs > 0 ? data.nowMs - this._entryPlacedAtMs : 0;
+    if (elapsedMs >= this._maxSignalHoldMs) return 'signal-max-hold';
+
+    if (!data.cexSignal || (this._cexRequireFresh && !data.cexFresh)) {
+      return this._exitOnSignalStale ? 'signal-stale' : undefined;
+    }
+
+    const direction = this._cexDirectionForEntrySide(data.cexSignal.direction, this._entrySide ?? 'UP');
+    if (Math.abs(data.cexSignal.value) <= this._normalizeThresholdBps || direction === 'flat') {
+      return 'signal-normalized';
+    }
+    if (this._exitOnSignalFlip && direction === 'down') {
+      return 'signal-flip';
     }
     return undefined;
   }
@@ -1075,6 +1341,128 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     const aggressive = Math.round(side.bestAskCents) - 1;
     const ask = aggressive > Math.round(side.bestBidCents) ? aggressive : Math.round(side.bestAskCents);
     return Math.max(1, Math.min(99, ask));
+  }
+
+  private _buildHedgeExit(data: CCData, exitReason: string): CCAction[] | undefined {
+    if (this._exitMode !== 'signal-normalized' || !this._hedgeWhenUnavailable) {
+      this._recordDecision(data, 'HOLD', 'exit-wait-token-availability');
+      return [{ type: 'STOP' }];
+    }
+
+    const elapsedMs = this._entryPlacedAtMs > 0 ? data.nowMs - this._entryPlacedAtMs : Number.POSITIVE_INFINITY;
+    if (elapsedMs >= this._tokenAvailabilityDelayMs) {
+      this._recordDecision(data, 'HOLD', 'await-available-token-after-delay');
+      return [{ type: 'STOP' }];
+    }
+
+    const hedgeTarget = this._resolveHedgeTarget(data);
+    if (!hedgeTarget || hedgeTarget.bestAskCents === undefined) {
+      this._recordDecision(data, 'HOLD', 'hedge-side-unavailable');
+      return [{ type: 'STOP' }];
+    }
+
+    const hedgePriceCents = Math.max(1, Math.min(99, Math.round(hedgeTarget.bestAskCents)));
+    const targetShares = this._effectiveEntryShares(data);
+    if (targetShares.lte(0)) {
+      this._recordDecision(data, 'HOLD', 'hedge-target-shares-zero');
+      return [{ type: 'STOP' }];
+    }
+
+    const hedgeSize = this._grossHedgeSharesForTargetShares(targetShares, hedgePriceCents);
+    if (hedgeSize.lt(data.minOrderSize)) {
+      this._recordDecision(data, 'HOLD', 'hedge-below-min-order-size', { bidCents: hedgePriceCents, size: hedgeSize, taker: true });
+      return [{ type: 'STOP' }];
+    }
+
+    const hedgeNotional = hedgeSize.mul(new Decimal(hedgePriceCents).div(100));
+    if (hedgeNotional.lt(data.minOrderValue)) {
+      this._recordDecision(data, 'HOLD', 'hedge-below-min-order-value', { bidCents: hedgePriceCents, size: hedgeSize, taker: true });
+      return [{ type: 'STOP' }];
+    }
+    if (hedgeNotional.gt(data.availableBalance)) {
+      this._recordDecision(data, 'HOLD', 'hedge-insufficient-balance', { bidCents: hedgePriceCents, size: hedgeSize, taker: true });
+      return [{ type: 'STOP' }];
+    }
+
+    const lockedProfitCents = this._lockedProfitCents(targetShares, hedgeSize, hedgePriceCents);
+    if (lockedProfitCents < this._minLockedProfitCents) {
+      this._recordDecision(data, 'HOLD', 'hedge-profit-below-threshold', { bidCents: hedgePriceCents, size: hedgeSize, taker: true });
+      return [{ type: 'STOP' }];
+    }
+
+    if (hedgeTarget.openBuyAtCents === hedgePriceCents) {
+      this._recordDecision(data, 'HOLD', 'open-hedge-buy-same-price', { bidCents: hedgePriceCents, size: hedgeSize, taker: true });
+      return [];
+    }
+
+    this._logger?.warn('CalibratedCrowd: HEDGE', {
+      entrySide: this._entrySide ?? 'n/a',
+      hedgeSide: hedgeTarget.side,
+      reason: exitReason,
+      bid: hedgePriceCents,
+      size: hedgeSize.toFixed(4),
+      lockedProfitCents: lockedProfitCents.toFixed(3),
+      elapsedMs,
+      cexDirection: data.cexDirectionForToken,
+      cexValueBps: data.cexSignal?.value.toFixed(3),
+    });
+
+    this._recordDecision(data, 'BUY', `${exitReason}-hedge`, {
+      bidCents: hedgePriceCents,
+      size: hedgeSize,
+      taker: true,
+    });
+    return [{
+      type: 'POST_BID',
+      bidCents: hedgePriceCents,
+      size: hedgeSize,
+      postOnly: false,
+      targetInstrumentId: hedgeTarget.targetInstrumentId,
+      targetAsset: hedgeTarget.targetAsset,
+    }];
+  }
+
+  private _resolveHedgeTarget(data: CCData): SideData | undefined {
+    if (this._entrySide === 'UP') return data.complementary;
+    if (this._entrySide === 'DOWN') return data.primary;
+    return undefined;
+  }
+
+  private _effectiveEntryShares(data: CCData): Decimal {
+    const exitTarget = this._resolveExitTarget(data);
+    if (exitTarget?.positionQty.gt(0)) return exitTarget.positionQty;
+    if (this._entrySize.gt(0)) return this._entrySize;
+    if (this._entrySide === 'UP') return data.primary.positionQty;
+    if (this._entrySide === 'DOWN') return data.complementary?.positionQty ?? new Decimal(0);
+    return new Decimal(0);
+  }
+
+  private _grossHedgeSharesForTargetShares(targetShares: Decimal, hedgePriceCents: number): Decimal {
+    const hedgePrice = hedgePriceCents / 100;
+    const netRatio = Math.max(0.0001, 1 - 0.072 * (1 - hedgePrice));
+    return targetShares.div(netRatio).toDecimalPlaces(4, Decimal.ROUND_UP);
+  }
+
+  private _lockedProfitCents(targetShares: Decimal, hedgeGrossShares: Decimal, hedgePriceCents: number): number {
+    const entryPrice = this._entryPriceCents / 100;
+    const hedgePrice = hedgePriceCents / 100;
+
+    const entryFeeDollars = this._entryPostOnly
+      ? 0
+      : calculatePolymarketTakerFeeNumber(this._entrySize.toNumber(), entryPrice);
+    const entryFeeShares = entryPrice > 0 ? new Decimal(entryFeeDollars).div(entryPrice) : new Decimal(0);
+    const entryNetShares = Decimal.max(new Decimal(0), this._entrySize.minus(entryFeeShares));
+
+    const hedgeFeeDollars = calculatePolymarketTakerFeeNumber(hedgeGrossShares.toNumber(), hedgePrice);
+    const hedgeFeeShares = hedgePrice > 0 ? new Decimal(hedgeFeeDollars).div(hedgePrice) : new Decimal(0);
+    const hedgeNetShares = Decimal.max(new Decimal(0), hedgeGrossShares.minus(hedgeFeeShares));
+
+    const guaranteedPayout = Decimal.min(entryNetShares, hedgeNetShares, targetShares);
+    const entryCost = this._entrySize.mul(entryPrice).plus(entryFeeDollars);
+    const hedgeCost = hedgeGrossShares.mul(hedgePrice).plus(hedgeFeeDollars);
+    const perSharePnl = guaranteedPayout.minus(entryCost).minus(hedgeCost)
+      .div(Decimal.max(this._entrySize, new Decimal(1)));
+    return perSharePnl.mul(100).toNumber();
   }
 
   /**
@@ -1109,11 +1497,12 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       }
       intents.push({ type: 'CANCEL_ALL' });
       if (a.type === 'POST_BID') {
-        intents.push({
-          type: 'PLACE',
-          side: 'BUY',
-          price: Price.of(new Decimal(a.bidCents).div(100)),
-          size: Quantity.of(a.size),
+      intents.push({
+        type: 'PLACE',
+        side: 'BUY',
+        price: Price.of(new Decimal(a.bidCents).div(100)),
+        size: Quantity.of(a.size),
+          postOnly: a.postOnly,
           targetInstrumentId: a.targetInstrumentId,
           targetAsset: a.targetAsset,
         });
@@ -1123,6 +1512,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
           side: 'SELL',
           price: Price.of(new Decimal(a.askCents).div(100)),
           size: Quantity.of(a.size),
+          postOnly: !a.taker,
           targetInstrumentId: a.targetInstrumentId,
           targetAsset: a.targetAsset,
         });

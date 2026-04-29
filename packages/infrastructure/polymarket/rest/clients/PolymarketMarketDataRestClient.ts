@@ -248,35 +248,54 @@ export class PolymarketMarketDataRestClient {
   }
 
   /**
-   * Получить информацию о маркете по slug или condition ID
+   * Получить информацию о маркете по slug.
    *
-   * @param slugOrConditionId - Слаг маркета (предпочтительно) или condition ID (запасной вариант)
+   * @param slug - Слаг маркета
+   * @returns Информация о маркете
+   * @throws {Error} При ошибке API-вызова или если маркет не найден
+   */
+  async getMarketInfo(slug: string): Promise<GammaMarketDto> {
+    this.logger.debug('Getting market info by slug', { slug });
+
+    const url = `${this.config.baseUrl}/markets?slug=${encodeURIComponent(slug)}`;
+    const results = await this.fetch<GammaMarketDto[]>(url);
+    const market = Array.isArray(results) ? results[0] : results;
+    if (!market) {
+      throw new Error(`Market not found: ${slug}`);
+    }
+
+    this.logger.debug('Market info retrieved', {
+      slug: market.slug,
+      conditionId: market.conditionId,
+      question: market.question,
+      active: market.active,
+    });
+
+    return market;
+  }
+
+  /**
+   * Получить информацию о маркете по внутреннему Gamma market id.
+   *
+   * @param marketId - Идентификатор `rawMarket.id` из Gamma API
    * @returns Информация о маркете
    * @throws {Error} При ошибке API-вызова или если маркет не найден
    *
    * @remarks
-   * Gamma API использует **slug** (например, "bitcoin-up-or-down-january-8")
-   * для endpoint /markets/{slug}, а НЕ conditionId.
-   *
-   * Если API вернёт 404, conditionId может сработать как запасной вариант для некоторых маркетов.
-   *
-   * @example
-   * ```typescript
-   * const market = await client.getMarketInfo('bitcoin-up-or-down-january-8');
-   * console.log(`Market: ${market.question}`);
-   * ```
+   * Для архивных/старых рынков lookup по slug может уже не работать,
+   * а `GET /markets/{id}` продолжает возвращать market object.
    */
-  async getMarketInfo(slugOrConditionId: string): Promise<GammaMarketDto> {
-    this.logger.debug('Getting market info', { slugOrConditionId });
+  async getMarketInfoById(marketId: string): Promise<GammaMarketDto> {
+    this.logger.debug('Getting market info by Gamma id', { marketId });
 
-    const url = `${this.config.baseUrl}/markets?slug=${encodeURIComponent(slugOrConditionId)}`;
-    const results = await this.fetch<GammaMarketDto[]>(url);
-    const market = Array.isArray(results) ? results[0] : results;
+    const url = `${this.config.baseUrl}/markets/${encodeURIComponent(marketId)}`;
+    const market = await this.fetch<GammaMarketDto>(url);
     if (!market) {
-      throw new Error(`Market not found: ${slugOrConditionId}`);
+      throw new Error(`Market not found by id: ${marketId}`);
     }
 
-    this.logger.debug('Market info retrieved', {
+    this.logger.debug('Market info retrieved by Gamma id', {
+      marketId,
       slug: market.slug,
       conditionId: market.conditionId,
       question: market.question,

@@ -1,0 +1,97 @@
+{
+  "name": "btc-crowd-policy-rules-v1",
+  "notes": [
+    "Rules derived from manual calibration review.",
+    "Strategy enters only UP token in listed states.",
+    "Default exit policy in backtest-policy-rules.ts is hold-to-expiry.",
+    "Rule r8 assumes tau=240-270s for the -$10/flat/35-45c cluster."
+  ],
+  "rules": [
+    {
+      "id": "r1_state_p40_tau60_90_up",
+      "label": "BUY +$40, 60-90s, up",
+      "side": "UP",
+      "deltaMin": 40,
+      "deltaMax": 40,
+      "tauMin": 60,
+      "tauMax": 90,
+      "regimes": ["up"]
+    },
+    {
+      "id": "r2_state_p20_tau30_60_flat",
+      "label": "BUY +$20, 30-60s, flat",
+      "side": "UP",
+      "deltaMin": 20,
+      "deltaMax": 20,
+      "tauMin": 30,
+      "tauMax": 60,
+      "regimes": ["flat"]
+    },
+    {
+      "id": "r3_state_m10_tau30_60_down",
+      "label": "BUY -$10, 30-60s, down",
+      "side": "UP",
+      "deltaMin": -10,
+      "deltaMax": -10,
+      "tauMin": 30,
+      "tauMax": 60,
+      "regimes": ["down"]
+    },
+    {
+      "id": "r4_state_m30_tau30_60_down",
+      "label": "BUY -$30, 30-60s, down",
+      "side": "UP",
+      "deltaMin": -30,
+      "deltaMax": -30,
+      "tauMin": 30,
+      "tauMax": 60,
+      "regimes": ["down"]
+    },
+    {
+      "id": "r5_state_m90_tau210_240_down",
+      "label": "BUY -$90, 210-240s, down",
+      "side": "UP",
+      "deltaMin": -90,
+      "deltaMax": -90,
+      "tauMin": 210,
+      "tauMax": 240,
+      "regimes": ["down"]
+    },
+    {
+      "id": "r6_cluster_p0_tau270_300_down_c45_55",
+      "label": "BUY +$0, 270-300s, down, crowd 45-55c",
+      "side": "UP",
+      "deltaMin": 0,
+      "deltaMax": 0,
+      "tauMin": 270,
+      "tauMax": 300,
+      "regimes": ["down"],
+      "crowdMin": 45,
+      "crowdMax": 55
+    },
+    {
+      "id": "r7_cluster_m10_tau270_300_down_c40_45",
+      "label": "BUY -$10, 270-300s, down, crowd 40-45c",
+      "side": "UP",
+      "deltaMin": -10,
+      "deltaMax": -10,
+      "tauMin": 270,
+      "tauMax": 300,
+      "regimes": ["down"],
+      "crowdMin": 40,
+      "crowdMax": 45
+    },
+    {
+      "id": "r8_cluster_m10_tau240_270_flat_c35_45",
+      "label": "BUY -$10, 240-270s, flat, crowd 35-45c",
+      "side": "UP",
+      "deltaMin": -10,
+      "deltaMax": -10,
+      "tauMin": 240,
+      "tauMax": 270,
+      "regimes": ["flat"],
+      "crowdMin": 35,
+      "crowdMax": 45
+    }
+  ]
+}

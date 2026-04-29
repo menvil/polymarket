@@ -12,6 +12,7 @@ import {
 import { DumbStrategy } from '../../src/strategies/DumbStrategy.js';
 import { AvellanedaStoikovStrategy } from '../../src/strategies/AvellanedaStoikovStrategy.js';
 import { CexLeadLagStrategy } from '../../src/strategies/CexLeadLagStrategy.js';
+import { PairedCexCrowdStrategy } from '../../src/strategies/PairedCexCrowdStrategy.js';
 
 describe('createStrategy', () => {
   it('создаёт DumbStrategy', () => {
@@ -65,6 +66,18 @@ describe('createStrategy', () => {
 
     expect(strategy).toBeInstanceOf(CexLeadLagStrategy);
     expect(strategy.name).toBe('CexLeadLagStrategy');
+  });
+
+  it('создаёт PairedCexCrowdStrategy', () => {
+    const strategy = createStrategy({
+      type: 'paired-cex-crowd',
+      params: {
+        edgeTablePath: 'apps/bot/tables/edge-table-5min.json',
+      },
+    });
+
+    expect(strategy).toBeInstanceOf(PairedCexCrowdStrategy);
+    expect(strategy.name).toBe('PairedCexCrowdStrategy');
   });
 
   it('бросает ошибку для неизвестного типа', () => {

@@ -31,6 +31,7 @@
     "@polymarket/cross-market": "0.1.0",
     "@polymarket/in-memory": "0.1.0",
     "@polymarket/exchange": "0.1.0",
+    "@polymarket/fill": "0.1.0",
     "@polymarket/cex-market-data": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/builder-relayer-client": "^0.0.8",

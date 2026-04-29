@@ -64,6 +64,8 @@ import { createStrategy } from '../strategyFactory.js';
 import type { StrategyConfig } from '../strategyFactory.js';
 import { SelectiveEntryStrategy } from '../strategies/SelectiveEntryStrategy.js';
 import type { RiskParams } from '@polymarket/risk';
+import { DecisionJournalRecorder } from '@polymarket/data-collection';
+import type { IDecisionJournal } from '@polymarket/ports';
 
 // ── Типы ────────────────────────────────────────────────────────────────────
 
@@ -291,6 +293,13 @@ async function runSingleMarketBacktest(
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.WARN });
   const { logger, eventBus } = infra;
+  let journal: IDecisionJournal | undefined;
+  if (config.recording?.enabled) {
+    journal = new DecisionJournalRecorder(
+      { journalDir: config.recording.journalDir },
+      logger,
+    );
+  }
 
   const repos = buildRepositories();
   const { portfolioStore } = repos;
@@ -390,16 +399,94 @@ async function runSingleMarketBacktest(
   // 11. Трекинг fills
   let buyCount = 0;
   let sellCount = 0;
+  const orderToToken = new Map<string, string>();
+  const orderToPriceCents = new Map<string, number>();
+  const recordedFillIds = new Set<string>();
+
+  eventBus.subscribe('ORDER_CREATED', (event) => {
+    const tokenId = String(event.asset ?? '');
+    const orderId = String(event.orderId);
+    const priceCents = event.price.value().toNumber() * 100;
+    if (tokenId) orderToToken.set(orderId, tokenId);
+    orderToPriceCents.set(orderId, priceCents);
+    journal?.recordOrder({
+      marketId: tokenId,
+      ts: Date.now(),
+      orderId,
+      side: event.side as 'BUY' | 'SELL',
+      price: event.price.value().toFixed(4),
+      size: event.size.value().toFixed(2),
+    });
+  });
+
+  const computeSlippage = (
+    orderId: string,
+    fillPriceCents: number,
+  ): { orderPriceCents: number; slippageCents: number } | undefined => {
+    const orderPrice = orderToPriceCents.get(orderId);
+    if (orderPrice === undefined) return undefined;
+    return { orderPriceCents: orderPrice, slippageCents: fillPriceCents - orderPrice };
+  };
+
   eventBus.subscribe('ORDER_FILLED', (event) => {
+    const fillId = String(event.fill.id);
+    if (recordedFillIds.has(fillId)) return;
+    recordedFillIds.add(fillId);
+
     if (event.fill.side === 'BUY') buyCount++;
     else sellCount++;
+
+    const price = event.fill.price.value();
+    const size = event.fill.size.value();
+    const orderId = String(event.orderId);
+    const tokenId = orderToToken.get(orderId) ?? '';
+    const slippage = computeSlippage(orderId, price.toNumber() * 100);
+    journal?.recordFill({
+      marketId: tokenId,
+      ts: Date.now(),
+      orderId,
+      side: event.fill.side as 'BUY' | 'SELL',
+      price: price.toFixed(4),
+      size: size.toFixed(2),
+      notional: price.times(size).toFixed(4),
+      partial: false,
+      ...slippage,
+    });
+    orderToPriceCents.delete(orderId);
+  });
+
+  eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
+    const fillId = String(event.fill.id);
+    if (recordedFillIds.has(fillId)) return;
+    recordedFillIds.add(fillId);
+
+    const price = event.fill.price.value();
+    const size = event.fill.size.value();
+    const orderId = String(event.orderId);
+    const tokenId = orderToToken.get(orderId) ?? '';
+    const slippage = computeSlippage(orderId, price.toNumber() * 100);
+    journal?.recordFill({
+      marketId: tokenId,
+      ts: Date.now(),
+      orderId,
+      side: event.fill.side as 'BUY' | 'SELL',
+      price: price.toFixed(4),
+      size: size.toFixed(2),
+      notional: price.times(size).toFixed(4),
+      partial: true,
+      ...slippage,
+    });
+  });
+
+  eventBus.subscribe('ORDER_FILLED', (event) => {
+    void event;
   });
 
   // 12. Создаём и регистрируем стратегию
   const strategy = createStrategy(
     { type: config.strategy, params: config.strategyParams } as StrategyConfig,
     logger,
-    undefined,
+    journal,
     config.execution,
   );
 
@@ -414,7 +501,12 @@ async function runSingleMarketBacktest(
   const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
 
   // Определяем нужен ли dual-token режим (стратегии, которые могут выбирать UP/DOWN).
-  const needsComplementary = config.strategy === 'adaptive-entry' || config.strategy === 'selective-entry';
+  const needsComplementary = config.strategy === 'adaptive-entry'
+    || config.strategy === 'selective-entry'
+    || config.strategy === 'calibrated-crowd'
+    || config.strategy === 'calibrated-crowd-cex'
+    || config.strategy === 'paired-cex-crowd'
+    || config.strategy === 'baseline-paired-overlay';
   const complementaryAsset = needsComplementary && complementaryInstrumentId
     ? asPolymarketCtfToken(String(complementaryInstrumentId))
     : undefined;
@@ -442,6 +534,20 @@ async function runSingleMarketBacktest(
     additionalInstrumentIds: needsComplementary && complementaryInstrumentId ? [complementaryInstrumentId] : undefined,
   });
   if (!regResult.ok) return null;
+
+  journal?.startSession({
+    marketId: String(marketId),
+    mode: 'paper',
+    strategyType: config.strategy,
+    strategyConfig: config.strategyParams as unknown as Record<string, unknown>,
+    marketQuestion: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] : fileName,
+    tokenIds: complementaryInstrumentId
+      ? [String(instrumentId), String(complementaryInstrumentId)]
+      : [String(instrumentId)],
+    instrumentId: String(instrumentId),
+    expiresAtMs: expirationMs,
+    eventStartMs,
+  });
 
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
@@ -550,6 +656,15 @@ async function runSingleMarketBacktest(
 
   const cryptoSnap = cryptoMeta ? cryptoPriceStore.get(cryptoMeta.rtdsFilter) : undefined;
   const resolution = cryptoMeta ? cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter) : undefined;
+  journal?.recordResolution({
+    marketId: String(marketId),
+    ts: Date.now(),
+    resolution: resolution ?? 'UNKNOWN',
+    pnl: pnl.toFixed(4),
+    settlementPrice: resolution === 'UP' || resolution === 'DOWN' ? '1.0000' : '0.0000',
+  });
+  await journal?.endSession(marketId, 'EXPIRED');
+  await journal?.close();
 
   return {
     file: fileName,

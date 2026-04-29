@@ -123,13 +123,9 @@ describe('FillMapper', () => {
       }
     });
 
-    it('вычисляет fee по формуле Polymarket: C × p × feeRate × (p × (1-p))^exponent', () => {
+    it('вычисляет fee по текущей формуле Polymarket: C × 0.072 × p × (1-p)', () => {
       const accountId = makeAccountId();
-      // Формула: feeUSDC = C × p × feeRate × (p × (1-p))^exponent
-      // Crypto market: feeRate = 0.25 (фиксированный!), exponent = 2
-      // p=0.65, C=10
-      // pq = 0.65 × 0.35 = 0.2275
-      // feeUSDC = 10 × 0.65 × 0.25 × (0.2275)^2 = 10 × 0.65 × 0.25 × 0.05175625 = 0.08410...
+      // feeUSDC = 10 × 0.072 × 0.65 × 0.35 = 0.1638
       const result = FillMapper.fromPolymarketTradeEvent(
         makeValidTakerEvent({ fee_rate_bps: '20', price: '0.65', size: '10' }),
         accountId
@@ -138,9 +134,7 @@ describe('FillMapper', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const feeUSDC = result.value.fill.fee.quantity.amount().value().toNumber();
-        // Проверяем формулу: C × p × feeRate × (p × (1-p))^2
-        // feeRate = 0.25 (фиксированный для crypto), НЕ fee_rate_bps/10000
-        const expected = 10 * 0.65 * 0.25 * Math.pow(0.65 * 0.35, 2);
+        const expected = 10 * 0.072 * 0.65 * 0.35;
         expect(feeUSDC).toBeCloseTo(expected, 8);
         expect(result.value.fill.hasFee()).toBe(true);
       }

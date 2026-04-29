@@ -12,6 +12,8 @@ import type { OrderId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
+import { EdgeTable, type EdgeZone, type Regime } from './calibrated-crowd/EdgeTable.js';
+import { RegimeDetector } from './calibrated-crowd/RegimeDetector.js';
 
 const SECONDS_PER_YEAR = 365.25 * 24 * 3600;
 
@@ -68,6 +70,27 @@ export interface CexLeadLagConfig {
   readonly basisByVenue?: Readonly<Record<string, number>>;
   /** Офлайн-калиброванный hit rate по score-бакетам [1..10]. */
   readonly confidenceByScore?: Readonly<Record<string, number>>;
+  /**
+   * Опциональный фильтр входа по edge-таблице (CalibratedCrowd-стиль).
+   *
+   * Если указан, перед входом стратегия смотрит зону `(delta, tau, regime)` в таблице.
+   * Вход блокируется если зона не найдена, signal=SKIP, или composite < edgeMinComposite.
+   *
+   * Идея: CexLeadLag-сигнал всегда гонит вход при detected residual, но не каждый
+   * residual прибыльный. Таблица выступает negative-фильтром: «исторически в этом
+   * бакете нет edge → не торгуем».
+   */
+  readonly edgeTablePath?: string;
+  /** Минимальный composite зоны для разрешения входа (default 0.3). */
+  readonly edgeMinComposite?: number;
+  /** Если true — блокировать вход когда zone отсутствует/SKIP (default true). */
+  readonly edgeRequireZone?: boolean;
+  /** Порог $/min для классификации режима (default 10). */
+  readonly edgeRegimeThresholdPerMin?: number;
+  /** Окно slope в ms (default 60_000). */
+  readonly edgeRegimeWindowMs?: number;
+  /** Минимум точек истории для классификации режима (default 5). */
+  readonly edgeRegimeMinPoints?: number;
   /** Минимальный порог сигнала в bps для признания direction != flat. Default: 0.5. */
   readonly signalThresholdBps?: number;
   /** Окно истории для momentum компоненты сигнала (ms). Default: 1000. */
@@ -327,6 +350,12 @@ interface CexLeadLagData {
    * Положительный → сигнал благоприятен (UP для up-токена), отрицательный → adverse.
    */
   readonly residualBps: number;
+  /** Edge-table фильтр: true = таблица говорит «нет edge», вход заблокирован. */
+  readonly edgeBlocked: boolean;
+  /** Причина блокировки таблицей для логирования. */
+  readonly edgeBlockReason: string | undefined;
+  /** Composite зоны (для диагностики). undefined если зона не найдена. */
+  readonly edgeComposite: number | undefined;
   /** Абсолютная величина residual (bps). */
   readonly residualMagnitudeBps: number;
   /** Сколько мс сигнал держится в одном направлении без смены знака. */
@@ -671,6 +700,10 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _exitTauSec: number;
   private readonly _maxEntryTauSec: number;
   private readonly _minSignalPersistenceMs: number;
+  private readonly _edgeTable: EdgeTable | undefined;
+  private readonly _edgeMinComposite: number;
+  private readonly _edgeRequireZone: boolean;
+  private readonly _edgeRegimeDetector: RegimeDetector | undefined;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
   private _ewma: number | null = null;
@@ -836,6 +869,26 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._exitTauSec = toNumber(config.exitTauSec, 20);
     this._maxEntryTauSec = toNumber(config.maxEntryTauSec, 300);
     this._minSignalPersistenceMs = Math.max(0, toNumber(config.minSignalPersistenceMs, 1));
+
+    this._edgeMinComposite = toNumber(config.edgeMinComposite, 0.3);
+    this._edgeRequireZone = config.edgeRequireZone ?? true;
+    if (config.edgeTablePath) {
+      this._edgeTable = EdgeTable.fromFile(config.edgeTablePath);
+      this._edgeRegimeDetector = new RegimeDetector({
+        thresholdPerMin: toNumber(config.edgeRegimeThresholdPerMin, 10),
+        windowMs: toNumber(config.edgeRegimeWindowMs, 60_000),
+        minPoints: toNumber(config.edgeRegimeMinPoints, 5),
+      });
+      this._logger?.warn('CexLeadLag: edge-table filter ENABLED', {
+        path: config.edgeTablePath,
+        zones: this._edgeTable.size,
+        minComposite: this._edgeMinComposite,
+        requireZone: this._edgeRequireZone,
+      });
+    } else {
+      this._edgeTable = undefined;
+      this._edgeRegimeDetector = undefined;
+    }
 
     this._logger?.warn('CexLeadLag: init (signal-first)', {
       strategyId: this.id,
@@ -1059,6 +1112,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const netExpectedEdgeCents = signedSignalMoveCents - executionPenaltyCents;
 
     // ── Portfolio / constraints ─────────────────────────────────────────────
+    // Стратегия всегда торгует primary instrument. Для DOWN-side primary
+    // должен быть DOWN-токен (outcomeIndex=1). Сторона `_side` влияет только
+    // на инверсию сигнала, а не на роутинг ордеров.
     const position = snapshot.portfolio?.getPosition(snapshot.instrumentId);
     const positionQty = position?.quantity.value() ?? new Decimal(0);
     const avgEntryPriceCents =
@@ -1073,6 +1129,47 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const minOrderValue = snapshot.constraints?.minOrderValue.value() ?? new Decimal(1);
     const inventoryUnits =
       this._orderSize.gt(0) ? positionQty.div(this._orderSize).toNumber() : 0;
+
+    let edgeBlocked = false;
+    let edgeBlockReason: string | undefined;
+    let edgeComposite: number | undefined;
+    if (this._edgeTable && this._edgeRegimeDetector) {
+      const deltaDollars = currentPrice - targetPrice;
+      const midCents = bestBidCents !== undefined && bestAskCents !== undefined
+        ? (bestBidCents + bestAskCents) / 2
+        : this._ewma ?? 50;
+      const regime: Regime = this._edgeRegimeDetector.classify(snapshot.cryptoPriceHistory)?.regime ?? 'flat';
+      const zone: EdgeZone | undefined = this._edgeTable.lookup({
+        deltaDollars,
+        tauSec,
+        midCents,
+        regime,
+      });
+      if (!zone) {
+        if (this._edgeRequireZone) {
+          edgeBlocked = true;
+          edgeBlockReason = 'zone_not_found';
+        }
+      } else {
+        edgeComposite = zone.weights.composite;
+        if (zone.signal === 'SKIP') {
+          edgeBlocked = true;
+          edgeBlockReason = 'zone_skip';
+        } else if (zone.weights.composite < this._edgeMinComposite) {
+          edgeBlocked = true;
+          edgeBlockReason = `composite_below_${this._edgeMinComposite}`;
+        } else {
+          // Direction match: zone.kelly.side ('UP'|'DOWN') должен совпадать со
+          // стороной стратегии. Иначе исторический edge зоны был за противоположный
+          // токен — разрешать вход здесь нельзя.
+          const zoneSide = zone.kelly.side === 'UP' ? 'up' : 'down';
+          if (zoneSide !== this._side) {
+            edgeBlocked = true;
+            edgeBlockReason = `zone_side_${zoneSide}_mismatch`;
+          }
+        }
+      }
+    }
 
     return {
       marketId: this._currentMarketId || String(snapshot.instrumentId),
@@ -1111,6 +1208,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       targetPrice,
 
       residualBps,
+      edgeBlocked,
+      edgeBlockReason,
+      edgeComposite,
       residualMagnitudeBps: Math.abs(residualBps),
       signalPersistenceMs,
       venueAgreement,
@@ -1773,6 +1873,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     if (data.signalPersistenceMs < this._minSignalPersistenceMs) return undefined;
     if (data.venueAgreement < 0.66) return undefined;
     if (data.netExpectedEdgeCents < this._minEdgeCents) return undefined;
+    if (data.edgeBlocked) return undefined;
 
     if (
       this._stopLossCooldownMs > 0 &&
@@ -1944,6 +2045,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     if (data.signalPersistenceMs < 300) blockers.push('low_persistence');
     if (data.venueAgreement < 0.66) blockers.push('low_venue_agreement');
     if (data.netExpectedEdgeCents < this._minEdgeCents) blockers.push('net_edge_below_threshold');
+    if (data.edgeBlocked) blockers.push(`edge_table:${data.edgeBlockReason ?? 'blocked'}`);
 
     if (
       this._stopLossCooldownMs > 0 &&
@@ -2243,7 +2345,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    * @param snapshot - Снапшот рынка
    */
   private _updateEwma(snapshot: StrategySnapshot): void {
-    const tapeRecords = snapshot.tradeTape?.getAll();
+    const tape = snapshot.tradeTape;
+    const tob = snapshot.topOfBook;
+    const tapeRecords = tape?.getAll();
     if (tapeRecords && tapeRecords.length > 0) {
       for (const trade of tapeRecords) {
         const tradeTs = trade.timestamp.toNumber();
@@ -2257,9 +2361,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       }
     }
 
-    if (this._ewma !== null || !snapshot.topOfBook) return;
-    const bid = snapshot.topOfBook.bestBid?.value().toNumber();
-    const ask = snapshot.topOfBook.bestAsk?.value().toNumber();
+    if (this._ewma !== null || !tob) return;
+    const bid = tob.bestBid?.value().toNumber();
+    const ask = tob.bestAsk?.value().toNumber();
     if (bid !== undefined && ask !== undefined) {
       this._ewma = (bid + ask) / 2 * 100;
       this._tradeCount = Math.max(this._tradeCount, 1);

@@ -29,6 +29,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
 import type { NormalizedFill, MarketMeta, FillRecord, MarketPnl, DailyPnl, PnlReport } from '../types.js';
 
 /**
@@ -173,10 +174,7 @@ export class PnlCalculator {
   }
 
   /**
-   * Polymarket fee model:
-   * - maker fee = 0
-   * - taker fee = C × feeRate × p × (1 - p)
-   * - fee округляется до 5 знаков; всё меньше 0.00001 → 0
+   * Polymarket fee model lives in @polymarket/fill.
    */
   private calculateFillFee(args: {
     size: number;
@@ -192,13 +190,7 @@ export class PnlCalculator {
       return 0;
     }
 
-    const rawFee = args.size * args.takerFeeRate * args.price * (1 - args.price);
-    return this.roundFeeUsdc(rawFee);
-  }
-
-  private roundFeeUsdc(fee: number): number {
-    const rounded = Number(fee.toFixed(5));
-    return rounded >= 0.00001 ? rounded : 0;
+    return calculatePolymarketTakerFeeNumber(args.size, args.price, args.takerFeeRate);
   }
 
   /**

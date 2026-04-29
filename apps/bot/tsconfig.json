@@ -21,6 +21,7 @@
       "@polymarket/trade-tape":       ["../../packages/domain/market-data/trade-tape/src/index.ts"],
       "@polymarket/order":            ["../../packages/domain/entities/order/src/index.ts"],
       "@polymarket/fill":             ["../../packages/domain/entities/fill/src/index.ts"],
+      "@polymarket/fill/polymarket-fee": ["../../packages/domain/entities/fill/src/polymarket-fee.ts"],
       "@polymarket/portfolio":        ["../../packages/domain/entities/portfolio/src/index.ts"],
       "@polymarket/trade":            ["../../packages/domain/entities/trade/src/index.ts"],
       "@polymarket/market":           ["../../packages/domain/entities/market/src/index.ts"],

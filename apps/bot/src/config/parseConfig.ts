@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'calibrated-crowd'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -461,7 +461,37 @@ function parseStrategyParams(
       }
       break;
 
+    case 'calibration-rules':
+      if (typeof raw['rulesTablePath'] !== 'string') {
+        errors.push('strategyParams.rulesTablePath is required for calibration-rules strategy');
+      } else {
+        result['rulesTablePath'] = raw['rulesTablePath'];
+      }
+      if (typeof raw['orderShares'] !== 'number') {
+        errors.push('strategyParams.orderShares is required for calibration-rules strategy');
+      } else {
+        result['orderShares'] = raw['orderShares'];
+      }
+      for (const numField of [
+        'maxSpreadCents',
+        'warmupSec',
+        'bidOffsetCents',
+        'makerRepriceAfterSec',
+        'regimeMinPoints',
+        'regimeThresholdPerMin',
+        'regimeWindowMs',
+      ]) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (typeof raw['useBookAnchoredMakerPricing'] === 'boolean') result['useBookAnchoredMakerPricing'] = raw['useBookAnchoredMakerPricing'];
+      if (typeof raw['logEntries'] === 'boolean') result['logEntries'] = raw['logEntries'];
+      if (typeof raw['postOnly'] === 'boolean') result['postOnly'] = raw['postOnly'];
+      break;
+
     case 'calibrated-crowd':
+    case 'calibrated-crowd-cex':
+    case 'paired-cex-crowd':
+    case 'baseline-paired-overlay':
       if (typeof raw['edgeTablePath'] !== 'string') {
         errors.push('strategyParams.edgeTablePath is required for calibrated-crowd strategy');
       } else {
@@ -473,13 +503,20 @@ function parseStrategyParams(
         'regimeMinPoints', 'regimeThresholdPerMin', 'regimeWindowMs',
         'weightDropThreshold', 'exitTauSec', 'edgeClosureCents', 'panicTauSec',
         'cexThresholdBps', 'cexLookbackMs', 'cexStaleMs', 'cexMinVenueCount', 'cexMaxSpreadBps',
+        'cexLinearInterceptUsd', 'minBasisSamples',
+        'normalizeThresholdBps', 'maxSignalHoldMs', 'tokenAvailabilityDelayMs', 'minLockedProfitCents',
+        'noFillDecisionMs', 'noFillDriftCents', 'oppositeEntryMinEdge', 'oppositeMaxImbalance',
+        'fillAdversePenaltyCents', 'sameSideReentryCooldownMs', 'pairedLockMinProfitCents', 'pairedLockFeeBufferCents',
+        'strongEntryCompositeMin', 'strongEntryCexBpsMin', 'mediumEntryCompositeMin', 'mediumEntryCexBpsMin',
+        'strongEntryProtectMs', 'tierBDecayFactor', 'tierCDecayFactor', 'hardFlipBps', 'overlayPairedLockMinProfitCents',
       ]) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       for (const boolField of [
         'relaxedRequireOos',
         'exitOnRegimeFlip', 'exitOnWeightDrop', 'exitOnTauTimeout',
-        'exitOnEdgeClosure', 'allowPanicTaker', 'cexRequireFresh',
+        'exitOnEdgeClosure', 'allowPanicTaker', 'cexRequireFresh', 'logEntries',
+        'exitOnSignalStale', 'exitOnSignalFlip', 'hedgeWhenUnavailable', 'allowTierALock',
       ]) {
         if (raw[boolField] === true || raw[boolField] === false) {
           result[boolField] = raw[boolField];
@@ -488,8 +525,19 @@ function parseStrategyParams(
       if (raw['crowdGate'] === 'strict' || raw['crowdGate'] === 'relaxed') {
         result['crowdGate'] = raw['crowdGate'];
       }
+      if (
+        raw['relaxedEntrySide'] === 'table' ||
+        raw['relaxedEntrySide'] === 'up' ||
+        raw['relaxedEntrySide'] === 'down' ||
+        raw['relaxedEntrySide'] === 'both'
+      ) {
+        result['relaxedEntrySide'] = raw['relaxedEntrySide'];
+      }
       if (raw['cexFilterMode'] === 'off' || raw['cexFilterMode'] === 'agree' || raw['cexFilterMode'] === 'not-adverse') {
         result['cexFilterMode'] = raw['cexFilterMode'];
+      }
+      if (raw['exitMode'] === 'hold' || raw['exitMode'] === 'signal-normalized') {
+        result['exitMode'] = raw['exitMode'];
       }
       if (typeof raw['cexSignalId'] === 'string') result['cexSignalId'] = raw['cexSignalId'];
       if (Array.isArray(raw['cexVenues'])) result['cexVenues'] = raw['cexVenues'];

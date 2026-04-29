@@ -669,7 +669,7 @@ export class PolymarketOrderRestClient {
    *
    * ВАЖНО: Это ставка для подписи ордера (`feeRateBps` в `BuildOrderParams`),
    * а НЕ параметр `feeRate` из формулы расчёта комиссии!
-   * Формула: `fee = C × p × feeRate × (p × (1-p))^exponent`, где feeRate = 0.25 (crypto).
+   * Текущая crypto-формула: `fee = round5(C × 0.072 × p × (1-p))`.
    *
    * @example
    * ```typescript

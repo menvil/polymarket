@@ -2,18 +2,10 @@
  * Калькулятор комиссий Polymarket
  *
  * @remarks
- * Формула комиссии Polymarket:
- * `fee = price × feeRate × (price × (1 - price))^exponent`
+ * Текущая формула комиссии Polymarket для crypto-рынков:
+ * `fee = round5(size × 0.072 × price × (1 - price))`
  *
  * Комиссия взимается только с taker-ордеров. Maker = 0%.
- *
- * ### Текущая модель (до 30 марта 2026):
- * - feeRate = 0.25, exponent = 2
- * - Пиковая ставка при p=0.50: ~1.56%
- *
- * ### Новая модель (после 30 марта 2026):
- * - feeRate = 0.072, exponent = 1
- * - Пиковая ставка при p=0.50: ~1.80%
  *
  * @example
  * ```typescript
@@ -21,12 +13,13 @@
  * import { FEE_MODEL_CURRENT } from '@polymarket/cross-market';
  *
  * const calc = new FeeCalculator(FEE_MODEL_CURRENT);
- * const fee = calc.takerFee(0.50); // ~0.0078 (1.56% от цены 0.50)
- * const cost = calc.totalFee(0.45, true, 0.55, false); // taker + maker
+ * const fee = calc.takerFee(0.50); // 0.018 для 1 share
+ * const cost = calc.pairFee(0.45, true, 0.55, false); // taker + maker
  * ```
  */
 
 import type { FeeModel } from './types.js';
+import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
 
 /**
  * Калькулятор комиссий Polymarket.
@@ -35,8 +28,8 @@ import type { FeeModel } from './types.js';
  *
  * @example
  * ```typescript
- * const calc = new FeeCalculator({ feeRate: 0.25, exponent: 2 });
- * console.log(calc.takerFee(0.50)); // 0.0078125
+ * const calc = new FeeCalculator({ feeRate: 0.072, exponent: 1 });
+ * console.log(calc.takerFee(0.50)); // 0.018
  * ```
  */
 export class FeeCalculator {
@@ -46,15 +39,24 @@ export class FeeCalculator {
    * Рассчитывает комиссию taker-ордера.
    *
    * @param price - Цена исполнения (0..1)
-   * @returns Абсолютная комиссия на 1 контракт
+   * @param size - Размер сделки в shares (default: 1)
+   * @returns Абсолютная комиссия в USDC-equivalent
    *
    * @remarks
-   * Формула: `price × feeRate × (price × (1 - price))^exponent`
+   * Для текущей модели используется единый helper из @polymarket/fill.
+   * Для явно переданной legacy-модели оставлена обобщённая форма:
+   * `round5(size × feeRate × (price × (1-price))^exponent)`.
    * При price=0 или price=1 комиссия = 0.
    */
-  takerFee(price: number): number {
+  takerFee(price: number, size = 1): number {
     if (price <= 0 || price >= 1) return 0;
-    return price * this._model.feeRate * Math.pow(price * (1 - price), this._model.exponent);
+
+    if (this._model.exponent === 1) {
+      return calculatePolymarketTakerFeeNumber(size, price, this._model.feeRate);
+    }
+
+    const rawFee = size * this._model.feeRate * Math.pow(price * (1 - price), this._model.exponent);
+    return this._roundFee(rawFee);
   }
 
   /**
@@ -64,16 +66,23 @@ export class FeeCalculator {
    * @param easyIsTaker - true если easy leg — taker
    * @param hardDownPrice - Цена покупки hard_Down (= 1 - hard_Up_bid)
    * @param hardIsTaker - true если hard leg — taker
-   * @returns Суммарная комиссия на 1 пару контрактов
+   * @param size - Размер каждой ноги в shares (default: 1)
+   * @returns Суммарная комиссия в USDC-equivalent
    */
   pairFee(
     easyPrice: number,
     easyIsTaker: boolean,
     hardDownPrice: number,
     hardIsTaker: boolean,
+    size = 1,
   ): number {
-    const easyFee = easyIsTaker ? this.takerFee(easyPrice) : 0;
-    const hardFee = hardIsTaker ? this.takerFee(hardDownPrice) : 0;
+    const easyFee = easyIsTaker ? this.takerFee(easyPrice, size) : 0;
+    const hardFee = hardIsTaker ? this.takerFee(hardDownPrice, size) : 0;
     return easyFee + hardFee;
+  }
+
+  private _roundFee(fee: number): number {
+    const rounded = Number(fee.toFixed(5));
+    return rounded >= 0.00001 ? rounded : 0;
   }
 }

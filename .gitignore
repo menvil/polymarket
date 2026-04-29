@@ -59,3 +59,6 @@ apps/bot/data/
 #Snapshots
 snapshots/
 *.zip
+
+# Bot strategy data cache (large jsonl files)
+apps/bot/.cache/

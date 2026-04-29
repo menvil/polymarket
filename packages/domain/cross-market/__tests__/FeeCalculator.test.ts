@@ -3,15 +3,13 @@ import { FeeCalculator } from '../src/FeeCalculator.js';
 import { FEE_MODEL_CURRENT, FEE_MODEL_MARCH30 } from '../src/types.js';
 
 describe('FeeCalculator', () => {
-  describe('текущая модель (rate=0.25, exp=2)', () => {
+  describe('текущая crypto-модель (rate=0.072, exp=1)', () => {
     const calc = new FeeCalculator(FEE_MODEL_CURRENT);
 
-    it('пиковая ставка при p=0.50 ≈ 1.56%', () => {
+    it('считает fee по формуле Polymarket для 1 share', () => {
       const fee = calc.takerFee(0.50);
-      // 0.50 × 0.25 × (0.50 × 0.50)^2 = 0.50 × 0.25 × 0.0625 = 0.0078125
-      expect(fee).toBeCloseTo(0.0078125, 6);
-      // Effective rate = fee / price = 0.0078125 / 0.50 ≈ 1.5625%
-      expect(fee / 0.50).toBeCloseTo(0.015625, 4);
+      // 1 × 0.072 × 0.50 × 0.50 = 0.018
+      expect(fee).toBeCloseTo(0.018, 6);
     });
 
     it('fee=0 при price=0', () => {
@@ -26,26 +24,21 @@ describe('FeeCalculator', () => {
       expect(calc.takerFee(0.10)).toBeLessThan(calc.takerFee(0.50));
     });
 
-    it('fee симметричен: f(0.3) = f(0.7) × (0.3/0.7)', () => {
-      // Не симметричен по абсолюту, но формула проверяема
+    it('fee симметричен по price: f(0.3) = f(0.7)', () => {
       const f03 = calc.takerFee(0.30);
       const f07 = calc.takerFee(0.70);
-      // f(p) = p × rate × (p(1-p))^exp
-      // f(0.3) = 0.3 × 0.25 × (0.21)^2 = 0.003308
-      expect(f03).toBeCloseTo(0.3 * 0.25 * Math.pow(0.3 * 0.7, 2), 6);
-      expect(f07).toBeCloseTo(0.7 * 0.25 * Math.pow(0.7 * 0.3, 2), 6);
+      expect(f03).toBeCloseTo(0.072 * 0.3 * 0.7, 6);
+      expect(f07).toBeCloseTo(f03, 6);
     });
-  });
 
-  describe('модель march30 (rate=0.072, exp=1)', () => {
-    const calc = new FeeCalculator(FEE_MODEL_MARCH30);
+    it('поддерживает расчёт на полный size с round5', () => {
+      const fee = calc.takerFee(0.65, 10);
+      expect(fee).toBeCloseTo(0.1638, 6);
+    });
 
-    it('пиковая ставка при p=0.50 ≈ 1.80%', () => {
-      const fee = calc.takerFee(0.50);
-      // 0.50 × 0.072 × (0.25)^1 = 0.009
-      expect(fee).toBeCloseTo(0.009, 6);
-      // Effective rate = 0.009 / 0.50 = 1.80%
-      expect(fee / 0.50).toBeCloseTo(0.018, 4);
+    it('deprecated march30 alias совпадает с текущей моделью', () => {
+      const aliasCalc = new FeeCalculator(FEE_MODEL_MARCH30);
+      expect(aliasCalc.takerFee(0.50, 10)).toBe(calc.takerFee(0.50, 10));
     });
   });
 

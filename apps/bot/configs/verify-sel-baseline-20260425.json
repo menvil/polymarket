@@ -1,0 +1,20 @@
+{
+  "strategy": "selective-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55, "maxZoneCents": 68,
+    "minDeltaPct": 0.03, "maxDeltaPct": 0.12,
+    "minTauSec": 120, "maxTauSec": 210,
+    "maxSpreadCents": 4, "warmupSec": 60,
+    "bidOffsetCents": 1
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": ["/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-25/polymarket/*Bitcoin*"],
+    "filter": { "requiredKeywords": ["bitcoin", "up or down"], "minDurationMinutes": 4, "maxDurationMinutes": 6 },
+    "outcomeIndex": 0
+  },
+  "resources": { "initialBalance": 1000, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
+  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
+  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+}

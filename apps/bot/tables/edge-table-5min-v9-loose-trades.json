@@ -1,0 +1,6518 @@
+{
+  "hold": [
+    {
+      "slug": "btc-updown-5m-1777075200",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777082400",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777082700",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6666666666666667,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777083000",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.4999999999999998,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777083300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777083600",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2195121951219513,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777083900",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.36986301369863017,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777084200",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.846153846153846,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777085700",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.564102564102564,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777086000",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777086300",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777087200",
+      "side": "DOWN",
+      "entryCrowd": 0.62,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.631578947368421,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777087800",
+      "side": "DOWN",
+      "entryCrowd": 0.93,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777088100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.36986301369863017,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777088400",
+      "side": "DOWN",
+      "entryCrowd": 0.96,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777088700",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.08695652173913039,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777075800",
+      "side": "UP",
+      "entryCrowd": 0.08,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777076100",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.17647058823529416,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777076400",
+      "side": "UP",
+      "entryCrowd": 0.51,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777076700",
+      "side": "DOWN",
+      "entryCrowd": 0.08,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.08695652173913039,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777077000",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5384615384615384,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777077600",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.9607843137254901,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777077900",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.08695652173913039,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777078200",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6129032258064516,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777078500",
+      "side": "UP",
+      "entryCrowd": 0.96,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.041666666666666706,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777078800",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777079100",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.7027027027027026,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777079400",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6666666666666667,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777079700",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777080000",
+      "side": "UP",
+      "entryCrowd": 0.19,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777080300",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.1276595744680853,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777080600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.818181818181818,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777080900",
+      "side": "UP",
+      "entryCrowd": 0.34,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.9411764705882348,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777081500",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.20481927710843378,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777081800",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.2222222222222225,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777125600",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 4.263157894736843,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777125900",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777136400",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.0408163265306123,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777126500",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.818181818181818,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777126800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777127100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.36986301369863017,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777127400",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.8571428571428574,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777128000",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.1276595744680853,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777128300",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.4999999999999998,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777093500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.14942528735632185,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777129200",
+      "side": "DOWN",
+      "entryCrowd": 0.66,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777129500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.2222222222222225,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777093800",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.041666666666666706,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777129800",
+      "side": "DOWN",
+      "entryCrowd": 0.78,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777130100",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777130400",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2987012987012987,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777131000",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.8571428571428574,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777131300",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.49253731343283597,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777131900",
+      "side": "UP",
+      "entryCrowd": 0.1,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777132200",
+      "side": "DOWN",
+      "entryCrowd": 0.67,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.0303030303030307,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777132500",
+      "side": "UP",
+      "entryCrowd": 0.71,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777137300",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.17647058823529416,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777089600",
+      "side": "DOWN",
+      "entryCrowd": 0.41,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.694915254237288,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777132800",
+      "side": "DOWN",
+      "entryCrowd": 0.44,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777133100",
+      "side": "DOWN",
+      "entryCrowd": 0.34,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777094400",
+      "side": "DOWN",
+      "entryCrowd": 0.94,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777137600",
+      "side": "UP",
+      "entryCrowd": 0.91,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.09890109890109887,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777090200",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.3157894736842105,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777133400",
+      "side": "DOWN",
+      "entryCrowd": 0.31,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777090500",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.3809523809523807,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777133700",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.8867924528301886,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777134000",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.4492753623188407,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777134300",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.052631578947368474,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777091400",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777134600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777091700",
+      "side": "DOWN",
+      "entryCrowd": 0.06,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.06382978723404262,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777134900",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777092000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777135200",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.23456790123456783,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777135500",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6129032258064516,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777092600",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.3809523809523807,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777092900",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2195121951219513,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777136100",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777095000",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777138200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.052631578947368474,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777095300",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.35135135135135137,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777138500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.14942528735632185,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777095600",
+      "side": "DOWN",
+      "entryCrowd": 0.82,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 4.5555555555555545,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777138800",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777095900",
+      "side": "DOWN",
+      "entryCrowd": 0.86,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 6.142857142857142,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777139700",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.3157894736842105,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777096800",
+      "side": "UP",
+      "entryCrowd": 0.89,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.12359550561797751,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777140000",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777097100",
+      "side": "DOWN",
+      "entryCrowd": 0.83,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777140300",
+      "side": "DOWN",
+      "entryCrowd": 0.35,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.5384615384615384,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777140600",
+      "side": "DOWN",
+      "entryCrowd": 0.57,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.325581395348837,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777097700",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777140900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.7857142857142856,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777098300",
+      "side": "DOWN",
+      "entryCrowd": 0.84,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777141500",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.4492753623188407,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777098600",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2987012987012987,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777098900",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777142100",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777099200",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.4999999999999998,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777099500",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777142700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2658227848101265,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777099800",
+      "side": "DOWN",
+      "entryCrowd": 0.71,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.4482758620689653,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777100100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.5873015873015873,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777143300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.1250000000000004,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777100400",
+      "side": "DOWN",
+      "entryCrowd": 0.28,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.38888888888888895,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777143600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777100700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777143900",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777101000",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777144200",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777101300",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777144500",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.3255813953488373,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777144800",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777101900",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777102200",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777145400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.052631578947368474,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777102500",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.3333333333333333,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777102800",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.17647058823529416,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777146000",
+      "side": "UP",
+      "entryCrowd": 0.5,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777146300",
+      "side": "DOWN",
+      "entryCrowd": 0.43,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777103400",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777146600",
+      "side": "UP",
+      "entryCrowd": 0.97,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.03092783505154642,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777103700",
+      "side": "DOWN",
+      "entryCrowd": 0.4,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.6666666666666667,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777146900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.7857142857142856,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777104000",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.8518518518518517,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777147200",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.4390243902439022,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777104300",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777147500",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777104600",
+      "side": "UP",
+      "entryCrowd": 0.33,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777147800",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777105200",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777148400",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5625,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777105500",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777148700",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.7241379310344829,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777105800",
+      "side": "UP",
+      "entryCrowd": 0.86,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.16279069767441862,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777106100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.5873015873015873,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777149300",
+      "side": "DOWN",
+      "entryCrowd": 0.75,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 3,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777106400",
+      "side": "UP",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.0833333333333335,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777149600",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.3333333333333333,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777149900",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777150200",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777150500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.14942528735632185,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777107600",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.923076923076923,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777150800",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.38888888888888895,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777107900",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777151100",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777151400",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.777777777777778,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777151700",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.333333333333333,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777108800",
+      "side": "UP",
+      "entryCrowd": 0.16,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777152000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777109100",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 6.692307692307692,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777152300",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777109400",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.4492753623188407,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777152600",
+      "side": "DOWN",
+      "entryCrowd": 0.27,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.36986301369863017,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777109700",
+      "side": "DOWN",
+      "entryCrowd": 0.76,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777152900",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777110000",
+      "side": "DOWN",
+      "entryCrowd": 0.2,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777153200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777110300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777153500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.47058823529411753,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777153800",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777110900",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.4705882352941178,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777154100",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777111200",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.7027027027027026,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777154400",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777111500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.2222222222222225,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777154700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5873015873015873,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777155000",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.639344262295082,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777112100",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.846153846153846,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777155300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777112400",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777155600",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5625,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777112700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5873015873015873,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777155900",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777113000",
+      "side": "UP",
+      "entryCrowd": 0.78,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.282051282051282,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777156200",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.20481927710843378,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777156500",
+      "side": "UP",
+      "entryCrowd": 0.27,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777113600",
+      "side": "UP",
+      "entryCrowd": 0.06,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777156800",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 3.5454545454545454,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777113900",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777157100",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.2987012987012987,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777157700",
+      "side": "UP",
+      "entryCrowd": 0.47,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.1276595744680853,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777158300",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777158600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777115700",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777158900",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.14942528735632185,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777116000",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.041666666666666706,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777116300",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.564102564102564,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777159500",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.7241379310344825,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777116600",
+      "side": "UP",
+      "entryCrowd": 0.61,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777159800",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6949152542372882,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777116900",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777160100",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.8867924528301886,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777117200",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.7037037037037033,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777160400",
+      "side": "UP",
+      "entryCrowd": 0.67,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777117500",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 2.571428571428571,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777117800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.923076923076923,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777118100",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5873015873015873,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777161300",
+      "side": "UP",
+      "entryCrowd": 0.84,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.19047619047619052,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777118400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.052631578947368474,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777161600",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.818181818181818,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777118700",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.23456790123456783,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777161900",
+      "side": "DOWN",
+      "entryCrowd": 0.54,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.173913043478261,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777119000",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.3157894736842105,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777119300",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.7037037037037033,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777119900",
+      "side": "UP",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777120200",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.4705882352941178,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777120500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777121100",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.2258064516129026,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777121400",
+      "side": "UP",
+      "entryCrowd": 0.8,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.24999999999999994,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777122000",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.23456790123456783,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777122300",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.20481927710843378,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777122900",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.052631578947368474,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777124100",
+      "side": "UP",
+      "entryCrowd": 0.41,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.4390243902439028,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777124400",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": null,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777124700",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -1,
+      "exitReason": "expiry"
+    },
+    {
+      "slug": "btc-updown-5m-1777125300",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": null,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.2258064516129026,
+      "exitReason": "expiry"
+    }
+  ],
+  "risk": [
+    {
+      "slug": "btc-updown-5m-1777075200",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.56,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.034482758620689495,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777082400",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.013888888888888902,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777082700",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.050000000000000044,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777083000",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.44,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.3999999999999999,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777083300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3125,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777083600",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.012195121951219523,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777083900",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.9,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.2328767123287672,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777084200",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.0384615384615385,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777085700",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.17948717948717935,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777086000",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.33,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777086300",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.72,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.22033898305084748,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777087200",
+      "side": "DOWN",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.026315789473684233,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777087800",
+      "side": "DOWN",
+      "entryCrowd": 0.93,
+      "exitCrowd": 0.94,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1428571428571415,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777088100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.04109589041095894,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777088400",
+      "side": "DOWN",
+      "entryCrowd": 0.96,
+      "exitCrowd": 0.96,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777088700",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": 0.93,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.010869565217391313,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777075800",
+      "side": "UP",
+      "entryCrowd": 0.08,
+      "exitCrowd": 0.08,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076100",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.16,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.011764705882352951,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076400",
+      "side": "UP",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.52,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.01960784313725492,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076700",
+      "side": "DOWN",
+      "entryCrowd": 0.08,
+      "exitCrowd": 0.19,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.11956521739130434,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777077000",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.7,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.07692307692307682,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777077600",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": 0.49,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777077900",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": 0.93,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.010869565217391313,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777078200",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777078500",
+      "side": "UP",
+      "entryCrowd": 0.96,
+      "exitCrowd": 0.98,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.020833333333333353,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777078800",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.87,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.16,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777079100",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.27,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.27027027027027023,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777079400",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.03333333333333337,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777079700",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.56,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.22222222222222213,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777080000",
+      "side": "UP",
+      "entryCrowd": 0.19,
+      "exitCrowd": 0.13,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3157894736842105,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777080300",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": 0.59,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.12765957446808499,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777080600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.55,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777080900",
+      "side": "UP",
+      "entryCrowd": 0.34,
+      "exitCrowd": 0.23,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3235294117647059,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777081500",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.72,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1325301204819277,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777081800",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.55,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777125600",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.85,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.21052631578947334,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777125900",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2666666666666669,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777136400",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.39,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.24489795918367346,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777126500",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.29090909090909084,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777126800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.54,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.11538461538461549,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777127100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.12328767123287668,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777127400",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.68,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.0857142857142858,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777128000",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": 0.53,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777128300",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.35,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1250000000000001,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777093500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777129200",
+      "side": "DOWN",
+      "entryCrowd": 0.66,
+      "exitCrowd": 0.68,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.05882352941176476,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777129500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.66,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.24444444444444444,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777093800",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.01041666666666667,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777129800",
+      "side": "DOWN",
+      "entryCrowd": 0.78,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777130100",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.77,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.21052631578947392,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777130400",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.07792207792207785,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777131000",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.36,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.0285714285714286,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777131300",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.41,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.11940298507462682,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777131900",
+      "side": "UP",
+      "entryCrowd": 0.1,
+      "exitCrowd": 0.16,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.6,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777132200",
+      "side": "DOWN",
+      "entryCrowd": 0.67,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.121212121212121,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777132500",
+      "side": "UP",
+      "entryCrowd": 0.71,
+      "exitCrowd": 0.78,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.09859154929577474,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777137300",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.08,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.08235294117647059,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777089600",
+      "side": "DOWN",
+      "entryCrowd": 0.41,
+      "exitCrowd": 0.39,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.03389830508474569,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777132800",
+      "side": "DOWN",
+      "entryCrowd": 0.44,
+      "exitCrowd": 0.59,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2678571428571428,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777133100",
+      "side": "DOWN",
+      "entryCrowd": 0.34,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.21212121212121207,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777094400",
+      "side": "DOWN",
+      "entryCrowd": 0.94,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.49999999999999817,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777137600",
+      "side": "UP",
+      "entryCrowd": 0.91,
+      "exitCrowd": 0.92,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.010989010989010999,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777090200",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777133400",
+      "side": "DOWN",
+      "entryCrowd": 0.31,
+      "exitCrowd": 0.39,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.11594202898550728,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777090500",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.6,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.04761904761904766,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777133700",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.018867924528301903,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134000",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3043478260869565,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134300",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.13,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.08421052631578949,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777091400",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.24,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.09090909090909087,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.018181818181818195,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777091700",
+      "side": "DOWN",
+      "entryCrowd": 0.06,
+      "exitCrowd": 0.07,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.010638297872340436,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134900",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.66,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.015384615384615398,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777092000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.0285714285714286,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777135200",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.77,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.049382716049382755,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777135500",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.03225806451612906,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777092600",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.65,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.1666666666666668,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777092900",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777136100",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.05555555555555561,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777095000",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.89,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.44999999999999996,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777138200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.04,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.010526315789473687,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777095300",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.74,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777138500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.89,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.022988505747126457,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777095600",
+      "side": "DOWN",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777138800",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.35,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777095900",
+      "side": "DOWN",
+      "entryCrowd": 0.86,
+      "exitCrowd": 0.65,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.4999999999999996,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777139700",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.58,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.23684210526315796,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777096800",
+      "side": "UP",
+      "entryCrowd": 0.89,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.02247191011235957,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777140000",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.43,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.16176470588235295,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777097100",
+      "side": "DOWN",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.6,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.3529411764705879,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777140300",
+      "side": "DOWN",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.35,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777140600",
+      "side": "DOWN",
+      "entryCrowd": 0.57,
+      "exitCrowd": 0.57,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777097700",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.8,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.02439024390243891,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777140900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": 0.52,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.07142857142857148,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777098300",
+      "side": "DOWN",
+      "entryCrowd": 0.84,
+      "exitCrowd": 0.85,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.06250000000000004,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777141500",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.7,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.01449275362318842,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777098600",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.84,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.09090909090909084,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777098900",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.54,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.16363636363636366,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777142100",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.66,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.10810810810810806,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777099200",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.49,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.27499999999999997,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777099500",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.55,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777142700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": 0.86,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.08860759493670879,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777099800",
+      "side": "DOWN",
+      "entryCrowd": 0.71,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777100100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.36,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.015873015873015886,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777143300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.79,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.34375,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777100400",
+      "side": "DOWN",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.23,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.06944444444444448,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777143600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.66,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.15000000000000013,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777100700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": 0.68,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.1392405063291139,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777143900",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777101000",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.9,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.23076923076923098,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777144200",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2173913043478258,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777101300",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": 0.52,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.058823529411764754,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777144500",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.22,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.4883720930232558,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777144800",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.38,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777101900",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.32,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.0967741935483871,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777102200",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.22,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.012987012987012998,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777145400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777102500",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.10666666666666662,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777102800",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.09,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.07058823529411765,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146000",
+      "side": "UP",
+      "entryCrowd": 0.5,
+      "exitCrowd": 0.5,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146300",
+      "side": "DOWN",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.52,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.15789473684210528,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777103400",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.04347826086956526,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146600",
+      "side": "UP",
+      "entryCrowd": 0.97,
+      "exitCrowd": 0.98,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.010309278350515474,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777103700",
+      "side": "DOWN",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.38,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.03333333333333337,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.35714285714285704,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777104000",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.01851851851851843,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777147200",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.56,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.07317073170731686,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777104300",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.7,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777147500",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.94,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.769230769230769,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777104600",
+      "side": "UP",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.33,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777147800",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.11428571428571407,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777105200",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.43,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3768115942028985,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777148400",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.73,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.14062499999999994,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777105500",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.04347826086956526,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777148700",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.59,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.017241379310344845,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777105800",
+      "side": "UP",
+      "entryCrowd": 0.86,
+      "exitCrowd": 0.85,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.011627906976744196,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777106100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.37,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777149300",
+      "side": "DOWN",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.76,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.040000000000000036,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777106400",
+      "side": "UP",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.25,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.47916666666666663,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777149600",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777149900",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3499999999999998,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150200",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.65,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.56,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3563218390804597,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777107600",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.019230769230769246,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150800",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": 0.86,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.19444444444444448,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777107900",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2653061224489796,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777151100",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777151400",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.44444444444444453,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777151700",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.7,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777108800",
+      "side": "UP",
+      "entryCrowd": 0.16,
+      "exitCrowd": 0.12,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.25000000000000006,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777152000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.7,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.14285714285714268,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777109100",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.77,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.769230769230769,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777152300",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.34,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.26923076923076916,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777109400",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.72,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.04347826086956526,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777152600",
+      "side": "DOWN",
+      "entryCrowd": 0.27,
+      "exitCrowd": 0.06,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.28767123287671237,
+      "exitReason": "tau-timeout"
+    },
+    {
+      "slug": "btc-updown-5m-1777109700",
+      "side": "DOWN",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.08333333333333341,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777152900",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.43,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777110000",
+      "side": "DOWN",
+      "entryCrowd": 0.2,
+      "exitCrowd": 0.19,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.012500000000000011,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777153200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.06,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.010526315789473679,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777110300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.037037037037036966,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777153500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.79,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.16176470588235292,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777153800",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1666666666666668,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777110900",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.33,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.01470588235294119,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777154100",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.39,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.01612903225806453,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777111200",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.57,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5405405405405405,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777154400",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.36,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1688311688311688,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777111500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.64,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.19999999999999996,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777154700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.52,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1746031746031746,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777155000",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": 0.39,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777112100",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.78,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.15384615384615397,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777155300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.44,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.03703703703703707,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777112400",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": 0.4,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.034482758620689585,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777155600",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.79,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.23437500000000003,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777112700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777155900",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.67,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.19512195121951234,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113000",
+      "side": "UP",
+      "entryCrowd": 0.78,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.19230769230769232,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777156200",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.81,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.024096385542168565,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777156500",
+      "side": "UP",
+      "entryCrowd": 0.27,
+      "exitCrowd": 0.27,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113600",
+      "side": "UP",
+      "entryCrowd": 0.06,
+      "exitCrowd": 0.06,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777156800",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.22,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113900",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777157100",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.27,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.05194805194805196,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777157700",
+      "side": "UP",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.45,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.042553191489361625,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777158300",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": 0.4,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.016393442622950834,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777158600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.36,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.6,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777115700",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.34883720930232553,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777158900",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.045977011494252915,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777116000",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": 0.03,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.01041666666666667,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777116300",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777159500",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": 0.4,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.034482758620689585,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777116600",
+      "side": "UP",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.63,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.03278688524590167,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777159800",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.46,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.22033898305084737,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777116900",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 2.227272727272727,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777160100",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777117200",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.7,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.1111111111111112,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777160400",
+      "side": "UP",
+      "entryCrowd": 0.67,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.059701492537313314,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777117500",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.964285714285714,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777117800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.27,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.40384615384615374,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777118100",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.20634920634920637,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777161300",
+      "side": "UP",
+      "entryCrowd": 0.84,
+      "exitCrowd": 0.84,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777118400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.03,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.021052631578947375,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777161600",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.62,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.309090909090909,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777118700",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.074074074074074,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777161900",
+      "side": "DOWN",
+      "entryCrowd": 0.54,
+      "exitCrowd": 0.11,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.9347826086956523,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777119000",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.55,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2763157894736842,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777119300",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.73,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777119900",
+      "side": "UP",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.03,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.4000000000000001,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777120200",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.18,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.20588235294117652,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777120500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.4,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.411764705882353,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777121100",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.53,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.5161290322580642,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777121400",
+      "side": "UP",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.85,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.06249999999999992,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777122000",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.14814814814814828,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777122300",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.012048192771084348,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777122900",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.04,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.010526315789473687,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777124100",
+      "side": "UP",
+      "entryCrowd": 0.41,
+      "exitCrowd": 0.35,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.14634146341463414,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777124400",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.40740740740740733,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777124700",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.1999999999999999,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777125300",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.53,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.5161290322580642,
+      "exitReason": "regime-flip"
+    }
+  ],
+  "full": [
+    {
+      "slug": "btc-updown-5m-1777075200",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.56,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.034482758620689495,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777082400",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": 0.72,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777082700",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.050000000000000044,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777083000",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.46,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.34999999999999987,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777083300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3125,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777083600",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777083900",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.73,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777084200",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.57,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.653846153846154,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777085700",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.17948717948717935,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777086000",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.33,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777086300",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.64,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.08474576271186449,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777087200",
+      "side": "DOWN",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.026315789473684233,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777087800",
+      "side": "DOWN",
+      "entryCrowd": 0.93,
+      "exitCrowd": 0.94,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1428571428571415,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777088100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.73,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777088400",
+      "side": "DOWN",
+      "entryCrowd": 0.96,
+      "exitCrowd": 0.96,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777088700",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": 0.92,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777075800",
+      "side": "UP",
+      "entryCrowd": 0.08,
+      "exitCrowd": 0.08,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076100",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.16,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.011764705882352951,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076400",
+      "side": "UP",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.52,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.01960784313725492,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777076700",
+      "side": "DOWN",
+      "entryCrowd": 0.08,
+      "exitCrowd": 0.08,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777077000",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.65,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777077600",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": 0.49,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777077900",
+      "side": "UP",
+      "entryCrowd": 0.92,
+      "exitCrowd": 0.92,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777078200",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777078500",
+      "side": "UP",
+      "entryCrowd": 0.96,
+      "exitCrowd": 0.96,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777078800",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.75,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777079100",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.27,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.27027027027027023,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777079400",
+      "side": "UP",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.050000000000000044,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777079700",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.59,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.138888888888889,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777080000",
+      "side": "UP",
+      "entryCrowd": 0.19,
+      "exitCrowd": 0.13,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3157894736842105,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777080300",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.02127659574468087,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777080600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.55,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777080900",
+      "side": "UP",
+      "entryCrowd": 0.34,
+      "exitCrowd": 0.23,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3235294117647059,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777081500",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777081800",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.55,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777125600",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.85,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.21052631578947334,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777125900",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2666666666666669,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777136400",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.46,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.10204081632653059,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777126500",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.45,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777126800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777127100",
+      "side": "UP",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.73,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777127400",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.64,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.0285714285714286,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777128000",
+      "side": "DOWN",
+      "entryCrowd": 0.53,
+      "exitCrowd": 0.53,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777128300",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.35,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1250000000000001,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777093500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777129200",
+      "side": "DOWN",
+      "entryCrowd": 0.66,
+      "exitCrowd": 0.68,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.05882352941176476,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777129500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.022222222222222244,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777093800",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": 0.04,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777129800",
+      "side": "DOWN",
+      "entryCrowd": 0.78,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777130100",
+      "side": "DOWN",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.77,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.21052631578947392,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777130400",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.77,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777131000",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.49,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.4000000000000001,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777131300",
+      "side": "DOWN",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.33,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777131900",
+      "side": "UP",
+      "entryCrowd": 0.1,
+      "exitCrowd": 0.15,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.4999999999999999,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777132200",
+      "side": "DOWN",
+      "entryCrowd": 0.67,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.121212121212121,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777132500",
+      "side": "UP",
+      "entryCrowd": 0.71,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777137300",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.15,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777089600",
+      "side": "DOWN",
+      "entryCrowd": 0.41,
+      "exitCrowd": 0.41,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777132800",
+      "side": "DOWN",
+      "entryCrowd": 0.44,
+      "exitCrowd": 0.59,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.2678571428571428,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777133100",
+      "side": "DOWN",
+      "entryCrowd": 0.34,
+      "exitCrowd": 0.33,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.015151515151515168,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777094400",
+      "side": "DOWN",
+      "entryCrowd": 0.94,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.49999999999999817,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777137600",
+      "side": "UP",
+      "entryCrowd": 0.91,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777090200",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777133400",
+      "side": "DOWN",
+      "entryCrowd": 0.31,
+      "exitCrowd": 0.31,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777090500",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.52,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.1428571428571427,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777133700",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.018867924528301903,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134000",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777134300",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777091400",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.24,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.09090909090909087,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777134600",
+      "side": "UP",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.018181818181818195,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777091700",
+      "side": "DOWN",
+      "entryCrowd": 0.06,
+      "exitCrowd": 0.06,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777134900",
+      "side": "UP",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.66,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.015384615384615398,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777092000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.0285714285714286,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777135200",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.012345679012345552,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777135500",
+      "side": "UP",
+      "entryCrowd": 0.62,
+      "exitCrowd": 0.66,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.06451612903225812,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777092600",
+      "side": "DOWN",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.09523809523809505,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777092900",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777136100",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.05555555555555561,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777095000",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.89,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.44999999999999996,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777138200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777095300",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.74,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777138500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777095600",
+      "side": "DOWN",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777138800",
+      "side": "UP",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.35,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777095900",
+      "side": "DOWN",
+      "entryCrowd": 0.86,
+      "exitCrowd": 0.65,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.4999999999999996,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777139700",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777096800",
+      "side": "UP",
+      "entryCrowd": 0.89,
+      "exitCrowd": 0.89,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777140000",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.32,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777097100",
+      "side": "DOWN",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.6,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 1.3529411764705879,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777140300",
+      "side": "DOWN",
+      "entryCrowd": 0.35,
+      "exitCrowd": 0.35,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777140600",
+      "side": "DOWN",
+      "entryCrowd": 0.57,
+      "exitCrowd": 0.57,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777097700",
+      "side": "UP",
+      "entryCrowd": 0.82,
+      "exitCrowd": 0.82,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777140900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": 0.56,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777098300",
+      "side": "DOWN",
+      "entryCrowd": 0.84,
+      "exitCrowd": 0.85,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.06250000000000004,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777141500",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777098600",
+      "side": "UP",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.012987012987012998,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777098900",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.45,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777142100",
+      "side": "UP",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.74,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777099200",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.6,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777099500",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.91,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.55,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777142700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": 0.79,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777099800",
+      "side": "DOWN",
+      "entryCrowd": 0.71,
+      "exitCrowd": 0.71,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777100100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.37,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777143300",
+      "side": "DOWN",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.79,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.34375,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777100400",
+      "side": "DOWN",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.26,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.027777777777777804,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777143600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.66,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.15000000000000013,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777100700",
+      "side": "UP",
+      "entryCrowd": 0.79,
+      "exitCrowd": 0.79,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777143900",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777101000",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.9,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.23076923076923098,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777144200",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.66,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.47826086956521735,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777101300",
+      "side": "DOWN",
+      "entryCrowd": 0.49,
+      "exitCrowd": 0.49,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777144500",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.22,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.4883720930232558,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777144800",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.38,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777101900",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.38,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777102200",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.23,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777145400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777102500",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777102800",
+      "side": "DOWN",
+      "entryCrowd": 0.15,
+      "exitCrowd": 0.15,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777146000",
+      "side": "UP",
+      "entryCrowd": 0.5,
+      "exitCrowd": 0.5,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146300",
+      "side": "DOWN",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.43,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777103400",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.04347826086956526,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777146600",
+      "side": "UP",
+      "entryCrowd": 0.97,
+      "exitCrowd": 0.97,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777103700",
+      "side": "DOWN",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.4,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777146900",
+      "side": "UP",
+      "entryCrowd": 0.56,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.33928571428571414,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777104000",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.46,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777147200",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.59,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777104300",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.7,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777147500",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.94,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.769230769230769,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777104600",
+      "side": "UP",
+      "entryCrowd": 0.33,
+      "exitCrowd": 0.33,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777147800",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.11428571428571407,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777105200",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.43,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.3768115942028985,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777148400",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777105500",
+      "side": "DOWN",
+      "entryCrowd": 0.77,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.04347826086956526,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777148700",
+      "side": "UP",
+      "entryCrowd": 0.58,
+      "exitCrowd": 0.58,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777105800",
+      "side": "UP",
+      "entryCrowd": 0.86,
+      "exitCrowd": 0.86,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777106100",
+      "side": "DOWN",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.37,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777149300",
+      "side": "DOWN",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.76,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.040000000000000036,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777106400",
+      "side": "UP",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.25,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.47916666666666663,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777149600",
+      "side": "UP",
+      "entryCrowd": 0.75,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777149900",
+      "side": "DOWN",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.3499999999999998,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150200",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.65,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150500",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777107600",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.019230769230769246,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777150800",
+      "side": "UP",
+      "entryCrowd": 0.72,
+      "exitCrowd": 0.74,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.027777777777777804,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777107900",
+      "side": "DOWN",
+      "entryCrowd": 0.51,
+      "exitCrowd": 0.51,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777151100",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.48,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777151400",
+      "side": "DOWN",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.57,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.19444444444444461,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777151700",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.7,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777108800",
+      "side": "UP",
+      "entryCrowd": 0.16,
+      "exitCrowd": 0.12,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.25000000000000006,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777152000",
+      "side": "DOWN",
+      "entryCrowd": 0.65,
+      "exitCrowd": 0.65,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777109100",
+      "side": "DOWN",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.77,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.769230769230769,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777152300",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.46,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.03846153846153839,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777109400",
+      "side": "UP",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.69,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777152600",
+      "side": "DOWN",
+      "entryCrowd": 0.27,
+      "exitCrowd": 0.15,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.16438356164383566,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777109700",
+      "side": "DOWN",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.08333333333333341,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777152900",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.43,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777110000",
+      "side": "DOWN",
+      "entryCrowd": 0.2,
+      "exitCrowd": 0.2,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777153200",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777110300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.46,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777153500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.68,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777153800",
+      "side": "DOWN",
+      "entryCrowd": 0.7,
+      "exitCrowd": 0.75,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.1666666666666668,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777110900",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.32,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777154100",
+      "side": "DOWN",
+      "entryCrowd": 0.38,
+      "exitCrowd": 0.38,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777111200",
+      "side": "UP",
+      "entryCrowd": 0.37,
+      "exitCrowd": 0.57,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.5405405405405405,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777154400",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.23,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777111500",
+      "side": "DOWN",
+      "entryCrowd": 0.55,
+      "exitCrowd": 0.64,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.19999999999999996,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777154700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777155000",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": 0.36,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.04918032786885251,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777112100",
+      "side": "DOWN",
+      "entryCrowd": 0.74,
+      "exitCrowd": 0.78,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.15384615384615397,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777155300",
+      "side": "DOWN",
+      "entryCrowd": 0.46,
+      "exitCrowd": 0.46,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777112400",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": 0.42,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777155600",
+      "side": "UP",
+      "entryCrowd": 0.64,
+      "exitCrowd": 0.64,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777112700",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777155900",
+      "side": "DOWN",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.67,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.19512195121951234,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113000",
+      "side": "UP",
+      "entryCrowd": 0.78,
+      "exitCrowd": 0.78,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777156200",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777156500",
+      "side": "UP",
+      "entryCrowd": 0.27,
+      "exitCrowd": 0.27,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113600",
+      "side": "UP",
+      "entryCrowd": 0.06,
+      "exitCrowd": 0.06,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777156800",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.22,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777113900",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777157100",
+      "side": "DOWN",
+      "entryCrowd": 0.23,
+      "exitCrowd": 0.23,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777157700",
+      "side": "UP",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.45,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.042553191489361625,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777158300",
+      "side": "DOWN",
+      "entryCrowd": 0.39,
+      "exitCrowd": 0.39,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777158600",
+      "side": "DOWN",
+      "entryCrowd": 0.6,
+      "exitCrowd": 0.58,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.050000000000000044,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777115700",
+      "side": "UP",
+      "entryCrowd": 0.43,
+      "exitCrowd": 0.28,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.34883720930232553,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777158900",
+      "side": "UP",
+      "entryCrowd": 0.87,
+      "exitCrowd": 0.87,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777116000",
+      "side": "DOWN",
+      "entryCrowd": 0.04,
+      "exitCrowd": 0.04,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777116300",
+      "side": "DOWN",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777159500",
+      "side": "DOWN",
+      "entryCrowd": 0.42,
+      "exitCrowd": 0.37,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.0862068965517241,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777116600",
+      "side": "UP",
+      "entryCrowd": 0.61,
+      "exitCrowd": 0.61,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777159800",
+      "side": "UP",
+      "entryCrowd": 0.59,
+      "exitCrowd": 0.46,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": -0.22033898305084737,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777116900",
+      "side": "UP",
+      "entryCrowd": 0.22,
+      "exitCrowd": 0.49,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 1.2272727272727273,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777160100",
+      "side": "DOWN",
+      "entryCrowd": 0.47,
+      "exitCrowd": 0.47,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777117200",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.7,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.1111111111111112,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777160400",
+      "side": "UP",
+      "entryCrowd": 0.67,
+      "exitCrowd": 0.67,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777117500",
+      "side": "UP",
+      "entryCrowd": 0.28,
+      "exitCrowd": 0.49,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.7499999999999998,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777117800",
+      "side": "DOWN",
+      "entryCrowd": 0.48,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777118100",
+      "side": "UP",
+      "entryCrowd": 0.63,
+      "exitCrowd": 0.63,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777161300",
+      "side": "UP",
+      "entryCrowd": 0.84,
+      "exitCrowd": 0.84,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777118400",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777161600",
+      "side": "DOWN",
+      "entryCrowd": 0.45,
+      "exitCrowd": 0.62,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.309090909090909,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777118700",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.81,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777161900",
+      "side": "DOWN",
+      "entryCrowd": 0.54,
+      "exitCrowd": 0.33,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.45652173913043487,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777119000",
+      "side": "UP",
+      "entryCrowd": 0.76,
+      "exitCrowd": 0.76,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777119300",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.73,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777119900",
+      "side": "UP",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.03,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": -0.4000000000000001,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777120200",
+      "side": "DOWN",
+      "entryCrowd": 0.32,
+      "exitCrowd": 0.32,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777120500",
+      "side": "UP",
+      "entryCrowd": 0.68,
+      "exitCrowd": 0.68,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777121100",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.54,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.4838709677419351,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777121400",
+      "side": "UP",
+      "entryCrowd": 0.8,
+      "exitCrowd": 0.8,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777122000",
+      "side": "UP",
+      "entryCrowd": 0.81,
+      "exitCrowd": 0.81,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777122300",
+      "side": "UP",
+      "entryCrowd": 0.83,
+      "exitCrowd": 0.83,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777122900",
+      "side": "DOWN",
+      "entryCrowd": 0.05,
+      "exitCrowd": 0.05,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777124100",
+      "side": "UP",
+      "entryCrowd": 0.41,
+      "exitCrowd": 0.42,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.024390243902439046,
+      "exitReason": "edge-close"
+    },
+    {
+      "slug": "btc-updown-5m-1777124400",
+      "side": "DOWN",
+      "entryCrowd": 0.73,
+      "exitCrowd": 0.62,
+      "resolution": "UP",
+      "stake": 1,
+      "pnl": 0.40740740740740733,
+      "exitReason": "weight-drop"
+    },
+    {
+      "slug": "btc-updown-5m-1777124700",
+      "side": "UP",
+      "entryCrowd": 0.4,
+      "exitCrowd": 0.48,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.1999999999999999,
+      "exitReason": "regime-flip"
+    },
+    {
+      "slug": "btc-updown-5m-1777125300",
+      "side": "DOWN",
+      "entryCrowd": 0.69,
+      "exitCrowd": 0.59,
+      "resolution": "DOWN",
+      "stake": 1,
+      "pnl": 0.3225806451612902,
+      "exitReason": "edge-close"
+    }
+  ]
+}

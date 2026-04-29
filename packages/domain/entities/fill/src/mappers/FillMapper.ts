@@ -57,7 +57,7 @@
  * - `trader_side = "MAKER"`: orderId из `maker_orders` (matched by owner UUID), side инвертирован
  *
  * ### Расчёт комиссии:
- * - TAKER: feeUSDC = C × p × feeRate × (p × (1-p))^exponent (формула Polymarket)
+ * - TAKER: feeUSDC = round5(C × 0.072 × p × (1-p)) для crypto-рынков
  * - MAKER: fee = 0 (мейкеры не платят комиссию на Polymarket)
  *
  * @example

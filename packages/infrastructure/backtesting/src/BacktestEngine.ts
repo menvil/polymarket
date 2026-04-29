@@ -681,11 +681,12 @@ export class BacktestEngine {
             if (!isPrimary && !isComplementary) continue;
 
             if (eventType === 'book') {
-              // Book events — только для основного токена
-              if (!isPrimary) continue;
+              // Book events: всегда для основного токена; для complementary —
+              // только если включён replayComplementary (dual-token стратегии).
+              const targetId = isPrimary ? fileInstrumentId : fileComplementaryId!;
               const result = await this._processBookEvent(
                 raw as unknown as RawBookEvent,
-                fileInstrumentId,
+                targetId,
                 filePath,
               );
               if (result) bookEvents += 1;

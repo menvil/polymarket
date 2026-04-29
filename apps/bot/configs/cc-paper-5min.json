@@ -1,8 +1,9 @@
 {
   "strategy": "calibrated-crowd",
   "strategyParams": {
-    "edgeTablePath": "tables/edge-table-5min.json",
-    "minComposite": 0.3,
+    "edgeTablePath": "tables/edge-table-5min-v9-loose.json",
+    "minComposite": 0.4,
+    "maxPremiumCents": 5,
     "maxPositionFraction": 0.05,
     "maxSharesPerMarket": 5,
     "warmupSec": 15,
@@ -43,7 +44,7 @@
     "accountId": "venue:POLYMARKET:paper-account"
   },
   "recording": {
-    "enabled": false,
+    "enabled": true,
     "outputDir": "./data/paper-recordings",
     "journalDir": "./data/paper-journals",
     "compression": "gzip"

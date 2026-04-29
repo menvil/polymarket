@@ -226,7 +226,7 @@ const CLOSED_MARKETS_TTL_MS = 24 * 60 * 60_000; // 24 часа
  */
 interface PendingEnrichment {
   readonly marketId: MarketId;
-  readonly slug: string;
+  readonly gammaMarketId: string;
   readonly symbol: string;
   readonly question: string;
   readonly startedAt: number;
@@ -261,7 +261,7 @@ async function processEnrichmentQueue(): Promise<void> {
     const elapsed = Date.now() - pe.startedAt;
 
     try {
-      const updatedMarket = await marketDataClient.getMarketInfo(pe.slug);
+      const updatedMarket = await marketDataClient.getMarketInfoById(pe.gammaMarketId);
       if (isShuttingDown) return;
       const updatedCrypto = parseCryptoMeta(updatedMarket as unknown as Record<string, unknown>);
 
@@ -297,7 +297,7 @@ async function processEnrichmentQueue(): Promise<void> {
       }
     } catch (err) {
       logger.debug('Enrichment re-fetch failed (will retry)', {
-        slug: pe.slug,
+        gammaMarketId: pe.gammaMarketId,
         attempt: pe.attempts,
         err: err instanceof Error ? err.message : String(err),
       });
@@ -488,16 +488,16 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
 
   // Крипто-рынок EXPIRED — откладываем finalize до получения priceToBeat.
   // Слот уже освобождён (subscribedMarkets.delete выше) → новые рынки открываются сразу.
-  const slug = (candidate.rawMarket as Record<string, unknown>)?.['slug'] as string | undefined;
-  if (!slug) {
+  const gammaMarketId = (candidate.rawMarket as Record<string, unknown>)?.['id'] as string | undefined;
+  if (!gammaMarketId) {
     await recorder.finalizeMarket(candidate.marketId, reason);
-    logger.info('Market closed (no slug for enrichment)', { marketId: marketKey });
+    logger.info('Market closed (no Gamma market id for enrichment)', { marketId: marketKey });
     return;
   }
 
   pendingEnrichment.set(marketKey, {
     marketId: candidate.marketId,
-    slug,
+    gammaMarketId,
     symbol: closeCryptoMeta.rtdsFilter,
     question: candidate.question,
     startedAt: Date.now(),
@@ -508,7 +508,7 @@ async function closeMarket(candidate: DiscoveredMarket, reason: 'EXPIRED' | 'SHU
   logger.info('Market expired, waiting for priceToBeat enrichment', {
     question: candidate.question,
     marketId: marketKey,
-    slug,
+    gammaMarketId,
   });
 }
 

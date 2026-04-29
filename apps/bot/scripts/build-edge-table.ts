@@ -233,11 +233,11 @@ function parseFeatures(raw: string): FeatureSet {
   return set;
 }
 
-function bucketKey(o: Observation, f: FeatureSet): ZoneKey {
+function bucketKey(o: Observation, f: FeatureSet, dStep = DELTA_STEP, tStep = TAU_STEP): ZoneKey {
   return {
-    delta:  f.delta  ? toBucket(o.delta, DELTA_STEP)          : 0,
-    tau:    f.tau    ? toBucket(o.tauSec, TAU_STEP)           : 0,
-    crowd:  f.crowd  ? toBucket(o.midPriceCents, CROWD_STEP)  : 0,
+    delta:  f.delta  ? toBucket(o.delta, dStep)               : 0,
+    tau:    f.tau    ? toBucket(o.tauSec, tStep)               : 0,
+    crowd:  f.crowd  ? toBucket(o.midPriceCents, CROWD_STEP)   : 0,
     regime: f.regime ? classifyRegime(o.trendSlope, REGIME_THRESHOLD) : 'flat',
   };
 }
@@ -322,6 +322,8 @@ function accumulateMarket(
   countBy: CountBy,
   fillMode: FillMode,
   features: FeatureSet,
+  deltaStep = DELTA_STEP,
+  tauStep = TAU_STEP,
 ): { observations: number; marketZones: number } {
   const perZone = new Map<string, MarketZoneSample>();
   let observations = 0;
@@ -335,7 +337,7 @@ function accumulateMarket(
     if (Math.abs(o.delta) > MAX_DELTA) continue;
     if (o.tauSec > MAX_TAU) continue;
     observations++;
-    const key = bucketKey(o, features);
+    const key = bucketKey(o, features, deltaStep, tauStep);
     const ks = zoneKeyStr(key);
     let sample = perZone.get(ks);
     if (!sample) {
@@ -379,6 +381,8 @@ interface Args {
   strictOos:  boolean;
   looseCi:    boolean;
   features:   FeatureSet;
+  deltaStep:  number;
+  tauStep:    number;
 }
 
 function parseArgs(): Args {
@@ -396,6 +400,8 @@ function parseArgs(): Args {
     strictOos:  false,
     looseCi:    false,
     features:   { delta: true, tau: true, crowd: true, regime: true },
+    deltaStep:  DELTA_STEP,
+    tauStep:    TAU_STEP,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -410,6 +416,8 @@ function parseArgs(): Args {
     else if (a === '--strict-oos') args.strictOos = true;
     else if (a === '--loose-ci')   args.looseCi = true;
     else if (a === '--features')   args.features = parseFeatures(argv[++i]);
+    else if (a === '--delta-step') args.deltaStep = Number(argv[++i]);
+    else if (a === '--tau-step')   args.tauStep   = Number(argv[++i]);
     else if (a === '--count-by') {
       const v = argv[++i];
       if (v !== 'markets' && v !== 'observations') {
@@ -430,6 +438,9 @@ function parseArgs(): Args {
       '  [--no-approx-resolution]',
     );
     process.exit(1);
+  }
+  if (args.fillMode === 'fill-sim' && args.countBy === 'observations') {
+    throw new Error('--count-by observations несовместим с fill-sim: fill-sim всегда считает effective sample по market-zone attempts/fills. Используй --legacy-fill для observation-weighted режима.');
   }
   return args;
 }
@@ -499,7 +510,7 @@ async function main(): Promise<void> {
   const trainMap = new Map<string, Accum>();
   let trainObsUsed = 0, trainMarketZones = 0;
   for (const m of trainMarkets) {
-    const r = accumulateMarket(m, trainMap, args.countBy, args.fillMode, args.features);
+    const r = accumulateMarket(m, trainMap, args.countBy, args.fillMode, args.features, args.deltaStep, args.tauStep);
     trainObsUsed += r.observations;
     trainMarketZones += r.marketZones;
   }
@@ -508,7 +519,7 @@ async function main(): Promise<void> {
   const testMap = new Map<string, Accum>();
   let testObsUsed = 0, testMarketZones = 0;
   for (const m of testMarkets) {
-    const r = accumulateMarket(m, testMap, args.countBy, args.fillMode, args.features);
+    const r = accumulateMarket(m, testMap, args.countBy, args.fillMode, args.features, args.deltaStep, args.tauStep);
     testObsUsed += r.observations;
     testMarketZones += r.marketZones;
   }
@@ -665,7 +676,7 @@ async function main(): Promise<void> {
         if (Math.abs(o.delta) > MAX_DELTA) continue;
         if (o.tauSec > MAX_TAU) continue;
 
-        const ks = zoneKeyStr(bucketKey(o, args.features));
+        const ks = zoneKeyStr(bucketKey(o, args.features, args.deltaStep, args.tauStep));
         const z = zoneLookup.get(ks);
 
         if (!entered) {
@@ -783,7 +794,7 @@ async function main(): Promise<void> {
       fillMode:    args.fillMode,
       strictOos:   args.strictOos,
       features:    args.features,
-      bucketing:   { deltaStep: DELTA_STEP, tauStep: TAU_STEP, crowdStep: CROWD_STEP, regimeThreshold: REGIME_THRESHOLD, maxDelta: MAX_DELTA, maxTau: MAX_TAU },
+      bucketing:   { deltaStep: args.deltaStep, tauStep: args.tauStep, crowdStep: CROWD_STEP, regimeThreshold: REGIME_THRESHOLD, maxDelta: MAX_DELTA, maxTau: MAX_TAU },
       gates:       { minN: args.minN, minEdge: MIN_EDGE, minCiEdge: MIN_CI_EDGE, fracKelly: FRAC_KELLY },
       training:    { marketCount: trainMarkets.length, endDateMaxMs: args.trainUntil, effectiveSamples: [...trainMap.values()].reduce((s, a) => s + a.n, 0), marketZoneSamples: trainMarketZones, observationCount: trainObsUsed },
       validation:  { marketCount: testMarkets.length, method: 'temporal-holdout', effectiveSamples: [...testMap.values()].reduce((s, a) => s + a.n, 0), marketZoneSamples: testMarketZones, observationCount: testObsUsed },

@@ -96,6 +96,12 @@ export interface EdgeTableMeta {
   readonly duration: string;
   readonly token: string;
   readonly sampleMode?: 'markets' | 'observations';
+  readonly features?: {
+    readonly delta?: boolean;
+    readonly tau?: boolean;
+    readonly crowd?: boolean;
+    readonly regime?: boolean;
+  };
   readonly bucketing: {
     readonly deltaStep: number;
     readonly tauStep: number;
@@ -210,11 +216,19 @@ export class EdgeTable {
     if (Math.abs(input.deltaDollars) > maxDelta) return undefined;
     if (input.tauSec < 0 || input.tauSec > maxTau) return undefined;
 
+    // Фичи, использованные при сборке таблицы. Если поле отсутствует — считаем,
+    // что включены все (обратная совместимость со старыми таблицами).
+    const feats = this._meta.features;
+    const useDelta  = feats?.delta  !== false;
+    const useTau    = feats?.tau    !== false;
+    const useCrowd  = feats?.crowd  !== false;
+    const useRegime = feats?.regime !== false;
+
     const key: EdgeZoneKey = {
-      delta:  toBucket(input.deltaDollars, deltaStep),
-      tau:    toBucket(input.tauSec,       tauStep),
-      crowd:  toBucket(input.midCents,     crowdStep),
-      regime: input.regime,
+      delta:  useDelta  ? toBucket(input.deltaDollars, deltaStep) : 0,
+      tau:    useTau    ? toBucket(input.tauSec,       tauStep)   : 0,
+      crowd:  useCrowd  ? toBucket(input.midCents,     crowdStep) : 0,
+      regime: useRegime ? input.regime : ('flat' as Regime),
     };
     return this._zones.get(zoneKeyStr(key));
   }

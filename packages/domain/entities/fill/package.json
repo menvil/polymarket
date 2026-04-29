@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./polymarket-fee": {
+      "types": "./dist/polymarket-fee.d.ts",
+      "import": "./dist/polymarket-fee.js"
     }
   },
   "files": [

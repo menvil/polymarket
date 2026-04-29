@@ -28,22 +28,22 @@
  *   --assets BTC,ETH \
  *   --pairs 5m-15m,5m-hourly
  *
- * # С новой моделью комиссий (после 30 марта):
+ * # Явно выбрать текущую crypto-модель комиссий:
  * npx tsx src/arbitrage/runArbBacktest.ts \
  *   --dir ../../packages/apps/collect-data/snapshots \
  *   --date 2026-03-23 \
- *   --fee-model march30
+ *   --fee-model current
  * ```
  *
  * ### Общие опции:
  * - `--max-depth <N>` — максимальная глубина ордербука (default: 5)
- * - `--fee-model current|march30` — модель комиссий (default: current)
+ * - `--fee-model current|march30` — модель комиссий (default: current; march30 оставлен как alias)
  * - `--min-spread <N>` — минимальный spread после fees (default: 0.005)
  *
  * ### ENV переменные:
  * - `ARB_SNAPSHOT_DIR` — путь к директории снапшотов (альтернатива --dir)
  * - `ARB_MAX_DEPTH` — максимальная глубина ордербука (default: 5)
- * - `ARB_FEE_MODEL` — модель комиссий: 'current' | 'march30' (default: current)
+ * - `ARB_FEE_MODEL` — модель комиссий: 'current' | 'march30' (default: current; march30 оставлен как alias)
  * - `ARB_MIN_SPREAD` — минимальный spread после fees (default: 0.005)
  * - `ARB_ASSETS` — фильтр по активам (comma-separated)
  * - `ARB_PAIRS` — фильтр по типам пар (comma-separated)

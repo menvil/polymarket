@@ -109,12 +109,14 @@ export class DepthAnalyzer {
       const execSize = Math.min(cumHardSize, cumEasySize);
       const costPerUnit = easyVwap + hardDownAsk;
 
-      const feePerUnit = this._feeCalc.pairFee(
+      const totalFee = this._feeCalc.pairFee(
         easyVwap,
         options.easyIsTaker,
         hardDownAsk,
         !options.hardIsMaker,
+        execSize,
       );
+      const feePerUnit = totalFee / execSize;
 
       const pnlPerUnit = 1 - costPerUnit - feePerUnit;
       const totalPnl = pnlPerUnit * execSize;
@@ -192,12 +194,14 @@ export class DepthAnalyzer {
       const costPerUnit = easyDownAsk + hardUpVwap;
 
       // Для DOWN: easy_Down — taker, hard_Up — maker (зеркально UP)
-      const feePerUnit = this._feeCalc.pairFee(
+      const totalFee = this._feeCalc.pairFee(
         easyDownAsk,
         options.easyIsTaker,
         hardUpVwap,
         !options.hardIsMaker,
+        execSize,
       );
+      const feePerUnit = totalFee / execSize;
 
       const pnlPerUnit = 1 - costPerUnit - feePerUnit;
       const totalPnl = pnlPerUnit * execSize;

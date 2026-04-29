@@ -81,6 +81,8 @@ export interface CryptoSignalRequest {
   readonly sources?: readonly CryptoPriceSource[];
   /** Веса бирж для взвешенной агрегации. */
   readonly weights?: Readonly<Record<string, number>>;
+  /** Intercept in USD for offline linear CEX→Chainlink models. */
+  readonly linearInterceptUsd?: number;
   /**
    * Per-venue статический базис в USD, обычно вычисляется офлайн как
    * `median(venueMicroprice - chainlinkPrice)`.
@@ -98,6 +100,8 @@ export interface CryptoSignalRequest {
   readonly staleMs?: number;
   /** Минимальный порог значения для direction != flat (bps). Default: 0.5. */
   readonly thresholdBps?: number;
+  /** Минимум исторических samples на venue для rolling-basis сигналов. Default: 3. */
+  readonly minBasisSamples?: number;
 }
 
 /**
@@ -147,6 +151,8 @@ export type CryptoSignalCalculator = (
  * - **`cex_chainlink_lead_lag`** — комбинированный lead-lag сигнал:
  *   residual (CEX vs Chainlink) + momentum + trade pressure,
  *   взвешенные по quality (возраст, спред).
+ * - **`cex_chainlink_rolling_divergence`** — CEX-vs-Chainlink residual
+ *   после вычитания rolling median basis за `lookbackMs`.
  *
  * @example
  * ```typescript
@@ -228,6 +234,8 @@ export function createDefaultCryptoSignalRegistry(): CryptoSignalRegistry {
   registry.register('cex_weighted_microprice_momentum', weightedMicropriceMomentum);
   registry.register('cex_vs_chainlink_basis', cexVsChainlinkBasis);
   registry.register('cex_chainlink_lead_lag', cexChainlinkLeadLag);
+  registry.register('cex_chainlink_rolling_divergence', cexChainlinkRollingDivergence);
+  registry.register('cex_chainlink_linear_lead_lag', cexChainlinkLinearLeadLag);
   return registry;
 }
 
@@ -495,6 +503,219 @@ function cexChainlinkLeadLag(
 }
 
 /**
+ * Rolling CEX-vs-Chainlink divergence without offline coefficients.
+ *
+ * @remarks
+ * For each venue:
+ * 1. Builds `basis = median(venueMicroprice - chainlinkPrice)` over `lookbackMs`.
+ * 2. Computes current residual after subtracting that basis.
+ * 3. Aggregates venue residuals by median and requires venue agreement.
+ *
+ * This is intended for "CEX оторвался от Chainlink" experiments where the
+ * absolute venue basis changes day to day and should adapt online.
+ */
+function cexChainlinkRollingDivergence(
+  context: CryptoSignalContext,
+  request: CryptoSignalRequest,
+): CryptoSignalResult | undefined {
+  const priceHistory = context.priceHistory;
+  const venueState = context.venueState;
+  if (!priceHistory || !venueState) return undefined;
+
+  const chainlink = priceHistory.getLatest('polymarket_chainlink');
+  if (!chainlink || !Number.isFinite(chainlink.price) || chainlink.price <= 0) return undefined;
+
+  const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
+  const staleMs = request.staleMs ?? 2_000;
+  const lookbackMs = request.lookbackMs ?? 60_000;
+  const thresholdBps = request.thresholdBps ?? 0.5;
+  const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
+  const minBasisSamples = request.minBasisSamples ?? 3;
+  const maxSpreadBps = request.maxSpreadBps ?? 10;
+  const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
+  if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
+
+  const chainlinkHistory = priceHistory.getRecent('polymarket_chainlink', lookbackMs + staleMs);
+  const residualsBps: number[] = [];
+  let lastTsMs = 0;
+  let maxAgeMs = chainlinkAgeMs;
+  let spreadSumBps = 0;
+  let venueCount = 0;
+  let positiveVenues = 0;
+  let negativeVenues = 0;
+  const components: Record<string, number | string | boolean> = {
+    thresholdBps,
+    lookbackMs,
+    minBasisSamples,
+    chainlinkPrice: chainlink.price,
+  };
+
+  for (const venue of venues) {
+    const state = venueState.get(venue);
+    if (!state) continue;
+
+    const ageMs = context.nowMs - state.lastBookTsMs;
+    if (ageMs < 0 || ageMs > staleMs) continue;
+    if (state.spreadBps > maxSpreadBps) continue;
+
+    const venueHistory = priceHistory
+      .getRecent(cexVenueToPriceSource(venue), lookbackMs)
+      .filter((point) => point.exchangeTsMs < state.lastBookTsMs);
+    const basisSamples: number[] = [];
+    for (const point of venueHistory) {
+      const chainlinkAtPoint = nearestPrice(point.exchangeTsMs, chainlinkHistory, staleMs);
+      if (!chainlinkAtPoint) continue;
+      basisSamples.push(point.price - chainlinkAtPoint.price);
+    }
+    if (basisSamples.length < minBasisSamples) continue;
+
+    const basisUsd = medianNumber(basisSamples);
+    const residualUsd = state.microprice - chainlink.price - basisUsd;
+    const residualBps = residualUsd / chainlink.price * 10_000;
+    residualsBps.push(residualBps);
+    if (residualBps >= thresholdBps) positiveVenues++;
+    if (residualBps <= -thresholdBps) negativeVenues++;
+
+    venueCount++;
+    lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    maxAgeMs = Math.max(maxAgeMs, ageMs);
+    spreadSumBps += state.spreadBps;
+    components[`${venue}BasisUsd`] = basisUsd;
+    components[`${venue}ResidualBps`] = residualBps;
+    components[`${venue}BasisSamples`] = basisSamples.length;
+  }
+
+  if (venueCount < minVenueCount || residualsBps.length < minVenueCount) return undefined;
+
+  const valueBpsRaw = medianNumber(residualsBps);
+  const rawDirection: CryptoSignalDirection = Math.abs(valueBpsRaw) < thresholdBps
+    ? 'flat'
+    : valueBpsRaw > 0
+      ? 'up'
+      : 'down';
+  const agreeingVenues = rawDirection === 'up'
+    ? positiveVenues
+    : rawDirection === 'down'
+      ? negativeVenues
+      : 0;
+  const valueBps = rawDirection === 'flat' || agreeingVenues < minVenueCount ? 0 : valueBpsRaw;
+
+  return makeSignalResult({
+    id: 'cex_chainlink_rolling_divergence',
+    asset: context.asset,
+    tsMs: Math.min(lastTsMs, chainlink.exchangeTsMs),
+    value: valueBps,
+    unit: 'bps',
+    thresholdBps,
+    stale: maxAgeMs > staleMs,
+    components: {
+      ...components,
+      venues: venues.join(','),
+      venueCount,
+      minVenueCount,
+      positiveVenues,
+      negativeVenues,
+      agreeingVenues,
+      rawValueBps: valueBpsRaw,
+      maxAgeMs,
+      chainlinkAgeMs,
+      avgSpreadBps: spreadSumBps / venueCount,
+      maxSpreadBps,
+    },
+  });
+}
+
+/**
+ * Offline linear CEX→Chainlink lead-lag model.
+ *
+ * @remarks
+ * Mirrors `scripts/backtest-cex-crowd.ts`: each venue feature is
+ * `venueMicroprice - venueBasis - chainlinkPrice`, then
+ * `predDeltaUsd = intercept + Σ(weight_venue × feature_venue)`.
+ */
+function cexChainlinkLinearLeadLag(
+  context: CryptoSignalContext,
+  request: CryptoSignalRequest,
+): CryptoSignalResult | undefined {
+  const priceHistory = context.priceHistory;
+  const venueState = context.venueState;
+  if (!priceHistory || !venueState) return undefined;
+
+  const chainlink = priceHistory.getLatest('polymarket_chainlink');
+  if (!chainlink || !Number.isFinite(chainlink.price) || chainlink.price <= 0) return undefined;
+
+  const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
+  const staleMs = request.staleMs ?? 2_000;
+  const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
+  if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
+
+  const thresholdBps = request.thresholdBps ?? 0.5;
+  const minVenueCount = request.minVenueCount ?? venues.length;
+  const maxSpreadBps = request.maxSpreadBps ?? 10;
+
+  let predDeltaUsd = request.linearInterceptUsd ?? 0;
+  let venueCount = 0;
+  let lastTsMs = 0;
+  let maxAgeMs = 0;
+  let spreadSumBps = 0;
+  const components: Record<string, number | string | boolean> = {
+    interceptUsd: predDeltaUsd,
+    thresholdBps,
+  };
+
+  for (const venue of venues) {
+    const state = venueState.get(venue);
+    if (!state) continue;
+
+    const ageMs = context.nowMs - state.lastBookTsMs;
+    if (ageMs < 0 || ageMs > staleMs) continue;
+    if (state.spreadBps > maxSpreadBps) continue;
+
+    const coefficient = request.weights?.[venue] ?? 0;
+    if (!Number.isFinite(coefficient)) continue;
+
+    const basisUsd = request.basisByVenue?.[venue] ?? 0;
+    const residualUsd = state.microprice - basisUsd - chainlink.price;
+    predDeltaUsd += coefficient * residualUsd;
+
+    components[`${venue}ResidualUsd`] = residualUsd;
+    components[`${venue}Weight`] = coefficient;
+    components[`${venue}BasisUsd`] = basisUsd;
+
+    venueCount++;
+    lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    maxAgeMs = Math.max(maxAgeMs, ageMs);
+    spreadSumBps += state.spreadBps;
+  }
+
+  if (venueCount < minVenueCount) return undefined;
+
+  const predBps = predDeltaUsd / chainlink.price * 10_000;
+  return makeSignalResult({
+    id: 'cex_chainlink_linear_lead_lag',
+    asset: context.asset,
+    tsMs: Math.min(lastTsMs, chainlink.exchangeTsMs),
+    value: predBps,
+    unit: 'bps',
+    thresholdBps,
+    stale: maxAgeMs > staleMs || chainlinkAgeMs > staleMs,
+    components: {
+      ...components,
+      venues: venues.join(','),
+      venueCount,
+      minVenueCount,
+      chainlinkPrice: chainlink.price,
+      predDeltaUsd,
+      predBps,
+      maxAgeMs,
+      chainlinkAgeMs,
+      avgSpreadBps: spreadSumBps / venueCount,
+      maxSpreadBps,
+    },
+  });
+}
+
+/**
  * Вычисляет взвешенный microprice по набору CEX-бирж.
  *
  * @param venueState - Текущее состояние стаканов
@@ -570,6 +791,32 @@ function makeSignalResult(input: {
     stale: input.stale,
     components: input.components,
   };
+}
+
+function nearestPrice(
+  tsMs: number,
+  points: readonly { readonly price: number; readonly exchangeTsMs: number }[],
+  maxDistanceMs: number,
+): { readonly price: number; readonly exchangeTsMs: number } | undefined {
+  let best: { readonly price: number; readonly exchangeTsMs: number } | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    const distance = Math.abs(point.exchangeTsMs - tsMs);
+    if (distance < bestDistance) {
+      best = point;
+      bestDistance = distance;
+    }
+  }
+  return best && bestDistance <= maxDistanceMs ? best : undefined;
+}
+
+function medianNumber(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 /**
