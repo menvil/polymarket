@@ -1,0 +1,90 @@
+{
+  "strategy": "cex-lead-lag",
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 1,
+    "side": "up",
+    "mode": "skewed",
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "emergencyExitSlippageCents": 1,
+    "maxChaseAboveExitCents": 5,
+    "stopLossCents": 5,
+    "stopLossCooldownMs": 60000,
+    "breakEvenTriggerCents": 6,
+    "breakEvenOffsetCents": 0,
+    "trailingStartMultiplier": 0.7,
+    "minTrailingDistanceCents": 5,
+    "tauTighteningStartSec": 25,
+    "tauTighteningMinMultiplier": 0.8,
+    "trailingExitRatio": 0.5,
+    "signalExitEnabled": true,
+    "signalExitGraceMs": 500,
+    "signalExitMinProfitCents": 2,
+    "signalExitRatio": 0.5,
+    "adverseExitGraceMs": 300,
+    "adverseExitRatio": 1,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minSignalPersistenceMs": 150,
+    "edgeTablePath": "tables/sweep-residual/edge-5min-up-relaxed.json",
+    "edgeRequireZone": false,
+    "edgeMinComposite": 0,
+    "edgeRegimeThresholdPerMin": 10,
+    "edgeRegimeWindowMs": 60000,
+    "edgeRegimeMinPoints": 5
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-25/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  }
+}

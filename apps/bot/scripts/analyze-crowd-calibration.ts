@@ -437,6 +437,11 @@ export interface Observation {
   trendSlope:    number;
   /** Макро-тренд BTC за N-часовое окно. Только если в parseSnapshot передана globalHistory. */
   macroTrend?:   MacroTrend;
+  /**
+   * Знаковый residual (bps): (cexConsensusMid − chainlinkPrice)/chainlinkPrice × 10000.
+   * Только если в parseSnapshot передан `cexConsensusAt`. Иначе undefined.
+   */
+  cexResidualBps?: number;
 }
 
 export type MarketDuration = '5min' | '15min' | 'other';
@@ -524,6 +529,11 @@ export async function parseSnapshot(
     windowMs:      number;
     threshold:     number;
   },
+  /**
+   * Источник CEX-консенсус-мида в $. Если задан — каждое наблюдение получает
+   * `cexResidualBps`; обcеrvations без consensus отбраковываются.
+   */
+  cexConsensusAt?: (tsMs: number) => number | null,
 ): Promise<ParseResult> {
   return new Promise((resolve) => {
     let resolution: 'UP' | 'DOWN' | null = null;
@@ -545,7 +555,13 @@ export async function parseSnapshot(
 
     // Диагностика причин отбраковки в tryEmit. Увеличиваются ТОЛЬКО когда оба стрима
     // уже присутствуют (т.е. логика дошла до проверки tau/desync/mid).
-    const rejectCounts = {
+    const rejectCounts: {
+      before_start:   number;
+      tau_too_large:  number;
+      desync:         number;
+      invalid_mid:    number;
+      no_cex_consensus?: number;
+    } = {
       before_start:   0,
       tau_too_large:  0,
       desync:         0,
@@ -678,12 +694,22 @@ export async function parseSnapshot(
         );
         macroTrend = classifyMacroTrend(macroSlope, macroOpts.threshold);
       }
+      let cexResidualBps: number | undefined;
+      if (cexConsensusAt) {
+        const cexMid = cexConsensusAt(tsMs);
+        if (cexMid === null || lastChainlinkPrice <= 0) {
+          rejectCounts.no_cex_consensus = (rejectCounts.no_cex_consensus ?? 0) + 1;
+          return;
+        }
+        cexResidualBps = (cexMid - lastChainlinkPrice) / lastChainlinkPrice * 10000;
+      }
       observations.push({
         tsMs,
         midPriceCents: mid, spreadCents: spread,
         bestBidCents, bestAskCents,
         delta: lastChainlinkPrice - strikePrice, tauSec, trendSlope,
         macroTrend,
+        cexResidualBps,
       });
     }
 

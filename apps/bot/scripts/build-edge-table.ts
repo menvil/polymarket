@@ -25,12 +25,13 @@
  */
 
 /* eslint-disable no-console */
-import { readdirSync, writeFileSync, mkdirSync } from 'fs';
+import { readdirSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import {
   parseSnapshot, classifyRegime,
   type Observation, type MarketData, type Regime,
 } from './analyze-crowd-calibration';
+import { loadCexCache, makeConsensus, type DayCache, type CexConsensus } from './cex-loader';
 
 // ── Параметры бакетизации ─────────────────────────────────────────────────────
 
@@ -46,25 +47,35 @@ const REGIME_THRESHOLD = 10;
 const MAX_DELTA = 200;
 /** Максимум tau (сек). За пределами — наблюдение не участвует. */
 const MAX_TAU = 300;
+/** Шаг бакета cexResidualBps. */
+const RESIDUAL_STEP = 2;
+/** Максимум |cexResidualBps|. За пределами — outlier, отбраковка. */
+const MAX_RESIDUAL = 30;
+/** Допустимый возраст последнего CEX tick'а (мс). */
+const CEX_STALE_MS = 2000;
 
-// ── Гейты для включения ячейки в таблицу ──────────────────────────────────────
+// ── Гейты для включения ячейки в таблицу (дефолты, перекрываются CLI) ────────
 
 /** Дефолтный минимум effective samples в train-ячейке, чтобы она попала в таблицу. */
 const DEFAULT_MIN_N = 20;
 /** Минимальный CI-edge (pLow − crowd) для включения в торгуемые зоны, д.ед. */
-const MIN_CI_EDGE = 0.02;
+const DEFAULT_MIN_CI_EDGE = 0.02;
 /** Минимальный empirical edge (p_hat − crowd) для торговли. */
-const MIN_EDGE = 0.03;
+const DEFAULT_MIN_EDGE = 0.03;
+/** Минимальный composite weight зоны для появления BUY/SELL (иначе SKIP). */
+const DEFAULT_MIN_COMPOSITE = 0.1;
 /** Размер фракционного Kelly (0.25 = quarter-Kelly). */
 const FRAC_KELLY = 0.25;
 
 // ── Типы таблицы ──────────────────────────────────────────────────────────────
 
 interface ZoneKey {
-  delta:  number;
-  tau:    number;
-  crowd:  number;
-  regime: Regime;
+  delta:    number;
+  tau:      number;
+  crowd:    number;
+  regime:   Regime;
+  /** Bucket по cexResidualBps (целое, шаг RESIDUAL_STEP); 0 если фича выключена. */
+  residual: number;
 }
 
 interface ZoneStats {
@@ -169,7 +180,7 @@ function toBucket(value: number, step: number): number {
 
 /** Строковый ключ для Map по ZoneKey. */
 function zoneKeyStr(k: ZoneKey): string {
-  return `${k.delta}:${k.tau}:${k.crowd}:${k.regime}`;
+  return `${k.delta}:${k.tau}:${k.crowd}:${k.regime}:${k.residual}`;
 }
 
 // ── Аккумулятор ───────────────────────────────────────────────────────────────
@@ -215,16 +226,17 @@ type FillMode = 'fill-sim' | 'legacy';
 
 /** Набор активных фичей бакетизации; выключенная фича схлопывается в константу. */
 interface FeatureSet {
-  delta:  boolean;
-  tau:    boolean;
-  crowd:  boolean;
-  regime: boolean;
+  delta:    boolean;
+  tau:      boolean;
+  crowd:    boolean;
+  regime:   boolean;
+  residual: boolean;
 }
 
 function parseFeatures(raw: string): FeatureSet {
-  const set: FeatureSet = { delta: false, tau: false, crowd: false, regime: false };
+  const set: FeatureSet = { delta: false, tau: false, crowd: false, regime: false, residual: false };
   for (const part of raw.split(',').map(s => s.trim().toLowerCase())) {
-    if (part === 'delta' || part === 'tau' || part === 'crowd' || part === 'regime') {
+    if (part === 'delta' || part === 'tau' || part === 'crowd' || part === 'regime' || part === 'residual') {
       set[part] = true;
     } else if (part !== '') {
       throw new Error(`--features: unknown dimension "${part}"`);
@@ -233,12 +245,32 @@ function parseFeatures(raw: string): FeatureSet {
   return set;
 }
 
-function bucketKey(o: Observation, f: FeatureSet, dStep = DELTA_STEP, tStep = TAU_STEP): ZoneKey {
+/**
+ * Bucket для residual: симметричное округление к ближайшему шагу с отсечкой |x|>MAX_RESIDUAL.
+ * Возвращает `null` если outlier (наблюдение надо отбросить).
+ */
+function residualBucket(bps: number | undefined, step = RESIDUAL_STEP): number | null {
+  if (bps === undefined || !Number.isFinite(bps)) return null;
+  if (Math.abs(bps) > MAX_RESIDUAL) return null;
+  return Math.round(bps / step) * step;
+}
+
+/**
+ * @returns null если активна residual-фича и obs.cexResidualBps вне допустимого диапазона.
+ */
+function bucketKey(o: Observation, f: FeatureSet, dStep = DELTA_STEP, tStep = TAU_STEP): ZoneKey | null {
+  let residual = 0;
+  if (f.residual) {
+    const r = residualBucket(o.cexResidualBps);
+    if (r === null) return null;
+    residual = r;
+  }
   return {
-    delta:  f.delta  ? toBucket(o.delta, dStep)               : 0,
-    tau:    f.tau    ? toBucket(o.tauSec, tStep)               : 0,
-    crowd:  f.crowd  ? toBucket(o.midPriceCents, CROWD_STEP)   : 0,
-    regime: f.regime ? classifyRegime(o.trendSlope, REGIME_THRESHOLD) : 'flat',
+    delta:    f.delta  ? toBucket(o.delta, dStep)               : 0,
+    tau:      f.tau    ? toBucket(o.tauSec, tStep)               : 0,
+    crowd:    f.crowd  ? toBucket(o.midPriceCents, CROWD_STEP)   : 0,
+    regime:   f.regime ? classifyRegime(o.trendSlope, REGIME_THRESHOLD) : 'flat',
+    residual,
   };
 }
 
@@ -336,8 +368,9 @@ function accumulateMarket(
     const o = obs[i];
     if (Math.abs(o.delta) > MAX_DELTA) continue;
     if (o.tauSec > MAX_TAU) continue;
-    observations++;
     const key = bucketKey(o, features, deltaStep, tauStep);
+    if (key === null) continue;
+    observations++;
     const ks = zoneKeyStr(key);
     let sample = perZone.get(ks);
     if (!sample) {
@@ -367,6 +400,8 @@ function accumulateMarket(
 
 // ── Парсинг аргументов ────────────────────────────────────────────────────────
 
+type RunMode = 'collect-raw' | 'apply-gates' | 'full';
+
 interface Args {
   dirs:       string[];
   trainUntil: number;   // epoch ms, наблюдения из рынков c endDateMs <= trainUntil — train
@@ -377,12 +412,20 @@ interface Args {
   countBy:    CountBy;
   fillMode:   FillMode;
   minN:       number;
+  minEdge:       number;
+  minCiEdge:     number;
+  minComposite:  number;
   /** Для fill-sim: требовать прошедший OOS (дропать зоны без oos.passes). */
   strictOos:  boolean;
   looseCi:    boolean;
   features:   FeatureSet;
   deltaStep:  number;
   tauStep:    number;
+  mode:       RunMode;
+  rawIn:      string;
+  rawOut:     string;
+  /** Каталог с CEX-кешами (`<dir>/<YYYY-MM-DD>.json`); требуется при `features.residual`. */
+  cexCacheDir: string;
 }
 
 function parseArgs(): Args {
@@ -397,11 +440,18 @@ function parseArgs(): Args {
     countBy:    'markets',
     fillMode:   'fill-sim',
     minN:       DEFAULT_MIN_N,
+    minEdge:       DEFAULT_MIN_EDGE,
+    minCiEdge:     DEFAULT_MIN_CI_EDGE,
+    minComposite:  DEFAULT_MIN_COMPOSITE,
     strictOos:  false,
     looseCi:    false,
-    features:   { delta: true, tau: true, crowd: true, regime: true },
+    features:   { delta: true, tau: true, crowd: true, regime: true, residual: false },
     deltaStep:  DELTA_STEP,
     tauStep:    TAU_STEP,
+    mode:       'full',
+    rawIn:      '',
+    rawOut:     '',
+    cexCacheDir: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -412,12 +462,19 @@ function parseArgs(): Args {
     else if (a === '--out')        args.outFile    = argv[++i];
     else if (a === '--no-approx-resolution') args.approxRes = false;
     else if (a === '--min-n')      args.minN       = Number(argv[++i]);
+    else if (a === '--min-edge')      args.minEdge      = Number(argv[++i]);
+    else if (a === '--min-ci-edge')   args.minCiEdge    = Number(argv[++i]);
+    else if (a === '--min-composite') args.minComposite = Number(argv[++i]);
     else if (a === '--legacy-fill') args.fillMode = 'legacy';
     else if (a === '--strict-oos') args.strictOos = true;
     else if (a === '--loose-ci')   args.looseCi = true;
     else if (a === '--features')   args.features = parseFeatures(argv[++i]);
     else if (a === '--delta-step') args.deltaStep = Number(argv[++i]);
     else if (a === '--tau-step')   args.tauStep   = Number(argv[++i]);
+    else if (a === '--mode')       args.mode      = argv[++i] as RunMode;
+    else if (a === '--raw-in')     args.rawIn     = argv[++i];
+    else if (a === '--raw-out')    args.rawOut    = argv[++i];
+    else if (a === '--cex-cache-dir') args.cexCacheDir = argv[++i];
     else if (a === '--count-by') {
       const v = argv[++i];
       if (v !== 'markets' && v !== 'observations') {
@@ -426,18 +483,29 @@ function parseArgs(): Args {
       args.countBy = v;
     }
   }
-  if (!args.dirs.length || !args.trainUntil || !args.outFile) {
-    console.error(
-      'Usage: npx tsx scripts/build-edge-table.ts \\\n' +
-      '  --snapshots dir1,dir2,... \\\n' +
-      '  --train-until YYYY-MM-DD \\\n' +
-      '  --asset bitcoin --token up \\\n' +
-      '  --out tables/edge-table-5min.json \\\n' +
-      '  [--min-n 20] \\\n' +
-      '  [--count-by markets|observations] \\\n' +
-      '  [--no-approx-resolution]',
-    );
+  if (args.mode !== 'collect-raw' && args.mode !== 'apply-gates' && args.mode !== 'full') {
+    console.error(`--mode: expected collect-raw|apply-gates|full, got ${args.mode}`);
     process.exit(1);
+  }
+
+  const usage =
+    'Usage:\n' +
+    '  collect-raw: --mode collect-raw --snapshots ... --train-until ... --asset ... --token ... --raw-out file.json\n' +
+    '  apply-gates: --mode apply-gates --raw-in file.json --out tables/foo.json [--min-n N --min-edge E ...]\n' +
+    '  full       : --snapshots ... --train-until ... --asset ... --token ... --out tables/foo.json (default)';
+
+  if (args.mode === 'collect-raw') {
+    if (!args.dirs.length || !args.trainUntil || !args.rawOut) {
+      console.error(usage); process.exit(1);
+    }
+  } else if (args.mode === 'apply-gates') {
+    if (!args.rawIn || !args.outFile) {
+      console.error(usage); process.exit(1);
+    }
+  } else {
+    if (!args.dirs.length || !args.trainUntil || !args.outFile) {
+      console.error(usage); process.exit(1);
+    }
   }
   if (args.fillMode === 'fill-sim' && args.countBy === 'observations') {
     throw new Error('--count-by observations несовместим с fill-sim: fill-sim всегда считает effective sample по market-zone attempts/fills. Используй --legacy-fill для observation-weighted режима.');
@@ -476,37 +544,132 @@ interface TradeLog {
   exitReason:   string;
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Сериализация Accum для raw-cache ──────────────────────────────────────────
 
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const files: string[] = [];
+interface SerializedAccum extends Omit<Accum, 'marketIds'> { marketIds: string[]; }
+
+function accumToJson(a: Accum): SerializedAccum {
+  return { ...a, marketIds: [...a.marketIds] };
+}
+
+function accumFromJson(s: SerializedAccum): Accum {
+  return { ...s, marketIds: new Set(s.marketIds) };
+}
+
+interface RawCache {
+  meta: {
+    asset: string;
+    token: 'up' | 'down';
+    trainUntil: number;
+    countBy: CountBy;
+    fillMode: FillMode;
+    features: FeatureSet;
+    deltaStep: number;
+    tauStep: number;
+    trainMarkets: number;
+    testMarkets: number;
+    trainMarketZones: number;
+    testMarketZones: number;
+    trainObsUsed: number;
+    testObsUsed: number;
+  };
+  trainMap: Record<string, SerializedAccum>;
+  testMap:  Record<string, SerializedAccum>;
+}
+
+function mapToJson(m: Map<string, Accum>): Record<string, SerializedAccum> {
+  const o: Record<string, SerializedAccum> = {};
+  for (const [k, v] of m) o[k] = accumToJson(v);
+  return o;
+}
+
+function mapFromJson(o: Record<string, SerializedAccum>): Map<string, Accum> {
+  const m = new Map<string, Accum>();
+  for (const [k, v] of Object.entries(o)) m.set(k, accumFromJson(v));
+  return m;
+}
+
+interface CollectResult {
+  trainMap: Map<string, Accum>;
+  testMap:  Map<string, Accum>;
+  trainMarkets: MarketData[];
+  testMarkets:  MarketData[];
+  trainMarketZones: number;
+  testMarketZones:  number;
+  trainObsUsed: number;
+  testObsUsed:  number;
+}
+
+/** Извлекает YYYY-MM-DD из пути снапшот-директории (`.../snapshots/2026-04-21[/polymarket]`). */
+function dirToDay(dir: string): string | null {
+  const segs = dir.split('/').filter(Boolean);
+  for (let i = segs.length - 1; i >= 0; i--) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(segs[i])) return segs[i];
+  }
+  return null;
+}
+
+/**
+ * Сборка консенсуса для каждой snapshot-директории. Если cache отсутствует — null
+ * (наблюдения этой директории не получат residual и будут отфильтрованы
+ * `parseSnapshot` при `cexConsensusAt` aktiv).
+ */
+function buildDirConsensusMap(dirs: string[], cexCacheDir: string): Map<string, CexConsensus | null> {
+  const map = new Map<string, CexConsensus | null>();
+  const dayCachePath = (day: string): string => join(cexCacheDir, `${day}.json`);
+  for (const dir of dirs) {
+    const day = dirToDay(dir);
+    if (!day) { map.set(dir, null); continue; }
+    const cachePath = dayCachePath(day);
+    if (!existsSync(cachePath)) { map.set(dir, null); continue; }
+    const cache: DayCache = loadCexCache(cachePath);
+    map.set(dir, makeConsensus([cache], CEX_STALE_MS));
+  }
+  return map;
+}
+
+async function collectRaw(args: Args): Promise<CollectResult> {
+  const files: { path: string; dir: string }[] = [];
   for (const dir of args.dirs) {
     for (const f of readdirSync(dir)) {
       if ((f.endsWith('.jsonl') || f.endsWith('.jsonl.gz')) && f.toLowerCase().includes(args.asset)) {
-        files.push(join(dir, f));
+        files.push({ path: join(dir, f), dir });
       }
     }
   }
   const featsStr = (Object.entries(args.features) as [keyof FeatureSet, boolean][]).filter(([,v])=>v).map(([k])=>k).join('+');
-  console.error(`Found ${files.length} files  |  train-until ${new Date(args.trainUntil).toISOString()}  |  token ${args.token}  |  count-by ${args.countBy}  |  fill-mode ${args.fillMode}  |  strict-oos ${args.strictOos}  |  features ${featsStr}  |  min-n ${args.minN}`);
+  console.error(`Found ${files.length} files  |  train-until ${new Date(args.trainUntil).toISOString()}  |  token ${args.token}  |  count-by ${args.countBy}  |  fill-mode ${args.fillMode}  |  features ${featsStr}`);
 
-  // ── Парсинг всех файлов ────────────────────────────────────────────────────
+  const useCex = args.features.residual;
+  const dirConsensus = useCex
+    ? buildDirConsensusMap(args.dirs, args.cexCacheDir)
+    : new Map<string, CexConsensus | null>();
+  if (useCex) {
+    if (!args.cexCacheDir) {
+      throw new Error('--features residual требует --cex-cache-dir DIR');
+    }
+    const withCache = [...dirConsensus.values()].filter((v) => v !== null).length;
+    console.error(`CEX cache: ${withCache}/${dirConsensus.size} dirs have caches in ${args.cexCacheDir}`);
+  }
+
   const trainMarkets: MarketData[] = [];
   const testMarkets:  MarketData[] = [];
-  let parsed = 0, skipped = 0;
+  let parsed = 0, skipped = 0, skippedNoCex = 0;
   for (const file of files) {
-    const r = await parseSnapshot(file, MAX_TAU, args.token, args.approxRes);
+    const cons = useCex ? dirConsensus.get(file.dir) ?? null : null;
+    if (useCex && !cons) { skipped++; skippedNoCex++; continue; }
+    const consAt = cons ? (ts: number) => cons.consensusAt(ts) : undefined;
+    const r = await parseSnapshot(file.path, MAX_TAU, args.token, args.approxRes, undefined, consAt);
     if (!r.data) { skipped++; continue; }
     const m = r.data;
     if (m.duration !== '5min') { skipped++; continue; }
+    if (m.observations.length === 0) { skipped++; continue; }
     (m.endDateMs <= args.trainUntil ? trainMarkets : testMarkets).push(m);
     parsed++;
     if (parsed % 100 === 0) console.error(`  parsed ${parsed}/${files.length}...`);
   }
-  console.error(`parsed: ${parsed}  skipped: ${skipped}  train: ${trainMarkets.length}  test: ${testMarkets.length}`);
+  console.error(`parsed: ${parsed}  skipped: ${skipped} (no-cex: ${skippedNoCex})  train: ${trainMarkets.length}  test: ${testMarkets.length}`);
 
-  // ── Аккумуляция train по ячейкам ───────────────────────────────────────────
   const trainMap = new Map<string, Accum>();
   let trainObsUsed = 0, trainMarketZones = 0;
   for (const m of trainMarkets) {
@@ -515,7 +678,6 @@ async function main(): Promise<void> {
     trainMarketZones += r.marketZones;
   }
 
-  // ── Аккумуляция test (holdout) ─────────────────────────────────────────────
   const testMap = new Map<string, Accum>();
   let testObsUsed = 0, testMarketZones = 0;
   for (const m of testMarkets) {
@@ -525,6 +687,79 @@ async function main(): Promise<void> {
   }
   console.error(`samples: train effective=${[...trainMap.values()].reduce((s, a) => s + a.n, 0)} market-zones=${trainMarketZones} obs=${trainObsUsed}`);
   console.error(`         test  effective=${[...testMap.values()].reduce((s, a) => s + a.n, 0)} market-zones=${testMarketZones} obs=${testObsUsed}`);
+
+  return { trainMap, testMap, trainMarkets, testMarkets, trainMarketZones, testMarketZones, trainObsUsed, testObsUsed };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const args = parseArgs();
+
+  // ── collect-raw: парс + аккум, дамп в JSON, выход ─────────────────────────
+  if (args.mode === 'collect-raw') {
+    const r = await collectRaw(args);
+    const cache: RawCache = {
+      meta: {
+        asset: args.asset, token: args.token, trainUntil: args.trainUntil,
+        countBy: args.countBy, fillMode: args.fillMode, features: args.features,
+        deltaStep: args.deltaStep, tauStep: args.tauStep,
+        trainMarkets: r.trainMarkets.length, testMarkets: r.testMarkets.length,
+        trainMarketZones: r.trainMarketZones, testMarketZones: r.testMarketZones,
+        trainObsUsed: r.trainObsUsed, testObsUsed: r.testObsUsed,
+      },
+      trainMap: mapToJson(r.trainMap),
+      testMap:  mapToJson(r.testMap),
+    };
+    mkdirSync(dirname(args.rawOut), { recursive: true });
+    writeFileSync(args.rawOut, JSON.stringify(cache));
+    console.error(`Raw cache written: ${args.rawOut}`);
+    return;
+  }
+
+  // ── apply-gates: загрузить кеш, дальше идём в общий путь без simulate ──────
+  let trainMap: Map<string, Accum>;
+  let testMap:  Map<string, Accum>;
+  let trainMarkets: MarketData[] = [];
+  let testMarkets:  MarketData[] = [];
+  let trainMarketZones = 0, testMarketZones = 0;
+  let trainObsUsed = 0, testObsUsed = 0;
+
+  if (args.mode === 'apply-gates') {
+    if (!existsSync(args.rawIn)) {
+      console.error(`raw-in not found: ${args.rawIn}`); process.exit(1);
+    }
+    const cache: RawCache = JSON.parse(readFileSync(args.rawIn, 'utf8'));
+    // Перенести meta-параметры в args, чтобы бакетизация совпадала с raw.
+    args.token     = cache.meta.token;
+    args.asset     = cache.meta.asset;
+    args.trainUntil= cache.meta.trainUntil;
+    args.countBy   = cache.meta.countBy;
+    args.fillMode  = cache.meta.fillMode;
+    args.features  = cache.meta.features;
+    args.deltaStep = cache.meta.deltaStep;
+    args.tauStep   = cache.meta.tauStep;
+    trainMap = mapFromJson(cache.trainMap);
+    testMap  = mapFromJson(cache.testMap);
+    trainMarketZones = cache.meta.trainMarketZones;
+    testMarketZones  = cache.meta.testMarketZones;
+    trainObsUsed = cache.meta.trainObsUsed;
+    testObsUsed  = cache.meta.testObsUsed;
+    // Фейковая длина для meta.training/validation.marketCount.
+    trainMarkets = new Array(cache.meta.trainMarkets);
+    testMarkets  = new Array(cache.meta.testMarkets);
+    console.error(`Loaded raw cache: ${args.rawIn}`);
+    console.error(`  train markets=${cache.meta.trainMarkets} effective=${[...trainMap.values()].reduce((s,a)=>s+a.n,0)}`);
+    console.error(`  test  markets=${cache.meta.testMarkets} effective=${[...testMap.values()].reduce((s,a)=>s+a.n,0)}`);
+    console.error(`  gates: minN=${args.minN} minEdge=${args.minEdge} minCiEdge=${args.minCiEdge} minComposite=${args.minComposite}`);
+  } else {
+    // full
+    const r = await collectRaw(args);
+    trainMap = r.trainMap; testMap = r.testMap;
+    trainMarkets = r.trainMarkets; testMarkets = r.testMarkets;
+    trainMarketZones = r.trainMarketZones; testMarketZones = r.testMarketZones;
+    trainObsUsed = r.trainObsUsed; testObsUsed = r.testObsUsed;
+  }
 
   // ── Построение зон + веса ──────────────────────────────────────────────────
   const zones: Zone[] = [];
@@ -539,8 +774,8 @@ async function main(): Promise<void> {
 
   for (const [ks, acc] of trainMap) {
     if (acc.n < args.minN) continue;
-    const [dS, tS, cS, rS] = ks.split(':');
-    const dtcKey = `${dS}:${tS}:${cS}`;
+    const [dS, tS, cS, rS, residS] = ks.split(':');
+    const dtcKey = `${dS}:${tS}:${cS}:${residS}`;
     const regime = rS as Regime;
     const p = acc.upCount / acc.n;
     const c = avgEntryOrMid(acc);
@@ -552,8 +787,8 @@ async function main(): Promise<void> {
   for (const [ks, acc] of trainMap) {
     if (acc.n < args.minN) continue;
 
-    const [dS, tS, cS, rS] = ks.split(':');
-    const key: ZoneKey = { delta: Number(dS), tau: Number(tS), crowd: Number(cS), regime: rS as Regime };
+    const [dS, tS, cS, rS, residS] = ks.split(':');
+    const key: ZoneKey = { delta: Number(dS), tau: Number(tS), crowd: Number(cS), regime: rS as Regime, residual: Number(residS) };
 
     const pHat    = acc.upCount / acc.n;
     const { low: pLow, high: pHigh } = wilsonCi(acc.upCount, acc.n);
@@ -609,7 +844,7 @@ async function main(): Promise<void> {
     // regimeWeight смысл имеет только если regime активен как фича.
     let regimeWeight = 1;
     if (args.features.regime) {
-      const dtcKey = `${key.delta}:${key.tau}:${key.crowd}`;
+      const dtcKey = `${key.delta}:${key.tau}:${key.crowd}:${key.residual}`;
       const regimes = signIndex.get(dtcKey)!;
       const signs = [...regimes.values()].map(e => Math.sign(e));
       regimeWeight =
@@ -624,11 +859,11 @@ async function main(): Promise<void> {
     // Kelly
     let side: ZoneKelly['side'] = 'NONE';
     let size = 0;
-    // CI-gate: в strict-режиме (по умолчанию) требуем pLow>=entry+MIN_CI_EDGE.
-    // В --loose-ci — требуем только edge≥MIN_EDGE и (опционально) oos.passes.
+    // CI-gate: в strict-режиме (по умолчанию) требуем pLow>=entry+args.minCiEdge.
+    // В --loose-ci — требуем только edge≥args.minEdge и (опционально) oos.passes.
     const looseCi = args.looseCi;
-    const upOk = edge >= MIN_EDGE && (looseCi || (pLow - crowdAvg) >= MIN_CI_EDGE);
-    const downOk = -edge >= MIN_EDGE && (looseCi || (crowdAvg - pHigh) >= MIN_CI_EDGE);
+    const upOk = edge >= args.minEdge && (looseCi || (pLow - crowdAvg) >= args.minCiEdge);
+    const downOk = -edge >= args.minEdge && (looseCi || (crowdAvg - pHigh) >= args.minCiEdge);
     if (upOk) {
       side = 'UP';
       const kellyEdge = looseCi ? edge : (pLow - crowdAvg);
@@ -640,7 +875,7 @@ async function main(): Promise<void> {
     }
     const kelly: ZoneKelly = { side, size: size * composite };
 
-    const signal: Zone['signal'] = side === 'NONE' || composite < 0.1 ? 'SKIP' :
+    const signal: Zone['signal'] = side === 'NONE' || composite < args.minComposite ? 'SKIP' :
       side === 'UP' ? 'BUY' : 'SELL';
 
     zones.push({ key, train, oos, weights, kelly, signal });
@@ -676,7 +911,9 @@ async function main(): Promise<void> {
         if (Math.abs(o.delta) > MAX_DELTA) continue;
         if (o.tauSec > MAX_TAU) continue;
 
-        const ks = zoneKeyStr(bucketKey(o, args.features, args.deltaStep, args.tauStep));
+        const k = bucketKey(o, args.features, args.deltaStep, args.tauStep);
+        if (k === null) continue;
+        const ks = zoneKeyStr(k);
         const z = zoneLookup.get(ks);
 
         if (!entered) {
@@ -778,11 +1015,13 @@ async function main(): Promise<void> {
     };
   }
 
-  const sim = {
+  // В apply-gates мы не имеем наблюдений testMarkets — пропускаем симуляцию.
+  const canSimulate = args.mode !== 'apply-gates';
+  const sim = canSimulate ? {
     hold: simulate('hold'),
     risk: simulate('risk'),
     full: simulate('full'),
-  };
+  } : null;
 
   // ── Сборка JSON ────────────────────────────────────────────────────────────
   const out = {
@@ -794,17 +1033,17 @@ async function main(): Promise<void> {
       fillMode:    args.fillMode,
       strictOos:   args.strictOos,
       features:    args.features,
-      bucketing:   { deltaStep: args.deltaStep, tauStep: args.tauStep, crowdStep: CROWD_STEP, regimeThreshold: REGIME_THRESHOLD, maxDelta: MAX_DELTA, maxTau: MAX_TAU },
-      gates:       { minN: args.minN, minEdge: MIN_EDGE, minCiEdge: MIN_CI_EDGE, fracKelly: FRAC_KELLY },
+      bucketing:   { deltaStep: args.deltaStep, tauStep: args.tauStep, crowdStep: CROWD_STEP, regimeThreshold: REGIME_THRESHOLD, maxDelta: MAX_DELTA, maxTau: MAX_TAU, residualStep: RESIDUAL_STEP, maxResidual: MAX_RESIDUAL },
+      gates:       { minN: args.minN, minEdge: args.minEdge, minCiEdge: args.minCiEdge, minComposite: args.minComposite, fracKelly: FRAC_KELLY },
       training:    { marketCount: trainMarkets.length, endDateMaxMs: args.trainUntil, effectiveSamples: [...trainMap.values()].reduce((s, a) => s + a.n, 0), marketZoneSamples: trainMarketZones, observationCount: trainObsUsed },
       validation:  { marketCount: testMarkets.length, method: 'temporal-holdout', effectiveSamples: [...testMap.values()].reduce((s, a) => s + a.n, 0), marketZoneSamples: testMarketZones, observationCount: testObsUsed },
     },
     zones,
-    backtest: {
+    backtest: sim ? {
       hold: sim.hold.result,
       risk: sim.risk.result,
       full: sim.full.result,
-    },
+    } : null,
   };
 
   const outFile = args.outFile;
@@ -812,12 +1051,13 @@ async function main(): Promise<void> {
   writeFileSync(outFile, JSON.stringify(out, null, 2));
   console.error(`\nJSON written: ${outFile}`);
 
-  // Пишем trade-logs рядом для глубокой отладки.
-  const tradesFile = outFile.replace(/\.json$/, '-trades.json');
-  writeFileSync(tradesFile, JSON.stringify({
-    hold: sim.hold.trades, risk: sim.risk.trades, full: sim.full.trades,
-  }, null, 2));
-  console.error(`Trades: ${tradesFile}`);
+  if (sim) {
+    const tradesFile = outFile.replace(/\.json$/, '-trades.json');
+    writeFileSync(tradesFile, JSON.stringify({
+      hold: sim.hold.trades, risk: sim.risk.trades, full: sim.full.trades,
+    }, null, 2));
+    console.error(`Trades: ${tradesFile}`);
+  }
 
   // ── Сводка ─────────────────────────────────────────────────────────────────
   console.error('');
@@ -825,14 +1065,16 @@ async function main(): Promise<void> {
   console.error(`  BUY signals:  ${zones.filter(z => z.signal === 'BUY').length}`);
   console.error(`  SELL signals: ${zones.filter(z => z.signal === 'SELL').length}`);
   console.error(`  SKIP:         ${zones.filter(z => z.signal === 'SKIP').length}`);
-  console.error('');
-  console.error(`Backtest on holdout (${testMarkets.length} markets, stake=1):`);
-  for (const p of ['hold', 'risk', 'full'] as const) {
-    const r = sim[p].result;
-    console.error(
-      `  ${p.padEnd(5)} trades=${String(r.trades).padEnd(4)} WR=${(r.winRate * 100).toFixed(1)}%  ` +
-      `avgPnL=${(r.avgPnLPerTrade * 100).toFixed(2)}%  totalPnL=${r.totalPnL.toFixed(2)}  maxDD=${r.maxDrawdown.toFixed(2)}`,
-    );
+  if (sim) {
+    console.error('');
+    console.error(`Backtest on holdout (${testMarkets.length} markets, stake=1):`);
+    for (const p of ['hold', 'risk', 'full'] as const) {
+      const r = sim[p].result;
+      console.error(
+        `  ${p.padEnd(5)} trades=${String(r.trades).padEnd(4)} WR=${(r.winRate * 100).toFixed(1)}%  ` +
+        `avgPnL=${(r.avgPnLPerTrade * 100).toFixed(2)}%  totalPnL=${r.totalPnL.toFixed(2)}  maxDD=${r.maxDrawdown.toFixed(2)}`,
+      );
+    }
   }
 }
 

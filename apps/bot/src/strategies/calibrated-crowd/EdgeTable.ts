@@ -42,6 +42,7 @@ export interface EdgeZoneKey {
   readonly tau: number;
   readonly crowd: number;
   readonly regime: Regime;
+  readonly residual?: number;
 }
 
 export interface EdgeZoneTrain {
@@ -101,6 +102,7 @@ export interface EdgeTableMeta {
     readonly tau?: boolean;
     readonly crowd?: boolean;
     readonly regime?: boolean;
+    readonly residual?: boolean;
   };
   readonly bucketing: {
     readonly deltaStep: number;
@@ -109,6 +111,8 @@ export interface EdgeTableMeta {
     readonly regimeThreshold: number;
     readonly maxDelta: number;
     readonly maxTau: number;
+    readonly residualStep?: number;
+    readonly maxResidual?: number;
   };
   readonly gates: {
     readonly minN: number;
@@ -152,6 +156,8 @@ export interface EdgeLookupInput {
   readonly tauSec: number;
   readonly midCents: number;
   readonly regime: Regime;
+  /** Знаковый CEX residual в bps (для таблиц с residual-фичей). */
+  readonly residualBps?: number;
 }
 
 // ── Реализация ────────────────────────────────────────────────────────────────
@@ -164,9 +170,21 @@ function toBucket(value: number, step: number): number {
   return Math.floor(value / step) * step;
 }
 
+/**
+ * Симметричное округление residual к ближайшему шагу (mirror `residualBucket()` из генератора).
+ * Возвращает null, если |bps|>maxResidual.
+ */
+function residualBucketLookup(bps: number, step: number, maxAbs: number): number | null {
+  if (!Number.isFinite(bps)) return null;
+  if (Math.abs(bps) > maxAbs) return null;
+  return Math.round(bps / step) * step;
+}
+
 /** Строковый ключ Map: совпадает с `zoneKeyStr()` из генератора. */
 function zoneKeyStr(k: EdgeZoneKey): string {
-  return `${k.delta}:${k.tau}:${k.crowd}:${k.regime}`;
+  return k.residual !== undefined
+    ? `${k.delta}:${k.tau}:${k.crowd}:${k.regime}:${k.residual}`
+    : `${k.delta}:${k.tau}:${k.crowd}:${k.regime}`;
 }
 
 export class EdgeTable {
@@ -210,7 +228,7 @@ export class EdgeTable {
    * @returns Зону если найдена, иначе `undefined` (неизвестный бакет → SKIP)
    */
   lookup(input: EdgeLookupInput): EdgeZone | undefined {
-    const { deltaStep, tauStep, crowdStep, maxDelta, maxTau } = this._meta.bucketing;
+    const { deltaStep, tauStep, crowdStep, maxDelta, maxTau, residualStep, maxResidual } = this._meta.bucketing;
 
     // За пределами покрытой сетки — SKIP (по договорённости: strict skip при нехватке данных).
     if (Math.abs(input.deltaDollars) > maxDelta) return undefined;
@@ -219,10 +237,11 @@ export class EdgeTable {
     // Фичи, использованные при сборке таблицы. Если поле отсутствует — считаем,
     // что включены все (обратная совместимость со старыми таблицами).
     const feats = this._meta.features;
-    const useDelta  = feats?.delta  !== false;
-    const useTau    = feats?.tau    !== false;
-    const useCrowd  = feats?.crowd  !== false;
-    const useRegime = feats?.regime !== false;
+    const useDelta    = feats?.delta    !== false;
+    const useTau      = feats?.tau      !== false;
+    const useCrowd    = feats?.crowd    !== false;
+    const useRegime   = feats?.regime   !== false;
+    const useResidual = feats?.residual === true;
 
     const key: EdgeZoneKey = {
       delta:  useDelta  ? toBucket(input.deltaDollars, deltaStep) : 0,
@@ -230,6 +249,14 @@ export class EdgeTable {
       crowd:  useCrowd  ? toBucket(input.midCents,     crowdStep) : 0,
       regime: useRegime ? input.regime : ('flat' as Regime),
     };
+    if (useResidual) {
+      if (input.residualBps === undefined) return undefined;
+      const step = residualStep ?? 2;
+      const maxAbs = maxResidual ?? 30;
+      const r = residualBucketLookup(input.residualBps, step, maxAbs);
+      if (r === null) return undefined;
+      (key as { residual: number }).residual = r;
+    }
     return this._zones.get(zoneKeyStr(key));
   }
 }

@@ -188,6 +188,9 @@ export class PolymarketMarketDataRestClient {
     let offset = 0;
     const limit = 500;
     const maxPages = this.config.maxPages;
+    // end_date_max API param causes HTTP 500 for all formats — filter client-side instead.
+    // Since results are sorted by endDate ascending, we stop as soon as we pass the cutoff.
+    const endDateCutoffMs = Date.now() + 2 * 24 * 60 * 60 * 1000;
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -197,11 +200,8 @@ export class PolymarketMarketDataRestClient {
         url.searchParams.set('closed', 'false');
         url.searchParams.set('limit', limit.toString());
         url.searchParams.set('offset', offset.toString());
-        url.searchParams.set('order', 'endDate'); // Сортировка по дате окончания
-        url.searchParams.set('ascending', 'true'); // По возрастанию (ближайшие первыми)
-        // Ограничиваем 2 днями — отсекаем долгосрочные рынки на стороне API
-        const endDateMax = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
-        url.searchParams.set('end_date_max', endDateMax);
+        url.searchParams.set('order', 'endDate');
+        url.searchParams.set('ascending', 'true');
 
         let batch: GammaMarketDto[];
         try {
@@ -224,6 +224,22 @@ export class PolymarketMarketDataRestClient {
         }
 
         if (batch.length === 0) {
+          break;
+        }
+
+        // Отсекаем рынки за пределами cutoff и останавливаем пагинацию.
+        // endDate отсортирован по возрастанию, поэтому первый рынок за cutoff
+        // означает, что все следующие страницы тоже выходят за него.
+        const lastEndDateMs = batch.length > 0 ? Date.parse(batch[batch.length - 1].endDate) : 0;
+        if (lastEndDateMs > endDateCutoffMs) {
+          const withinCutoff = batch.filter((m) => Date.parse(m.endDate) <= endDateCutoffMs);
+          allMarkets.push(...withinCutoff);
+          this.logger.debug('[Gamma API] Reached endDate cutoff, stopping pagination early', {
+            page,
+            batchSize: batch.length,
+            withinCutoff: withinCutoff.length,
+            cutoffIso: new Date(endDateCutoffMs).toISOString(),
+          });
           break;
         }
 

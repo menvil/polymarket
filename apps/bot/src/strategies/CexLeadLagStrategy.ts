@@ -1144,6 +1144,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         tauSec,
         midCents,
         regime,
+        // Raw signed residual (CEX − Chainlink) bps — совпадает с конвенцией build-edge-table.
+        residualBps: residualBpsRaw,
       });
       if (!zone) {
         if (this._edgeRequireZone) {
