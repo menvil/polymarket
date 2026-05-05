@@ -15,7 +15,7 @@
     "postOnly": true
   },
   "account": {
-    "accountId": "venue:POLYMARKET:paper-account-cll"
+    "accountId": "venue:POLYMARKET:live"
   },
   "strategyParams": {
     "orderSize": 5,
@@ -74,13 +74,13 @@
   },
   "recording": {
     "enabled": true,
-    "outputDir": "./data/paper-recordings-cll",
-    "journalDir": "./data/paper-journals-cll",
+    "outputDir": "./data/live-recordings-cll",
+    "journalDir": "./data/journals",
     "compression": "gzip"
   },
   "cex": {
     "enabled": true,
-    "outputDir": "./data/paper-recordings-cll/cex",
+    "outputDir": "./data/live-recordings-cll/cex",
     "compression": "gzip",
     "windowMinutes": 5,
     "bufferSize": 200,

@@ -1,9 +1,8 @@
 {
   "strategy": "cex-lead-lag",
   "strategyParams": {
-    "orderSize": 10,
+    "orderSize": 5,
     "qMax": 1,
-    "side": "up",
     "mode": "skewed",
     "venues": ["binance", "coinbase", "okx"],
     "signalThresholdBps": 0.5,
@@ -56,18 +55,14 @@
       "maxDurationMinutes": 6
     },
     "scanPauseMs": 30000,
-    "outcomeIndex": 0
+    "outcomeIndex": 0,
+    "bidirectional": true
   },
   "resources": {
     "initialBalance": 100,
     "maxConcurrentMarkets": 1,
     "minCapitalPerMarket": 1,
     "tradingBalanceRatio": 1.0
-  },
-  "paper": {
-    "fillOnBookCrossing": true,
-    "fillOnTape": true,
-    "fillAtOrderPrice": true
   },
   "account": {
     "accountId": "venue:POLYMARKET:live"

@@ -479,12 +479,14 @@ async function runPaper(): Promise<void> {
   const placeholderMarketId = firstSlot?.marketId ?? asMarketId('0x0000000000000000000000000000000000000000000000000000000000000001')!;
   const placeholderAsset = firstSlot?.asset ?? asPolymarketCtfToken('1')!;
 
-  logger.info('Bot starting in paper mode', {
+  logger.info('Bot starting', {
+    mode: 'paper',
     strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
     ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     marketId: firstSlot ? String(firstSlot.marketId) : '(arb: deferred)',
     maxConcurrentMarkets,
     initialBalance: config.resources.initialBalance,
+    account: config.account.accountId,
   });
 
   const repos = buildRepositories();
@@ -2898,6 +2900,7 @@ async function runLive(): Promise<void> {
     apiKey,
     apiSecret,
     apiPassphrase,
+    builderCode: process.env['BUILDER_CODE'] || undefined,
   };
 
   // ── Core infra ───────────────────────────────────────────────────────────
@@ -3081,11 +3084,13 @@ async function runLive(): Promise<void> {
   }
 
   const firstSlot = initialSlots.values().next().value;
-  logger.info('Bot starting in live mode', {
+  logger.info('Bot starting', {
+    mode: 'live',
     strategy: config.strategyRules?.length ? 'multi-strategy' : config.strategy,
     ...(config.strategyRules?.length ? { rules: config.strategyRules.map(r => r.label) } : {}),
     marketId: firstSlot ? String(firstSlot.marketId) : '(discovery: deferred)',
     maxConcurrentMarkets,
+    account: config.account.accountId,
     funderAddress: credentials.funderAddress ?? '(signer)',
   });
 

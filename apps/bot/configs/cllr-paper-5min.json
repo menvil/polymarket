@@ -15,7 +15,7 @@
     "postOnly": true
   },
   "account": {
-    "accountId": "venue:POLYMARKET:paper-account-cll"
+    "accountId": "venue:POLYMARKET:paper-account-cllr"
   },
   "strategyParams": {
     "orderSize": 5,
@@ -59,7 +59,13 @@
     "minTradesForMid": 3,
     "exitTauSec": 20,
     "maxEntryTauSec": 300,
-    "minSignalPersistenceMs": 150
+    "minSignalPersistenceMs": 150,
+    "edgeTablePath": "tables/sweep-residual/edge-5min-up-relaxed.json",
+    "edgeRequireZone": false,
+    "edgeMinComposite": 0,
+    "edgeRegimeThresholdPerMin": 10,
+    "edgeRegimeWindowMs": 60000,
+    "edgeRegimeMinPoints": 5
   },
   "market": {
     "source": "discovery",
@@ -74,13 +80,13 @@
   },
   "recording": {
     "enabled": true,
-    "outputDir": "./data/paper-recordings-cll",
-    "journalDir": "./data/paper-journals-cll",
+    "outputDir": "./data/paper-recordings-cllr",
+    "journalDir": "./data/paper-journals-cllr",
     "compression": "gzip"
   },
   "cex": {
     "enabled": true,
-    "outputDir": "./data/paper-recordings-cll/cex",
+    "outputDir": "./data/paper-recordings-cllr/cex",
     "compression": "gzip",
     "windowMinutes": 5,
     "bufferSize": 200,

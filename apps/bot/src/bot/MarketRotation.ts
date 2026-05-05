@@ -308,6 +308,7 @@ export class MarketRotation {
   private _rotationInProgress = false;
   private _expiryCheckIntervalId: ReturnType<typeof setInterval> | null = null;
   private _scanTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private _sessionStats = { wins: 0, losses: 0, pnl: new Decimal(0) };
 
   constructor(deps: MarketRotationDeps) {
     this._deps = deps;
@@ -1344,6 +1345,18 @@ export class MarketRotation {
     const portfolio = portfolioStore.get(accountId);
     const position = portfolio?.getPosition(slot.instrumentId);
 
+    // Обновляем статистику сессии
+    this._sessionStats.pnl = this._sessionStats.pnl.plus(totalPnl);
+    if (totalPnl.gt(0)) {
+      this._sessionStats.wins++;
+    } else {
+      this._sessionStats.losses++;
+    }
+    const sessionTotal = this._sessionStats.wins + this._sessionStats.losses;
+    const sessionWr = sessionTotal > 0
+      ? ((this._sessionStats.wins / sessionTotal) * 100).toFixed(0)
+      : '0';
+
     logger.warn('=== Market summary ===', {
       market: marketQuestion,
       duration: `${durMin}m${durSec}s`,
@@ -1356,6 +1369,7 @@ export class MarketRotation {
       finalTokens: position?.quantity.value().toFixed(2) ?? '0.00',
       finalUsdcFree: portfolio?.balance.available().value().toFixed(2) ?? '-',
       finalUsdcReserved: portfolio?.balance.reserved().value().toFixed(2) ?? '-',
+      session: `W${this._sessionStats.wins}/L${this._sessionStats.losses} WR=${sessionWr}% PnL=${(this._sessionStats.pnl.gte(0) ? '+' : '') + this._sessionStats.pnl.toFixed(4)} USDC`,
     });
   }
 }
