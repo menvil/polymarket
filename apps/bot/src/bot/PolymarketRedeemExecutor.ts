@@ -6,11 +6,23 @@ import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { polygon } from 'viem/chains';
 
-/** Адрес CTF контракта на Polygon */
+/** Адрес Gnosis ConditionalTokens (CTF ERC1155) на Polygon — не менялся в V2 */
 export const CTF_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 
-/** Адрес USDC.e (Bridged USDC) на Polygon */
+/** Адрес pUSD (Polymarket USD, proxy) на Polygon — залоговый токен CLOB V2, заменяет USDC.e */
+export const PUSD_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
+
+/** @deprecated USDC.e заменён на pUSD в CLOB V2. Используй PUSD_ADDRESS. */
 export const USDC_E_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+
+/** Адрес CTF Exchange V2 на Polygon (ордербук, не redeem) */
+export const CTF_EXCHANGE_V2_ADDRESS = '0xE111180000d2663C0091e4f400237545B87B996B';
+
+/** Адрес Neg Risk CTF Exchange V2 на Polygon (ордербук, не redeem) */
+export const NEG_RISK_CTF_EXCHANGE_V2_ADDRESS = '0xe2222d279d744050d28e00520010520000310F59';
+
+/** Адрес CollateralOnramp V2 — используется для wrap() USDC → pUSD */
+export const COLLATERAL_ONRAMP_ADDRESS = '0x93070a847efEf7F70739046A929D47a521F5B8ee';
 
 /** Data API для получения redeemable позиций */
 export const DATA_API_HOST = 'https://data-api.polymarket.com';
@@ -112,6 +124,37 @@ export class PolymarketRedeemExecutor {
     }, logger);
   }
 
+  /**
+   * Определяет залоговый токен для redemption: pUSD (V2) или USDC.e (V1).
+   *
+   * Алгоритм:
+   * 1. Пробуем estimateGas с pUSD (новый V2 токен).
+   * 2. Если revert — возвращаем USDC.e (старый V1 токен).
+   * 3. Если успех — возвращаем pUSD.
+   *
+   * @param conditionId - Идентификатор условия CTF
+   * @returns Адрес залогового токена (pUSD или USDC.e)
+   */
+  private async _resolveCollateralToken(conditionId: string): Promise<string> {
+    const calldataPusd = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
+      PUSD_ADDRESS,
+      ethers.ZeroHash,
+      conditionId,
+      [1, 2],
+    ]);
+
+    try {
+      await this._provider.estimateGas({
+        to: CTF_ADDRESS,
+        data: calldataPusd,
+        from: this._funderAddress,
+      });
+      return PUSD_ADDRESS;
+    } catch {
+      return USDC_E_ADDRESS;
+    }
+  }
+
   public async getRedeemablePositions(): Promise<DataApiPosition[]> {
     const url = `${DATA_API_HOST}/positions?user=${this._funderAddress}`;
     const res = await fetch(url);
@@ -131,8 +174,16 @@ export class PolymarketRedeemExecutor {
     options: { metadataPrefix?: string; skipOraclePrecheck?: boolean } = {},
   ): Promise<RedeemResult> {
     const { metadataPrefix = 'Redeem', skipOraclePrecheck = false } = options;
+
+    // V2 позиции используют pUSD, V1 — USDC.e. Пробуем оба токена через estimateGas.
+    const collateralToken = await this._resolveCollateralToken(conditionId);
+    this._logger.debug('Resolved collateral token for redeem', {
+      conditionId: conditionId.slice(0, 20),
+      collateral: collateralToken === PUSD_ADDRESS ? 'pUSD (V2)' : 'USDC.e (V1)',
+    });
+
     const calldata = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
-      USDC_E_ADDRESS,
+      collateralToken,
       ethers.ZeroHash,
       conditionId,
       [1, 2],

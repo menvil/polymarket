@@ -1284,12 +1284,20 @@ export class MarketRotation {
     }
     slot.directPartialAccum.clear();
 
+    const sessionTotal = this._sessionStats.wins + this._sessionStats.losses;
+    const sessionWr = sessionTotal > 0
+      ? ((this._sessionStats.wins / sessionTotal) * 100).toFixed(0)
+      : '0';
+    const sessionStr = () =>
+      `W${this._sessionStats.wins}/L${this._sessionStats.losses} WR=${sessionWr}% PnL=${(this._sessionStats.pnl.gte(0) ? '+' : '') + this._sessionStats.pnl.toFixed(4)} USDC`;
+
     if (slot.fillHistory.length === 0) {
       const noFillPortfolio = portfolioStore.get(accountId);
       logger.info('=== Market summary: no fills ===', {
         market: marketQuestion,
         usdcFree: noFillPortfolio?.balance.available().value().toFixed(2) ?? '-',
         usdcReserved: noFillPortfolio?.balance.reserved().value().toFixed(2) ?? '-',
+        session: sessionStr(),
       });
       return;
     }
@@ -1352,10 +1360,6 @@ export class MarketRotation {
     } else {
       this._sessionStats.losses++;
     }
-    const sessionTotal = this._sessionStats.wins + this._sessionStats.losses;
-    const sessionWr = sessionTotal > 0
-      ? ((this._sessionStats.wins / sessionTotal) * 100).toFixed(0)
-      : '0';
 
     logger.warn('=== Market summary ===', {
       market: marketQuestion,
@@ -1369,7 +1373,7 @@ export class MarketRotation {
       finalTokens: position?.quantity.value().toFixed(2) ?? '0.00',
       finalUsdcFree: portfolio?.balance.available().value().toFixed(2) ?? '-',
       finalUsdcReserved: portfolio?.balance.reserved().value().toFixed(2) ?? '-',
-      session: `W${this._sessionStats.wins}/L${this._sessionStats.losses} WR=${sessionWr}% PnL=${(this._sessionStats.pnl.gte(0) ? '+' : '') + this._sessionStats.pnl.toFixed(4)} USDC`,
+      session: sessionStr(),
     });
   }
 }
