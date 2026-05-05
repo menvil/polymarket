@@ -9,11 +9,8 @@ import { polygon } from 'viem/chains';
 /** Адрес Gnosis ConditionalTokens (CTF ERC1155) на Polygon — не менялся в V2 */
 export const CTF_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 
-/** Адрес pUSD (Polymarket USD, proxy) на Polygon — залоговый токен CLOB V2, заменяет USDC.e */
+/** Адрес pUSD (Polymarket USD, proxy) на Polygon — залоговый токен CLOB V2 */
 export const PUSD_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
-
-/** @deprecated USDC.e заменён на pUSD в CLOB V2. Используй PUSD_ADDRESS. */
-export const USDC_E_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 
 /** Адрес CTF Exchange V2 на Polygon (ордербук, не redeem) */
 export const CTF_EXCHANGE_V2_ADDRESS = '0xE111180000d2663C0091e4f400237545B87B996B';
@@ -125,36 +122,17 @@ export class PolymarketRedeemExecutor {
   }
 
   /**
-   * Определяет залоговый токен для redemption: pUSD (V2) или USDC.e (V1).
+   * Возвращает все redeemable позиции для funderAddress из Data API.
    *
-   * Алгоритм:
-   * 1. Пробуем estimateGas с pUSD (новый V2 токен).
-   * 2. Если revert — возвращаем USDC.e (старый V1 токен).
-   * 3. Если успех — возвращаем pUSD.
+   * @returns Список позиций с redeemable=true и size>0
+   * @throws {Error} При HTTP-ошибке от Data API
    *
-   * @param conditionId - Идентификатор условия CTF
-   * @returns Адрес залогового токена (pUSD или USDC.e)
+   * @example
+   * ```typescript
+   * const positions = await executor.getRedeemablePositions();
+   * for (const p of positions) await executor.redeem(p.conditionId);
+   * ```
    */
-  private async _resolveCollateralToken(conditionId: string): Promise<string> {
-    const calldataPusd = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
-      PUSD_ADDRESS,
-      ethers.ZeroHash,
-      conditionId,
-      [1, 2],
-    ]);
-
-    try {
-      await this._provider.estimateGas({
-        to: CTF_ADDRESS,
-        data: calldataPusd,
-        from: this._funderAddress,
-      });
-      return PUSD_ADDRESS;
-    } catch {
-      return USDC_E_ADDRESS;
-    }
-  }
-
   public async getRedeemablePositions(): Promise<DataApiPosition[]> {
     const url = `${DATA_API_HOST}/positions?user=${this._funderAddress}`;
     const res = await fetch(url);
@@ -169,21 +147,33 @@ export class PolymarketRedeemExecutor {
     return positions.filter((p) => p.redeemable === true && p.size > 0);
   }
 
+  /**
+   * Выполняет redeemPositions на CTF через relayer для указанного conditionId.
+   *
+   * Алгоритм:
+   * 1. Кодируем calldata redeemPositions с pUSD (V2 collateral).
+   * 2. Опционально проверяем готовность оракула через estimateGas.
+   * 3. Отправляем транзакцию через relayer и ждём receipt.
+   *
+   * @param conditionId - Идентификатор условия CTF (bytes32 hex)
+   * @param options.metadataPrefix - Префикс для metadata relayer-транзакции (default: 'Redeem')
+   * @param options.skipOraclePrecheck - Пропустить проверку готовности оракула (default: false)
+   * @returns RedeemResult с success, txHash и опциональным error
+   *
+   * @example
+   * ```typescript
+   * const result = await executor.redeem('0xabc...', { metadataPrefix: 'AutoRedeem' });
+   * if (result.success) console.log('redeemed', result.txHash);
+   * ```
+   */
   public async redeem(
     conditionId: string,
     options: { metadataPrefix?: string; skipOraclePrecheck?: boolean } = {},
   ): Promise<RedeemResult> {
     const { metadataPrefix = 'Redeem', skipOraclePrecheck = false } = options;
 
-    // V2 позиции используют pUSD, V1 — USDC.e. Пробуем оба токена через estimateGas.
-    const collateralToken = await this._resolveCollateralToken(conditionId);
-    this._logger.debug('Resolved collateral token for redeem', {
-      conditionId: conditionId.slice(0, 20),
-      collateral: collateralToken === PUSD_ADDRESS ? 'pUSD (V2)' : 'USDC.e (V1)',
-    });
-
     const calldata = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
-      collateralToken,
+      PUSD_ADDRESS,
       ethers.ZeroHash,
       conditionId,
       [1, 2],
