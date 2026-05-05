@@ -12,6 +12,9 @@ export const CTF_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 /** Адрес pUSD (Polymarket USD, proxy) на Polygon — залоговый токен CLOB V2 */
 export const PUSD_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 
+/** @deprecated USDC.e — коллатерал V1 позиций, минтованных до миграции на pUSD */
+export const USDC_E_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+
 /** Адрес CTF Exchange V2 на Polygon (ордербук, не redeem) */
 export const CTF_EXCHANGE_V2_ADDRESS = '0xE111180000d2663C0091e4f400237545B87B996B';
 
@@ -30,9 +33,12 @@ export const DEFAULT_POLYGON_RPC = 'https://polygon-bor-rpc.publicnode.com';
 /** Сообщение об ошибке оракула CTF */
 const ORACLE_NOT_READY_MSG = 'result for condition not received yet';
 
-/** ABI для redeemPositions */
+/** ABI для redeemPositions, getCollectionId, getPositionId и balanceOf */
 const CTF_INTERFACE = new ethers.Interface([
   'function redeemPositions(address collateralToken, bytes32 parentCollectionId, bytes32 conditionId, uint256[] indexSets)',
+  'function getCollectionId(bytes32 parentCollectionId, bytes32 conditionId, uint256 indexSet) view returns (bytes32)',
+  'function getPositionId(address collateralToken, bytes32 collectionId) pure returns (uint256)',
+  'function balanceOf(address account, uint256 id) view returns (uint256)',
 ]);
 
 export interface RelayerRedeemerConfig {
@@ -122,6 +128,44 @@ export class PolymarketRedeemExecutor {
   }
 
   /**
+   * Определяет коллатеральный токен для redemption по реальному ERC1155-балансу.
+   *
+   * Алгоритм:
+   * 1. Вычисляем positionId для каждого кандидата (pUSD, USDC.e) через CTF.getCollectionId + getPositionId.
+   * 2. Проверяем balanceOf(funder, positionId) на CTF.
+   * 3. Возвращаем токен с ненулевым балансом. По умолчанию pUSD.
+   *
+   * @param conditionId - bytes32 идентификатор условия CTF
+   * @returns Адрес коллатерального токена (pUSD или USDC.e)
+   *
+   * @remarks
+   * USDC.e нужен для V1-позиций, минтованных до миграции CLOB на pUSD.
+   * estimateGas не подходит для детекции: CTF redeemPositions с 0 балансом не ревертит.
+   */
+  private async _resolveCollateralToken(conditionId: string): Promise<string> {
+    const ctf = new ethers.Contract(CTF_ADDRESS, CTF_INTERFACE, this._provider);
+    const candidates = [PUSD_ADDRESS, USDC_E_ADDRESS] as const;
+    const indexSets = [1, 2];
+
+    for (const token of candidates) {
+      for (const indexSet of indexSets) {
+        try {
+          const collId = await ctf.getCollectionId(ethers.ZeroHash, conditionId, indexSet) as string;
+          const posId = await ctf.getPositionId(token, collId) as bigint;
+          const bal = await ctf.balanceOf(this._funderAddress, posId) as bigint;
+          if (bal > 0n) {
+            return token;
+          }
+        } catch {
+          // игнорируем ошибки чтения — переходим к следующему кандидату
+        }
+      }
+    }
+
+    return PUSD_ADDRESS;
+  }
+
+  /**
    * Возвращает все redeemable позиции для funderAddress из Data API.
    *
    * @returns Список позиций с redeemable=true и size>0
@@ -151,7 +195,7 @@ export class PolymarketRedeemExecutor {
    * Выполняет redeemPositions на CTF через relayer для указанного conditionId.
    *
    * Алгоритм:
-   * 1. Кодируем calldata redeemPositions с pUSD (V2 collateral).
+   * 1. Определяем коллатерал (pUSD V2 или USDC.e V1) по ERC1155-балансу proxy-кошелька.
    * 2. Опционально проверяем готовность оракула через estimateGas.
    * 3. Отправляем транзакцию через relayer и ждём receipt.
    *
@@ -172,8 +216,14 @@ export class PolymarketRedeemExecutor {
   ): Promise<RedeemResult> {
     const { metadataPrefix = 'Redeem', skipOraclePrecheck = false } = options;
 
+    const collateralToken = await this._resolveCollateralToken(conditionId);
+    this._logger.debug('Resolved collateral token for redeem', {
+      conditionId: conditionId.slice(0, 20),
+      collateral: collateralToken === PUSD_ADDRESS ? 'pUSD (V2)' : 'USDC.e (V1)',
+    });
+
     const calldata = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
-      PUSD_ADDRESS,
+      collateralToken,
       ethers.ZeroHash,
       conditionId,
       [1, 2],
