@@ -114,23 +114,13 @@ export function computeRiskBudgetDecision(input: RiskBudgetInput): RiskBudgetDec
   const thesisDecayRisk = input.cexDirection === 'favorable'
     ? clamp((entryThesisAge - 1) * 8, 0, 12)
     : clamp(entryThesisAge * 18, 0, 28);
-  // DOWN-токены структурно дешевле при входе (BTC выше цели → DOWN < 50¢).
-  // Сдвигаем штрафные пороги вниз для DOWN, чтобы не наказывать нормальный диапазон входа.
-  const isDown = input.side === 'down';
-  const lotteryRisk = isDown
-    ? (input.entryCents < 30 ? 18 : input.entryCents < 45 ? 8 : input.entryCents > 65 ? -6 : 0)
-    : (input.entryCents < 40 ? 18 : input.entryCents < 55 ? 8 : input.entryCents > 75 ? -6 : 0);
-  // structuralSafety для DOWN: используем deltaForSideDollars (уже side-adjusted).
-  // Для DOWN он положителен когда BTC ниже цели (позиция в деньгах).
-  // Дополнительно: если позиция около entry и сигнал ещё свежий — снижаем риск.
+  const lotteryRisk = input.entryCents < 40 ? 18 : input.entryCents < 55 ? 8 : input.entryCents > 75 ? -6 : 0;
   const inMoneyDelta = input.deltaForSideDollars;
   const structuralSafety = inMoneyDelta > 100 && input.tauSec < 45
     ? 20
     : inMoneyDelta > 50 && input.tauSec < 90
       ? 10
-      : isDown && inMoneyDelta > 0 && input.tauSec < 60 && input.cexDirection === 'favorable'
-        ? 8
-        : 0;
+      : 0;
   const monetizedEdgeRisk = realizedPnlCentsPerInitialShare > 0
     ? clamp(input.realizedScaleOutPct * 18, 0, 18)
     : clamp(input.realizedScaleOutPct * 25, 0, 25);
