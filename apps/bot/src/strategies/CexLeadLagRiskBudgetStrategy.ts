@@ -151,6 +151,14 @@ export interface CexLeadLagRiskBudgetConfig {
   readonly minSignalStrength?: number;
   /** Минимальная уверенность сигнала [0..1] для входа. Default: 0.55. */
   readonly minSignalConfidence?: number;
+  /**
+   * Отдельный порог силы сигнала для DOWN-токена. Если не задан — используется minSignalStrength.
+   * DOWN-сигналы шумнее (падения BTC медленнее и с отскоками), поэтому имеет смысл
+   * требовать более высокую силу сигнала на DOWN-стороне.
+   */
+  readonly downMinSignalStrength?: number;
+  /** Отдельный порог уверенности сигнала для DOWN-токена. Default: minSignalConfidence. */
+  readonly downMinSignalConfidence?: number;
   /** Порог репрайса maker-ордера (¢). Default: 1. */
   readonly makerRepriceThresholdCents?: number;
   /** Требовать сигнал для входа. Default: true. */
@@ -754,6 +762,8 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   private readonly _minVenueAgreement: number;
   private readonly _minSignalStrength: number;
   private readonly _minSignalConfidence: number;
+  private readonly _downMinSignalStrength: number;
+  private readonly _downMinSignalConfidence: number;
   private readonly _makerRepriceThresholdCents: number;
   private readonly _requireSignalForEntry: boolean;
   private readonly _allowTaker: boolean;
@@ -957,6 +967,8 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     this._maxSpreadBps = config.maxSpreadBps;
     this._minSignalStrength = toNumber(config.minSignalStrength, 6);
     this._minSignalConfidence = toNumber(config.minSignalConfidence, 0.55);
+    this._downMinSignalStrength = toNumber(config.downMinSignalStrength, this._minSignalStrength);
+    this._downMinSignalConfidence = toNumber(config.downMinSignalConfidence, this._minSignalConfidence);
     this._makerRepriceThresholdCents = toNumber(config.makerRepriceThresholdCents, 1);
     this._requireSignalForEntry = config.requireSignalForEntry ?? true;
     this._allowTaker = config.allowTaker ?? false;
@@ -1072,6 +1084,8 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       signalThresholdBps: this._signalThresholdBps,
       minSignalStrength: this._minSignalStrength,
       minSignalConfidence: this._minSignalConfidence,
+      downMinSignalStrength: this._downMinSignalStrength,
+      downMinSignalConfidence: this._downMinSignalConfidence,
       requireSignalForEntry: this._requireSignalForEntry,
       allowTaker: this._allowTaker,
       minEdgeCents: this._minEdgeCents,
@@ -1205,12 +1219,18 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
         ? signal?.direction ?? 'flat'
         : invertDirection(signal?.direction ?? 'flat');
 
+    const effectiveMinStrength = this._side === 'down'
+      ? this._downMinSignalStrength
+      : this._minSignalStrength;
+    const effectiveMinConfidence = this._side === 'down'
+      ? this._downMinSignalConfidence
+      : this._minSignalConfidence;
     const signalStrong = Boolean(
       signal &&
       !signal.stale &&
       signal.direction !== 'flat' &&
-      signal.strength >= this._minSignalStrength &&
-      signal.confidence >= this._minSignalConfidence,
+      signal.strength >= effectiveMinStrength &&
+      signal.confidence >= effectiveMinConfidence,
     );
 
     const signalFavorable = signalStrong && signalDirectionForToken === 'up';
@@ -2459,6 +2479,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       edgeTtlMs: this._riskBudgetEdgeTtlMs,
       realizedScaleOutPct,
       avgRealizedExitCents: this._avgRealizedExitCents(),
+      side: this._side,
     });
 
     const guard = applyRiskBudgetExecutionGuard({
