@@ -196,6 +196,7 @@ export class PaperExchangeClient implements IExchangeClient {
         accountId: ctx?.accountId ?? this._accountId,
         asset: ctx?.asset ?? this._asset,
         postOnly: params.postOnly === true,
+        orderType: params.orderType ?? 'GTC',
         placedAtMs: this._deps.clock.now().getTime(),
       });
     }

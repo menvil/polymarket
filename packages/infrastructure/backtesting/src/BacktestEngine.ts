@@ -874,12 +874,13 @@ export class BacktestEngine {
     eventStartMs: number | undefined,
   ): { readonly snapshotDateDir: string; readonly asset: string; readonly fromMs: number; readonly toMs: number } | undefined {
     const polymarketDir = path.dirname(polymarketFilePath);
-    if (path.basename(polymarketDir) !== 'polymarket') return undefined;
 
     const asset = inferCryptoAssetFromPolymarketFile(polymarketFilePath);
     if (!asset) return undefined;
 
-    const snapshotDateDir = path.dirname(polymarketDir);
+    const snapshotDateDir = this._resolveCexSnapshotDateDir(polymarketDir);
+    if (!snapshotDateDir) return undefined;
+
     const startMs = eventStartMs ?? fileWindow?.windowStartMs;
     const endMs = fileWindow?.windowEndMs;
     if (startMs === undefined || endMs === undefined) return undefined;
@@ -891,6 +892,20 @@ export class BacktestEngine {
       fromMs: startMs - warmupMs,
       toMs: endMs,
     };
+  }
+
+  private _resolveCexSnapshotDateDir(polymarketDir: string): string | undefined {
+    if (path.basename(polymarketDir) === 'polymarket') {
+      return path.dirname(polymarketDir);
+    }
+
+    const dateDirName = path.basename(polymarketDir);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateDirName)) {
+      const cexDateDir = path.join(path.dirname(polymarketDir), 'cex', dateDirName);
+      if (fs.existsSync(cexDateDir)) return cexDateDir;
+    }
+
+    return undefined;
   }
 
   private async _findCexSidecarFiles(

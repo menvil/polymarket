@@ -1,1 +1,67 @@
-{"strategy":"avellaneda-stoikov","strategyParams":{"gamma":0.05,"qMax":5,"orderSize":5,"spreadMult":1,"ewmaAlpha":0.3,"stopLossCents":0,"minTradesForMid":5,"regimeWindow":15,"regimeTrendThreshold":2,"regimeRangeThreshold":1,"regimeTrendSpreadMult":10,"regimeRangeSpreadMult":0.6,"warmupSec":10,"jumpThreshold":2,"jumpWidenFactor":2.5,"jumpCooldownTrades":3,"dynGammaSlope":1,"imbalanceSpreadFactor":0.5,"ofiWindow":10,"ofiWeight":0.5,"ofiSkipThreshold":0.2,"aasConsecutiveThreshold":3,"trailDistanceCents":0,"minBidZoneCents":12,"maxBidZoneCents":73,"probTablePath":"/tmp/prob-table-btc-only-day123.json","probTableMinEdge":5,"probTableMinN":100,"probTableMode":"veto"},"resources":{"initialBalance":100,"maxConcurrentMarkets":1,"minCapitalPerMarket":10,"tradingBalanceRatio":1},"paper":{"fillOnBookCrossing":true,"fillOnTape":true,"fillAtOrderPrice":true},"account":{"accountId":"venue:POLYMARKET:paper-account"},"market":{"source":"snapshots","paths":["/tmp/5min-btc-day4/*"],"outcomeIndex":0}}
+{
+  "_meta": {
+    "desc": "ProbTableStrategy experiment — pt-baseline-veto-day4-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "btc 5-min markets, day4+day5",
+      "pnl": "не записан",
+      "notes": "ProbTable как самостоятельная стратегия не работает: v1 (hold) лучший -101 USDC, v2 (edge convergence) -160 до -400 USDC. На 5-min fairValue прыгает между tau-бакетами, цена не сходится. Полезна только как AS-фильтр."
+    },
+    "todo": [
+      "не использовать самостоятельно — только как veto/shift фильтр для AS"
+    ]
+  },
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 5,
+    "spreadMult": 1,
+    "ewmaAlpha": 0.3,
+    "stopLossCents": 0,
+    "minTradesForMid": 5,
+    "regimeWindow": 15,
+    "regimeTrendThreshold": 2,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 10,
+    "regimeRangeSpreadMult": 0.6,
+    "warmupSec": 10,
+    "jumpThreshold": 2,
+    "jumpWidenFactor": 2.5,
+    "jumpCooldownTrades": 3,
+    "dynGammaSlope": 1,
+    "imbalanceSpreadFactor": 0.5,
+    "ofiWindow": 10,
+    "ofiWeight": 0.5,
+    "ofiSkipThreshold": 0.2,
+    "aasConsecutiveThreshold": 3,
+    "trailDistanceCents": 0,
+    "minBidZoneCents": 12,
+    "maxBidZoneCents": 73,
+    "probTablePath": "/tmp/prob-table-btc-only-day123.json",
+    "probTableMinEdge": 5,
+    "probTableMinN": 100,
+    "probTableMode": "veto"
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day4/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

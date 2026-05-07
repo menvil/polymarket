@@ -13,8 +13,8 @@ export interface PlaceOrderParams {
   price: number;
   size: number;
   postOnly?: boolean;
+  orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
   priceTick?: number;
-  feeRateBps?: number;
   clientOrderId?: string;
   /** ID стратегии для изоляции multi-strategy */
   strategyId?: string;

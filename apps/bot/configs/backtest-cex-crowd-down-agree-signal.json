@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CexCrowd DOWN agree signal experiment",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Ранний CEX-crowd signal тест (DOWN side). CEX agree исторически вредит результатам."
+    },
+    "todo": [
+      "archived — CEX agree фильтр доказано ухудшает результаты"
+    ]
+  },
   "snapshots": [
     "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-06/polymarket",
     "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-08/polymarket",

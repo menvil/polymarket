@@ -52,9 +52,6 @@ interface MarketConstraints {
 
   /** Шаг цены (минимальный шаг изменения цены) */
   priceTick: number;
-
-  /** Ставка комиссии в базисных пунктах (полученная из ошибок API) */
-  feeRateBps?: number;
 }
 
 /**
@@ -73,7 +70,6 @@ export class PolymarketMarketConstraintsPolicy {
   constructor(
     private readonly marketDataClient: PolymarketMarketDataRestClient,
     private readonly logger: ILogger,
-    private readonly feeRateFetcher?: (tokenId: string) => Promise<number>
   ) {}
 
   /**
@@ -128,30 +124,12 @@ export class PolymarketMarketConstraintsPolicy {
         priceTick,
       });
 
-      // Запрашиваем feeRateBps из API если есть fetcher
-      let feeRateBps: number | undefined;
-      if (this.feeRateFetcher) {
-        try {
-          feeRateBps = await this.feeRateFetcher(tokenId);
-          this.logger.info('Fee rate fetched from API', {
-            tokenId: tokenId.substring(0, 16) + '...',
-            feeRateBps,
-          });
-        } catch (feeError) {
-          this.logger.warn('Failed to fetch fee rate, will use default', {
-            tokenId: tokenId.substring(0, 16) + '...',
-            error: feeError,
-          });
-        }
-      }
-
       const constraints: MarketConstraints = {
         minOrderValue: apiConstraints.minimum_order_value ?? this.defaultConstraints.minOrderValue,
         minOrderSize: apiConstraints.minimum_order_size ?? this.defaultConstraints.minOrderSize,
         maxOrderSize: apiConstraints.maximum_order_size,
         sizeTick: apiConstraints.minimum_tick_size,
         priceTick,
-        feeRateBps,
       };
 
       this.cache.set(tokenId, constraints);
@@ -393,22 +371,6 @@ export class PolymarketMarketConstraintsPolicy {
       }
     }
 
-    // Парсим "invalid fee rate (X), current market's maker fee: Y"
-    const feeRateMatch = errorMsg.match(/invalid fee rate \((\d+)\), current market's maker fee:\s*(\d+)/i);
-    if (feeRateMatch) {
-      const correctFeeRate = parseInt(feeRateMatch[2], 10);
-      // Сохраняем feeRateBps в ограничениях (добавляем новое поле)
-      if ((constraints as any).feeRateBps !== correctFeeRate) {
-        (constraints as any).feeRateBps = correctFeeRate;
-        updated = true;
-        this.logger.warn('Learned feeRateBps from error', {
-          tokenId,
-          feeRateBps: correctFeeRate,
-          errorMsg,
-        });
-      }
-    }
-
     if (updated) {
       this.cache.set(tokenId, constraints);
       this.logger.info('Updated constraints from error', {
@@ -421,40 +383,6 @@ export class PolymarketMarketConstraintsPolicy {
         errorMsg,
       });
     }
-  }
-
-  /**
-   * Получить ставку комиссии в базисных пунктах для токена
-   *
-   * @param tokenId - Идентификатор токена
-   * @returns Ставка комиссии в базисных пунктах
-   *
-   * @remarks
-   * Источники (по приоритету):
-   * 1. Из API GET /fee-rate/{token_id} (при наличии feeRateFetcher) — загружается в getConstraints()
-   * 2. Из ошибок API (learnFromError)
-   * 3. Дефолт: 0 (без комиссии — безопасно, API поправит через ошибку)
-   *
-   * ВАЖНО: Это ставка для подписи ордера (feeRateBps в EIP-712),
-   * а НЕ параметр feeRate из формулы расчёта комиссии fill!
-   *
-   * @example
-   * ```typescript
-   * const feeRate = policy.getFeeRateBps('0x123');
-   * // Returns value from API (e.g., 30) or learned value or 0
-   * ```
-   */
-  getFeeRateBps(tokenId: string): number {
-    const constraints = this.cache.get(tokenId);
-    const feeRate = constraints?.feeRateBps ?? 0; // Дефолт: 0 (API поправит через ошибку)
-
-    this.logger.debug('Getting feeRateBps', {
-      tokenId: tokenId.substring(0, 16) + '...',
-      feeRate,
-      source: constraints?.feeRateBps !== undefined ? 'api_or_learned' : 'default',
-    });
-
-    return feeRate;
   }
 
   /**

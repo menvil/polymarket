@@ -26,17 +26,17 @@
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
-    "@polymarket/logger": "0.1.0",
-    "@polymarket/ids": "0.1.0",
-    "@polymarket/result": "0.1.0",
+    "@polymarket/clob-client-v2": "^1.0.3",
     "@polymarket/errors": "0.1.0",
-    "@polymarket/value-objects": "0.1.0",
-    "@polymarket/order-book": "0.1.0",
-    "@polymarket/trade": "0.1.0",
-    "@polymarket/ports": "0.1.0",
     "@polymarket/handlers": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/logger": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
-    "@polymarket/clob-client": "^5.8.1",
+    "@polymarket/order-book": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/result": "0.1.0",
+    "@polymarket/trade": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
     "decimal.js": "^10.6.0",
     "ethers": "^6.0.0"
   }

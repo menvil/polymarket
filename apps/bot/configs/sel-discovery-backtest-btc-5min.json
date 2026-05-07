@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry discovery backtest 5min",
+    "status": "insample",
+    "backtest": {
+      "dataset": "5-min BTC snapshots",
+      "pnl": "не записан",
+      "notes": "Бэктест с discovery mode."
+    },
+    "todo": [
+      "результаты не зафиксированы — см. docs/guides/selective-entry-ablation.md"
+    ]
+  },
   "strategy": "selective-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -19,7 +31,10 @@
       "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-21/*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

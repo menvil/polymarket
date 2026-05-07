@@ -1,4 +1,25 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag UP+DOWN skewed 5min BTC — текущий live baseline",
+    "status": "live",
+    "backtest": {
+      "dataset": "live-recordings 2026-04-22/2026-04-28, 7d OOS",
+      "pnl": "+69.09 USDC",
+      "markets": 245,
+      "date": "2026-04-29",
+      "notes": "UP +32.16, DOWN +36.93; architectural fix: revert complementary routing + outcomeIndex=1 for DOWN"
+    },
+    "paper": {
+      "period": "2026-04-29/2026-05-01",
+      "pnl": "done",
+      "notes": "baseline paper перед live, подтверждён"
+    },
+    "live": {
+      "started": "2026-04-29",
+      "pnl": "active",
+      "notes": "без CLLR residual overlay"
+    }
+  },
   "strategy": "cex-lead-lag",
   "resources": {
     "initialBalance": 100,
@@ -21,7 +42,11 @@
     "orderSize": 5,
     "qMax": 1,
     "mode": "skewed",
-    "venues": ["binance", "coinbase", "okx"],
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "signalThresholdBps": 0.5,
     "signalLookbackMs": 1000,
     "signalStaleMs": 2000,
@@ -41,19 +66,27 @@
     "maxChaseAboveExitCents": 5,
     "stopLossCents": 5,
     "stopLossCooldownMs": 60000,
-    "breakEvenTriggerCents": 6,
-    "breakEvenOffsetCents": 0,
+    "breakEvenTriggerCents": 8,
+    "breakEvenOffsetCents": 7,
+    "breakEvenExitRatio": 0.3,
+    "profitLockTriggerCents": 12,
+    "profitLockOffsetCents": 11,
+    "profitLockExitRatio": 0.3,
+    "profitTargetSlippageCents": 0,
     "trailingStartMultiplier": 0.7,
     "minTrailingDistanceCents": 5,
     "tauTighteningStartSec": 25,
     "tauTighteningMinMultiplier": 0.8,
-    "trailingExitRatio": 0.5,
+    "trailingExitRatio": 1,
     "signalExitEnabled": true,
     "signalExitGraceMs": 500,
-    "signalExitMinProfitCents": 2,
+    "signalExitMinProfitCents": 10,
     "signalExitRatio": 0.5,
     "adverseExitGraceMs": 300,
     "adverseExitRatio": 1,
+    "holdToExpiryMinBidCents": 98,
+    "holdToExpiryMaxTauSec": 90,
+    "holdToExpiryStopBidCents": 95,
     "warmupSec": 10,
     "ewmaAlpha": 0.3,
     "minTradesForMid": 3,
@@ -64,7 +97,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
@@ -88,7 +124,9 @@
     "exchanges": {
       "binance": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -96,7 +134,9 @@
       },
       "coinbase": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -104,7 +144,9 @@
       },
       "okx": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,

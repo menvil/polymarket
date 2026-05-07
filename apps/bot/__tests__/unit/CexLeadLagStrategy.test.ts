@@ -243,6 +243,9 @@ describe('_checkEntrySignalFirst — entry gating', () => {
     side: 'up' as const,
     mode: 'skewed' as const,
     marketId: 'test-market',
+    tradingInstrumentId: 'up-token' as any,
+    tradingAsset: undefined,
+    positionOn: 'primary' as const,
     signal: {
       id: 'test',
       asset: 'btc',
@@ -353,6 +356,9 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     side: 'up' as const,
     mode: 'skewed' as const,
     marketId: 'test-market',
+    tradingInstrumentId: 'up-token' as any,
+    tradingAsset: undefined,
+    positionOn: 'primary' as const,
     signal: undefined,
     signalDirectionForToken: 'up' as const,
     signalFavorable: true,
@@ -405,6 +411,54 @@ describe('_checkExitSignalFirst — exit triggers', () => {
 
   it('выходит при tauSec < exitTauSec', () => {
     const action = strategy._checkExitSignalFirst(makeData({ tauSec: 15 }));
+    expect(action?.type).toBe('SELL');
+  });
+
+  it('не делает TAU_EXIT для near-certain winner при bid выше hold порога', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(5),
+        qMax: 1,
+        exitTauSec: 20,
+        holdToExpiryMinBidCents: 98,
+        holdToExpiryMaxTauSec: 90,
+        holdToExpiryStopBidCents: 95,
+      },
+      'test-hold-tau',
+    );
+    strategy._entryPriceCents = 95;
+
+    const action = strategy._checkExitSignalFirst(makeData({
+      tauSec: 15,
+      tradeEwmaCents: 99,
+      bestBidCents: 99,
+      avgEntryPriceCents: 95,
+    }));
+
+    expect(action).toBeUndefined();
+  });
+
+  it('разрешает TAU_EXIT, если near-certain bid провалился ниже stop порога', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(5),
+        qMax: 1,
+        exitTauSec: 20,
+        holdToExpiryMinBidCents: 98,
+        holdToExpiryMaxTauSec: 90,
+        holdToExpiryStopBidCents: 95,
+      },
+      'test-hold-tau-stop',
+    );
+    strategy._entryPriceCents = 95;
+
+    const action = strategy._checkExitSignalFirst(makeData({
+      tauSec: 15,
+      tradeEwmaCents: 96,
+      bestBidCents: 94,
+      avgEntryPriceCents: 95,
+    }));
+
     expect(action?.type).toBe('SELL');
   });
 
@@ -559,6 +613,50 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(strategy._trailingScaleOutDone).toBe(true);
   });
 
+  it('не делает SIGNAL_COLLAPSE exit для near-certain winner при bid выше hold порога', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(10),
+        qMax: 1,
+        exitTauSec: 20,
+        signalExitEnabled: true,
+        signalExitGraceMs: 500,
+        signalExitMinProfitCents: 1,
+        holdToExpiryMinBidCents: 98,
+        holdToExpiryMaxTauSec: 90,
+        holdToExpiryStopBidCents: 95,
+      },
+      'test-hold-signal-collapse',
+    );
+    strategy._entryPriceCents = 98;
+
+    strategy._checkExitSignalFirst(makeData({
+      nowMs: 1_000,
+      tauSec: 60,
+      tradeEwmaCents: 99,
+      bestBidCents: 99,
+      avgEntryPriceCents: 98,
+      signalFavorable: false,
+      signalStrong: false,
+      signalPersistenceMs: 0,
+      venueAgreement: 0,
+    }));
+    const second = strategy._checkExitSignalFirst(makeData({
+      nowMs: 1_500,
+      tauSec: 60,
+      tradeEwmaCents: 99,
+      bestBidCents: 99,
+      avgEntryPriceCents: 98,
+      signalFavorable: false,
+      signalStrong: false,
+      signalPersistenceMs: 0,
+      venueAgreement: 0,
+    }));
+
+    expect(second).toBeUndefined();
+    expect(strategy._signalExitDone).toBe(false);
+  });
+
   it('adverse signal после grace закрывает доступную позицию', () => {
     strategy = new CexLeadLagStrategy(
       {
@@ -602,6 +700,49 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(strategy._adverseExitDone).toBe(true);
   });
 
+  it('не делает ADVERSE_SIGNAL exit для near-certain winner при bid выше hold порога', () => {
+    strategy = new CexLeadLagStrategy(
+      {
+        orderSize: new Decimal(10),
+        qMax: 1,
+        exitTauSec: 20,
+        signalExitEnabled: true,
+        adverseExitGraceMs: 300,
+        holdToExpiryMinBidCents: 98,
+        holdToExpiryMaxTauSec: 90,
+        holdToExpiryStopBidCents: 95,
+      },
+      'test-hold-adverse',
+    );
+    strategy._entryPriceCents = 98;
+
+    strategy._checkExitSignalFirst(makeData({
+      nowMs: 2_000,
+      tauSec: 60,
+      tradeEwmaCents: 99,
+      bestBidCents: 99,
+      avgEntryPriceCents: 98,
+      signalFavorable: false,
+      signalAdverse: true,
+      signalStrong: true,
+      signalDirectionForToken: 'down',
+    }));
+    const second = strategy._checkExitSignalFirst(makeData({
+      nowMs: 2_300,
+      tauSec: 60,
+      tradeEwmaCents: 99,
+      bestBidCents: 99,
+      avgEntryPriceCents: 98,
+      signalFavorable: false,
+      signalAdverse: true,
+      signalStrong: true,
+      signalDirectionForToken: 'down',
+    }));
+
+    expect(second).toBeUndefined();
+    expect(strategy._adverseExitDone).toBe(false);
+  });
+
   it('позиция, найденная после рестарта, не получает новый trailing stop', () => {
     strategy = new CexLeadLagStrategy(
       {
@@ -627,6 +768,44 @@ describe('_checkExitSignalFirst — exit triggers', () => {
     expect(strategy._entryPriceCents).toBe(40);
     expect(strategy._trailingScaleOutDone).toBe(true);
     expect(strategy._signalExitDone).toBe(true);
+  });
+
+  it('не блокирует аварийный выход из-за in-flight флага, если позиция уже видна', () => {
+    const actions = strategy.decide(makeData({
+      tauSec: 15,
+      hasInFlightFills: true,
+      positionQty: new Decimal(5),
+      availableTokenQty: new Decimal(5),
+      tradeEwmaCents: 64,
+      bestBidCents: 63,
+    }), new Set());
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.type).toBe('SELL');
+  });
+
+  it('SELL intent маршрутизируется на targetInstrumentId/targetAsset для complementary позиции', () => {
+    const targetInstrumentId = 'down-token' as any;
+    const targetAsset = { type: 'POLYMARKET_CTF_TOKEN', tokenId: 'down-token' } as any;
+
+    const intents = strategy.toIntents([
+      {
+        type: 'SELL',
+        price: 62,
+        size: new Decimal(5),
+        targetInstrumentId,
+        targetAsset,
+      },
+    ]);
+
+    expect(intents).toHaveLength(2);
+    expect(intents[0]).toEqual({ type: 'CANCEL_ALL' });
+    expect(intents[1]).toMatchObject({
+      type: 'PLACE',
+      side: 'SELL',
+      targetInstrumentId,
+      targetAsset,
+    });
   });
 });
 

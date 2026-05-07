@@ -18,9 +18,8 @@
  * const order = await client.createOrder({
  *   tokenId: '0x123',
  *   side: 'BUY',
- *   price: '0.52',
- *   size: '100',
- *   nonce: Date.now(),
+ *   price: 0.52,
+ *   size: 100,
  * });
  *
  * // Отменить ордер
@@ -32,8 +31,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import { OrderType } from '@polymarket/clob-client';
-import { orderToJson } from '@polymarket/clob-client/dist/utilities.js';
+import { OrderType, orderToJsonV2 } from '@polymarket/clob-client-v2';
 import { ApiError } from '../PolymarketRestClient.js';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 import type { PolymarketOrderBuilder } from '../auth/PolymarketOrderBuilder.js';
@@ -57,11 +55,8 @@ export interface CreateOrderRequest {
   /** true = post-only order; exchange rejects instead of matching immediately */
   postOnly?: boolean;
 
-  /** Ставка комиссии в базисных пунктах (по умолчанию: 0) */
-  feeRateBps?: number;
-
-  /** Nonce для защиты от повторного воспроизведения */
-  nonce: number;
+  /** CLOB order type. FAK is Polymarket CLOB's IOC analogue. */
+  orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
 
   /** Шаг цены для округления (необязательно, по умолчанию: 0.01) */
   priceTick?: number;
@@ -262,7 +257,6 @@ export class PolymarketOrderRestClient {
    *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
-   *   nonce: Date.now(),
    * });
    *
    * console.log(`Order created: ${order.orderId}`);
@@ -276,22 +270,14 @@ export class PolymarketOrderRestClient {
       size: request.size,
     });
 
-    // ВАЖНО: Передаём nonce=0 для автоматического назначения API
-    // API автоматически назначит корректный nonce для биржи
-    const exchangeNonce = 0;
-
-    this.logger.debug('Using nonce for order', { exchangeNonce });
-
-    // Строим EIP-712 подписанный ордер
+    // Строим EIP-712 подписанный ордер V2 (без nonce и feeRateBps)
     const signedOrder = await this.orderBuilder.buildOrder({
       tokenId: request.tokenId,
       side: request.side,
       price: request.price,
       size: request.size,
-      feeRateBps: request.feeRateBps ?? 0,
-      nonce: exchangeNonce,
       expiration: 0, // Без истечения
-      priceTick: request.priceTick, // Передаём шаг цены для округления
+      priceTick: request.priceTick,
       negRisk: request.negRisk,
     });
 
@@ -309,13 +295,12 @@ export class PolymarketOrderRestClient {
       );
     }
 
-    // Отправляем ордер в API (POST /order ожидает конкретный формат)
+    // Отправляем ордер в API (POST /order ожидает формат V2)
     // КРИТИЧНО: owner ДОЛЖЕН быть строкой API KEY (UUID), НЕ адресом кошелька!
-    // Референс SDK: orderToJson(order, this.creds?.key, orderType, deferExec)
-    const payload = orderToJson(
+    const payload = orderToJsonV2(
       signedOrder as any,
       this.restClient.getApiKey(),
-      OrderType.GTC,
+      request.orderType ? OrderType[request.orderType] : OrderType.GTC,
       request.postOnly === true,
       request.postOnly === true,
     );
@@ -388,6 +373,96 @@ export class PolymarketOrderRestClient {
     } else {
       this.logger.info('Order cancelled successfully', { orderId });
     }
+
+    return response;
+  }
+
+  /**
+   * Отменить несколько ордеров за один запрос (batch cancel)
+   *
+   * @param orderIds - Массив идентификаторов ордеров для отмены
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @example
+   * ```typescript
+   * await client.cancelOrders(['order-1', 'order-2']);
+   * ```
+   */
+  async cancelOrders(orderIds: string[]): Promise<CancelOrderResponse> {
+    this.logger.debug('Cancelling orders (batch)', { count: orderIds.length });
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders', {
+      orderIDs: orderIds,
+    });
+
+    this.logger.info('Batch cancel result', {
+      canceledCount: response.canceled?.length ?? 0,
+      notCanceledCount: Object.keys(response.not_canceled ?? {}).length,
+    });
+
+    return response;
+  }
+
+  /**
+   * Отменить все открытые ордера аккаунта (emergency stop)
+   *
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Отменяет все ордера аккаунта независимо от рынка.
+   * Используется для аварийного стопа бота.
+   *
+   * @example
+   * ```typescript
+   * await client.cancelAll();
+   * ```
+   */
+  async cancelAll(): Promise<CancelOrderResponse> {
+    this.logger.info('Cancelling ALL open orders');
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders', {
+      cancelAll: true,
+    });
+
+    this.logger.info('Cancel all result', {
+      canceledCount: response.canceled?.length ?? 0,
+      notCanceledCount: Object.keys(response.not_canceled ?? {}).length,
+    });
+
+    return response;
+  }
+
+  /**
+   * Отменить все ордера по рынку (conditionId) с опциональным фильтром по токену
+   *
+   * @param market - Condition ID рынка
+   * @param assetId - Опционально: фильтр по конкретному tokenId (UP или DOWN)
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @example
+   * ```typescript
+   * // Отменить все ордера по рынку
+   * await client.cancelMarketOrders('0xbd31dc8a...');
+   *
+   * // Отменить только по конкретному токену
+   * await client.cancelMarketOrders('0xbd31dc8a...', '52114319...');
+   * ```
+   */
+  async cancelMarketOrders(market: string, assetId?: string): Promise<CancelOrderResponse> {
+    this.logger.info('Cancelling market orders', { market: market.slice(0, 20), assetId: assetId?.slice(0, 16) });
+
+    const body: Record<string, string> = { market };
+    if (assetId) body['asset_id'] = assetId;
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders/market', body);
+
+    this.logger.info('Cancel market orders result', {
+      market: market.slice(0, 20),
+      canceledCount: response.canceled?.length ?? 0,
+    });
 
     return response;
   }
@@ -654,43 +729,5 @@ export class PolymarketOrderRestClient {
     }
 
     return allTrades;
-  }
-
-  /**
-   * Получить базовую ставку комиссии для токена
-   *
-   * @param tokenId - Идентификатор токена (asset ID)
-   * @returns Базовая ставка комиссии в базисных пунктах
-   * @throws {ApiError} При ошибке API-вызова или если токен не найден
-   *
-   * @remarks
-   * Использует endpoint `GET /fee-rate/{token_id}`.
-   * Возвращает `base_fee` в базисных пунктах (например, 30 bps).
-   *
-   * ВАЖНО: Это ставка для подписи ордера (`feeRateBps` в `BuildOrderParams`),
-   * а НЕ параметр `feeRate` из формулы расчёта комиссии!
-   * Текущая crypto-формула: `fee = round5(C × 0.072 × p × (1-p))`.
-   *
-   * @example
-   * ```typescript
-   * const baseFee = await client.getFeeRate('0x123...');
-   * console.log(`Base fee: ${baseFee} bps`); // "Base fee: 30 bps"
-   * ```
-   */
-  async getFeeRate(tokenId: string): Promise<number> {
-    this.logger.debug('Getting fee rate', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    const response = await this.restClient.get<{ base_fee: number }>(
-      `/fee-rate/${tokenId}`
-    );
-
-    this.logger.debug('Fee rate retrieved', {
-      tokenId: tokenId.substring(0, 16) + '...',
-      baseFee: response.base_fee,
-    });
-
-    return response.base_fee;
   }
 }

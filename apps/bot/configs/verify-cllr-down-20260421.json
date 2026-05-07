@@ -1,4 +1,19 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag + CLLR residual overlay DOWN side, 2026-04-21",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "live-recordings 2026-04-21 OOS",
+      "pnl": "-5.59 USDC",
+      "markets": 193,
+      "date": "2026-05-02",
+      "notes": "CLL=-13.16 USDC → CLLR=-5.59 USDC (Δ=+7.57 USDC). плохой день — много fills с потерями"
+    },
+    "todo": [
+      "trace mechanism: why SELL zones at resid∈[-6,-2] improve DOWN-side",
+      "re-run on 2026-05 data to verify residual overlay still has edge"
+    ]
+  },
   "strategy": "cex-lead-lag",
   "resources": {
     "initialBalance": 1000,

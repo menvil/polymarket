@@ -44,7 +44,7 @@ import type { CexVenue as StoreCexVenue } from '@polymarket/market-state';
 import { CexCollectorService } from '@polymarket/cex-market-data';
 import type { CexCollectorConfig, CexNormalizedEvent } from '@polymarket/cex-market-data';
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
-import type { IMarketFilterConfig } from '@polymarket/ports';
+import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import {
   asInstrumentId,
   asMarketId,
@@ -94,7 +94,7 @@ import type { RiskParams } from '@polymarket/risk';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { MarketPairMatcher } from '@polymarket/cross-market';
 import type { MarketInfo } from '@polymarket/cross-market';
-import type { CrossMarketArbConfig } from './strategies/CrossMarketArbStrategy.js';
+import type { ArbTradeExecutionReport, CrossMarketArbConfig } from './strategies/CrossMarketArbStrategy.js';
 import { CrossMarketArbStrategy } from './strategies/CrossMarketArbStrategy.js';
 import { SelectiveEntryStrategy } from './strategies/SelectiveEntryStrategy.js';
 import { MarketRotation, MIN_VIABLE_TRADING_MS } from './bot/MarketRotation.js';
@@ -829,6 +829,20 @@ async function runPaper(): Promise<void> {
       return false;
     }
 
+    // easyDown токен нужен если после strike-swap 15m окажется hard-рынком.
+    const easyDownIndex = mc.outcomeIndex === 0 ? 1 : 0;
+    const easyDownTokenStr = easyCandidate.allTokenIds?.[easyDownIndex];
+    const easyDownIId = easyDownTokenStr ? asInstrumentId(easyDownTokenStr) : undefined;
+    const easyDownAst = easyDownTokenStr ? asPolymarketCtfToken(easyDownTokenStr) : undefined;
+
+    // Регистрируем easyDown в exchangeClient (нужен для hardDown ноги после swap).
+    if (easyDownIId && easyDownAst) {
+      exchangeClient.registerMarket(easyDownIId, easyCandidate.marketId, accountId!, easyDownAst);
+    }
+
+    openArbRecording(easyCandidate, [easyUpTokenStr, easyDownTokenStr], easyCryptoMeta);
+    openArbRecording(hardCandidate, [hardUpTokenStr, hardDownTokenStr], hardCryptoMeta);
+
     // ── Создание стратегии ──────────────────────────────────────────────
     // Стратегия зарегистрирована на hard (5m) = slot market.
     // Easy (15m) = peer market, читается из MarketDataStore.
@@ -837,10 +851,18 @@ async function runPaper(): Promise<void> {
     const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
     const fullArbConfig: CrossMarketArbConfig = {
       peerInstrumentId: easyIId,
+      slotDownInstrumentId: hardDownIId,
+      peerDownInstrumentId: easyDownIId,
       minSpreadAfterFees: arbConfig.minSpreadAfterFees ?? 0.005,
       maxPositionUnits: arbConfig.maxPositionUnits ?? 50,
+      maxDepth: arbConfig.maxDepth ?? 1,
       slotStrike: hardStrike,   // hard (5m) = slot market
       peerStrike: easyStrike,   // easy (15m) = peer market
+      bookStalenessMs: arbConfig.bookStalenessMs ?? 1500,
+      auditMode: arbConfig.auditMode ?? false,
+      executionOrderType: arbConfig.executionOrderType ?? 'FAK',
+      executionReconcileDelayMs: arbConfig.executionReconcileDelayMs ?? 750,
+      executionRepairDelayMs: arbConfig.executionRepairDelayMs ?? 750,
       // feeModel по умолчанию = FEE_MODEL_CURRENT (в DivergenceDetector)
     };
 
@@ -861,36 +883,101 @@ async function runPaper(): Promise<void> {
      *
      * @returns true если обе ноги успешно размещены
      */
-    // easyDown токен — нужен для DOWN направления (BUY easy_Down + BUY hard_Up)
-    const easyDownIndex = mc.outcomeIndex === 0 ? 1 : 0;
-    const easyDownTokenStr = easyCandidate.allTokenIds?.[easyDownIndex];
-    const easyDownIId = easyDownTokenStr ? asInstrumentId(easyDownTokenStr) : undefined;
-    const easyDownAst = easyDownTokenStr ? asPolymarketCtfToken(easyDownTokenStr) : undefined;
-
-    // Регистрируем easyDown и hardUp в exchangeClient (нужны для DOWN направления)
-    if (easyDownIId && easyDownAst) {
-      exchangeClient.registerMarket(easyDownIId, easyCandidate.marketId, accountId!, easyDownAst);
-    }
-
-    arbStrategy.setTradeCallback(async (easyPrice, hardPrice, size, direction) => {
+    arbStrategy.setTradeCallback(async (plan): Promise<ArbTradeExecutionReport> => {
       const currentPortfolio = portfolioStore.get(accountId!);
-      if (!currentPortfolio) return false;
+      const plannedSize = plan.size.value().toNumber();
+      const emptyReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => ({
+        accepted: false,
+        repairState,
+        plannedSize,
+        easyFilledSize: 0,
+        hardFilledSize: 0,
+        balancedSize: 0,
+        unhedgedSize: 0,
+      });
+      if (!currentPortfolio) return emptyReport('REJECTED');
 
       const easyOrderId = asOrderId(`arb-easy-${_arbOrderCounter++}-${Date.now()}`);
       const hardOrderId = asOrderId(`arb-hard-${_arbOrderCounter++}-${Date.now()}`);
-      if (!easyOrderId || !hardOrderId) return false;
+      if (!easyOrderId || !hardOrderId) return emptyReport('REJECTED');
 
-      // Арбитраж ВСЕГДА покупает easy_Up + hard_Down — единственная safe-комбинация.
-      // direction не влияет на выбор токенов (только на маппинг цен в стратегии).
-      const easyLegAst = easyAst;
-      const easyLegIId = easyIId;
-      const hardLegAst = hardDownAst;
-      const hardLegIId = hardDownIId;
+      const resolveLeg = (instrumentId: InstrumentId): { asset: ReturnType<typeof asPolymarketCtfToken>; instrumentId: InstrumentId } | undefined => {
+        const id = String(instrumentId);
+        if (id === String(easyIId)) return { asset: easyAst, instrumentId: easyIId };
+        if (easyDownIId && easyDownAst && id === String(easyDownIId)) return { asset: easyDownAst, instrumentId: easyDownIId };
+        if (id === String(hardUpIId)) return { asset: hardUpAst, instrumentId: hardUpIId };
+        if (id === String(hardDownIId)) return { asset: hardDownAst, instrumentId: hardDownIId };
+        return undefined;
+      };
+
+      const easyLeg = resolveLeg(plan.easyInstrumentId);
+      const hardLeg = resolveLeg(plan.hardInstrumentId);
+      const easyLegAst = easyLeg?.asset;
+      const easyLegIId = easyLeg?.instrumentId;
+      const hardLegAst = hardLeg?.asset;
+      const hardLegIId = hardLeg?.instrumentId;
 
       if (!easyLegAst || !easyLegIId || !hardLegAst || !hardLegIId) {
-        logger.error('Missing token IDs for arb direction', { direction });
-        return false;
+        logger.error('Missing token IDs for arb plan', {
+          direction: plan.direction,
+          easyInstrumentId: String(plan.easyInstrumentId),
+          hardInstrumentId: String(plan.hardInstrumentId),
+        });
+        return emptyReport('REJECTED');
       }
+
+      const sizeNum = plannedSize;
+      const requiredCash = sizeNum * (plan.estimatedCostPerUnit + plan.estimatedFeePerUnit);
+      const availableCash = currentPortfolio.balance.available().value().toNumber();
+      if (availableCash < requiredCash) {
+        logger.warn('Insufficient cash for arb two-leg buy', {
+          availableCash: availableCash.toFixed(2),
+          requiredCash: requiredCash.toFixed(2),
+          easyPrice: plan.easyPrice.value().toFixed(4),
+          hardPrice: plan.hardPrice.value().toFixed(4),
+          size: plan.size.value().toFixed(0),
+          estimatedFeePerUnit: plan.estimatedFeePerUnit.toFixed(4),
+        });
+        return emptyReport('REJECTED');
+      }
+
+      const orderType = arbConfig.executionOrderType ?? 'FAK';
+      const reconcileDelayMs = arbConfig.executionReconcileDelayMs ?? 750;
+      const repairDelayMs = arbConfig.executionRepairDelayMs ?? 750;
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const qtyOf = (instrumentId: InstrumentId): number =>
+        portfolioStore.get(accountId!)
+          ?.getPosition(instrumentId)
+          ?.quantity.value().toNumber() ?? 0;
+      const beforeEasyQty = qtyOf(easyLegIId);
+      const beforeHardQty = qtyOf(hardLegIId);
+      const cancelIfPlaced = async (orderId: ReturnType<typeof asOrderId> | undefined, reason: string): Promise<void> => {
+        if (!orderId) return;
+        await orderUseCases.cancelOrderUseCase.execute({ orderId, accountId: accountId!, reason });
+      };
+      const snapshotReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => {
+        const easyFilledSize = Math.max(0, qtyOf(easyLegIId) - beforeEasyQty);
+        const hardFilledSize = Math.max(0, qtyOf(hardLegIId) - beforeHardQty);
+        const balancedSize = Math.min(easyFilledSize, hardFilledSize);
+        const unhedgedSize = Math.abs(easyFilledSize - hardFilledSize);
+        const actualNotional = easyFilledSize * plan.easyPrice.value().toNumber()
+          + hardFilledSize * plan.hardPrice.value().toNumber();
+        const actualFees = balancedSize * plan.estimatedFeePerUnit;
+        const conservativeSettlementValue = balancedSize;
+        return {
+          accepted: balancedSize > 0 && unhedgedSize < 0.000001,
+          repairState,
+          plannedSize,
+          easyFilledSize,
+          hardFilledSize,
+          balancedSize,
+          unhedgedSize,
+          actualNotional,
+          actualFees,
+          conservativeSettlementValue,
+          conservativePnl: conservativeSettlementValue - actualNotional - actualFees,
+        };
+      };
 
       // Размещаем обе ноги параллельно
       const [easyResult, hardResult] = await Promise.all([
@@ -900,8 +987,9 @@ async function runPaper(): Promise<void> {
           asset: easyLegAst,
           instrumentId: easyLegIId,
           side: 'BUY',
-          price: easyPrice,
-          size,
+          price: plan.easyPrice,
+          size: plan.size,
+          orderType,
           strategyId,
           portfolio: currentPortfolio,
           openOrdersCount: 0,
@@ -912,8 +1000,9 @@ async function runPaper(): Promise<void> {
           asset: hardLegAst,
           instrumentId: hardLegIId,
           side: 'BUY',
-          price: hardPrice,
-          size,
+          price: plan.hardPrice,
+          size: plan.size,
+          orderType,
           strategyId,
           portfolio: currentPortfolio,
           openOrdersCount: 0,
@@ -927,12 +1016,95 @@ async function runPaper(): Promise<void> {
         logger.info('Both arb legs placed', {
           easyOrderId: String(easyResult.value),
           hardOrderId: String(hardResult.value),
-          easyPrice: easyPrice.value().toFixed(4),
-          hardPrice: hardPrice.value().toFixed(4),
-          size: size.value().toFixed(0),
-          direction,
+          easyPrice: plan.easyPrice.value().toFixed(4),
+          hardPrice: plan.hardPrice.value().toFixed(4),
+          size: plan.size.value().toFixed(0),
+          direction: plan.direction,
+          estimatedCostPerUnit: plan.estimatedCostPerUnit.toFixed(4),
+          estimatedFeePerUnit: plan.estimatedFeePerUnit.toFixed(4),
+          estimatedPnlPerUnit: plan.estimatedPnlPerUnit.toFixed(4),
+          easyBookAgeMs: plan.easyBookAgeMs,
+          hardBookAgeMs: plan.hardBookAgeMs,
+          auditDepthLevels: plan.auditDepthLevels,
         });
-        return true;
+        await sleep(reconcileDelayMs);
+        await Promise.all([
+          cancelIfPlaced(easyResult.value, 'arb reconciliation'),
+          cancelIfPlaced(hardResult.value, 'arb reconciliation'),
+        ]);
+
+        let report = snapshotReport('BALANCED');
+        if (report.balancedSize <= 0 && report.unhedgedSize <= 0) return { ...report, accepted: false, repairState: 'NO_FILL' };
+        if (report.unhedgedSize <= 0.000001) return report;
+
+        logger.warn('Arb execution unbalanced, attempting rebalance', {
+          easyFilledSize: report.easyFilledSize.toFixed(4),
+          hardFilledSize: report.hardFilledSize.toFixed(4),
+          unhedgedSize: report.unhedgedSize.toFixed(4),
+        });
+
+        const missingEasy = report.easyFilledSize < report.hardFilledSize;
+        const rebalanceOrderId = asOrderId(`arb-rebalance-${_arbOrderCounter++}-${Date.now()}`);
+        if (rebalanceOrderId) {
+          const rebalanceLegAst = missingEasy ? easyLegAst : hardLegAst;
+          const rebalanceLegIId = missingEasy ? easyLegIId : hardLegIId;
+          const rebalancePrice = missingEasy ? plan.easyPrice : plan.hardPrice;
+          const repairPortfolio = portfolioStore.get(accountId!);
+          if (repairPortfolio) {
+            await orderUseCases.placeOrderUseCase.execute({
+              orderId: rebalanceOrderId,
+              accountId: accountId!,
+              asset: rebalanceLegAst,
+              instrumentId: rebalanceLegIId,
+              side: 'BUY',
+              price: rebalancePrice,
+              size: Quantity.of(new Decimal(report.unhedgedSize)),
+              orderType,
+              strategyId,
+              portfolio: repairPortfolio,
+              openOrdersCount: 0,
+            });
+            await sleep(repairDelayMs);
+            await cancelIfPlaced(rebalanceOrderId, 'arb rebalance reconciliation');
+            report = snapshotReport('REBALANCED');
+            if (report.unhedgedSize <= 0.000001) return { ...report, accepted: report.balancedSize > 0 };
+          }
+        }
+
+        logger.warn('Arb rebalance incomplete, unwinding surplus leg', {
+          easyFilledSize: report.easyFilledSize.toFixed(4),
+          hardFilledSize: report.hardFilledSize.toFixed(4),
+          unhedgedSize: report.unhedgedSize.toFixed(4),
+        });
+
+        const surplusEasy = report.easyFilledSize > report.hardFilledSize;
+        const unwindOrderId = asOrderId(`arb-unwind-${_arbOrderCounter++}-${Date.now()}`);
+        if (unwindOrderId && report.unhedgedSize > 0) {
+          const unwindLegAst = surplusEasy ? easyLegAst : hardLegAst;
+          const unwindLegIId = surplusEasy ? easyLegIId : hardLegIId;
+          const unwindPortfolio = portfolioStore.get(accountId!);
+          if (unwindPortfolio) {
+            await orderUseCases.placeOrderUseCase.execute({
+              orderId: unwindOrderId,
+              accountId: accountId!,
+              asset: unwindLegAst,
+              instrumentId: unwindLegIId,
+              side: 'SELL',
+              price: Price.of(new Decimal('0.01')),
+              size: Quantity.of(new Decimal(report.unhedgedSize)),
+              orderType,
+              strategyId,
+              portfolio: unwindPortfolio,
+              openOrdersCount: 0,
+            });
+            await sleep(repairDelayMs);
+            await cancelIfPlaced(unwindOrderId, 'arb unwind reconciliation');
+            report = snapshotReport('UNWOUND');
+            return { ...report, accepted: report.balancedSize > 0 && report.unhedgedSize <= 0.000001 };
+          }
+        }
+
+        return { ...report, repairState: 'FAILED_REPAIR', accepted: report.balancedSize > 0 && report.unhedgedSize <= 0.000001 };
       }
 
       // Частичный успех → отменяем успешную ногу
@@ -947,6 +1119,7 @@ async function runPaper(): Promise<void> {
         await orderUseCases.cancelOrderUseCase.execute({
           orderId: easyResult.value,
           accountId: accountId!,
+          reason: 'arb partial placement rejected',
         });
       } else if (!easyOk && hardOk) {
         logger.warn('Easy leg rejected, cancelling hard leg', {
@@ -956,6 +1129,7 @@ async function runPaper(): Promise<void> {
         await orderUseCases.cancelOrderUseCase.execute({
           orderId: hardResult.value,
           accountId: accountId!,
+          reason: 'arb partial placement rejected',
         });
       } else {
         logger.warn('Both arb legs rejected', {
@@ -964,7 +1138,7 @@ async function runPaper(): Promise<void> {
         });
       }
 
-      return false;
+      return emptyReport('REJECTED');
     });
 
     // ── Регистрация в инфраструктуре ──────────────────────────────────
@@ -1140,8 +1314,9 @@ async function runPaper(): Promise<void> {
     const hardQuestion = hardSlot?.candidate?.question ?? pair.hardTokenIdStr;
     const openedAt = hardSlot?.openedAt ?? Date.now();
     const durationMs = Date.now() - openedAt;
-    const durMin = Math.floor(durationMs / 60_000);
-    const durSec = Math.round((durationMs % 60_000) / 1000);
+    const durationSec = Math.max(0, Math.round(durationMs / 1000));
+    const durMin = Math.floor(durationSec / 60);
+    const durSec = durationSec % 60;
 
     // Закрываем hard слот (через стандартный closeMarket — НЕ печатает отдельный summary)
     // Сначала unregister стратегию и WS отписку без summary
@@ -1284,27 +1459,97 @@ async function runPaper(): Promise<void> {
     }
 
     // Арб-парная сводка
+    const bestObserved = metrics['bestObserved'] as Record<string, unknown> | null | undefined;
+    const auditEventCounts = metrics['auditEventCounts'] as Record<string, unknown> | undefined;
+    const assignment = metrics['assignment'] ?? 'unknown';
+    const strikeEasyMarket = assignment === 'SLOT_IS_EASY' ? hardQuestion : easyQuestion;
+    const strikeHardMarket = assignment === 'SLOT_IS_EASY' ? easyQuestion : hardQuestion;
+    const formatMetricNumber = (value: unknown, digits: number): string | null =>
+      typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : null;
     logger.warn('=== Arb pair summary ===', {
       pairId,
-      easy: easyQuestion,
-      hard: hardQuestion,
+      longWindowMarket: easyQuestion,
+      shortWindowMarket: hardQuestion,
+      strikeEasyMarket,
+      strikeHardMarket,
       duration: `${durMin}m${durSec}s`,
-      assignment: metrics['assignment'] ?? 'unknown',
+      assignment,
       ticks: metrics['tickCount'] ?? 0,
       divergences: metrics['divergenceCount'] ?? 0,
       trades: metrics['tradeCount'] ?? 0,
+      acceptedSettlementFaceValue: formatMetricNumber(metrics['acceptedSettlementFaceValue'], 4),
+      acceptedPlannedCost: formatMetricNumber(metrics['acceptedPlannedCost'], 4),
+      acceptedPlannedFees: formatMetricNumber(metrics['acceptedPlannedFees'], 4),
+      acceptedPlannedAllInCost: formatMetricNumber(metrics['acceptedPlannedAllInCost'], 4),
+      actualNotional: formatMetricNumber(metrics['actualNotional'], 4),
+      actualFees: formatMetricNumber(metrics['actualFees'], 4),
+      actualConservativePnl: formatMetricNumber(metrics['actualConservativePnl'], 4),
+      unhedgedExecutionCount: metrics['unhedgedExecutionCount'] ?? 0,
+      failedRepairCount: metrics['failedRepairCount'] ?? 0,
+      repairStateCounts: metrics['repairStateCounts'] ?? {},
+      freshEvaluations: metrics['freshEvaluations'] ?? 0,
+      grossCrossSamples: metrics['grossCrossSamples'] ?? 0,
+      netSignalSamples: metrics['netSignalSamples'] ?? 0,
+      skipMissingBook: auditEventCounts?.['SKIP_MISSING_BOOK'] ?? 0,
+      skipStaleBook: auditEventCounts?.['SKIP_STALE_BOOK'] ?? 0,
+      noSignal: auditEventCounts?.['NO_SIGNAL'] ?? 0,
+      skipCapacity: auditEventCounts?.['SKIP_CAPACITY'] ?? 0,
+      skipBalance: auditEventCounts?.['SKIP_BALANCE'] ?? 0,
+      signalAccepted: auditEventCounts?.['SIGNAL_ACCEPTED'] ?? 0,
+      bestObservedAt: bestObserved?.['observedAt'] ?? null,
+      bestObservedPnlPerUnit: formatMetricNumber(bestObserved?.['pnlPerUnit'], 5),
+      bestObservedCostPerUnit: formatMetricNumber(bestObserved?.['costPerUnit'], 5),
+      bestObservedFeePerUnit: formatMetricNumber(bestObserved?.['feePerUnit'], 5),
+      bestObservedSize: bestObserved?.['execSize'] ?? null,
+      bestObservedExecutableCost: typeof bestObserved?.['costPerUnit'] === 'number' && typeof bestObserved?.['execSize'] === 'number'
+        ? ((bestObserved['costPerUnit'] as number) * (bestObserved['execSize'] as number)).toFixed(4)
+        : null,
+      bestObservedPotentialPnl: typeof bestObserved?.['pnlPerUnit'] === 'number' && typeof bestObserved?.['execSize'] === 'number'
+        ? ((bestObserved['pnlPerUnit'] as number) * (bestObserved['execSize'] as number)).toFixed(4)
+        : null,
+      bestObservedEasyAgeMs: bestObserved?.['easyBookAgeMs'] ?? null,
+      bestObservedHardAgeMs: bestObserved?.['hardBookAgeMs'] ?? null,
       estimatedPnl: typeof metrics['totalPnlEstimate'] === 'object'
         ? (metrics['totalPnlEstimate'] as { toFixed: (n: number) => string }).toFixed(4)
         : String(metrics['totalPnlEstimate'] ?? 0),
       settlementCash: totalSettlementCash.toFixed(4),
       settledLegs,
-      peerStrike: pair.easyStrikeLocked ? 'set' : 'pending',
-      slotStrike: pair.hardStrikeLocked ? 'set' : 'pending',
+      longWindowStrike: pair.easyStrikeLocked ? 'set' : 'pending',
+      shortWindowStrike: pair.hardStrikeLocked ? 'set' : 'pending',
       reason,
     });
 
+    if (recording) {
+      if (hardSlot) await recording.closeMarket(hardSlot.marketId, reason);
+      await recording.closeMarket(pair.easySlot.marketId, reason);
+    }
+
     hardTokenToArbPair.delete(pair.hardTokenIdStr);
     activeArbPairs.delete(pairId);
+  }
+
+  function openArbRecording(
+    candidate: DiscoveredMarket,
+    tokenIds: readonly (string | undefined)[],
+    cryptoMeta: ReturnType<typeof parseCryptoMeta>,
+  ): void {
+    if (!recording) return;
+
+    const expiresAtResult = TimestampService.create(candidate.expiresAt.toNumber());
+    if (!expiresAtResult.ok) return;
+
+    const startsAtResult = cryptoMeta?.eventStartTimeMs
+      ? TimestampService.create(cryptoMeta.eventStartTimeMs)
+      : undefined;
+
+    recording.openMarket(candidate, {
+      marketId: candidate.marketId,
+      question: candidate.question ?? String(candidate.marketId),
+      tokenIds: tokenIds.filter((id): id is string => typeof id === 'string' && id.length > 0),
+      startsAt: startsAtResult?.ok ? startsAtResult.value : undefined,
+      expiresAt: expiresAtResult.value,
+      rawMarket: candidate.rawMarket,
+    }, 'paper');
   }
 
   /**
@@ -1397,10 +1642,18 @@ async function runPaper(): Promise<void> {
     const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
     const fullArbConfig: CrossMarketArbConfig = {
       peerInstrumentId: w.easyIId,
+      slotDownInstrumentId: w.hardDownIId,
+      peerDownInstrumentId: w.easyDownIId,
       minSpreadAfterFees: arbConfig.minSpreadAfterFees ?? 0.005,
       maxPositionUnits: arbConfig.maxPositionUnits ?? 50,
+      maxDepth: arbConfig.maxDepth ?? 1,
       slotStrike: w.hardStrike,
       peerStrike: w.easyStrike,
+      bookStalenessMs: arbConfig.bookStalenessMs ?? 1500,
+      auditMode: arbConfig.auditMode ?? false,
+      executionOrderType: arbConfig.executionOrderType ?? 'FAK',
+      executionReconcileDelayMs: arbConfig.executionReconcileDelayMs ?? 750,
+      executionRepairDelayMs: arbConfig.executionRepairDelayMs ?? 750,
     };
 
     const arbStrategy = new CrossMarketArbStrategy(
@@ -1416,24 +1669,104 @@ async function runPaper(): Promise<void> {
       exchangeClient.registerMarket(w.easyDownIId, w.easyCandidate.marketId, accountId!, easyDownAst);
     }
 
-    arbStrategy.setTradeCallback(async (easyPrice, hardPrice, size, direction) => {
+    openArbRecording(w.easyCandidate, [w.easyUpTokenStr, w.easyDownTokenStr], w.easyCryptoMeta);
+    openArbRecording(w.hardCandidate, [w.hardUpTokenStr, w.hardDownTokenStr], w.hardCryptoMeta);
+
+    arbStrategy.setTradeCallback(async (plan): Promise<ArbTradeExecutionReport> => {
       const currentPortfolio = portfolioStore.get(accountId!);
-      if (!currentPortfolio) return false;
+      const plannedSize = plan.size.value().toNumber();
+      const emptyReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => ({
+        accepted: false,
+        repairState,
+        plannedSize,
+        easyFilledSize: 0,
+        hardFilledSize: 0,
+        balancedSize: 0,
+        unhedgedSize: 0,
+      });
+      if (!currentPortfolio) return emptyReport('REJECTED');
 
       const easyOrderId = asOrderId(`arb-easy-${_arbOrderCounter++}-${Date.now()}`);
       const hardOrderId = asOrderId(`arb-hard-${_arbOrderCounter++}-${Date.now()}`);
-      if (!easyOrderId || !hardOrderId) return false;
+      if (!easyOrderId || !hardOrderId) return emptyReport('REJECTED');
 
-      // Арбитраж ВСЕГДА покупает easy_Up + hard_Down — единственная safe-комбинация.
-      const easyLegAst = w.easyAst;
-      const easyLegIId = w.easyIId;
-      const hardLegAst = w.hardDownAst;
-      const hardLegIId = w.hardDownIId;
+      const resolveLeg = (instrumentId: InstrumentId): { asset: ReturnType<typeof asPolymarketCtfToken>; instrumentId: InstrumentId } | undefined => {
+        const id = String(instrumentId);
+        if (id === String(w.easyIId)) return { asset: w.easyAst, instrumentId: w.easyIId };
+        if (w.easyDownIId && easyDownAst && id === String(w.easyDownIId)) return { asset: easyDownAst, instrumentId: w.easyDownIId };
+        if (id === String(w.hardUpIId)) return { asset: w.hardUpAst, instrumentId: w.hardUpIId };
+        if (id === String(w.hardDownIId)) return { asset: w.hardDownAst, instrumentId: w.hardDownIId };
+        return undefined;
+      };
+
+      const easyLeg = resolveLeg(plan.easyInstrumentId);
+      const hardLeg = resolveLeg(plan.hardInstrumentId);
+      const easyLegAst = easyLeg?.asset;
+      const easyLegIId = easyLeg?.instrumentId;
+      const hardLegAst = hardLeg?.asset;
+      const hardLegIId = hardLeg?.instrumentId;
 
       if (!easyLegAst || !easyLegIId || !hardLegAst || !hardLegIId) {
-        logger.error('Missing token IDs for arb direction', { direction });
-        return false;
+        logger.error('Missing token IDs for arb plan', {
+          direction: plan.direction,
+          easyInstrumentId: String(plan.easyInstrumentId),
+          hardInstrumentId: String(plan.hardInstrumentId),
+        });
+        return emptyReport('REJECTED');
       }
+
+      const sizeNum = plannedSize;
+      const requiredCash = sizeNum * (plan.estimatedCostPerUnit + plan.estimatedFeePerUnit);
+      const availableCash = currentPortfolio.balance.available().value().toNumber();
+      if (availableCash < requiredCash) {
+        logger.warn('Insufficient cash for arb two-leg buy', {
+          availableCash: availableCash.toFixed(2),
+          requiredCash: requiredCash.toFixed(2),
+          easyPrice: plan.easyPrice.value().toFixed(4),
+          hardPrice: plan.hardPrice.value().toFixed(4),
+          size: plan.size.value().toFixed(0),
+          estimatedFeePerUnit: plan.estimatedFeePerUnit.toFixed(4),
+        });
+        return emptyReport('REJECTED');
+      }
+
+      const orderType = arbConfig.executionOrderType ?? 'FAK';
+      const reconcileDelayMs = arbConfig.executionReconcileDelayMs ?? 750;
+      const repairDelayMs = arbConfig.executionRepairDelayMs ?? 750;
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const qtyOf = (instrumentId: InstrumentId): number =>
+        portfolioStore.get(accountId!)
+          ?.getPosition(instrumentId)
+          ?.quantity.value().toNumber() ?? 0;
+      const beforeEasyQty = qtyOf(easyLegIId);
+      const beforeHardQty = qtyOf(hardLegIId);
+      const cancelIfPlaced = async (orderId: ReturnType<typeof asOrderId> | undefined, reason: string): Promise<void> => {
+        if (!orderId) return;
+        await orderUseCases.cancelOrderUseCase.execute({ orderId, accountId: accountId!, reason });
+      };
+      const snapshotReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => {
+        const easyFilledSize = Math.max(0, qtyOf(easyLegIId) - beforeEasyQty);
+        const hardFilledSize = Math.max(0, qtyOf(hardLegIId) - beforeHardQty);
+        const balancedSize = Math.min(easyFilledSize, hardFilledSize);
+        const unhedgedSize = Math.abs(easyFilledSize - hardFilledSize);
+        const actualNotional = easyFilledSize * plan.easyPrice.value().toNumber()
+          + hardFilledSize * plan.hardPrice.value().toNumber();
+        const actualFees = balancedSize * plan.estimatedFeePerUnit;
+        const conservativeSettlementValue = balancedSize;
+        return {
+          accepted: balancedSize > 0 && unhedgedSize < 0.000001,
+          repairState,
+          plannedSize,
+          easyFilledSize,
+          hardFilledSize,
+          balancedSize,
+          unhedgedSize,
+          actualNotional,
+          actualFees,
+          conservativeSettlementValue,
+          conservativePnl: conservativeSettlementValue - actualNotional - actualFees,
+        };
+      };
 
       const [easyResult, hardResult] = await Promise.all([
         orderUseCases.placeOrderUseCase.execute({
@@ -1442,8 +1775,9 @@ async function runPaper(): Promise<void> {
           asset: easyLegAst,
           instrumentId: easyLegIId,
           side: 'BUY',
-          price: easyPrice,
-          size,
+          price: plan.easyPrice,
+          size: plan.size,
+          orderType,
           strategyId,
           portfolio: currentPortfolio,
           openOrdersCount: 0,
@@ -1454,8 +1788,9 @@ async function runPaper(): Promise<void> {
           asset: hardLegAst,
           instrumentId: hardLegIId,
           side: 'BUY',
-          price: hardPrice,
-          size,
+          price: plan.hardPrice,
+          size: plan.size,
+          orderType,
           strategyId,
           portfolio: currentPortfolio,
           openOrdersCount: 0,
@@ -1469,12 +1804,95 @@ async function runPaper(): Promise<void> {
         logger.info('Both arb legs placed', {
           easyOrderId: String(easyResult.value),
           hardOrderId: String(hardResult.value),
-          easyPrice: easyPrice.value().toFixed(4),
-          hardPrice: hardPrice.value().toFixed(4),
-          size: size.value().toFixed(0),
-          direction,
+          easyPrice: plan.easyPrice.value().toFixed(4),
+          hardPrice: plan.hardPrice.value().toFixed(4),
+          size: plan.size.value().toFixed(0),
+          direction: plan.direction,
+          estimatedCostPerUnit: plan.estimatedCostPerUnit.toFixed(4),
+          estimatedFeePerUnit: plan.estimatedFeePerUnit.toFixed(4),
+          estimatedPnlPerUnit: plan.estimatedPnlPerUnit.toFixed(4),
+          easyBookAgeMs: plan.easyBookAgeMs,
+          hardBookAgeMs: plan.hardBookAgeMs,
+          auditDepthLevels: plan.auditDepthLevels,
         });
-        return true;
+        await sleep(reconcileDelayMs);
+        await Promise.all([
+          cancelIfPlaced(easyResult.value, 'arb reconciliation'),
+          cancelIfPlaced(hardResult.value, 'arb reconciliation'),
+        ]);
+
+        let report = snapshotReport('BALANCED');
+        if (report.balancedSize <= 0 && report.unhedgedSize <= 0) return { ...report, accepted: false, repairState: 'NO_FILL' };
+        if (report.unhedgedSize <= 0.000001) return report;
+
+        logger.warn('Arb execution unbalanced, attempting rebalance', {
+          easyFilledSize: report.easyFilledSize.toFixed(4),
+          hardFilledSize: report.hardFilledSize.toFixed(4),
+          unhedgedSize: report.unhedgedSize.toFixed(4),
+        });
+
+        const missingEasy = report.easyFilledSize < report.hardFilledSize;
+        const rebalanceOrderId = asOrderId(`arb-rebalance-${_arbOrderCounter++}-${Date.now()}`);
+        if (rebalanceOrderId) {
+          const rebalanceLegAst = missingEasy ? easyLegAst : hardLegAst;
+          const rebalanceLegIId = missingEasy ? easyLegIId : hardLegIId;
+          const rebalancePrice = missingEasy ? plan.easyPrice : plan.hardPrice;
+          const repairPortfolio = portfolioStore.get(accountId!);
+          if (repairPortfolio) {
+            await orderUseCases.placeOrderUseCase.execute({
+              orderId: rebalanceOrderId,
+              accountId: accountId!,
+              asset: rebalanceLegAst,
+              instrumentId: rebalanceLegIId,
+              side: 'BUY',
+              price: rebalancePrice,
+              size: Quantity.of(new Decimal(report.unhedgedSize)),
+              orderType,
+              strategyId,
+              portfolio: repairPortfolio,
+              openOrdersCount: 0,
+            });
+            await sleep(repairDelayMs);
+            await cancelIfPlaced(rebalanceOrderId, 'arb rebalance reconciliation');
+            report = snapshotReport('REBALANCED');
+            if (report.unhedgedSize <= 0.000001) return { ...report, accepted: report.balancedSize > 0 };
+          }
+        }
+
+        logger.warn('Arb rebalance incomplete, unwinding surplus leg', {
+          easyFilledSize: report.easyFilledSize.toFixed(4),
+          hardFilledSize: report.hardFilledSize.toFixed(4),
+          unhedgedSize: report.unhedgedSize.toFixed(4),
+        });
+
+        const surplusEasy = report.easyFilledSize > report.hardFilledSize;
+        const unwindOrderId = asOrderId(`arb-unwind-${_arbOrderCounter++}-${Date.now()}`);
+        if (unwindOrderId && report.unhedgedSize > 0) {
+          const unwindLegAst = surplusEasy ? easyLegAst : hardLegAst;
+          const unwindLegIId = surplusEasy ? easyLegIId : hardLegIId;
+          const unwindPortfolio = portfolioStore.get(accountId!);
+          if (unwindPortfolio) {
+            await orderUseCases.placeOrderUseCase.execute({
+              orderId: unwindOrderId,
+              accountId: accountId!,
+              asset: unwindLegAst,
+              instrumentId: unwindLegIId,
+              side: 'SELL',
+              price: Price.of(new Decimal('0.01')),
+              size: Quantity.of(new Decimal(report.unhedgedSize)),
+              orderType,
+              strategyId,
+              portfolio: unwindPortfolio,
+              openOrdersCount: 0,
+            });
+            await sleep(repairDelayMs);
+            await cancelIfPlaced(unwindOrderId, 'arb unwind reconciliation');
+            report = snapshotReport('UNWOUND');
+            return { ...report, accepted: report.balancedSize > 0 && report.unhedgedSize <= 0.000001 };
+          }
+        }
+
+        return { ...report, repairState: 'FAILED_REPAIR', accepted: report.balancedSize > 0 && report.unhedgedSize <= 0.000001 };
       }
 
       const easyErr = !easyResult.ok ? String(easyResult.error) : undefined;
@@ -1488,6 +1906,7 @@ async function runPaper(): Promise<void> {
         await orderUseCases.cancelOrderUseCase.execute({
           orderId: easyResult.value,
           accountId: accountId!,
+          reason: 'arb partial placement rejected',
         });
       } else if (!easyOk && hardOk) {
         logger.warn('Easy leg rejected, cancelling hard leg', {
@@ -1497,6 +1916,7 @@ async function runPaper(): Promise<void> {
         await orderUseCases.cancelOrderUseCase.execute({
           orderId: hardResult.value,
           accountId: accountId!,
+          reason: 'arb partial placement rejected',
         });
       } else {
         logger.warn('Both arb legs rejected', {
@@ -1505,7 +1925,7 @@ async function runPaper(): Promise<void> {
         });
       }
 
-      return false;
+      return emptyReport('REJECTED');
     });
 
     // ── activeMarkets + activeArbPairs (WS/catalog/RTDS уже настроены) ──
@@ -1633,6 +2053,8 @@ async function runPaper(): Promise<void> {
         asset: parsed.asset,
         recurrence: parsed.recurrence,
         endDate: endDateStr,
+        startDate: new Date(parsed.startEpoch * 1000).toISOString(),
+        startEpochMs: parsed.startEpoch * 1000,
         endEpochMs: endDateMs,
         instrumentId: iId,
         filePath: '',
@@ -1898,7 +2320,11 @@ async function runPaper(): Promise<void> {
       const cryptoMeta = parseCryptoMeta(c.rawMarket);
       marketInfos.push({
         asset: parsed.asset, recurrence: parsed.recurrence,
-        endDate: endDateStr, endEpochMs: endDateMs, instrumentId: iId,
+        endDate: endDateStr,
+        startDate: new Date(parsed.startEpoch * 1000).toISOString(),
+        startEpochMs: parsed.startEpoch * 1000,
+        endEpochMs: endDateMs,
+        instrumentId: iId,
         filePath: '', ticker, priceToBeat: cryptoMeta?.priceToBeat, _candidate: c,
       });
     }
@@ -1995,6 +2421,8 @@ async function runPaper(): Promise<void> {
         asset: parsed.asset,
         recurrence: parsed.recurrence,
         endDate: endDateStr,
+        startDate: new Date(parsed.startEpoch * 1000).toISOString(),
+        startEpochMs: parsed.startEpoch * 1000,
         endEpochMs: endDateMs,
         instrumentId: iId,
         filePath: '',

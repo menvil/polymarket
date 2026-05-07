@@ -54,6 +54,8 @@ export interface RedeemResult {
   readonly success: boolean;
   readonly txHash?: string;
   readonly error?: string;
+  /** true если позиция была V1 (USDC.e коллатерал). Выплата в USDC.e, требует ручного wrap в pUSD. */
+  readonly isV1Position?: boolean;
 }
 
 export interface DataApiPosition {
@@ -217,10 +219,18 @@ export class PolymarketRedeemExecutor {
     const { metadataPrefix = 'Redeem', skipOraclePrecheck = false } = options;
 
     const collateralToken = await this._resolveCollateralToken(conditionId);
+    const isV1 = collateralToken === USDC_E_ADDRESS;
     this._logger.debug('Resolved collateral token for redeem', {
       conditionId: conditionId.slice(0, 20),
-      collateral: collateralToken === PUSD_ADDRESS ? 'pUSD (V2)' : 'USDC.e (V1)',
+      collateral: isV1 ? 'USDC.e (V1)' : 'pUSD (V2)',
     });
+    if (isV1) {
+      this._logger.warn('Redeeming V1 position (USDC.e collateral). Payout will be in USDC.e, NOT pUSD — bot balance tracker will NOT reflect this. Manual wrap via CollateralOnramp.wrap() required.', {
+        conditionId: conditionId.slice(0, 20),
+        collateralAddress: USDC_E_ADDRESS,
+        onrampAddress: COLLATERAL_ONRAMP_ADDRESS,
+      });
+    }
 
     const calldata = CTF_INTERFACE.encodeFunctionData('redeemPositions', [
       collateralToken,
@@ -270,10 +280,18 @@ export class PolymarketRedeemExecutor {
         txHash: receipt.transactionHash,
       });
 
+      if (success && isV1) {
+        this._logger.warn('V1 redeem succeeded — USDC.e credited to proxy wallet. Run CollateralOnramp.wrap() to convert to pUSD.', {
+          conditionId: conditionId.slice(0, 20),
+          txHash: receipt.transactionHash,
+        });
+      }
+
       return {
         success,
         txHash: receipt.transactionHash,
         error: success ? undefined : `Relayer state: ${receipt.state}`,
+        isV1Position: isV1,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);

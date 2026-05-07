@@ -78,6 +78,8 @@ export interface PlaceOrderInput {
   readonly size: Quantity;
   /** true = post-only order; exchange must reject if order would execute immediately */
   readonly postOnly?: boolean;
+  /** Venue order type. For Polymarket CLOB, FAK is the IOC analogue. */
+  readonly orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
   /** ID стратегии (опционально) */
   readonly strategyId?: string;
   /** Текущий portfolio (для риск-проверки) */
@@ -176,6 +178,7 @@ export class PlaceOrderUseCase {
       price: input.price,
       size: input.size,
       postOnly: input.postOnly,
+      orderType: input.orderType,
       clientOrderId: input.orderId as unknown as string,
       strategyId: input.strategyId,
     } as any);

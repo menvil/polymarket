@@ -1,14 +1,36 @@
 {
+  "_meta": {
+    "desc": "Cross-market arbitrage paper",
+    "status": "wip",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Cross-market arbitrage strategy. Экспериментальный."
+    },
+    "todo": [
+      "определить результаты paper trading",
+      "arb между UP/DOWN токенами одного рынка?"
+    ]
+  },
   "strategy": "cross-market-arb",
   "strategyParams": {
     "peerInstrumentId": "placeholder",
-    "minSpreadAfterFees": 0.005,
-    "maxPositionUnits": 50
+    "minSpreadAfterFees": 0.001,
+    "maxPositionUnits": 50,
+    "maxDepth": 5,
+    "bookStalenessMs": 1500,
+    "executionOrderType": "FAK",
+    "executionReconcileDelayMs": 750,
+    "executionRepairDelayMs": 750,
+    "auditMode": true
   },
   "market": {
     "source": "discovery",
     "filter": {
-      "anyOfKeywords": ["bitcoin", "crypto", "BTC", "ETH"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minLiquidity": 500
     },
     "scanPauseMs": 60000,
@@ -24,6 +46,12 @@
     "fillOnBookCrossing": true,
     "fillOnTape": true,
     "fillAtOrderPrice": true
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "apps/bot/data/arb-paper-recordings",
+    "journalDir": "apps/bot/data/arb-paper-journals",
+    "compression": "gzip"
   },
   "account": {
     "accountId": "venue:POLYMARKET:paper-arb-account"

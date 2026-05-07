@@ -1,18 +1,40 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry bidirectional paper discovery",
+    "status": "wip",
+    "paper": {
+      "period": "не определён",
+      "pnl": "не записан",
+      "notes": "Discovery mode эксперимент."
+    },
+    "todo": [
+      "уточнить цель конфига и зафиксировать результаты"
+    ]
+  },
   "strategy": "selective-entry",
   "strategyParams": {
     "orderSize": 5,
-    "minZoneCents": 55, "maxZoneCents": 68,
-    "minDeltaPct": 0.03, "maxDeltaPct": 0.12,
-    "minTauSec": 120, "maxTauSec": 210,
-    "maxSpreadCents": 4, "warmupSec": 60,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
     "bidOffsetCents": 1
   },
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin"],
-      "anyOfKeywords": ["up or down", "5 minutes", "5-minute"]
+      "requiredKeywords": [
+        "bitcoin"
+      ],
+      "anyOfKeywords": [
+        "up or down",
+        "5 minutes",
+        "5-minute"
+      ]
     },
     "scanPauseMs": 30000,
     "outcomeIndex": 0,

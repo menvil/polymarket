@@ -1,23 +1,29 @@
 /**
- * Построитель ордеров Polymarket
+ * Построитель ордеров Polymarket (CLOB V2)
  *
  * @remarks
- * Строит EIP-712 подписанные ордера для CLOB API Polymarket.
+ * Строит EIP-712 подписанные ордера для CLOB API Polymarket V2.
  *
- * Структура ордера:
+ * Структура ордера V2:
  * - salt: Случайное число для уникальности
  * - maker: Адрес фандера (кто предоставляет ликвидность)
  * - signer: Адрес подписанта (EOA который подписывает)
- * - taker: Нулевой адрес (любой может принять)
  * - tokenId: Идентификатор токена исхода
  * - makerAmount: Сумма которую тратит maker (в минимальных единицах)
  * - takerAmount: Сумма которую платит taker (в минимальных единицах)
+ * - side: BUY или SELL
+ * - timestamp: Unix timestamp в миллисекундах
+ * - metadata: Метаданные (bytes32)
+ * - builder: Адрес/код билдера (bytes32)
  * - expiration: Unix timestamp (0 = без истечения)
- * - nonce: Текущий nonce биржи
- * - feeRateBps: Ставка комиссии в базисных пунктах
- * - side: 0 = BUY, 1 = SELL
  * - signatureType: Тип подписи (EOA, POLY_PROXY и т.д.)
  * - signature: Подпись EIP-712
+ *
+ * Изменения V2 относительно V1:
+ * - Удалены: nonce, feeRateBps, taker
+ * - Добавлены: timestamp (ms), metadata, builder
+ * - EIP-712 domain version: "2"
+ * - Комиссии устанавливаются биржей в момент матчинга, не в ордере
  *
  * @example
  * ```typescript
@@ -28,8 +34,6 @@
  *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
- *   feeRateBps: 0,
- *   nonce: 123,
  * });
  *
  * // Использовать signedOrder в запросе POST /order
@@ -43,12 +47,12 @@ import { DEFAULT_PRICE_TICK } from '../constants.js';
 import {
   OrderBuilder as OfficialOrderBuilder,
   Side as OfficialSide,
-  SignatureType as OfficialSignatureType,
+  SignatureTypeV2 as OfficialSignatureTypeV2,
   type TickSize as OfficialTickSize,
-} from '@polymarket/clob-client';
+} from '@polymarket/clob-client-v2';
 
 /**
- * Параметры для построения ордера
+ * Параметры для построения ордера V2
  */
 export interface BuildOrderParams {
   /** Идентификатор токена */
@@ -63,12 +67,6 @@ export interface BuildOrderParams {
   /** Размер (количество акций) */
   size: number;
 
-  /** Ставка комиссии в базисных пунктах */
-  feeRateBps: number;
-
-  /** Nonce биржи */
-  nonce: number;
-
   /** Метка времени истечения (0 = без истечения) */
   expiration?: number;
 
@@ -77,29 +75,35 @@ export interface BuildOrderParams {
 
   /** true если рынок использует negRisk exchange contract */
   negRisk?: boolean;
+
+  /** Код билдера для атрибуции (bytes32 hex-строка) */
+  builderCode?: string;
+
+  /** Метаданные ордера (bytes32 hex-строка) */
+  metadata?: string;
 }
 
 /**
- * Подписанный ордер (готов для API)
+ * Подписанный ордер V2 (готов для API)
  */
 export interface SignedOrder {
-  salt: string | number;
+  salt: string;
   maker: string;
   signer: string;
-  taker: string;
   tokenId: string;
   makerAmount: string;
   takerAmount: string;
   expiration: string;
-  nonce: string;
-  feeRateBps: string;
-  side: number | 'BUY' | 'SELL';
+  side: string | number;
   signatureType: number;
+  timestamp: string;
+  metadata: string;
+  builder: string;
   signature: string;
 }
 
 /**
- * Построитель ордеров Polymarket
+ * Построитель ордеров Polymarket V2
  */
 export class PolymarketOrderBuilder {
   private readonly _officialBuilder: OfficialOrderBuilder;
@@ -109,7 +113,9 @@ export class PolymarketOrderBuilder {
     private readonly chainId: number,
     private readonly makerAddress: string,
     private readonly signatureType: SignatureType,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    /** Builder code для атрибуции (bytes32 hex, из Polymarket Builder Profile) */
+    private readonly builderCode?: string,
   ) {
     const signerBridge = {
       getAddress: async (): Promise<string> => this.signer.address,
@@ -128,16 +134,20 @@ export class PolymarketOrderBuilder {
     this._officialBuilder = new OfficialOrderBuilder(
       signerBridge as any,
       this.chainId as any,
-      this.signatureType as unknown as OfficialSignatureType,
+      this.signatureType as unknown as OfficialSignatureTypeV2,
       this.makerAddress,
     );
   }
 
   /**
-   * Построить и подписать ордер
+   * Построить и подписать ордер V2
    *
    * @param params - Параметры ордера
    * @returns Подписанный ордер готовый для API
+   *
+   * @remarks
+   * В V2 SDK генерирует timestamp самостоятельно.
+   * feeRateBps и nonce больше не нужны — комиссии устанавливаются биржей.
    *
    * @example
    * ```typescript
@@ -146,8 +156,6 @@ export class PolymarketOrderBuilder {
    *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
-   *   feeRateBps: 0,
-   *   nonce: 123,
    * });
    * ```
    */
@@ -174,14 +182,15 @@ export class PolymarketOrderBuilder {
         side: params.side === 'BUY' ? OfficialSide.BUY : OfficialSide.SELL,
         price: priceRounded,
         size: params.size,
-        feeRateBps: params.feeRateBps,
-        nonce: params.nonce,
         expiration: params.expiration,
+        builderCode: params.builderCode ?? this.builderCode,
+        metadata: params.metadata,
       },
       {
         tickSize: this.toOfficialTickSize(priceTick),
         negRisk: params.negRisk === true,
       },
+      2, // V2 EIP-712 domain
     );
 
     return signedOrder as unknown as SignedOrder;
@@ -195,41 +204,24 @@ export class PolymarketOrderBuilder {
    *
    * @remarks
    * Всегда возвращает 0.01 как наиболее безопасный шаг цены по умолчанию.
-   * Это более консервативно, чем 0.001, и наиболее совместимо с маркетами Polymarket.
-   *
-   * Важно: Это ЗАПАСНОЙ ВАРИАНТ. Правильный подход — передавать
-   * явный priceTick из ограничений маркета.
    *
    * @example
    * ```typescript
-   * inferPriceTick(0.52)   // 0.01 (округлит 0.52 → 0.52)
-   * inferPriceTick(0.843)  // 0.01 (округлит 0.843 → 0.84)
-   * inferPriceTick(0.9506) // 0.01 (округлит 0.9506 → 0.95)
+   * inferPriceTick(0.52)   // 0.01
+   * inferPriceTick(0.843)  // 0.01
    * ```
    */
   private inferPriceTick(_price: number): number {
     // КРИТИЧНО: Всегда используем DEFAULT_PRICE_TICK (0.01) как дефолт
-    // Это самый безопасный шаг на Polymarket (наиболее распространённый)
-    // НЕ выводить из десятичных знаков цены — шаг определяется маркетом, не ценой!
+    // Шаг определяется маркетом, не ценой!
     return DEFAULT_PRICE_TICK;
   }
 
   /**
-   * Вычислить суммы для maker и taker
+   * Получить конфиг округления для заданного шага цены
    *
-   * @param side - Направление ордера
-   * @param price - Цена ордера (0-1)
-   * @param size - Размер ордера (акции)
-   * @returns Суммы для maker и taker в минимальных единицах
-   *
-   * @remarks
-   * Ордер BUY:
-   * - Maker тратит: price * size (USDC)
-   * - Taker получает: size (токены исходов)
-   *
-   * Ордер SELL:
-   * - Maker тратит: size (токены исходов)
-   * - Taker получает: price * size (USDC)
+   * @param priceTick - Шаг цены
+   * @returns Конфиг с количеством знаков после запятой для цены, размера и суммы
    */
   private getRoundConfig(priceTick: number): { price: number; size: number; amount: number } {
     if (priceTick >= 0.1) return { price: 1, size: 2, amount: 3 };

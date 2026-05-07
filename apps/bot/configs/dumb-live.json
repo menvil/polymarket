@@ -1,4 +1,13 @@
 {
+  "_meta": {
+    "desc": "Dumb strategy — live test (диагностика инфраструктуры V2)",
+    "status": "wip",
+    "live": {
+      "started": "2026-05-05",
+      "pnl": "active",
+      "notes": "не production-стратегия; для верификации V2 order signing"
+    }
+  },
   "strategy": "dumb",
   "strategyParams": {
     "orderSize": 5,
@@ -9,7 +18,12 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "anyOfKeywords": ["bitcoin", "crypto", "ETH", "BTC"],
+      "anyOfKeywords": [
+        "bitcoin",
+        "crypto",
+        "ETH",
+        "BTC"
+      ],
       "minLiquidity": 500
     },
     "scanPauseMs": 60000,

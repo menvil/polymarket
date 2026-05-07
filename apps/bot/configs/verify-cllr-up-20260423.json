@@ -1,4 +1,19 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag + CLLR residual overlay UP side, 2026-04-23",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "live-recordings 2026-04-23 OOS",
+      "pnl": "+6.80 USDC",
+      "wr": "80.0%",
+      "markets": 20,
+      "date": "2026-05-02",
+      "notes": "Идентично CLL UP — SELL zones (resid∈[-6,-2]) не срабатывают на UP-side. очень хороший день"
+    },
+    "todo": [
+      "confirm mechanism: why UP-side is unaffected by residual overlay"
+    ]
+  },
   "strategy": "cex-lead-lag",
   "resources": {
     "initialBalance": 1000,

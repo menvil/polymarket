@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "PairedCexCrowd paper 5min",
+    "status": "archived",
+    "paper": {
+      "period": "2026-04-21/...",
+      "pnl": "не записан",
+      "notes": "Экспериментальная стратегия, не в production."
+    },
+    "todo": [
+      "запустить бэктест и зафиксировать результаты перед paper"
+    ]
+  },
   "strategy": "paired-cex-crowd",
   "strategyParams": {
     "edgeTablePath": "apps/bot/tables/edge-table-5min.json",
@@ -21,7 +33,11 @@
     "logEntries": true,
     "cexFilterMode": "not-adverse",
     "cexSignalId": "cex_chainlink_linear_lead_lag",
-    "cexVenues": ["binance", "coinbase", "okx"],
+    "cexVenues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "cexThresholdBps": 0.5,
     "cexStaleMs": 2000,
     "cexMinVenueCount": 3,
@@ -47,7 +63,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
@@ -84,7 +103,9 @@
     "exchanges": {
       "binance": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -92,7 +113,9 @@
       },
       "coinbase": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -100,7 +123,9 @@
       },
       "okx": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,

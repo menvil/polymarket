@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag BTС Apr8 early backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Ранний бэктест CLL до архитектурного фикса. Результаты устарели — DOWN-side был сломан."
+    },
+    "todo": [
+      "не использовать — архитектурный фикс изменил результаты принципиально"
+    ]
+  },
   "strategy": "cex-lead-lag",
   "resources": {
     "initialBalance": 100,
@@ -22,7 +34,11 @@
     "qMax": 1,
     "side": "up",
     "mode": "skewed",
-    "venues": ["binance", "coinbase", "okx"],
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "signalThresholdBps": 0.5,
     "signalLookbackMs": 1000,
     "signalStaleMs": 2000,
@@ -68,7 +84,9 @@
       "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-04-08/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["Bitcoin"]
+      "requiredKeywords": [
+        "Bitcoin"
+      ]
     },
     "outcomeIndex": 0
   }

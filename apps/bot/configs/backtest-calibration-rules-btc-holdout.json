@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CalibrationRules holdout backtest",
+    "status": "oos",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Calibration rules strategy на holdout данных. Journal: data/backtest-journals/calibration-rules-btc-holdout/. Данные Apr 23-25."
+    },
+    "todo": [
+      "посмотреть data/backtest-journals/calibration-rules-btc-holdout/ для результатов per-market"
+    ]
+  },
   "strategy": "calibration-rules",
   "strategyParams": {
     "rulesTablePath": "tables/calibration-rules-btc-v1.json",
@@ -25,7 +37,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-27/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

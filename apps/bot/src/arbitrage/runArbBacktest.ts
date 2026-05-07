@@ -21,6 +21,12 @@
  *   --dir ../../packages/apps/collect-data/snapshots \
  *   --date 2026-03-23
  *
+ * # Диапазон дат:
+ * npx tsx src/arbitrage/runArbBacktest.ts \
+ *   --dir ../../packages/apps/collect-data/snapshots \
+ *   --from-date 2026-04-21 \
+ *   --to-date 2026-04-27
+ *
  * # С фильтрами:
  * npx tsx src/arbitrage/runArbBacktest.ts \
  *   --dir ../../packages/apps/collect-data/snapshots \
@@ -39,12 +45,16 @@
  * - `--max-depth <N>` — максимальная глубина ордербука (default: 5)
  * - `--fee-model current|march30` — модель комиссий (default: current; march30 оставлен как alias)
  * - `--min-spread <N>` — минимальный spread после fees (default: 0.005)
+ * - `--book-staleness <ms>` — максимальная давность второй книги (default: 1500)
+ * - `--no-approx-resolution` — не восстанавливать settlement по Chainlink окну перед endDate
+ * - `--approx-resolution-window <ms>` — окно soft-resolution перед endDate (default: 2000)
  *
  * ### ENV переменные:
  * - `ARB_SNAPSHOT_DIR` — путь к директории снапшотов (альтернатива --dir)
  * - `ARB_MAX_DEPTH` — максимальная глубина ордербука (default: 5)
  * - `ARB_FEE_MODEL` — модель комиссий: 'current' | 'march30' (default: current; march30 оставлен как alias)
  * - `ARB_MIN_SPREAD` — минимальный spread после fees (default: 0.005)
+ * - `ARB_BOOK_STALENESS` — максимальная давность второй книги в мс (default: 1500)
  * - `ARB_ASSETS` — фильтр по активам (comma-separated)
  * - `ARB_PAIRS` — фильтр по типам пар (comma-separated)
  */
@@ -63,7 +73,7 @@ import type { PairResult, PairSimulationResult, SharedBalanceSimulationResult } 
  */
 type RunMode =
   | { kind: 'pair'; easyFile: string; hardFile: string }
-  | { kind: 'dir'; dir: string; date?: string; assets?: string[]; pairs?: string[] };
+  | { kind: 'dir'; dir: string; date?: string; fromDate?: string; toDate?: string; assets?: string[]; pairs?: string[] };
 
 /**
  * Общие опции бектеста.
@@ -76,6 +86,9 @@ interface CommonOpts {
   gapTolerance: number;
   latency: number;
   slippage: number;
+  bookStaleness: number;
+  approxResolution: boolean;
+  approxResolutionWindow: number;
 }
 
 /**
@@ -87,6 +100,8 @@ function parseArgs(): { mode: RunMode; opts: CommonOpts } {
   const args = process.argv.slice(2);
   let dir = process.env['ARB_SNAPSHOT_DIR'] ?? '';
   let date: string | undefined = process.env['ARB_DATE'];
+  let fromDate: string | undefined = process.env['ARB_FROM_DATE'];
+  let toDate: string | undefined = process.env['ARB_TO_DATE'];
   let maxDepth = parseInt(process.env['ARB_MAX_DEPTH'] ?? '5', 10);
   let feeModel: 'current' | 'march30' = (process.env['ARB_FEE_MODEL'] as 'current' | 'march30') ?? 'current';
   let minSpread = parseFloat(process.env['ARB_MIN_SPREAD'] ?? '0.005');
@@ -98,6 +113,9 @@ function parseArgs(): { mode: RunMode; opts: CommonOpts } {
   let gapTolerance = 500;
   let latency = 150;
   let slippage = 0;
+  let bookStaleness = parseInt(process.env['ARB_BOOK_STALENESS'] ?? '1500', 10);
+  let approxResolution = process.env['ARB_APPROX_RESOLUTION'] !== 'false';
+  let approxResolutionWindow = parseInt(process.env['ARB_APPROX_RESOLUTION_WINDOW'] ?? '2000', 10);
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -106,6 +124,12 @@ function parseArgs(): { mode: RunMode; opts: CommonOpts } {
         break;
       case '--date':
         date = args[++i] ?? '';
+        break;
+      case '--from-date':
+        fromDate = args[++i] ?? '';
+        break;
+      case '--to-date':
+        toDate = args[++i] ?? '';
         break;
       case '--easy':
         easyFile = args[++i] ?? '';
@@ -140,10 +164,30 @@ function parseArgs(): { mode: RunMode; opts: CommonOpts } {
       case '--slippage':
         slippage = parseFloat(args[++i] ?? '0');
         break;
+      case '--book-staleness':
+        bookStaleness = parseInt(args[++i] ?? '1500', 10);
+        break;
+      case '--no-approx-resolution':
+        approxResolution = false;
+        break;
+      case '--approx-resolution-window':
+        approxResolutionWindow = parseInt(args[++i] ?? '2000', 10);
+        break;
     }
   }
 
-  const opts: CommonOpts = { maxDepth, feeModel, minSpread, balance, gapTolerance, latency, slippage };
+  const opts: CommonOpts = {
+    maxDepth,
+    feeModel,
+    minSpread,
+    balance,
+    gapTolerance,
+    latency,
+    slippage,
+    bookStaleness,
+    approxResolution,
+    approxResolutionWindow,
+  };
 
   // Режим двух файлов
   if (easyFile && hardFile) {
@@ -164,6 +208,8 @@ function parseArgs(): { mode: RunMode; opts: CommonOpts } {
         kind: 'dir',
         dir: path.resolve(dir),
         date,
+        fromDate,
+        toDate,
         assets,
         pairs,
       },
@@ -392,6 +438,12 @@ function printSimulationSummary(results: PairSimulationResult[]): void {
   const totalPnl = results.reduce((s, r) => s + r.totalPnl, 0);
   const totalCost = results.reduce((s, r) => s + r.totalCost, 0);
   const totalInitial = results.reduce((s, r) => s + r.initialBalance, 0);
+  const totalUnits = results.reduce((s, r) => s + r.totalUnits, 0);
+  const guaranteedEdge = allTrades.reduce((s, t) => s + t.totalPnl, 0);
+  const avgEdgePerUnit = totalUnits > 0 ? guaranteedEdge / totalUnits : 0;
+  const avgEdgePerTrade = allTrades.length > 0 ? guaranteedEdge / allTrades.length : 0;
+  const auditedSettlementPairs = withTrades.filter(r => r.settlement.payoffPerUnit !== null);
+  const conservativeSettlementPairs = withTrades.filter(r => r.settlement.payoffPerUnit === null);
 
   console.log(`\n${'='.repeat(130)}`);
   console.log('BATCH SIMULATION RESULTS');
@@ -403,9 +455,15 @@ function printSimulationSummary(results: PairSimulationResult[]): void {
   console.log(`  Strike-safe pairs:      ${results.length - skippedByStrike.length}  (easy_strike ≤ hard_strike)`);
   console.log(`  Skipped (death risk):   ${skippedByStrike.length}  (easy_strike > hard_strike)`);
   console.log(`  Pairs with windows:     ${withWindows.length}`);
-  console.log(`  Pairs with trades:      ${withTrades.length}`);
+  console.log(`  Guaranteed arb pairs:   ${withTrades.length}  (strike-safe entries, conservative $1 min payoff)`);
+  console.log(`  Settlement audited:     ${auditedSettlementPairs.length}`);
+  console.log(`  Settlement fallback:    ${conservativeSettlementPairs.length}  (no final/soft Chainlink, counted as $1)`);
   console.log(`  Total windows:          ${allWindows.length}`);
   console.log(`  Total trades:           ${allTrades.length}`);
+  console.log(`  Total units:            ${totalUnits.toFixed(0)}`);
+  console.log(`  Guaranteed edge:        $${guaranteedEdge.toFixed(2)}  ($1 min payoff - cost - fees)`);
+  console.log(`  Avg edge / unit:        $${avgEdgePerUnit.toFixed(4)}`);
+  console.log(`  Avg edge / trade:       $${avgEdgePerTrade.toFixed(2)}`);
 
   // Статистика по длительности окон
   if (allWindows.length > 0) {
@@ -491,13 +549,15 @@ function printSimulationSummary(results: PairSimulationResult[]): void {
 
   if (withTrades.length > 0) {
     console.log(`\n${'─'.repeat(140)}`);
-    console.log('SETTLEMENT OUTCOMES');
+    console.log('SETTLEMENT AUDIT');
     console.log(`${'─'.repeat(140)}`);
-    console.log(`  SAFE ($1 payoff):       ${safePairs.length} (${((safePairs.length / withTrades.length) * 100).toFixed(0)}%)`);
-    console.log(`  WINDFALL ($2 payoff):   ${windfallPairs.length} (${((windfallPairs.length / withTrades.length) * 100).toFixed(0)}%)`);
-    console.log(`  DEATH ZONE ($0):        ${deathPairs.length} (${((deathPairs.length / withTrades.length) * 100).toFixed(0)}%)`);
+    console.log(`  Guaranteed arb pairs:   ${withTrades.length}`);
+    console.log(`  Audited settlements:    ${auditedSettlementPairs.length}`);
+    console.log(`  SAFE ($1 payoff):       ${safePairs.length} (${((safePairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
+    console.log(`  WINDFALL ($2 payoff):   ${windfallPairs.length} (${((windfallPairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
+    console.log(`  DEATH ZONE ($0):        ${deathPairs.length} (${((deathPairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
     if (unknownPairs.length > 0) {
-      console.log(`  Unknown:                ${unknownPairs.length}`);
+      console.log(`  Conservative fallback:  ${unknownPairs.length}  (settlement not audited, PnL uses guaranteed $1)`);
     }
     if (deathPairs.length > 0) {
       const deathLoss = deathPairs.reduce((s, r) => s + r.totalCost, 0);
@@ -534,8 +594,14 @@ function printSharedSimulationSummary(result: SharedBalanceSimulationResult): vo
   const allWindows = results.flatMap(r => r.windows);
   const allTrades = results.flatMap(r => r.trades);
   const totalCost = results.reduce((s, r) => s + r.totalCost, 0);
+  const totalUnits = results.reduce((s, r) => s + r.totalUnits, 0);
+  const guaranteedEdge = allTrades.reduce((s, t) => s + t.totalPnl, 0);
+  const avgEdgePerUnit = totalUnits > 0 ? guaranteedEdge / totalUnits : 0;
+  const avgEdgePerTrade = allTrades.length > 0 ? guaranteedEdge / allTrades.length : 0;
 
   const skippedByStrike = results.filter(r => !r.settlement.strikesSafe);
+  const auditedSettlementPairs = withTrades.filter(r => r.settlement.payoffPerUnit !== null);
+  const conservativeSettlementPairs = withTrades.filter(r => r.settlement.payoffPerUnit === null);
 
   console.log(`\n${'='.repeat(130)}`);
   console.log('SHARED BALANCE SIMULATION RESULTS');
@@ -551,9 +617,15 @@ function printSharedSimulationSummary(result: SharedBalanceSimulationResult): vo
   console.log(`  Strike-safe pairs:      ${results.length - skippedByStrike.length}  (easy_strike ≤ hard_strike)`);
   console.log(`  Skipped (death risk):   ${skippedByStrike.length}  (easy_strike > hard_strike)`);
   console.log(`  Pairs with windows:     ${withWindows.length}`);
-  console.log(`  Pairs with trades:      ${withTrades.length}`);
+  console.log(`  Guaranteed arb pairs:   ${withTrades.length}  (strike-safe entries, conservative $1 min payoff)`);
+  console.log(`  Settlement audited:     ${auditedSettlementPairs.length}`);
+  console.log(`  Settlement fallback:    ${conservativeSettlementPairs.length}  (no final/soft Chainlink, counted as $1)`);
   console.log(`  Total windows:          ${allWindows.length}`);
   console.log(`  Total trades:           ${allTrades.length}`);
+  console.log(`  Total units:            ${totalUnits.toFixed(0)}`);
+  console.log(`  Guaranteed edge:        $${guaranteedEdge.toFixed(2)}  ($1 min payoff - cost - fees)`);
+  console.log(`  Avg edge / unit:        $${avgEdgePerUnit.toFixed(4)}`);
+  console.log(`  Avg edge / trade:       $${avgEdgePerTrade.toFixed(2)}`);
 
   // Статистика по длительности окон
   if (allWindows.length > 0) {
@@ -633,13 +705,15 @@ function printSharedSimulationSummary(result: SharedBalanceSimulationResult): vo
 
   if (withTrades.length > 0) {
     console.log(`\n${'─'.repeat(130)}`);
-    console.log('SETTLEMENT OUTCOMES');
+    console.log('SETTLEMENT AUDIT');
     console.log(`${'─'.repeat(130)}`);
-    console.log(`  SAFE ($1 payoff):       ${safePairs.length} (${((safePairs.length / withTrades.length) * 100).toFixed(0)}%)`);
-    console.log(`  WINDFALL ($2 payoff):   ${windfallPairs.length} (${((windfallPairs.length / withTrades.length) * 100).toFixed(0)}%)`);
-    console.log(`  DEATH ZONE ($0):        ${deathPairs.length} (${((deathPairs.length / withTrades.length) * 100).toFixed(0)}%)`);
+    console.log(`  Guaranteed arb pairs:   ${withTrades.length}`);
+    console.log(`  Audited settlements:    ${auditedSettlementPairs.length}`);
+    console.log(`  SAFE ($1 payoff):       ${safePairs.length} (${((safePairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
+    console.log(`  WINDFALL ($2 payoff):   ${windfallPairs.length} (${((windfallPairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
+    console.log(`  DEATH ZONE ($0):        ${deathPairs.length} (${((deathPairs.length / withTrades.length) * 100).toFixed(0)}% of arb pairs)`);
     if (unknownPairs.length > 0) {
-      console.log(`  Unknown:                ${unknownPairs.length}`);
+      console.log(`  Conservative fallback:  ${unknownPairs.length}  (settlement not audited, PnL uses guaranteed $1)`);
     }
   }
 
@@ -649,6 +723,7 @@ function printSharedSimulationSummary(result: SharedBalanceSimulationResult): vo
   console.log(`${'─'.repeat(130)}`);
   console.log(`  Initial balance:          $${result.initialBalance.toFixed(2)}`);
   console.log(`  Total cost of entries:    $${totalCost.toFixed(2)}`);
+  console.log(`  Guaranteed edge:          $${guaranteedEdge.toFixed(2)}`);
   console.log(`  Settlement payoffs:       $${(totalCost + result.totalPnl).toFixed(2)}`);
   console.log(`  Final balance:            $${result.finalBalance.toFixed(2)}`);
   console.log(`  Total P&L:               $${result.totalPnl.toFixed(2)}`);
@@ -670,6 +745,8 @@ async function main(): Promise<void> {
   console.log(`  Min spread:   ${opts.minSpread}`);
   console.log(`  Gap tolerance:${opts.gapTolerance}ms`);
   console.log(`  Latency:      ${opts.latency}ms`);
+  console.log(`  Book stale:   ${opts.bookStaleness}ms`);
+  console.log(`  Approx res:   ${opts.approxResolution ? `${opts.approxResolutionWindow}ms` : 'off'}`);
   console.log(`  Slippage/leg: ${opts.slippage}`);
   if (opts.balance !== undefined) console.log(`  Balance:      $${opts.balance}`);
 
@@ -688,6 +765,9 @@ async function main(): Promise<void> {
         gapToleranceMs: opts.gapTolerance,
         latencyMs: opts.latency,
         slippagePerLeg: opts.slippage,
+        bookStalenessMs: opts.bookStaleness,
+        approxResolution: opts.approxResolution,
+        approxResolutionWindowMs: opts.approxResolutionWindow,
       },
       { logger },
     );
@@ -711,6 +791,7 @@ async function main(): Promise<void> {
     console.log(`  Mode:         directory scan`);
     console.log(`  Snapshot dir: ${mode.dir}`);
     if (mode.date) console.log(`  Date:         ${mode.date}`);
+    if (mode.fromDate || mode.toDate) console.log(`  Date range:   ${mode.fromDate ?? '-∞'} → ${mode.toDate ?? '+∞'}`);
     if (mode.assets) console.log(`  Assets:       ${mode.assets.join(', ')}`);
     if (mode.pairs) console.log(`  Pair types:   ${mode.pairs.join(', ')}`);
     console.log();
@@ -718,14 +799,17 @@ async function main(): Promise<void> {
     const engine = new CrossMarketBacktestEngine(
       {
         snapshotDir: mode.dir,
-        fromDate: mode.date,
-        toDate: mode.date,
+        fromDate: mode.date ?? mode.fromDate,
+        toDate: mode.date ?? mode.toDate,
         maxDepth: opts.maxDepth,
         feeModel,
         minSpreadAfterFees: opts.minSpread,
         gapToleranceMs: opts.gapTolerance,
         latencyMs: opts.latency,
         slippagePerLeg: opts.slippage,
+        bookStalenessMs: opts.bookStaleness,
+        approxResolution: opts.approxResolution,
+        approxResolutionWindowMs: opts.approxResolutionWindow,
         assets: mode.assets,
         pairTypes: mode.pairs,
       },

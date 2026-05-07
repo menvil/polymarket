@@ -156,8 +156,7 @@ export class PolymarketRestAdapter {
         ...params,
         size: canPlace.normalizedSize!, // Используем нормализованный размер
         price: canPlace.normalizedPrice!, // Используем нормализованную цену
-        priceTick: canPlace.priceTick, // Передаём шаг цены в построитель API
-        feeRateBps: canPlace.feeRateBps, // Передаём изученную или дефолтную ставку комиссии
+        priceTick: canPlace.priceTick,
       });
 
       this.logger.info('Order placed successfully', {

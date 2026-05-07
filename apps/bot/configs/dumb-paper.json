@@ -1,4 +1,13 @@
 {
+  "_meta": {
+    "desc": "Dumb strategy — paper (диагностика инфраструктуры)",
+    "status": "wip",
+    "paper": {
+      "period": "ongoing",
+      "pnl": "running",
+      "notes": "не production-стратегия"
+    }
+  },
   "strategy": "dumb",
   "strategyParams": {
     "orderSize": 5,

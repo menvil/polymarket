@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "Avellaneda-Stoikov experiment — as-mm-paper-discovery",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min или 15-min BTC/ETH/SOL/XRP",
+      "pnl": "не записан",
+      "notes": "Ранний AS эксперимент. Вся история: docs/guides/strategy-hypotheses.md. AS 5-min с зоной: +0.4 USDC breakeven. Без зоны: -174 USDC катастрофа. Заменён SelectiveEntry/AdaptiveEntry."
+    },
+    "todo": [
+      "archived — не перезапускать. Лучше использовать sel/ae стратегии."
+    ]
+  },
   "strategy": "avellaneda-stoikov",
   "strategyParams": {
     "gamma": 0.05,
@@ -13,7 +25,12 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "anyOfKeywords": ["bitcoin", "crypto", "ETH", "BTC"],
+      "anyOfKeywords": [
+        "bitcoin",
+        "crypto",
+        "ETH",
+        "BTC"
+      ],
       "minLiquidity": 500
     },
     "scanPauseMs": 60000,

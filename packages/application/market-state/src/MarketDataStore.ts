@@ -73,6 +73,7 @@ export interface MarketDataStoreDeps {
 export class MarketDataStore {
   private readonly _logger: ILogger;
   private readonly _topOfBooks = new Map<InstrumentId, TopOfBook>();
+  private readonly _topOfBookTimestampsMs = new Map<InstrumentId, number>();
   private _onChange?: (instrumentId: InstrumentId, reason: MarketDataReason) => void;
 
   private _unsubBookUpdated: (() => void) | undefined;
@@ -113,6 +114,7 @@ export class MarketDataStore {
       'BOOK_UPDATED',
       (event) => {
         this._topOfBooks.set(event.instrumentId, event.topOfBook);
+        this._topOfBookTimestampsMs.set(event.instrumentId, event.timestamp.toNumber());
         this._onChange?.(event.instrumentId, 'BOOK');
       },
     );
@@ -174,6 +176,17 @@ export class MarketDataStore {
   }
 
   /**
+   * Возвращает timestamp последнего BOOK_UPDATED для инструмента.
+   *
+   * @remarks
+   * Используется cross-market стратегиями для проверки, что две книги
+   * достаточно синхронны перед одновременной покупкой обеих ног.
+   */
+  public getTopOfBookTimestampMs(instrumentId: InstrumentId): number | undefined {
+    return this._topOfBookTimestampsMs.get(instrumentId);
+  }
+
+  /**
    * Возвращает историю снапшотов стакана.
    *
    * @param instrumentId - ID инструмента
@@ -201,5 +214,6 @@ export class MarketDataStore {
    */
   public clear(): void {
     this._topOfBooks.clear();
+    this._topOfBookTimestampsMs.clear();
   }
 }

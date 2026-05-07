@@ -1,10 +1,26 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag BTC early live config",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Ранний live конфиг до фикса и до bidirectional. Заменён cll-live-5min.json."
+    },
+    "todo": [
+      "устарел — использовать cll-live-5min.json или cllr-live-5min.json"
+    ]
+  },
   "strategy": "cex-lead-lag",
   "strategyParams": {
     "orderSize": 5,
     "qMax": 1,
     "mode": "skewed",
-    "venues": ["binance", "coinbase", "okx"],
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "signalThresholdBps": 0.5,
     "signalLookbackMs": 1000,
     "signalStaleMs": 2000,
@@ -50,7 +66,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
@@ -83,7 +102,9 @@
     "exchanges": {
       "binance": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -91,7 +112,9 @@
       },
       "coinbase": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -99,7 +122,9 @@
       },
       "okx": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,

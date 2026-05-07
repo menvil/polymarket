@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd experiment — cc-backtest-diag-one",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots Apr 2026",
+      "pnl": "не записан",
+      "notes": "Ранний эксперимент CalibratedCrowd. Большинство конфигов — варианты CEX filter (agree/not-adverse) которые ухудшают результат."
+    },
+    "todo": [
+      "результаты не зафиксированы",
+      "CEX agree/not-adverse фильтры исторически вредят — не использовать в новых конфигах"
+    ]
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
@@ -16,7 +29,9 @@
     "allowPanicTaker": false,
     "logEntries": true
   },
-  "execution": { "postOnly": true },
+  "execution": {
+    "postOnly": true
+  },
   "market": {
     "source": "snapshots",
     "paths": [
@@ -25,7 +40,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/polymarket_Bitcoin_Up_or_Down_-2026_April_21_1010AM-1015AM_ET___*.jsonl.gz"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
@@ -42,5 +60,7 @@
     "fillOnTape": true,
     "fillAtOrderPrice": true
   },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

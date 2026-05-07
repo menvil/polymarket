@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "SmartEntry bull directional variant, btc5",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc5 snapshots 5-min BTC",
+      "pnl": "не записан",
+      "notes": "SmartEntry стратегия (не SelectiveEntry!)."
+    },
+    "todo": [
+      "результаты не зафиксированы — перезапустить если нужны данные"
+    ]
+  },
   "strategy": "smart-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -10,8 +22,25 @@
     "bidOffsetCents": 1,
     "maxSpreadCents": 15
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day5/*"], "outcomeIndex": 0 },
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day5/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "Baseline paired overlay backtest Apr 21",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Baseline для paired+overlay strategy. Apr-21 данные."
+    },
+    "todo": [
+      "зафиксировать результаты для baseline comparison"
+    ]
+  },
   "strategy": "baseline-paired-overlay",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min.json",
@@ -22,7 +34,11 @@
     "logEntries": false,
     "cexFilterMode": "not-adverse",
     "cexSignalId": "cex_chainlink_linear_lead_lag",
-    "cexVenues": ["binance", "coinbase", "okx"],
+    "cexVenues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "cexThresholdBps": 0.5,
     "cexStaleMs": 2000,
     "cexMinVenueCount": 3,
@@ -53,7 +69,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

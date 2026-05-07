@@ -42,6 +42,10 @@ import { BinanceProbMMStrategy } from './strategies/BinanceProbMMStrategy.js';
 import type { BinanceProbMMConfig } from './strategies/BinanceProbMMStrategy.js';
 import { CexLeadLagStrategy } from './strategies/CexLeadLagStrategy.js';
 import type { CexLeadLagConfig } from './strategies/CexLeadLagStrategy.js';
+import { CexLeadLagExitPolicyStrategy } from './strategies/CexLeadLagExitPolicyStrategy.js';
+import type { CexLeadLagExitPolicyConfig } from './strategies/CexLeadLagExitPolicyStrategy.js';
+import { CexLeadLagRiskBudgetStrategy } from './strategies/CexLeadLagRiskBudgetStrategy.js';
+import type { CexLeadLagRiskBudgetConfig } from './strategies/CexLeadLagRiskBudgetStrategy.js';
 import { CalibrationRulesStrategy } from './strategies/CalibrationRulesStrategy.js';
 import type { CalibrationRulesConfig } from './strategies/CalibrationRulesStrategy.js';
 import { PairedCexCrowdStrategy } from './strategies/PairedCexCrowdStrategy.js';
@@ -68,6 +72,8 @@ export type StrategyConfig =
   | { readonly type: 'fair-value-mm'; readonly id?: string; readonly params: FairValueMMConfig }
   | { readonly type: 'binance-prob-mm'; readonly id?: string; readonly params: BinanceProbMMConfig }
   | { readonly type: 'cex-lead-lag'; readonly id?: string; readonly params: CexLeadLagConfig }
+  | { readonly type: 'cex-lead-lag-exit-policy'; readonly id?: string; readonly params: CexLeadLagExitPolicyConfig }
+  | { readonly type: 'cex-lead-lag-risk-budget'; readonly id?: string; readonly params: CexLeadLagRiskBudgetConfig }
   | { readonly type: 'calibration-rules'; readonly id?: string; readonly params: CalibrationRulesConfig }
   | { readonly type: 'calibrated-crowd'; readonly id?: string; readonly params: CalibratedCrowdConfig }
   | { readonly type: 'calibrated-crowd-cex'; readonly id?: string; readonly params: CexCrowdNotAdverseConfig }
@@ -142,6 +148,12 @@ export function createStrategy(
 
     case 'cex-lead-lag':
       return new CexLeadLagStrategy(config.params, config.id, logger, journal);
+
+    case 'cex-lead-lag-exit-policy':
+      return new CexLeadLagExitPolicyStrategy(config.params, config.id, logger, journal);
+
+    case 'cex-lead-lag-risk-budget':
+      return new CexLeadLagRiskBudgetStrategy(config.params, config.id, logger, journal);
 
     case 'calibration-rules':
       return new CalibrationRulesStrategy(

@@ -1,4 +1,18 @@
 {
+  "_meta": {
+    "desc": "AdaptiveEntry 15min BTC — paper test",
+    "status": "paper",
+    "backtest": {
+      "dataset": "btc1/btc2/btc4/btc5 snapshots, OOS",
+      "pnl": "+18.73 USDC",
+      "wr": "79.8%",
+      "notes": "auto UP/DOWN; 5-min not viable (timing issues); 15-min stable"
+    },
+    "paper": {
+      "period": "ongoing",
+      "pnl": "running"
+    }
+  },
   "strategy": "adaptive-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -11,7 +25,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 14,
       "maxDurationMinutes": 16
     },

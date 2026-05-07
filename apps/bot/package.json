@@ -8,7 +8,10 @@
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "configs": "npx tsx scripts/config-summary.ts",
+    "configs:live": "npx tsx scripts/config-summary.ts --status=live",
+    "configs:all": "npx tsx scripts/config-summary.ts --all"
   },
   "dependencies": {
     "@polymarket/logger": "0.1.0",

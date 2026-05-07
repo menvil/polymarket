@@ -10,7 +10,8 @@ describe('MarketPairMatcher', () => {
       expect(r).toEqual({
         asset: 'BTC',
         recurrence: '15m',
-        endEpoch: 1774231200,
+        startEpoch: 1774231200,
+        endEpoch: 1774232100,
       });
     });
 
@@ -19,7 +20,8 @@ describe('MarketPairMatcher', () => {
       expect(r).toEqual({
         asset: 'ETH',
         recurrence: 'hourly',
-        endEpoch: 1774231200,
+        startEpoch: 1774231200,
+        endEpoch: 1774234800,
       });
     });
 
@@ -28,7 +30,8 @@ describe('MarketPairMatcher', () => {
       expect(r).toEqual({
         asset: 'SOL',
         recurrence: '5m',
-        endEpoch: 1774231800,
+        startEpoch: 1774231800,
+        endEpoch: 1774232100,
       });
     });
 
@@ -43,10 +46,17 @@ describe('MarketPairMatcher', () => {
     it('парсит валидную мета-строку', () => {
       const meta = {
         t: 'meta' as const,
-        tokenIds: ['108038936235534562211272541592295195184893929481427466019651070223257905568509'],
+        tokenIds: [
+          '108038936235534562211272541592295195184893929481427466019651070223257905568509',
+          '208038936235534562211272541592295195184893929481427466019651070223257905568509',
+        ],
         m: {
           endDate: '2026-03-23T02:15:00Z',
-          events: [{ ticker: 'btc-updown-15m-1774231200' }],
+          events: [{
+            ticker: 'btc-updown-15m-1774231200',
+            startTime: '2026-03-23T02:00:00Z',
+            eventMetadata: { priceToBeat: '87250.5', finalPrice: 87275 },
+          }],
         },
       };
 
@@ -56,7 +66,11 @@ describe('MarketPairMatcher', () => {
       expect(result!.asset).toBe('BTC');
       expect(result!.recurrence).toBe('15m');
       expect(result!.endDate).toBe('2026-03-23T02:15:00Z');
-      expect(result!.endEpochMs).toBe(1774231200000);
+      expect(result!.startEpochMs).toBe(Date.parse('2026-03-23T02:00:00Z'));
+      expect(result!.endEpochMs).toBe(Date.parse('2026-03-23T02:15:00Z'));
+      expect(result!.priceToBeat).toBe(87250.5);
+      expect(result!.finalPrice).toBe(87275);
+      expect(result!.downInstrumentId).toBeDefined();
       expect(result!.filePath).toBe('/path/to/file.jsonl.gz');
     });
 

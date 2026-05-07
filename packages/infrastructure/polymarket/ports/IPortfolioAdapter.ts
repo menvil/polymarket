@@ -31,7 +31,6 @@ export type CanPlaceOrderResult =
       normalizedSize: number;
       normalizedPrice: number;
       priceTick: number;
-      feeRateBps?: number;
     }
   | { ok: false; reason: string };
 

@@ -1,4 +1,23 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry daccel-best, 5min BTC — live",
+    "status": "live",
+    "backtest": {
+      "dataset": "btc1/btc2/btc4/btc5 snapshots, OOS",
+      "pnl": "+13.75 USDC",
+      "wr": "65.6%",
+      "notes": "daccel filter best (+24.71 ablation); wait40 stable; rise/comp harmful"
+    },
+    "paper": {
+      "period": "2026-04-15/2026-04-20",
+      "pnl": "done",
+      "notes": "24h paper stable, подтверждён"
+    },
+    "live": {
+      "started": "2026-04-20",
+      "pnl": "active"
+    }
+  },
   "strategy": "selective-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -21,7 +40,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

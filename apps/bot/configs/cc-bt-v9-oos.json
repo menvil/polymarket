@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd v9 table OOS",
+    "status": "oos",
+    "backtest": {
+      "dataset": "BTC snapshots",
+      "pnl": "не записан",
+      "notes": "v9-loose edge-table OOS holdout."
+    },
+    "todo": [
+      "зафиксировать результаты OOS holdout"
+    ]
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-v9-loose.json",
@@ -26,7 +38,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-27/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

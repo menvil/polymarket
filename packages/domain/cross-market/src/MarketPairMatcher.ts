@@ -52,6 +52,7 @@ const RECURRENCE_DURATION_SEC: Record<Recurrence, number> = {
 interface TickerParseResult {
   readonly asset: string;
   readonly recurrence: Recurrence;
+  readonly startEpoch: number;
   readonly endEpoch: number;
 }
 
@@ -63,9 +64,14 @@ export interface RawSnapshotMeta {
   readonly tokenIds: string[];
   readonly m?: {
     readonly endDate?: string;
+    readonly eventStartTime?: string;
     readonly events?: ReadonlyArray<{
       readonly ticker?: string;
-      readonly eventMetadata?: { readonly priceToBeat?: number };
+      readonly startTime?: string;
+      readonly eventMetadata?: {
+        readonly priceToBeat?: number | string;
+        readonly finalPrice?: number | string;
+      };
     }>;
   };
 }
@@ -83,7 +89,7 @@ export class MarketPairMatcher {
    * @example
    * ```typescript
    * const result = MarketPairMatcher.parseTicker('btc-updown-15m-1774231200');
-   * // { asset: 'BTC', recurrence: '15m', endEpoch: 1774231200 }
+   * // { asset: 'BTC', recurrence: '15m', startEpoch: 1774231200, endEpoch: 1774232100 }
    * ```
    */
   static parseTicker(ticker: string): TickerParseResult | undefined {
@@ -101,7 +107,7 @@ export class MarketPairMatcher {
     const durationSec = RECURRENCE_DURATION_SEC[rec];
     const endEpoch = startEpoch + durationSec;
 
-    return { asset, recurrence: rec, endEpoch };
+    return { asset, recurrence: rec, startEpoch, endEpoch };
   }
 
   /**
@@ -124,6 +130,8 @@ export class MarketPairMatcher {
 
     const endDate = m.endDate;
     if (!endDate) return undefined;
+    const endEpochMs = Date.parse(endDate);
+    if (!Number.isFinite(endEpochMs)) return undefined;
 
     const rawTokenId = meta.tokenIds[0];
     if (!rawTokenId) return undefined;
@@ -131,17 +139,28 @@ export class MarketPairMatcher {
     const instrumentId = asInstrumentId(rawTokenId);
     if (!instrumentId) return undefined;
 
-    const priceToBeat = events?.[0]?.eventMetadata?.priceToBeat;
+    const rawDownTokenId = meta.tokenIds[1];
+    const downInstrumentId = rawDownTokenId ? asInstrumentId(rawDownTokenId) : undefined;
+    const event = events?.[0];
+    const startDate = event?.startTime ?? m.eventStartTime;
+    const parsedStartMs = startDate ? Date.parse(startDate) : NaN;
+    const startEpochMs = Number.isFinite(parsedStartMs) ? parsedStartMs : parsed.startEpoch * 1000;
+    const priceToBeat = toOptionalNumber(event?.eventMetadata?.priceToBeat);
+    const finalPrice = toOptionalNumber(event?.eventMetadata?.finalPrice);
 
     return {
       asset: parsed.asset,
       recurrence: parsed.recurrence,
       endDate,
-      endEpochMs: parsed.endEpoch * 1000,
+      startDate: Number.isFinite(parsedStartMs) ? startDate : new Date(startEpochMs).toISOString(),
+      startEpochMs,
+      endEpochMs,
       instrumentId,
+      downInstrumentId,
       filePath,
       ticker,
-      priceToBeat: typeof priceToBeat === 'number' ? priceToBeat : undefined,
+      priceToBeat,
+      finalPrice,
     };
   }
 
@@ -226,6 +245,15 @@ export class MarketPairMatcher {
 
     return pairs;
   }
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 /**

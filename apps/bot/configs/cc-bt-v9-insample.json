@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd v9 table in-sample",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots",
+      "pnl": "не записан",
+      "notes": "v9-loose edge-table. In-sample evaluation."
+    },
+    "todo": [
+      "зафиксировать результаты — serve as baseline для сравнения v9 vs delta-regime"
+    ]
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-v9-loose.json",
@@ -30,7 +42,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-25/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

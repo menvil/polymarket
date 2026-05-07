@@ -1,4 +1,13 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd edge-table v9-loose, 5min BTC — paper",
+    "status": "paper",
+    "paper": {
+      "period": "ongoing",
+      "pnl": "running",
+      "notes": "v9-loose таблица с relaxed gates"
+    }
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-v9-loose.json",
@@ -22,7 +31,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

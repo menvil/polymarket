@@ -1,6 +1,64 @@
-{ "strategy": "avellaneda-stoikov",
-  "strategyParams": { "gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0, "ewmaAlpha": 0.3, "unwindSec": 120, "unwindMaxDiscountCents": 5, "stopLossCents": 2, "stopLossSpreadMult": 2.0, "minTradesForMid": 5, "regimeWindow": 15, "regimeTrendThreshold": 2, "regimeRangeThreshold": 1, "regimeTrendSpreadMult": 10.0, "regimeRangeSpreadMult": 0.6, "warmupSec": 15, "jumpThreshold": 2, "jumpWidenFactor": 2.5, "jumpCooldownTrades": 3, "dynGammaSlope": 1.0, "maxSpreadCents": 2, "maxWarmupVolCents": 4, "minWarmupTradesPerSec": 0.5, "imbalanceSpreadFactor": 0.5, "ofiWindow": 10, "ofiWeight": 0.5 },
-  "market": { "source": "snapshots", "paths": ["/tmp/5min-snapshots-day1/*"], "outcomeIndex": 0 },
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" } }
+{
+  "_meta": {
+    "desc": "Avellaneda-Stoikov 5min variant — as-5min-combo-full-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min BTC btc1/btc2/btc4/btc5",
+      "pnl": "не записан",
+      "notes": "AS 5-min experiment. Все AS 5-min конфиги архивированы — стратегия заменена SelectiveEntry/AdaptiveEntry. Детали: docs/guides/strategy-hypotheses.md"
+    },
+    "todo": [
+      "archived — не перезапускать. Используй sel/ae стратегии."
+    ]
+  },
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 5,
+    "spreadMult": 1.0,
+    "ewmaAlpha": 0.3,
+    "unwindSec": 120,
+    "unwindMaxDiscountCents": 5,
+    "stopLossCents": 2,
+    "stopLossSpreadMult": 2.0,
+    "minTradesForMid": 5,
+    "regimeWindow": 15,
+    "regimeTrendThreshold": 2,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 10.0,
+    "regimeRangeSpreadMult": 0.6,
+    "warmupSec": 15,
+    "jumpThreshold": 2,
+    "jumpWidenFactor": 2.5,
+    "jumpCooldownTrades": 3,
+    "dynGammaSlope": 1.0,
+    "maxSpreadCents": 2,
+    "maxWarmupVolCents": 4,
+    "minWarmupTradesPerSec": 0.5,
+    "imbalanceSpreadFactor": 0.5,
+    "ofiWindow": 10,
+    "ofiWeight": 0.5
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-snapshots-day1/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "Crowd policy rules config (BTC)",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Конфиг для CalibrationRules стратегии на BTC. Crowd-based правила."
+    },
+    "todo": [
+      "запустить бэктест и зафиксировать результаты"
+    ]
+  },
   "name": "btc-crowd-policy-rules-v1",
   "notes": [
     "Rules derived from manual calibration review.",
@@ -15,7 +27,9 @@
       "deltaMax": 40,
       "tauMin": 60,
       "tauMax": 90,
-      "regimes": ["up"]
+      "regimes": [
+        "up"
+      ]
     },
     {
       "id": "r2_state_p20_tau30_60_flat",
@@ -25,7 +39,9 @@
       "deltaMax": 20,
       "tauMin": 30,
       "tauMax": 60,
-      "regimes": ["flat"]
+      "regimes": [
+        "flat"
+      ]
     },
     {
       "id": "r3_state_m10_tau30_60_down",
@@ -35,7 +51,9 @@
       "deltaMax": -10,
       "tauMin": 30,
       "tauMax": 60,
-      "regimes": ["down"]
+      "regimes": [
+        "down"
+      ]
     },
     {
       "id": "r4_state_m30_tau30_60_down",
@@ -45,7 +63,9 @@
       "deltaMax": -30,
       "tauMin": 30,
       "tauMax": 60,
-      "regimes": ["down"]
+      "regimes": [
+        "down"
+      ]
     },
     {
       "id": "r5_state_m90_tau210_240_down",
@@ -55,7 +75,9 @@
       "deltaMax": -90,
       "tauMin": 210,
       "tauMax": 240,
-      "regimes": ["down"]
+      "regimes": [
+        "down"
+      ]
     },
     {
       "id": "r6_cluster_p0_tau270_300_down_c45_55",
@@ -65,7 +87,9 @@
       "deltaMax": 0,
       "tauMin": 270,
       "tauMax": 300,
-      "regimes": ["down"],
+      "regimes": [
+        "down"
+      ],
       "crowdMin": 45,
       "crowdMax": 55
     },
@@ -77,7 +101,9 @@
       "deltaMax": -10,
       "tauMin": 270,
       "tauMax": 300,
-      "regimes": ["down"],
+      "regimes": [
+        "down"
+      ],
       "crowdMin": 40,
       "crowdMax": 45
     },
@@ -89,7 +115,9 @@
       "deltaMax": -10,
       "tauMin": 240,
       "tauMax": 270,
-      "regimes": ["flat"],
+      "regimes": [
+        "flat"
+      ],
       "crowdMin": 35,
       "crowdMax": 45
     }

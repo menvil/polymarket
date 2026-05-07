@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "ProbTableStrategy experiment — pt-e5-os5-day1-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "btc 5-min markets, day4+day5",
+      "pnl": "не записан",
+      "notes": "ProbTable как самостоятельная стратегия не работает: v1 (hold) лучший -101 USDC, v2 (edge convergence) -160 до -400 USDC. На 5-min fairValue прыгает между tau-бакетами, цена не сходится. Полезна только как AS-фильтр."
+    },
+    "todo": [
+      "не использовать самостоятельно — только как veto/shift фильтр для AS"
+    ]
+  },
   "strategy": "prob-table",
   "strategyParams": {
     "probTablePath": "/tmp/prob-table-btc-only-day123.json",

@@ -7,8 +7,8 @@
  *
  * ### Ключевые понятия:
  * - **Recurrence** — длительность рынка: `5m`, `15m`, `hourly`, `daily`
- * - **Easy leg** — рынок с более длинной duration (ниже priceToBeat, выше P(Up))
- * - **Hard leg** — рынок с более короткой duration (выше priceToBeat, ниже P(Up))
+ * - **Easy leg** — рынок с lower strike (ниже priceToBeat, выше P(Up))
+ * - **Hard leg** — рынок с higher strike (выше priceToBeat, ниже P(Up))
  * - **Divergence** — ситуация когда `hard_Up_bid > easy_Up_ask` (нарушение вероятностей)
  *
  * @packageDocumentation
@@ -23,8 +23,8 @@ import type { InstrumentId } from '@polymarket/ids';
  *
  * @remarks
  * Определяет временной интервал рынка на Polymarket.
- * Более длинный рынок = «easy» (цена имела больше времени для движения,
- * priceToBeat зафиксирован раньше → P(Up) выше).
+ * Recurrence используется для матчинга рынков с пересекающимся expiry.
+ * Safe easy/hard assignment перед торговлей определяется по strike.
  */
 export type Recurrence = '5m' | '15m' | 'hourly' | 'daily';
 
@@ -32,8 +32,8 @@ export type Recurrence = '5m' | '15m' | 'hourly' | 'daily';
  * Ранг рекуррентности: чем меньше число, тем длиннее duration.
  *
  * @remarks
- * Используется для определения easy vs hard в паре:
- * easy = меньший ранг (длиннее duration).
+ * Используется для предварительного упорядочивания пары по duration.
+ * Перед детекцией торговые legs нормализуются по strike.
  */
 export const RECURRENCE_RANK: Record<Recurrence, number> = {
   daily: 0,
@@ -86,10 +86,16 @@ export interface MarketInfo {
   readonly recurrence: Recurrence;
   /** ISO строка даты окончания */
   readonly endDate: string;
+  /** ISO строка даты старта, если известна */
+  readonly startDate?: string;
+  /** Epoch ms даты старта, если известна */
+  readonly startEpochMs?: number;
   /** Epoch ms даты окончания */
   readonly endEpochMs: number;
   /** ID токена Up-outcome (tokenIds[0]) */
   readonly instrumentId: InstrumentId;
+  /** ID токена Down-outcome (tokenIds[1]), если известен */
+  readonly downInstrumentId?: InstrumentId;
   /** Путь к файлу снапшота */
   readonly filePath: string;
   /** Сырой ticker из Gamma API */
@@ -100,9 +106,11 @@ export interface MarketInfo {
    * @remarks
    * Цена актива на момент старта рынка. Up-токен выигрывает если цена на endDate >= priceToBeat.
    * Два рынка одной пары (5m + 15m) имеют **разные** strike'ы из-за разного startTime.
-   * Зона между двумя strike'ами — «зона смерти» где обе ноги проигрывают.
+   * Safe-комбинация: lowerStrike_Up + higherStrike_Down.
    */
   readonly priceToBeat?: number;
+  /** Final settlement price из eventMetadata, если snapshot уже обогащён. */
+  readonly finalPrice?: number;
 }
 
 // ── Пара рынков ─────────────────────────────────────────────────────────────
@@ -112,16 +120,16 @@ export interface MarketInfo {
  *
  * @remarks
  * Два рынка с одинаковым `(asset, endDate)`, но разной `recurrence`.
- * Easy = более длинная duration (lower priceToBeat, higher P(Up)).
- * Hard = более короткая duration (higher priceToBeat, lower P(Up)).
+ * Easy = lower strike (lower priceToBeat, higher P(Up)).
+ * Hard = higher strike (higher priceToBeat, lower P(Up)).
  *
  * Математическое ограничение: `P(easy_Up) >= P(hard_Up)` (всегда).
  * Если рынок нарушает это — арбитражная возможность.
  */
 export interface MarketPair {
-  /** Рынок с длинной duration (easy Up) */
+  /** Рынок easy Up: lower strike после нормализации, либо longer duration до неё */
   readonly easy: MarketInfo;
-  /** Рынок с короткой duration (hard Up) */
+  /** Рынок hard Up: higher strike после нормализации, либо shorter duration до неё */
   readonly hard: MarketInfo;
   /** Тип пары: '5m-15m', '5m-hourly', '15m-hourly' */
   readonly pairType: string;

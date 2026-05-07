@@ -73,6 +73,17 @@ export interface PolymarketRestConfig {
    */
   funderAddress?: string;
 
+  /**
+   * Builder code для атрибуции ордеров (CLOB V2)
+   *
+   * @remarks
+   * Bytes32 hex-строка, выданная Polymarket на странице Builder Profile.
+   * Включается в каждый подписанный ордер автоматически.
+   *
+   * @example '0x2035099b0edacd0717f653f7c81078ef9e2b301f858e45cbb02c46377d001300'
+   */
+  builderCode?: string;
+
   /** Таймаут запроса в миллисекундах */
   timeout?: number;
 

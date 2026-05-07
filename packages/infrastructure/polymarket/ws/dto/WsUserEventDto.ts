@@ -57,12 +57,29 @@ export interface WsUserFillDto {
   readonly price: string;
   /** Объём исполнения (строка для Decimal-точности) */
   readonly size: string;
-  /** Ставка комиссии в базисных пунктах (строка) */
-  readonly fee_rate_bps: string;
+  /**
+   * Ставка комиссии в базисных пунктах (строка).
+   *
+   * @remarks
+   * В CLOB V2 комиссия устанавливается биржей в момент матчинга, не из ордера.
+   * Для maker всегда 0; для taker — определяется протоколом.
+   * Поле optional: V2 API может не включать его в событие.
+   */
+  readonly fee_rate_bps?: string;
   /** Статус fill (on-chain lifecycle) */
   readonly status: WsFillStatus;
   /** ID токена (UP/DOWN token) */
   readonly asset_id: string;
+  /**
+   * Индекс bucket внутри match-группы.
+   *
+   * @remarks
+   * Один fill может быть разбит на несколько on-chain транзакций из-за gas limit.
+   * Используй `bucket_index` + `match_time` для рекончиляции связанных транзакций.
+   */
+  readonly bucket_index?: number;
+  /** Время матчинга (ISO или Unix ms, опционально) */
+  readonly match_time?: string;
   /** Список maker-ордеров, участвовавших в матчинге */
   readonly maker_orders: Array<{
     readonly order_id: string;

@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry zone60 ablation (minZoneCents=60), btc4",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC",
+      "pnl": "-2.97 USDC",
+      "date": "2026-04-01",
+      "notes": "zone60 variant. Total: +4.90 USDC — нейтрально vs baseline +13.75. Строже нижняя граница = теряем хорошие входы."
+    },
+    "todo": [
+      "не использовать в production — baseline лучше"
+    ]
+  },
   "strategy": "selective-entry",
   "resources": {
     "initialBalance": 100,

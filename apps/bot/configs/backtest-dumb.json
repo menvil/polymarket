@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "Dumb strategy backtest",
+    "status": "wip",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Простейшая стратегия для диагностики инфраструктуры. Не для production."
+    },
+    "todo": [
+      "только для тестирования инфраструктуры"
+    ]
+  },
   "strategy": "dumb",
   "strategyParams": {
     "orderSize": 5,

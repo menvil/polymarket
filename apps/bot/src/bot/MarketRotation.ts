@@ -672,22 +672,30 @@ export class MarketRotation {
     }
 
     // Live: auto-redeem winning tokens (fire-and-forget)
-    if (redeemer && settlementResult && settlementResult.cashCredit.gt(0)) {
+    if (settlementResult && settlementResult.cashCredit.gt(0)) {
       const conditionId = String(slot.marketId);
-      void redeemer.redeem(conditionId).then((result) => {
-        if (result.success) {
-          logger.info('Auto-redeem successful', {
-            conditionId,
-            txHash: result.txHash,
-            cashCredit: settlementResult!.cashCredit.toFixed(4),
-          });
-        } else {
-          logger.warn('Auto-redeem failed (will be picked up by balance sync)', {
-            conditionId,
-            error: result.error,
-          });
-        }
-      });
+      if (redeemer) {
+        void redeemer.redeem(conditionId).then((result) => {
+          if (result.success) {
+            logger.info('Auto-redeem successful', {
+              conditionId,
+              txHash: result.txHash,
+              cashCredit: settlementResult!.cashCredit.toFixed(4),
+            });
+          } else {
+            logger.warn('Auto-redeem failed (will be retried by AutoRedeemer)', {
+              conditionId,
+              error: result.error,
+            });
+          }
+        });
+      } else {
+        logger.warn('Winning tokens NOT redeemed — redeemer not configured (missing BUILDER_API_KEY/SECRET/PASSPHRASE). Redeem manually or restart bot with credentials.', {
+          conditionId,
+          cashCredit: settlementResult.cashCredit.toFixed(4),
+          resolution: settlementResult.resolution,
+        });
+      }
     }
 
     // Сводка ПОСЛЕ settlement
@@ -1199,7 +1207,15 @@ export class MarketRotation {
       tokenQty: hasTokens ? position!.quantity.value().toFixed(2) : '0',
     });
 
-    if (!resolution || !portfolio || !position || !hasTokens) return undefined;
+    if (!resolution || !portfolio || !position || !hasTokens) {
+      if (!resolution) {
+        logger.warn('Settlement skipped: no resolution in cryptoPriceStore yet — AutoRedeemer will retry', {
+          symbol: slot.cryptoMeta!.rtdsFilter,
+          hasTokens,
+        });
+      }
+      return undefined;
+    }
 
     const qty = position.quantity.value();
     const oi = positionIsComp ? (1 - slot.outcomeIndex) as 0 | 1 : slot.outcomeIndex;

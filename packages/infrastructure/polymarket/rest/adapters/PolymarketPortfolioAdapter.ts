@@ -229,9 +229,6 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
     // Используем suggestedSize если он предоставлен проверкой баланса (напр., продажа доступного остатка)
     const finalSize = balanceCheck.suggestedSize ?? normalizedSize;
 
-    // Получаем ставку комиссии (изученную из ошибок или дефолтную)
-    const feeRateBps = this.constraintsPolicy.getFeeRateBps(tokenId);
-
     this.logger.debug('Order can be placed', {
       tokenId,
       side,
@@ -239,14 +236,12 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       normalizedSize,
       finalSize,
       priceTick: constraints.priceTick,
-      feeRateBps,
     });
 
     return {
       ok: true,
       normalizedSize: finalSize,
       normalizedPrice,
-      feeRateBps,
       priceTick: constraints.priceTick,
     };
   }

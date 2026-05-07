@@ -1,9 +1,22 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd parameter sweep — cc-sweep-S3",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots Apr 2026",
+      "pnl": "не записан",
+      "notes": "Параметрический sweep. Результаты не зафиксированы индивидуально."
+    },
+    "todo": [
+      "run and capture results",
+      "сравнить с cc-bt-A (baseline +14.50)"
+    ]
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
     "minComposite": 0.3,
-    "maxPositionFraction": 0.10,
+    "maxPositionFraction": 0.1,
     "maxSharesPerMarket": 10,
     "warmupSec": 15,
     "regimeThresholdPerMin": 10,
@@ -13,14 +26,36 @@
     "exitOnTauTimeout": true,
     "exitTauSec": 15
   },
-  "execution": { "postOnly": true },
+  "execution": {
+    "postOnly": true
+  },
   "market": {
     "source": "snapshots",
-    "paths": ["/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"],
-    "filter": { "requiredKeywords": ["bitcoin", "up or down"], "minDurationMinutes": 4, "maxDurationMinutes": 6 },
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
     "outcomeIndex": 0
   },
-  "resources": { "initialBalance": 1000, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 1, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

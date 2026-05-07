@@ -1,1 +1,66 @@
-{"strategy": "avellaneda-stoikov", "strategyParams": {"gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0, "ewmaAlpha": 0.3, "stopLossCents": 0, "minTradesForMid": 5, "regimeWindow": 15, "regimeTrendThreshold": 2, "regimeRangeThreshold": 1, "regimeTrendSpreadMult": 10.0, "regimeRangeSpreadMult": 0.6, "warmupSec": 10, "jumpThreshold": 2, "jumpWidenFactor": 2.5, "jumpCooldownTrades": 3, "dynGammaSlope": 1.0, "imbalanceSpreadFactor": 0.5, "ofiWindow": 10, "ofiWeight": 0.5, "ofiSkipThreshold": 0.2, "aasConsecutiveThreshold": 3, "trailDistanceCents": 0, "minBidZoneCents": 55, "maxBidZoneCents": 73, "dynSizeAlpha": 1.0, "dynSizeMinRatio": 0.3, "dynSizeMaxRatio": 2.0}, "market": {"source": "snapshots", "paths": ["/tmp/5min-snapshots-day1/*"], "outcomeIndex": 0}, "resources": {"initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0}, "paper": {"fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true}, "account": {"accountId": "venue:POLYMARKET:paper-account"}}
+{
+  "_meta": {
+    "desc": "AS zone55 parameter sweep, day1",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min BTC day1",
+      "pnl": "не записан",
+      "notes": "Часть параметрического sweep. Общий вывод: baseline (zone-only AS) оптимален. Детали: docs/guides/strategy-hypotheses.md"
+    },
+    "todo": [
+      "archived — baseline zone-only AS оптимален, sweeps не дали улучшений"
+    ]
+  },
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 5,
+    "spreadMult": 1.0,
+    "ewmaAlpha": 0.3,
+    "stopLossCents": 0,
+    "minTradesForMid": 5,
+    "regimeWindow": 15,
+    "regimeTrendThreshold": 2,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 10.0,
+    "regimeRangeSpreadMult": 0.6,
+    "warmupSec": 10,
+    "jumpThreshold": 2,
+    "jumpWidenFactor": 2.5,
+    "jumpCooldownTrades": 3,
+    "dynGammaSlope": 1.0,
+    "imbalanceSpreadFactor": 0.5,
+    "ofiWindow": 10,
+    "ofiWeight": 0.5,
+    "ofiSkipThreshold": 0.2,
+    "aasConsecutiveThreshold": 3,
+    "trailDistanceCents": 0,
+    "minBidZoneCents": 55,
+    "maxBidZoneCents": 73,
+    "dynSizeAlpha": 1.0,
+    "dynSizeMinRatio": 0.3,
+    "dynSizeMaxRatio": 2.0
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-snapshots-day1/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

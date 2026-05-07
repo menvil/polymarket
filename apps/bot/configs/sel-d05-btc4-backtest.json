@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry daccel ablation (requireDeltaAccel=true), btc4",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC",
+      "pnl": "-1.25 USDC",
+      "date": "2026-04-01",
+      "notes": "daccel лучший вариант. Total: +24.71 USDC, 68.3% WR (+10.96 vs baseline). Перевернул btc2 с -7.10 в +7.51."
+    },
+    "todo": [
+      "эти параметры использованы в sel-live-5min.json"
+    ]
+  },
   "strategy": "selective-entry",
   "resources": {
     "initialBalance": 100,

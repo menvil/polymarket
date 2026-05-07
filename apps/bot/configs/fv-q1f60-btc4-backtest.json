@@ -1,12 +1,36 @@
 {
+  "_meta": {
+    "desc": "FairValueMM q1f60, btc4 dataset",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC",
+      "pnl": "+0.08 USDC",
+      "date": "2026-03-31",
+      "notes": "Часть серии q1f60. Total 4-day: +3.24 USDC sigma=0.60, minFair=60. Total +3.24, OOS -16.42. OOS dataset"
+    },
+    "todo": [
+      "не использовать — есть более стабильные стратегии (sel-daccel, ae-auto)"
+    ]
+  },
   "strategy": "fair-value-mm",
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
   "strategyParams": {
     "orderSize": 5,
     "qMax": 1,
-    "sigmaAnnual": 0.60,
+    "sigmaAnnual": 0.6,
     "minEdgeCents": 2,
     "minFairCents": 60,
     "inventorySkew": 1.0,
@@ -20,5 +44,11 @@
     "unwindSec": 30,
     "dynSizeDecay": 0.2
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day4/*"], "outcomeIndex": 0 }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day4/*"
+    ],
+    "outcomeIndex": 0
+  }
 }

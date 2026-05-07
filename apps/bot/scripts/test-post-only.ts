@@ -312,9 +312,6 @@ async function main(): Promise<void> {
   const orderbookClient = new PolymarketOrderbookRestClient(restClient, logger);
   const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger, makerAddress);
   const userTradesClient = new PolymarketUserTradesRestClient(restClient, logger);
-  const feeRateBps = await orderClient.getFeeRate(token.tokenId);
-
-  console.log(`Fee rate: ${feeRateBps} bps`);
   console.log('');
 
   const results: ProbeAttemptResult[] = [];
@@ -358,8 +355,6 @@ async function main(): Promise<void> {
         price: planned.price,
         size: SIZE,
         postOnly: true,
-        nonce: 0,
-        feeRateBps,
         priceTick: planned.tick,
       });
 

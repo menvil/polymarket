@@ -2,6 +2,7 @@
  * CalibratedCrowdStrategy — barrel re-export.
  */
 export { EdgeTable } from './EdgeTable.js';
+export { ExitPolicyTable } from './ExitPolicyTable.js';
 export type {
   Regime,
   KellySide,
@@ -16,6 +17,16 @@ export type {
   EdgeTableFile,
   EdgeLookupInput,
 } from './EdgeTable.js';
+export type {
+  ExitPolicyKey,
+  ExitPolicyLookupInput,
+  ExitPolicyRecommendation,
+  ExitPolicySide,
+  ExitPolicyStats,
+  ExitPolicyTableFile,
+  ExitPolicyTableMeta,
+  ExitPolicyZone,
+} from './ExitPolicyTable.js';
 export { RegimeDetector } from './RegimeDetector.js';
 export type { RegimeDetectorConfig, RegimeClassification } from './RegimeDetector.js';
 export { CalibratedCrowdStrategy } from './CalibratedCrowdStrategy.js';

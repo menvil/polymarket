@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry Apr8 backtest",
+    "status": "insample",
+    "backtest": {
+      "dataset": "5-min BTC snapshots",
+      "pnl": "не записан",
+      "notes": "Бэктест на Apr 8 данных."
+    },
+    "todo": [
+      "результаты не зафиксированы — см. docs/guides/selective-entry-ablation.md"
+    ]
+  },
   "strategy": "selective-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -15,7 +27,9 @@
   },
   "market": {
     "source": "snapshots",
-    "paths": ["data/paper-recordings/2026-04-08/*"],
+    "paths": [
+      "data/paper-recordings/2026-04-08/*"
+    ],
     "outcomeIndex": 0
   },
   "resources": {

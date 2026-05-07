@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "Test baseline btc1 config",
+    "status": "wip",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Тестовый конфиг для базовой проверки. btc1 dataset."
+    },
+    "todo": [
+      "уточнить для чего используется"
+    ]
+  },
   "strategy": "avellaneda-stoikov",
   "resources": {
     "initialBalance": 100,

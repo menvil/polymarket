@@ -1,15 +1,51 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry baseline, btc2 dataset",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc2 snapshots 5-min BTC, 254 markets",
+      "pnl": "-7.10 USDC",
+      "wr": "60.0%",
+      "markets": 254,
+      "date": "2026-03-28",
+      "notes": "57 fills. train (плохой, много DOWN рынков). Total: +13.75 USDC, 65.6% WR."
+    },
+    "todo": [
+      "re-run on Apr 21-27 (see verify-sel-baseline configs)"
+    ]
+  },
   "strategy": "selective-entry",
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
   "strategyParams": {
     "orderSize": 5,
-    "minZoneCents": 55, "maxZoneCents": 68,
-    "minDeltaPct": 0.03, "maxDeltaPct": 0.12,
-    "minTauSec": 120, "maxTauSec": 210,
-    "maxSpreadCents": 4, "warmupSec": 60,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
     "bidOffsetCents": 1
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day2/*"], "outcomeIndex": 0 }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day2/*"
+    ],
+    "outcomeIndex": 0
+  }
 }

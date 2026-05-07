@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "AS ablation study variant — abl2-no-bad5-btc5",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min BTC, несколько дней",
+      "pnl": "не записан",
+      "notes": "Phase 3 ablation study. Классификация фич: zone (критически важна), warmup/dynsize (полезны), OFI/AAS (нейтральны), jump/regime/dynGamma (вредны). Полный отчёт: memory/backtest-findings-phase3.md"
+    },
+    "todo": [
+      "AS 5-min не конкурентоспособен — только архив/reference"
+    ]
+  },
   "strategy": "avellaneda-stoikov",
   "resources": {
     "initialBalance": 100,

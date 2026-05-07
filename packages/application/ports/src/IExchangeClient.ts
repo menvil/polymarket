@@ -48,6 +48,17 @@ export interface SubmitOrderParams {
   readonly size: Quantity;
   /** true = post-only order; exchange must reject marketable order instead of matching it */
   readonly postOnly?: boolean;
+  /**
+   * Тип исполнения ордера на venue.
+   *
+   * @remarks
+   * Polymarket CLOB поддерживает:
+   * - GTC: rests until filled/cancelled
+   * - GTD: rests until expiration
+   * - FOK: fill fully immediately or cancel
+   * - FAK: fill immediately available quantity and cancel the rest (IOC analogue)
+   */
+  readonly orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
   /** Клиентский ID ордера для идемпотентного retry (опционально) */
   readonly clientOrderId?: string;
   /** ID стратегии для трекинга (опционально) */

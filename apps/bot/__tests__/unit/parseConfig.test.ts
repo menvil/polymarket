@@ -47,4 +47,38 @@ describe('parseConfig', () => {
     expect(params['vetoCompDiscrepancyAboveCents']).toBe(3);
     expect(params['makerRepriceAfterSec']).toBe(3);
   });
+
+  it('сохраняет bidirectional=true для discovery market', () => {
+    const configPath = writeConfig({
+      strategy: 'dumb',
+      strategyParams: {
+        orderSize: 5,
+        buyOffsetPct: 0.01,
+        profitMarginPct: 0.02,
+        repriceThreshold: 0.01,
+      },
+      market: {
+        source: 'discovery',
+        filter: {
+          requiredKeywords: ['bitcoin', 'up or down'],
+          minDurationMinutes: 4,
+          maxDurationMinutes: 6,
+        },
+        scanPauseMs: 30_000,
+        outcomeIndex: 0,
+        bidirectional: true,
+      },
+    });
+
+    const result = parseConfig({ MODE: 'live', CONFIG: configPath }, configPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.config.market).toMatchObject({
+      source: 'discovery',
+      outcomeIndex: 0,
+      bidirectional: true,
+    });
+  });
 });

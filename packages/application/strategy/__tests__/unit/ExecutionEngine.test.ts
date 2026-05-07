@@ -363,8 +363,23 @@ describe('ExecutionEngine', () => {
 
       // Cancel выполняется первым
       expect(order[0]).toBe('cancel');
-      // Place пропущен из-за post-cancel cooldown (20s safety window)
+      // BUY place пропущен из-за post-cancel cooldown.
       expect(order).toHaveLength(1);
+    });
+
+    it('should not apply post-cancel cooldown to SELL exits', async () => {
+      const intents: StrategyIntent[] = [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: SELL, price: PRICE_55, size: SIZE_100 },
+      ];
+
+      const report = await engine.execute(ctx, intents);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect((deps.placeOrderUseCase.execute as any).mock.calls[0][0].side).toBe(SELL);
     });
 
     it('should allow place after post-cancel cooldown is cleared', async () => {
@@ -386,7 +401,7 @@ describe('ExecutionEngine', () => {
   // ── Смешанный сценарий ───────────────────────────────
 
   describe('mixed scenario', () => {
-    it('should handle CANCEL_ALL + PLACE — places skipped by post-cancel cooldown', async () => {
+    it('should handle CANCEL_ALL + PLACE — only BUY places skipped by post-cancel cooldown', async () => {
       (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
         makeOrder(ORDER_1),
         makeOrder(ORDER_2),
@@ -401,10 +416,9 @@ describe('ExecutionEngine', () => {
       const report = await engine.execute(ctx, intents);
 
       expect(report.cancelled).toBe(2);
-      // Places пропущены из-за post-cancel cooldown (20s safety window).
-      // Стратегия поставит ордера на следующем тике после получения fill.
-      expect(report.skipped).toBe(2);
-      expect(report.placed).toBe(0);
+      // BUY пропущен из-за cooldown; SELL exit должен проходить сразу.
+      expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(1);
       expect(report.errors).toHaveLength(0);
     });
 

@@ -1,8 +1,23 @@
 {
+  "_meta": {
+    "desc": "Multi-strategy paper trading",
+    "status": "wip",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Несколько стратегий одновременно через strategyRules. Экспериментальный режим."
+    },
+    "todo": [
+      "уточнить какие стратегии входят и каковы ожидаемые результаты"
+    ]
+  },
   "strategyRules": [
     {
       "label": "5min-selective",
-      "match": { "minDurationMinutes": 4, "maxDurationMinutes": 6 },
+      "match": {
+        "minDurationMinutes": 4,
+        "maxDurationMinutes": 6
+      },
       "strategy": "selective-entry",
       "strategyParams": {
         "orderSize": 5,
@@ -20,7 +35,10 @@
     },
     {
       "label": "15min-adaptive",
-      "match": { "minDurationMinutes": 14, "maxDurationMinutes": 16 },
+      "match": {
+        "minDurationMinutes": 14,
+        "maxDurationMinutes": 16
+      },
       "strategy": "adaptive-entry",
       "strategyParams": {
         "orderSize": 5,
@@ -35,7 +53,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "anyOfKeywords": ["bitcoin", "BTC"],
+      "anyOfKeywords": [
+        "bitcoin",
+        "BTC"
+      ],
       "minLiquidity": 500,
       "minDurationMinutes": 4,
       "maxDurationMinutes": 16

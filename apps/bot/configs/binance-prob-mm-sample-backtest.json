@@ -1,8 +1,31 @@
 {
+  "_meta": {
+    "desc": "BinanceProbMM sample backtest",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Sample бэктест для BinanceProbMM стратегии. Использует Binance futures prob модель."
+    },
+    "todo": [
+      "зафиксировать результаты sample backtest"
+    ]
+  },
   "strategy": "binance-prob-mm",
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
   "strategyParams": {
     "orderSize": 5,
     "qMax": 5,
@@ -21,7 +44,10 @@
   "market": {
     "source": "snapshots",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

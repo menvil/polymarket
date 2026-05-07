@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "CC delta-regime DOWN hold experiment",
+    "status": "insample",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "CalibratedCrowd DOWN-side с hold logic. Ранний эксперимент."
+    },
+    "todo": [
+      "результаты не зафиксированы"
+    ]
+  },
   "snapshots": [
     "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-06/polymarket",
     "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-08/polymarket",

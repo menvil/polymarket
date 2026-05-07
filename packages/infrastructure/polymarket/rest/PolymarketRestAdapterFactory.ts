@@ -147,7 +147,8 @@ export class PolymarketRestAdapterFactory {
       config.chainId,
       makerAddress,
       config.signatureType!,
-      logger
+      logger,
+      config.builderCode,
     );
 
     // REST клиенты
@@ -186,7 +187,6 @@ export class PolymarketRestAdapterFactory {
     const constraintsPolicy = new PolymarketMarketConstraintsPolicy(
       marketDataClient,
       logger,
-      (tokenId) => orderClient.getFeeRate(tokenId)
     );
 
     // Передаём PortfolioProjector в BalancePolicy для мгновенных проверок баланса

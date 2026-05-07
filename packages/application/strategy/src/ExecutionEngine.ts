@@ -164,11 +164,8 @@ export class ExecutionEngine {
    * @remarks
    * Защищает от cancel-and-replace race condition на Polymarket:
    * cancel на CLOB НЕ отменяет on-chain fill (MINT уже в пути).
-   * Без этого cooldown стратегия отменяет ордер, сразу ставит новый,
+   * Без этого cooldown стратегия отменяет BUY-ордер, сразу ставит новый BUY,
    * а fill на отменённый ордер всё равно приходит → двойная/тройная покупка.
-   *
-   * Polymarket on-chain settlement: 15-25 секунд (Polygon finality).
-   * 20 секунд — безопасный запас.
    */
   private readonly _postCancelCooldowns = new Map<string, number>();
 
@@ -420,11 +417,15 @@ export class ExecutionEngine {
     const instrumentKey = String(effectiveInstrumentId);
 
     // ── Post-cancel cooldown ────────────────────────────────
-    // После cancel ордера ждём 20 секунд — on-chain fill может прийти
-    // на отменённый ордер (cancel CLOB ≠ cancel on-chain MINT).
-    // Без этого: cancel → place → fill(старый) → двойная/тройная покупка.
+    // Блокируем только новые BUY после cancel. SELL-выходы нельзя задерживать:
+    // hard stop / emergency exit должен пройти даже если перед этим отменяли
+    // stale BUY. Иначе на 5m binary market позиция может уйти к 1c за cooldown.
     const lastCancelMs = this._postCancelCooldowns.get(instrumentKey);
-    if (lastCancelMs !== undefined && nowForCooldown - lastCancelMs < ExecutionEngine._POST_CANCEL_COOLDOWN_MS) {
+    if (
+      intent.side === 'BUY' &&
+      lastCancelMs !== undefined &&
+      nowForCooldown - lastCancelMs < ExecutionEngine._POST_CANCEL_COOLDOWN_MS
+    ) {
       this._logger.debug('ExecutionEngine: skip — post-cancel cooldown active', {
         strategyId: ctx.strategyId,
         instrumentId: instrumentKey,

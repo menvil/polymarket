@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry UP-only side, btc4",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC",
+      "pnl": "не записан",
+      "notes": "UP-only variant. Результаты не зафиксированы."
+    },
+    "todo": [
+      "результаты не зафиксированы — перезапустить если нужны данные"
+    ]
+  },
   "strategy": "selective-entry",
   "resources": {
     "initialBalance": 100,

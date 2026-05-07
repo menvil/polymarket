@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry zone60+daccel combo, btc4",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC",
+      "pnl": "-1.72 USDC",
+      "date": "2026-04-01",
+      "notes": "dz combo. Total: +21.01 USDC. Хуже чем daccel alone (+24.71). Combo не улучшает."
+    },
+    "todo": [
+      "не оптимально — используй daccel alone (sel-d05-btc*)"
+    ]
+  },
   "strategy": "selective-entry",
   "resources": {
     "initialBalance": 100,

@@ -1,4 +1,13 @@
 {
+  "_meta": {
+    "desc": "Dumb strategy discovery mode — paper (диагностика market discovery)",
+    "status": "wip",
+    "paper": {
+      "period": "ongoing",
+      "pnl": "running",
+      "notes": "тест discovery режима"
+    }
+  },
   "strategy": "dumb",
   "strategyParams": {
     "orderSize": 5,
@@ -9,7 +18,12 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "anyOfKeywords": ["bitcoin", "crypto", "ETH", "BTC"],
+      "anyOfKeywords": [
+        "bitcoin",
+        "crypto",
+        "ETH",
+        "BTC"
+      ],
       "minLiquidity": 500
     },
     "scanPauseMs": 60000,

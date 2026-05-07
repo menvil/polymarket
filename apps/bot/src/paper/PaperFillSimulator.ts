@@ -86,6 +86,7 @@ export interface PendingPaperOrder {
   readonly asset: AssetId;
   /** Accepted post-only order can only fill as maker. */
   readonly postOnly: boolean;
+  readonly orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
   /**
    * Время размещения ордера (epoch ms от clock).
    *

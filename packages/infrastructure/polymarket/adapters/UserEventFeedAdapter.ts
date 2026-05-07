@@ -108,8 +108,9 @@ export class UserEventFeedAdapter {
         asset_id: dto.asset_id,
         price: dto.price,
         size: dto.size,
-        fee_rate_bps: dto.fee_rate_bps,
+        fee_rate_bps: dto.fee_rate_bps ?? '0',
         status: dto.status,
+        bucket_index: dto.bucket_index,
         maker_orders: dto.maker_orders,
         timestamp: dto.timestamp,
       });
@@ -240,11 +241,13 @@ export class UserEventFeedAdapter {
     readonly trader_side: 'TAKER' | 'MAKER';
     readonly price: string;
     readonly size: string;
-    readonly fee_rate_bps: string;
+    readonly fee_rate_bps?: string;
     readonly status: string;
     readonly asset_id: string;
     readonly owner?: string;
     readonly market?: string;
+    readonly bucket_index?: number;
+    readonly match_time?: string;
     readonly maker_orders: Array<{
       readonly order_id: string;
       readonly matched_amount: string;
@@ -262,12 +265,14 @@ export class UserEventFeedAdapter {
       trader_side: dto.trader_side,
       price: dto.price,
       size: dto.size,
-      fee_rate_bps: dto.fee_rate_bps,
+      fee_rate_bps: dto.fee_rate_bps ?? '0',
       status: dto.status,
       asset_id: dto.asset_id,
       owner: dto.owner,
       maker_address: this._makerAddress,
       market: dto.market,
+      bucket_index: dto.bucket_index,
+      match_time: dto.match_time,
       maker_orders: dto.maker_orders,
       timestamp: dto.timestamp,
     };

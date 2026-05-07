@@ -1,21 +1,69 @@
 {
-  "strategy": "avellaneda-stoikov",
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" },
-  "strategyParams": {
-    "gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0,
-    "ewmaAlpha": 0.3, "minTradesForMid": 5, "warmupSec": 15,
-    "minBidZoneCents": 55, "maxBidZoneCents": 73,
-    "regimeWindow": 15, "regimeTrendThreshold": 2, "regimeRangeThreshold": 1,
-    "regimeTrendSpreadMult": 10.0, "regimeRangeSpreadMult": 0.6,
-    "jumpThreshold": 2, "jumpWidenFactor": 2.5, "jumpCooldownTrades": 3,
-    "dynGammaSlope": 1.0, "imbalanceSpreadFactor": 0.5,
-    "ofiWindow": 10, "ofiWeight": 0.5, "ofiSkipThreshold": 0.2,
-    "aasConsecutiveThreshold": 3,
-    "trailDistanceCents": 0, "dynSizeAlpha": 0,
-    "stopLossCents": 2, "unwindSec": 120, "unwindMaxDiscountCents": 5,
-    "maxSpreadCents": 2, "maxWarmupVolCents": 4, "minWarmupTradesPerSec": 0.5
+  "_meta": {
+    "desc": "AS 15min ofi-aas, btc4",
+    "status": "archived",
+    "backtest": {
+      "dataset": "btc4 snapshots 15-min BTC",
+      "pnl": "не записан",
+      "notes": "15-min AS variant. OFI+AAS 15-min давал +$61.56/день в симуляции (EXP-56). Реальный бэктест результат не зафиксирован."
+    },
+    "todo": [
+      "зафиксировать результаты для 15-min AS baseline и ofi-aas серий"
+    ]
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day4/*"], "outcomeIndex": 0 }
+  "strategy": "avellaneda-stoikov",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 5,
+    "spreadMult": 1.0,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 5,
+    "warmupSec": 15,
+    "minBidZoneCents": 55,
+    "maxBidZoneCents": 73,
+    "regimeWindow": 15,
+    "regimeTrendThreshold": 2,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 10.0,
+    "regimeRangeSpreadMult": 0.6,
+    "jumpThreshold": 2,
+    "jumpWidenFactor": 2.5,
+    "jumpCooldownTrades": 3,
+    "dynGammaSlope": 1.0,
+    "imbalanceSpreadFactor": 0.5,
+    "ofiWindow": 10,
+    "ofiWeight": 0.5,
+    "ofiSkipThreshold": 0.2,
+    "aasConsecutiveThreshold": 3,
+    "trailDistanceCents": 0,
+    "dynSizeAlpha": 0,
+    "stopLossCents": 2,
+    "unwindSec": 120,
+    "unwindMaxDiscountCents": 5,
+    "maxSpreadCents": 2,
+    "maxWarmupVolCents": 4,
+    "minWarmupTradesPerSec": 0.5
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day4/*"
+    ],
+    "outcomeIndex": 0
+  }
 }

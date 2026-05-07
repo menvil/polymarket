@@ -42,10 +42,11 @@
  * ```
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { ILogger } from '@polymarket/logger';
 import {
   SnapshotReaderFactory,
-  SnapshotScanner,
 } from '@polymarket/snapshot-readers';
 
 import type {
@@ -108,6 +109,18 @@ export interface CrossMarketBacktestConfig {
    * Реалистичные значения: 0.005 (100 units), 0.01 (200 units), 0.02 (500 units).
    */
   readonly slippagePerLeg?: number;
+  /**
+   * Максимальная разница между timestamp текущего события и последнего
+   * snapshot второй книги (default: 1500).
+   *
+   * Если одна книга старее этого значения, сигнал не считается исполнимым:
+   * это защита от ложного арбитража из-за рассинхрона snapshot streams.
+   */
+  readonly bookStalenessMs?: number;
+  /** Включить fallback settlement по Chainlink в окне перед endDate (default: true). */
+  readonly approxResolution?: boolean;
+  /** Окно soft-resolution перед endDate в мс (default: 2000). */
+  readonly approxResolutionWindowMs?: number;
 }
 
 /**
@@ -485,29 +498,13 @@ export class CrossMarketBacktestEngine {
     slippagePerLeg: number = 0,
   ): Promise<PairSimulationResult> {
     const startTime = Date.now();
-
-    // Strike-based assignment: easy = lower strike, hard = higher strike.
-    // MarketPairMatcher назначает easy/hard по duration, но детектор требует по strike.
-    // Если easy(by duration) имеет strike выше чем hard — свопаем книги,
-    // чтобы детектор всегда видел lower-strike как easy, upper-strike как hard.
-    // После свопа все расхождения — реальные арбитражные возможности.
-    const durationEasyStrike = pair.easy.priceToBeat;
-    const durationHardStrike = pair.hard.priceToBeat;
-    const swapBooks = (durationEasyStrike != null && durationHardStrike != null
-      && durationEasyStrike > durationHardStrike);
-
-    if (swapBooks) {
-      this._logger.debug('Swapping books: easy(by duration) has higher strike', {
-        durationEasyStrike: durationEasyStrike?.toFixed(2),
-        durationHardStrike: durationHardStrike?.toFixed(2),
-        pairType: pair.pairType,
-        endDate: pair.easy.endDate,
-      });
-    }
+    const pairWithStrikes = await this._resolveMissingStrikes(pair);
+    const strikePair = this._assignPairByStrike(pairWithStrikes);
+    const bookStalenessMs = this._config.bookStalenessMs ?? 1500;
 
     // Читаем и мёрджим оба файла
-    const easyEvents = await this._readBookEvents(pair.easy.filePath, 'easy');
-    const hardEvents = await this._readBookEvents(pair.hard.filePath, 'hard');
+    const easyEvents = await this._readBookEvents(strikePair.easy.filePath, 'easy');
+    const hardEvents = await this._readBookEvents(strikePair.hard.filePath, 'hard');
     const merged = this._mergeTimelines(easyEvents, hardEvents);
 
     // Храним книги раздельно по токену: Up и Down для каждой ноги.
@@ -563,20 +560,27 @@ export class CrossMarketBacktestEngine {
         timestampMs: event.timestampMs,
       };
 
-      // Strike-based assignment: если свопнули, easy-файл → hardUpBook, hard-файл → easyUpBook
       if (event.leg === 'easy') {
-        if (swapBooks) { hardUpBook = book; } else { easyUpBook = book; }
+        easyUpBook = book;
       } else {
-        if (swapBooks) { easyUpBook = book; } else { hardUpBook = book; }
+        hardUpBook = book;
       }
 
       if (easyUpBook.timestampMs === 0 || hardUpBook.timestampMs === 0) continue;
+      if (!this._isInLiveWindow(strikePair, event.timestampMs)) {
+        closeWindow();
+        continue;
+      }
+      if (!this._booksAreFresh(easyUpBook, hardUpBook, event.timestampMs, bookStalenessMs)) {
+        closeWindow();
+        continue;
+      }
 
       totalSnapshots++;
 
       // После strike-based assignment только UP-направление нужно:
       // единственная safe сделка = BUY lowerStrike_Up + BUY higherStrike_Down
-      const signal = detector.detect(easyUpBook, hardUpBook, pair, event.timestampMs);
+      const signal = detector.detect(easyUpBook, hardUpBook, strikePair, event.timestampMs);
 
       if (signal) {
         divergentSnapshots++;
@@ -659,9 +663,7 @@ export class CrossMarketBacktestEngine {
 
     closeWindow();
 
-    // Определяем реальный payoff с учётом разницы strike-цен.
-    // swapBooks сообщает settlement какой рынок реально easy (lower strike).
-    const settlement = await this._computeSettlement(pair, swapBooks);
+    const settlement = await this._computeSettlement(strikePair);
 
     const payoffPerUnit = settlement.payoffPerUnit ?? 1; // fallback $1 если нет данных
     const settlementPayoff = totalUnits * payoffPerUnit;
@@ -672,7 +674,7 @@ export class CrossMarketBacktestEngine {
     const durationMs = Date.now() - startTime;
 
     return {
-      pair,
+      pair: strikePair,
       initialBalance,
       finalBalance,
       totalPnl,
@@ -711,6 +713,7 @@ export class CrossMarketBacktestEngine {
       gapToleranceMs: gapTolerance,
       latencyMs: latency,
       slippagePerLeg: slippage,
+      bookStalenessMs: this._config.bookStalenessMs ?? 1500,
       balancePerPair: initialBalancePerPair,
     });
 
@@ -787,6 +790,7 @@ export class CrossMarketBacktestEngine {
       gapToleranceMs: gapTolerance,
       latencyMs: latency,
       slippagePerLeg: slippage,
+      bookStalenessMs: this._config.bookStalenessMs ?? 1500,
     });
 
     // Индексируем и находим пары
@@ -1025,16 +1029,12 @@ export class CrossMarketBacktestEngine {
    * Читает только meta-строку каждого файла для извлечения asset/recurrence/endDate.
    */
   private async _indexMarkets(): Promise<MarketInfo[]> {
-    const scanner = new SnapshotScanner(this._config.snapshotDir, this._logger);
-    const scanResult = await scanner.scan({
-      fromDate: this._config.fromDate,
-      toDate: this._config.toDate,
-    });
+    const files = this._scanSnapshotFiles();
     const readerFactory = new SnapshotReaderFactory(this._logger);
     const markets: MarketInfo[] = [];
 
-    for (const file of scanResult.files) {
-      const reader = readerFactory.create(file.filePath);
+    for (const filePath of files) {
+      const reader = readerFactory.create(filePath);
       try {
         for await (const line of reader.readLines()) {
           let raw: Record<string, unknown>;
@@ -1047,7 +1047,7 @@ export class CrossMarketBacktestEngine {
           if (raw['t'] === 'meta') {
             const info = MarketPairMatcher.parseSnapshotMeta(
               raw as unknown as RawSnapshotMeta,
-              file.filePath,
+              filePath,
             );
             if (info) markets.push(info);
           }
@@ -1059,6 +1059,42 @@ export class CrossMarketBacktestEngine {
     }
 
     return markets;
+  }
+
+  private _scanSnapshotFiles(): string[] {
+    const root = this._config.snapshotDir;
+    if (!root || !fs.existsSync(root)) return [];
+
+    const dateDirs = fs.readdirSync(root, { withFileTypes: true })
+      .filter(e => e.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(e.name))
+      .map(e => e.name)
+      .filter(date => {
+        if (this._config.fromDate && date < this._config.fromDate) return false;
+        if (this._config.toDate && date > this._config.toDate) return false;
+        return true;
+      })
+      .sort();
+
+    const files: string[] = [];
+    for (const date of dateDirs) {
+      const datePath = path.join(root, date);
+      this._collectJsonlFiles(datePath, files);
+      const polymarketPath = path.join(datePath, 'polymarket');
+      if (fs.existsSync(polymarketPath)) {
+        this._collectJsonlFiles(polymarketPath, files);
+      }
+    }
+
+    return files.sort();
+  }
+
+  private _collectJsonlFiles(dir: string, out: string[]): void {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith('.jsonl') && !entry.name.endsWith('.jsonl.gz')) continue;
+      out.push(path.join(dir, entry.name));
+    }
   }
 
   /**
@@ -1093,24 +1129,166 @@ export class CrossMarketBacktestEngine {
   }
 
   /**
+   * Нормализует пару для стратегии: easy = lower strike, hard = higher strike.
+   *
+   * До момента появления обоих strike'ов live-бот не должен торговать; в backtest
+   * при отсутствующем priceToBeat оставляем duration order, чтобы не ломать
+   * диагностические прогоны старых snapshot'ов.
+   */
+  private _assignPairByStrike(pair: MarketPair): MarketPair {
+    const easyStrike = pair.easy.priceToBeat;
+    const hardStrike = pair.hard.priceToBeat;
+    if (easyStrike === undefined || hardStrike === undefined) return pair;
+    if (easyStrike <= hardStrike) return pair;
+
+    this._logger.debug('Swapping pair legs by strike', {
+      pairType: pair.pairType,
+      endDate: pair.easy.endDate,
+      easyRecurrenceBefore: pair.easy.recurrence,
+      hardRecurrenceBefore: pair.hard.recurrence,
+      easyStrikeBefore: easyStrike.toFixed(2),
+      hardStrikeBefore: hardStrike.toFixed(2),
+    });
+
+    return {
+      easy: pair.hard,
+      hard: pair.easy,
+      pairType: pair.pairType,
+      overlapMs: pair.overlapMs,
+    };
+  }
+
+  private async _resolveMissingStrikes(pair: MarketPair): Promise<MarketPair> {
+    const [easy, hard] = await Promise.all([
+      this._resolveMarketStrike(pair.easy),
+      this._resolveMarketStrike(pair.hard),
+    ]);
+    if (easy === pair.easy && hard === pair.hard) return pair;
+    return { ...pair, easy, hard };
+  }
+
+  private async _resolveMarketStrike(market: MarketInfo): Promise<MarketInfo> {
+    if (market.priceToBeat !== undefined) return market;
+    if (market.startEpochMs === undefined) return market;
+
+    const restored = await this._readChainlinkPriceAtOrBefore(
+      market.filePath,
+      market.startEpochMs,
+    );
+    if (restored === null) return market;
+
+    this._logger.debug('Strike restored from Chainlink snapshot history', {
+      asset: market.asset,
+      recurrence: market.recurrence,
+      endDate: market.endDate,
+      startTime: new Date(market.startEpochMs).toISOString(),
+      strikePrice: restored.price.toFixed(2),
+      source: restored.source,
+      priceTs: new Date(restored.timestampMs).toISOString(),
+      ageMs: market.startEpochMs - restored.timestampMs,
+    });
+
+    return {
+      ...market,
+      priceToBeat: restored.price,
+    };
+  }
+
+  /**
+   * Восстанавливает strike по Chainlink history внутри snapshot-файла.
+   *
+   * Основной режим: последняя Chainlink цена с `ts <= startTime`.
+   * Fallback нужен для старых/неполных файлов, где запись могла начаться чуть
+   * после открытия: берём ближайшую Chainlink цену к startTime.
+   */
+  private async _readChainlinkPriceAtOrBefore(
+    filePath: string,
+    targetMs: number,
+  ): Promise<{ price: number; timestampMs: number; source: 'at-or-before' | 'nearest' } | null> {
+    const readerFactory = new SnapshotReaderFactory(this._logger);
+    const reader = readerFactory.create(filePath);
+    let lastAtOrBefore: { price: number; timestampMs: number } | null = null;
+    let nearest: { price: number; timestampMs: number } | null = null;
+
+    try {
+      for await (const line of reader.readLines()) {
+        if (!line.includes('crypto_price')) continue;
+
+        let raw: Record<string, unknown>;
+        try {
+          raw = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        if (raw['t'] !== 'crypto_price') continue;
+        if (raw['source'] !== 'chainlink') continue;
+        if (typeof raw['price'] !== 'number' || !Number.isFinite(raw['price'])) continue;
+
+        const tsRaw = raw['ts'];
+        const timestampMs = typeof tsRaw === 'number' ? tsRaw : Number(tsRaw);
+        if (!Number.isFinite(timestampMs)) continue;
+
+        const point = { price: raw['price'], timestampMs };
+        if (timestampMs <= targetMs) {
+          if (lastAtOrBefore === null || timestampMs > lastAtOrBefore.timestampMs) {
+            lastAtOrBefore = point;
+          }
+        }
+        if (nearest === null || Math.abs(timestampMs - targetMs) < Math.abs(nearest.timestampMs - targetMs)) {
+          nearest = point;
+        }
+      }
+    } finally {
+      await reader.close();
+    }
+
+    if (lastAtOrBefore !== null) {
+      return { ...lastAtOrBefore, source: 'at-or-before' };
+    }
+    if (nearest !== null) {
+      return { ...nearest, source: 'nearest' };
+    }
+    return null;
+  }
+
+  private _isInLiveWindow(pair: MarketPair, timestampMs: number): boolean {
+    const knownStarts = [pair.easy.startEpochMs, pair.hard.startEpochMs]
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const liveStartMs = knownStarts.length > 0
+      ? Math.max(...knownStarts)
+      : Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs) - pair.overlapMs;
+    const liveEndMs = Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs);
+    return timestampMs >= liveStartMs && timestampMs <= liveEndMs;
+  }
+
+  private _booksAreFresh(
+    easyBook: SimpleBook,
+    hardBook: SimpleBook,
+    nowMs: number,
+    bookStalenessMs: number,
+  ): boolean {
+    return nowMs - easyBook.timestampMs <= bookStalenessMs &&
+      nowMs - hardBook.timestampMs <= bookStalenessMs;
+  }
+
+  /**
    * Анализирует одну пару рынков: читает оба файла, ищет расхождения.
    */
   private async _analyzePair(
     pair: MarketPair,
     detector: DivergenceDetector,
   ): Promise<PairResult> {
+    const pairWithStrikes = await this._resolveMissingStrikes(pair);
+    const strikePair = this._assignPairByStrike(pairWithStrikes);
+    const bookStalenessMs = this._config.bookStalenessMs ?? 1500;
+
     // Читаем book events из обоих файлов
-    const easyEvents = await this._readBookEvents(pair.easy.filePath, 'easy');
-    const hardEvents = await this._readBookEvents(pair.hard.filePath, 'hard');
+    const easyEvents = await this._readBookEvents(strikePair.easy.filePath, 'easy');
+    const hardEvents = await this._readBookEvents(strikePair.hard.filePath, 'hard');
 
     // Merge по timestamp
     const merged = this._mergeTimelines(easyEvents, hardEvents);
-
-    // Strike-based swap: easy = lower strike, hard = higher strike
-    const durationEasyStrike = pair.easy.priceToBeat;
-    const durationHardStrike = pair.hard.priceToBeat;
-    const swapBooks = (durationEasyStrike != null && durationHardStrike != null
-      && durationEasyStrike > durationHardStrike);
 
     // Прогоняем детектор — используем только Up-книги обоих рынков
     const emptyBook: SimpleBook = { bids: [], asks: [], timestampMs: 0 };
@@ -1133,20 +1311,21 @@ export class CrossMarketBacktestEngine {
         timestampMs: event.timestampMs,
       };
 
-      // Strike-based assignment
       if (event.leg === 'easy') {
-        if (swapBooks) { hardUpBook = book; } else { easyUpBook = book; }
+        easyUpBook = book;
       } else {
-        if (swapBooks) { easyUpBook = book; } else { hardUpBook = book; }
+        hardUpBook = book;
       }
 
       // Проверяем только когда оба стакана инициализированы
       if (easyUpBook.timestampMs === 0 || hardUpBook.timestampMs === 0) continue;
+      if (!this._isInLiveWindow(strikePair, event.timestampMs)) continue;
+      if (!this._booksAreFresh(easyUpBook, hardUpBook, event.timestampMs, bookStalenessMs)) continue;
 
       totalSnapshots++;
 
       // После strike-based assignment только UP нужен
-      const signal = detector.detect(easyUpBook, hardUpBook, pair, event.timestampMs);
+      const signal = detector.detect(easyUpBook, hardUpBook, strikePair, event.timestampMs);
       if (signal) {
         divergentSnapshots++;
         sumPnlPerUnit += signal.optimalDepth.pnlPerUnit;
@@ -1159,7 +1338,7 @@ export class CrossMarketBacktestEngine {
     }
 
     return {
-      pair,
+      pair: strikePair,
       totalSnapshots,
       divergentSnapshots,
       bestSignal,
@@ -1174,24 +1353,20 @@ export class CrossMarketBacktestEngine {
    * @remarks
    * Алгоритм:
    * 1. Берём priceToBeat (strike) из MarketInfo обеих ног
-   * 2. Применяем strike-based swap (booksSwapped): easy = lower strike, hard = higher strike
-   * 3. Читаем последнюю crypto_price из easy-файла (15m файл длиннее, больше данных)
+   * 2. Пара уже нормализована: easy = lower strike, hard = higher strike
+   * 3. Берём finalPrice из meta или soft-resolution Chainlink price
+   *    из окна `[endDate - 2000ms, endDate)`
    * 4. Payoff = (lowerStrike_Up_won ? 1 : 0) + (higherStrike_Up_won ? 0 : 1)
    *    - $2 = windfall (цена между strike'ами: lower_Up WIN + higher_Down WIN)
    *    - $1 = safe (обе ноги в одну сторону)
    *    - $0 = невозможно после strike-based swap (lower ≤ higher всегда)
    *
    * @param pair - Пара рынков
-   * @param booksSwapped - Были ли книги свопнуты по strike (easy(duration) > hard(duration))
    * @returns Информация о settlement
    */
-  private async _computeSettlement(pair: MarketPair, booksSwapped: boolean = false): Promise<SettlementInfo> {
-    const durationEasyStrike = pair.easy.priceToBeat ?? null;
-    const durationHardStrike = pair.hard.priceToBeat ?? null;
-
-    // После strike-based swap: easy = lower strike, hard = higher strike
-    const easyStrike = booksSwapped ? durationHardStrike : durationEasyStrike;
-    const hardStrike = booksSwapped ? durationEasyStrike : durationHardStrike;
+  private async _computeSettlement(pair: MarketPair): Promise<SettlementInfo> {
+    const easyStrike = pair.easy.priceToBeat ?? null;
+    const hardStrike = pair.hard.priceToBeat ?? null;
 
     if (easyStrike === null || hardStrike === null) {
       this._logger.debug('Missing priceToBeat, assuming $1 payoff', {
@@ -1208,12 +1383,16 @@ export class CrossMarketBacktestEngine {
     // После strike-based swap easy всегда имеет lower strike → всегда safe
     const strikesSafe = easyStrike <= hardStrike;
 
-    // Читаем последнюю crypto_price из easy-файла (более длинный по duration, больше данных до экспирации)
-    const settlementPrice = await this._readSettlementPrice(pair.easy.filePath);
+    const settlementPrice = pair.easy.finalPrice ?? pair.hard.finalPrice ??
+      (this._config.approxResolution === false
+        ? null
+        : await this._readSoftSettlementPrice(pair));
 
     if (settlementPrice === null) {
-      this._logger.debug('No crypto_price found, assuming $1 payoff', {
+      this._logger.debug('No finalPrice/soft Chainlink resolution found, assuming $1 payoff', {
         easyFile: pair.easy.filePath,
+        hardFile: pair.hard.filePath,
+        endDate: pair.easy.endDate,
       });
       return {
         easyStrike, hardStrike,
@@ -1234,7 +1413,6 @@ export class CrossMarketBacktestEngine {
     this._logger.debug('Settlement computed', {
       easyStrike: easyStrike.toFixed(2),
       hardStrike: hardStrike.toFixed(2),
-      booksSwapped,
       settlementPrice: settlementPrice.toFixed(2),
       lowerUpWon, higherUpWon,
       payoffPerUnit,
@@ -1249,37 +1427,58 @@ export class CrossMarketBacktestEngine {
   }
 
   /**
-   * Читает последнюю crypto_price из файла снапшота.
+   * Читает soft-resolution Chainlink price для пары.
    *
    * @remarks
-   * Ищет события с `t: 'crypto_price'` и возвращает `price` последнего из них.
-   * Это цена актива (BTC/ETH/SOL) ближайшая к моменту экспирации рынка.
+   * Повторяет fallback из analyze-crowd-calibration:
+   * берём последний Chainlink sample строго в окне `[endDate - windowMs, endDate)`.
+   * Если в окне нет sample — не угадываем resolution.
    *
-   * @param filePath - Путь к NDJSON файлу
    * @returns Цена или null если не найдена
    */
-  private async _readSettlementPrice(filePath: string): Promise<number | null> {
+  private async _readSoftSettlementPrice(pair: MarketPair): Promise<number | null> {
+    const windowMs = this._config.approxResolutionWindowMs ?? 2_000;
+    const endMs = Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs);
+    const easy = await this._readLastChainlinkPriceInWindow(pair.easy.filePath, endMs - windowMs, endMs);
+    const hard = await this._readLastChainlinkPriceInWindow(pair.hard.filePath, endMs - windowMs, endMs);
+    const best = [easy, hard]
+      .filter((p): p is { price: number; timestampMs: number } => p !== null)
+      .sort((a, b) => b.timestampMs - a.timestampMs)[0];
+    return best?.price ?? null;
+  }
+
+  private async _readLastChainlinkPriceInWindow(
+    filePath: string,
+    fromInclusiveMs: number,
+    toExclusiveMs: number,
+  ): Promise<{ price: number; timestampMs: number } | null> {
     const readerFactory = new SnapshotReaderFactory(this._logger);
     const reader = readerFactory.create(filePath);
-    let lastPrice: number | null = null;
+    let best: { price: number; timestampMs: number } | null = null;
 
     try {
       for await (const line of reader.readLines()) {
+        if (!line.includes('crypto_price')) continue;
+
         let raw: Record<string, unknown>;
         try {
           raw = JSON.parse(line) as Record<string, unknown>;
         } catch {
           continue;
         }
-        if (raw['t'] === 'crypto_price' && typeof raw['price'] === 'number') {
-          lastPrice = raw['price'] as number;
-        }
+        if (raw['t'] !== 'crypto_price') continue;
+        if (raw['source'] !== 'chainlink') continue;
+        if (typeof raw['price'] !== 'number' || !Number.isFinite(raw['price'])) continue;
+        const timestampMs = typeof raw['ts'] === 'number' ? raw['ts'] : Number(raw['ts']);
+        if (!Number.isFinite(timestampMs)) continue;
+        if (timestampMs < fromInclusiveMs || timestampMs >= toExclusiveMs) continue;
+        if (!best || timestampMs > best.timestampMs) best = { price: raw['price'], timestampMs };
       }
     } finally {
       await reader.close();
     }
 
-    return lastPrice;
+    return best;
   }
 
   /**

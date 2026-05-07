@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "CalibratedCrowd experiment — cc-backtest-apr23-27-mc005-hold",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots Apr 2026",
+      "pnl": "не записан",
+      "notes": "Ранний эксперимент CalibratedCrowd. Большинство конфигов — варианты CEX filter (agree/not-adverse) которые ухудшают результат."
+    },
+    "todo": [
+      "результаты не зафиксированы",
+      "CEX agree/not-adverse фильтры исторически вредят — не использовать в новых конфигах"
+    ]
+  },
   "strategy": "calibrated-crowd",
   "strategyParams": {
     "edgeTablePath": "tables/edge-table-5min-market-weighted-train-through-20260420.json",
@@ -28,7 +41,10 @@
       "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-27/polymarket/*Bitcoin*"
     ],
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },

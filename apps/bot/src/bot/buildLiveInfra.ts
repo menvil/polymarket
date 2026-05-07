@@ -74,6 +74,14 @@ export interface LiveCredentials {
   readonly apiSecret: string;
   /** Polymarket L2 API passphrase (hex) */
   readonly apiPassphrase: string;
+  /**
+   * Builder code для атрибуции ордеров в CLOB V2 (bytes32 hex)
+   *
+   * @remarks
+   * Выдаётся на странице Polymarket Builder Profile.
+   * Включается в каждый подписанный ордер автоматически.
+   */
+  readonly builderCode?: string;
 }
 
 /** Параметры для buildLiveInfra */
@@ -140,6 +148,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
     signatureType: credentials.funderAddress ? SignatureType.POLY_PROXY : SignatureType.EOA,
     funderAddress: credentials.funderAddress,
+    builderCode: credentials.builderCode,
   };
 
   const restClient = new PolymarketRestClient(restConfig, logger, dnsOverride);
@@ -152,6 +161,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     makerAddress,
     restConfig.signatureType,
     logger,
+    restConfig.builderCode,
   );
 
   const orderRestClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);

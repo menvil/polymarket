@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'cex-lead-lag-exit-policy', 'cex-lead-lag-risk-budget', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -413,8 +413,10 @@ function parseStrategyParams(
       break;
 
     case 'cex-lead-lag':
-      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for cex-lead-lag strategy');
-      if (raw['qMax'] === undefined) errors.push('strategyParams.qMax is required for cex-lead-lag strategy');
+    case 'cex-lead-lag-exit-policy':
+    case 'cex-lead-lag-risk-budget':
+      if (!result['orderSize']) errors.push(`strategyParams.orderSize is required for ${strategyType} strategy`);
+      if (raw['qMax'] === undefined) errors.push(`strategyParams.qMax is required for ${strategyType} strategy`);
       if (typeof raw['qMax'] === 'number') result['qMax'] = raw['qMax'];
       if (raw['side'] === 'up' || raw['side'] === 'down') result['side'] = raw['side'];
       if (raw['mode'] === 'defensive' || raw['mode'] === 'skewed' || raw['mode'] === 'hybrid') result['mode'] = raw['mode'];
@@ -431,15 +433,50 @@ function parseStrategyParams(
         'minEdgeCents', 'exitEdgeCents', 'baseSpreadCents', 'exitDiscountCents',
         'emergencyExitSlippageCents', 'maxChaseAboveExitCents', 'stopLossCents',
         'stopLossCooldownMs', 'breakEvenTriggerCents', 'breakEvenOffsetCents',
+        'breakEvenExitRatio', 'profitLockTriggerCents', 'profitLockOffsetCents',
+        'profitLockExitRatio', 'profitTargetSlippageCents',
         'trailingStartMultiplier', 'minTrailingDistanceCents',
         'tauTighteningStartSec', 'tauTighteningMinMultiplier',
         'signalTighteningMultiplier', 'trailingExitRatio',
         'signalExitGraceMs', 'signalExitMinProfitCents', 'signalExitRatio',
         'adverseExitGraceMs', 'adverseExitRatio',
+        'holdToExpiryMinBidCents', 'holdToExpiryMaxTauSec', 'holdToExpiryStopBidCents',
         'warmupSec', 'ewmaAlpha', 'minTradesForMid', 'exitTauSec',
         'maxEntryTauSec', 'minSignalPersistenceMs', 'minFairCents', 'maxFairCents',
+        'riskBudgetTolerance', 'riskBudgetEdgeTtlMs',
+        'riskBudgetMinProfitScaleOutCents', 'riskBudgetMinRebalanceDiffPct',
+        'riskBudgetRebalanceHysteresisPct', 'riskBudgetRebalanceCooldownMs',
+        'riskBudgetMinRunnerPctAfterProfit', 'riskBudgetDrawdownEmergencyCents',
+        'riskBudgetOverFairEmergencyCents',
       ]) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (typeof raw['edgeTablePath'] === 'string') result['edgeTablePath'] = raw['edgeTablePath'];
+      if (raw['edgeRequireZone'] === true || raw['edgeRequireZone'] === false) result['edgeRequireZone'] = raw['edgeRequireZone'];
+      if (strategyType === 'cex-lead-lag-exit-policy') {
+        if (typeof raw['exitPolicyTablePath'] !== 'string') {
+          errors.push('strategyParams.exitPolicyTablePath is required for cex-lead-lag-exit-policy strategy');
+        } else {
+          result['exitPolicyTablePath'] = raw['exitPolicyTablePath'];
+        }
+        if (typeof raw['exitPolicyMinSamples'] === 'number') result['exitPolicyMinSamples'] = raw['exitPolicyMinSamples'];
+        if (raw['exitPolicySkipUnknown'] === true || raw['exitPolicySkipUnknown'] === false) {
+          result['exitPolicySkipUnknown'] = raw['exitPolicySkipUnknown'];
+        }
+      }
+      if (strategyType === 'cex-lead-lag-risk-budget') {
+        if (typeof raw['exitPolicyTablePath'] !== 'string') {
+          errors.push('strategyParams.exitPolicyTablePath is required for cex-lead-lag-risk-budget strategy');
+        } else {
+          result['exitPolicyTablePath'] = raw['exitPolicyTablePath'];
+        }
+        if (typeof raw['exitPolicyMinSamples'] === 'number') result['exitPolicyMinSamples'] = raw['exitPolicyMinSamples'];
+        if (raw['exitPolicySkipUnknown'] === true || raw['exitPolicySkipUnknown'] === false) {
+          result['exitPolicySkipUnknown'] = raw['exitPolicySkipUnknown'];
+        }
+        if (raw['riskBudgetEnabled'] === true || raw['riskBudgetEnabled'] === false) {
+          result['riskBudgetEnabled'] = raw['riskBudgetEnabled'];
+        }
       }
       if (raw['requireSignalForEntry'] === true || raw['requireSignalForEntry'] === false) {
         result['requireSignalForEntry'] = raw['requireSignalForEntry'];
@@ -609,6 +646,7 @@ function parseMarketConfig(
       const paths = Array.isArray(raw['paths']) ? raw['paths'] as string[] : undefined;
       const scanPauseMs = (raw['scanPauseMs'] as number | undefined) ?? 30_000;
       const outcomeIndex = (raw['outcomeIndex'] as number | undefined) ?? 0;
+      const bidirectional = raw['bidirectional'] === true;
 
       // ENV > JSON: env-переменные переопределяют значения из JSON-конфига
       const envMinLiquidity = env['MARKET_DISCOVERY_MIN_LIQUIDITY']
@@ -640,6 +678,7 @@ function parseMarketConfig(
         },
         scanPauseMs,
         outcomeIndex: outcomeIndex as 0 | 1,
+        bidirectional,
       };
     }
 

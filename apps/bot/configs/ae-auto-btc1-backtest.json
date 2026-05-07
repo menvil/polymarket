@@ -1,4 +1,19 @@
 {
+  "_meta": {
+    "desc": "AdaptiveEntry 15min auto UP/DOWN, btc1 dataset",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc1 snapshots 5-min BTC, 25 markets",
+      "pnl": "-5.45 USDC",
+      "wr": "69.2%",
+      "markets": 25,
+      "date": "2026-03-31",
+      "notes": "13 fills. btc1 убыточный (маленький dataset). Total 4-day: +18.73 USDC, 79.8% WR."
+    },
+    "todo": [
+      "re-run on Apr 21-27 data (see verify-ae-auto configs)"
+    ]
+  },
   "strategy": "adaptive-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -8,8 +23,25 @@
     "warmupTrades": 10,
     "bidOffsetCents": 1
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day1/*"], "outcomeIndex": 0 },
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day1/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

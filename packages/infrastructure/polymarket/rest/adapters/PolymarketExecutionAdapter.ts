@@ -171,6 +171,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       price: params.price,
       size: params.size,
       postOnly: params.postOnly === true,
+      orderType: params.orderType ?? 'GTC',
       priceTick: params.priceTick,
     });
 
@@ -185,8 +186,8 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         price: params.price,
         size: params.size,
         postOnly: params.postOnly,
+        orderType: params.orderType,
         priceTick: params.priceTick,
-        feeRateBps: params.feeRateBps, // Используем изученную или дефолтную ставку комиссии
         negRisk,
       });
 

@@ -1,15 +1,48 @@
 {
+  "_meta": {
+    "desc": "SelectiveEntry 15-min markets variant, btc5",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc5 snapshots 5-min BTC",
+      "pnl": "не записан",
+      "notes": "15-мин markets тест."
+    },
+    "todo": [
+      "результаты не зафиксированы — перезапустить если нужны данные"
+    ]
+  },
   "strategy": "selective-entry",
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
   "strategyParams": {
     "orderSize": 5,
-    "minZoneCents": 45, "maxZoneCents": 68,
-    "minDeltaPct": 0.03, "maxDeltaPct": 0.20,
-    "minTauSec": 300, "maxTauSec": 750,
-    "maxSpreadCents": 4, "warmupSec": 60,
+    "minZoneCents": 45,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.2,
+    "minTauSec": 300,
+    "maxTauSec": 750,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
     "bidOffsetCents": 1
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day5/*"], "outcomeIndex": 0 }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day5/*"
+    ],
+    "outcomeIndex": 0
+  }
 }

@@ -1,4 +1,17 @@
 {
+  "_meta": {
+    "desc": "AdaptiveEntry 5min baseline (НЕ РАБОТАЕТ), btc2",
+    "status": "archived",
+    "backtest": {
+      "dataset": "btc2 snapshots 5-min BTC",
+      "pnl": "+38.79 USDC",
+      "date": "2026-03-31",
+      "notes": "btc2 аномально +38.79 (overfit). btc1/4/5 все убыточные. 5-min слишком шумный для momentum."
+    },
+    "todo": [
+      "не запускать — 5-min momentum не работает, используй ae-auto-btc* (15-min)"
+    ]
+  },
   "strategy": "adaptive-entry",
   "strategyParams": {
     "orderSize": 5,
@@ -8,8 +21,25 @@
     "warmupTrades": 10,
     "bidOffsetCents": 1
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/5min-btc-day2/*"], "outcomeIndex": 0 },
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day2/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

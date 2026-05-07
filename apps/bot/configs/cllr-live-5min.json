@@ -1,4 +1,25 @@
 {
+  "_meta": {
+    "desc": "CexLeadLag + CLLR residual-axis overlay, 5min BTC — текущий live",
+    "status": "live",
+    "backtest": {
+      "dataset": "live-recordings 2026-04-21/2026-04-27, 7d OOS",
+      "pnl": "+81.16 USDC",
+      "markets": 245,
+      "date": "2026-05-02",
+      "notes": "CLL base +69.83 → +81.16 с CLLR overlay (+11.33). Весь прирост на DOWN-side. SELL zones resid ∈ [-6,-2]"
+    },
+    "paper": {
+      "period": "2026-05-02/2026-05-04",
+      "pnl": "done",
+      "notes": "2d paper перед live, подтверждён"
+    },
+    "live": {
+      "started": "2026-05-02",
+      "pnl": "active",
+      "notes": "приоритетный config"
+    }
+  },
   "strategy": "cex-lead-lag",
   "resources": {
     "initialBalance": 100,
@@ -16,7 +37,11 @@
     "orderSize": 5,
     "qMax": 1,
     "mode": "skewed",
-    "venues": ["binance", "coinbase", "okx"],
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
     "signalThresholdBps": 0.5,
     "signalLookbackMs": 1000,
     "signalStaleMs": 2000,
@@ -65,7 +90,10 @@
   "market": {
     "source": "discovery",
     "filter": {
-      "requiredKeywords": ["bitcoin", "up or down"],
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
       "minDurationMinutes": 4,
       "maxDurationMinutes": 6
     },
@@ -89,7 +117,9 @@
     "exchanges": {
       "binance": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -97,7 +127,9 @@
       },
       "coinbase": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,
@@ -105,7 +137,9 @@
       },
       "okx": {
         "type": "spot",
-        "symbols": ["BTC/USD"],
+        "symbols": [
+          "BTC/USD"
+        ],
         "orderbook": true,
         "trades": true,
         "obDepth": 10,

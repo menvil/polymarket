@@ -80,10 +80,11 @@ interface RequestOptions {
  * Конфигурация Polymarket REST Client (с применёнными значениями по умолчанию)
  */
 type ResolvedPolymarketRestConfig = Required<
-  Omit<PolymarketRestConfig, 'l2Credentials' | 'funderAddress'>
+  Omit<PolymarketRestConfig, 'l2Credentials' | 'funderAddress' | 'builderCode'>
 > & {
   l2Credentials?: PolymarketL2Credentials;
   funderAddress?: string;
+  builderCode?: string;
 };
 
 /**

@@ -1,4 +1,16 @@
 {
+  "_meta": {
+    "desc": "OscillationMM — osc-mm-filtered-btc2-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "btc1/btc2/btc4/btc5 5-min BTC",
+      "pnl": "не записан",
+      "notes": "Ранний эксперимент с MM на осцилляциях. Результаты не зафиксированы. Не развивался дальше."
+    },
+    "todo": [
+      "archived — результаты не зафиксированы"
+    ]
+  },
   "strategy": "oscillation-mm",
   "strategyParams": {
     "orderSize": 5,
@@ -17,8 +29,25 @@
     "maxDropCents": 3,
     "dropWindowSec": 30
   },
-  "market": { "source": "snapshots", "paths": ["/tmp/15min-btc-day2/*"], "outcomeIndex": 0 },
-  "resources": { "initialBalance": 100, "maxConcurrentMarkets": 1, "minCapitalPerMarket": 10, "tradingBalanceRatio": 1.0 },
-  "paper": { "fillOnBookCrossing": true, "fillOnTape": true, "fillAtOrderPrice": true },
-  "account": { "accountId": "venue:POLYMARKET:paper-account" }
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day2/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
 }

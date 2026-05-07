@@ -298,8 +298,6 @@ async function measureOrderLatency(tokenId: string, rounds: number): Promise<{ p
         side: 'BUY',
         price: 0.01,
         size: 5,
-        nonce: 0,
-        feeRateBps: 1000,
       });
       const placeMs = performance.now() - start;
 

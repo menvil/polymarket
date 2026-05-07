@@ -67,8 +67,8 @@ export class PolymarketOrderMapper {
     price: number;
     size: number;
     postOnly?: boolean;
+    orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
     priceTick?: number;
-    feeRateBps?: number;
     negRisk?: boolean;
   }): CreateOrderRequest {
     // Нормализуем сторону в нижний регистр для сравнения (защита от uppercase на входе)
@@ -80,9 +80,8 @@ export class PolymarketOrderMapper {
       price: params.price, // Число (0-1)
       size: params.size, // Число (акции)
       postOnly: params.postOnly,
-      feeRateBps: params.feeRateBps ?? 1000, // Используем переданное или дефолт 10% maker fee
-      nonce: Date.now(),
-      priceTick: params.priceTick, // Передаём шаг цены в построитель API
+      orderType: params.orderType,
+      priceTick: params.priceTick,
       negRisk: params.negRisk,
     };
   }
