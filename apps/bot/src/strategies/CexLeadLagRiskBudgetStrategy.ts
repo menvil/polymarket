@@ -2542,6 +2542,16 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       this._entryPriceCents !== null &&
       data.tradeEwmaCents < this._entryPriceCents - this._stopLossCents;
 
+    // Drawdown emergency как standalone guard: срабатывает даже если fairCents=null
+    // (нет данных в exit-policy таблице). Без этого позиция держится без защиты.
+    const drawdownEmergencyHit =
+      this._riskBudgetEnabled &&
+      this._riskBudgetGuardConfig.drawdownEmergencyCents > 0 &&
+      this._entryPriceCents !== null &&
+      data.bestBidCents !== undefined &&
+      data.positionQty.gt(0) &&
+      (this._entryPriceCents - data.bestBidCents) >= this._riskBudgetGuardConfig.drawdownEmergencyCents;
+
     const trailingStopHit =
       this._profitProtectTrailingEnabled &&
       this._trailingStopCents !== null &&
@@ -2610,9 +2620,10 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     const effectiveExitPolicyHit = false;
 
     const shouldExit =
+      hardStopHit ||
+      drawdownEmergencyHit ||
       riskBudgetHit ||
       effectiveExitPolicyHit ||
-      hardStopHit ||
       effectiveAdverseExitHit ||
       effectiveSignalExitHit ||
       trailingStopHit ||
@@ -2629,6 +2640,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     if (!data.availableTokenQty.gt(0)) {
       if (data.positionQty.gt(0)) {
         const exitTrigger = hardStopHit ? 'HARD_STOP' :
+          drawdownEmergencyHit ? 'HARD_STOP' :
           riskBudgetHit ? 'RISK_BUDGET' :
           effectiveExitPolicyHit ? 'EXIT_POLICY' :
           effectiveAdverseExitHit ? 'ADVERSE_SIGNAL' :
@@ -2677,6 +2689,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
 
     const exitReason =
       hardStopHit ? 'HARD_STOP' :
+      drawdownEmergencyHit ? 'HARD_STOP' :
       riskBudgetHit ? 'RISK_BUDGET' :
       effectiveExitPolicyHit ? 'EXIT_POLICY' :
       effectiveAdverseExitHit ? 'ADVERSE_SIGNAL' :
