@@ -8,7 +8,7 @@ import type {
   TriggerReason,
 } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
-import type { OrderId } from '@polymarket/ids';
+import type { AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
@@ -103,6 +103,13 @@ export interface CexLeadLagConfig {
   readonly minVenueCount?: number;
   /** Максимальный спред на бирже (bps). Биржа с более широким спредом игнорируется. */
   readonly maxSpreadBps?: number;
+  /**
+   * Минимальная доля бирж, согласованных по направлению, для входа [0..1]. Default: 0.66.
+   *
+   * @remarks
+   * При 3 биржах 0.66 = 2/3 (хотя бы 2 согласованы). При 2 биржах — обе должны совпадать.
+   */
+  readonly minVenueAgreement?: number;
   /** Минимальная сила сигнала [0..10] для входа. Default: 6. */
   readonly minSignalStrength?: number;
   /** Минимальная уверенность сигнала [0..1] для входа. Default: 0.55. */
@@ -181,6 +188,30 @@ export interface CexLeadLagConfig {
    */
   readonly breakEvenOffsetCents?: number;
   /**
+   * Доля исходной позиции, продаваемая сразу при достижении break-even tier.
+   * 0 = отключено. Default: 0.
+   */
+  readonly breakEvenExitRatio?: number;
+  /**
+   * Второй profit-lock tier: прибыль от входа (¢), после которой stop-floor
+   * поднимается до `entryPriceCents + profitLockOffsetCents`. 0 = отключено.
+   * Default: 0.
+   */
+  readonly profitLockTriggerCents?: number;
+  /**
+   * Смещение второго profit-lock floor выше цены входа (¢). Default: 0.
+   */
+  readonly profitLockOffsetCents?: number;
+  /**
+   * Доля исходной позиции, продаваемая сразу при достижении profit-lock tier.
+   * 0 = отключено. Default: 0.
+   */
+  readonly profitLockExitRatio?: number;
+  /**
+   * Slippage от bestBid для плановых PROFIT_TARGET exits (¢). Default: 0.
+   */
+  readonly profitTargetSlippageCents?: number;
+  /**
    * Базовое trailing distance как доля от накопленной прибыли (profit-from-entry).
    *
    * @remarks
@@ -256,6 +287,23 @@ export interface CexLeadLagConfig {
   readonly adverseExitGraceMs?: number;
   /** Доля доступной позиции, продаваемая при adverse-exit. Default: 1. */
   readonly adverseExitRatio?: number;
+  /**
+   * Удерживать near-certain winner до expiry, если best bid не ниже порога.
+   *
+   * @remarks
+   * 0 = отключено. При включении блокирует TAU_EXIT / ADVERSE_SIGNAL /
+   * SIGNAL_COLLAPSE near expiry. Guard активируется при bestBid >=
+   * holdToExpiryMinBidCents и держится, пока bestBid >= holdToExpiryStopBidCents.
+   * HARD_STOP и TRAILING_STOP не блокируются.
+   */
+  readonly holdToExpiryMinBidCents?: number;
+  /** Максимальный tauSec для hold-to-expiry режима. Default: 0 = отключено. */
+  readonly holdToExpiryMaxTauSec?: number;
+  /**
+   * Если bestBid опустился ниже этого уровня, hold-to-expiry guard выключается.
+   * Default: 95.
+   */
+  readonly holdToExpiryStopBidCents?: number;
   /** Секунды прогрева после начала рынка. Default: 10. */
   readonly warmupSec?: number;
   /** Alpha EWMA для расчёта mid по трейдам. Default: 0.3. */
@@ -292,6 +340,9 @@ export interface CexLeadLagConfig {
  */
 interface CexLeadLagData {
   readonly marketId: string;
+  readonly tradingInstrumentId: InstrumentId;
+  readonly tradingAsset: AssetId | undefined;
+  readonly positionOn: 'primary' | 'complementary';
   readonly side: CexLeadLagSide;
   readonly mode: CexLeadLagMode;
 
@@ -405,8 +456,8 @@ interface CexLeadLagData {
  * - `CANCEL` — снять все активные ордера.
  */
 type CexLeadLagAction =
-  | { readonly type: 'BUY'; readonly price: number; readonly size: Decimal; readonly cancelOrderId?: OrderId }
-  | { readonly type: 'SELL'; readonly price: number; readonly size: Decimal }
+  | { readonly type: 'BUY'; readonly price: number; readonly size: Decimal; readonly cancelOrderId?: OrderId; readonly targetInstrumentId?: InstrumentId; readonly targetAsset?: AssetId }
+  | { readonly type: 'SELL'; readonly price: number; readonly size: Decimal; readonly targetInstrumentId?: InstrumentId; readonly targetAsset?: AssetId }
   | { readonly type: 'CANCEL' };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -473,6 +524,8 @@ export function normalCdf(x: number): number {
 function clampNumber(x: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, x));
 }
+
+const EXIT_ORDER_REFRESH_MS = 1_500;
 
 /**
  * Вычисляет нейтральную вероятность P(S_T ≥ K) по GBM без дрейфа.
@@ -679,6 +732,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _stopLossCooldownMs: number;
   private readonly _breakEvenTriggerCents: number;
   private readonly _breakEvenOffsetCents: number;
+  private readonly _breakEvenExitRatio: number;
+  private readonly _profitLockTriggerCents: number;
+  private readonly _profitLockOffsetCents: number;
+  private readonly _profitLockExitRatio: number;
+  private readonly _profitTargetSlippageCents: number;
   private readonly _trailingStartMultiplier: number;
   private readonly _minTrailingDistanceCents: number;
   private readonly _tauTighteningStartSec: number;
@@ -694,6 +752,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _signalExitRatio: number;
   private readonly _adverseExitGraceMs: number;
   private readonly _adverseExitRatio: number;
+  private readonly _holdToExpiryMinBidCents: number;
+  private readonly _holdToExpiryMaxTauSec: number;
+  private readonly _holdToExpiryStopBidCents: number;
   private readonly _warmupSec: number;
   private readonly _ewmaAlpha: number;
   private readonly _minTradesForMid: number;
@@ -704,6 +765,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private readonly _edgeMinComposite: number;
   private readonly _edgeRequireZone: boolean;
   private readonly _edgeRegimeDetector: RegimeDetector | undefined;
+  private readonly _minVenueAgreement: number;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
   private _ewma: number | null = null;
@@ -738,6 +800,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private _pendingEntryPriceCents: number | null = null;
   /** Время последнего срабатывания стоп-лосса (ms). null если не было. */
   private _stopLossTriggeredAtMs: number | null = null;
+  /** Hold-to-expiry guard с гистерезисом: включается выше minBid, выключается ниже stopBid. */
+  private _holdToExpiryActive = false;
   private _currentMarketId = '';
   private _lastJournalDecisionMs = 0;
 
@@ -779,6 +843,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
   /** Пиковая EWMA mid со времени входа (¢). null если нет позиции. */
   private _peakPriceCents: number | null = null;
+  /** Размер позиции на входе; target scale-out считается от него, а не от остатка. */
+  private _entryPositionQty: Decimal | null = null;
   /** Пиковый netExpectedEdgeCents со времени входа. null если нет позиции. */
   private _peakNetExpectedEdgeCents: number | null = null;
   /** Пиковый residualMagnitudeBps со времени входа. null если нет позиции. */
@@ -790,6 +856,10 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    * Монотонно возрастает — trailing stop может только подниматься, но не опускаться.
    */
   private _trailingStopCents: number | null = null;
+  /** Первый profit-protect tier уже выставил scale-out для текущей позиции. */
+  private _breakEvenScaleOutDone = false;
+  /** Второй profit-protect tier уже выставил scale-out для текущей позиции. */
+  private _profitLockScaleOutDone = false;
   /** Первый trailing scale-out уже выставлен; остаток позиции держится как runner. */
   private _trailingScaleOutDone = false;
   /** Начало периода исчезнувшего favorable edge. */
@@ -800,6 +870,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   private _adverseExitStartedAtMs: number | null = null;
   /** Adverse-exit уже сделал partial scale-out для текущей позиции. */
   private _adverseExitDone = false;
+  /** Время последней попытки выставить SELL для текущего exit-триггера. */
+  private _lastExitOrderRefreshAtMs: number | null = null;
 
   /**
    * @param config - Конфигурация стратегии
@@ -848,6 +920,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._stopLossCooldownMs = toNumber(config.stopLossCooldownMs, 60_000);
     this._breakEvenTriggerCents = toNumber(config.breakEvenTriggerCents, 2);
     this._breakEvenOffsetCents = toNumber(config.breakEvenOffsetCents, 1);
+    this._breakEvenExitRatio = clampNumber(toNumber(config.breakEvenExitRatio, 0), 0, 1);
+    this._profitLockTriggerCents = Math.max(0, toNumber(config.profitLockTriggerCents, 0));
+    this._profitLockOffsetCents = toNumber(config.profitLockOffsetCents, 0);
+    this._profitLockExitRatio = clampNumber(toNumber(config.profitLockExitRatio, 0), 0, 1);
+    this._profitTargetSlippageCents = Math.max(0, toNumber(config.profitTargetSlippageCents, 0));
     this._trailingStartMultiplier = toNumber(config.trailingStartMultiplier, 0.5);
     this._minTrailingDistanceCents = Math.max(0.5, toNumber(config.minTrailingDistanceCents, 2));
     this._tauTighteningStartSec = toNumber(config.tauTighteningStartSec, 60);
@@ -863,6 +940,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._signalExitRatio = clampNumber(toNumber(config.signalExitRatio, 0.5), 0.05, 1);
     this._adverseExitGraceMs = Math.max(0, toNumber(config.adverseExitGraceMs, 300));
     this._adverseExitRatio = clampNumber(toNumber(config.adverseExitRatio, 1), 0.05, 1);
+    this._holdToExpiryMinBidCents = clampNumber(toNumber(config.holdToExpiryMinBidCents, 0), 0, 99);
+    this._holdToExpiryMaxTauSec = Math.max(0, toNumber(config.holdToExpiryMaxTauSec, 0));
+    this._holdToExpiryStopBidCents = clampNumber(toNumber(config.holdToExpiryStopBidCents, 95), 1, 99);
     this._warmupSec = toNumber(config.warmupSec, 10);
     this._ewmaAlpha = toNumber(config.ewmaAlpha, 0.3);
     this._minTradesForMid = toNumber(config.minTradesForMid, 3);
@@ -872,6 +952,20 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     this._edgeMinComposite = toNumber(config.edgeMinComposite, 0.3);
     this._edgeRequireZone = config.edgeRequireZone ?? true;
+    this._minVenueAgreement = toNumber(config.minVenueAgreement, 0.66);
+
+    // Валидация тиров profit-protect: offset второго тира должен быть выше первого.
+    // Math.max в _activeProfitLockFloorCents всегда выберет больший floor, но
+    // перевёрнутые тиры указывают на ошибку в конфиге.
+    if (
+      this._profitLockTriggerCents > 0 &&
+      this._profitLockOffsetCents < this._breakEvenOffsetCents
+    ) {
+      this._logger?.warn('CexLeadLag: inverted profit-protect tiers — profitLockOffsetCents < breakEvenOffsetCents', {
+        breakEvenOffsetCents: this._breakEvenOffsetCents,
+        profitLockOffsetCents: this._profitLockOffsetCents,
+      });
+    }
     if (config.edgeTablePath) {
       this._edgeTable = EdgeTable.fromFile(config.edgeTablePath);
       this._edgeRegimeDetector = new RegimeDetector({
@@ -906,6 +1000,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       stopLossCents: this._stopLossCents,
       stopLossCooldownMs: this._stopLossCooldownMs,
       emergencyExitSlippageCents: this._emergencyExitSlippageCents,
+      profitTargetSlippageCents: this._profitTargetSlippageCents,
       chainlinkStaleMs: this._chainlinkStaleMs,
       sigmaAnnual: this._sigmaAnnual,
       note: 'sigmaAnnual is sensitivity-helper only, not fair value source',
@@ -951,6 +1046,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._prevPositionQty = new Decimal(0);
       this._pendingEntryPriceCents = null;
       this._stopLossTriggeredAtMs = null;
+      this._holdToExpiryActive = false;
       this._currentMarketId = String(snapshot.instrumentId);
       this._lastJournalDecisionMs = 0;
       this._signalStartedAtMs = null;
@@ -963,14 +1059,18 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._signalOnChainlinkPrice = null;
       this._signalOnTs = null;
       this._peakPriceCents = null;
+      this._entryPositionQty = null;
       this._peakNetExpectedEdgeCents = null;
       this._peakResidualMagnitudeBps = null;
       this._trailingStopCents = null;
+      this._breakEvenScaleOutDone = false;
+      this._profitLockScaleOutDone = false;
       this._trailingScaleOutDone = false;
       this._signalExitStartedAtMs = null;
       this._signalExitDone = false;
       this._adverseExitStartedAtMs = null;
       this._adverseExitDone = false;
+      this._holdToExpiryActive = false;
     }
 
     this._updateEwma(snapshot);
@@ -1030,9 +1130,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     // ── Signal integrity check ──────────────────────────────────────────────
     // Проверяем, что знак signal.value совпадает с direction.
-    // Мы уничтожаем raw знак через Math.abs() и восстанавливаем его через
-    // signalDirectionForToken — если контракт сигнала когда-нибудь нарушится,
-    // это предотвращает тихую порчу данных.
+    // Ниже residual использует Math.abs() и восстанавливает знак через
+    // direction, поэтому при mismatch безопаснее пропустить тик полностью.
     if (signal && signal.value !== 0) {
       const rawSign = Math.sign(signal.value);
       const dirSign =
@@ -1044,7 +1143,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           value: signal.value,
           signalId: signal.id,
           ts: new Date(snapshot.nowMs).toISOString(),
+          action: 'skip_tick',
         });
+        return undefined;
       }
     }
 
@@ -1091,8 +1192,24 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           })
         : 0;
 
-    const bestBidCents = this._bestBidCents(snapshot);
-    const bestAskCents = this._bestAskCents(snapshot);
+    const primaryPosition = snapshot.portfolio?.getPosition(snapshot.instrumentId);
+    const primaryPositionQty = primaryPosition?.quantity.value() ?? new Decimal(0);
+    const complementaryPosition = snapshot.complementaryInstrumentId
+      ? snapshot.portfolio?.getPosition(snapshot.complementaryInstrumentId)
+      : undefined;
+    const complementaryPositionQty = complementaryPosition?.quantity.value() ?? new Decimal(0);
+    const useComplementaryPosition =
+      primaryPositionQty.lte(0) &&
+      complementaryPositionQty.gt(0) &&
+      snapshot.complementaryInstrumentId !== undefined &&
+      snapshot.complementaryAsset !== undefined;
+
+    const activeTopOfBook = useComplementaryPosition
+      ? snapshot.complementaryTopOfBook
+      : snapshot.topOfBook;
+    const activeMidCents = this._midCentsFromTopOfBook(activeTopOfBook);
+    const bestBidCents = this._bestBidCentsFromTopOfBook(activeTopOfBook);
+    const bestAskCents = this._bestAskCentsFromTopOfBook(activeTopOfBook);
 
     const executionPenaltyCents = this._executionPenaltyCents({
       bestBidCents,
@@ -1112,17 +1229,22 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const netExpectedEdgeCents = signedSignalMoveCents - executionPenaltyCents;
 
     // ── Portfolio / constraints ─────────────────────────────────────────────
-    // Стратегия всегда торгует primary instrument. Для DOWN-side primary
-    // должен быть DOWN-токен (outcomeIndex=1). Сторона `_side` влияет только
-    // на инверсию сигнала, а не на роутинг ордеров.
-    const position = snapshot.portfolio?.getPosition(snapshot.instrumentId);
+    // В штатном bidirectional режиме каждый side имеет свой primary slot. Но live
+    // fill/reconciliation может доставить позицию на complementary token в primary
+    // snapshot. Для выхода считаем такую позицию активной и маршрутизируем SELL
+    // на её instrumentId/asset.
+    const position = useComplementaryPosition ? complementaryPosition : primaryPosition;
     const positionQty = position?.quantity.value() ?? new Decimal(0);
     const avgEntryPriceCents =
       position && !position.isClosed()
         ? position.averageEntryPrice.value().toNumber() * 100
         : undefined;
+    const tradingInstrumentId = useComplementaryPosition
+      ? snapshot.complementaryInstrumentId!
+      : snapshot.instrumentId;
+    const tradingAsset = useComplementaryPosition ? snapshot.complementaryAsset : undefined;
     const availableTokenQty =
-      snapshot.portfolio?.availableTokenQuantity(snapshot.instrumentId) ?? new Decimal(0);
+      snapshot.portfolio?.availableTokenQuantity(tradingInstrumentId) ?? new Decimal(0);
     const availableBalance =
       snapshot.portfolio?.balance.available().value() ?? new Decimal(0);
     const minOrderSize = snapshot.constraints?.minOrderSize.value() ?? new Decimal(0);
@@ -1130,20 +1252,22 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const inventoryUnits =
       this._orderSize.gt(0) ? positionQty.div(this._orderSize).toNumber() : 0;
 
+    const deltaDollars = currentPrice - targetPrice;
+    const activeMidForTables = bestBidCents !== undefined && bestAskCents !== undefined
+      ? (bestBidCents + bestAskCents) / 2
+      : this._ewma ?? 50;
+    const tableRegime: Regime =
+      this._edgeRegimeDetector?.classify(snapshot.cryptoPriceHistory)?.regime ?? 'flat';
+
     let edgeBlocked = false;
     let edgeBlockReason: string | undefined;
     let edgeComposite: number | undefined;
     if (this._edgeTable && this._edgeRegimeDetector) {
-      const deltaDollars = currentPrice - targetPrice;
-      const midCents = bestBidCents !== undefined && bestAskCents !== undefined
-        ? (bestBidCents + bestAskCents) / 2
-        : this._ewma ?? 50;
-      const regime: Regime = this._edgeRegimeDetector.classify(snapshot.cryptoPriceHistory)?.regime ?? 'flat';
       const zone: EdgeZone | undefined = this._edgeTable.lookup({
         deltaDollars,
         tauSec,
-        midCents,
-        regime,
+        midCents: activeMidForTables,
+        regime: tableRegime,
         // Raw signed residual (CEX − Chainlink) bps — совпадает с конвенцией build-edge-table.
         residualBps: residualBpsRaw,
       });
@@ -1175,6 +1299,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     return {
       marketId: this._currentMarketId || String(snapshot.instrumentId),
+      tradingInstrumentId,
+      tradingAsset,
+      positionOn: useComplementaryPosition ? 'complementary' : 'primary',
       side: this._side,
       mode: this._mode,
 
@@ -1184,7 +1311,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       signalFavorable,
       signalAdverse,
 
-      tradeEwmaCents: this._ewma,
+      // this._ewma гарантированно non-null здесь: ранняя проверка на line ~1055 вернёт
+      // undefined из gather() если _ewma === null, поэтому код ниже недостижим при null.
+      tradeEwmaCents: useComplementaryPosition && activeMidCents !== undefined ? activeMidCents : this._ewma!,
       bestBidCents,
       bestAskCents,
       openBuyPriceCents: this._openBuyPriceCents(snapshot),
@@ -1198,8 +1327,12 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       minOrderSize,
       minOrderValue,
       inventoryUnits,
-      hasInFlightFills: snapshot.hasInFlightFills,
-      hasMatchedOrders: snapshot.matchedOrders.length > 0,
+      hasInFlightFills: useComplementaryPosition
+        ? Boolean(snapshot.hasComplementaryInFlightFills)
+        : snapshot.hasInFlightFills,
+      hasMatchedOrders: useComplementaryPosition
+        ? (snapshot.complementaryMatchedOrders?.length ?? 0) > 0
+        : snapshot.matchedOrders.length > 0,
 
       nowMs: snapshot.nowMs,
       currentPrice,
@@ -1268,35 +1401,11 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       return [{ type: 'CANCEL' }];
     }
 
-    // MATCHED ордер: fill неизбежен — CANCEL бессмысленен и выставит cooldown
-    // в ExecutionEngine. Просто ждём WS fill event.
-    if (data.hasMatchedOrders) {
-      this._logDiag(data, 'HOLD', {
-        reason: 'MATCHED_ORDER_AWAITING_FILL',
-        note: 'BUY order is MATCHED on exchange — fill is guaranteed, waiting for WS event',
-        positionQty: data.positionQty.toString(),
-        availableTokenQty: data.availableTokenQty.toString(),
-        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
-        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
-      });
-      return [];
-    }
-
-    if (data.hasInFlightFills) {
-      this._logDiag(data, 'CANCEL', {
-        reason: 'IN_FLIGHT_FILLS',
-        note: 'Fill received via WS but not yet processed locally — cancelling open orders',
-        positionQty: data.positionQty.toString(),
-        availableTokenQty: data.availableTokenQty.toString(),
-        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
-        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
-      }, true);
-      this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'IN_FLIGHT_FILLS' });
-      this._emitCancelAnalytics(data, 'IN_FLIGHT_FILLS');
-      return [{ type: 'CANCEL' }];
-    }
-
     // ── Position transition tracking ────────────────────────────────────────
+    // Выполняется ДО guard-блоков MATCHED/IN_FLIGHT, чтобы _entryPriceCents,
+    // _trailingStopCents и stop-уровни были актуальны в момент прихода CONFIRMED.
+    // Без этого 10–15-секундное ожидание on-chain finality = полная слепота стопа.
+    //
     // TODO: Replace heuristic entry/exit price tracking with fill-derived
     // weighted average prices. Current logic uses pending order price / EWMA
     // fallback and is not reliable for:
@@ -1310,16 +1419,24 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     if (wasFlat && hasPosition) {
       const recoveredExistingPosition = this._pendingEntryPriceCents === null;
+      // Приоритет: реальная цена филла из Portfolio (avgEntryPriceCents) > цена ордера
+      // (_pendingEntryPriceCents). При price improvement или taker slippage цена ордера
+      // расходится с ценой исполнения — стоп-лосс ставился бы выше/ниже нужного.
+      // avgEntryPriceCents доступен только после того как Portfolio обновлён (≥ MATCHED).
       this._entryPriceCents =
-        this._pendingEntryPriceCents ??
         data.avgEntryPriceCents ??
+        this._pendingEntryPriceCents ??
         data.tradeEwmaCents;
       this._pendingEntryPriceCents = null;
-      // Инициализируем peak-state в момент входа
-      this._peakPriceCents = data.tradeEwmaCents;
+      // Инициализируем peak от цены входа (не текущей рыночной) — иначе за 10–15 сек
+      // MATCHED→CONFIRMED рынок может упасть и trailing stop стартует с заниженной базы.
+      this._peakPriceCents = this._entryPriceCents;
+      this._entryPositionQty = data.positionQty;
       this._peakNetExpectedEdgeCents = data.netExpectedEdgeCents;
       this._peakResidualMagnitudeBps = data.residualMagnitudeBps;
       this._trailingStopCents = null;
+      this._breakEvenScaleOutDone = recoveredExistingPosition;
+      this._profitLockScaleOutDone = recoveredExistingPosition;
       // После рестарта mutable state потерян. Если позиция уже была в портфеле
       // и не связана с нашим pending BUY, не включаем trailing заново: такая
       // позиция может быть runner-остатком после partial scale-out.
@@ -1327,28 +1444,68 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._signalExitStartedAtMs = null;
       this._signalExitDone = recoveredExistingPosition;
       this._adverseExitStartedAtMs = null;
-      this._adverseExitDone = false;
+      // Исправление: при восстановлении позиции после рестарта все scale-out флаги
+      // должны быть true, иначе adverse-exit немедленно закроет позицию после запуска.
+      this._adverseExitDone = recoveredExistingPosition;
+      this._lastExitOrderRefreshAtMs = null;
     } else if (!wasFlat && isFlat) {
       this._lastExitPriceCents = data.tradeEwmaCents;
       this._entryPriceCents = null;
       this._pendingEntryPriceCents = null;
       // Сбрасываем peak-state при выходе из позиции
       this._peakPriceCents = null;
+      this._entryPositionQty = null;
       this._peakNetExpectedEdgeCents = null;
       this._peakResidualMagnitudeBps = null;
       this._trailingStopCents = null;
+      this._breakEvenScaleOutDone = false;
+      this._profitLockScaleOutDone = false;
       this._trailingScaleOutDone = false;
       this._signalExitStartedAtMs = null;
       this._signalExitDone = false;
       this._adverseExitStartedAtMs = null;
       this._adverseExitDone = false;
+      this._lastExitOrderRefreshAtMs = null;
     }
 
     this._prevPositionQty = data.positionQty;
 
+    // Обновляем extrema/trailing даже во время ожидания MATCHED/IN_FLIGHT,
+    // чтобы stop-уровни были актуальны в момент прихода CONFIRMED.
     if (hasPosition) {
       this._updatePositionExtrema(data);
       this._updateTrailingStop(data);
+    }
+
+    // MATCHED ордер: fill неизбежен — CANCEL бессмысленен и выставит cooldown
+    // в ExecutionEngine. Просто ждём WS fill event.
+    if (data.hasMatchedOrders && !hasPosition) {
+      this._logDiag(data, 'HOLD', {
+        reason: 'MATCHED_ORDER_AWAITING_FILL',
+        note: 'BUY order is MATCHED on exchange — fill is guaranteed, waiting for WS event',
+        positionQty: data.positionQty.toString(),
+        availableTokenQty: data.availableTokenQty.toString(),
+        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+      });
+      return [];
+    }
+
+    if (data.hasInFlightFills && !hasPosition) {
+      this._logDiag(data, 'CANCEL', {
+        reason: 'IN_FLIGHT_FILLS',
+        note: 'Fill received via WS but not yet processed locally — cancelling open orders',
+        positionQty: data.positionQty.toString(),
+        availableTokenQty: data.availableTokenQty.toString(),
+        openBuyPriceCents: data.openBuyPriceCents?.toFixed(2) ?? 'none',
+        tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+      }, true);
+      this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'IN_FLIGHT_FILLS' });
+      this._emitCancelAnalytics(data, 'IN_FLIGHT_FILLS');
+      return [{ type: 'CANCEL' }];
+    }
+
+    if (hasPosition) {
       const exit = this._checkExitSignalFirst(data);
       if (exit) return [exit];
 
@@ -1474,6 +1631,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           side: 'SELL',
           price: Price.of(new Decimal(action.price).div(100)),
           size: Quantity.of(action.size),
+          ...(action.targetInstrumentId !== undefined ? { targetInstrumentId: action.targetInstrumentId } : {}),
+          ...(action.targetAsset !== undefined ? { targetAsset: action.targetAsset } : {}),
         });
         continue;
       }
@@ -1488,6 +1647,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
           side: 'BUY',
           price: Price.of(new Decimal(action.price).div(100)),
           size: Quantity.of(action.size),
+          ...(action.targetInstrumentId !== undefined ? { targetInstrumentId: action.targetInstrumentId } : {}),
+          ...(action.targetAsset !== undefined ? { targetAsset: action.targetAsset } : {}),
         });
       }
     }
@@ -1630,13 +1791,55 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
   }
 
   /**
+   * Возвращает активный profit-lock floor (¢), если позиция уже давала
+   * достаточно прибыли. Floor считается от цены входа, а не от текущей цены.
+   */
+  private _activeProfitLockFloorCents(): number | null {
+    if (this._entryPriceCents === null || this._peakPriceCents === null) return null;
+
+    const entry = this._entryPriceCents;
+    const profitFromEntry = this._peakPriceCents - entry;
+    let floor: number | null = null;
+
+    if (profitFromEntry >= this._breakEvenTriggerCents) {
+      floor = entry + this._breakEvenOffsetCents;
+    }
+    if (
+      this._profitLockTriggerCents > 0 &&
+      profitFromEntry >= this._profitLockTriggerCents
+    ) {
+      floor = Math.max(floor ?? -Infinity, entry + this._profitLockOffsetCents);
+    }
+
+    return floor;
+  }
+
+  private _profitFromEntryPeakCents(): number {
+    if (this._entryPriceCents === null || this._peakPriceCents === null) return 0;
+    return this._peakPriceCents - this._entryPriceCents;
+  }
+
+  private _profitTargetSize(
+    data: CexLeadLagData,
+    exitRatio: number,
+  ): Decimal | null {
+    const basisQty = this._entryPositionQty ?? data.positionQty;
+    let size = basisQty.mul(exitRatio).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    if (size.gt(data.availableTokenQty)) {
+      size = data.availableTokenQty.toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    }
+    if (!size.gt(0)) return null;
+    return size;
+  }
+
+  /**
    * Вычисляет уровень динамического trailing stop (¢).
    *
    * @remarks
    * Алгоритм:
    * 1. Вычислить stop floor = entry − stopLossCents (hard stop).
-   * 2. При profitFromEntry >= breakEvenTriggerCents → поднять floor до entry + breakEvenOffsetCents.
-   * 3. Если profit ниже порога → вернуть floor (только hard stop, trailing не активирован).
+   * 2. При активном profit-lock поднять floor до лучшего tier от entry.
+   * 3. Если profit ниже первого порога → вернуть floor (только hard stop, trailing не активирован).
    * 4. Иначе: base distance = `_baseTrailingDistanceForPrice(peak)`.
    * 5. Применить tau-tightening multiplier.
    * 6. Применить signal-tightening если нужно.
@@ -1653,10 +1856,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     const peak = this._peakPriceCents;
     const profitFromEntry = peak - entry;
 
+    const activeProfitLockFloor = this._activeProfitLockFloorCents();
     let stopFloor = entry - this._stopLossCents;
-    if (profitFromEntry >= this._breakEvenTriggerCents) {
-      stopFloor = entry + this._breakEvenOffsetCents;
-    }
+    if (activeProfitLockFloor !== null) stopFloor = activeProfitLockFloor;
 
     // До достижения break-even — только hard stop floor, trailing не активируется
     if (profitFromEntry < this._breakEvenTriggerCents) {
@@ -1822,7 +2024,9 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     if (data.bestBidCents !== undefined && data.bestAskCents !== undefined) {
       const spread = data.bestAskCents - data.bestBidCents;
-      if (spread >= 3) penalty += 1.5;
+      // NaN или отрицательный спред (corrupted book) — обрабатываем как wide spread
+      if (!Number.isFinite(spread) || spread < 0) penalty += 1.5;
+      else if (spread >= 3) penalty += 1.5;
       else if (spread >= 2) penalty += 0.75;
     } else {
       penalty += 1;
@@ -1873,7 +2077,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     if (this._requireSignalForEntry && !data.signalFavorable) return undefined;
     if (!data.signalStrong) return undefined;
     if (data.signalPersistenceMs < this._minSignalPersistenceMs) return undefined;
-    if (data.venueAgreement < 0.66) return undefined;
+    if (data.venueAgreement < this._minVenueAgreement) return undefined;
     if (data.netExpectedEdgeCents < this._minEdgeCents) return undefined;
     if (data.edgeBlocked) return undefined;
 
@@ -2044,7 +2248,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     if (!data.signalStrong) blockers.push('weak_signal');
     if (this._requireSignalForEntry && !data.signalFavorable) blockers.push('not_favorable');
-    if (data.signalPersistenceMs < 300) blockers.push('low_persistence');
+    if (data.signalPersistenceMs < this._minSignalPersistenceMs) blockers.push('low_persistence');
     if (data.venueAgreement < 0.66) blockers.push('low_venue_agreement');
     if (data.netExpectedEdgeCents < this._minEdgeCents) blockers.push('net_edge_below_threshold');
     if (data.edgeBlocked) blockers.push(`edge_table:${data.edgeBlockReason ?? 'blocked'}`);
@@ -2090,7 +2294,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    *
    * ### SELL_IN_FLIGHT:
    * Если shouldExit=true, но `availableTokenQty=0` — SELL ордер уже выставлен,
-   * токены зарезервированы. Стратегия логирует HOLD(SELL_IN_FLIGHT) и ждёт fill.
+   * токены зарезервированы. Стратегия коротко ждёт fill, затем отменяет stale
+   * exit-order, чтобы на следующем тике переставить выход по исполняемой цене.
    *
    * @param data - Данные тика
    * @returns SELL-действие или undefined если выход не нужен
@@ -2108,13 +2313,34 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._trailingStopCents !== null &&
       !this._trailingScaleOutDone &&
       data.tradeEwmaCents < this._trailingStopCents;
-
-    const tauExit = data.tauSec < this._exitTauSec;
-
+    const activeProfitLockFloor = this._activeProfitLockFloorCents();
+    const profitLockExit = trailingStopHit && activeProfitLockFloor !== null;
+    const trailingExitReason = profitLockExit ? 'PROFIT_LOCK_STOP' : 'TRAILING_STOP';
+    const profitFromEntryPeakCents = this._profitFromEntryPeakCents();
+    const executableExitCents = data.bestBidCents ?? data.tradeEwmaCents;
     const pnlFromEntryCents =
       this._entryPriceCents !== null
-        ? data.tradeEwmaCents - this._entryPriceCents
+        ? executableExitCents - this._entryPriceCents
         : 0;
+    // Исправление: break-even срабатывает когда peak достиг trigger, а ТЕКУЩАЯ цена
+    // выше floor (offset), а не выше trigger. До исправления требовалось что current >= trigger,
+    // что блокировало scale-out при любом откате от пика.
+    const breakEvenTargetHit =
+      this._profitProtectTrailingEnabled &&
+      this._breakEvenExitRatio > 0 &&
+      !this._breakEvenScaleOutDone &&
+      profitFromEntryPeakCents >= this._breakEvenTriggerCents &&
+      pnlFromEntryCents >= this._breakEvenOffsetCents;
+    const profitLockTargetHit =
+      this._profitProtectTrailingEnabled &&
+      this._profitLockExitRatio > 0 &&
+      !this._profitLockScaleOutDone &&
+      this._profitLockTriggerCents > 0 &&
+      profitFromEntryPeakCents >= this._profitLockTriggerCents &&
+      pnlFromEntryCents >= this._profitLockOffsetCents;
+    const profitTargetHit = breakEvenTargetHit || (!breakEvenTargetHit && profitLockTargetHit);
+
+    const tauExit = data.tauSec < this._exitTauSec;
 
     const adverseCandidate =
       this._signalExitEnabled &&
@@ -2132,14 +2358,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._adverseExitStartedAtMs !== null &&
       data.nowMs - this._adverseExitStartedAtMs >= this._adverseExitGraceMs;
 
-    const signalCollapsed =
-      !data.signalFavorable &&
-      !data.signalAdverse &&
-      (
-        !data.signalStrong ||
-        data.signalPersistenceMs < 150 ||
-        data.venueAgreement < 0.5
-      );
+    const signalCollapsed = !data.signalFavorable && !data.signalAdverse;
 
     const signalExitCandidate =
       this._signalExitEnabled &&
@@ -2158,13 +2377,22 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       this._signalExitStartedAtMs !== null &&
       data.nowMs - this._signalExitStartedAtMs >= this._signalExitGraceMs;
 
+    const holdToExpiryGuard = this._shouldHoldNearCertainWinner(data);
+    const profitTargetRunnerMode = this._breakEvenScaleOutDone || this._profitLockScaleOutDone;
+    const effectiveAdverseExitHit = adverseExitHit && !holdToExpiryGuard && !profitTargetRunnerMode;
+    const effectiveSignalExitHit = signalExitHit && !holdToExpiryGuard && !profitTargetRunnerMode;
+    const effectiveTauExit = tauExit && !holdToExpiryGuard && !profitTargetRunnerMode;
+
     const shouldExit =
+      profitTargetHit ||
       hardStopHit ||
-      adverseExitHit ||
-      signalExitHit ||
+      effectiveAdverseExitHit ||
+      effectiveSignalExitHit ||
       trailingStopHit ||
+      // Negative-edge exit intentionally disabled: after entry, exits are governed
+      // by adverse signal, profit-protect targets, hard/trailing stops, and expiry.
       // data.netExpectedEdgeCents <= -this._exitEdgeCents ||
-      tauExit;
+      effectiveTauExit;
 
     if (!shouldExit) {
       return undefined;
@@ -2173,15 +2401,41 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     // SELL ордер уже выставлен — токены зарезервированы, ждём fill
     if (!data.availableTokenQty.gt(0)) {
       if (data.positionQty.gt(0)) {
+        const exitTrigger = hardStopHit ? 'HARD_STOP' :
+          breakEvenTargetHit ? 'PROFIT_TARGET_1' :
+          profitLockTargetHit ? 'PROFIT_TARGET_2' :
+          effectiveAdverseExitHit ? 'ADVERSE_SIGNAL' :
+          effectiveSignalExitHit ? 'SIGNAL_COLLAPSE' :
+          trailingStopHit ? trailingExitReason : 'TAU_EXIT';
+        const shouldRefreshExit =
+          this._lastExitOrderRefreshAtMs === null ||
+          data.nowMs - this._lastExitOrderRefreshAtMs >= EXIT_ORDER_REFRESH_MS ||
+          data.tauSec <= this._exitTauSec + 2;
+
+        if (shouldRefreshExit) {
+          this._lastExitOrderRefreshAtMs = data.nowMs;
+          this._logDiag(data, 'CANCEL', {
+            reason: 'REFRESH_EXIT_ORDER',
+            note: 'Exit condition still active, tokens are reserved by stale SELL order',
+            exitTrigger,
+            positionQty: data.positionQty.toString(),
+            availableTokenQty: data.availableTokenQty.toString(),
+            bestBidCents: data.bestBidCents?.toFixed(2) ?? 'none',
+            tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
+            trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
+          }, true);
+          this._recordJournalDecision(data, 'CANCEL', {
+            rejectReason: 'REFRESH_EXIT_ORDER',
+          });
+          return { type: 'CANCEL' };
+        }
+
         this._logDiag(data, 'HOLD', {
           reason: 'SELL_IN_FLIGHT',
           note: 'Exit condition met but tokens are reserved (SELL order pending fill)',
           positionQty: data.positionQty.toString(),
           availableTokenQty: data.availableTokenQty.toString(),
-          exitTrigger: hardStopHit ? 'HARD_STOP' :
-            adverseExitHit ? 'ADVERSE_SIGNAL' :
-            signalExitHit ? 'SIGNAL_COLLAPSE' :
-            trailingStopHit ? 'TRAILING_STOP' : 'TAU_EXIT',
+          exitTrigger,
           entryPriceCents: this._entryPriceCents?.toFixed(2) ?? 'none',
           trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
           tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
@@ -2195,11 +2449,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     }
 
     const exitReason =
+      breakEvenTargetHit ? 'PROFIT_TARGET_1' :
+      profitLockTargetHit ? 'PROFIT_TARGET_2' :
       hardStopHit ? 'HARD_STOP' :
-      adverseExitHit ? 'ADVERSE_SIGNAL' :
-      signalExitHit ? 'SIGNAL_COLLAPSE' :
-      trailingStopHit ? 'TRAILING_STOP' :
-      tauExit ? 'TAU_EXIT' :
+      effectiveAdverseExitHit ? 'ADVERSE_SIGNAL' :
+      effectiveSignalExitHit ? 'SIGNAL_COLLAPSE' :
+      trailingStopHit ? trailingExitReason :
+      effectiveTauExit ? 'TAU_EXIT' :
       'NEGATIVE_NET_EDGE';
 
     let askPrice = Math.floor(data.tradeEwmaCents - this._exitDiscountCents);
@@ -2208,9 +2464,15 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       exitReason === 'HARD_STOP' ||
       exitReason === 'ADVERSE_SIGNAL' ||
       exitReason === 'TRAILING_STOP' ||
+      exitReason === 'PROFIT_LOCK_STOP' ||
       exitReason === 'TAU_EXIT';
+    const profitTargetExit =
+      exitReason === 'PROFIT_TARGET_1' ||
+      exitReason === 'PROFIT_TARGET_2';
 
-    if (emergencyExit && data.bestBidCents !== undefined) {
+    if (profitTargetExit && data.bestBidCents !== undefined) {
+      askPrice = Math.max(1, Math.floor(data.bestBidCents - this._profitTargetSlippageCents));
+    } else if (emergencyExit && data.bestBidCents !== undefined) {
       askPrice = Math.max(1, Math.floor(data.bestBidCents - this._emergencyExitSlippageCents));
     } else if (this._allowTaker && data.bestBidCents !== undefined) {
       askPrice = Math.min(askPrice, Math.floor(data.bestBidCents));
@@ -2218,6 +2480,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     askPrice = Math.floor(clampNumber(askPrice, 1, 99));
 
+    const profitTargetScaleOut = profitTargetExit;
     const trailingScaleOut =
       exitReason === 'TRAILING_STOP' && this._trailingExitRatio < 1;
     const signalScaleOut =
@@ -2226,21 +2489,38 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       exitReason === 'ADVERSE_SIGNAL' && this._adverseExitRatio < 1;
     const partialScaleOut = trailingScaleOut || signalScaleOut || adverseScaleOut;
     const exitRatio =
+      exitReason === 'PROFIT_TARGET_1' ? this._breakEvenExitRatio :
+      exitReason === 'PROFIT_TARGET_2' ? this._profitLockExitRatio :
       trailingScaleOut ? this._trailingExitRatio :
       signalScaleOut ? this._signalExitRatio :
       adverseScaleOut ? this._adverseExitRatio :
       1;
 
-    let size = data.availableTokenQty.mul(exitRatio)
-      .toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    let size = profitTargetScaleOut
+      ? this._profitTargetSize(data, exitRatio)
+      : data.availableTokenQty.mul(exitRatio).toDecimalPlaces(2, Decimal.ROUND_DOWN);
 
-    if (partialScaleOut) {
+    if (size === null) {
+      this._logDiag(data, 'EXIT_SKIP_DUST', {
+        reason: exitReason,
+        availableTokenQty: data.availableTokenQty.toString(),
+        entryPositionQty: this._entryPositionQty?.toString() ?? 'none',
+        exitRatio,
+      });
+      return undefined;
+    }
+
+    if (partialScaleOut || profitTargetScaleOut) {
       const runnerQty = data.availableTokenQty.minus(size);
       const splitViolatesMinSize =
         size.lt(data.minOrderSize) || runnerQty.lt(data.minOrderSize);
 
       if (splitViolatesMinSize) {
-        if (exitReason === 'SIGNAL_COLLAPSE' || exitReason === 'ADVERSE_SIGNAL') {
+        if (
+          exitReason === 'SIGNAL_COLLAPSE' ||
+          exitReason === 'ADVERSE_SIGNAL' ||
+          profitTargetScaleOut
+        ) {
           size = data.availableTokenQty.toDecimalPlaces(2, Decimal.ROUND_DOWN);
         } else {
           this._logDiag(data, 'HOLD', {
@@ -2264,7 +2544,13 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       return undefined;
     }
 
+    // Кулдаун активируется только при настоящем stop-loss. Profit/trailing exits
+    // являются нормальными выходами и не должны блокировать следующий вход.
+    // Не применять к сигнальным выходам (SIGNAL_COLLAPSE, ADVERSE_SIGNAL, TAU_EXIT) —
+    // они означают нормальный выход по плану, а не защитную остановку.
     if (hardStopHit) this._stopLossTriggeredAtMs = data.nowMs;
+    if (exitReason === 'PROFIT_TARGET_1') this._breakEvenScaleOutDone = true;
+    if (exitReason === 'PROFIT_TARGET_2') this._profitLockScaleOutDone = true;
     if (trailingScaleOut) this._trailingScaleOutDone = true;
     if (signalScaleOut || exitReason === 'SIGNAL_COLLAPSE') {
       this._signalExitDone = true;
@@ -2285,12 +2571,19 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         adverseExitHit,
         signalExitHit,
         trailingStopHit,
+        breakEvenTargetHit,
+        profitLockTargetHit,
+        profitLockExit,
+        activeProfitLockFloorCents: activeProfitLockFloor?.toFixed(2) ?? 'none',
         tauExit,
+        holdToExpiryGuard,
+        profitTargetRunnerMode,
         signalCollapsed,
         pnlFromEntryCents: pnlFromEntryCents.toFixed(2),
         adverseExitGraceMs: this._adverseExitGraceMs,
         signalExitGraceMs: this._signalExitGraceMs,
         trailingScaleOut,
+        profitTargetScaleOut,
         signalScaleOut,
         adverseScaleOut,
         exitRatio,
@@ -2304,6 +2597,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         tradeEwmaCents: data.tradeEwmaCents.toFixed(2),
         peakPriceCents: this._peakPriceCents?.toFixed(2) ?? 'none',
         trailingStopCents: this._trailingStopCents?.toFixed(2) ?? 'none',
+        activeProfitLockFloorCents: activeProfitLockFloor?.toFixed(2) ?? 'none',
         hardStopLevelCents: this._entryPriceCents !== null
           ? (this._entryPriceCents - this._stopLossCents).toFixed(2)
           : 'none',
@@ -2331,7 +2625,38 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       effectiveSide: data.side,
     });
 
-    return { type: 'SELL', price: askPrice, size };
+    this._lastExitOrderRefreshAtMs = data.nowMs;
+
+    return {
+      type: 'SELL',
+      price: askPrice,
+      size,
+      ...(data.tradingInstrumentId !== undefined ? { targetInstrumentId: data.tradingInstrumentId } : {}),
+      ...(data.tradingAsset !== undefined ? { targetAsset: data.tradingAsset } : {}),
+    };
+  }
+
+  private _shouldHoldNearCertainWinner(data: CexLeadLagData): boolean {
+    if (this._holdToExpiryMinBidCents <= 0 || this._holdToExpiryMaxTauSec <= 0) {
+      this._holdToExpiryActive = false;
+      return false;
+    }
+    if (data.bestBidCents === undefined) {
+      this._holdToExpiryActive = false;
+      return false;
+    }
+    if (data.tauSec > this._holdToExpiryMaxTauSec) {
+      this._holdToExpiryActive = false;
+      return false;
+    }
+
+    if (this._holdToExpiryActive) {
+      this._holdToExpiryActive = data.bestBidCents >= this._holdToExpiryStopBidCents;
+      return this._holdToExpiryActive;
+    }
+
+    this._holdToExpiryActive = data.bestBidCents >= this._holdToExpiryMinBidCents;
+    return this._holdToExpiryActive;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2372,26 +2697,20 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     }
   }
 
-  /**
-   * Возвращает лучший bid из топбука в центах.
-   *
-   * @param snapshot - Снапшот рынка
-   * @returns Цена bid (¢) или undefined
-   */
-  private _bestBidCents(snapshot: StrategySnapshot): number | undefined {
-    const value = snapshot.topOfBook?.bestBid?.value().toNumber();
+  private _bestBidCentsFromTopOfBook(topOfBook: StrategySnapshot['topOfBook']): number | undefined {
+    const value = topOfBook?.bestBid?.value().toNumber();
     return value === undefined ? undefined : value * 100;
   }
 
-  /**
-   * Возвращает лучший ask из топбука в центах.
-   *
-   * @param snapshot - Снапшот рынка
-   * @returns Цена ask (¢) или undefined
-   */
-  private _bestAskCents(snapshot: StrategySnapshot): number | undefined {
-    const value = snapshot.topOfBook?.bestAsk?.value().toNumber();
+  private _bestAskCentsFromTopOfBook(topOfBook: StrategySnapshot['topOfBook']): number | undefined {
+    const value = topOfBook?.bestAsk?.value().toNumber();
     return value === undefined ? undefined : value * 100;
+  }
+
+  private _midCentsFromTopOfBook(topOfBook: StrategySnapshot['topOfBook']): number | undefined {
+    const bid = this._bestBidCentsFromTopOfBook(topOfBook);
+    const ask = this._bestAskCentsFromTopOfBook(topOfBook);
+    return bid === undefined || ask === undefined ? undefined : (bid + ask) / 2;
   }
 
   /**
@@ -2511,6 +2830,8 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         deltaToStrikeBps: priceDelta / data.targetPrice * 10_000,
       },
       position: {
+        instrumentId: String(data.tradingInstrumentId),
+        positionOn: data.positionOn,
         entryPriceCents: this._entryPriceCents,
         avgEntryPriceCents: data.avgEntryPriceCents ?? null,
         lastExitCents: this._lastExitPriceCents,
@@ -2769,8 +3090,16 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       signalExitRatio: this._signalExitRatio,
       adverseExitGraceMs: this._adverseExitGraceMs,
       adverseExitRatio: this._adverseExitRatio,
+      holdToExpiryMinBidCents: this._holdToExpiryMinBidCents,
+      holdToExpiryMaxTauSec: this._holdToExpiryMaxTauSec,
+      holdToExpiryStopBidCents: this._holdToExpiryStopBidCents,
       breakEvenTriggerCents: this._breakEvenTriggerCents,
       breakEvenOffsetCents: this._breakEvenOffsetCents,
+      breakEvenExitRatio: this._breakEvenExitRatio,
+      profitLockTriggerCents: this._profitLockTriggerCents,
+      profitLockOffsetCents: this._profitLockOffsetCents,
+      profitLockExitRatio: this._profitLockExitRatio,
+      profitTargetSlippageCents: this._profitTargetSlippageCents,
       trailingStartMultiplier: this._trailingStartMultiplier,
       minTrailingDistanceCents: this._minTrailingDistanceCents,
       tauTighteningStartSec: this._tauTighteningStartSec,
