@@ -12,7 +12,7 @@
   },
   "paper": {
     "fillOnBookCrossing": true,
-    "fillOnTake": true,
+    "fillOnTape": true,
     "fillAtOrderPrice": true
   },
   "execution": {
