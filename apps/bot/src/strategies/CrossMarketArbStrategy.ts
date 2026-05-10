@@ -399,7 +399,6 @@ export class CrossMarketArbStrategy implements IStrategy {
     const peerDownBook = peerDownId ? this._reader.getTopOfBook(peerDownId) : undefined;
 
     const easyUpTopOfBook = this._assignment === 'SLOT_IS_EASY' ? slotBook : peerBook;
-    const hardUpTopOfBook = this._assignment === 'SLOT_IS_EASY' ? peerBook : slotBook;
     const hardDownTopOfBook = this._assignment === 'SLOT_IS_EASY' ? peerDownBook : slotDownBook;
     const easyInstrumentId = this._assignment === 'SLOT_IS_EASY' ? snapshot.instrumentId : this._config.peerInstrumentId;
     const hardInstrumentId = this._assignment === 'SLOT_IS_EASY' ? peerDownId : slotDownId;
@@ -449,21 +448,28 @@ export class CrossMarketArbStrategy implements IStrategy {
         hardBookAgeMs,
         bookStalenessMs,
       });
+      // Периодический INFO-лог: виден даже без auditMode
+      if (this._tickCount % 50 === 1) {
+        this._logger?.info('Arb tick skipped: stale book', {
+          strategyId: this.id,
+          easyBookAgeMs,
+          hardBookAgeMs,
+          bookStalenessMs,
+        });
+      }
       return [];
     }
 
     // Периодический diagnostic лог: цены в стаканах (каждые 50 тиков)
     if (this._tickCount % 50 === 1) {
-      const hardBid = hardUpTopOfBook?.bestBid?.value().toNumber() ?? 0;
       const easyAsk = easySimple.asks[0]?.price ?? 0;
       const hardDownAsk = hardDownSimple.asks[0]?.price ?? 0;
       const rawGap = 1 - easyAsk - hardDownAsk;
-      this._logger?.debug('Arb tick diagnostic', {
+      this._logger?.info('Arb tick diagnostic', {
+        strategyId: this.id,
         tickCount: this._tickCount,
-        assignment: this._assignment,
-        easyBestBid: easySimple.bids[0]?.price.toFixed(4) ?? '-',
+        easyBestBid: (easySimple.bids[0]?.price ?? 0).toFixed(4),
         easyBestAsk: easyAsk.toFixed(4),
-        hardBestBid: hardBid.toFixed(4),
         hardDownBestAsk: hardDownAsk.toFixed(4),
         rawGap: rawGap.toFixed(4),
         diverges: rawGap > 0 ? 'YES' : 'no',
@@ -583,6 +589,16 @@ export class CrossMarketArbStrategy implements IStrategy {
         easyBookAgeMs,
         hardBookAgeMs,
       });
+      // Периодический INFO-лог: виден даже без auditMode
+      if (this._tickCount % 50 === 1) {
+        this._logger?.info('Arb no signal', {
+          strategyId: this.id,
+          easyAsk: easyLevels[0]?.price ?? null,
+          hardDownAsk: hardLevels[0]?.price ?? null,
+          bestPnlPerUnit: optimal?.pnlPerUnit?.toFixed(4) ?? null,
+          minSpreadAfterFees: this._config.minSpreadAfterFees,
+        });
+      }
       return null;
     }
 

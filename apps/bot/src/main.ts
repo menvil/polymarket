@@ -4641,21 +4641,34 @@ async function runLive(): Promise<void> {
           // Статус-лог каждые ~30с
           if (++_liveArbStatusCounter % 6 === 0) {
             for (const pair of liveActiveArbPairs.values()) {
-              const hardSlot = activeMarkets.get(pair.hardUpTokenIdStr);
+              // Показываем easy UP (левая нога) и hard DOWN (правая нога арбитража).
+              // hard UP не торгуется — показываем hard DOWN для диагностики спреда.
               const easyBook = marketDataStore.getTopOfBook(pair.easyInstrumentId);
-              const hardBook = hardSlot ? marketDataStore.getTopOfBook(hardSlot.instrumentId) : undefined;
+              const hardDownBook = marketDataStore.getTopOfBook(pair.hardDownInstrumentId);
+              const hardSlot = activeMarkets.get(pair.hardUpTokenIdStr);
               const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
               const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
+              const easyAsk = easyBook?.bestAsk?.value().toNumber() ?? null;
+              const hardDownAsk = hardDownBook?.bestAsk?.value().toNumber() ?? null;
+              const grossSpread = easyAsk !== null && hardDownAsk !== null
+                ? (1 - easyAsk - hardDownAsk).toFixed(4)
+                : null;
+              const auditCounts = metrics?.['auditEventCounts'] as Record<string, number> | undefined;
               logger.info('Live arb pair status', {
                 pairId: pair.pairId,
                 ttlSec,
                 ticks: metrics?.['tickCount'] ?? 0,
                 divergences: metrics?.['divergenceCount'] ?? 0,
                 trades: metrics?.['tradeCount'] ?? 0,
-                easyBid: easyBook?.bestBid?.value().toFixed(2) ?? '-',
-                easyAsk: easyBook?.bestAsk?.value().toFixed(2) ?? '-',
-                hardBid: hardBook?.bestBid?.value().toFixed(2) ?? '-',
-                hardAsk: hardBook?.bestAsk?.value().toFixed(2) ?? '-',
+                easyBid: easyBook?.bestBid?.value().toFixed(4) ?? '-',
+                easyAsk: easyAsk?.toFixed(4) ?? '-',
+                hardDownBid: hardDownBook?.bestBid?.value().toFixed(4) ?? '-',
+                hardDownAsk: hardDownAsk?.toFixed(4) ?? '-',
+                grossSpread,
+                skipStale: auditCounts?.['SKIP_STALE_BOOK'] ?? 0,
+                skipMissing: auditCounts?.['SKIP_MISSING_BOOK'] ?? 0,
+                noSignal: auditCounts?.['NO_SIGNAL'] ?? 0,
+                auditMode: metrics?.['auditMode'] ?? false,
               });
             }
           }

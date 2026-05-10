@@ -14,7 +14,7 @@
     "executionOrderType": "GTC",
     "executionReconcileDelayMs": 2500,
     "executionRepairDelayMs": 2500,
-    "auditMode": true
+    "auditMode": false
   },
   "market": {
     "source": "discovery",
