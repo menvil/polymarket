@@ -3796,6 +3796,34 @@ async function runLive(): Promise<void> {
       const availableCash = currentPortfolio.balance.available().value().toNumber();
       if (availableCash < requiredCash) return emptyReport('REJECTED');
 
+      // Polymarket min order notional = $1. Reject plan до размещения ордеров.
+      const minOrderNotional = 1.0;
+      const easyNotional = plan.easyPrice.value().toNumber() * plannedSize;
+      const hardNotional = plan.hardPrice.value().toNumber() * plannedSize;
+      if (easyNotional < minOrderNotional || hardNotional < minOrderNotional) {
+        logger.warn('Arb plan rejected: order notional below $1 minimum', {
+          easyNotional: easyNotional.toFixed(4),
+          hardNotional: hardNotional.toFixed(4),
+          plannedSize,
+        });
+        return emptyReport('REJECTED');
+      }
+
+      // Защита от повторного входа: реальные позиции могут опережать _currentPositionUnits
+      // если предыдущий коллбэк вернул accepted:false после частичного fill.
+      const existingEasyQty = currentPortfolio.getPosition(easyLeg.instrumentId)?.quantity.value().toNumber() ?? 0;
+      const existingHardQty = currentPortfolio.getPosition(hardLeg.instrumentId)?.quantity.value().toNumber() ?? 0;
+      const maxPos = fullArbConfig.maxPositionUnits;
+      if (existingEasyQty + plannedSize > maxPos || existingHardQty + plannedSize > maxPos) {
+        logger.warn('Arb plan rejected: position already at or near limit', {
+          existingEasyQty,
+          existingHardQty,
+          plannedSize,
+          maxPositionUnits: maxPos,
+        });
+        return emptyReport('REJECTED');
+      }
+
       const orderType = arbConfig.executionOrderType ?? 'FAK';
       const reconcileDelayMs = arbConfig.executionReconcileDelayMs ?? 750;
       const repairDelayMs = arbConfig.executionRepairDelayMs ?? 750;
