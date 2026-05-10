@@ -4641,43 +4641,82 @@ async function runLive(): Promise<void> {
           // Статус-лог каждые ~30с
           if (++_liveArbStatusCounter % 6 === 0) {
             for (const pair of liveActiveArbPairs.values()) {
-              // Показываем easy UP (левая нога) и hard DOWN (правая нога арбитража).
-              // hard UP не торгуется — показываем hard DOWN для диагностики спреда.
-              const easyBook = marketDataStore.getTopOfBook(pair.easyInstrumentId);
-              const hardDownBook = marketDataStore.getTopOfBook(pair.hardDownInstrumentId);
               const hardSlot = activeMarkets.get(pair.hardUpTokenIdStr);
               const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
-              const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
-              const easyAsk = easyBook?.bestAsk?.value().toNumber() ?? null;
-              const hardDownAsk = hardDownBook?.bestAsk?.value().toNumber() ?? null;
-              const grossSpread = easyAsk !== null && hardDownAsk !== null
-                ? (1 - easyAsk - hardDownAsk).toFixed(4)
+              const assignment = (metrics?.['assignment'] ?? null) as 'SLOT_IS_EASY' | 'PEER_IS_EASY' | null;
+
+              // Читаем все четыре книги: peer_UP, peer_DOWN, slot_UP, slot_DOWN
+              const peerUpBook   = marketDataStore.getTopOfBook(pair.easyInstrumentId);
+              const slotDownBook = marketDataStore.getTopOfBook(pair.hardDownInstrumentId);
+              const slotUpBook   = marketDataStore.getTopOfBook(pair.hardUpInstrumentId);
+              const peerDownBook = pair.easyDownInstrumentId
+                ? marketDataStore.getTopOfBook(pair.easyDownInstrumentId)
+                : undefined;
+
+              // Реальные ноги зависят от assignment:
+              //   PEER_IS_EASY → buy peer_UP + slot_DOWN  (нормальное направление UP)
+              //   SLOT_IS_EASY → buy slot_UP + peer_DOWN  (обратное направление DOWN)
+              //   null         → ещё не определено
+              let leg1Ask: number | null = null;
+              let leg2Ask: number | null = null;
+              let leg1Label: string;
+              let leg2Label: string;
+
+              if (assignment === 'SLOT_IS_EASY') {
+                // slot_UP ask: читаем напрямую или считаем как 1 - slot_DOWN bid
+                leg1Ask = slotUpBook?.bestAsk?.value().toNumber()
+                  ?? (slotDownBook?.bestBid?.value().toNumber() != null
+                    ? 1 - slotDownBook!.bestBid!.value().toNumber()
+                    : null);
+                // peer_DOWN ask: читаем напрямую или считаем как 1 - peer_UP bid
+                leg2Ask = peerDownBook?.bestAsk?.value().toNumber()
+                  ?? (peerUpBook?.bestBid?.value().toNumber() != null
+                    ? 1 - peerUpBook!.bestBid!.value().toNumber()
+                    : null);
+                leg1Label = 'slotUpAsk';
+                leg2Label = 'peerDownAsk';
+              } else {
+                // PEER_IS_EASY или null — показываем стандартное направление
+                leg1Ask = peerUpBook?.bestAsk?.value().toNumber() ?? null;
+                leg2Ask = slotDownBook?.bestAsk?.value().toNumber() ?? null;
+                leg1Label = 'peerUpAsk';
+                leg2Label = 'slotDownAsk';
+              }
+
+              const grossSpread = leg1Ask !== null && leg2Ask !== null
+                ? (1 - leg1Ask - leg2Ask).toFixed(4)
                 : null;
+
+              const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
               const auditCounts = metrics?.['auditEventCounts'] as Record<string, number> | undefined;
               const hardStartsInSec = pair.hardStrikeLocked
                 ? null
                 : pair.hardStartMs > 0
                   ? Math.max(0, Math.round((pair.hardStartMs - nowMs) / 1000))
                   : null;
+
               logger.info('Live arb pair status', {
                 pairId: pair.pairId,
                 ttlSec,
                 ticks: metrics?.['tickCount'] ?? 0,
                 divergences: metrics?.['divergenceCount'] ?? 0,
                 trades: metrics?.['tradeCount'] ?? 0,
-                easyBid: easyBook?.bestBid?.value().toFixed(4) ?? '-',
-                easyAsk: easyAsk?.toFixed(4) ?? '-',
-                hardDownBid: hardDownBook?.bestBid?.value().toFixed(4) ?? '-',
-                hardDownAsk: hardDownAsk?.toFixed(4) ?? '-',
+                // direction-aware legs
+                direction: assignment === 'SLOT_IS_EASY' ? 'DOWN' : assignment === 'PEER_IS_EASY' ? 'UP' : null,
+                [leg1Label]: leg1Ask?.toFixed(4) ?? '-',
+                [leg2Label]: leg2Ask?.toFixed(4) ?? '-',
                 grossSpread,
+                // raw books для диагностики
+                peerUpBid: peerUpBook?.bestBid?.value().toFixed(4) ?? '-',
+                peerUpAsk: peerUpBook?.bestAsk?.value().toFixed(4) ?? '-',
+                slotDownBid: slotDownBook?.bestBid?.value().toFixed(4) ?? '-',
+                slotDownAsk: slotDownBook?.bestAsk?.value().toFixed(4) ?? '-',
                 // strike/assignment state
-                assignment: metrics?.['assignment'] ?? null,
+                assignment,
                 easyStrikeLocked: pair.easyStrikeLocked,
                 hardStrikeLocked: pair.hardStrikeLocked,
-                // raw strikes из getMetrics — доступны до установки assignment
                 slotStrike: (metrics?.['slotStrike'] as number | null | undefined) ?? null,
                 peerStrike: (metrics?.['peerStrike'] as number | null | undefined) ?? null,
-                // сколько секунд до старта hard (5m) рынка (null = уже стартовал)
                 hardStartsInSec,
                 skipStale: auditCounts?.['SKIP_STALE_BOOK'] ?? 0,
                 skipMissing: auditCounts?.['SKIP_MISSING_BOOK'] ?? 0,
