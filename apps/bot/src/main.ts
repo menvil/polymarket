@@ -4654,6 +4654,7 @@ async function runLive(): Promise<void> {
                 ? (1 - easyAsk - hardDownAsk).toFixed(4)
                 : null;
               const auditCounts = metrics?.['auditEventCounts'] as Record<string, number> | undefined;
+              const strikes = pair.strategy.getStrikes();
               logger.info('Live arb pair status', {
                 pairId: pair.pairId,
                 ttlSec,
@@ -4665,6 +4666,12 @@ async function runLive(): Promise<void> {
                 hardDownBid: hardDownBook?.bestBid?.value().toFixed(4) ?? '-',
                 hardDownAsk: hardDownAsk?.toFixed(4) ?? '-',
                 grossSpread,
+                // strike/assignment state — null = ещё не пришли из Chainlink RTDS
+                assignment: metrics?.['assignment'] ?? null,
+                easyStrikeLocked: pair.easyStrikeLocked,
+                hardStrikeLocked: pair.hardStrikeLocked,
+                easyStrike: strikes?.easyStrike?.toFixed(2) ?? null,
+                hardStrike: strikes?.hardStrike?.toFixed(2) ?? null,
                 skipStale: auditCounts?.['SKIP_STALE_BOOK'] ?? 0,
                 skipMissing: auditCounts?.['SKIP_MISSING_BOOK'] ?? 0,
                 noSignal: auditCounts?.['NO_SIGNAL'] ?? 0,
