@@ -447,7 +447,8 @@ function parseStrategyParams(
         'riskBudgetMinProfitScaleOutCents', 'riskBudgetMinRebalanceDiffPct',
         'riskBudgetRebalanceHysteresisPct', 'riskBudgetRebalanceCooldownMs',
         'riskBudgetMinRunnerPctAfterProfit', 'riskBudgetDrawdownEmergencyCents',
-        'riskBudgetOverFairEmergencyCents',
+        'riskBudgetOverFairEmergencyCents', 'riskBudgetReentryCooldownMs',
+        'riskBudgetReentryMinPriceMoveCents',
       ]) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }

@@ -460,6 +460,9 @@ async function runSingleMarketBacktest(
     if (recordedFillIds.has(fillId)) return;
     recordedFillIds.add(fillId);
 
+    if (event.fill.side === 'BUY') buyCount++;
+    else sellCount++;
+
     const price = event.fill.price.value();
     const size = event.fill.size.value();
     const orderId = String(event.orderId);

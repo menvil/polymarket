@@ -45,6 +45,7 @@ interface Args {
   minHoldEdgeCents: number;
   exitEdgeCents: number;
   approxResolution: boolean;
+  noDelta: boolean;
 }
 
 interface Key {
@@ -91,11 +92,12 @@ function parseArgs(): Args {
     minHoldEdgeCents: 3,
     exitEdgeCents: 1,
     approxResolution: true,
+    noDelta: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--snapshots') args.dirs = argv[++i].split(',');
+    if (a === '--snapshots') args.dirs.push(...argv[++i].split(','));
     else if (a === '--out') args.outFile = argv[++i];
     else if (a === '--asset') args.asset = argv[++i].toLowerCase();
     else if (a === '--entry-min') args.entryMin = Number(argv[++i]);
@@ -111,6 +113,7 @@ function parseArgs(): Args {
     else if (a === '--min-hold-edge-cents') args.minHoldEdgeCents = Number(argv[++i]);
     else if (a === '--exit-edge-cents') args.exitEdgeCents = Number(argv[++i]);
     else if (a === '--no-approx-resolution') args.approxResolution = false;
+    else if (a === '--no-delta') args.noDelta = true;
   }
 
   if (!args.dirs.length || !args.outFile) {
@@ -137,8 +140,10 @@ function toBucket(value: number, step: number): number {
   return Math.floor(value / step) * step;
 }
 
-function keyStr(k: Key): string {
-  return `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.delta}:${k.regime}`;
+function keyStr(k: Key, noDelta?: boolean): string {
+  return noDelta
+    ? `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.regime}`
+    : `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.delta}:${k.regime}`;
 }
 
 function newAccum(): Accum {
@@ -228,10 +233,10 @@ function observeMarket(m: MarketData, args: Args, map: Map<string, Accum>): numb
           entry: toBucket(entry, args.entryStep),
           current: toBucket(currentBid, args.currentStep),
           tau: toBucket(o.tauSec, args.tauStep),
-          delta: toBucket(o.delta, args.deltaStep),
+          delta: args.noDelta ? 0 : toBucket(o.delta, args.deltaStep),
           regime: classifyRegime(o.trendSlope, args.regimeThreshold),
         };
-        const ks = keyStr(key);
+        const ks = keyStr(key, args.noDelta);
         const dedupeKey = `${m.slug}:${ks}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
@@ -306,7 +311,12 @@ async function main(): Promise<void> {
   const zones = [];
   for (const [ks, a] of map) {
     if (a.n < args.minN) continue;
-    const [side, entry, current, tau, delta, regime] = ks.split(':');
+    const parts = ks.split(':');
+    // noDelta: side:entry:current:tau:regime (5 parts)
+    // normal:  side:entry:current:tau:delta:regime (6 parts)
+    const [side, entry, current, tau, deltaOrRegime, regimePart] = parts;
+    const delta = args.noDelta ? 0 : Number(deltaOrRegime);
+    const regime = args.noDelta ? deltaOrRegime : regimePart;
     const ci = wilsonCi(a.wins, a.n);
     const rec = recommendation(a, args.minN, args.minHoldEdgeCents, args.exitEdgeCents);
     zones.push({
@@ -315,7 +325,7 @@ async function main(): Promise<void> {
         entry: Number(entry),
         current: Number(current),
         tau: Number(tau),
-        delta: Number(delta),
+        delta,
         regime,
       },
       stats: {
@@ -354,6 +364,7 @@ async function main(): Promise<void> {
       generatedAt: new Date().toISOString(),
       duration: '5min',
       asset: args.asset,
+      ...(args.noDelta ? { noDelta: true } : {}),
       bucketing: {
         entryStep: args.entryStep,
         currentStep: args.currentStep,

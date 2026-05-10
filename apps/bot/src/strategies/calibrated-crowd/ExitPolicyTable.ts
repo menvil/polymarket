@@ -51,6 +51,8 @@ export interface ExitPolicyTableMeta {
   readonly generatedAt: string;
   readonly duration: string;
   readonly asset: string;
+  /** Когда true — таблица не использует delta в ключе (fallback-режим). */
+  readonly noDelta?: boolean;
   readonly bucketing: {
     readonly entryStep: number;
     readonly currentStep: number;
@@ -89,8 +91,10 @@ function toBucket(value: number, step: number): number {
   return Math.floor(value / step) * step;
 }
 
-function keyStr(k: ExitPolicyKey): string {
-  return `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.delta}:${k.regime}`;
+function keyStr(k: ExitPolicyKey, noDelta?: boolean): string {
+  return noDelta
+    ? `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.regime}`
+    : `${k.side}:${k.entry}:${k.current}:${k.tau}:${k.delta}:${k.regime}`;
 }
 
 export class ExitPolicyTable {
@@ -108,7 +112,8 @@ export class ExitPolicyTable {
   constructor(file: ExitPolicyTableFile) {
     this._meta = file.meta;
     this._zones = new Map();
-    for (const zone of file.zones) this._zones.set(keyStr(zone.key), zone);
+    const noDelta = file.meta.noDelta ?? false;
+    for (const zone of file.zones) this._zones.set(keyStr(zone.key, noDelta), zone);
   }
 
   get meta(): ExitPolicyTableMeta {
@@ -121,17 +126,18 @@ export class ExitPolicyTable {
 
   lookup(input: ExitPolicyLookupInput): ExitPolicyZone | undefined {
     const b = this._meta.bucketing;
+    const noDelta = this._meta.noDelta ?? false;
     if (input.tauSec < 0 || input.tauSec > b.maxTau) return undefined;
-    if (Math.abs(input.deltaDollars) > b.maxDelta) return undefined;
+    if (!noDelta && Math.abs(input.deltaDollars) > b.maxDelta) return undefined;
 
     const key: ExitPolicyKey = {
       side: input.side,
       entry: toBucket(input.entryCents, b.entryStep),
       current: toBucket(input.currentBidCents, b.currentStep),
       tau: toBucket(input.tauSec, b.tauStep),
-      delta: toBucket(input.deltaDollars, b.deltaStep),
+      delta: noDelta ? 0 : toBucket(input.deltaDollars, b.deltaStep),
       regime: input.regime,
     };
-    return this._zones.get(keyStr(key));
+    return this._zones.get(keyStr(key, noDelta));
   }
 }

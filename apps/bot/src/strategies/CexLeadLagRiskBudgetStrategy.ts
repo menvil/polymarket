@@ -13,7 +13,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 import { EdgeTable, type EdgeZone, type Regime } from './calibrated-crowd/EdgeTable.js';
-import { ExitPolicyTable, type ExitPolicyZone } from './calibrated-crowd/ExitPolicyTable.js';
+import { ExitPolicyTable, type ExitPolicyLookupInput, type ExitPolicyZone } from './calibrated-crowd/ExitPolicyTable.js';
 import { RegimeDetector } from './calibrated-crowd/RegimeDetector.js';
 import {
   applyRiskBudgetExecutionGuard,
@@ -109,6 +109,8 @@ export interface CexLeadLagRiskBudgetConfig {
    * стратегия закрывает позицию по текущему исполнимому bid.
    */
   readonly exitPolicyTablePath?: string;
+  /** Fallback exit-policy таблица без delta-измерения (~90% покрытие). */
+  readonly exitPolicyFallbackTablePath?: string;
   /** Минимальное n в exit-policy зоне для разрешения EXIT (default из таблицы). */
   readonly exitPolicyMinSamples?: number;
   /** Если true — отсутствие зоны не влияет на старые exits (default true). */
@@ -131,6 +133,10 @@ export interface CexLeadLagRiskBudgetConfig {
   readonly riskBudgetDrawdownEmergencyCents?: number;
   /** Emergency rich-vs-fair bypass threshold in cents. Default: 3. */
   readonly riskBudgetOverFairEmergencyCents?: number;
+  /** Cooldown after a full risk-budget exit before re-entering the same market/side. Default: 0. */
+  readonly riskBudgetReentryCooldownMs?: number;
+  /** Minimum candidate-entry price move from the last full risk-budget exit. Default: 3. */
+  readonly riskBudgetReentryMinPriceMoveCents?: number;
   /** If false, risk-budget SELLs are disabled and old exit rules remain. Default: true. */
   readonly riskBudgetEnabled?: boolean;
   /** Минимальный порог сигнала в bps для признания direction != flat. Default: 0.5. */
@@ -183,6 +189,23 @@ export interface CexLeadLagRiskBudgetConfig {
    * Default: 2.
    */
   readonly minEdgeCents?: number;
+  /**
+   * Минимальное отношение bestBidCents к tradeEwmaCents для разрешения входа.
+   *
+   * @remarks
+   * Защита от входа в рынок где книга полностью оторвалась от тейпа:
+   * маркет-мейкеры ушли (bid=1¢), но редкие рестинг-ордера ещё торгуются
+   * на тейпе по 48¢. EWMA видит 48¢ и считает рынок нормальным, хотя
+   * единственный реальный выход — по 1¢.
+   *
+   * Если `bestBidCents / tradeEwmaCents < minEntryBookTapeRatio` — вход
+   * запрещён. 0 = фильтр выключен. Default: 0.5.
+   *
+   * @example
+   * EWMA=48¢, bestBid=1¢ → ratio=0.02 → заблокировано (0.02 < 0.5)
+   * EWMA=48¢, bestBid=30¢ → ratio=0.625 → разрешено
+   */
+  readonly minEntryBookTapeRatio?: number;
   /**
    * Порог для выхода по отрицательному edge (¢).
    *
@@ -446,6 +469,8 @@ interface CexLeadLagData {
   readonly edgeComposite: number | undefined;
   /** Exit-policy зона для уже открытой позиции. */
   readonly exitPolicyZone: ExitPolicyZone | undefined;
+  /** Входные параметры для повторного lookup в fallback-таблице. */
+  readonly exitPolicyLookupInput: ExitPolicyLookupInput | undefined;
   /** true = таблица выходов уверенно рекомендует закрыть позицию. */
   readonly exitPolicyExit: boolean;
   /** Причина/диагностика exit-policy решения. */
@@ -769,6 +794,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   private readonly _allowTaker: boolean;
   private readonly _sigmaAnnual: number;
   private readonly _minEdgeCents: number;
+  private readonly _minEntryBookTapeRatio: number;
   private readonly _exitEdgeCents: number;
   private readonly _baseSpreadCents: number;
   private readonly _exitDiscountCents: number;
@@ -812,12 +838,15 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   private readonly _edgeRequireZone: boolean;
   private readonly _edgeRegimeDetector: RegimeDetector | undefined;
   private readonly _exitPolicyTable: ExitPolicyTable | undefined;
+  private readonly _exitPolicyFallbackTable: ExitPolicyTable | undefined;
   private readonly _exitPolicyRegimeDetector: RegimeDetector | undefined;
   private readonly _exitPolicyMinSamples: number;
   private readonly _exitPolicySkipUnknown: boolean;
   private readonly _riskBudgetEnabled: boolean;
   private readonly _riskBudgetTolerance: number;
   private readonly _riskBudgetEdgeTtlMs: number;
+  private readonly _riskBudgetReentryCooldownMs: number;
+  private readonly _riskBudgetReentryMinPriceMoveCents: number;
   private readonly _riskBudgetGuardConfig: RiskBudgetExecutionGuardConfig;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
@@ -927,6 +956,12 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   private _lastRiskBudgetExecutedTargetPct = 100;
   /** Время последнего risk-budget rebalance SELL. */
   private _lastRiskBudgetRebalanceAtMs = -Infinity;
+  /** Время последнего полного выхода по risk-budget для защиты от re-entry churn. */
+  private _lastRiskBudgetFullExitAtMs: number | null = null;
+  /** Цена последнего полного выхода по risk-budget (¢). */
+  private _lastRiskBudgetFullExitPriceCents: number | null = null;
+  /** После полного risk-budget выхода ждём, пока старый favorable CEX-сигнал погаснет. */
+  private _riskBudgetAwaitingFreshSignal = false;
   /** Цена последнего выставленного SELL для приблизительного realized PnL. */
   private _lastPlacedExitPriceCents: number | null = null;
   /** Приблизительно проданное количество текущей позиции. */
@@ -975,6 +1010,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     this._sigmaAnnual = toNumber(config.sigmaAnnual, 0.60);
     this._minVenueAgreement = toNumber(config.minVenueAgreement, 0.66);
     this._minEdgeCents = toNumber(config.minEdgeCents, 2);
+    this._minEntryBookTapeRatio = Math.max(0, toNumber(config.minEntryBookTapeRatio, 0.5));
     this._exitEdgeCents = toNumber(config.exitEdgeCents, 1);
     this._baseSpreadCents = toNumber(config.baseSpreadCents, 1);
     this._exitDiscountCents = toNumber(config.exitDiscountCents, 1);
@@ -1048,6 +1084,8 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     this._riskBudgetEnabled = config.riskBudgetEnabled ?? true;
     this._riskBudgetTolerance = clampNumber(toNumber(config.riskBudgetTolerance, 70), 0, 100);
     this._riskBudgetEdgeTtlMs = Math.max(0, toNumber(config.riskBudgetEdgeTtlMs, 20_000));
+    this._riskBudgetReentryCooldownMs = Math.max(0, toNumber(config.riskBudgetReentryCooldownMs, 0));
+    this._riskBudgetReentryMinPriceMoveCents = Math.max(0, toNumber(config.riskBudgetReentryMinPriceMoveCents, 3));
     this._riskBudgetGuardConfig = {
       minProfitScaleOutCents: Math.max(0, toNumber(config.riskBudgetMinProfitScaleOutCents, 5)),
       minRebalanceDiffPct: Math.max(0, toNumber(config.riskBudgetMinRebalanceDiffPct, 20)),
@@ -1074,6 +1112,16 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     } else {
       this._exitPolicyTable = undefined;
       this._exitPolicyRegimeDetector = undefined;
+    }
+    if (config.exitPolicyFallbackTablePath) {
+      this._exitPolicyFallbackTable = ExitPolicyTable.fromFile(config.exitPolicyFallbackTablePath);
+      this._logger?.warn('CexLeadLagRiskBudget: exit-policy FALLBACK table ENABLED', {
+        path: config.exitPolicyFallbackTablePath,
+        zones: this._exitPolicyFallbackTable.size,
+        noDelta: this._exitPolicyFallbackTable.meta.noDelta ?? false,
+      });
+    } else {
+      this._exitPolicyFallbackTable = undefined;
     }
 
     this._logger?.warn('CexLeadLagRiskBudget: init (signal-first)', {
@@ -1170,6 +1218,9 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       this._entryStartedAtMs = null;
       this._lastRiskBudgetExecutedTargetPct = 100;
       this._lastRiskBudgetRebalanceAtMs = -Infinity;
+      this._lastRiskBudgetFullExitAtMs = null;
+      this._lastRiskBudgetFullExitPriceCents = null;
+      this._riskBudgetAwaitingFreshSignal = false;
       this._lastPlacedExitPriceCents = null;
       this._realizedSoldQty = new Decimal(0);
       this._realizedSellValueCents = new Decimal(0);
@@ -1407,26 +1458,30 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     }
 
     let exitPolicyZone: ExitPolicyZone | undefined;
+    let exitPolicyLookupInput: ExitPolicyLookupInput | undefined;
     let exitPolicyExit = false;
     let exitPolicyReason: string | undefined;
     if (
-      this._exitPolicyTable &&
+      (this._exitPolicyTable || this._exitPolicyFallbackTable) &&
       positionQty.gt(0) &&
       this._entryPriceCents !== null &&
       bestBidCents !== undefined
     ) {
-      exitPolicyZone = this._exitPolicyTable.lookup({
+      exitPolicyLookupInput = {
         side: this._side,
         entryCents: this._entryPriceCents,
         currentBidCents: bestBidCents,
         tauSec,
         deltaDollars,
         regime: tableRegime,
-      });
+      };
+      if (this._exitPolicyTable) {
+        exitPolicyZone = this._exitPolicyTable.lookup(exitPolicyLookupInput);
+      }
       if (!exitPolicyZone) {
         exitPolicyReason = this._exitPolicySkipUnknown ? 'zone_not_found_skip' : 'zone_not_found';
       } else {
-        const minSamples = this._exitPolicyMinSamples || this._exitPolicyTable.meta.gates.minN;
+        const minSamples = this._exitPolicyMinSamples || this._exitPolicyTable!.meta.gates.minN;
         const enoughSamples = exitPolicyZone.stats.n >= minSamples;
         exitPolicyReason = exitPolicyZone.reason;
         exitPolicyExit =
@@ -1483,6 +1538,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       edgeBlockReason,
       edgeComposite,
       exitPolicyZone,
+      exitPolicyLookupInput,
       exitPolicyExit,
       exitPolicyReason,
       residualMagnitudeBps: Math.abs(residualBps),
@@ -1586,6 +1642,9 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       this._entryStartedAtMs = data.nowMs;
       this._lastRiskBudgetExecutedTargetPct = 100;
       this._lastRiskBudgetRebalanceAtMs = -Infinity;
+      this._lastRiskBudgetFullExitAtMs = null;
+      this._lastRiskBudgetFullExitPriceCents = null;
+      this._riskBudgetAwaitingFreshSignal = false;
       this._lastPlacedExitPriceCents = null;
       this._realizedSoldQty = new Decimal(0);
       this._realizedSellValueCents = new Decimal(0);
@@ -1964,7 +2023,10 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     const profitFromEntry = this._peakPriceCents - entry;
     let floor: number | null = null;
 
-    if (profitFromEntry >= this._breakEvenTriggerCents) {
+    if (
+      this._breakEvenTriggerCents > 0 &&
+      profitFromEntry >= this._breakEvenTriggerCents
+    ) {
       floor = entry + this._breakEvenOffsetCents;
     }
     if (
@@ -2217,11 +2279,44 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     if (data.tauSec > this._maxEntryTauSec) return undefined;
     if (data.inventoryUnits >= this._qMax) return undefined;
 
+    if (this._riskBudgetAwaitingFreshSignal) {
+      if (data.signalFavorable) return undefined;
+      this._riskBudgetAwaitingFreshSignal = false;
+    }
+
+    const bidPrice = this._candidateEntryBidPriceSignalFirst(data);
+    if (bidPrice <= 0) return undefined;
+
+    if (
+      this._riskBudgetReentryCooldownMs > 0 &&
+      this._lastRiskBudgetFullExitAtMs !== null &&
+      data.nowMs - this._lastRiskBudgetFullExitAtMs < this._riskBudgetReentryCooldownMs
+    ) {
+      return undefined;
+    }
+
+    if (
+      this._riskBudgetReentryMinPriceMoveCents > 0 &&
+      this._lastRiskBudgetFullExitPriceCents !== null &&
+      Math.abs(bidPrice - this._lastRiskBudgetFullExitPriceCents) < this._riskBudgetReentryMinPriceMoveCents
+    ) {
+      return undefined;
+    }
+
     if (this._requireSignalForEntry && !data.signalFavorable) return undefined;
     if (!data.signalStrong) return undefined;
     if (data.signalPersistenceMs < this._minSignalPersistenceMs) return undefined;
     if (data.venueAgreement < this._minVenueAgreement) return undefined;
     if (data.netExpectedEdgeCents < this._minEdgeCents) return undefined;
+
+    if (
+      this._minEntryBookTapeRatio > 0 &&
+      data.bestBidCents !== undefined &&
+      data.tradeEwmaCents > 0 &&
+      data.bestBidCents / data.tradeEwmaCents < this._minEntryBookTapeRatio
+    ) {
+      return undefined;
+    }
     if (data.edgeBlocked) return undefined;
 
     if (
@@ -2236,14 +2331,10 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       this._maxChaseAboveExitCents > 0 &&
       this._lastExitPriceCents !== null
     ) {
-      const estimatedBid = this._candidateEntryBidPriceSignalFirst(data);
-      if (estimatedBid > this._lastExitPriceCents + this._maxChaseAboveExitCents) {
+      if (bidPrice > this._lastExitPriceCents + this._maxChaseAboveExitCents) {
         return undefined;
       }
     }
-
-    const bidPrice = this._candidateEntryBidPriceSignalFirst(data);
-    if (bidPrice <= 0) return undefined;
 
     // Не перебивать существующий ордер если он в пределах порога reprice
     if (
@@ -2389,6 +2480,29 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     if (data.tauSec > this._maxEntryTauSec) blockers.push('too_early');
     if (data.inventoryUnits >= this._qMax) blockers.push('inventory_limit');
 
+    if (this._riskBudgetAwaitingFreshSignal) {
+      if (data.signalFavorable) blockers.push('awaiting_fresh_cex_signal');
+      else this._riskBudgetAwaitingFreshSignal = false;
+    }
+
+    const bidPrice = this._candidateEntryBidPriceSignalFirst(data);
+
+    if (
+      this._riskBudgetReentryCooldownMs > 0 &&
+      this._lastRiskBudgetFullExitAtMs !== null &&
+      data.nowMs - this._lastRiskBudgetFullExitAtMs < this._riskBudgetReentryCooldownMs
+    ) {
+      blockers.push('risk_budget_reentry_cooldown');
+    }
+
+    if (
+      this._riskBudgetReentryMinPriceMoveCents > 0 &&
+      this._lastRiskBudgetFullExitPriceCents !== null &&
+      Math.abs(bidPrice - this._lastRiskBudgetFullExitPriceCents) < this._riskBudgetReentryMinPriceMoveCents
+    ) {
+      blockers.push('risk_budget_reentry_price_too_close');
+    }
+
     if (!data.signalStrong) blockers.push('weak_signal');
     if (this._requireSignalForEntry && !data.signalFavorable) blockers.push('not_favorable');
     if (data.signalPersistenceMs < this._minSignalPersistenceMs) blockers.push('low_persistence');
@@ -2404,7 +2518,6 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       blockers.push('stop_loss_cooldown');
     }
 
-    const bidPrice = this._candidateEntryBidPriceSignalFirst(data);
     if (bidPrice <= 0) blockers.push('invalid_bid');
 
     const buySize = bidPrice > 0 ? this._buySizeSignalFirst(data) : undefined;
@@ -2418,10 +2531,38 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   // ─────────────────────────────────────────────────────────────────────────
 
   private _riskBudgetFairCents(data: CexLeadLagData): number | null {
-    if (!data.exitPolicyZone || !this._exitPolicyTable) return null;
-    const minSamples = this._exitPolicyMinSamples || this._exitPolicyTable.meta.gates.minN;
-    if (data.exitPolicyZone.stats.n < minSamples) return null;
-    return clampNumber(data.exitPolicyZone.stats.winRate * 100, 1, 99);
+    // Уровень 1: основная 6D-таблица (side, entry, current, tau, delta, regime)
+    if (this._exitPolicyTable && data.exitPolicyZone) {
+      const minSamples = this._exitPolicyMinSamples || this._exitPolicyTable.meta.gates.minN;
+      if (data.exitPolicyZone.stats.n >= minSamples) {
+        return clampNumber(data.exitPolicyZone.stats.winRate * 100, 1, 99);
+      }
+    }
+
+    // Уровень 2 и 3 активны только если позиция в убытке.
+    // В прибыли — возвращаем null: trailing stop сам управляет, не режем победителей досрочно.
+    const entryCents = data.exitPolicyLookupInput?.entryCents;
+    const currentBidCents = data.bestBidCents;
+    const inLoss = entryCents !== undefined && currentBidCents !== undefined && currentBidCents < entryCents;
+    if (!inLoss) return null;
+
+    // Уровень 2: fallback 4D-таблица (side, entry, current, tau, regime) — без delta
+    if (this._exitPolicyFallbackTable && data.exitPolicyLookupInput) {
+      const zone = this._exitPolicyFallbackTable.lookup(data.exitPolicyLookupInput);
+      if (zone) {
+        const minSamples = this._exitPolicyMinSamples || this._exitPolicyFallbackTable.meta.gates.minN;
+        if (zone.stats.n >= minSamples) {
+          return clampNumber(zone.stats.winRate * 100, 1, 99);
+        }
+      }
+    }
+
+    // Уровень 3: conservative fair = currentBidCents (holdEdge = 0, drawdown давит к выходу)
+    if (this._exitPolicyFallbackTable !== undefined && currentBidCents !== undefined) {
+      return clampNumber(currentBidCents, 1, 99);
+    }
+
+    return null;
   }
 
   private _cexRiskDirection(data: CexLeadLagData): RiskBudgetDirection {
@@ -2762,6 +2903,10 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       return undefined;
     }
 
+    const riskBudgetFullExit =
+      exitReason === 'RISK_BUDGET' &&
+      data.availableTokenQty.minus(size).lte(0);
+
     // Кулдаун активируется только при настоящем stop-loss. Profit/trailing exits
     // являются нормальными выходами и не должны блокировать следующий вход.
     // Не применять к сигнальным выходам (SIGNAL_COLLAPSE, ADVERSE_SIGNAL, TAU_EXIT) —
@@ -2770,6 +2915,11 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
     if (exitReason === 'RISK_BUDGET' && riskBudgetPlan) {
       this._lastRiskBudgetRebalanceAtMs = data.nowMs;
       this._lastRiskBudgetExecutedTargetPct = riskBudgetPlan.guard.executableTargetPct;
+      if (riskBudgetFullExit) {
+        this._lastRiskBudgetFullExitAtMs = data.nowMs;
+        this._lastRiskBudgetFullExitPriceCents = askPrice;
+        this._riskBudgetAwaitingFreshSignal = data.signalFavorable;
+      }
     }
     if (trailingScaleOut) this._trailingScaleOutDone = true;
     if (signalScaleOut || exitReason === 'SIGNAL_COLLAPSE') {

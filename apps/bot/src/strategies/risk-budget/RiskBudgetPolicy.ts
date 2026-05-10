@@ -255,13 +255,19 @@ export function applyRiskBudgetExecutionGuard(
   const profitCents = input.bidCents - input.entryCents;
   const drawdownCents = input.entryCents - input.bidCents;
   const overFairCents = input.bidCents - input.fairCents;
+  const drawdownEmergency =
+    input.config.drawdownEmergencyCents > 0 &&
+    drawdownCents >= input.config.drawdownEmergencyCents;
+  const overFairEmergency =
+    input.config.overFairEmergencyCents > 0 &&
+    overFairCents >= input.config.overFairEmergencyCents;
   const emergency =
     input.config.damageControlBypass &&
     (
       input.cex === 'adverse' ||
       input.regime === 'adverse' ||
-      drawdownCents >= input.config.drawdownEmergencyCents ||
-      overFairCents >= input.config.overFairEmergencyCents
+      drawdownEmergency ||
+      overFairEmergency
     );
 
   if (!emergency && input.ageMs - input.lastRebalanceAtMs < input.config.rebalanceCooldownMs) {

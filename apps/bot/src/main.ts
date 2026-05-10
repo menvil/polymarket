@@ -3309,7 +3309,6 @@ async function runBacktest(): Promise<void> {
  * - `source=fixed`: одиночный рынок без ротации.
  */
 async function runLive(): Promise<void> {
-
   // ── Credentials из ENV ───────────────────────────────────────────────────
 
   const privateKey = process.env['PRIVATE_KEY'];
@@ -3366,9 +3365,36 @@ async function runLive(): Promise<void> {
   // MarketRotation создаётся после engine. Промежуточные переменные для early setup.
   const maxConcurrentMarkets = config.resources.maxConcurrentMarkets;
   const minCapitalPerMarket = config.resources.minCapitalPerMarket;
+  const isLiveArbMode = config.strategy === 'cross-market-arb';
   let _slotCounter = 0;
+  let _liveArbOrderCounter = 0;
   const initialSlots = new Map<string, MarketSlot>();
   const initialCompTokens = new Set<string>();
+  const liveActiveArbPairs = new Map<string, {
+    pairId: string;
+    easyInstrumentId: InstrumentId;
+    easyMarketId: MarketId;
+    easyAsset: AssetId;
+    easyTokenIdStr: string;
+    hardUpInstrumentId: InstrumentId;
+    hardUpMarketId: MarketId;
+    hardUpAsset: AssetId;
+    hardUpTokenIdStr: string;
+    hardDownInstrumentId: InstrumentId;
+    hardDownAsset: AssetId;
+    hardDownTokenIdStr: string;
+    easyDownInstrumentId?: InstrumentId;
+    easyDownAsset?: AssetId;
+    easyDownTokenIdStr?: string;
+    expiresAtMs: number;
+    strategy: CrossMarketArbStrategy;
+    easyCryptoMeta: CryptoMarketMeta | undefined;
+    hardCryptoMeta: CryptoMarketMeta | undefined;
+    easyStartMs: number;
+    hardStartMs: number;
+    easyStrikeLocked: boolean;
+    hardStrikeLocked: boolean;
+  }>();
   let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
   // ── Crypto price infrastructure (live) ─────────────────────────────────
@@ -3430,6 +3456,35 @@ async function runLive(): Promise<void> {
         });
       }
     }
+
+    if (symbol.includes('/')) {
+      for (const pair of liveActiveArbPairs.values()) {
+        const pairSymbol = pair.easyCryptoMeta?.rtdsFilter;
+        if (!pairSymbol || pairSymbol !== symbol) continue;
+
+        if (!pair.easyStrikeLocked && pair.easyStartMs > 0 && ts >= pair.easyStartMs) {
+          pair.easyStrikeLocked = true;
+          pair.strategy.updateStrikes(null, price);
+          logger.info('Arb peer (easy) strike from Chainlink (live)', {
+            pairId: pair.pairId,
+            peerStrike: price,
+            assignment: pair.strategy.assignment,
+            chainlinkTs: new Date(ts).toISOString(),
+          });
+        }
+        if (!pair.hardStrikeLocked && pair.hardStartMs > 0 && ts >= pair.hardStartMs) {
+          pair.hardStrikeLocked = true;
+          pair.strategy.updateStrikes(price, null);
+          logger.info('Arb slot (hard) strike from Chainlink (live)', {
+            pairId: pair.pairId,
+            slotStrike: price,
+            assignment: pair.strategy.assignment,
+            chainlinkTs: new Date(ts).toISOString(),
+          });
+        }
+      }
+    }
+
   });
 
   if (config.market.source === 'fixed') {
@@ -3563,15 +3618,16 @@ async function runLive(): Promise<void> {
     accountId,
   });
 
+  const orderUseCases = buildOrderUseCases({
+    infra,
+    repos,
+    exchangeClient: liveInfra.exchangeClient,
+    riskParams,
+  });
   const useCases = {
     processFillUseCase,
     portfolioService,
-    ...buildOrderUseCases({
-      infra,
-      repos,
-      exchangeClient: liveInfra.exchangeClient,
-      riskParams,
-    }),
+    ...orderUseCases,
   };
 
   // ── FillOrchestrator: FILL_RECEIVED → ProcessFillUseCase ─────────────────
@@ -3646,15 +3702,524 @@ async function runLive(): Promise<void> {
   for (const compToken of initialCompTokens) rotation.activeCompTokens.add(compToken);
   if (discoveryAdapter) {
     rotation.setDiscoveryAdapter(discoveryAdapter);
-    // Открываем первый рынок через единый код rotation.fillMarketSlots()
-    await rotation.fillMarketSlots();
-    if (rotation.activeMarkets.size === 0) {
+    if (!isLiveArbMode) {
+      // Открываем первый рынок через единый код rotation.fillMarketSlots()
+      await rotation.fillMarketSlots();
+    }
+    if (!isLiveArbMode && rotation.activeMarkets.size === 0) {
       logger.fatal('No markets found matching discovery filter at startup');
       process.exit(1);
     }
   }
   const activeMarkets = rotation.activeMarkets;
   const activeCompTokens = rotation.activeCompTokens;
+
+  async function openLiveArbPair(easyCandidate: DiscoveredMarket, hardCandidate: DiscoveredMarket): Promise<boolean> {
+    const portfolio = portfolioStore.get(accountId!);
+    if (portfolio && portfolio.balance.available().value().lt(minCapitalPerMarket)) {
+      logger.warn('Insufficient capital for live arb pair', {
+        available: portfolio.balance.available().value().toFixed(2),
+        minCapitalPerMarket,
+      });
+      return false;
+    }
+
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const easyUpTokenStr = easyCandidate.allTokenIds?.[mc.outcomeIndex] ?? String(easyCandidate.instrumentId);
+    const hardUpTokenStr = hardCandidate.allTokenIds?.[mc.outcomeIndex] ?? String(hardCandidate.instrumentId);
+    const downIndex = mc.outcomeIndex === 0 ? 1 : 0;
+    const hardDownTokenStr = hardCandidate.allTokenIds?.[downIndex];
+    const easyDownTokenStr = easyCandidate.allTokenIds?.[downIndex];
+    if (!hardDownTokenStr) return false;
+
+    const easyIId = asInstrumentId(easyUpTokenStr);
+    const hardUpIId = asInstrumentId(hardUpTokenStr);
+    const hardDownIId = asInstrumentId(hardDownTokenStr);
+    const easyDownIId = easyDownTokenStr ? asInstrumentId(easyDownTokenStr) : undefined;
+    const easyAst = asPolymarketCtfToken(easyUpTokenStr);
+    const hardUpAst = asPolymarketCtfToken(hardUpTokenStr);
+    const hardDownAst = asPolymarketCtfToken(hardDownTokenStr);
+    const easyDownAst = easyDownTokenStr ? asPolymarketCtfToken(easyDownTokenStr) : undefined;
+    if (!easyIId || !hardUpIId || !hardDownIId || !easyAst || !hardUpAst || !hardDownAst) return false;
+
+    const easyCryptoMeta = parseCryptoMeta(easyCandidate.rawMarket);
+    const hardCryptoMeta = parseCryptoMeta(hardCandidate.rawMarket);
+    const hardExpiresMs = hardCandidate.expiresAt.toNumber();
+    const easyStartMs = easyCryptoMeta?.eventStartTimeMs ?? 0;
+    const hardStartMs = hardCryptoMeta?.eventStartTimeMs ?? 0;
+    const strategyId = `cross-market-arb-live-slot-${_slotCounter++}`;
+    const arbConfig = config.strategyParams as CrossMarketArbConfig;
+    const fullArbConfig: CrossMarketArbConfig = {
+      peerInstrumentId: easyIId,
+      slotDownInstrumentId: hardDownIId,
+      peerDownInstrumentId: easyDownIId,
+      minSpreadAfterFees: arbConfig.minSpreadAfterFees ?? 0.005,
+      maxPositionUnits: arbConfig.maxPositionUnits ?? 5,
+      maxDepth: arbConfig.maxDepth ?? 1,
+      slotStrike: hardCryptoMeta?.priceToBeat ?? null,
+      peerStrike: easyCryptoMeta?.priceToBeat ?? null,
+      bookStalenessMs: arbConfig.bookStalenessMs ?? 1500,
+      auditMode: arbConfig.auditMode ?? false,
+      executionOrderType: arbConfig.executionOrderType ?? 'FAK',
+      executionReconcileDelayMs: arbConfig.executionReconcileDelayMs ?? 750,
+      executionRepairDelayMs: arbConfig.executionRepairDelayMs ?? 750,
+    };
+    const arbStrategy = new CrossMarketArbStrategy(fullArbConfig, marketDataStore, strategyId, logger);
+
+    arbStrategy.setTradeCallback(async (plan): Promise<ArbTradeExecutionReport> => {
+      const currentPortfolio = portfolioStore.get(accountId!);
+      const plannedSize = plan.size.value().toNumber();
+      const emptyReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => ({
+        accepted: false,
+        repairState,
+        plannedSize,
+        easyFilledSize: 0,
+        hardFilledSize: 0,
+        balancedSize: 0,
+        unhedgedSize: 0,
+      });
+      if (!currentPortfolio) return emptyReport('REJECTED');
+
+      const resolveLeg = (instrumentId: InstrumentId): { asset: AssetId; instrumentId: InstrumentId } | undefined => {
+        const id = String(instrumentId);
+        if (id === String(easyIId)) return { asset: easyAst, instrumentId: easyIId };
+        if (easyDownIId && easyDownAst && id === String(easyDownIId)) return { asset: easyDownAst, instrumentId: easyDownIId };
+        if (id === String(hardUpIId)) return { asset: hardUpAst, instrumentId: hardUpIId };
+        if (id === String(hardDownIId)) return { asset: hardDownAst, instrumentId: hardDownIId };
+        return undefined;
+      };
+      const easyLeg = resolveLeg(plan.easyInstrumentId);
+      const hardLeg = resolveLeg(plan.hardInstrumentId);
+      if (!easyLeg || !hardLeg) return emptyReport('REJECTED');
+
+      const requiredCash = plannedSize * (plan.estimatedCostPerUnit + plan.estimatedFeePerUnit);
+      const availableCash = currentPortfolio.balance.available().value().toNumber();
+      if (availableCash < requiredCash) return emptyReport('REJECTED');
+
+      const orderType = arbConfig.executionOrderType ?? 'FAK';
+      const reconcileDelayMs = arbConfig.executionReconcileDelayMs ?? 750;
+      const repairDelayMs = arbConfig.executionRepairDelayMs ?? 750;
+      // Ждём fills для указанных ордеров через WS или истечения таймаута (что раньше).
+      // Позволяет выйти из ожидания раньше reconcileDelayMs если все ноги уже matched.
+      const waitForOrdersMatchedOrTimeout = (orderIds: readonly string[], timeoutMs: number): Promise<void> =>
+        new Promise<void>((resolve) => {
+          const remaining = new Set(orderIds);
+          let settled = false;
+          let timer: ReturnType<typeof setTimeout>;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            unsub();
+            resolve();
+          };
+          const unsub = eventBus.subscribe('FILL_RECEIVED', (event) => {
+            remaining.delete(String(event.fill.orderId));
+            if (remaining.size === 0) done();
+          });
+          timer = setTimeout(done, timeoutMs);
+        });
+      const qtyOf = (instrumentId: InstrumentId): number =>
+        portfolioStore.get(accountId!)?.getPosition(instrumentId)?.quantity.value().toNumber() ?? 0;
+      const beforeEasyQty = qtyOf(easyLeg.instrumentId);
+      const beforeHardQty = qtyOf(hardLeg.instrumentId);
+      const cancelIfPlaced = async (orderId: ReturnType<typeof asOrderId> | undefined, reason: string): Promise<void> => {
+        if (!orderId) return;
+        await orderUseCases.cancelOrderUseCase.execute({ orderId, accountId: accountId!, reason });
+      };
+      const snapshotReport = (repairState: ArbTradeExecutionReport['repairState']): ArbTradeExecutionReport => {
+        const easyFilledSize = Math.max(0, qtyOf(easyLeg.instrumentId) - beforeEasyQty);
+        const hardFilledSize = Math.max(0, qtyOf(hardLeg.instrumentId) - beforeHardQty);
+        const balancedSize = Math.min(easyFilledSize, hardFilledSize);
+        const unhedgedSize = Math.abs(easyFilledSize - hardFilledSize);
+        const actualNotional = easyFilledSize * plan.easyPrice.value().toNumber()
+          + hardFilledSize * plan.hardPrice.value().toNumber();
+        const actualFees = balancedSize * plan.estimatedFeePerUnit;
+        const conservativeSettlementValue = balancedSize;
+        return {
+          accepted: balancedSize > 0 && unhedgedSize < 0.000001,
+          repairState,
+          plannedSize,
+          easyFilledSize,
+          hardFilledSize,
+          balancedSize,
+          unhedgedSize,
+          actualNotional,
+          actualFees,
+          conservativeSettlementValue,
+          conservativePnl: conservativeSettlementValue - actualNotional - actualFees,
+        };
+      };
+
+      const easyOrderId = asOrderId(`arb-live-easy-${_liveArbOrderCounter++}-${Date.now()}`);
+      const hardOrderId = asOrderId(`arb-live-hard-${_liveArbOrderCounter++}-${Date.now()}`);
+      if (!easyOrderId || !hardOrderId) return emptyReport('REJECTED');
+      const [easyResult, hardResult] = await Promise.all([
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: easyOrderId,
+          accountId: accountId!,
+          asset: easyLeg.asset,
+          instrumentId: easyLeg.instrumentId,
+          side: 'BUY',
+          price: plan.easyPrice,
+          size: plan.size,
+          orderType,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+        orderUseCases.placeOrderUseCase.execute({
+          orderId: hardOrderId,
+          accountId: accountId!,
+          asset: hardLeg.asset,
+          instrumentId: hardLeg.instrumentId,
+          side: 'BUY',
+          price: plan.hardPrice,
+          size: plan.size,
+          orderType,
+          strategyId,
+          portfolio: currentPortfolio,
+          openOrdersCount: 0,
+        }),
+      ]);
+
+      if (!easyResult.ok || !hardResult.ok) {
+        if (easyResult.ok) await cancelIfPlaced(easyResult.value, 'arb partial placement rejected');
+        if (hardResult.ok) await cancelIfPlaced(hardResult.value, 'arb partial placement rejected');
+        return emptyReport('REJECTED');
+      }
+
+      // Ждём пока обе ноги matched (WS) или истечёт reconcileDelayMs (whichever first)
+      await waitForOrdersMatchedOrTimeout(
+        [String(easyOrderId), String(hardOrderId)],
+        reconcileDelayMs,
+      );
+      // Отменяем оба GTC-ордера: заполненные игнорируют cancel, незаполненные снимаются
+      await Promise.all([
+        cancelIfPlaced(easyResult.value, 'arb reconciliation'),
+        cancelIfPlaced(hardResult.value, 'arb reconciliation'),
+      ]);
+      await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+      let report = snapshotReport('BALANCED');
+      if (report.balancedSize <= 0 && report.unhedgedSize <= 0) return { ...report, accepted: false, repairState: 'NO_FILL' };
+      if (report.unhedgedSize <= 0.000001) return report;
+
+      // Второй reconcile: ловим WS-fills с задержкой (Polymarket REST может запаздывать на 1-3с)
+      await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+      report = snapshotReport('BALANCED');
+      if (report.unhedgedSize <= 0.000001) return report;
+
+      // Одна нога не заполнилась. Rebalance по актуальной TOB-цене — plan-цена уже устарела.
+      const missingEasy = report.easyFilledSize < report.hardFilledSize;
+      const rebalanceLeg = missingEasy ? easyLeg : hardLeg;
+      const missingLegTob = marketDataStore.getTopOfBook(rebalanceLeg.instrumentId);
+      const rebalancePrice: Price = missingLegTob?.bestAsk ?? (missingEasy ? plan.easyPrice : plan.hardPrice);
+
+      // Фиксируем baseline ДО repair: исключает поздние WS-fills оригинального ордера из счёта
+      const repairBaseEasyQty = qtyOf(easyLeg.instrumentId);
+      const repairBaseHardQty = qtyOf(hardLeg.instrumentId);
+
+      const rebalanceOrderId = asOrderId(`arb-live-rebalance-${_liveArbOrderCounter++}-${Date.now()}`);
+      if (rebalanceOrderId) {
+        const repairPortfolio = portfolioStore.get(accountId!);
+        if (repairPortfolio) {
+          logger.info('Arb rebalance: placing repair leg at current TOB price', {
+            missingLeg: missingEasy ? 'EASY' : 'HARD',
+            instrumentId: String(rebalanceLeg.instrumentId),
+            rebalancePrice: rebalancePrice.value().toFixed(4),
+            stalePlanPrice: missingEasy
+              ? plan.easyPrice.value().toFixed(4)
+              : plan.hardPrice.value().toFixed(4),
+            unhedgedSize: report.unhedgedSize,
+          });
+          await orderUseCases.placeOrderUseCase.execute({
+            orderId: rebalanceOrderId,
+            accountId: accountId!,
+            asset: rebalanceLeg.asset,
+            instrumentId: rebalanceLeg.instrumentId,
+            side: 'BUY',
+            price: rebalancePrice,
+            size: Quantity.of(new Decimal(report.unhedgedSize)),
+            orderType: 'FAK',
+            strategyId,
+            portfolio: repairPortfolio,
+            openOrdersCount: 0,
+          });
+          await waitForOrdersMatchedOrTimeout([String(rebalanceOrderId)], repairDelayMs);
+          await cancelIfPlaced(rebalanceOrderId, 'arb rebalance reconciliation');
+          await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+
+          // Инкрементальный подсчёт: только fills repair-фазы + оригинальные из первого отчёта.
+          // Предотвращает двойной счёт если поздний WS-fill оригинала пришёл во время repair-окна.
+          const repairEasyFill = Math.max(0, qtyOf(easyLeg.instrumentId) - repairBaseEasyQty);
+          const repairHardFill = Math.max(0, qtyOf(hardLeg.instrumentId) - repairBaseHardQty);
+          const totalEasyFilled = report.easyFilledSize + repairEasyFill;
+          const totalHardFilled = report.hardFilledSize + repairHardFill;
+          const rebalancedSize = Math.min(totalEasyFilled, totalHardFilled);
+          const rebalancedUnhedged = Math.abs(totalEasyFilled - totalHardFilled);
+          const rebalancedNotional = totalEasyFilled * plan.easyPrice.value().toNumber()
+            + totalHardFilled * plan.hardPrice.value().toNumber();
+          report = {
+            accepted: rebalancedSize > 0 && rebalancedUnhedged < 0.000001,
+            repairState: 'REBALANCED',
+            plannedSize,
+            easyFilledSize: totalEasyFilled,
+            hardFilledSize: totalHardFilled,
+            balancedSize: rebalancedSize,
+            unhedgedSize: rebalancedUnhedged,
+            actualNotional: rebalancedNotional,
+            actualFees: rebalancedSize * plan.estimatedFeePerUnit,
+            conservativeSettlementValue: rebalancedSize,
+            conservativePnl: rebalancedSize - rebalancedNotional - rebalancedSize * plan.estimatedFeePerUnit,
+          };
+          if (report.unhedgedSize <= 0.000001) return { ...report, accepted: report.balancedSize > 0 };
+        }
+      }
+
+      // Всё ещё несбалансировано — агрессивная продажа избыточной ноги по best bid
+      const surplusEasy = report.easyFilledSize > report.hardFilledSize;
+      const unwindOrderId = asOrderId(`arb-live-unwind-${_liveArbOrderCounter++}-${Date.now()}`);
+      if (unwindOrderId && report.unhedgedSize > 0) {
+        const unwindLeg = surplusEasy ? easyLeg : hardLeg;
+        const unwindPortfolio = portfolioStore.get(accountId!);
+        if (unwindPortfolio) {
+          await orderUseCases.placeOrderUseCase.execute({
+            orderId: unwindOrderId,
+            accountId: accountId!,
+            asset: unwindLeg.asset,
+            instrumentId: unwindLeg.instrumentId,
+            side: 'SELL',
+            price: Price.of(new Decimal('0.01')),
+            size: Quantity.of(new Decimal(report.unhedgedSize)),
+            orderType: 'FAK',
+            strategyId,
+            portfolio: unwindPortfolio,
+            openOrdersCount: 0,
+          });
+          await waitForOrdersMatchedOrTimeout([String(unwindOrderId)], repairDelayMs);
+          await cancelIfPlaced(unwindOrderId, 'arb unwind reconciliation');
+          await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+          report = snapshotReport('UNWOUND');
+          return { ...report, accepted: report.balancedSize > 0 && report.unhedgedSize <= 0.000001 };
+        }
+      }
+      return { ...report, repairState: 'FAILED_REPAIR', accepted: false };
+    });
+
+    const expiresAtResult = TimestampService.create(hardExpiresMs);
+    const easyExpiresAtResult = TimestampService.create(easyCandidate.expiresAt.toNumber());
+    if (!expiresAtResult.ok || !easyExpiresAtResult.ok) return false;
+    for (const item of [
+      { instrumentId: easyIId, marketId: easyCandidate.marketId, expiresAt: easyExpiresAtResult.value },
+      { instrumentId: hardUpIId, marketId: hardCandidate.marketId, expiresAt: expiresAtResult.value },
+      { instrumentId: hardDownIId, marketId: hardCandidate.marketId, expiresAt: expiresAtResult.value },
+      ...(easyDownIId ? [{ instrumentId: easyDownIId, marketId: easyCandidate.marketId, expiresAt: easyExpiresAtResult.value }] : []),
+    ]) {
+      marketCatalog.register({
+        instrumentId: item.instrumentId,
+        marketId: item.marketId,
+        tickSize: Price.of(new Decimal('0.001')),
+        minOrderSize: Quantity.of(new Decimal('1')),
+        minOrderValue: Quantity.of(new Decimal('1')),
+        active: true,
+        expiresAt: item.expiresAt,
+      });
+    }
+
+    const hardSlot: MarketSlot = {
+      instrumentId: hardUpIId,
+      marketId: hardCandidate.marketId,
+      asset: hardUpAst,
+      tokenIdStr: hardUpTokenStr,
+      expiresAtMs: hardExpiresMs,
+      candidate: hardCandidate,
+      strategy: arbStrategy,
+      cryptoMeta: hardCryptoMeta,
+      additionalInstrumentIds: [easyIId, hardDownIId, ...(easyDownIId ? [easyDownIId] : [])],
+      outcomeIndex: mc.outcomeIndex,
+      fillHistory: [],
+      partialAccum: new Map(),
+      directPartialAccum: new Map(),
+      openedAt: Date.now(),
+    };
+    activeMarkets.set(hardUpTokenStr, hardSlot);
+    const registered = await rotation.registerMarketAndStrategy(hardSlot);
+    if (!registered) {
+      activeMarkets.delete(hardUpTokenStr);
+      return false;
+    }
+    activeCompTokens.add(hardDownTokenStr);
+    if (easyDownTokenStr) activeCompTokens.add(easyDownTokenStr);
+
+    await marketWsAdapter.subscribeToToken(easyUpTokenStr);
+    await marketWsAdapter.subscribeToToken(hardUpTokenStr);
+    await marketWsAdapter.subscribeToToken(hardDownTokenStr);
+    if (easyDownTokenStr) await marketWsAdapter.subscribeToToken(easyDownTokenStr);
+
+    for (const meta of [easyCryptoMeta, hardCryptoMeta]) {
+      if (!meta) continue;
+      for (const sub of meta.rtdsSubscriptions) liveRtdsClient.subscribe(sub.topic, sub.filter);
+    }
+
+    const easyStartsAtResult = easyStartMs > 0 ? TimestampService.create(easyStartMs) : undefined;
+    const hardStartsAtResult = hardStartMs > 0 ? TimestampService.create(hardStartMs) : undefined;
+
+    recording?.openMarket(easyCandidate, {
+      marketId: easyCandidate.marketId,
+      question: easyCandidate.question ?? String(easyCandidate.marketId),
+      tokenIds: [easyUpTokenStr, easyDownTokenStr].filter((id): id is string => !!id),
+      startsAt: easyStartsAtResult?.ok ? easyStartsAtResult.value : undefined,
+      expiresAt: easyExpiresAtResult.value,
+      rawMarket: easyCandidate.rawMarket,
+    }, 'live');
+    recording?.openMarket(hardCandidate, {
+      marketId: hardCandidate.marketId,
+      question: hardCandidate.question ?? String(hardCandidate.marketId),
+      tokenIds: [hardUpTokenStr, hardDownTokenStr],
+      startsAt: hardStartsAtResult?.ok ? hardStartsAtResult.value : undefined,
+      expiresAt: expiresAtResult.value,
+      rawMarket: hardCandidate.rawMarket,
+    }, 'live');
+
+    const pairId = `arb-live-${easyUpTokenStr}-${hardUpTokenStr}`;
+    liveActiveArbPairs.set(pairId, {
+      pairId,
+      easyInstrumentId: easyIId,
+      easyMarketId: easyCandidate.marketId,
+      easyAsset: easyAst,
+      easyTokenIdStr: easyUpTokenStr,
+      hardUpInstrumentId: hardUpIId,
+      hardUpMarketId: hardCandidate.marketId,
+      hardUpAsset: hardUpAst,
+      hardUpTokenIdStr: hardUpTokenStr,
+      hardDownInstrumentId: hardDownIId,
+      hardDownAsset: hardDownAst,
+      hardDownTokenIdStr: hardDownTokenStr,
+      easyDownInstrumentId: easyDownIId,
+      easyDownAsset: easyDownAst,
+      easyDownTokenIdStr: easyDownTokenStr,
+      expiresAtMs: hardExpiresMs,
+      strategy: arbStrategy,
+      easyCryptoMeta,
+      hardCryptoMeta,
+      easyStartMs,
+      hardStartMs,
+      easyStrikeLocked: easyCryptoMeta?.priceToBeat !== undefined,
+      hardStrikeLocked: hardCryptoMeta?.priceToBeat !== undefined,
+    });
+
+    logger.warn('Live arb pair opened', {
+      pairId,
+      easy: easyCandidate.question,
+      hard: hardCandidate.question,
+      maxPositionUnits: fullArbConfig.maxPositionUnits,
+      executionOrderType: fullArbConfig.executionOrderType,
+    });
+    return true;
+  }
+
+  async function fillLiveArbSlots(): Promise<void> {
+    if (!discoveryAdapter || !isLiveArbMode || activeMarkets.size >= maxConcurrentMarkets) return;
+    const candidates = await discoveryAdapter.findCandidates();
+    const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
+    const nowMs = Date.now();
+    const marketInfos: (MarketInfo & { _candidate: DiscoveredMarket })[] = [];
+    for (const c of candidates) {
+      const ticker = (c.rawMarket?.['events'] as readonly Record<string, unknown>[] | undefined)?.[0]?.['ticker'] as string | undefined;
+      if (!ticker) continue;
+      const parsed = MarketPairMatcher.parseTicker(ticker);
+      if (!parsed) continue;
+      const endDateStr = c.rawMarket?.['endDate'] as string | undefined;
+      if (!endDateStr) continue;
+      const endDateMs = new Date(endDateStr).getTime();
+      if (Number.isNaN(endDateMs)) continue;
+      const tokenId = c.allTokenIds?.[mc.outcomeIndex] ?? String(c.instrumentId);
+      const instrumentId = asInstrumentId(tokenId);
+      if (!instrumentId) continue;
+      const cryptoMeta = parseCryptoMeta(c.rawMarket);
+      marketInfos.push({
+        asset: parsed.asset,
+        recurrence: parsed.recurrence,
+        endDate: endDateStr,
+        startDate: new Date(parsed.startEpoch * 1000).toISOString(),
+        startEpochMs: parsed.startEpoch * 1000,
+        endEpochMs: endDateMs,
+        instrumentId,
+        filePath: '',
+        ticker,
+        priceToBeat: cryptoMeta?.priceToBeat,
+        _candidate: c,
+      });
+    }
+    const pairMatcher = new MarketPairMatcher();
+    const pairs = pairMatcher.findPairs(marketInfos);
+    for (const pair of pairs) {
+      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+      const easyCandidate = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
+      const hardCandidate = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
+      if (!easyCandidate || !hardCandidate) continue;
+      const opened = await openLiveArbPair(easyCandidate, hardCandidate);
+      if (opened) return;
+    }
+    logger.warn('No live arb pairs found in discovery cache', {
+      candidates: candidates.length,
+      parsedInfos: marketInfos.length,
+      pairsFound: pairs.length,
+    });
+  }
+
+  /**
+   * Закрывает живую арб-пару: отменяет ордера hard-слота через scheduler,
+   * снимает WS/RTDS подписки, удаляет из каталогов.
+   *
+   * @param pairId - Идентификатор пары из `liveActiveArbPairs`
+   * @param reason - Причина закрытия: 'EXPIRED' | 'SHUTDOWN'
+   *
+   * @remarks
+   * Для hard-слота делегирует в `rotation.closeMarket()` — он отменяет ордера
+   * (через `engine.scheduler.unregister`), запускает settlement и удаляет слот
+   * из `activeMarkets`. Для остальных токенов (easy up/down, hard down) выполняет
+   * WS-отписку и очистку `marketCatalog` вручную.
+   */
+  async function closeLiveArbPair(pairId: string, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+    const pair = liveActiveArbPairs.get(pairId);
+    if (!pair) return;
+
+    logger.info('Closing live arb pair', { pairId, reason });
+
+    // Hard-слот — полный teardown через rotation (cancel orders, settlement, activeMarkets.delete)
+    if (activeMarkets.has(pair.hardUpTokenIdStr)) {
+      await rotation.closeMarket(pair.hardUpTokenIdStr, reason);
+    }
+
+    // Easy UP + Down, Hard Down — WS-отписка и marketCatalog
+    await marketWsAdapter.unsubscribeFromToken(pair.easyTokenIdStr);
+    await marketWsAdapter.unsubscribeFromToken(pair.hardDownTokenIdStr);
+    if (pair.easyDownTokenIdStr) await marketWsAdapter.unsubscribeFromToken(pair.easyDownTokenIdStr);
+
+    marketCatalog.remove(pair.easyInstrumentId);
+    marketCatalog.remove(pair.hardDownInstrumentId);
+    if (pair.easyDownInstrumentId) marketCatalog.remove(pair.easyDownInstrumentId);
+
+    // activeCompTokens cleanup
+    activeCompTokens.delete(pair.hardDownTokenIdStr);
+    if (pair.easyDownTokenIdStr) activeCompTokens.delete(pair.easyDownTokenIdStr);
+
+    // RTDS unsubscribe — только если другие активные пары не используют тот же topic
+    for (const meta of [pair.easyCryptoMeta, pair.hardCryptoMeta]) {
+      if (!meta) continue;
+      const stillUsed = Array.from(liveActiveArbPairs.values()).some(
+        p => p.pairId !== pairId && (
+          p.easyCryptoMeta?.rtdsTopic === meta.rtdsTopic ||
+          p.hardCryptoMeta?.rtdsTopic === meta.rtdsTopic
+        ),
+      );
+      if (!stillUsed) liveRtdsClient.unsubscribe(meta.rtdsTopic, meta.rtdsFilter);
+    }
+
+    liveActiveArbPairs.delete(pairId);
+    logger.info('Live arb pair closed', { pairId, reason, activePairs: liveActiveArbPairs.size });
+  }
 
   const bookRegistry = new SimpleBookRegistry();
   const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
@@ -3769,12 +4334,22 @@ async function runLive(): Promise<void> {
   engine.orderEventBridge.start();
   engine.scheduler.start();
 
-  // Регистрируем все начальные слоты
-  for (const slot of activeMarkets.values()) {
-    const ok = await rotation.registerMarketAndStrategy(slot);
-    if (!ok) {
-      logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
+  if (isLiveArbMode) {
+    await fillLiveArbSlots();
+    if (activeMarkets.size === 0) {
+      logger.fatal('No live arb pairs found matching discovery filter at startup');
       process.exit(1);
+    }
+  }
+
+  // Регистрируем все начальные слоты (arb-режим: регистрация уже сделана внутри openLiveArbPair)
+  if (!isLiveArbMode) {
+    for (const slot of activeMarkets.values()) {
+      const ok = await rotation.registerMarketAndStrategy(slot);
+      if (!ok) {
+        logger.fatal('Failed to register initial strategy', { marketId: String(slot.marketId) });
+        process.exit(1);
+      }
     }
   }
 
@@ -3807,7 +4382,8 @@ async function runLive(): Promise<void> {
   }
 
   // Подключаемся к RTDS для крипто-цен (live)
-  const liveHasCryptoMarkets = Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
+  // В arb-режиме всегда подключаемся — крипто-подписки уже сделаны в openLiveArbPair
+  const liveHasCryptoMarkets = isLiveArbMode || Array.from(activeMarkets.values()).some(s => s.cryptoMeta !== undefined);
   if (liveHasCryptoMarkets) {
     try {
       await liveRtdsClient.connect();
@@ -3999,11 +4575,13 @@ async function runLive(): Promise<void> {
   // ── Ротация рынков (только для discovery) ────────────────────────────────
 
   if (rotation.discoveryAdapter) {
-    rotation.startExpiryCheck();
-    void rotation.scheduleScanLoop();
+    if (!isLiveArbMode) {
+      rotation.startExpiryCheck();
+      void rotation.scheduleScanLoop();
 
-    if (maxConcurrentMarkets > 1) {
-      void rotation.fillMarketSlots();
+      if (maxConcurrentMarkets > 1) {
+        void rotation.fillMarketSlots();
+      }
     }
 
     const mc = config.market as import('./config/BotConfig.js').DiscoveryMarketConfig;
@@ -4011,7 +4589,66 @@ async function runLive(): Promise<void> {
       expiryCheckMs: 5_000,
       scanPauseMs: mc.scanPauseMs ?? 60_000,
       maxConcurrentMarkets,
+      arbMode: isLiveArbMode,
     });
+  }
+
+  // ── Live arb expiry monitoring ────────────────────────────────────────────
+  // Проверяем expiry каждые 5s; при истечении закрываем пару и ищем новую.
+  // Статус-лог — каждые ~30s (6 × 5s тиков).
+
+  let _liveArbExpiryIntervalId: ReturnType<typeof setInterval> | undefined;
+  if (isLiveArbMode) {
+    const CANCEL_BEFORE_EXPIRY_MS = 5_000;
+    let _liveArbRotationInProgress = false;
+    let _liveArbStatusCounter = 0;
+
+    _liveArbExpiryIntervalId = setInterval(() => {
+      if (rotation.isShuttingDown || _liveArbRotationInProgress) return;
+      _liveArbRotationInProgress = true;
+      void (async () => {
+        try {
+          const nowMs = Date.now();
+
+          // Статус-лог каждые ~30с
+          if (++_liveArbStatusCounter % 6 === 0) {
+            for (const pair of liveActiveArbPairs.values()) {
+              const hardSlot = activeMarkets.get(pair.hardUpTokenIdStr);
+              const easyBook = marketDataStore.getTopOfBook(pair.easyInstrumentId);
+              const hardBook = hardSlot ? marketDataStore.getTopOfBook(hardSlot.instrumentId) : undefined;
+              const metrics = hardSlot?.strategy?.getMetrics?.() as Record<string, unknown> | undefined;
+              const ttlSec = Math.max(0, Math.round((pair.expiresAtMs - nowMs) / 1000));
+              logger.info('Live arb pair status', {
+                pairId: pair.pairId,
+                ttlSec,
+                ticks: metrics?.['tickCount'] ?? 0,
+                divergences: metrics?.['divergenceCount'] ?? 0,
+                trades: metrics?.['tradeCount'] ?? 0,
+                easyBid: easyBook?.bestBid?.value().toFixed(2) ?? '-',
+                easyAsk: easyBook?.bestAsk?.value().toFixed(2) ?? '-',
+                hardBid: hardBook?.bestBid?.value().toFixed(2) ?? '-',
+                hardAsk: hardBook?.bestAsk?.value().toFixed(2) ?? '-',
+              });
+            }
+          }
+
+          // Expiry check
+          const expiredPairIds = [...liveActiveArbPairs.values()]
+            .filter(p => p.expiresAtMs - nowMs <= CANCEL_BEFORE_EXPIRY_MS)
+            .map(p => p.pairId);
+
+          for (const expiredPairId of expiredPairIds) {
+            await closeLiveArbPair(expiredPairId, 'EXPIRED');
+          }
+
+          if (expiredPairIds.length > 0) {
+            await fillLiveArbSlots();
+          }
+        } finally {
+          _liveArbRotationInProgress = false;
+        }
+      })();
+    }, 5_000);
   }
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
@@ -4024,13 +4661,20 @@ async function runLive(): Promise<void> {
     rotation.stopTimers();
     clearInterval(reconcileIntervalId);
     clearInterval(balanceSyncIntervalId);
+    if (_liveArbExpiryIntervalId !== undefined) clearInterval(_liveArbExpiryIntervalId);
     // clearInterval(tokenBalanceSyncId); // DISABLED — token balance sync
     autoRedeemer?.stop();
 
     try {
-      // Закрываем все активные слоты через rotation
-      for (const tokenIdStr of [...activeMarkets.keys()]) {
-        await rotation.closeMarket(tokenIdStr, 'SHUTDOWN');
+      if (isLiveArbMode) {
+        for (const pairId of [...liveActiveArbPairs.keys()]) {
+          await closeLiveArbPair(pairId, 'SHUTDOWN');
+        }
+      } else {
+        // Закрываем все активные слоты через rotation
+        for (const tokenIdStr of [...activeMarkets.keys()]) {
+          await rotation.closeMarket(tokenIdStr, 'SHUTDOWN');
+        }
       }
 
       engine.scheduler.stop();
@@ -4156,6 +4800,20 @@ function toStoreCexVenue(venue: string): StoreCexVenue | undefined {
  */
 function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): RiskParams {
   const params = config?.strategyParams as unknown as Record<string, unknown> | undefined;
+  if (config?.strategy === 'cross-market-arb') {
+    const maxPositionUnits = typeof params?.['maxPositionUnits'] === 'number'
+      ? (params['maxPositionUnits'] as number)
+      : 5;
+    const initialBalance = config.resources.initialBalance ?? 30;
+    return {
+      maxOpenOrders: 6,
+      maxOrderNotional: new Decimal(initialBalance),
+      maxPositionSize: new Decimal(maxPositionUnits),
+      maxTotalExposure: new Decimal(initialBalance),
+      minAvailableBalance: new Decimal('1'),
+      minTimeToExpiryMs: 0,
+    };
+  }
   const orderSize = params?.['orderSize'] instanceof Decimal
     ? (params['orderSize'] as Decimal).toNumber()
     : 10;

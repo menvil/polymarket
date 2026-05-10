@@ -135,6 +135,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         price: params.price.value().toNumber(),
         size: effectiveSize.value().toNumber(),
         postOnly: params.postOnly,
+        orderType: params.orderType,
         clientOrderId: params.clientOrderId,
         strategyId: params.strategyId,
       });
