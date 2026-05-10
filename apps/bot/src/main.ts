@@ -4654,7 +4654,11 @@ async function runLive(): Promise<void> {
                 ? (1 - easyAsk - hardDownAsk).toFixed(4)
                 : null;
               const auditCounts = metrics?.['auditEventCounts'] as Record<string, number> | undefined;
-              const strikes = pair.strategy.getStrikes();
+              const hardStartsInSec = pair.hardStrikeLocked
+                ? null
+                : pair.hardStartMs > 0
+                  ? Math.max(0, Math.round((pair.hardStartMs - nowMs) / 1000))
+                  : null;
               logger.info('Live arb pair status', {
                 pairId: pair.pairId,
                 ttlSec,
@@ -4666,12 +4670,15 @@ async function runLive(): Promise<void> {
                 hardDownBid: hardDownBook?.bestBid?.value().toFixed(4) ?? '-',
                 hardDownAsk: hardDownAsk?.toFixed(4) ?? '-',
                 grossSpread,
-                // strike/assignment state — null = ещё не пришли из Chainlink RTDS
+                // strike/assignment state
                 assignment: metrics?.['assignment'] ?? null,
                 easyStrikeLocked: pair.easyStrikeLocked,
                 hardStrikeLocked: pair.hardStrikeLocked,
-                easyStrike: strikes?.easyStrike?.toFixed(2) ?? null,
-                hardStrike: strikes?.hardStrike?.toFixed(2) ?? null,
+                // raw strikes из getMetrics — доступны до установки assignment
+                slotStrike: (metrics?.['slotStrike'] as number | null | undefined) ?? null,
+                peerStrike: (metrics?.['peerStrike'] as number | null | undefined) ?? null,
+                // сколько секунд до старта hard (5m) рынка (null = уже стартовал)
+                hardStartsInSec,
                 skipStale: auditCounts?.['SKIP_STALE_BOOK'] ?? 0,
                 skipMissing: auditCounts?.['SKIP_MISSING_BOOK'] ?? 0,
                 noSignal: auditCounts?.['NO_SIGNAL'] ?? 0,

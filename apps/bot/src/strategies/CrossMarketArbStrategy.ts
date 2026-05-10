@@ -929,6 +929,9 @@ export class CrossMarketArbStrategy implements IStrategy {
       repairStateCounts: Object.fromEntries(this._repairStateCounts.entries()),
       rejectCooldownActive: this._lastRejectMs > 0 && Date.now() - this._lastRejectMs < this._rejectCooldownMs,
       assignment: this._assignment,
+      // Raw strikes доступны до установки assignment (показываем сразу после получения от Chainlink)
+      slotStrike: this._config.slotStrike,
+      peerStrike: this._config.peerStrike,
       currentPositionUnits: this._currentPositionUnits,
       bookStalenessMs: this._config.bookStalenessMs ?? 1500,
       auditMode: this._config.auditMode ?? false,
