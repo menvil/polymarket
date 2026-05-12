@@ -35,6 +35,31 @@ _checkExitSignalFirst:
 В live режиме задержка SELL fill может составлять несколько секунд (WS latency +
 on-chain confirmation). Все тики в этот период логируют `HOLD(SELL_IN_FLIGHT)`.
 
+### Баг «зомби-ордер» и его исправление
+
+**Проблема (исправлена 2026-05-12):** Если бот выставил SELL ордер под активным условием выхода,
+а затем условие исчезло (стоп отступил, сигнал восстановился), `shouldExit` становился `false`.
+Код возвращал `undefined` не проверив, что `availableTokenQty = 0` — SELL ордер оставался в рынке
+как «зомби» и мог сыграться в самый неподходящий момент (например, на пути к 99¢ перед резолюцией UP).
+
+**Пример:** 10:15 BTC UP market — SELL @ 55¢ висел 2:41 мин пока цена уходила до 14¢ и обратно.
+Сыграли арбитражёры при 55¢ на пути к 99¢. Итог: -1.04 USDC вместо ~+6 USDC.
+
+**Исправление:** В `_checkExitSignalFirst()` перед `return undefined` добавлена проверка зомби-ордера:
+
+```typescript
+if (!shouldExit) {
+  if (!data.availableTokenQty.gt(0) && data.positionQty.gt(0)) {
+    // Отменяем зомби — SELL выставлен ранее, но условие выхода уже не активно
+    return { type: 'CANCEL' };  // rejectReason: 'STALE_SELL_ON_HOLD'
+  }
+  return undefined;
+}
+```
+
+Исправление применено во всех трёх стратегиях: `CexLeadLagStrategy`, `CexLeadLagRiskBudgetStrategy`,
+`CexLeadLagExitPolicyStrategy`.
+
 ### HOLD при нормальном удержании позиции
 
 Пока позиция есть и ни один стоп не сработал — стратегия логирует:

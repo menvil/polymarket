@@ -2763,6 +2763,19 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       effectiveTauExit;
 
     if (!shouldExit) {
+      // «Зомби-ордер»: SELL выставлен ранее (availableTokenQty=0), но сейчас
+      // ни одно условие выхода не активно → отменяем, пока цена не ушла против нас.
+      if (!data.availableTokenQty.gt(0) && data.positionQty.gt(0)) {
+        this._logDiag(data, 'CANCEL', {
+          reason: 'STALE_SELL_ON_HOLD',
+          note: 'SELL order outstanding but no exit condition active — cancelling to avoid zombie fill',
+          positionQty: data.positionQty.toString(),
+          availableTokenQty: data.availableTokenQty.toString(),
+          bestBidCents: data.bestBidCents?.toFixed(2) ?? 'none',
+        }, true);
+        this._recordJournalDecision(data, 'CANCEL', { rejectReason: 'STALE_SELL_ON_HOLD' });
+        return { type: 'CANCEL' };
+      }
       return undefined;
     }
 
