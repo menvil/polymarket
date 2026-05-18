@@ -7,7 +7,7 @@ import { LiveClock } from '@polymarket/time';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
-import { ArchivedMarketMetaRewriter } from '../../../packages/infrastructure/persistence/data-collection/src/ArchivedMarketMetaRewriter.ts';
+import { ArchivedMarketMetaRewriter } from '../../../packages/infrastructure/persistence/data-collection/src/ArchivedMarketMetaRewriter.js';
 import { loadConfig } from './config.js';
 
 interface CliOptions {
