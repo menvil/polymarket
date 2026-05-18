@@ -54,7 +54,8 @@ import { BaselinePairedOverlayStrategy } from './strategies/BaselinePairedOverla
 import type { BaselinePairedOverlayConfig } from './strategies/BaselinePairedOverlayStrategy.js';
 import { CalibratedCrowdStrategy, CexCrowdNotAdverseStrategy } from './strategies/calibrated-crowd/index.js';
 import type { CalibratedCrowdConfig, CexCrowdNotAdverseConfig } from './strategies/calibrated-crowd/index.js';
-type OrderBookWallConfig = Record<string, unknown>;
+import { OrderBookWallStrategy } from './strategies/order-book-wall/index.js';
+import type { OrderBookWallConfig } from './strategies/order-book-wall/index.js';
 import { CrowdDeviationStrategy } from './strategies/CrowdDeviationStrategy.js';
 import type { CrowdDeviationConfig } from './strategies/CrowdDeviationStrategy.js';
 
@@ -183,8 +184,10 @@ export function createStrategy(
     case 'baseline-paired-overlay':
       return new BaselinePairedOverlayStrategy(config.params, config.id, logger, journal);
 
-    case 'order-book-wall':
-      throw new Error('OrderBookWallStrategy is not available in this build');
+    case 'order-book-wall': {
+      const obwId = config.id ?? `obw-${(config.params as any).side}-${Date.now()}`;
+      return new OrderBookWallStrategy(obwId, config.params as any, logger);
+    }
 
     case 'crowd-deviation':
       return new CrowdDeviationStrategy(
