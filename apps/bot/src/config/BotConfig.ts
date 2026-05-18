@@ -44,7 +44,7 @@ import type { CalibrationRulesConfig } from '../strategies/CalibrationRulesStrat
 import type { CalibratedCrowdConfig, CexCrowdNotAdverseConfig } from '../strategies/calibrated-crowd/index.js';
 import type { PairedCexCrowdConfig } from '../strategies/PairedCexCrowdStrategy.js';
 import type { BaselinePairedOverlayConfig } from '../strategies/BaselinePairedOverlayStrategy.js';
-import type { OrderBookWallConfig } from '../strategies/order-book-wall/index.js';
+type OrderBookWallConfig = Record<string, unknown>;
 import type { CrowdDeviationConfig } from '../strategies/CrowdDeviationStrategy.js';
 import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 
