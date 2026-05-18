@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'cex-lead-lag-exit-policy', 'cex-lead-lag-risk-budget', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'cex-lead-lag-exit-policy', 'cex-lead-lag-risk-budget', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay', 'order-book-wall', 'crowd-deviation'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -582,6 +582,53 @@ function parseStrategyParams(
       if (raw['cexWeights'] && typeof raw['cexWeights'] === 'object') result['cexWeights'] = raw['cexWeights'];
       if (raw['cexBasisByVenue'] && typeof raw['cexBasisByVenue'] === 'object') result['cexBasisByVenue'] = raw['cexBasisByVenue'];
       if (raw['cexConfidenceByScore'] && typeof raw['cexConfidenceByScore'] === 'object') result['cexConfidenceByScore'] = raw['cexConfidenceByScore'];
+      break;
+
+    case 'order-book-wall':
+      if (raw['side'] !== 'up' && raw['side'] !== 'down') {
+        errors.push('strategyParams.side must be "up" or "down" for order-book-wall strategy');
+      } else {
+        result['side'] = raw['side'];
+      }
+      if (typeof raw['orderSize'] !== 'number') {
+        errors.push('strategyParams.orderSize is required for order-book-wall strategy');
+      } else {
+        result['orderSize'] = raw['orderSize'];
+      }
+      if (typeof raw['venue'] !== 'string') {
+        errors.push('strategyParams.venue is required for order-book-wall strategy');
+      } else {
+        result['venue'] = raw['venue'];
+      }
+      for (const numField of [
+        'lookbackMs', 'bandSizePct', 'wallThresholdFactor', 'minWallSize', 'minWallAgeMs',
+        'consumptionWindowMs', 'absorptionThreshold', 'minSignalStrength',
+        'minEdgeCents', 'holdMaxMs', 'stopLossCents', 'sigmaAnnual',
+      ]) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (Array.isArray(raw['venues'])) result['venues'] = raw['venues'];
+      break;
+
+    case 'crowd-deviation':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for crowd-deviation strategy');
+      if (typeof raw['tableFile'] !== 'string') {
+        errors.push('strategyParams.tableFile is required for crowd-deviation strategy');
+      } else {
+        result['tableFile'] = raw['tableFile'];
+      }
+      for (const numField of ['entryDevCents', 'minDeltaDollars', 'maxDeltaDollars', 'minTauSec', 'maxTauSec', 'bidOffsetCents', 'warmupSec', 'makerRepriceAfterSec', 'residualMinBps', 'minEntryPriceCents']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['regimeFilter'] === 'up' || raw['regimeFilter'] === 'flat' || raw['regimeFilter'] === 'down' || raw['regimeFilter'] === 'all') {
+        result['regimeFilter'] = raw['regimeFilter'];
+      }
+      if (raw['residualFilter'] === 'pos' || raw['residualFilter'] === 'neg' || raw['residualFilter'] === 'all') {
+        result['residualFilter'] = raw['residualFilter'];
+      }
+      if (Array.isArray(raw['cexVenues'])) result['cexVenues'] = raw['cexVenues'];
+      if (typeof raw['cexMinVenueCount'] === 'number') result['cexMinVenueCount'] = raw['cexMinVenueCount'];
+      if (raw['postOnly'] === true || raw['postOnly'] === false) result['postOnly'] = raw['postOnly'];
       break;
   }
 

@@ -1018,10 +1018,15 @@ export class MarketRotation {
         this.orderToSlot.set(String(event.orderId), tokenIdStr);
         return;
       }
-      // Комплементарный токен → primary slot
+      // Комплементарный или дополнительный токен → primary slot
       if (tokenIdStr && this.activeCompTokens.has(tokenIdStr)) {
         for (const [primaryTokenId, slot] of this.activeMarkets) {
           if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
+            this.orderToSlot.set(String(event.orderId), primaryTokenId);
+            return;
+          }
+          // Арб: все ноги пары в additionalInstrumentIds → маршрутизируем в primary slot
+          if (slot.additionalInstrumentIds?.some(id => String(id) === tokenIdStr)) {
             this.orderToSlot.set(String(event.orderId), primaryTokenId);
             return;
           }

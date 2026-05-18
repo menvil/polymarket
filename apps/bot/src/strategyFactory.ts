@@ -54,6 +54,10 @@ import { BaselinePairedOverlayStrategy } from './strategies/BaselinePairedOverla
 import type { BaselinePairedOverlayConfig } from './strategies/BaselinePairedOverlayStrategy.js';
 import { CalibratedCrowdStrategy, CexCrowdNotAdverseStrategy } from './strategies/calibrated-crowd/index.js';
 import type { CalibratedCrowdConfig, CexCrowdNotAdverseConfig } from './strategies/calibrated-crowd/index.js';
+import { OrderBookWallStrategy } from './strategies/order-book-wall/index.js';
+import type { OrderBookWallConfig } from './strategies/order-book-wall/index.js';
+import { CrowdDeviationStrategy } from './strategies/CrowdDeviationStrategy.js';
+import type { CrowdDeviationConfig } from './strategies/CrowdDeviationStrategy.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -78,7 +82,9 @@ export type StrategyConfig =
   | { readonly type: 'calibrated-crowd'; readonly id?: string; readonly params: CalibratedCrowdConfig }
   | { readonly type: 'calibrated-crowd-cex'; readonly id?: string; readonly params: CexCrowdNotAdverseConfig }
   | { readonly type: 'paired-cex-crowd'; readonly id?: string; readonly params: PairedCexCrowdConfig }
-  | { readonly type: 'baseline-paired-overlay'; readonly id?: string; readonly params: BaselinePairedOverlayConfig };
+  | { readonly type: 'baseline-paired-overlay'; readonly id?: string; readonly params: BaselinePairedOverlayConfig }
+  | { readonly type: 'order-book-wall'; readonly id?: string; readonly params: OrderBookWallConfig }
+  | { readonly type: 'crowd-deviation'; readonly id?: string; readonly params: CrowdDeviationConfig };
 
 export interface StrategyExecutionOverrides {
   readonly postOnly?: boolean;
@@ -177,6 +183,22 @@ export function createStrategy(
 
     case 'baseline-paired-overlay':
       return new BaselinePairedOverlayStrategy(config.params, config.id, logger, journal);
+
+    case 'order-book-wall': {
+      const obwId = config.id ?? `obw-${config.params.side}-${Date.now()}`;
+      return new OrderBookWallStrategy(obwId, config.params, logger);
+    }
+
+    case 'crowd-deviation':
+      return new CrowdDeviationStrategy(
+        {
+          ...config.params,
+          postOnly: execution?.postOnly ?? config.params.postOnly,
+        },
+        config.id,
+        logger,
+        journal,
+      );
 
     default:
       throw new Error(`Unknown strategy type: ${(config as { type: string }).type}`);

@@ -44,6 +44,8 @@ import type { CalibrationRulesConfig } from '../strategies/CalibrationRulesStrat
 import type { CalibratedCrowdConfig, CexCrowdNotAdverseConfig } from '../strategies/calibrated-crowd/index.js';
 import type { PairedCexCrowdConfig } from '../strategies/PairedCexCrowdStrategy.js';
 import type { BaselinePairedOverlayConfig } from '../strategies/BaselinePairedOverlayStrategy.js';
+import type { OrderBookWallConfig } from '../strategies/order-book-wall/index.js';
+import type { CrowdDeviationConfig } from '../strategies/CrowdDeviationStrategy.js';
 import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 
 // ── Режим работы ─────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag' | 'cex-lead-lag-exit-policy' | 'cex-lead-lag-risk-budget' | 'calibration-rules' | 'calibrated-crowd' | 'calibrated-crowd-cex' | 'paired-cex-crowd' | 'baseline-paired-overlay';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag' | 'cex-lead-lag-exit-policy' | 'cex-lead-lag-risk-budget' | 'calibration-rules' | 'calibrated-crowd' | 'calibrated-crowd-cex' | 'paired-cex-crowd' | 'baseline-paired-overlay' | 'order-book-wall' | 'crowd-deviation';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
@@ -218,7 +220,9 @@ export type AnyStrategyParams =
   | CalibratedCrowdConfig
   | CexCrowdNotAdverseConfig
   | PairedCexCrowdConfig
-  | BaselinePairedOverlayConfig;
+  | BaselinePairedOverlayConfig
+  | OrderBookWallConfig
+  | CrowdDeviationConfig;
 
 /**
  * Фильтр для маршрутизации рынка на конкретную стратегию.

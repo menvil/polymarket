@@ -3394,6 +3394,9 @@ async function runLive(): Promise<void> {
     hardStartMs: number;
     easyStrikeLocked: boolean;
     hardStrikeLocked: boolean;
+    easyQuestion: string;
+    hardQuestion: string;
+    openedAtMs: number;
   }>();
   let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
@@ -3766,6 +3769,8 @@ async function runLive(): Promise<void> {
     };
     const arbStrategy = new CrossMarketArbStrategy(fullArbConfig, marketDataStore, strategyId, logger);
 
+    // Флаг: hedge-ордер размещён и ждём fill — предотвращает double-hedge между тиками
+    let hedgePending = false;
     arbStrategy.setTradeCallback(async (plan): Promise<ArbTradeExecutionReport> => {
       const currentPortfolio = portfolioStore.get(accountId!);
       const plannedSize = plan.size.value().toNumber();
@@ -3792,36 +3797,44 @@ async function runLive(): Promise<void> {
       const hardLeg = resolveLeg(plan.hardInstrumentId);
       if (!easyLeg || !hardLeg) return emptyReport('REJECTED');
 
-      const requiredCash = plannedSize * (plan.estimatedCostPerUnit + plan.estimatedFeePerUnit);
-      const availableCash = currentPortfolio.balance.available().value().toNumber();
-      if (availableCash < requiredCash) return emptyReport('REJECTED');
-
-      // Polymarket min order notional = $1. Reject plan до размещения ордеров.
-      const minOrderNotional = 1.0;
-      const easyNotional = plan.easyPrice.value().toNumber() * plannedSize;
-      const hardNotional = plan.hardPrice.value().toNumber() * plannedSize;
-      if (easyNotional < minOrderNotional || hardNotional < minOrderNotional) {
-        logger.warn('Arb plan rejected: order notional below $1 minimum', {
-          easyNotional: easyNotional.toFixed(4),
-          hardNotional: hardNotional.toFixed(4),
-          plannedSize,
-        });
-        return emptyReport('REJECTED');
-      }
-
-      // Защита от повторного входа: реальные позиции могут опережать _currentPositionUnits
-      // если предыдущий коллбэк вернул accepted:false после частичного fill.
+      // Detect hedge mode first: одна нога есть, другая отсутствует (split FAK race condition).
+      // В hedge mode пропускаем обычные cash/notional/capacity guards — используем отдельный путь.
       const existingEasyQty = currentPortfolio.getPosition(easyLeg.instrumentId)?.quantity.value().toNumber() ?? 0;
       const existingHardQty = currentPortfolio.getPosition(hardLeg.instrumentId)?.quantity.value().toNumber() ?? 0;
       const maxPos = fullArbConfig.maxPositionUnits;
-      if (existingEasyQty + plannedSize > maxPos || existingHardQty + plannedSize > maxPos) {
-        logger.warn('Arb plan rejected: position already at or near limit', {
-          existingEasyQty,
-          existingHardQty,
-          plannedSize,
-          maxPositionUnits: maxPos,
-        });
-        return emptyReport('REJECTED');
+      const isUnhedgedHard = existingHardQty > 0.000001 && existingEasyQty < 0.000001;
+      const isUnhedgedEasy = existingEasyQty > 0.000001 && existingHardQty < 0.000001;
+      const isHedgeMode = isUnhedgedHard || isUnhedgedEasy;
+
+      if (!isHedgeMode) {
+        const requiredCash = plannedSize * (plan.estimatedCostPerUnit + plan.estimatedFeePerUnit);
+        const availableCash = currentPortfolio.balance.available().value().toNumber();
+        if (availableCash < requiredCash) return emptyReport('REJECTED');
+
+        // Polymarket min order notional = $1. Reject plan до размещения ордеров.
+        const minOrderNotional = 1.0;
+        const easyNotional = plan.easyPrice.value().toNumber() * plannedSize;
+        const hardNotional = plan.hardPrice.value().toNumber() * plannedSize;
+        if (easyNotional < minOrderNotional || hardNotional < minOrderNotional) {
+          logger.warn('Arb plan rejected: order notional below $1 minimum', {
+            easyNotional: easyNotional.toFixed(4),
+            hardNotional: hardNotional.toFixed(4),
+            plannedSize,
+          });
+          return emptyReport('REJECTED');
+        }
+
+        // Защита от повторного входа: реальные позиции могут опережать _currentPositionUnits
+        // если предыдущий коллбэк вернул accepted:false после частичного fill.
+        if (existingEasyQty + plannedSize > maxPos || existingHardQty + plannedSize > maxPos) {
+          logger.warn('Arb plan rejected: position already at or near limit', {
+            existingEasyQty,
+            existingHardQty,
+            plannedSize,
+            maxPositionUnits: maxPos,
+          });
+          return emptyReport('REJECTED');
+        }
       }
 
       const orderType = arbConfig.executionOrderType ?? 'FAK';
@@ -3878,6 +3891,111 @@ async function runLive(): Promise<void> {
           conservativePnl: conservativeSettlementValue - actualNotional - actualFees,
         };
       };
+
+      // Hedge mode: одна нога куплена, второй нет — размещаем только недостающую FAK.
+      // Повторяется каждый тик пока hedge не заполнится или рынок не закроется.
+      if (isHedgeMode) {
+        if (hedgePending) {
+          logger.debug('Arb hedge skipped: hedge order already pending');
+          return emptyReport('REJECTED');
+        }
+        const missingLeg = isUnhedgedHard ? easyLeg : hardLeg;
+        const existingQty = isUnhedgedHard ? existingHardQty : existingEasyQty;
+        const hedgeSizeNum = Math.max(1, Math.min(Math.floor(existingQty), maxPos));
+        const missingLegTob = marketDataStore.getTopOfBook(missingLeg.instrumentId);
+        const currentAsk = missingLegTob?.bestAsk?.value().toNumber() ?? null;
+        const maxHedgePrice = 0.75;
+        const hedgeBuffer = 0.03;
+        if (currentAsk === null) {
+          logger.warn('Arb hedge skipped: no book data for missing leg', {
+            missingLeg: isUnhedgedHard ? 'EASY' : 'HARD',
+            instrumentId: String(missingLeg.instrumentId),
+          });
+          return emptyReport('REJECTED');
+        }
+        if (currentAsk > maxHedgePrice) {
+          logger.warn('Arb hedge skipped: ask above ceiling', {
+            missingLeg: isUnhedgedHard ? 'EASY' : 'HARD',
+            currentAsk: currentAsk.toFixed(4),
+            maxHedgePrice,
+          });
+          return emptyReport('REJECTED');
+        }
+        const hedgePriceNum = Math.min(currentAsk + hedgeBuffer, 0.99);
+        const hedgeNotional = hedgePriceNum * hedgeSizeNum;
+        if (hedgeNotional < 1.0) {
+          logger.warn('Arb hedge skipped: notional below $1 minimum', {
+            missingLeg: isUnhedgedHard ? 'EASY' : 'HARD',
+            hedgeNotional: hedgeNotional.toFixed(4),
+            hedgeSizeNum,
+            hedgePriceNum: hedgePriceNum.toFixed(4),
+          });
+          return emptyReport('REJECTED');
+        }
+        logger.warn('Arb hedge mode: placing single FAK for missing leg', {
+          missingLeg: isUnhedgedHard ? 'EASY' : 'HARD',
+          instrumentId: String(missingLeg.instrumentId),
+          currentAsk: currentAsk.toFixed(4),
+          hedgePrice: hedgePriceNum.toFixed(4),
+          hedgeSizeNum,
+          existingEasyQty: existingEasyQty.toFixed(4),
+          existingHardQty: existingHardQty.toFixed(4),
+        });
+        const hedgeBeforeQty = qtyOf(missingLeg.instrumentId);
+        hedgePending = true;
+        try {
+          const hedgeOrderId = asOrderId(`arb-live-hedge-${_liveArbOrderCounter++}-${Date.now()}`);
+          if (!hedgeOrderId) return emptyReport('REJECTED');
+          const hedgePortfolio = portfolioStore.get(accountId!);
+          if (!hedgePortfolio) return emptyReport('REJECTED');
+          const hedgePriceVO = Price.of(new Decimal(hedgePriceNum.toFixed(4)));
+          const hedgeSizeVO = Quantity.of(new Decimal(hedgeSizeNum));
+          const hedgeResult = await orderUseCases.placeOrderUseCase.execute({
+            orderId: hedgeOrderId,
+            accountId: accountId!,
+            asset: missingLeg.asset,
+            instrumentId: missingLeg.instrumentId,
+            side: 'BUY',
+            price: hedgePriceVO,
+            size: hedgeSizeVO,
+            orderType: 'FAK',
+            strategyId,
+            portfolio: hedgePortfolio,
+            openOrdersCount: 0,
+          });
+          if (!hedgeResult.ok) return emptyReport('REJECTED');
+          await waitForOrdersMatchedOrTimeout([String(hedgeOrderId)], reconcileDelayMs);
+          await cancelIfPlaced(hedgeResult.value, 'arb hedge reconciliation');
+          await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+          const hedgeFilledQty = Math.max(0, qtyOf(missingLeg.instrumentId) - hedgeBeforeQty);
+          const totalEasyQty = isUnhedgedHard ? hedgeFilledQty : existingEasyQty;
+          const totalHardQty = isUnhedgedHard ? existingHardQty : hedgeFilledQty;
+          const balancedSize = Math.min(totalEasyQty, totalHardQty);
+          const unhedgedSize = Math.abs(totalEasyQty - totalHardQty);
+          logger.warn('Arb hedge result', {
+            missingLeg: isUnhedgedHard ? 'EASY' : 'HARD',
+            hedgeFilledQty: hedgeFilledQty.toFixed(4),
+            balancedSize: balancedSize.toFixed(4),
+            unhedgedSize: unhedgedSize.toFixed(4),
+            hedgePrice: hedgePriceNum.toFixed(4),
+          });
+          return {
+            accepted: balancedSize > 0,
+            repairState: hedgeFilledQty > 0 ? 'REBALANCED' : 'FAILED_REPAIR',
+            plannedSize,
+            easyFilledSize: totalEasyQty,
+            hardFilledSize: totalHardQty,
+            balancedSize,
+            unhedgedSize,
+            actualNotional: hedgeFilledQty * hedgePriceNum,
+            actualFees: balancedSize * plan.estimatedFeePerUnit,
+            conservativeSettlementValue: balancedSize,
+            conservativePnl: balancedSize - hedgeFilledQty * hedgePriceNum - balancedSize * plan.estimatedFeePerUnit,
+          };
+        } finally {
+          hedgePending = false;
+        }
+      }
 
       const easyOrderId = asOrderId(`arb-live-easy-${_liveArbOrderCounter++}-${Date.now()}`);
       const hardOrderId = asOrderId(`arb-live-hard-${_liveArbOrderCounter++}-${Date.now()}`);
@@ -3942,65 +4060,95 @@ async function runLive(): Promise<void> {
       const rebalanceLeg = missingEasy ? easyLeg : hardLeg;
       const missingLegTob = marketDataStore.getTopOfBook(rebalanceLeg.instrumentId);
       const rebalancePrice: Price = missingLegTob?.bestAsk ?? (missingEasy ? plan.easyPrice : plan.hardPrice);
+      const rebalancePriceNum = rebalancePrice.value().toNumber();
 
-      // Фиксируем baseline ДО repair: исключает поздние WS-fills оригинального ордера из счёта
-      const repairBaseEasyQty = qtyOf(easyLeg.instrumentId);
-      const repairBaseHardQty = qtyOf(hardLeg.instrumentId);
+      // Проверяем прибыльность repair по ТЕКУЩЕЙ книге: читаем обе ноги из marketDataStore.
+      // plan-цены устарели — рынок мог сдвинуться за время reconcileDelayMs.
+      // Вопрос: если купить обе ноги прямо сейчас по текущим аск-ценам — есть ли ещё арб?
+      const filledLegInstrument = missingEasy ? hardLeg.instrumentId : easyLeg.instrumentId;
+      const filledLegTob = marketDataStore.getTopOfBook(filledLegInstrument);
+      const filledLegFallback = missingEasy
+        ? plan.hardPrice.value().toNumber()
+        : plan.easyPrice.value().toNumber();
+      const filledLegCurrentAsk = filledLegTob?.bestAsk?.value().toNumber() ?? filledLegFallback;
+      const combinedCostIfRepair = filledLegCurrentAsk + rebalancePriceNum;
+      const repairIsProfitable = combinedCostIfRepair < 1.0 - (fullArbConfig.minSpreadAfterFees ?? 0.001);
 
-      const rebalanceOrderId = asOrderId(`arb-live-rebalance-${_liveArbOrderCounter++}-${Date.now()}`);
-      if (rebalanceOrderId) {
-        const repairPortfolio = portfolioStore.get(accountId!);
-        if (repairPortfolio) {
-          logger.info('Arb rebalance: placing repair leg at current TOB price', {
-            missingLeg: missingEasy ? 'EASY' : 'HARD',
-            instrumentId: String(rebalanceLeg.instrumentId),
-            rebalancePrice: rebalancePrice.value().toFixed(4),
-            stalePlanPrice: missingEasy
-              ? plan.easyPrice.value().toFixed(4)
-              : plan.hardPrice.value().toFixed(4),
-            unhedgedSize: report.unhedgedSize,
-          });
-          await orderUseCases.placeOrderUseCase.execute({
-            orderId: rebalanceOrderId,
-            accountId: accountId!,
-            asset: rebalanceLeg.asset,
-            instrumentId: rebalanceLeg.instrumentId,
-            side: 'BUY',
-            price: rebalancePrice,
-            size: Quantity.of(new Decimal(report.unhedgedSize)),
-            orderType: 'FAK',
-            strategyId,
-            portfolio: repairPortfolio,
-            openOrdersCount: 0,
-          });
-          await waitForOrdersMatchedOrTimeout([String(rebalanceOrderId)], repairDelayMs);
-          await cancelIfPlaced(rebalanceOrderId, 'arb rebalance reconciliation');
-          await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+      if (!repairIsProfitable) {
+        logger.warn('Arb repair skipped: combined cost unprofitable at current book, unwinding filled leg', {
+          missingLeg: missingEasy ? 'EASY' : 'HARD',
+          filledLegCurrentAsk: filledLegCurrentAsk.toFixed(4),
+          rebalancePrice: rebalancePriceNum.toFixed(4),
+          combinedCostIfRepair: combinedCostIfRepair.toFixed(4),
+          minSpreadRequired: fullArbConfig.minSpreadAfterFees ?? 0.001,
+          unhedgedSize: report.unhedgedSize,
+        });
+        report = { ...report, repairState: 'NEEDS_UNWIND' };
+      } else {
+        // Фиксируем baseline ДО repair: исключает поздние WS-fills оригинального ордера из счёта
+        const repairBaseEasyQty = qtyOf(easyLeg.instrumentId);
+        const repairBaseHardQty = qtyOf(hardLeg.instrumentId);
 
-          // Инкрементальный подсчёт: только fills repair-фазы + оригинальные из первого отчёта.
-          // Предотвращает двойной счёт если поздний WS-fill оригинала пришёл во время repair-окна.
-          const repairEasyFill = Math.max(0, qtyOf(easyLeg.instrumentId) - repairBaseEasyQty);
-          const repairHardFill = Math.max(0, qtyOf(hardLeg.instrumentId) - repairBaseHardQty);
-          const totalEasyFilled = report.easyFilledSize + repairEasyFill;
-          const totalHardFilled = report.hardFilledSize + repairHardFill;
-          const rebalancedSize = Math.min(totalEasyFilled, totalHardFilled);
-          const rebalancedUnhedged = Math.abs(totalEasyFilled - totalHardFilled);
-          const rebalancedNotional = totalEasyFilled * plan.easyPrice.value().toNumber()
-            + totalHardFilled * plan.hardPrice.value().toNumber();
-          report = {
-            accepted: rebalancedSize > 0 && rebalancedUnhedged < 0.000001,
-            repairState: 'REBALANCED',
-            plannedSize,
-            easyFilledSize: totalEasyFilled,
-            hardFilledSize: totalHardFilled,
-            balancedSize: rebalancedSize,
-            unhedgedSize: rebalancedUnhedged,
-            actualNotional: rebalancedNotional,
-            actualFees: rebalancedSize * plan.estimatedFeePerUnit,
-            conservativeSettlementValue: rebalancedSize,
-            conservativePnl: rebalancedSize - rebalancedNotional - rebalancedSize * plan.estimatedFeePerUnit,
-          };
-          if (report.unhedgedSize <= 0.000001) return { ...report, accepted: report.balancedSize > 0 };
+        const rebalanceOrderId = asOrderId(`arb-live-rebalance-${_liveArbOrderCounter++}-${Date.now()}`);
+        if (rebalanceOrderId) {
+          const repairPortfolio = portfolioStore.get(accountId!);
+          if (repairPortfolio) {
+            logger.info('Arb rebalance: placing repair leg at current TOB price', {
+              missingLeg: missingEasy ? 'EASY' : 'HARD',
+              instrumentId: String(rebalanceLeg.instrumentId),
+              rebalancePrice: rebalancePriceNum.toFixed(4),
+              stalePlanPrice: missingEasy
+                ? plan.easyPrice.value().toFixed(4)
+                : plan.hardPrice.value().toFixed(4),
+              combinedCostIfRepair: combinedCostIfRepair.toFixed(4),
+              unhedgedSize: report.unhedgedSize,
+            });
+            await orderUseCases.placeOrderUseCase.execute({
+              orderId: rebalanceOrderId,
+              accountId: accountId!,
+              asset: rebalanceLeg.asset,
+              instrumentId: rebalanceLeg.instrumentId,
+              side: 'BUY',
+              price: rebalancePrice,
+              size: Quantity.of(new Decimal(report.unhedgedSize)),
+              orderType: 'FAK',
+              strategyId,
+              portfolio: repairPortfolio,
+              openOrdersCount: 0,
+            });
+            await waitForOrdersMatchedOrTimeout([String(rebalanceOrderId)], repairDelayMs);
+            await cancelIfPlaced(rebalanceOrderId, 'arb rebalance reconciliation');
+            await liveInfra.reconcileTradesUseCase.execute({ accountId: accountId! });
+
+            // Инкрементальный подсчёт: только fills repair-фазы + оригинальные из первого отчёта.
+            // Предотвращает двойной счёт если поздний WS-fill оригинала пришёл во время repair-окна.
+            const repairEasyFill = Math.max(0, qtyOf(easyLeg.instrumentId) - repairBaseEasyQty);
+            const repairHardFill = Math.max(0, qtyOf(hardLeg.instrumentId) - repairBaseHardQty);
+            const totalEasyFilled = report.easyFilledSize + repairEasyFill;
+            const totalHardFilled = report.hardFilledSize + repairHardFill;
+            const rebalancedSize = Math.min(totalEasyFilled, totalHardFilled);
+            const rebalancedUnhedged = Math.abs(totalEasyFilled - totalHardFilled);
+            // Нотионал: оригинальные fills по plan-цене + repair-fills по фактической rebalancePrice
+            const repairLegFills = missingEasy ? repairEasyFill : repairHardFill;
+            const rebalancedNotional =
+              report.easyFilledSize * plan.easyPrice.value().toNumber()
+              + report.hardFilledSize * plan.hardPrice.value().toNumber()
+              + repairLegFills * rebalancePriceNum;
+            report = {
+              accepted: rebalancedSize > 0 && rebalancedUnhedged < 0.000001,
+              repairState: 'REBALANCED',
+              plannedSize,
+              easyFilledSize: totalEasyFilled,
+              hardFilledSize: totalHardFilled,
+              balancedSize: rebalancedSize,
+              unhedgedSize: rebalancedUnhedged,
+              actualNotional: rebalancedNotional,
+              actualFees: rebalancedSize * plan.estimatedFeePerUnit,
+              conservativeSettlementValue: rebalancedSize,
+              conservativePnl: rebalancedSize - rebalancedNotional - rebalancedSize * plan.estimatedFeePerUnit,
+            };
+            if (report.unhedgedSize <= 0.000001) return { ...report, accepted: report.balancedSize > 0 };
+          }
         }
       }
 
@@ -4076,6 +4224,7 @@ async function runLive(): Promise<void> {
       activeMarkets.delete(hardUpTokenStr);
       return false;
     }
+    activeCompTokens.add(easyUpTokenStr);
     activeCompTokens.add(hardDownTokenStr);
     if (easyDownTokenStr) activeCompTokens.add(easyDownTokenStr);
 
@@ -4134,6 +4283,9 @@ async function runLive(): Promise<void> {
       hardStartMs,
       easyStrikeLocked: easyCryptoMeta?.priceToBeat !== undefined,
       hardStrikeLocked: hardCryptoMeta?.priceToBeat !== undefined,
+      easyQuestion: easyCandidate.question ?? String(easyCandidate.marketId),
+      hardQuestion: hardCandidate.question ?? String(hardCandidate.marketId),
+      openedAtMs: Date.now(),
     });
 
     logger.warn('Live arb pair opened', {
@@ -4213,6 +4365,68 @@ async function runLive(): Promise<void> {
     const pair = liveActiveArbPairs.get(pairId);
     if (!pair) return;
 
+    const durMs = Date.now() - pair.openedAtMs;
+    const durMin = Math.floor(durMs / 60_000);
+    const durSec = Math.floor((durMs % 60_000) / 1000);
+    const metrics = pair.strategy.getMetrics() as Record<string, unknown>;
+    const bestObserved = metrics['bestObserved'] as Record<string, unknown> | null | undefined;
+    const auditEventCounts = metrics['auditEventCounts'] as Record<string, unknown> | undefined;
+    const assignment = metrics['assignment'] ?? 'unknown';
+    const strikeEasyMarket = assignment === 'SLOT_IS_EASY' ? pair.hardQuestion : pair.easyQuestion;
+    const strikeHardMarket = assignment === 'SLOT_IS_EASY' ? pair.easyQuestion : pair.hardQuestion;
+    const fmtN = (v: unknown, d: number): string | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : null;
+    logger.warn('=== Live arb pair summary ===', {
+      pairId,
+      longWindowMarket: pair.easyQuestion,
+      shortWindowMarket: pair.hardQuestion,
+      strikeEasyMarket,
+      strikeHardMarket,
+      duration: `${durMin}m${durSec}s`,
+      assignment,
+      ticks: metrics['tickCount'] ?? 0,
+      divergences: metrics['divergenceCount'] ?? 0,
+      trades: metrics['tradeCount'] ?? 0,
+      acceptedSettlementFaceValue: fmtN(metrics['acceptedSettlementFaceValue'], 4),
+      acceptedPlannedCost: fmtN(metrics['acceptedPlannedCost'], 4),
+      acceptedPlannedFees: fmtN(metrics['acceptedPlannedFees'], 4),
+      acceptedPlannedAllInCost: fmtN(metrics['acceptedPlannedAllInCost'], 4),
+      actualNotional: fmtN(metrics['actualNotional'], 4),
+      actualFees: fmtN(metrics['actualFees'], 4),
+      actualConservativePnl: fmtN(metrics['actualConservativePnl'], 4),
+      unhedgedExecutionCount: metrics['unhedgedExecutionCount'] ?? 0,
+      failedRepairCount: metrics['failedRepairCount'] ?? 0,
+      repairStateCounts: metrics['repairStateCounts'] ?? {},
+      freshEvaluations: metrics['freshEvaluations'] ?? 0,
+      grossCrossSamples: metrics['grossCrossSamples'] ?? 0,
+      netSignalSamples: metrics['netSignalSamples'] ?? 0,
+      skipMissingBook: auditEventCounts?.['SKIP_MISSING_BOOK'] ?? 0,
+      skipStaleBook: auditEventCounts?.['SKIP_STALE_BOOK'] ?? 0,
+      noSignal: auditEventCounts?.['NO_SIGNAL'] ?? 0,
+      skipCapacity: auditEventCounts?.['SKIP_CAPACITY'] ?? 0,
+      skipBalance: auditEventCounts?.['SKIP_BALANCE'] ?? 0,
+      signalAccepted: auditEventCounts?.['SIGNAL_ACCEPTED'] ?? 0,
+      bestObservedAt: bestObserved?.['observedAt'] ?? null,
+      bestObservedPnlPerUnit: fmtN(bestObserved?.['pnlPerUnit'], 5),
+      bestObservedCostPerUnit: fmtN(bestObserved?.['costPerUnit'], 5),
+      bestObservedFeePerUnit: fmtN(bestObserved?.['feePerUnit'], 5),
+      bestObservedSize: bestObserved?.['execSize'] ?? null,
+      bestObservedExecutableCost: typeof bestObserved?.['costPerUnit'] === 'number' && typeof bestObserved?.['execSize'] === 'number'
+        ? ((bestObserved['costPerUnit'] as number) * (bestObserved['execSize'] as number)).toFixed(4)
+        : null,
+      bestObservedPotentialPnl: typeof bestObserved?.['pnlPerUnit'] === 'number' && typeof bestObserved?.['execSize'] === 'number'
+        ? ((bestObserved['pnlPerUnit'] as number) * (bestObserved['execSize'] as number)).toFixed(4)
+        : null,
+      bestObservedEasyAgeMs: bestObserved?.['easyBookAgeMs'] ?? null,
+      bestObservedHardAgeMs: bestObserved?.['hardBookAgeMs'] ?? null,
+      estimatedPnl: typeof metrics['totalPnlEstimate'] === 'object'
+        ? (metrics['totalPnlEstimate'] as { toFixed: (n: number) => string }).toFixed(4)
+        : String(metrics['totalPnlEstimate'] ?? 0),
+      longWindowStrike: pair.easyStrikeLocked ? 'set' : 'pending',
+      shortWindowStrike: pair.hardStrikeLocked ? 'set' : 'pending',
+      reason,
+    });
+
     logger.info('Closing live arb pair', { pairId, reason });
 
     // Hard-слот — полный teardown через rotation (cancel orders, settlement, activeMarkets.delete)
@@ -4230,6 +4444,7 @@ async function runLive(): Promise<void> {
     if (pair.easyDownInstrumentId) marketCatalog.remove(pair.easyDownInstrumentId);
 
     // activeCompTokens cleanup
+    activeCompTokens.delete(pair.easyTokenIdStr);
     activeCompTokens.delete(pair.hardDownTokenIdStr);
     if (pair.easyDownTokenIdStr) activeCompTokens.delete(pair.easyDownTokenIdStr);
 

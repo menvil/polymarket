@@ -161,7 +161,7 @@ export class PolymarketMarketDataRestClient {
     this.config = {
       ...config,
       timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
-      maxPages: config.maxPages ?? 12,
+      maxPages: config.maxPages ?? 100, // 100 pages × 100/page = до 10 000 рынков
     };
 
     this.logger = logger.child({ component: 'PolymarketMarketDataRestClient' });
@@ -174,8 +174,9 @@ export class PolymarketMarketDataRestClient {
    * @throws {Error} При ошибке API-вызова
    *
    * @remarks
-   * Постранично загружает все активные рынки (до 25 000).
-   * Сортировка по убыванию объёма (наибольший объём первым).
+   * Постранично загружает все активные рынки (до 10 000).
+   * Gamma API молча ограничивает страницу 100 записями независимо от `limit`.
+   * Zombie-рынки (endDate в прошлом, не помечены closed) пропускаются на лету.
    *
    * @example
    * ```typescript
@@ -186,11 +187,18 @@ export class PolymarketMarketDataRestClient {
   async getActiveMarkets(): Promise<GammaMarketDto[]> {
     const allMarkets: GammaMarketDto[] = [];
     let offset = 0;
-    const limit = 500;
+    // Gamma API silently caps responses at 100 regardless of limit param.
+    // Use 100 so batch.length < limit correctly detects the last page.
+    const limit = 100;
     const maxPages = this.config.maxPages;
     // end_date_max API param causes HTTP 500 for all formats — filter client-side instead.
     // Since results are sorted by endDate ascending, we stop as soon as we pass the cutoff.
-    const endDateCutoffMs = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const endDateCutoffMs = nowMs + 2 * 24 * 60 * 60 * 1000;
+    // Grace window: skip markets that expired more than 2 minutes ago (zombie markets
+    // from 2025 that are not marked closed by Gamma API). These appear on early pages
+    // sorted by endDate ascending and would otherwise flood the result set.
+    const endDateMinMs = nowMs - 2 * 60 * 1000;
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -230,20 +238,31 @@ export class PolymarketMarketDataRestClient {
         // Отсекаем рынки за пределами cutoff и останавливаем пагинацию.
         // endDate отсортирован по возрастанию, поэтому первый рынок за cutoff
         // означает, что все следующие страницы тоже выходят за него.
-        const lastEndDateMs = batch.length > 0 ? Date.parse(batch[batch.length - 1].endDate) : 0;
+        const lastEndDateMs = batch.length > 0 ? Date.parse(batch[batch.length - 1]!.endDate) : 0;
         if (lastEndDateMs > endDateCutoffMs) {
-          const withinCutoff = batch.filter((m) => Date.parse(m.endDate) <= endDateCutoffMs);
-          allMarkets.push(...withinCutoff);
+          const withinWindow = batch.filter(
+            (m) => { const t = Date.parse(m.endDate); return t >= endDateMinMs && t <= endDateCutoffMs; }
+          );
+          allMarkets.push(...withinWindow);
           this.logger.debug('[Gamma API] Reached endDate cutoff, stopping pagination early', {
             page,
             batchSize: batch.length,
-            withinCutoff: withinCutoff.length,
+            withinWindow: withinWindow.length,
             cutoffIso: new Date(endDateCutoffMs).toISOString(),
           });
           break;
         }
 
-        allMarkets.push(...batch);
+        // Пропускаем просроченные zombie-рынки (endDate в прошлом), но продолжаем пагинацию.
+        const withinWindow = batch.filter((m) => Date.parse(m.endDate) >= endDateMinMs);
+        const skipped = batch.length - withinWindow.length;
+        if (skipped > 0) {
+          this.logger.debug('[Gamma API] Skipped zombie markets with past endDate', {
+            page, offset, skipped, kept: withinWindow.length,
+          });
+        }
+
+        allMarkets.push(...withinWindow);
         offset += limit;
 
         // Если получили меньше limit, значит достигли конца

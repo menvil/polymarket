@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "desc": "CrowdDeviation 2-day backtest — OOS May 1-2 2026",
+    "status": "active",
+    "backtest": {
+      "dataset": "5-min BTC Up or Down, May 1-2 OOS",
+      "notes": "Baseline: entryDevCents=30, minDelta=25, all regimes."
+    }
+  },
+  "strategy": "crowd-deviation",
+  "resources": {
+    "initialBalance": 200,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": false
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "tableFile": "tables/edge-table-5min-full-mar-apr-up.json",
+    "orderSize": 10,
+    "entryDevCents": 30,
+    "minDeltaDollars": 25,
+    "minTauSec": 30,
+    "maxTauSec": 300,
+    "regimeFilter": "all",
+    "bidOffsetCents": 1,
+    "warmupSec": 0,
+    "postOnly": false
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-01/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-02/polymarket/*Bitcoin_Up_or_Down*"
+    ],
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  }
+}
