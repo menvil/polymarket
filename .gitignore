@@ -62,3 +62,6 @@ snapshots/
 
 # Bot strategy data cache (large jsonl files)
 apps/bot/.cache/
+
+# Bot tables (edge tables, CEX cache — large data files, not code)
+apps/bot/tables/
