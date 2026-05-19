@@ -58,6 +58,8 @@ import { OrderBookWallStrategy } from './strategies/order-book-wall/index.js';
 import type { OrderBookWallConfig } from './strategies/order-book-wall/index.js';
 import { CrowdDeviationStrategy } from './strategies/CrowdDeviationStrategy.js';
 import type { CrowdDeviationConfig } from './strategies/CrowdDeviationStrategy.js';
+import { CrowdDeviationTPSLStrategy } from './strategies/CrowdDeviationTPSLStrategy.js';
+import type { CrowdDeviationTPSLConfig } from './strategies/CrowdDeviationTPSLStrategy.js';
 
 // ── Типы конфигурации ────────────────────────────────────────────────────────
 
@@ -84,7 +86,8 @@ export type StrategyConfig =
   | { readonly type: 'paired-cex-crowd'; readonly id?: string; readonly params: PairedCexCrowdConfig }
   | { readonly type: 'baseline-paired-overlay'; readonly id?: string; readonly params: BaselinePairedOverlayConfig }
   | { readonly type: 'order-book-wall'; readonly id?: string; readonly params: OrderBookWallConfig }
-  | { readonly type: 'crowd-deviation'; readonly id?: string; readonly params: CrowdDeviationConfig };
+  | { readonly type: 'crowd-deviation'; readonly id?: string; readonly params: CrowdDeviationConfig }
+  | { readonly type: 'crowd-deviation-tpsl'; readonly id?: string; readonly params: CrowdDeviationTPSLConfig };
 
 export interface StrategyExecutionOverrides {
   readonly postOnly?: boolean;
@@ -191,6 +194,17 @@ export function createStrategy(
 
     case 'crowd-deviation':
       return new CrowdDeviationStrategy(
+        {
+          ...config.params,
+          postOnly: execution?.postOnly ?? config.params.postOnly,
+        },
+        config.id,
+        logger,
+        journal,
+      );
+
+    case 'crowd-deviation-tpsl':
+      return new CrowdDeviationTPSLStrategy(
         {
           ...config.params,
           postOnly: execution?.postOnly ?? config.params.postOnly,

@@ -97,7 +97,7 @@ export function parseConfig(
   }
 
   const strategyFromEnv = env['STRATEGY'] as StrategyType | undefined;
-  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'cex-lead-lag-exit-policy', 'cex-lead-lag-risk-budget', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay', 'order-book-wall', 'crowd-deviation'];
+  const VALID_STRATEGIES: StrategyType[] = ['dumb', 'avellaneda-stoikov', 'cross-market-arb', 'prob-table', 'crypto-prob', 'selective-entry', 'oscillation-mm', 'momentum-scalp', 'smart-entry', 'adaptive-entry', 'fair-value-mm', 'binance-prob-mm', 'cex-lead-lag', 'cex-lead-lag-exit-policy', 'cex-lead-lag-risk-budget', 'calibration-rules', 'calibrated-crowd', 'calibrated-crowd-cex', 'paired-cex-crowd', 'baseline-paired-overlay', 'order-book-wall', 'crowd-deviation', 'crowd-deviation-tpsl'];
   if (strategyFromEnv && !VALID_STRATEGIES.includes(strategyFromEnv)) {
     errors.push(`Invalid STRATEGY="${strategyFromEnv}". Valid values: ${VALID_STRATEGIES.join(', ')}`);
   }
@@ -618,6 +618,27 @@ function parseStrategyParams(
         result['tableFile'] = raw['tableFile'];
       }
       for (const numField of ['entryDevCents', 'minDeltaDollars', 'maxDeltaDollars', 'minTauSec', 'maxTauSec', 'bidOffsetCents', 'warmupSec', 'makerRepriceAfterSec', 'residualMinBps', 'minEntryPriceCents']) {
+        if (typeof raw[numField] === 'number') result[numField] = raw[numField];
+      }
+      if (raw['regimeFilter'] === 'up' || raw['regimeFilter'] === 'flat' || raw['regimeFilter'] === 'down' || raw['regimeFilter'] === 'all') {
+        result['regimeFilter'] = raw['regimeFilter'];
+      }
+      if (raw['residualFilter'] === 'pos' || raw['residualFilter'] === 'neg' || raw['residualFilter'] === 'all') {
+        result['residualFilter'] = raw['residualFilter'];
+      }
+      if (Array.isArray(raw['cexVenues'])) result['cexVenues'] = raw['cexVenues'];
+      if (typeof raw['cexMinVenueCount'] === 'number') result['cexMinVenueCount'] = raw['cexMinVenueCount'];
+      if (raw['postOnly'] === true || raw['postOnly'] === false) result['postOnly'] = raw['postOnly'];
+      break;
+
+    case 'crowd-deviation-tpsl':
+      if (!result['orderSize']) errors.push('strategyParams.orderSize is required for crowd-deviation-tpsl strategy');
+      if (typeof raw['tableFile'] !== 'string') {
+        errors.push('strategyParams.tableFile is required for crowd-deviation-tpsl strategy');
+      } else {
+        result['tableFile'] = raw['tableFile'];
+      }
+      for (const numField of ['entryDevCents', 'minDeltaDollars', 'maxDeltaDollars', 'minTauSec', 'maxTauSec', 'bidOffsetCents', 'sellOffsetCents', 'warmupSec', 'makerRepriceAfterSec', 'residualMinBps', 'minEntryPriceCents', 'takeProfitCents', 'stopLossCents']) {
         if (typeof raw[numField] === 'number') result[numField] = raw[numField];
       }
       if (raw['regimeFilter'] === 'up' || raw['regimeFilter'] === 'flat' || raw['regimeFilter'] === 'down' || raw['regimeFilter'] === 'all') {

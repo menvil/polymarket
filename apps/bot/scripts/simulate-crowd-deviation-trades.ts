@@ -92,11 +92,12 @@ interface Trade {
   resolution:   'UP' | 'DOWN';
   delta:        number;
   entryTau:     number;
-  entryPrice:   number;   // центы
-  deviation:    number;   // центы (obs - expected)
+  entryPrice:   number;        // центы
+  deviation:    number;        // центы (obs - expected)
   regime:       'up' | 'flat' | 'down';
   residualBps:  number | undefined;
-  pnl:          number;   // (1 - price/100) if UP else -(price/100)
+  pnl:          number;        // (1 - price/100) if UP else -(price/100)
+  exitType:     'tp' | 'sl' | 'expiry';  // как закрылась сделка
 }
 
 // ── Аккумулятор статистики ────────────────────────────────────────────────────
@@ -145,6 +146,8 @@ interface Args {
   residualFilter:  'pos' | 'neg' | 'all';  // pos=CEX > Chainlink
   residualMinBps:  number;                 // минимальный |CEX−Chainlink|/Chainlink в bps
   minEntryPrice:   number;                 // минимальная цена входа в центах (фильтр по цене стакана)
+  tp:              number;                 // take-profit в центах (0 = держать до экспирации)
+  sl:              number;                 // stop-loss в центах (0 = держать до экспирации)
   verbose:         boolean;
   csv:             boolean;                // вывести все сделки как CSV для анализа
 }
@@ -160,6 +163,8 @@ function parseArgs(): Args {
     regimeFilter: 'all', residualFilter: 'all',
     residualMinBps: 0,
     minEntryPrice: 0,
+    tp: 0,
+    sl: 0,
     verbose: false,
     csv: false,
   };
@@ -180,6 +185,8 @@ function parseArgs(): Args {
     else if (a === '--residual-filter')   args.residualFilter  = argv[++i] as Args['residualFilter'];
     else if (a === '--residual-min-bps') args.residualMinBps  = Number(argv[++i]);
     else if (a === '--min-entry-price')  args.minEntryPrice   = Number(argv[++i]);
+    else if (a === '--tp')               args.tp              = Number(argv[++i]);
+    else if (a === '--sl')               args.sl              = Number(argv[++i]);
     else if (a === '--verbose')           args.verbose         = true;
     else if (a === '--csv')               args.csv             = true;
   }
@@ -271,8 +278,13 @@ async function main(): Promise<void> {
     // Сортируем по tau убыванию (наибольший tau = самое раннее время в жизни рынка)
     const sorted = [...data.observations].sort((a, b) => b.tauSec - a.tauSec);
 
-    let entered = false;
-    for (const obs of sorted) {
+    // Ищем первый сигнал — запоминаем индекс для сбора последующих тиков
+    let entryObs: typeof sorted[0] | null = null;
+    let entryIdx = -1;
+    let entryDelta = 0, entryTau = 0, entryDeviation = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const obs = sorted[i]!;
       const delta = toBucket(obs.delta, buck.deltaStep);
       const tau   = toBucket(obs.tauSec, buck.tauStep);
 
@@ -316,21 +328,55 @@ async function main(): Promise<void> {
         if (obs.cexResidualBps < args.residualMinBps) continue;
       }
 
-      // Входим в сделку
-      const pnl = resolution === 'UP'
-        ? (1 - observedCrowd / 100)
-        : -(observedCrowd / 100);
-
-      trades.push({
-        slug: data.slug, resolution, delta, entryTau: tau,
-        entryPrice: observedCrowd, deviation, regime,
-        residualBps: obs.cexResidualBps,
-        pnl,
-      });
-      entered = true;
+      entryObs = obs;
+      entryIdx = i;
+      entryDelta = delta;
+      entryTau = tau;
+      entryDeviation = deviation;
       break;  // только первый сигнал на рынок
     }
-    if (!entered) noSignal++;
+
+    if (!entryObs) { noSignal++; continue; }
+
+    const observedCrowd = entryObs.midPriceCents;
+    const regime = classifyRegime(entryObs.trendSlope, buck.regimeThreshold);
+
+    // Расчёт PnL: с TP/SL или hold-to-expiry
+    let pnl: number;
+    let exitType: Trade['exitType'] = 'expiry';
+
+    if (args.tp > 0 || args.sl > 0) {
+      // Сканируем последующие тики (меньший tau = позже по времени)
+      const subsequentPrices = sorted.slice(entryIdx + 1).map(o => o.midPriceCents);
+      let exited = false;
+      for (const p of subsequentPrices) {
+        if (args.tp > 0 && p >= observedCrowd + args.tp) {
+          pnl = args.tp / 100;
+          exitType = 'tp';
+          exited = true;
+          break;
+        }
+        if (args.sl > 0 && p <= observedCrowd - args.sl) {
+          pnl = -(args.sl / 100);
+          exitType = 'sl';
+          exited = true;
+          break;
+        }
+      }
+      if (!exited) {
+        pnl = resolution === 'UP' ? (1 - observedCrowd / 100) : -(observedCrowd / 100);
+        exitType = 'expiry';
+      }
+    } else {
+      pnl = resolution === 'UP' ? (1 - observedCrowd / 100) : -(observedCrowd / 100);
+    }
+
+    trades.push({
+      slug: data.slug, resolution, delta: entryDelta, entryTau,
+      entryPrice: observedCrowd, deviation: entryDeviation, regime,
+      residualBps: entryObs.cexResidualBps,
+      pnl, exitType,
+    });
   }
 
   console.log(`\nParsed: ${filesOk} OK  |  ${filesSkipped} skipped`);
@@ -348,6 +394,22 @@ async function main(): Promise<void> {
   const all = emptyStats();
   for (const t of trades) addTrade(all, t);
   printStats('ВСЕ СДЕЛКИ', all);
+
+  // ── Breakdown по типу выхода (если TP/SL активен) ────────────────────────
+  if (args.tp > 0 || args.sl > 0) {
+    console.log(`\n${'─'.repeat(90)}`);
+    console.log(`${BOLD}TP/SL ВЫХОД  (tp=${args.tp}¢  sl=${args.sl}¢)${RESET}`);
+    console.log(`${'─'.repeat(90)}`);
+    const sTp = emptyStats(), sSl = emptyStats(), sExp = emptyStats();
+    for (const t of trades) {
+      if (t.exitType === 'tp') addTrade(sTp, t);
+      else if (t.exitType === 'sl') addTrade(sSl, t);
+      else addTrade(sExp, t);
+    }
+    printStats(`TP hit (${args.tp}¢)`, sTp, '  ');
+    printStats(`SL hit (${args.sl}¢)`, sSl, '  ');
+    printStats('hold to expiry', sExp, '  ');
+  }
 
   // ── По режиму ─────────────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(90)}`);
@@ -456,7 +518,10 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n${'═'.repeat(90)}`);
-  console.log(`Допущения: ставка $10 на сделку. PnL = (1 - price/100) если UP, -(price/100) если DOWN.`);
+  const exitNote = (args.tp > 0 || args.sl > 0)
+    ? `TP=${args.tp}¢/SL=${args.sl}¢ по mid-price тиков; оставшиеся — hold to expiry.`
+    : 'PnL = (1 - price/100) если UP, -(price/100) если DOWN.';
+  console.log(`Допущения: ставка $10 на сделку. ${exitNote}`);
   console.log(`Без учёта комиссий и проскальзывания.`);
   console.log(`${'═'.repeat(90)}\n`);
 }

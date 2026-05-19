@@ -54,7 +54,7 @@ import type { CexExchangeConfig } from '@polymarket/cex-market-data';
 export type BotMode = 'live' | 'paper' | 'backtest';
 
 /** Тип стратегии */
-export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag' | 'cex-lead-lag-exit-policy' | 'cex-lead-lag-risk-budget' | 'calibration-rules' | 'calibrated-crowd' | 'calibrated-crowd-cex' | 'paired-cex-crowd' | 'baseline-paired-overlay' | 'order-book-wall' | 'crowd-deviation';
+export type StrategyType = 'dumb' | 'avellaneda-stoikov' | 'cross-market-arb' | 'prob-table' | 'crypto-prob' | 'selective-entry' | 'oscillation-mm' | 'momentum-scalp' | 'smart-entry' | 'adaptive-entry' | 'fair-value-mm' | 'binance-prob-mm' | 'cex-lead-lag' | 'cex-lead-lag-exit-policy' | 'cex-lead-lag-risk-budget' | 'calibration-rules' | 'calibrated-crowd' | 'calibrated-crowd-cex' | 'paired-cex-crowd' | 'baseline-paired-overlay' | 'order-book-wall' | 'crowd-deviation' | 'crowd-deviation-tpsl';
 
 // ── Источник рынка ───────────────────────────────────────────────────────────
 
