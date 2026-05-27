@@ -1,15 +1,13 @@
 /**
- * @polymarket/risk — Pre-trade и post-trade риск-контроль.
+ * @polymarket/risk — Pre-trade риск-контроль.
  *
  * @remarks
  * ### Содержимое пакета:
  * - `OrderRiskChecker` — синхронный пре-трейд риск-чекер (O(1)/O(N))
- * - `DrawdownRiskMonitor` — async пост-трейд мониторинг просадки
  * - `RiskViolationError` — ошибка нарушения риск-лимита
  * - `RiskParams` — параметры риска (все опциональные)
  * - `PreOrderCheckInput` — входные данные для пре-трейд проверки
  * - `IOrderRiskChecker` — интерфейс риск-чекера
- * - `IMarkPricesProvider` — интерфейс провайдера рыночных цен
  *
  * @example
  * ```typescript
@@ -28,10 +26,8 @@
  * ```
  */
 export { OrderRiskChecker } from './OrderRiskChecker.js';
-export { DrawdownRiskMonitor } from './DrawdownRiskMonitor.js';
 export { RiskViolationError } from './RiskViolation.js';
 export type { RiskViolationCode } from './RiskViolation.js';
 export type { RiskParams } from './RiskParams.js';
 export type { PreOrderCheckInput } from './PreOrderCheckInput.js';
 export type { IOrderRiskChecker } from './IOrderRiskChecker.js';
-export type { IMarkPricesProvider } from './IMarkPricesProvider.js';

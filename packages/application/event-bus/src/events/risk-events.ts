@@ -2,7 +2,7 @@
  * Risk-события — нарушения лимитов.
  *
  * @remarks
- * RiskLimitBreachedEvent публикуется OrderRiskChecker или DrawdownRiskMonitor.
+ * RiskLimitBreachedEvent публикуется OrderRiskChecker.
  * StrategyRunner подписывается и останавливает стратегию при нарушении.
  */
 import type { AccountId } from '@polymarket/ids';
