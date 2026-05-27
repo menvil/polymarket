@@ -27,7 +27,7 @@
   "strategyParams": {
     "tableFile": "tables/edge-table-5min-apr-d10-t15-up.json",
     "orderSize": 5,
-    "entryDevCents": 15,
+    "entryDevCents": 5,
     "minEntryPriceCents": 45,
     "minDeltaDollars": 25,
     "minTauSec": 30,
@@ -39,8 +39,8 @@
     "bidOffsetCents": 1,
     "sellOffsetCents": 1,
     "warmupSec": 0,
-    "takeProfitCents": 20,
-    "stopLossCents": 15
+    "takeProfitCents": 25,
+    "stopLossCents": 5
   },
   "market": {
     "source": "discovery",

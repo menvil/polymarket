@@ -10,6 +10,10 @@
  * - `takeProfitCents` — закрыть в плюс если mid вырос на ≥TP от entry (центы, 0=выключено)
  * - `stopLossCents`   — закрыть в минус если mid упал  на ≥SL от entry (центы, 0=выключено)
  *
+ * ### Выход по SL/TP — simulated FOK:
+ * Ставим SELL-taker по `bestBid`. Если через 2с не заполнен → отменяем и перевыставляем
+ * по актуальной цене. Повторяем до заполнения или истечения рынка.
+ *
  * ### First-touch analysis (May 7-13, dev≥15¢, price≥45¢, regime=up):
  * | TP¢ | SL¢ | P(TP first) | EV/trade $5 |
  * |-----|-----|-------------|-------------|
@@ -129,7 +133,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
   private readonly _cexMinVenueCount: number;
   private readonly _orderSize: Decimal;
   private readonly _bidOffset: number;
-  private readonly _sellOffset: number;
+  // _sellOffset unused: SL/TP SELL always places at price=1 (market-like taker fill)
   private readonly _warmupSec: number;
   private readonly _postOnly: boolean;
   private readonly _makerRepriceAfterSec: number;
@@ -141,6 +145,19 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
   private readonly _tauStep: number;
   private readonly _regimeDetector: RegimeDetector;
 
+  /**
+   * После rejection биржи ждём минимум столько мс перед повторной отправкой SELL,
+   * чтобы ордер успел появиться в openOrders (иначе пошлём дубль).
+   */
+  private static readonly _SELL_CONFIRM_GRACE_MS = 3_000;
+
+  /**
+   * FOK-style exit: если SELL-ордер открыт дольше этого времени и не заполнен —
+   * отменяем и выставляем снова по актуальному bid. Simulated Fill-or-Kill.
+   * Taker SELL должен заполняться за 1 snapshot (~200ms), поэтому порог минимальный.
+   */
+  private static readonly _EXIT_ORDER_MAX_AGE_SEC = 0.5;
+
   private _ewma: number | null = null;
   private _tradeCount = 0;
   private _lastTradeTimestampMs = 0;
@@ -148,6 +165,10 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
   private _marketEventStartMs = 0;
   private _pendingPlace = false;
   private _pendingSell = false;
+  /** Метка времени последней эмиссии SELL intent — для grace period */
+  private _pendingSellEmittedTs = 0;
+  /** true когда открытый ордер является SELL-выходом (не трогаем cancel/reprice) */
+  private _isExitOrder = false;
   private _repricePending = false;
   private _lastDiagMs = 0;
   private _lastRejectReason = '';
@@ -180,7 +201,6 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
     this._cexMinVenueCount = config.cexMinVenueCount ?? 1;
     this._orderSize       = config.orderSize;
     this._bidOffset       = config.bidOffsetCents   ?? 1;
-    this._sellOffset      = config.sellOffsetCents  ?? 1;
     this._warmupSec       = config.warmupSec        ?? 0;
     this._postOnly        = config.postOnly         ?? true;
     this._makerRepriceAfterSec = config.makerRepriceAfterSec ?? 5;
@@ -245,6 +265,8 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       this._lastTradeTimestampMs = 0;
       this._pendingPlace         = false;
       this._pendingSell          = false;
+      this._pendingSellEmittedTs = 0;
+      this._isExitOrder          = false;
       this._repricePending       = false;
       this._lastDiagMs           = 0;
       this._strikePrice          = undefined;
@@ -394,10 +416,39 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
     if (data.hasInFlightFill) return [{ type: 'HOLD' }];
 
     if (data.hasOpenOrder || data.hasPosition) this._pendingPlace = false;
-    if (!data.hasOpenOrder) this._repricePending = false;
+    if (!data.hasOpenOrder) {
+      this._repricePending = false;
+      // Открытого ордера нет → SELL-ордер либо исполнился, либо был отклонён.
+      // Сбрасываем флаг выхода чтобы _evaluateOpenOrder снова применялся к BUY.
+      this._isExitOrder = false;
+    }
 
-    // Есть ордер → проверяем cancel/reprice
-    if (data.hasOpenOrder) return this._evaluateOpenOrder(data);
+    if (data.hasOpenOrder) {
+      if (this._isExitOrder) {
+        // FOK-style: ордер не заполнился за один snapshot-цикл → снимаем и ставим заново
+        // немедленно в том же тике. toIntents() генерирует [CANCEL_ALL, PLACE] за один вызов.
+        // Цена 1¢: CLOB исполнит по лучшему доступному bid (price improvement).
+        if (
+          data.openOrderAgeSec !== null &&
+          data.openOrderAgeSec >= CrowdDeviationTPSLStrategy._EXIT_ORDER_MAX_AGE_SEC
+        ) {
+          this._pendingSellEmittedTs = data.nowMs;
+          this._logger?.warn('CrowdDeviationTPSL: FOK re-place SELL', {
+            age: data.openOrderAgeSec.toFixed(2),
+            mid: data.midCents.toFixed(1),
+            entry: this._entryPriceCents?.toFixed(1),
+          });
+          this._journal?.recordDecision({
+            marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
+            action: 'SELL', rejectReason: `fok_retry(age=${data.openOrderAgeSec.toFixed(2)}s)`,
+            state: this._buildDecisionState(data),
+          });
+          return [{ type: 'SELL', price: 1, size: this._orderSize }];
+        }
+        return [{ type: 'HOLD' }];
+      }
+      return this._evaluateOpenOrder(data);
+    }
 
     // Есть позиция → проверяем TP/SL, иначе держим
     if (data.hasPosition) return this._evaluatePosition(data);
@@ -452,13 +503,43 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
 
   /**
    * Проверяет TP/SL для открытой позиции.
-   * Если сработал — эмитирует SELL, иначе HOLD.
+   *
+   * @remarks
+   * ### FOK-style retry (simulated Fill-or-Kill):
+   * 1. Эмитируем SELL по актуальному `bestBid` (taker, postOnly=false).
+   * 2. Если через `_EXIT_ORDER_MAX_AGE_SEC` (2с) ордер не заполнен →
+   *    CANCEL + сброс `_pendingSell` → следующий тик перевыставляет по свежему bid.
+   * 3. Повторяем до заполнения или истечения рынка.
+   *
+   * ### Grace period при rejection биржи:
+   * - После эмиссии SELL ждём `_SELL_CONFIRM_GRACE_MS` (3с) пока ордер
+   *   появится в openOrders. Если по истечении grace period ордера нет —
+   *   сбрасываем `_pendingSell` и повторяем. ExecutionEngine throttle-ит
+   *   повторные попытки через `_exchangeRejectionCooldowns` (30s).
    *
    * @param data - Данные тика с позицией
    * @returns SELL или HOLD
    */
   private _evaluatePosition(data: CDData): CDAction[] {
-    if (this._pendingSell) return [{ type: 'HOLD' }];
+    // Grace period: ждём подтверждения ордера в openOrders
+    if (this._pendingSell) {
+      const elapsed = data.nowMs - this._pendingSellEmittedTs;
+      if (elapsed < CrowdDeviationTPSLStrategy._SELL_CONFIRM_GRACE_MS) {
+        return [{ type: 'HOLD' }];
+      }
+      // Grace period истёк, ордера нет → rejection или иная ошибка → retry
+      this._pendingSell = false;
+      this._logger?.warn('CrowdDeviationTPSL: SELL unconfirmed — retry', {
+        elapsedMs: elapsed.toFixed(0),
+        entry: this._entryPriceCents?.toFixed(1),
+        mid: data.midCents.toFixed(1),
+      });
+      this._journal?.recordDecision({
+        marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
+        action: 'SKIP', rejectReason: `sell_retry(unconfirmed,elapsed=${elapsed.toFixed(0)}ms)`,
+        state: this._buildDecisionState(data),
+      });
+    }
 
     const entry = this._entryPriceCents;
     if (entry === null) return [{ type: 'HOLD' }];
@@ -467,6 +548,8 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
 
     if (this._takeProfitCents > 0 && mid >= entry + this._takeProfitCents) {
       this._pendingSell = true;
+      this._pendingSellEmittedTs = data.nowMs;
+      this._isExitOrder = true;
       const sellPrice = this._computeSellPrice(data);
       this._logger?.warn('CrowdDeviationTPSL: SELL — TP hit', {
         entry: entry.toFixed(1), mid: mid.toFixed(1),
@@ -475,8 +558,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       });
       this._journal?.recordDecision({
         marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
-        action: 'SELL', reason: 'take_profit',
-        entryPrice: entry, currentMid: mid, tp: this._takeProfitCents,
+        action: 'SELL', rejectReason: `take_profit(entry=${entry.toFixed(1)},mid=${mid.toFixed(1)},tp=${this._takeProfitCents})`,
         state: this._buildDecisionState(data),
       });
       return [{ type: 'SELL', price: sellPrice, size: this._orderSize }];
@@ -484,6 +566,8 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
 
     if (this._stopLossCents > 0 && mid <= entry - this._stopLossCents) {
       this._pendingSell = true;
+      this._pendingSellEmittedTs = data.nowMs;
+      this._isExitOrder = true;
       const sellPrice = this._computeSellPrice(data);
       this._logger?.warn('CrowdDeviationTPSL: SELL — SL hit', {
         entry: entry.toFixed(1), mid: mid.toFixed(1),
@@ -492,8 +576,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       });
       this._journal?.recordDecision({
         marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
-        action: 'SELL', reason: 'stop_loss',
-        entryPrice: entry, currentMid: mid, sl: this._stopLossCents,
+        action: 'SELL', rejectReason: `stop_loss(entry=${entry.toFixed(1)},mid=${mid.toFixed(1)},sl=${this._stopLossCents})`,
         state: this._buildDecisionState(data),
       });
       return [{ type: 'SELL', price: sellPrice, size: this._orderSize }];
@@ -510,6 +593,13 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
     if (data.tauSec < this._minTau)           return `tau_low(${data.tauSec.toFixed(0)}<${this._minTau})`;
     if (data.tauSec > this._maxTau)           return `tau_high(${data.tauSec.toFixed(0)}>${this._maxTau})`;
     if (data.deviation > -this._entryDevCents) return `dev_low(${data.deviation.toFixed(1)}>-${this._entryDevCents})`;
+    // Минимальное число активных CEX-бирж — независимо от residualFilter.
+    // Без этой проверки cexMinVenueCount игнорировался при residualFilter=all.
+    if (this._cexMinVenueCount > 0 && this._cexVenues.length > 0) {
+      if (data.cexVenueTotalCount < this._cexMinVenueCount) {
+        return `cex_venues_low(${data.cexVenueTotalCount}<${this._cexMinVenueCount})`;
+      }
+    }
     if (this._regimeFilter !== 'all') {
       if (data.regime === undefined) return 'no_regime';
       if (data.regime !== this._regimeFilter)  return `regime(${data.regime}!=${this._regimeFilter})`;
@@ -589,16 +679,17 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
 
   /**
    * Вычисляет цену SELL для выхода по TP/SL.
-   * Ставим на bid или чуть ниже ask — хотим быстрый выход.
    *
-   * @param data - Данные тика
-   * @returns Цена SELL в центах
+   * @remarks
+   * Возвращает минимальную цену (1¢) — simulated market order.
+   * На CLOB Polymarket тейкер-сделка исполняется по цене лучшего bid в книге
+   * (price improvement), а не по нашей заявленной цене 1¢.
+   * Это гарантирует немедленный taker-fill и максимальную цену из доступных.
+   *
+   * @returns 1 (минимальная допустимая цена, market-like fill)
    */
-  private _computeSellPrice(data: CDData): number {
-    if (data.bestBidCents !== null) {
-      return Math.max(1, data.bestBidCents - this._sellOffset);
-    }
-    return Math.max(1, Math.round(data.midCents) - this._sellOffset);
+  private _computeSellPrice(_data: CDData): number {
+    return 1;
   }
 
   private _logDiag(data: CDData, rejectReason: string): void {
@@ -636,7 +727,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
           type: 'PLACE', side: 'SELL',
           price: Price.of(new Decimal(action.price).div(100)),
           size:  Quantity.of(action.size),
-          postOnly: false,  // при TP/SL выходе хотим гарантированное исполнение
+          postOnly: false,
         });
       }
     }

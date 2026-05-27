@@ -439,16 +439,22 @@ export class ExecutionEngine {
     // Если биржа недавно отклонила ордер по этому инструменту/стороне —
     // пропускаем размещение до истечения cooldown.
     // Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
+    //
+    // SELL-выходы (SL/TP) исключаем из cooldown: стратегия сама контролирует темп retry
+    // через FOK-логику (не чаще чем раз в 0.5s). Cooldown блокировал бы критические
+    // SELL на 5s — слишком долго для stop-loss на 5-минутном рынке.
     const rejectionKey = `${instrumentKey}:${intent.side}`;
-    const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey);
-    if (lastRejectedMs !== undefined && nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
-      this._logger.info('ExecutionEngine: skip — exchange rejection cooldown active', {
-        strategyId: ctx.strategyId,
-        instrumentId: instrumentKey,
-        side: intent.side,
-        cooldownRemainingMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS - (nowForCooldown - lastRejectedMs),
-      });
-      return 'skipped';
+    if (intent.side !== 'SELL') {
+      const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey);
+      if (lastRejectedMs !== undefined && nowForCooldown - lastRejectedMs < ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS) {
+        this._logger.info('ExecutionEngine: skip — exchange rejection cooldown active', {
+          strategyId: ctx.strategyId,
+          instrumentId: instrumentKey,
+          side: intent.side,
+          cooldownRemainingMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS - (nowForCooldown - lastRejectedMs),
+        });
+        return 'skipped';
+      }
     }
 
     const orderId = asOrderId(randomUUID())!;
@@ -609,8 +615,11 @@ export class ExecutionEngine {
       }
 
       // Устанавливаем cooldown чтобы не спамить биржу при стабильном rejection.
-      // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (30s).
-      this._exchangeRejectionCooldowns.set(rejectionKey, this._deps.clock.now().getTime());
+      // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (5s).
+      // SELL не блокируем: стратегия сама контролирует темп через FOK-логику.
+      if (intent.side !== 'SELL') {
+        this._exchangeRejectionCooldowns.set(rejectionKey, this._deps.clock.now().getTime());
+      }
       // portfolioTokenQty: диагностика десинка in-memory vs on-chain.
       // Если qty совпадает с размером ордера — скорее всего token approval не выставлен.
       // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.

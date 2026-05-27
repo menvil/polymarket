@@ -1,0 +1,157 @@
+{
+  "_meta": {
+    "desc": "CexLeadLagRiskBudget UP+DOWN 5min BTC \u2014 paper before live",
+    "status": "paper",
+    "backtest": {
+      "dataset": "OOS May 01-06 2026",
+      "pnl": "+26.03 USDC (7-day, with minEntryBookTapeRatio filter)",
+      "date": "2026-05-10",
+      "notes": "fallback table + book/tape ratio filter"
+    }
+  },
+  "strategy": "cex-lead-lag-risk-budget",
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 20,
+    "qMax": 1,
+    "mode": "skewed",
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEntryBookTapeRatio": 0.5,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "emergencyExitSlippageCents": 1,
+    "maxChaseAboveExitCents": 5,
+    "stopLossCents": 0,
+    "stopLossCooldownMs": 60000,
+    "breakEvenTriggerCents": 8,
+    "breakEvenOffsetCents": 7,
+    "breakEvenExitRatio": 0,
+    "profitLockTriggerCents": 12,
+    "profitLockOffsetCents": 11,
+    "profitLockExitRatio": 0,
+    "profitTargetSlippageCents": 0,
+    "trailingStartMultiplier": 0.7,
+    "minTrailingDistanceCents": 5,
+    "tauTighteningStartSec": 25,
+    "tauTighteningMinMultiplier": 0.8,
+    "trailingExitRatio": 1,
+    "signalExitEnabled": true,
+    "signalExitGraceMs": 500,
+    "signalExitMinProfitCents": 10,
+    "signalExitRatio": 0.5,
+    "adverseExitGraceMs": 300,
+    "adverseExitRatio": 1,
+    "holdToExpiryMinBidCents": 98,
+    "holdToExpiryMaxTauSec": 90,
+    "holdToExpiryStopBidCents": 95,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minSignalPersistenceMs": 150,
+    "exitPolicyTablePath": "./tables/exit-policy-5min-cll-apr.json",
+    "exitPolicyFallbackTablePath": "./tables/exit-policy-5min-cll-apr-nodelta.json",
+    "exitPolicyMinSamples": 5,
+    "exitPolicySkipUnknown": true,
+    "riskBudgetEnabled": true,
+    "riskBudgetTolerance": 70,
+    "riskBudgetEdgeTtlMs": 20000,
+    "riskBudgetMinProfitScaleOutCents": 5,
+    "riskBudgetMinRebalanceDiffPct": 20,
+    "riskBudgetRebalanceHysteresisPct": 15,
+    "riskBudgetRebalanceCooldownMs": 15000,
+    "riskBudgetMinRunnerPctAfterProfit": 25,
+    "riskBudgetDrawdownEmergencyCents": 0,
+    "riskBudgetOverFairEmergencyCents": 3,
+    "profitProtectTrailingEnabled": false
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0,
+    "bidirectional": true
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings-cll-rb",
+    "journalDir": "./data/journals",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings-cll/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}

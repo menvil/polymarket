@@ -11,7 +11,7 @@
     "maxPositionUnits": 5,
     "maxDepth": 5,
     "bookStalenessMs": 1500,
-    "executionOrderType": "GTC",
+    "executionOrderType": "FAK",
     "executionReconcileDelayMs": 2500,
     "executionRepairDelayMs": 2500,
     "auditMode": false
@@ -23,7 +23,7 @@
         "bitcoin",
         "up or down"
       ],
-      "minLiquidity": 500
+      "minLiquidity": 50
     },
     "scanPauseMs": 60000,
     "outcomeIndex": 0
