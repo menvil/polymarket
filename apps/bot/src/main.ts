@@ -3294,14 +3294,14 @@ async function runBacktest(): Promise<void> {
  * ### Алгоритм:
  * 1. Валидация credentials из ENV
  * 2. Discovery рынка (fixed или discovery — аналогично paper режиму)
- * 3. Создание live инфраструктуры (REST stack + recovery services + WS user channel)
- * 4. Recovery: баланс с биржи через portfolioReplayService, сверка ордеров
+ * 3. Создание live инфраструктуры (REST stack + startup use-cases + WS user channel)
+ * 4. Startup: баланс с биржи через initializePortfolioUseCase, сверка ордеров
  * 5. WS подключение (market data + user channel для fills)
  * 6. Запуск стратегии + ротация рынков (только для discovery)
  * 7. Polling fallback: reconcileTradesUseCase каждые 60 сек (safety net)
  *
  * ### Балансирование:
- * - Начальный баланс берётся с биржи через `portfolioReplayService.replay()`.
+ * - Начальный баланс берётся с биржи через `initializePortfolioUseCase.execute()`.
  * - `resources.initialBalance` из конфига игнорируется в live режиме.
  *
  * ### Ротация рынков:
@@ -4539,20 +4539,13 @@ async function runLive(): Promise<void> {
     },
   });
 
-  // ── Recovery: баланс с биржи + сверка ордеров ────────────────────────────
+  // ── Startup: баланс с биржи + сверка ордеров ─────────────────────────────
 
-  logger.info('Starting recovery: fetching balance from exchange + order reconciliation');
-  try {
-    await liveInfra.portfolioReplayService.replay(accountId);
-    const portfolio = portfolioStore.get(accountId);
-    if (portfolio) {
-      logger.info('Portfolio initialised from exchange balance', {
-        usdc: portfolio.balance.available().value().toFixed(2),
-      });
-    }
-  } catch (err) {
-    logger.error('Portfolio replay failed — starting with zero balance', {
-      err: err instanceof Error ? err : new Error(String(err)),
+  logger.info('Starting: fetching balance from exchange + order reconciliation');
+  const initResult = await liveInfra.initializePortfolioUseCase.execute(accountId);
+  if (!initResult.ok) {
+    logger.error('Portfolio initialization failed — starting with zero balance', {
+      error: initResult.error.message,
     });
     const fallbackBalance = buildInitialBalance(0, accountId);
     const portfolioResult = Portfolio.create({
@@ -4561,6 +4554,13 @@ async function runLive(): Promise<void> {
       balance: fallbackBalance,
     });
     if (portfolioResult.ok) portfolioStore.save(portfolioResult.value, 0);
+  } else {
+    const portfolio = portfolioStore.get(accountId);
+    if (portfolio) {
+      logger.info('Portfolio initialised from exchange balance', {
+        usdc: portfolio.balance.available().value().toFixed(2),
+      });
+    }
   }
 
   try {

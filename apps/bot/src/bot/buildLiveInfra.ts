@@ -1,12 +1,12 @@
 /**
- * Построитель live режима — создаёт реальный exchange client и recovery сервисы.
+ * Построитель live режима — создаёт реальный exchange client и startup use-cases.
  *
  * @remarks
  * ### Порядок создания компонентов:
  * 1. `PolymarketRestClient` — базовый HTTP клиент с подписью
  * 2. `PolymarketExecutionAdapter` → `PolymarketExchangeClientAdapter` → `IExchangeClient`
  * 3. `PolymarketBalanceProvider` → `ICurrentBalanceProvider` (inline adapter)
- * 4. Recovery: `PortfolioReplayService`, `OrderReconciler`, `ReconcileTradesUseCase`
+ * 4. Startup: `InitializePortfolioUseCase`, `OrderReconciler` (inline), `ReconcileTradesUseCase`
  * 5. `UserEventFeedAdapter` — WS user channel (основной путь fills)
  *
  * ### Delivery fills в live режиме:
@@ -18,8 +18,8 @@
  * ```typescript
  * const live = buildLiveInfra({ credentials, infra, repos, processFillUseCase, userWsAdapter, accountId });
  *
- * // Recovery
- * await live.portfolioReplayService.replay(accountId);
+ * // Startup
+ * await live.initializePortfolioUseCase.execute(accountId);
  * await live.orderReconciler.reconcile(accountId);
  *
  * // WS user channel (отдельное соединение /ws/user)
@@ -30,13 +30,11 @@
 
 import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
-import type { IExchangeClient } from '@polymarket/ports';
+import type { IExchangeClient, ICurrentBalanceProvider } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import { ReconcileTradesUseCase, PortfolioService } from '@polymarket/use-cases';
+import { ReconcileTradesUseCase, PortfolioService, InitializePortfolioUseCase } from '@polymarket/use-cases';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
-import { PortfolioReplayService, OrderReconciler } from '@polymarket/recovery';
-import type { ICurrentBalanceProvider, IVenueOrderProvider } from '@polymarket/recovery';
 import { UserEventFeedAdapter } from '@polymarket/exchange/adapters';
 import { PolymarketExchangeClientAdapter } from '@polymarket/exchange/adapters';
 import {
@@ -106,10 +104,10 @@ export interface LiveInfra {
   readonly exchangeClient: IExchangeClient;
   /** WS user channel adapter (основной путь fills) */
   readonly userEventFeedAdapter: UserEventFeedAdapter;
-  /** Recovery: инициализация Portfolio из баланса venue */
-  readonly portfolioReplayService: PortfolioReplayService;
-  /** Recovery: сверка ордеров с venue при старте и reconnect */
-  readonly orderReconciler: OrderReconciler;
+  /** Startup: инициализация Portfolio из баланса venue */
+  readonly initializePortfolioUseCase: InitializePortfolioUseCase;
+  /** Startup: сверка ордеров с venue при старте и reconnect (LIVE + MATCHED) */
+  readonly orderReconciler: { reconcile(accountId: AccountId): Promise<void> };
   /** Fallback polling: сверка fills через REST (safety net) */
   readonly reconcileTradesUseCase: ReconcileTradesUseCase;
   /** Проверка баланса токена на CLOB (для диагностики SELL rejection) */
@@ -205,9 +203,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
   };
 
-  // ── 4. Recovery сервисы ───────────────────────────────────────────────────
+  // ── 4. Startup use-cases ─────────────────────────────────────────────────
 
-  const portfolioReplayService = new PortfolioReplayService({
+  const initializePortfolioUseCase = new InitializePortfolioUseCase({
     balanceProvider: currentBalanceProvider,
     portfolioStore,
     logger,
@@ -251,44 +249,53 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
   );
 
-  // Inline adapter: IVenueOrderProvider → LIVE + MATCHED ордера
-  // ВАЖНО: включаем и MATCHED ордера (сматченные, ожидающие on-chain сеттлмента).
-  // Polymarket не возвращает MATCHED из /orders (getOpenOrders), только LIVE.
-  // Без учёта MATCHED reconciler локально отменяет ордер до прихода fill → двойная покупка.
-  const venueOrderProvider: IVenueOrderProvider = {
-    async getOpenOrderIds(): Promise<readonly string[]> {
+// Inline reconciler: сверяет локальные ордера с venue (LIVE + MATCHED).
+  // Используем OrderUpdateHandler чтобы при отмене освобождалась резервация Portfolio.
+  const orderReconciler = {
+    async reconcile(reconcileAccountId: AccountId): Promise<void> {
+      const localOrders = await orderRepo.getAll();
+      if (localOrders.length === 0) {
+        logger.info('No local orders to reconcile');
+        return;
+      }
+
       const [liveResult, matchedOrders] = await Promise.allSettled([
-        exchangeClient.getOpenOrders(accountId),
+        exchangeClient.getOpenOrders(reconcileAccountId),
         orderRestClient.getMatchedOrders(undefined, 50),
       ]);
 
       if (liveResult.status === 'rejected') {
-        throw new Error(`getOpenOrders failed: ${String(liveResult.reason)}`);
+        logger.error('Order reconciliation: failed to fetch open orders from venue, skipping', { error: String(liveResult.reason) });
+        return;
       }
       if (!liveResult.value.ok) {
-        throw new Error(`getOpenOrders failed: ${liveResult.value.error.message}`);
+        logger.error('Order reconciliation: failed to fetch open orders from venue, skipping', { error: liveResult.value.error.message });
+        return;
       }
 
-      const liveIds = liveResult.value.value.map((o) => String(o.orderId));
-
-      // MATCHED ордера — best-effort (не прерываем reconciliation при ошибке)
-      const matchedIds: string[] = [];
+      const venueIds = new Set<string>(liveResult.value.value.map((o) => String(o.orderId)));
       if (matchedOrders.status === 'fulfilled') {
-        for (const o of matchedOrders.value) {
-          matchedIds.push(o.id);
+        for (const o of matchedOrders.value) venueIds.add(o.id);
+      }
+
+      let cancelledCount = 0;
+      for (const order of localOrders) {
+        if (!venueIds.has(String(order.id))) {
+          await orderUpdateHandler.handle({
+            type: 'CANCELLED',
+            orderId: order.id,
+            reason: 'Reconciliation: order not found on venue',
+          });
+          cancelledCount++;
         }
       }
 
-      return [...liveIds, ...matchedIds];
+      logger.info('Order reconciliation completed', {
+        total: localOrders.length,
+        cancelled: cancelledCount,
+      });
     },
   };
-
-  const orderReconciler = new OrderReconciler({
-    venueOrderProvider,
-    orderRepo,
-    orderUpdateHandler,
-    logger,
-  });
 
   // REST polling fallback (safety net при gaps в WS)
   const reconcileTradesUseCase = new ReconcileTradesUseCase({
@@ -326,7 +333,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   return {
     exchangeClient,
     userEventFeedAdapter,
-    portfolioReplayService,
+    initializePortfolioUseCase,
     orderReconciler,
     reconcileTradesUseCase,
     balanceRestClient,

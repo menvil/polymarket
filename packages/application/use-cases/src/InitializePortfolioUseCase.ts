@@ -1,5 +1,5 @@
 /**
- * PortfolioReplayService — инициализация Portfolio из текущего баланса venue.
+ * InitializePortfolioUseCase — инициализация Portfolio из текущего баланса venue.
  *
  * @remarks
  * Вызывается на старте системы (до WS-подписок), гарантируя наличие
@@ -19,25 +19,28 @@
  *
  * ### Порядок запуска:
  * ```
- * portfolioReplayService.replay(accountId)  ← Portfolio готов
+ * initializePortfolioUseCase.execute(accountId)  ← Portfolio готов
  *   ↓
- * orderReconciler.reconcile(accountId)      ← ордера синхронизированы
+ * reconcileOrdersUseCase.execute({ accountId })  ← ордера синхронизированы
  *   ↓
- * wsEmitter.start()                         ← live события
+ * wsEmitter.start()                              ← live события
  * ```
  *
  * @example
  * ```typescript
- * const service = new PortfolioReplayService({
+ * const useCase = new InitializePortfolioUseCase({
  *   balanceProvider,
  *   portfolioStore,
  *   logger,
  * });
  *
  * // На старте системы:
- * await service.replay(accountId);
+ * await useCase.execute(accountId);
  * ```
  */
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import { TradingError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
@@ -45,50 +48,50 @@ import { KnownVenues, accountIdToString } from '@polymarket/ids';
 import { Balance, Money } from '@polymarket/value-objects';
 import { asPortfolioId } from '@polymarket/portfolio';
 import { Portfolio } from '@polymarket/portfolio';
-import type { IPortfolioStore } from '@polymarket/ports';
-import type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
+import type { IPortfolioStore, ICurrentBalanceProvider } from '@polymarket/ports';
 
-/** Зависимости PortfolioReplayService */
-export interface PortfolioReplayDeps {
+/**
+ * Зависимости InitializePortfolioUseCase.
+ */
+export interface InitializePortfolioDeps {
   readonly balanceProvider: ICurrentBalanceProvider;
   readonly portfolioStore: IPortfolioStore;
   readonly logger: ILogger;
 }
 
 /**
- * Сервис восстановления Portfolio из текущего баланса venue.
+ * Use case инициализации Portfolio из баланса venue.
  *
  * @remarks
- * Инициализирует IPortfolioStore актуальным состоянием на старте системы.
  * Идемпотентен: повторный вызов безопасен (skip если Portfolio уже есть).
  */
-export class PortfolioReplayService {
+export class InitializePortfolioUseCase {
   private readonly _logger: ILogger;
 
   /**
-   * @param _deps - Зависимости сервиса
+   * @param _deps - Зависимости use case
    */
-  constructor(private readonly _deps: PortfolioReplayDeps) {
-    this._logger = _deps.logger.child({ component: 'PortfolioReplayService' });
+  constructor(private readonly _deps: InitializePortfolioDeps) {
+    this._logger = _deps.logger.child({ component: 'InitializePortfolioUseCase' });
   }
 
   /**
    * Инициализирует Portfolio в IPortfolioStore из текущего баланса venue.
    *
    * @param accountId - ID аккаунта для инициализации
+   * @returns Ok(void) при успехе или уже инициализированном Portfolio, Err при критической ошибке
    *
    * @remarks
-   * Идемпотентен: если Portfolio уже существует — возвращает без изменений.
-   * При ошибке создания Portfolio логирует error (не бросает исключение).
+   * Идемпотентен: если Portfolio уже существует — возвращает Ok без изменений.
    */
-  public async replay(accountId: AccountId): Promise<void> {
+  public async execute(accountId: AccountId): Promise<Result<void, TradingError>> {
     // Шаг 1: Проверить, существует ли Portfolio
     const existing = this._deps.portfolioStore.get(accountId);
     if (existing) {
-      this._logger.info('Portfolio already initialized, skipping replay', {
+      this._logger.info('Portfolio already initialized, skipping', {
         accountId: accountIdToString(accountId),
       });
-      return;
+      return Ok(undefined);
     }
 
     // Шаг 2: Получить текущий USDC-баланс от venue
@@ -96,11 +99,14 @@ export class PortfolioReplayService {
     try {
       usdcBalance = await this._deps.balanceProvider.getUsdcBalance(accountId);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Failed to fetch USDC balance from venue', {
         accountId: accountIdToString(accountId),
-        error: String(err),
+        error: message,
       });
-      return;
+      return Err(new TradingError(`Failed to fetch USDC balance: ${message}`, {
+        context: { accountId: accountIdToString(accountId) },
+      }));
     }
 
     // Шаг 3: Создать Portfolio
@@ -117,7 +123,9 @@ export class PortfolioReplayService {
         accountId: accountIdToString(accountId),
         error: portfolioResult.error.message,
       });
-      return;
+      return Err(new TradingError(`Failed to create Portfolio: ${portfolioResult.error.message}`, {
+        context: { accountId: accountIdToString(accountId) },
+      }));
     }
 
     // Шаг 4: Сохранить в store (версия 0 — новый агрегат)
@@ -127,12 +135,16 @@ export class PortfolioReplayService {
         accountId: accountIdToString(accountId),
         error: saveResult.error.message,
       });
-      return;
+      return Err(new TradingError(`Failed to save Portfolio: ${saveResult.error.message}`, {
+        context: { accountId: accountIdToString(accountId) },
+      }));
     }
 
     this._logger.info('Portfolio initialized from venue balance', {
       accountId: accountIdToString(accountId),
       usdcBalance: usdcBalance.toString(),
     });
+
+    return Ok(undefined);
   }
 }

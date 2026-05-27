@@ -2,7 +2,7 @@
  * Порт: провайдер текущего баланса от venue.
  *
  * @remarks
- * Используется PortfolioReplayService для инициализации Portfolio
+ * Используется InitializePortfolioUseCase для инициализации Portfolio
  * на основе актуального баланса из REST API биржи.
  *
  * Реализация в infrastructure layer:

@@ -9,6 +9,7 @@
  * - **CancelOrderUseCase** — отмена ордера с откатом резервации
  * - **ReconcileOrdersUseCase** — сверка открытых ордеров с биржей
  * - **ReconcileTradesUseCase** — сверка исполнений с биржей
+ * - **InitializePortfolioUseCase** — инициализация Portfolio из баланса venue
  *
  * Вспомогательные сервисы:
  * - **OrderService** — операции над Order aggregate
@@ -37,6 +38,9 @@ export type {
 
 export { ReconcileTradesUseCase } from './ReconcileTradesUseCase.js';
 export type { ReconcileTradesDeps, ReconcileTradesInput } from './ReconcileTradesUseCase.js';
+
+export { InitializePortfolioUseCase } from './InitializePortfolioUseCase.js';
+export type { InitializePortfolioDeps } from './InitializePortfolioUseCase.js';
 
 // Services
 export { OrderService } from './services/OrderService.js';

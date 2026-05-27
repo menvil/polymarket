@@ -17,6 +17,7 @@
  * - `IMarketDataRecorder` / `MarketMeta` — запись сырых WS-событий на диск
  * - `IMarketDiscoveryService` / `DiscoveredMarket` — обнаружение торговых рынков
  * - `IMarketFilterConfig` — конфигурация фильтрации рынков
+ * - `ICurrentBalanceProvider` — получение текущего USDC-баланса от venue
  *
  * @example
  * ```typescript
@@ -60,3 +61,4 @@ export type {
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
 export type { IOrderStateStore } from './IOrderStateStore.js';
+export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';

@@ -69,9 +69,6 @@
       "path": "../../packages/application/market-discovery/tsconfig.build.json"
     },
     {
-      "path": "../../packages/application/recovery/tsconfig.build.json"
-    },
-    {
       "path": "../../packages/infrastructure/backtesting/tsconfig.build.json"
     },
     {
