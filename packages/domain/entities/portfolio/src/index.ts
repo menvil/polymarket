@@ -50,3 +50,7 @@ export {
   getTotalUnrealizedPnL,
   type PriceProvider,
 } from './services/PortfolioValuationService.js';
+
+// Simple Position
+export { SimplePosition } from './SimplePosition.js';
+export type { SimplePositionParams } from './SimplePosition.js';

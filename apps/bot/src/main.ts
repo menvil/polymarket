@@ -86,7 +86,7 @@ import { buildStrategyEngine } from './bot/buildStrategyEngine.js';
 import { readSnapshotMeta } from './bot/readSnapshotMeta.js';
 import { runMultiMarketBacktest } from './bot/runMultiMarketBacktest.js';
 import { FillOrchestrator } from '@polymarket/orchestrators';
-import { SimplePosition } from '@polymarket/use-cases';
+import { SimplePosition } from '@polymarket/portfolio';
 import { createStrategy } from './strategyFactory.js';
 import type { StrategyConfig } from './strategyFactory.js';
 import { selectStrategyForMarket } from './strategyRouter.js';

@@ -173,6 +173,8 @@ describe('FillOrchestrator (integration)', () => {
       eventBus,
       processFill: processFillUseCase,
       logger: LOGGER,
+      orderStateStore: orderRepo,
+      portfolioService,
     });
 
     orchestrator.register();

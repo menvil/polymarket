@@ -49,7 +49,7 @@ import {
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
 import type { InstrumentInfo } from '@polymarket/ports';
-import { SimplePosition } from '@polymarket/use-cases';
+import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig } from '../config/BotConfig.js';
 import { buildCoreInfra } from './buildCoreInfra.js';

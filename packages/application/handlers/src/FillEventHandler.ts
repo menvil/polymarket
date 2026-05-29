@@ -29,6 +29,25 @@
  * создаёт отдельный Fill для каждого нашего ордера. Все fills кэшируются и публикуются
  * независимо.
  *
+ * ### Двухуровневая дедупликация fills:
+ * Система защищена от двойной обработки на двух уровнях:
+ *
+ * **Уровень 1 — FillEventHandler (_publishedRawIds)**:
+ * Предотвращает двойную публикацию FILL_RECEIVED в EventBus.
+ * MATCHED публикует fill и добавляет rawId в `_publishedRawIds`.
+ * CONFIRMED проверяет `_publishedRawIds` — если rawId уже там, публикует
+ * только FILL_CONFIRMED (не повторяет FILL_RECEIVED).
+ * Сброс при FAILED (fill откатывается, ID удаляется из set).
+ *
+ * **Уровень 2 — ProcessFillUseCase (IProcessedFillRepository.markIfNotExists)**:
+ * Idempotency guard на уровне обработки fill в use-case.
+ * Даже если FILL_RECEIVED будет опубликован дважды (WS reconnect race, два FillEventHandler),
+ * ProcessFillUseCase пропустит повторный fill через `markIfNotExists`.
+ * Атомарна — не нужна внешняя координация между экземплярами.
+ *
+ * Уровень 1 защищает от дублирования в нормальном flow (MATCHED→CONFIRMED).
+ * Уровень 2 защищает от дублирования при аномальных сценариях (рестарт, race).
+ *
  * ### Ответственность:
  * - НЕ обновляет Portfolio (это задача ProcessFillUseCase через FillOrchestrator)
  * - Кеш pending fills — in-memory, живёт до CONFIRMED/FAILED или рестарта бота

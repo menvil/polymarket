@@ -18,6 +18,8 @@
  * - `IMarketDiscoveryService` / `DiscoveredMarket` — обнаружение торговых рынков
  * - `IMarketFilterConfig` — конфигурация фильтрации рынков
  * - `ICurrentBalanceProvider` — получение текущего USDC-баланса от venue
+ * - `IFillReverter` — откат применённого fill из Portfolio (для FILL_FAILED handler)
+ * - `IFillProcessor` — обработка fill (для FillOrchestrator, реализует ProcessFillUseCase)
  *
  * @example
  * ```typescript
@@ -62,3 +64,5 @@ export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscove
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
 export type { IOrderStateStore } from './IOrderStateStore.js';
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
+export type { IFillReverter } from './IFillReverter.js';
+export type { IFillProcessor } from './IFillProcessor.js';

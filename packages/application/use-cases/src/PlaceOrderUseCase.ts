@@ -47,14 +47,12 @@ import type { IClock } from '@polymarket/time';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
-import type { IExchangeClient } from '@polymarket/ports';
-import type { IOrderStateStore } from '@polymarket/ports';
+import type { IExchangeClient, IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { PortfolioService } from './services/PortfolioService.js';
-import type { OrderService } from './services/OrderService.js';
 
 /** Входные данные для PlaceOrderUseCase */
 export interface PlaceOrderInput {
@@ -91,7 +89,7 @@ export interface PlaceOrderInput {
 /** Зависимости PlaceOrderUseCase */
 export interface PlaceOrderDeps {
   readonly riskChecker: IOrderRiskChecker;
-  readonly orderService: OrderService;
+  readonly orderRepo: IOrderRepository;
   readonly portfolioService: PortfolioService;
   readonly exchangeClient: IExchangeClient;
   readonly orderStateStore: IOrderStateStore;
@@ -299,7 +297,7 @@ export class PlaceOrderUseCase {
 
     // Шаг 6: Сохранение ордера (с venueOrderId)
     try {
-      await this._deps.orderService.save(acceptedOrder);
+      await this._deps.orderRepo.save(acceptedOrder);
     } catch (err) {
       this._logger.error('Failed to save accepted order', {
         venueOrderId: String(venueOrderId),

@@ -24,7 +24,7 @@
 
 import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
-import type { IPosition } from '@polymarket/portfolio';
+import type { IPosition } from './Portfolio.js';
 
 /** Параметры для создания SimplePosition */
 export interface SimplePositionParams {

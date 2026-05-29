@@ -43,7 +43,7 @@ import { parseCryptoMeta, computeInterval } from '@polymarket/exchange/adapters'
 import type { CryptoMarketMeta } from '@polymarket/exchange/adapters';
 import type { BinanceKlinesClient } from '@polymarket/exchange/adapters';
 import type { CryptoPriceStore } from '@polymarket/market-state';
-import { SimplePosition } from '@polymarket/use-cases';
+import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig, DiscoveryMarketConfig } from '../config/BotConfig.js';
 import type { StrategyConfig } from '../strategyFactory.js';

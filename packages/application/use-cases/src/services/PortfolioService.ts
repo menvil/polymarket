@@ -39,9 +39,9 @@ import type { AccountId, InstrumentId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import { Money } from '@polymarket/value-objects';
 import type { Portfolio } from '@polymarket/portfolio';
+import { SimplePosition } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import type { Fill } from '@polymarket/fill';
-import { SimplePosition } from './SimplePosition.js';
 
 /** Объединённый тип ошибок сохранения Portfolio */
 export type PortfolioSaveError = VersionConflictError | TradingError;

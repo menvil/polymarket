@@ -6,7 +6,7 @@
  *
  * ### Реальные компоненты (без моков):
  * - `PlaceOrderUseCase`, `ProcessFillUseCase`, `CancelOrderUseCase`
- * - `OrderService`, `PortfolioService`, `LedgerService`
+ * - `PortfolioService`, `LedgerService`
  * - `InMemoryOrderRepository`, `InMemoryProcessedFillRepository`
  * - `TestPortfolioStore` (без CAS)
  * - `EventBus`
@@ -26,7 +26,6 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { PlaceOrderUseCase } from '../../src/PlaceOrderUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { CancelOrderUseCase } from '../../src/CancelOrderUseCase.js';
-import { OrderService } from '../../src/services/OrderService.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import type { PlaceOrderDeps, PlaceOrderInput } from '../../src/PlaceOrderUseCase.js';
@@ -181,7 +180,6 @@ describe('TradingFlow (integration)', () => {
   let processedFillRepo: InMemoryProcessedFillRepository;
   let portfolioStore: TestPortfolioStore;
   let eventBus: EventBus;
-  let orderService: OrderService;
   let portfolioService: PortfolioService;
   let ledgerService: LedgerService;
 
@@ -190,7 +188,6 @@ describe('TradingFlow (integration)', () => {
     processedFillRepo = new InMemoryProcessedFillRepository();
     portfolioStore = new TestPortfolioStore();
     eventBus = new EventBus(LOGGER);
-    orderService = new OrderService(orderRepo, LOGGER);
     portfolioService = new PortfolioService(portfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
   });
@@ -210,7 +207,7 @@ describe('TradingFlow (integration)', () => {
 
     const placeDeps: PlaceOrderDeps = {
       riskChecker: makePassRiskChecker(),
-      orderService,
+      orderRepo,
       portfolioService,
       exchangeClient: makeExchangeClient(),
       orderStateStore: orderRepo,
@@ -285,7 +282,7 @@ describe('TradingFlow (integration)', () => {
 
     const placeDeps: PlaceOrderDeps = {
       riskChecker: makePassRiskChecker(),
-      orderService,
+      orderRepo,
       portfolioService,
       exchangeClient: makeExchangeClient(Err(exchangeError)),
       orderStateStore: orderRepo,
@@ -330,7 +327,7 @@ describe('TradingFlow (integration)', () => {
 
     const placeDeps: PlaceOrderDeps = {
       riskChecker: makePassRiskChecker(),
-      orderService,
+      orderRepo,
       portfolioService,
       exchangeClient: makeExchangeClient(),
       orderStateStore: orderRepo,
@@ -340,7 +337,6 @@ describe('TradingFlow (integration)', () => {
     };
 
     const cancelDeps: CancelOrderDeps = {
-      orderService,
       portfolioService,
       orderRepo,
       orderStateStore: orderRepo,

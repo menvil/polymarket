@@ -25,8 +25,11 @@
  * @example
  * ```typescript
  * const orchestrator = new FillOrchestrator({
- *   eventBus, processFill: processFillUseCase,
- *   orderStateStore, portfolioService, logger,
+ *   eventBus,
+ *   processFill: processFillUseCase,
+ *   orderStateStore,
+ *   portfolioService,
+ *   logger,
  * });
  * orchestrator.register();
  * // Теперь каждый FILL_RECEIVED запускает ProcessFillUseCase,
@@ -36,9 +39,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderStateStore } from '@polymarket/ports';
-import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import type { PortfolioService } from '@polymarket/use-cases';
+import type { IOrderStateStore, IFillReverter, IFillProcessor } from '@polymarket/ports';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 
 /**
@@ -46,12 +47,12 @@ import { assetIdToInstrumentId } from '@polymarket/ids';
  */
 export interface FillOrchestratorDeps {
   readonly eventBus: IEventBus;
-  readonly processFill: ProcessFillUseCase;
+  readonly processFill: IFillProcessor;
   readonly logger: ILogger;
   /** Хранилище ордеров — для очистки in-flight флагов при FILL_FAILED */
-  readonly orderStateStore?: IOrderStateStore;
-  /** PortfolioService — для отката Portfolio при FILL_FAILED (on-chain revert) */
-  readonly portfolioService?: PortfolioService;
+  readonly orderStateStore: IOrderStateStore;
+  /** Reverter для отката Portfolio при FILL_FAILED (on-chain revert) */
+  readonly portfolioService: IFillReverter;
 }
 
 /**
@@ -63,9 +64,9 @@ export interface FillOrchestratorDeps {
  */
 export class FillOrchestrator {
   private readonly _eventBus: IEventBus;
-  private readonly _processFill: ProcessFillUseCase;
-  private readonly _orderStateStore?: IOrderStateStore;
-  private readonly _portfolioService?: PortfolioService;
+  private readonly _processFill: IFillProcessor;
+  private readonly _orderStateStore: IOrderStateStore;
+  private readonly _portfolioService: IFillReverter;
   private readonly _logger: ILogger;
   private _unsubFillReceived?: () => void;
   private _unsubFillFailed?: () => void;
@@ -131,7 +132,7 @@ export class FillOrchestrator {
       });
 
       // Откат Portfolio для каждого fill
-      if (this._portfolioService && event.fills && event.fills.length > 0) {
+      if (event.fills && event.fills.length > 0) {
         for (const fill of event.fills) {
           try {
             const result = this._portfolioService.reverseFill(fill);
@@ -155,10 +156,6 @@ export class FillOrchestrator {
             });
           }
         }
-      } else if (!this._portfolioService) {
-        this._logger.warn('No portfolioService — cannot reverse failed fill (manual reconciliation required)', {
-          fillId: String(event.fillId),
-        });
       } else {
         this._logger.warn('No cached fills for failed event — cannot reverse (manual reconciliation required)', {
           fillId: String(event.fillId),
@@ -166,20 +163,18 @@ export class FillOrchestrator {
       }
 
       // Очистка in-flight флагов
-      if (this._orderStateStore) {
-        this._orderStateStore.clearMatchedOnExchange(event.orderId);
+      this._orderStateStore.clearMatchedOnExchange(event.orderId);
 
-        const order = this._orderStateStore.getOrder(event.orderId);
-        if (order) {
-          const instrumentId = assetIdToInstrumentId(order.asset);
-          if (instrumentId) {
-            this._orderStateStore.clearInFlightFills(instrumentId);
-          }
-        } else {
-          this._logger.debug('Order not found for failed fill — in-flight instrument flag may remain', {
-            orderId: String(event.orderId),
-          });
+      const order = this._orderStateStore.getOrder(event.orderId);
+      if (order) {
+        const instrumentId = assetIdToInstrumentId(order.asset);
+        if (instrumentId) {
+          this._orderStateStore.clearInFlightFills(instrumentId);
         }
+      } else {
+        this._logger.debug('Order not found for failed fill — in-flight instrument flag may remain', {
+          orderId: String(event.orderId),
+        });
       }
     });
 

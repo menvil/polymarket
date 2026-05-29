@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { CancelOrderUseCase } from '../src/CancelOrderUseCase.js';
-import { OrderService } from '../src/services/OrderService.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
@@ -168,11 +167,9 @@ describe('CancelOrderUseCase', () => {
     portfolioStore = makePortfolioStore();
     exchangeClient = makeExchangeClient(true);
 
-    const orderService = new OrderService(orderRepo, logger);
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
     deps = {
-      orderService,
       portfolioService,
       orderRepo,
       orderStateStore,
@@ -218,8 +215,7 @@ describe('CancelOrderUseCase', () => {
 
   it('возвращает Err если ордер не найден', async () => {
     orderRepo = makeOrderRepo(undefined);
-    const orderService = new OrderService(orderRepo, logger);
-    const useCase = new CancelOrderUseCase({ ...deps, orderService, orderRepo });
+    const useCase = new CancelOrderUseCase({ ...deps, orderRepo });
     const result = await useCase.execute(makeInput());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toMatch(/Order not found/);
@@ -247,8 +243,7 @@ describe('CancelOrderUseCase', () => {
     })();
 
     orderRepo = makeOrderRepo(cancelledOrder);
-    const orderService = new OrderService(orderRepo, logger);
-    const useCase = new CancelOrderUseCase({ ...deps, orderService, orderRepo });
+    const useCase = new CancelOrderUseCase({ ...deps, orderRepo });
     const result = await useCase.execute(makeInput());
     expect(result.ok).toBe(true);
   });
@@ -273,8 +268,7 @@ describe('CancelOrderUseCase', () => {
     })();
 
     orderRepo = makeOrderRepo(cancelledOrder2);
-    const orderService = new OrderService(orderRepo, logger);
-    const useCase = new CancelOrderUseCase({ ...deps, orderService, orderRepo });
+    const useCase = new CancelOrderUseCase({ ...deps, orderRepo });
     await useCase.execute(makeInput());
     // Для терминального ордера не вызываем cancelOrder
     expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();

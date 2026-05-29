@@ -4,7 +4,7 @@
  * @remarks
  * ### Алгоритм:
  * 1. Получение Order из репозитория
- * 2. Отмена Order (OrderService.cancel → CANCELED)
+ * 2. Отмена Order (order.cancel() → CANCELED + orderRepo.save())
  * 3. Снятие резервации баланса (PortfolioService.releaseReservation)
  * 4. Запрос отмены на бирже (exchangeClient.cancelOrder — best effort)
  * 5. Публикация доменных событий
@@ -14,7 +14,7 @@
  * ордер уже отменён на нашей стороне. Reconciliation обработает расхождение.
  *
  * ### Идемпотентность:
- * Если ордер уже в терминальном статусе (CANCELED/FILLED/etc), OrderService.cancel
+ * Если ордер уже в терминальном статусе (CANCELED/FILLED/etc), order.cancel()
  * вернёт Err, который транслируется в Ok(void) чтобы избежать повторной ошибки.
  *
  * @example
@@ -35,7 +35,6 @@ import type { AccountId, OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IOrderRepository, IOrderStateStore, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { OrderService } from './services/OrderService.js';
 import type { PortfolioService } from './services/PortfolioService.js';
 
 /** Входные данные для CancelOrderUseCase */
@@ -50,7 +49,6 @@ export interface CancelOrderInput {
 
 /** Зависимости CancelOrderUseCase */
 export interface CancelOrderDeps {
-  readonly orderService: OrderService;
   readonly portfolioService: PortfolioService;
   readonly orderRepo: IOrderRepository;
   readonly orderStateStore: IOrderStateStore;
@@ -118,20 +116,37 @@ export class CancelOrderUseCase {
     }
 
     // Шаг 2: Отмена Order
-    const cancelResult = await this._deps.orderService.cancel(order, input.reason);
+    const cancelResult = order.cancel(input.reason);
     if (!cancelResult.ok) {
+      this._logger.warn('Failed to cancel order', {
+        orderId: String(input.orderId),
+        status: order.status,
+        error: cancelResult.error.message,
+      });
       return Err(new TradingError(
         `Failed to cancel order: ${cancelResult.error.message}`,
         { context: { orderId: String(input.orderId), status: order.status } },
       ));
     }
     const cancelledOrder = cancelResult.value;
+    try {
+      await this._deps.orderRepo.save(cancelledOrder);
+    } catch (err) {
+      this._logger.error('Failed to save order after cancel', {
+        orderId: String(input.orderId),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Err(new TradingError(
+        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
+        { context: { orderId: String(input.orderId) } },
+      ));
+    }
 
     // Шаг 3: Снятие резервации по стороне ордера
     //
     // ВАЖНО: проверяем актуальный статус ордера в store перед снятием резервации.
-    // `orderService.cancel()` содержит `await orderRepo.save()` (yield B).
-    // Во время yield B мог выполниться ProcessFillUseCase:
+    // `orderRepo.save()` содержит async yield.
+    // Во время yield мог выполниться ProcessFillUseCase:
     //   - saveSync(FILED) → перезаписал CANCELLED → FILED в store
     //   - portfolioApplyFill → reservation потреблена (reserved = 0)
     // Если это произошло — нельзя снимать резервацию повторно (она уже потреблена fill).

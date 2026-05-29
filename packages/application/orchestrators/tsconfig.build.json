@@ -39,10 +39,10 @@
       "path": "../../foundation/ids/tsconfig.build.json"
     },
     {
-      "path": "../ports/tsconfig.build.json"
+      "path": "../../domain/entities/fill/tsconfig.build.json"
     },
     {
-      "path": "../use-cases/tsconfig.build.json"
+      "path": "../ports/tsconfig.build.json"
     }
   ]
 }

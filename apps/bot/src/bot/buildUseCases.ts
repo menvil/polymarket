@@ -41,7 +41,6 @@ import {
   PlaceOrderUseCase,
   CancelOrderUseCase,
   ProcessFillUseCase,
-  OrderService,
   PortfolioService,
   LedgerService,
 } from '@polymarket/use-cases';
@@ -120,8 +119,8 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
  *
  * @remarks
  * Вызывается ПОСЛЕ создания PaperExchangeClient, чтобы внедрить его
- * как exchangeClient. Пересоздаёт OrderService/PortfolioService — это нормально,
- * так как они stateless (state в репозиториях).
+ * как exchangeClient. Пересоздаёт PortfolioService — это нормально,
+ * так как он stateless (state в репозиториях).
  *
  * @param params - Зависимости
  * @returns Объект с placeOrderUseCase и cancelOrderUseCase
@@ -131,13 +130,12 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
 
-  const orderService = new OrderService(orderRepo, logger);
   const portfolioService = new PortfolioService(portfolioStore, logger);
   const riskChecker = new OrderRiskChecker(riskParams, logger);
 
   const placeOrderUseCase = new PlaceOrderUseCase({
     riskChecker,
-    orderService,
+    orderRepo,
     portfolioService,
     exchangeClient,
     orderStateStore: orderRepo,
@@ -147,7 +145,6 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
   });
 
   const cancelOrderUseCase = new CancelOrderUseCase({
-    orderService,
     portfolioService,
     orderRepo,
     orderStateStore: orderRepo,

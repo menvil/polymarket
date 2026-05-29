@@ -2,9 +2,8 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { FillOrchestrator } from '../src/FillOrchestrator.js';
 import type { FillOrchestratorDeps } from '../src/FillOrchestrator.js';
 import type { ILogger } from '@polymarket/logger';
-import type { IEventBus } from '@polymarket/event-bus';
-import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import type { FillReceivedEvent } from '@polymarket/event-bus';
+import type { IEventBus, FillReceivedEvent } from '@polymarket/event-bus';
+import type { IOrderStateStore, IFillReverter, IFillProcessor } from '@polymarket/ports';
 import type { Timestamp } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
@@ -47,12 +46,31 @@ function makeEventBus(): IEventBus & {
   return bus;
 }
 
-function makeProcessFillUseCase(ok = true): ProcessFillUseCase {
+function makeProcessFillUseCase(ok = true): IFillProcessor {
   return {
-    execute: jest.fn<ProcessFillUseCase['execute']>().mockResolvedValue(
+    execute: jest.fn<IFillProcessor['execute']>().mockResolvedValue(
       ok ? Ok(undefined) : Err(new TradingError('Fill processing failed') as never)
     ),
-  } as unknown as ProcessFillUseCase;
+  } as unknown as IFillProcessor;
+}
+
+function makeOrderStateStore(): IOrderStateStore {
+  return {
+    getOrder: jest.fn().mockReturnValue(undefined),
+    clearMatchedOnExchange: jest.fn(),
+    isMatchedOnExchange: jest.fn().mockReturnValue(false),
+    markMatchedOnExchange: jest.fn(),
+    getOpenOrdersByInstrument: jest.fn().mockReturnValue([]),
+    hasInFlightFills: jest.fn().mockReturnValue(false),
+    setHasInFlightFills: jest.fn(),
+    clearInFlightFills: jest.fn(),
+  } as unknown as IOrderStateStore;
+}
+
+function makeFillReverter(): IFillReverter {
+  return {
+    reverseFill: jest.fn().mockReturnValue(Ok(undefined)),
+  } as unknown as IFillReverter;
 }
 
 function makeFillEvent(): FillReceivedEvent {
@@ -68,14 +86,20 @@ function makeFillEvent(): FillReceivedEvent {
 describe('FillOrchestrator', () => {
   let logger: ILogger;
   let eventBus: ReturnType<typeof makeEventBus>;
-  let processFill: ProcessFillUseCase;
+  let processFill: IFillProcessor;
   let deps: FillOrchestratorDeps;
 
   beforeEach(() => {
     logger = makeLogger();
     eventBus = makeEventBus();
     processFill = makeProcessFillUseCase(true);
-    deps = { eventBus, processFill, logger };
+    deps = {
+      eventBus,
+      processFill,
+      logger,
+      orderStateStore: makeOrderStateStore(),
+      portfolioService: makeFillReverter(),
+    };
   });
 
   it('подписывается на FILL_RECEIVED и FILL_FAILED при register()', () => {

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { PlaceOrderUseCase } from '../src/PlaceOrderUseCase.js';
-import { OrderService } from '../src/services/OrderService.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { PlaceOrderInput, PlaceOrderDeps } from '../src/PlaceOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
@@ -162,11 +161,10 @@ describe('PlaceOrderUseCase', () => {
     riskChecker = makeRiskChecker(true);
 
     const portfolioService = new PortfolioService(portfolioStore, logger);
-    const orderService = new OrderService(orderRepo, logger);
 
     deps = {
       riskChecker,
-      orderService,
+      orderRepo,
       portfolioService,
       exchangeClient,
       orderStateStore: {
