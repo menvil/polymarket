@@ -85,7 +85,7 @@ import { buildMarketData } from './bot/buildMarketData.js';
 import { buildStrategyEngine } from './bot/buildStrategyEngine.js';
 import { readSnapshotMeta } from './bot/readSnapshotMeta.js';
 import { runMultiMarketBacktest } from './bot/runMultiMarketBacktest.js';
-import { FillOrchestrator } from '@polymarket/orchestrators';
+import { FillOrchestrator, OrderUpdateOrchestrator } from '@polymarket/orchestrators';
 import { SimplePosition } from '@polymarket/portfolio';
 import { createStrategy } from './strategyFactory.js';
 import type { StrategyConfig } from './strategyFactory.js';
@@ -3645,6 +3645,14 @@ async function runLive(): Promise<void> {
   });
   fillOrchestrator.register();
 
+  // ── OrderUpdateOrchestrator: ORDER_UPDATE_RECEIVED → UpdateOrderStatusUseCase ──
+  const orderUpdateOrchestrator = new OrderUpdateOrchestrator({
+    eventBus,
+    updateOrderStatus: liveInfra.updateOrderStatusUseCase,
+    logger,
+  });
+  orderUpdateOrchestrator.register();
+
   // ── Market data + strategy engine ────────────────────────────────────────
 
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
@@ -4989,6 +4997,7 @@ async function runLive(): Promise<void> {
       engine.scheduler.stop();
       engine.orderEventBridge.stop();
       fillOrchestrator.unregister();
+      orderUpdateOrchestrator.unregister();
       liveInfra.userEventFeedAdapter.stop();
       marketDataFeedAdapter.stop();
       await marketWsAdapter.disconnect();

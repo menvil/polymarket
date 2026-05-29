@@ -32,8 +32,7 @@ import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
 import type { IExchangeClient, ICurrentBalanceProvider } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import { ReconcileTradesUseCase, PortfolioService, InitializePortfolioUseCase } from '@polymarket/use-cases';
-import { assetIdToInstrumentId } from '@polymarket/ids';
+import { ReconcileTradesUseCase, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
 import { UserEventFeedAdapter } from '@polymarket/exchange/adapters';
 import { PolymarketExchangeClientAdapter } from '@polymarket/exchange/adapters';
@@ -114,6 +113,8 @@ export interface LiveInfra {
   readonly balanceRestClient: PolymarketBalanceRestClient;
   /** Провайдер текущего USDC-баланса от venue (для периодической синхронизации) */
   readonly currentBalanceProvider: ICurrentBalanceProvider;
+  /** Use case обновления статуса ордера — для OrderUpdateOrchestrator и прямого вызова из reconciler */
+  readonly updateOrderStatusUseCase: UpdateOrderStatusUseCase;
 }
 
 // ── Реализация ────────────────────────────────────────────────────────────────
@@ -211,46 +212,20 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     logger,
   });
 
-  // PortfolioService для освобождения резервации при внешней отмене ордера
-  const portfolioServiceForCancel = new PortfolioService(portfolioStore, logger);
+  const portfolioService = new PortfolioService(portfolioStore, logger);
 
-  const orderUpdateHandler = new OrderUpdateHandler(orderRepo, eventBus, logger,
-    // Callback: освобождение резервации при venue-initiated отмене (ручная отмена на бирже).
-    // CancelOrderUseCase делает unreserve сам; здесь — только внешние отмены.
-    (cancelledOrder) => {
-      // accountId берём из closure buildLiveInfra — Order entity не хранит accountId
-      const orderAccountId = accountId;
-      if (cancelledOrder.side === 'BUY') {
-        const remainingNotional = cancelledOrder.price.value().times(cancelledOrder.remainingSize.value());
-        const releaseResult = portfolioServiceForCancel.releaseReservation(orderAccountId, remainingNotional);
-        if (!releaseResult.ok) {
-          logger.error('Failed to release USDC reservation after external BUY cancel', {
-            orderId: String(cancelledOrder.id),
-            error: releaseResult.error.message,
-          });
-        }
-      } else {
-        // SELL: освобождаем резервацию токенов
-        const instrumentId = assetIdToInstrumentId(cancelledOrder.asset);
-        if (instrumentId) {
-          const releaseResult = portfolioServiceForCancel.releaseTokenReservation(
-            orderAccountId,
-            instrumentId,
-            cancelledOrder.remainingSize.value(),
-          );
-          if (!releaseResult.ok) {
-            logger.error('Failed to release token reservation after external SELL cancel', {
-              orderId: String(cancelledOrder.id),
-              error: releaseResult.error.message,
-            });
-          }
-        }
-      }
-    },
-  );
+  const updateOrderStatusUseCase = new UpdateOrderStatusUseCase({
+    orderRepo,
+    orderStateStore: orderRepo,
+    portfolioService,
+    eventBus,
+    logger,
+  });
+
+  const orderUpdateHandler = new OrderUpdateHandler(eventBus, clock, accountId, logger);
 
 // Inline reconciler: сверяет локальные ордера с venue (LIVE + MATCHED).
-  // Используем OrderUpdateHandler чтобы при отмене освобождалась резервация Portfolio.
+  // Вызываем updateOrderStatusUseCase напрямую (не через EventBus) для синхронной обработки.
   const orderReconciler = {
     async reconcile(reconcileAccountId: AccountId): Promise<void> {
       const localOrders = await orderRepo.getAll();
@@ -281,10 +256,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
       let cancelledCount = 0;
       for (const order of localOrders) {
         if (!venueIds.has(String(order.id))) {
-          await orderUpdateHandler.handle({
-            type: 'CANCELLED',
-            orderId: order.id,
-            reason: 'Reconciliation: order not found on venue',
+          await updateOrderStatusUseCase.execute({
+            update: { type: 'CANCELLED', orderId: order.id, reason: 'Reconciliation: order not found on venue' },
+            accountId: reconcileAccountId,
           });
           cancelledCount++;
         }
@@ -338,5 +312,6 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     reconcileTradesUseCase,
     balanceRestClient,
     currentBalanceProvider,
+    updateOrderStatusUseCase,
   };
 }

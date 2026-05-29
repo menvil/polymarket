@@ -22,4 +22,7 @@ export type { FillOrchestratorDeps } from './FillOrchestrator.js';
 export { RiskOrchestrator } from './RiskOrchestrator.js';
 export type { RiskOrchestratorDeps } from './RiskOrchestrator.js';
 
+export { OrderUpdateOrchestrator } from './OrderUpdateOrchestrator.js';
+export type { OrderUpdateOrchestratorDeps } from './OrderUpdateOrchestrator.js';
+
 export type { IStrategyRunner } from './IStrategyRunner.js';

@@ -3,9 +3,8 @@ import { OrderUpdateHandler } from '../src/OrderUpdateHandler.js';
 import type { VenueOrderUpdate } from '../src/OrderUpdateHandler.js';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { ILogger } from '@polymarket/logger';
-import type { IOrderRepository } from '@polymarket/ports';
-import type { OrderId } from '@polymarket/ids';
-import type { Order } from '@polymarket/order';
+import type { IClock } from '@polymarket/time';
+import type { AccountId, OrderId } from '@polymarket/ids';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,7 +16,7 @@ function makeLogger(): ILogger {
     warn: jest.fn() as ILogger['warn'],
     error: jest.fn() as ILogger['error'],
     fatal: jest.fn() as ILogger['fatal'],
-    child: jest.fn() as ILogger['child'],
+    child: jest.fn<ILogger['child']>().mockReturnThis() as ILogger['child'],
   };
 }
 
@@ -25,350 +24,70 @@ function makeEventBus(): IEventBus {
   return {
     publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
-    subscribe: jest.fn() as IEventBus['subscribe'],
+    subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }
 
-const ORDER_ID = 'order-001' as unknown as OrderId;
-
-/**
- * Создаёт mock Order с заданным результатом для указанного метода.
- */
-function makeOrderWithResult(
-  method: 'accept' | 'reject' | 'cancel' | 'expire',
-  ok: boolean,
-  events: unknown[] = [],
-): Order {
-  const updatedOrder = {
-    pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue(events),
-    accept: jest.fn(),
-    reject: jest.fn(),
-    cancel: jest.fn(),
-    expire: jest.fn(),
-  } as unknown as Order;
-
-  const result = ok
-    ? { ok: true as const, value: updatedOrder }
-    : { ok: false as const, error: new Error('Invalid transition') };
-
-  (updatedOrder[method] as ReturnType<typeof jest.fn>).mockReturnValue(result);
-
-  return {
-    accept: jest.fn<Order['accept']>().mockReturnValue(result as ReturnType<Order['accept']>),
-    reject: jest.fn<Order['reject']>().mockReturnValue(result as ReturnType<Order['reject']>),
-    cancel: jest.fn<Order['cancel']>().mockReturnValue(result as ReturnType<Order['cancel']>),
-    expire: jest.fn<Order['expire']>().mockReturnValue(result as ReturnType<Order['expire']>),
-    pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-  } as unknown as Order;
+function makeClock(ms = 1_700_000_000_000): IClock {
+  return { now: jest.fn(() => new Date(ms)) } as unknown as IClock;
 }
+
+const ACCOUNT_ID = 'acc-001' as unknown as AccountId;
+const ORDER_ID = 'order-001' as unknown as OrderId;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('OrderUpdateHandler', () => {
-  let orders: IOrderRepository;
+describe('OrderUpdateHandler (thin adapter)', () => {
   let eventBus: IEventBus;
+  let clock: IClock;
   let logger: ILogger;
   let handler: OrderUpdateHandler;
 
   beforeEach(() => {
-    orders = {
-      get: jest.fn().mockImplementation(() => Promise.resolve(undefined)) as unknown as IOrderRepository['get'],
-      save: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['save'],
-      delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
-      getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
-      countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
-      getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
-      getByMarketId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByMarketId'],
-    };
     eventBus = makeEventBus();
+    clock = makeClock();
     logger = makeLogger();
-    handler = new OrderUpdateHandler(orders, eventBus, logger);
+    handler = new OrderUpdateHandler(eventBus, clock, ACCOUNT_ID, logger);
   });
 
-  // ── Ордер не найден ──────────────────────────────────────────────────────
-
-  it('логирует warn и не публикует если ордер не найден', async () => {
+  it('публикует ORDER_UPDATE_RECEIVED при handle(ACCEPTED)', async () => {
     const update: VenueOrderUpdate = { type: 'ACCEPTED', orderId: ORDER_ID };
     await handler.handle(update);
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Order not found for venue update',
-      expect.objectContaining({ updateType: 'ACCEPTED' }),
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ORDER_UPDATE_RECEIVED',
+        update,
+        accountId: ACCOUNT_ID,
+      }),
     );
-    expect(eventBus.publishAll).not.toHaveBeenCalled();
-    expect(orders.save).not.toHaveBeenCalled();
   });
 
-  // ── ACCEPTED ─────────────────────────────────────────────────────────────
+  it('публикует ORDER_UPDATE_RECEIVED при handle(CANCELLED)', async () => {
+    const update: VenueOrderUpdate = { type: 'CANCELLED', orderId: ORDER_ID, reason: 'strategy' };
+    await handler.handle(update);
 
-  it('вызывает order.accept() и сохраняет ордер при ACCEPTED', async () => {
-    const order = makeOrderWithResult('accept', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(order.accept).toHaveBeenCalledTimes(1);
-    expect(orders.save).toHaveBeenCalledTimes(1);
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'ORDER_UPDATE_RECEIVED', update }),
+    );
   });
 
-  // ── REJECTED ─────────────────────────────────────────────────────────────
+  it('включает receivedAt в событие', async () => {
+    const update: VenueOrderUpdate = { type: 'EXPIRED', orderId: ORDER_ID };
+    await handler.handle(update);
 
-  it('вызывает order.reject(reason) при REJECTED', async () => {
-    const order = makeOrderWithResult('reject', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'REJECTED', orderId: ORDER_ID, reason: 'price out of range' });
-
-    expect(order.reject).toHaveBeenCalledWith('price out of range');
+    const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(published['receivedAt']).toBeDefined();
   });
 
-  // ── CANCELLED ────────────────────────────────────────────────────────────
+  it('eventBus.publish выбрасывает → error логируется, не выбрасывает', async () => {
+    (eventBus.publish as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('bus down'));
+    const update: VenueOrderUpdate = { type: 'REJECTED', orderId: ORDER_ID, reason: 'bad price' };
 
-  it('вызывает order.cancel(reason) при CANCELLED с reason', async () => {
-    const order = makeOrderWithResult('cancel', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'CANCELLED', orderId: ORDER_ID, reason: 'user request' });
-
-    expect(order.cancel).toHaveBeenCalledWith('user request');
-  });
-
-  it('вызывает order.cancel(undefined) при CANCELLED без reason', async () => {
-    const order = makeOrderWithResult('cancel', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'CANCELLED', orderId: ORDER_ID });
-
-    expect(order.cancel).toHaveBeenCalledWith(undefined);
-  });
-
-  // ── EXPIRED ──────────────────────────────────────────────────────────────
-
-  it('вызывает order.expire() при EXPIRED', async () => {
-    const order = makeOrderWithResult('expire', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'EXPIRED', orderId: ORDER_ID });
-
-    expect(order.expire).toHaveBeenCalledTimes(1);
-  });
-
-  // ── Ошибка перехода ──────────────────────────────────────────────────────
-
-  it('логирует error и не сохраняет если Order вернул error', async () => {
-    const order = makeOrderWithResult('accept', false);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
+    await expect(handler.handle(update)).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith(
-      'Failed to apply order update',
-      expect.objectContaining({ updateType: 'ACCEPTED' }),
-    );
-    expect(orders.save).not.toHaveBeenCalled();
-    expect(eventBus.publishAll).not.toHaveBeenCalled();
-  });
-
-  // ── Публикация Domain Events ─────────────────────────────────────────────
-
-  it('публикует OrderEvent[] из pullEvents() после успешного перехода', async () => {
-    const fakeEvent = { type: 'ORDER_ACCEPTED' as const, orderId: ORDER_ID };
-    const updatedOrder = {
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([fakeEvent]),
-    } as unknown as Order;
-
-    const order = {
-      accept: jest.fn<Order['accept']>().mockReturnValue({
-        ok: true,
-        value: updatedOrder,
-      } as ReturnType<Order['accept']>),
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn() as Order['cancel'],
-      expire: jest.fn() as Order['expire'],
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(eventBus.publishAll).toHaveBeenCalledWith([fakeEvent]);
-  });
-
-  it('НЕ вызывает publishAll если pullEvents() вернул []', async () => {
-    const order = makeOrderWithResult('accept', true, []);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(eventBus.publishAll).not.toHaveBeenCalled();
-  });
-
-  it('логирует info после успешного обновления', async () => {
-    const order = makeOrderWithResult('expire', true);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'EXPIRED', orderId: ORDER_ID });
-
-    expect(logger.info).toHaveBeenCalledWith(
-      'Order update applied',
-      expect.objectContaining({ updateType: 'EXPIRED' }),
-    );
-  });
-
-  // ── Idempotent (дублирующие WS-события) ──────────────────────────────────
-
-  it('дублирующий ACCEPTED на OPEN ордере — debug, не error, save не вызывается', async () => {
-    const order = {
-      status: 'OPEN',
-      accept: jest.fn<Order['accept']>().mockReturnValue({
-        ok: false,
-        error: new Error('Order already open'),
-      } as ReturnType<Order['accept']>),
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn() as Order['cancel'],
-      expire: jest.fn() as Order['expire'],
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Ignoring duplicate venue update (already in target state)',
-      expect.objectContaining({ updateType: 'ACCEPTED', currentStatus: 'OPEN' }),
-    );
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(orders.save).not.toHaveBeenCalled();
-  });
-
-  it('дублирующий CANCELLED на CANCELED ордере — debug, не error', async () => {
-    const order = {
-      status: 'CANCELED',
-      accept: jest.fn() as Order['accept'],
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn<Order['cancel']>().mockReturnValue({
-        ok: false,
-        error: new Error('Already canceled'),
-      } as ReturnType<Order['cancel']>),
-      expire: jest.fn() as Order['expire'],
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'CANCELLED', orderId: ORDER_ID });
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Ignoring duplicate venue update (already in target state)',
-      expect.objectContaining({ updateType: 'CANCELLED', currentStatus: 'CANCELED' }),
-    );
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
-  it('дублирующий EXPIRED на EXPIRED ордере — debug, не error', async () => {
-    const order = {
-      status: 'EXPIRED',
-      accept: jest.fn() as Order['accept'],
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn() as Order['cancel'],
-      expire: jest.fn<Order['expire']>().mockReturnValue({
-        ok: false,
-        error: new Error('Already expired'),
-      } as ReturnType<Order['expire']>),
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-
-    await handler.handle({ type: 'EXPIRED', orderId: ORDER_ID });
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Ignoring duplicate venue update (already in target state)',
-      expect.objectContaining({ updateType: 'EXPIRED', currentStatus: 'EXPIRED' }),
-    );
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
-  // ── save failure ──────────────────────────────────────────────────────────
-
-  it('orders.save() throws Error → error logged, publishAll не вызывается', async () => {
-    const order = makeOrderWithResult('accept', true, []);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-    (orders.save as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('DB unavailable'));
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to save order after venue update',
-      expect.objectContaining({ updateType: 'ACCEPTED' }),
-    );
-    expect(eventBus.publishAll).not.toHaveBeenCalled();
-  });
-
-  it('orders.save() throws non-Error → нормализуется через new Error(String(err))', async () => {
-    const order = makeOrderWithResult('accept', true, []);
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-    (orders.save as ReturnType<typeof jest.fn>).mockRejectedValue('string-db-error');
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to save order after venue update',
-      expect.objectContaining({ err: expect.any(Error) }),
-    );
-  });
-
-  // ── publishAll failure ────────────────────────────────────────────────────
-
-  it('eventBus.publishAll() throws Error → save уже произошёл, error logged', async () => {
-    const fakeEvent = { type: 'ORDER_ACCEPTED' as const, orderId: ORDER_ID };
-    const updatedOrder = {
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([fakeEvent]),
-    } as unknown as Order;
-    const order = {
-      accept: jest.fn<Order['accept']>().mockReturnValue({
-        ok: true,
-        value: updatedOrder,
-      } as ReturnType<Order['accept']>),
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn() as Order['cancel'],
-      expire: jest.fn() as Order['expire'],
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-    (eventBus.publishAll as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('Bus error'));
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(orders.save).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to publish order events',
-      expect.objectContaining({ updateType: 'ACCEPTED' }),
-    );
-  });
-
-  it('eventBus.publishAll() throws non-Error → нормализуется через new Error(String(err))', async () => {
-    const fakeEvent = { type: 'ORDER_ACCEPTED' as const, orderId: ORDER_ID };
-    const updatedOrder = {
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([fakeEvent]),
-    } as unknown as Order;
-    const order = {
-      accept: jest.fn<Order['accept']>().mockReturnValue({
-        ok: true,
-        value: updatedOrder,
-      } as ReturnType<Order['accept']>),
-      reject: jest.fn() as Order['reject'],
-      cancel: jest.fn() as Order['cancel'],
-      expire: jest.fn() as Order['expire'],
-      pullEvents: jest.fn<() => readonly unknown[]>().mockReturnValue([]),
-    } as unknown as Order;
-    (orders.get as ReturnType<typeof jest.fn>).mockResolvedValue(order);
-    (eventBus.publishAll as ReturnType<typeof jest.fn>).mockRejectedValue('string-bus-error');
-
-    await handler.handle({ type: 'ACCEPTED', orderId: ORDER_ID });
-
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to publish order events',
-      expect.objectContaining({ err: expect.any(Error) }),
+      'Failed to publish ORDER_UPDATE_RECEIVED',
+      expect.objectContaining({ orderId: String(ORDER_ID) }),
     );
   });
 });

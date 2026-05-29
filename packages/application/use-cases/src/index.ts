@@ -33,6 +33,9 @@ export type { ReconcileTradesDeps, ReconcileTradesInput } from './ReconcileTrade
 export { InitializePortfolioUseCase } from './InitializePortfolioUseCase.js';
 export type { InitializePortfolioDeps } from './InitializePortfolioUseCase.js';
 
+export { UpdateOrderStatusUseCase } from './UpdateOrderStatusUseCase.js';
+export type { UpdateOrderStatusInput, UpdateOrderStatusDeps } from './UpdateOrderStatusUseCase.js';
+
 // Services
 export { PortfolioService } from './services/PortfolioService.js';
 export type { PortfolioSaveError } from './services/PortfolioService.js';

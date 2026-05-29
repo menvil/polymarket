@@ -24,6 +24,7 @@ export type {
   MarketClosedEvent,
   MarketCloseReason,
 } from './market-lifecycle-events.js';
+export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './order-update-events.js';
 // Re-export Order domain events (из @polymarket/order)
 export type { OrderEvent } from '@polymarket/order';
 
@@ -51,6 +52,7 @@ import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './mar
 import type { RiskLimitBreachedEvent } from './risk-events.js';
 import type { StrategySignalEvent } from './strategy-events.js';
 import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle-events.js';
+import type { OrderUpdateReceivedEvent } from './order-update-events.js';
 import type { OrderEvent } from '@polymarket/order';
 
 export type ApplicationEvent =
@@ -65,4 +67,5 @@ export type ApplicationEvent =
   | StrategySignalEvent
   | MarketOpenedEvent
   | MarketClosedEvent
+  | OrderUpdateReceivedEvent
   | OrderEvent;

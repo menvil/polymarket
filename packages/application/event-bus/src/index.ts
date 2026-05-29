@@ -39,5 +39,6 @@ export type {
   MarketClosedEvent,
   MarketCloseReason,
 } from './events/market-lifecycle-events.js';
+export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './events/order-update-events.js';
 export type { IEventBus, EventHandler } from './IEventBus.js';
 export { EventBus } from './EventBus.js';
