@@ -580,43 +580,6 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── onRiskBreached ───────────────────────────────────
-
-  describe('onRiskBreached', () => {
-    it('should unregister specific strategy on targeted risk breach', async () => {
-      const s1 = makeStrategy('s1');
-      await scheduler.register(makeRegistration(s1));
-
-      await scheduler.onRiskBreached({
-        type: 'RISK_LIMIT_BREACHED',
-        violationType: 'MAX_DRAWDOWN',
-        violation: 'Exceeded',
-        strategyId: 's1',
-        timestamp: {} as any,
-      } as any);
-
-      expect(scheduler.getMetrics('s1')).toBeUndefined();
-    });
-
-    it('should stop all strategies on system-wide risk breach', async () => {
-      const s1 = makeStrategy('s1');
-      const s2 = makeStrategy('s2');
-      await scheduler.register(makeRegistration(s1));
-      await scheduler.register(makeRegistration(s2));
-
-      await scheduler.onRiskBreached({
-        type: 'RISK_LIMIT_BREACHED',
-        violationType: 'MAX_DRAWDOWN',
-        violation: 'Exceeded',
-        strategyId: undefined,
-        timestamp: {} as any,
-      } as any);
-
-      expect(scheduler.getMetrics('s1')).toBeUndefined();
-      expect(scheduler.getMetrics('s2')).toBeUndefined();
-    });
-  });
-
   // ── tick() error handling ────────────────────────────
 
   describe('tick error handling', () => {

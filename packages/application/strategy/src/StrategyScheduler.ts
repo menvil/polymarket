@@ -46,7 +46,6 @@ import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import type { RiskLimitBreachedEvent } from '@polymarket/event-bus';
 import type { IPortfolioStore, IOrderStateStore, IMarketCatalog } from '@polymarket/ports';
 import type { Market } from '@polymarket/market';
 import type { IStrategy } from './IStrategy.js';
@@ -521,30 +520,6 @@ export class StrategyScheduler {
    */
   public getMetrics(strategyId: string): Record<string, unknown> | undefined {
     return this._entries.get(strategyId)?.strategy.getMetrics();
-  }
-
-  /**
-   * Реагирует на нарушение риск-лимита.
-   *
-   * @param event - RiskLimitBreachedEvent
-   *
-   * @remarks
-   * - `event.strategyId` указан → unregister конкретной стратегии
-   * - `event.strategyId` undefined → системное нарушение → stopAll
-   */
-  public async onRiskBreached(event: RiskLimitBreachedEvent): Promise<void> {
-    if (event.strategyId) {
-      this._logger.warn('Risk limit breached, stopping strategy', {
-        strategyId: event.strategyId,
-        violationType: event.violationType,
-      });
-      await this.unregister(event.strategyId);
-    } else {
-      this._logger.warn('System-wide risk breach, stopping all', {
-        violationType: event.violationType,
-      });
-      await this.stopAll();
-    }
   }
 
   // ── Внутренний механизм: event-driven queue ──────────────

@@ -32,7 +32,6 @@ export type {
   BookDepthEvent,
   TradeReceivedEvent,
 } from './events/market-events.js';
-export type { RiskViolationType, RiskLimitBreachedEvent } from './events/risk-events.js';
 export type { SignalDirection, StrategySignalEvent } from './events/strategy-events.js';
 export type {
   MarketOpenedEvent,

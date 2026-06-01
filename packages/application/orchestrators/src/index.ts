@@ -6,7 +6,7 @@
  * Каждый оркестратор — единственный компонент с конкретной ответственностью:
  *
  * - `FillOrchestrator`: FILL_RECEIVED → ProcessFillUseCase
- * - `RiskOrchestrator`: RISK_LIMIT_BREACHED → IStrategyRunner.onRiskBreached()
+ * - `OrderUpdateOrchestrator`: ORDER_UPDATE_RECEIVED → UpdateOrderStatusUseCase
  *
  * ### Паттерн использования:
  * ```typescript
@@ -19,10 +19,5 @@
 export { FillOrchestrator } from './FillOrchestrator.js';
 export type { FillOrchestratorDeps } from './FillOrchestrator.js';
 
-export { RiskOrchestrator } from './RiskOrchestrator.js';
-export type { RiskOrchestratorDeps } from './RiskOrchestrator.js';
-
 export { OrderUpdateOrchestrator } from './OrderUpdateOrchestrator.js';
 export type { OrderUpdateOrchestratorDeps } from './OrderUpdateOrchestrator.js';
-
-export type { IStrategyRunner } from './IStrategyRunner.js';

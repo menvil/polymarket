@@ -17,7 +17,6 @@ export type {
   BookDepthEvent,
   TradeReceivedEvent,
 } from './market-events.js';
-export type { RiskViolationType, RiskLimitBreachedEvent } from './risk-events.js';
 export type { SignalDirection, StrategySignalEvent } from './strategy-events.js';
 export type {
   MarketOpenedEvent,
@@ -49,7 +48,6 @@ export type { OrderEvent } from '@polymarket/order';
  */
 import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
 import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
-import type { RiskLimitBreachedEvent } from './risk-events.js';
 import type { StrategySignalEvent } from './strategy-events.js';
 import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle-events.js';
 import type { OrderUpdateReceivedEvent } from './order-update-events.js';
@@ -63,7 +61,6 @@ export type ApplicationEvent =
   | BookUpdatedEvent
   | BookDepthEvent
   | TradeReceivedEvent
-  | RiskLimitBreachedEvent
   | StrategySignalEvent
   | MarketOpenedEvent
   | MarketClosedEvent
