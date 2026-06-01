@@ -98,6 +98,8 @@ interface CDData {
   readonly hasOpenOrder: boolean;
   readonly hasInFlightFill: boolean;
   readonly availableBalance: Decimal;
+  /** Токены доступные для SELL (с учётом fee deduction при BUY). Используется для размера SELL. */
+  readonly availableTokenQty: Decimal;
   readonly nowMs: number;
   readonly openOrderPriceCents: number | null;
   readonly openOrderAgeSec: number | null;
@@ -391,6 +393,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
     const primaryPos = snapshot.portfolio?.getPosition(snapshot.instrumentId);
     const primaryQty = primaryPos?.quantity.value() ?? new Decimal(0);
     const availableBalance = snapshot.portfolio?.balance.available().value() ?? new Decimal(0);
+    const availableTokenQty = snapshot.portfolio?.availableTokenQuantity(snapshot.instrumentId) ?? new Decimal(0);
     const openOrder        = snapshot.openOrders[0];
     const openOrderPriceCents = openOrder ? openOrder.price.value().toNumber() * 100 : null;
     const openOrderAgeSec     = openOrder
@@ -405,7 +408,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       hasPosition:      primaryQty.gt(0),
       hasOpenOrder:     snapshot.openOrders.length > 0,
       hasInFlightFill:  snapshot.hasInFlightFills || snapshot.matchedOrders.length > 0,
-      availableBalance, nowMs: snapshot.nowMs,
+      availableBalance, availableTokenQty, nowMs: snapshot.nowMs,
       openOrderPriceCents, openOrderAgeSec,
     };
   }
@@ -443,7 +446,8 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
             action: 'SELL', rejectReason: `fok_retry(age=${data.openOrderAgeSec.toFixed(2)}s)`,
             state: this._buildDecisionState(data),
           });
-          return [{ type: 'SELL', price: 1, size: this._orderSize }];
+          const fOKSize = data.availableTokenQty.gt(0) ? data.availableTokenQty : this._orderSize;
+          return [{ type: 'SELL', price: 1, size: fOKSize }];
         }
         return [{ type: 'HOLD' }];
       }
@@ -546,6 +550,12 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
 
     const mid = data.midCents;
 
+    // Используем availableTokenQty вместо _orderSize: fee deduction при BUY уменьшает
+    // реальную позицию (feeInTokens = feeUSDC / price). Если SELL запрашивает больше чем
+    // доступно — portfolio.reserveTokensForOrder возвращает Err, ордер не создаётся,
+    // sell_retry(unconfirmed) зацикливается до экспирации рынка.
+    const sellSize = data.availableTokenQty.gt(0) ? data.availableTokenQty : this._orderSize;
+
     if (this._takeProfitCents > 0 && mid >= entry + this._takeProfitCents) {
       this._pendingSell = true;
       this._pendingSellEmittedTs = data.nowMs;
@@ -554,14 +564,14 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       this._logger?.warn('CrowdDeviationTPSL: SELL — TP hit', {
         entry: entry.toFixed(1), mid: mid.toFixed(1),
         tp: this._takeProfitCents, gain: (mid - entry).toFixed(1),
-        sellPrice,
+        sellPrice, sellSize: sellSize.toNumber(),
       });
       this._journal?.recordDecision({
         marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
         action: 'SELL', rejectReason: `take_profit(entry=${entry.toFixed(1)},mid=${mid.toFixed(1)},tp=${this._takeProfitCents})`,
         state: this._buildDecisionState(data),
       });
-      return [{ type: 'SELL', price: sellPrice, size: this._orderSize }];
+      return [{ type: 'SELL', price: sellPrice, size: sellSize }];
     }
 
     if (this._stopLossCents > 0 && mid <= entry - this._stopLossCents) {
@@ -572,14 +582,14 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       this._logger?.warn('CrowdDeviationTPSL: SELL — SL hit', {
         entry: entry.toFixed(1), mid: mid.toFixed(1),
         sl: this._stopLossCents, loss: (entry - mid).toFixed(1),
-        sellPrice,
+        sellPrice, sellSize: sellSize.toNumber(),
       });
       this._journal?.recordDecision({
         marketId: data.instrumentId, strategyId: this.id, ts: data.nowMs,
         action: 'SELL', rejectReason: `stop_loss(entry=${entry.toFixed(1)},mid=${mid.toFixed(1)},sl=${this._stopLossCents})`,
         state: this._buildDecisionState(data),
       });
-      return [{ type: 'SELL', price: sellPrice, size: this._orderSize }];
+      return [{ type: 'SELL', price: sellPrice, size: sellSize }];
     }
 
     return [{ type: 'HOLD' }];
