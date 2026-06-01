@@ -260,6 +260,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
     // Позиция
     const position = portfolio.getPosition(snapshot.instrumentId);
     const positionQty = position ? position.quantity.value().toNumber() : 0;
+    const availableTokenQty = portfolio.availableTokenQuantity(snapshot.instrumentId).toNumber();
     const availableUsdc = portfolio.balance.available().value().toNumber();
 
     // Открытые ордера
@@ -281,6 +282,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
       ewmaMidCents: this._ewma ?? undefined,
       openBuyPriceCents,
       positionQty,
+      availableTokenQty,
       availableUsdc,
       hasInFlightFills: snapshot.hasInFlightFills,
       hasOpenSell,
@@ -305,7 +307,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
    * 5. HOLD: иначе.
    */
   protected decide(data: OBWData, _reasons: ReadonlySet<TriggerReason>): OBWAction[] {
-    const { nowMs, wallSignal, fairCents, positionQty, availableUsdc,
+    const { nowMs, wallSignal, fairCents, positionQty, availableTokenQty, availableUsdc,
       openBuyPriceCents, hasInFlightFills, hasOpenSell } = data;
 
     const midCents = data.ewmaMidCents ?? fairCents;
@@ -315,7 +317,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
       const loss = this._entryPriceCents - midCents;
       if (loss >= this._stopLossCents) {
         this._log('stop-loss triggered', { entryPriceCents: this._entryPriceCents, midCents, loss });
-        return this._exitPosition(nowMs, midCents, positionQty, 'stop-loss');
+        return this._exitPosition(nowMs, midCents, availableTokenQty > 0 ? availableTokenQty : positionQty, 'stop-loss');
       }
     }
 
@@ -323,13 +325,13 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
     if (this._entryMs !== null && positionQty > 0 && !hasOpenSell &&
         nowMs - this._entryMs >= this._holdMaxMs) {
       this._log('hold timeout', { holdMs: nowMs - this._entryMs, holdMaxMs: this._holdMaxMs });
-      return this._exitPosition(nowMs, midCents, positionQty, 'timeout');
+      return this._exitPosition(nowMs, midCents, availableTokenQty > 0 ? availableTokenQty : positionQty, 'timeout');
     }
 
     // ── 3. Разворотный сигнал при открытой позиции ────────────────────────
     if (positionQty > 0 && !hasOpenSell && this._isReverseSignal(wallSignal)) {
       this._log('reverse signal exit', { signal: wallSignal.type, strength: wallSignal.strength });
-      return this._exitPosition(nowMs, midCents, positionQty, 'reverse-signal');
+      return this._exitPosition(nowMs, midCents, availableTokenQty > 0 ? availableTokenQty : positionQty, 'reverse-signal');
     }
 
     // ── 4. BUY ────────────────────────────────────────────────────────────

@@ -177,6 +177,7 @@ export interface OBWData {
   readonly ewmaMidCents: number | undefined;
   readonly openBuyPriceCents: number | undefined;
   readonly positionQty: number;
+  readonly availableTokenQty: number;
   readonly availableUsdc: number;
   readonly hasInFlightFills: boolean;
   readonly hasOpenSell: boolean;

@@ -74,6 +74,7 @@ interface MSData {
   readonly tauSec: number;
   readonly hasPosition: boolean;
   readonly positionQty: Decimal;
+  readonly availableTokenQty: Decimal;
   readonly avgEntryPriceCents: number;
   readonly availableBalance: Decimal;
   readonly nowMs: number;
@@ -263,11 +264,12 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
     const hasPosition = positionQty.gt(0);
     const avgEntryPriceCents = hasPosition ? position!.averageEntryPrice.value().toNumber() * 100 : 0;
     const availableBalance = snapshot.portfolio?.balance.available().value() ?? new Decimal(0);
+    const availableTokenQty = snapshot.portfolio?.availableTokenQuantity(snapshot.instrumentId) ?? new Decimal(0);
 
     return {
       midCents, bestBidCents, bestAskCents,
       velocityCents30s, pressureRatio, tauSec,
-      hasPosition, positionQty, avgEntryPriceCents,
+      hasPosition, positionQty, availableTokenQty, avgEntryPriceCents,
       availableBalance, nowMs: snapshot.nowMs,
     };
   }
@@ -322,7 +324,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
           pnl: '+' + pnlCents.toFixed(0) + 'c',
         });
         const sellPrice = Math.max(20, Math.round(currentValueCents - 10));
-        return [{ type: 'CANCEL_ALL' }, { type: 'SELL', price: sellPrice, size: data.positionQty }];
+        return [{ type: 'CANCEL_ALL' }, { type: 'SELL', price: sellPrice, size: data.availableTokenQty.gt(0) ? data.availableTokenQty : data.positionQty }];
       }
 
       // Stop loss
@@ -332,7 +334,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
           pnl: pnlCents.toFixed(0) + 'c',
         });
         const sellPrice = Math.max(20, Math.round(currentValueCents - 10));
-        return [{ type: 'CANCEL_ALL' }, { type: 'SELL', price: sellPrice, size: data.positionQty }];
+        return [{ type: 'CANCEL_ALL' }, { type: 'SELL', price: sellPrice, size: data.availableTokenQty.gt(0) ? data.availableTokenQty : data.positionQty }];
       }
 
       // Timeout → hold to settlement (не продаём — momentum должен дотянуть)
