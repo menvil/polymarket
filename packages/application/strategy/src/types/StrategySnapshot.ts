@@ -36,116 +36,38 @@ import type { TradeTape } from '@polymarket/trade-tape';
 import type { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { Market } from '@polymarket/market';
+import type {
+  CexBookTick,
+  CexTradeTick,
+  CexVenue,
+  CexVenueState,
+  CryptoPriceHistoryView,
+  CryptoPricePoint,
+  CryptoPriceSource,
+  CryptoSignalDirection,
+  CryptoSignalRegistryView,
+  CryptoSignalRequest,
+  CryptoSignalResult,
+  CryptoVenueHistoryView,
+  CryptoVenueStateView,
+} from '@polymarket/market-state';
 import type { InstrumentConstraints } from './InstrumentConstraints.js';
 
-export type CryptoPriceSource =
-  | 'polymarket_chainlink'
-  | 'polymarket_binance'
-  | 'cex_binance'
-  | 'cex_coinbase'
-  | 'cex_okx'
-  | 'cex_cryptocom'
-  | 'cex_kraken';
-
-export type CexVenue = 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken';
-
-export interface CryptoPricePoint {
-  readonly asset: string;
-  readonly source: CryptoPriceSource;
-  readonly price: number;
-  readonly exchangeTsMs: number;
-  readonly receivedTsMs: number;
-}
-
-export interface CexBookTick {
-  readonly asset: string;
-  readonly venue: CexVenue;
-  readonly symbol: string;
-  readonly exchangeTsMs: number;
-  readonly receivedTsMs: number;
-  readonly bids: readonly (readonly [number, number])[];
-  readonly asks: readonly (readonly [number, number])[];
-}
-
-export interface CexTradeTick {
-  readonly asset: string;
-  readonly venue: CexVenue;
-  readonly symbol: string;
-  readonly exchangeTsMs: number;
-  readonly receivedTsMs: number;
-  readonly price: number;
-  readonly size: number;
-  readonly side?: 'buy' | 'sell';
-}
-
-export interface CexVenueState {
-  readonly asset: string;
-  readonly venue: CexVenue;
-  readonly symbol: string;
-  readonly bid: number;
-  readonly ask: number;
-  readonly mid: number;
-  readonly microprice: number;
-  readonly spreadBps: number;
-  readonly imbalanceTop: number;
-  readonly lastBookTsMs: number;
-  readonly lastReceivedTsMs: number;
-  readonly recentTradePressure: number;
-}
-
-export interface CryptoPriceHistoryView {
-  readonly asset: string;
-  getLatest(source: CryptoPriceSource): CryptoPricePoint | undefined;
-  getRecent(source: CryptoPriceSource, lookbackMs: number): readonly CryptoPricePoint[];
-  getMerged(sources: readonly CryptoPriceSource[], lookbackMs: number): readonly CryptoPricePoint[];
-}
-
-export interface CryptoVenueStateView {
-  readonly asset: string;
-  get(venue: CexVenue): CexVenueState | undefined;
-  getAll(): readonly CexVenueState[];
-}
-
-export interface CryptoVenueHistoryView {
-  readonly asset: string;
-  getRecentBooks(venue: CexVenue, lookbackMs: number): readonly CexBookTick[];
-  getRecentTrades(venue: CexVenue, lookbackMs: number): readonly CexTradeTick[];
-}
-
-export type CryptoSignalDirection = 'up' | 'down' | 'flat';
-
-export interface CryptoSignalResult {
-  readonly id: string;
-  readonly asset: string;
-  readonly tsMs: number;
-  readonly value: number;
-  readonly unit: 'bps' | 'price' | 'score';
-  readonly direction: CryptoSignalDirection;
-  readonly strength: number;
-  readonly confidence: number;
-  readonly stale: boolean;
-  readonly components: Readonly<Record<string, number | string | boolean>>;
-}
-
-export interface CryptoSignalRequest {
-  readonly venues?: readonly CexVenue[];
-  readonly sources?: readonly CryptoPriceSource[];
-  readonly weights?: Readonly<Record<string, number>>;
-  readonly linearInterceptUsd?: number;
-  readonly basisByVenue?: Readonly<Record<string, number>>;
-  readonly minVenueCount?: number;
-  readonly maxSpreadBps?: number;
-  readonly confidenceByScore?: Readonly<Record<string, number>>;
-  readonly lookbackMs?: number;
-  readonly staleMs?: number;
-  readonly thresholdBps?: number;
-  readonly minBasisSamples?: number;
-}
-
-export interface CryptoSignalRegistryView {
-  list(): readonly string[];
-  evaluate(signalId: string, request?: CryptoSignalRequest): CryptoSignalResult | undefined;
-}
+export type {
+  CexBookTick,
+  CexTradeTick,
+  CexVenue,
+  CexVenueState,
+  CryptoPriceHistoryView,
+  CryptoPricePoint,
+  CryptoPriceSource,
+  CryptoSignalDirection,
+  CryptoSignalRegistryView,
+  CryptoSignalRequest,
+  CryptoSignalResult,
+  CryptoVenueHistoryView,
+  CryptoVenueStateView,
+};
 
 export interface StrategySnapshot {
   /** ID инструмента (outcome token) */

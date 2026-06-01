@@ -13,7 +13,6 @@
  * - `IExchangeClient` / `SubmitOrderParams` / `ExchangeError` — торговый клиент
  * - `OpenOrderSnapshot` / `VenueTradeSnapshot` / `FeeSnapshot` — DTO от биржи
  * - `IMarketCatalog` / `InstrumentInfo` — каталог инструментов (read/write)
- * - `IBalanceAllocator` / `AllocationResult` / `AllocationStats` — распределитель баланса
  * - `IMarketDataRecorder` / `MarketMeta` — запись сырых WS-событий на диск
  * - `IMarketDiscoveryService` / `DiscoveredMarket` — обнаружение торговых рынков
  * - `IMarketFilterConfig` — конфигурация фильтрации рынков
@@ -28,7 +27,6 @@
  *   IPortfolioStore,
  *   IExchangeClient,
  *   IMarketCatalog,
- *   IBalanceAllocator,
  *   IMarketDataRecorder,
  * } from '@polymarket/ports';
  * ```
@@ -48,7 +46,6 @@ export type {
   FeeSnapshot,
 } from './IExchangeClient.js';
 export type { IMarketCatalog, InstrumentInfo } from './IMarketCatalog.js';
-export type { IBalanceAllocator, AllocationResult, AllocationStats } from './IBalanceAllocator.js';
 export type { IMarketDataRecorder, MarketMeta } from './IMarketDataRecorder.js';
 export type {
   IDecisionJournal,

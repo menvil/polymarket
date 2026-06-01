@@ -24,7 +24,8 @@
     "@polymarket/ports": "0.1.0",
     "@polymarket/trade-tape": "0.1.0",
     "@polymarket/use-cases": "0.1.0",
-    "@polymarket/orchestrators": "0.1.0"
+    "@polymarket/orchestrators": "0.1.0",
+    "@polymarket/market-state": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"
