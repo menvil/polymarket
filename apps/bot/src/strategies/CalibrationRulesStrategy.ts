@@ -184,7 +184,7 @@ export class CalibrationRulesStrategy extends BaseStrategy<RuleData, RuleAction>
       : undefined;
     const deltaBucket = deltaDollars !== undefined ? toBucket(deltaDollars, 10) : undefined;
     const crowdBucket = toBucket(midCents, 5);
-    const regime = this._regimeDetector.classify(snapshot.cryptoPriceHistory)?.regime;
+    const regime = this._regimeDetector.classify(snapshot.cryptoPriceHistory, snapshot.nowMs)?.regime;
     const matchingRule = this._matchRule(deltaBucket, tauSec, regime, crowdBucket);
 
     const portfolio = snapshot.portfolio;

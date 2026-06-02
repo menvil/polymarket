@@ -579,7 +579,7 @@ export class BaselinePairedOverlayStrategy extends BaseStrategy<CCData, CCAction
       deltaDollars = cp.currentPrice - cp.targetPrice;
     }
 
-    const regimeInfo = this._regimeDetector.classify(snapshot.cryptoPriceHistory);
+    const regimeInfo = this._regimeDetector.classify(snapshot.cryptoPriceHistory, snapshot.nowMs);
     const regime = regimeInfo?.regime;
 
     // Lookup зоны.

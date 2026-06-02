@@ -49,6 +49,7 @@ function makeBookCollector() {
   return {
     getHistory: jest.fn().mockReturnValue(undefined),
     recordDirect: jest.fn(),
+    clearMarket: jest.fn(),
     start: jest.fn(),
     stop: jest.fn(),
     clear: jest.fn(),
@@ -60,6 +61,7 @@ function makeTapeCollector() {
   return {
     getTape: jest.fn().mockReturnValue(undefined),
     recordDirect: jest.fn(),
+    clearMarket: jest.fn(),
     start: jest.fn(),
     stop: jest.fn(),
     clear: jest.fn(),
@@ -223,7 +225,7 @@ describe('MarketDataStore', () => {
       );
     });
 
-    it('не вызывает onChange для BOOK_DEPTH (вызван из BOOK_UPDATED)', () => {
+    it('вызывает onChange(BOOK) для BOOK_DEPTH (#2)', () => {
       const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
       store.setOnChange(onChange);
       store.start();
@@ -236,18 +238,17 @@ describe('MarketDataStore', () => {
         timestamp: { toNumber: () => 1000 },
       });
 
-      expect(onChange).not.toHaveBeenCalled();
+      expect(onChange).toHaveBeenCalledWith(INSTRUMENT_1, 'BOOK');
     });
 
-    it('BOOK_DEPTH без предшествующего BOOK_UPDATED — onChange не вызывается (known limitation)', () => {
-      // Документирует архитектурное допущение: depth всегда приходит вместе с top-of-book update.
-      // Если upstream нарушит этот контракт, стратегия не увидит обновление стакана.
+    it('depth-only апдейт (без BOOK_UPDATED) теперь будит стратегию (#2)', () => {
+      // Раньше depth-only изменения терялись (known limitation). Теперь BOOK_DEPTH
+      // вызывает onChange('BOOK') — стенки/ликвидность не пропадают для стратегии.
       const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
       store.setOnChange(onChange);
       store.start();
 
       const eventBus = deps.eventBus as any;
-      // Только BOOK_DEPTH, без BOOK_UPDATED
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
@@ -255,9 +256,8 @@ describe('MarketDataStore', () => {
         timestamp: { toNumber: () => 1000 },
       });
 
-      // bookCollector получил данные — но onChange не вызван
       expect((deps.bookCollector as any).recordDirect).toHaveBeenCalledTimes(1);
-      expect(onChange).not.toHaveBeenCalled();
+      expect(onChange).toHaveBeenCalledWith(INSTRUMENT_1, 'BOOK');
     });
   });
 
@@ -332,14 +332,15 @@ describe('MarketDataStore', () => {
   // ── start / stop ─────────────────────────────────────
 
   describe('lifecycle', () => {
-    it('should subscribe to 3 event types on start', () => {
+    it('should subscribe to 4 event types on start', () => {
       store.start();
 
-      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(3);
+      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(4);
       const types = (deps.eventBus.subscribe as any).mock.calls.map((c: any[]) => c[0]);
       expect(types).toContain('BOOK_UPDATED');
       expect(types).toContain('BOOK_DEPTH');
       expect(types).toContain('TRADE_RECEIVED');
+      expect(types).toContain('MARKET_CLOSED');
     });
 
     it('after stop(): BOOK_UPDATED не обновляет state и не вызывает onChange', () => {
@@ -399,7 +400,127 @@ describe('MarketDataStore', () => {
       store.start(); // no error
 
       // Should have called unsubscribe for first set, then subscribe again
-      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(6); // 3 + 3
+      expect(deps.eventBus.subscribe).toHaveBeenCalledTimes(8); // 4 + 4
+    });
+  });
+
+  // ── MARKET_CLOSED cleanup ────────────────────────────
+
+  describe('MARKET_CLOSED cleanup', () => {
+    function emitBookUpdated(eventBus: any, instrumentId: InstrumentId, marketId: string): void {
+      eventBus._emit('BOOK_UPDATED', {
+        type: 'BOOK_UPDATED',
+        instrumentId,
+        topOfBook: makeTopOfBook(),
+        marketId,
+        sequenceNumber: 1,
+        timestamp: { toNumber: () => 1000 },
+      });
+    }
+
+    it('удаляет TopOfBook инструментов закрытого рынка и делегирует коллекторам', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      emitBookUpdated(eventBus, INSTRUMENT_1, 'market-1');
+      emitBookUpdated(eventBus, INSTRUMENT_2, 'market-1');
+      expect(store.getTopOfBook(INSTRUMENT_1)).toBeDefined();
+      expect(store.getTopOfBook(INSTRUMENT_2)).toBeDefined();
+
+      eventBus._emit('MARKET_CLOSED', {
+        type: 'MARKET_CLOSED',
+        marketId: 'market-1',
+        reason: 'RESOLVED',
+        realizedPnL: {} as any,
+        timestamp: { toNumber: () => 2000 },
+      });
+
+      expect(store.getTopOfBook(INSTRUMENT_1)).toBeUndefined();
+      expect(store.getTopOfBook(INSTRUMENT_2)).toBeUndefined();
+      expect((deps.bookCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+    });
+
+    it('не трогает TopOfBook другого рынка', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      emitBookUpdated(eventBus, INSTRUMENT_1, 'market-1');
+      emitBookUpdated(eventBus, INSTRUMENT_2, 'market-2');
+
+      eventBus._emit('MARKET_CLOSED', {
+        type: 'MARKET_CLOSED',
+        marketId: 'market-1',
+        reason: 'RESOLVED',
+        realizedPnL: {} as any,
+        timestamp: { toNumber: () => 2000 },
+      });
+
+      expect(store.getTopOfBook(INSTRUMENT_1)).toBeUndefined();
+      expect(store.getTopOfBook(INSTRUMENT_2)).toBeDefined();
+    });
+
+    it('делегирует cleanup коллекторам даже без накопленного TopOfBook', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      eventBus._emit('MARKET_CLOSED', {
+        type: 'MARKET_CLOSED',
+        marketId: 'market-unknown',
+        reason: 'RESOLVED',
+        realizedPnL: {} as any,
+        timestamp: { toNumber: () => 2000 },
+      });
+
+      expect((deps.bookCollector as any).clearMarket).toHaveBeenCalledWith('market-unknown');
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-unknown');
+    });
+  });
+
+  // ── freshness API (#3) ───────────────────────────────
+
+  describe('getTopOfBookState / areBooksSynchronized', () => {
+    function emitBook(eventBus: any, instrumentId: InstrumentId, tsMs: number): void {
+      eventBus._emit('BOOK_UPDATED', {
+        type: 'BOOK_UPDATED',
+        instrumentId,
+        topOfBook: makeTopOfBook(),
+        marketId: 'market-1',
+        sequenceNumber: 1,
+        timestamp: { toNumber: () => tsMs },
+      });
+    }
+
+    it('getTopOfBookState возвращает undefined без данных', () => {
+      store.start();
+      expect(store.getTopOfBookState(INSTRUMENT_1, 1000, 2000)).toBeUndefined();
+    });
+
+    it('getTopOfBookState считает ageMs и stale от nowMs', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+      emitBook(eventBus, INSTRUMENT_1, 1000);
+
+      const fresh = store.getTopOfBookState(INSTRUMENT_1, 1500, 2000);
+      expect(fresh).toBeDefined();
+      expect(fresh!.eventTsMs).toBe(1000);
+      expect(fresh!.ageMs).toBe(500);
+      expect(fresh!.stale).toBe(false);
+
+      const stale = store.getTopOfBookState(INSTRUMENT_1, 5000, 2000);
+      expect(stale!.ageMs).toBe(4000);
+      expect(stale!.stale).toBe(true);
+    });
+
+    it('areBooksSynchronized: true при малом разрыве, false при большом/отсутствии', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+      emitBook(eventBus, INSTRUMENT_1, 1000);
+      emitBook(eventBus, INSTRUMENT_2, 1080);
+
+      expect(store.areBooksSynchronized(INSTRUMENT_1, INSTRUMENT_2, 100)).toBe(true);
+      expect(store.areBooksSynchronized(INSTRUMENT_1, INSTRUMENT_2, 50)).toBe(false);
+      expect(store.areBooksSynchronized(INSTRUMENT_1, 'token-x' as any, 100)).toBe(false);
     });
   });
 

@@ -5,7 +5,7 @@
  * ### Новая архитектура: reactive scheduling
  * Стратегия **НЕ** подписывается на события. Вместо этого:
  * 1. Events → State Stores (in-memory, sync)
- * 2. State Stores → DirtyTracker.markDirty()
+ * 2. State Stores → StrategyScheduler._markDirty()
  * 3. StrategyScheduler → strategy.tick(snapshot, reasons) → StrategyIntent[]
  * 4. ExecutionEngine → исполняет intents
  *

@@ -15,7 +15,6 @@
  *
  * **Реализации:**
  * - `BaseStrategy` — абстрактный класс с gather → decide → toIntents pipeline
- * - `DirtyTracker` — отслеживание dirty стратегий
  * - `ExecutionEngine` — нормализация и исполнение intents
  * - `StrategyScheduler` — ядро: event-driven queue + coalescing
  *
@@ -77,7 +76,6 @@ export type { IStrategy } from './IStrategy.js';
 
 // ── Новая архитектура: реализации ───────────────────────────
 export { BaseStrategy } from './BaseStrategy.js';
-export { DirtyTracker } from './DirtyTracker.js';
 export { ExecutionEngine } from './ExecutionEngine.js';
 export type { ExecutionEngineDeps, ExecutionContext, ExecutionReport, ITokenBalanceChecker } from './ExecutionEngine.js';
 export { StrategyScheduler } from './StrategyScheduler.js';
@@ -86,7 +84,7 @@ export type {
   StrategyRegistration,
   IMarketDataStore,
   ICryptoMarketDataStore,
-  ICryptoPriceStore,
+  ICryptoResolutionStore,
   ICryptoSignalRegistry,
 } from './StrategyScheduler.js';
 // IOrderStateStore re-exported from ports for backward compatibility

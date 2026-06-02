@@ -33,7 +33,7 @@
 import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
 import type {
   ITokenBalanceChecker,
-  ICryptoPriceStore,
+  ICryptoResolutionStore,
   ICryptoMarketDataStore,
   ICryptoSignalRegistry,
 } from '@polymarket/strategy';
@@ -53,8 +53,8 @@ export interface BuildStrategyEngineParams {
   readonly marketCatalog: IMarketCatalog;
   /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
   readonly tokenBalanceChecker?: ITokenBalanceChecker;
-  /** Опциональный: store крипто-цен для StrategyScheduler */
-  readonly cryptoPriceStore?: ICryptoPriceStore;
+  /** Опциональный: store strike/resolution для StrategyScheduler */
+  readonly cryptoResolutionStore?: ICryptoResolutionStore;
   /** Опциональный: long-lived history/state store для CEX/crypto market data */
   readonly cryptoMarketDataStore?: ICryptoMarketDataStore;
   /** Опциональный: shared crypto signal calculator registry */
@@ -89,7 +89,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     marketDataStore,
     marketCatalog,
     tokenBalanceChecker,
-    cryptoPriceStore,
+    cryptoResolutionStore,
     cryptoMarketDataStore,
     cryptoSignalRegistry,
   } = params;
@@ -116,7 +116,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     executionEngine,
     clock,
     logger,
-    cryptoPriceStore,
+    cryptoResolutionStore,
     cryptoMarketDataStore,
     cryptoSignalRegistry,
   });

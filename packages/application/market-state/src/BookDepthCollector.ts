@@ -247,6 +247,21 @@ export class BookDepthCollector {
   }
 
   /**
+   * Очищает историю снапшотов всех инструментов закрытого рынка.
+   *
+   * @param marketId - ID закрытого рынка
+   *
+   * @remarks
+   * Пассивная точка очистки (как {@link recordDirect} — пассивная точка записи).
+   * Используется `MarketDataStore`, который владеет подпиской на `MARKET_CLOSED`
+   * и делегирует cleanup сюда, чтобы избежать дублирующей подписки.
+   * Сложность O(k), где k = число инструментов рынка (обычно 2).
+   */
+  public clearMarket(marketId: string): void {
+    this._cleanup(marketId);
+  }
+
+  /**
    * Очищает все истории и reverse index из памяти.
    *
    * @remarks

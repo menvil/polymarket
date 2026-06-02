@@ -252,7 +252,7 @@ export class ExecutionEngine {
     ctx: ExecutionContext,
     intents: readonly StrategyIntent[],
   ): Promise<ExecutionReport> {
-    const normalized = this._normalize(intents);
+    const normalized = _normalize(intents);
     if (!normalized.hasCancelAll && normalized.cancels.length === 0 && normalized.places.length === 0) {
       return { placed: 0, cancelled: 0, skipped: 0, errors: [] };
     }
@@ -310,46 +310,6 @@ export class ExecutionEngine {
     }
 
     return { placed, cancelled, skipped, errors };
-  }
-
-  // ── Нормализация ─────────────────────────────────────────
-
-  /**
-   * Нормализует intents: dedupe и сортировка.
-   *
-   * @param intents - Сырые intents
-   * @returns Нормализованные: hasCancelAll, cancels (dedupe), places (dedupe)
-   *
-   * @remarks
-   * 1. Если CANCEL_ALL → все отдельные CANCEL удаляются
-   * 2. CANCEL dedupe по orderId
-   * 3. PLACE dedupe по `${side}:${price}` — последний побеждает
-   */
-  private _normalize(intents: readonly StrategyIntent[]): NormalizedIntents {
-    let hasCancelAll = false;
-    const cancelMap = new Map<string, CancelIntent>();
-    const placeMap = new Map<string, PlaceIntent>();
-
-    for (const intent of intents) {
-      switch (intent.type) {
-        case 'CANCEL_ALL':
-          hasCancelAll = true;
-          break;
-        case 'CANCEL':
-          cancelMap.set(String(intent.orderId), intent);
-          break;
-        case 'PLACE':
-          placeMap.set(`${intent.side}:${intent.price.toNumber()}`, intent);
-          break;
-      }
-    }
-
-    return {
-      hasCancelAll,
-      // Если CANCEL_ALL — не нужны отдельные cancels (CANCEL_ALL разворачивается отдельно)
-      cancels: hasCancelAll ? [] : [...cancelMap.values()],
-      places: [...placeMap.values()],
-    };
   }
 
   // ── Исполнение отдельных intents ─────────────────────────
@@ -542,7 +502,7 @@ export class ExecutionEngine {
     // когда L1 pre-check в адаптере не сконфигурирован или проигнорировал race condition
     // (баланс упал между pre-check и postOrder).
     if (!result.ok && intent.side === 'SELL') {
-      const retryHint = this._parseBalanceRejection(result.error.message);
+      const retryHint = _parseBalanceRejection(result.error.message);
       if (retryHint) {
         const { onChainBalance, orderAmount } = retryHint;
         const deficit = orderAmount - onChainBalance;
@@ -601,7 +561,7 @@ export class ExecutionEngine {
     }
 
     if (!result.ok) {
-      if (intent.postOnly === true && this._isBenignPostOnlyReject(result.error.message)) {
+      if (intent.postOnly === true && _isBenignPostOnlyReject(result.error.message)) {
         this._benignPostOnlyRejects++;
         this._logger.info('ExecutionEngine: skip — benign post-only reject', {
           strategyId: ctx.strategyId,
@@ -690,28 +650,63 @@ export class ExecutionEngine {
    * Значения в микроединицах USDC/token (6 dp). Парсер толерантен к префиксу: ищет
    * подстроку `balance: X, order amount: Y` в любом месте сообщения.
    */
-  private _parseBalanceRejection(message: string): { onChainBalance: number; orderAmount: number } | null {
-    const match = message.match(/balance:\s*(\d+),\s*order amount:\s*(\d+)/i);
-    if (!match) return null;
-    const onChainBalance = Number(match[1]);
-    const orderAmount = Number(match[2]);
-    if (!Number.isFinite(onChainBalance) || !Number.isFinite(orderAmount)) return null;
-    return { onChainBalance, orderAmount };
-  }
-
-  private _isBenignPostOnlyReject(message: string): boolean {
-    const text = message.toLowerCase();
-    return (
-      text.includes('post only') ||
-      text.includes('post-only') ||
-      text.includes('defer') ||
-      text.includes('marketable') ||
-      text.includes('would execute immediately')
-    );
-  }
 }
 
-// ── Внутренний тип ─────────────────────────────────────────
+// ── Внутренние чистые функции ──────────────────────────────
+
+/**
+ * Нормализует intents: dedupe и сортировка.
+ *
+ * @remarks
+ * 1. Если CANCEL_ALL → все отдельные CANCEL удаляются
+ * 2. CANCEL dedupe по orderId
+ * 3. PLACE dedupe по `${side}:${price}` — последний побеждает
+ */
+function _normalize(intents: readonly StrategyIntent[]): NormalizedIntents {
+  let hasCancelAll = false;
+  const cancelMap = new Map<string, CancelIntent>();
+  const placeMap = new Map<string, PlaceIntent>();
+
+  for (const intent of intents) {
+    switch (intent.type) {
+      case 'CANCEL_ALL':
+        hasCancelAll = true;
+        break;
+      case 'CANCEL':
+        cancelMap.set(String(intent.orderId), intent);
+        break;
+      case 'PLACE':
+        placeMap.set(`${intent.side}:${intent.price.toNumber()}`, intent);
+        break;
+    }
+  }
+
+  return {
+    hasCancelAll,
+    cancels: hasCancelAll ? [] : [...cancelMap.values()],
+    places: [...placeMap.values()],
+  };
+}
+
+function _parseBalanceRejection(message: string): { onChainBalance: number; orderAmount: number } | null {
+  const match = message.match(/balance:\s*(\d+),\s*order amount:\s*(\d+)/i);
+  if (!match) return null;
+  const onChainBalance = Number(match[1]);
+  const orderAmount = Number(match[2]);
+  if (!Number.isFinite(onChainBalance) || !Number.isFinite(orderAmount)) return null;
+  return { onChainBalance, orderAmount };
+}
+
+function _isBenignPostOnlyReject(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('post only') ||
+    text.includes('post-only') ||
+    text.includes('defer') ||
+    text.includes('marketable') ||
+    text.includes('would execute immediately')
+  );
+}
 
 interface NormalizedIntents {
   readonly hasCancelAll: boolean;

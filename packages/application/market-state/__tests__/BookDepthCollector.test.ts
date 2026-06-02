@@ -410,6 +410,35 @@ describe('BookDepthCollector', () => {
     });
   });
 
+  // ── clearMarket (пассивная очистка, без подписки) ──────────────────────────────
+
+  describe('clearMarket()', () => {
+    it('удаляет истории инструментов рынка без подписки на EventBus', () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      // start() не вызывается — пассивный режим (как при использовании из MarketDataStore)
+
+      collector.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
+      collector.recordDirect(TOKEN_B, makeSnapshot('market-1', String(TOKEN_B)), T0);
+      expect(collector.instrumentCount()).toBe(2);
+
+      collector.clearMarket('market-1');
+
+      expect(collector.getHistory(TOKEN_A)).toBeUndefined();
+      expect(collector.getHistory(TOKEN_B)).toBeUndefined();
+      expect(collector.instrumentCount()).toBe(0);
+    });
+
+    it('clearMarket для неизвестного рынка — no-op', () => {
+      const collector = new BookDepthCollector(deps, { maxCount: 100 });
+      collector.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
+
+      collector.clearMarket('market-unknown');
+
+      expect(collector.getHistory(TOKEN_A)).toBeDefined();
+      expect(collector.instrumentCount()).toBe(1);
+    });
+  });
+
   // ── MARKET_CLOSED → cleanup ───────────────────────────────────────────────────
 
   describe('cleanup при MARKET_CLOSED', () => {

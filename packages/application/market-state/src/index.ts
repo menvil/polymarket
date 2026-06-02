@@ -38,10 +38,10 @@ export { TradeTapeCollector } from './TradeTapeCollector.js';
 export type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from './TradeTapeCollector.js';
 
 export { MarketDataStore } from './MarketDataStore.js';
-export type { MarketDataStoreDeps, MarketDataReason } from './MarketDataStore.js';
+export type { MarketDataStoreDeps, MarketDataReason, TopOfBookState } from './MarketDataStore.js';
 
-export { CryptoPriceStore } from './CryptoPriceStore.js';
-export type { CryptoPriceSnapshot } from './CryptoPriceStore.js';
+export { CryptoResolutionStore } from './CryptoResolutionStore.js';
+export type { LatestPriceReader } from './CryptoResolutionStore.js';
 
 export { CryptoMarketDataStore } from './CryptoMarketDataStore.js';
 export type {

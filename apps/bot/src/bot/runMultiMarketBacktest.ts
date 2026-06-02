@@ -33,7 +33,7 @@ import { BacktestEngine } from '@polymarket/backtesting';
 import {
   createDefaultCryptoSignalRegistry,
   CryptoMarketDataStore,
-  CryptoPriceStore,
+  CryptoResolutionStore,
 } from '@polymarket/market-state';
 import { BookUpdateHandler } from '@polymarket/handlers';
 import type { IBookRegistry } from '@polymarket/handlers';
@@ -339,8 +339,8 @@ async function runSingleMarketBacktest(
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
 
   // 5. Crypto price store
-  const cryptoPriceStore = new CryptoPriceStore();
   const cryptoMarketDataStore = sharedCryptoMarketDataStore;
+  const cryptoResolutionStore = new CryptoResolutionStore(cryptoMarketDataStore);
   const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const cryptoMeta = parseCryptoMeta(rawMarket);
 
@@ -351,7 +351,7 @@ async function runSingleMarketBacktest(
     useCases,
     marketDataStore,
     marketCatalog,
-    cryptoPriceStore,
+    cryptoResolutionStore,
     cryptoMarketDataStore,
     cryptoSignalRegistry,
   });
@@ -555,7 +555,7 @@ async function runSingleMarketBacktest(
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
     { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary, cexWarmupMs },
-    { bookUpdateHandler, eventBus, replayClock, logger, cryptoPriceStore, cryptoMarketDataStore, parseCryptoMeta },
+    { bookUpdateHandler, eventBus, replayClock, logger, cryptoResolutionStore, cryptoMarketDataStore, parseCryptoMeta },
   );
   const replayResult = await backtestEngine.run();
 
@@ -577,7 +577,7 @@ async function runSingleMarketBacktest(
   // Auto-selection: позиция может быть на primary ИЛИ complementary инструменте.
   // Проверяем оба, определяем outcomeIndex позиции для корректного settlement.
   if (cryptoMeta) {
-    const resolution = cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter);
+    const resolution = cryptoResolutionStore.getResolution(cryptoMeta.rtdsFilter);
     const portfolio = portfolioStore.get(accountId);
 
     // Ищем позицию: на primary или complementary инструменте
@@ -657,8 +657,7 @@ async function runSingleMarketBacktest(
   const available = finalPortfolio ? finalPortfolio.balance.available().value() : initialBalanceDecimal;
   const pnl = available.minus(initialBalanceDecimal);
 
-  const cryptoSnap = cryptoMeta ? cryptoPriceStore.get(cryptoMeta.rtdsFilter) : undefined;
-  const resolution = cryptoMeta ? cryptoPriceStore.getResolution(cryptoMeta.rtdsFilter) : undefined;
+  const resolution = cryptoMeta ? cryptoResolutionStore.getResolution(cryptoMeta.rtdsFilter) : undefined;
   journal?.recordResolution({
     marketId: String(marketId),
     ts: Date.now(),
@@ -674,9 +673,9 @@ async function runSingleMarketBacktest(
     question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] as string : undefined,
     marketId: String(marketId),
     instrumentId: String(instrumentId).slice(0, 12) + '…',
-    cryptoSymbol: cryptoSnap?.symbol,
-    strikePrice: cryptoSnap?.targetPrice,
-    resolutionPrice: cryptoSnap?.resolutionPrice,
+    cryptoSymbol: cryptoMeta?.rtdsFilter,
+    strikePrice: cryptoMeta ? cryptoResolutionStore.getTarget(cryptoMeta.rtdsFilter) : undefined,
+    resolutionPrice: cryptoMeta ? cryptoResolutionStore.getResolutionPrice(cryptoMeta.rtdsFilter) : undefined,
     resolution,
     pnl,
     buys: buyCount,

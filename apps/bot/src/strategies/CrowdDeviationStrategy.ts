@@ -388,7 +388,7 @@ export class CrowdDeviationStrategy extends BaseStrategy<CDData, CDAction> {
     }
 
     // Режим BTC
-    const regimeResult = this._regimeDetector.classify(snapshot.cryptoPriceHistory);
+    const regimeResult = this._regimeDetector.classify(snapshot.cryptoPriceHistory, snapshot.nowMs);
     const regime = regimeResult?.regime;
 
     // CEX residual: (CEX − Chainlink) / Chainlink × 10000 bps. Вычисляется всегда.
@@ -397,13 +397,13 @@ export class CrowdDeviationStrategy extends BaseStrategy<CDData, CDAction> {
     let cexVenueAboveCount = 0;
     let cexVenueTotalCount = 0;
     if (snapshot.cryptoPriceHistory) {
-      const clPoints = snapshot.cryptoPriceHistory.getRecent('polymarket_chainlink', 5_000);
+      const clPoints = snapshot.cryptoPriceHistory.getRecent('polymarket_chainlink', 5_000, snapshot.nowMs);
       const clPrice = clPoints.length > 0 ? clPoints[clPoints.length - 1]!.price : undefined;
       if (clPrice !== undefined && clPrice > 0) {
         let sumResidual = 0;
         for (const venue of this._cexVenues) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const vPoints = snapshot.cryptoPriceHistory.getRecent(venue as any, 5_000);
+          const vPoints = snapshot.cryptoPriceHistory.getRecent(venue as any, 5_000, snapshot.nowMs);
           const vPrice = vPoints.length > 0 ? vPoints[vPoints.length - 1]!.price : undefined;
           if (vPrice !== undefined) {
             const residual = ((vPrice - clPrice) / clPrice) * 10_000;

@@ -17,7 +17,7 @@
  * @example
  * ```typescript
  * const detector = new RegimeDetector({ asset: 'btc', thresholdPerMin: 10, windowMs: 60_000 });
- * const regime = detector.classify(snapshot.cryptoPriceHistory);
+ * const regime = detector.classify(snapshot.cryptoPriceHistory, snapshot.nowMs);
  * // → 'up' | 'flat' | 'down' | undefined (если истории мало)
  * ```
  */
@@ -68,15 +68,17 @@ export class RegimeDetector {
    * Классифицировать режим по истории.
    *
    * @param history - `snapshot.cryptoPriceHistory` (живёт по asset, переживает rotation)
+   * @param nowMs - Опорное время (`snapshot.nowMs`). Привязывает окно к настоящему
+   *   моменту, исключая устаревшие/будущие точки (анти look-ahead в бэктесте).
    * @returns Режим + диагностика, или `undefined` если данных мало
    */
-  classify(history: CryptoPriceHistoryView | undefined): RegimeClassification | undefined {
+  classify(history: CryptoPriceHistoryView | undefined, nowMs?: number): RegimeClassification | undefined {
     if (!history) return undefined;
 
     for (const source of this._sources) {
       // Берём небольшой запас, чтобы найти точку <= now-windowMs, как в
       // scripts/analyze-crowd-calibration.ts::computeTrendSlope().
-      const points = history.getRecent(source, this._windowMs + 5_000);
+      const points = history.getRecent(source, this._windowMs + 5_000, nowMs);
       if (points.length < this._minPoints) continue;
 
       const slope = tableCompatibleSlopePerMin(points, this._windowMs);

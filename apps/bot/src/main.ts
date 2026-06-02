@@ -38,7 +38,7 @@ import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import {
   createDefaultCryptoSignalRegistry,
   CryptoMarketDataStore,
-  CryptoPriceStore,
+  CryptoResolutionStore,
 } from '@polymarket/market-state';
 import type { CexVenue as StoreCexVenue } from '@polymarket/market-state';
 import { CexCollectorService } from '@polymarket/cex-market-data';
@@ -243,8 +243,8 @@ async function runPaper(): Promise<void> {
   let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
   // ── Crypto price infrastructure (paper) ────────────────────────────────
-  const cryptoPriceStore = new CryptoPriceStore();
   const cryptoMarketDataStore = new CryptoMarketDataStore();
+  const cryptoResolutionStore = new CryptoResolutionStore(cryptoMarketDataStore);
   const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const paperCexService = createBotCexService(config, logger, cryptoMarketDataStore, recording ?? undefined);
   const binanceClient = new BinanceKlinesClient(logger);
@@ -253,7 +253,7 @@ async function runPaper(): Promise<void> {
     logger,
   );
 
-  // RTDS → CryptoPriceStore wiring
+  // RTDS → CryptoMarketDataStore wiring
   // Передаём ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
   //
   // Chainlink strike price fallback: если targetPrice ещё не установлен
@@ -270,7 +270,6 @@ async function runPaper(): Promise<void> {
   recording?.wireToRtds(rtdsClient);
 
   rtdsClient.onPrice((symbol, price, ts) => {
-    cryptoPriceStore.updatePrice(symbol, price, ts);
     cryptoMarketDataStore.updatePrice({ symbol, price, timestampMs: ts, receivedTsMs: Date.now() });
 
     // Периодический лог крипто-цен (раз в 30с) — символ активного рынка или арб-пары
@@ -281,11 +280,10 @@ async function runPaper(): Promise<void> {
         const now = Date.now();
         if (now - lastCryptoPriceLogMs >= CRYPTO_PRICE_LOG_INTERVAL_MS) {
           lastCryptoPriceLogMs = now;
-          const snap = cryptoPriceStore.get(symbol);
           logger.info('Crypto price update', {
             symbol,
             price: price.toFixed(2),
-            targetPrice: snap?.targetPrice?.toFixed(2) ?? '-',
+            targetPrice: cryptoResolutionStore.getTarget(symbol)?.toFixed(2) ?? '-',
             source: 'chainlink',
           });
         }
@@ -296,7 +294,7 @@ async function runPaper(): Promise<void> {
     if (symbol.includes('/') && pendingChainlinkStrike.has(symbol)) {
       const eventStartMs = pendingChainlinkStrike.get(symbol)!;
       if (ts >= eventStartMs) {
-        cryptoPriceStore.setTargetPrice(symbol, price);
+        cryptoResolutionStore.setTargetPrice(symbol, price);
         pendingChainlinkStrike.delete(symbol);
         logger.info('Strike price from Chainlink RTDS (first after eventStart)', {
           symbol,
@@ -528,7 +526,7 @@ async function runPaper(): Promise<void> {
     useCases,
     marketDataStore,
     marketCatalog,
-    cryptoPriceStore,
+    cryptoResolutionStore,
     cryptoMarketDataStore,
     cryptoSignalRegistry,
   });
@@ -557,7 +555,8 @@ async function runPaper(): Promise<void> {
     portfolioStore,
     accountId: accountId!,
     wsAdapter,
-    cryptoPriceStore,
+    cryptoResolutionStore,
+    cryptoMarketDataStore,
     cryptoSubs: paperCryptoSubs,
     pendingChainlinkStrike,
     binanceClient,
@@ -1173,7 +1172,7 @@ async function runPaper(): Promise<void> {
     // Подписка RTDS для крипто-цен (hard рынок — основной)
     if (hardCryptoMeta) {
       if (hardCryptoMeta.priceToBeat !== undefined) {
-        cryptoPriceStore.setTargetPrice(hardCryptoMeta.rtdsFilter, hardCryptoMeta.priceToBeat);
+        cryptoResolutionStore.setTargetPrice(hardCryptoMeta.rtdsFilter, hardCryptoMeta.priceToBeat);
       }
       for (const sub of hardCryptoMeta.rtdsSubscriptions) {
         rtdsClient.subscribe(sub.topic, sub.filter);
@@ -1367,13 +1366,14 @@ async function runPaper(): Promise<void> {
       const portfolio = portfolioStore.get(accountId!);
       if (portfolio) {
         // Определяем исход каждого рынка по BTC цене vs per-market strike.
-        // CryptoPriceStore.getResolution() хранит ОДИН targetPrice per asset —
-        // не подходит для арбитража (два рынка, разные strikes, один актив).
-        // Берём strikes из стратегии и текущую Chainlink цену напрямую.
+        // Арбитраж держит strikes сам (два рынка, разные strikes, один актив).
+        // Берём strikes из стратегии и последнюю Chainlink цену из marketData.
         const arbStrikes = pair.strategy.getStrikes();
         const cryptoSymbol = pair.easySlot.cryptoMeta?.rtdsFilter ?? hardSlot?.cryptoMeta?.rtdsFilter;
-        const btcSnap = cryptoSymbol ? cryptoPriceStore.get(cryptoSymbol) : undefined;
-        const btcPrice = btcSnap?.chainlink?.price ?? btcSnap?.currentPrice;
+        const btcPrice = cryptoSymbol
+          ? (cryptoMarketDataStore.getLatestPrice(cryptoSymbol, 'polymarket_chainlink')
+            ?? cryptoMarketDataStore.getLatestPrice(cryptoSymbol, 'polymarket_binance'))
+          : undefined;
 
         let easyResolution: 'UP' | 'DOWN' | undefined;
         let hardResolution: 'UP' | 'DOWN' | undefined;
@@ -2854,8 +2854,8 @@ async function runBacktest(): Promise<void> {
   const { marketDataStore, marketCatalog } = buildMarketData({ infra });
 
   // ── Crypto price infrastructure (backtest) ──────────────────────────────
-  const backtestCryptoPriceStore = new CryptoPriceStore();
   const backtestCryptoMarketDataStore = new CryptoMarketDataStore();
+  const backtestCryptoResolutionStore = new CryptoResolutionStore(backtestCryptoMarketDataStore);
   const backtestCryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const backtestCryptoMeta = parseCryptoMeta(snapshotRawMarket);
 
@@ -2873,7 +2873,7 @@ async function runBacktest(): Promise<void> {
     useCases,
     marketDataStore,
     marketCatalog,
-    cryptoPriceStore: backtestCryptoPriceStore,
+    cryptoResolutionStore: backtestCryptoResolutionStore,
     cryptoMarketDataStore: backtestCryptoMarketDataStore,
     cryptoSignalRegistry: backtestCryptoSignalRegistry,
   });
@@ -3055,7 +3055,7 @@ async function runBacktest(): Promise<void> {
       eventBus,
       replayClock,
       logger,
-      cryptoPriceStore: backtestCryptoPriceStore,
+      cryptoResolutionStore: backtestCryptoResolutionStore,
       cryptoMarketDataStore: backtestCryptoMarketDataStore,
       parseCryptoMeta,
     },
@@ -3065,8 +3065,8 @@ async function runBacktest(): Promise<void> {
 
   // Fallback: если после replay нет targetPrice или crypto_price — Binance klines
   if (backtestCryptoMeta) {
-    const snap = backtestCryptoPriceStore.get(backtestCryptoMeta.rtdsFilter);
-    const needTarget = !snap?.targetPrice;
+    const existingTarget = backtestCryptoResolutionStore.getTarget(backtestCryptoMeta.rtdsFilter);
+    const needTarget = existingTarget === undefined;
     const needPrices = replayResult.cryptoPriceEvents === 0;
 
     if (needTarget || needPrices) {
@@ -3084,15 +3084,23 @@ async function runBacktest(): Promise<void> {
           interval,
         );
         if (needTarget) {
-          backtestCryptoPriceStore.setTargetPrice(backtestCryptoMeta.rtdsFilter, kline.open);
+          backtestCryptoResolutionStore.setTargetPrice(backtestCryptoMeta.rtdsFilter, kline.open);
         }
         if (needPrices) {
-          backtestCryptoPriceStore.updatePrice(backtestCryptoMeta.rtdsFilter, kline.close, backtestCryptoMeta.endDateMs);
+          // Цена — в CryptoMarketDataStore (единый источник истины);
+          // rtdsFilter формата 'btc/usd' → source polymarket_chainlink.
+          backtestCryptoMarketDataStore.updatePrice({
+            symbol: backtestCryptoMeta.rtdsFilter,
+            price: kline.close,
+            timestampMs: backtestCryptoMeta.endDateMs,
+            receivedTsMs: backtestCryptoMeta.endDateMs,
+            source: 'chainlink',
+          });
         }
-        backtestCryptoPriceStore.setResolutionPrice(backtestCryptoMeta.rtdsFilter, kline.close);
+        backtestCryptoResolutionStore.setResolutionPrice(backtestCryptoMeta.rtdsFilter, kline.close);
         logger.info('Binance klines fallback applied', {
           symbol: backtestCryptoMeta.binanceSymbol,
-          strikePrice: needTarget ? kline.open : snap?.targetPrice,
+          strikePrice: needTarget ? kline.open : existingTarget,
           resolutionPrice: kline.close,
         });
       } catch (err) {
@@ -3112,7 +3120,7 @@ async function runBacktest(): Promise<void> {
 
   // Settlement при наличии крипто-рынка с известным исходом
   if (backtestCryptoMeta) {
-    const resolution = backtestCryptoPriceStore.getResolution(backtestCryptoMeta.rtdsFilter);
+    const resolution = backtestCryptoResolutionStore.getResolution(backtestCryptoMeta.rtdsFilter);
     if (resolution) {
       const portfolio = portfolioStore.get(accountId)!;
       const position = portfolio.getPosition(instrumentId);
@@ -3168,8 +3176,7 @@ async function runBacktest(): Promise<void> {
   );
 
   // Crypto price summary
-  const cryptoSnap = backtestCryptoMeta ? backtestCryptoPriceStore.get(backtestCryptoMeta.rtdsFilter) : undefined;
-  const cryptoResolution = backtestCryptoMeta ? backtestCryptoPriceStore.getResolution(backtestCryptoMeta.rtdsFilter) : undefined;
+  const cryptoResolution = backtestCryptoMeta ? backtestCryptoResolutionStore.getResolution(backtestCryptoMeta.rtdsFilter) : undefined;
 
   logger.warn('=== BACKTEST RESULTS ===', {
     snapshot: path.basename(snapshotPath),
@@ -3181,10 +3188,10 @@ async function runBacktest(): Promise<void> {
     cexTradeEvents: replayResult.cexTradeEvents,
     errors: replayResult.errors,
     durationMs: replayResult.durationMs,
-    ...(cryptoSnap ? {
-      cryptoSymbol: cryptoSnap.symbol,
-      strikePrice: cryptoSnap.targetPrice,
-      resolutionPrice: cryptoSnap.resolutionPrice,
+    ...(backtestCryptoMeta ? {
+      cryptoSymbol: backtestCryptoMeta.rtdsFilter,
+      strikePrice: backtestCryptoResolutionStore.getTarget(backtestCryptoMeta.rtdsFilter),
+      resolutionPrice: backtestCryptoResolutionStore.getResolutionPrice(backtestCryptoMeta.rtdsFilter),
       cryptoResolution,
     } : {}),
   });
@@ -3401,8 +3408,8 @@ async function runLive(): Promise<void> {
   let discoveryAdapter: PolymarketMarketDiscoveryAdapter | null = null;
 
   // ── Crypto price infrastructure (live) ─────────────────────────────────
-  const liveCryptoPriceStore = new CryptoPriceStore();
   const liveCryptoMarketDataStore = new CryptoMarketDataStore();
+  const liveCryptoResolutionStore = new CryptoResolutionStore(liveCryptoMarketDataStore);
   const liveCryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const liveCexService = createBotCexService(config, logger, liveCryptoMarketDataStore, recording ?? undefined);
   const liveBinanceClient = new BinanceKlinesClient(logger);
@@ -3411,7 +3418,7 @@ async function runLive(): Promise<void> {
     logger,
   );
 
-  // RTDS → CryptoPriceStore wiring
+  // RTDS → CryptoMarketDataStore wiring
   // Chainlink strike price fallback (аналогично paper mode):
   // Map: rtdsFilter → eventStartTimeMs. Первая Chainlink цена с ts >= eventStartTime = strike.
   const livePendingChainlinkStrike = new Map<string, number>();
@@ -3424,7 +3431,6 @@ async function runLive(): Promise<void> {
   recording?.wireToRtds(liveRtdsClient);
 
   liveRtdsClient.onPrice((symbol, price, ts) => {
-    liveCryptoPriceStore.updatePrice(symbol, price, ts);
     liveCryptoMarketDataStore.updatePrice({ symbol, price, timestampMs: ts, receivedTsMs: Date.now() });
 
     // Периодический лог крипто-цен (раз в 30с) — только символ активного рынка
@@ -3434,11 +3440,10 @@ async function runLive(): Promise<void> {
         const now = Date.now();
         if (now - liveLastCryptoPriceLogMs >= CRYPTO_PRICE_LOG_INTERVAL_MS) {
           liveLastCryptoPriceLogMs = now;
-          const snap = liveCryptoPriceStore.get(symbol);
           logger.info('Crypto price update', {
             symbol,
             price: price.toFixed(2),
-            targetPrice: snap?.targetPrice?.toFixed(2) ?? '-',
+            targetPrice: liveCryptoResolutionStore.getTarget(symbol)?.toFixed(2) ?? '-',
             source: 'chainlink',
           });
         }
@@ -3449,7 +3454,7 @@ async function runLive(): Promise<void> {
     if (symbol.includes('/') && livePendingChainlinkStrike.has(symbol)) {
       const eventStartMs = livePendingChainlinkStrike.get(symbol)!;
       if (ts >= eventStartMs) {
-        liveCryptoPriceStore.setTargetPrice(symbol, price);
+        liveCryptoResolutionStore.setTargetPrice(symbol, price);
         livePendingChainlinkStrike.delete(symbol);
         logger.info('Strike price from Chainlink RTDS (first after eventStart, live)', {
           symbol,
@@ -3676,7 +3681,7 @@ async function runLive(): Promise<void> {
     marketDataStore,
     marketCatalog,
     tokenBalanceChecker,
-    cryptoPriceStore: liveCryptoPriceStore,
+    cryptoResolutionStore: liveCryptoResolutionStore,
     cryptoMarketDataStore: liveCryptoMarketDataStore,
     cryptoSignalRegistry: liveCryptoSignalRegistry,
   });
@@ -3694,7 +3699,8 @@ async function runLive(): Promise<void> {
     portfolioStore,
     accountId,
     wsAdapter: marketWsAdapter,
-    cryptoPriceStore: liveCryptoPriceStore,
+    cryptoResolutionStore: liveCryptoResolutionStore,
+    cryptoMarketDataStore: liveCryptoMarketDataStore,
     cryptoSubs: liveCryptoSubs,
     pendingChainlinkStrike: livePendingChainlinkStrike,
     binanceClient: liveBinanceClient,

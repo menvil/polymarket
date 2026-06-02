@@ -3,12 +3,11 @@
  *
  * @remarks
  * ### Назначение:
- * Связывает state stores, dirty tracker, стратегии и execution engine
- * в единый event-driven цикл.
+ * Связывает state stores, стратегии и execution engine в единый event-driven цикл.
  *
  * ### Алгоритм:
  * 1. State store обновляется → `_onStateChanged(instrumentId, reason)`
- * 2. DirtyTracker.markDirty() → стратегия ставится в очередь
+ * 2. _markDirty() → стратегия ставится в очередь
  * 3. Microtask worker обрабатывает очередь:
  *    - Throttle check: если рано — deferred re-queue (setTimeout)
  *    - Coalescing: если стратегия running — rerunRequested = true
@@ -54,7 +53,6 @@ import type { StrategyIntent } from './types/StrategyIntent.js';
 import type { TriggerReason } from './types/TriggerReason.js';
 import type { ScheduleConfig } from './types/ScheduleConfig.js';
 import { DEFAULT_SCHEDULE_CONFIG } from './types/ScheduleConfig.js';
-import { DirtyTracker } from './DirtyTracker.js';
 import { ExecutionEngine } from './ExecutionEngine.js';
 import type { ExecutionContext } from './ExecutionEngine.js';
 
@@ -131,25 +129,15 @@ export interface IMarketDataStore {
 // IOrderStateStore импортирован из @polymarket/ports (re-export для обратной совместимости)
 
 /**
- * Интерфейс CryptoPriceStore для StrategyScheduler.
+ * Интерфейс strike/resolution-слоя для StrategyScheduler.
  *
  * @remarks
- * Минимальный интерфейс чтобы не создавать прямую зависимость
- * от market-state пакета.
+ * Минимальный интерфейс (реализуется `CryptoResolutionStore`). Хранит только
+ * lifecycle-метаданные рынка; цены берутся из {@link ICryptoMarketDataStore}.
  */
-export interface ICryptoPriceStore {
-  get(symbolOrAsset: string): {
-    asset: string;
-    symbol: string;
-    currentPrice: number;
-    currentPriceTimestampMs: number;
-    chainlink: { price: number; timestampMs: number } | undefined;
-    binance: { price: number; timestampMs: number } | undefined;
-    targetPrice: number | undefined;
-    resolutionPrice: number | undefined;
-    resolved: boolean;
-  } | undefined;
-  setOnChange(cb: (asset: string) => void): void;
+export interface ICryptoResolutionStore {
+  getTarget(symbolOrAsset: string): number | undefined;
+  getResolutionPrice(symbolOrAsset: string): number | undefined;
 }
 
 export type CryptoMarketDataReason = Extract<TriggerReason, 'CRYPTO_PRICE' | 'CRYPTO_MARKET_DATA'>;
@@ -183,8 +171,8 @@ export interface StrategySchedulerDeps {
   readonly executionEngine: ExecutionEngine;
   readonly clock: IClock;
   readonly logger: ILogger;
-  /** Опциональный store крипто-цен (для крипто-рынков) */
-  readonly cryptoPriceStore?: ICryptoPriceStore;
+  /** Опциональный store strike/resolution (для крипто-рынков settlement/snapshot). */
+  readonly cryptoResolutionStore?: ICryptoResolutionStore;
   /** Опциональный long-lived store истории и состояния CEX/crypto market data. */
   readonly cryptoMarketDataStore?: ICryptoMarketDataStore;
   /** Опциональный registry reusable signal calculators. */
@@ -222,7 +210,8 @@ interface StrategyEntry {
 
 export class StrategyScheduler {
   private readonly _logger: ILogger;
-  private readonly _dirtyTracker = new DirtyTracker();
+  /** strategyId → накопленные reasons для следующего tick */
+  private readonly _dirty = new Map<string, Set<TriggerReason>>();
 
   /** strategyId → entry */
   private readonly _entries = new Map<string, StrategyEntry>();
@@ -248,12 +237,9 @@ export class StrategyScheduler {
     _deps.marketDataStore.setOnChange((instrumentId, reason) => {
       this._onMarketDataChanged(instrumentId, reason);
     });
-    // Подписка на обновления крипто-цен
-    if (_deps.cryptoPriceStore) {
-      _deps.cryptoPriceStore.setOnChange((symbol) => {
-        this._onCryptoPriceChanged(symbol);
-      });
-    }
+    // Подписка на обновления крипто-цен/market data. CryptoMarketDataStore
+    // эмитит CRYPTO_PRICE на каждом ценовом апдейте — отдельная подписка на
+    // ценовой стор больше не нужна (single source of truth).
     if (_deps.cryptoMarketDataStore) {
       _deps.cryptoMarketDataStore.setOnChange((asset, reason) => {
         this._onCryptoMarketDataChanged(asset, reason);
@@ -268,7 +254,7 @@ export class StrategyScheduler {
    *
    * @remarks
    * Активирует обработку очереди. До вызова start() события накапливаются
-   * в DirtyTracker, но стратегии не tick'аются.
+   * во внутреннем dirty state, но стратегии не tick'аются.
    */
   public start(): void {
     this._stopped = false;
@@ -399,7 +385,7 @@ export class StrategyScheduler {
 
     // Запуск heartbeat
     entry.heartbeatTimer = setInterval(() => {
-      this._dirtyTracker.markDirty(strategyId, 'TIMER');
+      this._markDirty(strategyId, 'TIMER');
       this._enqueue(strategyId);
     }, config.maxIdleMs).unref();
 
@@ -483,7 +469,7 @@ export class StrategyScheduler {
    */
   public onOrderChanged(strategyId: string, reason: TriggerReason): void {
     if (!this._entries.has(strategyId)) return;
-    this._dirtyTracker.markDirty(strategyId, reason);
+    this._markDirty(strategyId, reason);
     this._enqueue(strategyId);
   }
 
@@ -507,7 +493,7 @@ export class StrategyScheduler {
     if (!strategyIds) return;
 
     for (const id of strategyIds) {
-      this._dirtyTracker.markDirty(id, 'FILL');
+      this._markDirty(id, 'FILL');
       this._enqueue(id);
     }
   }
@@ -524,31 +510,12 @@ export class StrategyScheduler {
 
   // ── Внутренний механизм: event-driven queue ──────────────
 
-  /**
-   * Маршрутизация обновлений крипто-цены к стратегиям.
-   *
-   * @param symbol - Символ крипто-актива (e.g. 'btcusdt')
-   *
-   * @remarks
-   * Находит все стратегии привязанные к данному символу,
-   * помечает их dirty с reason 'CRYPTO_PRICE' и ставит в очередь.
-   */
-  private _onCryptoPriceChanged(symbol: string): void {
-    const strategyIds = this._collectCryptoStrategyIds(symbol);
-    if (strategyIds.size === 0) return;
-
-    for (const id of strategyIds) {
-      this._dirtyTracker.markDirty(id, 'CRYPTO_PRICE');
-      this._enqueue(id);
-    }
-  }
-
   private _onCryptoMarketDataChanged(asset: string, reason: CryptoMarketDataReason): void {
     const strategyIds = this._collectCryptoStrategyIds(asset);
     if (strategyIds.size === 0) return;
 
     for (const id of strategyIds) {
-      this._dirtyTracker.markDirty(id, reason);
+      this._markDirty(id, reason);
       this._enqueue(id);
     }
   }
@@ -584,7 +551,7 @@ export class StrategyScheduler {
     if (!strategyIds) return;
 
     for (const id of strategyIds) {
-      this._dirtyTracker.markDirty(id, reason);
+      this._markDirty(id, reason);
       this._enqueue(id);
     }
   }
@@ -637,10 +604,7 @@ export class StrategyScheduler {
         if (!entry) continue;
 
         // ── Throttle check ──────────────────────────────
-        const hasPriority = this._dirtyTracker.hasPriorityTrigger(
-          strategyId,
-          entry.config.priorityTriggers,
-        );
+        const hasPriority = this._hasPriorityTrigger(strategyId, entry.config.priorityTriggers);
         const now = this._deps.clock.now().getTime();
         const elapsed = now - entry.lastRunMs;
         const remaining = entry.config.minIntervalMs - elapsed;
@@ -681,7 +645,7 @@ export class StrategyScheduler {
       strategyId,
       setTimeout(() => {
         this._deferredTimers.delete(strategyId);
-        if (this._dirtyTracker.isDirty(strategyId)) {
+        if (this._isDirty(strategyId)) {
           this._enqueue(strategyId);
         }
       }, delayMs).unref(),
@@ -699,8 +663,8 @@ export class StrategyScheduler {
    */
   private _executeTick(strategyId: string, entry: StrategyEntry): void {
     const snapshot = this._buildSnapshot(entry);
-    const reasons = this._dirtyTracker.getReasons(strategyId);
-    this._dirtyTracker.clearDirty(strategyId);
+    const reasons = this._getDirtyReasons(strategyId);
+    this._clearDirty(strategyId);
     entry.lastRunMs = this._deps.clock.now().getTime();
 
     let intents: StrategyIntent[];
@@ -819,20 +783,27 @@ export class StrategyScheduler {
       ? { minOrderSize: info.minOrderSize, minOrderValue: info.minOrderValue, tickSize: info.tickSize }
       : undefined;
 
-    // Крипто-цена (если стратегия привязана к символу)
+    // Крипто-цена: проекция из единых источников истины — цены из
+    // CryptoMarketDataStore, strike/resolution из CryptoResolutionStore.
+    // (Раньше собиралось из CryptoPriceStore, который дублировал ценовой поток.)
     let cryptoPrice: StrategySnapshot['cryptoPrice'];
-    if (entry.cryptoSymbol && this._deps.cryptoPriceStore) {
-      const snap = this._deps.cryptoPriceStore.get(entry.cryptoSymbol);
-      if (snap) {
+    if (entry.cryptoSymbol && this._deps.cryptoMarketDataStore) {
+      const ph = this._deps.cryptoMarketDataStore.getPriceHistory(entry.cryptoSymbol);
+      const cl = ph?.getLatest('polymarket_chainlink');
+      const bn = ph?.getLatest('polymarket_binance');
+      const current = cl ?? bn; // Chainlink приоритет (как в прежнем CryptoPriceStore)
+      if (current) {
+        const targetPrice = this._deps.cryptoResolutionStore?.getTarget(entry.cryptoSymbol);
+        const resolutionPrice = this._deps.cryptoResolutionStore?.getResolutionPrice(entry.cryptoSymbol);
         cryptoPrice = {
-          asset: snap.asset,
-          chainlink: snap.chainlink,
-          binance: snap.binance,
-          targetPrice: snap.targetPrice,
-          resolutionPrice: snap.resolutionPrice,
-          resolved: snap.resolved,
-          currentPrice: snap.currentPrice,
-          symbol: snap.symbol,
+          asset: normalizeCryptoAsset(entry.cryptoSymbol) ?? entry.cryptoSymbol,
+          chainlink: cl ? { price: cl.price, timestampMs: cl.exchangeTsMs } : undefined,
+          binance: bn ? { price: bn.price, timestampMs: bn.exchangeTsMs } : undefined,
+          targetPrice,
+          resolutionPrice,
+          resolved: resolutionPrice !== undefined,
+          currentPrice: current.price,
+          symbol: entry.cryptoSymbol,
         };
       }
     }
@@ -989,10 +960,50 @@ export class StrategyScheduler {
     this._queued.delete(strategyId);
 
     // Remove dirty tracking
-    this._dirtyTracker.remove(strategyId);
+    this._removeDirty(strategyId);
 
     // Remove entry
     this._entries.delete(strategyId);
+  }
+
+  // ── Dirty tracking (инлайн из DirtyTracker) ───────────────
+
+  private _markDirty(strategyId: string, reason: TriggerReason): void {
+    let reasons = this._dirty.get(strategyId);
+    if (reasons === undefined) {
+      reasons = new Set<TriggerReason>();
+      this._dirty.set(strategyId, reasons);
+    }
+    reasons.add(reason);
+  }
+
+  private _isDirty(strategyId: string): boolean {
+    const reasons = this._dirty.get(strategyId);
+    return reasons !== undefined && reasons.size > 0;
+  }
+
+  /** Возвращает копию накопленных reasons, чтобы внешний код не мог мутировать внутренний Set. */
+  private _getDirtyReasons(strategyId: string): ReadonlySet<TriggerReason> {
+    const reasons = this._dirty.get(strategyId);
+    if (reasons === undefined || reasons.size === 0) return _EMPTY_DIRTY_SET;
+    return new Set(reasons);
+  }
+
+  private _clearDirty(strategyId: string): void {
+    this._dirty.get(strategyId)?.clear();
+  }
+
+  private _hasPriorityTrigger(strategyId: string, priorities: ReadonlySet<TriggerReason>): boolean {
+    const reasons = this._dirty.get(strategyId);
+    if (!reasons || reasons.size === 0) return false;
+    for (const reason of reasons) {
+      if (priorities.has(reason)) return true;
+    }
+    return false;
+  }
+
+  private _removeDirty(strategyId: string): void {
+    this._dirty.delete(strategyId);
   }
 }
 
@@ -1004,3 +1015,6 @@ function normalizeCryptoAsset(symbolOrAsset: string | undefined): string | undef
   if (normalized.includes('-')) return normalized.split('-')[0] || undefined;
   return normalized.replace(/usd[tc]?$/i, '') || undefined;
 }
+
+/** Singleton пустой Set для _getDirtyReasons() — не аллоцируем объект каждый вызов */
+const _EMPTY_DIRTY_SET: ReadonlySet<TriggerReason> = new Set();

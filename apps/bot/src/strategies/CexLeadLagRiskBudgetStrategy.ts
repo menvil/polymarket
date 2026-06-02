@@ -1417,7 +1417,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
       : this._ewma ?? 50;
     const tableRegime: Regime =
       (this._edgeRegimeDetector ?? this._exitPolicyRegimeDetector)
-        ?.classify(snapshot.cryptoPriceHistory)?.regime ?? 'flat';
+        ?.classify(snapshot.cryptoPriceHistory, snapshot.nowMs)?.regime ?? 'flat';
 
     let edgeBlocked = false;
     let edgeBlockReason: string | undefined;

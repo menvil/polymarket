@@ -32,7 +32,7 @@ export type {
   BacktestDeps,
   BacktestResult,
   IBacktestCryptoMarketDataStore,
-  IBacktestCryptoPriceStore,
+  IBacktestCryptoResolutionStore,
 } from './BacktestEngine.js';
 
 export { CrossMarketBacktestEngine } from './CrossMarketBacktestEngine.js';

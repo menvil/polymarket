@@ -4,7 +4,7 @@
  * @remarks
  * Отвечает за обновление баланса и позиций Portfolio при:
  * - Размещении ордера (резервирование средств или токенов)
- * - Отмене ордера (снятие резервации)
+ * - Отмене ордера (`releaseOrderReservation` — снятие резервации по стороне ордера)
  * - Исполнении fill (дебет/кредит баланса + обновление позиции)
  *
  * ### Схема обновления баланса при Fill:
@@ -42,6 +42,7 @@ import type { Portfolio } from '@polymarket/portfolio';
 import { SimplePosition } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import type { Fill } from '@polymarket/fill';
+import type { Order } from '@polymarket/order';
 
 /** Объединённый тип ошибок сохранения Portfolio */
 export type PortfolioSaveError = VersionConflictError | TradingError;
@@ -224,6 +225,53 @@ export class PortfolioService {
       qty: qty.toString(),
     });
     return Ok(undefined);
+  }
+
+  /**
+   * Снимает резервацию Portfolio для отменённого или истёкшего ордера.
+   *
+   * @param accountId - ID аккаунта
+   * @param order - Ордер после отмены (содержит side, price, remainingSize, asset)
+   *
+   * @remarks
+   * BUY: освобождает USDC-резервацию (price × remainingSize).
+   * SELL: освобождает токенную резервацию (remainingSize по instrumentId).
+   * Ошибки логируются, но не прерывают выполнение — ордер уже отменён.
+   *
+   * @example
+   * ```typescript
+   * // В CancelOrderUseCase после проверки на concurrent fill:
+   * this._deps.portfolioService.releaseOrderReservation(accountId, cancelledOrder);
+   * ```
+   */
+  public releaseOrderReservation(accountId: AccountId, order: Order): void {
+    if (order.side === 'BUY') {
+      const remainingNotional = order.price.value().times(order.remainingSize.value());
+      const result = this.releaseReservation(accountId, remainingNotional);
+      if (!result.ok) {
+        this._logger.error('Failed to release USDC reservation for cancelled order', {
+          accountId: accountIdToString(accountId),
+          error: result.error.message,
+        });
+      }
+    } else {
+      const instrumentId = assetIdToInstrumentId(order.asset);
+      if (!instrumentId) {
+        this._logger.warn('Could not resolve instrumentId for SELL order reservation release', {
+          accountId: accountIdToString(accountId),
+          asset: String(order.asset),
+        });
+        return;
+      }
+      const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize.value());
+      if (!result.ok) {
+        this._logger.error('Failed to release token reservation for cancelled order', {
+          accountId: accountIdToString(accountId),
+          instrumentId: String(instrumentId),
+          error: result.error.message,
+        });
+      }
+    }
   }
 
   /**

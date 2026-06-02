@@ -42,7 +42,7 @@ import type { DiscoveredMarket } from '@polymarket/ports';
 import { parseCryptoMeta, computeInterval } from '@polymarket/exchange/adapters';
 import type { CryptoMarketMeta } from '@polymarket/exchange/adapters';
 import type { BinanceKlinesClient } from '@polymarket/exchange/adapters';
-import type { CryptoPriceStore } from '@polymarket/market-state';
+import type { CryptoResolutionStore, CryptoMarketDataStore } from '@polymarket/market-state';
 import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig, DiscoveryMarketConfig } from '../config/BotConfig.js';
@@ -195,7 +195,8 @@ export interface IOrderReconciler {
  * @param portfolioStore - Хранилище портфелей
  * @param accountId - ID аккаунта
  * @param wsAdapter - WS-адаптер для подписки на токены
- * @param cryptoPriceStore - Хранилище крипто-цен
+ * @param cryptoResolutionStore - Хранилище strike/resolution (settlement)
+ * @param cryptoMarketDataStore - Хранилище крипто-цен/CEX (источник истины по цене)
  * @param cryptoSubs - Менеджер подписок на RTDS
  * @param pendingChainlinkStrike - Ожидающие Chainlink strike prices
  * @param binanceClient - Клиент Binance klines API
@@ -218,7 +219,8 @@ export interface MarketRotationDeps {
   readonly portfolioStore: InMemoryPortfolioStore;
   readonly accountId: AccountId;
   readonly wsAdapter: IWsTokenSubscriber;
-  readonly cryptoPriceStore: CryptoPriceStore;
+  readonly cryptoResolutionStore: CryptoResolutionStore;
+  readonly cryptoMarketDataStore: CryptoMarketDataStore;
   readonly cryptoSubs: CryptoSubscriptionManager;
   readonly pendingChainlinkStrike: Map<string, number>;
   readonly binanceClient: BinanceKlinesClient;
@@ -649,7 +651,7 @@ export class MarketRotation {
 
     const {
       logger, engine, wsAdapter, marketCatalog, pendingChainlinkStrike,
-      cryptoPriceStore, eventBus, recording, redeemer,
+      cryptoResolutionStore, cryptoMarketDataStore, eventBus, recording, redeemer,
     } = this._deps;
 
     logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
@@ -704,13 +706,15 @@ export class MarketRotation {
     // Recording
     if (recording) {
       if (reason === 'EXPIRED' && slot.cryptoMeta) {
-        const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta.rtdsFilter);
-        if (cryptoSnap?.targetPrice && cryptoSnap?.currentPrice) {
+        const target = cryptoResolutionStore.getTarget(slot.cryptoMeta.rtdsFilter);
+        const currentPrice = cryptoMarketDataStore.getLatestPrice(slot.cryptoMeta.rtdsFilter, 'polymarket_chainlink')
+          ?? cryptoMarketDataStore.getLatestPrice(slot.cryptoMeta.rtdsFilter, 'polymarket_binance');
+        if (target && currentPrice) {
           recording.recordResolved(
             slot.tokenIdStr,
             slot.cryptoMeta.rtdsFilter,
-            cryptoSnap.targetPrice,
-            cryptoSnap.currentPrice,
+            target,
+            currentPrice,
             settlementResult?.resolution ?? 'UNKNOWN',
           );
         }
@@ -1134,10 +1138,10 @@ export class MarketRotation {
    * Приоритет: priceToBeat из API → Binance kline → Chainlink RTDS (fallback).
    */
   private async _resolveStrikePrice(cryptoMeta: CryptoMarketMeta): Promise<void> {
-    const { logger, cryptoPriceStore, pendingChainlinkStrike, binanceClient } = this._deps;
+    const { logger, cryptoResolutionStore, pendingChainlinkStrike, binanceClient } = this._deps;
 
     if (cryptoMeta.priceToBeat !== undefined) {
-      cryptoPriceStore.setTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
+      cryptoResolutionStore.setTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
       logger.info('Strike price from API (priceToBeat)', {
         symbol: cryptoMeta.rtdsFilter,
         strikePrice: cryptoMeta.priceToBeat,
@@ -1150,7 +1154,7 @@ export class MarketRotation {
       try {
         const interval = computeInterval(cryptoMeta.endDateMs - cryptoMeta.eventStartTimeMs);
         const kline = await binanceClient.getKline(cryptoMeta.binanceSymbol, cryptoMeta.eventStartTimeMs, interval);
-        cryptoPriceStore.setTargetPrice(cryptoMeta.rtdsFilter, kline.open);
+        cryptoResolutionStore.setTargetPrice(cryptoMeta.rtdsFilter, kline.open);
         logger.info('Strike price from Binance kline (event already started)', {
           symbol: cryptoMeta.rtdsFilter,
           strikePrice: kline.open,
@@ -1182,10 +1186,13 @@ export class MarketRotation {
    * Обновляет портфель: удаляет позицию + зачисляет cash credit.
    */
   private _settleMarket(slot: MarketSlot): { resolution: string; settlementPrice: Decimal; cashCredit: Decimal; qty: Decimal } | undefined {
-    const { logger, cryptoPriceStore, portfolioStore, accountId } = this._deps;
+    const { logger, cryptoResolutionStore, cryptoMarketDataStore, portfolioStore, accountId } = this._deps;
 
-    const resolution = cryptoPriceStore.getResolution(slot.cryptoMeta!.rtdsFilter);
-    const cryptoSnap = cryptoPriceStore.get(slot.cryptoMeta!.rtdsFilter);
+    const rtdsFilter = slot.cryptoMeta!.rtdsFilter;
+    const resolution = cryptoResolutionStore.getResolution(rtdsFilter);
+    const settlementTarget = cryptoResolutionStore.getTarget(rtdsFilter);
+    const settlementPriceNow = cryptoMarketDataStore.getLatestPrice(rtdsFilter, 'polymarket_chainlink')
+      ?? cryptoMarketDataStore.getLatestPrice(rtdsFilter, 'polymarket_binance');
     const portfolio = portfolioStore.get(accountId);
 
     // Ищем позицию на primary и comp токенах
@@ -1203,9 +1210,9 @@ export class MarketRotation {
 
     logger.info('Settlement check', {
       hasCryptoMeta: true,
-      symbol: slot.cryptoMeta!.rtdsFilter,
-      targetPrice: cryptoSnap?.targetPrice,
-      currentPrice: cryptoSnap?.currentPrice,
+      symbol: rtdsFilter,
+      targetPrice: settlementTarget,
+      currentPrice: settlementPriceNow,
       resolution: resolution ?? 'unknown',
       hasTokens,
       positionOn: positionIsComp ? 'complementary' : 'primary',
@@ -1214,8 +1221,8 @@ export class MarketRotation {
 
     if (!resolution || !portfolio || !position || !hasTokens) {
       if (!resolution) {
-        logger.warn('Settlement skipped: no resolution in cryptoPriceStore yet — AutoRedeemer will retry', {
-          symbol: slot.cryptoMeta!.rtdsFilter,
+        logger.warn('Settlement skipped: no resolution available yet — AutoRedeemer will retry', {
+          symbol: rtdsFilter,
           hasTokens,
         });
       }

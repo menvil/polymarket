@@ -446,6 +446,23 @@ describe('TradeTapeCollector', () => {
     });
   });
 
+  // ── clearMarket (пассивная очистка, без подписки) ──────────────────────────
+
+  describe('clearMarket()', () => {
+    it('удаляет ленты инструментов рынка без подписки на EventBus', () => {
+      const c = new TradeTapeCollector(deps, { maxCount: 100 });
+      // start() не вызывается — пассивный режим (как при использовании из MarketDataStore)
+
+      c.recordDirect(TOKEN_A, makePrice('0.65'), makeQty('100'), 'BUY', makeTs(T0));
+      expect(c.instrumentCount()).toBe(1);
+
+      c.clearMarket(MARKET_1);
+
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
+      expect(c.instrumentCount()).toBe(0);
+    });
+  });
+
   // ── Инструмент не в каталоге ───────────────────────────────────────────────
 
   describe('инструмент не в каталоге', () => {

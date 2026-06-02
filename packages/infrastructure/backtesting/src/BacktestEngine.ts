@@ -234,14 +234,19 @@ export interface BacktestConfig {
 }
 
 /**
- * Интерфейс CryptoPriceStore для BacktestEngine.
+ * Интерфейс strike/resolution-стора для BacktestEngine.
  *
  * @remarks
  * Минимальный интерфейс для передачи крипто-цен при реплее.
  */
-export interface IBacktestCryptoPriceStore {
-  get(symbolOrAsset: string): { targetPrice: number | undefined } | undefined;
-  updatePrice(symbol: string, price: number, timestampMs: number): void;
+/**
+ * Strike/resolution-слой для реплея (реализуется `CryptoResolutionStore`).
+ *
+ * @remarks
+ * Цены реплеятся в {@link IBacktestCryptoMarketDataStore} — единый источник
+ * истины. Этот интерфейс хранит только lifecycle (strike/resolution).
+ */
+export interface IBacktestCryptoResolutionStore {
   setTargetPrice(symbolOrAsset: string, price: number): void;
   setResolutionPrice(symbolOrAsset: string, price: number): void;
   /** Устанавливает и блокирует targetPrice (priceToBeat из meta) от перезаписи */
@@ -304,8 +309,8 @@ export interface BacktestDeps {
    * видят историческое время. При нарушении монотонности — логируем warn, пропускаем.
    */
   readonly replayClock?: ReplayClock;
-  /** Опциональный store крипто-цен для реплея crypto_price событий */
-  readonly cryptoPriceStore?: IBacktestCryptoPriceStore;
+  /** Опциональный store strike/resolution для реплея lifecycle-событий */
+  readonly cryptoResolutionStore?: IBacktestCryptoResolutionStore;
   /** Опциональный rolling history/state store для crypto/CEX replay. */
   readonly cryptoMarketDataStore?: IBacktestCryptoMarketDataStore;
   /**
@@ -501,7 +506,7 @@ export class BacktestEngine {
             }
 
             // Извлекаем priceToBeat и finalPrice из rawMarket (eventMetadata)
-            if (this._deps.cryptoPriceStore && meta.m) {
+            if (this._deps.cryptoResolutionStore && meta.m) {
               const cryptoMeta = this._deps.parseCryptoMeta?.(meta.m as Record<string, unknown>);
               if (cryptoMeta) {
                 fileCryptoSymbol = cryptoMeta.rtdsFilter;
@@ -510,7 +515,7 @@ export class BacktestEngine {
                 if (rawEvtStart) fileEventStartMs = new Date(rawEvtStart).getTime();
 
                 if (cryptoMeta.priceToBeat !== undefined) {
-                  this._deps.cryptoPriceStore.lockTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
+                  this._deps.cryptoResolutionStore.lockTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
                   strikeLocked = true;
                   this._logger.info('Strike price locked from meta (priceToBeat)', {
                     symbol: cryptoMeta.rtdsFilter,
@@ -518,7 +523,7 @@ export class BacktestEngine {
                   });
                 }
                 if (cryptoMeta.finalPrice !== undefined) {
-                  this._deps.cryptoPriceStore.lockResolutionPrice(cryptoMeta.rtdsFilter, cryptoMeta.finalPrice);
+                  this._deps.cryptoResolutionStore.lockResolutionPrice(cryptoMeta.rtdsFilter, cryptoMeta.finalPrice);
                   this._logger.info('Resolution price locked from meta (finalPrice)', {
                     symbol: cryptoMeta.rtdsFilter,
                     finalPrice: cryptoMeta.finalPrice,
@@ -550,11 +555,11 @@ export class BacktestEngine {
           }
 
           // ── strike_price событие (обратная совместимость со старыми снапшотами) ──
-          if (raw['t'] === 'strike_price' && this._deps.cryptoPriceStore) {
+          if (raw['t'] === 'strike_price' && this._deps.cryptoResolutionStore) {
             const symbol = raw['symbol'] as string;
             const strikePrice = raw['strikePrice'] as number;
             if (symbol && typeof strikePrice === 'number') {
-              this._deps.cryptoPriceStore.setTargetPrice(symbol, strikePrice);
+              this._deps.cryptoResolutionStore.setTargetPrice(symbol, strikePrice);
               this._logger.info('Strike price loaded (legacy event)', {
                 symbol,
                 strikePrice,
@@ -565,13 +570,13 @@ export class BacktestEngine {
 
           // ── crypto_price события (записанные collect-data) ──────────────
           // Реплеим ВСЕ цены (Chainlink + Binance) — стратегия сама выбирает source.
-          if (raw['t'] === 'crypto_price' && (this._deps.cryptoPriceStore || this._deps.cryptoMarketDataStore)) {
+          if (raw['t'] === 'crypto_price' && (this._deps.cryptoResolutionStore || this._deps.cryptoMarketDataStore)) {
             const symbol = raw['symbol'] as string;
             const price = raw['price'] as number;
             const ts = raw['ts'] as number;
             if (symbol && typeof price === 'number' && typeof ts === 'number') {
               this._advanceClock(new Date(ts));
-              this._deps.cryptoPriceStore?.updatePrice(symbol, price, ts);
+              // Цена — только в CryptoMarketDataStore (единый источник истины).
               this._deps.cryptoMarketDataStore?.updatePrice({
                 symbol,
                 price,
@@ -583,13 +588,13 @@ export class BacktestEngine {
               // Обновляем resolution price только от Chainlink (Polymarket резолвит по нему).
               // Binance цена НЕ используется для определения исхода рынка.
               // Формат Chainlink: 'btc/usd', Binance: 'btcusdt'.
-              if (symbol.includes('/') && this._deps.cryptoPriceStore) {
-                this._deps.cryptoPriceStore?.setResolutionPrice(symbol, price);
+              if (symbol.includes('/') && this._deps.cryptoResolutionStore) {
+                this._deps.cryptoResolutionStore.setResolutionPrice(symbol, price);
 
                 // Авто-strike: первая Chainlink цена после eventStartTime = strike
                 // (тот же подход что pendingChainlinkStrike в paper mode)
                 if (!strikeLocked && fileEventStartMs && fileCryptoSymbol === symbol && ts >= fileEventStartMs) {
-                  this._deps.cryptoPriceStore?.lockTargetPrice(symbol, price);
+                  this._deps.cryptoResolutionStore.lockTargetPrice(symbol, price);
                   strikeLocked = true;
                   this._logger.info('Strike price auto-locked from first Chainlink price after eventStart', {
                     symbol,
@@ -648,13 +653,13 @@ export class BacktestEngine {
           }
 
           // ── market_resolved события ────────────────────────────────────────
-          if (raw['t'] === 'market_resolved' && this._deps.cryptoPriceStore) {
+          if (raw['t'] === 'market_resolved' && this._deps.cryptoResolutionStore) {
             const symbol = raw['symbol'] as string;
             const strikePrice = raw['strikePrice'] as number;
             const resolutionPrice = raw['resolutionPrice'] as number;
             if (symbol && typeof strikePrice === 'number' && typeof resolutionPrice === 'number') {
-              this._deps.cryptoPriceStore.lockTargetPrice(symbol, strikePrice);
-              this._deps.cryptoPriceStore.lockResolutionPrice(symbol, resolutionPrice);
+              this._deps.cryptoResolutionStore.lockTargetPrice(symbol, strikePrice);
+              this._deps.cryptoResolutionStore.lockResolutionPrice(symbol, resolutionPrice);
               strikeLocked = true;
               this._logger.info('Market resolved event replayed (locked)', {
                 symbol,

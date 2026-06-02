@@ -218,13 +218,13 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
     // Обновляем EWMA Polymarket mid
     this._updateEwma(snapshot);
 
-    // Читаем свежий стакан CEX
-    const recentBooks = cryptoVenueHistory.getRecentBooks(this._venue, this._lookbackMs);
+    // Читаем свежий стакан CEX (окно привязано к nowMs — анти look-ahead)
+    const recentBooks = cryptoVenueHistory.getRecentBooks(this._venue, this._lookbackMs, nowMs);
     if (recentBooks.length === 0) return undefined;
     const latestBook = recentBooks[recentBooks.length - 1]!;
 
     // Читаем свежие трейды CEX
-    const recentTrades = cryptoVenueHistory.getRecentTrades(this._venue, this._lookbackMs);
+    const recentTrades = cryptoVenueHistory.getRecentTrades(this._venue, this._lookbackMs, nowMs);
 
     // Детектируем стенки
     const walls = WallDetector.detect(

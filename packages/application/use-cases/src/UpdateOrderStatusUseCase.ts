@@ -37,7 +37,6 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import type { IEventBus, ApplicationEvent, VenueOrderUpdate } from '@polymarket/event-bus';
 import type { PortfolioService } from './services/PortfolioService.js';
@@ -158,51 +157,16 @@ export class UpdateOrderStatusUseCase {
 
     // Шаг 4: Для venue-initiated отмен — освободить резервацию Portfolio.
     // Проверяем актуальный статус в orderStateStore (синхронно, без yield) —
-    // защита от concurrent fill: если fill уже применён и обновил order в store,
-    // резервация потреблена → пропускаем release.
+    // защита от concurrent fill: если fill уже применён, резервация потреблена → пропускаем release.
     if (update.type === 'CANCELLED' || update.type === 'EXPIRED') {
       const currentStoredOrder = this._deps.orderStateStore.getOrder(orderId);
       if (currentStoredOrder && currentStoredOrder.status !== updatedOrder.status) {
         this._logger.debug(
-          'Order status changed during cancel (concurrent fill) — skipping reservation release',
-          {
-            orderId: String(orderId),
-            cancelledStatus: updatedOrder.status,
-            currentStatus: currentStoredOrder.status,
-          },
+          'Order status changed during cancel/expire (concurrent fill) — skipping reservation release',
+          { orderId: String(orderId), cancelledStatus: updatedOrder.status, currentStatus: currentStoredOrder.status },
         );
-      } else if (order.side === 'BUY') {
-        const remainingNotional = updatedOrder.price.value().times(updatedOrder.remainingSize.value());
-        const releaseResult = this._deps.portfolioService.releaseReservation(accountId, remainingNotional);
-        if (!releaseResult.ok) {
-          this._logger.error('Failed to release USDC reservation after BUY cancel/expire', {
-            orderId: String(orderId),
-            error: releaseResult.error.message,
-          });
-          // Не прерываем — ордер уже отменён
-        }
       } else {
-        // SELL: освободить резервацию токенов
-        const instrumentId = assetIdToInstrumentId(updatedOrder.asset);
-        if (instrumentId) {
-          const releaseResult = this._deps.portfolioService.releaseTokenReservation(
-            accountId,
-            instrumentId,
-            updatedOrder.remainingSize.value(),
-          );
-          if (!releaseResult.ok) {
-            this._logger.error('Failed to release token reservation after SELL cancel/expire', {
-              orderId: String(orderId),
-              error: releaseResult.error.message,
-            });
-            // Не прерываем — ордер уже отменён
-          }
-        } else {
-          this._logger.warn('Could not resolve instrumentId for SELL order cancel/expire', {
-            orderId: String(orderId),
-            asset: String(updatedOrder.asset),
-          });
-        }
+        this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
       }
     }
 

@@ -32,7 +32,6 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IOrderRepository, IOrderStateStore, IExchangeClient } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { PortfolioService } from './services/PortfolioService.js';
@@ -142,60 +141,21 @@ export class CancelOrderUseCase {
       ));
     }
 
-    // Шаг 3: Снятие резервации по стороне ордера
+    // Шаг 3: Снятие резервации по стороне ордера.
     //
-    // ВАЖНО: проверяем актуальный статус ордера в store перед снятием резервации.
-    // `orderRepo.save()` содержит async yield.
-    // Во время yield мог выполниться ProcessFillUseCase:
-    //   - saveSync(FILED) → перезаписал CANCELLED → FILED в store
-    //   - portfolioApplyFill → reservation потреблена (reserved = 0)
-    // Если это произошло — нельзя снимать резервацию повторно (она уже потреблена fill).
-    // Синхронная проверка (без yield) читает актуальное состояние из store.
+    // Перед снятием — синхронная проверка актуального статуса (без yield):
+    // `orderRepo.save()` содержит async yield; во время него ProcessFillUseCase
+    // мог выполнить saveSync(FILED) → резервация уже потреблена fill.
+    // Если статус в store отличается — пропускаем освобождение.
     const currentStoredOrder = this._deps.orderStateStore.getOrder(input.orderId);
     if (currentStoredOrder?.status !== cancelledOrder.status) {
-      // Ордер был изменён конкурентно (fill перезаписал CANCELLED → FILED).
-      // Резервация уже потреблена fill — пропускаем освобождение.
       this._logger.debug('Order status changed during cancel (concurrent fill), skipping reservation release', {
         orderId: String(input.orderId),
         cancelledStatus: cancelledOrder.status,
         currentStatus: currentStoredOrder?.status,
       });
-    } else if (order.side === 'BUY') {
-      const remainingNotional = cancelledOrder.price.value().times(cancelledOrder.remainingSize.value());
-      const releaseResult = this._deps.portfolioService.releaseReservation(
-        input.accountId,
-        remainingNotional,
-      );
-      if (!releaseResult.ok) {
-        this._logger.error('Failed to release USDC reservation after BUY cancel', {
-          orderId: String(input.orderId),
-          error: releaseResult.error.message,
-        });
-        // Не прерываем — ордер уже отменён
-      }
     } else {
-      // SELL: освободить токенную резервацию
-      const instrumentId = assetIdToInstrumentId(cancelledOrder.asset);
-      if (instrumentId) {
-        const remainingQty = cancelledOrder.remainingSize.value();
-        const releaseResult = this._deps.portfolioService.releaseTokenReservation(
-          input.accountId,
-          instrumentId,
-          remainingQty,
-        );
-        if (!releaseResult.ok) {
-          this._logger.error('Failed to release token reservation after SELL cancel', {
-            orderId: String(input.orderId),
-            error: releaseResult.error.message,
-          });
-          // Не прерываем — ордер уже отменён
-        }
-      } else {
-        this._logger.warn('Could not resolve instrumentId for SELL order cancel', {
-          orderId: String(input.orderId),
-          asset: String(cancelledOrder.asset),
-        });
-      }
+      this._deps.portfolioService.releaseOrderReservation(input.accountId, cancelledOrder);
     }
 
     // Шаг 4: Best-effort отмена на бирже
