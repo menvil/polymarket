@@ -24,7 +24,7 @@
  * if (meta) {
  *   rtdsClient.subscribe(meta.rtdsTopic, meta.rtdsFilter);
  *   const kline = await binanceClient.getKline(meta.binanceSymbol, meta.eventStartTimeMs, '1h');
- *   cryptoPriceStore.setTargetPrice(meta.rtdsFilter, kline.open);
+ *   cryptoResolutionStore.startMarket({ symbolOrAsset: meta.rtdsFilter, targetPrice: kline.open, settlementTsMs: meta.endDateMs });
  * }
  * ```
  */

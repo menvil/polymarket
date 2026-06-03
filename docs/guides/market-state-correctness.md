@@ -350,6 +350,24 @@ e2e backtest даёт идентичный settlement (DOWN, strike 78286.53 / r
 Валидация: 100 тестов market-state; build/typecheck чисто; e2e backtest идентичен
 (DOWN, strike 78286.53 / resolution 78202.03, 0 errors, без skip/overwrite warnings).
 
+## Пятый батч ревью (строгий settleMarket)
+
+- **#1 строгий Chainlink-fallback в `settleMarket`.** Authoritative `settleMarket`
+  больше **не** замораживает «последнюю цену» без привязки к expiry: Chainlink-fallback
+  теперь **требует** `settlementTsMs` (из `input` или lifecycle-state), иначе warn +
+  `undefined`. Ветка с явной `resolutionPrice` (finalPrice из meta) осталась
+  безусловной — она авторитетна и settlementTsMs ей не нужна. `getResolution` (read-only)
+  сохраняет мягкий latest-fallback. Чёткое разделение: строгий settle vs мягкий helper.
+- **#2 (остаток).** Основной flow уже `startMarket → settleMarket`; почищен лишь
+  устаревший пример в `CryptoMarketMeta.ts` (ссылался на удалённый `cryptoPriceStore`).
+  Late-strike/replay/arb-вызовы низкоуровневых сеттеров — легитимные building blocks,
+  не второй протокол.
+- **#3 (доп. тесты).** `TRADE→BOOK_UPDATED→MARKET_CLOSED` очищает ленту; трейд без
+  marketId остаётся до `clear()`, но не ломает cleanup известных рынков.
+
+Валидация: 102 теста market-state; build/typecheck чисто; e2e backtest идентичен
+(DOWN, strike 78286.53 / resolution 78202.03, 0 errors).
+
 ## Тесты
 
 - `__tests__/unit/CryptoMarketDataStore.test.ts` — Tier 1 (9 кейсов), включая

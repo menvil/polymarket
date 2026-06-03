@@ -35,6 +35,7 @@ const qty = (v: string): Quantity => Quantity.of(new Decimal(v));
 
 const T0 = 1_700_000_000_000;
 const TOKEN_A = 'token-a' as unknown as InstrumentId;
+const TOKEN_B = 'token-b' as unknown as InstrumentId;
 const MARKET_1 = 'market-1' as unknown as MarketId;
 const MARKET_2 = 'market-2' as unknown as MarketId;
 
@@ -121,6 +122,19 @@ describe('TradeTapeCollector (passive)', () => {
       rec(c, TOKEN_A, 'BUY', T0 + 1, MARKET_1); // marketId стал известен → поздняя регистрация
       c.clearMarket(MARKET_1);
       expect(c.getTape(TOKEN_A)).toBeUndefined(); // утечка закрыта
+    });
+
+    it('#1 трейд без marketId остаётся до clear(), но не ломает cleanup известных рынков', () => {
+      const c = new TradeTapeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
+      rec(c, TOKEN_A, 'BUY', T0);            // marketId неизвестен — вне reverse index
+      rec(c, TOKEN_B, 'BUY', T0, MARKET_1);  // известный рынок
+
+      c.clearMarket(MARKET_1);
+      expect(c.getTape(TOKEN_B)).toBeUndefined(); // известный рынок очищен
+      expect(c.getTape(TOKEN_A)).toBeDefined();   // неизвестный остаётся (не падаем)
+
+      c.clear();
+      expect(c.getTape(TOKEN_A)).toBeUndefined();
     });
   });
 

@@ -493,6 +493,18 @@ describe('MarketDataStore', () => {
       expect(store.getTopOfBook(INSTRUMENT_1)).toBeUndefined(); // cleanup
       expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
     });
+
+    it('TRADE → BOOK_UPDATED → MARKET_CLOSED очищает ленту рынка', () => {
+      store.start();
+      const eb = deps.eventBus as any;
+      trade(eb, INSTRUMENT_1);                          // marketId неизвестен
+      expect(lastTradeMarketId(deps)).toBeUndefined();
+      bookUpdated(eb, INSTRUMENT_1, 'market-1');        // marketId стал известен
+      trade(eb, INSTRUMENT_1);
+      expect(lastTradeMarketId(deps)).toBe('market-1');
+      closed(eb, 'market-1');
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+    });
   });
 
   // ── MARKET_CLOSED cleanup ────────────────────────────

@@ -195,13 +195,17 @@ export class CryptoResolutionStore {
       return existing >= target ? 'UP' : 'DOWN';
     }
 
-    // (3) Chainlink-fallback со свежестью около settlement.
+    // (3) Chainlink-fallback — СТРОГО требует settlementTsMs. В отличие от read-only
+    // getResolution, authoritative settleMarket не замораживает «просто последнюю
+    // цену» без привязки к expiry (#1).
     const settlementTsMs = input.settlementTsMs ?? this._active.get(asset)?.settlementTsMs;
-    const maxLag = input.maxResolutionLagMs ?? DEFAULT_MAX_RESOLUTION_LAG_MS;
-    const point = settlementTsMs !== undefined
-      ? this._priceReader.getNearestPricePoint(asset, 'polymarket_chainlink', settlementTsMs, maxLag)
-      : this._priceReader.getLatestPricePoint(asset, 'polymarket_chainlink');
+    if (settlementTsMs === undefined) {
+      this._logger?.warn('settleMarket skipped: settlementTsMs required for Chainlink fallback', { asset });
+      return undefined;
+    }
 
+    const maxLag = input.maxResolutionLagMs ?? DEFAULT_MAX_RESOLUTION_LAG_MS;
+    const point = this._priceReader.getNearestPricePoint(asset, 'polymarket_chainlink', settlementTsMs, maxLag);
     if (point === undefined) {
       this._logger?.warn('settleMarket skipped: no fresh Chainlink price', {
         asset,
