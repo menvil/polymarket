@@ -174,6 +174,20 @@ describe('weightedVenuePrice фильтрация — #9/#10', () => {
       expect(result).toBeDefined();
       expect(result!.components.venueCount).toBe(2);
     });
+
+    it('#5 linear отклоняет агрегат при cross-venue skew', () => {
+      const store = new CryptoMarketDataStore();
+      const now = BASE + 10_000;
+      feedChainlink(store, now, 50_000);
+      feedBook(store, 'binance', now, 50_050);
+      feedBook(store, 'coinbase', now - 1_900, 50_050); // skew 1900 > 250
+
+      const result = registry.evaluate('cex_chainlink_linear_lead_lag', makeContext(store, now), {
+        venues: ['binance', 'coinbase'],
+        weights: { binance: 1, coinbase: 1 },
+      });
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('chainlink stale guard в basis', () => {

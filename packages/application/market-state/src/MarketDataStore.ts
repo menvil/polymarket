@@ -170,6 +170,10 @@ export class MarketDataStore {
           event.snapshot,
           event.timestamp.toNumber(),
         );
+        // Регистрируем instrument→market и из BOOK_DEPTH (snapshot несёт marketId):
+        // закрывает race, когда TRADE_RECEIVED приходит до BOOK_UPDATED — иначе
+        // лента трейдов не попала бы в reverse index и не очистилась при закрытии.
+        this._registerInstrument(event.snapshot.marketId as unknown as MarketId, event.instrumentId);
         // #2: уведомляем об изменении глубины. Reason 'BOOK' покрывает и
         // TopOfBook, и BookDepth; scheduler коалесцирует dirty-флаги per tick,
         // поэтому парный BOOK_UPDATED+BOOK_DEPTH даёт одну переоценку, не флудит.

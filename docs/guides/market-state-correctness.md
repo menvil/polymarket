@@ -289,6 +289,39 @@ tick (`Map<strategyId, Set<TriggerReason>>`), поэтому парный
 Валидация follow-up: 81 тест market-state (+10), все пакеты build + typecheck,
 e2e backtest даёт идентичный settlement (DOWN, strike 78286.53 / resolution 78202.03).
 
+## Третий батч ревью (settlement lifecycle + остаточные дыры)
+
+- **#2 marketId из BOOK_DEPTH.** `MarketDataStore` регистрирует `instrument→market`
+  не только из `BOOK_UPDATED`, но и из `BOOK_DEPTH` (`snapshot.marketId`) — закрыт
+  race «TRADE_RECEIVED до BOOK_UPDATED», когда лента не попала бы в reverse index.
+- **#8 фильтрация уровней.** `updateCexBook` отсекает уровни с NaN/Inf/`price≤0`/`size≤0`
+  до сортировки; пустая сторона → тик игнорируется. microprice/imbalance не мусорят.
+- **#9 getNearestBeforeOrAt.** Добавлен метод «цена до-или-в-момент `tsMs`»; momentum
+  (в `weighted_microprice_momentum` и live `cex_chainlink_lead_lag`) использует его
+  вместо «ближайшей с любой стороны» — корректнее для бэктеста.
+- **#3 startMarket lifecycle.** `CryptoResolutionStore.startMarket({symbolOrAsset,
+  targetPrice?, settlementTsMs?, source?})` — атомарное открытие рынка (reset + lock +
+  `_active` state). Инвариант «один активный рынок на актив» закреплён кодом: warn при
+  перезаписи неразрешённого рынка. `setTargetPrice` остался только для replay/тестов;
+  `MarketRotation._resolveStrikePrice` теперь использует `startMarket`. Полный
+  `(asset, marketId)`-ключ отложен (runtime asset-ориентирован, один рынок на актив).
+- **#7 momentum по одному набору venue.** `weightedVenuePrice` возвращает `usedVenues`;
+  momentum считает `previous` только по биржам, вошедшим в `current`.
+- **#5 cross-venue skew в linear + rolling.** `cex_chainlink_linear_lead_lag` (live) и
+  `cex_chainlink_rolling_divergence` теперь трекают `minTs/maxTs` и отклоняют агрегат
+  при рассинхроне — унифицировано с главным lead-lag.
+- **#4 timestamp-aware settlement.** `LatestPriceReader` отдаёт `getLatestPricePoint`/
+  `getNearestPricePoint` (с timestamp). `getResolution(opts{nowMs, settlementTsMs,
+  maxResolutionLagMs})`: до истечения → `undefined`; Chainlink-fallback требует свежую
+  цену около expiry (`getNearestPricePoint`, default лаг 10с), иначе `undefined` + warn —
+  не резолвить рынок устаревшей ценой. `settlementTsMs` берётся из `startMarket`.
+- **#9 docs.** `index.ts` и `TradeTapeCollector` header переписаны под пассивную модель
+  (коллекторы не подписываются, нет `start()/stop()`).
+
+Валидация: 91 тест market-state; все пакеты build + typecheck; e2e backtest даёт
+идентичный settlement (DOWN, strike 78286.53 / resolution 78202.03, 0 errors),
+без stale-price warnings.
+
 ## Тесты
 
 - `__tests__/unit/CryptoMarketDataStore.test.ts` — Tier 1 (9 кейсов), включая

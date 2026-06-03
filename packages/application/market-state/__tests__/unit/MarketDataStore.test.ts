@@ -405,6 +405,31 @@ describe('MarketDataStore', () => {
     });
   });
 
+  // ── #2 marketId из BOOK_DEPTH ────────────────────────
+
+  describe('#2 marketId из BOOK_DEPTH для ленты', () => {
+    it('TRADE после BOOK_DEPTH (без BOOK_UPDATED) получает marketId из snapshot', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      // Только BOOK_DEPTH — BOOK_UPDATED ещё не приходил
+      eventBus._emit('BOOK_DEPTH', {
+        type: 'BOOK_DEPTH',
+        instrumentId: INSTRUMENT_1,
+        snapshot: { marketId: 'market-1' } as any,
+        timestamp: { toNumber: () => 1000 },
+      });
+      eventBus._emit('TRADE_RECEIVED', {
+        type: 'TRADE_RECEIVED',
+        instrumentId: INSTRUMENT_1,
+        price: {} as any, size: {} as any, side: 'BUY', timestamp: {} as any,
+      });
+
+      const call = (deps.tapeCollector as any).recordDirect.mock.calls.at(-1);
+      expect(call[5]).toBe('market-1'); // marketId прокинут из BOOK_DEPTH
+    });
+  });
+
   // ── MARKET_CLOSED cleanup ────────────────────────────
 
   describe('MARKET_CLOSED cleanup', () => {

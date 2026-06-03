@@ -310,11 +310,13 @@ function weightedMicropriceMomentum(
   });
   if (!current) return undefined;
 
+  // #7: previous считаем по тем же биржам, что вошли в current (usedVenues),
+  // иначе momentum смешивал бы разные наборы бирж.
   let previousNumerator = 0;
   let previousDenominator = 0;
-  for (const venue of venues) {
-    // #9: цена ~lookback назад с допуском, а не самая ранняя точка окна.
-    const point = priceHistory.getNearest(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
+  for (const venue of current.usedVenues) {
+    // #9: цена «до или в момент» nowMs - lookback с допуском, не ближайшая с любой стороны.
+    const point = priceHistory.getNearestBeforeOrAt(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
     if (!point) continue;
     const weight = request.weights?.[venue] ?? 1;
     previousNumerator += point.price * weight;
@@ -486,8 +488,8 @@ function cexChainlinkLeadLag(
     const residualUsd = state.microprice - basisUsd - chainlink.price;
     const residualBps = residualUsd / chainlink.price * 10_000;
 
-    // #9: цена ~lookback назад с допуском, а не самая ранняя точка окна.
-    const previous = priceHistory.getNearest(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
+    // #9: цена «до или в момент» nowMs - lookback с допуском, не ближайшая с любой стороны.
+    const previous = priceHistory.getNearestBeforeOrAt(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
     const momentumBps = previous && previous.price > 0
       ? (state.microprice - previous.price) / previous.price * 10_000
       : 0;
@@ -610,12 +612,15 @@ function cexChainlinkRollingDivergence(
   const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
   const minBasisSamples = request.minBasisSamples ?? 3;
   const maxSpreadBps = request.maxSpreadBps ?? 10;
+  const maxCrossVenueSkewMs = request.maxCrossVenueSkewMs ?? DEFAULT_MAX_CROSS_VENUE_SKEW_MS;
   const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
   if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
 
   const chainlinkHistory = priceHistory.getRecent('polymarket_chainlink', lookbackMs + staleMs, context.nowMs);
   const residualsBps: number[] = [];
   let lastTsMs = 0;
+  let minVenueTsMs = Number.POSITIVE_INFINITY;
+  let maxVenueTsMs = Number.NEGATIVE_INFINITY;
   let maxAgeMs = chainlinkAgeMs;
   let spreadSumBps = 0;
   let venueCount = 0;
@@ -656,6 +661,8 @@ function cexChainlinkRollingDivergence(
 
     venueCount++;
     lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    minVenueTsMs = Math.min(minVenueTsMs, state.lastBookTsMs);
+    maxVenueTsMs = Math.max(maxVenueTsMs, state.lastBookTsMs);
     maxAgeMs = Math.max(maxAgeMs, ageMs);
     spreadSumBps += state.spreadBps;
     components[`${venue}BasisUsd`] = basisUsd;
@@ -664,6 +671,10 @@ function cexChainlinkRollingDivergence(
   }
 
   if (venueCount < minVenueCount || residualsBps.length < minVenueCount) return undefined;
+
+  // #5: отклоняем агрегат при рассинхроне бирж по времени.
+  const crossVenueSkewMs = maxVenueTsMs - minVenueTsMs;
+  if (crossVenueSkewMs > maxCrossVenueSkewMs) return undefined;
 
   const valueBpsRaw = medianNumber(residualsBps);
   const rawDirection: CryptoSignalDirection = Math.abs(valueBpsRaw) < thresholdBps
@@ -697,6 +708,7 @@ function cexChainlinkRollingDivergence(
       rawValueBps: valueBpsRaw,
       maxAgeMs,
       chainlinkAgeMs,
+      crossVenueSkewMs,
       avgSpreadBps: spreadSumBps / venueCount,
       maxSpreadBps,
     },
@@ -731,9 +743,13 @@ function cexChainlinkLinearLeadLag(
   const minVenueCount = request.minVenueCount ?? venues.length;
   const maxSpreadBps = request.maxSpreadBps ?? 10;
 
+  const maxCrossVenueSkewMs = request.maxCrossVenueSkewMs ?? DEFAULT_MAX_CROSS_VENUE_SKEW_MS;
+
   let predDeltaUsd = request.linearInterceptUsd ?? 0;
   let venueCount = 0;
   let lastTsMs = 0;
+  let minVenueTsMs = Number.POSITIVE_INFINITY;
+  let maxVenueTsMs = Number.NEGATIVE_INFINITY;
   let maxAgeMs = 0;
   let spreadSumBps = 0;
   const components: Record<string, number | string | boolean> = {
@@ -765,11 +781,17 @@ function cexChainlinkLinearLeadLag(
 
     venueCount++;
     lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    minVenueTsMs = Math.min(minVenueTsMs, state.lastBookTsMs);
+    maxVenueTsMs = Math.max(maxVenueTsMs, state.lastBookTsMs);
     maxAgeMs = Math.max(maxAgeMs, ageMs);
     spreadSumBps += state.spreadBps;
   }
 
   if (venueCount < minVenueCount) return undefined;
+
+  // #5: отклоняем агрегат при рассинхроне бирж по времени.
+  const crossVenueSkewMs = maxVenueTsMs - minVenueTsMs;
+  if (crossVenueSkewMs > maxCrossVenueSkewMs) return undefined;
 
   const predBps = predDeltaUsd / chainlink.price * 10_000;
   return makeSignalResult({
@@ -790,6 +812,7 @@ function cexChainlinkLinearLeadLag(
       predBps,
       maxAgeMs,
       chainlinkAgeMs,
+      crossVenueSkewMs,
       avgSpreadBps: spreadSumBps / venueCount,
       maxSpreadBps,
     },
@@ -861,6 +884,8 @@ function weightedVenuePrice(
   readonly venueCount: number;
   readonly maxAgeMs: number;
   readonly crossVenueSkewMs: number;
+  /** Биржи, реально вошедшие в агрегат (после фильтрации) — для согласования momentum (#7). */
+  readonly usedVenues: readonly CexVenue[];
 } | undefined {
   let numerator = 0;
   let denominator = 0;
@@ -868,7 +893,7 @@ function weightedVenuePrice(
   let minTs = Number.POSITIVE_INFINITY;
   let maxTs = Number.NEGATIVE_INFINITY;
   let maxAgeMs = 0;
-  let venueCount = 0;
+  const usedVenues: CexVenue[] = [];
 
   for (const venue of venues) {
     const state = venueState.get(venue);
@@ -887,16 +912,16 @@ function weightedVenuePrice(
     minTs = Math.min(minTs, state.lastBookTsMs);
     maxTs = Math.max(maxTs, state.lastBookTsMs);
     maxAgeMs = Math.max(maxAgeMs, ageMs);
-    venueCount++;
+    usedVenues.push(venue);
   }
 
-  if (denominator <= 0 || venueCount < filter.minVenueCount) return undefined;
+  if (denominator <= 0 || usedVenues.length < filter.minVenueCount) return undefined;
 
   // #10: отклоняем агрегат при рассинхроне бирж по времени.
   const crossVenueSkewMs = maxTs - minTs;
   if (crossVenueSkewMs > filter.maxCrossVenueSkewMs) return undefined;
 
-  return { price: numerator / denominator, lastTsMs, venueCount, maxAgeMs, crossVenueSkewMs };
+  return { price: numerator / denominator, lastTsMs, venueCount: usedVenues.length, maxAgeMs, crossVenueSkewMs, usedVenues };
 }
 
 /**

@@ -204,6 +204,29 @@ describe('CryptoMarketDataStore — Tier 1', () => {
       expect(state!.bid).toBe(49_999); // макс bid
       expect(state!.ask).toBe(50_001); // мин ask
     });
+
+    it('#8 отсеивает уровни с size<=0 / не-конечной ценой', () => {
+      const store = new CryptoMarketDataStore();
+      store.updateCexBook({
+        venue: 'binance', symbol: 'BTCUSDT', asset: 'btc',
+        exchangeTsMs: BASE, receivedTsMs: BASE,
+        bids: [[50_001, 0], [49_999, 1]],            // первый уровень size=0 → отсев
+        asks: [[Number.NaN, 1], [50_002, 2]],         // первый ask NaN → отсев
+      });
+      const state = store.getVenueState('btc')?.get('binance');
+      expect(state!.bid).toBe(49_999); // 50001 отсеян по size=0
+      expect(state!.ask).toBe(50_002); // NaN отсеян
+    });
+
+    it('#8 пустая сторона после фильтра → тик игнорируется', () => {
+      const store = new CryptoMarketDataStore();
+      store.updateCexBook({
+        venue: 'binance', symbol: 'BTCUSDT', asset: 'btc',
+        exchangeTsMs: BASE, receivedTsMs: BASE,
+        bids: [[50_001, 0]], asks: [[50_002, 1]], // все bids невалидны
+      });
+      expect(store.getVenueState('btc')).toBeUndefined();
+    });
   });
 
   describe('#9 getNearest', () => {
@@ -215,6 +238,18 @@ describe('CryptoMarketDataStore — Tier 1', () => {
       const view = store.getPriceHistory('btc')!;
       expect(view.getNearest('polymarket_chainlink', BASE + 1_100, 500)?.price).toBe(50_100);
       expect(view.getNearest('polymarket_chainlink', BASE + 5_000, 500)).toBeUndefined();
+    });
+
+    it('getNearestBeforeOrAt берёт точку до/в момент, не ближайшую сверху', () => {
+      const store = new CryptoMarketDataStore();
+      for (const [off, price] of [[0, 50_000], [2_000, 50_200]] as const) {
+        store.updatePrice({ symbol: 'btc/usd', price, timestampMs: BASE + off, receivedTsMs: BASE + off, source: 'chainlink' });
+      }
+      const view = store.getPriceHistory('btc')!;
+      // target BASE+1500: ближайшая сверху (BASE+2000) ближе, но before-or-at = BASE+0
+      expect(view.getNearestBeforeOrAt('polymarket_chainlink', BASE + 1_500, 2_000)?.price).toBe(50_000);
+      // вне допуска снизу
+      expect(view.getNearestBeforeOrAt('polymarket_chainlink', BASE + 1_500, 1_000)).toBeUndefined();
     });
   });
 

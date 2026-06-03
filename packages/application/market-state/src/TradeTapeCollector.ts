@@ -2,8 +2,10 @@
  * Коллектор ленты трейдов (Trade Tape Collector)
  *
  * @remarks
- * Подписывается на `TRADE_RECEIVED` события и накапливает rolling-ленту
- * трейдов per tokenId в виде `TradeTape` из `@polymarket/trade-tape`.
+ * **Пассивный буфер** rolling-ленты трейдов per tokenId (`TradeTape` из
+ * `@polymarket/trade-tape`). Подписками владеет `MarketDataStore` — он пишет сюда
+ * через `recordDirect()` (с опц. `marketId`) и чистит через `clearMarket()`.
+ * У коллектора **нет** `start()/stop()` и зависимости от EventBus (#1).
  *
  * ### Принцип: только запись, стратегия считает сама.
  * Коллектор НЕ вычисляет OFI, VWAP или другие метрики.
@@ -14,14 +16,12 @@
  * ### Согласованность с BookDepthCollector:
  * - `BookDepthCollector` хранит `OrderBookHistory` per tokenId
  * - `TradeTapeCollector` хранит `TradeTape` per tokenId
- * - Оба создают хранилище лениво при первом событии
- * - Оба очищают данные при `MARKET_CLOSED` за O(k)
+ * - Оба — пассивные буферы: создаются лениво, чистятся через `clearMarket()` за O(k)
  *
  * ### Жизненный цикл:
- * 1. `start()` — подписывается на `TRADE_RECEIVED` и `MARKET_CLOSED`
- * 2. `TRADE_RECEIVED` → добавляет `TapeRecord` в `TradeTape` инструмента
- * 3. `MARKET_CLOSED` → удаляет ленты инструментов закрытого рынка
- * 4. `stop()` — отписывается от всех событий
+ * 1. `recordDirect(...)` → добавляет `TapeRecord` в `TradeTape` инструмента
+ *    (marketId берётся из аргумента или из каталога для reverse index)
+ * 2. `clearMarket(marketId)` → удаляет ленты инструментов закрытого рынка
  *
  * ### Удержание данных (retention):
  * Политика передаётся при создании и применяется к каждой `TradeTape`:
@@ -35,11 +35,11 @@
  *
  * @example
  * ```typescript
- * const collector = new TradeTapeCollector(deps, {
- *   maxCount: 1000,    // последние 1000 трейдов
- *   maxAgeMs: 300_000, // или не старше 5 минут
- * });
- * collector.start();
+ * const collector = new TradeTapeCollector(
+ *   { catalog, logger, clock },
+ *   { maxCount: 1000, maxAgeMs: 300_000 },
+ * );
+ * // MarketDataStore пишет: collector.recordDirect(tokenId, price, size, side, ts, marketId);
  *
  * // В стратегии — взять ленту за последнюю минуту и посчитать:
  * const tape = collector.getTape(tokenId);

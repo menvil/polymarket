@@ -6,13 +6,25 @@
  */
 
 import { CryptoResolutionStore, type LatestPriceReader } from '../../src/CryptoResolutionStore.js';
-import { CryptoMarketDataStore, type CryptoPriceSource } from '../../src/CryptoMarketDataStore.js';
+import { CryptoMarketDataStore, type CryptoPriceSource, type CryptoPricePoint } from '../../src/CryptoMarketDataStore.js';
 
-/** Фейковый reader последней цены. */
-function makeReader(chainlink?: number): LatestPriceReader {
+/**
+ * Фейковый reader. `chainlink` — цена Chainlink (ts по умолчанию 0); `chainlinkTsMs`
+ * задаёт timestamp для проверок свежести (#4).
+ */
+function makeReader(chainlink?: number, chainlinkTsMs = 0): LatestPriceReader {
+  const point = (): CryptoPricePoint | undefined =>
+    chainlink === undefined
+      ? undefined
+      : { asset: 'btc', source: 'polymarket_chainlink', price: chainlink, exchangeTsMs: chainlinkTsMs, receivedTsMs: chainlinkTsMs };
   return {
-    getLatestPrice: (_s: string, source: CryptoPriceSource) =>
-      source === 'polymarket_chainlink' ? chainlink : undefined,
+    getLatestPricePoint: (_s: string, source: CryptoPriceSource) =>
+      source === 'polymarket_chainlink' ? point() : undefined,
+    getNearestPricePoint: (_s: string, source: CryptoPriceSource, tsMs: number, maxDistanceMs: number) => {
+      if (source !== 'polymarket_chainlink') return undefined;
+      const p = point();
+      return p && Math.abs(p.exchangeTsMs - tsMs) <= maxDistanceMs ? p : undefined;
+    },
   };
 }
 
@@ -69,6 +81,41 @@ describe('CryptoResolutionStore', () => {
     });
   });
 
+  describe('#3 startMarket', () => {
+    it('сбрасывает прошлый resolution и locked target/resolution, ставит новый strike', () => {
+      const store = new CryptoResolutionStore(makeReader());
+      store.lockTargetPrice('btc', 49_000);
+      store.lockResolutionPrice('btc', 49_500);
+
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 60_000 });
+
+      // старый locked target/resolution сброшены, новый target взят
+      expect(store.getTarget('btc')).toBe(60_000);
+      expect(store.getResolutionPrice('btc')).toBeUndefined();
+    });
+
+    it('getResolution после startMarket не использует старый resolution', () => {
+      const store = new CryptoResolutionStore(makeReader(55_000)); // chainlink 55000
+      store.lockTargetPrice('btc', 50_000);
+      store.lockResolutionPrice('btc', 49_000); // старый рынок → DOWN
+      expect(store.getResolution('btc')).toBe('DOWN');
+
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 50_000 });
+      // старый resolution 49000 сброшен → fallback на chainlink 55000 >= 50000 → UP
+      expect(store.getResolution('btc')).toBe('UP');
+    });
+
+    it('startMarket без target только сбрасывает (strike доставится позже)', () => {
+      const store = new CryptoResolutionStore(makeReader());
+      store.lockTargetPrice('btc', 49_000);
+      store.startMarket({ symbolOrAsset: 'btc', settlementTsMs: 5_000 });
+      expect(store.hasTarget('btc')).toBe(false);
+      // lock снят — поздний strike (Chainlink/kline) проходит
+      store.setTargetPrice('btc', 51_000);
+      expect(store.getTarget('btc')).toBe(51_000);
+    });
+  });
+
   describe('#3 resetAsset', () => {
     it('сбрасывает strike/resolution и locks при ротации', () => {
       const store = new CryptoResolutionStore(makeReader(50_000));
@@ -95,6 +142,26 @@ describe('CryptoResolutionStore', () => {
       expect(store.getResolution('btc', { nowMs: 1_000, settlementTsMs: 2_000 })).toBeUndefined();
       // после истечения — резолвит
       expect(store.getResolution('btc', { nowMs: 2_000, settlementTsMs: 2_000 })).toBe('UP');
+    });
+
+    it('не резолвит по устаревшей Chainlink-цене (freshness)', () => {
+      // chainlink ts=0, settlement в 20_000, maxLag 5_000 → цена слишком старая
+      const store = new CryptoResolutionStore(makeReader(50_000, 0));
+      store.setTargetPrice('btc', 49_000);
+      expect(store.getResolution('btc', { nowMs: 20_000, settlementTsMs: 20_000, maxResolutionLagMs: 5_000 })).toBeUndefined();
+      // свежая цена (в пределах лага) — резолвит
+      const fresh = new CryptoResolutionStore(makeReader(50_000, 19_000));
+      fresh.setTargetPrice('btc', 49_000);
+      expect(fresh.getResolution('btc', { nowMs: 20_000, settlementTsMs: 20_000, maxResolutionLagMs: 5_000 })).toBe('UP');
+    });
+
+    it('settlementTsMs берётся из startMarket (lifecycle-state)', () => {
+      const store = new CryptoResolutionStore(makeReader(50_000, 2_000));
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 49_000, settlementTsMs: 2_000 });
+      // nowMs до settlement (из state) → undefined без явного settlementTsMs в opts
+      expect(store.getResolution('btc', { nowMs: 1_000 })).toBeUndefined();
+      // после — резолвит (chainlink ts=2000 рядом с settlement)
+      expect(store.getResolution('btc', { nowMs: 2_000 })).toBe('UP');
     });
   });
 

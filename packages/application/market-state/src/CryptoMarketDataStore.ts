@@ -95,6 +95,15 @@ export interface CryptoPriceHistoryView {
    * от `getRecent(...)[0]`, который вернул бы самую раннюю точку окна (#9).
    */
   getNearest(source: CryptoPriceSource, tsMs: number, maxDistanceMs: number): CryptoPricePoint | undefined;
+  /**
+   * Точка с timestamp ≤ `tsMs`, ближайшая к нему снизу, в пределах `maxDistanceMs`.
+   *
+   * @remarks
+   * Для momentum правильнее, чем {@link getNearest}: берёт цену «до или в момент»
+   * `tsMs`, а не ближайшую с любой стороны (которая при редкой истории могла бы
+   * оказаться сильно ближе к настоящему и занизить momentum) (#9).
+   */
+  getNearestBeforeOrAt(source: CryptoPriceSource, tsMs: number, maxDistanceMs: number): CryptoPricePoint | undefined;
 }
 
 export interface CryptoVenueStateView {
@@ -329,16 +338,17 @@ export class CryptoMarketDataStore {
     const asset = normalizeAsset(input.asset ?? inferAssetFromSymbol(input.symbol));
     if (!asset) return;
 
-    // #10: нормализуем сортировку (bids по убыванию, asks по возрастанию) — upstream
-    // мог прислать уровни в произвольном порядке, иначе best bid/ask были бы мусором.
-    const bids = sortLevels(input.bids, 'desc');
-    const asks = sortLevels(input.asks, 'asc');
+    // #8 + #10: отсеиваем мусорные уровни (NaN/Inf/≤0) и сортируем — best bid/ask
+    // и деривативы не зависят ни от порядка, ни от битых size/price.
+    const bids = normalizeLevels(input.bids, 'desc');
+    const asks = normalizeLevels(input.asks, 'asc');
+    if (bids.length === 0 || asks.length === 0) return;
 
-    const bid = bids[0]?.[0];
-    const ask = asks[0]?.[0];
-    const bidSize = bids[0]?.[1] ?? 0;
-    const askSize = asks[0]?.[1] ?? 0;
-    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) return;
+    const bid = bids[0]![0];
+    const ask = asks[0]![0];
+    const bidSize = bids[0]![1];
+    const askSize = asks[0]![1];
+    if (ask < bid) return; // скрещенный стакан — мусор
 
     const receivedTsMs = input.receivedTsMs ?? Date.now();
     if (!this._acceptTimestamp(input.exchangeTsMs, receivedTsMs, 'book', input.symbol)) return;
@@ -468,7 +478,38 @@ export class CryptoMarketDataStore {
       },
       getNearest: (source, tsMs, maxDistanceMs) =>
         nearestByTimestamp(sourceMap.get(source) ?? [], tsMs, maxDistanceMs, (item) => item.exchangeTsMs),
+      getNearestBeforeOrAt: (source, tsMs, maxDistanceMs) =>
+        nearestBeforeOrAtByTimestamp(sourceMap.get(source) ?? [], tsMs, maxDistanceMs, (item) => item.exchangeTsMs),
     };
+  }
+
+  /**
+   * Последний ценовой тик источника (с timestamp) — для проверки свежести (#4).
+   *
+   * @param symbolOrAsset - Символ или базовый актив
+   * @param source - Источник цены
+   * @returns Точка `{ price, exchangeTsMs, receivedTsMs }` или `undefined`
+   */
+  getLatestPricePoint(symbolOrAsset: string, source: CryptoPriceSource): CryptoPricePoint | undefined {
+    const asset = normalizeAsset(inferAssetFromSymbol(symbolOrAsset));
+    return this._prices.get(asset)?.get(source)?.at(-1);
+  }
+
+  /**
+   * Ценовой тик источника, ближайший к `tsMs` в пределах `maxDistanceMs` (#4).
+   *
+   * @remarks
+   * Для settlement нужна цена около expiry, а не просто самая свежая на момент
+   * вызова — поэтому ищем ближайшую к `settlementTsMs`, а не последнюю.
+   */
+  getNearestPricePoint(
+    symbolOrAsset: string,
+    source: CryptoPriceSource,
+    tsMs: number,
+    maxDistanceMs: number,
+  ): CryptoPricePoint | undefined {
+    const asset = normalizeAsset(inferAssetFromSymbol(symbolOrAsset));
+    return nearestByTimestamp(this._prices.get(asset)?.get(source) ?? [], tsMs, maxDistanceMs, (item) => item.exchangeTsMs);
   }
 
   /**
@@ -758,23 +799,28 @@ function insertSortedAllowDuplicates<T>(
  * @returns Срез в окне `[minTs, maxTs]`
  */
 /**
- * Возвращает уровни стакана, отсортированные по цене (#10).
+ * Фильтрует невалидные уровни и сортирует по цене (#8 + #10).
  *
  * @param levels - Уровни (price, size)
  * @param dir - `desc` для bids (лучший = макс. цена), `asc` для asks (лучший = мин. цена)
- * @returns Новый отсортированный массив (вход не мутируется)
+ * @returns Новый массив без мусорных уровней, отсортированный (вход не мутируется)
  *
  * @remarks
- * Upstream может прислать уровни не отсортированными — без нормализации
- * `levels[0]` не был бы best bid/ask, и mid/spread/microprice стали бы мусором.
+ * - #8: отсекаются уровни с не-конечной/неположительной ценой или size — иначе
+ *   microprice/imbalance/sizeSum стали бы мусором даже при валидном best price.
+ * - #10: сортировка гарантирует, что `levels[0]` — действительно best bid/ask,
+ *   независимо от порядка, присланного upstream.
  */
-function sortLevels(
+function normalizeLevels(
   levels: readonly (readonly [number, number])[],
   dir: 'asc' | 'desc',
 ): (readonly [number, number])[] {
-  const sorted = [...levels];
-  sorted.sort((a, b) => (dir === 'desc' ? b[0] - a[0] : a[0] - b[0]));
-  return sorted;
+  const clean = levels.filter(
+    ([price, size]) =>
+      Number.isFinite(price) && Number.isFinite(size) && price > 0 && size > 0,
+  );
+  clean.sort((a, b) => (dir === 'desc' ? b[0] - a[0] : a[0] - b[0]));
+  return clean;
 }
 
 /**
@@ -802,6 +848,25 @@ function nearestByTimestamp<T>(
     }
   }
   return best;
+}
+
+/**
+ * Находит элемент с timestamp ≤ `targetTs`, ближайший к нему снизу, в пределах
+ * `maxDistanceMs` (#9). Массив отсортирован по возрастанию.
+ */
+function nearestBeforeOrAtByTimestamp<T>(
+  items: readonly T[],
+  targetTs: number,
+  maxDistanceMs: number,
+  getTs: (item: T) => number,
+): T | undefined {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const ts = getTs(items[index]!);
+    if (ts <= targetTs) {
+      return targetTs - ts <= maxDistanceMs ? items[index] : undefined;
+    }
+  }
+  return undefined;
 }
 
 function windowByTimestamp<T>(

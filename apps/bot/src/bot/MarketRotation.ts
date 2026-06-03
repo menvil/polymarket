@@ -1140,18 +1140,28 @@ export class MarketRotation {
   private async _resolveStrikePrice(cryptoMeta: CryptoMarketMeta): Promise<void> {
     const { logger, cryptoResolutionStore, pendingChainlinkStrike, binanceClient } = this._deps;
 
-    // #3: сбрасываем strike/resolution прошлого рынка на этот актив — иначе при
-    // ротации 5-мин рынков старое состояние протекло бы в новый рынок.
-    cryptoResolutionStore.resetAsset(cryptoMeta.rtdsFilter);
-
+    // #3: атомарно открываем рынок (reset прошлого состояния + фиксируем время
+    // истечения для settlement-guard). Strike задаём сразу, если есть priceToBeat.
     if (cryptoMeta.priceToBeat !== undefined) {
-      cryptoResolutionStore.setTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
+      cryptoResolutionStore.startMarket({
+        symbolOrAsset: cryptoMeta.rtdsFilter,
+        targetPrice: cryptoMeta.priceToBeat,
+        settlementTsMs: cryptoMeta.endDateMs,
+        source: 'gamma',
+      });
       logger.info('Strike price from API (priceToBeat)', {
         symbol: cryptoMeta.rtdsFilter,
         strikePrice: cryptoMeta.priceToBeat,
       });
       return;
     }
+
+    // Strike ещё неизвестен — открываем рынок без target (reset + settlementTsMs),
+    // strike доставится ниже (kline) или позже (первый Chainlink после eventStart).
+    cryptoResolutionStore.startMarket({
+      symbolOrAsset: cryptoMeta.rtdsFilter,
+      settlementTsMs: cryptoMeta.endDateMs,
+    });
 
     const eventStarted = Date.now() > cryptoMeta.eventStartTimeMs;
     if (eventStarted) {
@@ -1193,7 +1203,11 @@ export class MarketRotation {
     const { logger, cryptoResolutionStore, cryptoMarketDataStore, portfolioStore, accountId } = this._deps;
 
     const rtdsFilter = slot.cryptoMeta!.rtdsFilter;
-    const resolution = cryptoResolutionStore.getResolution(rtdsFilter);
+    // #4: settlementTsMs берётся из lifecycle-state (startMarket); nowMs включает
+    // guard «не резолвить до истечения» и проверку свежести Chainlink-цены.
+    const resolution = cryptoResolutionStore.getResolution(rtdsFilter, {
+      nowMs: this._deps.clock.now().getTime(),
+    });
     const settlementTarget = cryptoResolutionStore.getTarget(rtdsFilter);
     const settlementPriceNow = cryptoMarketDataStore.getLatestPrice(rtdsFilter, 'polymarket_chainlink')
       ?? cryptoMarketDataStore.getLatestPrice(rtdsFilter, 'polymarket_binance');
