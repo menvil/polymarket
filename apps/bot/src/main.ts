@@ -3120,7 +3120,11 @@ async function runBacktest(): Promise<void> {
 
   // Settlement при наличии крипто-рынка с известным исходом
   if (backtestCryptoMeta) {
-    const resolution = backtestCryptoResolutionStore.getResolution(backtestCryptoMeta.rtdsFilter);
+    // #2: authoritative settlement (единообразно с live) — замораживает исход.
+    const resolution = backtestCryptoResolutionStore.settleMarket({
+      symbolOrAsset: backtestCryptoMeta.rtdsFilter,
+      settlementTsMs: backtestCryptoMeta.endDateMs,
+    });
     if (resolution) {
       const portfolio = portfolioStore.get(accountId)!;
       const position = portfolio.getPosition(instrumentId);

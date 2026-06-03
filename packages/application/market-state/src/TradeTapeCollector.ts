@@ -111,6 +111,14 @@ export class TradeTapeCollector {
   private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
   /**
+   * Прямой индекс instrumentId → marketId (string).
+   * Нужен для **поздней** регистрации (#1): marketId может стать известен после
+   * создания ленты (первый трейд пришёл до BOOK_DEPTH/каталога) — тогда лента
+   * без этого индекса осталась бы вне `_byMarket` и не очистилась бы.
+   */
+  private readonly _instrumentToMarket = new Map<InstrumentId, string>();
+
+  /**
    * @param _deps - Зависимости (catalog, logger, clock)
    * @param _config - Политика хранения (maxCount и/или maxAgeMs)
    *
@@ -207,6 +215,7 @@ export class TradeTapeCollector {
   public clear(): void {
     this._entries.clear();
     this._byMarket.clear();
+    this._instrumentToMarket.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────────────────────
@@ -215,9 +224,9 @@ export class TradeTapeCollector {
    * Добавляет трейд в ленту инструмента.
    *
    * @remarks
-   * Лента (`TradeTape`) создаётся лениво при первом трейде.
-   * marketId берётся из каталога один раз при создании и регистрируется в reverse index.
-   * Вытеснение устаревших записей обрабатывается внутри `TradeTape.append()`.
+   * Лента (`TradeTape`) создаётся лениво при первом трейде. marketId
+   * регистрируется на каждом трейде (#1, поздняя регистрация). Вытеснение
+   * устаревших записей обрабатывается внутри `TradeTape.append()`.
    */
   private _record(
     instrumentId: InstrumentId,
@@ -227,29 +236,19 @@ export class TradeTapeCollector {
     timestamp: import('@polymarket/value-objects').Timestamp,
     marketId?: MarketId,
   ): void {
-    let entry = this._entries.get(instrumentId);
+    // #1: регистрируем marketId на КАЖДОМ трейде, а не только при создании ленты —
+    // marketId может стать известен позже (первый трейд пришёл до BOOK_DEPTH/каталога).
+    // #2: явный marketId (из BOOK_UPDATED/BOOK_DEPTH) надёжнее каталога.
+    this._registerMarket(instrumentId, marketId ?? this._deps.catalog.get(instrumentId)?.marketId);
 
+    let entry = this._entries.get(instrumentId);
     if (entry === undefined) {
-      // #2: явный marketId (из BOOK_UPDATED) надёжнее каталога; иначе fallback на каталог.
-      const resolvedMarketId = marketId ?? this._deps.catalog.get(instrumentId)?.marketId;
-      const marketIdStr = resolvedMarketId !== undefined ? String(resolvedMarketId) : undefined;
       const tape = TradeTape.create(this._config, this._deps.clock);
       entry = { tape };
       this._entries.set(instrumentId, entry);
-
-      // Регистрируем в reverse index: marketId → instrumentId
-      if (marketIdStr !== undefined) {
-        let set = this._byMarket.get(marketIdStr);
-        if (set === undefined) {
-          set = new Set<InstrumentId>();
-          this._byMarket.set(marketIdStr, set);
-        }
-        set.add(instrumentId);
-      }
-
       this._deps.logger.debug('TradeTapeCollector: new tape created', {
         tokenId: String(instrumentId),
-        marketId: marketIdStr ?? 'unknown',
+        marketId: this._instrumentToMarket.get(instrumentId) ?? 'unknown',
       });
     }
 
@@ -257,12 +256,44 @@ export class TradeTapeCollector {
   }
 
   /**
+   * Регистрирует/обновляет связь instrumentId → marketId в reverse index (#1).
+   *
+   * @remarks
+   * Идемпотентно: повторный тот же marketId — no-op. Если инструмент сменил
+   * рынок (редко) — удаляем из старого множества и пишем warn.
+   */
+  private _registerMarket(instrumentId: InstrumentId, marketId: MarketId | undefined): void {
+    if (marketId === undefined) return;
+    const marketIdStr = String(marketId);
+    const existing = this._instrumentToMarket.get(instrumentId);
+    if (existing === marketIdStr) return;
+
+    if (existing !== undefined) {
+      this._deps.logger.warn('TradeTapeCollector: instrument moved between markets', {
+        tokenId: String(instrumentId),
+        previousMarketId: existing,
+        newMarketId: marketIdStr,
+      });
+      this._byMarket.get(existing)?.delete(instrumentId);
+    }
+
+    this._instrumentToMarket.set(instrumentId, marketIdStr);
+    let set = this._byMarket.get(marketIdStr);
+    if (set === undefined) {
+      set = new Set<InstrumentId>();
+      this._byMarket.set(marketIdStr, set);
+    }
+    set.add(instrumentId);
+  }
+
+  /**
    * Удаляет ленты инструментов закрытого рынка.
    *
    * @remarks
    * Сложность O(k) где k = количество инструментов рынка (обычно 2 для Polymarket).
-   * Использует reverse index `_byMarket` — не итерирует все записи.
-   * Инструменты без известного marketId (не в каталоге) не удаляются.
+   * Использует reverse index `_byMarket` — не итерирует все записи. Поздняя
+   * регистрация marketId (#1) гарантирует, что лента попадает в индекс, даже если
+   * первый трейд пришёл до того, как marketId стал известен.
    *
    * @param marketId - ID закрытого рынка
    */
@@ -273,6 +304,7 @@ export class TradeTapeCollector {
 
     for (const key of keys) {
       this._entries.delete(key);
+      this._instrumentToMarket.delete(key);
     }
     this._byMarket.delete(marketIdStr);
 

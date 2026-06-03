@@ -577,7 +577,11 @@ async function runSingleMarketBacktest(
   // Auto-selection: позиция может быть на primary ИЛИ complementary инструменте.
   // Проверяем оба, определяем outcomeIndex позиции для корректного settlement.
   if (cryptoMeta) {
-    const resolution = cryptoResolutionStore.getResolution(cryptoMeta.rtdsFilter);
+    // #2: authoritative settlement (единообразно с live) — замораживает исход.
+    const resolution = cryptoResolutionStore.settleMarket({
+      symbolOrAsset: cryptoMeta.rtdsFilter,
+      settlementTsMs: cryptoMeta.endDateMs,
+    });
     const portfolio = portfolioStore.get(accountId);
 
     // Ищем позицию: на primary или complementary инструменте

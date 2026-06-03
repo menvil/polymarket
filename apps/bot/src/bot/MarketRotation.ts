@@ -1203,10 +1203,12 @@ export class MarketRotation {
     const { logger, cryptoResolutionStore, cryptoMarketDataStore, portfolioStore, accountId } = this._deps;
 
     const rtdsFilter = slot.cryptoMeta!.rtdsFilter;
-    // #4: settlementTsMs берётся из lifecycle-state (startMarket); nowMs включает
-    // guard «не резолвить до истечения» и проверку свежести Chainlink-цены.
-    const resolution = cryptoResolutionStore.getResolution(rtdsFilter, {
-      nowMs: this._deps.clock.now().getTime(),
+    // #2: authoritative settlement — замораживает resolution-цену и помечает рынок
+    // resolved (идемпотентно). settlementTsMs из cryptoMeta; freshness Chainlink
+    // проверяется внутри (устаревшая цена → undefined, settlement отложится).
+    const resolution = cryptoResolutionStore.settleMarket({
+      symbolOrAsset: rtdsFilter,
+      settlementTsMs: slot.cryptoMeta!.endDateMs,
     });
     const settlementTarget = cryptoResolutionStore.getTarget(rtdsFilter);
     const settlementPriceNow = cryptoMarketDataStore.getLatestPrice(rtdsFilter, 'polymarket_chainlink')

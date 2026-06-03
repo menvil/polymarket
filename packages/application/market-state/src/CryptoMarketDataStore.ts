@@ -838,6 +838,7 @@ function nearestByTimestamp<T>(
   maxDistanceMs: number,
   getTs: (item: T) => number,
 ): T | undefined {
+  if (!(maxDistanceMs >= 0)) return undefined; // guard: отрицательный/NaN допуск
   let best: T | undefined;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const item of items) {
@@ -860,6 +861,7 @@ function nearestBeforeOrAtByTimestamp<T>(
   maxDistanceMs: number,
   getTs: (item: T) => number,
 ): T | undefined {
+  if (!(maxDistanceMs >= 0)) return undefined; // guard: отрицательный/NaN допуск
   for (let index = items.length - 1; index >= 0; index--) {
     const ts = getTs(items[index]!);
     if (ts <= targetTs) {

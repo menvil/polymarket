@@ -14,12 +14,11 @@
  * 5. При обновлении вызывает `_onChange(instrumentId, reason)` callback
  * 6. При закрытии рынка чистит TopOfBook и делегирует cleanup коллекторам
  *
- * ### Владение подписками (важно):
+ * ### Владение подписками:
  * MarketDataStore — **единственный владелец** подписок EventBus. Коллекторы
- * (`BookDepthCollector`, `TradeTapeCollector`) используются как пассивные буферы:
- * запись через `recordDirect()`, очистка через `clearMarket()`. **Не вызывайте
- * `collector.start()`**, если коллектор передан в MarketDataStore — иначе каждое
- * событие запишется дважды (подписка коллектора + recordDirect стора).
+ * (`BookDepthCollector`, `TradeTapeCollector`) — пассивные буферы без `start()/stop()`:
+ * запись через `recordDirect()`, очистка через `clearMarket()`. Двойная запись
+ * невозможна на уровне типов (у коллекторов нет подписок).
  *
  * ### Особенности подписок:
  * - BOOK_UPDATED → сохраняет TopOfBook + reverse index + onChange('BOOK')
@@ -358,8 +357,7 @@ export class MarketDataStore {
    *
    * @remarks
    * MarketDataStore — единственный владелец подписки на MARKET_CLOSED. Коллекторы
-   * остаются пассивными (их собственный `start()` не вызывается), поэтому их
-   * очистка идёт через публичный `clearMarket()`, а не через их подписку. Это
+   * пассивны, поэтому их очистка идёт через публичный `clearMarket()`. Это
    * закрывает утечку: без этого истории закрытых рынков жили бы вечно.
    *
    * @param marketId - ID закрытого рынка

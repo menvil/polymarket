@@ -5,6 +5,7 @@
  * - контракт lock (no-op перезаписи)
  */
 
+import { jest } from '@jest/globals';
 import { CryptoResolutionStore, type LatestPriceReader } from '../../src/CryptoResolutionStore.js';
 import { CryptoMarketDataStore, type CryptoPriceSource, type CryptoPricePoint } from '../../src/CryptoMarketDataStore.js';
 
@@ -162,6 +163,54 @@ describe('CryptoResolutionStore', () => {
       expect(store.getResolution('btc', { nowMs: 1_000 })).toBeUndefined();
       // после — резолвит (chainlink ts=2000 рядом с settlement)
       expect(store.getResolution('btc', { nowMs: 2_000 })).toBe('UP');
+    });
+  });
+
+  describe('#2 settleMarket (freeze + идемпотентность)', () => {
+    it('замораживает resolution-цену и помечает resolved', () => {
+      const store = new CryptoResolutionStore(makeReader(50_500, 2_000));
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 50_000, settlementTsMs: 2_000 });
+
+      expect(store.settleMarket({ symbolOrAsset: 'btc' })).toBe('UP');
+      // цена зафиксирована → getResolution (read-only) отдаёт тот же исход
+      expect(store.getResolutionPrice('btc')).toBe(50_500);
+      expect(store.getResolution('btc')).toBe('UP');
+    });
+
+    it('идемпотентен: повторный settleMarket возвращает замороженный исход', () => {
+      // reader сначала 50_500 (UP), затем «подъезжает» 49_000 (DOWN)
+      let price = 50_500;
+      const reader: LatestPriceReader = {
+        getLatestPricePoint: () => ({ asset: 'btc', source: 'polymarket_chainlink', price, exchangeTsMs: 2_000, receivedTsMs: 2_000 }),
+        getNearestPricePoint: (_s, _src, tsMs, maxD) =>
+          Math.abs(2_000 - tsMs) <= maxD ? { asset: 'btc', source: 'polymarket_chainlink', price, exchangeTsMs: 2_000, receivedTsMs: 2_000 } : undefined,
+      };
+      const store = new CryptoResolutionStore(reader);
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 50_000, settlementTsMs: 2_000 });
+
+      expect(store.settleMarket({ symbolOrAsset: 'btc' })).toBe('UP');
+      price = 49_000; // более поздний тик дал бы DOWN, но resolution заморожен
+      expect(store.settleMarket({ symbolOrAsset: 'btc' })).toBe('UP');
+      expect(store.getResolution('btc')).toBe('UP');
+    });
+
+    it('не замораживает по устаревшей цене → undefined', () => {
+      const store = new CryptoResolutionStore(makeReader(50_500, 0)); // ts=0
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 50_000, settlementTsMs: 20_000 });
+      expect(store.settleMarket({ symbolOrAsset: 'btc', maxResolutionLagMs: 5_000 })).toBeUndefined();
+      expect(store.getResolutionPrice('btc')).toBeUndefined(); // ничего не заморожено
+    });
+
+    it('после settleMarket следующий startMarket не варнит про unresolved', () => {
+      const warn = jest.fn();
+      const logger = { trace: jest.fn(), debug: jest.fn(), info: jest.fn(), warn, error: jest.fn(), fatal: jest.fn(), child: () => logger } as any;
+      const store = new CryptoResolutionStore(makeReader(50_500, 2_000), logger);
+
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 50_000, settlementTsMs: 2_000 });
+      store.settleMarket({ symbolOrAsset: 'btc' });
+      store.startMarket({ symbolOrAsset: 'btc', targetPrice: 51_000, settlementTsMs: 5_000 }); // новый рынок
+
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 

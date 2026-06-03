@@ -322,6 +322,34 @@ e2e backtest даёт идентичный settlement (DOWN, strike 78286.53 / r
 идентичный settlement (DOWN, strike 78286.53 / resolution 78202.03, 0 errors),
 без stale-price warnings.
 
+## Четвёртый батч ревью (lifecycle settlement + остаточная утечка)
+
+- **#1 поздняя регистрация marketId (TradeTapeCollector).** Раньше `_byMarket`
+  пополнялся только при создании ленты — если первый трейд пришёл до того, как
+  marketId стал известен, лента оставалась вне индекса и не чистилась (утечка).
+  Теперь `_registerMarket` вызывается на **каждом** `_record()` (идемпотентно;
+  warn при смене рынка инструментом). `clear()`/`_cleanup()` чистят `_instrumentToMarket`.
+- **#2 settleMarket() — authoritative settlement.** `getResolution()` остаётся
+  read-only (UI/диагностика), а **`settleMarket()`** выполняет переход состояния
+  `unresolved → resolved`: вычисляет исход, **замораживает** `resolutionPrice`
+  (`lockResolutionPrice`) и ставит `resolved=true`. Идемпотентен — повторный вызов
+  отдаёт замороженный исход, а не пере-резолвит по более позднему тику. Используется
+  **единообразно в live и backtest** (`MarketRotation._settleMarket`, `main.ts`
+  backtest, `runMultiMarketBacktest`) — нет вилки lifecycle между средами.
+- **#3 устаревшие комментарии.** Из `MarketDataStore` убраны фразы про
+  «не вызывайте `collector.start()`» (у коллекторов нет `start()`).
+- **#4 guard на допуск.** `nearestByTimestamp`/`nearestBeforeOrAtByTimestamp`
+  возвращают `undefined` при `maxDistanceMs < 0` или NaN (защита от тихого
+  странного поведения). Двойного `return false` в `insertSortedUniqueByTimestamp`
+  не было — ложная тревога ревью, не трогали.
+
+Тесты на порядок событий: `TRADE→BOOK_DEPTH→MARKET_CLOSED`,
+`BOOK_DEPTH→TRADE→MARKET_CLOSED`, `BOOK_UPDATED→TRADE→MARKET_CLOSED`,
+`startMarket→settle→startMarket` (без warn), stale Chainlink, идемпотентность settle.
+
+Валидация: 100 тестов market-state; build/typecheck чисто; e2e backtest идентичен
+(DOWN, strike 78286.53 / resolution 78202.03, 0 errors, без skip/overwrite warnings).
+
 ## Тесты
 
 - `__tests__/unit/CryptoMarketDataStore.test.ts` — Tier 1 (9 кейсов), включая

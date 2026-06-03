@@ -155,6 +155,68 @@ export class CryptoResolutionStore {
   }
 
   /**
+   * Авторитетный settlement рынка (#2): вычисляет исход, **замораживает**
+   * resolution-цену и помечает рынок разрешённым.
+   *
+   * @param input - `{ symbolOrAsset, settlementTsMs?, maxResolutionLagMs? }`
+   * @returns `'UP'` / `'DOWN'` или `undefined`, если нет strike/свежей цены
+   *
+   * @remarks
+   * В отличие от read-only {@link getResolution}, это **переход состояния**
+   * `unresolved → resolved` с фиксацией цены — поэтому идемпотентен: повторный
+   * вызов вернёт уже замороженный исход, а не пере-резолвит по более позднему тику.
+   * Единая точка фактического закрытия рынка в live и backtest.
+   *
+   * Алгоритм:
+   * 1. Нет strike → `undefined`.
+   * 2. Есть зафиксированная `resolutionPrice` → помечаем resolved, возвращаем по ней.
+   * 3. Иначе — ближайшая свежая Chainlink-цена около `settlementTsMs`
+   *    (в пределах `maxResolutionLagMs`); если нет — warn + `undefined`
+   *    (НЕ резолвим по устаревшей цене). Иначе фиксируем и помечаем resolved.
+   */
+  settleMarket(input: {
+    readonly symbolOrAsset: string;
+    readonly settlementTsMs?: number;
+    readonly maxResolutionLagMs?: number;
+  }): 'UP' | 'DOWN' | undefined {
+    const asset = toAsset(input.symbolOrAsset);
+    const target = this._targets.get(asset);
+    if (target === undefined) return undefined;
+
+    const markResolved = (): void => {
+      const state = this._active.get(asset);
+      if (state) state.resolved = true;
+    };
+
+    // (2) уже зафиксированная resolutionPrice — авторитетна.
+    const existing = this._resolutions.get(asset);
+    if (existing !== undefined) {
+      markResolved();
+      return existing >= target ? 'UP' : 'DOWN';
+    }
+
+    // (3) Chainlink-fallback со свежестью около settlement.
+    const settlementTsMs = input.settlementTsMs ?? this._active.get(asset)?.settlementTsMs;
+    const maxLag = input.maxResolutionLagMs ?? DEFAULT_MAX_RESOLUTION_LAG_MS;
+    const point = settlementTsMs !== undefined
+      ? this._priceReader.getNearestPricePoint(asset, 'polymarket_chainlink', settlementTsMs, maxLag)
+      : this._priceReader.getLatestPricePoint(asset, 'polymarket_chainlink');
+
+    if (point === undefined) {
+      this._logger?.warn('settleMarket skipped: no fresh Chainlink price', {
+        asset,
+        settlementTsMs,
+        maxResolutionLagMs: maxLag,
+      });
+      return undefined;
+    }
+
+    this.lockResolutionPrice(asset, point.price); // заморозка → идемпотентность
+    markResolved();
+    return point.price >= target ? 'UP' : 'DOWN';
+  }
+
+  /**
    * Устанавливает strike (open свечи / priceToBeat). No-op если strike заблокирован.
    *
    * @param symbolOrAsset - Символ или базовый актив

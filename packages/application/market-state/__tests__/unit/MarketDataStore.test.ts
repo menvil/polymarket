@@ -430,6 +430,71 @@ describe('MarketDataStore', () => {
     });
   });
 
+  // ── Порядок событий (lifecycle) ──────────────────────
+
+  describe('порядок событий', () => {
+    function trade(eventBus: any, id: InstrumentId): void {
+      eventBus._emit('TRADE_RECEIVED', {
+        type: 'TRADE_RECEIVED', instrumentId: id,
+        price: {} as any, size: {} as any, side: 'BUY', timestamp: {} as any,
+      });
+    }
+    function depth(eventBus: any, id: InstrumentId, marketId: string): void {
+      eventBus._emit('BOOK_DEPTH', {
+        type: 'BOOK_DEPTH', instrumentId: id,
+        snapshot: { marketId } as any, timestamp: { toNumber: () => 1000 },
+      });
+    }
+    function bookUpdated(eventBus: any, id: InstrumentId, marketId: string): void {
+      eventBus._emit('BOOK_UPDATED', {
+        type: 'BOOK_UPDATED', instrumentId: id, topOfBook: makeTopOfBook(),
+        marketId, sequenceNumber: 1, timestamp: { toNumber: () => 1000 },
+      });
+    }
+    function closed(eventBus: any, marketId: string): void {
+      eventBus._emit('MARKET_CLOSED', {
+        type: 'MARKET_CLOSED', marketId, reason: 'RESOLVED',
+        realizedPnL: {} as any, timestamp: { toNumber: () => 2000 },
+      });
+    }
+    function lastTradeMarketId(deps: MarketDataStoreDeps): unknown {
+      return (deps.tapeCollector as any).recordDirect.mock.calls.at(-1)?.[5];
+    }
+
+    it('TRADE → BOOK_DEPTH → MARKET_CLOSED', () => {
+      store.start();
+      const eb = deps.eventBus as any;
+      trade(eb, INSTRUMENT_1);                          // marketId неизвестен
+      expect(lastTradeMarketId(deps)).toBeUndefined();
+      depth(eb, INSTRUMENT_1, 'market-1');              // marketId стал известен
+      trade(eb, INSTRUMENT_1);
+      expect(lastTradeMarketId(deps)).toBe('market-1'); // прокинут в ленту
+      closed(eb, 'market-1');
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+    });
+
+    it('BOOK_DEPTH → TRADE → MARKET_CLOSED', () => {
+      store.start();
+      const eb = deps.eventBus as any;
+      depth(eb, INSTRUMENT_1, 'market-1');
+      trade(eb, INSTRUMENT_1);
+      expect(lastTradeMarketId(deps)).toBe('market-1');
+      closed(eb, 'market-1');
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+    });
+
+    it('BOOK_UPDATED → TRADE → MARKET_CLOSED', () => {
+      store.start();
+      const eb = deps.eventBus as any;
+      bookUpdated(eb, INSTRUMENT_1, 'market-1');
+      trade(eb, INSTRUMENT_1);
+      expect(lastTradeMarketId(deps)).toBe('market-1');
+      closed(eb, 'market-1');
+      expect(store.getTopOfBook(INSTRUMENT_1)).toBeUndefined(); // cleanup
+      expect((deps.tapeCollector as any).clearMarket).toHaveBeenCalledWith('market-1');
+    });
+  });
+
   // ── MARKET_CLOSED cleanup ────────────────────────────
 
   describe('MARKET_CLOSED cleanup', () => {

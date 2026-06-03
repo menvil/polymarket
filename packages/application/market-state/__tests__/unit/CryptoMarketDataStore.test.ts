@@ -251,6 +251,14 @@ describe('CryptoMarketDataStore — Tier 1', () => {
       // вне допуска снизу
       expect(view.getNearestBeforeOrAt('polymarket_chainlink', BASE + 1_500, 1_000)).toBeUndefined();
     });
+
+    it('отрицательный/NaN maxDistanceMs → undefined (guard)', () => {
+      const store = new CryptoMarketDataStore();
+      store.updatePrice({ symbol: 'btc/usd', price: 50_000, timestampMs: BASE, receivedTsMs: BASE, source: 'chainlink' });
+      const view = store.getPriceHistory('btc')!;
+      expect(view.getNearest('polymarket_chainlink', BASE, -1)).toBeUndefined();
+      expect(view.getNearestBeforeOrAt('polymarket_chainlink', BASE, Number.NaN)).toBeUndefined();
+    });
   });
 
   describe('#7 material notify независим по venue', () => {

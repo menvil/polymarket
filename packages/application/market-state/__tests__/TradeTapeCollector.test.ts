@@ -111,6 +111,17 @@ describe('TradeTapeCollector (passive)', () => {
       c.clearMarket(MARKET_2);
       expect(c.getTape(TOKEN_A)).toBeDefined();
     });
+
+    it('#1 поздняя регистрация marketId: первый трейд без marketId, потом с marketId — чистится', () => {
+      // Каталог пуст, первый трейд без marketId → лента создана вне reverse index
+      const c = new TradeTapeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
+      rec(c, TOKEN_A, 'BUY', T0);            // marketId неизвестен
+      expect(c.getTape(TOKEN_A)).toBeDefined();
+
+      rec(c, TOKEN_A, 'BUY', T0 + 1, MARKET_1); // marketId стал известен → поздняя регистрация
+      c.clearMarket(MARKET_1);
+      expect(c.getTape(TOKEN_A)).toBeUndefined(); // утечка закрыта
+    });
   });
 
   describe('clear', () => {
