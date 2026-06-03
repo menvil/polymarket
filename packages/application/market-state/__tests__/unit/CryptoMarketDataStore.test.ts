@@ -191,6 +191,65 @@ describe('CryptoMarketDataStore — Tier 1', () => {
     });
   });
 
+  describe('#10 нормализация сортировки стакана', () => {
+    it('берёт правильный best bid/ask при неотсортированном входе', () => {
+      const store = new CryptoMarketDataStore();
+      store.updateCexBook({
+        venue: 'binance', symbol: 'BTCUSDT', asset: 'btc',
+        exchangeTsMs: BASE, receivedTsMs: BASE,
+        bids: [[49_990, 1], [49_999, 1], [49_995, 1]], // не отсортировано
+        asks: [[50_010, 1], [50_001, 1], [50_005, 1]],
+      });
+      const state = store.getVenueState('btc')?.get('binance');
+      expect(state!.bid).toBe(49_999); // макс bid
+      expect(state!.ask).toBe(50_001); // мин ask
+    });
+  });
+
+  describe('#9 getNearest', () => {
+    it('возвращает ближайшую к tsMs точку в пределах допуска', () => {
+      const store = new CryptoMarketDataStore();
+      for (const [off, price] of [[0, 50_000], [1_000, 50_100], [2_000, 50_200]] as const) {
+        store.updatePrice({ symbol: 'btc/usd', price, timestampMs: BASE + off, receivedTsMs: BASE + off, source: 'chainlink' });
+      }
+      const view = store.getPriceHistory('btc')!;
+      expect(view.getNearest('polymarket_chainlink', BASE + 1_100, 500)?.price).toBe(50_100);
+      expect(view.getNearest('polymarket_chainlink', BASE + 5_000, 500)).toBeUndefined();
+    });
+  });
+
+  describe('#7 material notify независим по venue', () => {
+    it('движение одной биржи не сбрасывает reference другой', () => {
+      const store = new CryptoMarketDataStore({ materialMoveBps: 5, materialMoveMinIntervalMs: 0 });
+      const reasons: string[] = [];
+      store.setOnChange((_a, r) => reasons.push(r));
+
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE, receivedTsMs: BASE, bids: [[49_999, 1]], asks: [[50_001, 1]] });
+      store.updateCexBook({ venue: 'coinbase', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE, receivedTsMs: BASE, bids: [[49_999, 1]], asks: [[50_001, 1]] });
+      expect(reasons).toHaveLength(0); // первые наблюдения — база per venue
+
+      // Binance двинулся на +10bps относительно своей базы → одно событие
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE + 100, receivedTsMs: BASE + 100, bids: [[50_049, 1]], asks: [[50_051, 1]] });
+      expect(reasons).toEqual(['CRYPTO_MARKET_DATA']);
+    });
+  });
+
+  describe('#8 material trade notify', () => {
+    it('крупный трейд будит стратегию', () => {
+      const store = new CryptoMarketDataStore({ materialTradeNotional: 100_000, materialMoveMinIntervalMs: 0 });
+      const reasons: string[] = [];
+      store.setOnChange((_a, r) => reasons.push(r));
+
+      // 1 BTC * 50000 = 50000 < 100000 → молчит
+      store.updateCexTrade({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE, receivedTsMs: BASE, price: 50_000, size: 1, side: 'buy' });
+      expect(reasons).toHaveLength(0);
+
+      // 3 BTC * 50000 = 150000 >= 100000 → событие
+      store.updateCexTrade({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE + 10, receivedTsMs: BASE + 10, price: 50_000, size: 3, side: 'buy' });
+      expect(reasons).toEqual(['CRYPTO_MARKET_DATA']);
+    });
+  });
+
   describe('#14 timestamp-guard на входе', () => {
     it('отбраковывает timestamp в секундах (ниже плотного epoch-ms)', () => {
       const store = new CryptoMarketDataStore();

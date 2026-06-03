@@ -58,13 +58,14 @@ export function buildMarketData(params: BuildMarketDataParams): MarketDataInfra 
 
   const marketCatalog = new InMemoryMarketCatalog();
 
+  // Коллекторы — пассивные буферы; подписками владеет MarketDataStore (#1).
   const bookCollector = new BookDepthCollector(
-    { eventBus, logger, clock },
+    { logger, clock },
     { maxCount: bookMaxCount },
   );
 
   const tapeCollector = new TradeTapeCollector(
-    { eventBus, catalog: marketCatalog, logger, clock },
+    { catalog: marketCatalog, logger, clock },
     { maxCount: tapeMaxCount },
   );
 

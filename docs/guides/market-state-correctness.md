@@ -256,6 +256,39 @@ tick (`Map<strategyId, Set<TriggerReason>>`), поэтому парный
   strike 78286.53 / resolution 78202.03 → `DOWN` (корректно), стратегия читает
   `chainlink`/`strike` из проекции. PnL-путь settlement не регрессировал.
 
+## Follow-up батч (повторное ревью): #1–#10
+
+Второй раунд ревью после миграции — закрыты остаточные баги и footgun'ы:
+
+- **#1 пассивные коллекторы.** Из `BookDepthCollector`/`TradeTapeCollector` убраны
+  `start()/stop()` и зависимость от EventBus — это чистые буферы (`recordDirect`/
+  `clearMarket`). Двойная запись теперь невозможна на уровне типов (не «просьба в
+  комментарии», а отсутствие `start()`). `buildMarketData` обновлён.
+- **#2 надёжная очистка ленты.** `MarketDataStore` строит `instrumentId → marketId`
+  из `BOOK_UPDATED` и прокидывает `marketId` в `tapeCollector.recordDirect`. Лента
+  регистрируется под рынком даже когда каталог ещё не знает инструмент — дыра утечки закрыта.
+- **#3 resetAsset.** `CryptoResolutionStore.resetAsset()` сбрасывает strike/resolution+locks;
+  `MarketRotation._resolveStrikePrice` зовёт его на старте рынка — старое состояние
+  не протекает в следующий 5-мин рынок при ротации.
+- **#4 settlement-guard.** `getResolution(symbolOrAsset, { nowMs, settlementTsMs })`
+  возвращает `undefined`, пока рынок не истёк — нет преждевременного исхода.
+- **#5 cross-venue skew в главном lead-lag.** `cex_chainlink_lead_lag` теперь трекает
+  `minTs/maxTs` и отклоняет агрегат при `maxTs-minTs > maxCrossVenueSkewMs`.
+- **#6 linear lead-lag.** venue учитывается только при заданном ненулевом весе —
+  без `weights` сигнал больше не строится из одного intercept.
+- **#7 material notify per-venue.** `_lastCexNotify` теперь `Map<asset, Map<venue, …>>` —
+  движение одной биржи не сбрасывает reference другой.
+- **#8 trade-pressure notify.** `materialTradeNotional` — крупный трейд будит
+  стратегию из `updateCexTrade` (раньше будил только book move).
+- **#9 getNearest.** Добавлен `getNearest(source, tsMs, maxDistanceMs)`; momentum
+  (в `weightedMicropriceMomentum` и `cex_chainlink_lead_lag`) берёт цену ~lookback
+  назад с допуском, а не самую раннюю точку окна.
+- **#10 нормализация стакана.** `updateCexBook` сортирует bids desc / asks asc —
+  best bid/ask и деривативы не зависят от порядка уровней upstream.
+
+Валидация follow-up: 81 тест market-state (+10), все пакеты build + typecheck,
+e2e backtest даёт идентичный settlement (DOWN, strike 78286.53 / resolution 78202.03).
+
 ## Тесты
 
 - `__tests__/unit/CryptoMarketDataStore.test.ts` — Tier 1 (9 кейсов), включая

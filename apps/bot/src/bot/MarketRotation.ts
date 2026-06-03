@@ -1140,6 +1140,10 @@ export class MarketRotation {
   private async _resolveStrikePrice(cryptoMeta: CryptoMarketMeta): Promise<void> {
     const { logger, cryptoResolutionStore, pendingChainlinkStrike, binanceClient } = this._deps;
 
+    // #3: сбрасываем strike/resolution прошлого рынка на этот актив — иначе при
+    // ротации 5-мин рынков старое состояние протекло бы в новый рынок.
+    cryptoResolutionStore.resetAsset(cryptoMeta.rtdsFilter);
+
     if (cryptoMeta.priceToBeat !== undefined) {
       cryptoResolutionStore.setTargetPrice(cryptoMeta.rtdsFilter, cryptoMeta.priceToBeat);
       logger.info('Strike price from API (priceToBeat)', {

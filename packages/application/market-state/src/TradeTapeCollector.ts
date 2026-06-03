@@ -54,18 +54,21 @@ import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Side } from '@polymarket/value-objects';
-import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import { TradeTape } from '@polymarket/trade-tape';
 import type { TapeRetentionPolicy } from '@polymarket/trade-tape';
 
 /**
  * Зависимости TradeTapeCollector.
+ *
+ * @remarks
+ * Коллектор — **пассивный буфер**: подписками владеет MarketDataStore (пишет
+ * через `recordDirect()`, чистит через `clearMarket()`), поэтому `eventBus` не
+ * нужен (#1). `catalog` остаётся как fallback для marketId, если MarketDataStore
+ * не передал его явно.
  */
 export interface TradeTapeCollectorDeps {
-  /** Event bus для подписки на TRADE_RECEIVED / MARKET_CLOSED */
-  readonly eventBus: IEventBus;
-  /** Каталог инструментов — для ассоциирования tokenId с marketId при cleanup */
+  /** Каталог инструментов — fallback для ассоциирования tokenId с marketId при cleanup */
   readonly catalog: IMarketCatalog;
   /** Logger */
   readonly logger: ILogger;
@@ -107,11 +110,8 @@ export class TradeTapeCollector {
    */
   private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
-  private _unsubTrade: (() => void) | undefined;
-  private _unsubMarketClosed: (() => void) | undefined;
-
   /**
-   * @param _deps - Зависимости (eventBus, catalog, logger, clock)
+   * @param _deps - Зависимости (catalog, logger, clock)
    * @param _config - Политика хранения (maxCount и/или maxAgeMs)
    *
    * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
@@ -125,64 +125,6 @@ export class TradeTapeCollector {
         'TradeTapeCollector: config must specify maxCount and/or maxAgeMs',
       );
     }
-  }
-
-  /**
-   * Запускает коллектор — подписывается на события.
-   *
-   * @remarks
-   * Повторный вызов без `stop()` отписывает предыдущие подписки (идемпотентен).
-   *
-   * @example
-   * ```typescript
-   * collector.start();
-   * ```
-   */
-  public start(): void {
-    this._unsubTrade?.();
-    this._unsubMarketClosed?.();
-
-    this._unsubTrade = this._deps.eventBus.subscribe(
-      'TRADE_RECEIVED',
-      (event) => {
-        try {
-          this._record(event.instrumentId, event.price, event.size, event.side, event.timestamp);
-        } catch (err) {
-          this._deps.logger.error('TradeTapeCollector: failed to record trade', {
-            instrumentId: String(event.instrumentId),
-            err: err instanceof Error ? err : new Error(String(err)),
-          });
-        }
-      },
-    );
-
-    this._unsubMarketClosed = this._deps.eventBus.subscribe(
-      'MARKET_CLOSED',
-      (event) => {
-        this._cleanup(event.marketId);
-      },
-    );
-
-    this._deps.logger.info('TradeTapeCollector started', {
-      maxCount: this._config.maxCount ?? null,
-      maxAgeMs: this._config.maxAgeMs ?? null,
-    });
-  }
-
-  /**
-   * Останавливает коллектор — отписывается от событий.
-   *
-   * @remarks
-   * Накопленные ленты сохраняются после stop().
-   * Для полного сброса вызовите `clear()`.
-   */
-  public stop(): void {
-    this._unsubTrade?.();
-    this._unsubMarketClosed?.();
-    this._unsubTrade = undefined;
-    this._unsubMarketClosed = undefined;
-
-    this._deps.logger.info('TradeTapeCollector stopped', {});
   }
 
   /**
@@ -221,9 +163,14 @@ export class TradeTapeCollector {
    * @param side - Сторона агрессора
    * @param timestamp - Timestamp трейда
    *
+   * @param marketId - ID рынка (опц.). Если передан — используется для reverse
+   *   index вместо каталога (#2): MarketDataStore знает marketId из BOOK_UPDATED,
+   *   что надёжнее каталога и закрывает дыру утечки для инструментов, которых
+   *   каталог ещё не знает.
+   *
    * @remarks
    * Используется MarketDataStore для записи TRADE_RECEIVED событий
-   * без дублирования EventBus подписки (MarketDataStore уже подписан).
+   * без дублирования EventBus подписки (MarketDataStore владеет подпиской).
    */
   public recordDirect(
     instrumentId: InstrumentId,
@@ -231,8 +178,9 @@ export class TradeTapeCollector {
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
     timestamp: import('@polymarket/value-objects').Timestamp,
+    marketId?: MarketId,
   ): void {
-    this._record(instrumentId, price, size, side, timestamp);
+    this._record(instrumentId, price, size, side, timestamp, marketId);
   }
 
   /**
@@ -277,12 +225,14 @@ export class TradeTapeCollector {
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
     timestamp: import('@polymarket/value-objects').Timestamp,
+    marketId?: MarketId,
   ): void {
     let entry = this._entries.get(instrumentId);
 
     if (entry === undefined) {
-      const marketId = this._deps.catalog.get(instrumentId)?.marketId;
-      const marketIdStr = marketId !== undefined ? String(marketId) : undefined;
+      // #2: явный marketId (из BOOK_UPDATED) надёжнее каталога; иначе fallback на каталог.
+      const resolvedMarketId = marketId ?? this._deps.catalog.get(instrumentId)?.marketId;
+      const marketIdStr = resolvedMarketId !== undefined ? String(resolvedMarketId) : undefined;
       const tape = TradeTape.create(this._config, this._deps.clock);
       entry = { tape };
       this._entries.set(instrumentId, entry);

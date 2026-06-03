@@ -108,6 +108,12 @@ export class MarketDataStore {
    * за O(k) удалить TopOfBook данные закрытого рынка при MARKET_CLOSED.
    */
   private readonly _byMarket = new Map<string, Set<InstrumentId>>();
+  /**
+   * Прямой индекс instrumentId → marketId (из BOOK_UPDATED).
+   * Прокидывается в `tapeCollector.recordDirect`, чтобы лента надёжно
+   * регистрировалась под рынком даже когда каталог ленты ещё не знает инструмент (#2).
+   */
+  private readonly _instrumentToMarket = new Map<InstrumentId, MarketId>();
   private _onChange?: (instrumentId: InstrumentId, reason: MarketDataReason) => void;
 
   private _unsubBookUpdated: (() => void) | undefined;
@@ -181,6 +187,7 @@ export class MarketDataStore {
           event.size,
           event.side,
           event.timestamp,
+          this._instrumentToMarket.get(event.instrumentId),
         );
         this._onChange?.(event.instrumentId, 'TRADE');
       },
@@ -316,6 +323,7 @@ export class MarketDataStore {
     this._topOfBooks.clear();
     this._topOfBookTimestampsMs.clear();
     this._byMarket.clear();
+    this._instrumentToMarket.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────
@@ -334,6 +342,7 @@ export class MarketDataStore {
       this._byMarket.set(key, set);
     }
     set.add(instrumentId);
+    this._instrumentToMarket.set(instrumentId, marketId);
   }
 
   /**
@@ -358,6 +367,7 @@ export class MarketDataStore {
       for (const instrumentId of instruments) {
         this._topOfBooks.delete(instrumentId);
         this._topOfBookTimestampsMs.delete(instrumentId);
+        this._instrumentToMarket.delete(instrumentId);
       }
       this._byMarket.delete(key);
     }

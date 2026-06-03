@@ -82,6 +82,19 @@ export interface CryptoPriceHistoryView {
    */
   getRecent(source: CryptoPriceSource, lookbackMs: number, nowMs?: number): readonly CryptoPricePoint[];
   getMerged(sources: readonly CryptoPriceSource[], lookbackMs: number, nowMs?: number): readonly CryptoPricePoint[];
+  /**
+   * Точка, ближайшая по времени к `tsMs`, в пределах `maxDistanceMs`.
+   *
+   * @param source - Источник цены
+   * @param tsMs - Целевой момент (epoch ms)
+   * @param maxDistanceMs - Макс. допустимое отклонение от `tsMs`
+   * @returns Ближайшая точка или `undefined`, если в пределах допуска ничего нет
+   *
+   * @remarks
+   * Корректный способ взять цену «примерно X мс назад» (для momentum), в отличие
+   * от `getRecent(...)[0]`, который вернул бы самую раннюю точку окна (#9).
+   */
+  getNearest(source: CryptoPriceSource, tsMs: number, maxDistanceMs: number): CryptoPricePoint | undefined;
 }
 
 export interface CryptoVenueStateView {
@@ -134,6 +147,16 @@ export interface CryptoMarketDataStoreConfig {
    * По умолчанию {@link DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS}.
    */
   readonly materialMoveMinIntervalMs?: number;
+  /**
+   * Порог нотионала одиночного трейда (USD) для material-уведомления (#8).
+   *
+   * @remarks
+   * Связывает trade-pressure с триггером: крупный трейд (`price*size >= порог`)
+   * будит стратегию (`CRYPTO_MARKET_DATA`) даже без движения book microprice,
+   * с тем же интервальным гейтом {@link materialMoveMinIntervalMs}.
+   * `0` (default) — выключено.
+   */
+  readonly materialTradeNotional?: number;
   /**
    * Максимальное опережение `exchangeTsMs` относительно `receivedTsMs` (мс).
    *
@@ -224,12 +247,15 @@ export class CryptoMarketDataStore {
   private readonly _notifyCexChanges: boolean;
   private readonly _materialMoveBps: number;
   private readonly _materialMoveMinIntervalMs: number;
+  private readonly _materialTradeNotional: number;
   private readonly _maxFutureSkewMs: number;
   private readonly _maxBookLevels: number;
   private readonly _logger: ILogger | undefined;
   private _rejectedTickCount = 0;
-  /** Per-asset точка отсчёта для материального движения (#7). */
-  private readonly _lastCexNotify = new Map<string, { tsMs: number; refMicroprice: number }>();
+  /** Точка отсчёта материального движения book per (asset, venue) (#7). */
+  private readonly _lastCexNotify = new Map<string, Map<CexVenue, { tsMs: number; refMicroprice: number }>>();
+  /** Время последнего trade-notify per (asset, venue) для интервального гейта (#8). */
+  private readonly _lastTradeNotify = new Map<string, Map<CexVenue, number>>();
 
   private readonly _prices = new Map<string, Map<CryptoPriceSource, CryptoPricePoint[]>>();
   private readonly _books = new Map<string, Map<CexVenue, CexBookTick[]>>();
@@ -245,6 +271,7 @@ export class CryptoMarketDataStore {
     this._notifyCexChanges = config.notifyCexChanges ?? false;
     this._materialMoveBps = Math.max(0, config.materialMoveBps ?? 0);
     this._materialMoveMinIntervalMs = config.materialMoveMinIntervalMs ?? DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS;
+    this._materialTradeNotional = Math.max(0, config.materialTradeNotional ?? 0);
     this._maxFutureSkewMs = config.maxFutureSkewMs ?? DEFAULT_MAX_FUTURE_SKEW_MS;
     this._maxBookLevels = Math.max(1, config.maxBookLevels ?? DEFAULT_MAX_BOOK_LEVELS);
     this._logger = config.logger?.child({ component: 'CryptoMarketDataStore' });
@@ -302,10 +329,15 @@ export class CryptoMarketDataStore {
     const asset = normalizeAsset(input.asset ?? inferAssetFromSymbol(input.symbol));
     if (!asset) return;
 
-    const bid = input.bids[0]?.[0];
-    const ask = input.asks[0]?.[0];
-    const bidSize = input.bids[0]?.[1] ?? 0;
-    const askSize = input.asks[0]?.[1] ?? 0;
+    // #10: нормализуем сортировку (bids по убыванию, asks по возрастанию) — upstream
+    // мог прислать уровни в произвольном порядке, иначе best bid/ask были бы мусором.
+    const bids = sortLevels(input.bids, 'desc');
+    const asks = sortLevels(input.asks, 'asc');
+
+    const bid = bids[0]?.[0];
+    const ask = asks[0]?.[0];
+    const bidSize = bids[0]?.[1] ?? 0;
+    const askSize = asks[0]?.[1] ?? 0;
     if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) return;
 
     const receivedTsMs = input.receivedTsMs ?? Date.now();
@@ -318,8 +350,8 @@ export class CryptoMarketDataStore {
       exchangeTsMs: input.exchangeTsMs,
       receivedTsMs,
       // #4: храним только top-N уровней (память), деривативы ниже считаем по top-of-book.
-      bids: input.bids.slice(0, this._maxBookLevels),
-      asks: input.asks.slice(0, this._maxBookLevels),
+      bids: bids.slice(0, this._maxBookLevels),
+      asks: asks.slice(0, this._maxBookLevels),
     };
 
     const bookMap = getOrCreateNestedMap(this._books, asset);
@@ -356,9 +388,12 @@ export class CryptoMarketDataStore {
     });
 
     this._recordVenuePrice(asset, input.venue, microprice, input.exchangeTsMs, receivedTsMs);
-    if (isLatest) {
-      this._maybeNotifyCexMove(asset, microprice, input.exchangeTsMs);
+    if (!isLatest) return;
+    if (this._notifyCexChanges) {
+      this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
+      return;
     }
+    this._maybeNotifyCexMove(asset, input.venue, microprice, input.exchangeTsMs);
   }
 
   updateCexTrade(input: UpdateCexTradeInput): void {
@@ -399,9 +434,13 @@ export class CryptoMarketDataStore {
       });
     }
 
-    if (isLatest && this._notifyCexChanges) {
+    if (!isLatest) return;
+    if (this._notifyCexChanges) {
       this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
+      return;
     }
+    // #8: крупный трейд будит стратегию даже без движения book microprice.
+    this._maybeNotifyTrade(asset, input.venue, input.price * input.size, input.exchangeTsMs);
   }
 
   getPriceHistory(symbolOrAsset: string): CryptoPriceHistoryView | undefined {
@@ -427,6 +466,8 @@ export class CryptoMarketDataStore {
           .flatMap((source) => windowByTimestamp(sourceMap.get(source) ?? [], anchor - lookbackMs, anchor, (item) => item.exchangeTsMs))
           .sort((left, right) => left.exchangeTsMs - right.exchangeTsMs);
       },
+      getNearest: (source, tsMs, maxDistanceMs) =>
+        nearestByTimestamp(sourceMap.get(source) ?? [], tsMs, maxDistanceMs, (item) => item.exchangeTsMs),
     };
   }
 
@@ -561,29 +602,26 @@ export class CryptoMarketDataStore {
   }
 
   /**
-   * Уведомляет о материальном движении CEX microprice (#7).
+   * Уведомляет о материальном движении CEX microprice — per (asset, venue) (#7).
    *
    * Алгоритм:
-   * 1. Сырой режим (`notifyCexChanges=true`) — уведомляем всегда.
+   * 1. Сырой режим (`notifyCexChanges=true`) — уведомляем всегда (обработано в caller).
    * 2. Слой выключен (`materialMoveBps <= 0`) — молчим.
-   * 3. Первое наблюдение по активу — фиксируем точку отсчёта, не будим (нет базы).
+   * 3. Первое наблюдение по (asset,venue) — фиксируем точку отсчёта, не будим.
    * 4. Иначе будим, только если сдвиг ≥ `materialMoveBps` И прошло
-   *    ≥ `materialMoveMinIntervalMs` с прошлого уведомления.
+   *    ≥ `materialMoveMinIntervalMs` с прошлого уведомления по этой бирже.
    *
-   * @param asset - Базовый актив
-   * @param microprice - Текущий microprice биржи
-   * @param nowMs - Время апдейта (exchangeTsMs)
+   * @remarks
+   * Точка отсчёта хранится per venue: движение Binance сравнивается с прошлым
+   * Binance, а не с чужой биржей (иначе reference смешивался бы между venue).
    */
-  private _maybeNotifyCexMove(asset: string, microprice: number, nowMs: number): void {
-    if (this._notifyCexChanges) {
-      this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
-      return;
-    }
+  private _maybeNotifyCexMove(asset: string, venue: CexVenue, microprice: number, nowMs: number): void {
     if (this._materialMoveBps <= 0 || microprice <= 0) return;
 
-    const last = this._lastCexNotify.get(asset);
+    const byVenue = getOrCreateNestedMap(this._lastCexNotify, asset);
+    const last = byVenue.get(venue);
     if (last === undefined) {
-      this._lastCexNotify.set(asset, { tsMs: nowMs, refMicroprice: microprice });
+      byVenue.set(venue, { tsMs: nowMs, refMicroprice: microprice });
       return;
     }
 
@@ -591,7 +629,31 @@ export class CryptoMarketDataStore {
     if (moveBps < this._materialMoveBps) return;
     if (nowMs - last.tsMs < this._materialMoveMinIntervalMs) return;
 
-    this._lastCexNotify.set(asset, { tsMs: nowMs, refMicroprice: microprice });
+    byVenue.set(venue, { tsMs: nowMs, refMicroprice: microprice });
+    this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
+  }
+
+  /**
+   * Уведомляет о крупном трейде (#8) — per (asset, venue).
+   *
+   * @param asset - Базовый актив
+   * @param venue - Биржа
+   * @param notional - Нотионал трейда (price × size, USD)
+   * @param nowMs - Время трейда (exchangeTsMs)
+   *
+   * @remarks
+   * Будит стратегию, если `notional ≥ materialTradeNotional` И прошло
+   * ≥ `materialMoveMinIntervalMs` с прошлого trade-notify по этой бирже.
+   * Связывает trade-pressure с триггером (раньше будил только book move).
+   */
+  private _maybeNotifyTrade(asset: string, venue: CexVenue, notional: number, nowMs: number): void {
+    if (this._materialTradeNotional <= 0 || notional < this._materialTradeNotional) return;
+
+    const byVenue = getOrCreateNestedMap(this._lastTradeNotify, asset);
+    const lastTs = byVenue.get(venue);
+    if (lastTs !== undefined && nowMs - lastTs < this._materialMoveMinIntervalMs) return;
+
+    byVenue.set(venue, nowMs);
     this._onChange?.(asset, 'CRYPTO_MARKET_DATA');
   }
 }
@@ -695,6 +757,53 @@ function insertSortedAllowDuplicates<T>(
  * @param getTs - Извлечение timestamp из элемента
  * @returns Срез в окне `[minTs, maxTs]`
  */
+/**
+ * Возвращает уровни стакана, отсортированные по цене (#10).
+ *
+ * @param levels - Уровни (price, size)
+ * @param dir - `desc` для bids (лучший = макс. цена), `asc` для asks (лучший = мин. цена)
+ * @returns Новый отсортированный массив (вход не мутируется)
+ *
+ * @remarks
+ * Upstream может прислать уровни не отсортированными — без нормализации
+ * `levels[0]` не был бы best bid/ask, и mid/spread/microprice стали бы мусором.
+ */
+function sortLevels(
+  levels: readonly (readonly [number, number])[],
+  dir: 'asc' | 'desc',
+): (readonly [number, number])[] {
+  const sorted = [...levels];
+  sorted.sort((a, b) => (dir === 'desc' ? b[0] - a[0] : a[0] - b[0]));
+  return sorted;
+}
+
+/**
+ * Находит элемент, ближайший по timestamp к `targetTs`, в пределах `maxDistanceMs` (#9).
+ *
+ * @param items - Отсортированный по возрастанию timestamp массив
+ * @param targetTs - Целевой момент (epoch ms)
+ * @param maxDistanceMs - Макс. допустимое отклонение
+ * @param getTs - Извлечение timestamp
+ * @returns Ближайший элемент или `undefined`
+ */
+function nearestByTimestamp<T>(
+  items: readonly T[],
+  targetTs: number,
+  maxDistanceMs: number,
+  getTs: (item: T) => number,
+): T | undefined {
+  let best: T | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    const distance = Math.abs(getTs(item) - targetTs);
+    if (distance <= maxDistanceMs && distance < bestDistance) {
+      best = item;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 function windowByTimestamp<T>(
   items: readonly T[],
   minTs: number,

@@ -69,6 +69,35 @@ describe('CryptoResolutionStore', () => {
     });
   });
 
+  describe('#3 resetAsset', () => {
+    it('сбрасывает strike/resolution и locks при ротации', () => {
+      const store = new CryptoResolutionStore(makeReader(50_000));
+      store.lockTargetPrice('btc', 49_000);
+      store.lockResolutionPrice('btc', 49_500);
+      expect(store.getResolution('btc')).toBe('UP');
+
+      store.resetAsset('btc');
+      expect(store.getTarget('btc')).toBeUndefined();
+      expect(store.getResolutionPrice('btc')).toBeUndefined();
+      expect(store.getResolution('btc')).toBeUndefined();
+
+      // После reset новый рынок может задать свой strike (lock снят)
+      store.setTargetPrice('btc', 51_000);
+      expect(store.getTarget('btc')).toBe(51_000);
+    });
+  });
+
+  describe('#4 settlement-guard', () => {
+    it('не резолвит рынок до истечения', () => {
+      const store = new CryptoResolutionStore(makeReader(50_000));
+      store.setTargetPrice('btc', 49_000);
+      // nowMs < settlementTsMs → undefined, несмотря на наличие данных
+      expect(store.getResolution('btc', { nowMs: 1_000, settlementTsMs: 2_000 })).toBeUndefined();
+      // после истечения — резолвит
+      expect(store.getResolution('btc', { nowMs: 2_000, settlementTsMs: 2_000 })).toBe('UP');
+    });
+  });
+
   describe('интеграция с реальным CryptoMarketDataStore', () => {
     const BASE = 1_700_000_000_000;
 

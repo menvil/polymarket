@@ -313,8 +313,8 @@ function weightedMicropriceMomentum(
   let previousNumerator = 0;
   let previousDenominator = 0;
   for (const venue of venues) {
-    const history = priceHistory.getRecent(cexVenueToPriceSource(venue), lookbackMs, context.nowMs);
-    const point = history[0];
+    // #9: цена ~lookback назад с допуском, а не самая ранняя точка окна.
+    const point = priceHistory.getNearest(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
     if (!point) continue;
     const weight = request.weights?.[venue] ?? 1;
     previousNumerator += point.price * weight;
@@ -455,12 +455,15 @@ function cexChainlinkLeadLag(
   const thresholdBps = request.thresholdBps ?? 0.5;
   const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
   const maxSpreadBps = request.maxSpreadBps ?? 10;
+  const maxCrossVenueSkewMs = request.maxCrossVenueSkewMs ?? DEFAULT_MAX_CROSS_VENUE_SKEW_MS;
 
   let residualNumerator = 0;
   let momentumNumerator = 0;
   let tradePressureNumerator = 0;
   let denominator = 0;
   let lastTsMs = 0;
+  let minVenueTsMs = Number.POSITIVE_INFINITY;
+  let maxVenueTsMs = Number.NEGATIVE_INFINITY;
   let venueCount = 0;
   let agreeingVenues = 0;
   let positiveVenues = 0;
@@ -483,7 +486,8 @@ function cexChainlinkLeadLag(
     const residualUsd = state.microprice - basisUsd - chainlink.price;
     const residualBps = residualUsd / chainlink.price * 10_000;
 
-    const previous = priceHistory.getRecent(cexVenueToPriceSource(venue), lookbackMs, context.nowMs)[0];
+    // #9: цена ~lookback назад с допуском, а не самая ранняя точка окна.
+    const previous = priceHistory.getNearest(cexVenueToPriceSource(venue), context.nowMs - lookbackMs, lookbackMs);
     const momentumBps = previous && previous.price > 0
       ? (state.microprice - previous.price) / previous.price * 10_000
       : 0;
@@ -498,6 +502,8 @@ function cexChainlinkLeadLag(
     tradePressureNumerator += state.recentTradePressure * qualityWeight;
     denominator += qualityWeight;
     lastTsMs = Math.max(lastTsMs, state.lastBookTsMs);
+    minVenueTsMs = Math.min(minVenueTsMs, state.lastBookTsMs);
+    maxVenueTsMs = Math.max(maxVenueTsMs, state.lastBookTsMs);
     maxAgeMs = Math.max(maxAgeMs, ageMs);
     avgSpreadBps += state.spreadBps;
     venueCount++;
@@ -509,6 +515,11 @@ function cexChainlinkLeadLag(
   }
 
   if (denominator <= 0 || venueCount < minVenueCount) return undefined;
+
+  // #5: отклоняем агрегат при рассинхроне бирж по времени (одна свежая, другая
+  // почти у границы staleMs — вместе мусор для секундного сигнала).
+  const crossVenueSkewMs = maxVenueTsMs - minVenueTsMs;
+  if (crossVenueSkewMs > maxCrossVenueSkewMs) return undefined;
 
   const residualBps = residualNumerator / denominator;
   const momentumBps = momentumNumerator / denominator;
@@ -558,6 +569,7 @@ function cexChainlinkLeadLag(
       agreement,
       positiveVenues,
       negativeVenues,
+      crossVenueSkewMs,
       scoreBucket,
       thresholdBps,
       maxAgeMs,
@@ -737,8 +749,11 @@ function cexChainlinkLinearLeadLag(
     if (ageMs < 0 || ageMs > staleMs) continue;
     if (state.spreadBps > maxSpreadBps) continue;
 
-    const coefficient = request.weights?.[venue] ?? 0;
-    if (!Number.isFinite(coefficient)) continue;
+    // #6: venue учитывается только при заданном ненулевом коэффициенте.
+    // Иначе без weights все коэффициенты были бы 0, venueCount прошёл бы
+    // minVenueCount, и сигнал собрался бы из одного intercept.
+    const coefficient = request.weights?.[venue];
+    if (coefficient === undefined || !Number.isFinite(coefficient) || coefficient === 0) continue;
 
     const basisUsd = request.basisByVenue?.[venue] ?? 0;
     const residualUsd = state.microprice - basisUsd - chainlink.price;

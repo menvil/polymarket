@@ -116,6 +116,66 @@ describe('weightedVenuePrice фильтрация — #9/#10', () => {
     });
   });
 
+  describe('#5 cross-venue skew в cex_chainlink_lead_lag', () => {
+    it('отклоняет lead-lag при рассинхроне бирж больше порога', () => {
+      const store = new CryptoMarketDataStore();
+      const now = BASE + 10_000;
+      feedChainlink(store, now, 50_000);
+      feedBook(store, 'binance', now, 50_050);
+      feedBook(store, 'coinbase', now - 1_900, 50_050); // обе fresh, skew 1900 > 250
+
+      const result = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
+        venues: ['binance', 'coinbase'],
+      });
+      expect(result).toBeUndefined();
+    });
+
+    it('строит lead-lag при увеличенном пороге skew', () => {
+      const store = new CryptoMarketDataStore();
+      const now = BASE + 10_000;
+      feedChainlink(store, now, 50_000);
+      feedBook(store, 'binance', now, 50_050);
+      feedBook(store, 'coinbase', now - 1_900, 50_050);
+
+      const result = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
+        venues: ['binance', 'coinbase'],
+        maxCrossVenueSkewMs: 3_000,
+      });
+      expect(result).toBeDefined();
+      expect(result!.components.crossVenueSkewMs).toBe(1_900);
+    });
+  });
+
+  describe('#6 linear lead-lag требует ненулевые веса', () => {
+    it('не строит сигнал без weights (иначе только intercept)', () => {
+      const store = new CryptoMarketDataStore();
+      const now = BASE + 10_000;
+      feedChainlink(store, now, 50_000);
+      feedBook(store, 'binance', now, 50_050);
+      feedBook(store, 'coinbase', now, 50_050);
+
+      const result = registry.evaluate('cex_chainlink_linear_lead_lag', makeContext(store, now), {
+        venues: ['binance', 'coinbase'],
+      });
+      expect(result).toBeUndefined();
+    });
+
+    it('строит сигнал при заданных весах', () => {
+      const store = new CryptoMarketDataStore();
+      const now = BASE + 10_000;
+      feedChainlink(store, now, 50_000);
+      feedBook(store, 'binance', now, 50_050);
+      feedBook(store, 'coinbase', now, 50_050);
+
+      const result = registry.evaluate('cex_chainlink_linear_lead_lag', makeContext(store, now), {
+        venues: ['binance', 'coinbase'],
+        weights: { binance: 1, coinbase: 1 },
+      });
+      expect(result).toBeDefined();
+      expect(result!.components.venueCount).toBe(2);
+    });
+  });
+
   describe('chainlink stale guard в basis', () => {
     it('не выдаёт basis при устаревшем Chainlink', () => {
       const store = new CryptoMarketDataStore();

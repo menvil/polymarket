@@ -287,6 +287,7 @@ describe('MarketDataStore', () => {
         size,
         'BUY',
         timestamp,
+        undefined, // marketId — нет предшествующего BOOK_UPDATED для инструмента
       );
     });
 

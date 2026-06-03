@@ -124,6 +124,24 @@ export class CryptoResolutionStore {
   }
 
   /**
+   * Сбрасывает всё состояние актива (strike/resolution + locks) (#3).
+   *
+   * @param symbolOrAsset - Символ или базовый актив
+   *
+   * @remarks
+   * Стор asset-scoped: при ротации 5-минутных рынков на один актив старый
+   * strike/resolution (особенно locked) иначе протёк бы в следующий рынок.
+   * Вызывать при открытии/закрытии рынка, чтобы новый рынок стартовал чисто.
+   */
+  resetAsset(symbolOrAsset: string): void {
+    const asset = toAsset(symbolOrAsset);
+    this._targets.delete(asset);
+    this._resolutions.delete(asset);
+    this._lockedTargets.delete(asset);
+    this._lockedResolutions.delete(asset);
+  }
+
+  /**
    * Определяет исход рынка для settlement.
    *
    * @param symbolOrAsset - Символ или базовый актив
@@ -136,10 +154,20 @@ export class CryptoResolutionStore {
    *    (Polymarket резолвит по Chainlink; Binance НЕ используется).
    *
    * **Контракт вызова:** fallback на последнюю Chainlink-цену корректен ТОЛЬКО на
-   * момент settlement (рынок истёк — последняя цена и есть resolution). НЕ
-   * вызывайте до фактического закрытия рынка.
+   * момент settlement (рынок истёк — последняя цена и есть resolution). Передайте
+   * `opts` с `nowMs`/`settlementTsMs` — тогда до фактического закрытия рынка
+   * (`nowMs < settlementTsMs`) метод вернёт `undefined` вместо преждевременного
+   * исхода по ещё живой цене (#4).
+   *
+   * @param opts - Опциональный settlement-guard: `{ nowMs, settlementTsMs }`
    */
-  getResolution(symbolOrAsset: string): 'UP' | 'DOWN' | undefined {
+  getResolution(
+    symbolOrAsset: string,
+    opts?: { readonly nowMs: number; readonly settlementTsMs: number },
+  ): 'UP' | 'DOWN' | undefined {
+    // #4: не резолвим рынок до его истечения.
+    if (opts && opts.nowMs < opts.settlementTsMs) return undefined;
+
     const asset = toAsset(symbolOrAsset);
     const target = this._targets.get(asset);
     if (target === undefined) return undefined;

@@ -2,8 +2,10 @@
  * Коллектор полных снапшотов стакана (Book Depth Collector)
  *
  * @remarks
- * Подписывается на `BOOK_DEPTH` события и накапливает rolling-историю
- * снапшотов per tokenId в `OrderBookHistory`.
+ * **Пассивный буфер** rolling-истории снапшотов per tokenId в `OrderBookHistory`.
+ * Подписками на EventBus владеет `MarketDataStore` — он пишет сюда через
+ * `recordDirect()` и чистит через `clearMarket()`. У коллектора **нет**
+ * `start()/stop()` и зависимости от EventBus (#1 — двойная запись невозможна).
  *
  * ### Принцип: только запись, стратегия считает сама.
  * Коллектор НЕ вычисляет имбаланс, метрики или сигналы.
@@ -12,10 +14,8 @@
  * `ImbalanceCalculator` с нужным ей режимом.
  *
  * ### Жизненный цикл:
- * 1. `start()` — подписывается на `BOOK_DEPTH` и `MARKET_CLOSED`
- * 2. `BOOK_DEPTH` → `history.record(snapshot, nowMs)` для данного tokenId
- * 3. `MARKET_CLOSED` → история инструмента удаляется (cleanup памяти)
- * 4. `stop()` — отписывается от всех событий
+ * 1. `recordDirect(tokenId, snapshot, nowMs)` → `history.record(...)` для tokenId
+ * 2. `clearMarket(marketId)` → истории инструментов рынка удаляются (cleanup памяти)
  *
  * ### Изоляция по инструментам:
  * У каждого tokenId своя `OrderBookHistory` с единой политикой из конфига.
@@ -29,10 +29,10 @@
  * @example
  * ```typescript
  * const collector = new BookDepthCollector(
- *   { eventBus, logger, clock },
+ *   { logger, clock },
  *   { maxCount: 500, maxAgeMs: 300_000 },
  * );
- * collector.start();
+ * // MarketDataStore пишет: collector.recordDirect(tokenId, snapshot, nowMs);
  *
  * // В стратегии — забрать данные и посчитать самостоятельно:
  * const history = collector.getHistory(tokenId);
@@ -54,14 +54,16 @@ import type { InstrumentId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import { OrderBookHistory } from '@polymarket/order-book';
 import type { OrderBookRetentionPolicy, OrderBookSnapshot } from '@polymarket/order-book';
-import type { IEventBus } from '@polymarket/event-bus';
 
 /**
  * Зависимости BookDepthCollector.
+ *
+ * @remarks
+ * Коллектор — **пассивный буфер**: подписками на EventBus владеет MarketDataStore,
+ * который пишет через `recordDirect()` и чистит через `clearMarket()`. Поэтому
+ * `eventBus` здесь не нужен (#1 — исключает двойную запись на уровне типов).
  */
 export interface BookDepthCollectorDeps {
-  /** Event bus для подписки на BOOK_DEPTH / MARKET_CLOSED */
-  readonly eventBus: IEventBus;
   /** Logger */
   readonly logger: ILogger;
   /** Источник времени для детерминированной работы OrderBookHistory */
@@ -111,12 +113,8 @@ export class BookDepthCollector {
    */
   private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
-  /** Unsubscribe-функции для cleanup */
-  private _unsubBookDepth: (() => void) | undefined;
-  private _unsubMarketClosed: (() => void) | undefined;
-
   /**
-   * @param _deps - Зависимости (eventBus, logger, clock)
+   * @param _deps - Зависимости (logger, clock)
    * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
    *
    * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
@@ -130,71 +128,6 @@ export class BookDepthCollector {
         'BookDepthCollector: retention policy must specify maxCount and/or maxAgeMs',
       );
     }
-  }
-
-  /**
-   * Запускает коллектор — подписывается на события.
-   *
-   * @remarks
-   * Повторный вызов без предварительного `stop()` не создаёт дублирующих подписок
-   * (предыдущие отписываются автоматически).
-   *
-   * @example
-   * ```typescript
-   * collector.start();
-   * ```
-   */
-  public start(): void {
-    // Защита от двойного запуска
-    this._unsubBookDepth?.();
-    this._unsubMarketClosed?.();
-
-    this._unsubBookDepth = this._deps.eventBus.subscribe(
-      'BOOK_DEPTH',
-      (event) => {
-        try {
-          this._record(event.instrumentId, event.snapshot, event.timestamp.toNumber());
-        } catch (err) {
-          this._deps.logger.error('BookDepthCollector: failed to record snapshot', {
-            instrumentId: String(event.instrumentId),
-            err: err instanceof Error ? err : new Error(String(err)),
-          });
-        }
-      },
-    );
-
-    this._unsubMarketClosed = this._deps.eventBus.subscribe(
-      'MARKET_CLOSED',
-      (event) => {
-        this._cleanup(String(event.marketId));
-      },
-    );
-
-    this._deps.logger.info('BookDepthCollector started', {
-      maxCount: this._config.maxCount ?? null,
-      maxAgeMs: this._config.maxAgeMs ?? null,
-    });
-  }
-
-  /**
-   * Останавливает коллектор — отписывается от событий.
-   *
-   * @remarks
-   * Накопленные истории сохраняются — стратегии могут читать их после stop().
-   * Для полного сброса вызовите `clear()`.
-   *
-   * @example
-   * ```typescript
-   * collector.stop();
-   * ```
-   */
-  public stop(): void {
-    this._unsubBookDepth?.();
-    this._unsubMarketClosed?.();
-    this._unsubBookDepth = undefined;
-    this._unsubMarketClosed = undefined;
-
-    this._deps.logger.info('BookDepthCollector stopped', {});
   }
 
   /**
