@@ -350,3 +350,60 @@ describe('CryptoMarketDataStore — Tier 1', () => {
     });
   });
 });
+
+  describe('U2 валидация конфига', () => {
+    it('отрицательный retention → default (история не сносится)', () => {
+      const store = new CryptoMarketDataStore({ bookRetentionMs: -1 });
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE, receivedTsMs: BASE, bids: [[49_999, 1]], asks: [[50_001, 1]] });
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE + 1_000, receivedTsMs: BASE + 1_000, bids: [[49_999, 1]], asks: [[50_001, 1]] });
+      const books = store.getVenueHistory('btc')?.getRecentBooks('binance', 1_000_000, BASE + 2_000);
+      expect(books).toHaveLength(2); // не вычищено отрицательным retention
+    });
+
+    it('NaN maxFutureSkew → тики принимаются (а не все режутся)', () => {
+      const store = new CryptoMarketDataStore({ maxFutureSkewMs: Number.NaN });
+      store.updatePrice({ symbol: 'btc/usd', price: 50_000, timestampMs: BASE, receivedTsMs: BASE, source: 'chainlink' });
+      expect(store.rejectedTickCount()).toBe(0);
+      expect(store.getLatestPrice('btc', 'polymarket_chainlink')).toBe(50_000);
+    });
+  });
+
+  describe('M3 count-cap retention', () => {
+    it('режет историю до maxHistoryCount', () => {
+      const store = new CryptoMarketDataStore({ maxHistoryCount: 3, priceRetentionMs: 1_000_000_000 });
+      for (let i = 0; i < 6; i++) {
+        store.updatePrice({ symbol: 'btc/usd', price: 50_000 + i, timestampMs: BASE + i * 1_000, receivedTsMs: BASE + i * 1_000, source: 'chainlink' });
+      }
+      const recent = store.getPriceHistory('btc')?.getRecent('polymarket_chainlink', 1_000_000_000, BASE + 10_000);
+      expect(recent).toHaveLength(3);
+      expect(recent!.at(-1)!.price).toBe(50_005); // последние сохранены
+    });
+  });
+
+  describe('M2 out-of-order пишет microprice (не mid)', () => {
+    it('в price-history попадает microprice out-of-order тика', () => {
+      const store = new CryptoMarketDataStore();
+      // in-order тик в now → ставит lastBookTsMs
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE + 5_000, receivedTsMs: BASE + 5_000, bids: [[49_999, 1]], asks: [[50_001, 1]] });
+      // out-of-order тик в now-1000 с асимметричными размерами → microprice != mid
+      store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', asset: 'btc', exchangeTsMs: BASE + 4_000, receivedTsMs: BASE + 5_000, bids: [[49_999, 3]], asks: [[50_001, 1]] });
+      // microprice = (50001*3 + 49999*1)/4 = 50000.5; mid = 50000
+      const pt = store.getPriceHistory('btc')?.getNearest('cex_binance', BASE + 4_000, 10);
+      expect(pt?.price).toBeCloseTo(50_000.5, 5);
+    });
+  });
+
+  describe('M5a windowByTimestamp границы', () => {
+    it('включает границы окна и режет вне', () => {
+      const store = new CryptoMarketDataStore();
+      for (const off of [0, 1_000, 2_000, 3_000]) {
+        store.updatePrice({ symbol: 'btc/usd', price: 50_000 + off, timestampMs: BASE + off, receivedTsMs: BASE + off, source: 'chainlink' });
+      }
+      const view = store.getPriceHistory('btc')!;
+      // окно [now-2000, now] при now=BASE+2000 → точки BASE, BASE+1000, BASE+2000 (3)
+      const w = view.getRecent('polymarket_chainlink', 2_000, BASE + 2_000);
+      expect(w).toHaveLength(3);
+      expect(w[0]!.exchangeTsMs).toBe(BASE);
+      expect(w.at(-1)!.exchangeTsMs).toBe(BASE + 2_000); // верхняя граница включена, BASE+3000 отрезана
+    });
+  });

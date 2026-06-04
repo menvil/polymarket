@@ -105,6 +105,17 @@ describe('BookDepthCollector (passive)', () => {
       expect(c.getHistory(TOKEN_A)).toBeDefined();
       expect(c.instrumentCount()).toBe(1);
     });
+
+    it('#U4 смена marketId у инструмента → чистится по новому рынку', () => {
+      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
+      c.recordDirect(TOKEN_A, makeSnapshot('market-2', String(TOKEN_A)), T0 + 1); // «переехал»
+
+      c.clearMarket('market-1'); // старый рынок — инструмент уже не там
+      expect(c.getHistory(TOKEN_A)).toBeDefined();
+      c.clearMarket('market-2'); // новый рынок — чистится
+      expect(c.getHistory(TOKEN_A)).toBeUndefined();
+    });
   });
 
   describe('clear', () => {

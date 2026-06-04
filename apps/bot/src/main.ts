@@ -1171,6 +1171,10 @@ async function runPaper(): Promise<void> {
 
     // Подписка RTDS для крипто-цен (hard рынок — основной)
     if (hardCryptoMeta) {
+      // ВАЖНО: arb держит ДВА рынка на один asset (easy+hard) и резолвит сам
+      // (pair.strategy.getStrikes() + Chainlink напрямую), НЕ через settleMarket.
+      // Здесь target пишется только для отображения strike в snapshot — это
+      // осознанное исключение из инварианта «один активный рынок на asset».
       if (hardCryptoMeta.priceToBeat !== undefined) {
         cryptoResolutionStore.setTargetPrice(hardCryptoMeta.rtdsFilter, hardCryptoMeta.priceToBeat);
       }

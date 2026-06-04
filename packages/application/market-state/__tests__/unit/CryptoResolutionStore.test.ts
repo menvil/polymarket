@@ -135,6 +135,20 @@ describe('CryptoResolutionStore', () => {
     });
   });
 
+  describe('U3 getResolution read-only guard', () => {
+    it('nowMs без settlementTsMs → undefined (нельзя проверить свежесть)', () => {
+      const store = new CryptoResolutionStore(makeReader(50_000, 0));
+      store.setTargetPrice('btc', 49_000); // без startMarket → settlementTsMs неизвестен
+      expect(store.getResolution('btc', { nowMs: 1_000 })).toBeUndefined();
+    });
+
+    it('без opts (read-only) использует мягкий latest-fallback', () => {
+      const store = new CryptoResolutionStore(makeReader(50_000, 0));
+      store.setTargetPrice('btc', 49_000);
+      expect(store.getResolution('btc')).toBe('UP'); // legacy soft read
+    });
+  });
+
   describe('#4 settlement-guard', () => {
     it('не резолвит рынок до истечения', () => {
       const store = new CryptoResolutionStore(makeReader(50_000));

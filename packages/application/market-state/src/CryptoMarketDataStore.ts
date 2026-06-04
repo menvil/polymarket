@@ -70,6 +70,11 @@ export interface CexVenueState {
 
 export interface CryptoPriceHistoryView {
   readonly asset: string;
+  /**
+   * Последний известный тик источника (`at(-1)`), **без гарантии свежести** —
+   * возраст не проверяется. Для проверки актуальности используйте `getNearest`/
+   * `getRecent` с `nowMs` или сверяйте `exchangeTsMs` самостоятельно.
+   */
   getLatest(source: CryptoPriceSource): CryptoPricePoint | undefined;
   /**
    * Возвращает точки за последние `lookbackMs` миллисекунд.
@@ -194,6 +199,16 @@ export interface CryptoMarketDataStoreConfig {
    * По умолчанию {@link DEFAULT_MAX_BOOK_LEVELS}.
    */
   readonly maxBookLevels?: number;
+  /**
+   * Жёсткий потолок числа элементов в каждом массиве истории (#M3).
+   *
+   * @remarks
+   * Дополняет `maxAgeMs`-retention count-cap'ом: при высокочастотном CEX-потоке
+   * (5 бирж × ~100/с × 30 мин) массивы иначе растут в сотни тысяч элементов.
+   * После prune по времени массив дополнительно режется до `maxHistoryCount`
+   * (удаляются самые старые). По умолчанию {@link DEFAULT_MAX_HISTORY_COUNT}.
+   */
+  readonly maxHistoryCount?: number;
 }
 
 export interface UpdateCryptoPriceInput {
@@ -237,6 +252,14 @@ const DEFAULT_MAX_FUTURE_SKEW_MS = 5_000;
  * ограничивают память против полного стакана на 30 минут retention.
  */
 const DEFAULT_MAX_BOOK_LEVELS = 20;
+/**
+ * Потолок числа элементов в массиве истории по умолчанию (#M3).
+ *
+ * @remarks
+ * ~50k тиков на (asset, source/venue) — щедро для 30-мин ретеншена на нормальной
+ * частоте, но ограничивает память при патологическом потоке.
+ */
+const DEFAULT_MAX_HISTORY_COUNT = 50_000;
 /** Минимальный интервал между материальными CEX-уведомлениями по умолчанию (ms) (#7). */
 const DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS = 50;
 /**
@@ -259,6 +282,7 @@ export class CryptoMarketDataStore {
   private readonly _materialTradeNotional: number;
   private readonly _maxFutureSkewMs: number;
   private readonly _maxBookLevels: number;
+  private readonly _maxHistoryCount: number;
   private readonly _logger: ILogger | undefined;
   private _rejectedTickCount = 0;
   /** Точка отсчёта материального движения book per (asset, venue) (#7). */
@@ -273,17 +297,21 @@ export class CryptoMarketDataStore {
   private _onChange?: (asset: string, reason: CryptoMarketDataReason) => void;
 
   constructor(config: CryptoMarketDataStoreConfig = {}) {
-    this._priceRetentionMs = config.priceRetentionMs ?? DEFAULT_RETENTION_MS;
-    this._bookRetentionMs = config.bookRetentionMs ?? DEFAULT_RETENTION_MS;
-    this._tradeRetentionMs = config.tradeRetentionMs ?? DEFAULT_RETENTION_MS;
-    this._tradePressureLookbackMs = config.tradePressureLookbackMs ?? DEFAULT_TRADE_PRESSURE_LOOKBACK_MS;
-    this._notifyCexChanges = config.notifyCexChanges ?? false;
-    this._materialMoveBps = Math.max(0, config.materialMoveBps ?? 0);
-    this._materialMoveMinIntervalMs = config.materialMoveMinIntervalMs ?? DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS;
-    this._materialTradeNotional = Math.max(0, config.materialTradeNotional ?? 0);
-    this._maxFutureSkewMs = config.maxFutureSkewMs ?? DEFAULT_MAX_FUTURE_SKEW_MS;
-    this._maxBookLevels = Math.max(1, config.maxBookLevels ?? DEFAULT_MAX_BOOK_LEVELS);
     this._logger = config.logger?.child({ component: 'CryptoMarketDataStore' });
+    // #U2: валидация конфига — NaN/Inf/<=0 в retention/skew иначе отключили бы
+    // pruning, снесли бы историю или отбраковали все тики. Чиним → default + warn.
+    const log = this._logger;
+    this._priceRetentionMs = sanitizePositiveMs(config.priceRetentionMs, DEFAULT_RETENTION_MS, log, 'priceRetentionMs');
+    this._bookRetentionMs = sanitizePositiveMs(config.bookRetentionMs, DEFAULT_RETENTION_MS, log, 'bookRetentionMs');
+    this._tradeRetentionMs = sanitizePositiveMs(config.tradeRetentionMs, DEFAULT_RETENTION_MS, log, 'tradeRetentionMs');
+    this._tradePressureLookbackMs = sanitizePositiveMs(config.tradePressureLookbackMs, DEFAULT_TRADE_PRESSURE_LOOKBACK_MS, log, 'tradePressureLookbackMs');
+    this._notifyCexChanges = config.notifyCexChanges ?? false;
+    this._materialMoveBps = sanitizeNonNegative(config.materialMoveBps, 0, log, 'materialMoveBps');
+    this._materialMoveMinIntervalMs = sanitizeNonNegative(config.materialMoveMinIntervalMs, DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS, log, 'materialMoveMinIntervalMs');
+    this._materialTradeNotional = sanitizeNonNegative(config.materialTradeNotional, 0, log, 'materialTradeNotional');
+    this._maxFutureSkewMs = sanitizeNonNegative(config.maxFutureSkewMs, DEFAULT_MAX_FUTURE_SKEW_MS, log, 'maxFutureSkewMs');
+    this._maxBookLevels = sanitizeCount(config.maxBookLevels, DEFAULT_MAX_BOOK_LEVELS, log, 'maxBookLevels');
+    this._maxHistoryCount = sanitizeCount(config.maxHistoryCount, DEFAULT_MAX_HISTORY_COUNT, log, 'maxHistoryCount');
   }
 
   setOnChange(cb: (asset: string, reason: CryptoMarketDataReason) => void): void {
@@ -325,7 +353,7 @@ export class CryptoMarketDataStore {
     const history = getOrCreateArray(sourceMap, source);
     const isLatest = insertSortedUniqueByTimestamp(history, point, (item) => item.exchangeTsMs);
     const latestTs = history.at(-1)?.exchangeTsMs ?? point.exchangeTsMs;
-    pruneByTimestamp(history, latestTs - this._priceRetentionMs, (item) => item.exchangeTsMs);
+    pruneAndCap(history, latestTs - this._priceRetentionMs, this._maxHistoryCount, (item) => item.exchangeTsMs);
 
     if (isLatest) {
       this._onChange?.(asset, 'CRYPTO_PRICE');
@@ -368,19 +396,22 @@ export class CryptoMarketDataStore {
     const bookHistory = getOrCreateArray(bookMap, input.venue);
     const isLatest = insertSortedUniqueByTimestamp(bookHistory, tick, (item) => item.exchangeTsMs);
     const latestTs = bookHistory.at(-1)?.exchangeTsMs ?? tick.exchangeTsMs;
-    pruneByTimestamp(bookHistory, latestTs - this._bookRetentionMs, (item) => item.exchangeTsMs);
+    pruneAndCap(bookHistory, latestTs - this._bookRetentionMs, this._maxHistoryCount, (item) => item.exchangeTsMs);
 
-    const existingState = this._venueStates.get(asset)?.get(input.venue);
-    if (existingState && input.exchangeTsMs < existingState.lastBookTsMs) {
-      this._recordVenuePrice(asset, input.venue, (bid + ask) / 2, input.exchangeTsMs, receivedTsMs);
-      return;
-    }
-
+    // Деривативы считаем до out-of-order ветки, чтобы #M2: в price-history писать
+    // microprice (а не mid) в обоих путях — иначе серия цен биржи смешивала бы их.
     const mid = (bid + ask) / 2;
     const sizeSum = bidSize + askSize;
     const microprice = sizeSum > 0 ? (ask * bidSize + bid * askSize) / sizeSum : mid;
     const spreadBps = ((ask - bid) / mid) * 10_000;
     const imbalanceTop = sizeSum > 0 ? (bidSize - askSize) / sizeSum : 0;
+
+    const existingState = this._venueStates.get(asset)?.get(input.venue);
+    if (existingState && input.exchangeTsMs < existingState.lastBookTsMs) {
+      // Out-of-order тик: не регрессируем venue-state, но microprice в историю пишем.
+      this._recordVenuePrice(asset, input.venue, microprice, input.exchangeTsMs, receivedTsMs);
+      return;
+    }
 
     getOrCreateNestedMap(this._venueStates, asset).set(input.venue, {
       asset,
@@ -434,7 +465,7 @@ export class CryptoMarketDataStore {
     // одинаковый exchangeTsMs (мс), unique-replace терял бы данные (#5).
     const isLatest = insertSortedAllowDuplicates(tradeHistory, tick, (item) => item.exchangeTsMs);
     const latestTs = tradeHistory.at(-1)?.exchangeTsMs ?? tick.exchangeTsMs;
-    pruneByTimestamp(tradeHistory, latestTs - this._tradeRetentionMs, (item) => item.exchangeTsMs);
+    pruneAndCap(tradeHistory, latestTs - this._tradeRetentionMs, this._maxHistoryCount, (item) => item.exchangeTsMs);
 
     const venueState = this._venueStates.get(asset)?.get(input.venue);
     if (venueState && input.exchangeTsMs >= venueState.lastBookTsMs) {
@@ -576,7 +607,7 @@ export class CryptoMarketDataStore {
     const history = getOrCreateArray(sourceMap, source);
     insertSortedUniqueByTimestamp(history, { asset, source, price, exchangeTsMs, receivedTsMs }, (item) => item.exchangeTsMs);
     const latestTs = history.at(-1)?.exchangeTsMs ?? exchangeTsMs;
-    pruneByTimestamp(history, latestTs - this._priceRetentionMs, (item) => item.exchangeTsMs);
+    pruneAndCap(history, latestTs - this._priceRetentionMs, this._maxHistoryCount, (item) => item.exchangeTsMs);
   }
 
   private _computeRecentTradePressure(asset: string, venue: CexVenue, nowMs: number): number {
@@ -755,6 +786,56 @@ function pruneByTimestamp<T>(items: T[], minTs: number, getTs: (item: T) => numb
 }
 
 /**
+ * Prune по времени + жёсткий count-cap (#M3).
+ *
+ * @remarks
+ * Сначала отсекает элементы старше `minTs`, затем — если массив всё ещё длиннее
+ * `maxCount` — удаляет самые старые с начала. Защищает память при
+ * высокочастотном потоке (retention по времени недостаточно).
+ */
+function pruneAndCap<T>(items: T[], minTs: number, maxCount: number, getTs: (item: T) => number): void {
+  pruneByTimestamp(items, minTs, getTs);
+  if (items.length > maxCount) {
+    items.splice(0, items.length - maxCount);
+  }
+}
+
+// ── Валидация конфига (#U2) ──────────────────────────────────────────────────
+
+/**
+ * Возвращает `value`, если это конечное положительное число, иначе `fallback`
+ * (с warn). Для retention/lookback/skew, где `<= 0`/NaN/Inf ломают pruning/guard.
+ */
+function sanitizePositiveMs(value: number | undefined, fallback: number, log?: ILogger, name?: string): number {
+  if (value === undefined) return fallback;
+  if (Number.isFinite(value) && value > 0) return value;
+  log?.warn('Invalid config value, using default', { param: name, value, fallback });
+  return fallback;
+}
+
+/**
+ * Возвращает `value`, если это конечное неотрицательное число (0 допустим — напр.
+ * «выключено»/«нет интервала»), иначе `fallback` (с warn).
+ */
+function sanitizeNonNegative(value: number | undefined, fallback: number, log?: ILogger, name?: string): number {
+  if (value === undefined) return fallback;
+  if (Number.isFinite(value) && value >= 0) return value;
+  log?.warn('Invalid config value, using default', { param: name, value, fallback });
+  return fallback;
+}
+
+/**
+ * Возвращает целое `>= 1` (округление вниз), иначе `fallback` (с warn).
+ * Для счётчиков (maxBookLevels, maxHistoryCount), где NaN/0 ломают slice/cap.
+ */
+function sanitizeCount(value: number | undefined, fallback: number, log?: ILogger, name?: string): number {
+  if (value === undefined) return fallback;
+  if (Number.isFinite(value) && value >= 1) return Math.floor(value);
+  log?.warn('Invalid config value, using default', { param: name, value, fallback });
+  return fallback;
+}
+
+/**
  * Вставляет элемент в отсортированный по timestamp массив, **сохраняя дубликаты**.
  *
  * @remarks
@@ -871,21 +952,50 @@ function nearestBeforeOrAtByTimestamp<T>(
   return undefined;
 }
 
+/**
+ * Срез элементов с timestamp в `[minTs, maxTs]` через binary search (#M5a).
+ *
+ * @remarks
+ * Массив отсортирован по возрастанию timestamp → находим границы за O(log n)
+ * вместо O(n)-скана (важно при 30-мин ретеншене на десятки тысяч элементов,
+ * сигналы зовут это per-tick).
+ */
 function windowByTimestamp<T>(
   items: readonly T[],
   minTs: number,
   maxTs: number,
   getTs: (item: T) => number,
 ): readonly T[] {
-  let start = 0;
-  while (start < items.length && getTs(items[start]!) < minTs) {
-    start++;
+  if (minTs > maxTs) return [];
+  // start = первый индекс с ts >= minTs
+  const start = lowerBound(items, minTs, getTs);
+  // end = первый индекс с ts > maxTs (exclusive)
+  const end = upperBound(items, maxTs, getTs);
+  return start < end ? items.slice(start, end) : [];
+}
+
+/** Первый индекс, где `getTs(items[i]) >= target` (binary search). */
+function lowerBound<T>(items: readonly T[], target: number, getTs: (item: T) => number): number {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (getTs(items[mid]!) < target) lo = mid + 1;
+    else hi = mid;
   }
-  let end = items.length;
-  while (end > start && getTs(items[end - 1]!) > maxTs) {
-    end--;
+  return lo;
+}
+
+/** Первый индекс, где `getTs(items[i]) > target` (binary search). */
+function upperBound<T>(items: readonly T[], target: number, getTs: (item: T) => number): number {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (getTs(items[mid]!) <= target) lo = mid + 1;
+    else hi = mid;
   }
-  return items.slice(start, end);
+  return lo;
 }
 
 function normalizePriceSource(

@@ -368,6 +368,39 @@ e2e backtest даёт идентичный settlement (DOWN, strike 78286.53 / r
 Валидация: 102 теста market-state; build/typecheck чисто; e2e backtest идентичен
 (DOWN, strike 78286.53 / resolution 78202.03, 0 errors).
 
+## Шестой батч (deep-review: 13 пунктов)
+
+Объединённый проход по находкам внешнего ревью (U1–U5) и собственного глубокого
+ревью (M1–M5 + арх):
+
+- **U1** — `thresholdBps <= 0`/NaN/Inf ломал `makeSignalResult` (NaN strength,
+  `'down'` на нуле). Введён `normalizeThreshold` (min `1e-4`) во всех сигналах +
+  defensive в `makeSignalResult`.
+- **U2** — валидация конфига `CryptoMarketDataStore`: `sanitizePositiveMs/
+  NonNegative/Count` для retention/lookback/skew/material*/maxBookLevels/maxHistoryCount
+  (NaN/Inf/≤0 → default + warn). Раньше битый конфиг отключал prune или сносил историю.
+- **U3** — `getResolution` помечен read-only/non-authoritative; guard «`nowMs` без
+  `settlementTsMs` → undefined». Авторитетный путь — `settleMarket`.
+- **U4** — `BookDepthCollector` регистрирует marketId на каждом снапшоте (как
+  TradeTapeCollector) — консистентность + обработка «moved» (на Polymarket immutable).
+- **M2** — out-of-order book-тик пишет в price-history **microprice**, а не mid.
+- **M3** — count-cap retention (`maxHistoryCount`, default 50k) дополнительно к `maxAgeMs`.
+- **M4** — удалён мёртвый `resolveMarket`; дедуп `nearestPrice` (через `getNearest`).
+- **M5a** — `windowByTimestamp` на binary search (O(log n) вместо O(n)).
+- **M5b** — диагностические сигналы (momentum/basis/rolling) помечены `experimental`
+  через `register(..., { experimental: true })` + `isExperimental()`.
+- **Арх** — `getLatest` задокументирован как «без гарантии свежести»; arb-исключение
+  из one-active-per-asset зафиксировано комментарием.
+- **U5/M1** — покрытие `CryptoSignalRegistry` поднято 58% → 88% stmt / 98.6% lines
+  (momentum/rolling/linear happy-path, lead_lag agreement/confidenceByScore, boundary).
+
+Известная мелочь (не баг): в `cex_chainlink_lead_lag` флаг `stale` всегда `false`
+(ранние guard'ы по chainlinkAgeMs + фильтр venue по staleMs делают stale-ветку
+недостижимой) — сигнал просто не эмитится при устаревании.
+
+Валидация: **119 тестов** market-state (покрытие 89% stmt / 95% lines); все пакеты
+build + typecheck; e2e backtest идентичен (DOWN, 78286.53 / 78202.03, 0 errors).
+
 ## Тесты
 
 - `__tests__/unit/CryptoMarketDataStore.test.ts` — Tier 1 (9 кейсов), включая

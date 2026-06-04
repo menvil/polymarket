@@ -114,6 +114,13 @@ export class BookDepthCollector {
   private readonly _byMarket = new Map<string, Set<InstrumentId>>();
 
   /**
+   * Прямой индекс tokenId → marketId — для консистентности с TradeTapeCollector
+   * и обработки смены рынка инструментом (#U4; на Polymarket tokenId иммутабелен
+   * per condition, поэтому это defensive).
+   */
+  private readonly _instrumentToMarket = new Map<InstrumentId, string>();
+
+  /**
    * @param _deps - Зависимости (logger, clock)
    * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
    *
@@ -203,6 +210,7 @@ export class BookDepthCollector {
   public clear(): void {
     this._entries.clear();
     this._byMarket.clear();
+    this._instrumentToMarket.clear();
   }
 
   // ── Приватные методы ───────────────────────────────────────────────────────
@@ -223,21 +231,15 @@ export class BookDepthCollector {
     snapshot: OrderBookSnapshot,
     nowMs: number,
   ): void {
-    let entry = this._entries.get(tokenId);
+    // #U4: регистрируем marketId на каждом снапшоте (snapshot всегда несёт marketId);
+    // обрабатывает смену рынка инструментом и держит индекс консистентным.
+    this._registerMarket(tokenId, snapshot.marketId);
 
+    let entry = this._entries.get(tokenId);
     if (entry === undefined) {
       const history = OrderBookHistory.create(this._config, this._deps.clock);
       entry = { history };
       this._entries.set(tokenId, entry);
-
-      // Регистрируем в reverse index: marketId → tokenId
-      let set = this._byMarket.get(snapshot.marketId);
-      if (set === undefined) {
-        set = new Set<InstrumentId>();
-        this._byMarket.set(snapshot.marketId, set);
-      }
-      set.add(tokenId);
-
       this._deps.logger.debug('BookDepthCollector: new history created', {
         tokenId: String(tokenId),
         marketId: snapshot.marketId,
@@ -245,6 +247,32 @@ export class BookDepthCollector {
     }
 
     entry.history.record(snapshot, nowMs);
+  }
+
+  /**
+   * Регистрирует/обновляет связь tokenId → marketId в reverse index (#U4).
+   * При смене рынка инструментом удаляет из старого множества и пишет warn.
+   */
+  private _registerMarket(tokenId: InstrumentId, marketId: string): void {
+    const existing = this._instrumentToMarket.get(tokenId);
+    if (existing === marketId) return;
+
+    if (existing !== undefined) {
+      this._deps.logger.warn('BookDepthCollector: instrument moved between markets', {
+        tokenId: String(tokenId),
+        previousMarketId: existing,
+        newMarketId: marketId,
+      });
+      this._byMarket.get(existing)?.delete(tokenId);
+    }
+
+    this._instrumentToMarket.set(tokenId, marketId);
+    let set = this._byMarket.get(marketId);
+    if (set === undefined) {
+      set = new Set<InstrumentId>();
+      this._byMarket.set(marketId, set);
+    }
+    set.add(tokenId);
   }
 
   /**
@@ -263,6 +291,7 @@ export class BookDepthCollector {
 
     for (const key of keys) {
       this._entries.delete(key);
+      this._instrumentToMarket.delete(key);
     }
     this._byMarket.delete(marketId);
 

@@ -201,15 +201,21 @@ export type CryptoSignalCalculator = (
  */
 export class CryptoSignalRegistry {
   private readonly _calculators = new Map<string, CryptoSignalCalculator>();
+  /** ID сигналов, помеченных как экспериментальные/диагностические (#M5b). */
+  private readonly _experimental = new Set<string>();
 
   /**
    * Регистрирует новый сигнал.
    *
    * @param id - Уникальный идентификатор сигнала
    * @param calculator - Функция вычисления
+   * @param opts - `experimental: true` помечает сигнал как диагностический
+   *   (не предназначен для торговли) — см. {@link isExperimental}
    */
-  register(id: string, calculator: CryptoSignalCalculator): void {
+  register(id: string, calculator: CryptoSignalCalculator, opts?: { readonly experimental?: boolean }): void {
     this._calculators.set(id, calculator);
+    if (opts?.experimental) this._experimental.add(id);
+    else this._experimental.delete(id);
   }
 
   /**
@@ -219,6 +225,20 @@ export class CryptoSignalRegistry {
    */
   list(): readonly string[] {
     return [...this._calculators.keys()];
+  }
+
+  /**
+   * Помечен ли сигнал как экспериментальный/диагностический (#M5b).
+   *
+   * @param id - Идентификатор сигнала
+   * @returns `true` для не-торговых диагностических сигналов
+   *
+   * @remarks
+   * Диагностические сигналы (momentum/basis/rolling) не потребляются live-стратегиями;
+   * флаг помогает не спутать их с торговыми и фильтровать в UI/диагностике.
+   */
+  isExperimental(id: string): boolean {
+    return this._experimental.has(id);
   }
 
   /**
@@ -257,23 +277,29 @@ export class CryptoSignalRegistry {
 }
 
 /**
- * Создаёт реестр с тремя встроенными сигналами.
+ * Создаёт реестр со встроенными сигналами.
  *
  * @remarks
- * Регистрирует:
+ * **Торговые** (потребляются live-стратегиями):
+ * - `cex_chainlink_lead_lag`
+ * - `cex_chainlink_linear_lead_lag`
+ *
+ * **Диагностические** (помечены `experimental`, #M5b — не для торговли):
  * - `cex_weighted_microprice_momentum`
  * - `cex_vs_chainlink_basis`
- * - `cex_chainlink_lead_lag`
+ * - `cex_chainlink_rolling_divergence`
  *
  * @returns Готовый к использованию `CryptoSignalRegistry`
  */
 export function createDefaultCryptoSignalRegistry(): CryptoSignalRegistry {
   const registry = new CryptoSignalRegistry();
-  registry.register('cex_weighted_microprice_momentum', weightedMicropriceMomentum);
-  registry.register('cex_vs_chainlink_basis', cexVsChainlinkBasis);
+  // Торговые сигналы
   registry.register('cex_chainlink_lead_lag', cexChainlinkLeadLag);
-  registry.register('cex_chainlink_rolling_divergence', cexChainlinkRollingDivergence);
   registry.register('cex_chainlink_linear_lead_lag', cexChainlinkLinearLeadLag);
+  // Диагностические (experimental)
+  registry.register('cex_weighted_microprice_momentum', weightedMicropriceMomentum, { experimental: true });
+  registry.register('cex_vs_chainlink_basis', cexVsChainlinkBasis, { experimental: true });
+  registry.register('cex_chainlink_rolling_divergence', cexChainlinkRollingDivergence, { experimental: true });
   return registry;
 }
 
@@ -299,7 +325,7 @@ function weightedMicropriceMomentum(
   const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
   const lookbackMs = request.lookbackMs ?? 1_000;
   const staleMs = request.staleMs ?? 2_000;
-  const thresholdBps = request.thresholdBps ?? 0.5;
+  const thresholdBps = normalizeThreshold(request.thresholdBps);
 
   const current = weightedVenuePrice(venueState, venues, request.weights, {
     nowMs: context.nowMs,
@@ -372,7 +398,7 @@ function cexVsChainlinkBasis(
 
   const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
   const staleMs = request.staleMs ?? 2_000;
-  const thresholdBps = request.thresholdBps ?? 0.5;
+  const thresholdBps = normalizeThreshold(request.thresholdBps);
 
   const chainlink = priceHistory.getLatest('polymarket_chainlink');
   // Не считаем basis по невалидному/устаревшему оракулу (консистентно с lead-lag).
@@ -454,7 +480,7 @@ function cexChainlinkLeadLag(
   if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
 
   const lookbackMs = request.lookbackMs ?? 1_000;
-  const thresholdBps = request.thresholdBps ?? 0.5;
+  const thresholdBps = normalizeThreshold(request.thresholdBps);
   const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
   const maxSpreadBps = request.maxSpreadBps ?? 10;
   const maxCrossVenueSkewMs = request.maxCrossVenueSkewMs ?? DEFAULT_MAX_CROSS_VENUE_SKEW_MS;
@@ -536,7 +562,7 @@ function cexChainlinkLeadLag(
   if (direction === 'up') agreeingVenues = positiveVenues;
   if (direction === 'down') agreeingVenues = negativeVenues;
   const agreement = direction === 'flat' ? 0 : agreeingVenues / venueCount;
-  const strength = Math.max(0, Math.min(10, Math.abs(valueBps) / Math.max(thresholdBps, 0.0001)));
+  const strength = Math.max(0, Math.min(10, Math.abs(valueBps) / thresholdBps));
   const scoreBucket = Math.max(0, Math.min(10, Math.ceil(strength)));
   const calibratedConfidence = request.confidenceByScore?.[String(scoreBucket)];
   const stale = maxAgeMs > staleMs || chainlinkAgeMs > staleMs;
@@ -608,7 +634,7 @@ function cexChainlinkRollingDivergence(
   const venues = request.venues ?? ['binance', 'coinbase', 'okx'];
   const staleMs = request.staleMs ?? 2_000;
   const lookbackMs = request.lookbackMs ?? 60_000;
-  const thresholdBps = request.thresholdBps ?? 0.5;
+  const thresholdBps = normalizeThreshold(request.thresholdBps);
   const minVenueCount = request.minVenueCount ?? Math.min(2, venues.length);
   const minBasisSamples = request.minBasisSamples ?? 3;
   const maxSpreadBps = request.maxSpreadBps ?? 10;
@@ -616,7 +642,6 @@ function cexChainlinkRollingDivergence(
   const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
   if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
 
-  const chainlinkHistory = priceHistory.getRecent('polymarket_chainlink', lookbackMs + staleMs, context.nowMs);
   const residualsBps: number[] = [];
   let lastTsMs = 0;
   let minVenueTsMs = Number.POSITIVE_INFINITY;
@@ -646,7 +671,8 @@ function cexChainlinkRollingDivergence(
       .filter((point) => point.exchangeTsMs < state.lastBookTsMs);
     const basisSamples: number[] = [];
     for (const point of venueHistory) {
-      const chainlinkAtPoint = nearestPrice(point.exchangeTsMs, chainlinkHistory, staleMs);
+      // Дедуп (#M4): берём ближайшую Chainlink-точку через view, без локального nearestPrice.
+      const chainlinkAtPoint = priceHistory.getNearest('polymarket_chainlink', point.exchangeTsMs, staleMs);
       if (!chainlinkAtPoint) continue;
       basisSamples.push(point.price - chainlinkAtPoint.price);
     }
@@ -739,7 +765,7 @@ function cexChainlinkLinearLeadLag(
   const chainlinkAgeMs = context.nowMs - chainlink.exchangeTsMs;
   if (chainlinkAgeMs < 0 || chainlinkAgeMs > staleMs) return undefined;
 
-  const thresholdBps = request.thresholdBps ?? 0.5;
+  const thresholdBps = normalizeThreshold(request.thresholdBps);
   const minVenueCount = request.minVenueCount ?? venues.length;
   const maxSpreadBps = request.maxSpreadBps ?? 10;
 
@@ -835,6 +861,25 @@ function cexChainlinkLinearLeadLag(
  * грубый рассинхрон, который делает усреднённую цену мусором для секундных сигналов.
  */
 const DEFAULT_MAX_CROSS_VENUE_SKEW_MS = 250;
+
+/**
+ * Минимальный положительный `thresholdBps` (#U1).
+ *
+ * @remarks
+ * `thresholdBps` — делитель для strength и порог для direction. Значение `<= 0`,
+ * `NaN` или `Infinity` дало бы `NaN`/`Infinity` strength и неверный `direction`
+ * (`'down'` на нулевом value). Нормализуем к этому минимуму.
+ */
+const MIN_THRESHOLD_BPS = 1e-4;
+
+/**
+ * Нормализует `thresholdBps` из запроса: `undefined` → дефолт 0.5;
+ * `<= 0`/NaN/Infinity → {@link MIN_THRESHOLD_BPS} (#U1).
+ */
+function normalizeThreshold(value: number | undefined): number {
+  const v = value ?? 0.5;
+  return Number.isFinite(v) && v > 0 ? Math.max(v, MIN_THRESHOLD_BPS) : MIN_THRESHOLD_BPS;
+}
 
 /**
  * Фильтр качества бирж для взвешенной агрегации цены.
@@ -948,13 +993,19 @@ function makeSignalResult(input: {
   readonly quality?: number;
   readonly components: Readonly<Record<string, number | string | boolean>>;
 }): CryptoSignalResult {
+  // Defensive (#U1): даже если caller передал невалидный порог, не выдаём
+  // NaN strength / неверный direction (сигналы уже нормализуют через
+  // normalizeThreshold, это второй рубеж).
+  const thresholdBps = Number.isFinite(input.thresholdBps) && input.thresholdBps > 0
+    ? input.thresholdBps
+    : MIN_THRESHOLD_BPS;
   const absValue = Math.abs(input.value);
-  const direction: CryptoSignalDirection = absValue < input.thresholdBps
+  const direction: CryptoSignalDirection = absValue < thresholdBps
     ? 'flat'
     : input.value > 0
       ? 'up'
       : 'down';
-  const strength = Math.max(0, Math.min(10, absValue / input.thresholdBps));
+  const strength = Math.max(0, Math.min(10, absValue / thresholdBps));
   // Эвристическая confidence (НЕ калибрована): нормированная величина.
   const confidence = input.stale ? 0 : Math.max(0, Math.min(1, strength / 10));
 
@@ -983,23 +1034,6 @@ function makeSignalResult(input: {
 function freshnessQuality(maxAgeMs: number, staleMs: number): number {
   if (staleMs <= 0) return 0;
   return Math.max(0, Math.min(1, 1 - maxAgeMs / staleMs));
-}
-
-function nearestPrice(
-  tsMs: number,
-  points: readonly { readonly price: number; readonly exchangeTsMs: number }[],
-  maxDistanceMs: number,
-): { readonly price: number; readonly exchangeTsMs: number } | undefined {
-  let best: { readonly price: number; readonly exchangeTsMs: number } | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const point of points) {
-    const distance = Math.abs(point.exchangeTsMs - tsMs);
-    if (distance < bestDistance) {
-      best = point;
-      bestDistance = distance;
-    }
-  }
-  return best && bestDistance <= maxDistanceMs ? best : undefined;
 }
 
 function medianNumber(values: readonly number[]): number {

@@ -142,19 +142,6 @@ export class CryptoResolutionStore {
   }
 
   /**
-   * Помечает рынок разрешённым и фиксирует resolution-цену (#3).
-   *
-   * @param symbolOrAsset - Символ или базовый актив
-   * @param resolutionPrice - Финальная цена (finalPrice)
-   */
-  resolveMarket(symbolOrAsset: string, resolutionPrice: number): void {
-    const asset = toAsset(symbolOrAsset);
-    this.lockResolutionPrice(asset, resolutionPrice);
-    const state = this._active.get(asset);
-    if (state) state.resolved = true;
-  }
-
-  /**
    * Авторитетный settlement рынка (#2): вычисляет исход, **замораживает**
    * resolution-цену и помечает рынок разрешённым.
    *
@@ -307,12 +294,18 @@ export class CryptoResolutionStore {
   }
 
   /**
-   * Определяет исход рынка для settlement.
+   * **Read-only** (non-authoritative) определение исхода — для UI/диагностики (#U3).
    *
    * @param symbolOrAsset - Символ или базовый актив
    * @returns `'UP'` если цена ≥ strike, `'DOWN'` если ниже, `undefined` если нет данных
    *
    * @remarks
+   * Это НЕ settlement-action: ничего не замораживает и не помечает `resolved`.
+   * Авторитетное закрытие рынка — {@link settleMarket}. Если передан `nowMs`
+   * (намёк на settlement-интент), но `settlementTsMs` неизвестен — метод вернёт
+   * `undefined` (нельзя проверить ни истечение, ни свежесть). Мягкий latest-fallback
+   * сохранён только для read-only/replay-чтения без `nowMs`.
+   *
    * Приоритет:
    * 1. `resolutionPrice` (finalPrice из meta или последняя цена на close) vs strike;
    * 2. fallback — последняя Chainlink-цена из `CryptoMarketDataStore` vs strike
@@ -345,6 +338,11 @@ export class CryptoResolutionStore {
     if (target === undefined) return undefined;
 
     const settlementTsMs = opts?.settlementTsMs ?? this._active.get(asset)?.settlementTsMs;
+
+    // #U3: nowMs задан (settlement-интент), но settlementTsMs неизвестен → не можем
+    // проверить ни истечение, ни свежесть. Не выдаём исход. (Read-only вызовы без
+    // nowMs сохраняют мягкий latest-fallback.)
+    if (opts?.nowMs !== undefined && settlementTsMs === undefined) return undefined;
 
     // #4: не резолвим рынок до его истечения.
     if (opts?.nowMs !== undefined && settlementTsMs !== undefined && opts.nowMs < settlementTsMs) {
