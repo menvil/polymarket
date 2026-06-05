@@ -234,8 +234,12 @@ export class CryptoSignalRegistry {
    * @returns `true` для не-торговых диагностических сигналов
    *
    * @remarks
-   * Диагностические сигналы (momentum/basis/rolling) не потребляются live-стратегиями;
-   * флаг помогает не спутать их с торговыми и фильтровать в UI/диагностике.
+   * **Registry-level флаг** (не пробрасывается в `CryptoSignalRegistryView` /
+   * `snapshot.cryptoSignals`). Доступен только коду, который держит сам реестр —
+   * офлайн-тулинг и конфиг (напр. `analyzeChainlinkLeadLag`), чтобы не спутать
+   * диагностические сигналы (momentum/basis/rolling) с торговыми. Per-tick
+   * стратегии флаг не видят и он им не нужен. Если понадобится фильтрация из
+   * снапшота в UI — метод можно будет добавить и на view.
    */
   isExperimental(id: string): boolean {
     return this._experimental.has(id);
@@ -510,7 +514,7 @@ function cexChainlinkLeadLag(
     const configuredWeight = request.weights?.[venue] ?? 1;
     if (!Number.isFinite(configuredWeight) || configuredWeight <= 0) continue;
 
-    const basisUsd = request.basisByVenue?.[venue] ?? 0;
+    const basisUsd = sanitizeFinite(request.basisByVenue?.[venue], 0); // #1
     const residualUsd = state.microprice - basisUsd - chainlink.price;
     const residualBps = residualUsd / chainlink.price * 10_000;
 
@@ -564,7 +568,13 @@ function cexChainlinkLeadLag(
   const agreement = direction === 'flat' ? 0 : agreeingVenues / venueCount;
   const strength = Math.max(0, Math.min(10, Math.abs(valueBps) / thresholdBps));
   const scoreBucket = Math.max(0, Math.min(10, Math.ceil(strength)));
-  const calibratedConfidence = request.confidenceByScore?.[String(scoreBucket)];
+  // #1: калиброванную confidence берём только если она конечна, и клампим в [0,1];
+  // битое значение в офлайн-таблице иначе дало бы NaN/вне диапазона. Невалидное →
+  // undefined → fallback на эвристику (как будто калибровки нет).
+  const rawCalibrated = request.confidenceByScore?.[String(scoreBucket)];
+  const calibratedConfidence = rawCalibrated !== undefined && Number.isFinite(rawCalibrated)
+    ? Math.max(0, Math.min(1, rawCalibrated))
+    : undefined;
   const stale = maxAgeMs > staleMs || chainlinkAgeMs > staleMs;
   const confidence = stale
     ? 0
@@ -771,7 +781,7 @@ function cexChainlinkLinearLeadLag(
 
   const maxCrossVenueSkewMs = request.maxCrossVenueSkewMs ?? DEFAULT_MAX_CROSS_VENUE_SKEW_MS;
 
-  let predDeltaUsd = request.linearInterceptUsd ?? 0;
+  let predDeltaUsd = sanitizeFinite(request.linearInterceptUsd, 0); // #1
   let venueCount = 0;
   let lastTsMs = 0;
   let minVenueTsMs = Number.POSITIVE_INFINITY;
@@ -797,7 +807,7 @@ function cexChainlinkLinearLeadLag(
     const coefficient = request.weights?.[venue];
     if (coefficient === undefined || !Number.isFinite(coefficient) || coefficient === 0) continue;
 
-    const basisUsd = request.basisByVenue?.[venue] ?? 0;
+    const basisUsd = sanitizeFinite(request.basisByVenue?.[venue], 0); // #1
     const residualUsd = state.microprice - basisUsd - chainlink.price;
     predDeltaUsd += coefficient * residualUsd;
 
@@ -1034,6 +1044,17 @@ function makeSignalResult(input: {
 function freshnessQuality(maxAgeMs: number, staleMs: number): number {
   if (staleMs <= 0) return 0;
   return Math.max(0, Math.min(1, 1 - maxAgeMs / staleMs));
+}
+
+/**
+ * Возвращает `value`, если это конечное число, иначе `fallback` (#1).
+ *
+ * @remarks
+ * Защита от NaN/Infinity в офлайн-конфиге (`basisByVenue`, `linearInterceptUsd`),
+ * который иначе отравил бы value/strength/direction торгового сигнала.
+ */
+function sanitizeFinite(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) ? value : fallback;
 }
 
 function medianNumber(values: readonly number[]): number {

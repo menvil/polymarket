@@ -361,3 +361,56 @@ describe('CryptoSignalRegistry — покрытие сигналов', () => {
     });
   });
 });
+
+describe('CryptoSignalRegistry — #1 sanitize офлайн-конфига', () => {
+  const registry = createDefaultCryptoSignalRegistry();
+
+  it('NaN basisByVenue не отравляет lead_lag (нет NaN в value/strength)', () => {
+    const store = new CryptoMarketDataStore();
+    const now = BASE + 10_000;
+    feedChainlink(store, now, 50_000);
+    feedBook(store, 'binance', now, 50_100);
+    feedBook(store, 'coinbase', now, 50_100);
+    const r = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
+      venues: ['binance', 'coinbase'],
+      basisByVenue: { binance: Number.NaN, coinbase: Number.POSITIVE_INFINITY },
+    });
+    expect(r).toBeDefined();
+    expect(Number.isFinite(r!.value)).toBe(true);
+    expect(Number.isFinite(r!.strength)).toBe(true);
+  });
+
+  it('NaN linearInterceptUsd не отравляет linear', () => {
+    const store = new CryptoMarketDataStore();
+    const now = BASE + 10_000;
+    feedChainlink(store, now, 50_000);
+    feedBook(store, 'binance', now, 50_050);
+    feedBook(store, 'coinbase', now, 50_050);
+    const r = registry.evaluate('cex_chainlink_linear_lead_lag', makeContext(store, now), {
+      venues: ['binance', 'coinbase'], weights: { binance: 1, coinbase: 1 },
+      linearInterceptUsd: Number.NaN,
+    });
+    expect(r).toBeDefined();
+    expect(Number.isFinite(r!.value)).toBe(true);
+    expect(Number.isFinite(Number(r!.components.predDeltaUsd))).toBe(true);
+  });
+
+  it('confidenceByScore клампится в [0,1], NaN → fallback на эвристику', () => {
+    const store = new CryptoMarketDataStore();
+    const now = BASE + 10_000;
+    feedChainlink(store, now, 50_000);
+    feedBook(store, 'binance', now, 50_100);
+    feedBook(store, 'coinbase', now, 50_100);
+
+    const over = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
+      venues: ['binance', 'coinbase'], confidenceByScore: { '10': 1.5 },
+    });
+    expect(over!.confidence).toBeLessThanOrEqual(1);
+    expect(over!.confidence).toBeGreaterThanOrEqual(0);
+
+    const bad = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
+      venues: ['binance', 'coinbase'], confidenceByScore: { '10': Number.NaN },
+    });
+    expect(Number.isFinite(bad!.confidence)).toBe(true);
+  });
+});
