@@ -4,7 +4,6 @@
   "private": true,
   "description": "Polymarket trading system monorepo",
   "workspaces": [
-    "apps/*",
     "packages/foundation/*",
     "packages/domain/*",
     "packages/domain/accounting/*",
@@ -12,7 +11,8 @@
     "packages/domain/market-data/*",
     "packages/infrastructure/*",
     "packages/infrastructure/persistence/*",
-    "packages/application/*"
+    "packages/application/*",
+    "apps/*"
   ],
   "scripts": {
     "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo && npm run clean:src",
