@@ -195,10 +195,11 @@ export class PolymarketMarketDataRestClient {
     // Since results are sorted by endDate ascending, we stop as soon as we pass the cutoff.
     const nowMs = Date.now();
     const endDateCutoffMs = nowMs + 2 * 24 * 60 * 60 * 1000;
-    // Grace window: skip markets that expired more than 2 minutes ago (zombie markets
-    // from 2025 that are not marked closed by Gamma API). These appear on early pages
-    // sorted by endDate ascending and would otherwise flood the result set.
+    // Grace window: include markets that expired up to 2 minutes ago (to tolerate clock skew).
+    // Pass end_date_min to API to skip zombie markets from 2025 that aren't marked closed —
+    // without this filter, all 2000+ zombies appear first and pagination hits the 422 limit.
     const endDateMinMs = nowMs - 2 * 60 * 1000;
+    const endDateMinIso = new Date(endDateMinMs).toISOString();
 
     this.logger.info('[Gamma API] Fetching active markets...');
 
@@ -210,6 +211,7 @@ export class PolymarketMarketDataRestClient {
         url.searchParams.set('offset', offset.toString());
         url.searchParams.set('order', 'endDate');
         url.searchParams.set('ascending', 'true');
+        url.searchParams.set('end_date_min', endDateMinIso);
 
         let batch: GammaMarketDto[];
         try {
