@@ -4,9 +4,10 @@ import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore } from '@polymarket/ports';
+import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore, IKeyedMutex, InFlightFill } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
-import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
+import { asPolymarketCtfToken } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
@@ -44,7 +45,7 @@ function makeQty(val: string): Quantity {
 }
 
 const ACCOUNT_ID = 'acc-001' as unknown as AccountId;
-const ASSET_ID = 'token-abc' as unknown as AssetId;
+const ASSET_ID = asPolymarketCtfToken('123')!;
 const ORDER_ID = 'order-1' as unknown as OrderId;
 
 function makeOpenOrder(): Order {
@@ -94,6 +95,7 @@ function makePortfolioStore(portfolio?: Portfolio): IPortfolioStore {
   return {
     get: jest.fn<IPortfolioStore['get']>().mockReturnValue(p),
     save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+    getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
   };
 }
 
@@ -109,27 +111,44 @@ function makeOrderRepo(order?: Order): IOrderRepository {
   };
 }
 
-function makeOrderStateStore(order?: Order, matchedOrderIds: string[] = []): IOrderStateStore {
+function makeOrderStateStore(
+  order?: Order,
+  matchedOrderIds: string[] = [],
+  inFlightInstrumentIds: string[] = [],
+): IOrderStateStore {
   const matched = new Set(matchedOrderIds);
+  const inFlight = new Set(inFlightInstrumentIds);
   return {
     getOrder: jest.fn<IOrderStateStore['getOrder']>().mockReturnValue(order),
     saveSync: jest.fn<IOrderStateStore['saveSync']>(),
     getOpenOrders: jest.fn<IOrderStateStore['getOpenOrders']>().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn<IOrderStateStore['getOpenOrdersByInstrument']>().mockReturnValue([]),
-    markMatchedOnExchange: jest.fn<IOrderStateStore['markMatchedOnExchange']>(),
-    clearMatchedOnExchange: jest.fn<IOrderStateStore['clearMatchedOnExchange']>(),
-    isMatchedOnExchange: jest.fn<IOrderStateStore['isMatchedOnExchange']>().mockImplementation(
+    markOrderFillMatched: jest.fn<IOrderStateStore['markOrderFillMatched']>(),
+    clearOrderFillMatched: jest.fn<IOrderStateStore['clearOrderFillMatched']>(),
+    hasMatchedFills: jest.fn<IOrderStateStore['hasMatchedFills']>().mockImplementation(
       (id) => matched.has(String(id)),
     ),
+    getMatchedFillIds: jest.fn<IOrderStateStore['getMatchedFillIds']>().mockReturnValue([]),
     markInFlightFill: jest.fn<IOrderStateStore['markInFlightFill']>(),
-    hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockReturnValue(false),
-    clearInFlightFills: jest.fn<IOrderStateStore['clearInFlightFills']>(),
+    clearInFlightFill: jest.fn<IOrderStateStore['clearInFlightFill']>(),
+    hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockImplementation(
+      (id) => inFlight.has(String(id)),
+    ),
+    getInFlightFills: jest.fn<IOrderStateStore['getInFlightFills']>().mockReturnValue([] as readonly InFlightFill[]),
+  };
+}
+
+function makeKeyedMutex(): IKeyedMutex {
+  return {
+    runExclusive: jest.fn(<T>(_keys: readonly string[], fn: () => Promise<T>) => fn()) as unknown as IKeyedMutex['runExclusive'],
   };
 }
 
 function makeExchangeClient(success = true): IExchangeClient {
   return {
-    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok({ orderId: ORDER_ID, immediatelyMatched: false })),
+    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+      Ok({ orderId: ORDER_ID, immediatelyMatched: false, effectiveSize: makeQty('100') }),
+    ),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
       success ? Ok(undefined) : Err(new TradingError('Exchange error') as never),
     ),
@@ -156,6 +175,7 @@ describe('CancelOrderUseCase', () => {
   let orderStateStore: IOrderStateStore;
   let portfolioStore: IPortfolioStore;
   let exchangeClient: IExchangeClient;
+  let keyedMutex: IKeyedMutex;
   let deps: CancelOrderDeps;
 
   beforeEach(() => {
@@ -166,6 +186,7 @@ describe('CancelOrderUseCase', () => {
     orderStateStore = makeOrderStateStore(order);
     portfolioStore = makePortfolioStore();
     exchangeClient = makeExchangeClient(true);
+    keyedMutex = makeKeyedMutex();
 
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
@@ -173,6 +194,7 @@ describe('CancelOrderUseCase', () => {
       portfolioService,
       orderRepo,
       orderStateStore,
+      keyedMutex,
       exchangeClient,
       eventBus,
       logger,
@@ -289,6 +311,50 @@ describe('CancelOrderUseCase', () => {
     const useCase = new CancelOrderUseCase({ ...deps, orderStateStore });
     await useCase.execute(makeInput());
     expect(orderRepo.save).not.toHaveBeenCalled();
+  });
+
+  // ── In-flight fills на инструменте ────────────────────────────────────────
+
+  it('возвращает Ok без отмены, если у инструмента есть in-flight fill (даже если ордер не matched)', async () => {
+    // instrumentId для ASSET_ID = asPolymarketCtfToken('123') → InstrumentId '123'
+    orderStateStore = makeOrderStateStore(makeOpenOrder(), [], ['123']);
+    const useCase = new CancelOrderUseCase({ ...deps, orderStateStore });
+    const result = await useCase.execute(makeInput());
+    expect(result.ok).toBe(true);
+    expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+    expect(orderRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('не блокирует cancel для инструмента без in-flight fills', async () => {
+    orderStateStore = makeOrderStateStore(makeOpenOrder(), [], ['some-other-instrument']);
+    const useCase = new CancelOrderUseCase({ ...deps, orderStateStore });
+    const result = await useCase.execute(makeInput());
+    expect(result.ok).toBe(true);
+    expect(exchangeClient.cancelOrder).toHaveBeenCalled();
+  });
+
+  // ── Конкурентность: keyed mutex ───────────────────────────────────────────
+
+  it('сериализует конкурентные execute() для одного orderId через keyedMutex.runExclusive', async () => {
+    const callOrder: string[] = [];
+    const realMutexKeys: string[][] = [];
+    keyedMutex = {
+      runExclusive: jest.fn(async (keys: readonly string[], fn: () => Promise<unknown>) => {
+        realMutexKeys.push([...keys]);
+        callOrder.push('acquire');
+        const result = await fn();
+        callOrder.push('release');
+        return result;
+      }),
+    } as unknown as IKeyedMutex;
+
+    const useCase = new CancelOrderUseCase({ ...deps, keyedMutex });
+    await useCase.execute(makeInput());
+
+    expect(keyedMutex.runExclusive).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['acquire', 'release']);
+    // Ключ блокировки включает accountId, orderId, instrumentId
+    expect(realMutexKeys[0]).toContain(String(ORDER_ID));
   });
 
   // ── Best-effort биржевая отмена ────────────────────────────────────────────

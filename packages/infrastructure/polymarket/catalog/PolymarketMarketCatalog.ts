@@ -12,7 +12,9 @@
  *
  * ### Структура хранилища:
  * - Основная карта: `InstrumentId → InstrumentInfo` (O(1) lookup по tokenId)
- * - Вспомогательная карта: `MarketId → InstrumentId` (O(1) lookup по conditionId)
+ * - Вспомогательная карта: `MarketId → Set<InstrumentId>` (O(1) lookup по conditionId).
+ *   Set, а не одиночный InstrumentId — один market может иметь несколько outcome-токенов
+ *   (бинарный рынок Polymarket: YES/NO, у каждого свой instrumentId, общий marketId).
  *
  * ### Thread safety:
  * Не thread-safe (Node.js однопоточный, поэтому не требуется).
@@ -30,7 +32,8 @@
  * });
  *
  * const info = catalog.get(instrumentId);     // InstrumentInfo | undefined
- * const byMarket = catalog.getByMarketId(marketId); // InstrumentInfo | undefined
+ * const byMarket = catalog.getByMarketId(marketId); // первый InstrumentInfo | undefined
+ * const allByMarket = catalog.getAllByMarketId(marketId); // ВСЕ outcome-токены рынка
  * catalog.remove(instrumentId);
  * catalog.clear();
  * ```
@@ -50,8 +53,12 @@ import type { ILogger } from '@polymarket/logger';
 export class PolymarketMarketCatalog implements IMarketCatalog {
   /** Основная карта: InstrumentId → InstrumentInfo */
   private readonly _instruments = new Map<InstrumentId, InstrumentInfo>();
-  /** Вспомогательная карта для lookup по MarketId: MarketId → InstrumentId */
-  private readonly _marketIdIndex = new Map<MarketId, InstrumentId>();
+  /**
+   * Вспомогательная карта для lookup по MarketId: MarketId → Set<InstrumentId>.
+   * Set, а не одиночный InstrumentId — один market может иметь несколько
+   * outcome-токенов (бинарный рынок: YES/NO).
+   */
+  private readonly _marketIdIndex = new Map<MarketId, Set<InstrumentId>>();
   /** Дочерний логгер с контекстом компонента */
   private readonly _logger: ILogger;
 
@@ -82,7 +89,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
   }
 
   /**
-   * Возвращает метаданные инструмента по MarketId (condition_id).
+   * Возвращает метаданные ПЕРВОГО зарегистрированного инструмента по MarketId.
    *
    * @param marketId - ID рынка (condition_id в Polymarket API)
    * @returns InstrumentInfo или undefined если рынок неизвестен
@@ -92,6 +99,10 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * Применяется в `StrategyCoordinator._checkPolicy()` для получения
    * `instrumentId` перед вызовом `remove()`.
    *
+   * ⚠️ Рынок может иметь несколько outcome-токенов (YES/NO) — этот метод
+   * возвращает только один из них. Используй `getAllByMarketId()`, если
+   * нужны ВСЕ инструменты рынка.
+   *
    * @example
    * ```typescript
    * const info = catalog.getByMarketId(marketId);
@@ -99,9 +110,34 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * ```
    */
   public getByMarketId(marketId: MarketId): InstrumentInfo | undefined {
-    const instrumentId = this._marketIdIndex.get(marketId);
-    if (!instrumentId) return undefined;
-    return this._instruments.get(instrumentId);
+    const instrumentIds = this._marketIdIndex.get(marketId);
+    if (!instrumentIds || instrumentIds.size === 0) return undefined;
+    const [firstInstrumentId] = instrumentIds;
+    return this._instruments.get(firstInstrumentId);
+  }
+
+  /**
+   * Возвращает ВСЕ инструменты (outcome-токены) заданного MarketId.
+   *
+   * @param marketId - ID рынка (condition_id в Polymarket API)
+   * @returns Readonly массив InstrumentInfo (пустой, если рынок неизвестен)
+   *
+   * @example
+   * ```typescript
+   * const instruments = catalog.getAllByMarketId(marketId);
+   * // Бинарный рынок: [{ instrumentId: yesTokenId, ... }, { instrumentId: noTokenId, ... }]
+   * for (const info of instruments) catalog.remove(info.instrumentId);
+   * ```
+   */
+  public getAllByMarketId(marketId: MarketId): readonly InstrumentInfo[] {
+    const instrumentIds = this._marketIdIndex.get(marketId);
+    if (!instrumentIds) return [];
+    const result: InstrumentInfo[] = [];
+    for (const instrumentId of instrumentIds) {
+      const info = this._instruments.get(instrumentId);
+      if (info) result.push(info);
+    }
+    return result;
   }
 
   /**
@@ -149,8 +185,18 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
     const existing = this._instruments.get(instrument.instrumentId);
 
     if (existing) {
-      // Удаляем старый marketId из индекса (может измениться при обновлении)
-      this._marketIdIndex.delete(existing.marketId);
+      // marketId мог измениться при обновлении — убираем ТОЛЬКО этот instrumentId
+      // из старого Set (а не весь Set — там могут быть сиблинги: другой outcome-токен
+      // того же market), удаляя ключ marketId целиком лишь если Set опустел.
+      if (existing.marketId !== instrument.marketId) {
+        const oldSet = this._marketIdIndex.get(existing.marketId);
+        if (oldSet) {
+          oldSet.delete(existing.instrumentId);
+          if (oldSet.size === 0) {
+            this._marketIdIndex.delete(existing.marketId);
+          }
+        }
+      }
       this._logger.debug('Updating instrument in catalog', {
         instrumentId: String(instrument.instrumentId),
         marketId: String(instrument.marketId),
@@ -164,7 +210,13 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
     }
 
     this._instruments.set(instrument.instrumentId, instrument);
-    this._marketIdIndex.set(instrument.marketId, instrument.instrumentId);
+
+    let marketSet = this._marketIdIndex.get(instrument.marketId);
+    if (!marketSet) {
+      marketSet = new Set<InstrumentId>();
+      this._marketIdIndex.set(instrument.marketId, marketSet);
+    }
+    marketSet.add(instrument.instrumentId);
   }
 
   /**
@@ -193,7 +245,17 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
     }
 
     this._instruments.delete(instrumentId);
-    this._marketIdIndex.delete(existing.marketId);
+
+    // Удаляем ТОЛЬКО этот instrumentId из Set — сиблинги (другой outcome-токен
+    // того же market) не должны пострадать. Ключ marketId убираем целиком лишь
+    // если Set опустел.
+    const marketSet = this._marketIdIndex.get(existing.marketId);
+    if (marketSet) {
+      marketSet.delete(instrumentId);
+      if (marketSet.size === 0) {
+        this._marketIdIndex.delete(existing.marketId);
+      }
+    }
 
     this._logger.debug('Removed instrument from catalog', {
       instrumentId: String(instrumentId),

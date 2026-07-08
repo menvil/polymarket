@@ -21,6 +21,7 @@ export default {
     '^@polymarket/time$':          '<rootDir>/../../foundation/time/src/index.ts',
     '^@polymarket/math$':          '<rootDir>/../../foundation/math/src/index.ts',
     '^@polymarket/fill$':          '<rootDir>/../../domain/entities/fill/src/index.ts',
+    '^@polymarket/fill/polymarket-fee$': '<rootDir>/../../domain/entities/fill/src/polymarket-fee.ts',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {

@@ -58,6 +58,7 @@ import Decimal from 'decimal.js';
 // Прямые импорты (избегаем @polymarket/backtesting — подтягивает транзитивные зависимости)
 import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
+import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -84,6 +85,11 @@ class TestPortfolioStore implements IPortfolioStore {
   save(portfolio: Portfolio, _expectedVersion: number): Result<void, VersionConflictError> {
     this._map.set(accountIdToString(portfolio.accountId), portfolio);
     return Ok(undefined);
+  }
+
+  /** Всегда 0 — эта тестовая реализация намеренно не поддерживает версионирование. */
+  getVersion(_accountId: AccountId): number {
+    return 0;
   }
 
   clear(): void {
@@ -205,6 +211,7 @@ function makeFill(overrides: {
 describe('ProcessFillUseCase (integration)', () => {
   let orderRepo: InMemoryOrderRepository;
   let processedFillRepo: InMemoryProcessedFillRepository;
+  let keyedMutex: InMemoryKeyedMutex;
   let portfolioStore: TestPortfolioStore;
   let eventBus: EventBus;
   let ledgerService: LedgerService;
@@ -213,6 +220,7 @@ describe('ProcessFillUseCase (integration)', () => {
   beforeEach(() => {
     orderRepo = new InMemoryOrderRepository();
     processedFillRepo = new InMemoryProcessedFillRepository();
+    keyedMutex = new InMemoryKeyedMutex();
     portfolioStore = new TestPortfolioStore();
     eventBus = new EventBus(LOGGER);
 
@@ -225,6 +233,7 @@ describe('ProcessFillUseCase (integration)', () => {
       ledgerService,
       orderRepo,
       processedFillRepo,
+      keyedMutex,
       eventBus,
       logger: LOGGER,
     };

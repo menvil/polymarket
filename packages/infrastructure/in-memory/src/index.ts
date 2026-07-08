@@ -8,7 +8,8 @@
  * ### Содержимое пакета:
  * - `InMemoryOrderRepository` — хранилище ордеров (реализует IOrderRepository + IOrderStateStore)
  * - `InMemoryPortfolioStore` — CAS-хранилище Portfolio (реализует IPortfolioStore)
- * - `InMemoryProcessedFillRepository` — idempotency guard для Fill (реализует IProcessedFillRepository)
+ * - `InMemoryProcessedFillRepository` — idempotency + lifecycle guard для Fill (реализует IProcessedFillRepository)
+ * - `InMemoryKeyedMutex` — keyed mutex для сериализации fill/cancel (реализует IKeyedMutex)
  *
  * @example
  * ```typescript
@@ -16,14 +17,17 @@
  *   InMemoryOrderRepository,
  *   InMemoryPortfolioStore,
  *   InMemoryProcessedFillRepository,
+ *   InMemoryKeyedMutex,
  * } from '@polymarket/in-memory';
  *
  * const orderRepo = new InMemoryOrderRepository();
  * const portfolioStore = new InMemoryPortfolioStore();
  * const processedFillRepo = new InMemoryProcessedFillRepository();
+ * const keyedMutex = new InMemoryKeyedMutex();
  * ```
  */
 
 export { InMemoryOrderRepository } from './InMemoryOrderRepository.js';
 export { InMemoryPortfolioStore } from './InMemoryPortfolioStore.js';
 export { InMemoryProcessedFillRepository } from './InMemoryProcessedFillRepository.js';
+export { InMemoryKeyedMutex } from './InMemoryKeyedMutex.js';

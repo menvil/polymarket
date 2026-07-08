@@ -5,7 +5,9 @@
  * Dependency Inversion — use-cases зависят от этого интерфейса,
  * а не от конкретной инфраструктурной реализации.
  *
- * Реализация: `PolymarketExchangeClientAdapter` в `@polymarket/exchange` (Phase 8).
+ * Реализация: `PolymarketExchangeClientAdapter` в пакете `@polymarket/exchange`
+ * (директория `packages/infrastructure/polymarket`, Phase 8). Для бектестов —
+ * `MockExchangeClient` в `packages/infrastructure/backtesting`.
  *
  * Используется:
  * - PlaceOrderUseCase — `submitOrder()` → получить OrderId от биржи
@@ -32,7 +34,7 @@ export class ExchangeError extends TradingError {
 
 // Re-export snapshot types для удобства импорта из @polymarket/ports
 export type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
-export type { VenueTradeSnapshot, FeeSnapshot } from './types/VenueTradeSnapshot.js';
+export type { VenueTradeSnapshot, VenueTradeStatus, FeeSnapshot } from './types/VenueTradeSnapshot.js';
 
 /**
  * Параметры для размещения лимитного ордера.
@@ -70,16 +72,27 @@ export interface SubmitOrderParams {
  *
  * @param orderId - ID ордера на бирже
  * @param immediatelyMatched - true если ордер мгновенно исполнен (status=matched, sizeRemaining=0)
+ * @param effectiveSize - фактический size, отправленный на биржу (может отличаться от
+ * `SubmitOrderParams.size`, если адаптер скорректировал его перед отправкой)
  *
  * @remarks
  * Polymarket CLOB может вернуть status "matched" прямо из REST-ответа.
  * Это значит ордер мгновенно исполнен и cancel невозможен.
  * Если `immediatelyMatched=true`, вызывающий код должен пометить ордер через
- * `orderStateStore.markMatchedOnExchange()` чтобы CancelOrderUseCase не пытался отменить.
+ * `orderStateStore.markOrderFillMatched()` чтобы CancelOrderUseCase не пытался отменить.
+ *
+ * `effectiveSize` ОБЯЗАТЕЛЕН: некоторые реализации (например,
+ * `PolymarketExchangeClientAdapter` на SELL при нехватке on-chain баланса) корректируют
+ * запрошенный `size` перед отправкой на биржу. Вызывающий код (`PlaceOrderUseCase`) обязан
+ * создавать доменный `Order` с `effectiveSize`, а НЕ с исходным `SubmitOrderParams.size` —
+ * иначе локальное состояние (резервации, размер ордера) разойдётся с тем, что реально
+ * находится в стакане на бирже. Если адаптер size не корректирует — `effectiveSize` равен
+ * исходному `SubmitOrderParams.size`.
  */
 export interface SubmitOrderResult {
   readonly orderId: OrderId;
   readonly immediatelyMatched: boolean;
+  readonly effectiveSize: Quantity;
 }
 
 /**
@@ -97,7 +110,8 @@ export interface SubmitOrderResult {
  *   logger.error('Failed to submit order', { error: result.error.message });
  *   return;
  * }
- * const { orderId, immediatelyMatched } = result.value;
+ * const { orderId, immediatelyMatched, effectiveSize } = result.value;
+ * // Order.create() должен использовать effectiveSize, а не исходный params.size
  * ```
  */
 export interface IExchangeClient {

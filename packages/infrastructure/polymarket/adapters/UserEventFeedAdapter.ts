@@ -33,8 +33,9 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId, OrderId, InstrumentId } from '@polymarket/ids';
-import { asOrderId, asInstrumentId } from '@polymarket/ids';
+import type { AccountId, OrderId, InstrumentId, FillId } from '@polymarket/ids';
+import { asOrderId, asInstrumentId, asFillId } from '@polymarket/ids';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { FillEventHandler, OrderUpdateHandler, VenueOrderUpdate } from '@polymarket/handlers';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
 import type { WsOrderUpdateDto } from '../ws/dto/WsUserEventDto.js';
@@ -68,8 +69,14 @@ export class UserEventFeedAdapter {
    *   Используется как fallback для поиска нашего maker_order в cross-outcome fills,
    *   где top-level `owner` = UUID тейкера, а не наш UUID.
    * @param _onMatchedOnExchange - Опциональный callback при WS status=MATCHED для ордера.
-   *   Позволяет пометить ордер как "matched on exchange" чтобы CancelOrderUseCase
-   *   пропустил его отмену — MATCHED ордер уже исполнен, отмена невозможна.
+   *   Позволяет пометить конкретный fill ордера как "matched on exchange" чтобы
+   *   CancelOrderUseCase пропустил его отмену — MATCHED ордер уже исполнен, отмена
+   *   невозможна. Второй параметр — fillId (из fill-события, либо `pendingMatchFillId`
+   *   когда конкретный fillId неизвестен на этом уровне — order-update MATCHED без
+   *   привязанного fill-события).
+   * @param _onInFlightFill - Опциональный callback при WS status=MATCHED для fill-события.
+   *   Помечает instrument как имеющий in-flight fill, идентифицируя запись по fillId
+   *   (третий параметр — orderId, к которому относится fill).
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
@@ -79,8 +86,8 @@ export class UserEventFeedAdapter {
     logger: ILogger,
     private readonly _onReconnect?: () => Promise<void>,
     private readonly _makerAddress?: string,
-    private readonly _onMatchedOnExchange?: (orderId: OrderId) => void,
-    private readonly _onInFlightFill?: (instrumentId: InstrumentId) => void,
+    private readonly _onMatchedOnExchange?: (orderId: OrderId, fillId: FillId) => void,
+    private readonly _onInFlightFill?: (instrumentId: InstrumentId, fillId: FillId, orderId: OrderId) => void,
   ) {
     this._logger = logger.child({ component: 'UserEventFeedAdapter' });
   }
@@ -120,7 +127,7 @@ export class UserEventFeedAdapter {
       //
       // Без этого TAKER cross-outcome MINT fills вызывают phantom position:
       // 1. Fill MINED приходит раньше WS order MATCHED event
-      // 2. Стратегия отменяет ордер (isMatchedOnExchange = false)
+      // 2. Стратегия отменяет ордер (hasMatchedFills = false)
       // 3. Cancel успешен на CLOB, но on-chain MINT завершается
       // 4. Токены в portfolio но не на CLOB balance → SELL невозможен навсегда
       //
@@ -135,25 +142,30 @@ export class UserEventFeedAdapter {
       // Instrument-level tracking: помечаем инструмент как имеющий in-flight fills.
       // ТОЛЬКО при MATCHED — первое подтверждение in-flight fill.
       //
-      // НЕ маркируем при MINED: fill уже обработан при MATCHED,
-      // ProcessFillUseCase уже снял флаг через clearInFlightFills.
-      // Повторная маркировка при MINED создаёт deadlock:
-      //   MATCHED → markInFlightFill → process → clearInFlightFills → стратегия SELL
-      //   MINED → markInFlightFill снова → FillEventHandler: "already processed" →
-      //   FILL_RECEIVED не публикуется → clearInFlightFills НИКОГДА не вызывается →
-      //   hasInFlightFills=true навсегда → стратегия HOLD навсегда.
+      // НЕ маркируем при MINED: fill уже обработан при MATCHED, ProcessFillUseCase
+      // уже снял флаг через clearInFlightFill(fillId). Раньше (при counter-based
+      // хранилище) повторная маркировка при MINED создавала риск double-increment
+      // без гарантированного decrement (если FILL_RECEIVED для повторного MINED
+      // не публикуется как "already processed" fill) → hasInFlightFills=true навсегда.
+      // Сейчас хранилище identity-based (`Map<FillId, InFlightFill>`) — повторная
+      // маркировка ТЕМ ЖЕ dto.id идемпотентна (перезаписывает ту же запись, не
+      // удваивает), поэтому этот риск структурно исключён. MATCHED-only оставлен
+      // как есть — маркировать при MINED всё равно избыточно (fill уже отслежен).
       //
       // Order-level tracking (shouldMarkOrder) маркирует и MINED — это безопасно,
       // т.к. order-level флаг снимается ProcessFillUseCase для каждого fill.
       const shouldMarkInstrument = dto.status === 'MATCHED';
       if (shouldMarkInstrument && this._onInFlightFill) {
         const instrumentId = asInstrumentId(dto.asset_id);
-        if (instrumentId) {
+        const fillId = asFillId(dto.id);
+        const [firstOrderId] = this._resolveOurOrderIds(dto);
+        if (instrumentId && fillId && firstOrderId) {
           this._logger.debug('[USER-EVENT] marking instrument as having in-flight fill', {
             asset_id: dto.asset_id,
             status: dto.status,
+            fillId: dto.id,
           });
-          this._onInFlightFill(instrumentId);
+          this._onInFlightFill(instrumentId, fillId, firstOrderId);
         }
       }
 
@@ -176,13 +188,16 @@ export class UserEventFeedAdapter {
       // отмена невозможна. Помечаем ордер, чтобы CancelOrderUseCase пропустил его.
       // Это устраняет race condition: partial fill → стратегия отменяет →
       // оставшийся fill на "отменённый" ордер → portfolio desync.
+      // Это order-lifecycle событие, а не fill-событие — конкретный fillId здесь
+      // неизвестен, используем pendingMatchFillId placeholder (см. doc в @polymarket/ports);
+      // он автоматически снимется, когда придёт реальный fill для этого ордера.
       if (dto.orderEventType === 'UPDATE' && dto.status === 'MATCHED' && this._onMatchedOnExchange) {
         const orderId = asOrderId(dto.order_id);
         if (orderId) {
           this._logger.debug('[USER-EVENT] order MATCHED on exchange — marking non-cancellable', {
             order_id: dto.order_id,
           });
-          this._onMatchedOnExchange(orderId);
+          this._onMatchedOnExchange(orderId, pendingMatchFillId(orderId));
         }
       }
 
@@ -292,30 +307,49 @@ export class UserEventFeedAdapter {
    * Идемпотентен (Set.add — повторные вызовы безопасны).
    */
   private _markOrderFromFill(dto: {
+    readonly id: string;
     readonly taker_order_id: string;
     readonly trader_side: 'TAKER' | 'MAKER';
     readonly maker_orders: ReadonlyArray<{ readonly order_id: string }>;
   }): void {
+    const fillId = asFillId(dto.id);
+    if (!fillId) return;
+
+    for (const orderId of this._resolveOurOrderIds(dto)) {
+      this._logger.debug('[USER-EVENT] fill received — marking order as MATCHED', {
+        order_id: String(orderId),
+        fillId: dto.id,
+        trader_side: dto.trader_side,
+      });
+      this._onMatchedOnExchange!(orderId, fillId);
+    }
+  }
+
+  /**
+   * Определяет НАШИ orderId, участвующие в fill-событии.
+   *
+   * @param dto - Raw fill DTO из user-channel
+   * @returns Массив наших OrderId (TAKER — всегда один; MAKER — может быть несколько)
+   *
+   * @remarks
+   * - TAKER → наш ордер = taker_order_id
+   * - MAKER → наши ордера = maker_orders[].order_id
+   */
+  private _resolveOurOrderIds(dto: {
+    readonly taker_order_id: string;
+    readonly trader_side: 'TAKER' | 'MAKER';
+    readonly maker_orders: ReadonlyArray<{ readonly order_id: string }>;
+  }): readonly OrderId[] {
     if (dto.trader_side === 'TAKER') {
       const orderId = asOrderId(dto.taker_order_id);
-      if (orderId) {
-        this._logger.debug('[USER-EVENT] fill received — marking order as MATCHED (taker)', {
-          order_id: dto.taker_order_id,
-        });
-        this._onMatchedOnExchange!(orderId);
-      }
-    } else {
-      // MAKER: все maker_orders в этом fill — наши ордера
-      for (const mo of dto.maker_orders) {
-        const orderId = asOrderId(mo.order_id);
-        if (orderId) {
-          this._logger.debug('[USER-EVENT] fill received — marking order as MATCHED (maker)', {
-            order_id: mo.order_id,
-          });
-          this._onMatchedOnExchange!(orderId);
-        }
-      }
+      return orderId ? [orderId] : [];
     }
+    const orderIds: OrderId[] = [];
+    for (const mo of dto.maker_orders) {
+      const orderId = asOrderId(mo.order_id);
+      if (orderId) orderIds.push(orderId);
+    }
+    return orderIds;
   }
 
   /**

@@ -57,3 +57,4 @@ export type { SubmittedOrder } from './MockExchangeClient.js';
 export { InMemoryOrderRepository } from './InMemoryOrderRepository.js';
 export { InMemoryPortfolioStore } from './InMemoryPortfolioStore.js';
 export { InMemoryProcessedFillRepository } from './InMemoryProcessedFillRepository.js';
+export { InMemoryKeyedMutex } from './InMemoryKeyedMutex.js';

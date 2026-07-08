@@ -75,7 +75,12 @@ describe('ReconcileTradesUseCase', () => {
       getTrades: jest.fn() as jest.MockedFunction<IExchangeClient['getTrades']>,
     };
     processedFillRepo = {
-      markIfNotExists: jest.fn<IProcessedFillRepository['markIfNotExists']>(),
+      begin: jest.fn<IProcessedFillRepository['begin']>(),
+      markApplied: jest.fn<IProcessedFillRepository['markApplied']>(),
+      markFailed: jest.fn<IProcessedFillRepository['markFailed']>(),
+      markReverted: jest.fn<IProcessedFillRepository['markReverted']>(),
+      markReconciliationRequired: jest.fn<IProcessedFillRepository['markReconciliationRequired']>(),
+      getStatus: jest.fn<IProcessedFillRepository['getStatus']>(),
     };
     processFillUseCase = {
       execute: jest.fn<ProcessFillUseCase['execute']>().mockResolvedValue(Ok(undefined)),
@@ -97,7 +102,7 @@ describe('ReconcileTradesUseCase', () => {
     const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
     expect(result.ok).toBe(true);
-    expect(processedFillRepo.markIfNotExists).not.toHaveBeenCalled();
+    expect(processedFillRepo.getStatus).not.toHaveBeenCalled();
     expect(processFillUseCase.execute).not.toHaveBeenCalled();
   });
 
@@ -112,11 +117,11 @@ describe('ReconcileTradesUseCase', () => {
     expect(result.error.message).toContain('Exchange getTrades failed');
   });
 
-  it('пропускает уже обработанный fill (не новый)', async () => {
+  it('пропускает уже обработанный (APPLIED) fill', async () => {
     const snapshot = makeTradeSnapshot('fill-already-processed');
     (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
       .mockResolvedValue(Ok([snapshot]));
-    processedFillRepo.markIfNotExists.mockResolvedValue(false); // уже был
+    processedFillRepo.getStatus.mockResolvedValue('APPLIED'); // уже был обработан (скорее всего через WS)
 
     const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
@@ -124,11 +129,27 @@ describe('ReconcileTradesUseCase', () => {
     expect(processFillUseCase.execute).not.toHaveBeenCalled();
   });
 
-  it('обрабатывает новый fill через ProcessFillUseCase', async () => {
+  it('пропускает fill со статусом RECONCILIATION_REQUIRED, не вызывает ProcessFillUseCase, логирует error', async () => {
+    const snapshot = makeTradeSnapshot('fill-desync');
+    (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+      .mockResolvedValue(Ok([snapshot]));
+    processedFillRepo.getStatus.mockResolvedValue('RECONCILIATION_REQUIRED');
+
+    const result = await useCase.execute({ accountId: ACCOUNT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(processFillUseCase.execute).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Fill requires manual reconciliation — skipping reconcile attempt',
+      expect.objectContaining({ fillId: 'fill-desync' }),
+    );
+  });
+
+  it('обрабатывает новый (unknown status) fill через ProcessFillUseCase', async () => {
     const snapshot = makeTradeSnapshot('fill-new');
     (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
       .mockResolvedValue(Ok([snapshot]));
-    processedFillRepo.markIfNotExists.mockResolvedValue(true); // новый
+    processedFillRepo.getStatus.mockResolvedValue(undefined); // новый, ProcessFillUseCase сам решит
 
     const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
@@ -136,12 +157,26 @@ describe('ReconcileTradesUseCase', () => {
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('НЕ вызывает processedFillRepo.begin() напрямую — делегирует ProcessFillUseCase.execute()', async () => {
+    // Регрессия: если бы ReconcileTradesUseCase сам вызывал begin(), второй begin()
+    // внутри ProcessFillUseCase.execute() увидел бы PROCESSING и вернул BUSY,
+    // ошибочно пропустив реальную обработку.
+    const snapshot = makeTradeSnapshot('fill-new');
+    (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+      .mockResolvedValue(Ok([snapshot]));
+    processedFillRepo.getStatus.mockResolvedValue(undefined);
+
+    await useCase.execute({ accountId: ACCOUNT_ID });
+
+    expect(processedFillRepo.begin).not.toHaveBeenCalled();
+  });
+
   it('пропускает fill с ошибкой ProcessFillUseCase, обрабатывает следующий', async () => {
     const snap1 = makeTradeSnapshot('fill-fail');
     const snap2 = makeTradeSnapshot('fill-ok');
     (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
       .mockResolvedValue(Ok([snap1, snap2]));
-    processedFillRepo.markIfNotExists.mockResolvedValue(true);
+    processedFillRepo.getStatus.mockResolvedValue(undefined);
     (processFillUseCase.execute as jest.MockedFunction<ProcessFillUseCase['execute']>)
       .mockResolvedValueOnce(Err(new TradingError('Fill failed')))
       .mockResolvedValueOnce(Ok(undefined));
@@ -152,18 +187,18 @@ describe('ReconcileTradesUseCase', () => {
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(2);
   });
 
-  it('пропускает fills со статусами MINED / RETRYING / undefined без вызова markIfNotExists', async () => {
+  it('пропускает fills со статусами MINED / RETRYING / undefined без вызова getStatus', async () => {
     const statuses = ['MINED', 'RETRYING', undefined] as const;
     for (const status of statuses) {
       const snapshot = { ...makeTradeSnapshot(`fill-${status ?? 'undef'}`), status };
       (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
         .mockResolvedValue(Ok([snapshot]));
-      processedFillRepo.markIfNotExists.mockClear();
+      processedFillRepo.getStatus.mockClear();
 
       const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
       expect(result.ok).toBe(true);
-      expect(processedFillRepo.markIfNotExists).not.toHaveBeenCalled();
+      expect(processedFillRepo.getStatus).not.toHaveBeenCalled();
     }
   });
 
@@ -171,13 +206,13 @@ describe('ReconcileTradesUseCase', () => {
     const snapshot = { ...makeTradeSnapshot('fill-matched'), status: 'MATCHED' as const };
     (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
       .mockResolvedValue(Ok([snapshot]));
-    processedFillRepo.markIfNotExists.mockResolvedValue(true);
+    processedFillRepo.getStatus.mockResolvedValue(undefined);
     processFillUseCase.execute.mockResolvedValue(Ok(undefined));
 
     const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
     expect(result.ok).toBe(true);
-    expect(processedFillRepo.markIfNotExists).toHaveBeenCalledTimes(1);
+    expect(processedFillRepo.getStatus).toHaveBeenCalledTimes(1);
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
   });
 

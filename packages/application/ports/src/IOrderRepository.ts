@@ -4,7 +4,10 @@
  * @remarks
  * Единственное определение — только в @polymarket/ports.
  * Handlers и use-cases импортируют отсюда.
- * Реализации: InMemoryOrderRepository (Phase 1), RedisOrderRepository (Phase 9).
+ * Реализации: InMemoryOrderRepository (Phase 1, packages/infrastructure/in-memory
+ * и packages/infrastructure/backtesting). RedisOrderRepository (Phase 9,
+ * см. master-plan.md → "Фаза 9: Recovery & Reconciliation") — запланирован,
+ * но пока НЕ реализован.
  *
  * Используется:
  * - FillEventHandler — `get(orderId)` → применить fill

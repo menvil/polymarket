@@ -3,38 +3,67 @@
  *
  * @remarks
  * ### Алгоритм:
- * 1. Idempotency guard (IProcessedFillRepository.markIfNotExists)
- *    — при дублирующемся fill возвращает Ok без повторной обработки
- * 2. Получение Order из репозитория
+ * 1. Idempotency guard (`IProcessedFillRepository.begin`) — `DUPLICATE`/`BUSY`
+ *    возвращают Ok без повторной обработки; `RECONCILIATION_REQUIRED` тоже
+ *    возвращает Ok (no-op), но с error-логом — retry не разрешён (см. п.6);
+ *    `ACQUIRED` обязывает довести обработку до `markApplied()`, `markFailed()`
+ *    либо `markReconciliationRequired()`.
+ * 2. Keyed mutex (`IKeyedMutex.runExclusive`) по [accountId, orderId, instrumentId] —
+ *    сериализует эту обработку относительно `CancelOrderUseCase` и других
+ *    конкурентных fill-ов того же ордера/инструмента.
+ * 3. Получение Order из репозитория
  *    — если ордер не найден или уже terminal (CANCELLED/FILLED): direct fill path.
  *    Portfolio обновляется немедленно через applyDirectFill (без резерваций).
- * 3. Применение Fill к Order (sync, order.applyFill)
- * 4. Синхронное сохранение обновлённого Order (orderStateStore.saveSync)
- * 5. Обновление Portfolio (PortfolioService.applyFill)
- * 6. Запись в Ledger (LedgerService.recordFill)
- * 7. Публикация доменных событий Order (await)
+ * 4. Применение Fill к Order (sync, order.applyFill)
+ * 5. Синхронное сохранение обновлённого Order (orderStateStore.saveSync)
+ * 6. Обновление Portfolio (PortfolioService.applyFill) — если упадёт ПОСЛЕ шага 5
+ *    (Order уже сохранён), это `markReconciliationRequired()` (терминально,
+ *    retry НЕ разрешён), а не `markFailed()`: Order.applyFill defends against
+ *    duplicate fill id, поэтому retry такого fillId лишь повторит "duplicate
+ *    fill" и никогда не восстановит Portfolio (`ORDER_PORTFOLIO_DESYNC` в
+ *    логах, ручная реконсиляция).
+ * 7. Запись в Ledger (LedgerService.recordFill)
+ * 8. `markApplied(fill.id)` — сразу после успешного завершения шагов 4–7 (commit
+ *    состояния Order/Portfolio/Ledger), ДО публикации событий.
+ * 9. Публикация доменных событий Order (await) — НЕ гейтит markApplied.
+ *    Если публикация упадёт, fill уже `APPLIED` и retry невозможен: состояние
+ *    уже закоммичено, повторный вызов лишь заново применил бы уже применённый
+ *    fill (Order defends against duplicate fill id, но direct-fill path и
+ *    Portfolio — нет), удвоив эффект. Ошибка публикации логируется отдельно
+ *    (`EVENT_PUBLISH_FAILED`) как потеря уведомления, требующая ручного replay,
+ *    а не как неприменённая бизнес-мутация.
+ *    Любая ошибка на шаге 4 (order.applyFill, до saveSync) → `markFailed(fill.id, reason)`,
+ *    fillId остаётся retryable. Ошибка на шаге 6 ПОСЛЕ saveSync →
+ *    `markReconciliationRequired()` (см. п.6), НЕ retryable FAILED.
  *
  * ### Идемпотентность:
- * Повторный вызов с тем же fillId безопасен — шаг 1 предотвращает
- * повторную обработку. Гарантирует «exactly once» семантику.
+ * Повторный вызов с тем же fillId, пока предыдущая попытка ещё не завершилась
+ * (`PROCESSING`) — `BUSY`, Ok без повторной обработки. После `APPLIED` — `DUPLICATE`,
+ * Ok без повторной обработки. После `FAILED`/`REVERTED` — retry разрешён.
+ * После `RECONCILIATION_REQUIRED` — retry НЕ разрешён: `execute()` возвращает
+ * Ok (no-op) при каждом повторном вызове, но логирует error — fill не мутирует
+ * Order/Portfolio/Ledger повторно, требуется ручная реконсиляция.
  *
  * ### Консистентность (устранение race condition):
- * Шаги 3–6 выполняются синхронно, без yield между ними.
- * `await` появляется только на шаге 7 (publishAll).
- * К моменту первого yield ордер уже помечен как terminal (FILED/CANCELLED),
- * поэтому любой тик стратегии или CancelOrderUseCase, запущенный в этом окне,
- * увидит `order.isTerminal === true` и пропустит отмену:
+ * Шаги 4–7 выполняются синхронно, без yield между ними.
+ * `await` появляется только на шаге 8 (publishAll) и на idempotency/mutex вызовах.
+ * К моменту первого yield внутри критической секции ордер уже помечен как
+ * terminal (FILED/CANCELLED), поэтому любой тик стратегии или CancelOrderUseCase,
+ * запущенный в этом окне, увидит `order.isTerminal === true` и пропустит отмену:
  * ```
  * // CancelOrderUseCase, строка 100:
  * if (order.isTerminal) return Ok(undefined);  // no-op
  * ```
  * Это устраняет ошибку «Cannot unfreeze/consume X: only 0 reserved».
+ * Keyed mutex (шаг 2) устраняет ту же гонку и на уровне межпроцессного тика —
+ * `CancelOrderUseCase.execute()` для того же orderId дожидается завершения
+ * этой обработки, а не читает Order в промежуточном состоянии.
  *
  * @example
  * ```typescript
  * const useCase = new ProcessFillUseCase({
  *   orderStateStore, portfolioService, ledgerService,
- *   processedFillRepo, orderRepo, eventBus, logger,
+ *   processedFillRepo, orderRepo, keyedMutex, eventBus, logger,
  * });
  *
  * const result = await useCase.execute(fill);
@@ -46,11 +75,11 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
-import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore } from '@polymarket/ports';
+import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore, IKeyedMutex } from '@polymarket/ports';
 import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
-import { assetIdToInstrumentId } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 
@@ -61,6 +90,7 @@ export interface ProcessFillDeps {
   readonly ledgerService: LedgerService;
   readonly orderRepo: IOrderRepository;
   readonly processedFillRepo: IProcessedFillRepository;
+  readonly keyedMutex: IKeyedMutex;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
 }
@@ -71,7 +101,7 @@ export interface ProcessFillDeps {
  * @remarks
  * Оркестрирует идемпотентное обновление Order, Portfolio и Ledger
  * при получении нового исполнения ордера.
- * Все state-мутации выполняются синхронно до первого await.
+ * Все state-мутации выполняются синхронно до первого await внутри критической секции.
  */
 export class ProcessFillUseCase {
   private readonly _logger: ILogger;
@@ -87,21 +117,62 @@ export class ProcessFillUseCase {
    * Выполняет обработку исполнения ордера.
    *
    * @param fill - Полученное исполнение ордера
-   * @returns Ok(void) при успехе, Err(TradingError) при ошибке
+   * @returns Ok(void) при успехе (в т.ч. duplicate/busy/reconciliation-required — no-op),
+   *   Err(TradingError) при ошибке обработки
    *
    * @remarks
-   * Повторный вызов с тем же fill.id вернёт Ok(void) без повторной обработки
-   * (idempotency guard на шаге 1).
+   * Повторный вызов с тем же fill.id безопасен: `DUPLICATE` (уже применён) или
+   * `BUSY` (обрабатывается конкурентно) возвращают Ok без повторной обработки.
+   * После `FAILED`/`REVERTED` — retry разрешён. После `RECONCILIATION_REQUIRED` —
+   * retry НЕ разрешён (частичный commit, нужна ручная реконсиляция): возвращает
+   * Ok (no-op, fill не мутируется повторно), но логирует error при каждом
+   * вызове, чтобы не молчать о нерешённой проблеме.
    */
   public async execute(fill: Fill): Promise<Result<void, TradingError>> {
     // Шаг 1: Idempotency guard
-    const isNew = await this._deps.processedFillRepo.markIfNotExists(fill.id);
-    if (!isNew) {
-      this._logger.debug('Duplicate fill ignored', { fillId: String(fill.id) });
+    const begin = await this._deps.processedFillRepo.begin(fill.id);
+    if (begin.outcome === 'DUPLICATE') {
+      this._logger.debug('Fill already applied, skipping (idempotent)', { fillId: String(fill.id) });
       return Ok(undefined);
     }
+    if (begin.outcome === 'BUSY') {
+      this._logger.warn('Fill already being processed concurrently, skipping', { fillId: String(fill.id) });
+      return Ok(undefined);
+    }
+    if (begin.outcome === 'RECONCILIATION_REQUIRED') {
+      // Терминально — НЕ ACQUIRED, значит НЕ мутируем Order/Portfolio/Ledger
+      // повторно. Ok (no-op), а не Err: caller (WS handler / ReconcileTradesUseCase)
+      // не должен трактовать это как retryable ошибку. Error-лог на каждый
+      // вызов — чтобы нерешённая проблема оставалась видимой в мониторинге.
+      this._logger.error('ORDER_PORTFOLIO_DESYNC: fill requires manual reconciliation — retry not attempted, skipping', {
+        fillId: String(fill.id),
+      });
+      return Ok(undefined);
+    }
+    if (begin.isRetry) {
+      this._logger.info('Retrying previously failed/reverted fill', { fillId: String(fill.id) });
+    }
 
-    // Шаг 2: Получить Order
+    // Шаг 2: Keyed mutex — сериализует относительно CancelOrderUseCase и других
+    // конкурентных fill-ов того же ордера/инструмента/аккаунта.
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    const lockKeys = [
+      accountIdToString(fill.accountId),
+      String(fill.orderId),
+      instrumentId ? String(instrumentId) : String(fill.tokenId),
+    ];
+
+    return this._deps.keyedMutex.runExclusive(lockKeys, () => this._processLocked(fill));
+  }
+
+  /**
+   * Тело обработки fill — вызывается ВНУТРИ keyed mutex.
+   *
+   * @param fill - Полученное исполнение ордера
+   * @returns Ok(void) при успехе, Err(TradingError) при ошибке
+   */
+  private async _processLocked(fill: Fill): Promise<Result<void, TradingError>> {
+    // Получить Order
     const order = await this._deps.orderRepo.get(fill.orderId);
 
     // Особый случай: ордер не найден или уже terminal (например, CANCELLED).
@@ -127,7 +198,12 @@ export class ProcessFillUseCase {
           orderId: String(fill.orderId),
           error: directResult.error.message,
         });
-        // Не останавливаем: ledger всё равно запишем
+        this._clearInFlightFlags(fill);
+        await this._deps.processedFillRepo.markFailed(fill.id, directResult.error.message);
+        return Err(new TradingError(
+          `Direct fill portfolio update failed: ${directResult.error.message}`,
+          { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+        ));
       }
 
       this._deps.ledgerService.recordFill(fill);
@@ -148,24 +224,45 @@ export class ProcessFillUseCase {
         });
       }
 
+      // Portfolio/Ledger уже применены (commit состоялся) — помечаем APPLIED
+      // ДО попытки публикации. Публикация — это уведомление о свершившемся
+      // факте, а не часть транзакции: если пометить fill FAILED из-за ошибки
+      // publish, retry вызовет execute() заново, order всё ещё terminal/not-found
+      // → снова direct-fill path → applyDirectFill() применится к Portfolio
+      // ПОВТОРНО (нет defence от duplicate на этом пути, в отличие от
+      // Order.applyFill) — двойной учёт баланса. Поэтому publish-ошибка не
+      // должна делать fill retryable.
+      await this._deps.processedFillRepo.markApplied(fill.id);
+
       // Публикуем DIRECT_FILL_APPLIED чтобы MarketRotation мог учесть этот fill
       // в fillHistory (для корректной сводки рынка). Без этого события fills на
       // отменённых ордерах не отображаются в market summary.
-      await this._deps.eventBus.publishAll([
-        { type: 'DIRECT_FILL_APPLIED', fill } as ApplicationEvent,
-      ]);
+      try {
+        await this._deps.eventBus.publishAll([
+          { type: 'DIRECT_FILL_APPLIED', fill } as ApplicationEvent,
+        ]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Состояние (Portfolio/Ledger) уже закоммичено и fill уже APPLIED —
+        // это НЕ retryable ошибка, а потеря уведомления. Логируем как
+        // отдельную категорию для алертинга/ручного replay события.
+        this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish DIRECT_FILL_APPLIED after commit — fill stays APPLIED, event lost', {
+          fillId: String(fill.id),
+          err: err instanceof Error ? err : new Error(message),
+        });
+        return Err(new TradingError(
+          `Failed to publish DIRECT_FILL_APPLIED event (fill already committed as APPLIED): ${message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
 
       return Ok(undefined);
     }
 
-    // Шаги 3–6 выполняются синхронно (без yield) — атомарное обновление состояния.
-    // Первый await появляется только на шаге 7 (publishAll).
-    //
-    // КРИТИЧНО: clearMatchedOnExchange вызывается ВСЕГДА (в finally-pattern).
-    // Без этого ошибка на любом шаге (applyFill, portfolio, ledger) оставляет
-    // флаг matchedOnExchange навсегда → hasMatchedOrders: true → стратегия зависает в HOLD.
+    // Шаги ниже выполняются синхронно (без yield) — атомарное обновление состояния.
+    // Первый await появляется только на публикации событий.
 
-    // Шаг 3: Применить Fill к Order (sync)
+    // Применить Fill к Order (sync)
     const fillData: FillData = {
       id: fill.id,
       orderId: fill.orderId,
@@ -181,9 +278,10 @@ export class ProcessFillUseCase {
         orderId: String(fill.orderId),
         error: applyResult.error.message,
       });
-      // Снимаем флаг MATCHED даже при ошибке — fill уже on-chain,
+      // Снимаем флаги даже при ошибке — fill уже on-chain,
       // повторная пометка произойдёт при следующем fill-событии если нужно.
       this._clearInFlightFlags(fill);
+      await this._deps.processedFillRepo.markFailed(fill.id, applyResult.error.message);
       return Err(new TradingError(
         `Failed to apply fill to order: ${applyResult.error.message}`,
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
@@ -191,12 +289,12 @@ export class ProcessFillUseCase {
     }
     const updatedOrder = applyResult.value;
 
-    // Шаг 4: Синхронно сохранить обновлённый Order (terminal = true)
+    // Синхронно сохранить обновлённый Order (terminal = true, если FILLED)
     // После этой строки любой читатель IOrderStateStore увидит ордер как FILED/terminal.
     // CancelOrderUseCase: if (order.isTerminal) return Ok(undefined) — пропустит cancel.
     this._deps.orderStateStore.saveSync(updatedOrder);
 
-    // Шаг 5: Обновить Portfolio (sync)
+    // Обновить Portfolio (sync)
     // Передаём цену ордера, чтобы точно совпасть с зарезервированной суммой
     // (fill.price может быть округлена биржей: 0.829 → 0.83, что вызывает «Cannot unfreeze/consume»).
     this._logger.info('Applying fill to portfolio', {
@@ -210,21 +308,37 @@ export class ProcessFillUseCase {
     });
     const portfolioResult = this._deps.portfolioService.applyFill(fill, order.price.value());
     if (!portfolioResult.ok) {
-      this._logger.error('Failed to apply fill to portfolio', {
+      // ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ (нет полного Unit of Work — вне scope этого этапа):
+      // Order уже сохранён ВЫШЕ (saveSync) с применённым fill.id, а Portfolio —
+      // нет. Order.applyFill() защищён от повторного применения того же fillId
+      // (см. Order._fill.ts), поэтому retry этого fillId НЕ приведёт к повторному
+      // прогону Portfolio — он остановится на applyFill-to-order с ошибкой
+      // "duplicate fill". Именно поэтому здесь `markReconciliationRequired()`,
+      // а НЕ `markFailed()`: FAILED подразумевает «retry поможет», а тут retry
+      // гарантированно бесполезен и лишь маскирует проблему повторяющейся
+      // ошибкой "duplicate fill" вместо истинной причины.
+      // RECONCILIATION_REQUIRED — терминальный статус: begin() больше НЕ выдаст
+      // ACQUIRED для этого fillId, требуется явная ручная реконсиляция Order↔Portfolio.
+      this._logger.error('ORDER_PORTFOLIO_DESYNC: Failed to apply fill to portfolio after Order already saved — fill requires manual reconciliation', {
         fillId: String(fill.id),
+        orderId: String(fill.orderId),
         error: portfolioResult.error.message,
       });
-      // Снимаем флаг MATCHED даже при ошибке portfolio.
-      // Ордер уже сохранён как terminal (шаг 4), поэтому он не появится
-      // в getOpenOrdersByInstrument. Но для чистоты — снимаем флаг.
+      // Снимаем флаги даже при ошибке portfolio.
+      // Ордер уже сохранён как terminal (выше), поэтому он не появится
+      // в getOpenOrdersByInstrument. Но для чистоты — снимаем флаги.
       this._clearInFlightFlags(fill);
+      await this._deps.processedFillRepo.markReconciliationRequired(
+        fill.id,
+        `ORDER_PORTFOLIO_DESYNC: ${portfolioResult.error.message}`,
+      );
       return Err(new TradingError(
-        `Failed to update portfolio: ${portfolioResult.error.message}`,
-        { context: { fillId: String(fill.id) } },
+        `Failed to update portfolio (Order already committed — manual reconciliation required): ${portfolioResult.error.message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
       ));
     }
 
-    // Шаг 5b: Снять остаток резервации при FILLED через dust threshold.
+    // Снять остаток резервации при FILLED через dust threshold.
     // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
     // (остаток 0.007233 < 0.01 = FILLED), но PortfolioService.applyFill снял резервацию
     // только на fillQty. Остаток застревает навсегда, блокируя будущие ордера.
@@ -267,24 +381,48 @@ export class ProcessFillUseCase {
       }
     }
 
-    // Шаг 6: Запись в Ledger (sync)
+    // Запись в Ledger (sync)
     this._deps.ledgerService.recordFill(fill);
 
-    // Шаг 7: Снимаем все in-flight флаги ПЕРЕД публикацией событий.
-    // КРИТИЧНО: publishAll (шаг 8) — await, создаёт yield-окно.
+    // Снимаем все in-flight флаги ПЕРЕД публикацией событий.
+    // КРИТИЧНО: publishAll ниже — await, создаёт yield-окно.
     // Обработчики ORDER_FILLED (OrderEventBridge) запланируют тик стратегии
     // через microtask (Promise.resolve().then(processQueue)).
     // Если флаги не сняты ДО yield — стратегия увидит hasInFlightFills=true
     // на тике, который выполнится ВНУТРИ await → зависнет в HOLD навсегда.
     // Безопасно: если другой fill для того же ордера ещё в пути,
-    // следующий MATCHED-event заново поставит флаг.
+    // следующий MATCHED-event заново поставит флаг (под своим fillId).
     this._clearInFlightFlags(fill);
 
-    // Шаг 8: Публикация событий.
-    // К этому моменту: Order = terminal, Portfolio = обновлён, флаги сняты.
+    // Order/Portfolio/Ledger уже закоммичены синхронно выше — помечаем APPLIED
+    // ДО публикации событий. Публикация может упасть (EventBus.publishAll
+    // реально бросает), но состояние уже применено: если пометить fill FAILED
+    // здесь, retry заново вызовет order.applyFill(fillData) с тем же fill.id —
+    // Order defends against duplicate fill id и просто вернёт ошибку "duplicate
+    // fill" на каждой попытке, вечно оставляя fill в FAILED без реального
+    // прогресса и маскируя истинную причину (сбой публикации, а не бизнес-ошибка).
+    // Поэтому publish-ошибка не должна делать fill retryable — она логируется
+    // отдельно как потеря уведомления, а не как неприменённая мутация.
+    await this._deps.processedFillRepo.markApplied(fill.id);
+
+    // Публикация событий.
+    // К этому моменту: Order = terminal (если FILLED), Portfolio = обновлён, флаги сняты.
     // Стратегия на тике увидит чистое состояние.
     const events = updatedOrder.pullEvents();
-    await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    try {
+      await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish fill events after commit — fill stays APPLIED, event lost', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        err: err instanceof Error ? err : new Error(message),
+      });
+      return Err(new TradingError(
+        `Failed to publish fill events (fill already committed as APPLIED): ${message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+      ));
+    }
 
     // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
     // Polymarket on-chain settlement списывает fee из получаемых токенов (BUY).
@@ -316,21 +454,17 @@ export class ProcessFillUseCase {
   }
 
   /**
-   * Снимает все in-flight флаги: order-level matchedOnExchange + instrument-level inFlightFills.
+   * Снимает in-flight флаги этого КОНКРЕТНОГО fill: order-level matched + instrument-level in-flight.
    *
    * @param fill - Обработанный fill
    *
    * @remarks
-   * Вызывается после обработки CONFIRMED fill (или на error path).
-   * Очищает оба уровня tracking:
-   * - `clearMatchedOnExchange(orderId)` — order-level (для CancelOrderUseCase)
-   * - `clearInFlightFills(instrumentId)` — instrument-level (для StrategyScheduler snapshot)
+   * fillId-scoped (не order/instrument-wide) — партиальные fills того же
+   * ордера/инструмента с ДРУГИМИ fillId не затрагиваются. Вызывается после
+   * обработки fill (или на error path).
    */
   private _clearInFlightFlags(fill: Fill): void {
-    this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
-    const instrumentId = assetIdToInstrumentId(fill.tokenId);
-    if (instrumentId) {
-      this._deps.orderStateStore.clearInFlightFills(instrumentId);
-    }
+    this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, fill.id);
+    this._deps.orderStateStore.clearInFlightFill(fill.id);
   }
 }

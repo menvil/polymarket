@@ -80,7 +80,7 @@ export interface IMarketCatalog {
   get(instrumentId: InstrumentId): InstrumentInfo | undefined;
 
   /**
-   * Возвращает метаданные инструмента по MarketId (condition_id).
+   * Возвращает метаданные ОДНОГО инструмента по MarketId (condition_id).
    *
    * @param marketId - ID рынка (condition_id в Polymarket API)
    * @returns InstrumentInfo или undefined если рынок неизвестен
@@ -88,8 +88,30 @@ export interface IMarketCatalog {
    * @remarks
    * Используется при закрытии рынка для поиска instrumentId по marketId
    * перед вызовом remove().
+   *
+   * ⚠️ Один market может иметь НЕСКОЛЬКО outcome-токенов (например, бинарный
+   * рынок Polymarket — YES/NO, каждый со своим `instrumentId`, но одним
+   * `marketId`). Этот метод возвращает только ПЕРВЫЙ зарегистрированный
+   * инструмент для данного marketId — для случаев, где достаточно любого
+   * инструмента рынка (например, чтение tickSize). Если нужны ВСЕ инструменты
+   * рынка (например, поиск ордеров по рынку в `IOrderRepository.getByMarketId()`,
+   * закрытие рынка целиком) — используй `getAllByMarketId()`.
    */
   getByMarketId(marketId: MarketId): InstrumentInfo | undefined;
+
+  /**
+   * Возвращает ВСЕ инструменты (outcome-токены) заданного MarketId.
+   *
+   * @param marketId - ID рынка (condition_id в Polymarket API)
+   * @returns Readonly массив InstrumentInfo (пустой, если рынок неизвестен)
+   *
+   * @remarks
+   * В отличие от `getByMarketId()` (первый инструмент), возвращает всех
+   * outcome-токенов рынка. Обязателен для любого сценария, где пропуск
+   * второго outcome-токена бинарного рынка (YES/NO) был бы багом —
+   * например, `IOrderRepository.getByMarketId()` при закрытии рынка.
+   */
+  getAllByMarketId(marketId: MarketId): readonly InstrumentInfo[];
 
   /**
    * Возвращает все загруженные инструменты.

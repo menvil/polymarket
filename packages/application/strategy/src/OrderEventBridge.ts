@@ -145,10 +145,12 @@ export class OrderEventBridge {
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_CONFIRMED', (event) => {
         for (const fill of event.fills) {
-          this._deps.orderStateStore.clearMatchedOnExchange(fill.orderId);
+          // fillId-scoped: снимает ТОЛЬКО этот fill — другой ещё не подтверждённый
+          // partial fill того же ордера/инструмента не затрагивается.
+          this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, fill.id);
+          this._deps.orderStateStore.clearInFlightFill(fill.id);
           const instrumentId = assetIdToInstrumentId(fill.tokenId);
           if (instrumentId) {
-            this._deps.orderStateStore.clearInFlightFills(instrumentId);
             this._deps.executionEngine.clearExchangeRejectionCooldown(instrumentId);
             this._deps.scheduler.onFillForInstrument(instrumentId);
           }

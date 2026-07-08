@@ -18,9 +18,9 @@
  * ```
  *
  * ### Гарантии:
- * - `recordDecision`, `recordSignalEvent`, `recordCancel`, `recordFill` — синхронные,
- *   fire-and-forget, не блокируют trading path
- * - `startSession`, `endSession`, `close` — асинхронные (I/O)
+ * - `startSession`, `recordDecision`, `recordSignalEvent`, `recordCancel`, `recordFill` —
+ *   синхронные, fire-and-forget, не блокируют trading path
+ * - `endSession`, `close` — асинхронные (I/O, flush на диск)
  *
  * Реализация: `DecisionJournalRecorder` в `@polymarket/data-collection`.
  *
@@ -304,8 +304,8 @@ export interface ResolutionEntry {
  * Порт журнала решений стратегии.
  *
  * @remarks
- * Синхронные методы `record*` — fire-and-forget, буферизация внутри.
- * Асинхронные `startSession`, `endSession`, `close` — I/O операции.
+ * Синхронные методы `startSession`, `record*` — fire-and-forget, буферизация внутри.
+ * Асинхронные `endSession`, `close` — I/O операции (flush буфера на диск).
  */
 export interface IDecisionJournal {
   /**

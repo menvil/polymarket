@@ -2,7 +2,7 @@
  * @polymarket/orchestrators — Слой оркестрации Application Layer.
  *
  * @remarks
- * Связывает IEventBus с use-cases и StrategyRunner.
+ * Связывает IEventBus с use-cases.
  * Каждый оркестратор — единственный компонент с конкретной ответственностью:
  *
  * - `FillOrchestrator`: FILL_RECEIVED → ProcessFillUseCase
@@ -10,7 +10,13 @@
  *
  * ### Паттерн использования:
  * ```typescript
- * const fillOrch = new FillOrchestrator({ eventBus, processFill, logger });
+ * const fillOrch = new FillOrchestrator({
+ *   eventBus,
+ *   processFill,
+ *   orderStateStore,
+ *   portfolioService,
+ *   logger,
+ * });
  * fillOrch.register(); // при старте системы
  * // ...
  * fillOrch.unregister(); // при graceful shutdown

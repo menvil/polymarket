@@ -771,6 +771,16 @@ describe('_checkExitSignalFirst — exit triggers', () => {
   });
 
   it('не блокирует аварийный выход из-за in-flight флага, если позиция уже видна', () => {
+    // ВАЖНО: если вызвать decide() сразу с positionQty>0 из чистого инстанса (без
+    // предварительного _pendingEntryPriceCents), сработает ветка "recovered position
+    // after restart" (wasFlat && hasPosition, см. CexLeadLagStrategy.ts ~1420) — она
+    // считает позицию runner-остатком и взводит ВСЕ scale-out флаги (включая
+    // _breakEvenScaleOutDone), что попутно отключает tau-based exit. Это маскирует
+    // проверяемое поведение (in-flight flag gating) под несвязанной runner-логикой.
+    // Устанавливаем _pendingEntryPriceCents, как это делает сам strategy.decide()
+    // при обычном BUY (см. ~1555), чтобы сымитировать штатный вход, а не рестарт.
+    strategy._pendingEntryPriceCents = 40;
+
     const actions = strategy.decide(makeData({
       tauSec: 15,
       hasInFlightFills: true,

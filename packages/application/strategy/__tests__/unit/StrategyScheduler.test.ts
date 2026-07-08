@@ -57,12 +57,14 @@ function makeOrderStateStore(): IOrderStateStore {
     getOpenOrdersByInstrument: fn().mockReturnValue([]),
     getOrder: fn().mockReturnValue(undefined),
     saveSync: fn(),
-    markMatchedOnExchange: fn(),
-    clearMatchedOnExchange: fn(),
-    isMatchedOnExchange: fn().mockReturnValue(false),
+    markOrderFillMatched: fn(),
+    clearOrderFillMatched: fn(),
+    hasMatchedFills: fn().mockReturnValue(false),
+    getMatchedFillIds: fn().mockReturnValue([]),
     markInFlightFill: fn(),
     hasInFlightFills: fn().mockReturnValue(false),
-    clearInFlightFills: fn(),
+    clearInFlightFill: fn(),
+    getInFlightFills: fn().mockReturnValue([]),
   };
 }
 
@@ -622,7 +624,7 @@ describe('StrategyScheduler', () => {
 
       const orderStateStore = makeOrderStateStore();
       (orderStateStore.getOpenOrdersByInstrument as any).mockReturnValue([orderMatched, orderNormal]);
-      (orderStateStore.isMatchedOnExchange as any).mockImplementation(
+      (orderStateStore.hasMatchedFills as any).mockImplementation(
         (id: any) => String(id) === 'order-matched',
       );
 

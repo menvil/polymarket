@@ -57,6 +57,7 @@ import Decimal from 'decimal.js';
 
 import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
+import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -73,6 +74,11 @@ class TestPortfolioStore implements IPortfolioStore {
   save(portfolio: Portfolio, _expectedVersion: number): Result<void, VersionConflictError> {
     this._map.set(accountIdToString(portfolio.accountId), portfolio);
     return Ok(undefined);
+  }
+
+  /** Всегда 0 — эта тестовая реализация намеренно не поддерживает версионирование. */
+  getVersion(_accountId: AccountId): number {
+    return 0;
   }
 
   clear(): void {
@@ -143,7 +149,11 @@ function makePassRiskChecker(): IOrderRiskChecker {
  * @param submitResult - Результат submitOrder (по умолчанию Ok(ORDER_ID))
  */
 function makeExchangeClient(
-  submitResult: Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError> = Ok({ orderId: ORDER_ID, immediatelyMatched: false }),
+  submitResult: Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError> = Ok({
+    orderId: ORDER_ID,
+    immediatelyMatched: false,
+    effectiveSize: ORDER_SIZE,
+  }),
 ): IExchangeClient {
   return {
     submitOrder: () => Promise.resolve(submitResult),
@@ -178,6 +188,7 @@ function makeFill(orderId: OrderId = ORDER_ID): Fill {
 describe('TradingFlow (integration)', () => {
   let orderRepo: InMemoryOrderRepository;
   let processedFillRepo: InMemoryProcessedFillRepository;
+  let keyedMutex: InMemoryKeyedMutex;
   let portfolioStore: TestPortfolioStore;
   let eventBus: EventBus;
   let portfolioService: PortfolioService;
@@ -186,6 +197,7 @@ describe('TradingFlow (integration)', () => {
   beforeEach(() => {
     orderRepo = new InMemoryOrderRepository();
     processedFillRepo = new InMemoryProcessedFillRepository();
+    keyedMutex = new InMemoryKeyedMutex();
     portfolioStore = new TestPortfolioStore();
     eventBus = new EventBus(LOGGER);
     portfolioService = new PortfolioService(portfolioStore, LOGGER);
@@ -222,6 +234,7 @@ describe('TradingFlow (integration)', () => {
       ledgerService,
       orderRepo,
       processedFillRepo,
+      keyedMutex,
       eventBus,
       logger: LOGGER,
     };
@@ -340,6 +353,7 @@ describe('TradingFlow (integration)', () => {
       portfolioService,
       orderRepo,
       orderStateStore: orderRepo,
+      keyedMutex,
       exchangeClient: makeExchangeClient(),
       eventBus,
       logger: LOGGER,
@@ -380,5 +394,99 @@ describe('TradingFlow (integration)', () => {
     // Assert: portfolio.reserved = 0 (резервация освобождена)
     const portfolioAfterCancel = portfolioStore.get(ACCOUNT_ID)!;
     expect(portfolioAfterCancel.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+  });
+
+  // ── Конкурентность: ProcessFillUseCase и CancelOrderUseCase сериализуются ──
+
+  it('concurrent ProcessFillUseCase.execute() и CancelOrderUseCase.execute() для одного ордера не пересекаются (реальный InMemoryKeyedMutex)', async () => {
+    // Arrange: размещаем ордер обычным путём
+    const portfolio = makeInitialPortfolio();
+    portfolioStore.save(portfolio, 0);
+
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo,
+      portfolioService,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
+      eventBus,
+      clock: makeClock(),
+      logger: LOGGER,
+    };
+    const input: PlaceOrderInput = {
+      orderId: ORDER_ID,
+      accountId: ACCOUNT_ID,
+      asset: TOKEN_ASSET_ID,
+      instrumentId: INSTRUMENT_ID,
+      side: 'BUY',
+      price: ORDER_PRICE,
+      size: ORDER_SIZE,
+      portfolio,
+      openOrdersCount: 0,
+    };
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute(input);
+    expect(placeResult.ok).toBe(true);
+
+    // Инструментируем РЕАЛЬНЫЙ InMemoryKeyedMutex — считаем максимум одновременных
+    // "владений" ключом. Если сериализация сломана, concurrent-счётчик превысит 1.
+    let active = 0;
+    let maxActive = 0;
+    const originalRunExclusive = keyedMutex.runExclusive.bind(keyedMutex);
+    const instrumentedMutex = {
+      runExclusive: async <T>(keys: readonly string[], fn: () => Promise<T>): Promise<T> =>
+        originalRunExclusive(keys, async () => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          try {
+            // Искусственная задержка внутри критической секции — увеличивает
+            // окно, в котором конкурентный вызов мог бы вклиниться, если бы
+            // сериализация не работала.
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            return await fn();
+          } finally {
+            active--;
+          }
+        }),
+    };
+
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo,
+      portfolioService,
+      ledgerService,
+      orderRepo,
+      processedFillRepo,
+      keyedMutex: instrumentedMutex,
+      eventBus,
+      logger: LOGGER,
+    });
+    const cancelOrderUseCase = new CancelOrderUseCase({
+      portfolioService,
+      orderRepo,
+      orderStateStore: orderRepo,
+      keyedMutex: instrumentedMutex,
+      exchangeClient: makeExchangeClient(),
+      eventBus,
+      logger: LOGGER,
+    });
+
+    // Act: запускаем fill и cancel КОНКУРЕНТНО для одного и того же orderId
+    const [fillResult, cancelResult] = await Promise.all([
+      processFillUseCase.execute(makeFill()),
+      cancelOrderUseCase.execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID, reason: 'race test' }),
+    ]);
+
+    // Assert: оба вызова завершились без исключений (успех или контролируемый skip)
+    expect(fillResult.ok).toBe(true);
+    expect(cancelResult.ok).toBe(true);
+
+    // Assert: критическая секция никогда не выполнялась параллельно
+    expect(maxActive).toBe(1);
+
+    // Assert: итоговое состояние ордера согласовано — либо FILLED (fill выиграл
+    // гонку, cancel увидел terminal/matched и стал no-op), либо CANCELED (cancel
+    // выиграл, fill применился как direct-fill на уже terminal ордер) — но НЕ
+    // повреждённое промежуточное состояние.
+    const finalOrder = await orderRepo.get(ORDER_ID);
+    expect(['FILLED', 'CANCELED']).toContain(finalOrder?.status);
   });
 });

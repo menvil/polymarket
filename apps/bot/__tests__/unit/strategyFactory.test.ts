@@ -72,7 +72,7 @@ describe('createStrategy', () => {
     const strategy = createStrategy({
       type: 'paired-cex-crowd',
       params: {
-        edgeTablePath: 'apps/bot/tables/edge-table-5min.json',
+        edgeTablePath: 'tables/edge-table-5min.json',
       },
     });
 

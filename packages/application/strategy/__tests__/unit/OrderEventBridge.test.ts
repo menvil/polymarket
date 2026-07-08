@@ -65,12 +65,14 @@ function makeOrderStateStore(orders: Map<string, any> = new Map()) {
     getOpenOrdersByInstrument: jest.fn().mockReturnValue([]),
     getOrder: jest.fn((id: OrderId) => orders.get(String(id))),
     saveSync: jest.fn(),
-    markMatchedOnExchange: jest.fn(),
-    clearMatchedOnExchange: jest.fn(),
-    isMatchedOnExchange: jest.fn().mockReturnValue(false),
+    markOrderFillMatched: jest.fn(),
+    clearOrderFillMatched: jest.fn(),
+    hasMatchedFills: jest.fn().mockReturnValue(false),
+    getMatchedFillIds: jest.fn().mockReturnValue([]),
     markInFlightFill: jest.fn(),
     hasInFlightFills: jest.fn().mockReturnValue(false),
-    clearInFlightFills: jest.fn(),
+    clearInFlightFill: jest.fn(),
+    getInFlightFills: jest.fn().mockReturnValue([]),
   };
 }
 
@@ -285,12 +287,12 @@ describe('OrderEventBridge', () => {
       const eventBus = deps.eventBus as any;
       eventBus._emit('FILL_CONFIRMED', {
         type: 'FILL_CONFIRMED',
-        fills: [{ orderId: ORDER_1, tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
+        fills: [{ id: 'fill-1', orderId: ORDER_1, tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
         receivedAt: {},
       });
 
-      expect((deps.orderStateStore as any).clearMatchedOnExchange).toHaveBeenCalledWith(ORDER_1);
-      expect((deps.orderStateStore as any).clearInFlightFills).toHaveBeenCalled();
+      expect((deps.orderStateStore as any).clearOrderFillMatched).toHaveBeenCalledWith(ORDER_1, 'fill-1');
+      expect((deps.orderStateStore as any).clearInFlightFill).toHaveBeenCalledWith('fill-1');
       expect((deps.executionEngine as any).clearExchangeRejectionCooldown).toHaveBeenCalled();
       expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
     });

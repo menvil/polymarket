@@ -96,7 +96,7 @@ export interface UseCases extends ProcessFillBundle, OrderUseCases {}
 export function buildProcessFillUseCase(params: BuildProcessFillParams): ProcessFillBundle {
   const { infra, repos } = params;
   const { logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, processedFillRepo } = repos;
+  const { orderRepo, portfolioStore, processedFillRepo, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
   const ledgerService = new LedgerService(logger);
@@ -107,6 +107,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
     ledgerService,
     orderRepo,
     processedFillRepo,
+    keyedMutex,
     eventBus,
     logger,
   });
@@ -128,7 +129,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
 export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCases {
   const { infra, repos, exchangeClient, riskParams } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore } = repos;
+  const { orderRepo, portfolioStore, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
   const riskChecker = new OrderRiskChecker(riskParams, logger);
@@ -148,6 +149,7 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     portfolioService,
     orderRepo,
     orderStateStore: orderRepo,
+    keyedMutex,
     exchangeClient,
     eventBus,
     logger,

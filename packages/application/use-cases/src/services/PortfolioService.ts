@@ -77,7 +77,7 @@ export class PortfolioService {
     accountId: AccountId,
     notional: Decimal,
   ): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(accountId) ?? 0;
+    const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
@@ -116,7 +116,7 @@ export class PortfolioService {
     accountId: AccountId,
     notional: Decimal,
   ): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(accountId) ?? 0;
+    const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
@@ -159,7 +159,7 @@ export class PortfolioService {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(accountId) ?? 0;
+    const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
@@ -202,7 +202,7 @@ export class PortfolioService {
     instrumentId: InstrumentId,
     qty: Decimal,
   ): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(accountId) ?? 0;
+    const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
     if (!portfolio) {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
@@ -301,7 +301,7 @@ export class PortfolioService {
    * tokenId используется как instrumentId для поиска/обновления позиции.
    */
   public applyFill(fill: Fill, orderPrice?: Decimal): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(fill.accountId) ?? 0;
+    const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
       return Err(new TradingError(
@@ -384,7 +384,7 @@ export class PortfolioService {
       this._logger.error('Portfolio save after fill failed (version conflict)', {
         fillId: String(fill.id),
         expectedVersion: version,
-        currentVersion: this._store.getVersion?.(fill.accountId) ?? -1,
+        currentVersion: this._store.getVersion(fill.accountId),
       });
       return saveResult;
     }
@@ -433,7 +433,7 @@ export class PortfolioService {
    * - Позиция LONG: quantity -= size (best effort — позиции может не быть)
    */
   public applyDirectFill(fill: Fill): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(fill.accountId) ?? 0;
+    const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
       return Err(new TradingError(
@@ -545,7 +545,7 @@ export class PortfolioService {
    * - FAILED — крайне редкое событие, точность reversal достаточна
    */
   public reverseFill(fill: Fill): Result<void, PortfolioSaveError> {
-    const version = this._store.getVersion?.(fill.accountId) ?? 0;
+    const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
       return Err(new TradingError(

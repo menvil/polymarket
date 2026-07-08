@@ -149,7 +149,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
       }
 
       // Polymarket CLOB может мгновенно исполнить ордер (status=matched).
-      // Обнаруживаем это чтобы вызывающий код пометил ордер через markMatchedOnExchange
+      // Обнаруживаем это чтобы вызывающий код пометил ордер через markOrderFillMatched
       // и не пытался отменять уже исполненный ордер.
       const immediatelyMatched =
         (response.status === 'matched' || response.status === 'filled') &&
@@ -163,7 +163,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         ...(immediatelyMatched ? { immediatelyMatched: true, responseStatus: response.status } : {}),
       });
 
-      return Ok({ orderId, immediatelyMatched });
+      return Ok({ orderId, immediatelyMatched, effectiveSize });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Exchange submitOrder failed', {

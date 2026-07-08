@@ -84,29 +84,48 @@ if (result.ok) {
 
 ### Алгоритм
 
-1. **Idempotency guard** — `processedFillRepo.markIfNotExists(fill.id)` → skip if false
-2. **Получить Order** — `orderRepo.get(fill.orderId)`
-3. **Применить Fill к Order** — `orderService.applyFill(order, fillData)`
-4. **Обновить Portfolio** — `portfolioService.applyFill(fill)`
+1. **Idempotency guard** — `processedFillRepo.begin(fill.id)` → `DUPLICATE`/`BUSY`/`RECONCILIATION_REQUIRED` → skip (Ok, no-op)
+2. **Keyed mutex** — `keyedMutex.runExclusive([accountId, orderId, instrumentId], ...)` сериализует относительно `CancelOrderUseCase`
+3. **Получить Order** — `orderRepo.get(fill.orderId)`
+4. **Применить Fill к Order** — `order.applyFill(fillData)`
+5. **Сохранить Order** — `orderStateStore.saveSync(updatedOrder)`
+6. **Обновить Portfolio** — `portfolioService.applyFill(fill)`
    - BUY: `applyDebit(price×size)` + позиция увеличивается
    - SELL: `applyCredit(price×size)` + позиция уменьшается
-5. **Записать в Ledger** — `ledgerService.recordFill(fill)`
-6. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
+   - Если падает ПОСЛЕ шага 5 (Order уже сохранён) → `markReconciliationRequired(fill.id, reason)`,
+     НЕ `markFailed()` (см. Idempotency ниже)
+7. **Записать в Ledger** — `ledgerService.recordFill(fill)`
+8. **`markApplied(fill.id)`** — сразу после успешного применения к Order/Portfolio/Ledger, ДО публикации
+9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())` — ошибка публикации НЕ откатывает `markApplied` (см. `ProcessFillUseCase` doc, `EVENT_PUBLISH_FAILED`)
 
 ### Idempotency
 
-Повторный вызов с тем же `fill.id` безопасен — шаг 1 предотвращает двойную обработку.
+Повторный вызов с тем же `fill.id` безопасен: `begin()` возвращает `DUPLICATE` (уже `APPLIED`)
+или `BUSY` (конкурентно `PROCESSING`) — в обоих случаях Ok без повторной обработки.
+После `FAILED`/`REVERTED` — retry разрешён (`begin()` вернёт `ACQUIRED, isRetry: true`).
+
+После `RECONCILIATION_REQUIRED` — retry НЕ разрешён. Этот статус ставится, когда Order уже
+сохранён (шаг 5), а Portfolio — нет: `Order.applyFill()` защищён от повторного применения того
+же fillId, поэтому retry такого fillId гарантированно упрётся в ошибку "duplicate fill" и никогда
+не восстановит Portfolio. `begin()` на `RECONCILIATION_REQUIRED` возвращает
+`{ outcome: 'RECONCILIATION_REQUIRED' }` (не `ACQUIRED`), а `execute()` — `Ok` (no-op) с
+error-логом на каждый повторный вызов, чтобы проблема оставалась видимой в мониторинге, но не
+мутирует Order/Portfolio/Ledger повторно. Требуется ручная реконсиляция.
 
 ## CancelOrderUseCase
 
 ### Алгоритм
 
-1. **Получить Order** — `orderRepo.get(orderId)`
-2. **Проверить статус** — если терминальный → `Ok(void)` (идемпотентность)
-3. **Отменить Order** — `orderService.cancel(order, reason)` → CANCELED
-4. **Снять резервацию** — `portfolioService.releaseReservation(remainingNotional)` (только BUY)
-5. **Best-effort биржевая отмена** — `exchangeClient.cancelOrder(orderId)` (ошибка не прерывает)
-6. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
+1. **Preflight** — `orderRepo.get(orderId)` (fail-fast, чтобы вычислить instrumentId для lock keys)
+2. **Keyed mutex** — `keyedMutex.runExclusive([accountId, orderId, instrumentId], ...)` сериализует относительно `ProcessFillUseCase`
+3. **Получить Order заново** (внутри lock — состояние могло измениться, пока ждали mutex)
+4. **Проверить статус** — если терминальный → `Ok(void)` (идемпотентность)
+5. **Проверить matched/in-flight fills** — `orderStateStore.hasMatchedFills(orderId)` или
+   `hasInFlightFills(instrumentId)` → `Ok(void)` (skip, отмена заблокирована)
+6. **Отменить Order** — `order.cancel(reason)` → CANCELED
+7. **Снять резервацию** — `portfolioService.releaseReservation(remainingNotional)` (только BUY)
+8. **Best-effort биржевая отмена** — `exchangeClient.cancelOrder(orderId)` (ошибка не прерывает)
+9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
 
 ### Best-effort отмена
 

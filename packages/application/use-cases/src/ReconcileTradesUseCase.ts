@@ -9,9 +9,18 @@
  * ### Алгоритм:
  * 1. `exchangeClient.getTrades(accountId, since)` → VenueTradeSnapshot[]
  * 2. Для каждого trade:
- *    - `processedFillRepo.markIfNotExists(trade.fillId)`:
- *      - `false` → дубликат, пропустить
- *      - `true` → новый fill → конвертировать и обработать через ProcessFillUseCase
+ *    - Читаем `processedFillRepo.getStatus(trade.fillId)` ТОЛЬКО для статистики
+ *      (skippedCount) — реальный idempotency guard (begin/markApplied/markFailed)
+ *      целиком внутри `ProcessFillUseCase.execute()`. Здесь НЕ вызываем `begin()` —
+ *      иначе внутренний `begin()` внутри `execute()` увидел бы `PROCESSING`
+ *      (уже выставленный этим же вызовом) и вернул бы `BUSY`, ошибочно пропустив
+ *      реальную обработку.
+ *    - `APPLIED` → уже обработан (скорее всего через WS) → пропустить
+ *    - `RECONCILIATION_REQUIRED` → частичный commit, retry не поможет
+ *      (см. `ProcessFillUseCase` doc) → пропустить, инкрементировать
+ *      `reconciliationRequiredCount`, залогировать error (не молчать)
+ *    - иначе → конвертировать и обработать через ProcessFillUseCase (само решит
+ *      ACQUIRED/DUPLICATE/BUSY/retry)
  *
  * ### Конвертация VenueTradeSnapshot → Fill:
  * Используем `Fill.create()` напрямую с типизированными данными из снапшота.
@@ -118,6 +127,7 @@ export class ReconcileTradesUseCase {
     let processedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
+    let reconciliationRequiredCount = 0;
 
     this._logger.debug('Reconciliation: processing trades', { count: trades.length });
 
@@ -132,7 +142,8 @@ export class ReconcileTradesUseCase {
       // MATCHED обрабатываем чтобы не потерять fill при WS race condition:
       // REST может вернуть matched, но WS fill event не прийти.
       // processedFillRepo предотвращает дубли: если WS уже обработал fill,
-      // markIfNotExists вернёт false и повторной обработки не будет.
+      // ProcessFillUseCase.execute() увидит APPLIED через begin() и вернёт
+      // Ok без повторной обработки (см. регрессионный тест ниже).
       //
       // MINED / RETRYING / FAILED / undefined → пропускаем.
       // MINED: cross-outcome MINT fills — CLOB отклоняет SELL до CONFIRMED.
@@ -147,11 +158,25 @@ export class ReconcileTradesUseCase {
         continue;
       }
 
-      // Проверка idempotency — markIfNotExists атомарна
-      const isNew = await this._deps.processedFillRepo.markIfNotExists(trade.fillId);
-
-      if (!isNew) {
+      // Статистика only — реальный idempotency guard (begin()) внутри
+      // ProcessFillUseCase.execute(). Этот use case намеренно НЕ вызывает
+      // begin() сам: повторный begin() внутри ProcessFillUseCase увидел бы
+      // PROCESSING и вернул бы BUSY, ошибочно пропустив реальную обработку.
+      const status = await this._deps.processedFillRepo.getStatus(trade.fillId);
+      if (status === 'APPLIED') {
         skippedCount++;
+        continue;
+      }
+      // RECONCILIATION_REQUIRED — терминально, ProcessFillUseCase.execute()
+      // и так вернёт Ok(no-op) для этого fillId (см. doc ProcessFillUseCase),
+      // но не отправляем его туда вовсе — незачем платить за keyed-mutex round-trip
+      // ради статуса, который уже известен как «не восстановится автоматически».
+      if (status === 'RECONCILIATION_REQUIRED') {
+        this._logger.error('Fill requires manual reconciliation — skipping reconcile attempt', {
+          fillId: fillIdStr,
+          orderId: String(trade.orderId),
+        });
+        reconciliationRequiredCount++;
         continue;
       }
 
@@ -188,6 +213,7 @@ export class ReconcileTradesUseCase {
       processed: processedCount,
       skipped: skippedCount,
       errors: errorCount,
+      reconciliationRequired: reconciliationRequiredCount,
     });
 
     return Ok(undefined);

@@ -39,10 +39,11 @@
  * только FILL_CONFIRMED (не повторяет FILL_RECEIVED).
  * Сброс при FAILED (fill откатывается, ID удаляется из set).
  *
- * **Уровень 2 — ProcessFillUseCase (IProcessedFillRepository.markIfNotExists)**:
- * Idempotency guard на уровне обработки fill в use-case.
+ * **Уровень 2 — ProcessFillUseCase (IProcessedFillRepository.begin/markApplied/markFailed/markReconciliationRequired)**:
+ * Idempotency guard на уровне обработки fill в use-case (state machine
+ * PROCESSING/APPLIED/FAILED/REVERTED/RECONCILIATION_REQUIRED).
  * Даже если FILL_RECEIVED будет опубликован дважды (WS reconnect race, два FillEventHandler),
- * ProcessFillUseCase пропустит повторный fill через `markIfNotExists`.
+ * ProcessFillUseCase пропустит повторный fill через `begin()` (DUPLICATE/BUSY/RECONCILIATION_REQUIRED).
  * Атомарна — не нужна внешняя координация между экземплярами.
  *
  * Уровень 1 защищает от дублирования в нормальном flow (MATCHED→CONFIRMED).
@@ -236,7 +237,7 @@ export class FillEventHandler {
    *
    * ### Fallback (MATCHED пропущен, например рестарт бота):
    * Парсим fill из raw и публикуем FILL_RECEIVED.
-   * ProcessFillUseCase idempotency guard (markIfNotExists) предотвращает двойную обработку.
+   * ProcessFillUseCase idempotency guard (`begin()`/`markApplied()`) предотвращает двойную обработку.
    */
   private async _handleConfirmedFill(
     raw: Record<string, unknown>,

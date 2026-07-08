@@ -1,116 +1,155 @@
 /**
- * InMemoryProcessedFillRepository — idempotency guard для Fill в памяти.
+ * InMemoryProcessedFillRepository — idempotency + lifecycle guard для Fill в памяти.
  *
  * @remarks
- * Реализует интерфейс `IProcessedFillRepository` на основе `Set<FillId>`.
- * Используется в `BacktestEngine` для предотвращения двойной обработки Fill.
+ * Реализует интерфейс `IProcessedFillRepository` на основе `Map<FillId, ProcessedFillStatus>`.
+ * Используется в `BacktestEngine` и live/paper режимах бота для предотвращения
+ * двойной обработки Fill и разрешения retry после сбоя обработки.
  *
- * ### Семантика markIfNotExists:
- * - Атомарна в рамках Node.js single-thread — нет window между check и mark.
- * - `true` → fill помечен ВПЕРВЫЕ (нужно обрабатывать).
- * - `false` → fill уже был помечен ранее (дубликат, пропустить).
+ * ### Семантика begin():
+ * - Ключа нет → ставим `PROCESSING`, возвращаем `{ outcome: 'ACQUIRED', isRetry: false }`.
+ * - `APPLIED` → возвращаем `{ outcome: 'DUPLICATE' }` (не трогаем состояние).
+ * - `PROCESSING` → возвращаем `{ outcome: 'BUSY' }` (конкурентная обработка).
+ * - `FAILED` / `REVERTED` → ставим `PROCESSING`, возвращаем
+ *   `{ outcome: 'ACQUIRED', isRetry: true }` (retry разрешён).
+ * - `RECONCILIATION_REQUIRED` → возвращаем `{ outcome: 'RECONCILIATION_REQUIRED' }` (терминально, retry НЕ
+ *   разрешён — не трогаем состояние; см. `markReconciliationRequired()`).
  *
  * ### Отличие от production реализации:
- * Production использует Redis SETNX + TTL или PostgreSQL unique constraint
- * для поддержки multi-process и персистентности.
- * In-memory реализация подходит только для бектеста и юнит-тестов.
+ * Production использует Redis (SETNX/Lua CAS) или PostgreSQL (unique constraint
+ * + status column) для поддержки multi-process и персистентности.
+ * In-memory реализация подходит только для бектеста, paper/live single-process
+ * режима и юнит-тестов.
  *
  * @example
  * ```typescript
  * const repo = new InMemoryProcessedFillRepository();
  *
- * const isNew = await repo.markIfNotExists(fillId);
- * if (isNew) {
- *   // Первый раз — обрабатываем fill
+ * const begin = await repo.begin(fillId);
+ * if (begin.outcome === 'ACQUIRED') {
+ *   try {
+ *     // ... применяем fill ...
+ *     await repo.markApplied(fillId);
+ *   } catch (err) {
+ *     await repo.markFailed(fillId, String(err));
+ *   }
  * }
- *
- * const isDuplicate = !(await repo.markIfNotExists(fillId));
- * // isDuplicate === true, fill уже был помечен
  * ```
  */
 import type { FillId } from '@polymarket/ids';
-import type { IProcessedFillRepository } from '@polymarket/ports';
+import type {
+  IProcessedFillRepository,
+  ProcessedFillStatus,
+  BeginFillProcessingResult,
+} from '@polymarket/ports';
 
 /**
- * In-memory реализация idempotency guard для Fill-событий.
+ * In-memory реализация idempotency + lifecycle guard для Fill-событий.
  *
  * @remarks
- * Хранит ID обработанных Fill в `Set<FillId>`.
- * Не персистентна — при перезапуске бектеста все Fill считаются новыми.
+ * Хранит статус каждого FillId в `Map<FillId, ProcessedFillStatus>`.
+ * Не персистентна — при перезапуске бектеста/бота все Fill считаются новыми.
  */
 export class InMemoryProcessedFillRepository implements IProcessedFillRepository {
-  /** Множество обработанных FillId */
-  private readonly _processed = new Set<FillId>();
+  /** FillId → текущий статус обработки */
+  private readonly _statuses = new Map<FillId, ProcessedFillStatus>();
 
   /**
-   * Атомарно помечает fill как обработанный.
-   *
-   * @remarks
-   * Алгоритм:
-   * 1. Проверяем наличие fillId в Set.
-   * 2. Если нет — добавляем в Set, возвращаем true.
-   * 3. Если есть — возвращаем false (дубликат).
+   * Атомарно резервирует fillId под обработку.
    *
    * @param fillId - ID fill-события
-   * @returns true если fill помечен впервые, false если уже был помечен (дубликат)
+   * @returns `BeginFillProcessingResult` — см. диаграмму переходов в doc порта
    *
    * @example
    * ```typescript
-   * const isNew = await repo.markIfNotExists(fillId);
-   * if (!isNew) {
-   *   logger.debug('Duplicate fill, skipping', { fillId });
-   *   return;
-   * }
-   * // обрабатываем fill
+   * const begin = await repo.begin(fillId);
+   * if (begin.outcome === 'DUPLICATE') return Ok(undefined);
+   * if (begin.outcome === 'BUSY') return Ok(undefined);
+   * // begin.outcome === 'ACQUIRED'
    * ```
    */
-  public async markIfNotExists(fillId: FillId): Promise<boolean> {
-    if (this._processed.has(fillId)) {
-      return false;
+  public async begin(fillId: FillId): Promise<BeginFillProcessingResult> {
+    const current = this._statuses.get(fillId);
+
+    if (current === 'APPLIED') {
+      return { outcome: 'DUPLICATE' };
     }
-    this._processed.add(fillId);
-    return true;
+    if (current === 'PROCESSING') {
+      return { outcome: 'BUSY' };
+    }
+    if (current === 'RECONCILIATION_REQUIRED') {
+      return { outcome: 'RECONCILIATION_REQUIRED' };
+    }
+
+    const isRetry = current === 'FAILED' || current === 'REVERTED';
+    this._statuses.set(fillId, 'PROCESSING');
+    return { outcome: 'ACQUIRED', isRetry };
   }
 
   /**
-   * Проверяет, был ли fill обработан ранее.
-   *
-   * @remarks
-   * Вспомогательный метод для тестовых assertions.
-   * Не меняет состояние Set — только читает.
+   * Помечает fill как успешно применённый.
    *
    * @param fillId - ID fill-события
-   * @returns true если fill уже был помечен как обработанный
-   *
-   * @example
-   * ```typescript
-   * await repo.markIfNotExists(fillId);
-   * expect(repo.has(fillId)).toBe(true);
-   * ```
    */
-  public has(fillId: FillId): boolean {
-    return this._processed.has(fillId);
+  public async markApplied(fillId: FillId): Promise<void> {
+    this._statuses.set(fillId, 'APPLIED');
   }
 
   /**
-   * Возвращает количество обработанных Fill.
+   * Помечает fill как неудачно обработанный — разрешает retry через `begin()`.
+   *
+   * @param fillId - ID fill-события
+   * @param _reason - Причина ошибки (не хранится in-memory реализацией;
+   *   ожидается, что caller уже залогировал её отдельно)
+   */
+  public async markFailed(fillId: FillId, _reason: string): Promise<void> {
+    this._statuses.set(fillId, 'FAILED');
+  }
+
+  /**
+   * Помечает ранее применённый fill как откаченный (FILL_FAILED rollback).
+   *
+   * @param fillId - ID fill-события
+   */
+  public async markReverted(fillId: FillId): Promise<void> {
+    this._statuses.set(fillId, 'REVERTED');
+  }
+
+  /**
+   * Помечает fill как заблокированный из-за частичного commit — retry НЕ разрешён.
+   *
+   * @param fillId - ID fill-события
+   * @param _reason - Причина (не хранится in-memory реализацией; ожидается,
+   *   что caller уже залогировал её отдельно для алертинга/ручной реконсиляции)
+   */
+  public async markReconciliationRequired(fillId: FillId, _reason: string): Promise<void> {
+    this._statuses.set(fillId, 'RECONCILIATION_REQUIRED');
+  }
+
+  /**
+   * Возвращает текущий статус fillId.
+   *
+   * @param fillId - ID fill-события
+   * @returns Текущий `ProcessedFillStatus`, либо `undefined` если fillId неизвестен
+   */
+  public async getStatus(fillId: FillId): Promise<ProcessedFillStatus | undefined> {
+    return this._statuses.get(fillId);
+  }
+
+  /**
+   * Возвращает количество отслеживаемых Fill (в любом статусе).
    *
    * @remarks
    * Вспомогательный метод для тестовых assertions.
    *
-   * @returns Количество уникальных FillId в Set
-   *
-   * @example
-   * ```typescript
-   * expect(repo.size).toBe(5);
-   * ```
+   * @returns Количество уникальных FillId в хранилище
    */
   public get size(): number {
-    return this._processed.size;
+    return this._statuses.size;
   }
 
   /**
-   * Очищает хранилище обработанных Fill.
+   * Очищает хранилище.
    *
    * @remarks
    * Используется в тестах для сброса состояния между тестами.
@@ -121,6 +160,6 @@ export class InMemoryProcessedFillRepository implements IProcessedFillRepository
    * ```
    */
   public clear(): void {
-    this._processed.clear();
+    this._statuses.clear();
   }
 }

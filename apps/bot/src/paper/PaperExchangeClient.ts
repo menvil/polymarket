@@ -185,14 +185,19 @@ export class PaperExchangeClient implements IExchangeClient {
     const result = await this._deps.mock.submitOrder(params);
 
     if (result.ok) {
+      // effectiveSize — фактический size, принятый биржей (MockExchangeClient сейчас
+      // всегда отражает params.size без изменений, но контракт IExchangeClient этого
+      // не гарантирует — трекаем то, что реально вернул submitOrder(), а не то, что
+      // запросили, чтобы поведение не разошлось молча при будущих изменениях mock).
+      const { effectiveSize } = result.value;
       this._deps.simulator.trackOrder({
         orderId: result.value.orderId,
         instrumentId,
         marketId: ctx?.marketId ?? this._marketId,
         side: params.side,
         price: params.price,
-        totalSize: params.size,
-        remainingSize: params.size.value(),
+        totalSize: effectiveSize,
+        remainingSize: effectiveSize.value(),
         accountId: ctx?.accountId ?? this._accountId,
         asset: ctx?.asset ?? this._asset,
         postOnly: params.postOnly === true,

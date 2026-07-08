@@ -80,8 +80,15 @@ export interface VenueTradeSnapshot {
    * On-chain статус сделки.
    *
    * @remarks
-   * Только `CONFIRMED` гарантирует что токены реально в кошельке.
-   * `MATCHED` = в очереди на запись, портфолио обновлять рано.
+   * Только `CONFIRMED` гарантирует что токены реально в кошельке — для live-processing
+   * через `FillOrchestrator`/`ProcessFillUseCase` `MATCHED` считается «рано» и не должен
+   * применяться к Portfolio до подтверждения.
+   *
+   * Исключение: `ReconcileTradesUseCase` (сверка после рестарта) намеренно обрабатывает
+   * И `CONFIRMED`, И `MATCHED` — чтобы не потерять fill, если MATCHED пришёл через WS
+   * до рестарта, а CONFIRMED ещё не наступил (race condition при recovery). Это осознанное
+   * исключение из общего правила «MATCHED ещё рано», а не расхождение с контрактом.
+   *
    * `undefined` — статус не был возвращён биржей (старый API).
    */
   readonly status?: VenueTradeStatus;

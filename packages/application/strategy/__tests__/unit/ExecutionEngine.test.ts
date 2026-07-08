@@ -652,23 +652,45 @@ describe('ExecutionEngine', () => {
     });
 
     it('should skip second attempt immediately after rejection (cooldown active)', async () => {
+      // SELL намеренно исключён из cooldown (см. ExecutionEngine.ts: "SELL-выходы (SL/TP)
+      // исключаем из cooldown... cooldown блокировал бы критические SELL на 5s") —
+      // используем BUY, для которого cooldown реально применяется.
       (deps.placeOrderUseCase as any).execute.mockResolvedValue(
         Err(new TradingError('not enough balance/allowance')),
       );
 
       // Первая попытка → rejection + cooldown установлен
-      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
+      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 }]);
       (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
 
       // Вторая попытка сразу → cooldown активен → skip
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
       ]);
 
       expect(report.skipped).toBe(1);
       expect(report.errors).toHaveLength(0);
       // Биржа НЕ вызывается в cooldown
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should NOT apply cooldown to SELL (SL/TP exits must not be blocked)', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('not enough balance/allowance')),
+      );
+
+      // Первая попытка SELL → rejection, но cooldown НЕ устанавливается для SELL
+      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
+      (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
+
+      // Вторая попытка SELL сразу → биржа вызывается снова (нет cooldown-skip)
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+      ]);
+
+      expect(report.skipped).toBe(0);
+      expect(report.errors).toHaveLength(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
     });
 
     it('should not apply cooldown to different side', async () => {

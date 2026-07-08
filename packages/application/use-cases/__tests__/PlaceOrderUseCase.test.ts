@@ -82,6 +82,7 @@ function makePortfolioStore(portfolio?: Portfolio): IPortfolioStore {
   return {
     get: jest.fn<IPortfolioStore['get']>().mockReturnValue(p),
     save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+    getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
   };
 }
 
@@ -100,7 +101,9 @@ function makeOrderRepo(): IOrderRepository {
 function makeExchangeClient(orderId?: OrderId): IExchangeClient {
   const id = orderId ?? ('exchange-order-1' as unknown as OrderId);
   return {
-    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(Ok({ orderId: id, immediatelyMatched: false })),
+    submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+      Ok({ orderId: id, immediatelyMatched: false, effectiveSize: makeQty('100') }),
+    ),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
     getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
     getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
@@ -168,12 +171,14 @@ describe('PlaceOrderUseCase', () => {
       portfolioService,
       exchangeClient,
       orderStateStore: {
-        markMatchedOnExchange: jest.fn(),
-        isMatchedOnExchange: jest.fn().mockReturnValue(false),
+        markOrderFillMatched: jest.fn(),
+        hasMatchedFills: jest.fn().mockReturnValue(false),
+        getMatchedFillIds: jest.fn().mockReturnValue([]),
         getOpenOrdersByInstrument: jest.fn().mockReturnValue([]),
         hasInFlightFills: jest.fn().mockReturnValue(false),
-        setHasInFlightFills: jest.fn(),
-        clearInFlightFills: jest.fn(),
+        markInFlightFill: jest.fn(),
+        clearInFlightFill: jest.fn(),
+        getInFlightFills: jest.fn().mockReturnValue([]),
       } as unknown as IOrderStateStore,
       eventBus,
       clock,
@@ -264,12 +269,217 @@ describe('PlaceOrderUseCase', () => {
     expect(orderRepo.save).not.toHaveBeenCalled();
   });
 
+  // ── effectiveSize (адаптер скорректировал size перед отправкой) ────────────
+
+  describe('effectiveSize != requested size', () => {
+    it('BUY: создаёт Order с effectiveSize и освобождает излишек USDC-резервации', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeWithAdjustedSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        portfolioService,
+        exchangeClient: exchangeWithAdjustedSize,
+      });
+      // Запрошенный size=100, биржа исполнит только 80 → excess=20 * price(0.65)=13
+      await useCase.execute(makeInput({ size: makeQty('100'), price: makePrice('0.65') }));
+
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      const releaseCall = (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
+      expect((releaseCall as { value(): Decimal }).value().toString()).toBe('13');
+
+      const savedOrder = (orderRepo.save as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
+      expect(savedOrder.size.value().toString()).toBe('80');
+    });
+
+    it('SELL: создаёт Order с effectiveSize и освобождает излишек токен-резервации', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeWithAdjustedSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('37') }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        portfolioService,
+        exchangeClient: exchangeWithAdjustedSize,
+      });
+      // Запрошенный size=50 (SELL), биржа приняла только 37 (dust-adjust) → excess=13 токенов
+      await useCase.execute(makeInput({ side: 'SELL', size: makeQty('50') }));
+
+      expect(portfolio.releaseTokenReservation).toHaveBeenCalled();
+      const releaseArgs = (portfolio.releaseTokenReservation as ReturnType<typeof jest.fn>).mock.calls[0];
+      expect((releaseArgs?.[1] as Decimal).toString()).toBe('13');
+
+      const savedOrder = (orderRepo.save as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
+      expect(savedOrder.size.value().toString()).toBe('37');
+    });
+
+    it('не освобождает излишек и не логирует adjustment, если effectiveSize == requested size', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService });
+
+      await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        'Exchange adjusted order size — releasing excess reservation',
+        expect.anything(),
+      );
+    });
+
+    it('возвращает Err и отменяет venue-ордер, если effectiveSize == 0', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const exchangeWithZeroSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('0') }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeWithZeroSize });
+      const result = await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(result.ok).toBe(false);
+      expect(cancelOrder).toHaveBeenCalledWith('exchange-order-1');
+      expect(orderRepo.save).not.toHaveBeenCalled();
+      // Освобождается ПОЛНАЯ исходная резервация (не частичная) — adapter вернул мусор,
+      // доверять effectiveSize нельзя вообще.
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+    });
+
+    it('возвращает Err и отменяет venue-ордер, если effectiveSize > requested size', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const exchangeWithOversizedFill: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('150') }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeWithOversizedFill });
+      const result = await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(result.ok).toBe(false);
+      expect(cancelOrder).toHaveBeenCalledWith('exchange-order-1');
+      expect(orderRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('возвращает Err и отменяет venue-ордер, если освобождение излишка резервации падает', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('store unavailable') as never),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const exchangeWithAdjustedSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeWithAdjustedSize });
+      const result = await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(result.ok).toBe(false);
+      expect(cancelOrder).toHaveBeenCalledWith('exchange-order-1');
+      expect(orderRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('логирует error, если cancelOrder падает после invalid effectiveSize (manual reconciliation)', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+        Err(new TradingError('exchange unreachable') as never),
+      );
+      const exchangeWithZeroSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('0') }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeWithZeroSize });
+      const result = await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(result.ok).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required',
+        expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
+      );
+    });
+
+    it('логирует error, если cancelOrder падает после excess-release failure (manual reconciliation)', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('store unavailable') as never),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+        Err(new TradingError('exchange unreachable') as never),
+      );
+      const exchangeWithAdjustedSize: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeWithAdjustedSize });
+      const result = await useCase.execute(makeInput({ size: makeQty('100') }));
+
+      expect(result.ok).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required',
+        expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
+      );
+    });
+  });
+
   // ── Portfolio не найден ───────────────────────────────────────────────────
 
   it('возвращает Err если portfolio не найден', async () => {
     const emptyStore: IPortfolioStore = {
       get: jest.fn<IPortfolioStore['get']>().mockReturnValue(undefined),
       save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+      getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
     };
     const portfolioService = new PortfolioService(emptyStore, logger);
     const useCase = new PlaceOrderUseCase({ ...deps, portfolioService });

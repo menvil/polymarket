@@ -68,14 +68,15 @@ function makeOrderRepo(order: Order | undefined): IOrderRepository {
 function makeOrderStateStore(storedOrder?: Order): IOrderStateStore {
   return {
     getOrder: jest.fn().mockReturnValue(storedOrder),
-    isMatchedOnExchange: jest.fn().mockReturnValue(false),
-    markMatchedOnExchange: jest.fn(),
-    clearMatchedOnExchange: jest.fn(),
+    hasMatchedFills: jest.fn().mockReturnValue(false),
+    markOrderFillMatched: jest.fn(),
+    clearOrderFillMatched: jest.fn(),
+    getMatchedFillIds: jest.fn().mockReturnValue([]),
     getOpenOrdersByInstrument: jest.fn().mockReturnValue([]),
     hasInFlightFills: jest.fn().mockReturnValue(false),
-    setHasInFlightFills: jest.fn(),
-    clearInFlightFills: jest.fn(),
+    clearInFlightFill: jest.fn(),
     markInFlightFill: jest.fn(),
+    getInFlightFills: jest.fn().mockReturnValue([]),
   } as unknown as IOrderStateStore;
 }
 
@@ -93,6 +94,7 @@ function makePortfolioStore(): IPortfolioStore {
   return {
     get: jest.fn<IPortfolioStore['get']>().mockReturnValue(portfolio),
     save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+    getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
   };
 }
 

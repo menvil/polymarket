@@ -254,9 +254,13 @@ describe('BaseStrategy', () => {
       expect(strategy.publicAdjustBuySize(d('3'), d('0.55'), d('1'), d('5'))).toEqual(d('5'));
     });
 
-    it('should clamp up to meet minOrderValue when value too low', () => {
-      // desired=5, price=0.117, minOrderValue=1, minOrderSize=5 → value=0.585<1 → ceil(1/0.117)=9
-      expect(strategy.publicAdjustBuySize(d('5'), d('0.117'), d('1'), d('5'))).toEqual(d('9'));
+    it('does NOT scale up for minOrderValue even when order value is below it (avoids overbuy)', () => {
+      // desired=5, price=0.117, minOrderValue=1, minOrderSize=5 → value=0.585<1, но
+      // adjustBuySize больше НЕ увеличивает size ради minOrderValue (см. @remarks
+      // на adjustBuySize: при дешёвых токенах это удваивало size 5→10, покупая
+      // больше конфигурации пользователя). Биржа отклонит по minOrderValue —
+      // стратегия попробует снова на следующем тике.
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.117'), d('1'), d('5'))).toEqual(d('5'));
     });
 
     it('should not clamp when value exactly meets minOrderValue', () => {
@@ -264,9 +268,10 @@ describe('BaseStrategy', () => {
       expect(strategy.publicAdjustBuySize(d('5'), d('0.20'), d('1'), d('5'))).toEqual(d('5'));
     });
 
-    it('should handle very low price requiring large size', () => {
-      // desired=5, price=0.01, minOrderValue=1, minOrderSize=5 → value=0.05<1 → ceil(1/0.01)=100
-      expect(strategy.publicAdjustBuySize(d('5'), d('0.01'), d('1'), d('5'))).toEqual(d('100'));
+    it('игнорирует minOrderValue даже при очень низкой цене (не удваивает size)', () => {
+      // desired=5, price=0.01, minOrderValue=1, minOrderSize=5 → value=0.05<1, но
+      // clamp только к minOrderSize=5, а НЕ к ceil(1/0.01)=100.
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.01'), d('1'), d('5'))).toEqual(d('5'));
     });
   });
 });

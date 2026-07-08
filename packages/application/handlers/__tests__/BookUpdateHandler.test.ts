@@ -91,6 +91,7 @@ describe('BookUpdateHandler', () => {
       get: jest.fn<IMarketCatalog['get']>().mockReturnValue(makeInstrumentInfo()),
       getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
       getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
+      getAllByMarketId: jest.fn<IMarketCatalog['getAllByMarketId']>().mockReturnValue([]),
       register: jest.fn<IMarketCatalog['register']>(),
       remove: jest.fn<IMarketCatalog['remove']>(),
       clear: jest.fn<IMarketCatalog['clear']>(),
@@ -120,12 +121,14 @@ describe('BookUpdateHandler', () => {
     expect(published).toMatchObject({ type: 'BOOK_UPDATED', marketId: MARKET_ID });
   });
 
-  it('пропускает снапшот и логирует warn если инструмент не найден в каталоге', async () => {
+  it('пропускает снапшот и логирует debug если инструмент не найден в каталоге', async () => {
+    // warn → debug понижен намеренно (см. историю BookUpdateHandler.ts) — отсутствие
+    // инструмента в каталоге при старте/ретрансляции не редкость и не заслуживает warn.
     (catalog.get as ReturnType<typeof jest.fn>).mockReturnValue(undefined);
 
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining('unregistered instrument'),
       expect.any(Object),
     );
@@ -133,11 +136,12 @@ describe('BookUpdateHandler', () => {
     expect(eventBus.publish).not.toHaveBeenCalled();
   });
 
-  it('логирует warn при stale снапшоте, но всё равно применяет', async () => {
+  it('логирует debug при stale снапшоте, но всё равно применяет', async () => {
+    // warn → debug понижен намеренно — stale-снапшоты при reconnect/replay штатны.
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(2000));
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000)); // stale: 1000 <= 2000
 
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining('Stale'),
       expect.any(Object),
     );
@@ -145,11 +149,14 @@ describe('BookUpdateHandler', () => {
     expect(mockBook.applyFullState).toHaveBeenCalledTimes(2);
   });
 
-  it('логирует warn при равном timestamp (stale: equal не строго больше)', async () => {
+  it('логирует debug при равном timestamp (stale: equal не строго больше)', async () => {
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000)); // equal — тоже stale
 
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const staleDebugCalls = (logger.debug as ReturnType<typeof jest.fn>).mock.calls.filter(
+      ([msg]) => typeof msg === 'string' && msg.includes('Stale'),
+    );
+    expect(staleDebugCalls).toHaveLength(1);
   });
 
   it('не логирует warn для первого снапшота', async () => {

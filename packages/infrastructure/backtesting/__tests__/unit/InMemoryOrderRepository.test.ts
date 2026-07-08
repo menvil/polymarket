@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { asOrderId } from '@polymarket/ids';
+import { asOrderId, asFillId } from '@polymarket/ids';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
@@ -160,6 +160,101 @@ describe('InMemoryOrderRepository', () => {
     });
   });
 
+  // ── fillId-based matched tracking ───────────────────────
+
+  describe('markOrderFillMatched / clearOrderFillMatched / hasMatchedFills (fillId-scoped)', () => {
+    const ORDER_ID = asOrderId('order-1')!;
+    const FILL_1 = asFillId('fill-1')!;
+    const FILL_2 = asFillId('fill-2')!;
+    const UNKNOWN_FILL = asFillId('fill-unknown')!;
+
+    it('два partial fills одного ордера: clear первого не снимает matched второго', () => {
+      repo.markOrderFillMatched(ORDER_ID, FILL_1);
+      repo.markOrderFillMatched(ORDER_ID, FILL_2);
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(true);
+      expect([...repo.getMatchedFillIds(ORDER_ID)].sort()).toEqual([FILL_1, FILL_2].sort());
+
+      repo.clearOrderFillMatched(ORDER_ID, FILL_1);
+
+      // FILL_1 снят, но FILL_2 остаётся matched — ордер всё ещё "matched" в целом.
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(true);
+      expect(repo.getMatchedFillIds(ORDER_ID)).toEqual([FILL_2]);
+
+      repo.clearOrderFillMatched(ORDER_ID, FILL_2);
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(false);
+    });
+
+    it('повторная пометка ТЕМ ЖЕ fillId идемпотентна (дублирующееся MATCHED-событие)', () => {
+      repo.markOrderFillMatched(ORDER_ID, FILL_1);
+      repo.markOrderFillMatched(ORDER_ID, FILL_1); // дубликат
+      expect(repo.getMatchedFillIds(ORDER_ID)).toEqual([FILL_1]);
+
+      // Один clear полностью снимает — счётчик не «застревает» на 2.
+      repo.clearOrderFillMatched(ORDER_ID, FILL_1);
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(false);
+    });
+
+    it('clear по неизвестному fillId — no-op, не открывает cancel преждевременно', () => {
+      repo.markOrderFillMatched(ORDER_ID, FILL_1);
+      repo.clearOrderFillMatched(ORDER_ID, UNKNOWN_FILL);
+
+      // Реальный matched fill (FILL_1) остаётся нетронутым.
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(true);
+      expect(repo.getMatchedFillIds(ORDER_ID)).toEqual([FILL_1]);
+    });
+
+    it('clear по неизвестному orderId — no-op, не бросает исключение', () => {
+      expect(() => repo.clearOrderFillMatched(asOrderId('never-marked')!, FILL_1)).not.toThrow();
+    });
+  });
+
+  // ── fillId-based in-flight tracking ──────────────────────
+
+  describe('markInFlightFill / clearInFlightFill / hasInFlightFills (fillId-scoped)', () => {
+    const ORDER_ID = asOrderId('order-1')!;
+    const INSTRUMENT_A = 'instrument-a' as unknown as InstrumentId;
+    const FILL_1 = asFillId('fill-1')!;
+    const FILL_2 = asFillId('fill-2')!;
+    const UNKNOWN_FILL = asFillId('fill-unknown')!;
+
+    it('duplicate MATCHED событие (тот же fillId) не ломает in-flight tracking', () => {
+      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
+      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID); // дубликат WS-события
+      expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(true);
+      expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(1);
+
+      // Один clear полностью снимает — не нужно два clear на дублированный mark.
+      repo.clearInFlightFill(FILL_1);
+      expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(false);
+    });
+
+    it('два разных in-flight fill на одном инструменте: clear одного не затрагивает другой', () => {
+      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
+      repo.markInFlightFill(INSTRUMENT_A, FILL_2, ORDER_ID);
+      expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(2);
+
+      repo.clearInFlightFill(FILL_1);
+
+      expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(true);
+      const remaining = repo.getInFlightFills(INSTRUMENT_A);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.fillId).toBe(FILL_2);
+    });
+
+    it('clear по неизвестному fillId — no-op, не открывает cancel преждевременно', () => {
+      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
+      repo.clearInFlightFill(UNKNOWN_FILL);
+
+      // Реальный in-flight fill (FILL_1) остаётся нетронутым.
+      expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(true);
+      expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(1);
+    });
+
+    it('clear по неизвестному fillId вообще (никогда не помечался) не бросает исключение', () => {
+      expect(() => repo.clearInFlightFill(UNKNOWN_FILL)).not.toThrow();
+    });
+  });
+
   // ── Утилиты ─────────────────────────────────────────────
 
   describe('utilities', () => {
@@ -175,6 +270,24 @@ describe('InMemoryOrderRepository', () => {
       repo.clear();
       expect(repo.size).toBe(0);
       expect(repo.getOpenOrders('strat-1')).toHaveLength(0);
+    });
+
+    it('clear() сбрасывает также matched fills и in-flight fills индексы', () => {
+      const orderId = asOrderId('order-1')!;
+      const fillId = asFillId('fill-1')!;
+      const instrumentId = 'instrument-a' as unknown as InstrumentId;
+
+      repo.markOrderFillMatched(orderId, fillId);
+      repo.markInFlightFill(instrumentId, fillId, orderId);
+      expect(repo.hasMatchedFills(orderId)).toBe(true);
+      expect(repo.hasInFlightFills(instrumentId)).toBe(true);
+
+      repo.clear();
+
+      expect(repo.hasMatchedFills(orderId)).toBe(false);
+      expect(repo.hasInFlightFills(instrumentId)).toBe(false);
+      expect(repo.getMatchedFillIds(orderId)).toHaveLength(0);
+      expect(repo.getInFlightFills(instrumentId)).toHaveLength(0);
     });
   });
 });

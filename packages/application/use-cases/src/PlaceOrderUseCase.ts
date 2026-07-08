@@ -48,6 +48,7 @@ import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import type { IExchangeClient, IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
@@ -214,17 +215,110 @@ export class PlaceOrderUseCase {
     // venueOrderId — реальный ID от биржи (0xa928...).
     // Именно этот ID используется в WS-событиях (fills, order updates).
     // Order entity создаётся с этим ID, чтобы lookups в OrderUpdateHandler работали.
-    const { orderId: venueOrderId, immediatelyMatched } = submitResult.value;
+    const { orderId: venueOrderId, immediatelyMatched, effectiveSize } = submitResult.value;
 
-    // Шаг 4: Создание Order aggregate с venueOrderId
-    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
-    if (!timestampResult.ok) {
+    // Адаптер биржи (например, SELL preflight balance check в
+    // PolymarketExchangeClientAdapter) мог скорректировать size перед отправкой.
+    // Резервация в Шаге 2 была сделана под input.size — если effectiveSize меньше,
+    // нужно освободить излишек ДО создания Order, иначе:
+    // 1. Order создастся с неверным (завышенным) size относительно реального ордера на бирже
+    // 2. Излишек резервации останется висеть, блокируя баланс/токены без причины
+    // `orderSize`/`orderNotional` далее используются вместо `input.size`/`notional` во всех
+    // rollback-ветках, чтобы освобождать РОВНО то, что реально осталось зарезервировано.
+    //
+    // Guard: effectiveSize обязан быть в диапазоне (0, input.size]. Контракт порта
+    // (SubmitOrderResult.effectiveSize) документирует именно это, но если реализация
+    // adapter'а его нарушит (баг, 0, отрицательное или size БОЛЬШЕ запрошенного) —
+    // excessSize стал бы отрицательным, и код попытался бы "освободить" отрицательную
+    // резервацию, что незаметно испортит Portfolio. Вместо этого — abort с отменой
+    // venue-ордера и Err, а не тихое продолжение.
+    if (effectiveSize.isZero() || effectiveSize.isGreaterThan(input.size)) {
+      this._logger.error('Exchange returned invalid effectiveSize — aborting and cancelling venue order', {
+        venueOrderId: String(venueOrderId),
+        requestedSize: input.size.value().toString(),
+        effectiveSize: effectiveSize.value().toString(),
+      });
       const releaseResult = isBuy
         ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
         : this._deps.portfolioService.releaseTokenReservation(
             input.accountId,
             input.instrumentId,
             input.size.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after invalid effectiveSize — manual reconciliation required', {
+          venueOrderId: String(venueOrderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      if (!cancelExchangeResult.ok) {
+        this._logger.error('Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required', {
+          venueOrderId: String(venueOrderId),
+          error: cancelExchangeResult.error.message,
+        });
+      }
+      return Err(new TradingError(
+        `Exchange returned invalid effectiveSize (${effectiveSize.value().toString()}) for requested size (${input.size.value().toString()})`,
+        { context: { venueOrderId: String(venueOrderId) } },
+      ));
+    }
+
+    let orderSize = input.size;
+    let orderNotional = notional;
+    if (!effectiveSize.equals(input.size)) {
+      const excessSize = input.size.value().minus(effectiveSize.value());
+      this._logger.warn('Exchange adjusted order size — releasing excess reservation', {
+        venueOrderId: String(venueOrderId),
+        requestedSize: input.size.value().toString(),
+        effectiveSize: effectiveSize.value().toString(),
+      });
+
+      const excessReleaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(
+            input.accountId,
+            input.price.value().times(excessSize),
+          )
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            excessSize,
+          );
+      if (!excessReleaseResult.ok) {
+        // Не продолжаем как ни в чём не бывало: если излишек не освободился, Portfolio
+        // и venue разойдутся молча (order сохранится с меньшим size, а лишняя резервация
+        // останется висеть). Отменяем venue-ордер и требуем ручной reconciliation вместо
+        // сохранения Order с потенциально неверным состоянием резервации.
+        this._logger.error('Failed to release excess reservation after size adjustment — aborting, manual reconciliation required', {
+          venueOrderId: String(venueOrderId),
+          releaseError: excessReleaseResult.error.message,
+        });
+        const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+        if (!cancelExchangeResult.ok) {
+          this._logger.error('Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required', {
+            venueOrderId: String(venueOrderId),
+            error: cancelExchangeResult.error.message,
+          });
+        }
+        return Err(new TradingError(
+          `Failed to release excess reservation after exchange size adjustment: ${excessReleaseResult.error.message}`,
+          { context: { venueOrderId: String(venueOrderId) } },
+        ));
+      }
+
+      orderSize = effectiveSize;
+      orderNotional = isBuy ? input.price.value().times(effectiveSize.value()) : undefined;
+    }
+
+    // Шаг 4: Создание Order aggregate с venueOrderId
+    const timestampResult = TimestampService.fromDate(this._deps.clock.now());
+    if (!timestampResult.ok) {
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            orderSize.value(),
           );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation after timestamp failure', {
@@ -244,17 +338,17 @@ export class PlaceOrderUseCase {
       asset: input.asset,
       side: input.side,
       price: input.price,
-      size: input.size,
+      size: orderSize,
       timestamp: timestampResult.value,
       strategyId: input.strategyId,
     });
     if (!orderResult.ok) {
       const releaseResult = isBuy
-        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
         : this._deps.portfolioService.releaseTokenReservation(
             input.accountId,
             input.instrumentId,
-            input.size.value(),
+            orderSize.value(),
           );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation after Order.create failure', {
@@ -272,11 +366,11 @@ export class PlaceOrderUseCase {
     if (!acceptResult.ok) {
       // Откат: снять резервацию и отменить ордер на бирже
       const releaseResult = isBuy
-        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
         : this._deps.portfolioService.releaseTokenReservation(
             input.accountId,
             input.instrumentId,
-            input.size.value(),
+            orderSize.value(),
           );
       if (!releaseResult.ok) {
         this._logger.error('Failed to release reservation during accept() rollback', {
@@ -327,12 +421,15 @@ export class PlaceOrderUseCase {
     // Если ордер мгновенно matched — помечаем чтобы CancelOrderUseCase не пытался отменять.
     // Fill придёт через WS (FillEventHandler) или REST (ReconcileTradesUseCase).
     if (immediatelyMatched) {
-      this._deps.orderStateStore.markMatchedOnExchange(venueOrderId);
+      // Конкретный fillId ещё не известен на этом уровне (REST-ответ submitOrder
+      // не содержит fill-данных) — используем placeholder; он автоматически
+      // снимется в clearOrderFillMatched, когда придёт реальный fill.
+      this._deps.orderStateStore.markOrderFillMatched(venueOrderId, pendingMatchFillId(venueOrderId));
       this._logger.warn('Order immediately matched on exchange — awaiting fill via WS/reconciliation', {
         venueOrderId: String(venueOrderId),
         side: input.side,
         price: input.price.value().toString(),
-        size: input.size.value().toString(),
+        size: orderSize.value().toString(),
       });
     }
 
@@ -340,7 +437,7 @@ export class PlaceOrderUseCase {
       venueOrderId: String(venueOrderId),
       clientOrderId: String(input.orderId),
       side: input.side,
-      ...(notional !== undefined ? { notional: notional.toString() } : { size: input.size.value().toString() }),
+      ...(orderNotional !== undefined ? { notional: orderNotional.toString() } : { size: orderSize.value().toString() }),
     });
 
     return Ok(venueOrderId);

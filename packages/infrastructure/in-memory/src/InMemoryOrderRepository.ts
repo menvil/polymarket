@@ -25,8 +25,10 @@
  * ```
  */
 import type { Order } from '@polymarket/order';
-import type { OrderId, MarketId, InstrumentId } from '@polymarket/ids';
-import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import type { OrderId, MarketId, InstrumentId, FillId } from '@polymarket/ids';
+import { assetIdToInstrumentId } from '@polymarket/ids';
+import type { IOrderRepository, IOrderStateStore, IMarketCatalog, InFlightFill } from '@polymarket/ports';
+import { pendingMatchFillId } from '@polymarket/ports';
 
 /**
  * In-memory реализация хранилища Order агрегатов.
@@ -43,28 +45,43 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   private readonly _store = new Map<OrderId, Order>();
 
   /**
-   * Множество orderId, помеченных как MATCHED на бирже.
-   *
-   * @remarks
-   * Заполняется при получении WS-события status=MATCHED.
-   * Используется CancelOrderUseCase для блокировки отмены MATCHED ордеров.
-   * Очищается в ProcessFillUseCase после обработки CONFIRMED fill.
+   * @param _marketCatalog - Опциональный каталог инструментов для честной реализации
+   * `getByMarketId()` через реальный marketId → instrumentId маппинг. Если не передан,
+   * `getByMarketId()` использует legacy-фолбэк на конвенцию `strategyId == String(marketId)`
+   * (см. doc `getByMarketId()`).
    */
-  private readonly _matchedOnExchange = new Set<string>();
+  public constructor(private readonly _marketCatalog?: IMarketCatalog) {}
 
   /**
-   * Счётчик in-flight fills per instrumentId (MATCHED/MINED, но не CONFIRMED).
+   * orderId → Set<FillId> matched на бирже (fillId-identity, не boolean/orderId-only).
    *
    * @remarks
-   * Трекинг на уровне инструмента решает проблему:
-   * после cancel ордер удалён из repo (terminal), но fill в пути on-chain.
-   * `isMatchedOnExchange(orderId)` бесполезен — ордера нет в `getOpenOrdersByInstrument`.
-   * `hasInFlightFills(instrumentId)` работает независимо от состояния ордера.
-   *
-   * Counter (а не boolean) корректно работает при нескольких concurrent fills
-   * на одном инструменте: каждый mark инкрементирует, каждый clear декрементирует.
+   * Заполняется при получении WS-события status=MATCHED, по конкретному fillId
+   * (либо `pendingMatchFillId(orderId)`, если fillId ещё не известен на этом уровне).
+   * Используется CancelOrderUseCase для блокировки отмены ордеров с matched fills.
+   * Каждый fillId снимается независимо в `clearOrderFillMatched` — partial fills
+   * одного ордера не затирают состояние друг друга.
    */
-  private readonly _inFlightFills = new Map<string, number>();
+  private readonly _matchedFillsByOrder = new Map<string, Set<FillId>>();
+
+  /**
+   * instrumentId → (fillId → InFlightFill). fillId-identity вместо счётчика.
+   *
+   * @remarks
+   * Трекинг на уровне инструмента решает проблему: после cancel ордер удалён
+   * из repo (terminal), но fill в пути on-chain. `hasMatchedFills(orderId)`
+   * бесполезен — ордера нет в `getOpenOrdersByInstrument`. `hasInFlightFills(
+   * instrumentId)` работает независимо от состояния ордера.
+   *
+   * Identity (Map<FillId, ...>), а не счётчик: повторная пометка ТОГО ЖЕ fillId
+   * (дублирующееся WS-событие) идемпотентна (перезаписывает ту же запись, не
+   * инкрементирует), а clear снимает ТОЛЬКО указанный fillId — другие
+   * concurrent in-flight fills того же инструмента не затрагиваются.
+   */
+  private readonly _inFlightFillsByInstrument = new Map<string, Map<FillId, InFlightFill>>();
+
+  /** fillId → instrumentId (строкой) — обратный индекс для O(1) clearInFlightFill(fillId). */
+  private readonly _inFlightFillInstrumentIndex = new Map<FillId, string>();
 
   /**
    * Возвращает Order по ID или undefined если не найден.
@@ -118,14 +135,21 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   }
 
   /**
-   * Возвращает все ордера заданной стратегии.
+   * Возвращает все ОТКРЫТЫЕ (не терминальные) ордера заданной стратегии.
    *
    * @remarks
+   * Порт `IOrderRepository.getByStrategyId()` документирован как «все открытые
+   * ордера» — раньше реализация этого не делала и возвращала ВСЕ ордера, включая
+   * FILLED/CANCELED/REJECTED/EXPIRED, что могло привести к неверным решениям
+   * у вызывающего кода (например, `ExecutionEngine` CANCEL_ALL пытался бы отменить
+   * уже терминальные ордера). Фильтрация по `!order.isTerminal` приводит поведение
+   * в соответствие с контрактом порта.
+   *
    * Выполняет линейный поиск O(n) по всему Map.
    * Допустимо в бектесте, где объём данных ограничен.
    *
    * @param strategyId - ID стратегии
-   * @returns Promise с readonly массивом ордеров стратегии
+   * @returns Promise с readonly массивом ОТКРЫТЫХ ордеров стратегии
    *
    * @example
    * ```typescript
@@ -136,7 +160,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   public async getByStrategyId(strategyId: string): Promise<readonly Order[]> {
     const result: Order[] = [];
     for (const order of this._store.values()) {
-      if (order.strategyId === strategyId) {
+      if (order.strategyId === strategyId && !order.isTerminal) {
         result.push(order);
       }
     }
@@ -168,7 +192,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
       // MATCHED на бирже → fill(ы) в пути, отменить нельзя, не считаем как "открытые".
       // Без этого фильтра MAX_OPEN_ORDERS блокирует новые ордера на 5-20 сек
       // пока MATCHED→CONFIRMED проходит через Polygon finality.
-      if (this._matchedOnExchange.has(String(order.id))) continue;
+      if (this.hasMatchedFills(order.id)) continue;
       count += 1;
     }
     return count;
@@ -197,9 +221,22 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * Возвращает все ордера указанного рынка.
    *
    * @remarks
-   * Реализует конвенцию «strategyId == String(marketId)» в одном месте.
-   * Вызывающий код (`CloseMarketUseCase`) работает с типизированным `MarketId`
-   * и не знает о деталях хранения.
+   * Порт `IOrderRepository.getByMarketId()` требует поиска по РЕАЛЬНОМУ marketId
+   * ордера, а не по конвенции `strategyId == String(marketId)` (`Order` не хранит
+   * `marketId` напрямую — только `asset: AssetId`).
+   *
+   * Если конструктору передан `marketCatalog` — используется честная реализация:
+   * `marketId` → `IMarketCatalog.getAllByMarketId()` → все instrumentId рынка,
+   * затем фильтрация ордеров по `assetIdToInstrumentId(order.asset) ∈ instrumentIds`.
+   * Используется `getAllByMarketId()`, а не `getByMarketId()` — бинарный рынок
+   * Polymarket имеет два outcome-токена (YES/NO) на один marketId; `getByMarketId()`
+   * вернул бы только один из них и пропустил ордера второго.
+   *
+   * Если `marketCatalog` не передан (обратная совместимость с существующими
+   * call sites, где эта зависимость не нужна) — используется legacy-фолбэк на
+   * конвенцию `strategyId == String(marketId)`. Он корректен только пока в системе
+   * действует правило «одна стратегия — один рынок»; при её нарушении молча
+   * пропустит часть ордеров.
    *
    * @param marketId - ID рынка
    * @returns Promise с readonly массивом ордеров рынка
@@ -210,24 +247,43 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * ```
    */
   public async getByMarketId(marketId: MarketId): Promise<readonly Order[]> {
-    return this.getByStrategyId(String(marketId));
+    if (!this._marketCatalog) {
+      return this.getByStrategyId(String(marketId));
+    }
+
+    const instruments = this._marketCatalog.getAllByMarketId(marketId);
+    if (instruments.length === 0) {
+      return [];
+    }
+    const instrumentIds = new Set(instruments.map((i) => i.instrumentId));
+
+    const result: Order[] = [];
+    for (const order of this._store.values()) {
+      const orderInstrumentId = assetIdToInstrumentId(order.asset);
+      if (orderInstrumentId && instrumentIds.has(orderInstrumentId)) {
+        result.push(order);
+      }
+    }
+    return result;
   }
 
   // ── IOrderStateStore (sync methods) ──────────────────────
 
   /**
-   * Sync: возвращает все ордера стратегии.
+   * Sync: возвращает все ОТКРЫТЫЕ (не терминальные) ордера стратегии.
    *
    * @param strategyId - ID стратегии
-   * @returns Readonly массив ордеров стратегии
+   * @returns Readonly массив открытых ордеров стратегии
    *
    * @remarks
    * Синхронная версия getByStrategyId() для StrategyScheduler.
+   * Фильтрует терминальные статусы — симметрично `getOpenOrdersByInstrument()`
+   * и контракту порта `IOrderStateStore.getOpenOrders()` («все открытые ордера»).
    */
   public getOpenOrders(strategyId: string): readonly Order[] {
     const result: Order[] = [];
     for (const order of this._store.values()) {
-      if (order.strategyId === strategyId) {
+      if (order.strategyId === strategyId && !order.isTerminal) {
         result.push(order);
       }
     }
@@ -287,39 +343,69 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   }
 
   /**
-   * Помечает ордер как MATCHED на бирже.
+   * Помечает конкретный fill ордера как matched на бирже.
    *
    * @param orderId - ID ордера
+   * @param fillId - ID fill-события (или `pendingMatchFillId(orderId)`)
    *
    * @remarks
-   * Вызывается при получении WS status=MATCHED.
-   * После пометки CancelOrderUseCase пропустит отмену этого ордера.
+   * Вызывается при получении WS status=MATCHED. После пометки CancelOrderUseCase
+   * пропустит отмену этого ордера, пока `hasMatchedFills(orderId)` не станет false.
+   * Идемпотентен: Set.add на существующий fillId — no-op.
    */
-  public markMatchedOnExchange(orderId: OrderId): void {
-    this._matchedOnExchange.add(String(orderId));
+  public markOrderFillMatched(orderId: OrderId, fillId: FillId): void {
+    const key = String(orderId);
+    let set = this._matchedFillsByOrder.get(key);
+    if (!set) {
+      set = new Set<FillId>();
+      this._matchedFillsByOrder.set(key, set);
+    }
+    set.add(fillId);
   }
 
   /**
-   * Возвращает true если ордер помечен как MATCHED на бирже.
+   * Снимает пометку matched с конкретного fill ордера.
    *
    * @param orderId - ID ордера
-   * @returns true если WS сообщил MATCHED для этого ордера
+   * @param fillId - ID fill-события, переданный ранее в `markOrderFillMatched`
+   *
+   * @remarks
+   * Снимает ТОЛЬКО этот fillId — другой ещё не подтверждённый partial fill
+   * того же ордера не затрагивается. Дополнительно снимает placeholder-запись
+   * `pendingMatchFillId(orderId)` для этого ордера, если она есть (см. doc
+   * `pendingMatchFillId` в `@polymarket/ports`).
    */
-  public isMatchedOnExchange(orderId: OrderId): boolean {
-    return this._matchedOnExchange.has(String(orderId));
+  public clearOrderFillMatched(orderId: OrderId, fillId: FillId): void {
+    const key = String(orderId);
+    const set = this._matchedFillsByOrder.get(key);
+    if (!set) return;
+    set.delete(fillId);
+    set.delete(pendingMatchFillId(orderId));
+    if (set.size === 0) {
+      this._matchedFillsByOrder.delete(key);
+    }
   }
 
   /**
-   * Снимает пометку MATCHED с ордера.
+   * Возвращает true если у ордера есть хотя бы один matched (ещё не cleared) fill.
    *
    * @param orderId - ID ордера
-   *
-   * @remarks
-   * Вызывается после обработки CONFIRMED fill.
-   * Идемпотентен: повторный вызов безопасен (Set.delete на отсутствующем — no-op).
+   * @returns true если WS сообщил MATCHED хотя бы для одного fill этого ордера
    */
-  public clearMatchedOnExchange(orderId: OrderId): void {
-    this._matchedOnExchange.delete(String(orderId));
+  public hasMatchedFills(orderId: OrderId): boolean {
+    const set = this._matchedFillsByOrder.get(String(orderId));
+    return !!set && set.size > 0;
+  }
+
+  /**
+   * Возвращает все ID fill-ов, помеченных matched для данного ордера.
+   *
+   * @param orderId - ID ордера
+   * @returns Readonly массив FillId (пустой, если matched-fill-ов нет)
+   */
+  public getMatchedFillIds(orderId: OrderId): readonly FillId[] {
+    const set = this._matchedFillsByOrder.get(String(orderId));
+    return set ? [...set] : [];
   }
 
   /**
@@ -344,6 +430,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    *
    * @remarks
    * Используется в тестах для сброса состояния между тестами.
+   * Очищает не только `_store`, но и все fillId-scoped индексы
+   * (matched fills, in-flight fills) — иначе `hasMatchedFills()`/
+   * `hasInFlightFills()` продолжат возвращать состояние из предыдущего теста.
    *
    * @example
    * ```typescript
@@ -352,49 +441,77 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public clear(): void {
     this._store.clear();
+    this._matchedFillsByOrder.clear();
+    this._inFlightFillsByInstrument.clear();
+    this._inFlightFillInstrumentIndex.clear();
   }
 
   // ── In-flight fills (instrument-level) ─────────────────
 
   /**
-   * Инкрементирует счётчик in-flight fills для инструмента.
+   * Помечает конкретный fill как in-flight на уровне инструмента.
    *
    * @param instrumentId - ID инструмента
+   * @param fillId - ID fill-события
+   * @param orderId - ID ордера, к которому относится fill
    *
    * @remarks
-   * Вызывается при каждом MATCHED fill. Декрементируется через clearInFlightFills.
+   * Вызывается при каждом MATCHED fill. Идемпотентен: повторная пометка того
+   * же fillId (дублирующееся WS-событие) — no-op по факту (перезаписывает ту
+   * же запись), не создаёт вторую запись и не «удваивает» in-flight состояние.
    */
-  public markInFlightFill(instrumentId: InstrumentId): void {
+  public markInFlightFill(instrumentId: InstrumentId, fillId: FillId, orderId: OrderId): void {
     const key = String(instrumentId);
-    this._inFlightFills.set(key, (this._inFlightFills.get(key) ?? 0) + 1);
+    let byFillId = this._inFlightFillsByInstrument.get(key);
+    if (!byFillId) {
+      byFillId = new Map<FillId, InFlightFill>();
+      this._inFlightFillsByInstrument.set(key, byFillId);
+    }
+    byFillId.set(fillId, { fillId, orderId, instrumentId });
+    this._inFlightFillInstrumentIndex.set(fillId, key);
   }
 
   /**
-   * Возвращает true если на инструменте есть in-flight fills.
+   * Снимает in-flight пометку с конкретного fill по его FillId.
+   *
+   * @param fillId - ID fill-события, ранее переданный в `markInFlightFill`
+   *
+   * @remarks
+   * Идентифицирует запись по fillId через обратный индекс — не нужно знать
+   * instrumentId на момент очистки. Неизвестный fillId — no-op (безопасно;
+   * не может преждевременно снять in-flight состояние чужого fill).
+   */
+  public clearInFlightFill(fillId: FillId): void {
+    const key = this._inFlightFillInstrumentIndex.get(fillId);
+    if (!key) return;
+    this._inFlightFillInstrumentIndex.delete(fillId);
+    const byFillId = this._inFlightFillsByInstrument.get(key);
+    if (byFillId) {
+      byFillId.delete(fillId);
+      if (byFillId.size === 0) {
+        this._inFlightFillsByInstrument.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Возвращает true если на инструменте есть хотя бы один in-flight fill.
    *
    * @param instrumentId - ID инструмента
    */
   public hasInFlightFills(instrumentId: InstrumentId): boolean {
-    return (this._inFlightFills.get(String(instrumentId)) ?? 0) > 0;
+    const byFillId = this._inFlightFillsByInstrument.get(String(instrumentId));
+    return !!byFillId && byFillId.size > 0;
   }
 
   /**
-   * Декрементирует счётчик in-flight fills для инструмента.
+   * Возвращает все in-flight fills данного инструмента.
    *
    * @param instrumentId - ID инструмента
-   *
-   * @remarks
-   * Вызывается ProcessFillUseCase после обработки fill
-   * и OrderEventBridge при FILL_CONFIRMED (страховка).
-   * Идемпотентен: декремент ниже 0 невозможен (удаляем ключ при 0).
+   * @returns Readonly массив `InFlightFill` (пустой, если in-flight fills нет)
    */
-  public clearInFlightFills(instrumentId: InstrumentId): void {
-    const key = String(instrumentId);
-    const count = (this._inFlightFills.get(key) ?? 0) - 1;
-    if (count <= 0) {
-      this._inFlightFills.delete(key);
-    } else {
-      this._inFlightFills.set(key, count);
-    }
+  public getInFlightFills(instrumentId: InstrumentId): readonly InFlightFill[] {
+    const byFillId = this._inFlightFillsByInstrument.get(String(instrumentId));
+    return byFillId ? [...byFillId.values()] : [];
   }
 }

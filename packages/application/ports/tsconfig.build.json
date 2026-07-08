@@ -33,6 +33,9 @@
       "path": "../../foundation/result/tsconfig.build.json"
     },
     {
+      "path": "../../domain/entities/fill/tsconfig.build.json"
+    },
+    {
       "path": "../../domain/entities/order/tsconfig.build.json"
     },
     {

@@ -296,12 +296,12 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     },
     // makerAddress: ETH-адрес нашего кошелька — fallback для cross-outcome fills
     makerAddress,
-    // onMatchedOnExchange: помечаем ордер как MATCHED, чтобы CancelOrderUseCase пропустил его.
+    // onMatchedOnExchange: помечаем fill ордера как MATCHED, чтобы CancelOrderUseCase пропустил его.
     // Устраняет race: partial fill → стратегия cancels → fill 4.68 на "не найден" → portfolio desync.
-    (orderId) => { repos.orderRepo.markMatchedOnExchange(orderId); },
+    (orderId, fillId) => { repos.orderRepo.markOrderFillMatched(orderId, fillId); },
     // onInFlightFill: instrument-level tracking — блокирует стратегию даже если ордер уже cancelled/deleted.
     // Решает race: cancel → place → fill(старый) → двойная покупка.
-    (instrumentId) => { repos.orderRepo.markInFlightFill(instrumentId); },
+    (instrumentId, fillId, orderId) => { repos.orderRepo.markInFlightFill(instrumentId, fillId, orderId); },
   );
 
   return {

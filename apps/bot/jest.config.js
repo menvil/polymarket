@@ -38,6 +38,7 @@ export default {
     '^@polymarket/order-book$': '<rootDir>/../../packages/domain/market-data/order-book/src/index.ts',
     '^@polymarket/value-objects/asset-quantity$': '<rootDir>/../../packages/domain/value-objects/src/asset-quantity/index.ts',
     '^@polymarket/fill$': '<rootDir>/../../packages/domain/entities/fill/src/index.ts',
+    '^@polymarket/fill/polymarket-fee$': '<rootDir>/../../packages/domain/entities/fill/src/polymarket-fee.ts',
     '^@polymarket/ledger$': '<rootDir>/../../packages/domain/accounting/ledger/src/index.ts',
     '^@polymarket/trade$': '<rootDir>/../../packages/domain/entities/trade/src/index.ts',
     '^@polymarket/use-cases$': '<rootDir>/../../packages/application/use-cases/src/index.ts',

@@ -301,14 +301,18 @@ async function runSingleMarketBacktest(
     );
   }
 
-  const repos = buildRepositories();
+  // 3a. Market data + catalog — строится ДО репозиториев, чтобы orderRepo.getByMarketId()
+  // мог резолвить реальный marketId → instrumentId вместо legacy strategyId-конвенции.
+  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+
+  const repos = buildRepositories(marketCatalog);
   const { portfolioStore } = repos;
   const riskParams = buildRiskParams(config);
 
   const accountId = parseAccountId(config.account.accountId);
   if (!accountId) return null;
 
-  // 3. Paper infra + simulator
+  // 3b. Paper infra + simulator
   const { mockClient } = buildPaperInfra({ clock: replayClock });
   const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
   const { simulator, exchangeClient } = buildPaperSimulator({
@@ -334,9 +338,6 @@ async function runSingleMarketBacktest(
 
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
-
-  // 4. Market data + catalog
-  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
 
   // 5. Crypto price store
   const cryptoMarketDataStore = sharedCryptoMarketDataStore;

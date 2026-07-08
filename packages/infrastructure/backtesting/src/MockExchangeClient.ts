@@ -112,7 +112,7 @@ export class MockExchangeClient implements IExchangeClient {
       submittedAt: now,
     });
 
-    return Ok({ orderId, immediatelyMatched: false });
+    return Ok({ orderId, immediatelyMatched: false, effectiveSize: params.size });
   }
 
   /**

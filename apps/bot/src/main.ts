@@ -487,7 +487,11 @@ async function runPaper(): Promise<void> {
     account: config.account.accountId,
   });
 
-  const repos = buildRepositories();
+  // marketCatalog строится ДО репозиториев, чтобы orderRepo.getByMarketId() мог
+  // резолвить реальный marketId → instrumentId вместо legacy strategyId-конвенции.
+  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+
+  const repos = buildRepositories(marketCatalog);
   const { portfolioStore } = repos;
 
   const riskParams: RiskParams = buildRiskParams(config);
@@ -519,7 +523,6 @@ async function runPaper(): Promise<void> {
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
-  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
   const engine = buildStrategyEngine({
     infra,
     repos,
@@ -2823,7 +2826,11 @@ async function runBacktest(): Promise<void> {
     });
   }
 
-  const repos = buildRepositories();
+  // marketCatalog строится ДО репозиториев, чтобы orderRepo.getByMarketId() мог
+  // резолвить реальный marketId → instrumentId вместо legacy strategyId-конвенции.
+  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+
+  const repos = buildRepositories(marketCatalog);
   const { portfolioStore, orderRepo } = repos;
 
   const riskParams: RiskParams = buildRiskParams(config);
@@ -2854,8 +2861,6 @@ async function runBacktest(): Promise<void> {
 
   const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
-
-  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
 
   // ── Crypto price infrastructure (backtest) ──────────────────────────────
   const backtestCryptoMarketDataStore = new CryptoMarketDataStore();
@@ -3599,7 +3604,11 @@ async function runLive(): Promise<void> {
     process.exit(1);
   }
 
-  const repos = buildRepositories();
+  // marketCatalog строится ДО репозиториев, чтобы orderRepo.getByMarketId() мог
+  // резолвить реальный marketId → instrumentId вместо legacy strategyId-конвенции.
+  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+
+  const repos = buildRepositories(marketCatalog);
   const { portfolioStore } = repos;
   const riskParams = buildRiskParams(config);
 
@@ -3654,6 +3663,7 @@ async function runLive(): Promise<void> {
     processFill: processFillUseCase,
     orderStateStore: repos.orderRepo,
     portfolioService,
+    processedFillRepo: repos.processedFillRepo,
     logger,
   });
   fillOrchestrator.register();
@@ -3667,8 +3677,7 @@ async function runLive(): Promise<void> {
   orderUpdateOrchestrator.register();
 
   // ── Market data + strategy engine ────────────────────────────────────────
-
-  const { marketDataStore, marketCatalog } = buildMarketData({ infra });
+  // marketDataStore/marketCatalog уже построены выше (до buildRepositories()).
 
   // ITokenBalanceChecker: при SELL rejection проверяем реальный баланс/allowance токена на CLOB.
   // Диагностика: отличает settlement lag (balance=0) от allowance проблемы (allowance=0).

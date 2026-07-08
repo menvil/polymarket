@@ -745,7 +745,7 @@ export class StrategyScheduler {
     const openOrders: import('@polymarket/order').Order[] = [];
     const matchedOrders: import('@polymarket/order').Order[] = [];
     for (const o of allOpen) {
-      if (this._deps.orderStateStore.isMatchedOnExchange(o.id)) {
+      if (this._deps.orderStateStore.hasMatchedFills(o.id)) {
         matchedOrders.push(o);
       } else {
         openOrders.push(o);
@@ -839,7 +839,7 @@ export class StrategyScheduler {
       complementaryOpenOrders = [];
       complementaryMatchedOrders = [];
       for (const o of allCompOpen) {
-        if (this._deps.orderStateStore.isMatchedOnExchange(o.id)) {
+        if (this._deps.orderStateStore.hasMatchedFills(o.id)) {
           complementaryMatchedOrders.push(o);
         } else {
           complementaryOpenOrders.push(o);
