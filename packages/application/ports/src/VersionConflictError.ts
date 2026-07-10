@@ -1,12 +1,16 @@
 /**
- * Ошибка конфликта версий Portfolio при CAS-сохранении.
+ * Ошибка конфликта версий при CAS-сохранении/удалении.
  *
  * @remarks
  * Возвращается (НЕ выбрасывается) как `Err(VersionConflictError)` из
- * `IPortfolioStore.save()`, когда версия в store не совпадает с ожидаемой.
- * Caller должен перечитать Portfolio и повторить.
+ * CAS-методов портов, когда версия в store не совпадает с ожидаемой:
+ * - `IPortfolioStore.save()` — `resourceId` = accountId
+ * - `IOrderRepository.save()` / `deleteIfVersion()` — `resourceId` = orderId
  *
- * `accountId`/`expected`/`actual` доступны как типизированные поля
+ * Caller должен перечитать актуальное состояние и решить: повторить операцию,
+ * деградировать в no-op или вернуть ошибку.
+ *
+ * `resourceId`/`expected`/`actual` доступны как типизированные поля
  * (не только в тексте `message`) — для structured logging, метрик и retry-логики.
  *
  * @example
@@ -14,11 +18,11 @@
  * const result = store.save(portfolio, expectedVersion);
  * if (!result.ok && result.error instanceof VersionConflictError) {
  *   logger.warn('CAS conflict', {
- *     accountId: result.error.accountId,
+ *     resourceId: result.error.resourceId,
  *     expected: result.error.expected,
  *     actual: result.error.actual,
  *   });
- *   // Retry: перечитать portfolio и повторить операцию
+ *   // Retry: перечитать состояние и повторить операцию
  *   const fresh = store.get(accountId);
  *   // ... повторить
  * }
@@ -30,18 +34,18 @@ export class VersionConflictError extends TradingError {
   public readonly severity = 'low' as const;
 
   /**
-   * @param accountId - ID аккаунта с конфликтом
-   * @param expected - Ожидаемая версия (прочитанная при get())
+   * @param resourceId - ID ресурса с конфликтом (accountId для Portfolio, orderId для Order)
+   * @param expected - Ожидаемая версия (прочитанная при get()/getVersion())
    * @param actual - Фактическая версия в store
    */
   constructor(
-    public readonly accountId: string,
+    public readonly resourceId: string,
     public readonly expected: number,
     public readonly actual: number,
   ) {
     super(
-      `Portfolio version conflict for ${accountId}: expected ${expected}, got ${actual}`,
-      { context: { accountId, expected, actual } },
+      `Version conflict for ${resourceId}: expected ${expected}, got ${actual}`,
+      { context: { resourceId, expected, actual } },
     );
   }
 }

@@ -80,8 +80,10 @@ function makeOrderRepo() {
   const fn = jest.fn as any;
   return {
     get: fn().mockResolvedValue(undefined),
-    save: fn().mockResolvedValue(undefined),
-    delete: fn().mockResolvedValue(undefined),
+    getVersion: fn().mockResolvedValue(0),
+    save: fn().mockResolvedValue({ ok: true, value: undefined }),
+    deleteIfVersion: fn().mockResolvedValue({ ok: true, value: { status: 'DELETED' } }),
+    deleteIfState: fn().mockResolvedValue({ ok: true, value: { status: 'DELETED' } }),
     getByStrategyId: fn().mockResolvedValue([]),
     countByStrategyId: fn().mockResolvedValue(0),
     getAll: fn().mockResolvedValue([]),
@@ -194,7 +196,7 @@ describe('OrderEventBridge', () => {
 
       // Cleanup is async — wait for microtask
       await new Promise((r) => setTimeout(r, 0));
-      expect(deps.orderRepo.delete).toHaveBeenCalledWith(ORDER_1);
+      expect(deps.orderRepo.deleteIfState).toHaveBeenCalledWith(ORDER_1, ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED']);
     });
   });
 
@@ -212,7 +214,7 @@ describe('OrderEventBridge', () => {
 
       expect((deps.scheduler as any).onOrderChanged).toHaveBeenCalledWith(STRATEGY_ID, 'ORDER_UPDATE');
       await new Promise((r) => setTimeout(r, 0));
-      expect(deps.orderRepo.delete).toHaveBeenCalledWith(ORDER_1);
+      expect(deps.orderRepo.deleteIfState).toHaveBeenCalledWith(ORDER_1, ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED']);
     });
   });
 
@@ -257,7 +259,7 @@ describe('OrderEventBridge', () => {
 
       expect((deps.scheduler as any).onOrderChanged).toHaveBeenCalledWith(STRATEGY_ID, 'FILL');
       await new Promise((r) => setTimeout(r, 0));
-      expect(deps.orderRepo.delete).toHaveBeenCalledWith(ORDER_1);
+      expect(deps.orderRepo.deleteIfState).toHaveBeenCalledWith(ORDER_1, ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED']);
     });
   });
 
@@ -325,7 +327,7 @@ describe('OrderEventBridge', () => {
     it('should handle cleanup error gracefully', async () => {
       const orders = new Map([[String(ORDER_1), makeOrder(ORDER_1, STRATEGY_ID)]]);
       const orderRepo = makeOrderRepo();
-      (orderRepo.delete as any).mockRejectedValue(new Error('DB error'));
+      (orderRepo.deleteIfState as any).mockRejectedValue(new Error('DB error'));
 
       deps = makeDeps({
         orderStateStore: makeOrderStateStore(orders) as any,
@@ -345,6 +347,38 @@ describe('OrderEventBridge', () => {
       await new Promise((r) => setTimeout(r, 10));
       // Should not throw — error is logged
       expect((deps.logger as any).child().error || (deps.logger as any).error).toBeDefined();
+    });
+
+    it('should skip cleanup with warn when order is not in terminal state', async () => {
+      const orders = new Map([[String(ORDER_1), makeOrder(ORDER_1, STRATEGY_ID)]]);
+      const orderRepo = makeOrderRepo();
+      // deleteIfState отклоняет удаление: ордер в не-терминальном статусе
+      (orderRepo.deleteIfState as any).mockResolvedValue({
+        ok: false,
+        error: { name: 'OrderStateConflictError', actualState: 'OPEN' },
+      });
+
+      deps = makeDeps({
+        orderStateStore: makeOrderStateStore(orders) as any,
+        orderRepo: orderRepo as any,
+      });
+      bridge = new OrderEventBridge(deps);
+      bridge.start();
+
+      const eventBus = deps.eventBus as any;
+      eventBus._emit('ORDER_FILLED', {
+        type: 'ORDER_FILLED',
+        orderId: ORDER_1,
+        fill: {},
+        averagePrice: {},
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+      const childLogger = (deps.logger as any).child();
+      expect(childLogger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/not in terminal state/i),
+        expect.objectContaining({ actualState: 'OPEN' }),
+      );
     });
   });
 

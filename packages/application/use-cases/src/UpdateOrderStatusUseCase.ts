@@ -7,18 +7,21 @@
  * `ORDER_UPDATE_RECEIVED`; `OrderUpdateOrchestrator` вызывает этот use case.
  *
  * ### Алгоритм:
- * 1. Получить Order из репозитория
+ * 1. Атомарно прочитать Order + версию (getWithVersion) из репозитория
  * 2. Применить доменный метод (accept/reject/cancel/expire)
  * 3. Обработать idempotent/race сценарии
- * 4. Для CANCELLED/EXPIRED — освободить резервацию Portfolio с защитой от concurrent fill
- * 5. Сохранить обновлённый Order в репозиторий
+ * 4. CAS-сохранение обновлённого Order (save(order, expectedVersion))
+ * 5. Для CANCELLED/EXPIRED — освободить резервацию Portfolio (только после
+ *    успешного CAS save)
  * 6. Опубликовать OrderEvent[] в EventBus
  *
- * ### Защита от concurrent fill:
- * Между шагами 2 и 4 (async repo.save) мог выполниться ProcessFillUseCase
- * и перезаписать Order статус (FILLED). Синхронная проверка orderStateStore
- * (без yield) читает актуальное состояние — пропускаем release если резервация
- * уже потреблена fill.
+ * ### Защита от concurrent fill (CAS):
+ * Между чтением версии и save мог выполниться ProcessFillUseCase и перезаписать
+ * Order статус (FILLED) через saveSync — тогда версия выросла и CAS save вернёт
+ * VersionConflictError. При конфликте перечитываем актуальное состояние:
+ * если ордер терминален / уже в целевом статусе / исчез — идемпотентный no-op
+ * (Ok, БЕЗ release/publish); иначе Err. Резервация освобождается только после
+ * успешного CAS save — значит fill её потребить не успел.
  *
  * @example
  * ```typescript
@@ -89,8 +92,15 @@ export class UpdateOrderStatusUseCase {
     const { update, accountId } = input;
     const orderId: OrderId = update.orderId;
 
-    // Шаг 1: Получить Order
-    const order = await this._deps.orderRepo.get(orderId);
+    // Шаг 1: Получить Order + версию атомарно.
+    // getWithVersion() гарантирует, что version относится к ТОЙ ЖЕ записи,
+    // что и order — раздельные get()+getVersion() содержали yield-окно между
+    // двумя await, где конкурирующая мутация могла бы рассинхронизировать
+    // пару (не потеря данных — CAS save ниже всё равно поймал бы конфликт —
+    // но лишний ложный конфликт под нагрузкой).
+    const snapshot = await this._deps.orderRepo.getWithVersion(orderId);
+    const order = snapshot?.order;
+    const expectedVersion = snapshot?.version ?? 0;
     if (!order) {
       this._logger.warn('Order not found for venue update', {
         orderId: String(orderId),
@@ -155,35 +165,44 @@ export class UpdateOrderStatusUseCase {
 
     const updatedOrder = result.value;
 
-    // Шаг 4: Для venue-initiated отмен — освободить резервацию Portfolio.
-    // Проверяем актуальный статус в orderStateStore (синхронно, без yield) —
-    // защита от concurrent fill: если fill уже применён, резервация потреблена → пропускаем release.
-    if (update.type === 'CANCELLED' || update.type === 'EXPIRED') {
-      const currentStoredOrder = this._deps.orderStateStore.getOrder(orderId);
-      if (currentStoredOrder && currentStoredOrder.status !== updatedOrder.status) {
-        this._logger.debug(
-          'Order status changed during cancel/expire (concurrent fill) — skipping reservation release',
-          { orderId: String(orderId), cancelledStatus: updatedOrder.status, currentStatus: currentStoredOrder.status },
-        );
-      } else {
-        this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
-      }
-    }
-
-    // Шаг 5: Сохранить обновлённый Order
+    // Шаг 4: CAS-сохранение обновлённого Order.
+    // Конфликт версии = конкурирующая мутация (например, fill через saveSync)
+    // успела между чтением версии и записью — резервацию НЕ трогаем и события
+    // НЕ публикуем, вместо этого перечитываем актуальное состояние.
     const events = updatedOrder.pullEvents();
-    try {
-      await this._deps.orderRepo.save(updatedOrder);
-    } catch (err) {
-      this._logger.error('Failed to save order after venue update', {
+    const saveResult = await this._deps.orderRepo.save(updatedOrder, expectedVersion);
+    if (!saveResult.ok) {
+      const latest = await this._deps.orderRepo.get(orderId);
+      if (!latest || latest.status === updatedOrder.status || latest.isTerminal) {
+        // Ордер исчез (cleanup), уже в целевом статусе (дубль-событие) или
+        // терминален (конкурирующий fill/cancel обработал его первым) —
+        // идемпотентный no-op; резервация обработана той мутацией.
+        this._logger.warn('Order version conflict during venue update — latest state already settled, no-op', {
+          orderId: String(orderId),
+          updateType: update.type,
+          latestStatus: latest?.status,
+        });
+        return Ok(undefined);
+      }
+      this._logger.error('Order version conflict during venue update', {
         orderId: String(orderId),
         updateType: update.type,
-        err: err instanceof Error ? err : new Error(String(err)),
+        expected: saveResult.error.expected,
+        actual: saveResult.error.actual,
+        latestStatus: latest.status,
       });
       return Err(new TradingError(
-        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { orderId: String(orderId) } },
+        `Order version conflict during venue update: ${saveResult.error.message}`,
+        { context: { orderId: String(orderId), updateType: update.type, latestStatus: latest.status } },
       ));
+    }
+
+    // Шаг 5: Для venue-initiated отмен — освободить резервацию Portfolio.
+    // ТОЛЬКО после успешного CAS save: успех гарантирует, что между чтением
+    // версии и записью не было конкурирующего fill (saveSync инкрементит
+    // версию → был бы конфликт), т.е. резервация ещё не потреблена.
+    if (update.type === 'CANCELLED' || update.type === 'EXPIRED') {
+      this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
     }
 
     // Шаг 6: Опубликовать OrderEvent[]

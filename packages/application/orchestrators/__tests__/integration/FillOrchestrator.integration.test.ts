@@ -201,7 +201,7 @@ describe('FillOrchestrator (integration)', () => {
 
   it('FILL_RECEIVED → вся цепочка: Order FILLED, ORDER_FILLED опубликован', async () => {
     // Arrange
-    await orderRepo.save(makeOpenOrder());
+    await orderRepo.save(makeOpenOrder(), 0);
     portfolioStore.save(makePortfolio(), 0);
 
     const fill = makeFill(asFillId('fill-orch-001')!);
@@ -229,7 +229,7 @@ describe('FillOrchestrator (integration)', () => {
 
   it('Дублирующий FILL_RECEIVED → ORDER_FILLED опубликован ровно один раз', async () => {
     // Arrange
-    await orderRepo.save(makeOpenOrder());
+    await orderRepo.save(makeOpenOrder(), 0);
     portfolioStore.save(makePortfolio(), 0);
 
     const fill = makeFill(asFillId('fill-orch-dup-001')!);
@@ -264,7 +264,7 @@ describe('FillOrchestrator (integration)', () => {
     const unknownOrderId = asOrderId('order-unknown-99')!;
     const knownOrderId = asOrderId('order-known-01')!;
 
-    await orderRepo.save(makeOpenOrder(knownOrderId));
+    await orderRepo.save(makeOpenOrder(knownOrderId), 0);
     portfolioStore.save(makePortfolio(), 0);
 
     const fillUnknown = makeFill(asFillId('fill-unknown-001')!, unknownOrderId);

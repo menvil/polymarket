@@ -292,6 +292,12 @@ export class ProcessFillUseCase {
     // Синхронно сохранить обновлённый Order (terminal = true, если FILLED)
     // После этой строки любой читатель IOrderStateStore увидит ордер как FILED/terminal.
     // CancelOrderUseCase: if (order.isTerminal) return Ok(undefined) — пропустит cancel.
+    //
+    // TODO: replace saveSync with CAS/UnitOfWork; saveSync intentionally bypasses
+    // repository CAS to preserve current no-yield fill/cancel race fix.
+    // saveSync при этом ИНКРЕМЕНТИТ версию записи — конкурирующий CAS save
+    // (CancelOrderUseCase/UpdateOrderStatusUseCase) со stale-версией корректно
+    // получит VersionConflictError и не перетрёт применённый fill.
     this._deps.orderStateStore.saveSync(updatedOrder);
 
     // Обновить Portfolio (sync)

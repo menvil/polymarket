@@ -37,8 +37,19 @@ import type { OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import type { OrderStatus } from '@polymarket/order';
 import type { StrategyScheduler } from './StrategyScheduler.js';
 import type { ExecutionEngine } from './ExecutionEngine.js';
+
+/**
+ * Терминальные статусы Order — только в них cleanup-удаление разрешено.
+ *
+ * @remarks
+ * Локальная копия (type-only импорт `@polymarket/order`): пакет strategy
+ * не имеет runtime-зависимости от order entity, поэтому `TERMINAL_STATUSES`
+ * оттуда импортировать нельзя.
+ */
+const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'];
 
 // ── Публичные типы ─────────────────────────────────────────
 
@@ -203,16 +214,27 @@ export class OrderEventBridge {
   }
 
   /**
-   * Удаляет терминальный ордер из репозитория.
+   * Удаляет терминальный ордер из репозитория (условно, по статусу).
    *
    * @param orderId - ID ордера для удаления
    *
    * @remarks
    * Best-effort: ошибки логируются, но не прерывают обработку.
+   * Использует `deleteIfState()` вместо безусловного delete — если ордер
+   * успел вернуться в не-терминальный статус (гонка событий) или был
+   * перезаписан более свежим состоянием, удаление не выполняется и
+   * логируется warning вместо молчаливой потери актуального ордера.
+   * `NOT_FOUND` — идемпотентный no-op (ордер уже удалён другим событием).
    */
   private async _cleanupOrder(orderId: OrderId): Promise<void> {
     try {
-      await this._deps.orderRepo.delete(orderId);
+      const result = await this._deps.orderRepo.deleteIfState(orderId, TERMINAL_ORDER_STATUSES);
+      if (!result.ok) {
+        this._logger.warn('OrderEventBridge: skipping cleanup — order not in terminal state', {
+          orderId: String(orderId),
+          actualState: result.error.actualState,
+        });
+      }
     } catch (err) {
       this._logger.error('OrderEventBridge: failed to delete terminal order', {
         orderId: String(orderId),

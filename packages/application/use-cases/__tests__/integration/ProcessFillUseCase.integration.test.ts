@@ -250,7 +250,7 @@ describe('ProcessFillUseCase (integration)', () => {
   it('BUY fill happy path: Order → FILLED, Ledger обновлён, событие опубликовано', async () => {
     // Arrange
     const order = makeOpenOrder();
-    await orderRepo.save(order);
+    await orderRepo.save(order, 0);
     portfolioStore.save(makePortfolio(), 0);
 
     const published: ApplicationEvent[] = [];
@@ -283,7 +283,7 @@ describe('ProcessFillUseCase (integration)', () => {
   it('Idempotency: повторный fill → Ok без изменений в Order и Ledger', async () => {
     // Arrange
     const order = makeOpenOrder();
-    await orderRepo.save(order);
+    await orderRepo.save(order, 0);
     portfolioStore.save(makePortfolio(), 0);
 
     const useCase = new ProcessFillUseCase(deps);
@@ -320,7 +320,7 @@ describe('ProcessFillUseCase (integration)', () => {
     // Arrange: Order size=100, Portfolio reserved=100 USDC (хватит на оба fill)
     const orderId = asOrderId('order-partial-001')!;
     const order = makeOpenOrder(orderId, Quantity.of(new Decimal('100')));
-    await orderRepo.save(order);
+    await orderRepo.save(order, 0);
     portfolioStore.save(makePortfolio(new Decimal('900'), new Decimal('100')), 0);
 
     const useCase = new ProcessFillUseCase(deps);
@@ -395,7 +395,7 @@ describe('ProcessFillUseCase (integration)', () => {
   it('Portfolio не найден → возвращает Err с сообщением Portfolio not found', async () => {
     // Arrange: order есть, portfolioStore пуст
     const order = makeOpenOrder();
-    await orderRepo.save(order);
+    await orderRepo.save(order, 0);
     // portfolioStore остаётся пустым
     const fill = makeFill();
 

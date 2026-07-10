@@ -48,7 +48,7 @@ describe('InMemoryOrderRepository', () => {
   describe('IOrderRepository (async)', () => {
     it('should save and get order', async () => {
       const order = createOrder({ id: 'order-1' });
-      await repo.save(order);
+      await repo.save(order, 0);
 
       const found = await repo.get(order.id);
       expect(found).toBe(order);
@@ -58,11 +58,12 @@ describe('InMemoryOrderRepository', () => {
       expect(await repo.get(asOrderId('unknown')!)).toBeUndefined();
     });
 
-    it('should delete order', async () => {
+    it('should delete order via deleteIfVersion', async () => {
       const order = createOrder({ id: 'order-1' });
-      await repo.save(order);
-      await repo.delete(order.id);
+      await repo.save(order, 0);
+      const result = await repo.deleteIfVersion(order.id, 1);
 
+      expect(result.ok).toBe(true);
       expect(await repo.get(order.id)).toBeUndefined();
     });
 
@@ -70,9 +71,9 @@ describe('InMemoryOrderRepository', () => {
       const order1 = createOrder({ id: 'order-1', strategyId: 'strat-1' });
       const order2 = createOrder({ id: 'order-2', strategyId: 'strat-1' });
       const order3 = createOrder({ id: 'order-3', strategyId: 'strat-2' });
-      await repo.save(order1);
-      await repo.save(order2);
-      await repo.save(order3);
+      await repo.save(order1, 0);
+      await repo.save(order2, 0);
+      await repo.save(order3, 0);
 
       const strat1Orders = await repo.getByStrategyId('strat-1');
       expect(strat1Orders).toHaveLength(2);
@@ -81,8 +82,8 @@ describe('InMemoryOrderRepository', () => {
     it('should countByStrategyId', async () => {
       const order1 = createOrder({ id: 'order-1', strategyId: 'strat-1' });
       const order2 = createOrder({ id: 'order-2', strategyId: 'strat-1' });
-      await repo.save(order1);
-      await repo.save(order2);
+      await repo.save(order1, 0);
+      await repo.save(order2, 0);
 
       expect(await repo.countByStrategyId('strat-1')).toBe(2);
       expect(await repo.countByStrategyId('strat-2')).toBe(0);
@@ -90,8 +91,8 @@ describe('InMemoryOrderRepository', () => {
     });
 
     it('should getAll', async () => {
-      await repo.save(createOrder({ id: 'order-1' }));
-      await repo.save(createOrder({ id: 'order-2' }));
+      await repo.save(createOrder({ id: 'order-1' }), 0);
+      await repo.save(createOrder({ id: 'order-2' }), 0);
 
       const all = await repo.getAll();
       expect(all).toHaveLength(2);
@@ -105,9 +106,9 @@ describe('InMemoryOrderRepository', () => {
       const order1 = createOrder({ id: 'order-1', strategyId: 'strat-1' });
       const order2 = createOrder({ id: 'order-2', strategyId: 'strat-1' });
       const order3 = createOrder({ id: 'order-3', strategyId: 'strat-2' });
-      await repo.save(order1);
-      await repo.save(order2);
-      await repo.save(order3);
+      await repo.save(order1, 0);
+      await repo.save(order2, 0);
+      await repo.save(order3, 0);
 
       // Sync call — no await
       const orders = repo.getOpenOrders('strat-1');
@@ -126,9 +127,9 @@ describe('InMemoryOrderRepository', () => {
       const order1 = createOrder({ id: 'order-1', strategyId: 'strat-1', asset: ASSET_1 });
       const order2 = createOrder({ id: 'order-2', strategyId: 'strat-1', asset: ASSET_1 });
       const order3 = createOrder({ id: 'order-3', strategyId: 'strat-2', asset: ASSET_1 });
-      await repo.save(order1);
-      await repo.save(order2);
-      await repo.save(order3);
+      await repo.save(order1, 0);
+      await repo.save(order2, 0);
+      await repo.save(order3, 0);
 
       // getOpenOrdersByInstrument фильтрует по String(order.asset) === String(instrumentId)
       const instrumentId = String(ASSET_1) as unknown as InstrumentId;
@@ -139,7 +140,7 @@ describe('InMemoryOrderRepository', () => {
     it('should getOpenOrdersByInstrument — фильтрация по инструменту', async () => {
       // order1 на одном asset, order2 на другом
       const order1 = createOrder({ id: 'order-1', strategyId: 'strat-1', asset: ASSET_1 });
-      await repo.save(order1);
+      await repo.save(order1, 0);
 
       // InstrumentId не совпадает с asset order1
       const orders = repo.getOpenOrdersByInstrument('strat-1', INSTRUMENT_2);
@@ -148,7 +149,7 @@ describe('InMemoryOrderRepository', () => {
 
     it('should getOrder sync', async () => {
       const order = createOrder({ id: 'order-1' });
-      await repo.save(order);
+      await repo.save(order, 0);
 
       // Sync call
       const found = repo.getOrder(order.id);
@@ -260,13 +261,13 @@ describe('InMemoryOrderRepository', () => {
   describe('utilities', () => {
     it('should report size', async () => {
       expect(repo.size).toBe(0);
-      await repo.save(createOrder({ id: 'order-1' }));
+      await repo.save(createOrder({ id: 'order-1' }), 0);
       expect(repo.size).toBe(1);
     });
 
     it('should clear all orders', async () => {
-      await repo.save(createOrder({ id: 'order-1' }));
-      await repo.save(createOrder({ id: 'order-2' }));
+      await repo.save(createOrder({ id: 'order-1' }), 0);
+      await repo.save(createOrder({ id: 'order-2' }), 0);
       repo.clear();
       expect(repo.size).toBe(0);
       expect(repo.getOpenOrders('strat-1')).toHaveLength(0);

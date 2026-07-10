@@ -2,12 +2,17 @@
  * InMemoryOrderRepository — хранилище ордеров в памяти для бектестирования.
  *
  * @remarks
- * Реализует интерфейсы `IOrderRepository` (async) и `IOrderStateStore` (sync)
+ * Реализует интерфейсы `IOrderRepository` (async, CAS) и `IOrderStateStore` (sync)
  * на основе `Map`.
  * Используется в `BacktestEngine` как замена Redis/Postgres хранилища.
  *
  * ### Особенности:
  * - Все операции синхронны под капотом, обёрнуты в Promise для совместимости с IOrderRepository.
+ * - **Optimistic concurrency (CAS)**: каждая запись хранится как `OrderRecord`
+ *   с монотонно растущей версией. `save(order, expectedVersion)` и
+ *   `deleteIfVersion()` — условные; stale write возвращает `Err(VersionConflictError)`
+ *   и не изменяет хранимую запись. Новый ордер сохраняется с `expectedVersion=0`.
+ * - `deleteIfState()` — условное удаление по статусу (для cleanup терминальных ордеров).
  * - `IOrderStateStore` — синхронные методы для StrategyScheduler (без async overhead).
  * - `getByStrategyId()` выполняет линейный поиск O(n) — приемлемо для бектеста.
  * - `countByStrategyId()` считает только активные (не терминальные) ордера.
@@ -16,33 +21,55 @@
  * @example
  * ```typescript
  * const repo = new InMemoryOrderRepository();
- * await repo.save(order);
+ * const saved = await repo.save(order, 0); // новый ордер → expectedVersion=0
+ * if (!saved.ok) throw saved.error;
  *
  * const found = await repo.get(order.id);
  * console.log(found?.id); // order.id
  *
- * const strategyOrders = await repo.getByStrategyId('strategy-1');
+ * const version = await repo.getVersion(order.id); // 1
+ * const updated = await repo.save(mutatedOrder, version);
  * ```
  */
-import type { Order } from '@polymarket/order';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import type { Order, OrderStatus } from '@polymarket/order';
 import type { OrderId, MarketId, InstrumentId, FillId } from '@polymarket/ids';
 import { assetIdToInstrumentId } from '@polymarket/ids';
-import type { IOrderRepository, IOrderStateStore, IMarketCatalog, InFlightFill } from '@polymarket/ports';
-import { pendingMatchFillId } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IOrderStateStore,
+  IMarketCatalog,
+  InFlightFill,
+  DeleteOrderResult,
+} from '@polymarket/ports';
+import { pendingMatchFillId, VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
+
+/**
+ * Запись хранилища: Order + версия для optimistic concurrency.
+ *
+ * @remarks
+ * Версия монотонно растёт при каждой записи (CAS `save` и `saveSync`).
+ * Первое сохранение даёт version=1; отсутствующий ордер имеет версию 0.
+ */
+interface OrderRecord {
+  readonly order: Order;
+  readonly version: number;
+}
 
 /**
  * In-memory реализация хранилища Order агрегатов.
  *
  * @remarks
- * Хранит ордера в `Map<OrderId, Order>`.
+ * Хранит ордера в `Map<OrderId, OrderRecord>` (Order + версия).
  * Реализует оба интерфейса:
- * - `IOrderRepository` — async для use-cases и handlers
+ * - `IOrderRepository` — async CAS API для use-cases и handlers
  * - `IOrderStateStore` — sync для StrategyScheduler
  * Не потокобезопасна (Node.js single-thread достаточно для бектеста).
  */
 export class InMemoryOrderRepository implements IOrderRepository, IOrderStateStore {
-  /** Внутреннее хранилище: OrderId → Order */
-  private readonly _store = new Map<OrderId, Order>();
+  /** Внутреннее хранилище: OrderId → OrderRecord (Order + версия) */
+  private readonly _store = new Map<OrderId, OrderRecord>();
 
   /**
    * @param _marketCatalog - Опциональный каталог инструментов для честной реализации
@@ -98,40 +125,160 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * ```
    */
   public async get(orderId: OrderId): Promise<Order | undefined> {
-    return this._store.get(orderId);
+    return this._store.get(orderId)?.order;
   }
 
   /**
-   * Сохраняет (или перезаписывает) Order агрегат.
+   * Возвращает текущую версию записи Order.
    *
-   * @param order - Order для сохранения
-   * @returns Promise<void>
-   *
-   * @example
-   * ```typescript
-   * await repo.save(order);
-   * ```
-   */
-  public async save(order: Order): Promise<void> {
-    this._store.set(order.id, order);
-  }
-
-  /**
-   * Удаляет Order из хранилища.
+   * @param orderId - ID ордера
+   * @returns Promise с версией записи; `0` — если Order отсутствует
    *
    * @remarks
-   * Безопасен при вызове с несуществующим ID (no-op).
-   *
-   * @param orderId - ID ордера для удаления
-   * @returns Promise<void>
+   * Читается ПЕРЕД мутацией Order и передаётся в `save()` как `expectedVersion`.
    *
    * @example
    * ```typescript
-   * await repo.delete(orderId);
+   * const version = await repo.getVersion(orderId); // 0 для нового ордера
    * ```
    */
-  public async delete(orderId: OrderId): Promise<void> {
+  public async getVersion(orderId: OrderId): Promise<number> {
+    return this._store.get(orderId)?.version ?? 0;
+  }
+
+  /**
+   * Атомарно возвращает Order вместе с его текущей версией.
+   *
+   * @param orderId - ID ордера
+   * @returns Promise с `{ order, version }` или undefined, если Order отсутствует
+   *
+   * @remarks
+   * Предпочтительнее раздельных `get()` + `getVersion()` перед CAS-мутацией:
+   * гарантирует, что `version` относится к ТОЙ ЖЕ записи (единое чтение из
+   * `_store`, без yield-окна между двумя await, в котором конкурирующая
+   * мутация могла бы рассинхронизировать пару).
+   *
+   * @example
+   * ```typescript
+   * const snapshot = await repo.getWithVersion(orderId);
+   * if (!snapshot) return Ok(undefined);
+   * const cancelled = snapshot.order.cancel();
+   * if (cancelled.ok) await repo.save(cancelled.value, snapshot.version);
+   * ```
+   */
+  public async getWithVersion(
+    orderId: OrderId,
+  ): Promise<{ readonly order: Order; readonly version: number } | undefined> {
+    const record = this._store.get(orderId);
+    return record ? { order: record.order, version: record.version } : undefined;
+  }
+
+  /**
+   * CAS-сохранение Order: записывает только при совпадении версии.
+   *
+   * @param order - Order для сохранения
+   * @param expectedVersion - Ожидаемая текущая версия записи
+   *   (`0` для нового ордера; иначе значение из `getVersion()`)
+   * @returns Ok(void) при успехе; Err(VersionConflictError) при stale save
+   *
+   * @remarks
+   * При конфликте хранимый Order НЕ изменяется. Повторный save с тем же
+   * `expectedVersion` после успешного save конфликтует (версия уже выросла).
+   *
+   * @example
+   * ```typescript
+   * const result = await repo.save(order, 0); // новый ордер
+   * if (!result.ok) {
+   *   // stale save — перечитать get()/getVersion() и решить
+   * }
+   * ```
+   */
+  public async save(
+    order: Order,
+    expectedVersion: number,
+  ): Promise<Result<void, VersionConflictError>> {
+    const existing = this._store.get(order.id);
+    const currentVersion = existing?.version ?? 0;
+
+    if (currentVersion !== expectedVersion) {
+      return Err(new VersionConflictError(String(order.id), expectedVersion, currentVersion));
+    }
+
+    this._store.set(order.id, {
+      order,
+      version: currentVersion + 1,
+    });
+
+    return Ok(undefined);
+  }
+
+  /**
+   * Условное удаление Order по версии.
+   *
+   * @param orderId - ID ордера для удаления
+   * @param expectedVersion - Ожидаемая текущая версия записи
+   * @returns Ok({status:'DELETED'}) — удалён; Ok({status:'NOT_FOUND'}) —
+   *   отсутствовал при `expectedVersion=0`; Err(VersionConflictError) —
+   *   версия не совпала (запись не изменяется)
+   *
+   * @example
+   * ```typescript
+   * const version = await repo.getVersion(orderId);
+   * const result = await repo.deleteIfVersion(orderId, version);
+   * ```
+   */
+  public async deleteIfVersion(
+    orderId: OrderId,
+    expectedVersion: number,
+  ): Promise<Result<DeleteOrderResult, VersionConflictError>> {
+    const existing = this._store.get(orderId);
+    const currentVersion = existing?.version ?? 0;
+
+    if (currentVersion !== expectedVersion) {
+      return Err(new VersionConflictError(String(orderId), expectedVersion, currentVersion));
+    }
+
+    if (!existing) {
+      // expectedVersion === 0 и ордера нет — идемпотентный no-op.
+      return Ok({ status: 'NOT_FOUND' });
+    }
+
     this._store.delete(orderId);
+    return Ok({ status: 'DELETED' });
+  }
+
+  /**
+   * Условное удаление Order по статусу (а не по версии).
+   *
+   * @param orderId - ID ордера для удаления
+   * @param allowedStates - Статусы, в которых удаление разрешено
+   * @returns Ok({status:'DELETED'}) — удалён; Ok({status:'NOT_FOUND'}) —
+   *   отсутствовал; Err(OrderStateConflictError) — статус вне allowedStates
+   *
+   * @remarks
+   * Для cleanup-путей (OrderEventBridge удаляет терминальные ордера): важна
+   * инвариантность «удаляем только терминальный ордер», а не конкретная версия.
+   *
+   * @example
+   * ```typescript
+   * const result = await repo.deleteIfState(orderId, ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED']);
+   * ```
+   */
+  public async deleteIfState(
+    orderId: OrderId,
+    allowedStates: readonly OrderStatus[],
+  ): Promise<Result<DeleteOrderResult, OrderStateConflictError>> {
+    const existing = this._store.get(orderId);
+    if (!existing) {
+      return Ok({ status: 'NOT_FOUND' });
+    }
+
+    if (!allowedStates.includes(existing.order.status)) {
+      return Err(new OrderStateConflictError(orderId, allowedStates, existing.order.status));
+    }
+
+    this._store.delete(orderId);
+    return Ok({ status: 'DELETED' });
   }
 
   /**
@@ -159,9 +306,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public async getByStrategyId(strategyId: string): Promise<readonly Order[]> {
     const result: Order[] = [];
-    for (const order of this._store.values()) {
-      if (order.strategyId === strategyId && !order.isTerminal) {
-        result.push(order);
+    for (const record of this._store.values()) {
+      if (record.order.strategyId === strategyId && !record.order.isTerminal) {
+        result.push(record.order);
       }
     }
     return result;
@@ -185,7 +332,8 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public async countByStrategyId(strategyId?: string): Promise<number> {
     let count = 0;
-    for (const order of this._store.values()) {
+    for (const record of this._store.values()) {
+      const order = record.order;
       // Считаем только активные (не терминальные) ордера
       if (order.isTerminal) continue;
       if (strategyId !== undefined && order.strategyId !== strategyId) continue;
@@ -199,13 +347,17 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   }
 
   /**
-   * Возвращает все ордера из хранилища.
+   * Возвращает ВСЕ ордера из хранилища — включая терминальные, ещё не удалённые
+   * cleanup-путём (`deleteIfState`/`deleteIfVersion`).
    *
    * @remarks
+   * НЕ фильтрует по статусу — в отличие от `getByStrategyId()`/`getByMarketId()`.
+   * OrderReconciler и итоговая отчётность бектеста (`runMultiMarketBacktest.ts`)
+   * читают именно этот полный снимок хранилища, а не только открытые ордера.
    * Возвращает snapshot значений Map на момент вызова.
    * Изменения в Map после вызова не отражаются в возвращённом массиве.
    *
-   * @returns Promise с readonly массивом всех ордеров
+   * @returns Promise с readonly массивом всех сохранённых ордеров
    *
    * @example
    * ```typescript
@@ -214,13 +366,16 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * ```
    */
   public async getAll(): Promise<readonly Order[]> {
-    return [...this._store.values()];
+    return [...this._store.values()].map((record) => record.order);
   }
 
   /**
-   * Возвращает все ордера указанного рынка.
+   * Возвращает все ОТКРЫТЫЕ (не терминальные) ордера указанного рынка.
    *
    * @remarks
+   * Фильтрует по `!order.isTerminal` независимо от того, каким путём реализация
+   * искала ордера рынка (marketCatalog или legacy-конвенция) — семантика
+   * «открытые» должна совпадать с `getByStrategyId()`.
    * Порт `IOrderRepository.getByMarketId()` требует поиска по РЕАЛЬНОМУ marketId
    * ордера, а не по конвенции `strategyId == String(marketId)` (`Order` не хранит
    * `marketId` напрямую — только `asset: AssetId`).
@@ -239,7 +394,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * пропустит часть ордеров.
    *
    * @param marketId - ID рынка
-   * @returns Promise с readonly массивом ордеров рынка
+   * @returns Promise с readonly массивом открытых ордеров рынка
    *
    * @example
    * ```typescript
@@ -248,6 +403,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public async getByMarketId(marketId: MarketId): Promise<readonly Order[]> {
     if (!this._marketCatalog) {
+      // getByStrategyId() уже фильтрует !isTerminal — семантика совпадает.
       return this.getByStrategyId(String(marketId));
     }
 
@@ -258,7 +414,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
     const instrumentIds = new Set(instruments.map((i) => i.instrumentId));
 
     const result: Order[] = [];
-    for (const order of this._store.values()) {
+    for (const record of this._store.values()) {
+      const order = record.order;
+      if (order.isTerminal) continue;
       const orderInstrumentId = assetIdToInstrumentId(order.asset);
       if (orderInstrumentId && instrumentIds.has(orderInstrumentId)) {
         result.push(order);
@@ -282,9 +440,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public getOpenOrders(strategyId: string): readonly Order[] {
     const result: Order[] = [];
-    for (const order of this._store.values()) {
-      if (order.strategyId === strategyId && !order.isTerminal) {
-        result.push(order);
+    for (const record of this._store.values()) {
+      if (record.order.strategyId === strategyId && !record.order.isTerminal) {
+        result.push(record.order);
       }
     }
     return result;
@@ -303,7 +461,8 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   public getOpenOrdersByInstrument(strategyId: string, instrumentId: InstrumentId): readonly Order[] {
     const instrumentStr = String(instrumentId);
     const result: Order[] = [];
-    for (const order of this._store.values()) {
+    for (const record of this._store.values()) {
+      const order = record.order;
       if (order.isTerminal) continue;
       // AssetId — объект ({type, tokenId}), поэтому String() даёт "[object Object]".
       // Для CTF-токенов Polymarket tokenId совпадает с InstrumentId.
@@ -325,7 +484,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * @returns Order или undefined
    */
   public getOrder(orderId: OrderId): Order | undefined {
-    return this._store.get(orderId);
+    return this._store.get(orderId)?.order;
   }
 
   /**
@@ -335,11 +494,22 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    *
    * @remarks
    * Используется в ProcessFillUseCase для устранения race condition:
-   * ордер помечается как FILED синхронно до обновления Portfolio,
+   * ордер помечается как FILLED синхронно до обновления Portfolio,
    * что исключает yield-окно между двумя state-мутациями.
+   *
+   * ВАЖНО: saveSync НАМЕРЕННО обходит CAS-проверку (нет expectedVersion),
+   * но версию записи инкрементирует — конкурирующий CAS `save()` со stale
+   * версией после saveSync корректно получит VersionConflictError.
+   * TODO: устранить saveSync отдельным Unit of Work/CAS refactor; сейчас он
+   * нужен только для существующего no-yield fill/cancel race fix в
+   * ProcessFillUseCase.
    */
   public saveSync(order: Order): void {
-    this._store.set(order.id, order);
+    const existing = this._store.get(order.id);
+    this._store.set(order.id, {
+      order,
+      version: (existing?.version ?? 0) + 1,
+    });
   }
 
   /**
@@ -430,8 +600,8 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    *
    * @remarks
    * Используется в тестах для сброса состояния между тестами.
-   * Очищает не только `_store`, но и все fillId-scoped индексы
-   * (matched fills, in-flight fills) — иначе `hasMatchedFills()`/
+   * Очищает не только `_store` (ордера + версии), но и все fillId-scoped
+   * индексы (matched fills, in-flight fills) — иначе `hasMatchedFills()`/
    * `hasInFlightFills()` продолжат возвращать состояние из предыдущего теста.
    *
    * @example
