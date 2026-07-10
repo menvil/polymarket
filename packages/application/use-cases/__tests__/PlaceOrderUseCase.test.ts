@@ -6,6 +6,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IExchangeClient, IPortfolioStore, IOrderStateStore } from '@polymarket/ports';
+import { VersionConflictError } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
@@ -89,8 +90,11 @@ function makePortfolioStore(portfolio?: Portfolio): IPortfolioStore {
 function makeOrderRepo(): IOrderRepository {
   return {
     get: jest.fn().mockImplementation(() => Promise.resolve(undefined)) as unknown as IOrderRepository['get'],
-    save: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['save'],
-    delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
+    getVersion: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['getVersion'],
+    getWithVersion: jest.fn().mockImplementation(() => Promise.resolve(undefined)) as unknown as IOrderRepository['getWithVersion'],
+    save: jest.fn().mockImplementation(() => Promise.resolve(Ok(undefined))) as unknown as IOrderRepository['save'],
+    deleteIfVersion: jest.fn().mockImplementation(() => Promise.resolve(Ok({ status: 'DELETED' }))) as unknown as IOrderRepository['deleteIfVersion'],
+    deleteIfState: jest.fn().mockImplementation(() => Promise.resolve(Ok({ status: 'DELETED' }))) as unknown as IOrderRepository['deleteIfState'],
     getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
     countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
     getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
@@ -104,7 +108,7 @@ function makeExchangeClient(orderId?: OrderId): IExchangeClient {
     submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
       Ok({ orderId: id, immediatelyMatched: false, effectiveSize: makeQty('100') }),
     ),
-    cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+    cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
     getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
     getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
   };
@@ -246,7 +250,7 @@ describe('PlaceOrderUseCase', () => {
       submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
         Err(new TradingError('Exchange unavailable') as never),
       ),
-      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
       getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
       getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
@@ -260,13 +264,117 @@ describe('PlaceOrderUseCase', () => {
       submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
         Err(new TradingError('Exchange unavailable') as never),
       ),
-      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
       getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
       getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
     const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: failingExchange });
     await useCase.execute(makeInput());
     expect(orderRepo.save).not.toHaveBeenCalled();
+  });
+
+  // ── CAS конфликт при сохранении ордера ───────────────────────────────────
+
+  describe('save version conflict (CAS)', () => {
+    let storePortfolio: Portfolio;
+
+    beforeEach(() => {
+      storePortfolio = makePortfolio();
+      portfolioStore = makePortfolioStore(storePortfolio);
+      const portfolioService = new PortfolioService(portfolioStore, logger);
+      (orderRepo.save as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Err(new VersionConflictError('exchange-order-1', 0, 1))),
+      );
+      deps = { ...deps, portfolioService, orderRepo };
+    });
+
+    it('возвращает Err и НЕ публикует события', async () => {
+      const useCase = new PlaceOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(TradingError);
+        expect(result.error.message).toMatch(/version conflict/i);
+      }
+      expect(eventBus.publishAll).not.toHaveBeenCalled();
+    });
+
+    it('best-effort отменяет venue-ордер и откатывает резервацию', async () => {
+      const useCase = new PlaceOrderUseCase(deps);
+      await useCase.execute(makeInput());
+
+      expect(exchangeClient.cancelOrder).toHaveBeenCalledWith('exchange-order-1');
+      expect(storePortfolio.releaseReservation).toHaveBeenCalled();
+    });
+
+    it('логирует manual reconciliation если venue-отмена падает', async () => {
+      (exchangeClient.cancelOrder as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Err(new TradingError('cancel failed'))),
+      );
+      const useCase = new PlaceOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/manual reconciliation/i),
+        expect.any(Object),
+      );
+    });
+
+    // ── Rollback: обработка CancelOrderResult (без парсинга текста) ────────
+
+    it('rollback cancel Ok({status: CANCELLED}) — без rollback-специфичного error-лога', async () => {
+      (exchangeClient.cancelOrder as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Ok({ status: 'CANCELLED' })),
+      );
+      const useCase = new PlaceOrderUseCase(deps);
+      await useCase.execute(makeInput());
+
+      expect(logger.error).not.toHaveBeenCalledWith(
+        expect.stringMatching(/^Rollback cancel/),
+        expect.any(Object),
+      );
+    });
+
+    it('rollback cancel Ok({status: ALREADY_FILLED}) — логирует manual reconciliation/fill expected', async () => {
+      (exchangeClient.cancelOrder as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Ok({ status: 'ALREADY_FILLED', reason: 'matched' })),
+      );
+      const useCase = new PlaceOrderUseCase(deps);
+      await useCase.execute(makeInput());
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Rollback cancel failed — order already filled on exchange, manual reconciliation/fill expected',
+        expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
+      );
+    });
+
+    it('rollback cancel Ok({status: UNKNOWN_RETRY_NEEDED}) — логирует manual reconciliation required', async () => {
+      (exchangeClient.cancelOrder as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'weird' })),
+      );
+      const useCase = new PlaceOrderUseCase(deps);
+      await useCase.execute(makeInput());
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Rollback cancel outcome unclear — venue order may still be live, manual reconciliation required',
+        expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
+      );
+    });
+
+    it('rollback cancel Err(ExchangeError) — логируется как раньше', async () => {
+      (exchangeClient.cancelOrder as jest.Mock).mockImplementation(() =>
+        Promise.resolve(Err(new TradingError('exchange unreachable'))),
+      );
+      const useCase = new PlaceOrderUseCase(deps);
+      await useCase.execute(makeInput());
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/manual reconciliation/i),
+        expect.objectContaining({ venueOrderId: 'exchange-order-1', error: 'exchange unreachable' }),
+      );
+    });
   });
 
   // ── effectiveSize (адаптер скорректировал size перед отправкой) ────────────
@@ -280,7 +388,7 @@ describe('PlaceOrderUseCase', () => {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
           Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
         ),
-        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
         getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
       };
@@ -309,7 +417,7 @@ describe('PlaceOrderUseCase', () => {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
           Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('37') }),
         ),
-        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined)),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
         getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
       };
@@ -349,7 +457,7 @@ describe('PlaceOrderUseCase', () => {
       const portfolio = makePortfolio();
       const store = makePortfolioStore(portfolio);
       const portfolioService = new PortfolioService(store, logger);
-      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithZeroSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
           Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('0') }),
@@ -374,7 +482,7 @@ describe('PlaceOrderUseCase', () => {
       const portfolio = makePortfolio();
       const store = makePortfolioStore(portfolio);
       const portfolioService = new PortfolioService(store, logger);
-      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithOversizedFill: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
           Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('150') }),
@@ -399,7 +507,7 @@ describe('PlaceOrderUseCase', () => {
       );
       const store = makePortfolioStore(portfolio);
       const portfolioService = new PortfolioService(store, logger);
-      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(undefined));
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithAdjustedSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
           Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),

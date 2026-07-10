@@ -6,9 +6,10 @@
  * а не от конкретных инфраструктурных реализаций.
  *
  * ### Содержимое пакета:
- * - `IOrderRepository` — хранилище Order агрегатов
+ * - `IOrderRepository` — хранилище Order агрегатов с CAS-защитой (optimistic concurrency)
+ * - `DeleteOrderResult` / `OrderStateConflictError` — результат/ошибка условного удаления Order
  * - `IPortfolioStore` — хранилище Portfolio с CAS-защитой
- * - `VersionConflictError` — ошибка конфликта версий (CAS)
+ * - `VersionConflictError` — ошибка конфликта версий (CAS, Portfolio и Order)
  * - `IProcessedFillRepository` — idempotency guard для Fill
  * - `IExchangeClient` / `SubmitOrderParams` / `ExchangeError` — торговый клиент
  * - `OpenOrderSnapshot` / `VenueTradeSnapshot` / `FeeSnapshot` — DTO от биржи
@@ -33,7 +34,8 @@
  * ```
  */
 
-export type { IOrderRepository } from './IOrderRepository.js';
+export type { IOrderRepository, DeleteOrderResult } from './IOrderRepository.js';
+export { OrderStateConflictError } from './IOrderRepository.js';
 export type { IPortfolioStore } from './IPortfolioStore.js';
 export { VersionConflictError } from './VersionConflictError.js';
 export type {
@@ -46,6 +48,7 @@ export type {
   IExchangeClient,
   SubmitOrderParams,
   SubmitOrderResult,
+  CancelOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   VenueTradeStatus,

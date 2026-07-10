@@ -47,6 +47,7 @@ import type {
   PlaceOrderParams,
   OrderResponse,
   FillResponse,
+  CancelOrderExecutionResponse,
 } from '../../ports/IExecutionAdapter.js';
 import type { PolymarketOrderRestClient, TradeResponse } from '../clients/PolymarketOrderRestClient.js';
 import type { PolymarketOrderbookRestClient } from '../clients/PolymarketOrderbookRestClient.js';
@@ -335,12 +336,16 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * Отменить ордер (прямой API-вызов + публикация события)
    *
    * @param orderId - Идентификатор ордера для отмены
-   * @throws {ApiError} При ошибке API-вызова
+   * @returns Структурированный ответ venue (`canceled` / `not_canceled`)
+   * @throws {ApiError} При реальной HTTP/API ошибке
    *
    * @remarks
-   * После успешного API call публикует OrderCancelled event
+   * Публикует OrderCancelled event ТОЛЬКО если orderId реально попал в
+   * `response.canceled` — `not_canceled` это business outcome (уже matched,
+   * уже cancelled, not found, ...), а не успешная отмена, и не должен
+   * порождать событие, семантика которого — "ордер был отменён".
    */
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string): Promise<CancelOrderExecutionResponse> {
     // РЕЖИМ СИМУЛЯЦИИ: Пропускаем API вызов, публикуем только событие
     if (this.simulationMode) {
       this.logger.info('Cancelling order (SIMULATION MODE - virtual cancellation)', { orderId });
@@ -361,32 +366,48 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       this.eventBus.publish(envelope);
 
       this.logger.debug('Published OrderCancelled event (SIMULATION MODE)', { orderId });
-      return;
+      return { canceled: [orderId], not_canceled: {} };
     }
 
     // БОЕВОЙ РЕЖИМ: Реальный API вызов
     this.logger.info('Cancelling order via API', { orderId });
 
-    await this.orderClient.cancelOrder(orderId);
+    const response = await this.orderClient.cancelOrder(orderId);
+    const wasCanceled = response.canceled.includes(orderId);
 
-    this.logger.info('Order cancelled successfully', { orderId });
-
-    // Публикуем событие OrderCancelled
-    const orderCancelledEvent: OrderCancelled = {
-      type: 'OrderCancelled',
+    this.logger.info('Order cancel request completed', {
       orderId,
-      reason: 'User requested cancellation',
-      timestamp: new Date(),
-    };
+      canceled: wasCanceled,
+    });
 
-    const envelope = createProductionEnvelope(
-      orderCancelledEvent,
-      this.executionContext
-    );
+    // Публикуем событие OrderCancelled ТОЛЬКО при реальной отмене.
+    // not_canceled — business outcome (already filled/cancelled/not found/unknown),
+    // классификация которого выполняется в PolymarketExchangeClientAdapter, а не событие
+    // "ордер отменён".
+    if (wasCanceled) {
+      const orderCancelledEvent: OrderCancelled = {
+        type: 'OrderCancelled',
+        orderId,
+        reason: 'User requested cancellation',
+        timestamp: new Date(),
+      };
 
-    this.eventBus.publish(envelope);
+      const envelope = createProductionEnvelope(
+        orderCancelledEvent,
+        this.executionContext
+      );
 
-    this.logger.debug('Published OrderCancelled event', { orderId });
+      this.eventBus.publish(envelope);
+
+      this.logger.debug('Published OrderCancelled event', { orderId });
+    } else {
+      this.logger.debug('Skipped OrderCancelled event — order not in canceled response', {
+        orderId,
+        notCanceledReason: response.not_canceled[orderId],
+      });
+    }
+
+    return response;
   }
 
   /**

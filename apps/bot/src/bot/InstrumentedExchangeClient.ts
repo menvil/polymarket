@@ -23,6 +23,7 @@ import type {
   IExchangeClient,
   SubmitOrderParams,
   SubmitOrderResult,
+  CancelOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   ExchangeError,
@@ -101,7 +102,7 @@ export class InstrumentedExchangeClient implements IExchangeClient {
     return result;
   }
 
-  async cancelOrder(orderId: OrderId): Promise<Result<void, ExchangeError>> {
+  async cancelOrder(orderId: OrderId): Promise<Result<CancelOrderResult, ExchangeError>> {
     const start = performance.now();
     const result = await this._inner.cancelOrder(orderId);
     const elapsed = performance.now() - start;

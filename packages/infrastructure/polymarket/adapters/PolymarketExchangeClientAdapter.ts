@@ -45,9 +45,10 @@ import { asOrderId, assetIdToString, isPolymarketCtfToken, asFillId, asMarketId,
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import { calculatePolymarketTakerFee } from '@polymarket/fill';
 import type { Timestamp } from '@polymarket/value-objects';
-import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
+import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, CancelOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
+import type { CancelOrderExecutionResponse } from '../ports/IExecutionAdapter.js';
 import type { PolymarketBalancePolicy } from '../rest/policies/PolymarketBalancePolicy.js';
 
 /**
@@ -182,17 +183,24 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * Отменяет ордер на бирже.
    *
    * @param orderId - ID ордера для отмены
-   * @returns Ok(void) при успехе, Err(ExchangeError) при ошибке
+   * @returns Ok(CancelOrderResult) с бизнес-исходом отмены; Err(ExchangeError) только
+   * при транспортной/API ошибке (executionAdapter.cancelOrder бросил exception)
    *
    * @remarks
-   * Все exceptions из PolymarketExecutionAdapter оборачиваются в ExchangeError.
+   * `not_canceled[orderId]` от venue — это НЕ ошибка, а нормальный business outcome:
+   * маппится в `CancelOrderResult` через `_mapCancelResponse` /
+   * `_classifyCancelRejection`. Err возвращается только если сам HTTP/API вызов упал.
    */
-  public async cancelOrder(orderId: OrderId): Promise<Result<void, ExchangeError>> {
+  public async cancelOrder(orderId: OrderId): Promise<Result<CancelOrderResult, ExchangeError>> {
     try {
-      await this._executionAdapter.cancelOrder(String(orderId));
+      const response = await this._executionAdapter.cancelOrder(String(orderId));
+      const result = this._mapCancelResponse(orderId, response);
 
-      this._logger.info('Order cancelled on exchange', { orderId: String(orderId) });
-      return Ok(undefined);
+      this._logger.info('Order cancel result mapped', {
+        orderId: String(orderId),
+        status: result.status,
+      });
+      return Ok(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Exchange cancelOrder failed', {
@@ -204,6 +212,84 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         { context: { orderId: String(orderId) } },
       ));
     }
+  }
+
+  /**
+   * Маппит сырой venue-ответ на отмену в структурированный CancelOrderResult.
+   *
+   * @param orderId - ID ордера, для которого запрашивалась отмена
+   * @param response - Сырой ответ venue (`canceled` / `not_canceled`)
+   * @returns CancelOrderResult с классифицированным business outcome
+   */
+  private _mapCancelResponse(orderId: OrderId, response: CancelOrderExecutionResponse): CancelOrderResult {
+    const orderIdStr = String(orderId);
+
+    if (response.canceled.includes(orderIdStr)) {
+      return { status: 'CANCELLED' };
+    }
+
+    const reason = response.not_canceled[orderIdStr];
+    if (reason !== undefined) {
+      return this._classifyCancelRejection(reason);
+    }
+
+    return {
+      status: 'UNKNOWN_RETRY_NEEDED',
+      reason: `Order ${orderIdStr} not present in canceled/not_canceled response`,
+    };
+  }
+
+  /**
+   * Классифицирует venue-специфичную причину отказа в отмене.
+   *
+   * @param reason - Текст причины из `not_canceled[orderId]`
+   * @returns CancelOrderResult с классифицированным статусом (ALREADY_FILLED,
+   * ALREADY_CANCELLED, NOT_FOUND или UNKNOWN_RETRY_NEEDED)
+   *
+   * @remarks
+   * Единственное место в кодовой базе, где допустим парсинг текста venue-ошибки —
+   * application layer (`CancelOrderUseCase`) полагается на уже классифицированный
+   * `status` и не видит сырой текст.
+   */
+  private _classifyCancelRejection(reason: string): CancelOrderResult {
+    const lower = reason.toLowerCase();
+
+    if (
+      lower.includes('matched') ||
+      lower.includes('filled') ||
+      lower.includes('executed') ||
+      lower.includes("can't be canceled") ||
+      lower.includes('cannot be canceled')
+    ) {
+      return { status: 'ALREADY_FILLED', reason };
+    }
+
+    // NOT_FOUND проверяется ДО generic already-cancelled — иначе фразы вроде
+    // "order not found, not canceled" ошибочно попали бы в ALREADY_CANCELLED.
+    if (
+      lower.includes('not found') ||
+      lower.includes('does not exist') ||
+      lower.includes('unknown order') ||
+      lower.includes('not exist')
+    ) {
+      return { status: 'NOT_FOUND', reason };
+    }
+
+    // Только точные признаки "уже отменён" — НЕ просто lower.includes('cancelled'),
+    // иначе "not canceled" / "could not be canceled" ошибочно классифицировались бы
+    // как идемпотентный успех, хотя venue фактически сообщил об отказе в отмене.
+    if (
+      lower.includes('already canceled') ||
+      lower.includes('already cancelled') ||
+      lower.includes('previously canceled') ||
+      lower.includes('previously cancelled') ||
+      lower.includes('status canceled') ||
+      lower.includes('status cancelled')
+    ) {
+      return { status: 'ALREADY_CANCELLED', reason };
+    }
+
+    return { status: 'UNKNOWN_RETRY_NEEDED', reason };
   }
 
   /**

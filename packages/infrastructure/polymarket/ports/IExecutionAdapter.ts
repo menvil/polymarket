@@ -45,6 +45,19 @@ export interface FillResponse {
 }
 
 /**
+ * Структурированный ответ venue на запрос отмены ордера.
+ *
+ * @remarks
+ * `canceled` — orderId, успешно отменённые. `not_canceled` — `{ orderId: reason }`
+ * для ордеров, отмена которых была отклонена venue (нормальный business outcome,
+ * НЕ transport-ошибка).
+ */
+export interface CancelOrderExecutionResponse {
+  readonly canceled: readonly string[];
+  readonly not_canceled: Readonly<Record<string, string>>;
+}
+
+/**
  * Интерфейс для исполнения ордеров через биржевой API.
  *
  * @remarks
@@ -52,7 +65,7 @@ export interface FillResponse {
  */
 export interface IExecutionAdapter {
   postOrder(params: PlaceOrderParams): Promise<OrderResponse>;
-  cancelOrder(orderId: string): Promise<void>;
+  cancelOrder(orderId: string): Promise<CancelOrderExecutionResponse>;
   getOpenOrders(tokenId?: string): Promise<OrderResponse[]>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getOrderById(orderId: string): Promise<any>;

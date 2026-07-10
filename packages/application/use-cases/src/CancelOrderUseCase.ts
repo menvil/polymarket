@@ -9,8 +9,11 @@
  * 3. Внутри lock: свежий lookup Order (состояние могло измениться, пока ждали lock).
  * 4. Блокировка отмены, если у ордера есть matched fills ИЛИ у инструмента —
  *    in-flight fills (fill(ы) уже в пути on-chain — отмена вызовет portfolio desync).
- * 5. Отмена Order (order.cancel() → CANCELED + orderRepo.save())
- * 6. Снятие резервации баланса (PortfolioService.releaseReservation)
+ * 5. Отмена Order (order.cancel() → CANCELED + CAS orderRepo.save(order, expectedVersion));
+ *    конфликт версии → перечитать: терминальный/исчезнувший ордер = no-op (Ok),
+ *    иначе Err; резервация при конфликте НЕ освобождается
+ * 6. Снятие резервации баланса (PortfolioService.releaseReservation) — только после
+ *    успешного CAS save
  * 7. Запрос отмены на бирже (exchangeClient.cancelOrder — best effort)
  * 8. Публикация доменных событий
  *
@@ -126,7 +129,14 @@ export class CancelOrderUseCase {
   ): Promise<Result<void, TradingError>> {
     // Свежий lookup — состояние могло измениться, пока ждали lock
     // (например, ProcessFillUseCase уже применил fill и освободил lock).
-    const order = await this._deps.orderRepo.get(input.orderId);
+    // getWithVersion() читает Order и версию атомарно (без yield-окна между
+    // двумя отдельными await) — версия гарантированно относится к ТОЙ ЖЕ
+    // записи, что и order. Раздельные get()+getVersion() не давали такой
+    // гарантии: конкурирующая мутация между ними могла бы вызвать ложный
+    // CAS-конфликт ниже (не потерю данных, но лишний Err/no-op).
+    const snapshot = await this._deps.orderRepo.getWithVersion(input.orderId);
+    const order = snapshot?.order;
+    const expectedVersion = snapshot?.version ?? 0;
     if (!order) {
       this._logger.warn('Order not found for cancellation', { orderId: String(input.orderId) });
       return Err(new TradingError(
@@ -184,27 +194,48 @@ export class CancelOrderUseCase {
       ));
     }
     const cancelledOrder = cancelResult.value;
-    try {
-      await this._deps.orderRepo.save(cancelledOrder);
-    } catch (err) {
-      this._logger.error('Failed to save order after cancel', {
+
+    // CAS save: записываем CANCELED только если никто не мутировал ордер после
+    // чтения версии выше. Конфликт = конкурирующий fill/update успел раньше —
+    // резервацию НЕ трогаем и события НЕ публикуем.
+    const saveResult = await this._deps.orderRepo.save(cancelledOrder, expectedVersion);
+    if (!saveResult.ok) {
+      const latest = await this._deps.orderRepo.get(input.orderId);
+      if (!latest) {
+        // Ордер исчез из репозитория (cleanup терминального ордера) — отменять нечего.
+        this._logger.warn('Order disappeared before cancel save — treating as no-op', {
+          orderId: String(input.orderId),
+        });
+        return Ok(undefined);
+      }
+      if (latest.isTerminal) {
+        // Конкурирующая мутация довела ордер до терминального статуса (fill/cancel/expire).
+        // Резервация уже обработана той мутацией — повторно НЕ освобождаем.
+        this._logger.info('Order reached terminal state concurrently during cancel — no-op', {
+          orderId: String(input.orderId),
+          status: latest.status,
+        });
+        return Ok(undefined);
+      }
+      this._logger.error('Order version conflict during cancel save', {
         orderId: String(input.orderId),
-        err: err instanceof Error ? err : new Error(String(err)),
+        expected: saveResult.error.expected,
+        actual: saveResult.error.actual,
+        latestStatus: latest.status,
       });
       return Err(new TradingError(
-        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { orderId: String(input.orderId) } },
+        `Order version conflict during cancel: ${saveResult.error.message}`,
+        { context: { orderId: String(input.orderId), latestStatus: latest.status } },
       ));
     }
 
-    // Снятие резервации по стороне ордера.
+    // Снятие резервации по стороне ордера — ТОЛЬКО после успешного CAS save.
     //
     // Перед снятием — синхронная проверка актуального статуса (без yield):
-    // `orderRepo.save()` содержит async yield; во время него ProcessFillUseCase
-    // мог выполнить saveSync(FILED) → резервация уже потреблена fill. Keyed mutex
-    // (шаг 2 в execute()) исключает это для НОВЫХ обработок, но этот caller мог
-    // войти в `_cancelLocked` до того, как mutex поддержку добавили везде — эта
-    // проверка остаётся defense-in-depth.
+    // CAS save выше уже гарантирует, что между чтением версии и записью CANCELED
+    // никто не мутировал ордер (saveSync из ProcessFillUseCase инкрементит версию
+    // и вызвал бы конфликт). Эта проверка остаётся defense-in-depth против
+    // перезаписи ПОСЛЕ нашего save (пока resolve'ился Promise).
     // Если статус в store отличается — пропускаем освобождение.
     const currentStoredOrder = this._deps.orderStateStore.getOrder(input.orderId);
     if (currentStoredOrder?.status !== cancelledOrder.status) {
@@ -217,29 +248,55 @@ export class CancelOrderUseCase {
       this._deps.portfolioService.releaseOrderReservation(input.accountId, cancelledOrder);
     }
 
-    // Best-effort отмена на бирже
+    // Best-effort отмена на бирже.
+    //
+    // Business outcomes (CancelOrderResult.status) приходят уже классифицированными
+    // от infrastructure adapter — здесь НЕТ парсинга текста venue-ошибок, только
+    // switch по типизированному status.
     const exchangeResult = await this._deps.exchangeClient.cancelOrder(input.orderId);
     let matchedOnExchange = false;
-    if (!exchangeResult.ok) {
-      // Парсим: "matched orders can't be canceled" → ордер уже matched на бирже.
-      // Помечаем чтобы fill был подхвачен через WS или ReconcileTradesUseCase.
-      // Конкретный fillId здесь неизвестен (только текст ошибки cancel) —
-      // используем pendingMatchFillId placeholder; он автоматически снимется
-      // в clearOrderFillMatched, когда придёт реальный fill для этого ордера.
-      const errMsg = exchangeResult.error.message.toLowerCase();
-      if (errMsg.includes('matched') || errMsg.includes("can't be canceled") || errMsg.includes('cannot be canceled')) {
-        matchedOnExchange = true;
-        this._deps.orderStateStore.markOrderFillMatched(input.orderId, pendingMatchFillId(input.orderId));
-        this._logger.warn('Cancel rejected — order was matched on exchange, awaiting fill via WS/reconciliation', {
-          orderId: String(input.orderId),
-          error: exchangeResult.error.message,
-        });
-      } else {
-        this._logger.warn('Exchange cancel failed (best effort)', {
-          orderId: String(input.orderId),
-          error: exchangeResult.error.message,
-        });
+    if (exchangeResult.ok) {
+      const cancelOutcome = exchangeResult.value;
+      switch (cancelOutcome.status) {
+        case 'CANCELLED':
+          break;
+        case 'ALREADY_FILLED':
+          // Ордер уже matched на бирже. Помечаем чтобы fill был подхвачен через
+          // WS или ReconcileTradesUseCase. Конкретный fillId здесь неизвестен —
+          // используем pendingMatchFillId placeholder; он автоматически снимется
+          // в clearOrderFillMatched, когда придёт реальный fill для этого ордера.
+          matchedOnExchange = true;
+          this._deps.orderStateStore.markOrderFillMatched(input.orderId, pendingMatchFillId(input.orderId));
+          this._logger.warn('Cancel rejected — order was matched on exchange, awaiting fill via WS/reconciliation', {
+            orderId: String(input.orderId),
+            reason: cancelOutcome.reason,
+          });
+          break;
+        case 'ALREADY_CANCELLED':
+          this._logger.info('Order was already cancelled on exchange (idempotent)', {
+            orderId: String(input.orderId),
+            reason: cancelOutcome.reason,
+          });
+          break;
+        case 'NOT_FOUND':
+          this._logger.warn('Order not found on exchange during cancel — treating as best-effort success', {
+            orderId: String(input.orderId),
+            reason: cancelOutcome.reason,
+          });
+          break;
+        case 'UNKNOWN_RETRY_NEEDED':
+          this._logger.error('EXCHANGE_CANCEL_UNKNOWN_RETRY_NEEDED — venue cancel outcome unclear', {
+            orderId: String(input.orderId),
+            reason: cancelOutcome.reason,
+          });
+          break;
       }
+    } else {
+      // Транспортная/API ошибка биржи — best-effort, ордер уже отменён локально в любом случае.
+      this._logger.warn('Exchange cancel failed (best effort)', {
+        orderId: String(input.orderId),
+        error: exchangeResult.error.message,
+      });
     }
 
     // Публикация событий

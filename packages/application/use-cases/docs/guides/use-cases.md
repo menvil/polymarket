@@ -45,7 +45,10 @@ CancelOrderUseCase
 4. **Отправка на биржу** — `exchangeClient.submitOrder()`
    - При ошибке биржи: откат резервации через `releaseReservation()`
 5. **Принятие ордера** — `order.accept()` → OPEN
-6. **Сохранение** — `orderRepo.save(acceptedOrder)`
+6. **Сохранение (CAS)** — `orderRepo.save(acceptedOrder, 0)` — новый ордер всегда
+   с `expectedVersion=0`. `Err(VersionConflictError)` означает, что под этим
+   venueOrderId уже есть запись (гонка с reconcile/WS) — выполняется best-effort
+   отмена venue-ордера + откат резервации, события НЕ публикуются
 7. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
 
 ### Пример использования
@@ -118,25 +121,82 @@ error-логом на каждый повторный вызов, чтобы п�
 
 1. **Preflight** — `orderRepo.get(orderId)` (fail-fast, чтобы вычислить instrumentId для lock keys)
 2. **Keyed mutex** — `keyedMutex.runExclusive([accountId, orderId, instrumentId], ...)` сериализует относительно `ProcessFillUseCase`
-3. **Получить Order заново** (внутри lock — состояние могло измениться, пока ждали mutex)
+3. **Прочитать версию + Order заново** (внутри lock) — `getVersion(orderId)` читается
+   ДО `get(orderId)`: если конкурирующая мутация вклинится между этими await,
+   CAS save конфликтнёт вместо молчаливой перезаписи
 4. **Проверить статус** — если терминальный → `Ok(void)` (идемпотентность)
 5. **Проверить matched/in-flight fills** — `orderStateStore.hasMatchedFills(orderId)` или
    `hasInFlightFills(instrumentId)` → `Ok(void)` (skip, отмена заблокирована)
-6. **Отменить Order** — `order.cancel(reason)` → CANCELED
-7. **Снять резервацию** — `portfolioService.releaseReservation(remainingNotional)` (только BUY)
+6. **Отменить Order (CAS)** — `order.cancel(reason)` → CANCELED, затем
+   `orderRepo.save(cancelledOrder, expectedVersion)`. При `VersionConflictError`:
+   перечитать latest — терминальный/исчезнувший → `Ok` (no-op, БЕЗ release),
+   иначе `Err`. Резервация и события при конфликте НЕ трогаются
+7. **Снять резервацию** — `portfolioService.releaseOrderReservation()` — только
+   ПОСЛЕ успешного CAS save
 8. **Best-effort биржевая отмена** — `exchangeClient.cancelOrder(orderId)` (ошибка не прерывает)
 9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
 
 ### Best-effort отмена
 
-Ошибка `exchangeClient.cancelOrder()` логируется, но не вызывает Err.
-Reconciliation-процесс обрабатывает расхождения между локальным состоянием и биржей.
+`exchangeClient.cancelOrder()` возвращает `Ok(CancelOrderResult)` для любого бизнес-исхода
+venue-отмены (`CANCELLED`, `ALREADY_FILLED`, `ALREADY_CANCELLED`, `NOT_FOUND`,
+`UNKNOWN_RETRY_NEEDED`) — `Err(ExchangeError)` зарезервирован только для транспортных/API
+ошибок. `CancelOrderUseCase` переключается по типизированному `status` и **не парсит текст
+venue-ошибок** — эта классификация выполняется исключительно в infrastructure-адаптере
+(`PolymarketExchangeClientAdapter._classifyCancelRejection`). `ALREADY_FILLED` помечает ордер
+через `orderStateStore.markOrderFillMatched()`. И `Ok` с любым статусом, и транспортный `Err`
+не приводят к возврату `Err` из use case — ордер уже отменён локально в любом случае;
+reconciliation-процесс обрабатывает расхождения между локальным состоянием и биржей.
 
 ## Portfolio CAS
 
 `IPortfolioStore.save(portfolio, expectedVersion)` использует Compare-And-Swap.
 Portfolio не имеет поля `.version` — always pass `0`. In-memory реализация
 всегда принимает сохранение.
+
+## OrderRepository CAS (optimistic concurrency)
+
+### Почему это сделано так?
+
+Раньше `IOrderRepository.save(order)` / `delete(orderId)` работали по принципу
+last-write-wins: устаревшая копия Order могла молча перетереть более свежее
+состояние при fill/cancel/reconcile гонках. Теперь репозиторий версионирует
+каждую запись, и все критические записи/удаления — условные.
+
+### Контракт
+
+- `getVersion(orderId)` → текущая версия записи; `0` для отсутствующего ордера.
+- `save(order, expectedVersion)` → `Ok(void)` или `Err(VersionConflictError)`.
+  Новый ордер сохраняется с `expectedVersion=0`; stale save не изменяет
+  хранимую запись.
+- `deleteIfVersion(orderId, expectedVersion)` → условное удаление по версии;
+  `Ok({status:'DELETED'|'NOT_FOUND'})` или `Err(VersionConflictError)`.
+- `deleteIfState(orderId, allowedStates)` → условное удаление по статусу
+  (например, cleanup терминальных ордеров в `OrderEventBridge`);
+  `Err(OrderStateConflictError)`, если фактический статус вне `allowedStates`.
+
+### Порядок чтения версии
+
+Версию нужно читать ДО чтения Order (`getVersion` → `get` → мутация → `save`).
+При обратном порядке можно прочитать копию версии N и версию N+1 — тогда CAS save
+устаревшей копии пройдёт без конфликта.
+
+### Поведение use-cases при конфликте
+
+- `PlaceOrderUseCase`: `Err`, best-effort отмена venue-ордера, откат резервации,
+  события не публикуются.
+- `CancelOrderUseCase` / `UpdateOrderStatusUseCase`: перечитать latest;
+  терминальный / целевой статус / исчезнувший ордер → `Ok` (идемпотентный no-op,
+  без повторного release), иначе `Err`. Резервация освобождается только после
+  успешного CAS save.
+
+### saveSync — временный escape hatch
+
+`IOrderStateStore.saveSync(order)` НАМЕРЕННО обходит CAS (нет `expectedVersion`) —
+он нужен `ProcessFillUseCase` для no-yield сохранения Order до мутации Portfolio
+(fill/cancel race fix). При этом `saveSync` инкрементирует версию записи, поэтому
+конкурирующий CAS save со stale-версией корректно получит `VersionConflictError`.
+`saveSync` должен быть устранён отдельным Unit of Work/CAS refactor.
 
 ## Позиции: SimplePosition
 

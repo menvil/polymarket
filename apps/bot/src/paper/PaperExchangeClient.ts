@@ -34,7 +34,7 @@
  * ```
  */
 
-import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, SubmitOrderParams } from '@polymarket/ports';
+import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, SubmitOrderParams, CancelOrderResult } from '@polymarket/ports';
 import type { MockExchangeClient } from '@polymarket/backtesting';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
@@ -214,12 +214,28 @@ export class PaperExchangeClient implements IExchangeClient {
    *
    * @param orderId - ID ордера для отмены
    * @returns Результат отмены
+   *
+   * @remarks
+   * `CANCELLED` / `ALREADY_CANCELLED` / `NOT_FOUND` — venue-сторона считается
+   * завершённой или идемпотентной, ордер удаляется из симулятора. Для
+   * `ALREADY_FILLED` / `UNKNOWN_RETRY_NEEDED` ордер НЕ удаляется — состояние
+   * неоднозначно, удаление могло бы скрыть fill, который ещё нужно обработать.
    */
-  public async cancelOrder(orderId: OrderId): Promise<Result<void, ExchangeError>> {
+  public async cancelOrder(orderId: OrderId): Promise<Result<CancelOrderResult, ExchangeError>> {
     const result = await this._deps.mock.cancelOrder(orderId);
 
     if (result.ok) {
-      this._deps.simulator.removeOrder(orderId);
+      switch (result.value.status) {
+        case 'CANCELLED':
+        case 'ALREADY_CANCELLED':
+        case 'NOT_FOUND':
+          this._deps.simulator.removeOrder(orderId);
+          break;
+        case 'ALREADY_FILLED':
+        case 'UNKNOWN_RETRY_NEEDED':
+          // Не удаляем из симулятора — состояние неоднозначно.
+          break;
+      }
     }
 
     return result;

@@ -337,13 +337,20 @@ export class PolymarketOrderRestClient {
    * Отменить ордер
    *
    * @param orderId - Идентификатор ордера для отмены
-   * @returns Ответ на отмену
-   * @throws {ApiError} При ошибке API-вызова
+   * @returns Сырой ответ API (`canceled` / `not_canceled`) — НЕ бросает при
+   * `not_canceled[orderId]`, это нормальный venue outcome
+   * @throws {ApiError} Только при реальной HTTP/API ошибке (`restClient.delete` throw)
+   *
+   * @remarks
+   * Классификация `not_canceled[orderId]` (matched/already cancelled/not found/unknown)
+   * НЕ выполняется здесь — это ответственность вышестоящего адаптера
+   * (`PolymarketExchangeClientAdapter`), который маппит structured response
+   * в `CancelOrderResult`. Здесь только сырой passthrough + логирование.
    *
    * @example
    * ```typescript
-   * await client.cancelOrder('order-123');
-   * console.log('Order cancelled');
+   * const response = await client.cancelOrder('order-123');
+   * if (response.canceled.includes('order-123')) console.log('Order cancelled');
    * ```
    */
   async cancelOrder(orderId: string): Promise<CancelOrderResponse> {
@@ -354,18 +361,16 @@ export class PolymarketOrderRestClient {
       timestamp: Date.now(),
     });
 
-    // Проверяем что ордер попал в canceled, а не в not_canceled
     const isCanceled = response.canceled?.includes(orderId);
     const notCanceledReason = response.not_canceled?.[orderId];
 
     if (notCanceledReason) {
-      throw new ApiError(
-        `Cancel order rejected by exchange: ${notCanceledReason} (orderId=${orderId})`,
-      );
-    }
-
-    if (!isCanceled) {
-      this.logger.warn('Order not found in canceled list — may have already been filled/cancelled', {
+      this.logger.warn('Order not canceled by exchange (venue outcome, not a transport error)', {
+        orderId,
+        reason: notCanceledReason,
+      });
+    } else if (!isCanceled) {
+      this.logger.warn('Order not present in canceled/not_canceled response', {
         orderId,
         canceled: response.canceled,
         not_canceled: response.not_canceled,

@@ -104,7 +104,7 @@ describe('MockExchangeClient', () => {
   // ── cancelOrder ───────────────────────────────────────────────────────────
 
   describe('cancelOrder()', () => {
-    it('возвращает Ok(undefined)', async () => {
+    it('возвращает Ok({status: CANCELLED})', async () => {
       const submitResult = await client.submitOrder(makeOrderParams());
       expect(submitResult.ok).toBe(true);
 
@@ -112,7 +112,7 @@ describe('MockExchangeClient', () => {
         const cancelResult = await client.cancelOrder(submitResult.value.orderId);
         expect(cancelResult.ok).toBe(true);
         if (cancelResult.ok) {
-          expect(cancelResult.value).toBeUndefined();
+          expect(cancelResult.value).toEqual({ status: 'CANCELLED' });
         }
       }
     });

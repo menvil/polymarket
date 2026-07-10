@@ -157,7 +157,7 @@ function makeExchangeClient(
 ): IExchangeClient {
   return {
     submitOrder: () => Promise.resolve(submitResult),
-    cancelOrder: () => Promise.resolve(Ok(undefined)),
+    cancelOrder: () => Promise.resolve(Ok({ status: 'CANCELLED' })),
     getOpenOrders: () => Promise.resolve(Ok([])),
     getTrades: () => Promise.resolve(Ok([])),
   };

@@ -1,0 +1,35 @@
+export default {
+  preset: 'ts-jest/presets/default-esm',
+  testEnvironment: 'node',
+  extensionsToTreatAsEsm: ['.ts'],
+  moduleFileExtensions: ['ts', 'js'],
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@polymarket/logger$':        '<rootDir>/../../foundation/logger/src/index.ts',
+    '^@polymarket/ids$':           '<rootDir>/../../foundation/ids/src/index.ts',
+    '^@polymarket/result$':        '<rootDir>/../../foundation/result/src/index.ts',
+    '^@polymarket/errors$':        '<rootDir>/../../foundation/errors/src/index.ts',
+    '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
+    '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
+    '^@polymarket/ports$':         '<rootDir>/../../application/ports/src/index.ts',
+    '^@polymarket/handlers$':      '<rootDir>/../../application/handlers/src/index.ts',
+    '^@polymarket/order$':         '<rootDir>/../../domain/entities/order/src/index.ts',
+    '^@polymarket/order-book$':    '<rootDir>/../../domain/market-data/order-book/src/index.ts',
+    '^@polymarket/trade$':         '<rootDir>/../../domain/entities/trade/src/index.ts',
+    '^@polymarket/event-bus$':     '<rootDir>/../../application/event-bus/src/index.ts',
+    '^@polymarket/time$':          '<rootDir>/../../foundation/time/src/index.ts',
+    '^@polymarket/math$':          '<rootDir>/../../foundation/math/src/index.ts',
+    '^@polymarket/fill$':          '<rootDir>/../../domain/entities/fill/src/index.ts',
+    '^@polymarket/portfolio$':     '<rootDir>/../../domain/entities/portfolio/src/index.ts',
+    '^@polymarket/market-discovery$': '<rootDir>/../../application/market-discovery/src/index.ts',
+  },
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
+      useESM: true,
+      tsconfig: {
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+      },
+    }],
+  },
+};

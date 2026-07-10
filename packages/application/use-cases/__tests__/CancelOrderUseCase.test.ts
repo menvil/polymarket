@@ -4,7 +4,8 @@ import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore, IKeyedMutex, InFlightFill } from '@polymarket/ports';
+import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore, IKeyedMutex, InFlightFill, CancelOrderResult } from '@polymarket/ports';
+import { VersionConflictError, pendingMatchFillId } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
 import { asPolymarketCtfToken } from '@polymarket/ids';
@@ -102,8 +103,13 @@ function makePortfolioStore(portfolio?: Portfolio): IPortfolioStore {
 function makeOrderRepo(order?: Order): IOrderRepository {
   return {
     get: jest.fn().mockImplementation(() => Promise.resolve(order)) as unknown as IOrderRepository['get'],
-    save: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['save'],
-    delete: jest.fn().mockImplementation(() => Promise.resolve()) as unknown as IOrderRepository['delete'],
+    getVersion: jest.fn().mockImplementation(() => Promise.resolve(order ? 1 : 0)) as unknown as IOrderRepository['getVersion'],
+    getWithVersion: jest.fn().mockImplementation(() =>
+      Promise.resolve(order ? { order, version: 1 } : undefined),
+    ) as unknown as IOrderRepository['getWithVersion'],
+    save: jest.fn().mockImplementation(() => Promise.resolve(Ok(undefined))) as unknown as IOrderRepository['save'],
+    deleteIfVersion: jest.fn().mockImplementation(() => Promise.resolve(Ok({ status: 'DELETED' }))) as unknown as IOrderRepository['deleteIfVersion'],
+    deleteIfState: jest.fn().mockImplementation(() => Promise.resolve(Ok({ status: 'DELETED' }))) as unknown as IOrderRepository['deleteIfState'],
     getByStrategyId: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getByStrategyId'],
     countByStrategyId: jest.fn().mockImplementation(() => Promise.resolve(0)) as unknown as IOrderRepository['countByStrategyId'],
     getAll: jest.fn().mockImplementation(() => Promise.resolve([])) as unknown as IOrderRepository['getAll'],
@@ -150,7 +156,7 @@ function makeExchangeClient(success = true): IExchangeClient {
       Ok({ orderId: ORDER_ID, immediatelyMatched: false, effectiveSize: makeQty('100') }),
     ),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
-      success ? Ok(undefined) : Err(new TradingError('Exchange error') as never),
+      success ? Ok({ status: 'CANCELLED' } as CancelOrderResult) : Err(new TradingError('Exchange error') as never),
     ),
     getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
     getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
@@ -231,6 +237,77 @@ describe('CancelOrderUseCase', () => {
     const useCase = new CancelOrderUseCase(deps);
     await useCase.execute(makeInput());
     expect(logger.info).toHaveBeenCalledWith('Order cancelled successfully', expect.any(Object));
+  });
+
+  // ── CAS конфликт при сохранении отменённого ордера ────────────────────────
+
+  describe('save version conflict (CAS)', () => {
+    let storePortfolio: Portfolio;
+
+    /** Настраивает deps так, что CAS save конфликтует, а reread возвращает latest */
+    function setupConflict(latest: Order | undefined): void {
+      const openOrder = makeOpenOrder();
+      orderRepo = {
+        ...makeOrderRepo(openOrder),
+        save: jest.fn<IOrderRepository['save']>().mockResolvedValue(
+          Err(new VersionConflictError(String(ORDER_ID), 1, 2)),
+        ),
+        get: jest.fn<IOrderRepository['get']>()
+          .mockResolvedValueOnce(openOrder) // preflight lookup (вне lock)
+          .mockResolvedValue(latest),       // reread после конфликта
+        getWithVersion: jest.fn<IOrderRepository['getWithVersion']>()
+          .mockResolvedValue({ order: openOrder, version: 1 }), // свежий snapshot внутри lock
+      } as unknown as IOrderRepository;
+
+      storePortfolio = makePortfolioMock();
+      portfolioStore = makePortfolioStore(storePortfolio);
+      const portfolioService = new PortfolioService(portfolioStore, logger);
+      deps = { ...deps, orderRepo, portfolioService };
+    }
+
+    it('reread: ордер терминальный → Ok no-op, без release/exchange cancel/publish', async () => {
+      const cancelledLatest = makeOpenOrder().cancel();
+      if (!cancelledLatest.ok) throw new Error('cancel failed');
+      cancelledLatest.value.pullEvents();
+      setupConflict(cancelledLatest.value);
+
+      const useCase = new CancelOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(storePortfolio.releaseReservation).not.toHaveBeenCalled();
+      expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+      expect(eventBus.publishAll).not.toHaveBeenCalled();
+    });
+
+    it('reread: ордер исчез → Ok no-op с warn, без release', async () => {
+      setupConflict(undefined);
+
+      const useCase = new CancelOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/disappeared/i),
+        expect.any(Object),
+      );
+      expect(storePortfolio.releaseReservation).not.toHaveBeenCalled();
+    });
+
+    it('reread: ордер не терминальный → Err, без release/publish', async () => {
+      setupConflict(makeOpenOrder());
+
+      const useCase = new CancelOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(TradingError);
+        expect(result.error.message).toMatch(/version conflict/i);
+      }
+      expect(storePortfolio.releaseReservation).not.toHaveBeenCalled();
+      expect(eventBus.publishAll).not.toHaveBeenCalled();
+    });
   });
 
   // ── Ордер не найден ───────────────────────────────────────────────────────
@@ -374,5 +451,82 @@ describe('CancelOrderUseCase', () => {
       'Exchange cancel failed (best effort)',
       expect.any(Object),
     );
+  });
+
+  // ── CancelOrderResult (структурированный биржевой исход) ───────────────────
+
+  describe('CancelOrderResult от биржи', () => {
+    function withExchangeCancelResult(result: CancelOrderResult): IExchangeClient {
+      return {
+        ...makeExchangeClient(true),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok(result)),
+      };
+    }
+
+    it('Ok({status: CANCELLED}) — обычный успех, не помечает matched', async () => {
+      exchangeClient = withExchangeCancelResult({ status: 'CANCELLED' });
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Order cancelled successfully', expect.any(Object));
+    });
+
+    it('Ok({status: ALREADY_FILLED}) — помечает markOrderFillMatched и возвращает Ok', async () => {
+      exchangeClient = withExchangeCancelResult({ status: 'ALREADY_FILLED', reason: 'matched' });
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).toHaveBeenCalledWith(
+        ORDER_ID,
+        pendingMatchFillId(ORDER_ID),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Cancel rejected — order was matched on exchange, awaiting fill via WS/reconciliation',
+        expect.any(Object),
+      );
+    });
+
+    it('Ok({status: ALREADY_CANCELLED}) — Ok, не помечает matched', async () => {
+      exchangeClient = withExchangeCancelResult({ status: 'ALREADY_CANCELLED' });
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+    });
+
+    it('Ok({status: NOT_FOUND}) — Ok, не помечает matched', async () => {
+      exchangeClient = withExchangeCancelResult({ status: 'NOT_FOUND' });
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+    });
+
+    it('Ok({status: UNKNOWN_RETRY_NEEDED}) — Ok, логирует error без парсинга текста', async () => {
+      exchangeClient = withExchangeCancelResult({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'weird reason' });
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'EXCHANGE_CANCEL_UNKNOWN_RETRY_NEEDED — venue cancel outcome unclear',
+        expect.any(Object),
+      );
+    });
+
+    it('Err(ExchangeError) — best-effort Ok после локальной отмены, без message.toLowerCase()', async () => {
+      exchangeClient = makeExchangeClient(false);
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+    });
   });
 });

@@ -44,6 +44,7 @@ import type {
   IExchangeClient,
   SubmitOrderParams,
   SubmitOrderResult,
+  CancelOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,
   ExchangeError,
@@ -123,19 +124,19 @@ export class MockExchangeClient implements IExchangeClient {
    * в бектесте стратегия сама управляет жизненным циклом ордеров.
    *
    * @param orderId - ID ордера для отмены
-   * @returns Ok(undefined) — всегда успех
+   * @returns Ok({status: 'CANCELLED'}) — всегда успех
    *
    * @example
    * ```typescript
    * const result = await client.cancelOrder(orderId);
-   * // result.ok === true
+   * // result.ok === true, result.value.status === 'CANCELLED'
    * ```
    */
   public async cancelOrder(
     orderId: OrderId,
-  ): Promise<Result<void, ExchangeError>> {
+  ): Promise<Result<CancelOrderResult, ExchangeError>> {
     this._cancelledOrderIds.add(orderId);
-    return Ok(undefined);
+    return Ok({ status: 'CANCELLED' });
   }
 
   /**

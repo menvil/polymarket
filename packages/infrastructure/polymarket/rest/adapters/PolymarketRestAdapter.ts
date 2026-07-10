@@ -48,7 +48,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { PlaceOrderParams, OrderResponse } from '../../ports/IExecutionAdapter.js';
+import type { PlaceOrderParams, OrderResponse, CancelOrderExecutionResponse } from '../../ports/IExecutionAdapter.js';
 import type { PositionResponse } from '../../ports/IPortfolioAdapter.js';
 import type { PolymarketExecutionAdapter } from './PolymarketExecutionAdapter.js';
 import type { PolymarketPortfolioAdapter } from './PolymarketPortfolioAdapter.js';
@@ -184,20 +184,23 @@ export class PolymarketRestAdapter {
    * Отменить ордер
    *
    * @param orderId - Идентификатор ордера для отмены
-   * @throws {ApiError} При ошибке API-вызова
+   * @returns Структурированный ответ venue (`canceled` / `not_canceled`)
+   * @throws {ApiError} При реальной HTTP/API ошибке
    *
    * @example
    * ```typescript
-   * await adapter.cancelOrder('order-123');
-   * console.log('Order cancelled');
+   * const response = await adapter.cancelOrder('order-123');
+   * console.log('Order cancel requested', response);
    * ```
    */
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string): Promise<CancelOrderExecutionResponse> {
     this.logger.info('cancelOrder called', { orderId });
 
-    await this.executionAdapter.cancelOrder(orderId);
+    const response = await this.executionAdapter.cancelOrder(orderId);
 
-    this.logger.info('Order cancelled successfully', { orderId });
+    this.logger.info('Order cancel request completed', { orderId });
+
+    return response;
   }
 
   /**

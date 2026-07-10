@@ -9,7 +9,8 @@
  *    - При ошибке биржи: откат резервации
  * 4. Создание Order aggregate с **venueOrderId** (Order.create → PENDING)
  * 5. Принятие ордера (order.accept → OPEN)
- * 6. Сохранение ордера в репозиторий (с venueOrderId!)
+ * 6. Сохранение ордера в репозиторий (с venueOrderId!) — CAS save с expectedVersion=0
+ *    (новый ордер); конфликт версии → best-effort отмена на бирже + откат резервации
  * 7. Публикация доменных событий
  *
  * ### Почему Order создаётся ПОСЛЕ отправки на биржу:
@@ -117,6 +118,51 @@ export class PlaceOrderUseCase {
    */
   constructor(private readonly _deps: PlaceOrderDeps) {
     this._logger = _deps.logger.child({ component: 'PlaceOrderUseCase' });
+  }
+
+  /**
+   * Логирует исход best-effort venue-отмены в rollback-ветках.
+   *
+   * @param venueOrderId - ID ордера на бирже, для которого запрашивался rollback cancel
+   * @param cancelResult - Результат `exchangeClient.cancelOrder()`
+   * @param transportErrorMessage - Сообщение для лога, если cancelResult — Err (транспортная ошибка)
+   *
+   * @remarks
+   * Не парсит `reason` из `CancelOrderResult` — только switch по типизированному `status`.
+   * `CANCELLED` / `ALREADY_CANCELLED` / `NOT_FOUND` считаются завершённым или идемпотентным
+   * rollback venue-стороны и не логируются как ошибка.
+   */
+  private _logRollbackCancelOutcome(
+    venueOrderId: OrderId,
+    cancelResult: Awaited<ReturnType<IExchangeClient['cancelOrder']>>,
+    transportErrorMessage: string,
+  ): void {
+    if (!cancelResult.ok) {
+      this._logger.error(transportErrorMessage, {
+        venueOrderId: String(venueOrderId),
+        error: cancelResult.error.message,
+      });
+      return;
+    }
+
+    switch (cancelResult.value.status) {
+      case 'CANCELLED':
+      case 'ALREADY_CANCELLED':
+      case 'NOT_FOUND':
+        break;
+      case 'ALREADY_FILLED':
+        this._logger.error(
+          'Rollback cancel failed — order already filled on exchange, manual reconciliation/fill expected',
+          { venueOrderId: String(venueOrderId), reason: cancelResult.value.reason },
+        );
+        break;
+      case 'UNKNOWN_RETRY_NEEDED':
+        this._logger.error(
+          'Rollback cancel outcome unclear — venue order may still be live, manual reconciliation required',
+          { venueOrderId: String(venueOrderId), reason: cancelResult.value.reason },
+        );
+        break;
+    }
   }
 
   /**
@@ -252,12 +298,11 @@ export class PlaceOrderUseCase {
         });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      if (!cancelExchangeResult.ok) {
-        this._logger.error('Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required', {
-          venueOrderId: String(venueOrderId),
-          error: cancelExchangeResult.error.message,
-        });
-      }
+      this._logRollbackCancelOutcome(
+        venueOrderId,
+        cancelExchangeResult,
+        'Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required',
+      );
       return Err(new TradingError(
         `Exchange returned invalid effectiveSize (${effectiveSize.value().toString()}) for requested size (${input.size.value().toString()})`,
         { context: { venueOrderId: String(venueOrderId) } },
@@ -294,12 +339,11 @@ export class PlaceOrderUseCase {
           releaseError: excessReleaseResult.error.message,
         });
         const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-        if (!cancelExchangeResult.ok) {
-          this._logger.error('Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required', {
-            venueOrderId: String(venueOrderId),
-            error: cancelExchangeResult.error.message,
-          });
-        }
+        this._logRollbackCancelOutcome(
+          venueOrderId,
+          cancelExchangeResult,
+          'Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required',
+        );
         return Err(new TradingError(
           `Failed to release excess reservation after exchange size adjustment: ${excessReleaseResult.error.message}`,
           { context: { venueOrderId: String(venueOrderId) } },
@@ -326,7 +370,12 @@ export class PlaceOrderUseCase {
           releaseError: releaseResult.error.message,
         });
       }
-      await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      this._logRollbackCancelOutcome(
+        venueOrderId,
+        cancelExchangeResult,
+        'Failed to cancel exchange order after timestamp failure — venue order may still be live, manual reconciliation required',
+      );
       return Err(new TradingError(
         `Failed to create timestamp: ${timestampResult.error.message}`,
         { context: { venueOrderId: String(venueOrderId) } },
@@ -356,7 +405,12 @@ export class PlaceOrderUseCase {
           releaseError: releaseResult.error.message,
         });
       }
-      await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      this._logRollbackCancelOutcome(
+        venueOrderId,
+        cancelExchangeResult,
+        'Failed to cancel exchange order after Order.create failure — venue order may still be live, manual reconciliation required',
+      );
       return Err(orderResult.error);
     }
     const order = orderResult.value;
@@ -379,26 +433,50 @@ export class PlaceOrderUseCase {
         });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      if (!cancelExchangeResult.ok) {
-        this._logger.error('Failed to cancel exchange order during accept() rollback', {
-          venueOrderId: String(venueOrderId),
-          error: cancelExchangeResult.error.message,
-        });
-      }
+      this._logRollbackCancelOutcome(
+        venueOrderId,
+        cancelExchangeResult,
+        'Failed to cancel exchange order during accept() rollback',
+      );
       return Err(acceptResult.error);
     }
     const acceptedOrder = acceptResult.value;
 
-    // Шаг 6: Сохранение ордера (с venueOrderId)
-    try {
-      await this._deps.orderRepo.save(acceptedOrder);
-    } catch (err) {
-      this._logger.error('Failed to save accepted order', {
+    // Шаг 6: Сохранение ордера (с venueOrderId).
+    // Новый ордер → expectedVersion=0 (CAS). Конфликт означает, что под этим
+    // venueOrderId в репозитории уже есть запись (гонка с reconcile/WS-обработкой) —
+    // молча перетирать её нельзя.
+    const saveResult = await this._deps.orderRepo.save(acceptedOrder, 0);
+    if (!saveResult.ok) {
+      this._logger.error('Failed to save accepted order due to version conflict', {
         venueOrderId: String(venueOrderId),
-        err: err instanceof Error ? err : new Error(String(err)),
+        expected: saveResult.error.expected,
+        actual: saveResult.error.actual,
       });
+      // Ордер уже создан на venue — best-effort отмена, как в других rollback-ветках.
+      const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+      this._logRollbackCancelOutcome(
+        venueOrderId,
+        cancelExchangeResult,
+        'Failed to cancel exchange order after save conflict — venue order may still be live, manual reconciliation required',
+      );
+      // Откат резервации (она ещё не освобождалась в этой ветке).
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            orderSize.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after save conflict — manual reconciliation required', {
+          venueOrderId: String(venueOrderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      // События НЕ публикуем — локально ордер не сохранён.
       return Err(new TradingError(
-        `Failed to save order: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to save order due to version conflict: ${saveResult.error.message}`,
         { context: { venueOrderId: String(venueOrderId) } },
       ));
     }

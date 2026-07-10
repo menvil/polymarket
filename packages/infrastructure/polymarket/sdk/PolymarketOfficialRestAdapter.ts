@@ -153,7 +153,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { PlaceOrderParams, OrderResponse } from '../ports/IExecutionAdapter.js';
+import type { PlaceOrderParams, OrderResponse, CancelOrderExecutionResponse } from '../ports/IExecutionAdapter.js';
 import type { PositionResponse } from '../ports/IPortfolioAdapter.js';
 
 /**
@@ -245,7 +245,7 @@ export class PolymarketOfficialRestAdapter {
    * 1. Вызвать SDK's cancelOrder(orderId)
    * 2. Обработать ошибки SDK
    */
-  async cancelOrder(_orderId: string): Promise<void> {
+  async cancelOrder(_orderId: string): Promise<CancelOrderExecutionResponse> {
     throw new Error('PolymarketOfficialRestAdapter.cancelOrder() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
