@@ -596,6 +596,33 @@ describe('PlaceOrderUseCase', () => {
     });
   });
 
+  // ── Post-commit publish failure (notification path, не транзакция) ─────────
+
+  it('сбой publishAll ПОСЛЕ успешного save — Ok(venueOrderId), не Err (committed operation не retryable)', async () => {
+    const failingEventBus: IEventBus = {
+      ...eventBus,
+      publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
+    };
+    const useCase = new PlaceOrderUseCase({ ...deps, eventBus: failingEventBus });
+
+    const result = await useCase.execute(makeInput());
+
+    // Ордер уже сохранён и live на venue — Err сделал бы операцию retryable
+    // и повторный вызов создал бы дублирующий ордер.
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe('exchange-order-1');
+    expect(orderRepo.save).toHaveBeenCalled();
+    expect(failingEventBus.publishAll).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('EVENT_PUBLISH_FAILED'),
+      expect.objectContaining({
+        venueOrderId: 'exchange-order-1',
+        clientOrderId: String(ORDER_ID),
+        submitStatus: 'OPEN',
+      }),
+    );
+  });
+
   // ── SubmitOrderResult.status (OPEN/PARTIALLY_FILLED/FILLED/REJECTED/UNKNOWN) ──
 
   describe('submitOrder status handling', () => {

@@ -15,7 +15,10 @@
  * 6. Снятие резервации баланса (PortfolioService.releaseReservation) — только после
  *    успешного CAS save
  * 7. Запрос отмены на бирже (exchangeClient.cancelOrder — best effort)
- * 8. Публикация доменных событий
+ * 8. Публикация доменных событий — notification path, НЕ часть транзакции:
+ *    сбой publish после успешного local cancel логируется как
+ *    `EVENT_PUBLISH_FAILED` и НЕ меняет результат (Ok) — committed cancel
+ *    не должен становиться retryable из-за потери уведомления
  *
  * ### Best-effort биржевая отмена:
  * Ошибка exchangeClient.cancelOrder логируется, но не прерывает use case —
@@ -39,9 +42,17 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
+import type { IClock } from '@polymarket/time';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
-import type { IOrderRepository, IOrderStateStore, IExchangeClient, IKeyedMutex } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IOrderStateStore,
+  IExchangeClient,
+  IKeyedMutex,
+  IReconciliationIssueRepository,
+  ReconciliationIssue,
+} from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { PortfolioService } from './services/PortfolioService.js';
@@ -65,6 +76,26 @@ export interface CancelOrderDeps {
   readonly exchangeClient: IExchangeClient;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
+  /**
+   * Queryable хранилище reconciliation issues (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты: без него
+   * поведение прежнее (только logging). Если передан, ambiguous venue cancel
+   * после УЖЕ выполненного локального cancel создаёт `CANCEL_UNKNOWN_OUTCOME`
+   * issue (исходы `UNKNOWN_RETRY_NEEDED` и транспортная/API ошибка) — venue
+   * order может быть live, а локально он уже CANCELED. Сбой `add()`
+   * логируется и НЕ меняет результат use case.
+   */
+  readonly reconciliationIssues?: IReconciliationIssueRepository;
+  /**
+   * Источник времени для `ReconciliationIssue.createdAt` (опционально).
+   *
+   * @remarks
+   * Optional по той же причине. Без него используется `new Date()`
+   * (только для createdAt issue — trading flow времени не использует).
+   */
+  readonly clock?: IClock;
 }
 
 /**
@@ -82,6 +113,33 @@ export class CancelOrderUseCase {
    */
   constructor(private readonly _deps: CancelOrderDeps) {
     this._logger = _deps.logger.child({ component: 'CancelOrderUseCase' });
+  }
+
+  /**
+   * Best-effort создание reconciliation issue (CANCEL_UNKNOWN_OUTCOME).
+   *
+   * @param issue - Issue с детерминированным id (см. call sites)
+   *
+   * @remarks
+   * No-op, если `reconciliationIssues` не передан в deps (optional dependency —
+   * прежнее поведение сохраняется). `add()` идемпотентен по id — повторный
+   * вызов того же сценария не создаёт дубль. Любая ошибка `add()` логируется
+   * и проглатывается: issue — вторичный alerting-механизм, он не должен
+   * менять результат use case (локальный cancel уже committed → Ok).
+   */
+  private async _addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
+    if (!this._deps.reconciliationIssues) {
+      return;
+    }
+    try {
+      await this._deps.reconciliationIssues.add(issue);
+    } catch (err) {
+      this._logger.error('Failed to add reconciliation issue', {
+        issueId: issue.id,
+        issueType: issue.type,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   /**
@@ -260,18 +318,35 @@ export class CancelOrderUseCase {
       switch (cancelOutcome.status) {
         case 'CANCELLED':
           break;
-        case 'ALREADY_FILLED':
+        case 'ALREADY_FILLED': {
           // Ордер уже matched на бирже. Помечаем чтобы fill был подхвачен через
           // WS или ReconcileTradesUseCase. Конкретный fillId здесь неизвестен —
           // используем pendingMatchFillId placeholder; он автоматически снимется
           // в clearOrderFillMatched, когда придёт реальный fill для этого ордера.
           matchedOnExchange = true;
-          this._deps.orderStateStore.markOrderFillMatched(input.orderId, pendingMatchFillId(input.orderId));
+          const pendingFillId = pendingMatchFillId(input.orderId);
+          this._deps.orderStateStore.markOrderFillMatched(input.orderId, pendingFillId);
+          // Instrument-level pending in-flight marker: локально ордер уже
+          // terminal (CANCELED), поэтому order-level marker не помешает
+          // стратегии открыть НОВЫЙ ордер на том же инструменте до прихода
+          // реального fill (race: cancel → already filled → place → old fill).
+          // hasInFlightFills(instrumentId) блокирует это окно. Placeholder
+          // снимается в ProcessFillUseCase._clearInFlightFlags при первом
+          // реальном fill этого ордера.
+          if (instrumentId) {
+            this._deps.orderStateStore.markInFlightFill({
+              instrumentId,
+              fillId: pendingFillId,
+              orderId: input.orderId,
+              status: 'MATCHED',
+            });
+          }
           this._logger.warn('Cancel rejected — order was matched on exchange, awaiting fill via WS/reconciliation', {
             orderId: String(input.orderId),
             reason: cancelOutcome.reason,
           });
           break;
+        }
         case 'ALREADY_CANCELLED':
           this._logger.info('Order was already cancelled on exchange (idempotent)', {
             orderId: String(input.orderId),
@@ -289,6 +364,24 @@ export class CancelOrderUseCase {
             orderId: String(input.orderId),
             reason: cancelOutcome.reason,
           });
+          // Локально ордер уже CANCELED и резервация освобождена, но venue
+          // order может быть live — queryable issue для ручной реконсиляции.
+          // Сбой add() не меняет Ok-результат (см. helper).
+          await this._addReconciliationIssue({
+            id: `reconciliation:cancel:${String(input.orderId)}:unknown`,
+            type: 'CANCEL_UNKNOWN_OUTCOME',
+            status: 'OPEN',
+            reason: cancelOutcome.reason,
+            createdAt: this._deps.clock?.now() ?? new Date(),
+            orderId: input.orderId,
+            accountId: input.accountId,
+            ...(instrumentId ? { instrumentId } : {}),
+            context: {
+              localStatus: 'CANCELED',
+              stage: 'exchange-cancel-after-local-cancel',
+              outcome: 'UNKNOWN_RETRY_NEEDED',
+            },
+          });
           break;
       }
     } else {
@@ -297,21 +390,39 @@ export class CancelOrderUseCase {
         orderId: String(input.orderId),
         error: exchangeResult.error.message,
       });
+      // Как и UNKNOWN_RETRY_NEEDED: исход venue cancel неизвестен (запрос мог
+      // и дойти, и нет), локальный ордер уже CANCELED — venue order может быть live.
+      await this._addReconciliationIssue({
+        id: `reconciliation:cancel:${String(input.orderId)}:transport-error`,
+        type: 'CANCEL_UNKNOWN_OUTCOME',
+        status: 'OPEN',
+        reason: exchangeResult.error.message,
+        createdAt: this._deps.clock?.now() ?? new Date(),
+        orderId: input.orderId,
+        accountId: input.accountId,
+        ...(instrumentId ? { instrumentId } : {}),
+        context: {
+          localStatus: 'CANCELED',
+          stage: 'exchange-cancel-after-local-cancel',
+          outcome: 'TRANSPORT_ERROR',
+        },
+      });
     }
 
-    // Публикация событий
+    // Публикация событий.
+    // Бизнес-коммит уже состоялся (CANCELED сохранён CAS save, резервация
+    // освобождена, venue cancel attempted) — публикация является notification
+    // path, НЕ частью транзакции. Ошибка publish НЕ откатывает состояние и НЕ
+    // делает committed cancel retryable: логируем EVENT_PUBLISH_FAILED и
+    // продолжаем к Ok(undefined).
     const events = cancelledOrder.pullEvents();
     try {
       await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
     } catch (err) {
-      this._logger.error('Failed to publish cancel events', {
+      this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish cancel events after commit — order stays cancelled, event lost', {
         orderId: String(input.orderId),
         err: err instanceof Error ? err : new Error(String(err)),
       });
-      return Err(new TradingError(
-        `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { orderId: String(input.orderId) } },
-      ));
     }
 
     if (matchedOnExchange) {

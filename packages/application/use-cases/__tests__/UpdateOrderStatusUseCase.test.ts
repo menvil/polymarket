@@ -174,6 +174,31 @@ describe('UpdateOrderStatusUseCase', () => {
     expect(orderRepo.save).toHaveBeenCalled();
   });
 
+  it('сбой publishAll ПОСЛЕ успешного CAS save и release — Ok(undefined), не Err (committed update не retryable)', async () => {
+    const order = makeOpenOrder();
+    orderRepo = makeOrderRepo(order);
+    orderStateStore = makeOrderStateStore(order);
+    const failingEventBus: IEventBus = {
+      ...makeEventBus(),
+      publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
+    };
+    deps = { orderRepo, orderStateStore, portfolioService, eventBus: failingEventBus, logger };
+    const useCase = new UpdateOrderStatusUseCase(deps);
+
+    const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+    // Коммит уже состоялся: CAS save выполнен, release для CANCELLED выполнен
+    // (сохранён обратно в portfolioStore) — потеря уведомления не откатывает их.
+    expect(result.ok).toBe(true);
+    expect(orderRepo.save).toHaveBeenCalled();
+    expect(portfolioStore.save).toHaveBeenCalled(); // release персистирован до publish
+    expect(failingEventBus.publishAll).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('EVENT_PUBLISH_FAILED'),
+      expect.objectContaining({ orderId: String(ORDER_ID), updateType: 'CANCELLED' }),
+    );
+  });
+
   it('CANCELLED на уже CANCELED ордере → Ok(void), idempotent (save не вызван)', async () => {
     const order = makeOpenOrder();
     const cancelResult = order.cancel();

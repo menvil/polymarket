@@ -15,6 +15,7 @@ import type {
   BeginFillProcessingResult,
   IReconciliationIssueRepository,
 } from '@polymarket/ports';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
@@ -274,6 +275,15 @@ describe('ProcessFillUseCase', () => {
     const useCase = new ProcessFillUseCase(deps);
     await useCase.execute(makeFill());
     expect(orderStateStore.clearOrderFillMatched).toHaveBeenCalledWith(ORDER_ID, FILL_ID);
+  });
+
+  it('снимает in-flight флаги: реальный fillId И pending placeholder этого ордера', async () => {
+    const useCase = new ProcessFillUseCase(deps);
+    await useCase.execute(makeFill());
+    // Реальный fill «разрешает» более раннюю неоднозначную пометку от
+    // cancel ALREADY_FILLED / submit FILLED (placeholder pendingMatchFillId).
+    expect(orderStateStore.clearInFlightFill).toHaveBeenCalledWith(FILL_ID);
+    expect(orderStateStore.clearInFlightFill).toHaveBeenCalledWith(pendingMatchFillId(ORDER_ID));
   });
 
   it('помечает fill как APPLIED после успешной обработки', async () => {

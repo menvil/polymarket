@@ -4,7 +4,16 @@ import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IExchangeClient, IOrderStateStore, IKeyedMutex, InFlightFill, CancelOrderResult } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IPortfolioStore,
+  IExchangeClient,
+  IOrderStateStore,
+  IKeyedMutex,
+  InFlightFill,
+  CancelOrderResult,
+  IReconciliationIssueRepository,
+} from '@polymarket/ports';
 import { VersionConflictError, pendingMatchFillId } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
@@ -173,6 +182,15 @@ function makeInput(overrides: Partial<CancelOrderInput> = {}): CancelOrderInput 
   };
 }
 
+function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
+  return {
+    add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
+    listOpen: jest.fn<IReconciliationIssueRepository['listOpen']>().mockResolvedValue([]),
+    get: jest.fn<IReconciliationIssueRepository['get']>().mockResolvedValue(undefined),
+    markResolved: jest.fn<IReconciliationIssueRepository['markResolved']>().mockResolvedValue(undefined),
+  };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('CancelOrderUseCase', () => {
@@ -238,6 +256,158 @@ describe('CancelOrderUseCase', () => {
     const useCase = new CancelOrderUseCase(deps);
     await useCase.execute(makeInput());
     expect(logger.info).toHaveBeenCalledWith('Order cancelled successfully', expect.any(Object));
+  });
+
+  // ── Post-commit publish failure (notification path, не транзакция) ─────────
+
+  it('сбой publishAll ПОСЛЕ локального cancel — Ok(undefined), не Err (committed cancel не retryable)', async () => {
+    const failingEventBus: IEventBus = {
+      ...eventBus,
+      publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
+    };
+    const useCase = new CancelOrderUseCase({ ...deps, eventBus: failingEventBus });
+
+    const result = await useCase.execute(makeInput());
+
+    // Локальный cancel уже committed (CAS save + release + venue cancel attempted).
+    expect(result.ok).toBe(true);
+    expect(orderRepo.save).toHaveBeenCalled();
+    expect(failingEventBus.publishAll).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('EVENT_PUBLISH_FAILED'),
+      expect.objectContaining({ orderId: String(ORDER_ID) }),
+    );
+  });
+
+  // ── Reconciliation issues при ambiguous venue cancel ───────────────────────
+
+  describe('reconciliation issues (ambiguous cancel после local cancel)', () => {
+    it('UNKNOWN_RETRY_NEEDED создаёт CANCEL_UNKNOWN_OUTCOME issue, результат Ok', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const unknownExchange: IExchangeClient = {
+        ...makeExchangeClient(true),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+          Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'timeout while cancelling' } as CancelOrderResult),
+        ),
+      };
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient: unknownExchange, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        status: string;
+        reason: string;
+        orderId: unknown;
+        accountId: unknown;
+        instrumentId: unknown;
+        createdAt: Date;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:cancel:${String(ORDER_ID)}:unknown`);
+      expect(issue.type).toBe('CANCEL_UNKNOWN_OUTCOME');
+      expect(issue.status).toBe('OPEN');
+      expect(issue.reason).toBe('timeout while cancelling');
+      expect(issue.orderId).toBe(ORDER_ID);
+      expect(issue.accountId).toBe(ACCOUNT_ID);
+      expect(issue.instrumentId).toBeDefined(); // из order.asset (CTF token '123')
+      expect(issue.createdAt).toBeInstanceOf(Date);
+      expect(issue.context).toMatchObject({
+        localStatus: 'CANCELED',
+        stage: 'exchange-cancel-after-local-cancel',
+        outcome: 'UNKNOWN_RETRY_NEEDED',
+      });
+    });
+
+    it('транспортный Err(ExchangeError) после local cancel создаёт CANCEL_UNKNOWN_OUTCOME issue, результат Ok', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      // makeExchangeClient(false) → cancelOrder возвращает Err(TradingError('Exchange error'))
+      const useCase = new CancelOrderUseCase({
+        ...deps,
+        exchangeClient: makeExchangeClient(false),
+        reconciliationIssues,
+      });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:cancel:${String(ORDER_ID)}:transport-error`);
+      expect(issue.type).toBe('CANCEL_UNKNOWN_OUTCOME');
+      expect(issue.reason).toBe('Exchange error');
+      expect(issue.context).toMatchObject({
+        localStatus: 'CANCELED',
+        stage: 'exchange-cancel-after-local-cancel',
+        outcome: 'TRANSPORT_ERROR',
+      });
+    });
+
+    it('сбой reconciliationIssues.add логируется, но результат остаётся Ok', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      (reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+        Promise.reject(new Error('issue store down')),
+      );
+      const unknownExchange: IExchangeClient = {
+        ...makeExchangeClient(true),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+          Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'timeout' } as CancelOrderResult),
+        ),
+      };
+      const useCase = new CancelOrderUseCase({ ...deps, exchangeClient: unknownExchange, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to add reconciliation issue',
+        expect.objectContaining({ issueType: 'CANCEL_UNKNOWN_OUTCOME' }),
+      );
+    });
+
+    it('CANCELLED (чистый исход) — issue НЕ создаётся', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new CancelOrderUseCase({ ...deps, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(reconciliationIssues.add).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── ALREADY_FILLED: instrument-level pending in-flight marker ───────────────
+
+  it('ALREADY_FILLED ставит и order-level matched, и instrument-level in-flight placeholder', async () => {
+    const filledExchange: IExchangeClient = {
+      ...makeExchangeClient(true),
+      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+        Ok({ status: 'ALREADY_FILLED', reason: 'order is matched' } as CancelOrderResult),
+      ),
+    };
+    const useCase = new CancelOrderUseCase({ ...deps, exchangeClient: filledExchange });
+
+    const result = await useCase.execute(makeInput());
+
+    expect(result.ok).toBe(true);
+    const pendingFillId = pendingMatchFillId(ORDER_ID);
+    expect(orderStateStore.markOrderFillMatched).toHaveBeenCalledWith(ORDER_ID, pendingFillId);
+    // Instrument-level marker блокирует открытие нового ордера на инструменте
+    // до прихода реального fill (race: cancel → already filled → place → old fill).
+    expect(orderStateStore.markInFlightFill).toHaveBeenCalledWith({
+      instrumentId: expect.anything(),
+      fillId: pendingFillId,
+      orderId: ORDER_ID,
+      status: 'MATCHED',
+    });
   });
 
   // ── CAS конфликт при сохранении отменённого ордера ────────────────────────

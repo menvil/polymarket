@@ -33,6 +33,10 @@
  *    deps передан `reconciliationIssues`); для `PARTIALLY_FILLED` issue не создаётся —
  *    ордер live, pending marker достаточен.
  * 7. Публикация доменных событий — `eventBus.publishAll(order.pullEvents())`.
+ *    Публикация после успешного commit — notification path, НЕ часть транзакции:
+ *    её сбой логируется как `EVENT_PUBLISH_FAILED` и возвращается `Ok(venueOrderId)`
+ *    (state не откатывается; Err сделал бы committed operation retryable —
+ *    повторный вызов создал бы дублирующий ордер на venue).
  *
  * ### Почему Order создаётся ПОСЛЕ отправки на биржу:
  * Polymarket возвращает свой orderId (0xa928...) при размещении.
@@ -75,6 +79,7 @@ import type {
   IOrderStateStore,
   IReconciliationIssueRepository,
   ReconciliationIssue,
+  SubmitOrderParams,
 } from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -286,16 +291,17 @@ export class PlaceOrderUseCase {
     // Шаг 3: Отправка на биржу
     // input.orderId используется как clientOrderId для идемпотентности retry.
     // Фактический orderId ордера = venueOrderId, который вернёт биржа.
-    const submitResult = await this._deps.exchangeClient.submitOrder({
+    const submitParams: SubmitOrderParams = {
       asset: input.asset,
       side: input.side,
       price: input.price,
       size: input.size,
       postOnly: input.postOnly,
       orderType: input.orderType,
-      clientOrderId: input.orderId as unknown as string,
+      clientOrderId: String(input.orderId),
       strategyId: input.strategyId,
-    } as any);
+    };
+    const submitResult = await this._deps.exchangeClient.submitOrder(submitParams);
 
     if (!submitResult.ok) {
       // Откат: снять резервацию
@@ -697,19 +703,23 @@ export class PlaceOrderUseCase {
       });
     }
 
-    // Шаг 7: Публикация событий
+    // Шаг 7: Публикация событий.
+    // Бизнес-коммит уже состоялся (ордер сохранён CAS save выше, live на venue) —
+    // публикация является notification path, НЕ частью транзакции. Ошибка
+    // publish НЕ откатывает состояние и НЕ должна делать committed operation
+    // retryable: повторный execute() создал бы ДУБЛИРУЮЩИЙ ордер на venue.
+    // Поэтому логируем EVENT_PUBLISH_FAILED и возвращаем Ok(venueOrderId).
     const events = acceptedOrder.pullEvents();
     try {
       await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
     } catch (err) {
-      this._logger.error('Failed to publish order placed events', {
+      this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish order placed events after commit — order stays placed, event lost', {
         venueOrderId: String(venueOrderId),
+        clientOrderId: String(input.orderId),
+        submitStatus: submitValue.status,
         err: err instanceof Error ? err : new Error(String(err)),
       });
-      return Err(new TradingError(
-        `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
-        { context: { venueOrderId: String(venueOrderId) } },
-      ));
+      return Ok(venueOrderId);
     }
 
     this._logger.info('Order placed successfully', {

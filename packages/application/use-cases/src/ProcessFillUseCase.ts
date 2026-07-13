@@ -90,6 +90,7 @@ import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 
@@ -549,9 +550,18 @@ export class ProcessFillUseCase {
    * fillId-scoped (не order/instrument-wide) — партиальные fills того же
    * ордера/инструмента с ДРУГИМИ fillId не затрагиваются. Вызывается после
    * обработки fill (или на error path).
+   *
+   * Дополнительно снимается instrument-level placeholder
+   * `pendingMatchFillId(fill.orderId)`: реальный fill «разрешает» более раннюю
+   * неоднозначную пометку от cancel ALREADY_FILLED / submit FILLED (там
+   * конкретный fillId неизвестен). Order-level placeholder аналогично снимает
+   * `clearOrderFillMatched`. Placeholder снимается при ПЕРВОМ реальном fill
+   * ордера; реальные fillId других partial fills не затрагиваются
+   * (clearInFlightFill — no-op для неизвестных id).
    */
   private _clearInFlightFlags(fill: Fill): void {
     this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, fill.id);
     this._deps.orderStateStore.clearInFlightFill(fill.id);
+    this._deps.orderStateStore.clearInFlightFill(pendingMatchFillId(fill.orderId));
   }
 }

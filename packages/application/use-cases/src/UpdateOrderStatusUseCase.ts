@@ -13,7 +13,10 @@
  * 4. CAS-сохранение обновлённого Order (save(order, expectedVersion))
  * 5. Для CANCELLED/EXPIRED — освободить резервацию Portfolio (только после
  *    успешного CAS save)
- * 6. Опубликовать OrderEvent[] в EventBus
+ * 6. Опубликовать OrderEvent[] в EventBus — notification path, НЕ часть
+ *    транзакции: сбой publish после успешного CAS save логируется как
+ *    `EVENT_PUBLISH_FAILED` и НЕ меняет результат (Ok) — committed update
+ *    не должен становиться retryable из-за потери уведомления
  *
  * ### Защита от concurrent fill (CAS):
  * Между чтением версии и save мог выполниться ProcessFillUseCase и перезаписать
@@ -205,20 +208,20 @@ export class UpdateOrderStatusUseCase {
       this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
     }
 
-    // Шаг 6: Опубликовать OrderEvent[]
+    // Шаг 6: Опубликовать OrderEvent[].
+    // Бизнес-коммит уже состоялся (CAS save + возможный reservation release) —
+    // публикация является notification path, НЕ частью транзакции. Ошибка
+    // publish НЕ откатывает состояние и НЕ делает committed update retryable:
+    // логируем EVENT_PUBLISH_FAILED и продолжаем к Ok(undefined).
     if (events.length > 0) {
       try {
         await this._deps.eventBus.publishAll(events as readonly ApplicationEvent[]);
       } catch (err) {
-        this._logger.error('Failed to publish order events', {
+        this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish order events after commit — update stays applied, event lost', {
           orderId: String(orderId),
           updateType: update.type,
           err: err instanceof Error ? err : new Error(String(err)),
         });
-        return Err(new TradingError(
-          `Failed to publish events: ${err instanceof Error ? err.message : String(err)}`,
-          { context: { orderId: String(orderId) } },
-        ));
       }
     }
 
