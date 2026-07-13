@@ -41,7 +41,7 @@ import { assetIdToString } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
-import { Err } from '@polymarket/result';
+import { Ok } from '@polymarket/result';
 import { ExchangeError } from '@polymarket/ports';
 import type { PaperFillSimulator } from './PaperFillSimulator.js';
 
@@ -166,8 +166,20 @@ export class PaperExchangeClient implements IExchangeClient {
    * @remarks
    * Маршрутизация: по `params.asset` находит зарегистрированный рыночный контекст.
    * При отсутствии — fallback на текущий `this._instrumentId`.
-   * При успехе: ордер добавляется в PaperFillSimulator.
-   * При ошибке (risk check и т.д.): в симулятор не добавляется.
+   *
+   * Регистрация в PaperFillSimulator зависит от `submitResult.status`:
+   * - `OPEN` / `PARTIALLY_FILLED` — есть остаток, стоящий в стакане, трекаем его
+   *   через `trackOrder()` с `remainingSize` из результата (для PARTIALLY_FILLED —
+   *   НЕ полный effectiveSize, а именно то, что реально осталось неисполненным).
+   * - `FILLED` — ничего не осталось в стакане, live-ордера трекать нечего.
+   * - `REJECTED` / `UNKNOWN` — ордер либо не создан, либо его состояние неясно;
+   *   в симулятор не добавляется.
+   *
+   * Post-only marketable reject — это business outcome (venue отклоняет заведомо
+   * маркетируемый post-only ордер), а не транспортная ошибка, поэтому возвращается
+   * через `Ok({status: 'REJECTED', reason})`, а не `Err(ExchangeError)` — согласно
+   * контракту `IExchangeClient.submitOrder`, `Err` зарезервирован только для
+   * транспортных/API ошибок.
    */
   public async submitOrder(
     params: SubmitOrderParams,
@@ -179,31 +191,31 @@ export class PaperExchangeClient implements IExchangeClient {
       params.postOnly === true &&
       this._deps.simulator.wouldCrossImmediately(instrumentId, params.side, params.price)
     ) {
-      return Err(new ExchangeError('post-only order would execute immediately (marketable)'));
+      return Ok({ status: 'REJECTED', reason: 'post-only order would execute immediately (marketable)' });
     }
 
     const result = await this._deps.mock.submitOrder(params);
 
     if (result.ok) {
-      // effectiveSize — фактический size, принятый биржей (MockExchangeClient сейчас
-      // всегда отражает params.size без изменений, но контракт IExchangeClient этого
-      // не гарантирует — трекаем то, что реально вернул submitOrder(), а не то, что
-      // запросили, чтобы поведение не разошлось молча при будущих изменениях mock).
-      const { effectiveSize } = result.value;
-      this._deps.simulator.trackOrder({
-        orderId: result.value.orderId,
-        instrumentId,
-        marketId: ctx?.marketId ?? this._marketId,
-        side: params.side,
-        price: params.price,
-        totalSize: effectiveSize,
-        remainingSize: effectiveSize.value(),
-        accountId: ctx?.accountId ?? this._accountId,
-        asset: ctx?.asset ?? this._asset,
-        postOnly: params.postOnly === true,
-        orderType: params.orderType ?? 'GTC',
-        placedAtMs: this._deps.clock.now().getTime(),
-      });
+      const submitValue = result.value;
+      if (submitValue.status === 'OPEN' || submitValue.status === 'PARTIALLY_FILLED') {
+        this._deps.simulator.trackOrder({
+          orderId: submitValue.orderId,
+          instrumentId,
+          marketId: ctx?.marketId ?? this._marketId,
+          side: params.side,
+          price: params.price,
+          totalSize: submitValue.effectiveSize,
+          remainingSize: submitValue.remainingSize.value(),
+          accountId: ctx?.accountId ?? this._accountId,
+          asset: ctx?.asset ?? this._asset,
+          postOnly: params.postOnly === true,
+          orderType: params.orderType ?? 'GTC',
+          placedAtMs: this._deps.clock.now().getTime(),
+        });
+      }
+      // FILLED: ничего не осталось в стакане — трекать как live order нечего.
+      // REJECTED/UNKNOWN: ордер не создан либо состояние неясно — не трекаем.
     }
 
     return result;

@@ -5,7 +5,13 @@ import type { PlaceOrderInput, PlaceOrderDeps } from '../src/PlaceOrderUseCase.j
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IExchangeClient, IPortfolioStore, IOrderStateStore } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IExchangeClient,
+  IPortfolioStore,
+  IOrderStateStore,
+  IReconciliationIssueRepository,
+} from '@polymarket/ports';
 import { VersionConflictError } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
@@ -106,11 +112,20 @@ function makeExchangeClient(orderId?: OrderId): IExchangeClient {
   const id = orderId ?? ('exchange-order-1' as unknown as OrderId);
   return {
     submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-      Ok({ orderId: id, immediatelyMatched: false, effectiveSize: makeQty('100') }),
+      Ok({ status: 'OPEN', orderId: id, effectiveSize: makeQty('100'), remainingSize: makeQty('100') }),
     ),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
     getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
     getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+  };
+}
+
+function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
+  return {
+    add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
+    listOpen: jest.fn<IReconciliationIssueRepository['listOpen']>().mockResolvedValue([]),
+    get: jest.fn<IReconciliationIssueRepository['get']>().mockResolvedValue(undefined),
+    markResolved: jest.fn<IReconciliationIssueRepository['markResolved']>().mockResolvedValue(undefined),
   };
 }
 
@@ -386,7 +401,7 @@ describe('PlaceOrderUseCase', () => {
       const portfolioService = new PortfolioService(store, logger);
       const exchangeWithAdjustedSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('80'), remainingSize: makeQty('80') }),
         ),
         cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -415,7 +430,7 @@ describe('PlaceOrderUseCase', () => {
       const portfolioService = new PortfolioService(store, logger);
       const exchangeWithAdjustedSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('37') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('37'), remainingSize: makeQty('37') }),
         ),
         cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -460,7 +475,7 @@ describe('PlaceOrderUseCase', () => {
       const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithZeroSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('0') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('0'), remainingSize: makeQty('0') }),
         ),
         cancelOrder,
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -485,7 +500,7 @@ describe('PlaceOrderUseCase', () => {
       const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithOversizedFill: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('150') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('150'), remainingSize: makeQty('150') }),
         ),
         cancelOrder,
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -510,7 +525,7 @@ describe('PlaceOrderUseCase', () => {
       const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
       const exchangeWithAdjustedSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('80'), remainingSize: makeQty('80') }),
         ),
         cancelOrder,
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -534,7 +549,7 @@ describe('PlaceOrderUseCase', () => {
       );
       const exchangeWithZeroSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('0') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('0'), remainingSize: makeQty('0') }),
         ),
         cancelOrder,
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -563,7 +578,7 @@ describe('PlaceOrderUseCase', () => {
       );
       const exchangeWithAdjustedSize: IExchangeClient = {
         submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-          Ok({ orderId: 'exchange-order-1' as unknown as OrderId, immediatelyMatched: false, effectiveSize: makeQty('80') }),
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('80'), remainingSize: makeQty('80') }),
         ),
         cancelOrder,
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
@@ -578,6 +593,393 @@ describe('PlaceOrderUseCase', () => {
         'Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required',
         expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
       );
+    });
+  });
+
+  // ── SubmitOrderResult.status (OPEN/PARTIALLY_FILLED/FILLED/REJECTED/UNKNOWN) ──
+
+  describe('submitOrder status handling', () => {
+    it('OPEN: сохраняет ордер, не помечает matched', async () => {
+      const useCase = new PlaceOrderUseCase(deps);
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(deps.orderStateStore.markOrderFillMatched).not.toHaveBeenCalled();
+    });
+
+    it('PARTIALLY_FILLED: сохраняет ордер, помечает pending matched', async () => {
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'PARTIALLY_FILLED',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            filledSize: makeQty('40'),
+            remainingSize: makeQty('60'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(deps.orderStateStore.markOrderFillMatched).toHaveBeenCalledWith(
+        'exchange-order-1',
+        expect.anything(),
+      );
+    });
+
+    it('PARTIALLY_FILLED/FILLED: markOrderFillMatched вызывается ДО publishAll — стратегия не должна увидеть ORDER_ACCEPTED раньше marker\'а', async () => {
+      const callOrder: string[] = [];
+      const orderStateStore = {
+        ...(deps.orderStateStore as unknown as Record<string, unknown>),
+        markOrderFillMatched: jest.fn(() => { callOrder.push('markOrderFillMatched'); }),
+      } as unknown as IOrderStateStore;
+      const eventBusSpy: IEventBus = {
+        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
+        publishAll: jest.fn(async () => { callOrder.push('publishAll'); }) as unknown as IEventBus['publishAll'],
+        subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
+      };
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'FILLED',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            filledSize: makeQty('100'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, orderStateStore, eventBus: eventBusSpy, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(callOrder).toEqual(['markOrderFillMatched', 'publishAll']);
+    });
+
+    it('FILLED: сохраняет ордер, помечает pending matched, не синтезирует Fill', async () => {
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'FILLED',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            filledSize: makeQty('100'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(deps.orderStateStore.markOrderFillMatched).toHaveBeenCalledWith(
+        'exchange-order-1',
+        expect.anything(),
+      );
+      // Use case не синтезирует Fill и не трогает Portfolio напрямую здесь —
+      // сохранённый Order не содержит fill-данных сверх size.
+      const savedOrder = (orderRepo.save as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
+      expect(savedOrder.size.value().toString()).toBe('100');
+    });
+
+    it('REJECTED: откатывает резервацию, НЕ сохраняет Order, возвращает Err', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK order could not be filled' }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/rejected/i);
+      expect(orderRepo.save).not.toHaveBeenCalled();
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      // Нет orderId (REJECTED никогда его не содержит) — cancel не имеет смысла.
+      expect(cancelOrder).not.toHaveBeenCalled();
+    });
+
+    it('UNKNOWN с orderId: откатывает резервацию, пытается best-effort cancel, возвращает Err', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'UNKNOWN',
+            reason: 'ambiguous venue response',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+          }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/ambiguous/i);
+      expect(orderRepo.save).not.toHaveBeenCalled();
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      expect(cancelOrder).toHaveBeenCalledWith('exchange-order-1');
+    });
+
+    it('UNKNOWN без orderId: откатывает резервацию, НЕ пытается cancel, возвращает Err', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const cancelOrder = jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' }));
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'UNKNOWN', reason: 'ambiguous, no orderId returned' }),
+        ),
+        cancelOrder,
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(orderRepo.save).not.toHaveBeenCalled();
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      expect(cancelOrder).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Reconciliation issues (optional dependency) ───────────────────────────
+
+  describe('reconciliation issues', () => {
+    function makeUnknownExchangeClient(withOrderId: boolean): IExchangeClient {
+      return {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok(
+            withOrderId
+              ? {
+                  status: 'UNKNOWN',
+                  reason: 'ambiguous venue response',
+                  orderId: 'exchange-order-1' as unknown as OrderId,
+                  effectiveSize: makeQty('100'),
+                }
+              : { status: 'UNKNOWN', reason: 'ambiguous, no orderId returned' },
+          ),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+    }
+
+    function makeFilledExchangeClient(): IExchangeClient {
+      return {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'FILLED',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            filledSize: makeQty('100'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+    }
+
+    it('UNKNOWN с orderId: создаёт SUBMIT_UNKNOWN_OUTCOME issue с детерминированным id, результат прежний Err', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        exchangeClient: makeUnknownExchangeClient(true),
+        reconciliationIssues,
+      });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/ambiguous/i);
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        status: string;
+        reason: string;
+        orderId: unknown;
+        accountId: unknown;
+        instrumentId: unknown;
+        createdAt: Date;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:submit:exchange-order-1:unknown');
+      expect(issue.type).toBe('SUBMIT_UNKNOWN_OUTCOME');
+      expect(issue.status).toBe('OPEN');
+      expect(issue.reason).toBe('ambiguous venue response');
+      expect(issue.orderId).toBe('exchange-order-1');
+      expect(issue.accountId).toBe(ACCOUNT_ID);
+      expect(issue.instrumentId).toBe(INSTRUMENT_ID);
+      expect(issue.createdAt).toEqual(new Date('2024-01-01T00:00:00.000Z')); // clock.now()
+      expect(issue.context).toMatchObject({
+        clientOrderId: String(ORDER_ID),
+        venueOrderId: 'exchange-order-1',
+        cancelAttempted: true,
+        rollbackReleaseOk: true,
+      });
+    });
+
+    it('UNKNOWN без orderId: создаёт issue с id на основе clientOrderId, cancelAttempted=false', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        exchangeClient: makeUnknownExchangeClient(false),
+        reconciliationIssues,
+      });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        orderId?: unknown;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:submit-client:${String(ORDER_ID)}:unknown`);
+      expect(issue.type).toBe('SUBMIT_UNKNOWN_OUTCOME');
+      expect(issue.orderId).toBeUndefined();
+      expect(issue.context).toMatchObject({
+        clientOrderId: String(ORDER_ID),
+        cancelAttempted: false,
+      });
+      expect(issue.context).not.toHaveProperty('venueOrderId');
+    });
+
+    it('FILLED: создаёт SUBMIT_FILLED_WITHOUT_FILL_DETAILS issue и всё равно возвращает Ok(venueOrderId)', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        exchangeClient: makeFilledExchangeClient(),
+        reconciliationIssues,
+      });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe('exchange-order-1');
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(deps.orderStateStore.markOrderFillMatched).toHaveBeenCalled();
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        status: string;
+        reason: string;
+        orderId: unknown;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:submit:exchange-order-1:filled-without-fill-details');
+      expect(issue.type).toBe('SUBMIT_FILLED_WITHOUT_FILL_DETAILS');
+      expect(issue.status).toBe('OPEN');
+      expect(issue.reason).toBe('Submit returned FILLED without fill details; waiting for WS/reconciliation fill');
+      expect(issue.orderId).toBe('exchange-order-1');
+      expect(issue.context).toMatchObject({
+        clientOrderId: String(ORDER_ID),
+        filledSize: '100',
+        effectiveSize: '100',
+        side: 'BUY',
+        price: '0.65',
+      });
+    });
+
+    it('PARTIALLY_FILLED: issue НЕ создаётся (ордер live, pending marker достаточен)', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const exchangeClient: IExchangeClient = {
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'PARTIALLY_FILLED',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            filledSize: makeQty('40'),
+            remainingSize: makeQty('60'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(Ok({ status: 'CANCELLED' })),
+        getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+        getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient, reconciliationIssues });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(reconciliationIssues.add).not.toHaveBeenCalled();
+    });
+
+    it('сбой reconciliationIssues.add в FILLED-ветке не ломает успешный результат', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      (reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+        Promise.reject(new Error('issue store down')),
+      );
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        exchangeClient: makeFilledExchangeClient(),
+        reconciliationIssues,
+      });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe('exchange-order-1');
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to add reconciliation issue',
+        expect.objectContaining({ issueType: 'SUBMIT_FILLED_WITHOUT_FILL_DETAILS' }),
+      );
+      // publishAll всё равно выполнен — flow не прерван.
+      expect(eventBus.publishAll).toHaveBeenCalled();
+    });
+
+    it('сбой reconciliationIssues.add в UNKNOWN-ветке не меняет исходный Err', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      (reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+        Promise.reject(new Error('issue store down')),
+      );
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        exchangeClient: makeUnknownExchangeClient(true),
+        reconciliationIssues,
+      });
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      // Err про ambiguous submit, а не про issue store.
+      if (!result.ok) expect(result.error.message).toMatch(/ambiguous/i);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to add reconciliation issue',
+        expect.objectContaining({ issueType: 'SUBMIT_UNKNOWN_OUTCOME' }),
+      );
+    });
+
+    it('без reconciliationIssues (optional dep) поведение прежнее — UNKNOWN возвращает Err без issue', async () => {
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: makeUnknownExchangeClient(true) });
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
     });
   });
 

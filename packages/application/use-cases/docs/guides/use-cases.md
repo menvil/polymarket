@@ -19,14 +19,16 @@ PlaceOrderUseCase
   ├── PortfolioService → IPortfolioStore
   ├── IExchangeClient
   ├── IEventBus
-  └── IClock
+  ├── IClock
+  └── IReconciliationIssueRepository (optional, queryable issues)
 
 ProcessFillUseCase
   ├── OrderService → IOrderRepository
   ├── PortfolioService → IPortfolioStore
   ├── LedgerService → Ledger
   ├── IProcessedFillRepository (idempotency guard)
-  └── IEventBus
+  ├── IEventBus
+  └── IReconciliationIssueRepository (optional, queryable issues)
 
 CancelOrderUseCase
   ├── OrderService → IOrderRepository
@@ -42,14 +44,49 @@ CancelOrderUseCase
 1. **Риск-проверка** — `riskChecker.checkBeforeOrder()` (fail-fast)
 2. **Создание Order** — `Order.create()` → PENDING
 3. **Резервирование баланса** — `portfolioService.reserveForOrder(notional)`
-4. **Отправка на биржу** — `exchangeClient.submitOrder()`
-   - При ошибке биржи: откат резервации через `releaseReservation()`
+4. **Отправка на биржу** — `exchangeClient.submitOrder()` → типизированный
+   `SubmitOrderResult`:
+   - `Err(ExchangeError)` (транспорт) → откат резервации, `Err`
+   - `Ok({status: 'REJECTED'})` → откат резервации, `Err`; локальный `Order` НЕ
+     создаётся (venue вообще не создал live-ордер)
+   - `Ok({status: 'UNKNOWN'})` → откат резервации, best-effort `cancelOrder`
+     (если venue вернул `orderId`), `Err` с manual-reconciliation контекстом;
+     use case НИКОГДА не превращает ambiguous-ответ в обычный OPEN order.
+     Если в deps передан `reconciliationIssues` — дополнительно создаётся
+     queryable issue `SUBMIT_UNKNOWN_OUTCOME` (детерминированный id:
+     `reconciliation:submit:${venueOrderId}:unknown`, либо
+     `reconciliation:submit-client:${clientOrderId}:unknown` без venueOrderId).
+     Issue создаётся ДАЖЕ если best-effort cancel удался — исход submit был
+     ambiguous, и venue-состояние требует ручной проверки. Сбой `add()`
+     логируется и не меняет исходный `Err`
+   - `Ok({status: 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED'})` → продолжение до шага 7
 5. **Принятие ордера** — `order.accept()` → OPEN
 6. **Сохранение (CAS)** — `orderRepo.save(acceptedOrder, 0)` — новый ордер всегда
    с `expectedVersion=0`. `Err(VersionConflictError)` означает, что под этим
    venueOrderId уже есть запись (гонка с reconcile/WS) — выполняется best-effort
    отмена venue-ордера + откат резервации, события НЕ публикуются
-7. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`
+7. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`. Для
+   `PARTIALLY_FILLED`/`FILLED` дополнительно —
+   `orderStateStore.markOrderFillMatched(venueOrderId, pendingMatchFillId(...))`,
+   БЕЗ синтеза `Fill`: use case не знает деталей исполнения (venue submit-ответ
+   их не содержит) и не применяет ничего к `Portfolio` на этом шаге — реальный
+   `Fill` придёт отдельно через WS (`FillEventHandler`) или REST
+   (`ReconcileTradesUseCase`) и будет обработан в `ProcessFillUseCase`. Пометка
+   нужна только чтобы `CancelOrderUseCase` не пытался отменить уже (частично)
+   исполненный ордер.
+
+   Для `FILLED` (если в deps передан `reconciliationIssues`) после успешного
+   save+marker и ДО `publishAll` дополнительно создаётся queryable issue
+   `SUBMIT_FILLED_WITHOUT_FILL_DETAILS`
+   (id: `reconciliation:submit:${venueOrderId}:filled-without-fill-details`).
+
+   **Почему это сделано так:** live-ордера на venue уже нет, а `Portfolio`
+   нельзя обновить без реального `Fill` — если WS/reconciliation fill не
+   придёт, потерю нельзя увидеть только по логам; issue делает ожидание
+   fill queryable/alertable. Порядок (до `publishAll`) гарантирует, что при
+   сбое публикации issue уже записана. Для `PARTIALLY_FILLED` issue НЕ
+   создаётся: ордер всё ещё live, pending marker достаточен. Сбой `add()`
+   логируется и не ломает успешный результат (`Ok(venueOrderId)`).
 
 ### Пример использования
 
@@ -96,7 +133,11 @@ if (result.ok) {
    - BUY: `applyDebit(price×size)` + позиция увеличивается
    - SELL: `applyCredit(price×size)` + позиция уменьшается
    - Если падает ПОСЛЕ шага 5 (Order уже сохранён) → `markReconciliationRequired(fill.id, reason)`,
-     НЕ `markFailed()` (см. Idempotency ниже)
+     НЕ `markFailed()` (см. Idempotency ниже). Если в deps передан
+     `reconciliationIssues` — дополнительно создаётся queryable issue
+     `ORDER_PORTFOLIO_DESYNC` (id: `reconciliation:fill:${fill.id}:order-portfolio-desync`)
+     с тем же reason; семантика `markReconciliationRequired` не меняется,
+     сбой `add()` логируется и не маскирует исходный `Err`
 7. **Записать в Ledger** — `ledgerService.recordFill(fill)`
 8. **`markApplied(fill.id)`** — сразу после успешного применения к Order/Portfolio/Ledger, ДО публикации
 9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())` — ошибка публикации НЕ откатывает `markApplied` (см. `ProcessFillUseCase` doc, `EVENT_PUBLISH_FAILED`)
@@ -114,6 +155,39 @@ if (result.ok) {
 `{ outcome: 'RECONCILIATION_REQUIRED' }` (не `ACQUIRED`), а `execute()` — `Ok` (no-op) с
 error-логом на каждый повторный вызов, чтобы проблема оставалась видимой в мониторинге, но не
 мутирует Order/Portfolio/Ledger повторно. Требуется ручная реконсиляция.
+
+## Reconciliation issues (IReconciliationIssueRepository)
+
+### Почему это сделано так?
+
+Manual reconciliation paths раньше только логировались или помечали статус fill в
+`IProcessedFillRepository`. Логи не queryable, а processed-fill статус привязан к
+fillId и не покрывает submit-сценарии без fill (UNKNOWN outcome, FILLED без fill
+details). Порт `IReconciliationIssueRepository` (в `@polymarket/ports`) даёт единое
+queryable/alertable хранилище проблем, требующих ручного вмешательства.
+
+Ключевые свойства:
+
+- **Optional dependency** — use-cases работают без него (прежнее поведение:
+  logging + `markReconciliationRequired`); передача repo только добавляет issues.
+- **Идемпотентный `add()`** — детерминированные id (`reconciliation:...`)
+  гарантируют отсутствие дублей при retry того же сценария.
+- **Best-effort** — сбой `add()` никогда не маскирует исходную trading-ошибку
+  и не меняет результат use case (логируется `Failed to add reconciliation issue`).
+- **Не мутирует trading state** — это operational/recovery запись, не Order/Portfolio.
+
+### Кто какие issues создаёт
+
+| Use case | Сценарий | Тип issue | id |
+|----------|----------|-----------|----|
+| `PlaceOrderUseCase` | submit → `UNKNOWN` | `SUBMIT_UNKNOWN_OUTCOME` | `reconciliation:submit:${venueOrderId}:unknown` (или `submit-client:${clientOrderId}`) |
+| `PlaceOrderUseCase` | submit → `FILLED` без fill details | `SUBMIT_FILLED_WITHOUT_FILL_DETAILS` | `reconciliation:submit:${venueOrderId}:filled-without-fill-details` |
+| `ProcessFillUseCase` | Portfolio падает после сохранения Order | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:order-portfolio-desync` |
+
+In-memory реализация — `InMemoryReconciliationIssueRepository`
+(`@polymarket/in-memory`, re-export в `@polymarket/backtesting`). Recovery
+worker/use-case по этим issues — вне scope текущего этапа (только repository +
+создание issues).
 
 ## CancelOrderUseCase
 

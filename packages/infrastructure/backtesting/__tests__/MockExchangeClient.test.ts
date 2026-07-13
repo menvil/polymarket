@@ -49,14 +49,17 @@ describe('MockExchangeClient', () => {
   // ── submitOrder ────────────────────────────────────────────────────────────
 
   describe('submitOrder()', () => {
-    it('возвращает Ok с уникальным OrderId', async () => {
+    it('возвращает Ok({status: OPEN}) с уникальным OrderId', async () => {
       const result = await client.submitOrder(makeOrderParams());
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(typeof result.value.orderId).toBe('string');
-        expect(String(result.value.orderId).length).toBeGreaterThan(0);
-        expect(result.value.immediatelyMatched).toBe(false);
+        expect(result.value.status).toBe('OPEN');
+        if (result.value.status === 'OPEN') {
+          expect(typeof result.value.orderId).toBe('string');
+          expect(String(result.value.orderId).length).toBeGreaterThan(0);
+          expect(result.value.remainingSize.value().toString()).toBe('100');
+        }
       }
     });
 
@@ -66,8 +69,8 @@ describe('MockExchangeClient', () => {
       const r3 = await client.submitOrder(makeOrderParams());
 
       expect(r1.ok && r2.ok && r3.ok).toBe(true);
-      if (r1.ok && r2.ok && r3.ok) {
-        const ids = new Set([r1.value, r2.value, r3.value]);
+      if (r1.ok && r2.ok && r3.ok && r1.value.status === 'OPEN' && r2.value.status === 'OPEN' && r3.value.status === 'OPEN') {
+        const ids = new Set([r1.value.orderId, r2.value.orderId, r3.value.orderId]);
         expect(ids.size).toBe(3);
       }
     });
@@ -94,7 +97,7 @@ describe('MockExchangeClient', () => {
       const result = await client.submitOrder(makeOrderParams());
       expect(result.ok).toBe(true);
 
-      if (result.ok) {
+      if (result.ok && result.value.status === 'OPEN') {
         const submitted = client.getSubmittedOrders();
         expect(submitted[0].orderId).toBe(result.value.orderId);
       }
@@ -108,7 +111,7 @@ describe('MockExchangeClient', () => {
       const submitResult = await client.submitOrder(makeOrderParams());
       expect(submitResult.ok).toBe(true);
 
-      if (submitResult.ok) {
+      if (submitResult.ok && submitResult.value.status === 'OPEN') {
         const cancelResult = await client.cancelOrder(submitResult.value.orderId);
         expect(cancelResult.ok).toBe(true);
         if (cancelResult.ok) {
@@ -121,7 +124,7 @@ describe('MockExchangeClient', () => {
       const submitResult = await client.submitOrder(makeOrderParams());
       expect(submitResult.ok).toBe(true);
 
-      if (submitResult.ok) {
+      if (submitResult.ok && submitResult.value.status === 'OPEN') {
         const orderId = submitResult.value.orderId;
         expect(client.isCancelled(orderId)).toBe(false);
 
@@ -211,14 +214,14 @@ describe('MockExchangeClient', () => {
 
     it('сбрасывает отменённые ордера', async () => {
       const result = await client.submitOrder(makeOrderParams());
-      if (result.ok) {
+      if (result.ok && result.value.status === 'OPEN') {
         await client.cancelOrder(result.value.orderId);
         expect(client.isCancelled(result.value.orderId)).toBe(true);
       }
 
       client.reset();
 
-      if (result.ok) {
+      if (result.ok && result.value.status === 'OPEN') {
         expect(client.isCancelled(result.value.orderId)).toBe(false);
       }
     });
@@ -231,7 +234,7 @@ describe('MockExchangeClient', () => {
       const r1 = await client.submitOrder(makeOrderParams());
       const r2 = await client.submitOrder(makeOrderParams());
 
-      if (r1.ok && r2.ok) {
+      if (r1.ok && r2.ok && r1.value.status === 'OPEN' && r2.value.status === 'OPEN') {
         expect(r1.value.orderId).not.toBe(r2.value.orderId);
         // После сброса счётчик начинается заново — суффикс -1
         expect(String(r1.value.orderId)).toMatch(/-1$/);

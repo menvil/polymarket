@@ -68,32 +68,64 @@ export interface SubmitOrderParams {
 }
 
 /**
- * Результат размещения ордера на бирже.
- *
- * @param orderId - ID ордера на бирже
- * @param immediatelyMatched - true если ордер мгновенно исполнен (status=matched, sizeRemaining=0)
- * @param effectiveSize - фактический size, отправленный на биржу (может отличаться от
- * `SubmitOrderParams.size`, если адаптер скорректировал его перед отправкой)
+ * Структурированный бизнес-результат размещения ордера на бирже.
  *
  * @remarks
- * Polymarket CLOB может вернуть status "matched" прямо из REST-ответа.
- * Это значит ордер мгновенно исполнен и cancel невозможен.
- * Если `immediatelyMatched=true`, вызывающий код должен пометить ордер через
- * `orderStateStore.markOrderFillMatched()` чтобы CancelOrderUseCase не пытался отменить.
+ * Возвращается внутри `Ok(...)` — `Err(ExchangeError)` зарезервирован только для
+ * транспортных/API ошибок (сеть недоступна, аутентификация и т.п.). Все остальные
+ * исходы venue — типизированный `status`, по которому переключается вызывающий код
+ * (`PlaceOrderUseCase`), НЕ выводя семантику из отдельных boolean-флагов.
  *
- * `effectiveSize` ОБЯЗАТЕЛЕН: некоторые реализации (например,
- * `PolymarketExchangeClientAdapter` на SELL при нехватке on-chain баланса) корректируют
- * запрошенный `size` перед отправкой на биржу. Вызывающий код (`PlaceOrderUseCase`) обязан
- * создавать доменный `Order` с `effectiveSize`, а НЕ с исходным `SubmitOrderParams.size` —
- * иначе локальное состояние (резервации, размер ордера) разойдётся с тем, что реально
- * находится в стакане на бирже. Если адаптер size не корректирует — `effectiveSize` равен
- * исходному `SubmitOrderParams.size`.
+ * `effectiveSize` — фактический size, реально отправленный на биржу (может отличаться
+ * от `SubmitOrderParams.size`, если адаптер скорректировал его перед отправкой,
+ * например SELL dust-adjustment по on-chain балансу). Вызывающий код обязан создавать
+ * доменный `Order` с `effectiveSize`, а не с исходным `SubmitOrderParams.size`.
+ *
+ * - `OPEN` — ордер принят и стоит в стакане, ничего не исполнено
+ *   (`remainingSize == effectiveSize`, `filledSize == 0`).
+ * - `PARTIALLY_FILLED` — часть ордера исполнена мгновенно, остаток стоит в стакане
+ *   (`0 < filledSize < effectiveSize`). Fill details ещё не известны на этом уровне —
+ *   реальный `Fill` придёт через WS/reconciliation; здесь только факт частичного исполнения.
+ * - `FILLED` — ордер исполнен (полностью или в объёме, который venue вернул как
+ *   финальный) и больше не стоит в стакане (`remainingSize == 0`, `filledSize > 0`).
+ *   НЕ содержит synthetic fill — только факт «исполнено», конкретные fills приходят
+ *   отдельно через WS/reconciliation.
+ * - `REJECTED` — venue явно отклонил/провалил ордер без создания live-ордера
+ *   (нулевой fill, ничего не осталось в стакане).
+ * - `UNKNOWN` — ответ venue не укладывается в безопасную модель (неизвестный статус,
+ *   некорректные/противоречивые size-поля). Вызывающий код обязан считать ордер
+ *   потенциально live и требовать ручной reconciliation — НЕ создавать обычный OPEN order.
  */
-export interface SubmitOrderResult {
-  readonly orderId: OrderId;
-  readonly immediatelyMatched: boolean;
-  readonly effectiveSize: Quantity;
-}
+export type SubmitOrderResult =
+  | {
+      readonly status: 'OPEN';
+      readonly orderId: OrderId;
+      readonly effectiveSize: Quantity;
+      readonly remainingSize: Quantity;
+    }
+  | {
+      readonly status: 'PARTIALLY_FILLED';
+      readonly orderId: OrderId;
+      readonly effectiveSize: Quantity;
+      readonly filledSize: Quantity;
+      readonly remainingSize: Quantity;
+    }
+  | {
+      readonly status: 'FILLED';
+      readonly orderId: OrderId;
+      readonly effectiveSize: Quantity;
+      readonly filledSize: Quantity;
+    }
+  | {
+      readonly status: 'REJECTED';
+      readonly reason: string;
+    }
+  | {
+      readonly status: 'UNKNOWN';
+      readonly reason: string;
+      readonly orderId?: OrderId;
+      readonly effectiveSize?: Quantity;
+    };
 
 /**
  * Структурированный результат venue-отмены ордера.
@@ -137,8 +169,12 @@ export type CancelOrderResult =
  *   logger.error('Failed to submit order', { error: result.error.message });
  *   return;
  * }
- * const { orderId, immediatelyMatched, effectiveSize } = result.value;
- * // Order.create() должен использовать effectiveSize, а не исходный params.size
+ * switch (result.value.status) {
+ *   case 'OPEN':
+ *     // Order.create() должен использовать effectiveSize, а не исходный params.size
+ *     break;
+ *   // ...
+ * }
  * ```
  */
 export interface IExchangeClient {
@@ -146,7 +182,13 @@ export interface IExchangeClient {
    * Размещает лимитный ордер на бирже.
    *
    * @param params - Параметры ордера
-   * @returns SubmitOrderResult при успехе, ExchangeError при отказе биржи
+   * @returns Ok(SubmitOrderResult) с типизированным business-исходом; Err(ExchangeError)
+   * только при транспортной/API ошибке
+   *
+   * @remarks
+   * Business-исходы (OPEN/PARTIALLY_FILLED/FILLED/REJECTED/UNKNOWN) возвращаются через
+   * `Ok(SubmitOrderResult)`. Адаптер не синтезирует fills — при частичном/полном
+   * исполнении реальные `Fill` приходят отдельно через WS/reconciliation.
    */
   submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>>;
 

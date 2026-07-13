@@ -48,8 +48,27 @@ import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, CancelOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
-import type { CancelOrderExecutionResponse } from '../ports/IExecutionAdapter.js';
+import type { CancelOrderExecutionResponse, OrderResponse } from '../ports/IExecutionAdapter.js';
 import type { PolymarketBalancePolicy } from '../rest/policies/PolymarketBalancePolicy.js';
+
+/**
+ * Статусы venue, которые данный маппер умеет распознавать.
+ *
+ * @remarks
+ * Включает как «сырые» статусы Polymarket CLOB API (`live`, `unmatched`, `pending`,
+ * `delayed`, `matched`), так и уже нормализованные значения, которые фактически
+ * отдаёт `PolymarketOrderMapper.mapStatus()` (`open`, `partially_filled`, `filled`,
+ * `cancelled`) — `OrderResponse.status` типизирован как `string`, контракт не
+ * гарантирует, какой именно набор значений реально придёт.
+ */
+const KNOWN_SUBMIT_STATUSES = new Set([
+  'live', 'open', 'unmatched', 'pending', 'delayed',
+  'matched', 'filled', 'partially_filled',
+  'rejected', 'failed', 'cancelled', 'canceled',
+]);
+
+/** Статусы, означающие терминальный исход без live-ордера (reject/cancel на этапе submit). */
+const REJECTED_SUBMIT_STATUSES = new Set(['rejected', 'failed', 'cancelled', 'canceled']);
 
 /**
  * Реализует IExchangeClient через PolymarketExecutionAdapter.
@@ -105,7 +124,8 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * Размещает лимитный ордер через Polymarket REST.
    *
    * @param params - Параметры ордера (domain VOs)
-   * @returns Ok(OrderId) при успехе, Err(ExchangeError) при ошибке
+   * @returns Ok(SubmitOrderResult) с типизированным business-исходом; Err(ExchangeError)
+   * только при транспортной/API ошибке
    *
    * @remarks
    * Конвертирует:
@@ -115,6 +135,8 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * - `params.side: Side` → lowercase 'buy' | 'sell'
    *
    * Все exceptions из PolymarketExecutionAdapter оборачиваются в ExchangeError.
+   * Business-классификация ответа (OPEN/PARTIALLY_FILLED/FILLED/REJECTED/UNKNOWN)
+   * выполняется в `_mapSubmitResponse` — сам этот метод её не парсит.
    */
   public async submitOrder(params: SubmitOrderParams): Promise<Result<SubmitOrderResult, ExchangeError>> {
     const tokenId = this._extractTokenId(params);
@@ -141,30 +163,20 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         strategyId: params.strategyId,
       });
 
-      const orderId = asOrderId(response.orderId);
-      if (!orderId) {
-        return Err(new ExchangeErrorClass(
-          `Invalid orderId returned from exchange: ${response.orderId}`,
-          { context: { tokenId, strategyId: params.strategyId } },
-        ));
+      const mapped = this._mapSubmitResponse(response, effectiveSize);
+      if (!mapped.ok) {
+        return mapped;
       }
 
-      // Polymarket CLOB может мгновенно исполнить ордер (status=matched).
-      // Обнаруживаем это чтобы вызывающий код пометил ордер через markOrderFillMatched
-      // и не пытался отменять уже исполненный ордер.
-      const immediatelyMatched =
-        (response.status === 'matched' || response.status === 'filled') &&
-        response.sizeRemaining === 0;
-
-      this._logger.info('Order submitted to exchange', {
+      this._logger.info('Order submit result mapped', {
         orderId: response.orderId,
         tokenId,
         side: params.side,
         strategyId: params.strategyId,
-        ...(immediatelyMatched ? { immediatelyMatched: true, responseStatus: response.status } : {}),
+        status: mapped.value.status,
       });
 
-      return Ok({ orderId, immediatelyMatched, effectiveSize });
+      return mapped;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Exchange submitOrder failed', {
@@ -177,6 +189,138 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         { context: { tokenId } },
       ));
     }
+  }
+
+  /**
+   * Маппит сырой venue-ответ на размещение ордера в структурированный SubmitOrderResult.
+   *
+   * @param response - Ответ `IExecutionAdapter.postOrder()` (нормализован
+   * `PolymarketOrderMapper`, но `status` типизирован как `string` — контракт не
+   * гарантирует конкретный набор значений)
+   * @param effectiveSize - Фактический size, отправленный на биржу
+   * @returns Ok(SubmitOrderResult) с классифицированным business outcome;
+   * Err(ExchangeError) только если orderId невалиден (адаптер вернул мусор)
+   *
+   * @remarks
+   * Приоритет источников истины: `filledSize` (вычисленный из ответа) важнее
+   * текстового `status` — `status` используется только чтобы (1) отсеять
+   * нераспознанные значения в UNKNOWN и (2) для терминальных статусов
+   * (rejected/failed/cancelled/canceled) отличить REJECTED (`filledSize == 0`,
+   * ничего не исполнено) от FAK/IOC-подобного FILLED (`filledSize > 0`, часть
+   * исполнилась, остаток venue закрыл сам — live-ордера больше нет независимо
+   * от того, что показывает сырой `sizeRemaining`).
+   * Никогда не синтезирует fills — `filledSize`/`remainingSize` это просто числа,
+   * не `Fill`-объекты; реальные fills приходят через WS/reconciliation.
+   */
+  private _mapSubmitResponse(
+    response: OrderResponse,
+    effectiveSize: Quantity,
+  ): Result<SubmitOrderResult, ExchangeError> {
+    const orderId = asOrderId(response.orderId);
+    if (!orderId) {
+      return Err(new ExchangeErrorClass(
+        `Invalid orderId returned from exchange: ${response.orderId}`,
+      ));
+    }
+
+    const normalizedStatus = response.status.toLowerCase();
+    if (!KNOWN_SUBMIT_STATUSES.has(normalizedStatus)) {
+      this._logger.warn('Unrecognized venue order status on submit', {
+        orderId: response.orderId,
+        status: response.status,
+      });
+      return Ok({
+        status: 'UNKNOWN',
+        reason: `Unrecognized venue order status: ${response.status}`,
+        orderId,
+        effectiveSize,
+      });
+    }
+
+    const totalSize = effectiveSize.value();
+    const remainingRaw = response.sizeRemaining;
+    if (!Number.isFinite(remainingRaw)) {
+      return Ok({
+        status: 'UNKNOWN',
+        reason: `Non-finite sizeRemaining from venue: ${String(remainingRaw)}`,
+        orderId,
+        effectiveSize,
+      });
+    }
+
+    const remainingDecimal = new Decimal(remainingRaw);
+    if (remainingDecimal.isNegative() || remainingDecimal.greaterThan(totalSize)) {
+      return Ok({
+        status: 'UNKNOWN',
+        reason: `sizeRemaining (${remainingRaw}) out of bounds for effectiveSize (${totalSize.toString()})`,
+        orderId,
+        effectiveSize,
+      });
+    }
+    const filledDecimal = totalSize.minus(remainingDecimal);
+
+    if (REJECTED_SUBMIT_STATUSES.has(normalizedStatus)) {
+      // filled == 0 → ничего не исполнилось, ордер целиком отклонён/отменён venue —
+      // никакого live-ордера не создано. `remainingDecimal` здесь НЕ проверяем на ноль:
+      // sizeRemaining = size - filledSize, поэтому при filled=0 remaining математически
+      // равен totalSize (venue просто эхом возвращает исходный размер как «неисполненный»),
+      // а не 0 — требовать remaining==0 тут было бы недостижимым условием.
+      if (filledDecimal.isZero()) {
+        return Ok({
+          status: 'REJECTED',
+          reason: `Venue reported status "${response.status}" with no fill`,
+        });
+      }
+      // filled > 0 при терминальном статусе — FAK/IOC-подобный исход: часть исполнилась,
+      // остаток venue закрыл/отменил сам. Live-ордера больше нет, поэтому это FILLED тем
+      // объёмом, что реально исполнился (НЕ ждём отдельного OPEN/PARTIALLY_FILLED remainder).
+      // `remainingDecimal` из сырого ответа здесь не используется — терминальный статус
+      // авторитетнее: остатка в стакане нет независимо от того, что показывает sizeRemaining.
+      return Ok({
+        status: 'FILLED',
+        orderId,
+        effectiveSize,
+        filledSize: Quantity.of(filledDecimal),
+      });
+    }
+
+    if (remainingDecimal.isZero() && filledDecimal.isPositive()) {
+      return Ok({
+        status: 'FILLED',
+        orderId,
+        effectiveSize,
+        filledSize: Quantity.of(filledDecimal),
+      });
+    }
+
+    if (remainingDecimal.isPositive() && filledDecimal.isZero()) {
+      return Ok({
+        status: 'OPEN',
+        orderId,
+        effectiveSize,
+        remainingSize: Quantity.of(remainingDecimal),
+      });
+    }
+
+    if (remainingDecimal.isPositive() && filledDecimal.isPositive()) {
+      return Ok({
+        status: 'PARTIALLY_FILLED',
+        orderId,
+        effectiveSize,
+        filledSize: Quantity.of(filledDecimal),
+        remainingSize: Quantity.of(remainingDecimal),
+      });
+    }
+
+    // filled == 0 && remaining == 0 при не-REJECTED статусе означало бы totalSize == 0,
+    // что невозможно (Quantity гарантирует > 0) — сюда попадаем только при рассинхроне
+    // данных venue; не додумываем исход.
+    return Ok({
+      status: 'UNKNOWN',
+      reason: `Ambiguous venue response: status="${response.status}", filled=0, remaining=0`,
+      orderId,
+      effectiveSize,
+    });
   }
 
   /**

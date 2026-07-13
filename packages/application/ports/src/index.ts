@@ -11,6 +11,8 @@
  * - `IPortfolioStore` — хранилище Portfolio с CAS-защитой
  * - `VersionConflictError` — ошибка конфликта версий (CAS, Portfolio и Order)
  * - `IProcessedFillRepository` — idempotency guard для Fill
+ * - `IReconciliationIssueRepository` / `ReconciliationIssue` — queryable хранилище
+ *   operational/recovery issues, требующих ручной реконсиляции
  * - `IExchangeClient` / `SubmitOrderParams` / `ExchangeError` — торговый клиент
  * - `OpenOrderSnapshot` / `VenueTradeSnapshot` / `FeeSnapshot` — DTO от биржи
  * - `IMarketCatalog` / `InstrumentInfo` — каталог инструментов (read/write)
@@ -43,6 +45,12 @@ export type {
   ProcessedFillStatus,
   BeginFillProcessingResult,
 } from './IProcessedFillRepository.js';
+export type {
+  IReconciliationIssueRepository,
+  ReconciliationIssue,
+  ReconciliationIssueType,
+  ReconciliationIssueStatus,
+} from './IReconciliationIssueRepository.js';
 export { ExchangeError } from './IExchangeClient.js';
 export type {
   IExchangeClient,

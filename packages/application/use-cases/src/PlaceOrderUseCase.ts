@@ -5,13 +5,34 @@
  * ### Алгоритм (7 шагов):
  * 1. Пре-трейд риск-проверка (OrderRiskChecker)
  * 2. Резервирование баланса (portfolio.reserveForOrder)
- * 3. Отправка на биржу (exchangeClient.submitOrder) → получаем venueOrderId
- *    - При ошибке биржи: откат резервации
+ * 3. Отправка на биржу (exchangeClient.submitOrder) → типизированный SubmitOrderResult:
+ *    - `Err(ExchangeError)` (транспорт): откат резервации, Err
+ *    - `Ok({status: 'REJECTED'})`: откат резервации, Err, локальный Order НЕ создаётся
+ *    - `Ok({status: 'UNKNOWN'})`: откат резервации, best-effort cancel (если есть orderId),
+ *      Err — ambiguous venue-ответ никогда не превращается в обычный OPEN order.
+ *      Если в deps передан `reconciliationIssues` — дополнительно создаётся
+ *      `SUBMIT_UNKNOWN_OUTCOME` issue (даже при успешном cancel: исход submit
+ *      был ambiguous), best-effort — сбой add() не меняет Err
+ *    - `Ok({status: 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED'})`: venueOrderId получен,
+ *      продолжаем шаги 4-7
  * 4. Создание Order aggregate с **venueOrderId** (Order.create → PENDING)
  * 5. Принятие ордера (order.accept → OPEN)
  * 6. Сохранение ордера в репозиторий (с venueOrderId!) — CAS save с expectedVersion=0
- *    (новый ордер); конфликт версии → best-effort отмена на бирже + откат резервации
- * 7. Публикация доменных событий
+ *    (новый ордер); конфликт версии → best-effort отмена на бирже + откат резервации.
+ *    Сразу после успешного save, ДО публикации событий — для `PARTIALLY_FILLED`/
+ *    `FILLED` вызывается `markOrderFillMatched(venueOrderId, pendingMatchFillId(...))`,
+ *    БЕЗ синтеза Fill: реальный `Fill` придёт отдельно через WS/reconciliation и
+ *    применится к Portfolio в `ProcessFillUseCase`. Порядок важен: события (в т.ч.
+ *    ORDER_ACCEPTED) публикуются синхронно всем подписчикам (`EventBus.publishAll`
+ *    дренирует handlers немедленно), и `OrderEventBridge`/стратегия могут отреагировать
+ *    на ORDER_ACCEPTED раньше, чем marker будет виден в `IOrderStateStore` — если
+ *    marker ставится ПОСЛЕ publishAll, стратегия успеет попытаться cancel/reprice
+ *    ордер, который на самом деле уже исполнен. Для `FILLED` (live-ордера уже нет,
+ *    Portfolio ждёт реальный Fill) после save+marker и ДО publishAll дополнительно
+ *    создаётся `SUBMIT_FILLED_WITHOUT_FILL_DETAILS` reconciliation issue (если в
+ *    deps передан `reconciliationIssues`); для `PARTIALLY_FILLED` issue не создаётся —
+ *    ордер live, pending marker достаточен.
+ * 7. Публикация доменных событий — `eventBus.publishAll(order.pullEvents())`.
  *
  * ### Почему Order создаётся ПОСЛЕ отправки на биржу:
  * Polymarket возвращает свой orderId (0xa928...) при размещении.
@@ -48,7 +69,13 @@ import type { IClock } from '@polymarket/time';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
-import type { IExchangeClient, IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import type {
+  IExchangeClient,
+  IOrderRepository,
+  IOrderStateStore,
+  IReconciliationIssueRepository,
+  ReconciliationIssue,
+} from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
 import { Order } from '@polymarket/order';
@@ -98,6 +125,19 @@ export interface PlaceOrderDeps {
   readonly eventBus: IEventBus;
   readonly clock: IClock;
   readonly logger: ILogger;
+  /**
+   * Queryable хранилище reconciliation issues (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты: без него
+   * поведение прежнее (только logging). Если передан, создаются issues:
+   * - `SUBMIT_UNKNOWN_OUTCOME` — при `SubmitOrderResult.UNKNOWN` (исход submit
+   *   ambiguous, даже если best-effort cancel удался);
+   * - `SUBMIT_FILLED_WITHOUT_FILL_DETAILS` — при `FILLED` (live-ордера уже нет,
+   *   Portfolio нельзя обновить без реального Fill — ждём WS/reconciliation).
+   * Сбой `add()` логируется и НЕ меняет результат use case.
+   */
+  readonly reconciliationIssues?: IReconciliationIssueRepository;
 }
 
 /** Ошибки PlaceOrderUseCase */
@@ -118,6 +158,35 @@ export class PlaceOrderUseCase {
    */
   constructor(private readonly _deps: PlaceOrderDeps) {
     this._logger = _deps.logger.child({ component: 'PlaceOrderUseCase' });
+  }
+
+  /**
+   * Best-effort создание reconciliation issue (SUBMIT_UNKNOWN_OUTCOME /
+   * SUBMIT_FILLED_WITHOUT_FILL_DETAILS).
+   *
+   * @param issue - Issue с детерминированным id (см. call sites)
+   *
+   * @remarks
+   * No-op, если `reconciliationIssues` не передан в deps (optional dependency —
+   * прежнее поведение сохраняется). `add()` идемпотентен по id — повторный
+   * вызов того же сценария не создаёт дубль. Любая ошибка `add()` логируется
+   * и проглатывается: issue — вторичный alerting-механизм, он не должен
+   * менять результат use case (ни исходный Err в UNKNOWN-ветке, ни успешный
+   * Ok в FILLED-ветке).
+   */
+  private async _addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
+    if (!this._deps.reconciliationIssues) {
+      return;
+    }
+    try {
+      await this._deps.reconciliationIssues.add(issue);
+    } catch (err) {
+      this._logger.error('Failed to add reconciliation issue', {
+        issueId: issue.id,
+        issueType: issue.type,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   /**
@@ -258,10 +327,109 @@ export class PlaceOrderUseCase {
       ));
     }
 
+    const submitValue = submitResult.value;
+
+    // REJECTED: venue явно отклонил ордер, live-ордера не существует — откатываем
+    // резервацию под ПОЛНЫЙ исходный size (адаптер ничего не отправил на venue-side,
+    // корректировать нечего) и не создаём локальный Order.
+    if (submitValue.status === 'REJECTED') {
+      this._logger.warn('Exchange rejected order (no live order created), rolling back reservation', {
+        clientOrderId: String(input.orderId),
+        reason: submitValue.reason,
+      });
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after REJECTED submit', {
+          clientOrderId: String(input.orderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      return Err(new TradingError(
+        `Exchange rejected order: ${submitValue.reason}`,
+        {
+          context: {
+            clientOrderId: String(input.orderId),
+            rollbackError: releaseResult.ok ? undefined : releaseResult.error.message,
+          },
+        },
+      ));
+    }
+
+    // UNKNOWN: ответ venue не укладывается в безопасную модель — НЕ создаём обычный
+    // OPEN order на основании непонятных данных. Откатываем резервацию; если venue
+    // всё же вернул orderId, делаем best-effort cancel (ордер может быть live).
+    if (submitValue.status === 'UNKNOWN') {
+      this._logger.error('Exchange submit result ambiguous (UNKNOWN) — rolling back, manual reconciliation required', {
+        clientOrderId: String(input.orderId),
+        reason: submitValue.reason,
+        venueOrderId: submitValue.orderId ? String(submitValue.orderId) : undefined,
+      });
+      const releaseResult = isBuy
+        ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
+        : this._deps.portfolioService.releaseTokenReservation(
+            input.accountId,
+            input.instrumentId,
+            input.size.value(),
+          );
+      if (!releaseResult.ok) {
+        this._logger.error('Failed to release reservation after UNKNOWN submit result', {
+          clientOrderId: String(input.orderId),
+          releaseError: releaseResult.error.message,
+        });
+      }
+      if (submitValue.orderId) {
+        const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(submitValue.orderId);
+        this._logRollbackCancelOutcome(
+          submitValue.orderId,
+          cancelExchangeResult,
+          'Failed to cancel exchange order after UNKNOWN submit result — venue order may still be live, manual reconciliation required',
+        );
+      }
+      // Issue создаётся ДАЖЕ если best-effort cancel удался: исход submit был
+      // ambiguous — venue-состояние требует ручной проверки в любом случае.
+      // Сбой add() не меняет исходный Err ниже.
+      await this._addReconciliationIssue({
+        id: submitValue.orderId
+          ? `reconciliation:submit:${String(submitValue.orderId)}:unknown`
+          : `reconciliation:submit-client:${String(input.orderId)}:unknown`,
+        type: 'SUBMIT_UNKNOWN_OUTCOME',
+        status: 'OPEN',
+        reason: submitValue.reason,
+        createdAt: this._deps.clock.now(),
+        ...(submitValue.orderId ? { orderId: submitValue.orderId } : {}),
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        context: {
+          clientOrderId: String(input.orderId),
+          ...(submitValue.orderId ? { venueOrderId: String(submitValue.orderId) } : {}),
+          cancelAttempted: submitValue.orderId !== undefined,
+          rollbackReleaseOk: releaseResult.ok,
+        },
+      });
+      return Err(new TradingError(
+        `Exchange submit result ambiguous: ${submitValue.reason}`,
+        {
+          context: {
+            clientOrderId: String(input.orderId),
+            venueOrderId: submitValue.orderId ? String(submitValue.orderId) : undefined,
+          },
+        },
+      ));
+    }
+
+    // Здесь submitValue.status ∈ {OPEN, PARTIALLY_FILLED, FILLED} — все три варианта
+    // содержат orderId + effectiveSize; ордер реально создан на venue.
     // venueOrderId — реальный ID от биржи (0xa928...).
     // Именно этот ID используется в WS-событиях (fills, order updates).
     // Order entity создаётся с этим ID, чтобы lookups в OrderUpdateHandler работали.
-    const { orderId: venueOrderId, immediatelyMatched, effectiveSize } = submitResult.value;
+    const venueOrderId = submitValue.orderId;
+    const effectiveSize = submitValue.effectiveSize;
 
     // Адаптер биржи (например, SELL preflight balance check в
     // PolymarketExchangeClientAdapter) мог скорректировать size перед отправкой.
@@ -481,6 +649,54 @@ export class PlaceOrderUseCase {
       ));
     }
 
+    // PARTIALLY_FILLED/FILLED: часть или весь ордер уже исполнен на venue в момент
+    // submit-ответа. Помечаем через pendingMatchFillId СРАЗУ после успешного CAS save
+    // и ДО publishAll() — иначе OrderEventBridge/стратегия увидят ORDER_ACCEPTED
+    // раньше marker'а и могут успеть попытаться cancel/reprice OPEN-ордер, который
+    // на самом деле уже (частично) исполнен. Реальный Fill придёт отдельно через
+    // WS (FillEventHandler) или REST (ReconcileTradesUseCase); мы НЕ синтезируем
+    // Fill здесь и НЕ применяем его к Portfolio на этом уровне.
+    const filledOnSubmit = submitValue.status === 'PARTIALLY_FILLED' || submitValue.status === 'FILLED';
+    if (filledOnSubmit) {
+      this._deps.orderStateStore.markOrderFillMatched(venueOrderId, pendingMatchFillId(venueOrderId));
+      this._logger.warn('Order partially/fully filled on exchange — awaiting fill via WS/reconciliation', {
+        venueOrderId: String(venueOrderId),
+        submitStatus: submitValue.status,
+        side: input.side,
+        price: input.price.value().toString(),
+        size: orderSize.value().toString(),
+      });
+    }
+
+    // FILLED: live-ордера на venue уже НЕТ, а Portfolio нельзя обновить без
+    // реальных fill details (мы их не синтезируем) — создаём queryable issue,
+    // чтобы отсутствие WS/reconciliation fill было видимо и alertable.
+    // Строго ПОСЛЕ успешного save + marker и ДО publishAll: если publishAll
+    // упадёт, issue уже записана. Сбой add() логируется и не ломает успешный
+    // результат use case.
+    // Для PARTIALLY_FILLED issue НЕ создаётся: ордер всё ещё live, pending
+    // marker (markOrderFillMatched выше) достаточен — остаток ордера виден
+    // venue-стороне и придёт обычным путём.
+    if (submitValue.status === 'FILLED') {
+      await this._addReconciliationIssue({
+        id: `reconciliation:submit:${String(venueOrderId)}:filled-without-fill-details`,
+        type: 'SUBMIT_FILLED_WITHOUT_FILL_DETAILS',
+        status: 'OPEN',
+        reason: 'Submit returned FILLED without fill details; waiting for WS/reconciliation fill',
+        createdAt: this._deps.clock.now(),
+        orderId: venueOrderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        context: {
+          clientOrderId: String(input.orderId),
+          filledSize: submitValue.filledSize.value().toString(),
+          effectiveSize: effectiveSize.value().toString(),
+          side: input.side,
+          price: input.price.value().toString(),
+        },
+      });
+    }
+
     // Шаг 7: Публикация событий
     const events = acceptedOrder.pullEvents();
     try {
@@ -496,25 +712,11 @@ export class PlaceOrderUseCase {
       ));
     }
 
-    // Если ордер мгновенно matched — помечаем чтобы CancelOrderUseCase не пытался отменять.
-    // Fill придёт через WS (FillEventHandler) или REST (ReconcileTradesUseCase).
-    if (immediatelyMatched) {
-      // Конкретный fillId ещё не известен на этом уровне (REST-ответ submitOrder
-      // не содержит fill-данных) — используем placeholder; он автоматически
-      // снимется в clearOrderFillMatched, когда придёт реальный fill.
-      this._deps.orderStateStore.markOrderFillMatched(venueOrderId, pendingMatchFillId(venueOrderId));
-      this._logger.warn('Order immediately matched on exchange — awaiting fill via WS/reconciliation', {
-        venueOrderId: String(venueOrderId),
-        side: input.side,
-        price: input.price.value().toString(),
-        size: orderSize.value().toString(),
-      });
-    }
-
     this._logger.info('Order placed successfully', {
       venueOrderId: String(venueOrderId),
       clientOrderId: String(input.orderId),
       side: input.side,
+      submitStatus: submitValue.status,
       ...(orderNotional !== undefined ? { notional: orderNotional.toString() } : { size: orderSize.value().toString() }),
     });
 

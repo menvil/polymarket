@@ -150,9 +150,10 @@ function makePassRiskChecker(): IOrderRiskChecker {
  */
 function makeExchangeClient(
   submitResult: Result<import('@polymarket/ports').SubmitOrderResult, ExchangeError> = Ok({
+    status: 'OPEN',
     orderId: ORDER_ID,
-    immediatelyMatched: false,
     effectiveSize: ORDER_SIZE,
+    remainingSize: ORDER_SIZE,
   }),
 ): IExchangeClient {
   return {

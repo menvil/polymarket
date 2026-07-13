@@ -1,17 +1,21 @@
 /**
- * Тесты маппинга venue cancel response → CancelOrderResult.
+ * Тесты маппинга venue-ответов → CancelOrderResult / SubmitOrderResult.
  *
  * @remarks
- * Проверяет самую рискованную часть PolymarketExchangeClientAdapter.cancelOrder():
- * классификацию `not_canceled[orderId]` в структурированный CancelOrderResult.status.
+ * Проверяет самую рискованную часть PolymarketExchangeClientAdapter:
+ * - cancelOrder(): классификацию `not_canceled[orderId]` в CancelOrderResult.status.
+ * - submitOrder(): классификацию OrderResponse (status + sizeRemaining) в SubmitOrderResult.status.
  * Все тексты причин — реальные/правдоподобные ответы Polymarket CLOB API.
  */
 import { describe, it, expect, jest } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { PolymarketExchangeClientAdapter } from '../adapters/PolymarketExchangeClientAdapter.js';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
-import type { CancelOrderExecutionResponse } from '../ports/IExecutionAdapter.js';
+import type { CancelOrderExecutionResponse, OrderResponse } from '../ports/IExecutionAdapter.js';
 import type { ILogger } from '@polymarket/logger';
-import { asOrderId } from '@polymarket/ids';
+import { asOrderId, asPolymarketCtfToken } from '@polymarket/ids';
+import { Price, Quantity } from '@polymarket/value-objects';
+import type { SubmitOrderParams } from '@polymarket/ports';
 
 function makeLogger(): ILogger {
   return {
@@ -26,12 +30,17 @@ function makeLogger(): ILogger {
 }
 
 const ORDER_ID = asOrderId('0xabc123')!;
+const TEST_ASSET = asPolymarketCtfToken('123')!;
 
-function makeExecutionAdapter(
-  cancelOrderImpl: (orderId: string) => Promise<CancelOrderExecutionResponse>,
-): PolymarketExecutionAdapter {
+function makeExecutionAdapter(overrides: {
+  cancelOrder?: (orderId: string) => Promise<CancelOrderExecutionResponse>;
+  postOrder?: (params: unknown) => Promise<OrderResponse>;
+}): PolymarketExecutionAdapter {
   return {
-    cancelOrder: jest.fn(cancelOrderImpl),
+    cancelOrder: jest.fn(overrides.cancelOrder ?? (async () => ({ canceled: [], not_canceled: {} }))),
+    postOrder: jest.fn(overrides.postOrder ?? (async () => {
+      throw new Error('postOrder not stubbed');
+    })),
   } as unknown as PolymarketExecutionAdapter;
 }
 
@@ -39,9 +48,41 @@ function makeAdapter(
   cancelOrderImpl: (orderId: string) => Promise<CancelOrderExecutionResponse>,
 ): PolymarketExchangeClientAdapter {
   return new PolymarketExchangeClientAdapter(
-    makeExecutionAdapter(cancelOrderImpl),
+    makeExecutionAdapter({ cancelOrder: cancelOrderImpl }),
     makeLogger(),
   );
+}
+
+function makeSubmitAdapter(
+  postOrderImpl: (params: unknown) => Promise<OrderResponse>,
+): PolymarketExchangeClientAdapter {
+  return new PolymarketExchangeClientAdapter(
+    makeExecutionAdapter({ postOrder: postOrderImpl }),
+    makeLogger(),
+  );
+}
+
+function makeSubmitParams(size = '100'): SubmitOrderParams {
+  return {
+    asset: TEST_ASSET,
+    side: 'BUY',
+    price: Price.of(new Decimal('0.65')),
+    size: Quantity.of(new Decimal(size)),
+  };
+}
+
+function makeOrderResponse(overrides: Partial<OrderResponse> = {}): OrderResponse {
+  return {
+    orderId: String(ORDER_ID),
+    status: 'live',
+    side: 'buy',
+    price: 0.65,
+    size: 100,
+    sizeRemaining: 100,
+    tokenId: '123',
+    createdAt: Date.now(),
+    ...overrides,
+  };
 }
 
 describe('PolymarketExchangeClientAdapter.cancelOrder — mapping', () => {
@@ -137,6 +178,171 @@ describe('PolymarketExchangeClientAdapter.cancelOrder — mapping', () => {
       throw new Error('network timeout');
     });
     const result = await adapter.cancelOrder(ORDER_ID);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/network timeout/);
+  });
+});
+
+describe('PolymarketExchangeClientAdapter.submitOrder — mapping', () => {
+  it('status live, sizeRemaining == effectiveSize → OPEN', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'live', sizeRemaining: 100 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('OPEN');
+      if (result.value.status === 'OPEN') {
+        expect(result.value.orderId).toBe(ORDER_ID);
+        expect(result.value.remainingSize.value().toString()).toBe('100');
+      }
+    }
+  });
+
+  it.each(['open', 'unmatched', 'pending', 'delayed'])(
+    'status %s, sizeRemaining == effectiveSize → OPEN',
+    async (status) => {
+      const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status, sizeRemaining: 100 }));
+      const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.status).toBe('OPEN');
+    },
+  );
+
+  it.each(['matched', 'filled'])(
+    'status %s, sizeRemaining == 0 → FILLED (без synthetic fills)',
+    async (status) => {
+      const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status, sizeRemaining: 0 }));
+      const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.status).toBe('FILLED');
+        if (result.value.status === 'FILLED') {
+          expect(result.value.filledSize.value().toString()).toBe('100');
+          expect(result.value).not.toHaveProperty('fills');
+        }
+      }
+    },
+  );
+
+  it('sizeRemaining == 0 при статусе live (без явного matched/filled) → тоже FILLED', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'live', sizeRemaining: 0 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.status).toBe('FILLED');
+  });
+
+  it('0 < sizeRemaining < effectiveSize → PARTIALLY_FILLED', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'live', sizeRemaining: 40 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('PARTIALLY_FILLED');
+      if (result.value.status === 'PARTIALLY_FILLED') {
+        expect(result.value.filledSize.value().toString()).toBe('60');
+        expect(result.value.remainingSize.value().toString()).toBe('40');
+      }
+    }
+  });
+
+  it.each(['rejected', 'failed', 'cancelled', 'canceled'])(
+    'status %s, sizeRemaining == effectiveSize (нулевой fill) → REJECTED',
+    async (status) => {
+      const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status, sizeRemaining: 100 }));
+      const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.status).toBe('REJECTED');
+    },
+  );
+
+  it('терминальный статус (cancelled) без какого-либо fill → REJECTED', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'cancelled', sizeRemaining: 100 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('REJECTED');
+      if (result.value.status === 'REJECTED') {
+        expect(result.value.reason).toMatch(/cancelled/i);
+      }
+    }
+  });
+
+  it('терминальный статус (rejected) без fill → REJECTED', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'rejected', sizeRemaining: 100 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.status).toBe('REJECTED');
+  });
+
+  it('терминальный статус (cancelled) с частичным fill → FILLED тем объёмом, что реально исполнился (FAK/IOC-подобный исход)', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'cancelled', sizeRemaining: 40 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('FILLED');
+      if (result.value.status === 'FILLED') {
+        expect(result.value.orderId).toBe(ORDER_ID);
+        expect(result.value.filledSize.value().toString()).toBe('60');
+      }
+    }
+  });
+
+  it('невалидный orderId → Err(ExchangeError)', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ orderId: '' }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/Invalid orderId/);
+  });
+
+  it('sizeRemaining > effectiveSize → UNKNOWN (не OPEN)', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'live', sizeRemaining: 150 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('UNKNOWN');
+      if (result.value.status === 'UNKNOWN') {
+        expect(result.value.orderId).toBe(ORDER_ID);
+        expect(result.value.reason).toMatch(/out of bounds/);
+      }
+    }
+  });
+
+  it('отрицательный sizeRemaining → UNKNOWN (не OPEN)', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'live', sizeRemaining: -5 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.status).toBe('UNKNOWN');
+  });
+
+  it('неизвестный статус → UNKNOWN, даже если размеры выглядят как OPEN', async () => {
+    const adapter = makeSubmitAdapter(async () => makeOrderResponse({ status: 'some-weird-status', sizeRemaining: 100 }));
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('UNKNOWN');
+      if (result.value.status === 'UNKNOWN') {
+        expect(result.value.reason).toMatch(/Unrecognized venue order status/);
+      }
+    }
+  });
+
+  it('executionAdapter.postOrder бросает → Err(ExchangeError)', async () => {
+    const adapter = makeSubmitAdapter(async () => {
+      throw new Error('network timeout');
+    });
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toMatch(/network timeout/);

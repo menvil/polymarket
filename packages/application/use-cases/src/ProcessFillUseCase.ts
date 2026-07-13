@@ -21,7 +21,10 @@
  *    retry НЕ разрешён), а не `markFailed()`: Order.applyFill defends against
  *    duplicate fill id, поэтому retry такого fillId лишь повторит "duplicate
  *    fill" и никогда не восстановит Portfolio (`ORDER_PORTFOLIO_DESYNC` в
- *    логах, ручная реконсиляция).
+ *    логах, ручная реконсиляция). Если в deps передан `reconciliationIssues`,
+ *    дополнительно создаётся queryable `ReconciliationIssue`
+ *    (type `ORDER_PORTFOLIO_DESYNC`, детерминированный id) — best-effort:
+ *    сбой `add()` логируется и не меняет исходный error path.
  * 7. Запись в Ledger (LedgerService.recordFill)
  * 8. `markApplied(fill.id)` — сразу после успешного завершения шагов 4–7 (commit
  *    состояния Order/Portfolio/Ledger), ДО публикации событий.
@@ -75,7 +78,14 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
-import type { IOrderRepository, IProcessedFillRepository, IOrderStateStore, IKeyedMutex } from '@polymarket/ports';
+import type { IClock } from '@polymarket/time';
+import type {
+  IOrderRepository,
+  IProcessedFillRepository,
+  IOrderStateStore,
+  IKeyedMutex,
+  IReconciliationIssueRepository,
+} from '@polymarket/ports';
 import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData } from '@polymarket/order';
@@ -93,6 +103,26 @@ export interface ProcessFillDeps {
   readonly keyedMutex: IKeyedMutex;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
+  /**
+   * Queryable хранилище reconciliation issues (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты: без него
+   * поведение прежнее (markReconciliationRequired + logging). Если передан,
+   * `RECONCILIATION_REQUIRED` дополнительно создаёт `ReconciliationIssue`
+   * с детерминированным id (idempotent add). Сбой `add()` НЕ маскирует
+   * исходную trading-ошибку — только error-лог.
+   */
+  readonly reconciliationIssues?: IReconciliationIssueRepository;
+  /**
+   * Источник времени для `ReconciliationIssue.createdAt` (опционально).
+   *
+   * @remarks
+   * Optional по той же причине, что и `reconciliationIssues`. Если не передан,
+   * используется `new Date()` (только для createdAt issue — trading flow
+   * времени не использует).
+   */
+  readonly clock?: IClock;
 }
 
 /**
@@ -334,10 +364,11 @@ export class ProcessFillUseCase {
       // Ордер уже сохранён как terminal (выше), поэтому он не появится
       // в getOpenOrdersByInstrument. Но для чистоты — снимаем флаги.
       this._clearInFlightFlags(fill);
-      await this._deps.processedFillRepo.markReconciliationRequired(
-        fill.id,
-        `ORDER_PORTFOLIO_DESYNC: ${portfolioResult.error.message}`,
-      );
+      const reconciliationReason = `ORDER_PORTFOLIO_DESYNC: ${portfolioResult.error.message}`;
+      await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reconciliationReason);
+      // Queryable issue в дополнение к processed-fill статусу (семантика
+      // markReconciliationRequired не меняется). Сбой add() не маскирует Err ниже.
+      await this._addReconciliationIssue(fill, reconciliationReason, portfolioResult.error.message);
       return Err(new TradingError(
         `Failed to update portfolio (Order already committed — manual reconciliation required): ${portfolioResult.error.message}`,
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
@@ -457,6 +488,56 @@ export class ProcessFillUseCase {
     });
 
     return Ok(undefined);
+  }
+
+  /**
+   * Best-effort создание reconciliation issue при ORDER_PORTFOLIO_DESYNC.
+   *
+   * @param fill - Fill, обработка которого привела к частичному commit
+   * @param reason - Та же причина, что передана в `markReconciliationRequired()`
+   * @param errorMessage - Сообщение исходной ошибки Portfolio (для context)
+   *
+   * @remarks
+   * No-op, если `reconciliationIssues` не передан в deps (optional dependency —
+   * прежнее поведение сохраняется). Id детерминированный
+   * (`reconciliation:fill:${fill.id}:order-portfolio-desync`) — `add()`
+   * идемпотентен, повторная попытка не создаст дубль. Любая ошибка `add()`
+   * логируется и проглатывается: issue — вторичный alerting-механизм, он не
+   * должен маскировать исходную trading-ошибку и не должен менять исходный
+   * error path (`markReconciliationRequired` + Err).
+   */
+  private async _addReconciliationIssue(
+    fill: Fill,
+    reason: string,
+    errorMessage: string,
+  ): Promise<void> {
+    if (!this._deps.reconciliationIssues) {
+      return;
+    }
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    try {
+      await this._deps.reconciliationIssues.add({
+        id: `reconciliation:fill:${String(fill.id)}:order-portfolio-desync`,
+        type: 'ORDER_PORTFOLIO_DESYNC',
+        status: 'OPEN',
+        reason,
+        createdAt: this._deps.clock?.now() ?? new Date(),
+        fillId: fill.id,
+        orderId: fill.orderId,
+        accountId: fill.accountId,
+        ...(instrumentId ? { instrumentId } : {}),
+        context: {
+          stage: 'portfolio-apply-after-order-saved',
+          error: errorMessage,
+        },
+      });
+    } catch (err) {
+      this._logger.error('Failed to add reconciliation issue', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   /**

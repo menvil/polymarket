@@ -13,6 +13,7 @@ import type {
   IKeyedMutex,
   InFlightFill,
   BeginFillProcessingResult,
+  IReconciliationIssueRepository,
 } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
@@ -193,6 +194,15 @@ function makeProcessedFillRepo(
 function makeKeyedMutex(): IKeyedMutex {
   return {
     runExclusive: jest.fn(<T>(_keys: readonly string[], fn: () => Promise<T>) => fn()) as unknown as IKeyedMutex['runExclusive'],
+  };
+}
+
+function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
+  return {
+    add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
+    listOpen: jest.fn<IReconciliationIssueRepository['listOpen']>().mockResolvedValue([]),
+    get: jest.fn<IReconciliationIssueRepository['get']>().mockResolvedValue(undefined),
+    markResolved: jest.fn<IReconciliationIssueRepository['markResolved']>().mockResolvedValue(undefined),
   };
 }
 
@@ -439,6 +449,76 @@ describe('ProcessFillUseCase', () => {
       expect.stringContaining('ORDER_PORTFOLIO_DESYNC'),
     );
     expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('при RECONCILIATION_REQUIRED дополнительно создаёт reconciliation issue (если repo передан)', async () => {
+    const emptyStore: IPortfolioStore = {
+      get: jest.fn<IPortfolioStore['get']>().mockReturnValue(undefined),
+      save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+      getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
+    };
+    const portfolioService = new PortfolioService(emptyStore, logger);
+    const reconciliationIssues = makeReconciliationIssueRepo();
+    const useCase = new ProcessFillUseCase({ ...deps, portfolioService, reconciliationIssues });
+
+    const result = await useCase.execute(makeFill());
+
+    expect(result.ok).toBe(false);
+    expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+      FILL_ID,
+      expect.stringContaining('ORDER_PORTFOLIO_DESYNC'),
+    );
+    expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+    const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+      id: string;
+      type: string;
+      status: string;
+      reason: string;
+      fillId: unknown;
+      orderId: unknown;
+      accountId: unknown;
+      createdAt: Date;
+      context?: Record<string, unknown>;
+    };
+    // Детерминированный id — повторный add того же сценария идемпотентен.
+    expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:order-portfolio-desync`);
+    expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+    expect(issue.status).toBe('OPEN');
+    // reason совпадает с тем, что передан в markReconciliationRequired.
+    expect(issue.reason).toContain('ORDER_PORTFOLIO_DESYNC');
+    expect(issue.fillId).toBe(FILL_ID);
+    expect(issue.orderId).toBe(ORDER_ID);
+    expect(issue.accountId).toBe(ACCOUNT_ID);
+    expect(issue.createdAt).toBeInstanceOf(Date);
+    expect(issue.context).toMatchObject({ stage: 'portfolio-apply-after-order-saved' });
+  });
+
+  it('сбой reconciliationIssues.add не маскирует исходную ошибку: markReconciliationRequired вызван, результат прежний Err', async () => {
+    const emptyStore: IPortfolioStore = {
+      get: jest.fn<IPortfolioStore['get']>().mockReturnValue(undefined),
+      save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+      getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
+    };
+    const portfolioService = new PortfolioService(emptyStore, logger);
+    const reconciliationIssues = makeReconciliationIssueRepo();
+    (reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+      Promise.reject(new Error('issue store down')),
+    );
+    const useCase = new ProcessFillUseCase({ ...deps, portfolioService, reconciliationIssues });
+
+    const result = await useCase.execute(makeFill());
+
+    // Результат тот же, что и без reconciliationIssues: Err про portfolio, не про issue store.
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/portfolio/i);
+    expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+      FILL_ID,
+      expect.stringContaining('ORDER_PORTFOLIO_DESYNC'),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to add reconciliation issue',
+      expect.objectContaining({ fillId: String(FILL_ID) }),
+    );
   });
 
   it('begin() RECONCILIATION_REQUIRED → execute() возвращает Ok (no-op), не мутирует Order/Portfolio/Ledger повторно', async () => {

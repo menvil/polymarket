@@ -9,6 +9,7 @@
  * - `InMemoryOrderRepository` — хранилище ордеров (реализует IOrderRepository + IOrderStateStore)
  * - `InMemoryPortfolioStore` — CAS-хранилище Portfolio (реализует IPortfolioStore)
  * - `InMemoryProcessedFillRepository` — idempotency + lifecycle guard для Fill (реализует IProcessedFillRepository)
+ * - `InMemoryReconciliationIssueRepository` — queryable хранилище reconciliation issues (реализует IReconciliationIssueRepository)
  * - `InMemoryKeyedMutex` — keyed mutex для сериализации fill/cancel (реализует IKeyedMutex)
  *
  * @example
@@ -30,4 +31,5 @@
 export { InMemoryOrderRepository } from './InMemoryOrderRepository.js';
 export { InMemoryPortfolioStore } from './InMemoryPortfolioStore.js';
 export { InMemoryProcessedFillRepository } from './InMemoryProcessedFillRepository.js';
+export { InMemoryReconciliationIssueRepository } from './InMemoryReconciliationIssueRepository.js';
 export { InMemoryKeyedMutex } from './InMemoryKeyedMutex.js';

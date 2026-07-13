@@ -153,7 +153,7 @@ function makeKeyedMutex(): IKeyedMutex {
 function makeExchangeClient(success = true): IExchangeClient {
   return {
     submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
-      Ok({ orderId: ORDER_ID, immediatelyMatched: false, effectiveSize: makeQty('100') }),
+      Ok({ status: 'OPEN', orderId: ORDER_ID, effectiveSize: makeQty('100'), remainingSize: makeQty('100') }),
     ),
     cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
       success ? Ok({ status: 'CANCELLED' } as CancelOrderResult) : Err(new TradingError('Exchange error') as never),

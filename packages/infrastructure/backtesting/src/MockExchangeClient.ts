@@ -89,15 +89,17 @@ export class MockExchangeClient implements IExchangeClient {
    *
    * @remarks
    * Генерирует OrderId вида `order-{timestamp}-{counter}`, сохраняет параметры.
-   * Никогда не возвращает ошибку в нормальном режиме работы.
+   * По умолчанию всегда возвращает `Ok({status: 'OPEN', ...})` — в бектесте fills
+   * приходят отдельно из записанных снапшотов (не мгновенно на submit), поэтому
+   * ордер всегда встаёт в стакан целиком, ничего не исполнено сразу.
    *
    * @param params - Параметры ордера
-   * @returns Ok(orderId) — всегда успех
+   * @returns Ok({status: 'OPEN', orderId, effectiveSize, remainingSize}) — всегда успех
    *
    * @example
    * ```typescript
    * const result = await client.submitOrder({ asset, side, price, size });
-   * // result.ok === true, result.value — сгенерированный OrderId
+   * // result.ok === true, result.value.status === 'OPEN'
    * ```
    */
   public async submitOrder(
@@ -113,7 +115,12 @@ export class MockExchangeClient implements IExchangeClient {
       submittedAt: now,
     });
 
-    return Ok({ orderId, immediatelyMatched: false, effectiveSize: params.size });
+    return Ok({
+      status: 'OPEN',
+      orderId,
+      effectiveSize: params.size,
+      remainingSize: params.size,
+    });
   }
 
   /**
