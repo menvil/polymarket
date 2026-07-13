@@ -98,8 +98,11 @@ function makeDeps(logger: ILogger): {
     }) as InstrumentInfo),
     getAll: jest.fn<IMarketCatalog['getAll']>().mockReturnValue([]),
     getByMarketId: jest.fn<IMarketCatalog['getByMarketId']>().mockReturnValue(undefined),
+    getAnyInstrumentByMarketIdForMetadataOnly: jest.fn<IMarketCatalog['getAnyInstrumentByMarketIdForMetadataOnly']>().mockReturnValue(undefined),
     getAllByMarketId: jest.fn<IMarketCatalog['getAllByMarketId']>().mockReturnValue([]),
     register: jest.fn<IMarketCatalog['register']>(),
+    registerMarket: jest.fn<IMarketCatalog['registerMarket']>(),
+    removeMarket: jest.fn<IMarketCatalog['removeMarket']>(),
     remove: jest.fn<IMarketCatalog['remove']>(),
     clear: jest.fn<IMarketCatalog['clear']>(),
   };

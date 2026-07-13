@@ -32,9 +32,10 @@
  * });
  *
  * const info = catalog.get(instrumentId);     // InstrumentInfo | undefined
- * const byMarket = catalog.getByMarketId(marketId); // первый InstrumentInfo | undefined
+ * const anyOfMarket = catalog.getAnyInstrumentByMarketIdForMetadataOnly(marketId); // metadata-only
  * const allByMarket = catalog.getAllByMarketId(marketId); // ВСЕ outcome-токены рынка
- * catalog.remove(instrumentId);
+ * catalog.registerMarket({ marketId, instruments: [yesInfo, noInfo] }); // атомарно
+ * catalog.removeMarket(marketId); // рынок целиком
  * catalog.clear();
  * ```
  */
@@ -94,22 +95,31 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * @param marketId - ID рынка (condition_id в Polymarket API)
    * @returns InstrumentInfo или undefined если рынок неизвестен
    *
+   * @deprecated Use getAnyInstrumentByMarketIdForMetadataOnly() for metadata-only cases
+   * and getAllByMarketId() for market-wide logic.
+   *
    * @remarks
-   * Использует вспомогательный индекс для O(1) поиска.
-   * Применяется в `StrategyCoordinator._checkPolicy()` для получения
-   * `instrumentId` перед вызовом `remove()`.
-   *
    * ⚠️ Рынок может иметь несколько outcome-токенов (YES/NO) — этот метод
-   * возвращает только один из них. Используй `getAllByMarketId()`, если
-   * нужны ВСЕ инструменты рынка.
-   *
-   * @example
-   * ```typescript
-   * const info = catalog.getByMarketId(marketId);
-   * if (info) catalog.remove(info.instrumentId);
-   * ```
+   * возвращает только один из них. Backward-compatible alias
+   * `getAnyInstrumentByMarketIdForMetadataOnly()`.
    */
   public getByMarketId(marketId: MarketId): InstrumentInfo | undefined {
+    return this.getAnyInstrumentByMarketIdForMetadataOnly(marketId);
+  }
+
+  /**
+   * Возвращает ЛЮБОЙ (первый зарегистрированный) инструмент рынка —
+   * ТОЛЬКО для metadata-only сценариев (tickSize, minOrderSize, preview).
+   *
+   * @param marketId - ID рынка (condition_id в Polymarket API)
+   * @returns InstrumentInfo или undefined если рынок неизвестен
+   *
+   * @remarks
+   * Использует вспомогательный индекс для O(1) поиска. Для market-wide
+   * логики (закрытие рынка, settlement, cancel-all, поиск ордеров) используй
+   * `getAllByMarketId()` — пропуск второго outcome-токена там является багом.
+   */
+  public getAnyInstrumentByMarketIdForMetadataOnly(marketId: MarketId): InstrumentInfo | undefined {
     const instrumentIds = this._marketIdIndex.get(marketId);
     if (!instrumentIds || instrumentIds.size === 0) return undefined;
     const [firstInstrumentId] = instrumentIds;
@@ -220,6 +230,62 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
   }
 
   /**
+   * Атомарно регистрирует (или обновляет) все инструменты одного рынка.
+   *
+   * @param input - `{ marketId, instruments }` — все outcome-токены рынка
+   * @throws {Error} Если `instruments` пуст (почти всегда bug вызывающего кода)
+   * @throws {Error} Если хотя бы один instrument имеет чужой marketId —
+   *   ничего не регистрируется (validate-first, затем mutate)
+   *
+   * @remarks
+   * Upsert, не replace: существующие инструменты рынка, не вошедшие в
+   * `input.instruments`, не удаляются. См. контракт порта `IMarketCatalog`.
+   */
+  public registerMarket(input: {
+    readonly marketId: MarketId;
+    readonly instruments: readonly InstrumentInfo[];
+  }): void {
+    if (input.instruments.length === 0) {
+      throw new Error(`registerMarket: empty instruments list for market ${String(input.marketId)}`);
+    }
+    // Validate-first: partial mutation исключена.
+    for (const instrument of input.instruments) {
+      if (instrument.marketId !== input.marketId) {
+        throw new Error(
+          `registerMarket: instrument ${String(instrument.instrumentId)} belongs to market ` +
+          `${String(instrument.marketId)}, expected ${String(input.marketId)} — nothing registered`,
+        );
+      }
+    }
+    for (const instrument of input.instruments) {
+      this.register(instrument);
+    }
+  }
+
+  /**
+   * Удаляет ВСЕ инструменты рынка из каталога.
+   *
+   * @param marketId - ID рынка
+   *
+   * @remarks
+   * Безопасная альтернатива паре `getByMarketId()` + `remove()` при закрытии
+   * рынка. Неизвестный marketId — no-op (не бросает).
+   */
+  public removeMarket(marketId: MarketId): void {
+    const instrumentIds = this._marketIdIndex.get(marketId);
+    if (!instrumentIds) return;
+    // Копия — итерация по живому Set во время удаления небезопасна.
+    for (const instrumentId of [...instrumentIds]) {
+      this._instruments.delete(instrumentId);
+    }
+    this._marketIdIndex.delete(marketId);
+    this._logger.debug('Removed market from catalog', {
+      marketId: String(marketId),
+      removedInstruments: instrumentIds.size,
+    });
+  }
+
+  /**
    * Удаляет инструмент из каталога по InstrumentId.
    *
    * @param instrumentId - ID токена для удаления
@@ -230,8 +296,8 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    *
    * @example
    * ```typescript
-   * const found = catalog.getByMarketId(marketId);
-   * if (found) catalog.remove(found.instrumentId);
+   * catalog.remove(instrumentId);
+   * // Рынок целиком (все outcome-токены): catalog.removeMarket(marketId);
    * ```
    */
   public remove(instrumentId: InstrumentId): void {

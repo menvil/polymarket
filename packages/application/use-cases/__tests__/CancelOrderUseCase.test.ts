@@ -136,6 +136,7 @@ function makeOrderStateStore(
     ),
     getMatchedFillIds: jest.fn<IOrderStateStore['getMatchedFillIds']>().mockReturnValue([]),
     markInFlightFill: jest.fn<IOrderStateStore['markInFlightFill']>(),
+    updateInFlightFillStatus: jest.fn<IOrderStateStore['updateInFlightFillStatus']>(),
     clearInFlightFill: jest.fn<IOrderStateStore['clearInFlightFill']>(),
     hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockImplementation(
       (id) => inFlight.has(String(id)),

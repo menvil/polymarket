@@ -39,6 +39,18 @@ import type { OrderId, InstrumentId, FillId } from '@polymarket/ids';
 import { asFillId } from '@polymarket/ids';
 
 /**
+ * On-chain статус in-flight fill.
+ *
+ * @remarks
+ * Жизненный цикл fill на Polymarket: `MATCHED` (ордера сведены) → `MINED`
+ * (транзакция в блоке) → `CONFIRMED` (finality) либо `FAILED` (revert).
+ * Пометка (`markInFlightFill`) допустима только в не-терминальных статусах
+ * `MATCHED`/`MINED`; `CONFIRMED`/`FAILED` выставляются через
+ * `updateInFlightFillStatus()` перед снятием записи (`clearInFlightFill`).
+ */
+export type InFlightFillStatus = 'MATCHED' | 'MINED' | 'CONFIRMED' | 'FAILED';
+
+/**
  * In-flight fill: fill получил on-chain подтверждение (MATCHED/MINED),
  * но ещё не достиг finality (CONFIRMED) или не завершился (FAILED).
  */
@@ -46,8 +58,24 @@ export interface InFlightFill {
   readonly fillId: FillId;
   readonly orderId: OrderId;
   readonly instrumentId: InstrumentId;
-  /** On-chain статус на момент последней пометки (если известен). */
-  readonly status?: 'MATCHED' | 'MINED' | 'CONFIRMED' | 'FAILED';
+  /** On-chain статус на момент последней пометки/обновления (всегда известен). */
+  readonly status: InFlightFillStatus;
+}
+
+/**
+ * Входные данные `markInFlightFill()`.
+ *
+ * @remarks
+ * `status` ограничен `MATCHED | MINED`: пометить fill как in-flight можно
+ * только в не-терминальном статусе. Терминальные `CONFIRMED`/`FAILED`
+ * выставляются отдельно через `updateInFlightFillStatus()` — семантически
+ * это уже не «новый in-flight fill», а завершение существующего.
+ */
+export interface MarkInFlightFillInput {
+  readonly instrumentId: InstrumentId;
+  readonly fillId: FillId;
+  readonly orderId: OrderId;
+  readonly status: Extract<InFlightFillStatus, 'MATCHED' | 'MINED'>;
 }
 
 /**
@@ -113,6 +141,9 @@ export interface IOrderStateStore {
    * Это предотвращает race condition, когда стратегия видит position>0
    * но ордер ещё OPEN → шлёт CANCEL → "Cannot unfreeze".
    */
+  // TODO(unit-of-work): replace saveSync with CAS-aware UnitOfWork / atomic
+  // Order+Portfolio commit. saveSync is a pragmatic single-process guard,
+  // not a multi-aggregate transaction.
   saveSync(order: Order): void;
 
   /**
@@ -172,9 +203,8 @@ export interface IOrderStateStore {
   /**
    * Помечает конкретный fill как in-flight на уровне инструмента.
    *
-   * @param instrumentId - ID инструмента
-   * @param fillId - ID fill-события
-   * @param orderId - ID ордера, к которому относится fill
+   * @param input - `{ instrumentId, fillId, orderId, status }`;
+   *   `status` — только не-терминальные `MATCHED`/`MINED` (см. `MarkInFlightFillInput`)
    *
    * @remarks
    * Трекинг на уровне инструмента (а не ордера) через identity fillId, а не
@@ -183,10 +213,26 @@ export interface IOrderStateStore {
    * `getOpenOrdersByInstrument`. `hasInFlightFills(instrumentId)` работает
    * независимо от состояния ордера.
    *
-   * Идемпотентен: повторная пометка того же fillId (дублирующееся WS-событие)
-   * не создаёт вторую запись и не «удваивает» in-flight состояние.
+   * Идемпотентен по fillId: повторная пометка того же fillId (дублирующееся
+   * WS-событие) не создаёт вторую запись и не «удваивает» in-flight состояние —
+   * существующая запись обновляется на переданный `input.status` (например,
+   * MATCHED → MINED при повторном событии более позднего статуса).
    */
-  markInFlightFill(instrumentId: InstrumentId, fillId: FillId, orderId: OrderId): void;
+  markInFlightFill(input: MarkInFlightFillInput): void;
+
+  /**
+   * Обновляет статус уже отслеживаемого in-flight fill.
+   *
+   * @param fillId - ID fill-события, ранее переданный в `markInFlightFill`
+   * @param status - Новый on-chain статус (включая терминальные CONFIRMED/FAILED)
+   *
+   * @remarks
+   * Неизвестный fillId — no-op (безопасно: fill уже снят через
+   * `clearInFlightFill` или никогда не помечался). Обновление статуса НЕ
+   * снимает запись — терминальный статус (`CONFIRMED`/`FAILED`) фиксируется
+   * для наблюдаемости, а снятие остаётся явным `clearInFlightFill(fillId)`.
+   */
+  updateInFlightFillStatus(fillId: FillId, status: InFlightFillStatus): void;
 
   /**
    * Снимает in-flight пометку с конкретного fill по его FillId.
@@ -214,7 +260,8 @@ export interface IOrderStateStore {
    * Возвращает все in-flight fills данного инструмента.
    *
    * @param instrumentId - ID инструмента
-   * @returns Readonly массив `InFlightFill` (пустой, если in-flight fills нет)
+   * @returns Readonly массив `InFlightFill` (пустой, если in-flight fills нет);
+   *   `status` заполнен всегда (не optional)
    */
   getInFlightFills(instrumentId: InstrumentId): readonly InFlightFill[];
 }

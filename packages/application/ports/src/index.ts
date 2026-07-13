@@ -76,7 +76,12 @@ export type {
 } from './IDecisionJournal.js';
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
-export type { IOrderStateStore, InFlightFill } from './IOrderStateStore.js';
+export type {
+  IOrderStateStore,
+  InFlightFill,
+  InFlightFillStatus,
+  MarkInFlightFillInput,
+} from './IOrderStateStore.js';
 export { pendingMatchFillId } from './IOrderStateStore.js';
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
 export type { IFillReverter } from './IFillReverter.js';

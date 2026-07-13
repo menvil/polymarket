@@ -172,6 +172,7 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     hasMatchedFills: jest.fn<IOrderStateStore['hasMatchedFills']>().mockReturnValue(false),
     getMatchedFillIds: jest.fn<IOrderStateStore['getMatchedFillIds']>().mockReturnValue([]),
     markInFlightFill: jest.fn<IOrderStateStore['markInFlightFill']>(),
+    updateInFlightFillStatus: jest.fn<IOrderStateStore['updateInFlightFillStatus']>(),
     clearInFlightFill: jest.fn<IOrderStateStore['clearInFlightFill']>(),
     hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockReturnValue(false),
     getInFlightFills: jest.fn<IOrderStateStore['getInFlightFills']>().mockReturnValue([] as readonly InFlightFill[]),

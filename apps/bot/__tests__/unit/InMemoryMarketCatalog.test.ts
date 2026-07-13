@@ -89,4 +89,99 @@ describe('InMemoryMarketCatalog', () => {
     expect(catalog.getAllByMarketId(MARKET_ID).map((i) => i.instrumentId)).toEqual([NO_TOKEN]);
     expect(catalog.getAllByMarketId(OTHER_MARKET_ID).map((i) => i.instrumentId)).toEqual([YES_TOKEN]);
   });
+
+  // ── getAnyInstrumentByMarketIdForMetadataOnly / deprecated alias ───────────
+
+  describe('getAnyInstrumentByMarketIdForMetadataOnly', () => {
+    it('возвращает один инструмент рынка (metadata-only)', () => {
+      catalog.register(makeInstrument(YES_TOKEN, MARKET_ID));
+      catalog.register(makeInstrument(NO_TOKEN, MARKET_ID));
+
+      const found = catalog.getAnyInstrumentByMarketIdForMetadataOnly(MARKET_ID);
+      expect(found).toBeDefined();
+      expect([YES_TOKEN, NO_TOKEN]).toContain(found?.instrumentId);
+    });
+
+    it('возвращает undefined для неизвестного рынка', () => {
+      expect(catalog.getAnyInstrumentByMarketIdForMetadataOnly(MARKET_ID)).toBeUndefined();
+    });
+
+    it('deprecated getByMarketId — alias с идентичным результатом', () => {
+      catalog.register(makeInstrument(YES_TOKEN, MARKET_ID));
+
+      expect(catalog.getByMarketId(MARKET_ID)).toEqual(
+        catalog.getAnyInstrumentByMarketIdForMetadataOnly(MARKET_ID),
+      );
+    });
+  });
+
+  // ── registerMarket / removeMarket ──────────────────────────────────────────
+
+  describe('registerMarket', () => {
+    it('регистрирует несколько инструментов одного marketId атомарно', () => {
+      catalog.registerMarket({
+        marketId: MARKET_ID,
+        instruments: [makeInstrument(YES_TOKEN, MARKET_ID), makeInstrument(NO_TOKEN, MARKET_ID)],
+      });
+
+      expect(catalog.getAllByMarketId(MARKET_ID)).toHaveLength(2);
+      expect(catalog.get(YES_TOKEN)).toBeDefined();
+      expect(catalog.get(NO_TOKEN)).toBeDefined();
+    });
+
+    it('не делает partial mutation, если один instrument с чужим marketId — бросает Error', () => {
+      expect(() =>
+        catalog.registerMarket({
+          marketId: MARKET_ID,
+          instruments: [
+            makeInstrument(YES_TOKEN, MARKET_ID),
+            makeInstrument(OTHER_TOKEN, OTHER_MARKET_ID), // чужой marketId
+          ],
+        }),
+      ).toThrow(/belongs to market/);
+
+      // Validate-first: НИЧЕГО не зарегистрировано, включая валидный YES_TOKEN.
+      expect(catalog.getAll()).toHaveLength(0);
+      expect(catalog.get(YES_TOKEN)).toBeUndefined();
+    });
+
+    it('registerMarket с пустым instruments бросает Error (пустая регистрация — bug вызывающего кода)', () => {
+      expect(() => catalog.registerMarket({ marketId: MARKET_ID, instruments: [] })).toThrow(
+        /empty instruments/,
+      );
+    });
+
+    it('upsert, не replace: существующий инструмент рынка вне input.instruments не удаляется', () => {
+      catalog.register(makeInstrument(NO_TOKEN, MARKET_ID));
+
+      catalog.registerMarket({
+        marketId: MARKET_ID,
+        instruments: [makeInstrument(YES_TOKEN, MARKET_ID)],
+      });
+
+      expect(catalog.getAllByMarketId(MARKET_ID)).toHaveLength(2);
+    });
+  });
+
+  describe('removeMarket', () => {
+    it('удаляет ВСЕ инструменты рынка (оба outcome-токена)', () => {
+      catalog.registerMarket({
+        marketId: MARKET_ID,
+        instruments: [makeInstrument(YES_TOKEN, MARKET_ID), makeInstrument(NO_TOKEN, MARKET_ID)],
+      });
+      catalog.register(makeInstrument(OTHER_TOKEN, OTHER_MARKET_ID));
+
+      catalog.removeMarket(MARKET_ID);
+
+      expect(catalog.getAllByMarketId(MARKET_ID)).toHaveLength(0);
+      expect(catalog.get(YES_TOKEN)).toBeUndefined();
+      expect(catalog.get(NO_TOKEN)).toBeUndefined();
+      // Другой рынок не затронут.
+      expect(catalog.get(OTHER_TOKEN)).toBeDefined();
+    });
+
+    it('unknown marketId — no-op, не бросает', () => {
+      expect(() => catalog.removeMarket(MARKET_ID)).not.toThrow();
+    });
+  });
 });

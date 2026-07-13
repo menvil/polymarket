@@ -62,6 +62,7 @@ function makeOrderStateStore(): IOrderStateStore {
     hasMatchedFills: fn().mockReturnValue(false),
     getMatchedFillIds: fn().mockReturnValue([]),
     markInFlightFill: fn(),
+    updateInFlightFillStatus: fn(),
     hasInFlightFills: fn().mockReturnValue(false),
     clearInFlightFill: fn(),
     getInFlightFills: fn().mockReturnValue([]),

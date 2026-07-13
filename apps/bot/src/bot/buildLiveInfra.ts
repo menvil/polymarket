@@ -301,7 +301,10 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     (orderId, fillId) => { repos.orderRepo.markOrderFillMatched(orderId, fillId); },
     // onInFlightFill: instrument-level tracking — блокирует стратегию даже если ордер уже cancelled/deleted.
     // Решает race: cancel → place → fill(старый) → двойная покупка.
-    (instrumentId, fillId, orderId) => { repos.orderRepo.markInFlightFill(instrumentId, fillId, orderId); },
+    // status: 'MATCHED' — UserEventFeedAdapter вызывает callback только при dto.status === 'MATCHED'.
+    (instrumentId, fillId, orderId) => {
+      repos.orderRepo.markInFlightFill({ instrumentId, fillId, orderId, status: 'MATCHED' });
+    },
   );
 
   return {

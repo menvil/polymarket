@@ -62,12 +62,11 @@ export interface InstrumentInfo {
  * // info.tickSize уже Price — не нужно парсить строку
  * riskChecker.validatePrice(price, info.tickSize);
  *
- * // Добавление нового инструмента:
- * catalog.register({ instrumentId, marketId, tickSize, minOrderSize, active: true, expiresAt });
+ * // Атомарная регистрация рынка (оба outcome-токена сразу):
+ * catalog.registerMarket({ marketId, instruments: [yesInfo, noInfo] });
  *
- * // Удаление по marketId:
- * const found = catalog.getByMarketId(marketId);
- * if (found) catalog.remove(found.instrumentId);
+ * // Удаление рынка целиком (все outcome-токены):
+ * catalog.removeMarket(marketId);
  * ```
  */
 export interface IMarketCatalog {
@@ -85,19 +84,33 @@ export interface IMarketCatalog {
    * @param marketId - ID рынка (condition_id в Polymarket API)
    * @returns InstrumentInfo или undefined если рынок неизвестен
    *
-   * @remarks
-   * Используется при закрытии рынка для поиска instrumentId по marketId
-   * перед вызовом remove().
+   * @deprecated Use getAnyInstrumentByMarketIdForMetadataOnly() for metadata-only cases
+   * and getAllByMarketId() for market-wide logic.
    *
-   * ⚠️ Один market может иметь НЕСКОЛЬКО outcome-токенов (например, бинарный
-   * рынок Polymarket — YES/NO, каждый со своим `instrumentId`, но одним
-   * `marketId`). Этот метод возвращает только ПЕРВЫЙ зарегистрированный
-   * инструмент для данного marketId — для случаев, где достаточно любого
-   * инструмента рынка (например, чтение tickSize). Если нужны ВСЕ инструменты
-   * рынка (например, поиск ордеров по рынку в `IOrderRepository.getByMarketId()`,
-   * закрытие рынка целиком) — используй `getAllByMarketId()`.
+   * @remarks
+   * ⚠️ Один market может иметь НЕСКОЛЬКО outcome-токенов (бинарный рынок
+   * Polymarket — YES/NO, каждый со своим `instrumentId`, но одним `marketId`),
+   * а этот метод возвращает только ПЕРВЫЙ зарегистрированный — из имени это
+   * не видно, что делает его foot-gun для market-wide логики. Оставлен как
+   * backward-compatible alias `getAnyInstrumentByMarketIdForMetadataOnly()`.
    */
   getByMarketId(marketId: MarketId): InstrumentInfo | undefined;
+
+  /**
+   * Возвращает ЛЮБОЙ (первый зарегистрированный) инструмент рынка —
+   * ТОЛЬКО для metadata-only сценариев.
+   *
+   * @param marketId - ID рынка (condition_id в Polymarket API)
+   * @returns InstrumentInfo или undefined если рынок неизвестен
+   *
+   * @remarks
+   * Название намеренно длинное: допустимые кейсы — те, где достаточно любого
+   * outcome-токена рынка (чтение `tickSize`/`minOrderSize`, metadata preview).
+   * НЕ использовать для закрытия рынка, settlement, cancel-all, reconciliation
+   * или поиска ордеров — там пропуск второго outcome-токена является багом,
+   * используй `getAllByMarketId()`.
+   */
+  getAnyInstrumentByMarketIdForMetadataOnly(marketId: MarketId): InstrumentInfo | undefined;
 
   /**
    * Возвращает ВСЕ инструменты (outcome-токены) заданного MarketId.
@@ -144,18 +157,61 @@ export interface IMarketCatalog {
   register(instrument: InstrumentInfo): void;
 
   /**
+   * Атомарно регистрирует (или обновляет) ВСЕ инструменты одного рынка.
+   *
+   * @param input - `{ marketId, instruments }` — все outcome-токены рынка
+   * @throws {Error} Если `instruments` пуст — пустая регистрация рынка почти
+   *   всегда bug вызывающего кода (потерян список токенов), молчаливый no-op
+   *   замаскировал бы его
+   * @throws {Error} Если хотя бы один instrument имеет
+   *   `instrument.marketId !== input.marketId` — при этом НЕ регистрируется
+   *   НИЧЕГО (validate-first, затем mutate: partial mutation исключена)
+   *
+   * @remarks
+   * Предпочтительный способ регистрации бинарного рынка (YES/NO пачкой) —
+   * в отличие от последовательных `register()` не создаёт окна, в котором
+   * `getAllByMarketId()` видит рынок с частью outcome-токенов.
+   * Уже существующие в каталоге инструменты этого рынка, не вошедшие в
+   * `input.instruments`, НЕ удаляются (upsert, не replace).
+   *
+   * @example
+   * ```typescript
+   * catalog.registerMarket({
+   *   marketId,
+   *   instruments: [yesInstrumentInfo, noInstrumentInfo],
+   * });
+   * ```
+   */
+  registerMarket(input: {
+    readonly marketId: MarketId;
+    readonly instruments: readonly InstrumentInfo[];
+  }): void;
+
+  /**
+   * Удаляет ВСЕ инструменты рынка из каталога.
+   *
+   * @param marketId - ID рынка
+   *
+   * @remarks
+   * Безопасная альтернатива паре `getByMarketId()` + `remove()` при закрытии
+   * рынка: удаляет все outcome-токены, а не только первый зарегистрированный.
+   * Неизвестный marketId — no-op (не бросает).
+   */
+  removeMarket(marketId: MarketId): void;
+
+  /**
    * Удаляет инструмент из каталога по InstrumentId.
    *
    * @param instrumentId - ID токена для удаления
    *
    * @remarks
    * Если инструмент не найден — no-op (не бросает ошибку).
-   * Вызывается при закрытии рынка для очистки каталога.
+   * Для закрытия рынка целиком используй `removeMarket(marketId)` —
+   * он удаляет ВСЕ outcome-токены, а не один.
    *
    * @example
    * ```typescript
-   * const found = catalog.getByMarketId(marketId);
-   * if (found) catalog.remove(found.instrumentId);
+   * catalog.remove(instrumentId);
    * ```
    */
   remove(instrumentId: InstrumentId): void;

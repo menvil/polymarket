@@ -41,6 +41,8 @@ import type {
   IOrderStateStore,
   IMarketCatalog,
   InFlightFill,
+  InFlightFillStatus,
+  MarkInFlightFillInput,
   DeleteOrderResult,
 } from '@polymarket/ports';
 import { pendingMatchFillId, VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
@@ -621,24 +623,44 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   /**
    * Помечает конкретный fill как in-flight на уровне инструмента.
    *
-   * @param instrumentId - ID инструмента
-   * @param fillId - ID fill-события
-   * @param orderId - ID ордера, к которому относится fill
+   * @param input - `{ instrumentId, fillId, orderId, status }`;
+   *   `status` — только не-терминальные `MATCHED`/`MINED`
    *
    * @remarks
-   * Вызывается при каждом MATCHED fill. Идемпотентен: повторная пометка того
-   * же fillId (дублирующееся WS-событие) — no-op по факту (перезаписывает ту
-   * же запись), не создаёт вторую запись и не «удваивает» in-flight состояние.
+   * Вызывается при каждом MATCHED/MINED fill. Идемпотентен по fillId:
+   * повторная пометка того же fillId (дублирующееся WS-событие) не создаёт
+   * вторую запись и не «удваивает» in-flight состояние — существующая запись
+   * перезаписывается с переданным `input.status` (MATCHED → MINED допустимо).
    */
-  public markInFlightFill(instrumentId: InstrumentId, fillId: FillId, orderId: OrderId): void {
+  public markInFlightFill(input: MarkInFlightFillInput): void {
+    const { instrumentId, fillId, orderId, status } = input;
     const key = String(instrumentId);
     let byFillId = this._inFlightFillsByInstrument.get(key);
     if (!byFillId) {
       byFillId = new Map<FillId, InFlightFill>();
       this._inFlightFillsByInstrument.set(key, byFillId);
     }
-    byFillId.set(fillId, { fillId, orderId, instrumentId });
+    byFillId.set(fillId, { fillId, orderId, instrumentId, status });
     this._inFlightFillInstrumentIndex.set(fillId, key);
+  }
+
+  /**
+   * Обновляет статус уже отслеживаемого in-flight fill.
+   *
+   * @param fillId - ID fill-события, ранее переданный в `markInFlightFill`
+   * @param status - Новый on-chain статус (включая терминальные CONFIRMED/FAILED)
+   *
+   * @remarks
+   * Неизвестный fillId — no-op (запись уже снята или никогда не помечалась).
+   * Не снимает запись — снятие остаётся явным `clearInFlightFill(fillId)`.
+   */
+  public updateInFlightFillStatus(fillId: FillId, status: InFlightFillStatus): void {
+    const key = this._inFlightFillInstrumentIndex.get(fillId);
+    if (!key) return;
+    const byFillId = this._inFlightFillsByInstrument.get(key);
+    const existing = byFillId?.get(fillId);
+    if (!byFillId || !existing) return;
+    byFillId.set(fillId, { ...existing, status });
   }
 
   /**

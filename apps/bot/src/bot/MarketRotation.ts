@@ -369,28 +369,26 @@ export class MarketRotation {
     const tickSize = slot.tickSize ?? Price.of(new Decimal('0.001'));
     const minOrderSize = slot.minOrderSize ?? Quantity.of(new Decimal('1'));
 
-    marketCatalog.register({
-      instrumentId: slot.instrumentId,
+    // Атомарная регистрация рынка: primary + комплементарный (для ExecutionEngine
+    // routing) токены одним вызовом — без окна, где getAllByMarketId() видит
+    // рынок с частью outcome-токенов.
+    const sharedInstrumentFields = {
       marketId: slot.marketId,
       tickSize,
       minOrderSize,
       minOrderValue: Quantity.of(new Decimal('1')),
       active: true,
       expiresAt: expiresAtResult.value,
+    };
+    marketCatalog.registerMarket({
+      marketId: slot.marketId,
+      instruments: [
+        { instrumentId: slot.instrumentId, ...sharedInstrumentFields },
+        ...(slot.complementaryInstrumentId
+          ? [{ instrumentId: slot.complementaryInstrumentId, ...sharedInstrumentFields }]
+          : []),
+      ],
     });
-
-    // Регистрируем комплементарный инструмент (для ExecutionEngine routing)
-    if (slot.complementaryInstrumentId) {
-      marketCatalog.register({
-        instrumentId: slot.complementaryInstrumentId,
-        marketId: slot.marketId,
-        tickSize,
-        minOrderSize,
-        minOrderValue: Quantity.of(new Decimal('1')),
-        active: true,
-        expiresAt: expiresAtResult.value,
-      });
-    }
 
     // Recording: регистрируем рынок
     if (recording && slot.candidate) {
@@ -660,7 +658,10 @@ export class MarketRotation {
     await engine.scheduler.unregister(slot.strategy.id);
 
     await wsAdapter.unsubscribeFromToken(tokenIdStr);
-    marketCatalog.remove(slot.instrumentId);
+    // Market-wide закрытие: удаляем ВСЕ outcome-токены рынка (primary +
+    // комплементарный). Раньше remove(slot.instrumentId) оставлял
+    // комплементарный токен в каталоге навсегда.
+    marketCatalog.removeMarket(slot.marketId);
 
     // Очистка pending Chainlink strike (не отписываемся от RTDS — deferred cleanup)
     if (slot.cryptoMeta) {

@@ -45,5 +45,8 @@ export interface IKeyedMutex {
    * пробрасывает ту же ошибку дальше, но обязательно освобождает блокировку
    * (эквивалент `finally`).
    */
+  // TODO(production): add timeoutMs / lockTtlMs options if this mutex is used
+  // beyond single-process in-memory execution. Current contract relies on fn
+  // completion and has no stale-lock protection.
   runExclusive<T>(keys: readonly string[], fn: () => Promise<T>): Promise<T>;
 }

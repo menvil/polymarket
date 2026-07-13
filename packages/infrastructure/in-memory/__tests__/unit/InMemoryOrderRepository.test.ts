@@ -219,8 +219,8 @@ describe('InMemoryOrderRepository', () => {
     const UNKNOWN_FILL = asFillId('fill-unknown')!;
 
     it('duplicate MATCHED событие (тот же fillId) не ломает in-flight tracking', () => {
-      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
-      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID); // дубликат WS-события
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' }); // дубликат WS-события
       expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(true);
       expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(1);
 
@@ -229,9 +229,43 @@ describe('InMemoryOrderRepository', () => {
       expect(repo.hasInFlightFills(INSTRUMENT_A)).toBe(false);
     });
 
+    it('markInFlightFill сохраняет status; getInFlightFills возвращает записи со status', () => {
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_2, orderId: ORDER_ID, status: 'MINED' });
+
+      const fills = repo.getInFlightFills(INSTRUMENT_A);
+      expect(fills).toHaveLength(2);
+      expect(fills.find((f) => f.fillId === FILL_1)?.status).toBe('MATCHED');
+      expect(fills.find((f) => f.fillId === FILL_2)?.status).toBe('MINED');
+    });
+
+    it('duplicate mark того же fillId обновляет status на новый input.status (MATCHED → MINED)', () => {
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MINED' });
+
+      const fills = repo.getInFlightFills(INSTRUMENT_A);
+      expect(fills).toHaveLength(1); // дубля нет
+      expect(fills[0]?.status).toBe('MINED');
+    });
+
+    it('updateInFlightFillStatus обновляет status существующей записи (включая терминальный)', () => {
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
+
+      repo.updateInFlightFillStatus(FILL_1, 'CONFIRMED');
+
+      const fills = repo.getInFlightFills(INSTRUMENT_A);
+      expect(fills).toHaveLength(1); // запись НЕ снята — снятие остаётся за clearInFlightFill
+      expect(fills[0]?.status).toBe('CONFIRMED');
+    });
+
+    it('updateInFlightFillStatus для неизвестного fillId — no-op, не бросает', () => {
+      expect(() => repo.updateInFlightFillStatus(UNKNOWN_FILL, 'FAILED')).not.toThrow();
+      expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(0);
+    });
+
     it('два разных in-flight fill на одном инструменте: clear одного не затрагивает другой', () => {
-      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
-      repo.markInFlightFill(INSTRUMENT_A, FILL_2, ORDER_ID);
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_2, orderId: ORDER_ID, status: 'MATCHED' });
       expect(repo.getInFlightFills(INSTRUMENT_A)).toHaveLength(2);
 
       repo.clearInFlightFill(FILL_1);
@@ -243,7 +277,7 @@ describe('InMemoryOrderRepository', () => {
     });
 
     it('clear по неизвестному fillId — no-op, не открывает cancel преждевременно', () => {
-      repo.markInFlightFill(INSTRUMENT_A, FILL_1, ORDER_ID);
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_1, orderId: ORDER_ID, status: 'MATCHED' });
       repo.clearInFlightFill(UNKNOWN_FILL);
 
       // Реальный in-flight fill (FILL_1) остаётся нетронутым.
@@ -279,7 +313,7 @@ describe('InMemoryOrderRepository', () => {
       const instrumentId = 'instrument-a' as unknown as InstrumentId;
 
       repo.markOrderFillMatched(orderId, fillId);
-      repo.markInFlightFill(instrumentId, fillId, orderId);
+      repo.markInFlightFill({ instrumentId, fillId, orderId, status: 'MATCHED' });
       expect(repo.hasMatchedFills(orderId)).toBe(true);
       expect(repo.hasInFlightFills(instrumentId)).toBe(true);
 

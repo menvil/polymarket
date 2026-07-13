@@ -128,6 +128,9 @@ export interface IMarketDataRecorder {
    *
    * @throws При ошибке I/O
    */
+  // TODO(recovery): replace destructive cleanup() with recoverIncomplete()/
+  // quarantineIncomplete()/cleanupQuarantineOlderThan(). Incomplete files may
+  // be needed for crash recovery/debug.
   cleanup(): Promise<void>;
 
   /**
