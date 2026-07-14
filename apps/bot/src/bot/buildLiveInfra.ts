@@ -132,7 +132,7 @@ export interface LiveInfra {
 export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   const { credentials, infra, repos, processFillUseCase, userWsAdapter, accountId, dnsOverride } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, processedFillRepo } = repos;
+  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo } = repos;
 
   // ── 1. REST stack ──────────────────────────────────────────────────────────
 
@@ -220,6 +220,10 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     portfolioService,
     eventBus,
     logger,
+    // Сбой release резервации после committed venue update теперь queryable
+    // (ORDER_PORTFOLIO_DESYNC), а не только лог.
+    reconciliationIssues: reconciliationIssueRepo,
+    clock,
   });
 
   const orderUpdateHandler = new OrderUpdateHandler(eventBus, clock, accountId, logger);
@@ -277,6 +281,10 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     processedFillRepo,
     processFillUseCase,
     logger,
+    // venue FAILED при локальном APPLIED теперь queryable
+    // (VENUE_LOCAL_ORDER_DESYNC), а не только лог.
+    reconciliationIssues: reconciliationIssueRepo,
+    clock,
   });
 
   // ── 5. WS user channel ────────────────────────────────────────────────────

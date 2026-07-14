@@ -19,6 +19,10 @@
  *    - `RECONCILIATION_REQUIRED` → частичный commit, retry не поможет
  *      (см. `ProcessFillUseCase` doc) → пропустить, инкрементировать
  *      `reconciliationRequiredCount`, залогировать error (не молчать)
+ *    - venue `FAILED` при локальном `APPLIED` → fill применён локально, но venue
+ *      его откатил (WS FILL_FAILED пропущен) — создаётся
+ *      `VENUE_LOCAL_ORDER_DESYNC` issue (если передан `reconciliationIssues`),
+ *      обработка пропускается; автоматический reversal — future work
  *    - иначе → конвертировать и обработать через ProcessFillUseCase (само решит
  *      ACQUIRED/DUPLICATE/BUSY/retry)
  *
@@ -44,12 +48,19 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
+import type { IClock } from '@polymarket/time';
 import type { AccountId } from '@polymarket/ids';
-import { asVenueId, AssetIdHelpers, accountIdToString } from '@polymarket/ids';
+import { asVenueId, AssetIdHelpers, accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import { Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
-import type { IExchangeClient, IProcessedFillRepository, VenueTradeSnapshot } from '@polymarket/ports';
+import type {
+  IExchangeClient,
+  IProcessedFillRepository,
+  IReconciliationIssueRepository,
+  ReconciliationIssue,
+  VenueTradeSnapshot,
+} from '@polymarket/ports';
 import { Fill } from '@polymarket/fill';
 import type { ProcessFillUseCase } from './ProcessFillUseCase.js';
 
@@ -59,6 +70,25 @@ export interface ReconcileTradesDeps {
   readonly processedFillRepo: IProcessedFillRepository;
   readonly processFillUseCase: ProcessFillUseCase;
   readonly logger: ILogger;
+  /**
+   * Queryable хранилище reconciliation issues (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты. Если передан,
+   * `FAILED` trade при локальном статусе `APPLIED` (venue откатил fill, который
+   * мы уже применили к Order/Portfolio/Ledger) создаёт
+   * `VENUE_LOCAL_ORDER_DESYNC` issue — reversal требует ручного вмешательства,
+   * автоматический reversal из reconciler — future work. Сбой `add()`
+   * логируется и НЕ меняет результат use case.
+   */
+  readonly reconciliationIssues?: IReconciliationIssueRepository;
+  /**
+   * Источник времени для `ReconciliationIssue.createdAt` (опционально).
+   *
+   * @remarks
+   * Optional по той же причине. Без него используется `new Date()`.
+   */
+  readonly clock?: IClock;
 }
 
 /** Входные данные для ReconcileTradesUseCase */
@@ -83,6 +113,31 @@ export class ReconcileTradesUseCase {
    */
   constructor(private readonly _deps: ReconcileTradesDeps) {
     this._logger = _deps.logger.child({ component: 'ReconcileTradesUseCase' });
+  }
+
+  /**
+   * Best-effort создание reconciliation issue (venue FAILED после local APPLIED).
+   *
+   * @param issue - Issue с детерминированным id (см. call site)
+   *
+   * @remarks
+   * No-op, если `reconciliationIssues` не передан в deps. `add()` идемпотентен
+   * по id. Ошибка `add()` логируется и проглатывается — reconciliation loop
+   * продолжает обработку остальных trades и возвращает Ok.
+   */
+  private async _addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
+    if (!this._deps.reconciliationIssues) {
+      return;
+    }
+    try {
+      await this._deps.reconciliationIssues.add(issue);
+    } catch (err) {
+      this._logger.error('Failed to add reconciliation issue', {
+        issueId: issue.id,
+        issueType: issue.type,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   /**
@@ -128,6 +183,7 @@ export class ReconcileTradesUseCase {
     let skippedCount = 0;
     let errorCount = 0;
     let reconciliationRequiredCount = 0;
+    let failedAfterAppliedCount = 0;
 
     this._logger.debug('Reconciliation: processing trades', { count: trades.length });
 
@@ -137,6 +193,48 @@ export class ReconcileTradesUseCase {
     for (const trade of trades) {
       const fillIdStr = String(trade.fillId);
 
+      // FAILED — особый случай ДО общего фильтра: reconciler — safety net при
+      // пропущенных WS-событиях. Если venue сообщает FAILED, а локально fill
+      // уже APPLIED (WS FILL_FAILED не дошёл), Order/Portfolio/Ledger содержат
+      // применённый fill, которого on-chain больше нет — reversal требуется,
+      // но автоматически здесь НЕ выполняется (future work): создаём queryable
+      // issue и пропускаем. Локальный статус НЕ APPLIED — просто skip (WS
+      // reversal не нужен или fill не применялся).
+      if (trade.status === 'FAILED') {
+        const localStatus = await this._deps.processedFillRepo.getStatus(trade.fillId);
+        if (localStatus === 'APPLIED') {
+          this._logger.error('VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED: venue reports FAILED for locally APPLIED fill — reversal required, manual reconciliation', {
+            fillId: fillIdStr,
+            orderId: String(trade.orderId),
+          });
+          const instrumentId = assetIdToInstrumentId(trade.asset);
+          await this._addReconciliationIssue({
+            id: `reconciliation:fill:${fillIdStr}:venue-failed-after-applied`,
+            type: 'VENUE_LOCAL_ORDER_DESYNC',
+            status: 'OPEN',
+            reason: 'VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED: fill was APPLIED locally but venue reports FAILED',
+            createdAt: this._deps.clock?.now() ?? new Date(),
+            fillId: trade.fillId,
+            orderId: trade.orderId,
+            accountId: input.accountId,
+            ...(instrumentId ? { instrumentId } : {}),
+            context: {
+              stage: 'reconcile-trades-failed-after-applied',
+              venueStatus: 'FAILED',
+              localProcessedStatus: 'APPLIED',
+            },
+          });
+          failedAfterAppliedCount++;
+        } else {
+          this._logger.debug('FAILED trade without local APPLIED state — skipping (no reversal needed)', {
+            fillId: fillIdStr,
+            localStatus: localStatus ?? 'undefined',
+          });
+          skippedCount++;
+        }
+        continue;
+      }
+
       // Фильтрация по on-chain статусу.
       // Принимаем CONFIRMED (finality) и MATCHED (мгновенное исполнение).
       // MATCHED обрабатываем чтобы не потерять fill при WS race condition:
@@ -145,9 +243,9 @@ export class ReconcileTradesUseCase {
       // ProcessFillUseCase.execute() увидит APPLIED через begin() и вернёт
       // Ok без повторной обработки (см. регрессионный тест ниже).
       //
-      // MINED / RETRYING / FAILED / undefined → пропускаем.
+      // MINED / RETRYING / undefined → пропускаем.
       // MINED: cross-outcome MINT fills — CLOB отклоняет SELL до CONFIRMED.
-      // FAILED: FillEventHandler через WS обработает reversal.
+      // FAILED обработан отдельной веткой ВЫШЕ (issue при local APPLIED).
       const PROCESSABLE_STATUSES = new Set(['CONFIRMED', 'MATCHED']);
       if (!PROCESSABLE_STATUSES.has(trade.status ?? '')) {
         this._logger.debug('Trade not in processable status, skipping', {
@@ -214,6 +312,7 @@ export class ReconcileTradesUseCase {
       skipped: skippedCount,
       errors: errorCount,
       reconciliationRequired: reconciliationRequiredCount,
+      failedAfterApplied: failedAfterAppliedCount,
     });
 
     return Ok(undefined);

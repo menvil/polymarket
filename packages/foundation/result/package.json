@@ -60,7 +60,7 @@
   "author": "Ivan Moroz",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^26.1.1",
     "@types/jest": "^29.5.0",
     "typescript": "^5.3.0",
     "jest": "^29.7.0",

@@ -629,8 +629,6 @@ async function checkExpiredMarkets(): Promise<void> {
 
   if (expired.length > 0) {
     logger.info('Expired markets finalized', { count: expired.length });
-    // Слоты освободились — берём замены из кэша (без нового API-запроса).
-    await fillMarketSlots();
   }
 }
 
@@ -824,9 +822,12 @@ expiryInterval = setInterval(() => {
   }
 
   expiryRunInProgress = true;
-  void checkExpiredMarkets()
+  void (async () => {
+    await checkExpiredMarkets();
+    await fillMarketSlots();
+  })()
     .catch((err) => {
-      logger.warn('Expired markets check failed', {
+      logger.warn('Market slot maintenance failed', {
         err: err instanceof Error ? err : new Error(String(err)),
       });
     })

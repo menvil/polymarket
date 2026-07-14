@@ -63,6 +63,21 @@ export class PortfolioService {
   }
 
   /**
+   * Возвращает актуальный снапшот Portfolio из хранилища.
+   *
+   * @param accountId - ID аккаунта
+   * @returns Portfolio или undefined, если не инициализирован
+   *
+   * @remarks
+   * Используется для authoritative risk-check внутри keyed mutex в
+   * `PlaceOrderUseCase`: snapshot из `PlaceOrderInput` мог устареть, пока
+   * ждали lock (конкурентный fill/place изменил баланс/экспозицию).
+   */
+  public getPortfolio(accountId: AccountId): Portfolio | undefined {
+    return this._store.get(accountId);
+  }
+
+  /**
    * Резервирует средства для нового ордера.
    *
    * @param accountId - ID аккаунта
@@ -228,23 +243,35 @@ export class PortfolioService {
   }
 
   /**
-   * Снимает резервацию Portfolio для отменённого или истёкшего ордера.
+   * Снимает резервацию Portfolio для отменённого/истёкшего/отклонённого ордера.
    *
    * @param accountId - ID аккаунта
    * @param order - Ордер после отмены (содержит side, price, remainingSize, asset)
+   * @returns Ok(void) или Err при ошибке release/save
    *
    * @remarks
    * BUY: освобождает USDC-резервацию (price × remainingSize).
-   * SELL: освобождает токенную резервацию (remainingSize по instrumentId).
-   * Ошибки логируются, но не прерывают выполнение — ордер уже отменён.
+   * SELL: освобождает токенную резервацию (remainingSize по instrumentId);
+   * нерезолвящийся instrumentId — тоже Err (резервацию невозможно снять).
+   *
+   * Ошибки логируются И возвращаются через Result — caller решает, что делать:
+   * ордер к этому моменту обычно уже terminal (committed CAS save), поэтому
+   * сбой release — это Order↔Portfolio desync (замороженная резервация),
+   * а не warning; use case должен создать reconciliation issue, а не глотать.
    *
    * @example
    * ```typescript
-   * // В CancelOrderUseCase после проверки на concurrent fill:
-   * this._deps.portfolioService.releaseOrderReservation(accountId, cancelledOrder);
+   * // В CancelOrderUseCase после успешного CAS save:
+   * const releaseResult = portfolioService.releaseOrderReservation(accountId, cancelledOrder);
+   * if (!releaseResult.ok) {
+   *   // committed cancel + frozen reservation → reconciliation issue
+   * }
    * ```
    */
-  public releaseOrderReservation(accountId: AccountId, order: Order): void {
+  public releaseOrderReservation(
+    accountId: AccountId,
+    order: Order,
+  ): Result<void, PortfolioSaveError> {
     if (order.side === 'BUY') {
       const remainingNotional = order.price.value().times(order.remainingSize.value());
       const result = this.releaseReservation(accountId, remainingNotional);
@@ -254,24 +281,29 @@ export class PortfolioService {
           error: result.error.message,
         });
       }
-    } else {
-      const instrumentId = assetIdToInstrumentId(order.asset);
-      if (!instrumentId) {
-        this._logger.warn('Could not resolve instrumentId for SELL order reservation release', {
-          accountId: accountIdToString(accountId),
-          asset: String(order.asset),
-        });
-        return;
-      }
-      const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize.value());
-      if (!result.ok) {
-        this._logger.error('Failed to release token reservation for cancelled order', {
-          accountId: accountIdToString(accountId),
-          instrumentId: String(instrumentId),
-          error: result.error.message,
-        });
-      }
+      return result;
     }
+
+    const instrumentId = assetIdToInstrumentId(order.asset);
+    if (!instrumentId) {
+      this._logger.warn('Could not resolve instrumentId for SELL order reservation release', {
+        accountId: accountIdToString(accountId),
+        asset: String(order.asset),
+      });
+      return Err(new TradingError(
+        `Could not resolve instrumentId for SELL order reservation release: ${String(order.asset)}`,
+        { context: { accountId: accountIdToString(accountId), orderId: String(order.id) } },
+      ));
+    }
+    const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize.value());
+    if (!result.ok) {
+      this._logger.error('Failed to release token reservation for cancelled order', {
+        accountId: accountIdToString(accountId),
+        instrumentId: String(instrumentId),
+        error: result.error.message,
+      });
+    }
+    return result;
   }
 
   /**

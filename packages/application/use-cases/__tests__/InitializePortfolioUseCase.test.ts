@@ -98,9 +98,9 @@ describe('InitializePortfolioUseCase', () => {
     expect(portfolioStore.save).not.toHaveBeenCalled();
   });
 
-  it('конфликт версий при save → Err', async () => {
+  it('конфликт версий при save и портфель ВСЁ ЕЩЁ отсутствует → Err', async () => {
     portfolioStore = {
-      ...makePortfolioStore(),
+      ...makePortfolioStore(), // get всегда undefined — reread после конфликта тоже пуст
       save: jest.fn<IPortfolioStore['save']>().mockReturnValue(
         Err(new VersionConflictError('portfolio-test', 0, 1)),
       ),
@@ -111,5 +111,34 @@ describe('InitializePortfolioUseCase', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toMatch(/Failed to save Portfolio/);
+  });
+
+  it('concurrent init: конфликт при save, но портфель уже создан конкурентом → идемпотентный Ok', async () => {
+    // Гонка: между проверкой existing (шаг 1) и save (шаг 4) конкурирующий init
+    // успел сохранить Portfolio. get: сначала undefined (шаг 1), после
+    // конфликта — существующий портфель (reread).
+    const existing = { accountId: ACCOUNT_ID } as unknown as Portfolio;
+    portfolioStore = {
+      get: jest.fn<IPortfolioStore['get']>()
+        .mockReturnValueOnce(undefined) // шаг 1: портфеля ещё нет
+        .mockReturnValue(existing),     // reread после конфликта: уже есть
+      save: jest.fn<IPortfolioStore['save']>().mockReturnValue(
+        Err(new VersionConflictError('portfolio-test', 0, 1)),
+      ),
+      getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(1),
+    };
+    const useCase = new InitializePortfolioUseCase({ ...deps, portfolioStore });
+
+    const result = await useCase.execute(ACCOUNT_ID);
+
+    // Состояние системы нормальное (Portfolio инициализирован конкурентом) —
+    // Err здесь был бы ложной тревогой на старте.
+    expect(result.ok).toBe(true);
+    expect(balanceProvider.getUsdcBalance).toHaveBeenCalled(); // до save дошли
+    expect(portfolioStore.save).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('initialized concurrently'),
+      expect.any(Object),
+    );
   });
 });

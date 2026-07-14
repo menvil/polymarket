@@ -2,8 +2,21 @@
  * PlaceOrderUseCase — оркестрация размещения нового торгового ордера.
  *
  * @remarks
- * ### Алгоритм (7 шагов):
- * 1. Пре-трейд риск-проверка (OrderRiskChecker)
+ * ### Алгоритм:
+ * 1a. Дешёвый риск-precheck (OrderRiskChecker) на snapshot из input — вне lock,
+ *     fail-fast. НЕ authoritative.
+ *
+ * Шаги 1b–6 выполняются ВНУТРИ keyed mutex по [accountId, instrumentId]
+ * (пересекается с lock-ключами ProcessFillUseCase/CancelOrderUseCase):
+ * WS fill, прилетевший между submitOrder и локальным save, ждёт завершения
+ * Place и находит сохранённый Order вместо ухода в direct-fill path.
+ * Lock удерживается на время network call submitOrder — осознанный
+ * single-process компромисс. publishAll вынесен ЗА lock (шаг 7).
+ * TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
+ *
+ * 1b. Authoritative риск-проверка на СВЕЖЕМ portfolio (portfolioService.getPortfolio)
+ *     и актуальном openOrdersCount (orderRepo.countByStrategyId) — устраняет
+ *     гонку двух конкурентных execute() на устаревшем snapshot.
  * 2. Резервирование баланса (portfolio.reserveForOrder)
  * 3. Отправка на биржу (exchangeClient.submitOrder) → типизированный SubmitOrderResult:
  *    - `Err(ExchangeError)` (транспорт): откат резервации, Err
@@ -73,8 +86,10 @@ import type { IClock } from '@polymarket/time';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type {
   IExchangeClient,
+  IKeyedMutex,
   IOrderRepository,
   IOrderStateStore,
   IReconciliationIssueRepository,
@@ -127,6 +142,17 @@ export interface PlaceOrderDeps {
   readonly portfolioService: PortfolioService;
   readonly exchangeClient: IExchangeClient;
   readonly orderStateStore: IOrderStateStore;
+  /**
+   * Keyed mutex — сериализует reserve+submit+local save относительно
+   * `ProcessFillUseCase`/`CancelOrderUseCase` по [accountId, instrumentId].
+   *
+   * @remarks
+   * Закрывает race «submitOrder → WS fill → local save»: без lock fill,
+   * прилетевший между submit и сохранением Order, не находил Order и уходил
+   * в direct-fill path (BUY дебетует available, исходная резервация остаётся
+   * замороженной), после чего Place сохранял OPEN order → desync.
+   */
+  readonly keyedMutex: IKeyedMutex;
   readonly eventBus: IEventBus;
   readonly clock: IClock;
   readonly logger: ILogger;
@@ -147,6 +173,25 @@ export interface PlaceOrderDeps {
 
 /** Ошибки PlaceOrderUseCase */
 export type PlaceOrderError = TradingError | RiskViolationError;
+
+/**
+ * Результат критической секции размещения (внутри lock), готовый к публикации.
+ *
+ * @remarks
+ * `_placeLocked` возвращает это ВМЕСТО того, чтобы публиковать события самому —
+ * publish выполняется в `execute()` уже ПОСЛЕ освобождения lock (сужение
+ * critical section: EventBus.publishAll реально await-ит drain handlers).
+ * Commit (CAS save + markers + issues) уже состоялся к моменту возврата.
+ */
+interface PlaceCommitResult {
+  readonly venueOrderId: OrderId;
+  /** Доменные события Order (уже вытянуты через pullEvents внутри lock). */
+  readonly events: readonly unknown[];
+  readonly submitStatus: string;
+  /** Поля для success-лога (notional для BUY либо size для SELL). */
+  readonly logNotional?: string;
+  readonly logSize?: string;
+}
 
 /**
  * Use case размещения торгового ордера.
@@ -195,26 +240,100 @@ export class PlaceOrderUseCase {
   }
 
   /**
-   * Логирует исход best-effort venue-отмены в rollback-ветках.
+   * Best-effort issue при сбое release резервации в rollback-ветке.
    *
-   * @param venueOrderId - ID ордера на бирже, для которого запрашивался rollback cancel
-   * @param cancelResult - Результат `exchangeClient.cancelOrder()`
-   * @param transportErrorMessage - Сообщение для лога, если cancelResult — Err (транспортная ошибка)
+   * @param args - `releaseError` (сообщение ошибки release), `stage`
+   *   (идентификатор rollback-ветки), `clientOrderId`, `accountId`,
+   *   `instrumentId`, опциональный `venueOrderId` (если venue-ордер существовал)
    *
    * @remarks
-   * Не парсит `reason` из `CancelOrderResult` — только switch по типизированному `status`.
-   * `CANCELLED` / `ALREADY_CANCELLED` / `NOT_FOUND` считаются завершённым или идемпотентным
-   * rollback venue-стороны и не логируются как ошибка.
+   * Rollback-ветка уже возвращает свой Err, но упавший release означает,
+   * что резервация может остаться замороженной (Order↔Portfolio desync) —
+   * без queryable issue это было бы видно только в логах.
+   * `ORDER_PORTFOLIO_DESYNC`, id детерминирован по venue/client orderId
+   * (`reconciliation:place-rollback[…]:release-failed`) — в одном размещении
+   * срабатывает максимум одна rollback-ветка, коллизий нет.
+   * Сбой `add()` не маскирует исходный Err rollback-ветки.
    */
-  private _logRollbackCancelOutcome(
-    venueOrderId: OrderId,
-    cancelResult: Awaited<ReturnType<IExchangeClient['cancelOrder']>>,
-    transportErrorMessage: string,
-  ): void {
+  private async _addRollbackReleaseIssue(args: {
+    readonly releaseError: string;
+    readonly stage: string;
+    readonly clientOrderId: OrderId;
+    readonly accountId: AccountId;
+    readonly instrumentId: InstrumentId;
+    readonly venueOrderId?: OrderId;
+  }): Promise<void> {
+    await this._addReconciliationIssue({
+      id: args.venueOrderId
+        ? `reconciliation:place-rollback:${String(args.venueOrderId)}:release-failed`
+        : `reconciliation:place-rollback-client:${String(args.clientOrderId)}:release-failed`,
+      type: 'ORDER_PORTFOLIO_DESYNC',
+      status: 'OPEN',
+      reason: `PLACE_ROLLBACK_RELEASE_FAILED: ${args.releaseError}`,
+      createdAt: this._deps.clock.now(),
+      ...(args.venueOrderId ? { orderId: args.venueOrderId } : {}),
+      accountId: args.accountId,
+      instrumentId: args.instrumentId,
+      context: {
+        stage: args.stage,
+        clientOrderId: String(args.clientOrderId),
+        ...(args.venueOrderId ? { venueOrderId: String(args.venueOrderId) } : {}),
+      },
+    });
+  }
+
+  /**
+   * Обрабатывает исход best-effort venue-отмены в rollback-ветках:
+   * логирует и для ambiguous исходов создаёт reconciliation issue.
+   *
+   * @param args - `venueOrderId`, результат `cancelOrder()`, `stage`
+   *   (идентификатор rollback-ветки для context), `clientOrderId`,
+   *   `accountId`/`instrumentId` (для issue),
+   *   `transportErrorMessage` (текст лога при транспортном Err)
+   *
+   * @remarks
+   * Не парсит `reason` из `CancelOrderResult` — только switch по типизированному
+   * `status`. `CANCELLED` / `ALREADY_CANCELLED` / `NOT_FOUND` — завершённый или
+   * идемпотентный rollback venue-стороны: не ошибка, issue не создаётся.
+   * Ambiguous исходы становятся queryable issues (best-effort, сбой `add()`
+   * не маскирует исходный Err rollback-ветки):
+   * - `ALREADY_FILLED` → `VENUE_LOCAL_ORDER_DESYNC`: локальный Order НЕ сохранён
+   *   (rollback), а venue-ордер исполнен — придёт fill на несуществующий ордер;
+   * - `UNKNOWN_RETRY_NEEDED` / транспортный `Err` → `CANCEL_UNKNOWN_OUTCOME`:
+   *   venue-ордер может быть live, локально его нет.
+   */
+  private async _handleRollbackCancelOutcome(args: {
+    readonly venueOrderId: OrderId;
+    readonly cancelResult: Awaited<ReturnType<IExchangeClient['cancelOrder']>>;
+    readonly stage: string;
+    readonly clientOrderId: OrderId;
+    readonly accountId: AccountId;
+    readonly instrumentId: InstrumentId;
+    readonly transportErrorMessage: string;
+  }): Promise<void> {
+    const { venueOrderId, cancelResult, stage, clientOrderId, accountId, instrumentId } = args;
+    const baseContext = {
+      stage,
+      clientOrderId: String(clientOrderId),
+      // Во всех rollback-ветках локальный Order не сохранён (или save не удался).
+      localOrderSaved: false,
+    };
+
     if (!cancelResult.ok) {
-      this._logger.error(transportErrorMessage, {
+      this._logger.error(args.transportErrorMessage, {
         venueOrderId: String(venueOrderId),
         error: cancelResult.error.message,
+      });
+      await this._addReconciliationIssue({
+        id: `reconciliation:place-rollback:${String(venueOrderId)}:transport-error`,
+        type: 'CANCEL_UNKNOWN_OUTCOME',
+        status: 'OPEN',
+        reason: `ROLLBACK_CANCEL_TRANSPORT_ERROR: ${cancelResult.error.message}`,
+        createdAt: this._deps.clock.now(),
+        orderId: venueOrderId,
+        accountId,
+        instrumentId,
+        context: { ...baseContext, rollbackCancelOutcome: 'TRANSPORT_ERROR' },
       });
       return;
     }
@@ -229,12 +348,34 @@ export class PlaceOrderUseCase {
           'Rollback cancel failed — order already filled on exchange, manual reconciliation/fill expected',
           { venueOrderId: String(venueOrderId), reason: cancelResult.value.reason },
         );
+        await this._addReconciliationIssue({
+          id: `reconciliation:place-rollback:${String(venueOrderId)}:already-filled`,
+          type: 'VENUE_LOCAL_ORDER_DESYNC',
+          status: 'OPEN',
+          reason: `ROLLBACK_CANCEL_ALREADY_FILLED: ${cancelResult.value.reason ?? 'already filled'}`,
+          createdAt: this._deps.clock.now(),
+          orderId: venueOrderId,
+          accountId,
+          instrumentId,
+          context: { ...baseContext, rollbackCancelOutcome: 'ALREADY_FILLED' },
+        });
         break;
       case 'UNKNOWN_RETRY_NEEDED':
         this._logger.error(
           'Rollback cancel outcome unclear — venue order may still be live, manual reconciliation required',
           { venueOrderId: String(venueOrderId), reason: cancelResult.value.reason },
         );
+        await this._addReconciliationIssue({
+          id: `reconciliation:place-rollback:${String(venueOrderId)}:unknown`,
+          type: 'CANCEL_UNKNOWN_OUTCOME',
+          status: 'OPEN',
+          reason: `ROLLBACK_CANCEL_UNKNOWN_OUTCOME: ${cancelResult.value.reason}`,
+          createdAt: this._deps.clock.now(),
+          orderId: venueOrderId,
+          accountId,
+          instrumentId,
+          context: { ...baseContext, rollbackCancelOutcome: 'UNKNOWN_RETRY_NEEDED' },
+        });
         break;
     }
   }
@@ -248,8 +389,11 @@ export class PlaceOrderUseCase {
    * @throws Не бросает исключений — все ошибки возвращаются через Result
    */
   public async execute(input: PlaceOrderInput): Promise<Result<OrderId, PlaceOrderError>> {
-    // Шаг 1: Пре-трейд риск-проверка
-    const riskResult = this._deps.riskChecker.checkBeforeOrder({
+    // Шаг 1a: Дешёвый precheck — вне lock (fail-fast на stale snapshot из input).
+    // Не authoritative: два конкурентных execute() могут оба пройти его на
+    // старом snapshot. Финальная, authoritative риск-проверка — внутри lock на
+    // свежем portfolio + актуальном openOrdersCount (см. _placeLocked, шаг 1b).
+    const precheckResult = this._deps.riskChecker.checkBeforeOrder({
       portfolio: input.portfolio,
       openOrdersCount: input.openOrdersCount,
       side: input.side,
@@ -258,10 +402,104 @@ export class PlaceOrderUseCase {
       instrumentId: input.instrumentId,
       strategyId: input.strategyId,
     });
+    if (!precheckResult.ok) {
+      this._logger.warn('Pre-trade risk precheck failed (stale snapshot)', {
+        riskCode: precheckResult.error.riskCode,
+        clientOrderId: String(input.orderId),
+      });
+      return precheckResult;
+    }
+
+    // Keyed mutex по [accountId, instrumentId] — пересекается с lock-ключами
+    // ProcessFillUseCase/CancelOrderUseCase (оба включают accountId, а fill
+    // того же инструмента — и instrumentId). Закрывает race: WS fill,
+    // прилетевший между submitOrder и локальным orderRepo.save, ждёт
+    // завершения Place и находит сохранённый Order вместо ухода в
+    // direct-fill path (frozen reservation + double debit).
+    //
+    // Lock осознанно удерживается на время network call submitOrder —
+    // прагматичный single-process safety guard.
+    // TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
+    const lockKeys = [
+      accountIdToString(input.accountId),
+      String(input.instrumentId),
+    ];
+    const lockedResult = await this._deps.keyedMutex.runExclusive(
+      lockKeys,
+      () => this._placeLocked(input),
+    );
+    if (!lockedResult.ok) {
+      return lockedResult;
+    }
+    const commit = lockedResult.value;
+
+    // Шаг 7: Публикация событий — ВНЕ lock (critical section уже закрыта).
+    // Бизнес-коммит состоялся под lock (CAS save + markers + issues), ордер live
+    // на venue — публикация является notification path, НЕ частью транзакции.
+    // publishAll реально await-ит drain handlers, поэтому выносим его за lock,
+    // чтобы не расширять critical section на время обработки подписчиков.
+    // Ошибка publish НЕ откатывает состояние и НЕ делает committed operation
+    // retryable (повторный execute() создал бы дубль на venue): логируем
+    // EVENT_PUBLISH_FAILED и возвращаем Ok(venueOrderId).
+    try {
+      await this._deps.eventBus.publishAll(commit.events as Parameters<IEventBus['publishAll']>[0]);
+    } catch (err) {
+      this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish order placed events after commit — order stays placed, event lost', {
+        venueOrderId: String(commit.venueOrderId),
+        clientOrderId: String(input.orderId),
+        submitStatus: commit.submitStatus,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return Ok(commit.venueOrderId);
+    }
+
+    this._logger.info('Order placed successfully', {
+      venueOrderId: String(commit.venueOrderId),
+      clientOrderId: String(input.orderId),
+      side: input.side,
+      submitStatus: commit.submitStatus,
+      ...(commit.logNotional !== undefined ? { notional: commit.logNotional } : { size: commit.logSize }),
+    });
+
+    return Ok(commit.venueOrderId);
+  }
+
+  /**
+   * Критическая секция размещения — вызывается ВНУТРИ keyed mutex.
+   *
+   * @param input - Входные данные ордера (risk check уже пройден)
+   * @returns Ok(venueOrderId) при успехе, Err(PlaceOrderError) при ошибке
+   *
+   * @remarks
+   * Внутри lock: reserve → submit → обработка REJECTED/UNKNOWN →
+   * effectiveSize adjustment → Order.create/accept → CAS save → markers/issues →
+   * publish. Состояние Portfolio/Order последовательно относительно
+   * конкурентных fills/cancels этого инструмента/аккаунта.
+   */
+  private async _placeLocked(input: PlaceOrderInput): Promise<Result<PlaceCommitResult, PlaceOrderError>> {
+    // Шаг 1b: Authoritative риск-проверка на СВЕЖЕМ состоянии.
+    // input.portfolio и input.openOrdersCount — snapshot, собранный ДО lock;
+    // пока ждали lock, конкурентный place/fill мог изменить баланс/экспозицию
+    // и число открытых ордеров. Перечитываем portfolio и openOrdersCount под
+    // lock и повторяем проверку — иначе два конкурентных execute() оба прошли
+    // бы лимиты по количеству/экспозиции на устаревшем snapshot, а затем
+    // последовательно разместились бы, превысив лимит.
+    const freshPortfolio = this._deps.portfolioService.getPortfolio(input.accountId) ?? input.portfolio;
+    const freshOpenOrdersCount = await this._deps.orderRepo.countByStrategyId(input.strategyId);
+    const riskResult = this._deps.riskChecker.checkBeforeOrder({
+      portfolio: freshPortfolio,
+      openOrdersCount: freshOpenOrdersCount,
+      side: input.side,
+      price: input.price,
+      size: input.size,
+      instrumentId: input.instrumentId,
+      strategyId: input.strategyId,
+    });
     if (!riskResult.ok) {
-      this._logger.warn('Pre-trade risk check failed', {
+      this._logger.warn('Pre-trade risk check failed (authoritative, under lock)', {
         riskCode: riskResult.error.riskCode,
         clientOrderId: String(input.orderId),
+        freshOpenOrdersCount,
       });
       return riskResult;
     }
@@ -321,6 +559,13 @@ export class PlaceOrderUseCase {
           clientOrderId: String(input.orderId),
           releaseError: releaseResult.error.message,
         });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'submit-transport-error-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+        });
       }
       return Err(new TradingError(
         `Exchange submission failed: ${submitResult.error.message}`,
@@ -354,6 +599,13 @@ export class PlaceOrderUseCase {
         this._logger.error('Failed to release reservation after REJECTED submit', {
           clientOrderId: String(input.orderId),
           releaseError: releaseResult.error.message,
+        });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'rejected-submit-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
         });
       }
       return Err(new TradingError(
@@ -391,11 +643,15 @@ export class PlaceOrderUseCase {
       }
       if (submitValue.orderId) {
         const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(submitValue.orderId);
-        this._logRollbackCancelOutcome(
-          submitValue.orderId,
-          cancelExchangeResult,
-          'Failed to cancel exchange order after UNKNOWN submit result — venue order may still be live, manual reconciliation required',
-        );
+        await this._handleRollbackCancelOutcome({
+          venueOrderId: submitValue.orderId,
+          cancelResult: cancelExchangeResult,
+          stage: 'unknown-submit-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          transportErrorMessage: 'Failed to cancel exchange order after UNKNOWN submit result — venue order may still be live, manual reconciliation required',
+        });
       }
       // Issue создаётся ДАЖЕ если best-effort cancel удался: исход submit был
       // ambiguous — venue-состояние требует ручной проверки в любом случае.
@@ -470,13 +726,25 @@ export class PlaceOrderUseCase {
           venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
         });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'invalid-effective-size-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          venueOrderId,
+        });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      this._logRollbackCancelOutcome(
+      await this._handleRollbackCancelOutcome({
         venueOrderId,
-        cancelExchangeResult,
-        'Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required',
-      );
+        cancelResult: cancelExchangeResult,
+        stage: 'invalid-effective-size-rollback',
+        clientOrderId: input.orderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        transportErrorMessage: 'Failed to cancel exchange order after invalid effectiveSize — venue order may still be live, manual reconciliation required',
+      });
       return Err(new TradingError(
         `Exchange returned invalid effectiveSize (${effectiveSize.value().toString()}) for requested size (${input.size.value().toString()})`,
         { context: { venueOrderId: String(venueOrderId) } },
@@ -512,12 +780,24 @@ export class PlaceOrderUseCase {
           venueOrderId: String(venueOrderId),
           releaseError: excessReleaseResult.error.message,
         });
-        const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-        this._logRollbackCancelOutcome(
+        await this._addRollbackReleaseIssue({
+          releaseError: excessReleaseResult.error.message,
+          stage: 'excess-release-failure-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
           venueOrderId,
-          cancelExchangeResult,
-          'Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required',
-        );
+        });
+        const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
+        await this._handleRollbackCancelOutcome({
+          venueOrderId,
+          cancelResult: cancelExchangeResult,
+          stage: 'excess-release-failure-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          transportErrorMessage: 'Failed to cancel exchange order after excess-release failure — venue order may still be live, manual reconciliation required',
+        });
         return Err(new TradingError(
           `Failed to release excess reservation after exchange size adjustment: ${excessReleaseResult.error.message}`,
           { context: { venueOrderId: String(venueOrderId) } },
@@ -543,13 +823,25 @@ export class PlaceOrderUseCase {
           venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
         });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'timestamp-failure-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          venueOrderId,
+        });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      this._logRollbackCancelOutcome(
+      await this._handleRollbackCancelOutcome({
         venueOrderId,
-        cancelExchangeResult,
-        'Failed to cancel exchange order after timestamp failure — venue order may still be live, manual reconciliation required',
-      );
+        cancelResult: cancelExchangeResult,
+        stage: 'timestamp-failure-rollback',
+        clientOrderId: input.orderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        transportErrorMessage: 'Failed to cancel exchange order after timestamp failure — venue order may still be live, manual reconciliation required',
+      });
       return Err(new TradingError(
         `Failed to create timestamp: ${timestampResult.error.message}`,
         { context: { venueOrderId: String(venueOrderId) } },
@@ -578,13 +870,25 @@ export class PlaceOrderUseCase {
           venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
         });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'order-create-failure-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          venueOrderId,
+        });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      this._logRollbackCancelOutcome(
+      await this._handleRollbackCancelOutcome({
         venueOrderId,
-        cancelExchangeResult,
-        'Failed to cancel exchange order after Order.create failure — venue order may still be live, manual reconciliation required',
-      );
+        cancelResult: cancelExchangeResult,
+        stage: 'order-create-failure-rollback',
+        clientOrderId: input.orderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        transportErrorMessage: 'Failed to cancel exchange order after Order.create failure — venue order may still be live, manual reconciliation required',
+      });
       return Err(orderResult.error);
     }
     const order = orderResult.value;
@@ -605,13 +909,25 @@ export class PlaceOrderUseCase {
           venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
         });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'accept-failure-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          venueOrderId,
+        });
       }
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      this._logRollbackCancelOutcome(
+      await this._handleRollbackCancelOutcome({
         venueOrderId,
-        cancelExchangeResult,
-        'Failed to cancel exchange order during accept() rollback',
-      );
+        cancelResult: cancelExchangeResult,
+        stage: 'accept-failure-rollback',
+        clientOrderId: input.orderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        transportErrorMessage: 'Failed to cancel exchange order during accept() rollback',
+      });
       return Err(acceptResult.error);
     }
     const acceptedOrder = acceptResult.value;
@@ -629,11 +945,15 @@ export class PlaceOrderUseCase {
       });
       // Ордер уже создан на venue — best-effort отмена, как в других rollback-ветках.
       const cancelExchangeResult = await this._deps.exchangeClient.cancelOrder(venueOrderId);
-      this._logRollbackCancelOutcome(
+      await this._handleRollbackCancelOutcome({
         venueOrderId,
-        cancelExchangeResult,
-        'Failed to cancel exchange order after save conflict — venue order may still be live, manual reconciliation required',
-      );
+        cancelResult: cancelExchangeResult,
+        stage: 'save-conflict-rollback',
+        clientOrderId: input.orderId,
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        transportErrorMessage: 'Failed to cancel exchange order after save conflict — venue order may still be live, manual reconciliation required',
+      });
       // Откат резервации (она ещё не освобождалась в этой ветке).
       const releaseResult = isBuy
         ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
@@ -646,6 +966,14 @@ export class PlaceOrderUseCase {
         this._logger.error('Failed to release reservation after save conflict — manual reconciliation required', {
           venueOrderId: String(venueOrderId),
           releaseError: releaseResult.error.message,
+        });
+        await this._addRollbackReleaseIssue({
+          releaseError: releaseResult.error.message,
+          stage: 'save-conflict-rollback',
+          clientOrderId: input.orderId,
+          accountId: input.accountId,
+          instrumentId: input.instrumentId,
+          venueOrderId,
         });
       }
       // События НЕ публикуем — локально ордер не сохранён.
@@ -703,33 +1031,17 @@ export class PlaceOrderUseCase {
       });
     }
 
-    // Шаг 7: Публикация событий.
-    // Бизнес-коммит уже состоялся (ордер сохранён CAS save выше, live на venue) —
-    // публикация является notification path, НЕ частью транзакции. Ошибка
-    // publish НЕ откатывает состояние и НЕ должна делать committed operation
-    // retryable: повторный execute() создал бы ДУБЛИРУЮЩИЙ ордер на venue.
-    // Поэтому логируем EVENT_PUBLISH_FAILED и возвращаем Ok(venueOrderId).
+    // Commit завершён (CAS save + markers + FILLED issue). События вытягиваем
+    // здесь (pullEvents — sync, дренирует буфер Order), но НЕ публикуем под
+    // lock: publishAll выполняется в execute() уже после освобождения lock.
     const events = acceptedOrder.pullEvents();
-    try {
-      await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
-    } catch (err) {
-      this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish order placed events after commit — order stays placed, event lost', {
-        venueOrderId: String(venueOrderId),
-        clientOrderId: String(input.orderId),
-        submitStatus: submitValue.status,
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
-      return Ok(venueOrderId);
-    }
-
-    this._logger.info('Order placed successfully', {
-      venueOrderId: String(venueOrderId),
-      clientOrderId: String(input.orderId),
-      side: input.side,
+    return Ok({
+      venueOrderId,
+      events,
       submitStatus: submitValue.status,
-      ...(orderNotional !== undefined ? { notional: orderNotional.toString() } : { size: orderSize.value().toString() }),
+      ...(orderNotional !== undefined
+        ? { logNotional: orderNotional.toString() }
+        : { logSize: orderSize.value().toString() }),
     });
-
-    return Ok(venueOrderId);
   }
 }

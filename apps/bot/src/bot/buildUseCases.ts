@@ -145,6 +145,9 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     portfolioService,
     exchangeClient,
     orderStateStore: orderRepo,
+    // Сериализация reserve+submit+save относительно fills/cancels
+    // по [accountId, instrumentId] (см. PlaceOrderUseCase doc).
+    keyedMutex,
     eventBus,
     clock,
     logger,

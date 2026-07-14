@@ -20,7 +20,8 @@ import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
 import { Price, Quantity } from '@polymarket/value-objects';
-import { Ok } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import { TradingError } from '@polymarket/errors';
 import { Order } from '@polymarket/order';
 import Decimal from 'decimal.js';
 
@@ -387,7 +388,7 @@ describe('ProcessFillUseCase', () => {
 
   // ── Publish failure после commit (не должен делать fill retryable) ────────
 
-  it('normal path: fill остаётся APPLIED (не FAILED), если publishAll падает после commit', async () => {
+  it('normal path: publishAll падает после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED в логе', async () => {
     const failingEventBus: IEventBus = {
       ...eventBus,
       publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
@@ -396,13 +397,18 @@ describe('ProcessFillUseCase', () => {
 
     const result = await useCase.execute(makeFill());
 
-    expect(result.ok).toBe(false);
-    // Состояние уже закоммичено — markApplied вызван, markFailed НЕ вызван.
+    // Fill уже committed и APPLIED — потеря уведомления не делает операцию
+    // retryable: Ok, не Err.
+    expect(result.ok).toBe(true);
     expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
     expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('EVENT_PUBLISH_FAILED'),
+      expect.objectContaining({ fillId: String(FILL_ID) }),
+    );
   });
 
-  it('direct fill path: fill остаётся APPLIED (не FAILED), если publishAll падает после commit', async () => {
+  it('direct fill path: publishAll падает после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED в логе', async () => {
     orderRepo = makeOrderRepo(undefined);
     const directOrderStateStore = makeOrderStateStore(undefined);
     const failingEventBus: IEventBus = {
@@ -418,9 +424,226 @@ describe('ProcessFillUseCase', () => {
 
     const result = await useCase.execute(makeFill());
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
     expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
     expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('EVENT_PUBLISH_FAILED'),
+      expect.objectContaining({ fillId: String(FILL_ID) }),
+    );
+  });
+
+  // ── Dust-release failure после terminal fill ────────────────────────────────
+
+  describe('dust reservation release (terminal fill через dust threshold)', () => {
+    // order size 100, fill 99.995 → остаток 0.005 < dust threshold → FILLED.
+    const DUST_FILL_SIZE = '99.995';
+
+    it('BUY: сбой dust release → RECONCILIATION_REQUIRED, issue, markApplied НЕ вызван, Err', async () => {
+      const portfolio = makePortfolioMock();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze dust')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({ ...deps, portfolioService, reconciliationIssues });
+
+      const result = await useCase.execute(makeFill({ size: makeQty(DUST_FILL_SIZE) } as never));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/dust/i);
+      // Order уже terminal (saveSync) + Portfolio applied — retry бесполезен.
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID,
+        expect.stringContaining('DUST_RESERVATION_RELEASE_FAILED'),
+      );
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+      // Флаги сняты — как на других partial-commit error paths.
+      expect(orderStateStore.clearOrderFillMatched).toHaveBeenCalledWith(ORDER_ID, FILL_ID);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:dust-reservation-release-failed`);
+      expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+      expect(issue.context).toMatchObject({
+        stage: 'dust-reservation-release-after-terminal-fill',
+        side: 'BUY',
+        remainingQty: '0.005',
+        orderId: String(ORDER_ID),
+      });
+    });
+
+    it('SELL: сбой dust release → RECONCILIATION_REQUIRED, issue, Err', async () => {
+      const sellOrder = (() => {
+        const r = Order.create({
+          id: ORDER_ID,
+          asset: ASSET_ID,
+          side: 'SELL',
+          price: makePrice('0.65') as never,
+          size: makeQty('100') as never,
+          timestamp: { value: () => new Decimal(1000), toNumber: () => 1000, toISO: () => '2024-01-01T00:00:00.000Z' } as never,
+        });
+        if (!r.ok) throw new Error('Cannot create Order');
+        const accepted = r.value.accept();
+        if (!accepted.ok) throw new Error('Cannot accept Order');
+        accepted.value.pullEvents();
+        return accepted.value;
+      })();
+
+      const sellPortfolio: Portfolio = {
+        ...makePortfolioMock(),
+        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
+          instrumentId: ASSET_ID as unknown as InstrumentId,
+          quantity: makeQty('100'),
+          averageEntryPrice: makePrice('0.65'),
+          side: 'LONG',
+          isClosed: () => false,
+        } as never),
+      } as unknown as Portfolio;
+      (sellPortfolio.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(sellPortfolio));
+      (sellPortfolio.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(sellPortfolio);
+      // releaseTokenReservation падает — и best-effort внутри applyFill (толерантен),
+      // и dust release после terminal (НЕ толерантен).
+      (sellPortfolio.releaseTokenReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot release token dust')),
+      );
+      const store = makePortfolioStore(sellPortfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(sellOrder),
+        orderStateStore: makeOrderStateStore(sellOrder),
+        portfolioService,
+        reconciliationIssues,
+      });
+
+      const result = await useCase.execute(
+        makeFill({ side: 'SELL', size: makeQty(DUST_FILL_SIZE) } as never),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID,
+        expect.stringContaining('DUST_RESERVATION_RELEASE_FAILED'),
+      );
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:dust-reservation-release-failed`);
+      expect(issue.context).toMatchObject({ side: 'SELL', remainingQty: '0.005' });
+    });
+
+    it('успешный dust release → Ok, markApplied вызван', async () => {
+      const portfolio = makePortfolioMock();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(Ok(portfolio));
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new ProcessFillUseCase({ ...deps, portfolioService });
+
+      const result = await useCase.execute(makeFill({ size: makeQty(DUST_FILL_SIZE) } as never));
+
+      expect(result.ok).toBe(true);
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
+    });
+
+    it('нет dust (fill не делает ордер terminal) → release не вызывается', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new ProcessFillUseCase({ ...deps, portfolioService });
+
+      const result = await useCase.execute(makeFill()); // 50 из 100 — не terminal
+
+      expect(result.ok).toBe(true);
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Ledger failure после Order+Portfolio commit ─────────────────────────────
+
+  describe('ledger failure после commit (частичный commit)', () => {
+    const throwingLedger = {
+      recordFill: jest.fn(() => {
+        throw new Error('ledger down');
+      }),
+    } as unknown as LedgerService;
+
+    it('normal path: recordFill бросает → RECONCILIATION_REQUIRED (ORDER_PORTFOLIO_LEDGER_DESYNC), Err, markApplied НЕ вызван', async () => {
+      const useCase = new ProcessFillUseCase({ ...deps, ledgerService: throwingLedger });
+
+      const result = await useCase.execute(makeFill());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/ledger/i);
+      // Order+Portfolio уже committed — retry бесполезен (duplicate fill defence),
+      // поэтому терминальный RECONCILIATION_REQUIRED, а не retryable FAILED.
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID,
+        expect.stringContaining('ORDER_PORTFOLIO_LEDGER_DESYNC'),
+      );
+      expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      // Флаги сняты — fill on-chain, stuck state недопустим.
+      expect(orderStateStore.clearOrderFillMatched).toHaveBeenCalledWith(ORDER_ID, FILL_ID);
+    });
+
+    it('normal path: при переданном reconciliationIssues создаётся issue order-portfolio-ledger-desync', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({ ...deps, ledgerService: throwingLedger, reconciliationIssues });
+
+      await useCase.execute(makeFill());
+
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:order-portfolio-ledger-desync`);
+      expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+      expect(issue.reason).toContain('ORDER_PORTFOLIO_LEDGER_DESYNC');
+      expect(issue.context).toMatchObject({ stage: 'ledger-record-after-portfolio-apply' });
+    });
+
+    it('direct fill path: recordFill бросает → RECONCILIATION_REQUIRED, Err, markApplied НЕ вызван', async () => {
+      // Ордер не найден → direct-fill path: Portfolio применён через
+      // applyDirectFill, retry повторно применил бы его (нет duplicate defence).
+      orderRepo = makeOrderRepo(undefined);
+      const directOrderStateStore = makeOrderStateStore(undefined);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo,
+        orderStateStore: directOrderStateStore,
+        ledgerService: throwingLedger,
+        reconciliationIssues,
+      });
+
+      const result = await useCase.execute(makeFill());
+
+      expect(result.ok).toBe(false);
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID,
+        expect.stringContaining('ORDER_PORTFOLIO_LEDGER_DESYNC'),
+      );
+      expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:order-portfolio-ledger-desync`);
+      expect(issue.context).toMatchObject({ stage: 'ledger-record-after-direct-fill-portfolio-apply' });
+    });
   });
 
   // ── Portfolio не найден ───────────────────────────────────────────────────

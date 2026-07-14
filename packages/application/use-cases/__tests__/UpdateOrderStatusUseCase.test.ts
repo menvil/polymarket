@@ -4,10 +4,16 @@ import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { UpdateOrderStatusDeps } from '../src/UpdateOrderStatusUseCase.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { IOrderRepository, IPortfolioStore, IOrderStateStore } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IPortfolioStore,
+  IOrderStateStore,
+  IReconciliationIssueRepository,
+} from '@polymarket/ports';
 import { VersionConflictError } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
-import type { AccountId, AssetId, OrderId } from '@polymarket/ids';
+import type { AccountId, OrderId } from '@polymarket/ids';
+import { asPolymarketCtfToken } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
@@ -37,7 +43,8 @@ function makeEventBus(): IEventBus {
 }
 
 const ACCOUNT_ID = 'acc-001' as unknown as AccountId;
-const ASSET_ID = 'token-abc' as unknown as AssetId;
+// Структурный AssetId (CTF token) — use case вызывает assetIdToInstrumentId(order.asset)
+const ASSET_ID = asPolymarketCtfToken('123')!;
 const ORDER_ID = 'order-1' as unknown as OrderId;
 const MOCK_TIMESTAMP = { value: () => new Decimal(1000), toNumber: () => 1000, toISO: () => '' } as never;
 
@@ -107,6 +114,15 @@ function makePortfolioStore(): IPortfolioStore {
     get: jest.fn<IPortfolioStore['get']>().mockReturnValue(portfolio),
     save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
     getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
+  };
+}
+
+function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
+  return {
+    add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
+    listOpen: jest.fn<IReconciliationIssueRepository['listOpen']>().mockResolvedValue([]),
+    get: jest.fn<IReconciliationIssueRepository['get']>().mockResolvedValue(undefined),
+    markResolved: jest.fn<IReconciliationIssueRepository['markResolved']>().mockResolvedValue(undefined),
   };
 }
 
@@ -197,6 +213,86 @@ describe('UpdateOrderStatusUseCase', () => {
       expect.stringContaining('EVENT_PUBLISH_FAILED'),
       expect.objectContaining({ orderId: String(ORDER_ID), updateType: 'CANCELLED' }),
     );
+  });
+
+  it('REJECTED на PENDING ордере → Ok(void), save вызван И резервация освобождена', async () => {
+    // Venue отклонил уже сохранённый локальный ордер — live-ордера нет,
+    // без release резервация осталась бы замороженной навсегда.
+    const pendingResult = Order.create({
+      id: ORDER_ID,
+      asset: ASSET_ID,
+      side: 'BUY',
+      price: Price.of(new Decimal('0.65')) as never,
+      size: Quantity.of(new Decimal('100')) as never,
+      timestamp: MOCK_TIMESTAMP,
+    });
+    if (!pendingResult.ok) throw pendingResult.error;
+    const pendingOrder = pendingResult.value;
+    pendingOrder.pullEvents();
+
+    orderRepo = makeOrderRepo(pendingOrder);
+    orderStateStore = makeOrderStateStore(pendingOrder);
+    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    const useCase = new UpdateOrderStatusUseCase(deps);
+
+    const result = await useCase.execute({
+      update: { type: 'REJECTED', orderId: ORDER_ID, reason: 'insufficient funds' },
+      accountId: ACCOUNT_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(orderRepo.save).toHaveBeenCalled();
+    const portfolio = (portfolioStore.get as jest.Mock)(ACCOUNT_ID) as Portfolio;
+    expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+  });
+
+  it('сбой release после committed venue update → Ok, ORDER_PORTFOLIO_DESYNC issue создана', async () => {
+    const order = makeOpenOrder();
+    orderRepo = makeOrderRepo(order);
+    orderStateStore = makeOrderStateStore(order);
+    // Пустой portfolio store → releaseOrderReservation вернёт Err('Portfolio not found').
+    const emptyPortfolioStore: IPortfolioStore = {
+      get: jest.fn<IPortfolioStore['get']>().mockReturnValue(undefined),
+      save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+      getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
+    };
+    const failingPortfolioService = new PortfolioService(emptyPortfolioStore, logger);
+    const reconciliationIssues = makeReconciliationIssueRepo();
+    deps = {
+      orderRepo,
+      orderStateStore,
+      portfolioService: failingPortfolioService,
+      eventBus,
+      logger,
+      reconciliationIssues,
+    };
+    const useCase = new UpdateOrderStatusUseCase(deps);
+
+    const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+    // Update уже committed (CAS save) — сбой release НЕ делает его retryable Err.
+    expect(result.ok).toBe(true);
+    expect(orderRepo.save).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('VENUE_UPDATE_RESERVATION_RELEASE_FAILED'),
+      expect.objectContaining({ orderId: String(ORDER_ID), updateType: 'CANCELLED' }),
+    );
+    expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+    const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+      id: string;
+      type: string;
+      reason: string;
+      context?: Record<string, unknown>;
+    };
+    expect(issue.id).toBe(`reconciliation:order-update:${String(ORDER_ID)}:reservation-release-failed`);
+    expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+    expect(issue.reason).toContain('VENUE_UPDATE_RESERVATION_RELEASE_FAILED');
+    expect(issue.context).toMatchObject({
+      stage: 'venue-update-release-reservation-after-order-save',
+      updateType: 'CANCELLED',
+    });
+    // События всё равно публикуются — update committed.
+    expect(eventBus.publishAll).toHaveBeenCalled();
   });
 
   it('CANCELLED на уже CANCELED ордере → Ok(void), idempotent (save не вызван)', async () => {

@@ -279,6 +279,86 @@ describe('CancelOrderUseCase', () => {
     );
   });
 
+  // ── Release после CAS save: source of truth — save, не projection ──────────
+
+  describe('reservation release после успешного CAS save', () => {
+    it('release вызывается даже при stale projection (getOrder возвращает OPEN)', async () => {
+      // Default orderStateStore.getOrder возвращает исходный OPEN order —
+      // stale относительно только что сохранённого CANCELED. Раньше это
+      // приводило к skip release и замороженной резервации.
+      const portfolio = makePortfolioMock();
+      portfolioStore = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(portfolioStore, logger);
+      const useCase = new CancelOrderUseCase({ ...deps, portfolioService });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+    });
+
+    it('release вызывается даже если projection пуст (getOrder возвращает undefined)', async () => {
+      const order = makeOpenOrder();
+      orderRepo = makeOrderRepo(order);
+      const emptyProjectionStore = {
+        ...makeOrderStateStore(order),
+        getOrder: jest.fn<IOrderStateStore['getOrder']>().mockReturnValue(undefined),
+      };
+      const portfolio = makePortfolioMock();
+      portfolioStore = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(portfolioStore, logger);
+      const useCase = new CancelOrderUseCase({
+        ...deps,
+        orderRepo,
+        orderStateStore: emptyProjectionStore,
+        portfolioService,
+      });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+    });
+
+    it('сбой release после committed CANCELED → Ok, issue reservation-release-failed, venue cancel и publish выполняются', async () => {
+      // Пустой portfolio store → releaseOrderReservation вернёт Err('Portfolio not found').
+      const emptyPortfolioStore: IPortfolioStore = {
+        get: jest.fn<IPortfolioStore['get']>().mockReturnValue(undefined),
+        save: jest.fn<IPortfolioStore['save']>().mockReturnValue(Ok(undefined)),
+        getVersion: jest.fn<IPortfolioStore['getVersion']>().mockReturnValue(0),
+      };
+      const portfolioService = new PortfolioService(emptyPortfolioStore, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new CancelOrderUseCase({ ...deps, portfolioService, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      // Cancel уже committed — сбой release НЕ делает его retryable Err.
+      expect(result.ok).toBe(true);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('CANCEL_RESERVATION_RELEASE_FAILED'),
+        expect.objectContaining({ orderId: String(ORDER_ID) }),
+      );
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:cancel:${String(ORDER_ID)}:reservation-release-failed`);
+      expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+      expect(issue.reason).toContain('CANCEL_RESERVATION_RELEASE_FAILED');
+      expect(issue.context).toMatchObject({
+        stage: 'cancel-release-reservation-after-order-save',
+        localStatus: 'CANCELED',
+      });
+      // Flow продолжается: venue cancel всё ещё нужен, события публикуются.
+      expect(exchangeClient.cancelOrder).toHaveBeenCalledWith(ORDER_ID);
+      expect(eventBus.publishAll).toHaveBeenCalled();
+    });
+  });
+
   // ── Reconciliation issues при ambiguous venue cancel ───────────────────────
 
   describe('reconciliation issues (ambiguous cancel после local cancel)', () => {

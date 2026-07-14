@@ -9,7 +9,9 @@
  * 1. Если Portfolio уже существует в store — пропустить (идемпотентно).
  * 2. Получить текущий USDC-баланс от venue через ICurrentBalanceProvider.
  * 3. Создать Portfolio с Balance.withZeroReserved(USDC, accountId, POLYMARKET).
- * 4. Сохранить в IPortfolioStore (версия 0 — новый агрегат).
+ * 4. Сохранить в IPortfolioStore (версия 0 — новый агрегат). Конфликт версии
+ *    при save → перечитать store: если Portfolio уже есть (конкурирующий init
+ *    успел между шагами 1 и 4) — идемпотентный Ok; если нет — Err.
  *
  * ### Почему не replay через fills:
  * Текущий баланс из REST уже отражает все исторические fill.
@@ -131,6 +133,18 @@ export class InitializePortfolioUseCase {
     // Шаг 4: Сохранить в store (версия 0 — новый агрегат)
     const saveResult = this._deps.portfolioStore.save(portfolioResult.value, 0);
     if (!saveResult.ok) {
+      // Конфликт версии на save(…, 0) чаще всего означает, что КОНКУРИРУЮЩИЙ
+      // init успел сохранить Portfolio между проверкой existing (шаг 1) и этим
+      // save (между ними await balance provider). Состояние системы при этом
+      // нормальное — Portfolio инициализирован, просто не нами. Перечитываем:
+      // если Portfolio есть — идемпотентный Ok; если нет — настоящая ошибка.
+      const existingAfterConflict = this._deps.portfolioStore.get(accountId);
+      if (existingAfterConflict) {
+        this._logger.warn('Portfolio was initialized concurrently during init — treating as idempotent success', {
+          accountId: accountIdToString(accountId),
+        });
+        return Ok(undefined);
+      }
       this._logger.error('Failed to save portfolio to store', {
         accountId: accountIdToString(accountId),
         error: saveResult.error.message,

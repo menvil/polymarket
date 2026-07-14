@@ -6,7 +6,12 @@ import { ReconcileTradesUseCase } from '../src/ReconcileTradesUseCase.js';
 // ReconcileTradesDeps and ReconcileTradesInput are exported but not used directly in tests
 import type { ProcessFillUseCase } from '../src/ProcessFillUseCase.js';
 import type { ILogger } from '@polymarket/logger';
-import type { IExchangeClient, IProcessedFillRepository, VenueTradeSnapshot } from '@polymarket/ports';
+import type {
+  IExchangeClient,
+  IProcessedFillRepository,
+  IReconciliationIssueRepository,
+  VenueTradeSnapshot,
+} from '@polymarket/ports';
 import { ExchangeError } from '@polymarket/ports';
 import type { AccountId, AssetId, FillId, MarketId, OrderId } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
@@ -214,6 +219,117 @@ describe('ReconcileTradesUseCase', () => {
     expect(result.ok).toBe(true);
     expect(processedFillRepo.getStatus).toHaveBeenCalledTimes(1);
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
+  });
+
+  // ── venue FAILED после local APPLIED ────────────────────────────────────────
+
+  describe('FAILED trade handling', () => {
+    function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
+      return {
+        add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
+        listOpen: jest.fn<IReconciliationIssueRepository['listOpen']>().mockResolvedValue([]),
+        get: jest.fn<IReconciliationIssueRepository['get']>().mockResolvedValue(undefined),
+        markResolved: jest.fn<IReconciliationIssueRepository['markResolved']>().mockResolvedValue(undefined),
+      };
+    }
+
+    function makeUseCaseWithIssues(reconciliationIssues: IReconciliationIssueRepository): ReconcileTradesUseCase {
+      return new ReconcileTradesUseCase({
+        exchangeClient,
+        processedFillRepo,
+        processFillUseCase: processFillUseCase as unknown as ProcessFillUseCase,
+        logger,
+        reconciliationIssues,
+      });
+    }
+
+    it('FAILED + local APPLIED → VENUE_LOCAL_ORDER_DESYNC issue, ProcessFillUseCase не вызывается', async () => {
+      const snapshot = { ...makeTradeSnapshot('fill-failed-applied'), status: 'FAILED' as const };
+      (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+        .mockResolvedValue(Ok([snapshot]));
+      processedFillRepo.getStatus.mockResolvedValue('APPLIED');
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCaseWithIssues = makeUseCaseWithIssues(reconciliationIssues);
+
+      const result = await useCaseWithIssues.execute({ accountId: ACCOUNT_ID });
+
+      expect(result.ok).toBe(true);
+      expect(processFillUseCase.execute).not.toHaveBeenCalled();
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        fillId: unknown;
+        orderId: unknown;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:fill:fill-failed-applied:venue-failed-after-applied');
+      expect(issue.type).toBe('VENUE_LOCAL_ORDER_DESYNC');
+      expect(issue.reason).toContain('VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED');
+      expect(issue.fillId).toBe(snapshot.fillId);
+      expect(issue.orderId).toBe(snapshot.orderId);
+      expect(issue.context).toMatchObject({
+        stage: 'reconcile-trades-failed-after-applied',
+        venueStatus: 'FAILED',
+        localProcessedStatus: 'APPLIED',
+      });
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED'),
+        expect.objectContaining({ fillId: 'fill-failed-applied' }),
+      );
+    });
+
+    it('FAILED + local НЕ APPLIED (undefined/FAILED/RECONCILIATION_REQUIRED) → skip без issue и без обработки', async () => {
+      const localStatuses = [undefined, 'FAILED', 'RECONCILIATION_REQUIRED'] as const;
+      for (const localStatus of localStatuses) {
+        const snapshot = { ...makeTradeSnapshot('fill-failed-x'), status: 'FAILED' as const };
+        (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+          .mockResolvedValue(Ok([snapshot]));
+        processedFillRepo.getStatus.mockResolvedValue(localStatus);
+        const reconciliationIssues = makeReconciliationIssueRepo();
+        const useCaseWithIssues = makeUseCaseWithIssues(reconciliationIssues);
+        (processFillUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
+
+        const result = await useCaseWithIssues.execute({ accountId: ACCOUNT_ID });
+
+        expect(result.ok).toBe(true);
+        expect(processFillUseCase.execute).not.toHaveBeenCalled();
+        expect(reconciliationIssues.add).not.toHaveBeenCalled();
+      }
+    });
+
+    it('сбой issue store логируется, reconciliation всё равно возвращает Ok', async () => {
+      const snapshot = { ...makeTradeSnapshot('fill-failed-applied'), status: 'FAILED' as const };
+      (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+        .mockResolvedValue(Ok([snapshot]));
+      processedFillRepo.getStatus.mockResolvedValue('APPLIED');
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      (reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+        Promise.reject(new Error('issue store down')),
+      );
+      const useCaseWithIssues = makeUseCaseWithIssues(reconciliationIssues);
+
+      const result = await useCaseWithIssues.execute({ accountId: ACCOUNT_ID });
+
+      expect(result.ok).toBe(true);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to add reconciliation issue',
+        expect.objectContaining({ issueType: 'VENUE_LOCAL_ORDER_DESYNC' }),
+      );
+    });
+
+    it('без reconciliationIssues (optional dep) FAILED + APPLIED — только лог, Ok', async () => {
+      const snapshot = { ...makeTradeSnapshot('fill-failed-applied'), status: 'FAILED' as const };
+      (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+        .mockResolvedValue(Ok([snapshot]));
+      processedFillRepo.getStatus.mockResolvedValue('APPLIED');
+
+      const result = await useCase.execute({ accountId: ACCOUNT_ID });
+
+      expect(result.ok).toBe(true);
+      expect(processFillUseCase.execute).not.toHaveBeenCalled();
+    });
   });
 
   it('передаёт since в getTrades если указан', async () => {

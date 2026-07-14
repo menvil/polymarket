@@ -28,6 +28,7 @@ PlaceOrderUseCase
   ├── OrderService → IOrderRepository
   ├── PortfolioService → IPortfolioStore
   ├── IExchangeClient
+  ├── IKeyedMutex (сериализация reserve+submit+save по accountId+instrumentId)
   ├── IEventBus
   ├── IClock
   └── IReconciliationIssueRepository (optional, queryable issues)
@@ -50,9 +51,27 @@ CancelOrderUseCase
 
 ## PlaceOrderUseCase
 
-### Алгоритм (7 шагов)
+### Алгоритм
 
-1. **Риск-проверка** — `riskChecker.checkBeforeOrder()` (fail-fast)
+1a. **Дешёвый риск-precheck** — `riskChecker.checkBeforeOrder()` на snapshot из
+   `input` (fail-fast, вне lock). **НЕ authoritative**: два конкурентных
+   `execute()` могут оба пройти его на устаревшем snapshot.
+
+Шаги 1b–6 выполняются внутри **keyed mutex по `[accountId, instrumentId]`** —
+ключи пересекаются с lock-наборами `ProcessFillUseCase`/`CancelOrderUseCase`.
+Это закрывает race «submitOrder → WS fill → local save»: fill, прилетевший
+между submit и сохранением Order, ждёт завершения Place и находит сохранённый
+Order вместо ухода в direct-fill path (double debit + замороженная резервация).
+Lock осознанно удерживается на время network call `submitOrder` — прагматичный
+single-process safety guard. `publishAll` вынесен **за** lock (шаг 7).
+TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
+
+1b. **Authoritative риск-проверка (под lock)** — повторный
+   `riskChecker.checkBeforeOrder()` на **свежем** `portfolio`
+   (`portfolioService.getPortfolio`) и **актуальном** `openOrdersCount`
+   (`orderRepo.countByStrategyId`). Устраняет гонку: без неё два конкурентных
+   `execute()`, прошедших precheck на устаревшем snapshot, могли бы
+   последовательно разместиться под lock, превысив лимиты по количеству/экспозиции.
 2. **Резервирование ресурсов** — BUY: `portfolioService.reserveForOrder(notional)`,
    SELL: `reserveTokensForOrder(size)`
 3. **Отправка на биржу** — `exchangeClient.submitOrder()` → типизированный
@@ -90,9 +109,47 @@ CancelOrderUseCase
    (`ReconcileTradesUseCase`) и будет обработан в `ProcessFillUseCase`. Пометка
    нужна только чтобы `CancelOrderUseCase` не пытался отменить уже (частично)
    исполненный ордер.
-7. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`.
+7. **Публикация событий — ВНЕ lock** — `eventBus.publishAll(order.pullEvents())`
+   выполняется в `execute()` уже ПОСЛЕ освобождения keyed mutex. `_placeLocked`
+   возвращает commit-payload (venueOrderId + вытянутые события), а публикацию
+   делает вызывающий: `publishAll` реально await-ит drain подписчиков, и
+   держать на это время lock значило бы напрасно расширять critical section.
+   Commit (CAS save + markers + issues) к этому моменту уже состоялся под lock.
    Сбой публикации после commit НЕ возвращает `Err` — см.
    «Post-commit event publish failure policy» ниже.
+
+### Rollback release issues
+
+Во всех rollback-ветках выполняется откат резервации
+(`releaseReservation`/`releaseTokenReservation`). Если сам release падает,
+резервация может остаться замороженной (Order↔Portfolio desync) — создаётся
+best-effort issue `ORDER_PORTFOLIO_DESYNC`
+(`reconciliation:place-rollback:${venueOrderId}:release-failed`, либо
+`reconciliation:place-rollback-client:${clientOrderId}:release-failed`, если
+venue-ордера не было — например REJECTED). Context содержит `stage`
+(rollback-ветку) и `clientOrderId`. Rollback-ветка всё равно возвращает свой
+исходный `Err`; сбой `add()` его не маскирует.
+
+### Rollback cancel issues
+
+Во всех rollback-ветках (UNKNOWN submit, invalid effectiveSize, excess-release
+failure, timestamp/Order.create/accept failure, save conflict) выполняется
+best-effort `cancelOrder(venueOrderId)`. Ambiguous исход этой отмены — venue
+order может быть live или исполнен, а локального Order нет — создаёт issue
+(если передан `reconciliationIssues`):
+
+- `ALREADY_FILLED` → `VENUE_LOCAL_ORDER_DESYNC`
+  (`reconciliation:place-rollback:${venueOrderId}:already-filled`) — придёт
+  fill на несуществующий локально ордер;
+- `UNKNOWN_RETRY_NEEDED` → `CANCEL_UNKNOWN_OUTCOME`
+  (`reconciliation:place-rollback:${venueOrderId}:unknown`);
+- транспортный `Err` → `CANCEL_UNKNOWN_OUTCOME`
+  (`reconciliation:place-rollback:${venueOrderId}:transport-error`).
+
+`CANCELLED`/`ALREADY_CANCELLED`/`NOT_FOUND` — чистый rollback, issue не
+создаётся. Context содержит `stage` (какая rollback-ветка), `clientOrderId`,
+`rollbackCancelOutcome`, `localOrderSaved: false`. Сбой `add()` не маскирует
+исходный `Err` rollback-ветки.
 
    Для `FILLED` (если в deps передан `reconciliationIssues`) после успешного
    save+marker и ДО `publishAll` дополнительно создаётся queryable issue
@@ -157,9 +214,23 @@ if (result.ok) {
      `ORDER_PORTFOLIO_DESYNC` (id: `reconciliation:fill:${fill.id}:order-portfolio-desync`)
      с тем же reason; семантика `markReconciliationRequired` не меняется,
      сбой `add()` логируется и не маскирует исходный `Err`
-7. **Записать в Ledger** — `ledgerService.recordFill(fill)`
+6a. **Dust release** (order стал terminal через dust threshold, remaining > 0) —
+   снять остаток резервации. Сбой release НЕ проглатывается: Order уже terminal,
+   dust-резервация может остаться замороженной →
+   `markReconciliationRequired('DUST_RESERVATION_RELEASE_FAILED: ...')` +
+   issue (`reconciliation:fill:${fillId}:dust-reservation-release-failed`),
+   `Err`; Ledger и `markApplied` НЕ выполняются
+7. **Записать в Ledger** — `ledgerService.recordFill(fill)`. Если `recordFill`
+   бросит ПОСЛЕ commit Order+Portfolio — частичный commit (Ledger отстаёт),
+   retry бесполезен → `markReconciliationRequired(fill.id,
+   'ORDER_PORTFOLIO_LEDGER_DESYNC: ...')` + reconciliation issue
+   (id `reconciliation:fill:${fillId}:order-portfolio-ledger-desync`), `Err`.
+   То же в direct-fill path (там retry повторно применил бы Portfolio)
 8. **`markApplied(fill.id)`** — сразу после успешного применения к Order/Portfolio/Ledger, ДО публикации
-9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())` — ошибка публикации НЕ откатывает `markApplied` (см. `ProcessFillUseCase` doc, `EVENT_PUBLISH_FAILED`)
+9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())` — ошибка
+   публикации НЕ откатывает `markApplied` и НЕ меняет результат: логируется
+   `EVENT_PUBLISH_FAILED`, возвращается `Ok` (см. «Post-commit event publish
+   failure policy»)
 
 ### Idempotency
 
@@ -202,8 +273,16 @@ queryable/alertable хранилище проблем, требующих руч
 | `PlaceOrderUseCase` | submit → `UNKNOWN` | `SUBMIT_UNKNOWN_OUTCOME` | `reconciliation:submit:${venueOrderId}:unknown` (или `submit-client:${clientOrderId}`) |
 | `PlaceOrderUseCase` | submit → `FILLED` без fill details | `SUBMIT_FILLED_WITHOUT_FILL_DETAILS` | `reconciliation:submit:${venueOrderId}:filled-without-fill-details` |
 | `ProcessFillUseCase` | Portfolio падает после сохранения Order | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:order-portfolio-desync` |
+| `ProcessFillUseCase` | Ledger падает после commit Order+Portfolio | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:order-portfolio-ledger-desync` |
 | `CancelOrderUseCase` | venue cancel → `UNKNOWN_RETRY_NEEDED` после local cancel | `CANCEL_UNKNOWN_OUTCOME` | `reconciliation:cancel:${orderId}:unknown` |
 | `CancelOrderUseCase` | транспортный `Err` venue cancel после local cancel | `CANCEL_UNKNOWN_OUTCOME` | `reconciliation:cancel:${orderId}:transport-error` |
+| `CancelOrderUseCase` | release резервации падает после committed CANCELED | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:cancel:${orderId}:reservation-release-failed` |
+| `UpdateOrderStatusUseCase` | release резервации падает после committed venue update | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:order-update:${orderId}:reservation-release-failed` |
+| `PlaceOrderUseCase` | rollback cancel → `ALREADY_FILLED` | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:place-rollback:${venueOrderId}:already-filled` |
+| `PlaceOrderUseCase` | rollback cancel → `UNKNOWN_RETRY_NEEDED` / транспортный `Err` | `CANCEL_UNKNOWN_OUTCOME` | `reconciliation:place-rollback:${venueOrderId}:unknown` / `:transport-error` |
+| `PlaceOrderUseCase` | rollback release резервации падает | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:place-rollback:${venueOrderId}:release-failed` (или `place-rollback-client:${clientOrderId}` без venueOrderId) |
+| `ProcessFillUseCase` | dust release падает после terminal fill | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:dust-reservation-release-failed` |
+| `ReconcileTradesUseCase` | venue `FAILED` при локальном `APPLIED` | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:fill:${fillId}:venue-failed-after-applied` |
 
 In-memory реализация — `InMemoryReconciliationIssueRepository`
 (`@polymarket/in-memory`, re-export в `@polymarket/backtesting`). Recovery
@@ -226,8 +305,17 @@ worker/use-case по этим issues — вне scope текущего этап�
    `orderRepo.save(cancelledOrder, expectedVersion)`. При `VersionConflictError`:
    перечитать latest — терминальный/исчезнувший → `Ok` (no-op, БЕЗ release),
    иначе `Err`. Резервация и события при конфликте НЕ трогаются
-7. **Снять резервацию** — `portfolioService.releaseOrderReservation()` — только
-   ПОСЛЕ успешного CAS save
+7. **Снять резервацию** — `portfolioService.releaseOrderReservation()` — ВСЕГДА
+   после успешного CAS save. **Source of truth — сам успешный CAS save**, а не
+   projection (`orderStateStore.getOrder`): раньше release зависел от
+   projection-проверки, что при persistent repo + stale/async projection
+   оставляло резервацию замороженной навсегда. `releaseOrderReservation()`
+   возвращает `Result` — сбой release после committed CANCELED (Order уже
+   terminal, резервация может остаться frozen) → error-лог
+   `CANCEL_RESERVATION_RELEASE_FAILED` + best-effort issue
+   `ORDER_PORTFOLIO_DESYNC`
+   (id `reconciliation:cancel:${orderId}:reservation-release-failed`),
+   результат остаётся `Ok`, flow продолжается (venue cancel всё ещё нужен)
 8. **Best-effort биржевая отмена** — `exchangeClient.cancelOrder(orderId)` (ошибка не прерывает)
 9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`.
    Сбой публикации после commit НЕ возвращает `Err` — см.
@@ -267,6 +355,18 @@ Context обоих: `{ localStatus: 'CANCELED', stage: 'exchange-cancel-after-lo
 outcome: 'UNKNOWN_RETRY_NEEDED' | 'TRANSPORT_ERROR' }`. Сбой `add()` логируется и не
 меняет `Ok(undefined)` результата.
 
+## ReconcileTradesUseCase: venue FAILED после local APPLIED
+
+Reconciler — safety net при пропущенных WS-событиях. Если REST-сверка видит
+trade со статусом `FAILED`, а локальный processed-fill статус — `APPLIED`
+(WS `FILL_FAILED` не дошёл), значит Order/Portfolio/Ledger содержат применённый
+fill, которого on-chain больше нет. Автоматический reversal из reconciler —
+future work; текущее поведение: error-лог `VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED`
++ issue `VENUE_LOCAL_ORDER_DESYNC`
+(`reconciliation:fill:${fillId}:venue-failed-after-applied`), обработка trade
+пропускается, счётчик `failedAfterApplied` в summary-логе. `FAILED` при
+локальном статусе НЕ `APPLIED` — обычный skip (reversal не требуется).
+
 ## Post-commit event publish failure policy
 
 ### Почему это сделано так?
@@ -292,9 +392,33 @@ publish падает:
 | `PlaceOrderUseCase` | CAS save Order (live на venue) | `Ok(venueOrderId)` |
 | `CancelOrderUseCase` | CAS save CANCELED + release + venue cancel attempted | `Ok(undefined)` |
 | `UpdateOrderStatusUseCase` | CAS save + возможный release | `Ok(undefined)` |
-| `ProcessFillUseCase` | Order/Portfolio/Ledger + `markApplied` | `Err` с пометкой «fill already committed as APPLIED» — fill НЕ становится retryable (`markApplied` уже вызван), Err сигнализирует только потерю уведомления |
+| `ProcessFillUseCase` (normal и direct-fill) | Order/Portfolio/Ledger + `markApplied` | `Ok(undefined)` — fill уже `APPLIED`, `markFailed` не вызывается |
 
 Ошибки ДО коммита по-прежнему возвращают `Err` (с откатом, где он определён).
+
+## Release резервации после committed terminal order
+
+`PortfolioService.releaseOrderReservation(accountId, order)` возвращает
+`Result<void, PortfolioSaveError>` (раньше — `void` с проглатыванием ошибок).
+Сбой release, когда локальный Order уже terminal (committed CAS save), — это
+Order↔Portfolio desync (замороженная резервация), а не warning: caller обязан
+создать reconciliation issue.
+
+- `CancelOrderUseCase` — release всегда после успешного CAS save (projection
+  не участвует, см. алгоритм); сбой → issue + `Ok`.
+- `UpdateOrderStatusUseCase` — release для `CANCELLED`/`EXPIRED`/**`REJECTED`**
+  (REJECTED добавлен: venue отклонил уже сохранённый локальный ордер —
+  live-ордера нет, без release резервация замёрзла бы навсегда); сбой →
+  issue + `Ok` (update уже committed). CAS-конфликт по-прежнему НЕ release'ит.
+
+## InitializePortfolioUseCase: идемпотентный concurrent init
+
+Между проверкой существующего Portfolio (шаг 1) и `save(…, 0)` (шаг 4) есть
+`await balanceProvider.getUsdcBalance()` — конкурирующий init может успеть
+сохранить Portfolio первым. Конфликт версии при `save(…, 0)` теперь
+обрабатывается перечитыванием store: если Portfolio уже есть — warn-лог и
+идемпотентный `Ok` (состояние системы нормальное, инициализацию выполнил
+конкурент); если всё ещё нет — `Err` как раньше.
 
 ## Portfolio CAS
 
@@ -356,3 +480,16 @@ Order и версию нужно читать атомарно через `getWi
 `SimplePosition` — упрощённая реализация `IPosition` без lot-based FIFO/LIFO.
 Хранит агрегированные `quantity` и `averageEntryPrice`. Для lot-based tracking
 используйте `@polymarket/position` в отдельном слое.
+
+## Remaining known debt
+
+- **PendingVenueOrderRegistry** — сильнее, чем удержание keyed mutex на время
+  `submitOrder`: реестр pending venue-ордеров позволил бы fill-ам находить
+  «ордер в процессе размещения» без сериализации всего инструмента на network
+  call. Текущий long-held lock — прагматичный single-process guard.
+- **Автоматический reversal из reconcile `FAILED`** — future work; текущее
+  поведение создаёт `VENUE_LOCAL_ORDER_DESYNC` issue и требует ручного
+  вмешательства.
+- **UnitOfWork / атомарный Order+Portfolio commit** — `saveSync` и
+  последовательные мутации Portfolio остаются прагматичным single-process
+  решением (см. также TODO в `IOrderStateStore.saveSync`).

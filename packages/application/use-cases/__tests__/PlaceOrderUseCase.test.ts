@@ -10,12 +10,15 @@ import type {
   IExchangeClient,
   IPortfolioStore,
   IOrderStateStore,
+  IKeyedMutex,
   IReconciliationIssueRepository,
+  CancelOrderResult,
 } from '@polymarket/ports';
 import { VersionConflictError } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
@@ -120,6 +123,12 @@ function makeExchangeClient(orderId?: OrderId): IExchangeClient {
   };
 }
 
+function makeKeyedMutex(): IKeyedMutex {
+  return {
+    runExclusive: jest.fn(<T>(_keys: readonly string[], fn: () => Promise<T>) => fn()) as unknown as IKeyedMutex['runExclusive'],
+  };
+}
+
 function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
   return {
     add: jest.fn<IReconciliationIssueRepository['add']>().mockResolvedValue(undefined),
@@ -171,6 +180,7 @@ describe('PlaceOrderUseCase', () => {
   let portfolioStore: IPortfolioStore;
   let exchangeClient: IExchangeClient;
   let riskChecker: IOrderRiskChecker;
+  let keyedMutex: IKeyedMutex;
   let deps: PlaceOrderDeps;
 
   beforeEach(() => {
@@ -181,6 +191,7 @@ describe('PlaceOrderUseCase', () => {
     portfolioStore = makePortfolioStore();
     exchangeClient = makeExchangeClient(); // default: 'exchange-order-1' (venueOrderId)
     riskChecker = makeRiskChecker(true);
+    keyedMutex = makeKeyedMutex();
 
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
@@ -189,6 +200,7 @@ describe('PlaceOrderUseCase', () => {
       orderRepo,
       portfolioService,
       exchangeClient,
+      keyedMutex,
       orderStateStore: {
         markOrderFillMatched: jest.fn(),
         hasMatchedFills: jest.fn().mockReturnValue(false),
@@ -621,6 +633,429 @@ describe('PlaceOrderUseCase', () => {
         submitStatus: 'OPEN',
       }),
     );
+  });
+
+  // ── Keyed mutex: сериализация reserve+submit+save ───────────────────────────
+
+  describe('keyed mutex', () => {
+    it('runExclusive вызывается с ключами accountId + instrumentId; submit и save — внутри lock', async () => {
+      const callOrder: string[] = [];
+      const trackingMutex: IKeyedMutex = {
+        runExclusive: jest.fn(async <T>(_keys: readonly string[], fn: () => Promise<T>) => {
+          callOrder.push('lock-enter');
+          const result = await fn();
+          callOrder.push('lock-exit');
+          return result;
+        }) as unknown as IKeyedMutex['runExclusive'],
+      };
+      const trackingExchange: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn(async () => {
+          callOrder.push('submit');
+          return Ok({
+            status: 'OPEN' as const,
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('100'),
+            remainingSize: makeQty('100'),
+          });
+        }) as unknown as IExchangeClient['submitOrder'],
+      };
+      const trackingRepo: IOrderRepository = {
+        ...makeOrderRepo(),
+        save: jest.fn(async () => {
+          callOrder.push('save');
+          return Ok(undefined);
+        }) as unknown as IOrderRepository['save'],
+      };
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        keyedMutex: trackingMutex,
+        exchangeClient: trackingExchange,
+        orderRepo: trackingRepo,
+      });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      const keys = (trackingMutex.runExclusive as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as string[];
+      expect(keys).toContain(String(INSTRUMENT_ID));
+      // accountId-ключ обязан совпадать с ключом ProcessFillUseCase/CancelOrderUseCase
+      // (оба используют accountIdToString) — иначе lock-наборы не пересекутся.
+      expect(keys).toContain(accountIdToString(ACCOUNT_ID));
+      // Весь критический участок — внутри lock.
+      expect(callOrder).toEqual(['lock-enter', 'submit', 'save', 'lock-exit']);
+    });
+
+    it('risk-check failure → lock не берётся, submit не вызывается', async () => {
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker: makeRiskChecker(false) });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(keyedMutex.runExclusive).not.toHaveBeenCalled();
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+    });
+
+    it('reserve failure (внутри lock) → submit не вызывается', async () => {
+      const failingPortfolio = makePortfolio();
+      (failingPortfolio.reserveForOrder as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('insufficient available balance')),
+      );
+      const store = makePortfolioStore(failingPortfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(keyedMutex.runExclusive).toHaveBeenCalled(); // lock взят
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled(); // но до submit не дошло
+    });
+  });
+
+  // ── Rollback cancel outcomes → reconciliation issues ────────────────────────
+
+  describe('rollback cancel issues', () => {
+    /** Exchange: submit OK (OPEN), save конфликтует → rollback cancel с заданным исходом */
+    function makeSaveConflictSetup(
+      cancelResult: Awaited<ReturnType<IExchangeClient['cancelOrder']>>,
+    ): {
+      exchangeClient: IExchangeClient;
+      orderRepo: IOrderRepository;
+      reconciliationIssues: IReconciliationIssueRepository;
+    } {
+      return {
+        exchangeClient: {
+          ...makeExchangeClient(),
+          cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(cancelResult),
+        },
+        orderRepo: {
+          ...makeOrderRepo(),
+          save: jest.fn<IOrderRepository['save']>().mockResolvedValue(
+            Err(new VersionConflictError('exchange-order-1', 0, 1)),
+          ),
+        },
+        reconciliationIssues: makeReconciliationIssueRepo(),
+      };
+    }
+
+    it('save conflict + rollback cancel ALREADY_FILLED → VENUE_LOCAL_ORDER_DESYNC issue, исходный Err сохранён', async () => {
+      const setup = makeSaveConflictSetup(Ok({ status: 'ALREADY_FILLED', reason: 'order is matched' } as CancelOrderResult));
+      const useCase = new PlaceOrderUseCase({ ...deps, ...setup });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/version conflict/i);
+      expect(setup.reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (setup.reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        orderId: unknown;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:place-rollback:exchange-order-1:already-filled');
+      expect(issue.type).toBe('VENUE_LOCAL_ORDER_DESYNC');
+      expect(issue.reason).toBe('ROLLBACK_CANCEL_ALREADY_FILLED: order is matched');
+      expect(issue.orderId).toBe('exchange-order-1');
+      expect(issue.context).toMatchObject({
+        stage: 'save-conflict-rollback',
+        clientOrderId: String(ORDER_ID),
+        rollbackCancelOutcome: 'ALREADY_FILLED',
+        localOrderSaved: false,
+      });
+    });
+
+    it('invalid effectiveSize + rollback cancel UNKNOWN_RETRY_NEEDED → CANCEL_UNKNOWN_OUTCOME issue', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const exchangeClient: IExchangeClient = {
+        ...makeExchangeClient(),
+        // effectiveSize > input.size — нарушение контракта порта → rollback.
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({
+            status: 'OPEN',
+            orderId: 'exchange-order-1' as unknown as OrderId,
+            effectiveSize: makeQty('150'),
+            remainingSize: makeQty('150'),
+          }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+          Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'timeout' } as CancelOrderResult),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:place-rollback:exchange-order-1:unknown');
+      expect(issue.type).toBe('CANCEL_UNKNOWN_OUTCOME');
+      expect(issue.reason).toBe('ROLLBACK_CANCEL_UNKNOWN_OUTCOME: timeout');
+      expect(issue.context).toMatchObject({
+        stage: 'invalid-effective-size-rollback',
+        rollbackCancelOutcome: 'UNKNOWN_RETRY_NEEDED',
+      });
+    });
+
+    it('rollback cancel транспортный Err → CANCEL_UNKNOWN_OUTCOME issue transport-error', async () => {
+      const setup = makeSaveConflictSetup(Err(new TradingError('network down') as never));
+      const useCase = new PlaceOrderUseCase({ ...deps, ...setup });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(setup.reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (setup.reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe('reconciliation:place-rollback:exchange-order-1:transport-error');
+      expect(issue.type).toBe('CANCEL_UNKNOWN_OUTCOME');
+      expect(issue.reason).toBe('ROLLBACK_CANCEL_TRANSPORT_ERROR: network down');
+      expect(issue.context).toMatchObject({ rollbackCancelOutcome: 'TRANSPORT_ERROR' });
+    });
+
+    it('rollback cancel CANCELLED (чистый rollback) — issue НЕ создаётся', async () => {
+      const setup = makeSaveConflictSetup(Ok({ status: 'CANCELLED' } as CancelOrderResult));
+      const useCase = new PlaceOrderUseCase({ ...deps, ...setup });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(setup.reconciliationIssues.add).not.toHaveBeenCalled();
+    });
+
+    it('сбой issue store не маскирует исходный Err rollback-ветки', async () => {
+      const setup = makeSaveConflictSetup(Ok({ status: 'ALREADY_FILLED', reason: 'matched' } as CancelOrderResult));
+      (setup.reconciliationIssues.add as ReturnType<typeof jest.fn>).mockImplementation(() =>
+        Promise.reject(new Error('issue store down')),
+      );
+      const useCase = new PlaceOrderUseCase({ ...deps, ...setup });
+
+      const result = await useCase.execute(makeInput());
+
+      // Err про version conflict, а не про issue store.
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/version conflict/i);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to add reconciliation issue',
+        expect.objectContaining({ issueType: 'VENUE_LOCAL_ORDER_DESYNC' }),
+      );
+    });
+  });
+
+  // ── Rollback RELEASE failure → ORDER_PORTFOLIO_DESYNC issue ──────────────────
+
+  describe('rollback release failure issues', () => {
+    it('REJECTED submit + сбой release → ORDER_PORTFOLIO_DESYNC issue (client-id, без venueOrderId)', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const exchangeClient: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK could not fill' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      // Ровно одна issue — release-failed (REJECTED сам issue не создаёт).
+      expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+        id: string;
+        type: string;
+        reason: string;
+        orderId?: unknown;
+        context?: Record<string, unknown>;
+      };
+      expect(issue.id).toBe(`reconciliation:place-rollback-client:${String(ORDER_ID)}:release-failed`);
+      expect(issue.type).toBe('ORDER_PORTFOLIO_DESYNC');
+      expect(issue.reason).toContain('PLACE_ROLLBACK_RELEASE_FAILED');
+      expect(issue.reason).toContain('cannot unfreeze');
+      expect(issue.orderId).toBeUndefined(); // REJECTED не создаёт venue order
+      expect(issue.context).toMatchObject({
+        stage: 'rejected-submit-rollback',
+        clientOrderId: String(ORDER_ID),
+      });
+    });
+
+    it('save conflict + сбой release → ORDER_PORTFOLIO_DESYNC issue с venueOrderId', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze after save conflict')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const orderRepo: IOrderRepository = {
+        ...makeOrderRepo(),
+        save: jest.fn<IOrderRepository['save']>().mockResolvedValue(
+          Err(new VersionConflictError('exchange-order-1', 0, 1)),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, orderRepo, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      // Две issues: rollback cancel (CANCELLED → нет) + release-failed. cancel
+      // по умолчанию CANCELLED → issue не создаёт, значит ровно одна — release.
+      const calls = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls;
+      const releaseIssue = calls
+        .map((c) => c[0] as { id: string; type: string; orderId?: unknown; context?: Record<string, unknown> })
+        .find((i) => i.id.endsWith(':release-failed'));
+      expect(releaseIssue).toBeDefined();
+      expect(releaseIssue!.id).toBe('reconciliation:place-rollback:exchange-order-1:release-failed');
+      expect(releaseIssue!.type).toBe('ORDER_PORTFOLIO_DESYNC');
+      expect(releaseIssue!.orderId).toBe('exchange-order-1');
+      expect(releaseIssue!.context).toMatchObject({
+        stage: 'save-conflict-rollback',
+        venueOrderId: 'exchange-order-1',
+      });
+    });
+
+    it('успешный release → release-failed issue НЕ создаётся', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const exchangeClient: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK could not fill' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      const releaseIssue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { id: string })
+        .find((i) => i.id.endsWith(':release-failed'));
+      expect(releaseIssue).toBeUndefined();
+    });
+  });
+
+  // ── Authoritative risk-check под lock (свежее состояние) ─────────────────────
+
+  describe('authoritative risk-check под lock', () => {
+    it('precheck проходит на stale snapshot, но authoritative check под lock падает на свежем count → Err, submit НЕ вызывается', async () => {
+      // Свежий openOrdersCount из репозитория превышает лимит, хотя input.openOrdersCount = 0.
+      const orderRepo: IOrderRepository = {
+        ...makeOrderRepo(),
+        countByStrategyId: jest.fn<IOrderRepository['countByStrategyId']>().mockResolvedValue(99),
+      };
+      // checkBeforeOrder: 1-й вызов (precheck) — Ok, 2-й (authoritative) — Err.
+      const riskChecker: IOrderRiskChecker = {
+        checkBeforeOrder: jest.fn<IOrderRiskChecker['checkBeforeOrder']>()
+          .mockReturnValueOnce(Ok(undefined))
+          .mockReturnValueOnce(
+            Err(new RiskViolationErrorClass('MAX_OPEN_ORDERS_EXCEEDED', 'Too many open orders', {})),
+          ),
+        updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, orderRepo, riskChecker });
+
+      const result = await useCase.execute(makeInput({ openOrdersCount: 0 }));
+
+      expect(result.ok).toBe(false);
+      // authoritative check прочитал свежий count из репозитория…
+      expect(orderRepo.countByStrategyId).toHaveBeenCalled();
+      // …и до submit дело не дошло — лимит превышен на свежем состоянии.
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('authoritative'),
+        expect.objectContaining({ freshOpenOrdersCount: 99 }),
+      );
+    });
+
+    it('authoritative check выполняется ВНУТРИ lock (submit не вызывается при провале)', async () => {
+      const callOrder: string[] = [];
+      const trackingMutex: IKeyedMutex = {
+        runExclusive: jest.fn(async <T>(_keys: readonly string[], fn: () => Promise<T>) => {
+          callOrder.push('lock-enter');
+          const r = await fn();
+          callOrder.push('lock-exit');
+          return r;
+        }) as unknown as IKeyedMutex['runExclusive'],
+      };
+      const riskChecker: IOrderRiskChecker = {
+        checkBeforeOrder: jest.fn<IOrderRiskChecker['checkBeforeOrder']>()
+          .mockReturnValueOnce(Ok(undefined)) // precheck
+          .mockImplementationOnce(() => {
+            callOrder.push('authoritative-check');
+            return Err(new RiskViolationErrorClass('MAX_OPEN_ORDERS_EXCEEDED', 'too many', {}));
+          }),
+        updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, keyedMutex: trackingMutex, riskChecker });
+
+      await useCase.execute(makeInput());
+
+      // authoritative check между lock-enter и lock-exit.
+      expect(callOrder).toEqual(['lock-enter', 'authoritative-check', 'lock-exit']);
+    });
+  });
+
+  // ── publishAll ВНЕ lock ──────────────────────────────────────────────────────
+
+  describe('publishAll вне lock', () => {
+    it('publishAll вызывается ПОСЛЕ освобождения lock (не внутри critical section)', async () => {
+      const callOrder: string[] = [];
+      const trackingMutex: IKeyedMutex = {
+        runExclusive: jest.fn(async <T>(_keys: readonly string[], fn: () => Promise<T>) => {
+          callOrder.push('lock-enter');
+          const r = await fn();
+          callOrder.push('lock-exit');
+          return r;
+        }) as unknown as IKeyedMutex['runExclusive'],
+      };
+      const eventBusSpy: IEventBus = {
+        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
+        publishAll: jest.fn(async () => { callOrder.push('publishAll'); }) as unknown as IEventBus['publishAll'],
+        subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, keyedMutex: trackingMutex, eventBus: eventBusSpy });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      // publishAll — строго после lock-exit.
+      expect(callOrder).toEqual(['lock-enter', 'lock-exit', 'publishAll']);
+    });
+
+    it('сбой publishAll (вне lock) после commit → Ok(venueOrderId), EVENT_PUBLISH_FAILED', async () => {
+      const failingEventBus: IEventBus = {
+        ...eventBus,
+        publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, eventBus: failingEventBus });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe('exchange-order-1');
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('EVENT_PUBLISH_FAILED'),
+        expect.objectContaining({ venueOrderId: 'exchange-order-1', submitStatus: 'OPEN' }),
+      );
+    });
   });
 
   // ── SubmitOrderResult.status (OPEN/PARTIALLY_FILLED/FILLED/REJECTED/UNKNOWN) ──

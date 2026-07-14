@@ -11,8 +11,10 @@
  * 2. Применить доменный метод (accept/reject/cancel/expire)
  * 3. Обработать idempotent/race сценарии
  * 4. CAS-сохранение обновлённого Order (save(order, expectedVersion))
- * 5. Для CANCELLED/EXPIRED — освободить резервацию Portfolio (только после
- *    успешного CAS save)
+ * 5. Для CANCELLED/EXPIRED/REJECTED — освободить резервацию Portfolio (только
+ *    после успешного CAS save). Сбой release → error-лог +
+ *    `ORDER_PORTFOLIO_DESYNC` reconciliation issue (best-effort), результат
+ *    остаётся Ok — update уже committed
  * 6. Опубликовать OrderEvent[] в EventBus — notification path, НЕ часть
  *    транзакции: сбой publish после успешного CAS save логируется как
  *    `EVENT_PUBLISH_FAILED` и НЕ меняет результат (Ok) — committed update
@@ -42,8 +44,15 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
+import type { IClock } from '@polymarket/time';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import type {
+  IOrderRepository,
+  IOrderStateStore,
+  IReconciliationIssueRepository,
+  ReconciliationIssue,
+} from '@polymarket/ports';
 import type { IEventBus, ApplicationEvent, VenueOrderUpdate } from '@polymarket/event-bus';
 import type { PortfolioService } from './services/PortfolioService.js';
 
@@ -62,6 +71,24 @@ export interface UpdateOrderStatusDeps {
   readonly portfolioService: PortfolioService;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
+  /**
+   * Queryable хранилище reconciliation issues (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты: без него
+   * поведение прежнее (только logging). Если передан, сбой release резервации
+   * ПОСЛЕ успешного CAS save (ордер уже terminal, резервация может остаться
+   * замороженной) создаёт `ORDER_PORTFOLIO_DESYNC` issue. Сбой `add()`
+   * логируется и НЕ меняет результат use case.
+   */
+  readonly reconciliationIssues?: IReconciliationIssueRepository;
+  /**
+   * Источник времени для `ReconciliationIssue.createdAt` (опционально).
+   *
+   * @remarks
+   * Optional по той же причине. Без него используется `new Date()`.
+   */
+  readonly clock?: IClock;
 }
 
 /**
@@ -79,6 +106,31 @@ export class UpdateOrderStatusUseCase {
    */
   constructor(private readonly _deps: UpdateOrderStatusDeps) {
     this._logger = _deps.logger.child({ component: 'UpdateOrderStatusUseCase' });
+  }
+
+  /**
+   * Best-effort создание reconciliation issue (release failure после CAS save).
+   *
+   * @param issue - Issue с детерминированным id (см. call site)
+   *
+   * @remarks
+   * No-op, если `reconciliationIssues` не передан в deps. `add()` идемпотентен
+   * по id. Ошибка `add()` логируется и проглатывается — issue не должен менять
+   * результат use case (update уже committed → Ok).
+   */
+  private async _addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
+    if (!this._deps.reconciliationIssues) {
+      return;
+    }
+    try {
+      await this._deps.reconciliationIssues.add(issue);
+    } catch (err) {
+      this._logger.error('Failed to add reconciliation issue', {
+        issueId: issue.id,
+        issueType: issue.type,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   /**
@@ -200,12 +252,41 @@ export class UpdateOrderStatusUseCase {
       ));
     }
 
-    // Шаг 5: Для venue-initiated отмен — освободить резервацию Portfolio.
+    // Шаг 5: Для venue-initiated терминальных статусов — освободить резервацию
+    // Portfolio. REJECTED включён наравне с CANCELLED/EXPIRED: venue отклонил
+    // уже сохранённый локальный ордер — live-ордера нет, резервация без release
+    // осталась бы замороженной навсегда.
     // ТОЛЬКО после успешного CAS save: успех гарантирует, что между чтением
     // версии и записью не было конкурирующего fill (saveSync инкрементит
     // версию → был бы конфликт), т.е. резервация ещё не потреблена.
-    if (update.type === 'CANCELLED' || update.type === 'EXPIRED') {
-      this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
+    //
+    // Сбой release после committed save — Order↔Portfolio desync (замороженная
+    // резервация): НЕ retryable business Err (update уже committed), логируем +
+    // best-effort reconciliation issue и продолжаем к публикации/Ok.
+    if (update.type === 'CANCELLED' || update.type === 'EXPIRED' || update.type === 'REJECTED') {
+      const releaseResult = this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
+      if (!releaseResult.ok) {
+        this._logger.error('VENUE_UPDATE_RESERVATION_RELEASE_FAILED: reservation release failed after committed venue update — reservation may stay frozen', {
+          orderId: String(orderId),
+          updateType: update.type,
+          error: releaseResult.error.message,
+        });
+        const instrumentId = assetIdToInstrumentId(updatedOrder.asset);
+        await this._addReconciliationIssue({
+          id: `reconciliation:order-update:${String(orderId)}:reservation-release-failed`,
+          type: 'ORDER_PORTFOLIO_DESYNC',
+          status: 'OPEN',
+          reason: `VENUE_UPDATE_RESERVATION_RELEASE_FAILED: ${releaseResult.error.message}`,
+          createdAt: this._deps.clock?.now() ?? new Date(),
+          orderId,
+          accountId,
+          ...(instrumentId ? { instrumentId } : {}),
+          context: {
+            stage: 'venue-update-release-reservation-after-order-save',
+            updateType: update.type,
+          },
+        });
+      }
     }
 
     // Шаг 6: Опубликовать OrderEvent[].

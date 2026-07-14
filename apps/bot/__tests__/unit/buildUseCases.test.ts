@@ -72,13 +72,17 @@ function makeTimestamp(): Timestamp {
 }
 
 /** Сидирует Portfolio с балансом 1000 USDC в portfolioStore */
-function seedPortfolio(portfolioStore: ReturnType<typeof buildRepositories>['portfolioStore']): Portfolio {
+/** Сидирует Portfolio; `reserved` — уже зарезервированная сумма USDC (для cancel-сценариев) */
+function seedPortfolio(
+  portfolioStore: ReturnType<typeof buildRepositories>['portfolioStore'],
+  reserved = '0',
+): Portfolio {
   const result = Portfolio.create({
     id: asPortfolioId('portfolio:venue:POLYMARKET:test-account'),
     accountId: ACCOUNT_ID,
     balance: Balance.of(
       Money.of(new Decimal('1000'), 'USDC'),
-      Money.of(new Decimal(0), 'USDC'),
+      Money.of(new Decimal(reserved), 'USDC'),
       ACCOUNT_ID,
       KnownVenues.POLYMARKET,
     ),
@@ -174,7 +178,9 @@ describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCa
   it('UNKNOWN_RETRY_NEEDED после local cancel создаёт CANCEL_UNKNOWN_OUTCOME issue в repos.reconciliationIssueRepo', async () => {
     const infra = makeInfra();
     const repos = buildRepositories();
-    seedPortfolio(repos.portfolioStore);
+    // reserved 2.5 = BUY 5 @ 0.5 — cancel всегда release'ит резервацию после
+    // CAS save; без неё release упал бы и создал ВТОРУЮ (release-failed) issue.
+    seedPortfolio(repos.portfolioStore, '2.5');
 
     // Существующий OPEN ордер — cancel сначала отменяет его локально (CAS save),
     // и только потом получает ambiguous ответ от venue.

@@ -12,8 +12,11 @@
  * 5. Отмена Order (order.cancel() → CANCELED + CAS orderRepo.save(order, expectedVersion));
  *    конфликт версии → перечитать: терминальный/исчезнувший ордер = no-op (Ok),
  *    иначе Err; резервация при конфликте НЕ освобождается
- * 6. Снятие резервации баланса (PortfolioService.releaseReservation) — только после
- *    успешного CAS save
+ * 6. Снятие резервации баланса (PortfolioService.releaseOrderReservation) — только
+ *    после успешного CAS save; сам успешный CAS save — source of truth, projection
+ *    (orderStateStore) в решении о release не участвует. Сбой release после
+ *    committed CANCELED → error-лог + `ORDER_PORTFOLIO_DESYNC` reconciliation
+ *    issue (best-effort), результат остаётся Ok — cancel уже committed
  * 7. Запрос отмены на бирже (exchangeClient.cancelOrder — best effort)
  * 8. Публикация доменных событий — notification path, НЕ часть транзакции:
  *    сбой publish после успешного local cancel логируется как
@@ -287,23 +290,40 @@ export class CancelOrderUseCase {
       ));
     }
 
-    // Снятие резервации по стороне ордера — ТОЛЬКО после успешного CAS save.
+    // Снятие резервации по стороне ордера — ВСЕГДА после успешного CAS save.
     //
-    // Перед снятием — синхронная проверка актуального статуса (без yield):
-    // CAS save выше уже гарантирует, что между чтением версии и записью CANCELED
-    // никто не мутировал ордер (saveSync из ProcessFillUseCase инкрементит версию
-    // и вызвал бы конфликт). Эта проверка остаётся defense-in-depth против
-    // перезаписи ПОСЛЕ нашего save (пока resolve'ился Promise).
-    // Если статус в store отличается — пропускаем освобождение.
-    const currentStoredOrder = this._deps.orderStateStore.getOrder(input.orderId);
-    if (currentStoredOrder?.status !== cancelledOrder.status) {
-      this._logger.debug('Order status changed during cancel (concurrent fill), skipping reservation release', {
+    // Source of truth — успешный CAS save выше: он гарантирует, что между
+    // чтением версии и записью CANCELED никто не мутировал ордер (saveSync из
+    // ProcessFillUseCase инкрементит версию и вызвал бы конфликт). Раньше здесь
+    // была дополнительная проверка projection (orderStateStore.getOrder) —
+    // это было опасно для persistent repo + async/stale projection: save уже
+    // committed, а projection мог быть stale/undefined, и резервация оставалась
+    // замороженной навсегда. Projection НЕ участвует в решении о release.
+    //
+    // Сбой release после committed CANCELED — Order↔Portfolio desync
+    // (замороженная резервация): НЕ retryable business Err (cancel уже
+    // committed), логируем + best-effort reconciliation issue и продолжаем —
+    // venue cancel ниже всё ещё необходим.
+    const releaseResult = this._deps.portfolioService.releaseOrderReservation(input.accountId, cancelledOrder);
+    if (!releaseResult.ok) {
+      this._logger.error('CANCEL_RESERVATION_RELEASE_FAILED: reservation release failed after committed local cancel — reservation may stay frozen', {
         orderId: String(input.orderId),
-        cancelledStatus: cancelledOrder.status,
-        currentStatus: currentStoredOrder?.status,
+        error: releaseResult.error.message,
       });
-    } else {
-      this._deps.portfolioService.releaseOrderReservation(input.accountId, cancelledOrder);
+      await this._addReconciliationIssue({
+        id: `reconciliation:cancel:${String(input.orderId)}:reservation-release-failed`,
+        type: 'ORDER_PORTFOLIO_DESYNC',
+        status: 'OPEN',
+        reason: `CANCEL_RESERVATION_RELEASE_FAILED: ${releaseResult.error.message}`,
+        createdAt: this._deps.clock?.now() ?? new Date(),
+        orderId: input.orderId,
+        accountId: input.accountId,
+        ...(instrumentId ? { instrumentId } : {}),
+        context: {
+          stage: 'cancel-release-reservation-after-order-save',
+          localStatus: 'CANCELED',
+        },
+      });
     }
 
     // Best-effort отмена на бирже.

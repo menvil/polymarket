@@ -25,16 +25,22 @@
  *    дополнительно создаётся queryable `ReconciliationIssue`
  *    (type `ORDER_PORTFOLIO_DESYNC`, детерминированный id) — best-effort:
  *    сбой `add()` логируется и не меняет исходный error path.
- * 7. Запись в Ledger (LedgerService.recordFill)
+ * 7. Запись в Ledger (LedgerService.recordFill). Если `recordFill` бросит ПОСЛЕ
+ *    commit Order+Portfolio — это частичный commit (Ledger отстаёт), retry
+ *    бесполезен (Order defends против duplicate fill id; direct-path повторно
+ *    применил бы Portfolio) → `markReconciliationRequired()`
+ *    (`ORDER_PORTFOLIO_LEDGER_DESYNC`) + reconciliation issue, Err.
  * 8. `markApplied(fill.id)` — сразу после успешного завершения шагов 4–7 (commit
  *    состояния Order/Portfolio/Ledger), ДО публикации событий.
- * 9. Публикация доменных событий Order (await) — НЕ гейтит markApplied.
- *    Если публикация упадёт, fill уже `APPLIED` и retry невозможен: состояние
- *    уже закоммичено, повторный вызов лишь заново применил бы уже применённый
- *    fill (Order defends against duplicate fill id, но direct-fill path и
- *    Portfolio — нет), удвоив эффект. Ошибка публикации логируется отдельно
+ * 9. Публикация доменных событий Order (await) — НЕ гейтит markApplied и НЕ
+ *    меняет результат: notification path, не транзакция. Если публикация
+ *    упадёт, fill уже `APPLIED` и retry невозможен: состояние уже закоммичено,
+ *    повторный вызов лишь заново применил бы уже применённый fill (Order
+ *    defends against duplicate fill id, но direct-fill path и Portfolio — нет),
+ *    удвоив эффект. Ошибка публикации логируется отдельно
  *    (`EVENT_PUBLISH_FAILED`) как потеря уведомления, требующая ручного replay,
- *    а не как неприменённая бизнес-мутация.
+ *    и `execute()` возвращает Ok — Err делал бы committed fill похожим на
+ *    retryable business failure.
  *    Любая ошибка на шаге 4 (order.applyFill, до saveSync) → `markFailed(fill.id, reason)`,
  *    fillId остаётся retryable. Ошибка на шаге 6 ПОСЛЕ saveSync →
  *    `markReconciliationRequired()` (см. п.6), НЕ retryable FAILED.
@@ -237,7 +243,33 @@ export class ProcessFillUseCase {
         ));
       }
 
-      this._deps.ledgerService.recordFill(fill);
+      // Запись в Ledger. Portfolio уже применён (applyDirectFill выше) —
+      // если recordFill бросит, retry этого fillId повторно применил бы
+      // Portfolio (direct-path не защищён от duplicate, в отличие от
+      // Order.applyFill) → RECONCILIATION_REQUIRED (терминально), НЕ markFailed.
+      try {
+        this._deps.ledgerService.recordFill(fill);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const reason = `ORDER_PORTFOLIO_LEDGER_DESYNC: ${message}`;
+        this._logger.error('ORDER_PORTFOLIO_LEDGER_DESYNC: Ledger record failed after direct-fill Portfolio already committed — fill requires manual reconciliation', {
+          fillId: String(fill.id),
+          orderId: String(fill.orderId),
+          error: message,
+        });
+        this._clearInFlightFlags(fill);
+        await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
+        await this._addReconciliationIssue(fill, {
+          idSuffix: 'order-portfolio-ledger-desync',
+          reason,
+          stage: 'ledger-record-after-direct-fill-portfolio-apply',
+          error: message,
+        });
+        return Err(new TradingError(
+          `Failed to record direct fill in ledger (Portfolio already committed — manual reconciliation required): ${message}`,
+          { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+        ));
+      }
       this._clearInFlightFlags(fill);
 
       // Диагностика fee для direct fill (BUY).
@@ -275,16 +307,14 @@ export class ProcessFillUseCase {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         // Состояние (Portfolio/Ledger) уже закоммичено и fill уже APPLIED —
-        // это НЕ retryable ошибка, а потеря уведомления. Логируем как
-        // отдельную категорию для алертинга/ручного replay события.
+        // это НЕ retryable ошибка, а потеря уведомления (notification path,
+        // не транзакция). Err здесь заставлял бы caller трактовать committed
+        // fill как retryable business failure. Логируем EVENT_PUBLISH_FAILED
+        // для алертинга/ручного replay события и возвращаем Ok.
         this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish DIRECT_FILL_APPLIED after commit — fill stays APPLIED, event lost', {
           fillId: String(fill.id),
           err: err instanceof Error ? err : new Error(message),
         });
-        return Err(new TradingError(
-          `Failed to publish DIRECT_FILL_APPLIED event (fill already committed as APPLIED): ${message}`,
-          { context: { fillId: String(fill.id) } },
-        ));
       }
 
       return Ok(undefined);
@@ -377,7 +407,12 @@ export class ProcessFillUseCase {
       await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reconciliationReason);
       // Queryable issue в дополнение к processed-fill статусу (семантика
       // markReconciliationRequired не меняется). Сбой add() не маскирует Err ниже.
-      await this._addReconciliationIssue(fill, reconciliationReason, portfolioResult.error.message);
+      await this._addReconciliationIssue(fill, {
+        idSuffix: 'order-portfolio-desync',
+        reason: reconciliationReason,
+        stage: 'portfolio-apply-after-order-saved',
+        error: portfolioResult.error.message,
+      });
       return Err(new TradingError(
         `Failed to update portfolio (Order already committed — manual reconciliation required): ${portfolioResult.error.message}`,
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
@@ -388,47 +423,107 @@ export class ProcessFillUseCase {
     // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
     // (остаток 0.007233 < 0.01 = FILLED), но PortfolioService.applyFill снял резервацию
     // только на fillQty. Остаток застревает навсегда, блокируя будущие ордера.
+    //
+    // Сбой release здесь НЕ проглатывается: Order уже terminal (committed
+    // saveSync + applyFill), а dust-резервация может остаться замороженной —
+    // это Order↔Portfolio desync. Retry этого fillId бесполезен (duplicate fill
+    // defence в Order) → RECONCILIATION_REQUIRED, НЕ markApplied и НЕ Ledger.
     if (updatedOrder.isTerminal) {
       const remainingQty = updatedOrder.remainingSize.value();
       if (remainingQty.gt(0)) {
-        if (fill.side === 'SELL') {
-          // SELL: снять остаток токенной резервации
-          const instrumentId = assetIdToInstrumentId(fill.tokenId);
-          if (instrumentId) {
-            const releaseResult = this._deps.portfolioService.releaseTokenReservation(
+        const isSell = fill.side === 'SELL';
+        // instrumentId для SELL здесь всегда резолвится — applyFill выше уже
+        // вернул бы Err на invalid tokenId; guard оставлен как defence.
+        const dustInstrumentId = isSell ? assetIdToInstrumentId(fill.tokenId) : undefined;
+        const dustNotional = isSell ? undefined : remainingQty.times(order.price.value());
+
+        let dustReleaseResult: ReturnType<PortfolioService['releaseReservation']> = Ok(undefined);
+        if (isSell) {
+          if (dustInstrumentId) {
+            dustReleaseResult = this._deps.portfolioService.releaseTokenReservation(
               fill.accountId,
-              instrumentId,
+              dustInstrumentId,
               remainingQty,
             );
-            if (releaseResult.ok) {
-              this._logger.info('Released dust token reservation after SELL FILLED', {
-                fillId: String(fill.id),
-                orderId: String(fill.orderId),
-                dustQty: remainingQty.toNumber(),
-              });
-            }
           }
         } else {
-          // BUY: снять остаток USDC резервации (remainingQty × orderPrice)
-          const dustNotional = remainingQty.times(order.price.value());
-          const releaseResult = this._deps.portfolioService.releaseReservation(
+          dustReleaseResult = this._deps.portfolioService.releaseReservation(
             fill.accountId,
-            dustNotional,
+            dustNotional!,
           );
-          if (releaseResult.ok) {
-            this._logger.info('Released dust USDC reservation after BUY FILLED', {
-              fillId: String(fill.id),
-              orderId: String(fill.orderId),
-              dustQty: remainingQty.toNumber(),
-              dustNotional: dustNotional.toNumber(),
-            });
-          }
         }
+
+        if (!dustReleaseResult.ok) {
+          const message = dustReleaseResult.error.message;
+          const reason = `DUST_RESERVATION_RELEASE_FAILED: ${message}`;
+          this._logger.error('DUST_RESERVATION_RELEASE_FAILED: dust reservation release failed after terminal fill — reservation may stay frozen', {
+            fillId: String(fill.id),
+            orderId: String(fill.orderId),
+            side: fill.side,
+            remainingQty: remainingQty.toString(),
+            error: message,
+          });
+          this._clearInFlightFlags(fill);
+          await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
+          await this._addReconciliationIssue(fill, {
+            idSuffix: 'dust-reservation-release-failed',
+            reason,
+            stage: 'dust-reservation-release-after-terminal-fill',
+            error: message,
+            extraContext: {
+              side: fill.side,
+              remainingQty: remainingQty.toString(),
+              orderId: String(fill.orderId),
+            },
+          });
+          return Err(new TradingError(
+            `Failed to release dust reservation after terminal fill (manual reconciliation required): ${message}`,
+            { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+          ));
+        }
+
+        this._logger.info(
+          isSell
+            ? 'Released dust token reservation after SELL FILLED'
+            : 'Released dust USDC reservation after BUY FILLED',
+          {
+            fillId: String(fill.id),
+            orderId: String(fill.orderId),
+            dustQty: remainingQty.toNumber(),
+            ...(dustNotional !== undefined ? { dustNotional: dustNotional.toNumber() } : {}),
+          },
+        );
       }
     }
 
-    // Запись в Ledger (sync)
-    this._deps.ledgerService.recordFill(fill);
+    // Запись в Ledger (sync).
+    // Order+Portfolio уже committed выше — если recordFill бросит, получаем
+    // частичный commit (Ledger отстаёт), и retry этого fillId бесполезен:
+    // Order defends против duplicate fill id → RECONCILIATION_REQUIRED
+    // (терминально), НЕ markFailed.
+    try {
+      this._deps.ledgerService.recordFill(fill);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const reason = `ORDER_PORTFOLIO_LEDGER_DESYNC: ${message}`;
+      this._logger.error('ORDER_PORTFOLIO_LEDGER_DESYNC: Ledger record failed after Order+Portfolio already committed — fill requires manual reconciliation', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        error: message,
+      });
+      this._clearInFlightFlags(fill);
+      await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
+      await this._addReconciliationIssue(fill, {
+        idSuffix: 'order-portfolio-ledger-desync',
+        reason,
+        stage: 'ledger-record-after-portfolio-apply',
+        error: message,
+      });
+      return Err(new TradingError(
+        `Failed to record fill in ledger (Order+Portfolio already committed — manual reconciliation required): ${message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+      ));
+    }
 
     // Снимаем все in-flight флаги ПЕРЕД публикацией событий.
     // КРИТИЧНО: publishAll ниже — await, создаёт yield-окно.
@@ -459,15 +554,14 @@ export class ProcessFillUseCase {
       await this._deps.eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Fill уже committed и APPLIED — потеря уведомления (notification path,
+      // не транзакция): НЕ markFailed, НЕ Err. Логируем EVENT_PUBLISH_FAILED
+      // для алертинга/ручного replay и продолжаем к Ok.
       this._logger.error('EVENT_PUBLISH_FAILED: Failed to publish fill events after commit — fill stays APPLIED, event lost', {
         fillId: String(fill.id),
         orderId: String(fill.orderId),
         err: err instanceof Error ? err : new Error(message),
       });
-      return Err(new TradingError(
-        `Failed to publish fill events (fill already committed as APPLIED): ${message}`,
-        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
-      ));
     }
 
     // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
@@ -500,25 +594,32 @@ export class ProcessFillUseCase {
   }
 
   /**
-   * Best-effort создание reconciliation issue при ORDER_PORTFOLIO_DESYNC.
+   * Best-effort создание reconciliation issue при частичном commit fill.
    *
    * @param fill - Fill, обработка которого привела к частичному commit
-   * @param reason - Та же причина, что передана в `markReconciliationRequired()`
-   * @param errorMessage - Сообщение исходной ошибки Portfolio (для context)
+   * @param params - `idSuffix` (детерминированный суффикс id), `reason`
+   *   (та же причина, что в `markReconciliationRequired()`), `stage`
+   *   (этап частичного commit для context), `error` (исходная ошибка)
    *
    * @remarks
    * No-op, если `reconciliationIssues` не передан в deps (optional dependency —
    * прежнее поведение сохраняется). Id детерминированный
-   * (`reconciliation:fill:${fill.id}:order-portfolio-desync`) — `add()`
-   * идемпотентен, повторная попытка не создаст дубль. Любая ошибка `add()`
-   * логируется и проглатывается: issue — вторичный alerting-механизм, он не
-   * должен маскировать исходную trading-ошибку и не должен менять исходный
+   * (`reconciliation:fill:${fill.id}:${idSuffix}`) — `add()` идемпотентен,
+   * повторная попытка не создаст дубль. Любая ошибка `add()` логируется и
+   * проглатывается: issue — вторичный alerting-механизм, он не должен
+   * маскировать исходную trading-ошибку и не должен менять исходный
    * error path (`markReconciliationRequired` + Err).
    */
   private async _addReconciliationIssue(
     fill: Fill,
-    reason: string,
-    errorMessage: string,
+    params: {
+      readonly idSuffix: string;
+      readonly reason: string;
+      readonly stage: string;
+      readonly error: string;
+      /** Дополнительные non-sensitive поля context (сливаются со stage/error) */
+      readonly extraContext?: Readonly<Record<string, string | number | boolean | null>>;
+    },
   ): Promise<void> {
     if (!this._deps.reconciliationIssues) {
       return;
@@ -526,18 +627,19 @@ export class ProcessFillUseCase {
     const instrumentId = assetIdToInstrumentId(fill.tokenId);
     try {
       await this._deps.reconciliationIssues.add({
-        id: `reconciliation:fill:${String(fill.id)}:order-portfolio-desync`,
+        id: `reconciliation:fill:${String(fill.id)}:${params.idSuffix}`,
         type: 'ORDER_PORTFOLIO_DESYNC',
         status: 'OPEN',
-        reason,
+        reason: params.reason,
         createdAt: this._deps.clock?.now() ?? new Date(),
         fillId: fill.id,
         orderId: fill.orderId,
         accountId: fill.accountId,
         ...(instrumentId ? { instrumentId } : {}),
         context: {
-          stage: 'portfolio-apply-after-order-saved',
-          error: errorMessage,
+          stage: params.stage,
+          error: params.error,
+          ...(params.extraContext ?? {}),
         },
       });
     } catch (err) {
