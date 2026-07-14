@@ -161,6 +161,11 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     exchangeClient,
     eventBus,
     logger,
+    // CANCEL_UNKNOWN_OUTCOME (UNKNOWN_RETRY_NEEDED / transport error после
+    // local cancel) теперь queryable, а не только лог. clock — детерминированный
+    // createdAt относительно приложения (ReplayClock в бектесте).
+    reconciliationIssues: reconciliationIssueRepo,
+    clock,
   });
 
   return { placeOrderUseCase, cancelOrderUseCase };

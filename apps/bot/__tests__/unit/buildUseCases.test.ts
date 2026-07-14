@@ -170,6 +170,72 @@ describe('buildOrderUseCases — wiring reconciliationIssues в PlaceOrderUseCas
   });
 });
 
+describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCase', () => {
+  it('UNKNOWN_RETRY_NEEDED после local cancel создаёт CANCEL_UNKNOWN_OUTCOME issue в repos.reconciliationIssueRepo', async () => {
+    const infra = makeInfra();
+    const repos = buildRepositories();
+    seedPortfolio(repos.portfolioStore);
+
+    // Существующий OPEN ордер — cancel сначала отменяет его локально (CAS save),
+    // и только потом получает ambiguous ответ от venue.
+    const venueOrderId = asOrderId('0xvenue-cancel')!;
+    const orderResult = Order.create({
+      id: venueOrderId,
+      asset: ASSET,
+      side: 'BUY',
+      price: Price.of(new Decimal('0.5')),
+      size: Quantity.of(new Decimal('5')),
+      timestamp: makeTimestamp(),
+    });
+    if (!orderResult.ok) throw new Error('Failed to create order');
+    const acceptResult = orderResult.value.accept();
+    if (!acceptResult.ok) throw new Error('Failed to accept order');
+    acceptResult.value.pullEvents();
+    const saveResult = await repos.orderRepo.save(acceptResult.value, 0);
+    if (!saveResult.ok) throw new Error('Failed to save order');
+
+    const exchangeClient: IExchangeClient = {
+      submitOrder: jest.fn().mockResolvedValue(
+        Ok({
+          status: 'OPEN',
+          orderId: venueOrderId,
+          effectiveSize: Quantity.of(new Decimal('5')),
+          remainingSize: Quantity.of(new Decimal('5')),
+        }),
+      ) as unknown as IExchangeClient['submitOrder'],
+      cancelOrder: jest.fn().mockResolvedValue(
+        Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'venue timeout during cancel' }),
+      ) as unknown as IExchangeClient['cancelOrder'],
+      getOpenOrders: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getOpenOrders'],
+      getTrades: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getTrades'],
+    };
+
+    const { cancelOrderUseCase } = buildOrderUseCases({
+      infra,
+      repos,
+      exchangeClient,
+      riskParams: RISK_PARAMS,
+    });
+
+    const result = await cancelOrderUseCase.execute({
+      orderId: venueOrderId,
+      accountId: ACCOUNT_ID,
+      reason: 'test cancel',
+    });
+
+    // Локальный cancel committed → Ok, ambiguous venue outcome → queryable issue.
+    expect(result.ok).toBe(true);
+    const open = await repos.reconciliationIssueRepo.listOpen();
+    expect(open).toHaveLength(1);
+    expect(open[0]?.type).toBe('CANCEL_UNKNOWN_OUTCOME');
+    expect(open[0]?.id).toBe('reconciliation:cancel:0xvenue-cancel:unknown');
+    expect(open[0]?.reason).toBe('venue timeout during cancel');
+    expect(open[0]?.orderId).toBe(venueOrderId);
+    // createdAt берётся из infra.clock (buildOrderUseCases прокидывает clock).
+    expect(open[0]?.createdAt.toISOString()).toBe(FIXED_NOW.toISOString());
+  });
+});
+
 describe('buildProcessFillUseCase — wiring reconciliationIssues в ProcessFillUseCase', () => {
   it('ORDER_PORTFOLIO_DESYNC (portfolio отсутствует после сохранения Order) создаёт issue в repos.reconciliationIssueRepo', async () => {
     const infra = makeInfra();
