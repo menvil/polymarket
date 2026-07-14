@@ -324,8 +324,16 @@ export class ProcessFillUseCase {
     // После этой строки любой читатель IOrderStateStore увидит ордер как FILED/terminal.
     // CancelOrderUseCase: if (order.isTerminal) return Ok(undefined) — пропустит cancel.
     //
-    // TODO: replace saveSync with CAS/UnitOfWork; saveSync intentionally bypasses
-    // repository CAS to preserve current no-yield fill/cancel race fix.
+    // TODO(unit-of-work): replace this sequential commit with an explicit
+    // UnitOfWork boundary for Order + Portfolio + Ledger + ProcessedFill.
+    // Current behaviour is a compensating transaction: saveSync commits Order
+    // first, then later steps either finish or mark RECONCILIATION_REQUIRED.
+    // A real UoW should mutate snapshots and commit all affected stores in one
+    // boundary: in-memory as a locked copy-swap, persistent storage as a DB
+    // transaction/atomic batch. Until then this block is intentionally not
+    // full atomicity; reconciliation issues are the recovery mechanism.
+    // saveSync intentionally bypasses repository CAS to preserve current
+    // no-yield fill/cancel race fix.
     // saveSync при этом ИНКРЕМЕНТИТ версию записи — конкурирующий CAS save
     // (CancelOrderUseCase/UpdateOrderStatusUseCase) со stale-версией корректно
     // получит VersionConflictError и не перетрёт применённый fill.
