@@ -134,7 +134,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
 export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCases {
   const { infra, repos, exchangeClient, riskParams } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, reconciliationIssueRepo, keyedMutex } = repos;
+  const { orderRepo, portfolioStore, reconciliationIssueRepo, orderSubmissionRepo, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
   const riskChecker = new OrderRiskChecker(riskParams, logger);
@@ -154,6 +154,8 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     // SUBMIT_UNKNOWN_OUTCOME / SUBMIT_FILLED_WITHOUT_FILL_DETAILS теперь
     // queryable через repos.reconciliationIssueRepo, а не только лог.
     reconciliationIssues: reconciliationIssueRepo,
+    // Guard от небезопасного повторного submit того же clientOrderId.
+    submissions: orderSubmissionRepo,
   });
 
   const cancelOrderUseCase = new CancelOrderUseCase({

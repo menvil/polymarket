@@ -326,7 +326,13 @@ export class PortfolioService {
    *    feeInTokens = feeUSDC / price (Polymarket списывает fee в shares при BUY)
    *
    * ### SELL fill:
-   * 1. Снимаем токенную резервацию (best effort — бот мог перезапуститься)
+   * 1. Снимаем токенную резервацию **строго** (НЕ best-effort): это local-order
+   *    path — резервация была создана при размещении SELL-ордера
+   *    (`reserveTokensForOrder`), и её отсутствие означает Order↔Portfolio
+   *    desync, а не нормальный recovery-сценарий. При провере release → `Err`,
+   *    caller (`ProcessFillUseCase`) переводит fill в RECONCILIATION_REQUIRED.
+   *    Для external/recovery fills (ордер неизвестен) используется
+   *    `applyDirectFill`, где release токенов остаётся best-effort.
    * 2. `applyCredit(price × size)` — зачисляет выручку на доступный баланс
    * 3. Позиция LONG: quantity -= size, isClosed() = true при quantity = 0
    *
@@ -357,21 +363,28 @@ export class PortfolioService {
     const notional = priceForDebit.times(fillQty);
     const money = Money.of(notional, 'USDC');
 
-    // Для SELL: снять токенную резервацию (best effort)
+    // Для SELL: снять токенную резервацию СТРОГО (local-order path).
+    // Резервация создавалась при размещении SELL-ордера — её отсутствие/недостаток
+    // здесь это Order↔Portfolio desync, а не нормальный recovery-случай.
+    // Возвращаем Err, чтобы ProcessFillUseCase пометил fill RECONCILIATION_REQUIRED.
+    // (external/recovery fills без ордера идут через applyDirectFill с best-effort.)
     let portfolioAfterTokenRelease = portfolio;
     if (fill.side === 'SELL') {
       const releaseResult = portfolio.releaseTokenReservation(instrumentId, fillQty);
       if (!releaseResult.ok) {
-        // best effort: резервации может не быть (бот перезапустился)
-        this._logger.warn('Token reservation not found for SELL fill — skipping release', {
+        this._logger.error('SELL_TOKEN_RESERVATION_RELEASE_FAILED: token reservation missing/insufficient for local SELL fill — Order↔Portfolio desync', {
           accountId: accountIdToString(fill.accountId),
           fillId: String(fill.id),
           instrumentId: String(instrumentId),
           fillQty: fillQty.toString(),
+          error: releaseResult.error.message,
         });
-      } else {
-        portfolioAfterTokenRelease = releaseResult.value;
+        return Err(new TradingError(
+          `Failed to release token reservation for SELL fill: ${releaseResult.error.message}`,
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId), fillQty: fillQty.toString() } },
+        ));
       }
+      portfolioAfterTokenRelease = releaseResult.value;
     }
 
     // Диагностика: состояние портфеля до дебита
@@ -450,9 +463,11 @@ export class PortfolioService {
    * @returns Ok(void) или Err при ошибке
    *
    * @remarks
-   * Используется когда fill приходит на terminal или не найденный ордер.
+   * External/recovery path: fill приходит на terminal или не найденный ордер.
    * Биржевое событие — источник истины: токены получены/переданы независимо
-   * от локального состояния ордера.
+   * от локального состояния ордера. В отличие от `applyFill` (local-order path),
+   * здесь release токенной резервации остаётся **best-effort**: ордер мог быть
+   * внешним/восстановленным, резервации могло не быть вовсе — это НЕ desync.
    *
    * ### BUY fill:
    * - `applyDirectDebit(fill.price × size)` — прямой дебит из available
@@ -460,7 +475,7 @@ export class PortfolioService {
    * - Позиция LONG: quantity += size
    *
    * ### SELL fill:
-   * - Снимаем токенную резервацию (best effort)
+   * - Снимаем токенную резервацию (best effort — ордер мог быть внешним)
    * - `applyCredit(fill.price × size)` — зачисление выручки
    * - Позиция LONG: quantity -= size (best effort — позиции может не быть)
    */

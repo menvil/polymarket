@@ -419,15 +419,48 @@ export class ProcessFillUseCase {
       ));
     }
 
+    // Запись в Ledger (sync) — ДО dust release.
+    // Order+Portfolio уже committed выше. Ledger пишем РАНЬШЕ dust release,
+    // чтобы при сбое dust release Ledger уже был записан, и dust-issue касался
+    // ТОЛЬКО замороженной резервации (не «Ledger тоже отстаёт»).
+    // Если recordFill бросит — частичный commit (Ledger отстаёт), retry этого
+    // fillId бесполезен: Order defends против duplicate fill id →
+    // RECONCILIATION_REQUIRED (терминально), НЕ markFailed, НЕ markApplied.
+    try {
+      this._deps.ledgerService.recordFill(fill);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const reason = `ORDER_PORTFOLIO_LEDGER_DESYNC: ${message}`;
+      this._logger.error('ORDER_PORTFOLIO_LEDGER_DESYNC: Ledger record failed after Order+Portfolio already committed — fill requires manual reconciliation', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        error: message,
+      });
+      this._clearInFlightFlags(fill);
+      await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
+      await this._addReconciliationIssue(fill, {
+        idSuffix: 'order-portfolio-ledger-desync',
+        reason,
+        stage: 'ledger-record-after-portfolio-apply',
+        error: message,
+      });
+      return Err(new TradingError(
+        `Failed to record fill in ledger (Order+Portfolio already committed — manual reconciliation required): ${message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
+      ));
+    }
+
     // Снять остаток резервации при FILLED через dust threshold.
     // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
     // (остаток 0.007233 < 0.01 = FILLED), но PortfolioService.applyFill снял резервацию
     // только на fillQty. Остаток застревает навсегда, блокируя будущие ордера.
     //
+    // Выполняется ПОСЛЕ Ledger record: если dust release упадёт, Order/Portfolio/
+    // Ledger уже консистентны, и остаётся ТОЛЬКО замороженная dust-резервация.
     // Сбой release здесь НЕ проглатывается: Order уже terminal (committed
     // saveSync + applyFill), а dust-резервация может остаться замороженной —
-    // это Order↔Portfolio desync. Retry этого fillId бесполезен (duplicate fill
-    // defence в Order) → RECONCILIATION_REQUIRED, НЕ markApplied и НЕ Ledger.
+    // это Order↔Portfolio reservation desync. Retry этого fillId бесполезен
+    // (duplicate fill defence в Order) → RECONCILIATION_REQUIRED, НЕ markApplied.
     if (updatedOrder.isTerminal) {
       const remainingQty = updatedOrder.remainingSize.value();
       if (remainingQty.gt(0)) {
@@ -456,7 +489,7 @@ export class ProcessFillUseCase {
         if (!dustReleaseResult.ok) {
           const message = dustReleaseResult.error.message;
           const reason = `DUST_RESERVATION_RELEASE_FAILED: ${message}`;
-          this._logger.error('DUST_RESERVATION_RELEASE_FAILED: dust reservation release failed after terminal fill — reservation may stay frozen', {
+          this._logger.error('DUST_RESERVATION_RELEASE_FAILED: dust reservation release failed after terminal fill (Ledger already recorded) — reservation may stay frozen', {
             fillId: String(fill.id),
             orderId: String(fill.orderId),
             side: fill.side,
@@ -474,6 +507,7 @@ export class ProcessFillUseCase {
               side: fill.side,
               remainingQty: remainingQty.toString(),
               orderId: String(fill.orderId),
+              ledgerRecorded: true,
             },
           });
           return Err(new TradingError(
@@ -494,35 +528,6 @@ export class ProcessFillUseCase {
           },
         );
       }
-    }
-
-    // Запись в Ledger (sync).
-    // Order+Portfolio уже committed выше — если recordFill бросит, получаем
-    // частичный commit (Ledger отстаёт), и retry этого fillId бесполезен:
-    // Order defends против duplicate fill id → RECONCILIATION_REQUIRED
-    // (терминально), НЕ markFailed.
-    try {
-      this._deps.ledgerService.recordFill(fill);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const reason = `ORDER_PORTFOLIO_LEDGER_DESYNC: ${message}`;
-      this._logger.error('ORDER_PORTFOLIO_LEDGER_DESYNC: Ledger record failed after Order+Portfolio already committed — fill requires manual reconciliation', {
-        fillId: String(fill.id),
-        orderId: String(fill.orderId),
-        error: message,
-      });
-      this._clearInFlightFlags(fill);
-      await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
-      await this._addReconciliationIssue(fill, {
-        idSuffix: 'order-portfolio-ledger-desync',
-        reason,
-        stage: 'ledger-record-after-portfolio-apply',
-        error: message,
-      });
-      return Err(new TradingError(
-        `Failed to record fill in ledger (Order+Portfolio already committed — manual reconciliation required): ${message}`,
-        { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
-      ));
     }
 
     // Снимаем все in-flight флаги ПЕРЕД публикацией событий.

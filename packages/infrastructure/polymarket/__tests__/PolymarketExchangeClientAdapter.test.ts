@@ -295,12 +295,29 @@ describe('PolymarketExchangeClientAdapter.submitOrder — mapping', () => {
     }
   });
 
-  it('невалидный orderId → Err(ExchangeError)', async () => {
+  it('невалидный orderId → Err(ExchangeError), submitOutcome=MAY_HAVE_BEEN_SUBMITTED (venue ответил)', async () => {
     const adapter = makeSubmitAdapter(async () => makeOrderResponse({ orderId: '' }));
     const result = await adapter.submitOrder(makeSubmitParams('100'));
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toMatch(/Invalid orderId/);
+    if (!result.ok) {
+      expect(result.error.message).toMatch(/Invalid orderId/);
+      expect(result.error.submitOutcome).toBe('MAY_HAVE_BEEN_SUBMITTED');
+    }
+  });
+
+  it('postOrder бросает (network/timeout после отправки) → Err, submitOutcome=MAY_HAVE_BEEN_SUBMITTED', async () => {
+    const adapter = makeSubmitAdapter(async () => {
+      throw new Error('network timeout');
+    });
+    const result = await adapter.submitOrder(makeSubmitParams('100'));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toMatch(/submitOrder failed/);
+      // Ошибка ПОСЛЕ отправки — ордер мог создаться.
+      expect(result.error.submitOutcome).toBe('MAY_HAVE_BEEN_SUBMITTED');
+    }
   });
 
   it('sizeRemaining > effectiveSize → UNKNOWN (не OPEN)', async () => {

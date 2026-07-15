@@ -7,6 +7,11 @@
  * `ORDER_UPDATE_RECEIVED`; `OrderUpdateOrchestrator` вызывает этот use case.
  *
  * ### Алгоритм:
+ * 0. Взять keyed mutex по [accountId, orderId] — сериализует с PlaceOrderUseCase
+ *    (пересечение по accountId), закрывая race «ранний terminal ORDER_UPDATE до
+ *    локального save». Если Order всё ещё не найден под lock и update терминален
+ *    (CANCELLED/REJECTED/EXPIRED) — создаётся `VENUE_LOCAL_ORDER_DESYNC` issue
+ *    (`EARLY_ORDER_UPDATE_WITHOUT_LOCAL_ORDER`), возвращается Ok (без retry-loop).
  * 1. Атомарно прочитать Order + версию (getWithVersion) из репозитория
  * 2. Применить доменный метод (accept/reject/cancel/expire)
  * 3. Обработать idempotent/race сценарии
@@ -45,11 +50,12 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import { assetIdToInstrumentId } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import type {
   IOrderRepository,
   IOrderStateStore,
+  IKeyedMutex,
   IReconciliationIssueRepository,
   ReconciliationIssue,
 } from '@polymarket/ports';
@@ -69,6 +75,18 @@ export interface UpdateOrderStatusDeps {
   readonly orderRepo: IOrderRepository;
   readonly orderStateStore: IOrderStateStore;
   readonly portfolioService: PortfolioService;
+  /**
+   * Keyed mutex — сериализует обработку update относительно PlaceOrderUseCase
+   * (и ProcessFillUseCase/CancelOrderUseCase) по [accountId, orderId].
+   *
+   * @remarks
+   * Закрывает race «ранний ORDER_UPDATE до локального save»: venue мог прислать
+   * CANCELLED/REJECTED/EXPIRED раньше, чем PlaceOrderUseCase успел сохранить
+   * Order после submitOrder(). Все use-case'ы держат `accountId` в lock-ключах,
+   * поэтому update ждёт завершения конкурентного Place для того же аккаунта и
+   * видит уже сохранённый Order вместо тихого сброса.
+   */
+  readonly keyedMutex: IKeyedMutex;
   readonly eventBus: IEventBus;
   readonly logger: ILogger;
   /**
@@ -144,6 +162,24 @@ export class UpdateOrderStatusUseCase {
    * логируются на уровне debug/warn и возвращают Ok(void).
    */
   public async execute(input: UpdateOrderStatusInput): Promise<Result<void, TradingError>> {
+    const { accountId } = input;
+    const orderId: OrderId = input.update.orderId;
+
+    // Keyed mutex по [accountId, orderId] — сериализует относительно
+    // PlaceOrderUseCase (держит [accountId, instrumentId]; пересечение по
+    // accountId) и ProcessFillUseCase/CancelOrderUseCase (держат accountId+orderId).
+    // Закрывает race «ранний terminal ORDER_UPDATE до локального save Order».
+    const lockKeys = [accountIdToString(accountId), String(orderId)];
+    return this._deps.keyedMutex.runExclusive(lockKeys, () => this._executeLocked(input));
+  }
+
+  /**
+   * Тело обработки update — вызывается ВНУТРИ keyed mutex.
+   *
+   * @param input - Входные данные с update и accountId
+   * @returns Ok(void) при успехе/идемпотентном skip, Err при критических сбоях
+   */
+  private async _executeLocked(input: UpdateOrderStatusInput): Promise<Result<void, TradingError>> {
     const { update, accountId } = input;
     const orderId: OrderId = update.orderId;
 
@@ -157,10 +193,42 @@ export class UpdateOrderStatusUseCase {
     const order = snapshot?.order;
     const expectedVersion = snapshot?.version ?? 0;
     if (!order) {
-      this._logger.warn('Order not found for venue update', {
-        orderId: String(orderId),
-        updateType: update.type,
-      });
+      // Order по-прежнему не найден ДАЖЕ после ожидания lock. Для terminal
+      // update-типов (CANCELLED/REJECTED/EXPIRED) это НЕ безопасный no-op:
+      // venue сообщил о терминальном состоянии ордера, которого локально нет —
+      // либо Place ещё не дошёл до save (и уже не дойдёт, раз мы под lock и его
+      // не видим), либо ордер внешний. Тихий drop потерял бы факт terminal-события.
+      // Создаём queryable issue и возвращаем Ok (update handler не должен
+      // бесконечно retry-ить без локального order).
+      const isTerminalUpdate =
+        update.type === 'CANCELLED' || update.type === 'REJECTED' || update.type === 'EXPIRED';
+      if (isTerminalUpdate) {
+        this._logger.error('EARLY_ORDER_UPDATE_WITHOUT_LOCAL_ORDER: terminal venue update for order missing locally (even under lock)', {
+          orderId: String(orderId),
+          updateType: update.type,
+        });
+        await this._addReconciliationIssue({
+          id: `reconciliation:order-update:${String(orderId)}:early-terminal-without-local-order`,
+          type: 'VENUE_LOCAL_ORDER_DESYNC',
+          status: 'OPEN',
+          reason: `EARLY_ORDER_UPDATE_WITHOUT_LOCAL_ORDER: venue ${update.type} for order not found locally`,
+          createdAt: this._deps.clock?.now() ?? new Date(),
+          orderId,
+          accountId,
+          context: {
+            stage: 'venue-update-order-not-found-under-lock',
+            updateType: update.type,
+          },
+        });
+      } else {
+        // ACCEPTED без локального order — мягче: ордер обычно приходит через
+        // ORDER_ACCEPTED сразу после Place, и его отсутствие здесь чаще
+        // benign race (Place опубликует ACCEPTED сам). Только warning.
+        this._logger.warn('Order not found for venue update (non-terminal) — ignoring', {
+          orderId: String(orderId),
+          updateType: update.type,
+        });
+      }
       return Ok(undefined);
     }
 

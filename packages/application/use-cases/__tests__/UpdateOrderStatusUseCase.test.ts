@@ -8,12 +8,13 @@ import type {
   IOrderRepository,
   IPortfolioStore,
   IOrderStateStore,
+  IKeyedMutex,
   IReconciliationIssueRepository,
 } from '@polymarket/ports';
 import { VersionConflictError } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import { asPolymarketCtfToken } from '@polymarket/ids';
+import { asPolymarketCtfToken, accountIdToString } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
@@ -39,6 +40,13 @@ function makeEventBus(): IEventBus {
     publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
+  };
+}
+
+// Fake keyed mutex — сразу выполняет callback (single-thread тест).
+function makeKeyedMutex(): IKeyedMutex {
+  return {
+    runExclusive: jest.fn(<T>(_keys: readonly string[], fn: () => Promise<T>) => fn()) as unknown as IKeyedMutex['runExclusive'],
   };
 }
 
@@ -147,10 +155,81 @@ describe('UpdateOrderStatusUseCase', () => {
   it('возвращает Ok(void) если ордер не найден (не крашит)', async () => {
     orderRepo = makeOrderRepo(undefined);
     orderStateStore = makeOrderStateStore();
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
     expect(result.ok).toBe(true);
+  });
+
+  // ── Ранний terminal update до локального save Order ─────────────────────────
+
+  describe('early terminal update без локального order', () => {
+    for (const updateType of ['CANCELLED', 'REJECTED', 'EXPIRED'] as const) {
+      it(`${updateType} без локального order → VENUE_LOCAL_ORDER_DESYNC issue, Ok`, async () => {
+        orderRepo = makeOrderRepo(undefined);
+        orderStateStore = makeOrderStateStore();
+        const reconciliationIssues = makeReconciliationIssueRepo();
+        deps = {
+          orderRepo, orderStateStore, portfolioService,
+          keyedMutex: makeKeyedMutex(), eventBus, logger, reconciliationIssues,
+        };
+        const useCase = new UpdateOrderStatusUseCase(deps);
+
+        const update = updateType === 'REJECTED'
+          ? ({ type: 'REJECTED', orderId: ORDER_ID, reason: 'bad price' } as const)
+          : ({ type: updateType, orderId: ORDER_ID } as const);
+        const result = await useCase.execute({ update, accountId: ACCOUNT_ID });
+
+        // Update handler не должен бесконечно retry-ить — Ok.
+        expect(result.ok).toBe(true);
+        expect(reconciliationIssues.add).toHaveBeenCalledTimes(1);
+        const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
+          id: string; type: string; reason: string; orderId: unknown; accountId: unknown;
+          context?: Record<string, unknown>;
+        };
+        expect(issue.id).toBe(`reconciliation:order-update:${String(ORDER_ID)}:early-terminal-without-local-order`);
+        expect(issue.type).toBe('VENUE_LOCAL_ORDER_DESYNC');
+        expect(issue.reason).toContain('EARLY_ORDER_UPDATE_WITHOUT_LOCAL_ORDER');
+        expect(issue.orderId).toBe(ORDER_ID);
+        expect(issue.accountId).toBe(ACCOUNT_ID);
+        expect(issue.context).toMatchObject({
+          stage: 'venue-update-order-not-found-under-lock',
+          updateType,
+        });
+      });
+    }
+
+    it('ACCEPTED без локального order → issue НЕ создаётся (benign race), Ok', async () => {
+      orderRepo = makeOrderRepo(undefined);
+      orderStateStore = makeOrderStateStore();
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      deps = {
+        orderRepo, orderStateStore, portfolioService,
+        keyedMutex: makeKeyedMutex(), eventBus, logger, reconciliationIssues,
+      };
+      const useCase = new UpdateOrderStatusUseCase(deps);
+
+      const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+      expect(result.ok).toBe(true);
+      expect(reconciliationIssues.add).not.toHaveBeenCalled();
+    });
+
+    it('update выполняется через keyedMutex с ключами [accountId, orderId]', async () => {
+      orderRepo = makeOrderRepo(makeOpenOrder());
+      orderStateStore = makeOrderStateStore(makeOpenOrder());
+      const keyedMutex = makeKeyedMutex();
+      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex, eventBus, logger };
+      const useCase = new UpdateOrderStatusUseCase(deps);
+
+      await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+      const keys = (keyedMutex.runExclusive as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as string[];
+      expect(keys).toContain(String(ORDER_ID));
+      // accountId-ключ (в каноническом виде) обязан пересекаться с
+      // PlaceOrderUseCase lock-набором (тот тоже использует accountIdToString).
+      expect(keys).toContain(accountIdToString(ACCOUNT_ID));
+    });
   });
 
   it('ACCEPTED → сохраняет Order и публикует события', async () => {
@@ -169,7 +248,7 @@ describe('UpdateOrderStatusUseCase', () => {
 
     orderRepo = makeOrderRepo(pendingOrder);
     orderStateStore = makeOrderStateStore(pendingOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -182,7 +261,7 @@ describe('UpdateOrderStatusUseCase', () => {
     const order = makeOpenOrder();
     orderRepo = makeOrderRepo(order);
     orderStateStore = makeOrderStateStore(order);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -198,7 +277,7 @@ describe('UpdateOrderStatusUseCase', () => {
       ...makeEventBus(),
       publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
     };
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus: failingEventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus: failingEventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
 
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -232,7 +311,7 @@ describe('UpdateOrderStatusUseCase', () => {
 
     orderRepo = makeOrderRepo(pendingOrder);
     orderStateStore = makeOrderStateStore(pendingOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
 
     const result = await useCase.execute({
@@ -262,6 +341,7 @@ describe('UpdateOrderStatusUseCase', () => {
       orderRepo,
       orderStateStore,
       portfolioService: failingPortfolioService,
+      keyedMutex: makeKeyedMutex(),
       eventBus,
       logger,
       reconciliationIssues,
@@ -304,7 +384,7 @@ describe('UpdateOrderStatusUseCase', () => {
 
     orderRepo = makeOrderRepo(cancelledOrder);
     orderStateStore = makeOrderStateStore(cancelledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -325,7 +405,7 @@ describe('UpdateOrderStatusUseCase', () => {
 
     orderRepo = makeOrderRepo(cancelledOrder);
     orderStateStore = makeOrderStateStore(cancelledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -348,7 +428,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(order),
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(order);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -373,7 +453,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(filledOrder), // reread после конфликта
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(filledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -403,7 +483,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(cancelledLatest), // reread: уже CANCELED
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(cancelledLatest);
-    deps = { orderRepo, orderStateStore, portfolioService, eventBus, logger };
+    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), eventBus, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 

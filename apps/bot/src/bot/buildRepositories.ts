@@ -30,6 +30,7 @@ import {
   InMemoryPortfolioStore,
   InMemoryProcessedFillRepository,
   InMemoryReconciliationIssueRepository,
+  InMemoryOrderSubmissionRepository,
   InMemoryKeyedMutex,
 } from '@polymarket/in-memory';
 import type { IMarketCatalog, IKeyedMutex } from '@polymarket/ports';
@@ -40,6 +41,7 @@ export interface Repositories {
   readonly portfolioStore: InMemoryPortfolioStore;
   readonly processedFillRepo: InMemoryProcessedFillRepository;
   readonly reconciliationIssueRepo: InMemoryReconciliationIssueRepository;
+  readonly orderSubmissionRepo: InMemoryOrderSubmissionRepository;
   readonly keyedMutex: IKeyedMutex;
 }
 
@@ -67,6 +69,7 @@ export function buildRepositories(marketCatalog?: IMarketCatalog): Repositories 
     portfolioStore: new InMemoryPortfolioStore(),
     processedFillRepo: new InMemoryProcessedFillRepository(),
     reconciliationIssueRepo: new InMemoryReconciliationIssueRepository(),
+    orderSubmissionRepo: new InMemoryOrderSubmissionRepository(),
     keyedMutex: new InMemoryKeyedMutex(),
   };
 }

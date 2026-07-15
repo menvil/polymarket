@@ -147,7 +147,11 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     // При дефиците < 1% policy возвращает suggestedSize = floor(onChain*100)/100 → адаптируем size.
     const adjustedSize = await this._preflightSellCheck(params, tokenId);
     if (!adjustedSize.ok) {
-      return Err(adjustedSize.error);
+      // Pre-dispatch validation — запрос на venue НЕ отправлялся: ордер точно не создан.
+      return Err(new ExchangeErrorClass(adjustedSize.error.message, {
+        context: { tokenId },
+        submitOutcome: 'DEFINITELY_NOT_SUBMITTED',
+      }));
     }
     const effectiveSize = adjustedSize.value;
 
@@ -184,9 +188,12 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         side: params.side,
         error: message,
       });
+      // Ошибка ПОСЛЕ отправки postOrder (timeout/network/API): venue-ордер МОГ
+      // быть создан — ambiguous. Вызывающий код (PlaceOrderUseCase) обязан
+      // трактовать как UNKNOWN-like (manual reconciliation), а не «точно не создан».
       return Err(new ExchangeErrorClass(
         `Exchange submitOrder failed: ${message}`,
-        { context: { tokenId } },
+        { context: { tokenId }, submitOutcome: 'MAY_HAVE_BEEN_SUBMITTED' },
       ));
     }
   }
@@ -218,8 +225,10 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
   ): Result<SubmitOrderResult, ExchangeError> {
     const orderId = asOrderId(response.orderId);
     if (!orderId) {
+      // Venue ОТВЕТИЛ (запрос дошёл), но orderId невалиден — ордер мог быть создан.
       return Err(new ExchangeErrorClass(
         `Invalid orderId returned from exchange: ${response.orderId}`,
+        { submitOutcome: 'MAY_HAVE_BEEN_SUBMITTED' },
       ));
     }
 

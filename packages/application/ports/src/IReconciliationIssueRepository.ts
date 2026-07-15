@@ -56,6 +56,9 @@ import type { AccountId, FillId, InstrumentId, MarketId, OrderId } from '@polyma
  *   (ждём WS/reconciliation).
  * - `CANCEL_UNKNOWN_OUTCOME` — исход cancel неясен: venue-ордер может быть live.
  * - `VENUE_LOCAL_ORDER_DESYNC` — расхождение venue-состояния и локального Order.
+ * - `EVENT_PUBLISH_FAILED` — доменное событие не опубликовано после commit
+ *   (notification path упал): состояние закоммичено, но подписчики
+ *   (strategy/bridge/projections) не уведомлены — требуется ручной replay.
  */
 export type ReconciliationIssueType =
   | 'FILL_PARTIAL_COMMIT'
@@ -63,7 +66,8 @@ export type ReconciliationIssueType =
   | 'SUBMIT_UNKNOWN_OUTCOME'
   | 'SUBMIT_FILLED_WITHOUT_FILL_DETAILS'
   | 'CANCEL_UNKNOWN_OUTCOME'
-  | 'VENUE_LOCAL_ORDER_DESYNC';
+  | 'VENUE_LOCAL_ORDER_DESYNC'
+  | 'EVENT_PUBLISH_FAILED';
 
 /**
  * Статус жизненного цикла issue.

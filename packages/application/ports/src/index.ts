@@ -46,6 +46,12 @@ export type {
   BeginFillProcessingResult,
 } from './IProcessedFillRepository.js';
 export type {
+  IOrderSubmissionRepository,
+  OrderSubmissionRecord,
+  OrderSubmissionStatus,
+  BeginOrderSubmissionResult,
+} from './IOrderSubmissionRepository.js';
+export type {
   IReconciliationIssueRepository,
   ReconciliationIssue,
   ReconciliationIssueType,
@@ -56,6 +62,7 @@ export type {
   IExchangeClient,
   SubmitOrderParams,
   SubmitOrderResult,
+  SubmitAmbiguity,
   CancelOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,

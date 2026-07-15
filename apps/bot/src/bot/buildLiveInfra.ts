@@ -132,7 +132,7 @@ export interface LiveInfra {
 export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   const { credentials, infra, repos, processFillUseCase, userWsAdapter, accountId, dnsOverride } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo } = repos;
+  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex } = repos;
 
   // ── 1. REST stack ──────────────────────────────────────────────────────────
 
@@ -218,10 +218,13 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     orderRepo,
     orderStateStore: orderRepo,
     portfolioService,
+    // Сериализация с PlaceOrderUseCase по [accountId, orderId] — закрывает race
+    // «ранний terminal ORDER_UPDATE до локального save».
+    keyedMutex,
     eventBus,
     logger,
     // Сбой release резервации после committed venue update теперь queryable
-    // (ORDER_PORTFOLIO_DESYNC), а не только лог.
+    // (ORDER_PORTFOLIO_DESYNC), а не только лог. Плюс early-terminal-update issue.
     reconciliationIssues: reconciliationIssueRepo,
     clock,
   });

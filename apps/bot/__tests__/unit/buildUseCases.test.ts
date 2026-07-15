@@ -120,6 +120,59 @@ describe('buildRepositories', () => {
     expect(open).toHaveLength(1);
     expect(open[0]?.id).toBe('smoke-issue');
   });
+
+  it('возвращает orderSubmissionRepo (submission guard)', () => {
+    const repos = buildRepositories();
+    expect(repos.orderSubmissionRepo).toBeDefined();
+  });
+});
+
+describe('buildOrderUseCases — wiring orderSubmissionRepo (submission guard)', () => {
+  it('повторный execute() с тем же clientOrderId после committed submit не делает второй submit', async () => {
+    const infra = makeInfra();
+    const repos = buildRepositories();
+    const portfolio = seedPortfolio(repos.portfolioStore);
+
+    const submitOrder = jest.fn().mockResolvedValue(
+      Ok({
+        status: 'OPEN',
+        orderId: asOrderId('0xvenue-committed')!,
+        effectiveSize: Quantity.of(new Decimal('5')),
+        remainingSize: Quantity.of(new Decimal('5')),
+      }),
+    ) as unknown as IExchangeClient['submitOrder'];
+    const cancelOrder = jest.fn().mockResolvedValue(Ok({ status: 'CANCELLED' })) as unknown as IExchangeClient['cancelOrder'];
+    const exchangeClient: IExchangeClient = {
+      submitOrder,
+      cancelOrder,
+      getOpenOrders: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getOpenOrders'],
+      getTrades: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getTrades'],
+    };
+
+    const { placeOrderUseCase } = buildOrderUseCases({ infra, repos, exchangeClient, riskParams: RISK_PARAMS });
+    const input = {
+      orderId: asOrderId('client-dup-1')!,
+      accountId: ACCOUNT_ID,
+      asset: ASSET,
+      instrumentId: INSTRUMENT_ID,
+      side: 'BUY' as const,
+      price: Price.of(new Decimal('0.5')),
+      size: Quantity.of(new Decimal('5')),
+      portfolio,
+      openOrdersCount: 0,
+    };
+
+    const first = await placeOrderUseCase.execute(input);
+    expect(first.ok).toBe(true);
+
+    const second = await placeOrderUseCase.execute(input);
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value).toBe('0xvenue-committed');
+
+    // submitOrder вызван РОВНО один раз (второй execute короткозамкнулся), cancel не вызван.
+    expect((submitOrder as ReturnType<typeof jest.fn>).mock.calls.length).toBe(1);
+    expect(cancelOrder).not.toHaveBeenCalled();
+  });
 });
 
 describe('buildOrderUseCases — wiring reconciliationIssues в PlaceOrderUseCase', () => {

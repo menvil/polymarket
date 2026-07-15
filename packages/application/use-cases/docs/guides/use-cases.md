@@ -281,8 +281,11 @@ queryable/alertable хранилище проблем, требующих руч
 | `PlaceOrderUseCase` | rollback cancel → `ALREADY_FILLED` | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:place-rollback:${venueOrderId}:already-filled` |
 | `PlaceOrderUseCase` | rollback cancel → `UNKNOWN_RETRY_NEEDED` / транспортный `Err` | `CANCEL_UNKNOWN_OUTCOME` | `reconciliation:place-rollback:${venueOrderId}:unknown` / `:transport-error` |
 | `PlaceOrderUseCase` | rollback release резервации падает | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:place-rollback:${venueOrderId}:release-failed` (или `place-rollback-client:${clientOrderId}` без venueOrderId) |
-| `ProcessFillUseCase` | dust release падает после terminal fill | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:dust-reservation-release-failed` |
+| `ProcessFillUseCase` | dust release падает после terminal fill (Ledger уже записан) | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:dust-reservation-release-failed` |
 | `ReconcileTradesUseCase` | venue `FAILED` при локальном `APPLIED` | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:fill:${fillId}:venue-failed-after-applied` |
+| `PlaceOrderUseCase` | submit транспорт `MAY_HAVE_BEEN_SUBMITTED` | `SUBMIT_UNKNOWN_OUTCOME` | `reconciliation:submit-client:${clientOrderId}:unknown` |
+| `PlaceOrderUseCase` | publish событий падает после commit | `EVENT_PUBLISH_FAILED` | `reconciliation:submit:${venueOrderId}:event-publish-failed` |
+| `UpdateOrderStatusUseCase` | terminal update без локального Order (под lock) | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:order-update:${orderId}:early-terminal-without-local-order` |
 
 In-memory реализация — `InMemoryReconciliationIssueRepository`
 (`@polymarket/in-memory`, re-export в `@polymarket/backtesting`). Recovery
@@ -481,12 +484,50 @@ Order и версию нужно читать атомарно через `getWi
 Хранит агрегированные `quantity` и `averageEntryPrice`. Для lot-based tracking
 используйте `@polymarket/position` в отдельном слое.
 
+## Submission guard (IOrderSubmissionRepository)
+
+`PlaceOrderUseCase` под keyed mutex вызывает `submissions.begin(clientOrderId)`
+ПЕРВЫМ шагом (если `submissions` передан). Это защита от небезопасного
+повторного submit того же `clientOrderId` (retry после таймаута): venue
+идемпотентен по clientOrderId и может вернуть тот же venueOrderId, из-за чего
+второй `execute()` попал бы в save-conflict и отменил бы успешно созданный ордер.
+
+- `ALREADY_COMMITTED` → вернуть существующий `venueOrderId`, БЕЗ submit/cancel.
+- `IN_PROGRESS` → `Err` (submission уже идёт).
+- `UNKNOWN` → `Err` + `SUBMIT_UNKNOWN_OUTCOME` issue; авто-retry заблокирован.
+- `ACQUIRED`/`FAILED_RETRYABLE` → продолжить.
+
+После успешного `orderRepo.save` → `markCommitted`. UNKNOWN/ambiguous submit
+(включая транспортный `MAY_HAVE_BEEN_SUBMITTED`) → `markUnknown`. REJECTED /
+`DEFINITELY_NOT_SUBMITTED` → `markFailed` (retry допустим). В save-conflict-ветке
+перед rollback cancel проверяется `submissions.get(clientOrderId)`: если запись
+`COMMITTED` с тем же `venueOrderId` — venue-ордер НЕ отменяется (это наш же
+успешно созданный ордер), возвращается `Ok(venueOrderId)`.
+
+Optional dependency — без неё поведение прежнее. In-memory реализация:
+`InMemoryOrderSubmissionRepository` (`@polymarket/in-memory`).
+
+## Ambiguity транспортной ошибки submit (ExchangeError.submitOutcome)
+
+`submitOrder` возвращает `Err(ExchangeError)` только на транспортных/API ошибках.
+`ExchangeError.submitOutcome` различает: `DEFINITELY_NOT_SUBMITTED` (ошибка ДО
+отправки — ордер точно не создан, чистый rollback + Err) и
+`MAY_HAVE_BEEN_SUBMITTED` (ошибка ПОСЛЕ отправки — venue-ордер мог быть создан).
+Если поле не задано — **conservative default `MAY_HAVE_BEEN_SUBMITTED`** (для live
+trading безопаснее). При `MAY_HAVE_BEEN_SUBMITTED` `PlaceOrderUseCase` трактует
+исход как UNKNOWN: best-effort rollback + `SUBMIT_UNKNOWN_OUTCOME` issue, Order НЕ
+создаётся. Адаптер (`PolymarketExchangeClientAdapter`) помечает pre-dispatch
+validation как `DEFINITELY_NOT_SUBMITTED`, а post-dispatch (timeout/invalid
+response) как `MAY_HAVE_BEEN_SUBMITTED`.
+
 ## Remaining known debt
 
 - **PendingVenueOrderRegistry** — сильнее, чем удержание keyed mutex на время
   `submitOrder`: реестр pending venue-ордеров позволил бы fill-ам находить
   «ордер в процессе размещения» без сериализации всего инструмента на network
   call. Текущий long-held lock — прагматичный single-process guard.
+  `IOrderSubmissionRepository` частично закрывает дубль-submit риск, но полноценный
+  registry + persistence (Redis/Postgres) — future work.
 - **Автоматический reversal из reconcile `FAILED`** — future work; текущее
   поведение создаёт `VENUE_LOCAL_ORDER_DESYNC` issue и требует ручного
   вмешательства.

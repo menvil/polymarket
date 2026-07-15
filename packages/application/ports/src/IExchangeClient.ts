@@ -23,13 +23,53 @@ import type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
 import type { VenueTradeSnapshot } from './types/VenueTradeSnapshot.js';
 
 /**
+ * Ambiguity транспортной ошибки `submitOrder` — дошла ли отправка до venue.
+ *
+ * @remarks
+ * - `DEFINITELY_NOT_SUBMITTED` — ошибка ДО отправки запроса на venue
+ *   (local validation, preflight-проверка баланса и т.п.). Ордер точно не
+ *   создан → безопасен чистый rollback резервации + Err.
+ * - `MAY_HAVE_BEEN_SUBMITTED` — ошибка ПОСЛЕ отправки запроса (timeout,
+ *   network drop, неоднозначный ответ API). Venue-ордер МОГ быть создан →
+ *   вызывающий код обязан трактовать как ambiguous (UNKNOWN-like): best-effort
+ *   rollback + reconciliation issue, БЕЗ создания обычного Order.
+ */
+export type SubmitAmbiguity = 'DEFINITELY_NOT_SUBMITTED' | 'MAY_HAVE_BEEN_SUBMITTED';
+
+/**
  * Ошибка при взаимодействии с биржей.
  *
  * @remarks
  * Severity 'high' — требует немедленного внимания и обычно останавливает стратегию.
+ *
+ * `submitOutcome` — ТОЛЬКО для ошибок `submitOrder`: могла ли отправка дойти до
+ * venue (см. `SubmitAmbiguity`). Если поле не задано, вызывающий код обязан
+ * применять conservative default `MAY_HAVE_BEEN_SUBMITTED` (для live trading
+ * безопаснее считать ордер потенциально созданным). Адаптеры должны явно
+ * помечать pre-dispatch validation ошибки как `DEFINITELY_NOT_SUBMITTED`.
  */
 export class ExchangeError extends TradingError {
   public readonly severity = 'high' as const;
+
+  /** Только для submitOrder: ambiguity отправки (см. `SubmitAmbiguity`). */
+  public readonly submitOutcome?: SubmitAmbiguity;
+
+  /**
+   * @param message - Сообщение ошибки
+   * @param options - Опции: стандартные `code`/`context` (TradingError) плюс
+   *   `submitOutcome` для классификации ambiguity отправки submitOrder
+   */
+  constructor(
+    message: string,
+    options?: {
+      readonly code?: string;
+      readonly context?: Record<string, unknown>;
+      readonly submitOutcome?: SubmitAmbiguity;
+    },
+  ) {
+    super(message, options);
+    this.submitOutcome = options?.submitOutcome;
+  }
 }
 
 // Re-export snapshot types для удобства импорта из @polymarket/ports

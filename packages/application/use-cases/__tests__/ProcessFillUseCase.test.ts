@@ -506,11 +506,13 @@ describe('ProcessFillUseCase', () => {
       } as unknown as Portfolio;
       (sellPortfolio.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(sellPortfolio));
       (sellPortfolio.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(sellPortfolio);
-      // releaseTokenReservation падает — и best-effort внутри applyFill (толерантен),
-      // и dust release после terminal (НЕ толерантен).
-      (sellPortfolio.releaseTokenReservation as ReturnType<typeof jest.fn>).mockReturnValue(
-        Err(new TradingError('cannot release token dust')),
-      );
+      // Основной release в applyFill (fillQty=99.995) успешен, а dust release
+      // остатка (0.005) падает — чтобы тест дошёл именно до dust-ветки.
+      // (Task 6 сделал основной SELL release строгим: если бы падал ОН, applyFill
+      //  вернул бы Err раньше — отдельный тест ниже это покрывает.)
+      (sellPortfolio.releaseTokenReservation as ReturnType<typeof jest.fn>)
+        .mockReturnValueOnce(Ok(sellPortfolio))
+        .mockReturnValue(Err(new TradingError('cannot release token dust')));
       const store = makePortfolioStore(sellPortfolio);
       const portfolioService = new PortfolioService(store, logger);
       const reconciliationIssues = makeReconciliationIssueRepo();
@@ -564,6 +566,95 @@ describe('ProcessFillUseCase', () => {
 
       expect(result.ok).toBe(true);
       expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── SELL строгий release в applyFill (Task 6) ───────────────────────────────
+
+  describe('SELL token reservation release строгий (local order path)', () => {
+    /** SELL order (найден, OPEN) для local-order path */
+    function makeSellOrder(): Order {
+      const r = Order.create({
+        id: ORDER_ID,
+        asset: ASSET_ID,
+        side: 'SELL',
+        price: makePrice('0.65') as never,
+        size: makeQty('100') as never,
+        timestamp: { value: () => new Decimal(1000), toNumber: () => 1000, toISO: () => '2024-01-01T00:00:00.000Z' } as never,
+      });
+      if (!r.ok) throw new Error('Cannot create Order');
+      const accepted = r.value.accept();
+      if (!accepted.ok) throw new Error('Cannot accept Order');
+      accepted.value.pullEvents();
+      return accepted.value;
+    }
+
+    /** SELL portfolio с позицией и заданным поведением releaseTokenReservation */
+    function makeSellPortfolio(releaseFails: boolean): Portfolio {
+      const p: Portfolio = {
+        ...makePortfolioMock(),
+        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
+          instrumentId: ASSET_ID as unknown as InstrumentId,
+          quantity: makeQty('100'),
+          averageEntryPrice: makePrice('0.65'),
+          side: 'LONG',
+          isClosed: () => false,
+        } as never),
+      } as unknown as Portfolio;
+      (p.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
+      (p.applyDirectDebit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
+      (p.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(p);
+      (p.releaseTokenReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        releaseFails ? Err(new TradingError('token reservation missing')) : Ok(p),
+      );
+      return p;
+    }
+
+    it('local SELL fill без токенной резервации → applyFill Err → RECONCILIATION_REQUIRED (ORDER_PORTFOLIO_DESYNC)', async () => {
+      const sellOrder = makeSellOrder();
+      const sellPortfolio = makeSellPortfolio(true); // release всегда падает
+      const store = makePortfolioStore(sellPortfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(sellOrder),
+        orderStateStore: makeOrderStateStore(sellOrder),
+        portfolioService,
+        reconciliationIssues,
+      });
+
+      // Частичный fill (50 из 100) — ордер остаётся OPEN, dust-ветки нет.
+      const result = await useCase.execute(makeFill({ side: 'SELL', size: makeQty('50') } as never));
+
+      expect(result.ok).toBe(false);
+      // applyFill упал строго на SELL release → десинк ловится РАНЬШЕ dust.
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID,
+        expect.stringContaining('ORDER_PORTFOLIO_DESYNC'),
+      );
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as { id: string };
+      expect(issue.id).toBe(`reconciliation:fill:${String(FILL_ID)}:order-portfolio-desync`);
+    });
+
+    it('direct SELL fill (ордер не найден) без резервации всё равно успешен (best-effort credit)', async () => {
+      const sellPortfolio = makeSellPortfolio(true); // release падает — но direct path толерантен
+      const store = makePortfolioStore(sellPortfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined), // ордер не найден → direct-fill path
+        orderStateStore: makeOrderStateStore(undefined),
+        portfolioService,
+      });
+
+      const result = await useCase.execute(makeFill({ side: 'SELL', size: makeQty('50') } as never));
+
+      // Direct path: release best-effort, USDC зачислен → Ok.
+      expect(result.ok).toBe(true);
+      expect(sellPortfolio.applyCredit).toHaveBeenCalled();
+      expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
     });
   });
 
