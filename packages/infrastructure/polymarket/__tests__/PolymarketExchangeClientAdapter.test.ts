@@ -364,4 +364,34 @@ describe('PolymarketExchangeClientAdapter.submitOrder — mapping', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toMatch(/network timeout/);
   });
+
+  it('SELL preflight checkBalance отклоняет Promise → Err(DEFINITELY_NOT_SUBMITTED), postOrder НЕ вызывается', async () => {
+    // Pre-dispatch failure: сетевая ошибка balance check ДО отправки на venue —
+    // ордер точно не создан, PlaceOrderUseCase может безопасно retry-ить.
+    const executionAdapter = makeExecutionAdapter({
+      postOrder: async () => {
+        throw new Error('postOrder must not be called');
+      },
+    });
+    const balancePolicy = {
+      checkBalance: jest.fn().mockImplementation(async () => {
+        throw new Error('rpc connection reset');
+      }),
+    } as unknown as import('../rest/policies/PolymarketBalancePolicy.js').PolymarketBalancePolicy;
+    const adapter = new PolymarketExchangeClientAdapter(
+      executionAdapter,
+      makeLogger(),
+      undefined,
+      balancePolicy,
+    );
+
+    const result = await adapter.submitOrder({ ...makeSubmitParams('100'), side: 'SELL' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.submitOutcome).toBe('DEFINITELY_NOT_SUBMITTED');
+      expect(result.error.message).toMatch(/rpc connection reset/);
+    }
+    expect(executionAdapter.postOrder).not.toHaveBeenCalled();
+  });
 });

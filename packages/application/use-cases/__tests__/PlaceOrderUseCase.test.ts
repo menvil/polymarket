@@ -13,9 +13,10 @@ import type {
   IKeyedMutex,
   IReconciliationIssueRepository,
   IOrderSubmissionRepository,
+  OrderSubmissionRecord,
   CancelOrderResult,
 } from '@polymarket/ports';
-import { VersionConflictError, ExchangeError } from '@polymarket/ports';
+import { VersionConflictError, ExchangeError, emptyReservation } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
@@ -25,6 +26,7 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import { RiskViolationError as RiskViolationErrorClass } from '@polymarket/risk';
 import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
+import { InMemoryOrderedEventOutbox } from '../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import Decimal from 'decimal.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,6 +53,27 @@ function makeEventBus(): IEventBus {
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
+}
+
+/**
+ * Реальный ordered outbox, публикующий в переданный eventBus.
+ *
+ * @remarks
+ * PlaceOrderUseCase больше НЕ вызывает `eventBus.publishAll` напрямую: события
+ * `enqueue`-ятся под lock и `flush`-ятся ПОСЛЕ lock через outbox. Помощник
+ * связывает outbox.publish → eventBus.publishAll, поэтому assertion'ы на
+ * `eventBus.publishAll` продолжают работать. `reconciliationIssues` (если
+ * передан) — куда outbox положит EVENT_PUBLISH_FAILED при сбое публикации.
+ */
+function makeOutbox(
+  bus: IEventBus,
+  reconciliationIssues?: IReconciliationIssueRepository,
+): InMemoryOrderedEventOutbox {
+  return new InMemoryOrderedEventOutbox({
+    publish: (events) => bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+    logger: makeLogger(),
+    reconciliationIssues,
+  });
 }
 
 function makePrice(val: string): Price {
@@ -140,6 +163,52 @@ function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
   };
 }
 
+/** Полная submission-запись для стабов (все обязательные поля включая reservation). */
+function makeSubmissionRecord(
+  overrides: Partial<OrderSubmissionRecord> = {},
+): OrderSubmissionRecord {
+  return {
+    clientOrderId: ORDER_ID,
+    status: 'SUBMITTING',
+    accountId: ACCOUNT_ID,
+    instrumentId: INSTRUMENT_ID,
+    attempt: 1,
+    fingerprint: 'fp',
+    side: 'BUY',
+    orderPrice: '0.5',
+    requestedSize: '10',
+    reservation: emptyReservation('USDC'),
+    createdAt: new Date('2024-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+/**
+ * Полный стаб IOrderSubmissionRepository со всеми методами (включая reservation
+ * journal). Дефолты: begin→ACQUIRED, get/findByVenueOrderId→undefined,
+ * mark-методы/transition→no-op/Ok. Переопределяй нужные методы через `overrides`.
+ */
+function makeSubmissionsStub(
+  overrides: Partial<IOrderSubmissionRepository> = {},
+): IOrderSubmissionRepository {
+  return {
+    begin: jest.fn<IOrderSubmissionRepository['begin']>().mockResolvedValue({ outcome: 'ACQUIRED' }),
+    markReservationHeld: jest.fn<IOrderSubmissionRepository['markReservationHeld']>()
+      .mockImplementation(async () => Ok(makeSubmissionRecord())),
+    setEffectiveSize: jest.fn<IOrderSubmissionRepository['setEffectiveSize']>().mockResolvedValue(undefined),
+    applyReservationTransition: jest.fn<IOrderSubmissionRepository['applyReservationTransition']>()
+      .mockImplementation(async () => Ok(makeSubmissionRecord())),
+    markVenueAccepted: jest.fn<IOrderSubmissionRepository['markVenueAccepted']>().mockResolvedValue(undefined),
+    markCommitted: jest.fn<IOrderSubmissionRepository['markCommitted']>().mockResolvedValue(undefined),
+    markUnknown: jest.fn<IOrderSubmissionRepository['markUnknown']>().mockResolvedValue(undefined),
+    markFailed: jest.fn<IOrderSubmissionRepository['markFailed']>().mockResolvedValue(undefined),
+    get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue(undefined),
+    findByVenueOrderId: jest.fn<IOrderSubmissionRepository['findByVenueOrderId']>().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 function makeRiskChecker(pass = true): IOrderRiskChecker {
   return {
     checkBeforeOrder: jest.fn<IOrderRiskChecker['checkBeforeOrder']>().mockReturnValue(
@@ -183,6 +252,8 @@ describe('PlaceOrderUseCase', () => {
   let exchangeClient: IExchangeClient;
   let riskChecker: IOrderRiskChecker;
   let keyedMutex: IKeyedMutex;
+  let orderedEventOutbox: InMemoryOrderedEventOutbox;
+  let submissions: InMemoryOrderSubmissionRepository;
   let deps: PlaceOrderDeps;
 
   beforeEach(() => {
@@ -194,6 +265,8 @@ describe('PlaceOrderUseCase', () => {
     exchangeClient = makeExchangeClient(); // default: 'exchange-order-1' (venueOrderId)
     riskChecker = makeRiskChecker(true);
     keyedMutex = makeKeyedMutex();
+    orderedEventOutbox = makeOutbox(eventBus);
+    submissions = new InMemoryOrderSubmissionRepository();
 
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
@@ -212,8 +285,18 @@ describe('PlaceOrderUseCase', () => {
         markInFlightFill: jest.fn(),
         clearInFlightFill: jest.fn(),
         getInFlightFills: jest.fn().mockReturnValue([]),
+        hasUnsettledFills: jest.fn().mockReturnValue(false),
+        getFillProcessingBlocks: jest.fn().mockReturnValue([]),
+        hasFillProcessingBlocks: jest.fn().mockReturnValue(false),
+        markManualReconciliationBlock: jest.fn(),
+        clearManualReconciliationBlock: jest.fn(),
+        hasManualReconciliationBlockForOrder: jest.fn().mockReturnValue(false),
+        hasManualReconciliationBlocks: jest.fn().mockReturnValue(false),
+        getManualReconciliationBlocks: jest.fn().mockReturnValue([]),
       } as unknown as IOrderStateStore,
-      eventBus,
+      // eventBus больше не dep — публикация через ordered outbox (flush после lock).
+      orderedEventOutbox,
+      submissions,
       clock,
       logger,
     };
@@ -250,7 +333,10 @@ describe('PlaceOrderUseCase', () => {
   it('логирует info при успешном размещении', async () => {
     const useCase = new PlaceOrderUseCase(deps);
     await useCase.execute(makeInput());
-    expect(logger.info).toHaveBeenCalledWith('Order placed successfully', expect.any(Object));
+    expect(logger.info).toHaveBeenCalledWith(
+      'Order placed successfully (events enqueued for flush after lock)',
+      expect.any(Object),
+    );
   });
 
   // ── Провал риск-проверки ──────────────────────────────────────────────────
@@ -314,7 +400,11 @@ describe('PlaceOrderUseCase', () => {
       (orderRepo.save as jest.Mock).mockImplementation(() =>
         Promise.resolve(Err(new VersionConflictError('exchange-order-1', 0, 1))),
       );
-      deps = { ...deps, portfolioService, orderRepo };
+      // submissions.get() → undefined: конфликт трактуется как ЧУЖАЯ запись
+      // (не наш committed/VENUE_ACCEPTED ордер) → включается безопасный
+      // rollback-cancel branch (cancel venue → release только после подтверждения).
+      const foreignConflictSubmissions = makeSubmissionsStub();
+      deps = { ...deps, portfolioService, orderRepo, submissions: foreignConflictSubmissions };
     });
 
     it('возвращает Err и НЕ публикует события', async () => {
@@ -374,7 +464,7 @@ describe('PlaceOrderUseCase', () => {
       await useCase.execute(makeInput());
 
       expect(logger.error).toHaveBeenCalledWith(
-        'Rollback cancel failed — order already filled on exchange, manual reconciliation/fill expected',
+        'Rollback cancel failed — order already filled on exchange, reservation held, fill expected',
         expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
       );
     });
@@ -387,7 +477,7 @@ describe('PlaceOrderUseCase', () => {
       await useCase.execute(makeInput());
 
       expect(logger.error).toHaveBeenCalledWith(
-        'Rollback cancel outcome unclear — venue order may still be live, manual reconciliation required',
+        'Rollback cancel outcome unclear — venue order may still be live, reservation held, manual reconciliation required',
         expect.objectContaining({ venueOrderId: 'exchange-order-1' }),
       );
     });
@@ -612,12 +702,22 @@ describe('PlaceOrderUseCase', () => {
 
   // ── Post-commit publish failure (notification path, не транзакция) ─────────
 
-  it('сбой publishAll ПОСЛЕ успешного save — Ok(venueOrderId), не Err (committed operation не retryable)', async () => {
-    const failingEventBus: IEventBus = {
+  it('сбой publishAll (flush после lock) ПОСЛЕ успешного save — Ok(venueOrderId), не Err (committed operation не retryable)', async () => {
+    // Сбой публикации теперь проглатывается outbox на flush() (ПОСЛЕ lock):
+    // outbox логирует EVENT_PUBLISH_FAILED и создаёт issue, а PlaceOrderUseCase
+    // возвращает Ok — commit (save+markers) уже выполнен под lock.
+    const failingBus: IEventBus = {
       ...eventBus,
       publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
     };
-    const useCase = new PlaceOrderUseCase({ ...deps, eventBus: failingEventBus });
+    const outboxLogger = makeLogger();
+    const reconciliationIssues = makeReconciliationIssueRepo();
+    const failingOutbox = new InMemoryOrderedEventOutbox({
+      publish: (events) => failingBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+      logger: outboxLogger,
+      reconciliationIssues,
+    });
+    const useCase = new PlaceOrderUseCase({ ...deps, orderedEventOutbox: failingOutbox });
 
     const result = await useCase.execute(makeInput());
 
@@ -626,15 +726,15 @@ describe('PlaceOrderUseCase', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toBe('exchange-order-1');
     expect(orderRepo.save).toHaveBeenCalled();
-    expect(failingEventBus.publishAll).toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
+    expect(failingBus.publishAll).toHaveBeenCalled();
+    // Outbox залогировал EVENT_PUBLISH_FAILED и создал issue.
+    expect(outboxLogger.error).toHaveBeenCalledWith(
       expect.stringContaining('EVENT_PUBLISH_FAILED'),
-      expect.objectContaining({
-        venueOrderId: 'exchange-order-1',
-        clientOrderId: String(ORDER_ID),
-        submitStatus: 'OPEN',
-      }),
+      expect.objectContaining({ aggregateId: 'exchange-order-1' }),
     );
+    const addCalls = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls;
+    expect(addCalls).toHaveLength(1);
+    expect((addCalls[0]?.[0] as { type: string }).type).toBe('EVENT_PUBLISH_FAILED');
   });
 
   // ── Keyed mutex: сериализация reserve+submit+save ───────────────────────────
@@ -680,10 +780,11 @@ describe('PlaceOrderUseCase', () => {
 
       expect(result.ok).toBe(true);
       const keys = (trackingMutex.runExclusive as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as string[];
-      expect(keys).toContain(String(INSTRUMENT_ID));
-      // accountId-ключ обязан совпадать с ключом ProcessFillUseCase/CancelOrderUseCase
-      // (оба используют accountIdToString) — иначе lock-наборы не пересекутся.
-      expect(keys).toContain(accountIdToString(ACCOUNT_ID));
+      // Namespaced ключи: `instrument:<id>` и `account:<accountIdToString>`.
+      expect(keys).toContain(`instrument:${String(INSTRUMENT_ID)}`);
+      // account-ключ обязан совпадать с ключом ProcessFillUseCase/CancelOrderUseCase
+      // (оба namespace-ят через accountIdToString) — иначе lock-наборы не пересекутся.
+      expect(keys).toContain(`account:${accountIdToString(ACCOUNT_ID)}`);
       // Весь критический участок — внутри lock.
       expect(callOrder).toEqual(['lock-enter', 'submit', 'save', 'lock-exit']);
     });
@@ -725,6 +826,7 @@ describe('PlaceOrderUseCase', () => {
       exchangeClient: IExchangeClient;
       orderRepo: IOrderRepository;
       reconciliationIssues: IReconciliationIssueRepository;
+      submissions: IOrderSubmissionRepository;
     } {
       return {
         exchangeClient: {
@@ -738,6 +840,10 @@ describe('PlaceOrderUseCase', () => {
           ),
         },
         reconciliationIssues: makeReconciliationIssueRepo(),
+        // submissions.get() → undefined: конфликт трактуется как ЧУЖАЯ запись
+        // (не наш committed/VENUE_ACCEPTED ордер), поэтому включается безопасный
+        // rollback-cancel branch (а не idempotent no-cancel).
+        submissions: makeSubmissionsStub(),
       };
     }
 
@@ -912,7 +1018,9 @@ describe('PlaceOrderUseCase', () => {
           Err(new VersionConflictError('exchange-order-1', 0, 1)),
         ),
       };
-      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, orderRepo, reconciliationIssues });
+      // submissions.get() → undefined → foreign-conflict rollback branch (cancel + release).
+      const submissions = makeSubmissionsStub();
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, orderRepo, reconciliationIssues, submissions });
 
       const result = await useCase.execute(makeInput());
 
@@ -1014,10 +1122,10 @@ describe('PlaceOrderUseCase', () => {
     });
   });
 
-  // ── publishAll ВНЕ lock ──────────────────────────────────────────────────────
+  // ── publishAll (flush) ВНЕ lock, enqueue внутри lock ─────────────────────────
 
-  describe('publishAll внутри lock (per-order event ordering)', () => {
-    it('publishAll вызывается ВНУТРИ lock (до lock-exit) — Fill не опубликует ORDER_FILLED раньше', async () => {
+  describe('flush после lock (per-order event ordering)', () => {
+    it('события enqueue-ятся ВНУТРИ lock, а publishAll (flush) — строго ПОСЛЕ lock-exit', async () => {
       const callOrder: string[] = [];
       const trackingMutex: IKeyedMutex = {
         runExclusive: jest.fn(async <T>(_keys: readonly string[], fn: () => Promise<T>) => {
@@ -1027,43 +1135,49 @@ describe('PlaceOrderUseCase', () => {
           return r;
         }) as unknown as IKeyedMutex['runExclusive'],
       };
+      // publishAll теперь вызывается outbox'ом на flush() ПОСЛЕ выхода из lock.
       const eventBusSpy: IEventBus = {
         publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
         publishAll: jest.fn(async () => { callOrder.push('publishAll'); }) as unknown as IEventBus['publishAll'],
         subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
       };
-      const useCase = new PlaceOrderUseCase({ ...deps, keyedMutex: trackingMutex, eventBus: eventBusSpy });
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        keyedMutex: trackingMutex,
+        orderedEventOutbox: makeOutbox(eventBusSpy),
+      });
 
       const result = await useCase.execute(makeInput());
 
       expect(result.ok).toBe(true);
-      // publishAll — строго ДО lock-exit (внутри critical section).
-      expect(callOrder).toEqual(['lock-enter', 'publishAll', 'lock-exit']);
+      // publishAll — строго ПОСЛЕ lock-exit (enqueue под lock, flush вне lock).
+      // Это исключает deadlock (handler → lock-зависимый use-case), а per-order
+      // FIFO сохраняется внутри outbox по aggregateId.
+      expect(callOrder).toEqual(['lock-enter', 'lock-exit', 'publishAll']);
     });
 
-    it('сбой publishAll (внутри lock) после commit → Ok(venueOrderId), EVENT_PUBLISH_FAILED issue', async () => {
-      const failingEventBus: IEventBus = {
+    it('сбой publishAll (flush после lock) после commit → Ok(venueOrderId), EVENT_PUBLISH_FAILED issue (создаёт outbox)', async () => {
+      const failingBus: IEventBus = {
         ...eventBus,
         publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
       };
       const reconciliationIssues = makeReconciliationIssueRepo();
-      const useCase = new PlaceOrderUseCase({ ...deps, eventBus: failingEventBus, reconciliationIssues });
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        orderedEventOutbox: makeOutbox(failingBus, reconciliationIssues),
+      });
 
       const result = await useCase.execute(makeInput());
 
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value).toBe('exchange-order-1');
       expect(orderRepo.save).toHaveBeenCalled();
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('EVENT_PUBLISH_FAILED'),
-        expect.objectContaining({ venueOrderId: 'exchange-order-1', submitStatus: 'OPEN' }),
-      );
-      // Queryable issue для ручного replay.
+      // Queryable issue для ручного replay — создаётся outbox'ом на flush.
       const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
         .map((c) => c[0] as { id: string; type: string })
         .find((i) => i.type === 'EVENT_PUBLISH_FAILED');
       expect(issue).toBeDefined();
-      expect(issue!.id).toBe('reconciliation:submit:exchange-order-1:event-publish-failed');
+      expect(issue!.id).toBe('reconciliation:outbox:exchange-order-1:event-publish-failed');
     });
   });
 
@@ -1077,7 +1191,7 @@ describe('PlaceOrderUseCase', () => {
       };
     }
 
-    it('MAY_HAVE_BEEN_SUBMITTED → SUBMIT_UNKNOWN_OUTCOME issue, release резервации, Err, Order НЕ создаётся', async () => {
+    it('MAY_HAVE_BEEN_SUBMITTED → SUBMIT_UNKNOWN_OUTCOME issue, резервация УДЕРЖАНА (не release), Err, Order НЕ создаётся', async () => {
       const portfolio = makePortfolio();
       const store = makePortfolioStore(portfolio);
       const portfolioService = new PortfolioService(store, logger);
@@ -1091,13 +1205,19 @@ describe('PlaceOrderUseCase', () => {
 
       expect(result.ok).toBe(false);
       expect(orderRepo.save).not.toHaveBeenCalled();
-      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      // Ордер МОГ создаться на venue — освобождать резервацию нельзя (двойной
+      // debit при последующем fill). Резервация удержана до reconciliation.
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
       const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
         .map((c) => c[0] as { id: string; type: string; context?: Record<string, unknown> })
         .find((i) => i.type === 'SUBMIT_UNKNOWN_OUTCOME');
       expect(issue).toBeDefined();
       expect(issue!.id).toBe(`reconciliation:submit-client:${String(ORDER_ID)}:unknown`);
-      expect(issue!.context).toMatchObject({ submitOutcome: 'MAY_HAVE_BEEN_SUBMITTED', cancelAttempted: false });
+      expect(issue!.context).toMatchObject({
+        submitOutcome: 'MAY_HAVE_BEEN_SUBMITTED',
+        cancelAttempted: false,
+        reservationHeld: true,
+      });
     });
 
     it('DEFINITELY_NOT_SUBMITTED → чистый rollback + Err, SUBMIT_UNKNOWN_OUTCOME issue НЕ создаётся', async () => {
@@ -1165,27 +1285,23 @@ describe('PlaceOrderUseCase', () => {
       // submissions.get() уже показывает COMMITTED под тем же venueOrderId
       // (наш собственный предыдущий committed submit). Стаб с begin→ACQUIRED,
       // get→COMMITTED.
-      const racySubmissions: IOrderSubmissionRepository = {
-        begin: jest.fn<IOrderSubmissionRepository['begin']>().mockResolvedValue({ outcome: 'ACQUIRED' }),
-        markCommitted: jest.fn<IOrderSubmissionRepository['markCommitted']>().mockResolvedValue(undefined),
-        markUnknown: jest.fn<IOrderSubmissionRepository['markUnknown']>().mockResolvedValue(undefined),
-        markFailed: jest.fn<IOrderSubmissionRepository['markFailed']>().mockResolvedValue(undefined),
-        get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue({
-          clientOrderId: ORDER_ID,
+      const racySubmissions = makeSubmissionsStub({
+        get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue(makeSubmissionRecord({
           venueOrderId: 'exchange-order-1' as unknown as OrderId,
           status: 'COMMITTED',
-          accountId: ACCOUNT_ID,
-          instrumentId: INSTRUMENT_ID,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      };
+        })),
+      });
 
       const conflictingRepo: IOrderRepository = {
         ...makeOrderRepo(),
         save: jest.fn<IOrderRepository['save']>().mockResolvedValue(
           Err(new VersionConflictError('exchange-order-1', 0, 1)),
         ),
+        // Наш прошлый committed submit уже сохранил Order под этим venueOrderId:
+        // save-conflict branch находит его через get() → idempotent success, без cancel.
+        get: jest.fn().mockImplementation(() =>
+          Promise.resolve({ id: 'exchange-order-1' } as unknown),
+        ) as unknown as IOrderRepository['get'],
       };
       const exchangeClient = makeExchangeClient();
       const useCase = new PlaceOrderUseCase({ ...deps, orderRepo: conflictingRepo, exchangeClient, submissions: racySubmissions });
@@ -1197,6 +1313,47 @@ describe('PlaceOrderUseCase', () => {
       if (result.ok) expect(result.value).toBe('exchange-order-1');
       expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
     });
+
+    // ── Stage 5: corrupt submission без venueOrderId ─────────────────────────
+    for (const [outcome, recordStatus] of [
+      ['ALREADY_COMMITTED', 'COMMITTED'],
+      ['VENUE_ACCEPTED', 'VENUE_ACCEPTED'],
+    ] as const) {
+      it(`${outcome} БЕЗ venueOrderId → Err, issue, НЕ reserve/submit/cancel/markFailed`, async () => {
+        const reconciliationIssues = makeReconciliationIssueRepo();
+        // begin() возвращает corrupt outcome без venueOrderId.
+        const corruptSubmissions = makeSubmissionsStub({
+          begin: jest.fn<IOrderSubmissionRepository['begin']>().mockResolvedValue({
+            outcome,
+            record: makeSubmissionRecord({ status: recordStatus, venueOrderId: undefined }),
+          }),
+        });
+        const portfolio = makePortfolio();
+        const store = makePortfolioStore(portfolio);
+        const portfolioService = new PortfolioService(store, logger);
+        const exchangeClient = makeExchangeClient();
+        const useCase = new PlaceOrderUseCase({
+          ...deps, portfolioService, exchangeClient, submissions: corruptSubmissions, reconciliationIssues,
+        });
+
+        const result = await useCase.execute(makeInput());
+
+        expect(result.ok).toBe(false);
+        // Никаких мутаций venue/portfolio.
+        expect(portfolio.reserveForOrder).not.toHaveBeenCalled();
+        expect(portfolio.reserveTokensForOrder).not.toHaveBeenCalled();
+        expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+        expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+        expect(corruptSubmissions.markFailed).not.toHaveBeenCalled();
+        // Детерминированный issue.
+        const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+          .map((c) => c[0] as { id: string; type: string; context?: Record<string, unknown> })
+          .find((i) => i.id.endsWith(':corrupt-submission-missing-venue-order-id'));
+        expect(issue).toBeDefined();
+        expect(issue!.type).toBe('VENUE_LOCAL_ORDER_DESYNC');
+        expect(issue!.context).toMatchObject({ stage: 'corrupt-submission-missing-venue-order-id', submissionStatus: recordStatus });
+      });
+    }
 
     it('UNKNOWN submit помечает submission UNKNOWN → повторный execute() блокирован (Err, issue)', async () => {
       const submissions = new InMemoryOrderSubmissionRepository();
@@ -1242,10 +1399,15 @@ describe('PlaceOrderUseCase', () => {
       expect((failingThenOk.submitOrder as ReturnType<typeof jest.fn>).mock.calls.length).toBe(2);
     });
 
-    it('без submissions (optional) поведение прежнее', async () => {
-      const useCase = new PlaceOrderUseCase(deps); // без submissions
+    it('первый execute() с чистым submissions guard проходит (ACQUIRED → COMMITTED)', async () => {
+      // submissions теперь ОБЯЗАТЕЛЬНЫЙ dep (в beforeEach — чистый InMemory guard).
+      const useCase = new PlaceOrderUseCase(deps);
       const result = await useCase.execute(makeInput());
       expect(result.ok).toBe(true);
+      // После успеха submission помечен COMMITTED под venueOrderId.
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('COMMITTED');
+      expect(record?.venueOrderId).toBe('exchange-order-1');
     });
   });
 
@@ -1311,10 +1473,17 @@ describe('PlaceOrderUseCase', () => {
         getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
         getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
       };
-      const useCase = new PlaceOrderUseCase({ ...deps, orderStateStore, eventBus: eventBusSpy, exchangeClient });
+      const useCase = new PlaceOrderUseCase({
+        ...deps,
+        orderStateStore,
+        orderedEventOutbox: makeOutbox(eventBusSpy),
+        exchangeClient,
+      });
       const result = await useCase.execute(makeInput());
 
       expect(result.ok).toBe(true);
+      // markOrderFillMatched — под lock (commit), publishAll — на flush после lock.
+      // Порядок сохраняется: marker строго ДО публикации.
       expect(callOrder).toEqual(['markOrderFillMatched', 'publishAll']);
     });
 
@@ -1399,7 +1568,7 @@ describe('PlaceOrderUseCase', () => {
       expect(cancelOrder).toHaveBeenCalledWith('exchange-order-1');
     });
 
-    it('UNKNOWN без orderId: откатывает резервацию, НЕ пытается cancel, возвращает Err', async () => {
+    it('UNKNOWN без orderId: резервация УДЕРЖАНА (venue-ордер мог создаться), НЕ пытается cancel, возвращает Err', async () => {
       const portfolio = makePortfolio();
       const store = makePortfolioStore(portfolio);
       const portfolioService = new PortfolioService(store, logger);
@@ -1417,7 +1586,9 @@ describe('PlaceOrderUseCase', () => {
 
       expect(result.ok).toBe(false);
       expect(orderRepo.save).not.toHaveBeenCalled();
-      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      // Без venueOrderId cancel невозможен, а ордер мог создаться → резервацию
+      // НЕ освобождаем (иначе двойной учёт при последующем fill).
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
       expect(cancelOrder).not.toHaveBeenCalled();
     });
   });
@@ -1496,7 +1667,9 @@ describe('PlaceOrderUseCase', () => {
         clientOrderId: String(ORDER_ID),
         venueOrderId: 'exchange-order-1',
         cancelAttempted: true,
-        rollbackReleaseOk: true,
+        // cancel вернул CANCELLED → резервация освобождена, held=false.
+        cancelOutcome: 'CANCELLED',
+        reservationHeld: false,
       });
     });
 
@@ -1648,5 +1821,393 @@ describe('PlaceOrderUseCase', () => {
     const useCase = new PlaceOrderUseCase({ ...deps, portfolioService });
     const result = await useCase.execute(makeInput());
     expect(result.ok).toBe(false);
+  });
+
+  // ── Commit-critical reserve+journal (Этап 2) ─────────────────────────────────
+
+  describe('commit-critical journal HELD (Этап 2.2)', () => {
+    it('markReservationHeld → Err: submit НЕ вызывается, Portfolio восстановлен (compensating release), submission FAILED (retryable)', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const submissionsStub = makeSubmissionsStub({
+        markReservationHeld: jest.fn<IOrderSubmissionRepository['markReservationHeld']>()
+          .mockResolvedValue(Err(new (await import('@polymarket/ports')).ReservationTransitionError('INVARIANT_VIOLATION', 'journal write failed'))),
+      });
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, submissions: submissionsStub });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+      // Компенсация: reserve был выполнен → release тем же объёмом.
+      expect(portfolio.reserveForOrder).toHaveBeenCalledTimes(1);
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      // Компенсация успешна → submission помечена FAILED (retry разрешён).
+      expect(submissionsStub.markFailed).toHaveBeenCalledWith(
+        ORDER_ID, expect.stringContaining('JOURNAL_HELD_FAILED'), expect.any(Date),
+      );
+    });
+
+    it('markReservationHeld падает И compensating release падает: submission НЕ retryable (без markFailed), journal → RECONCILIATION_REQUIRED, issue', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const submissionsStub = makeSubmissionsStub({
+        markReservationHeld: jest.fn<IOrderSubmissionRepository['markReservationHeld']>()
+          .mockRejectedValue(new Error('journal unavailable')),
+      });
+      const useCase = new PlaceOrderUseCase({
+        ...deps, portfolioService, submissions: submissionsStub, reconciliationIssues,
+      });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+      // Submission НЕ FAILED → begin при retry вернёт IN_PROGRESS (blocked).
+      expect(submissionsStub.markFailed).not.toHaveBeenCalled();
+      // Journal помечен RECONCILIATION_REQUIRED (best-effort).
+      expect(submissionsStub.applyReservationTransition).toHaveBeenCalledWith(
+        ORDER_ID,
+        expect.objectContaining({ status: 'RECONCILIATION_REQUIRED' }),
+      );
+      // Blocking issue создана.
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { type: string; reason: string })
+        .find((i) => i.type === 'ORDER_PORTFOLIO_DESYNC');
+      expect(issue).toBeDefined();
+      expect(issue!.reason).toContain('journal HELD failed');
+    });
+  });
+
+  describe('definite rejection rollback (Этап 2.3)', () => {
+    it('DEFINITELY_NOT_SUBMITTED + release failure: submission НЕ FAILED, journal RECONCILIATION_REQUIRED, второй execute НЕ reserve и НЕ submit', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Err(new ExchangeError('preflight rejected', { submitOutcome: 'DEFINITELY_NOT_SUBMITTED' })),
+        ),
+      };
+      // Реальный journal — проверяем реальные статусы записи.
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeClient2 });
+
+      const first = await useCase.execute(makeInput());
+      expect(first.ok).toBe(false);
+
+      const record = await submissions.get(ORDER_ID);
+      // Release упал → journal НЕ SETTLED, submission НЕ FAILED (остаётся SUBMITTING).
+      expect(record?.status).toBe('SUBMITTING');
+      expect(record?.reservation.status).toBe('RECONCILIATION_REQUIRED');
+
+      // Второй execute: begin → IN_PROGRESS → Err, без reserve/submit.
+      (portfolio.reserveForOrder as ReturnType<typeof jest.fn>).mockClear();
+      (exchangeClient2.submitOrder as ReturnType<typeof jest.fn>).mockClear();
+      const second = await useCase.execute(makeInput());
+      expect(second.ok).toBe(false);
+      expect(portfolio.reserveForOrder).not.toHaveBeenCalled();
+      expect(exchangeClient2.submitOrder).not.toHaveBeenCalled();
+    });
+
+    it('REJECTED + release failure: submission НЕ FAILED, retry заблокирован (без reserve/submit)', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK could not fill' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeClient2 });
+
+      const first = await useCase.execute(makeInput());
+      expect(first.ok).toBe(false);
+
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('SUBMITTING');
+      expect(record?.reservation.status).toBe('RECONCILIATION_REQUIRED');
+
+      (portfolio.reserveForOrder as ReturnType<typeof jest.fn>).mockClear();
+      (exchangeClient2.submitOrder as ReturnType<typeof jest.fn>).mockClear();
+      const second = await useCase.execute(makeInput());
+      expect(second.ok).toBe(false);
+      expect(portfolio.reserveForOrder).not.toHaveBeenCalled();
+      expect(exchangeClient2.submitOrder).not.toHaveBeenCalled();
+    });
+
+    it('REJECTED + успешный rollback: journal SETTLED (remaining=0), submission FAILED → retry разрешён', async () => {
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK could not fill' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: exchangeClient2 });
+
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('FAILED');
+      expect(record?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0' });
+    });
+  });
+
+  describe('post-submit rollback + journal (Этап 2.4)', () => {
+    /** Триггер post-submit rollback: venue вернул невалидный effectiveSize (0). */
+    function makeInvalidEffectiveSizeExchange(): IExchangeClient {
+      return {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('0'), remainingSize: makeQty('0') }),
+        ),
+      };
+    }
+
+    it('confirmed post-submit cancel: Portfolio released И journal SETTLED', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new PlaceOrderUseCase({
+        ...deps, portfolioService, exchangeClient: makeInvalidEffectiveSizeExchange(),
+      });
+
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+
+      expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('UNKNOWN'); // venue-ордер существовал — retry заблокирован
+      expect(record?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0' });
+    });
+
+    it('post-submit Portfolio release failure: journal НЕ SETTLED (RECONCILIATION_REQUIRED)', async () => {
+      const portfolio = makePortfolio();
+      (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(
+        Err(new TradingError('cannot unfreeze')),
+      );
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const useCase = new PlaceOrderUseCase({
+        ...deps, portfolioService, exchangeClient: makeInvalidEffectiveSizeExchange(),
+      });
+
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.reservation.status).toBe('RECONCILIATION_REQUIRED');
+      expect(record?.reservation.status).not.toBe('SETTLED');
+    });
+
+    it('uncertain rollback cancel (UNKNOWN_RETRY_NEEDED): Portfolio НЕ тронут, journal остаётся HELD, ставится блокирующий marker', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeClient2: IExchangeClient = {
+        ...makeInvalidEffectiveSizeExchange(),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+          Ok({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'gateway timeout' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeClient2 });
+
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.reservation.status).toBe('HELD');
+      // Блокирующий instrument-marker поставлен.
+      expect(deps.orderStateStore.markInFlightFill).toHaveBeenCalled();
+    });
+  });
+
+  describe('второй submission attempt (Этап 2, тест 7)', () => {
+    it('operation IDs разных attempts различаются — второй rollback реально применяется', async () => {
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'REJECTED', reason: 'FOK could not fill' }),
+        ),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, exchangeClient: exchangeClient2 });
+
+      // Attempt 1: REJECTED → подтверждённый rollback → FAILED.
+      const first = await useCase.execute(makeInput());
+      expect(first.ok).toBe(false);
+      const afterFirst = await submissions.get(ORDER_ID);
+      expect(afterFirst?.status).toBe('FAILED');
+      expect(afterFirst?.attempt).toBe(1);
+      expect(afterFirst?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0' });
+
+      // Attempt 2: retry → hold заново → REJECTED → rollback attempt-scoped opId.
+      const second = await useCase.execute(makeInput());
+      expect(second.ok).toBe(false);
+      const afterSecond = await submissions.get(ORDER_ID);
+      expect(afterSecond?.attempt).toBe(2);
+      // Если бы operationId совпадал с attempt 1, release был бы проглочен
+      // идемпотентностью → journal остался бы HELD и markFailed бы не случился.
+      expect(afterSecond?.status).toBe('FAILED');
+      expect(afterSecond?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0' });
+    });
+  });
+
+  describe('unsettled fills guard в use-case (Этап 2.1)', () => {
+    it('hasUnsettledFills=true → Err, reserve/submit/begin НЕ вызываются', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      (deps.orderStateStore.hasUnsettledFills as ReturnType<typeof jest.fn>).mockReturnValue(true);
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/unsettled fills/i);
+      expect(portfolio.reserveForOrder).not.toHaveBeenCalled();
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+      // begin() не выполнялся — записи нет.
+      expect(await submissions.get(ORDER_ID)).toBeUndefined();
+    });
+  });
+
+  describe('begin → RECONCILIATION_REQUIRED (Этап 1.2/2)', () => {
+    it('FAILED + held reservation: risk/reserve/submit НЕ выполняются, issue создана, Err', async () => {
+      // Подготовка: запись FAILED с held-резервацией (unsafe retry).
+      await submissions.begin({
+        clientOrderId: ORDER_ID,
+        accountId: ACCOUNT_ID,
+        instrumentId: INSTRUMENT_ID,
+        fingerprint: [
+          `account=${accountIdToString(ACCOUNT_ID)}`,
+          `instrument=${String(INSTRUMENT_ID)}`,
+          `asset=${String(ASSET_ID)}`,
+          'side=BUY',
+          'price=0.65',
+          'size=100',
+          'orderType=',
+          'postOnly=false',
+          'strategyId=test-strategy',
+        ].join('|'),
+        side: 'BUY',
+        orderPrice: '0.65',
+        requestedSize: '100',
+        now: new Date('2024-01-01T00:00:00.000Z'),
+      });
+      await submissions.markReservationHeld(ORDER_ID, '65', new Date());
+      await submissions.markFailed(ORDER_ID, 'submit failed', new Date());
+
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, reconciliationIssues });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toMatch(/unresolved reservation/i);
+      expect(portfolio.reserveForOrder).not.toHaveBeenCalled();
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { id: string; reason: string })
+        .find((i) => i.id.includes('retry-blocked-unresolved-reservation'));
+      expect(issue).toBeDefined();
+      expect(issue!.reason).toContain('SUBMISSION_RETRY_BLOCKED_UNRESOLVED_RESERVATION');
+    });
+  });
+
+  describe('exception boundaries (P1): rejected Promise вместо Result', () => {
+    it('submitOrder отклоняет Promise → консервативно MAY_HAVE_BEEN_SUBMITTED: Err, резервация held, submission UNKNOWN, issue', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockRejectedValue(new Error('socket hang up')),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeClient2, reconciliationIssues });
+
+      // НЕ бросает — Err (saga recovery выполняется).
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      // Ордер МОГ создаться на venue — резервация held (не release).
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      // Submission заблокирована как UNKNOWN (retry запрещён), journal HELD.
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('UNKNOWN');
+      expect(record?.reservation.status).toBe('HELD');
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { type: string; reason: string })
+        .find((i) => i.type === 'SUBMIT_UNKNOWN_OUTCOME');
+      expect(issue).toBeDefined();
+      expect(issue!.reason).toContain('socket hang up');
+    });
+
+    it('rollback cancelOrder отклоняет Promise → transport-политика: Err без throw, резервация held, journal HELD, submission UNKNOWN', async () => {
+      const portfolio = makePortfolio();
+      const store = makePortfolioStore(portfolio);
+      const portfolioService = new PortfolioService(store, logger);
+      const exchangeClient2: IExchangeClient = {
+        ...makeExchangeClient(),
+        // Триггер post-submit rollback: невалидный effectiveSize (0).
+        submitOrder: jest.fn<IExchangeClient['submitOrder']>().mockResolvedValue(
+          Ok({ status: 'OPEN', orderId: 'exchange-order-1' as unknown as OrderId, effectiveSize: makeQty('0'), remainingSize: makeQty('0') }),
+        ),
+        cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockRejectedValue(new Error('gateway down')),
+      };
+      const useCase = new PlaceOrderUseCase({ ...deps, portfolioService, exchangeClient: exchangeClient2 });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(false);
+      // Cancel не подтверждён → Portfolio НЕ released, journal held.
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      const record = await submissions.get(ORDER_ID);
+      expect(record?.status).toBe('UNKNOWN');
+      expect(record?.reservation.status).toBe('HELD');
+    });
+  });
+
+  describe('outbox enqueue Err (Этап 2, тест 9)', () => {
+    it('enqueue → Err: Place остаётся committed (Ok), создаётся EVENT_PUBLISH_FAILED issue', async () => {
+      const { OutboxEnqueueError } = await import('@polymarket/ports');
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const failingOutbox = {
+        enqueue: jest.fn().mockImplementation(async () => Err(new OutboxEnqueueError('queue full'))),
+        flush: jest.fn().mockImplementation(async () => undefined),
+      } as unknown as PlaceOrderDeps['orderedEventOutbox'];
+      const useCase = new PlaceOrderUseCase({
+        ...deps, orderedEventOutbox: failingOutbox, reconciliationIssues,
+      });
+
+      const result = await useCase.execute(makeInput());
+
+      // Business commit состоялся — Ok(venueOrderId), несмотря на сбой enqueue.
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe('exchange-order-1');
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { type: string; reason: string })
+        .find((i) => i.type === 'EVENT_PUBLISH_FAILED');
+      expect(issue).toBeDefined();
+      expect(issue!.reason).toContain('queue full');
+    });
   });
 });

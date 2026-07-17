@@ -752,13 +752,13 @@ export class StrategyScheduler {
       }
     }
 
-    // Instrument-level in-flight detection:
-    // Если есть in-flight fills на инструменте (MATCHED/MINED пришёл, CONFIRMED ещё нет),
-    // добавляем виртуальный matched-маркер. Это ловит случай когда ордер уже cancelled/deleted
-    // из repo, но fill ещё в пути on-chain.
-    const hasInFlightFills = this._deps.orderStateStore.hasInFlightFills(id);
+    // Instrument-level unsettled detection (Stage 6): venue in-flight (MATCHED/
+    // MINED без CONFIRMED) ЛИБО application processing-блок (FAILED_RETRYABLE/
+    // RECONCILIATION_REQUIRED). Единый guard hasUnsettledFills — ловит и fill в
+    // пути on-chain, и fill, не долитый до конца в ProcessFillUseCase.
+    const hasInFlightFills = this._deps.orderStateStore.hasUnsettledFills(id);
     if (hasInFlightFills && matchedOrders.length === 0) {
-      this._deps.logger.debug('Instrument has in-flight fills (no matched orders in repo)', {
+      this._deps.logger.debug('Instrument has unsettled fills (no matched orders in repo)', {
         strategyId: entry.strategy.id,
         instrumentId: String(id),
       });
@@ -846,7 +846,7 @@ export class StrategyScheduler {
         }
       }
 
-      hasComplementaryInFlightFills = this._deps.orderStateStore.hasInFlightFills(compId);
+      hasComplementaryInFlightFills = this._deps.orderStateStore.hasUnsettledFills(compId);
       if (hasComplementaryInFlightFills && complementaryMatchedOrders.length === 0) {
         this._deps.logger.debug('Complementary instrument has in-flight fills (no matched orders in repo)', {
           strategyId: entry.strategy.id,

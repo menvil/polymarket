@@ -143,13 +143,15 @@ order может быть live или исполнен, а локального 
   fill на несуществующий локально ордер;
 - `UNKNOWN_RETRY_NEEDED` → `CANCEL_UNKNOWN_OUTCOME`
   (`reconciliation:place-rollback:${venueOrderId}:unknown`);
+- `NOT_FOUND` → HELD + issue (`reconciliation:place-rollback:${venueOrderId}:not-found`) —
+  ордер мог существовать, НЕ чистый rollback;
 - транспортный `Err` → `CANCEL_UNKNOWN_OUTCOME`
   (`reconciliation:place-rollback:${venueOrderId}:transport-error`).
 
-`CANCELLED`/`ALREADY_CANCELLED`/`NOT_FOUND` — чистый rollback, issue не
-создаётся. Context содержит `stage` (какая rollback-ветка), `clientOrderId`,
-`rollbackCancelOutcome`, `localOrderSaved: false`. Сбой `add()` не маскирует
-исходный `Err` rollback-ветки.
+Только `CANCELLED`/`ALREADY_CANCELLED` — чистый rollback (release), issue не
+создаётся. Все остальные исходы держат резервацию (`reservationHeld: true`).
+Context содержит `stage` (какая rollback-ветка), `clientOrderId`,
+`rollbackCancelOutcome`. Сбой `add()` не маскирует исходный `Err` rollback-ветки.
 
    Для `FILLED` (если в deps передан `reconciliationIssues`) после успешного
    save+marker и ДО `publishAll` дополнительно создаётся queryable issue
@@ -286,6 +288,17 @@ queryable/alertable хранилище проблем, требующих руч
 | `PlaceOrderUseCase` | submit транспорт `MAY_HAVE_BEEN_SUBMITTED` | `SUBMIT_UNKNOWN_OUTCOME` | `reconciliation:submit-client:${clientOrderId}:unknown` |
 | `PlaceOrderUseCase` | publish событий падает после commit | `EVENT_PUBLISH_FAILED` | `reconciliation:submit:${venueOrderId}:event-publish-failed` |
 | `UpdateOrderStatusUseCase` | terminal update без локального Order (под lock) | `VENUE_LOCAL_ORDER_DESYNC` | `reconciliation:order-update:${orderId}:early-terminal-without-local-order` |
+| `PlaceOrderUseCase` | retry после FAILED с неснятой резервацией заблокирован | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:submit-client:${clientOrderId}:retry-blocked-unresolved-reservation` |
+| `PlaceOrderUseCase` | journal rollback release падает после успешного Portfolio release | `RESERVATION_JOURNAL_DESYNC` | `reconciliation:place-rollback[-client]:${id}:journal-release-failed` |
+| `ProcessFillUseCase` | journal transition падает после Order+Portfolio+Ledger commit | `RESERVATION_JOURNAL_DESYNC` | `reconciliation:fill:${fillId}:reservation-journal-desync` |
+| `ProcessFillUseCase` | превалидация held-fill провалилась (account/side/instrument/kind/amount) | `ORDER_PORTFOLIO_DESYNC` | `reconciliation:fill:${fillId}:held-fill-validation-failed` |
+| `CancelOrderUseCase` | journal release падает после успешного Portfolio release | `RESERVATION_JOURNAL_DESYNC` | `reconciliation:cancel:${orderId}:journal-release-failed` |
+| `UpdateOrderStatusUseCase` | journal release падает после успешного Portfolio release | `RESERVATION_JOURNAL_DESYNC` | `reconciliation:order-update:${orderId}:journal-release-failed` |
+| Все четыре use-case | outbox `enqueue` вернул Err после business commit | `EVENT_PUBLISH_FAILED` | `reconciliation:<scope>:${id}:outbox-enqueue-failed` |
+
+> Полное описание commit-critical семантики reservation journal (attempt-скоупинг
+> operation IDs, safe-retry guard, атомарный terminal transition, blocking
+> outcomes) — см. `docs/architecture/reservation-journal-safety.md`.
 
 In-memory реализация — `InMemoryReconciliationIssueRepository`
 (`@polymarket/in-memory`, re-export в `@polymarket/backtesting`). Recovery
@@ -301,62 +314,46 @@ worker/use-case по этим issues — вне scope текущего этап�
 3. **Прочитать Order + версию атомарно** (внутри lock) — `getWithVersion(orderId)`:
    версия гарантированно относится к той же записи, что и Order (нет yield-окна
    между двумя раздельными await)
-4. **Проверить статус** — если терминальный → `Ok(void)` (идемпотентность)
-5. **Проверить matched/in-flight fills** — `orderStateStore.hasMatchedFills(orderId)` или
-   `hasInFlightFills(instrumentId)` → `Ok(void)` (skip, отмена заблокирована)
-6. **Отменить Order (CAS)** — `order.cancel(reason)` → CANCELED, затем
-   `orderRepo.save(cancelledOrder, expectedVersion)`. При `VersionConflictError`:
-   перечитать latest — терминальный/исчезнувший → `Ok` (no-op, БЕЗ release),
-   иначе `Err`. Резервация и события при конфликте НЕ трогаются
-7. **Снять резервацию** — `portfolioService.releaseOrderReservation()` — ВСЕГДА
-   после успешного CAS save. **Source of truth — сам успешный CAS save**, а не
-   projection (`orderStateStore.getOrder`): раньше release зависел от
-   projection-проверки, что при persistent repo + stale/async projection
-   оставляло резервацию замороженной навсегда. `releaseOrderReservation()`
-   возвращает `Result` — сбой release после committed CANCELED (Order уже
-   terminal, резервация может остаться frozen) → error-лог
-   `CANCEL_RESERVATION_RELEASE_FAILED` + best-effort issue
-   `ORDER_PORTFOLIO_DESYNC`
-   (id `reconciliation:cancel:${orderId}:reservation-release-failed`),
-   результат остаётся `Ok`, flow продолжается (venue cancel всё ещё нужен)
-8. **Best-effort биржевая отмена** — `exchangeClient.cancelOrder(orderId)` (ошибка не прерывает)
-9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())`.
-   Сбой публикации после commit НЕ возвращает `Err` — см.
-   «Post-commit event publish failure policy» ниже.
+4. **Проверить статус** — если терминальный → `Ok({status:'ALREADY_CANCELLED'})` (идемпотентность)
+5. **Проверить unsettled fills** — `hasMatchedFills(orderId)` или
+   `hasUnsettledFills(instrumentId)` (venue in-flight ЛИБО application
+   processing-блок) → `Ok({status:'FILL_PENDING'})` (skip, fill в пути)
+6. **VENUE-FIRST: запрос отмены на venue** — `exchangeClient.cancelOrder(orderId)`
+   выполняется **ДО** любой локальной мутации. Брошенное исключение трактуется
+   как transport unknown. По типизированному исходу:
+   - `CANCELLED`/`ALREADY_CANCELLED` → `order.cancel()` + CAS save + enqueue
+     events + Portfolio release + journal release (СТРОГО в этом порядке) →
+     `{status:'CANCELLED'|'ALREADY_CANCELLED'}` возвращается ТОЛЬКО после двух
+     успешных release-операций. Сбой Portfolio release → journal
+     `RECONCILIATION_REQUIRED` (НЕ `SETTLED`) + block + issue →
+     `{status:'RECONCILIATION_REQUIRED'}`; сбой journal release →
+     `RESERVATION_JOURNAL_DESYNC` issue + block → `{status:'RECONCILIATION_REQUIRED'}`.
+     Если venue подтвердил, но local CAS конфликтует (non-terminal) — НЕ release
+     вслепую, `VENUE_LOCAL_ORDER_DESYNC` issue, `{status:'RECONCILIATION_REQUIRED'}`.
+   - `ALREADY_FILLED` → локальный Order **НЕ** переводим в CANCELED, резервацию
+     **НЕ** освобождаем; ставим matched + instrument-block; `{status:'FILL_PENDING'}`
+     (Fill позже пройдёт normal path и потребит резервацию один раз).
+   - `NOT_FOUND` / `UNKNOWN_RETRY_NEEDED` / transport `Err` / throw → **НЕ**
+     подтверждение отмены: локально НЕ меняем, резервация **held**,
+     `CANCEL_UNKNOWN_OUTCOME` issue + instrument-block, `{status:'RECONCILIATION_REQUIRED'}`.
+7. **Публикация** — cancel-события `enqueue`-ятся под lock (aggregateId=orderId),
+   `flush` ПОСЛЕ выхода из lock (никаких `publishAll` под mutex).
 
-### Best-effort отмена
+### Типизированный `CancelOrderOutcome`
 
-`exchangeClient.cancelOrder()` возвращает `Ok(CancelOrderResult)` для любого бизнес-исхода
-venue-отмены (`CANCELLED`, `ALREADY_FILLED`, `ALREADY_CANCELLED`, `NOT_FOUND`,
-`UNKNOWN_RETRY_NEEDED`) — `Err(ExchangeError)` зарезервирован только для транспортных/API
-ошибок. `CancelOrderUseCase` переключается по типизированному `status` и **не парсит текст
-venue-ошибок** — эта классификация выполняется исключительно в infrastructure-адаптере
-(`PolymarketExchangeClientAdapter._classifyCancelRejection`). И `Ok` с любым статусом, и
-транспортный `Err` не приводят к возврату `Err` из use case — ордер уже отменён локально
-в любом случае; reconciliation-процесс обрабатывает расхождения между локальным состоянием
-и биржей.
+`execute()` возвращает `Result<CancelOrderOutcome, TradingError>`, где
+`CancelOrderOutcome = { status: 'CANCELLED' | 'ALREADY_CANCELLED' | 'FILL_PENDING'
+| 'RECONCILIATION_REQUIRED'; reason? }`. Uncertain-исходы (`RECONCILIATION_REQUIRED`,
+`FILL_PENDING`) **не выглядят как подтверждённая отмена** — caller и логи
+однозначно видят reconciliation state. `Err` возвращается только если ордер вообще
+не найден (preflight).
 
-`ALREADY_FILLED` помечает ордер через `orderStateStore.markOrderFillMatched()` И ставит
-instrument-level pending marker `markInFlightFill({ fillId: pendingMatchFillId(orderId),
-status: 'MATCHED' })`: локально ордер уже terminal, order-level marker не мешает стратегии
-открыть НОВЫЙ ордер на том же инструменте до прихода реального fill —
-`hasInFlightFills(instrumentId)` закрывает это race-окно. Оба placeholder-маркера снимаются
-в `ProcessFillUseCase._clearInFlightFlags()` при первом реальном fill этого ордера.
-
-### Reconciliation issues при ambiguous cancel
-
-Если в deps передан `reconciliationIssues`, ambiguous исход venue cancel ПОСЛЕ уже
-выполненного локального cancel (локально CANCELED, резервация освобождена, но venue
-order может быть live) создаёт queryable issue `CANCEL_UNKNOWN_OUTCOME`:
-
-- `UNKNOWN_RETRY_NEEDED` → id `reconciliation:cancel:${orderId}:unknown`,
-  reason из `cancelOutcome.reason`;
-- транспортный/API `Err(ExchangeError)` → id `reconciliation:cancel:${orderId}:transport-error`,
-  reason из `error.message`.
-
-Context обоих: `{ localStatus: 'CANCELED', stage: 'exchange-cancel-after-local-cancel',
-outcome: 'UNKNOWN_RETRY_NEEDED' | 'TRANSPORT_ERROR' }`. Сбой `add()` логируется и не
-меняет `Ok(undefined)` результата.
+**NOT_FOUND — НЕ best-effort success**: резервация НЕ освобождается (venue-ордер
+мог существовать). `ALREADY_FILLED` ставит `markOrderFillMatched()` +
+instrument-level `markInFlightFill({ fillId: pendingMatchFillId(orderId), status:
+'MATCHED' })` (блокирует новые ордера инструмента до прихода Fill). Uncertain
+outcomes создают `CANCEL_UNKNOWN_OUTCOME` issue (id `…:not-found` / `…:unknown` /
+`…:transport-error`, context `{ localStatus: 'UNCHANGED', reservationHeld: true }`).
 
 ## ReconcileTradesUseCase: venue FAILED после local APPLIED
 

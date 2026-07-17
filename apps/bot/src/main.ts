@@ -504,7 +504,7 @@ async function runPaper(): Promise<void> {
 
   // Chicken-and-egg: MockExchangeClient → ProcessFillUseCase → Simulator → PaperExchangeClient
   const { mockClient } = buildPaperInfra({ clock });
-  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
 
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
@@ -520,7 +520,7 @@ async function runPaper(): Promise<void> {
     config: config.paper,
   });
 
-  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const engine = buildStrategyEngine({
@@ -2843,7 +2843,7 @@ async function runBacktest(): Promise<void> {
 
   // Chicken-and-egg
   const { mockClient } = buildPaperInfra({ clock: replayClock });
-  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
 
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
@@ -2859,7 +2859,7 @@ async function runBacktest(): Promise<void> {
     config: config.paper,
   });
 
-  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   // ── Crypto price infrastructure (backtest) ──────────────────────────────
@@ -3632,13 +3632,14 @@ async function runLive(): Promise<void> {
   );
   const userWsAdapter = new PolymarketWsAdapter(userWsManager, logger);
 
-  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
 
   const liveInfra = buildLiveInfra({
     credentials,
     infra,
     repos,
     processFillUseCase,
+    orderedEventOutbox,
     userWsAdapter,
     accountId,
   });
@@ -3648,6 +3649,7 @@ async function runLive(): Promise<void> {
     repos,
     exchangeClient: liveInfra.exchangeClient,
     riskParams,
+    orderedEventOutbox,
   });
   const useCases = {
     processFillUseCase,

@@ -67,7 +67,9 @@ function makeDeps(overrides: Partial<ExecutionEngineDeps> = {}): ExecutionEngine
   const fn = jest.fn as any;
   return {
     placeOrderUseCase: { execute: fn().mockResolvedValue(Ok(ORDER_1)) } as any,
-    cancelOrderUseCase: { execute: fn().mockResolvedValue(Ok(undefined)) } as any,
+    // CancelOrderUseCase возвращает типизированный CancelOrderOutcome:
+    // ExecutionEngine засчитывает cancelled ТОЛЬКО для CANCELLED/ALREADY_CANCELLED.
+    cancelOrderUseCase: { execute: fn().mockResolvedValue(Ok({ status: 'CANCELLED' })) } as any,
     orderRepo: {
       getByStrategyId: fn().mockResolvedValue([]),
       countByStrategyId: fn().mockResolvedValue(0),
@@ -347,7 +349,7 @@ describe('ExecutionEngine', () => {
 
       (deps.cancelOrderUseCase as any).execute.mockImplementation(async () => {
         order.push('cancel');
-        return Ok(undefined);
+        return Ok({ status: 'CANCELLED' });
       });
       (deps.placeOrderUseCase as any).execute.mockImplementation(async () => {
         order.push('place');
@@ -465,7 +467,7 @@ describe('ExecutionEngine', () => {
     it('should skip place when at least one cancel succeeds (cooldown set)', async () => {
       (deps.cancelOrderUseCase as any).execute
         .mockResolvedValueOnce(Err(new TradingError('Not found')))
-        .mockResolvedValueOnce(Ok(undefined));
+        .mockResolvedValueOnce(Ok({ status: 'CANCELLED' }));
 
       const intents: StrategyIntent[] = [
         { type: 'CANCEL', orderId: ORDER_1 },
@@ -706,6 +708,91 @@ describe('ExecutionEngine', () => {
         { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
       ]);
 
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+  });
+
+  // ── CancelExecutionResult (Этап 7) ─────────────────────
+
+  describe('cancel outcome mapping (Этап 7)', () => {
+    it('FILL_PENDING не считается успешной отменой (cancelled=0), PLACE того же цикла блокируется', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Ok({ status: 'FILL_PENDING' }));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ]);
+
+      expect(report.cancelled).toBe(0);
+      expect(report.placed).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      expect(report.errors).toHaveLength(0); // PENDING — не ошибка
+    });
+
+    it('RECONCILIATION_REQUIRED блокирует PLACE intents того же cycle', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
+        Ok({ status: 'RECONCILIATION_REQUIRED', reason: 'venue outcome unknown' }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+      ]);
+
+      expect(report.cancelled).toBe(0);
+      expect(report.placed).toBe(0);
+      expect(report.skipped).toBe(2);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('SELL тоже НЕ обходит reconciliation block (в отличие от cooldown)', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
+        Ok({ status: 'RECONCILIATION_REQUIRED', reason: 'transport error' }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+      ]);
+
+      expect(report.placed).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('только CANCELLED/ALREADY_CANCELLED увеличивают cancelled', async () => {
+      (deps.cancelOrderUseCase as any).execute
+        .mockResolvedValueOnce(Ok({ status: 'CANCELLED' }))
+        .mockResolvedValueOnce(Ok({ status: 'ALREADY_CANCELLED' }))
+        .mockResolvedValueOnce(Ok({ status: 'FILL_PENDING' }))
+        .mockResolvedValueOnce(Ok({ status: 'RECONCILIATION_REQUIRED', reason: 'x' }))
+        .mockResolvedValueOnce(Err(new TradingError('Not found')));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'CANCEL', orderId: ORDER_2 },
+        { type: 'CANCEL', orderId: ORDER_3 },
+        { type: 'CANCEL', orderId: asOrderId('order-4')! },
+        { type: 'CANCEL', orderId: asOrderId('order-5')! },
+      ]);
+
+      expect(report.cancelled).toBe(2); // только CANCELLED + ALREADY_CANCELLED
+      expect(report.errors).toHaveLength(1); // только Err
+    });
+
+    it('PENDING cancel НЕ ставит post-cancel cooldown (cooldown не подтверждение отмены)', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValueOnce(Ok({ status: 'FILL_PENDING' }));
+
+      // Первый цикл: PENDING cancel (без PLACE).
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      // Второй цикл: BUY place — cooldown НЕ должен блокировать (не был поставлен).
+      const report = await engine.execute(ctx, [
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ]);
       expect(report.placed).toBe(1);
       expect(report.skipped).toBe(0);
     });

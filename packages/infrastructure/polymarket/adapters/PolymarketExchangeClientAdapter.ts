@@ -145,7 +145,27 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     // Защищает от рассинхрона event-sourced Portfolio ↔ фактический on-chain баланс
     // (типичный случай: dust-потеря 0.001-0.01% после BUY settlement).
     // При дефиците < 1% policy возвращает suggestedSize = floor(onChain*100)/100 → адаптируем size.
-    const adjustedSize = await this._preflightSellCheck(params, tokenId);
+    //
+    // Exception boundary: сетевой `checkBalance()` внутри preflight может
+    // отклонить Promise — это PRE-DISPATCH failure (запрос на venue НЕ
+    // отправлялся, ордер точно не создан) → классифицируем как
+    // DEFINITELY_NOT_SUBMITTED, НЕ пробрасываем throw (иначе caller не смог бы
+    // отличить его от ambiguous post-dispatch сбоя и заблокировал бы retry).
+    let adjustedSize: Result<Quantity, ExchangeError>;
+    try {
+      adjustedSize = await this._preflightSellCheck(params, tokenId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._logger.warn('SELL pre-flight balance check threw (pre-dispatch) — order definitely not submitted', {
+        tokenId,
+        error: message,
+        strategyId: params.strategyId,
+      });
+      return Err(new ExchangeErrorClass(`SELL pre-flight balance check threw: ${message}`, {
+        context: { tokenId },
+        submitOutcome: 'DEFINITELY_NOT_SUBMITTED',
+      }));
+    }
     if (!adjustedSize.ok) {
       // Pre-dispatch validation — запрос на venue НЕ отправлялся: ордер точно не создан.
       return Err(new ExchangeErrorClass(adjustedSize.error.message, {

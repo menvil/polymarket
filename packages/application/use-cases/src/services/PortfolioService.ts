@@ -457,6 +457,63 @@ export class PortfolioService {
   }
 
   /**
+   * Применяет Fill против УДЕРЖАННОЙ резервации (recovery-путь без локального Order).
+   *
+   * @param params - `fill`, `orderPrice` (из execution journal, НЕ округлённая
+   *   venue fill price), `reservationKind` (USDC для BUY, TOKENS для SELL)
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Явный recovery-путь для fill, пришедшего на ambiguous submit БЕЗ локального
+   * Order (`ProcessFillUseCase` нашёл held-резервацию по venueOrderId в execution
+   * journal). Экономически идентичен `applyFill(fill, orderPrice)`:
+   * - **BUY**: `applyDebit(orderPrice × size)` — потребляет ЗАРЕЗЕРВИРОВАННЫЕ USDC
+   *   (НЕ `applyDirectDebit` из available — иначе двойной учёт: available списан,
+   *   а reservation осталась замороженной). Позиция считается по реальной
+   *   `fill.price`, BUY fee учитывается.
+   * - **SELL**: строго снимает token-резервацию на `fill.size` + зачисляет выручку.
+   *
+   * Отдельный API (а не прямой вызов `applyFill`) — чтобы recovery-путь был явно
+   * виден в коде вызывающего и в логах.
+   *
+   * ### Defensive-проверка reservationKind:
+   * BUY обязан потреблять `USDC`-резервацию, SELL — `TOKENS`. Несоответствие
+   * (повреждённый journal / баг caller) → `Err` БЕЗ мутации Portfolio, даже
+   * если caller уже выполнил собственную валидацию.
+   */
+  public applyFillAgainstHeldReservation(params: {
+    readonly fill: Fill;
+    readonly orderPrice: Decimal;
+    readonly reservationKind: 'USDC' | 'TOKENS';
+  }): Result<void, PortfolioSaveError> {
+    // Defensive: kind резервации обязан соответствовать стороне fill.
+    const expectedKind = params.fill.side === 'BUY' ? 'USDC' : 'TOKENS';
+    if (params.reservationKind !== expectedKind) {
+      this._logger.error('RESERVATION_KIND_MISMATCH: held-reservation fill kind does not match fill side — Portfolio not mutated', {
+        accountId: accountIdToString(params.fill.accountId),
+        fillId: String(params.fill.id),
+        side: params.fill.side,
+        reservationKind: params.reservationKind,
+        expectedKind,
+      });
+      return Err(new TradingError(
+        `Reservation kind mismatch for held-reservation fill: got ${params.reservationKind}, expected ${expectedKind} for ${params.fill.side}`,
+        { context: { fillId: String(params.fill.id), side: params.fill.side, reservationKind: params.reservationKind } },
+      ));
+    }
+    this._logger.info('Applying fill against HELD reservation (recovery path — no live local Order)', {
+      accountId: accountIdToString(params.fill.accountId),
+      fillId: String(params.fill.id),
+      side: params.fill.side,
+      orderPrice: params.orderPrice.toString(),
+      reservationKind: params.reservationKind,
+    });
+    // Экономика идентична local-order fill: BUY дебетует reserved по orderPrice,
+    // SELL строго снимает token-резервацию. Переиспользуем applyFill.
+    return this.applyFill(params.fill, params.orderPrice);
+  }
+
+  /**
    * Применяет Fill напрямую к Portfolio без задействования резерваций.
    *
    * @param fill - Исполнение ордера

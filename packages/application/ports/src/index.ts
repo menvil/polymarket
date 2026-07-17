@@ -52,11 +52,32 @@ export type {
   BeginOrderSubmissionResult,
 } from './IOrderSubmissionRepository.js';
 export type {
+  ReservationKind,
+  ReservationStatus,
+  ReservationSnapshot,
+  ReservationDelta,
+  ReservationTransitionCode,
+  OrderSide,
+} from './reservationJournal.js';
+export {
+  ReservationTransitionError,
+  emptyReservation,
+  heldReservation,
+  hasHeldReservation,
+  canConsumeHeldReservation,
+  applyReservationDelta,
+} from './reservationJournal.js';
+export type {
   IReconciliationIssueRepository,
   ReconciliationIssue,
   ReconciliationIssueType,
   ReconciliationIssueStatus,
 } from './IReconciliationIssueRepository.js';
+export type {
+  IOrderedEventOutbox,
+  OrderedEventBatch,
+} from './IOrderedEventOutbox.js';
+export { OutboxEnqueueError } from './IOrderedEventOutbox.js';
 export { ExchangeError } from './IExchangeClient.js';
 export type {
   IExchangeClient,
@@ -88,6 +109,10 @@ export type {
   InFlightFill,
   InFlightFillStatus,
   MarkInFlightFillInput,
+  FillProcessingStatus,
+  FillProcessingBlock,
+  MarkFillProcessingInput,
+  ManualReconciliationBlock,
 } from './IOrderStateStore.js';
 export { pendingMatchFillId } from './IOrderStateStore.js';
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';

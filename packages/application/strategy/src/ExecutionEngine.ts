@@ -101,6 +101,20 @@ export interface ExecutionContext {
 }
 
 /**
+ * Типизированный результат исполнения CANCEL intent.
+ *
+ * @remarks
+ * - `CONFIRMED` — venue подтвердил отмену (`CANCELLED`/`ALREADY_CANCELLED`):
+ *   капитал освобождён, можно считать cancel успешным.
+ * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`: ордер matched, ждём
+ *   fill; `RECONCILIATION_REQUIRED`: venue-исход неоднозначен): PLACE intents
+ *   текущего цикла блокируются — размещение поверх неопределённого состояния
+ *   могло бы задвоить экспозицию.
+ * - `FAILED` — use case вернул Err (например, ордер не найден).
+ */
+export type CancelExecutionResult = 'CONFIRMED' | 'PENDING' | 'FAILED';
+
+/**
  * Отчёт об исполнении intents.
  */
 export interface ExecutionReport {
@@ -271,6 +285,11 @@ export class ExecutionEngine {
     }
 
     // ── 2. Cancels параллельно ──────────────────────────────
+    // PENDING (FILL_PENDING / RECONCILIATION_REQUIRED) — отмена НЕ подтверждена:
+    // блокируем ВСЕ PLACE intents текущего цикла (включая SELL — reconciliation
+    // block не обходится по стороне). Финальный контроль остаётся в
+    // PlaceOrderUseCase (unsettled-fills guard под mutex).
+    let hasPendingCancel = false;
     if (normalized.cancels.length > 0) {
       const cancelResults = await Promise.allSettled(
         normalized.cancels.map((intent) => this._executeCancel(ctx, intent)),
@@ -278,27 +297,47 @@ export class ExecutionEngine {
 
       for (let i = 0; i < cancelResults.length; i++) {
         const result = cancelResults[i];
-        if (result.status === 'fulfilled' && result.value) {
-          cancelled++;
-        } else if (result.status === 'rejected') {
+        if (result.status === 'rejected') {
           errors.push({
             intent: normalized.cancels[i],
             error: result.reason instanceof Error
               ? result.reason
               : new Error(String(result.reason)),
           });
-        } else if (result.status === 'fulfilled' && !result.value) {
-          // Cancel failed via Result.err — already logged in _executeCancel
-          errors.push({
-            intent: normalized.cancels[i],
-            error: new Error('Cancel failed'),
-          });
+          continue;
+        }
+        switch (result.value) {
+          case 'CONFIRMED':
+            // cancelled++ ТОЛЬКО для подтверждённой отмены (CANCELLED/ALREADY_CANCELLED).
+            cancelled++;
+            break;
+          case 'PENDING':
+            hasPendingCancel = true;
+            break;
+          case 'FAILED':
+            // Cancel failed via Result.err — already logged in _executeCancel
+            errors.push({
+              intent: normalized.cancels[i],
+              error: new Error('Cancel failed'),
+            });
+            break;
         }
       }
     }
 
     // ── 3. Places последовательно ───────────────────────────
     for (const intent of normalized.places) {
+      if (hasPendingCancel) {
+        // Неопределённый cancel в этом же цикле: размещение (BUY И SELL)
+        // блокируется до подтверждения/реконсиляции — SELL не обходит блок.
+        this._logger.warn('ExecutionEngine: skip PLACE — unconfirmed cancel in same execution cycle', {
+          strategyId: ctx.strategyId,
+          instrumentId: String(intent.targetInstrumentId ?? ctx.instrumentId),
+          side: intent.side,
+        });
+        skipped++;
+        continue;
+      }
       const result = await this._executePlace(ctx, intent);
       if (result === 'placed') {
         placed++;
@@ -317,9 +356,19 @@ export class ExecutionEngine {
   /**
    * Исполняет CANCEL intent.
    *
-   * @returns true если cancel успешен, false если ошибка
+   * @returns Типизированный {@link CancelExecutionResult}:
+   *   `CONFIRMED` — venue подтвердил (CANCELLED/ALREADY_CANCELLED);
+   *   `PENDING` — не подтверждено (FILL_PENDING/RECONCILIATION_REQUIRED);
+   *   `FAILED` — use case вернул Err
+   *
+   * @remarks
+   * Раньше ЛЮБОЙ Ok считался успешной отменой — но `CancelOrderOutcome`
+   * включает FILL_PENDING/RECONCILIATION_REQUIRED, которые отменой НЕ являются.
+   * Cooldown ставится только для CONFIRMED: он — защита от on-chain fill после
+   * подтверждённого cancel, а НЕ подтверждение отмены. Окончательный контроль
+   * всё равно в PlaceOrderUseCase (unsettled-fills guard).
    */
-  private async _executeCancel(ctx: ExecutionContext, intent: CancelIntent): Promise<boolean> {
+  private async _executeCancel(ctx: ExecutionContext, intent: CancelIntent): Promise<CancelExecutionResult> {
     const result = await this._deps.cancelOrderUseCase.execute({
       orderId: intent.orderId,
       accountId: ctx.accountId,
@@ -332,10 +381,25 @@ export class ExecutionEngine {
         strategyId: ctx.strategyId,
         error: result.error.message,
       });
-      return false;
+      return 'FAILED';
     }
 
-    // Post-cancel cooldown: блокируем PLACE на этом инструменте на 20 секунд.
+    const outcome = result.value;
+    if (outcome.status === 'FILL_PENDING' || outcome.status === 'RECONCILIATION_REQUIRED') {
+      // Отмена НЕ подтверждена: ордер matched (ждём fill) либо venue-исход
+      // неоднозначен. cancelled НЕ инкрементируется, PLACE intents текущего
+      // цикла будут заблокированы (см. execute()).
+      this._logger.warn('ExecutionEngine: cancel not confirmed — blocking PLACE intents this cycle', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+        outcome: outcome.status,
+        ...(outcome.status === 'RECONCILIATION_REQUIRED' ? { reason: outcome.reason } : {}),
+      });
+      return 'PENDING';
+    }
+
+    // CANCELLED / ALREADY_CANCELLED — подтверждённая отмена.
+    // Post-cancel cooldown: блокируем новые BUY на этом инструменте.
     // Cancel на CLOB не отменяет on-chain fill — MINT может быть уже в пути.
     // Без cooldown: cancel → place(новый) → fill(старый) приходит → двойная покупка.
     const instrumentKey = String(ctx.instrumentId);
@@ -347,7 +411,7 @@ export class ExecutionEngine {
       cooldownMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS,
     });
 
-    return true;
+    return 'CONFIRMED';
   }
 
   /**

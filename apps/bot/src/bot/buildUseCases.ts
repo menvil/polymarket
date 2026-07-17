@@ -44,9 +44,10 @@ import {
   PortfolioService,
   LedgerService,
 } from '@polymarket/use-cases';
+import { InMemoryOrderedEventOutbox } from '@polymarket/in-memory';
 import { OrderRiskChecker } from '@polymarket/risk';
 import type { RiskParams } from '@polymarket/risk';
-import type { IExchangeClient } from '@polymarket/ports';
+import type { IExchangeClient, IOrderedEventOutbox } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 
@@ -62,6 +63,12 @@ export interface BuildProcessFillParams {
 export interface ProcessFillBundle {
   readonly processFillUseCase: ProcessFillUseCase;
   readonly portfolioService: PortfolioService;
+  /**
+   * Ordered event outbox, разделяемый между ProcessFillUseCase и PlaceOrderUseCase.
+   * Передаётся в `buildOrderUseCases` — единый инстанс гарантирует per-order FIFO
+   * порядок событий Place↔Fill.
+   */
+  readonly orderedEventOutbox: IOrderedEventOutbox;
 }
 
 /** Параметры для создания PlaceOrderUseCase + CancelOrderUseCase */
@@ -70,6 +77,12 @@ export interface BuildOrderUseCasesParams {
   readonly repos: Repositories;
   readonly exchangeClient: IExchangeClient;
   readonly riskParams: RiskParams;
+  /**
+   * Ordered event outbox — ТОТ ЖЕ инстанс, что у ProcessFillUseCase
+   * (из `buildProcessFillUseCase().orderedEventOutbox`). Обязателен для per-order
+   * порядка событий.
+   */
+  readonly orderedEventOutbox: IOrderedEventOutbox;
 }
 
 /** Результат: PlaceOrderUseCase + CancelOrderUseCase */
@@ -78,8 +91,15 @@ export interface OrderUseCases {
   readonly cancelOrderUseCase: CancelOrderUseCase;
 }
 
-/** Полный набор use cases */
-export interface UseCases extends ProcessFillBundle, OrderUseCases {}
+/**
+ * Полный набор use cases.
+ *
+ * @remarks
+ * `orderedEventOutbox` — внутренняя деталь wiring (разделяется между
+ * ProcessFillUseCase и PlaceOrderUseCase), поэтому исключён из публичного
+ * набора: downstream-код не должен таскать его за собой.
+ */
+export interface UseCases extends Omit<ProcessFillBundle, 'orderedEventOutbox'>, OrderUseCases {}
 
 // ── Построители ──────────────────────────────────────────────────────────────
 
@@ -96,10 +116,19 @@ export interface UseCases extends ProcessFillBundle, OrderUseCases {}
 export function buildProcessFillUseCase(params: BuildProcessFillParams): ProcessFillBundle {
   const { infra, repos } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex } = repos;
+  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
   const ledgerService = new LedgerService(logger);
+
+  // Единый ordered event outbox: публикует Order-события ПОСЛЕ выхода из keyed
+  // mutex (без deadlock) и сохраняет per-order FIFO порядок Place↔Fill.
+  const orderedEventOutbox = new InMemoryOrderedEventOutbox({
+    publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+    logger,
+    reconciliationIssues: reconciliationIssueRepo,
+    now: () => clock.now(),
+  });
 
   const processFillUseCase = new ProcessFillUseCase({
     orderStateStore: orderRepo,
@@ -109,6 +138,10 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
     processedFillRepo,
     keyedMutex,
     eventBus,
+    orderedEventOutbox,
+    // Reservation journal — Fill потребляет held-резервацию (recovery-путь) вместо
+    // повторного дебета available; ТОТ ЖЕ инстанс, что у PlaceOrderUseCase.
+    submissions: orderSubmissionRepo,
     logger,
     // ORDER_PORTFOLIO_DESYNC теперь queryable, а не только лог/fill-статус.
     // clock — чтобы createdAt issue был детерминирован относительно приложения
@@ -117,7 +150,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
     clock,
   });
 
-  return { processFillUseCase, portfolioService };
+  return { processFillUseCase, portfolioService, orderedEventOutbox };
 }
 
 /**
@@ -132,8 +165,8 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
  * @returns Объект с placeOrderUseCase и cancelOrderUseCase
  */
 export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCases {
-  const { infra, repos, exchangeClient, riskParams } = params;
-  const { clock, logger, eventBus } = infra;
+  const { infra, repos, exchangeClient, riskParams, orderedEventOutbox } = params;
+  const { clock, logger } = infra;
   const { orderRepo, portfolioStore, reconciliationIssueRepo, orderSubmissionRepo, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
@@ -146,15 +179,15 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     exchangeClient,
     orderStateStore: orderRepo,
     // Сериализация reserve+submit+save относительно fills/cancels
-    // по [accountId, instrumentId] (см. PlaceOrderUseCase doc).
+    // по [account, instrument] (см. PlaceOrderUseCase doc).
     keyedMutex,
-    eventBus,
+    // ТОТ ЖЕ outbox, что у ProcessFillUseCase — per-order FIFO Place↔Fill.
+    orderedEventOutbox,
     clock,
     logger,
-    // SUBMIT_UNKNOWN_OUTCOME / SUBMIT_FILLED_WITHOUT_FILL_DETAILS теперь
-    // queryable через repos.reconciliationIssueRepo, а не только лог.
+    // SUBMIT_UNKNOWN_OUTCOME / SUBMIT_FILLED_WITHOUT_FILL_DETAILS / EVENT_PUBLISH_FAILED.
     reconciliationIssues: reconciliationIssueRepo,
-    // Guard от небезопасного повторного submit того же clientOrderId.
+    // Guard от небезопасного повторного submit того же clientOrderId (обязателен).
     submissions: orderSubmissionRepo,
   });
 
@@ -164,11 +197,13 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     orderStateStore: orderRepo,
     keyedMutex,
     exchangeClient,
-    eventBus,
+    // Venue-first cancel: события через ТОТ ЖЕ outbox (per-order FIFO с Place/Fill),
+    // journal release остатка резервации при подтверждённой отмене.
+    orderedEventOutbox,
+    submissions: orderSubmissionRepo,
     logger,
-    // CANCEL_UNKNOWN_OUTCOME (UNKNOWN_RETRY_NEEDED / transport error после
-    // local cancel) теперь queryable, а не только лог. clock — детерминированный
-    // createdAt относительно приложения (ReplayClock в бектесте).
+    // CANCEL_UNKNOWN_OUTCOME (NOT_FOUND / UNKNOWN_RETRY_NEEDED / transport) и
+    // VENUE_LOCAL_ORDER_DESYNC. clock — детерминированный createdAt (ReplayClock).
     reconciliationIssues: reconciliationIssueRepo,
     clock,
   });
@@ -188,8 +223,9 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
 export function buildAllUseCases(
   params: BuildProcessFillParams & { exchangeClient: IExchangeClient; riskParams: RiskParams },
 ): UseCases {
-  const { processFillUseCase, portfolioService } = buildProcessFillUseCase(params);
-  const orderCases = buildOrderUseCases(params);
+  const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase(params);
+  // ТОТ ЖЕ outbox прокидывается в order use-cases — per-order FIFO Place↔Fill.
+  const orderCases = buildOrderUseCases({ ...params, orderedEventOutbox });
 
   return { processFillUseCase, portfolioService, ...orderCases };
 }

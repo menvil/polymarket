@@ -14,8 +14,11 @@ import type {
   InFlightFill,
   BeginFillProcessingResult,
   IReconciliationIssueRepository,
+  IOrderedEventOutbox,
 } from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
+import { InMemoryOrderedEventOutbox } from '../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
+import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
@@ -45,6 +48,26 @@ function makeEventBus(): IEventBus {
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
+}
+
+/**
+ * Реальный ordered outbox, публикующий в переданный eventBus на flush().
+ *
+ * @remarks
+ * Использует реальный `InMemoryOrderedEventOutbox`: `flush()` НИКОГДА не бросает
+ * (ошибки публикации проглатываются с EVENT_PUBLISH_FAILED). Нормальный путь
+ * ProcessFillUseCase публикует через outbox, поэтому assertion'ы на
+ * `eventBus.publishAll` продолжают работать (flush → publishAll).
+ */
+function makeOutbox(
+  eventBus: IEventBus,
+  reconciliationIssues?: IReconciliationIssueRepository,
+): IOrderedEventOutbox {
+  return new InMemoryOrderedEventOutbox({
+    publish: (events) => eventBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+    logger: makeLogger(),
+    reconciliationIssues,
+  });
 }
 
 function makePrice(val: string): Price {
@@ -132,6 +155,8 @@ function makePortfolioMock(): Portfolio {
   (p.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.applyDirectDebit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(p);
+  (p.reserveForOrder as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
+  (p.releaseReservation as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.reserveTokensForOrder as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   (p.releaseTokenReservation as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
   return p;
@@ -178,6 +203,17 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     clearInFlightFill: jest.fn<IOrderStateStore['clearInFlightFill']>(),
     hasInFlightFills: jest.fn<IOrderStateStore['hasInFlightFills']>().mockReturnValue(false),
     getInFlightFills: jest.fn<IOrderStateStore['getInFlightFills']>().mockReturnValue([] as readonly InFlightFill[]),
+    markFillProcessing: jest.fn<IOrderStateStore['markFillProcessing']>(),
+    updateFillProcessingStatus: jest.fn<IOrderStateStore['updateFillProcessingStatus']>(),
+    clearFillProcessing: jest.fn<IOrderStateStore['clearFillProcessing']>(),
+    hasFillProcessingBlocks: jest.fn<IOrderStateStore['hasFillProcessingBlocks']>().mockReturnValue(false),
+    getFillProcessingBlocks: jest.fn<IOrderStateStore['getFillProcessingBlocks']>().mockReturnValue([]),
+    hasUnsettledFills: jest.fn<IOrderStateStore['hasUnsettledFills']>().mockReturnValue(false),
+    markManualReconciliationBlock: jest.fn<IOrderStateStore['markManualReconciliationBlock']>(),
+    clearManualReconciliationBlock: jest.fn<IOrderStateStore['clearManualReconciliationBlock']>(),
+    hasManualReconciliationBlockForOrder: jest.fn<IOrderStateStore['hasManualReconciliationBlockForOrder']>().mockReturnValue(false),
+    hasManualReconciliationBlocks: jest.fn<IOrderStateStore['hasManualReconciliationBlocks']>().mockReturnValue(false),
+    getManualReconciliationBlocks: jest.fn<IOrderStateStore['getManualReconciliationBlocks']>().mockReturnValue([]),
   };
 }
 
@@ -242,6 +278,10 @@ describe('ProcessFillUseCase', () => {
       processedFillRepo,
       keyedMutex,
       eventBus,
+      orderedEventOutbox: makeOutbox(eventBus),
+      // Пустой submission journal: findByVenueOrderId→undefined → normal/direct
+      // path (held-recovery проверяется отдельными тестами с seeded journal).
+      submissions: new InMemoryOrderSubmissionRepository(),
       logger,
     };
   });
@@ -388,12 +428,19 @@ describe('ProcessFillUseCase', () => {
 
   // ── Publish failure после commit (не должен делать fill retryable) ────────
 
-  it('normal path: publishAll падает после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED в логе', async () => {
-    const failingEventBus: IEventBus = {
+  it('normal path: publishAll падает на flush после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED issue (создаёт outbox)', async () => {
+    // Нормальный путь публикует через ordered outbox (flush после lock). Сбой
+    // публикации проглатывается outbox'ом: он логирует EVENT_PUBLISH_FAILED и
+    // создаёт issue, а ProcessFillUseCase возвращает Ok (fill уже APPLIED).
+    const failingBus: IEventBus = {
       ...eventBus,
       publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
     };
-    const useCase = new ProcessFillUseCase({ ...deps, eventBus: failingEventBus });
+    const reconciliationIssues = makeReconciliationIssueRepo();
+    const useCase = new ProcessFillUseCase({
+      ...deps,
+      orderedEventOutbox: makeOutbox(failingBus, reconciliationIssues),
+    });
 
     const result = await useCase.execute(makeFill());
 
@@ -402,24 +449,28 @@ describe('ProcessFillUseCase', () => {
     expect(result.ok).toBe(true);
     expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
     expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('EVENT_PUBLISH_FAILED'),
-      expect.objectContaining({ fillId: String(FILL_ID) }),
-    );
+    expect(failingBus.publishAll).toHaveBeenCalled();
+    // Outbox создал EVENT_PUBLISH_FAILED issue (queryable, для ручного replay).
+    const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+      .map((c) => c[0] as { type: string })
+      .find((i) => i.type === 'EVENT_PUBLISH_FAILED');
+    expect(issue).toBeDefined();
   });
 
-  it('direct fill path: publishAll падает после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED в логе', async () => {
+  it('direct fill path: publishAll падает на flush после commit → Ok (fill APPLIED, не retryable), EVENT_PUBLISH_FAILED issue (создаёт outbox)', async () => {
     orderRepo = makeOrderRepo(undefined);
     const directOrderStateStore = makeOrderStateStore(undefined);
-    const failingEventBus: IEventBus = {
+    // Direct-fill теперь публикует DIRECT_FILL_APPLIED через outbox (aggregateId=orderId).
+    const failingBus: IEventBus = {
       ...eventBus,
       publishAll: jest.fn<IEventBus['publishAll']>().mockRejectedValue(new Error('bus down')),
     };
+    const reconciliationIssues = makeReconciliationIssueRepo();
     const useCase = new ProcessFillUseCase({
       ...deps,
       orderStateStore: directOrderStateStore,
       orderRepo,
-      eventBus: failingEventBus,
+      orderedEventOutbox: makeOutbox(failingBus, reconciliationIssues),
     });
 
     const result = await useCase.execute(makeFill());
@@ -427,10 +478,11 @@ describe('ProcessFillUseCase', () => {
     expect(result.ok).toBe(true);
     expect(processedFillRepo.markApplied).toHaveBeenCalledWith(FILL_ID);
     expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('EVENT_PUBLISH_FAILED'),
-      expect.objectContaining({ fillId: String(FILL_ID) }),
-    );
+    // Сбой публикации проглочен outbox: EVENT_PUBLISH_FAILED issue создан.
+    const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+      .map((c) => c[0] as { type: string })
+      .find((i) => i.type === 'EVENT_PUBLISH_FAILED');
+    expect(issue).toBeDefined();
   });
 
   // ── Dust-release failure после terminal fill ────────────────────────────────
@@ -906,5 +958,526 @@ describe('ProcessFillUseCase', () => {
     const useCase = new ProcessFillUseCase({ ...deps, orderStateStore: makeOrderStateStore(sellOrder), orderRepo, portfolioService: sellPortfolioService });
     const result = await useCase.execute(sellFill);
     expect(result.ok).toBe(true);
+  });
+
+  // ── Held-reservation recovery path (Stage 2) ─────────────────────────────────
+
+  describe('held-reservation recovery path', () => {
+    const CLIENT_ID = 'client-1' as unknown as OrderId;
+    // ВАЖНО: instrumentId записи journal обязан совпадать с инструментом fill
+    // (assetIdToInstrumentId(ASSET_ID) === 'token-abc') — иначе prevalidation
+    // held-fill корректно заблокирует потребление (Этап 3).
+    const INSTRUMENT_ID = 'token-abc' as unknown as InstrumentId;
+
+    /** Seed submission journal с held BUY-резервацией под venueOrderId=ORDER_ID. */
+    async function seedHeldBuy(
+      submissions: InMemoryOrderSubmissionRepository,
+      initial: string,
+    ): Promise<void> {
+      await submissions.begin({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, instrumentId: INSTRUMENT_ID,
+        fingerprint: 'fp', side: 'BUY', orderPrice: '0.65', requestedSize: '100', now: new Date(),
+      });
+      await submissions.markReservationHeld(CLIENT_ID, initial, new Date());
+      await submissions.markVenueAccepted(CLIENT_ID, ORDER_ID, new Date());
+    }
+
+    it('Order отсутствует + held-резервация → held path (applyDebit из reserved, НЕ applyDirectDebit)', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        portfolioService: new PortfolioService(store, logger),
+        submissions,
+      });
+      const result = await useCase.execute(makeFill()); // BUY 50 @ 0.65
+      expect(result.ok).toBe(true);
+      // Held path: потребляет reserved (applyDebit), НЕ available (applyDirectDebit).
+      expect(portfolio.applyDebit).toHaveBeenCalled();
+      expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();
+    });
+
+    it('held partial fill → journal PARTIALLY_SETTLED, remaining уменьшается на notional', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        submissions,
+      });
+      await useCase.execute(makeFill()); // consume 0.65 * 50 = 32.5
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation).toMatchObject({
+        consumed: '32.5', remaining: '32.5', status: 'PARTIALLY_SETTLED',
+      });
+    });
+
+    it('held full fill → journal SETTLED (remaining 0)', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        submissions,
+      });
+      await useCase.execute(makeFill({ size: makeQty('100') })); // consume 0.65 * 100 = 65
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation).toMatchObject({ remaining: '0', consumed: '65', status: 'SETTLED' });
+    });
+
+    it('два partial fill с разными fillId полностью закрывают резервацию', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        processedFillRepo: makeProcessedFillRepo(), // ACQUIRED для обоих
+        submissions,
+      });
+      await useCase.execute(makeFill({ id: 'f1' as unknown as FillId, size: makeQty('50') }));
+      await useCase.execute(makeFill({ id: 'f2' as unknown as FillId, size: makeQty('50') }));
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation).toMatchObject({ remaining: '0', consumed: '65', status: 'SETTLED' });
+    });
+
+    it('duplicate fillId не потребляет резервацию повторно (idempotent journal)', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+      // applyReservationTransition идемпотентен by operationId=fillId. Прямой
+      // повторный transition тем же fillId не удваивает consumed.
+      await submissions.applyReservationTransition(CLIENT_ID, { operationId: String(FILL_ID), consume: '32.5', now: new Date() });
+      await submissions.applyReservationTransition(CLIENT_ID, { operationId: String(FILL_ID), consume: '32.5', now: new Date() });
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation.consumed).toBe('32.5');
+    });
+
+    it('external fill без execution record → direct path (applyDirectDebit)', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        portfolioService: new PortfolioService(store, logger),
+        submissions: new InMemoryOrderSubmissionRepository(), // пусто
+      });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(true);
+      // Нет execution → direct path: списание из available.
+      expect(portfolio.applyDirectDebit).toHaveBeenCalled();
+      expect(portfolio.applyDebit).not.toHaveBeenCalled();
+    });
+
+    it('execution SETTLED → direct path (не held)', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+      // Полностью потребляем резервацию → SETTLED.
+      await submissions.applyReservationTransition(CLIENT_ID, { operationId: 'prior', consume: '65', now: new Date() });
+
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        portfolioService: new PortfolioService(store, logger),
+        submissions,
+      });
+      const result = await useCase.execute(makeFill({ id: 'later' as unknown as FillId }));
+      expect(result.ok).toBe(true);
+      // SETTLED → нет held-резервации → direct path.
+      expect(portfolio.applyDirectDebit).toHaveBeenCalled();
+    });
+
+    it('terminal Order + held-резервация → held path (не direct)', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeldBuy(submissions, '65');
+
+      // Order существует, но terminal (FILLED/CANCELLED).
+      const terminalOrder = makeOrderOpen();
+      const cancelled = terminalOrder.cancel();
+      const order = cancelled.ok ? cancelled.value : terminalOrder;
+
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(order),
+        orderStateStore: makeOrderStateStore(order),
+        portfolioService: new PortfolioService(store, logger),
+        submissions,
+      });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(true);
+      // Terminal Order + held → held path (reserved consume), не direct.
+      expect(portfolio.applyDebit).toHaveBeenCalled();
+      expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Fill processing blocks (Stage 6) ─────────────────────────────────────────
+
+  describe('fill processing blocks', () => {
+    it('успех → markFillProcessing + clearFillProcessing (блок снят)', async () => {
+      const useCase = new ProcessFillUseCase(deps);
+      await useCase.execute(makeFill());
+      expect(deps.orderStateStore.markFillProcessing).toHaveBeenCalled();
+      expect(deps.orderStateStore.clearFillProcessing).toHaveBeenCalledWith(FILL_ID);
+    });
+
+    it('Portfolio applyFill failure после saveSync → RECONCILIATION_REQUIRED, блок НЕ снят', async () => {
+      const portfolio = makePortfolioMock();
+      (portfolio.applyDebit as ReturnType<typeof jest.fn>).mockReturnValue(Err(new TradingError('debit failed')));
+      const store = makePortfolioStore(portfolio);
+      const useCase = new ProcessFillUseCase({ ...deps, portfolioService: new PortfolioService(store, logger) });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(false);
+      expect(deps.orderStateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      expect(deps.orderStateStore.clearFillProcessing).not.toHaveBeenCalled();
+    });
+
+    it('direct-fill Portfolio failure → FAILED_RETRYABLE, блок НЕ снят', async () => {
+      const portfolio = makePortfolioMock();
+      (portfolio.applyDirectDebit as ReturnType<typeof jest.fn>).mockReturnValue(Err(new TradingError('direct debit failed')));
+      const store = makePortfolioStore(portfolio);
+      const directStore = makeOrderStateStore(undefined);
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        orderStateStore: directStore,
+        portfolioService: new PortfolioService(store, logger),
+      });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(false);
+      expect(directStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'FAILED_RETRYABLE');
+      expect(directStore.clearFillProcessing).not.toHaveBeenCalled();
+    });
+
+    it('event publish failure после commit → блок СНЯТ (fill APPLIED, не trading block)', async () => {
+      const failingBus = makeEventBus();
+      (failingBus.publishAll as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('bus down') as never);
+      const useCase = new ProcessFillUseCase({ ...deps, orderedEventOutbox: makeOutbox(failingBus) });
+      await useCase.execute(makeFill());
+      // Commit состоялся до publish → блок снят несмотря на сбой публикации.
+      expect(deps.orderStateStore.clearFillProcessing).toHaveBeenCalledWith(FILL_ID);
+    });
+  });
+
+  // ── Превалидация held-fill (Этап 3) ──────────────────────────────────────────
+
+  describe('held-fill prevalidation (Этап 3)', () => {
+    const CLIENT_ID = 'client-1' as unknown as OrderId;
+    const HELD_INSTRUMENT_ID = 'token-abc' as unknown as InstrumentId;
+
+    /** Seed журнала с held-резервацией под venueOrderId=ORDER_ID. */
+    async function seedHeld(
+      submissions: InMemoryOrderSubmissionRepository,
+      opts: {
+        side?: 'BUY' | 'SELL';
+        initial?: string;
+        accountId?: AccountId;
+        instrumentId?: InstrumentId;
+        orderPrice?: string;
+        requestedSize?: string;
+      } = {},
+    ): Promise<void> {
+      await submissions.begin({
+        clientOrderId: CLIENT_ID,
+        accountId: opts.accountId ?? ACCOUNT_ID,
+        instrumentId: opts.instrumentId ?? HELD_INSTRUMENT_ID,
+        fingerprint: 'fp',
+        side: opts.side ?? 'BUY',
+        orderPrice: opts.orderPrice ?? '0.65',
+        requestedSize: opts.requestedSize ?? '100',
+        now: new Date(),
+      });
+      await submissions.markReservationHeld(CLIENT_ID, opts.initial ?? '65', new Date());
+      await submissions.markVenueAccepted(CLIENT_ID, ORDER_ID, new Date());
+    }
+
+    /** Собирает deps для held-сценария и возвращает шпионов. */
+    function makeHeldDeps(submissions: InMemoryOrderSubmissionRepository): {
+      useCase: ProcessFillUseCase;
+      portfolio: Portfolio;
+      store: IPortfolioStore;
+      reconciliationIssues: IReconciliationIssueRepository;
+      stateStore: IOrderStateStore;
+      ledgerRecordFill: ReturnType<typeof jest.fn>;
+    } {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const stateStore = makeOrderStateStore(undefined);
+      const ledgerService = new LedgerService(makeLogger());
+      const ledgerRecordFill = jest.fn();
+      (ledgerService as unknown as { recordFill: unknown }).recordFill = ledgerRecordFill;
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        orderRepo: makeOrderRepo(undefined),
+        orderStateStore: stateStore,
+        portfolioService: new PortfolioService(store, logger),
+        ledgerService,
+        submissions,
+        reconciliationIssues,
+      });
+      return { useCase, portfolio, store, reconciliationIssues, stateStore, ledgerRecordFill };
+    }
+
+    /** Общие проверки «никаких мутаций + reconciliation-блок». */
+    async function expectBlockedWithoutMutations(
+      ctx: ReturnType<typeof makeHeldDeps>,
+      submissions: InMemoryOrderSubmissionRepository,
+      result: Awaited<ReturnType<ProcessFillUseCase['execute']>>,
+      expectedRemaining: string,
+    ): Promise<void> {
+      expect(result.ok).toBe(false);
+      // Portfolio: никаких балансовых мутаций.
+      expect(ctx.portfolio.applyDebit).not.toHaveBeenCalled();
+      expect(ctx.portfolio.applyDirectDebit).not.toHaveBeenCalled();
+      expect(ctx.portfolio.applyCredit).not.toHaveBeenCalled();
+      expect(ctx.store.save).not.toHaveBeenCalled();
+      // Ledger не записан.
+      expect(ctx.ledgerRecordFill).not.toHaveBeenCalled();
+      // Journal amounts не тронуты.
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation.remaining).toBe(expectedRemaining);
+      expect(record?.reservation.consumed).toBe('0');
+      // Processed fill → RECONCILIATION_REQUIRED, processing-блок сохранён.
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalled();
+      expect(ctx.stateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      expect(ctx.stateStore.clearFillProcessing).not.toHaveBeenCalled();
+      // Issue с фактическими значениями.
+      expect(ctx.reconciliationIssues.add).toHaveBeenCalled();
+    }
+
+    it('held fill с чужим accountId — никаких мутаций, reconciliation-блок', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions, { accountId: 'acc-OTHER' as unknown as AccountId });
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill());
+      await expectBlockedWithoutMutations(ctx, submissions, result, '65');
+    });
+
+    it('held fill с неправильным instrument — никаких мутаций', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions, { instrumentId: 'token-OTHER' as unknown as InstrumentId });
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill());
+      await expectBlockedWithoutMutations(ctx, submissions, result, '65');
+    });
+
+    it('held fill с неправильной side — никаких мутаций', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions, { side: 'SELL', initial: '100' }); // журнал SELL, fill BUY
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill()); // BUY
+      await expectBlockedWithoutMutations(ctx, submissions, result, '100');
+    });
+
+    it('held fill больше remaining — Portfolio и Ledger не изменены', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions, { initial: '20' }); // remaining 20 < consume 32.5
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill()); // BUY 50 @ 0.65 = 32.5
+      await expectBlockedWithoutMutations(ctx, submissions, result, '20');
+    });
+
+    it('cumulative fill size больше effective/requested size — блок', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      // Журнал: size 40, но capital 65 (несогласованная запись) → size-проверка ловит.
+      await seedHeld(submissions, { requestedSize: '40', initial: '65' });
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill()); // fill size 50 > 40
+      await expectBlockedWithoutMutations(ctx, submissions, result, '65');
+    });
+
+    it('reservation RECONCILIATION_REQUIRED: ни held, ни direct path — fill блокируется', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions);
+      await submissions.applyReservationTransition(CLIENT_ID, {
+        operationId: 'attempt:1:reconcile', status: 'RECONCILIATION_REQUIRED', now: new Date(),
+      });
+      const ctx = makeHeldDeps(submissions);
+      const result = await ctx.useCase.execute(makeFill());
+      expect(result.ok).toBe(false);
+      // Ни held-потребление, ни direct-дебет.
+      expect(ctx.portfolio.applyDebit).not.toHaveBeenCalled();
+      expect(ctx.portfolio.applyDirectDebit).not.toHaveBeenCalled();
+      expect(ctx.ledgerRecordFill).not.toHaveBeenCalled();
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID, expect.stringContaining('RESERVATION_RECONCILIATION_REQUIRED'),
+      );
+      expect(ctx.stateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      expect(ctx.stateStore.clearFillProcessing).not.toHaveBeenCalled();
+    });
+
+    it('held path: applyReservationTransition отклоняет Promise → RECONCILIATION_REQUIRED, manual block, НЕ APPLIED', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedHeld(submissions);
+      jest.spyOn(submissions, 'applyReservationTransition').mockRejectedValue(new Error('journal store down'));
+      const ctx = makeHeldDeps(submissions);
+
+      // НЕ бросает — rejection репозитория пойман exception boundary.
+      const result = await ctx.useCase.execute(makeFill());
+
+      expect(result.ok).toBe(false);
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID, expect.stringContaining('RESERVATION_JOURNAL_DESYNC'),
+      );
+      expect(ctx.stateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      // Typed manual block поставлен (двухслойная защита при недоступном журнале).
+      expect(ctx.stateStore.markManualReconciliationBlock).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: ORDER_ID }),
+      );
+    });
+
+    it('reservation kind mismatch: PortfolioService defensive-проверка возвращает Err без мутаций', async () => {
+      // Прямой unit-тест defensive-проверки (caller-валидация обойдена).
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const service = new PortfolioService(store, logger);
+      const r = service.applyFillAgainstHeldReservation({
+        fill: makeFill(), // BUY
+        orderPrice: new Decimal('0.65'),
+        reservationKind: 'TOKENS', // BUY обязан быть USDC
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.message).toMatch(/kind mismatch/i);
+      expect(portfolio.applyDebit).not.toHaveBeenCalled();
+      expect(store.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Commit-critical journal на normal fill (Этап 4) ──────────────────────────
+
+  describe('normal fill journal commit-critical (Этап 4)', () => {
+    const CLIENT_ID = 'client-1' as unknown as OrderId;
+    const NORMAL_INSTRUMENT_ID = 'token-abc' as unknown as InstrumentId;
+
+    /** Seed журнала под live local Order (venueOrderId=ORDER_ID). */
+    async function seedJournal(
+      submissions: InMemoryOrderSubmissionRepository,
+      initial = '65',
+    ): Promise<void> {
+      await submissions.begin({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, instrumentId: NORMAL_INSTRUMENT_ID,
+        fingerprint: 'fp', side: 'BUY', orderPrice: '0.65', requestedSize: '100', now: new Date(),
+      });
+      await submissions.markReservationHeld(CLIENT_ID, initial, new Date());
+      await submissions.markCommitted(CLIENT_ID, ORDER_ID, new Date());
+    }
+
+    it('partial normal fill: journal consume attempt-scoped, PARTIALLY_SETTLED', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedJournal(submissions);
+      const useCase = new ProcessFillUseCase({ ...deps, submissions });
+      const result = await useCase.execute(makeFill()); // BUY 50 @ 0.65 → consume 32.5
+      expect(result.ok).toBe(true);
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation).toMatchObject({
+        consumed: '32.5', remaining: '32.5', status: 'PARTIALLY_SETTLED',
+      });
+    });
+
+    it('terminal normal fill: consume и release выполняются ОДНИМ transition → SETTLED', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedJournal(submissions);
+      const applySpy = jest.spyOn(submissions, 'applyReservationTransition');
+      const useCase = new ProcessFillUseCase({ ...deps, submissions });
+      // Полный fill: size 100 → Order terminal (FILLED), consume 65, release 0.
+      const result = await useCase.execute(makeFill({ size: makeQty('100') }));
+      expect(result.ok).toBe(true);
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.reservation).toMatchObject({ remaining: '0', status: 'SETTLED' });
+      // Ровно ОДИН transition с operationId ...:terminal (не отдельные consume + settle).
+      const terminalCalls = applySpy.mock.calls.filter(
+        (c) => (c[1] as { operationId: string }).operationId === `attempt:1:fill:${String(FILL_ID)}:terminal`,
+      );
+      expect(terminalCalls).toHaveLength(1);
+      expect(applySpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('terminal fill с dust-остатком: единый transition consume+release → SETTLED', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedJournal(submissions);
+      const useCase = new ProcessFillUseCase({ ...deps, submissions });
+      // Fill 99.995 при size 100 → dust 0.005 < 0.01 → Order terminal.
+      const result = await useCase.execute(makeFill({ size: makeQty('99.995') }));
+      expect(result.ok).toBe(true);
+      const record = await submissions.get(CLIENT_ID);
+      // consume = 0.65 × 99.995 = 64.99675; release = 65 − 64.99675 = 0.00325.
+      expect(record?.reservation).toMatchObject({ remaining: '0', status: 'SETTLED' });
+      expect(record?.reservation.consumed).toBe('64.99675');
+      expect(record?.reservation.released).toBe('0.00325');
+    });
+
+    it('journal consume failure после business commit: НЕ APPLIED, блок остаётся, RESERVATION_JOURNAL_DESYNC issue', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      // Журнал под-зарезервирован: consume 32.5 > remaining 10 → OVER_CONSUME.
+      await seedJournal(submissions, '10');
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      const useCase = new ProcessFillUseCase({ ...deps, submissions, reconciliationIssues });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(false);
+      expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID, expect.stringContaining('RESERVATION_JOURNAL_DESYNC'),
+      );
+      expect(deps.orderStateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      expect(deps.orderStateStore.clearFillProcessing).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { type: string })
+        .find((i) => i.type === 'RESERVATION_JOURNAL_DESYNC');
+      expect(issue).toBeDefined();
+    });
+
+    it('journal failure после Portfolio/Ledger: повторный execute НЕ применяет fill заново', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await seedJournal(submissions, '10'); // OVER_CONSUME на первом вызове
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      // Реалистичный idempotency-репозиторий: после markReconciliationRequired
+      // begin() возвращает RECONCILIATION_REQUIRED.
+      let reconciled = false;
+      const realisticRepo: IProcessedFillRepository = {
+        ...makeProcessedFillRepo(),
+        begin: jest.fn<IProcessedFillRepository['begin']>().mockImplementation(async () =>
+          reconciled ? { outcome: 'RECONCILIATION_REQUIRED' } : { outcome: 'ACQUIRED', isRetry: false },
+        ),
+        markReconciliationRequired: jest.fn<IProcessedFillRepository['markReconciliationRequired']>()
+          .mockImplementation(async () => { reconciled = true; }),
+      };
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        submissions,
+        processedFillRepo: realisticRepo,
+        portfolioService: new PortfolioService(store, logger),
+      });
+
+      const first = await useCase.execute(makeFill());
+      expect(first.ok).toBe(false);
+      expect(portfolio.applyDebit).toHaveBeenCalledTimes(1); // business commit был
+
+      const second = await useCase.execute(makeFill());
+      // Повторный вызов — no-op (Ok), Portfolio НЕ мутируется повторно.
+      expect(second.ok).toBe(true);
+      expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
+    });
+
+    it('journal NONE (резервация не фиксировалась) → sync пропускается, fill применяется', async () => {
+      const submissions = new InMemoryOrderSubmissionRepository();
+      await submissions.begin({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, instrumentId: NORMAL_INSTRUMENT_ID,
+        fingerprint: 'fp', side: 'BUY', orderPrice: '0.65', requestedSize: '100', now: new Date(),
+      });
+      await submissions.markCommitted(CLIENT_ID, ORDER_ID, new Date());
+      const useCase = new ProcessFillUseCase({ ...deps, submissions });
+      const result = await useCase.execute(makeFill());
+      expect(result.ok).toBe(true);
+      expect(processedFillRepo.markApplied).toHaveBeenCalled();
+    });
   });
 });

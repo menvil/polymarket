@@ -101,6 +101,64 @@ export function pendingMatchFillId(orderId: OrderId): FillId {
   return asFillId(`pending-match:${String(orderId)}`)!;
 }
 
+/**
+ * Application-level статус обработки fill (ОТДЕЛЬНАЯ ось от venue on-chain
+ * {@link InFlightFillStatus}).
+ *
+ * @remarks
+ * `InFlightFillStatus` описывает venue-жизненный цикл (MATCHED→MINED→CONFIRMED/
+ * FAILED). `FillProcessingStatus` описывает, довёл ли ProcessFillUseCase обработку
+ * до конца:
+ * - `PROCESSING` — обработка начата (под lock), ещё не завершена.
+ * - `FAILED_RETRYABLE` — обработка упала ДО commit (order.applyFill), retry поможет.
+ * - `RECONCILIATION_REQUIRED` — частичный commit (Portfolio/Ledger/journal desync),
+ *   retry НЕ поможет, нужна ручная реконсиляция.
+ *
+ * Блок НЕ снимается автоматически при retryable/reconciliation — только при
+ * реально settled обработке (APPLIED) либо явной ручной очистке.
+ */
+export type FillProcessingStatus = 'PROCESSING' | 'FAILED_RETRYABLE' | 'RECONCILIATION_REQUIRED';
+
+/** Application-level блок обработки fill (см. {@link FillProcessingStatus}). */
+export interface FillProcessingBlock {
+  readonly fillId: FillId;
+  readonly orderId: OrderId;
+  readonly instrumentId: InstrumentId;
+  readonly status: FillProcessingStatus;
+}
+
+/** Входные данные `markFillProcessing()`. */
+export interface MarkFillProcessingInput {
+  readonly fillId: FillId;
+  readonly orderId: OrderId;
+  readonly instrumentId: InstrumentId;
+}
+
+/**
+ * Manual reconciliation block — типизированный блок ручной реконсиляции
+ * (ОТДЕЛЬНАЯ ось от venue in-flight fills и fill processing-блоков).
+ *
+ * @remarks
+ * Ставится use-case'ами при частичном commit, когда Portfolio↔journal desync
+ * не может быть разрешён автоматически (journal release упал после успешного
+ * Portfolio release; CAS conflict после подтверждённого venue cancel и т.п.).
+ *
+ * ### Почему НЕ pendingMatchFillId/MATCHED placeholder:
+ * MATCHED placeholder означает «fill ожидается и разрешит состояние» — его
+ * снимает первый реальный fill (`clearInFlightFill`/`clearOrderFillMatched`).
+ * Manual block означает противоположное: «состояние разрешает ТОЛЬКО человек» —
+ * реальный fill НЕ должен его снимать (и сам обязан блокироваться), иначе
+ * задержанный fill на desync-ордере потребил бы чужой reserved-капитал и
+ * заодно снял бы блок. Снятие — только явный `clearManualReconciliationBlock`
+ * (оператор/recovery-тулинг после реконсиляции).
+ */
+export interface ManualReconciliationBlock {
+  readonly orderId: OrderId;
+  readonly instrumentId: InstrumentId;
+  /** Причина блока (English, для оператора). */
+  readonly reason: string;
+}
+
 export interface IOrderStateStore {
   /**
    * Возвращает все открытые ордера стратегии.
@@ -264,4 +322,121 @@ export interface IOrderStateStore {
    *   `status` заполнен всегда (не optional)
    */
   getInFlightFills(instrumentId: InstrumentId): readonly InFlightFill[];
+
+  // ── Application-level fill processing blocks (Stage 6) ──────────────────────
+
+  /**
+   * Ставит application-level processing-блок (`PROCESSING`) на fill.
+   *
+   * @param input - `{ fillId, orderId, instrumentId }`
+   *
+   * @remarks
+   * Вызывается ProcessFillUseCase в начале обработки под lock. Идемпотентен по
+   * fillId. Блок отражает «обработка ещё не settled» и участвует в
+   * {@link IOrderStateStore.hasUnsettledFills}.
+   */
+  markFillProcessing(input: MarkFillProcessingInput): void;
+
+  /**
+   * Обновляет статус processing-блока (PROCESSING → FAILED_RETRYABLE /
+   * RECONCILIATION_REQUIRED).
+   *
+   * @param fillId - ID fill
+   * @param status - Новый статус
+   *
+   * @remarks
+   * Неизвестный fillId — no-op. НЕ снимает блок (снятие — только
+   * `clearFillProcessing` на settled/manual).
+   */
+  updateFillProcessingStatus(fillId: FillId, status: FillProcessingStatus): void;
+
+  /**
+   * Снимает processing-блок с fill (только на реально settled обработке / manual).
+   *
+   * @param fillId - ID fill
+   *
+   * @remarks
+   * Неизвестный fillId — no-op. НЕ вызывается на FAILED_RETRYABLE/
+   * RECONCILIATION_REQUIRED (блок должен сохраняться).
+   */
+  clearFillProcessing(fillId: FillId): void;
+
+  /**
+   * Есть ли на инструменте хотя бы один processing-блок.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть незавершённый/заблокированный fill
+   */
+  hasFillProcessingBlocks(instrumentId: InstrumentId): boolean;
+
+  /**
+   * Возвращает все processing-блоки инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns Readonly массив `FillProcessingBlock`
+   */
+  getFillProcessingBlocks(instrumentId: InstrumentId): readonly FillProcessingBlock[];
+
+  /**
+   * Есть ли на инструменте НЕзавершённые fills (venue in-flight ЛИБО
+   * application processing-блок ЛИБО manual reconciliation block).
+   *
+   * @param instrumentId - ID инструмента
+   * @returns `hasInFlightFills(id) || hasFillProcessingBlocks(id) ||
+   *   hasManualReconciliationBlocks(id)`
+   *
+   * @remarks
+   * ЕДИНЫЙ guard для стратегий и cancel: блокирует новую активность, пока есть
+   * хоть venue in-flight fill, хоть незавершённый application processing-блок
+   * (FAILED_RETRYABLE/RECONCILIATION_REQUIRED), хоть manual reconciliation block.
+   */
+  hasUnsettledFills(instrumentId: InstrumentId): boolean;
+
+  // ── Manual reconciliation blocks ─────────────────────────────────────────────
+
+  /**
+   * Ставит manual reconciliation block на ордер/инструмент.
+   *
+   * @param block - `{ orderId, instrumentId, reason }`
+   *
+   * @remarks
+   * Идемпотентен по orderId (повторная пометка обновляет reason). Блок участвует
+   * в {@link IOrderStateStore.hasUnsettledFills} и НЕ снимается fill-ами —
+   * только явным `clearManualReconciliationBlock` (оператор/recovery-тулинг).
+   */
+  markManualReconciliationBlock(block: ManualReconciliationBlock): void;
+
+  /**
+   * Снимает manual reconciliation block с ордера (ТОЛЬКО ручная реконсиляция).
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Неизвестный orderId — no-op. НЕ вызывается автоматикой обработки fill.
+   */
+  clearManualReconciliationBlock(orderId: OrderId): void;
+
+  /**
+   * Есть ли manual reconciliation block на конкретном ордере.
+   *
+   * @param orderId - ID ордера
+   * @returns true если блок стоит
+   */
+  hasManualReconciliationBlockForOrder(orderId: OrderId): boolean;
+
+  /**
+   * Есть ли на инструменте хотя бы один manual reconciliation block.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть блок(и)
+   */
+  hasManualReconciliationBlocks(instrumentId: InstrumentId): boolean;
+
+  /**
+   * Возвращает все manual reconciliation blocks инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns Readonly массив блоков (пустой, если блоков нет)
+   */
+  getManualReconciliationBlocks(instrumentId: InstrumentId): readonly ManualReconciliationBlock[];
 }

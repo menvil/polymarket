@@ -50,7 +50,8 @@ import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value
 import { Balance } from '@polymarket/value-objects/balance';
 import { Fill } from '@polymarket/fill';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import type { IPortfolioStore, IExchangeClient, ExchangeError, VersionConflictError } from '@polymarket/ports';
+import type { IPortfolioStore, IExchangeClient, VersionConflictError } from '@polymarket/ports';
+import { ExchangeError } from '@polymarket/ports';
 import type { IOrderRiskChecker } from '@polymarket/risk';
 import type { IClock } from '@polymarket/time';
 import Decimal from 'decimal.js';
@@ -58,6 +59,8 @@ import Decimal from 'decimal.js';
 import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
+import { InMemoryOrderedEventOutbox } from '../../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
+import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -194,6 +197,8 @@ describe('TradingFlow (integration)', () => {
   let eventBus: EventBus;
   let portfolioService: PortfolioService;
   let ledgerService: LedgerService;
+  let orderedEventOutbox: InMemoryOrderedEventOutbox;
+  let orderSubmissionRepo: InMemoryOrderSubmissionRepository;
 
   beforeEach(() => {
     orderRepo = new InMemoryOrderRepository();
@@ -203,6 +208,12 @@ describe('TradingFlow (integration)', () => {
     eventBus = new EventBus(LOGGER);
     portfolioService = new PortfolioService(portfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
+    // Единый ordered outbox (Place↔Fill per-order FIFO), публикует в реальный EventBus.
+    orderedEventOutbox = new InMemoryOrderedEventOutbox({
+      publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+      logger: LOGGER,
+    });
+    orderSubmissionRepo = new InMemoryOrderSubmissionRepository();
   });
 
   afterEach(() => {
@@ -225,7 +236,8 @@ describe('TradingFlow (integration)', () => {
       keyedMutex,
       exchangeClient: makeExchangeClient(),
       orderStateStore: orderRepo,
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       clock: makeClock(),
       logger: LOGGER,
     };
@@ -238,6 +250,8 @@ describe('TradingFlow (integration)', () => {
       processedFillRepo,
       keyedMutex,
       eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       logger: LOGGER,
     };
 
@@ -291,9 +305,12 @@ describe('TradingFlow (integration)', () => {
     const portfolio = makeInitialPortfolio();
     portfolioStore.save(portfolio, 0);
 
-    const exchangeError = new (class extends Error {
-      message = 'Exchange connectivity error';
-    })() as unknown as ExchangeError;
+    // DEFINITELY_NOT_SUBMITTED — ордер точно НЕ создан на venue (preflight/reject),
+    // поэтому Place делает чистый rollback резервации. (MAY_HAVE_BEEN_SUBMITTED,
+    // напротив, удержал бы резервацию до reconciliation — см. отдельный тест.)
+    const exchangeError = new ExchangeError('Exchange connectivity error', {
+      submitOutcome: 'DEFINITELY_NOT_SUBMITTED',
+    });
 
     const placeDeps: PlaceOrderDeps = {
       riskChecker: makePassRiskChecker(),
@@ -302,7 +319,8 @@ describe('TradingFlow (integration)', () => {
       keyedMutex,
       exchangeClient: makeExchangeClient(Err(exchangeError)),
       orderStateStore: orderRepo,
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       clock: makeClock(),
       logger: LOGGER,
     };
@@ -348,7 +366,8 @@ describe('TradingFlow (integration)', () => {
       keyedMutex,
       exchangeClient: makeExchangeClient(),
       orderStateStore: orderRepo,
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       clock: makeClock(),
       logger: LOGGER,
     };
@@ -359,7 +378,8 @@ describe('TradingFlow (integration)', () => {
       orderStateStore: orderRepo,
       keyedMutex,
       exchangeClient: makeExchangeClient(),
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       logger: LOGGER,
     };
 
@@ -414,7 +434,8 @@ describe('TradingFlow (integration)', () => {
       keyedMutex,
       exchangeClient: makeExchangeClient(),
       orderStateStore: orderRepo,
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       clock: makeClock(),
       logger: LOGGER,
     };
@@ -462,6 +483,8 @@ describe('TradingFlow (integration)', () => {
       processedFillRepo,
       keyedMutex: instrumentedMutex,
       eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       logger: LOGGER,
     });
     const cancelOrderUseCase = new CancelOrderUseCase({
@@ -470,7 +493,8 @@ describe('TradingFlow (integration)', () => {
       orderStateStore: orderRepo,
       keyedMutex: instrumentedMutex,
       exchangeClient: makeExchangeClient(),
-      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
       logger: LOGGER,
     });
 
@@ -493,5 +517,98 @@ describe('TradingFlow (integration)', () => {
     // повреждённое промежуточное состояние.
     const finalOrder = await orderRepo.get(ORDER_ID);
     expect(['FILLED', 'CANCELED']).toContain(finalOrder?.status);
+  });
+
+  // ── Сценарий A (P0): ambiguous submit → held reservation → Fill ─────────────
+
+  it('Сценарий A: ambiguous submit (held reservation, no local Order) → Fill потребляет reserved БЕЗ двойного debit', async () => {
+    const portfolio = makeInitialPortfolio();
+    portfolioStore.save(portfolio, 0);
+
+    // 1. Reserve NOTIONAL (как PlaceOrderUseCase перед submit).
+    expect(portfolioService.reserveForOrder(ACCOUNT_ID, NOTIONAL).ok).toBe(true);
+    const availableAfterReserve = portfolioStore.get(ACCOUNT_ID)!.balance.available().value().toNumber();
+
+    // 2. Ambiguous submit с известным venue ID: journal HELD + venueAccepted, БЕЗ local Order.
+    const CLIENT = asOrderId('client-ambiguous-A')!;
+    await orderSubmissionRepo.begin({
+      clientOrderId: CLIENT, accountId: ACCOUNT_ID, instrumentId: INSTRUMENT_ID,
+      fingerprint: 'fp-A', side: 'BUY', orderPrice: ORDER_PRICE.value().toString(),
+      requestedSize: ORDER_SIZE.value().toString(), now: new Date(),
+    });
+    await orderSubmissionRepo.markReservationHeld(CLIENT, NOTIONAL.toString(), new Date());
+    await orderSubmissionRepo.markVenueAccepted(CLIENT, ORDER_ID, new Date());
+    expect(await orderRepo.get(ORDER_ID)).toBeUndefined(); // 3. local Order отсутствует
+
+    // 4. Fill приходит на venueOrderId=ORDER_ID.
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
+      keyedMutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+    const fillResult = await processFillUseCase.execute(makeFill());
+    expect(fillResult.ok).toBe(true);
+
+    // 5. Проверки:
+    const after = portfolioStore.get(ACCOUNT_ID)!;
+    // available НЕ списан второй раз (held-path потребил reserved, не available).
+    expect(after.balance.available().value().toNumber()).toBeCloseTo(availableAfterReserve, 6);
+    // reserved = 0 (полностью потреблено).
+    expect(after.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    // Позиция создана.
+    expect(after.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeGreaterThan(0);
+    // journal SETTLED.
+    expect((await orderSubmissionRepo.get(CLIENT))?.reservation.status).toBe('SETTLED');
+  });
+
+  // ── Сценарий B (P0): cancel → ALREADY_FILLED → Fill (normal path) ───────────
+
+  it('Сценарий B: cancel → ALREADY_FILLED → Order не отменён, резервация held, Fill потребляет ровно один раз', async () => {
+    const portfolio = makeInitialPortfolio();
+    portfolioStore.save(portfolio, 0);
+
+    // 1. Place order нормально (Order saved, reserved).
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo, portfolioService, keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
+      orderedEventOutbox, submissions: orderSubmissionRepo,
+      clock: makeClock(), logger: LOGGER,
+    };
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute({
+      orderId: ORDER_ID, accountId: ACCOUNT_ID, asset: TOKEN_ASSET_ID, instrumentId: INSTRUMENT_ID,
+      side: 'BUY', price: ORDER_PRICE, size: ORDER_SIZE, portfolio, openOrdersCount: 0,
+    });
+    expect(placeResult.ok).toBe(true);
+    expect(portfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(NOTIONAL.toNumber(), 6);
+
+    // 2. Cancel → venue вернул ALREADY_FILLED.
+    const alreadyFilledExchange: IExchangeClient = {
+      ...makeExchangeClient(),
+      cancelOrder: () => Promise.resolve(Ok({ status: 'ALREADY_FILLED', reason: 'matched' })),
+    };
+    const cancelDeps: CancelOrderDeps = {
+      portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex,
+      exchangeClient: alreadyFilledExchange, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    };
+    const cancelResult = await new CancelOrderUseCase(cancelDeps).execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID });
+    expect(cancelResult.ok).toBe(true);
+    if (cancelResult.ok) expect(cancelResult.value.status).toBe('FILL_PENDING');
+
+    // 3. Order НЕ terminal, резервация held.
+    expect((await orderRepo.get(ORDER_ID))?.isTerminal).toBe(false);
+    expect(portfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(NOTIONAL.toNumber(), 6);
+
+    // 4. Fill приходит → normal path (Order всё ещё OPEN) → consume резервации.
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
+      keyedMutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+    const fillResult = await processFillUseCase.execute(makeFill());
+    expect(fillResult.ok).toBe(true);
+
+    // 5. reserved → 0 (потреблено РОВНО один раз), позиция создана.
+    expect(portfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    expect(portfolioStore.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeGreaterThan(0);
   });
 });

@@ -290,6 +290,72 @@ describe('InMemoryOrderRepository', () => {
     });
   });
 
+  // ── Fill processing blocks (Stage 6) ─────────────────────
+  describe('fill processing blocks + hasUnsettledFills', () => {
+    const ORDER_ID = asOrderId('order-1')!;
+    const INSTRUMENT_A = 'instrument-a' as unknown as InstrumentId;
+    const FILL_1 = asFillId('fill-1')!;
+    const FILL_2 = asFillId('fill-2')!;
+
+    it('markFillProcessing → PROCESSING; hasFillProcessingBlocks true', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      expect(repo.hasFillProcessingBlocks(INSTRUMENT_A)).toBe(true);
+      expect(repo.getFillProcessingBlocks(INSTRUMENT_A)[0]).toMatchObject({ fillId: FILL_1, status: 'PROCESSING' });
+    });
+
+    it('updateFillProcessingStatus меняет статус, НЕ снимает блок', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.updateFillProcessingStatus(FILL_1, 'RECONCILIATION_REQUIRED');
+      expect(repo.hasFillProcessingBlocks(INSTRUMENT_A)).toBe(true);
+      expect(repo.getFillProcessingBlocks(INSTRUMENT_A)[0]?.status).toBe('RECONCILIATION_REQUIRED');
+    });
+
+    it('clearFillProcessing снимает блок', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.clearFillProcessing(FILL_1);
+      expect(repo.hasFillProcessingBlocks(INSTRUMENT_A)).toBe(false);
+    });
+
+    it('clear одного блока не затрагивает другой', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.markFillProcessing({ fillId: FILL_2, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.clearFillProcessing(FILL_1);
+      const blocks = repo.getFillProcessingBlocks(INSTRUMENT_A);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]?.fillId).toBe(FILL_2);
+    });
+
+    it('update/clear по неизвестному fillId — no-op, не бросает', () => {
+      expect(() => repo.updateFillProcessingStatus(FILL_1, 'FAILED_RETRYABLE')).not.toThrow();
+      expect(() => repo.clearFillProcessing(FILL_1)).not.toThrow();
+    });
+
+    it('hasUnsettledFills = venue in-flight ЛИБО processing-блок', () => {
+      // Ни того, ни другого.
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(false);
+      // Только processing-блок.
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+      repo.clearFillProcessing(FILL_1);
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(false);
+      // Только venue in-flight.
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId: FILL_2, orderId: ORDER_ID, status: 'MATCHED' });
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+    });
+
+    it('RECONCILIATION_REQUIRED блок держит hasUnsettledFills true (блокирует новую активность)', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.updateFillProcessingStatus(FILL_1, 'RECONCILIATION_REQUIRED');
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+    });
+
+    it('clear() очищает processing-блоки', () => {
+      repo.markFillProcessing({ fillId: FILL_1, orderId: ORDER_ID, instrumentId: INSTRUMENT_A });
+      repo.clear();
+      expect(repo.hasFillProcessingBlocks(INSTRUMENT_A)).toBe(false);
+    });
+  });
+
   // ── Утилиты ─────────────────────────────────────────────
 
   describe('utilities', () => {
@@ -323,6 +389,59 @@ describe('InMemoryOrderRepository', () => {
       expect(repo.hasInFlightFills(instrumentId)).toBe(false);
       expect(repo.getMatchedFillIds(orderId)).toHaveLength(0);
       expect(repo.getInFlightFills(instrumentId)).toHaveLength(0);
+    });
+  });
+
+  // ── Manual reconciliation blocks (P0) ────────────────────
+  describe('manual reconciliation blocks', () => {
+    const ORDER_ID = asOrderId('order-1')!;
+    const ORDER_2 = asOrderId('order-2')!;
+    const INSTRUMENT_A = 'instrument-a' as unknown as InstrumentId;
+    const INSTRUMENT_B = 'instrument-b' as unknown as InstrumentId;
+
+    it('markManualReconciliationBlock → блок виден по order и по instrument, участвует в hasUnsettledFills', () => {
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'journal desync' });
+      expect(repo.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
+      expect(repo.hasManualReconciliationBlocks(INSTRUMENT_A)).toBe(true);
+      expect(repo.hasManualReconciliationBlocks(INSTRUMENT_B)).toBe(false);
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+      expect(repo.getManualReconciliationBlocks(INSTRUMENT_A)).toEqual([
+        { orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'journal desync' },
+      ]);
+    });
+
+    it('идемпотентен по orderId (повторная пометка обновляет reason, не дублирует)', () => {
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'first' });
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'second' });
+      const blocks = repo.getManualReconciliationBlocks(INSTRUMENT_A);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].reason).toBe('second');
+    });
+
+    it('clearManualReconciliationBlock снимает ТОЛЬКО указанный orderId', () => {
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'a' });
+      repo.markManualReconciliationBlock({ orderId: ORDER_2, instrumentId: INSTRUMENT_A, reason: 'b' });
+      repo.clearManualReconciliationBlock(ORDER_ID);
+      expect(repo.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(false);
+      expect(repo.hasManualReconciliationBlockForOrder(ORDER_2)).toBe(true);
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+    });
+
+    it('clearInFlightFill/clearFillProcessing НЕ снимают manual block (отдельная ось)', () => {
+      const fillId = asFillId('fill-x')!;
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'desync' });
+      repo.markInFlightFill({ instrumentId: INSTRUMENT_A, fillId, orderId: ORDER_ID, status: 'MATCHED' });
+      repo.clearInFlightFill(fillId);
+      repo.clearFillProcessing(fillId);
+      expect(repo.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(true);
+    });
+
+    it('clear() очищает manual blocks', () => {
+      repo.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_A, reason: 'x' });
+      repo.clear();
+      expect(repo.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(false);
+      expect(repo.hasUnsettledFills(INSTRUMENT_A)).toBe(false);
     });
   });
 });

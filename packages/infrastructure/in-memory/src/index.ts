@@ -33,4 +33,6 @@ export { InMemoryPortfolioStore } from './InMemoryPortfolioStore.js';
 export { InMemoryProcessedFillRepository } from './InMemoryProcessedFillRepository.js';
 export { InMemoryReconciliationIssueRepository } from './InMemoryReconciliationIssueRepository.js';
 export { InMemoryOrderSubmissionRepository } from './InMemoryOrderSubmissionRepository.js';
+export { InMemoryOrderedEventOutbox } from './InMemoryOrderedEventOutbox.js';
+export type { InMemoryOrderedEventOutboxDeps } from './InMemoryOrderedEventOutbox.js';
 export { InMemoryKeyedMutex } from './InMemoryKeyedMutex.js';

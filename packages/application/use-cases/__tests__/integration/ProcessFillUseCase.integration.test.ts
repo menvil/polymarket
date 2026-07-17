@@ -59,6 +59,8 @@ import Decimal from 'decimal.js';
 import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
+import { InMemoryOrderedEventOutbox } from '../../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
+import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
@@ -227,6 +229,12 @@ describe('ProcessFillUseCase (integration)', () => {
     const portfolioService = new PortfolioService(portfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
 
+    // Реальный ordered outbox: публикует в реальный EventBus после flush().
+    const orderedEventOutbox = new InMemoryOrderedEventOutbox({
+      publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+      logger: LOGGER,
+    });
+
     deps = {
       orderStateStore: orderRepo,
       portfolioService,
@@ -235,6 +243,8 @@ describe('ProcessFillUseCase (integration)', () => {
       processedFillRepo,
       keyedMutex,
       eventBus,
+      orderedEventOutbox,
+      submissions: new InMemoryOrderSubmissionRepository(),
       logger: LOGGER,
     };
   });

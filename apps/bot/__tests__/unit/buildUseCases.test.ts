@@ -149,7 +149,8 @@ describe('buildOrderUseCases — wiring orderSubmissionRepo (submission guard)',
       getTrades: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getTrades'],
     };
 
-    const { placeOrderUseCase } = buildOrderUseCases({ infra, repos, exchangeClient, riskParams: RISK_PARAMS });
+    const { orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
+    const { placeOrderUseCase } = buildOrderUseCases({ infra, repos, exchangeClient, riskParams: RISK_PARAMS, orderedEventOutbox });
     const input = {
       orderId: asOrderId('client-dup-1')!,
       accountId: ACCOUNT_ID,
@@ -196,11 +197,13 @@ describe('buildOrderUseCases — wiring reconciliationIssues в PlaceOrderUseCas
       getTrades: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getTrades'],
     };
 
+    const { orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
     const { placeOrderUseCase } = buildOrderUseCases({
       infra,
       repos,
       exchangeClient,
       riskParams: RISK_PARAMS,
+      orderedEventOutbox,
     });
 
     const result = await placeOrderUseCase.execute({
@@ -269,11 +272,13 @@ describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCa
       getTrades: jest.fn().mockResolvedValue(Ok([])) as unknown as IExchangeClient['getTrades'],
     };
 
+    const { orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
     const { cancelOrderUseCase } = buildOrderUseCases({
       infra,
       repos,
       exchangeClient,
       riskParams: RISK_PARAMS,
+      orderedEventOutbox,
     });
 
     const result = await cancelOrderUseCase.execute({

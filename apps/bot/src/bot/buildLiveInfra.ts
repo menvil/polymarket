@@ -30,7 +30,7 @@
 
 import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
-import type { IExchangeClient, ICurrentBalanceProvider } from '@polymarket/ports';
+import type { IExchangeClient, ICurrentBalanceProvider, IOrderedEventOutbox } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
 import { ReconcileTradesUseCase, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
@@ -88,6 +88,12 @@ export interface BuildLiveInfraParams {
   readonly repos: Repositories;
   readonly processFillUseCase: ProcessFillUseCase;
   /**
+   * Разделяемый ordered event outbox (из `buildProcessFillUseCase`) — ТОТ ЖЕ
+   * инстанс, что у Place/Fill/Cancel; передаётся в UpdateOrderStatusUseCase для
+   * per-order FIFO событий.
+   */
+  readonly orderedEventOutbox: IOrderedEventOutbox;
+  /**
    * WS-адаптер для user channel (`/ws/user`).
    * Должен быть отдельным от market WS-адаптера — Polymarket принимает
    * только одно subscription-сообщение на соединение.
@@ -130,9 +136,9 @@ export interface LiveInfra {
  * после инициализации strategy engine.
  */
 export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
-  const { credentials, infra, repos, processFillUseCase, userWsAdapter, accountId, dnsOverride } = params;
+  const { credentials, infra, repos, processFillUseCase, orderedEventOutbox, userWsAdapter, accountId, dnsOverride } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex } = repos;
+  const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
   // ── 1. REST stack ──────────────────────────────────────────────────────────
 
@@ -221,7 +227,10 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     // Сериализация с PlaceOrderUseCase по [accountId, orderId] — закрывает race
     // «ранний terminal ORDER_UPDATE до локального save».
     keyedMutex,
-    eventBus,
+    // ТОТ ЖЕ outbox, что у Place/Fill/Cancel — per-order FIFO; flush после lock.
+    orderedEventOutbox,
+    // Journal release остатка резервации при терминальном venue-update.
+    submissions: orderSubmissionRepo,
     logger,
     // Сбой release резервации после committed venue update теперь queryable
     // (ORDER_PORTFOLIO_DESYNC), а не только лог. Плюс early-terminal-update issue.

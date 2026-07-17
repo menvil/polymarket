@@ -43,6 +43,10 @@ import type {
   InFlightFill,
   InFlightFillStatus,
   MarkInFlightFillInput,
+  FillProcessingBlock,
+  FillProcessingStatus,
+  MarkFillProcessingInput,
+  ManualReconciliationBlock,
   DeleteOrderResult,
 } from '@polymarket/ports';
 import { pendingMatchFillId, VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
@@ -111,6 +115,30 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
 
   /** fillId → instrumentId (строкой) — обратный индекс для O(1) clearInFlightFill(fillId). */
   private readonly _inFlightFillInstrumentIndex = new Map<FillId, string>();
+
+  /**
+   * Application-level processing-блоки: instrumentId(строкой) → Map<FillId, block>.
+   *
+   * @remarks
+   * ОТДЕЛЬНАЯ ось от venue in-flight (`_inFlightFillsByInstrument`): отражает,
+   * довёл ли ProcessFillUseCase обработку до конца (PROCESSING/FAILED_RETRYABLE/
+   * RECONCILIATION_REQUIRED). НЕ снимается автоматически на retryable/reconciliation.
+   */
+  private readonly _fillProcessingByInstrument = new Map<string, Map<FillId, FillProcessingBlock>>();
+
+  /** fillId → instrumentId(строкой) — обратный индекс для processing-блоков. */
+  private readonly _fillProcessingInstrumentIndex = new Map<FillId, string>();
+
+  /**
+   * Manual reconciliation blocks: orderId(строкой) → block.
+   *
+   * @remarks
+   * ОТДЕЛЬНАЯ ось от venue in-flight и fill processing-блоков: ставится
+   * use-case'ами при частичном commit (Portfolio↔journal desync), участвует в
+   * `hasUnsettledFills` и НЕ снимается fill-ами — только явным
+   * `clearManualReconciliationBlock` (оператор/recovery-тулинг).
+   */
+  private readonly _manualBlocksByOrder = new Map<string, ManualReconciliationBlock>();
 
   /**
    * Возвращает Order по ID или undefined если не найден.
@@ -616,6 +644,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
     this._matchedFillsByOrder.clear();
     this._inFlightFillsByInstrument.clear();
     this._inFlightFillInstrumentIndex.clear();
+    this._fillProcessingByInstrument.clear();
+    this._fillProcessingInstrumentIndex.clear();
+    this._manualBlocksByOrder.clear();
   }
 
   // ── In-flight fills (instrument-level) ─────────────────
@@ -705,5 +736,154 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   public getInFlightFills(instrumentId: InstrumentId): readonly InFlightFill[] {
     const byFillId = this._inFlightFillsByInstrument.get(String(instrumentId));
     return byFillId ? [...byFillId.values()] : [];
+  }
+
+  // ── Application-level fill processing blocks (Stage 6) ──────────────────────
+
+  /**
+   * Ставит processing-блок (`PROCESSING`) на fill. Идемпотентен по fillId.
+   *
+   * @param input - `{ fillId, orderId, instrumentId }`
+   */
+  public markFillProcessing(input: MarkFillProcessingInput): void {
+    const key = String(input.instrumentId);
+    let byFillId = this._fillProcessingByInstrument.get(key);
+    if (!byFillId) {
+      byFillId = new Map<FillId, FillProcessingBlock>();
+      this._fillProcessingByInstrument.set(key, byFillId);
+    }
+    byFillId.set(input.fillId, {
+      fillId: input.fillId,
+      orderId: input.orderId,
+      instrumentId: input.instrumentId,
+      status: 'PROCESSING',
+    });
+    this._fillProcessingInstrumentIndex.set(input.fillId, key);
+  }
+
+  /**
+   * Обновляет статус processing-блока (не снимает его). Неизвестный fillId — no-op.
+   *
+   * @param fillId - ID fill
+   * @param status - Новый статус
+   */
+  public updateFillProcessingStatus(fillId: FillId, status: FillProcessingStatus): void {
+    const key = this._fillProcessingInstrumentIndex.get(fillId);
+    if (key === undefined) return;
+    const byFillId = this._fillProcessingByInstrument.get(key);
+    const existing = byFillId?.get(fillId);
+    if (!existing) return;
+    byFillId!.set(fillId, { ...existing, status });
+  }
+
+  /**
+   * Снимает processing-блок с fill. Неизвестный fillId — no-op.
+   *
+   * @param fillId - ID fill
+   */
+  public clearFillProcessing(fillId: FillId): void {
+    const key = this._fillProcessingInstrumentIndex.get(fillId);
+    if (key === undefined) return;
+    const byFillId = this._fillProcessingByInstrument.get(key);
+    if (byFillId) {
+      byFillId.delete(fillId);
+      if (byFillId.size === 0) this._fillProcessingByInstrument.delete(key);
+    }
+    this._fillProcessingInstrumentIndex.delete(fillId);
+  }
+
+  /**
+   * Есть ли на инструменте processing-блоки.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть хотя бы один блок
+   */
+  public hasFillProcessingBlocks(instrumentId: InstrumentId): boolean {
+    const byFillId = this._fillProcessingByInstrument.get(String(instrumentId));
+    return !!byFillId && byFillId.size > 0;
+  }
+
+  /**
+   * Возвращает все processing-блоки инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns Readonly массив блоков
+   */
+  public getFillProcessingBlocks(instrumentId: InstrumentId): readonly FillProcessingBlock[] {
+    const byFillId = this._fillProcessingByInstrument.get(String(instrumentId));
+    return byFillId ? [...byFillId.values()] : [];
+  }
+
+  /**
+   * Есть ли на инструменте НЕзавершённые fills (venue in-flight ЛИБО processing-блок).
+   *
+   * @param instrumentId - ID инструмента
+   * @returns `hasInFlightFills(id) || hasFillProcessingBlocks(id)`
+   */
+  public hasUnsettledFills(instrumentId: InstrumentId): boolean {
+    return (
+      this.hasInFlightFills(instrumentId) ||
+      this.hasFillProcessingBlocks(instrumentId) ||
+      this.hasManualReconciliationBlocks(instrumentId)
+    );
+  }
+
+  // ── Manual reconciliation blocks ─────────────────────────────────────────────
+
+  /**
+   * Ставит manual reconciliation block (идемпотентно по orderId).
+   *
+   * @param block - `{ orderId, instrumentId, reason }`
+   */
+  public markManualReconciliationBlock(block: ManualReconciliationBlock): void {
+    this._manualBlocksByOrder.set(String(block.orderId), {
+      orderId: block.orderId,
+      instrumentId: block.instrumentId,
+      reason: block.reason,
+    });
+  }
+
+  /**
+   * Снимает manual reconciliation block (ТОЛЬКО ручная реконсиляция; no-op если нет).
+   *
+   * @param orderId - ID ордера
+   */
+  public clearManualReconciliationBlock(orderId: OrderId): void {
+    this._manualBlocksByOrder.delete(String(orderId));
+  }
+
+  /**
+   * Есть ли manual reconciliation block на конкретном ордере.
+   *
+   * @param orderId - ID ордера
+   * @returns true если блок стоит
+   */
+  public hasManualReconciliationBlockForOrder(orderId: OrderId): boolean {
+    return this._manualBlocksByOrder.has(String(orderId));
+  }
+
+  /**
+   * Есть ли на инструменте хотя бы один manual reconciliation block.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть блок(и)
+   */
+  public hasManualReconciliationBlocks(instrumentId: InstrumentId): boolean {
+    const key = String(instrumentId);
+    for (const block of this._manualBlocksByOrder.values()) {
+      if (String(block.instrumentId) === key) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Возвращает все manual reconciliation blocks инструмента.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns Readonly массив блоков
+   */
+  public getManualReconciliationBlocks(instrumentId: InstrumentId): readonly ManualReconciliationBlock[] {
+    const key = String(instrumentId);
+    return [...this._manualBlocksByOrder.values()].filter((b) => String(b.instrumentId) === key);
   }
 }

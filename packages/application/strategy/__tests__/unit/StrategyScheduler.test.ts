@@ -66,6 +66,17 @@ function makeOrderStateStore(): IOrderStateStore {
     hasInFlightFills: fn().mockReturnValue(false),
     clearInFlightFill: fn(),
     getInFlightFills: fn().mockReturnValue([]),
+    markFillProcessing: fn(),
+    updateFillProcessingStatus: fn(),
+    clearFillProcessing: fn(),
+    hasFillProcessingBlocks: fn().mockReturnValue(false),
+    getFillProcessingBlocks: fn().mockReturnValue([]),
+    hasUnsettledFills: fn().mockReturnValue(false),
+    markManualReconciliationBlock: fn(),
+    clearManualReconciliationBlock: fn(),
+    hasManualReconciliationBlockForOrder: fn().mockReturnValue(false),
+    hasManualReconciliationBlocks: fn().mockReturnValue(false),
+    getManualReconciliationBlocks: fn().mockReturnValue([]),
   };
 }
 

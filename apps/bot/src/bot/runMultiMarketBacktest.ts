@@ -314,7 +314,7 @@ async function runSingleMarketBacktest(
 
   // 3b. Paper infra + simulator
   const { mockClient } = buildPaperInfra({ clock: replayClock });
-  const { processFillUseCase, portfolioService } = buildProcessFillUseCase({ infra, repos });
+  const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
   const { simulator, exchangeClient } = buildPaperSimulator({
     mockClient,
     processFillUseCase,
@@ -336,7 +336,7 @@ async function runSingleMarketBacktest(
     }
   }
 
-  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   // 5. Crypto price store

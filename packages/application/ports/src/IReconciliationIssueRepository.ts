@@ -59,6 +59,9 @@ import type { AccountId, FillId, InstrumentId, MarketId, OrderId } from '@polyma
  * - `EVENT_PUBLISH_FAILED` — доменное событие не опубликовано после commit
  *   (notification path упал): состояние закоммичено, но подписчики
  *   (strategy/bridge/projections) не уведомлены — требуется ручной replay.
+ * - `RESERVATION_JOURNAL_DESYNC` — Order/Portfolio/Ledger уже закоммичены, а
+ *   reservation journal transition упал: учёт резервации отстаёт от Portfolio,
+ *   fill заблокирован до ручной реконсиляции (см. `ProcessFillUseCase`).
  */
 export type ReconciliationIssueType =
   | 'FILL_PARTIAL_COMMIT'
@@ -67,7 +70,8 @@ export type ReconciliationIssueType =
   | 'SUBMIT_FILLED_WITHOUT_FILL_DETAILS'
   | 'CANCEL_UNKNOWN_OUTCOME'
   | 'VENUE_LOCAL_ORDER_DESYNC'
-  | 'EVENT_PUBLISH_FAILED';
+  | 'EVENT_PUBLISH_FAILED'
+  | 'RESERVATION_JOURNAL_DESYNC';
 
 /**
  * Статус жизненного цикла issue.
