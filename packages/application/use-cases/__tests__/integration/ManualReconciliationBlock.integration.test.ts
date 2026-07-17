@@ -134,9 +134,32 @@ function makeProcessedFillRepo(): IProcessedFillRepository {
   };
 }
 
-function makeOpenOrder(): Order {
+/**
+ * Реалистичный (stateful) idempotency-репозиторий: FAILED → retry разрешён
+ * (ACQUIRED c isRetry), APPLIED → DUPLICATE, RECONCILIATION_REQUIRED → терминал.
+ */
+function makeStatefulProcessedFillRepo(): IProcessedFillRepository {
+  const status = new Map<string, 'PROCESSING' | 'APPLIED' | 'FAILED' | 'RECONCILIATION_REQUIRED'>();
+  return {
+    begin: jest.fn(async (fillId: FillId) => {
+      const s = status.get(String(fillId));
+      if (s === 'APPLIED') return { outcome: 'DUPLICATE' as const };
+      if (s === 'RECONCILIATION_REQUIRED') return { outcome: 'RECONCILIATION_REQUIRED' as const };
+      const isRetry = s === 'FAILED';
+      status.set(String(fillId), 'PROCESSING');
+      return { outcome: 'ACQUIRED' as const, isRetry };
+    }),
+    markApplied: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'APPLIED'); }),
+    markFailed: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'FAILED'); }),
+    markReverted: jest.fn(async () => undefined),
+    markReconciliationRequired: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'RECONCILIATION_REQUIRED'); }),
+    getStatus: jest.fn(async (fillId: FillId) => status.get(String(fillId))),
+  } as unknown as IProcessedFillRepository;
+}
+
+function makeOpenOrder(orderId: OrderId = ORDER_ID): Order {
   const result = Order.create({
-    id: ORDER_ID,
+    id: orderId,
     asset: ASSET_ID,
     side: 'BUY',
     price: Price.of(new Decimal('0.65')) as never,
@@ -150,10 +173,10 @@ function makeOpenOrder(): Order {
   return accepted.value;
 }
 
-function makeFill(id: string, size = '50'): Fill {
+function makeFill(id: string, size = '50', orderId: OrderId = ORDER_ID): Fill {
   return {
     id: id as unknown as FillId,
-    orderId: ORDER_ID,
+    orderId,
     accountId: ACCOUNT_ID,
     tokenId: ASSET_ID,
     settlementAssetId: 'USDC' as unknown as AssetId,
@@ -259,8 +282,11 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
     // Fill НЕ снял manual block (в отличие от MATCHED placeholder).
     expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
     expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
-    // Processed fill → RECONCILIATION_REQUIRED (не APPLIED).
-    expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalled();
+    // Fill отложен как retryable (deferred, P1): НЕ APPLIED и НЕ terminal —
+    // после ручного clearManualReconciliationBlock его можно повторить.
+    expect(processedFillRepo.markFailed).toHaveBeenCalledWith(
+      expect.anything(), expect.stringContaining('MANUAL_RECONCILIATION_BLOCK_DEFERRED'),
+    );
     expect(processedFillRepo.markApplied).not.toHaveBeenCalled();
   }
 
@@ -297,7 +323,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
     await expectFillBlockedWithoutMutations('late-fill-1');
   });
 
-  it('update journal failure → Fill блокируется, Portfolio/Ledger не мутируются, block остаётся', async () => {
+  it('update (deferred) → settle journal failure → escalated manual block → Fill блокируется без мутаций', async () => {
     const updateUseCase = new UpdateOrderStatusUseCase({
       orderRepo: store,
       orderStateStore: store,
@@ -308,16 +334,95 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
       logger,
     });
 
+    // Terminal update с held journal → settlement DEFERRED (pending), капитал held.
     const updateResult = await updateUseCase.execute({
       update: { type: 'CANCELLED', orderId: ORDER_ID },
       accountId: ACCOUNT_ID,
     });
     expect(updateResult.ok).toBe(true);
-    expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+
+    // Settle-резолвер: venue trades пусты (Ok), Portfolio release ok, journal
+    // release падает (и best-effort пометка тоже) → escalated manual block.
+    const { SettleTerminalOrdersUseCase } = await import('../../src/SettleTerminalOrdersUseCase.js');
+    const settle = new SettleTerminalOrdersUseCase({
+      orderStateStore: store,
+      submissions: failingJournal,
+      portfolioService,
+      exchangeClient: {
+        submitOrder: jest.fn(), cancelOrder: jest.fn(),
+        getOpenOrders: jest.fn().mockImplementation(async () => Ok([])),
+        getTrades: jest.fn().mockImplementation(async () => Ok([])),
+      } as unknown as import('@polymarket/ports').IExchangeClient,
+      processedFillRepo,
+      fillProcessor: makeProcessFill(),
+      tradeToFill: () => { throw new Error('not used'); },
+      keyedMutex: makeKeyedMutex(),
+      clock: { now: () => new Date() },
+      logger,
+    });
+    const settleResult = await settle.execute({ accountId: ACCOUNT_ID });
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ escalated: 1, settled: 0 });
+    expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1); // Portfolio уже освобождён
     expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(false);
 
     (portfolio.releaseReservation as ReturnType<typeof jest.fn>).mockClear();
     await expectFillBlockedWithoutMutations('late-fill-2');
+  });
+
+  it('P1: fill B чужого Order отложен (deferred) блоком Order A, после clear блока retry применяет его РОВНО один раз', async () => {
+    const ORDER_B = 'order-B' as unknown as OrderId;
+    // Order B — живой локальный ордер того же инструмента (normal path).
+    const saveB = await store.save(makeOpenOrder(ORDER_B), 0);
+    if (!saveB.ok) throw new Error('seed order B save failed');
+    // 1. Order A ставит manual block на инструмент.
+    store.markManualReconciliationBlock({ orderId: ORDER_ID, instrumentId: INSTRUMENT_ID, reason: 'order A desync' });
+
+    const statefulRepo = makeStatefulProcessedFillRepo();
+    const useCase = new ProcessFillUseCase({
+      orderStateStore: store,
+      portfolioService,
+      ledgerService,
+      orderRepo: store,
+      processedFillRepo: statefulRepo,
+      keyedMutex: makeKeyedMutex(),
+      eventBus,
+      orderedEventOutbox: makeOutbox(eventBus),
+      submissions: realJournal,
+      logger,
+    });
+    const fillB = makeFill('fill-B', '50', ORDER_B);
+
+    // 2-3. Fill B блокируется ДО мутаций, но НЕ терминально (deferred).
+    const first = await useCase.execute(fillB);
+    expect(first.ok).toBe(false);
+    expect(portfolio.applyDebit).not.toHaveBeenCalled();
+    expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();
+    expect(ledgerSpy).not.toHaveBeenCalled();
+    expect(statefulRepo.markReconciliationRequired).not.toHaveBeenCalled();
+
+    // Retry при ЖИВОМ блоке — снова deferred, мутаций по-прежнему нет.
+    const retryWhileBlocked = await useCase.execute(fillB);
+    expect(retryWhileBlocked.ok).toBe(false);
+    expect(portfolio.applyDebit).not.toHaveBeenCalled();
+
+    // 4. Оператор снимает блок Order A.
+    store.clearManualReconciliationBlock(ORDER_ID);
+
+    // 5-6. Повторный execute применяет fill B РОВНО один раз.
+    const second = await useCase.execute(fillB);
+    expect(second.ok).toBe(true);
+    expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
+    expect(ledgerSpy).toHaveBeenCalledTimes(1);
+    expect(statefulRepo.markApplied).toHaveBeenCalledTimes(1);
+
+    // Третий вызов — DUPLICATE no-op (не двойное применение).
+    const third = await useCase.execute(fillB);
+    expect(third.ok).toBe(true);
+    expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
   });
 
   it('fill A journal failure → другой fillId B блокируется, Portfolio/Ledger не мутируются повторно, block остаётся', async () => {

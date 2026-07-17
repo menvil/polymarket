@@ -105,14 +105,18 @@ export interface ExecutionContext {
  *
  * @remarks
  * - `CONFIRMED` — venue подтвердил отмену (`CANCELLED`/`ALREADY_CANCELLED`):
- *   капитал освобождён, можно считать cancel успешным.
- * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`: ордер matched, ждём
- *   fill; `RECONCILIATION_REQUIRED`: venue-исход неоднозначен): PLACE intents
- *   текущего цикла блокируются — размещение поверх неопределённого состояния
- *   могло бы задвоить экспозицию.
+ *   капитал освобождён, можно считать cancel успешным (только эти два исхода
+ *   инкрементируют `cancelled` и ставят post-cancel cooldown).
+ * - `TERMINAL_NOOP` — ордер уже terminal НЕ отменой (`ALREADY_TERMINAL`:
+ *   REJECTED/EXPIRED): отменять нечего, но это НЕ подтверждённая отмена —
+ *   не считается в `cancelled`, PLACE не блокирует.
+ * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`/`ALREADY_FILLED`: fill
+ *   исполнен/в пути; `RECONCILIATION_REQUIRED`: venue-исход неоднозначен):
+ *   PLACE intents текущего цикла блокируются — размещение поверх
+ *   неопределённого состояния могло бы задвоить экспозицию.
  * - `FAILED` — use case вернул Err (например, ордер не найден).
  */
-export type CancelExecutionResult = 'CONFIRMED' | 'PENDING' | 'FAILED';
+export type CancelExecutionResult = 'CONFIRMED' | 'TERMINAL_NOOP' | 'PENDING' | 'FAILED';
 
 /**
  * Отчёт об исполнении intents.
@@ -311,6 +315,9 @@ export class ExecutionEngine {
             // cancelled++ ТОЛЬКО для подтверждённой отмены (CANCELLED/ALREADY_CANCELLED).
             cancelled++;
             break;
+          case 'TERMINAL_NOOP':
+            // Ордер умер сам (REJECTED/EXPIRED): не отмена, не блокировка.
+            break;
           case 'PENDING':
             hasPendingCancel = true;
             break;
@@ -385,10 +392,14 @@ export class ExecutionEngine {
     }
 
     const outcome = result.value;
-    if (outcome.status === 'FILL_PENDING' || outcome.status === 'RECONCILIATION_REQUIRED') {
-      // Отмена НЕ подтверждена: ордер matched (ждём fill) либо venue-исход
-      // неоднозначен. cancelled НЕ инкрементируется, PLACE intents текущего
-      // цикла будут заблокированы (см. execute()).
+    if (
+      outcome.status === 'FILL_PENDING' ||
+      outcome.status === 'ALREADY_FILLED' ||
+      outcome.status === 'RECONCILIATION_REQUIRED'
+    ) {
+      // Отмена НЕ подтверждена: ордер исполнен/matched (fill получен или в
+      // пути) либо venue-исход неоднозначен. cancelled НЕ инкрементируется,
+      // PLACE intents текущего цикла будут заблокированы (см. execute()).
       this._logger.warn('ExecutionEngine: cancel not confirmed — blocking PLACE intents this cycle', {
         orderId: String(intent.orderId),
         strategyId: ctx.strategyId,
@@ -396,6 +407,16 @@ export class ExecutionEngine {
         ...(outcome.status === 'RECONCILIATION_REQUIRED' ? { reason: outcome.reason } : {}),
       });
       return 'PENDING';
+    }
+    if (outcome.status === 'ALREADY_TERMINAL') {
+      // REJECTED/EXPIRED: ордер умер сам — не отмена (без cooldown/cancelled++),
+      // но и не блокировка (fill не ожидается).
+      this._logger.info('ExecutionEngine: cancel no-op — order already terminal (not cancelled)', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+        orderStatus: outcome.orderStatus,
+      });
+      return 'TERMINAL_NOOP';
     }
 
     // CANCELLED / ALREADY_CANCELLED — подтверждённая отмена.

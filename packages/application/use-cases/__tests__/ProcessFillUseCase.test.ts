@@ -214,6 +214,11 @@ function makeOrderStateStore(order?: Order): IOrderStateStore {
     hasManualReconciliationBlockForOrder: jest.fn<IOrderStateStore['hasManualReconciliationBlockForOrder']>().mockReturnValue(false),
     hasManualReconciliationBlocks: jest.fn<IOrderStateStore['hasManualReconciliationBlocks']>().mockReturnValue(false),
     getManualReconciliationBlocks: jest.fn<IOrderStateStore['getManualReconciliationBlocks']>().mockReturnValue([]),
+    markTerminalSettlementPending: jest.fn<IOrderStateStore['markTerminalSettlementPending']>(),
+    clearTerminalSettlementPending: jest.fn<IOrderStateStore['clearTerminalSettlementPending']>(),
+    hasTerminalSettlementPendingForOrder: jest.fn<IOrderStateStore['hasTerminalSettlementPendingForOrder']>().mockReturnValue(false),
+    hasTerminalSettlementPending: jest.fn<IOrderStateStore['hasTerminalSettlementPending']>().mockReturnValue(false),
+    getTerminalSettlementPending: jest.fn<IOrderStateStore['getTerminalSettlementPending']>().mockReturnValue([]),
   };
 }
 
@@ -1465,6 +1470,80 @@ describe('ProcessFillUseCase', () => {
       // Повторный вызов — no-op (Ok), Portfolio НЕ мутируется повторно.
       expect(second.ok).toBe(true);
       expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
+    });
+
+    it('unexpected PREcommit exception (orderRepo.get отклоняет Promise) → retryable, markers сохранены, повторный execute применяет fill', async () => {
+      // Stateful repo: FAILED → retry разрешён.
+      const status = new Map<string, string>();
+      const statefulRepo = {
+        begin: jest.fn(async (fillId: FillId) => {
+          const s = status.get(String(fillId));
+          if (s === 'APPLIED') return { outcome: 'DUPLICATE' as const };
+          if (s === 'RECONCILIATION_REQUIRED') return { outcome: 'RECONCILIATION_REQUIRED' as const };
+          const isRetry = s === 'FAILED';
+          status.set(String(fillId), 'PROCESSING');
+          return { outcome: 'ACQUIRED' as const, isRetry };
+        }),
+        markApplied: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'APPLIED'); }),
+        markFailed: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'FAILED'); }),
+        markReverted: jest.fn(async () => undefined),
+        markReconciliationRequired: jest.fn(async (fillId: FillId) => { status.set(String(fillId), 'RECONCILIATION_REQUIRED'); }),
+        getStatus: jest.fn(async (fillId: FillId) => status.get(String(fillId))),
+      } as unknown as IProcessedFillRepository;
+
+      const failingOrderRepo = makeOrderRepo(makeOrderOpen());
+      (failingOrderRepo.get as ReturnType<typeof jest.fn>)
+        .mockRejectedValueOnce(new Error('repo connection reset') as never);
+      const useCase = new ProcessFillUseCase({ ...deps, orderRepo: failingOrderRepo, processedFillRepo: statefulRepo });
+
+      // Первый вызов: НЕ бросает — Err (retryable), мутаций не было.
+      const first = await useCase.execute(makeFill());
+      expect(first.ok).toBe(false);
+      expect(statefulRepo.markFailed).toHaveBeenCalledWith(
+        FILL_ID, expect.stringContaining('UNEXPECTED_EXCEPTION_PRECOMMIT'),
+      );
+      expect(statefulRepo.markReconciliationRequired).not.toHaveBeenCalled();
+      expect(deps.orderStateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'FAILED_RETRYABLE');
+      // Venue MATCHED/in-flight evidence НЕ снимается generic exception path.
+      expect(deps.orderStateStore.clearOrderFillMatched).not.toHaveBeenCalled();
+      expect(deps.orderStateStore.clearInFlightFill).not.toHaveBeenCalled();
+
+      // Retry: repo восстановился → fill применяется.
+      const second = await useCase.execute(makeFill());
+      expect(second.ok).toBe(true);
+      expect(statefulRepo.markApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('unexpected POSTcommit exception (applyFill бросает после saveSync) → terminal reconciliation + manual block, markers сохранены', async () => {
+      const reconciliationIssues = makeReconciliationIssueRepo();
+      // portfolioService.applyFill БРОСАЕТ (не Err) — после saveSync (ORDER_COMMITTED).
+      const throwingPortfolioService = {
+        applyFill: jest.fn(() => { throw new Error('portfolio store crashed'); }),
+      } as unknown as ProcessFillDeps['portfolioService'];
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        portfolioService: throwingPortfolioService,
+        reconciliationIssues,
+      });
+
+      const result = await useCase.execute(makeFill());
+
+      expect(result.ok).toBe(false);
+      expect(processedFillRepo.markReconciliationRequired).toHaveBeenCalledWith(
+        FILL_ID, expect.stringContaining('UNEXPECTED_EXCEPTION_POSTCOMMIT (phase=ORDER_COMMITTED)'),
+      );
+      expect(processedFillRepo.markFailed).not.toHaveBeenCalled();
+      expect(deps.orderStateStore.updateFillProcessingStatus).toHaveBeenCalledWith(FILL_ID, 'RECONCILIATION_REQUIRED');
+      // Manual block поставлен (частичный commit).
+      expect(deps.orderStateStore.markManualReconciliationBlock).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: ORDER_ID }),
+      );
+      // Markers сохранены.
+      expect(deps.orderStateStore.clearOrderFillMatched).not.toHaveBeenCalled();
+      const issue = (reconciliationIssues.add as ReturnType<typeof jest.fn>).mock.calls
+        .map((c) => c[0] as { id: string })
+        .find((i) => i.id.endsWith(':unexpected-exception-postcommit'));
+      expect(issue).toBeDefined();
     });
 
     it('journal NONE (резервация не фиксировалась) → sync пропускается, fill применяется', async () => {

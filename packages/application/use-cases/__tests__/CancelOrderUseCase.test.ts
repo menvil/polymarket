@@ -180,6 +180,11 @@ function makeOrderStateStore(
     hasManualReconciliationBlockForOrder: jest.fn<IOrderStateStore['hasManualReconciliationBlockForOrder']>().mockReturnValue(false),
     hasManualReconciliationBlocks: jest.fn<IOrderStateStore['hasManualReconciliationBlocks']>().mockReturnValue(false),
     getManualReconciliationBlocks: jest.fn<IOrderStateStore['getManualReconciliationBlocks']>().mockReturnValue([]),
+    markTerminalSettlementPending: jest.fn<IOrderStateStore['markTerminalSettlementPending']>(),
+    clearTerminalSettlementPending: jest.fn<IOrderStateStore['clearTerminalSettlementPending']>(),
+    hasTerminalSettlementPendingForOrder: jest.fn<IOrderStateStore['hasTerminalSettlementPendingForOrder']>().mockReturnValue(false),
+    hasTerminalSettlementPending: jest.fn<IOrderStateStore['hasTerminalSettlementPending']>().mockReturnValue(false),
+    getTerminalSettlementPending: jest.fn<IOrderStateStore['getTerminalSettlementPending']>().mockReturnValue([]),
   };
 }
 
@@ -565,6 +570,39 @@ describe('CancelOrderUseCase (venue-first)', () => {
     expect(trackingMutex.runExclusive).toHaveBeenCalledTimes(1);
     expect(callOrder).toEqual(['acquire', 'release']);
     expect(realMutexKeys[0]).toContain(`order:${String(ORDER_ID)}`);
+  });
+
+  // ── Terminal outcome mapping (Шаг 6) ─────────────────────────────────────────
+
+  describe('terminal outcome mapping (Шаг 6)', () => {
+    function makeTerminalOrderRepo(status: string): IOrderRepository {
+      const terminalOrder = { id: ORDER_ID, asset: ASSET_ID, side: 'BUY', status, isTerminal: true } as unknown as Order;
+      return {
+        ...makeOrderRepo(terminalOrder),
+        getWithVersion: jest.fn<IOrderRepository['getWithVersion']>().mockResolvedValue({ order: terminalOrder, version: 1 }),
+      } as unknown as IOrderRepository;
+    }
+
+    it.each([
+      ['CANCELED', 'ALREADY_CANCELLED'],
+      ['FILLED', 'ALREADY_FILLED'],
+      ['REJECTED', 'ALREADY_TERMINAL'],
+      ['EXPIRED', 'ALREADY_TERMINAL'],
+    ])('terminal Order %s → outcome %s (venue-запрос не выполняется)', async (orderStatus, expectedOutcome) => {
+      const useCase = new CancelOrderUseCase({ ...deps, orderRepo: makeTerminalOrderRepo(orderStatus) });
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.status).toBe(expectedOutcome);
+        if (result.value.status === 'ALREADY_TERMINAL') {
+          expect(result.value.orderStatus).toBe(orderStatus);
+        }
+      }
+      expect(exchangeClient.cancelOrder).not.toHaveBeenCalled();
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    });
   });
 
   // ── Portfolio↔journal синхронизация (Этап 5) ─────────────────────────────────

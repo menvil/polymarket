@@ -205,6 +205,7 @@ function makeSubmissionsStub(
     markFailed: jest.fn<IOrderSubmissionRepository['markFailed']>().mockResolvedValue(undefined),
     get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue(undefined),
     findByVenueOrderId: jest.fn<IOrderSubmissionRepository['findByVenueOrderId']>().mockResolvedValue(undefined),
+    listByStatus: jest.fn<IOrderSubmissionRepository['listByStatus']>().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -293,6 +294,11 @@ describe('PlaceOrderUseCase', () => {
         hasManualReconciliationBlockForOrder: jest.fn().mockReturnValue(false),
         hasManualReconciliationBlocks: jest.fn().mockReturnValue(false),
         getManualReconciliationBlocks: jest.fn().mockReturnValue([]),
+        markTerminalSettlementPending: jest.fn(),
+        clearTerminalSettlementPending: jest.fn(),
+        hasTerminalSettlementPendingForOrder: jest.fn().mockReturnValue(false),
+        hasTerminalSettlementPending: jest.fn().mockReturnValue(false),
+        getTerminalSettlementPending: jest.fn().mockReturnValue([]),
       } as unknown as IOrderStateStore,
       // eventBus больше не dep — публикация через ordered outbox (flush после lock).
       orderedEventOutbox,

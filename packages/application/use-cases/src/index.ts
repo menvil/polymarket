@@ -8,6 +8,8 @@
  * - **ProcessFillUseCase** — обработка исполнения ордера (идемпотентно)
  * - **CancelOrderUseCase** — отмена ордера с откатом резервации
  * - **ReconcileTradesUseCase** — сверка исполнений с биржей
+ * - **ReconcileUnknownSubmissionsUseCase** — привязка/разрешение ambiguous
+ *   submissions без venueOrderId (recovery reservation)
  * - **InitializePortfolioUseCase** — инициализация Portfolio из баланса venue
  *
  * Вспомогательные сервисы:
@@ -29,6 +31,32 @@ export type { CancelOrderInput, CancelOrderDeps } from './CancelOrderUseCase.js'
 
 export { ReconcileTradesUseCase } from './ReconcileTradesUseCase.js';
 export type { ReconcileTradesDeps, ReconcileTradesInput } from './ReconcileTradesUseCase.js';
+
+export { ReconcileUnknownSubmissionsUseCase } from './ReconcileUnknownSubmissionsUseCase.js';
+export type {
+  ReconcileUnknownSubmissionsDeps,
+  ReconcileUnknownSubmissionsInput,
+  ReconcileUnknownSubmissionsSummary,
+  UnknownSubmissionCandidate,
+  UnknownSubmissionDiscoveryOutcome,
+  UnknownSubmissionFinding,
+} from './ReconcileUnknownSubmissionsUseCase.js';
+
+export { ResolveUnknownSubmissionUseCase } from './ResolveUnknownSubmissionUseCase.js';
+export type {
+  ResolveUnknownSubmissionDeps,
+  ResolveUnknownSubmissionInput,
+  ResolveUnknownSubmissionOutcome,
+  UnknownSubmissionResolution,
+} from './ResolveUnknownSubmissionUseCase.js';
+
+export { SettleTerminalOrdersUseCase } from './SettleTerminalOrdersUseCase.js';
+export type {
+  SettleTerminalOrdersDeps,
+  SettleTerminalOrdersInput,
+  SettleTerminalOrdersSummary,
+} from './SettleTerminalOrdersUseCase.js';
+export { venueTradeToFill } from './services/venueTradeToFill.js';
 
 export { InitializePortfolioUseCase } from './InitializePortfolioUseCase.js';
 export type { InitializePortfolioDeps } from './InitializePortfolioUseCase.js';

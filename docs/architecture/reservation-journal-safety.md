@@ -80,9 +80,135 @@ Portfolio+journal).
 
 Перед ЛЮБЫМИ мутациями (и до чтения Order/journal) `_processLocked` проверяет
 `hasManualReconciliationBlockForOrder(fill.orderId)` и
-`hasManualReconciliationBlocks(instrumentId)` — при блоке fill переводится в
-`RECONCILIATION_REQUIRED` (Portfolio/Ledger/journal не тронуты), processing-блок
-сохраняется, manual block остаётся.
+`hasManualReconciliationBlocks(instrumentId)` — при блоке fill **откладывается**
+(deferred): processing-блок → `FAILED_RETRYABLE`, processed fill → `markFailed`
+(retry разрешён), Portfolio/Ledger/journal не тронуты, manual block остаётся.
+
+### Почему deferred, а не terminal (P1)
+
+Fill, остановленный manual block ДО мутаций, ещё ничего не изменил. Terminal
+`RECONCILIATION_REQUIRED` делал бы корректный fill соседнего ордера того же
+инструмента навсегда необрабатываемым (после снятия блока `begin()` возвращал
+бы вечный no-op). Deferred-семантика: пока блок жив — каждый retry снова
+откладывается без мутаций (безопасность обеспечивает сам блок); после
+`clearManualReconciliationBlock` повторный `execute(fill)` применяет fill ровно
+один раз. Terminal `RECONCILIATION_REQUIRED` остаётся только для post-mutation
+сбоев (частичный commit самого fill) и провала prevalidation held-fill.
+
+## Recovery ambiguous submissions без venueOrderId (fail-closed)
+
+### Проблема
+
+При `MAY_HAVE_BEEN_SUBMITTED` (или `UNKNOWN` без orderId) submission
+переводится в `UNKNOWN`, резервация held, но **venueOrderId неизвестен** —
+поздний Fill не находит запись через `findByVenueOrderId` и ушёл бы в direct
+path: двойной дебет для BUY (available списан + исходная USDC-резервация
+аккаунта заморожена навсегда).
+
+### Почему НЕ автоматический recovery
+
+Эвристическое совпадение по instrument/side/price/size/time — только ПОДСКАЗКА
+оператору, не доказательство (ошибочный bind чужого ордера хуже отсутствия
+bind). Пустой ответ `getOpenOrders()+getTrades()` — НЕ доказательство
+отсутствия заявки (API может отставать). Никакой возраст записи не разрешает
+автоматический release. UNKNOWN без venueOrderId ВСЕГДА означает: reservation
+held, manual block активен, авто-retry submit запрещён.
+
+### Решение (трёхступенчатое, fail-closed)
+
+1. **`PlaceOrderUseCase` сразу ставит manual block** на инструмент (ключ —
+   clientOrderId) в обеих ветках без venueOrderId — fill будет отложен
+   (deferred), а не применён direct path.
+2. **`ReconcileUnknownSubmissionsUseCase` — DISCOVERY-ONLY** (периодически +
+   после WS reconnect): `listByStatus('UNKNOWN')` → эвристические кандидаты
+   (структурированные `UnknownSubmissionCandidate`: `OPEN_ORDER` со snapshot /
+   `TRADE` с trade) → findings + идемпотентные issues. Исходы:
+   `HEURISTIC_CANDIDATE_FOUND` / `AMBIGUOUS_VENUE_MATCH` /
+   `NO_CANDIDATE_INCONCLUSIVE` / `VENUE_LOOKUP_INCOMPLETE`. НИКОГДА не
+   вызывает bind/release/`markFailed`/`clearManualReconciliationBlock`.
+3. **`ResolveUnknownSubmissionUseCase` — явное операторское решение** (под
+   account/instrument locks, с audit: operatorId/reason/время):
+   - `BIND_VENUE_ORDER` + `OPEN_ORDER`: verify через venue → `markVenueAccepted`
+     → **block ОСТАЁТСЯ** (`BOUND_AWAITING_ORDER_RECOVERY`: данных snapshot
+     недостаточно для восстановления локального Order — нет strategyId и части
+     параметров; блок до восстановления Order в локальном репозитории);
+   - `BIND_VENUE_ORDER` + `TRADE`: verify → bind → matched/in-flight markers
+     на конкретные fillId trade-ов (unsettled evidence сохраняется) → ТОЛЬКО
+     потом снятие блока (`BOUND_AWAITING_FILL`); fill применится held-path
+     через WS/reconciliation, markers снимет `ProcessFillUseCase`;
+   - `CONFIRM_NOT_SUBMITTED`: Portfolio release → journal release (`SETTLED`)
+     → `markFailed` (retry разрешён) → снятие блока
+     (`RELEASED_NOT_SUBMITTED`). Частичный сбой → journal
+     `RECONCILIATION_REQUIRED` best-effort, блок ОСТАЁТСЯ, issue, retry
+     запрещён (`RECONCILIATION_REQUIRED`).
+
+Автоматический UNKNOWN recovery возвращать только после появления сильного
+venue identifier либо authoritative lookup с отдельным исходом
+`CONCLUSIVELY_NOT_FOUND`.
+
+## Exception boundary обработки Fill (FillCommitPhase + lease)
+
+### Commit tracker
+
+`ProcessFillUseCase` ведёт `FillCommitPhase` (`NONE → ORDER_COMMITTED →
+PORTFOLIO_COMMITTED → LEDGER_COMMITTED → JOURNAL_COMMITTED`), обновляемую сразу
+после каждой необратимой мутации. Locked processing обёрнут в exception
+boundary; `orderedEventOutbox.flush()` — в `finally` (уже enqueued события
+committed мутаций не остаются без попытки публикации). Неожиданный throw:
+
+- `phase === NONE` → business mutation не было → `markFailed` +
+  processing-блок `FAILED_RETRYABLE` → **retry разрешён**;
+- `phase !== NONE` → частичный commit → `markReconciliationRequired` + journal
+  `RECONCILIATION_REQUIRED` best-effort + manual block + issue → retry запрещён.
+
+В ОБОИХ случаях venue MATCHED/in-flight markers НЕ снимаются — evidence
+сохраняется до применения/отката/операторского разрешения.
+
+### PROCESSING lease
+
+`IProcessedFillRepository.begin(fillId, lease?)` принимает
+`{ workerId, now, leaseMs }` (default в ProcessFill: `main`/120s): просроченный
+`PROCESSING` (крэш между begin и mark*) reclaim-ится (`reclaimed: true`,
+монотонный `leaseToken` — fencing) вместо вечного `BUSY`. Legacy begin без
+lease — прежнее поведение. Персистентная реализация обязана делать
+acquire/reclaim атомарно и отклонять `mark*` со старым token.
+
+## Terminal settlement pending (delayed-fill race)
+
+### Проблема
+
+Partial fill произошёл на venue, а `CANCELLED`/`EXPIRED`/`REJECTED` update
+пришёл ПЕРВЫМ. Немедленный release всей остаточной резервации завысил бы
+available (временно доступный незаработанный капитал), а delayed fill затем
+дебетовал бы available второй раз.
+
+### Решение
+
+Manual block здесь НЕ подходит (заблокировал бы и сам поздний Fill). Введён
+отдельный АВТОМАТИЧЕСКИ разрешаемый статус `TerminalSettlementPending`
+(`IOrderStateStore`): блокирует Place/Cancel/strategy (входит в
+`hasUnsettledFills`), но НЕ блокирует `ProcessFillUseCase`.
+
+- `UpdateOrderStatusUseCase` при терминальном update с held journal-резервацией
+  (обе ветки: с локальным Order и без): CAS save terminal → **резервация НЕ
+  освобождается** → ставится pending → pending-cancel marker НЕ снимается.
+  Legacy-путь (без journal-резервации) — прежний немедленный release.
+- **`SettleTerminalOrdersUseCase`** (периодически + в reconcile loop):
+  authoritative `getTrades` (Err → pending ОСТАЁТСЯ: timeout — не
+  доказательство отсутствия fill) → непримененные trades ордера прогоняются
+  через `fillProcessor` (delayed fill → held-reservation path) → после
+  применения ВСЕХ trades journal `remaining` — authoritative остаток:
+  Portfolio release remaining → journal release → `SETTLED` → снятие pending +
+  placeholder. Частичный сбой settlement → эскалация в manual block + issue.
+
+## CancelOrderOutcome: различение terminal-статусов
+
+`CancelOrderOutcome` различает: `ALREADY_CANCELLED` (CANCELED),
+`ALREADY_FILLED` (FILLED — НЕ отмена, экспозиция получена),
+`ALREADY_TERMINAL { orderStatus: REJECTED | EXPIRED }` (ордер умер сам).
+`ExecutionEngine`-маппинг: `ALREADY_FILLED → PENDING` (блокирует PLACE цикла),
+`ALREADY_TERMINAL → TERMINAL_NOOP` (не cancelled++, не блокирует, без
+cooldown); `cancelled++`/cooldown — только `CANCELLED`/`ALREADY_CANCELLED`.
 
 ## Exception boundaries (P1)
 

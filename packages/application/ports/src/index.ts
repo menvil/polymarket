@@ -44,6 +44,7 @@ export type {
   IProcessedFillRepository,
   ProcessedFillStatus,
   BeginFillProcessingResult,
+  FillProcessingLease,
 } from './IProcessedFillRepository.js';
 export type {
   IOrderSubmissionRepository,
@@ -113,6 +114,7 @@ export type {
   FillProcessingBlock,
   MarkFillProcessingInput,
   ManualReconciliationBlock,
+  TerminalSettlementPending,
 } from './IOrderStateStore.js';
 export { pendingMatchFillId } from './IOrderStateStore.js';
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';

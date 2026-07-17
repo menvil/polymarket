@@ -159,6 +159,33 @@ export interface ManualReconciliationBlock {
   readonly reason: string;
 }
 
+/**
+ * Terminal settlement pending — авторитетный terminal venue-update получен, но
+ * held-резервация ещё НЕ освобождена (окно delayed fill не разрешено).
+ *
+ * @remarks
+ * Race: partial fill произошёл на venue, а CANCELLED/EXPIRED/REJECTED update
+ * пришёл ПЕРВЫМ. Немедленный release всей остаточной резервации завысил бы
+ * available (временно доступный незаработанный капитал), а последующий delayed
+ * fill дебетовал бы available второй раз.
+ *
+ * ### Отличие от {@link ManualReconciliationBlock}:
+ * Manual block заблокировал бы и сам поздний Fill. TerminalSettlementPending —
+ * АВТОМАТИЧЕСКИ разрешаемый статус: он блокирует Place/Cancel/strategy
+ * (участвует в `hasUnsettledFills`), но НЕ блокирует `ProcessFillUseCase` —
+ * delayed fill применяется held-reservation path. Снимается
+ * `SettleTerminalOrdersUseCase` ПОСЛЕ применения всех venue trades и release
+ * только authoritative остатка (Portfolio + journal settlement).
+ */
+export interface TerminalSettlementPending {
+  readonly orderId: OrderId;
+  readonly instrumentId: InstrumentId;
+  /** Терминальный venue-статус, инициировавший settlement. */
+  readonly venueStatus: 'CANCELLED' | 'EXPIRED' | 'REJECTED';
+  /** Когда terminal update получен. */
+  readonly receivedAt: Date;
+}
+
 export interface IOrderStateStore {
   /**
    * Возвращает все открытые ордера стратегии.
@@ -379,18 +406,69 @@ export interface IOrderStateStore {
 
   /**
    * Есть ли на инструменте НЕзавершённые fills (venue in-flight ЛИБО
-   * application processing-блок ЛИБО manual reconciliation block).
+   * application processing-блок ЛИБО manual reconciliation block ЛИБО
+   * terminal settlement pending).
    *
    * @param instrumentId - ID инструмента
    * @returns `hasInFlightFills(id) || hasFillProcessingBlocks(id) ||
-   *   hasManualReconciliationBlocks(id)`
+   *   hasManualReconciliationBlocks(id) || hasTerminalSettlementPending(id)`
    *
    * @remarks
    * ЕДИНЫЙ guard для стратегий и cancel: блокирует новую активность, пока есть
    * хоть venue in-flight fill, хоть незавершённый application processing-блок
-   * (FAILED_RETRYABLE/RECONCILIATION_REQUIRED), хоть manual reconciliation block.
+   * (FAILED_RETRYABLE/RECONCILIATION_REQUIRED), хоть manual reconciliation
+   * block, хоть неразрешённый terminal settlement.
    */
   hasUnsettledFills(instrumentId: InstrumentId): boolean;
+
+  // ── Terminal settlement pending ──────────────────────────────────────────────
+
+  /**
+   * Ставит terminal settlement pending (идемпотентно по orderId).
+   *
+   * @param pending - `{ orderId, instrumentId, venueStatus, receivedAt }`
+   *
+   * @remarks
+   * Ставится `UpdateOrderStatusUseCase` при терминальном venue-update с held
+   * journal-резервацией. Участвует в `hasUnsettledFills`, но НЕ блокирует
+   * `ProcessFillUseCase` (delayed fill должен примениться held-path).
+   */
+  markTerminalSettlementPending(pending: TerminalSettlementPending): void;
+
+  /**
+   * Снимает terminal settlement pending (после Portfolio + journal settlement).
+   *
+   * @param orderId - ID ордера
+   *
+   * @remarks
+   * Вызывается ТОЛЬКО `SettleTerminalOrdersUseCase` (или ручной реконсиляцией)
+   * после применения всех venue trades и release authoritative остатка.
+   * Неизвестный orderId — no-op.
+   */
+  clearTerminalSettlementPending(orderId: OrderId): void;
+
+  /**
+   * Есть ли terminal settlement pending на конкретном ордере.
+   *
+   * @param orderId - ID ордера
+   * @returns true если settlement ещё не разрешён
+   */
+  hasTerminalSettlementPendingForOrder(orderId: OrderId): boolean;
+
+  /**
+   * Есть ли на инструменте хотя бы один terminal settlement pending.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть неразрешённые terminal settlements
+   */
+  hasTerminalSettlementPending(instrumentId: InstrumentId): boolean;
+
+  /**
+   * Возвращает ВСЕ terminal settlement pending записи (для settle-резолвера).
+   *
+   * @returns Readonly массив pending записей (пустой, если нет)
+   */
+  getTerminalSettlementPending(): readonly TerminalSettlementPending[];
 
   // ── Manual reconciliation blocks ─────────────────────────────────────────────
 

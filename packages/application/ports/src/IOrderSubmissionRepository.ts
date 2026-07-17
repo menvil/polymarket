@@ -336,4 +336,18 @@ export interface IOrderSubmissionRepository {
    * @returns Запись или `undefined`, если clientOrderId неизвестен
    */
   get(clientOrderId: OrderId): Promise<OrderSubmissionRecord | undefined>;
+
+  /**
+   * Возвращает все записи с указанным статусом submission.
+   *
+   * @param status - Статус (например `UNKNOWN` для reconciler'а ambiguous submits)
+   * @returns Snapshot-массив записей (пустой, если таких нет)
+   *
+   * @remarks
+   * Нужен `ReconcileUnknownSubmissionsUseCase`: ambiguous submit БЕЗ
+   * venueOrderId невозможно найти через `findByVenueOrderId` — reconciler
+   * перебирает `UNKNOWN`-записи и осторожно сопоставляет их с venue open
+   * orders/trades, чтобы привязать venueOrderId либо освободить резервацию.
+   */
+  listByStatus(status: OrderSubmissionStatus): Promise<readonly OrderSubmissionRecord[]>;
 }

@@ -1371,6 +1371,16 @@ export class PlaceOrderUseCase {
           clientOrderId: String(input.orderId),
           error: submitResult.error.message,
         });
+        // venueOrderId НЕИЗВЕСТЕН: поздний Fill не сможет найти запись через
+        // findByVenueOrderId и ушёл бы в direct path (двойной дебет при held
+        // резервации). Manual block на инструмент (ключ — clientOrderId)
+        // блокирует fills/place/cancel до привязки venueOrderId reconciler'ом
+        // (ReconcileUnknownSubmissionsUseCase) либо ручной реконсиляции.
+        this._deps.orderStateStore.markManualReconciliationBlock({
+          orderId: input.orderId,
+          instrumentId: input.instrumentId,
+          reason: `SUBMIT_MAY_HAVE_BEEN_SUBMITTED_NO_VENUE_ORDER_ID: ${submitResult.error.message}`,
+        });
         await this._addReconciliationIssue({
           id: `reconciliation:submit-client:${String(input.orderId)}:unknown`,
           type: 'SUBMIT_UNKNOWN_OUTCOME',
@@ -1532,6 +1542,17 @@ export class PlaceOrderUseCase {
             });
           }
         }
+      }
+
+      // Без venueOrderId поздний Fill не найдёт запись (findByVenueOrderId) и
+      // ушёл бы в direct path при held-резервации — manual block до привязки
+      // venueOrderId reconciler'ом либо ручной реконсиляции.
+      if (!submitValue.orderId) {
+        this._deps.orderStateStore.markManualReconciliationBlock({
+          orderId: input.orderId,
+          instrumentId: input.instrumentId,
+          reason: `SUBMIT_UNKNOWN_NO_VENUE_ORDER_ID: ${submitValue.reason}`,
+        });
       }
 
       // Issue: исход submit ambiguous — venue-состояние требует ручной проверки.

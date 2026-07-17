@@ -63,7 +63,7 @@ import type {
   IOrderedEventOutbox,
   IOrderSubmissionRepository,
 } from '@polymarket/ports';
-import { pendingMatchFillId, canConsumeHeldReservation } from '@polymarket/ports';
+import { pendingMatchFillId, canConsumeHeldReservation, hasHeldReservation } from '@polymarket/ports';
 import type { OrderSubmissionRecord } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
@@ -376,71 +376,28 @@ export class UpdateOrderStatusUseCase {
       return Ok(undefined);
     }
 
-    // Шаг 3: held-резервация → Portfolio release по kind/remaining.
+    // Шаг 3: held-резервация → НЕ освобождаем автоматически (Шаг 5, delayed-fill
+    // race): ставим TerminalSettlementPending — release только authoritative
+    // остатка выполнит SettleTerminalOrdersUseCase после применения venue trades.
     if (canConsumeHeldReservation(execution.reservation)) {
-      const remaining = new Decimal(execution.reservation.remaining);
-      const releaseResult = execution.reservation.kind === 'USDC'
-        ? this._deps.portfolioService.releaseReservation(accountId, remaining)
-        : this._deps.portfolioService.releaseTokenReservation(accountId, execution.instrumentId, remaining);
-      if (!releaseResult.ok) {
-        // Portfolio release упал → journal НЕ settle, blocking marker + issue.
-        this._logger.error('Portfolio release failed on terminal update without local Order — journal not settled, manual reconciliation required', {
-          orderId: String(orderId),
-          updateType: update.type,
-          error: releaseResult.error.message,
-        });
-        await this._markJournalReconciliationRequired(orderId, 'venue-update-release-failed');
-        this._markReconciliationBlock(orderId, execution.instrumentId, `TERMINAL_UPDATE_HELD_EXECUTION_RELEASE_FAILED: ${releaseResult.error.message}`);
-        await this._addReconciliationIssue({
-          id: `reconciliation:order-update:${String(orderId)}:held-execution-release-failed`,
-          type: 'ORDER_PORTFOLIO_DESYNC',
-          status: 'OPEN',
-          reason: `TERMINAL_UPDATE_HELD_EXECUTION_RELEASE_FAILED: ${releaseResult.error.message}`,
-          createdAt: this._deps.clock?.now() ?? new Date(),
-          orderId,
-          accountId,
-          instrumentId: execution.instrumentId,
-          context: {
-            stage: 'terminal-update-held-execution-release',
-            updateType: update.type,
-            reservationKind: execution.reservation.kind,
-            reservationRemaining: execution.reservation.remaining,
-          },
-        });
-        return Ok(undefined);
-      }
-      // Journal release ТОЛЬКО после успешного Portfolio release.
-      const journalRelease = await this._releaseJournalReservation(orderId);
-      if (!journalRelease.ok) {
-        // Journal остался НЕ settled при уже освобождённом Portfolio — best-effort
-        // RECONCILIATION_REQUIRED + manual block (задержанный fill не должен
-        // выбрать held-path на уже освобождённый капитал).
-        await this._markJournalReconciliationRequired(orderId, 'venue-update-journal-release-failed');
-        this._markReconciliationBlock(orderId, execution.instrumentId, `TERMINAL_UPDATE_HELD_EXECUTION_JOURNAL_RELEASE_FAILED: ${journalRelease.error}`);
-        await this._addReconciliationIssue({
-          id: `reconciliation:order-update:${String(orderId)}:held-execution-journal-release-failed`,
-          type: 'RESERVATION_JOURNAL_DESYNC',
-          status: 'OPEN',
-          reason: `TERMINAL_UPDATE_HELD_EXECUTION_JOURNAL_RELEASE_FAILED: ${journalRelease.error}`,
-          createdAt: this._deps.clock?.now() ?? new Date(),
-          orderId,
-          accountId,
-          instrumentId: execution.instrumentId,
-          context: { stage: 'terminal-update-held-execution-journal-release', updateType: update.type },
-        });
-        return Ok(undefined);
-      }
-      this._logger.info('Held execution reservation released on authoritative terminal venue update (no local Order)', {
+      this._deps.orderStateStore.markTerminalSettlementPending({
+        orderId,
+        instrumentId: execution.instrumentId,
+        venueStatus: update.type as 'CANCELLED' | 'EXPIRED' | 'REJECTED',
+        receivedAt: this._deps.clock?.now() ?? new Date(),
+      });
+      this._logger.info('Terminal venue update for held execution (no local Order) — settlement deferred until delayed-fill window resolves', {
         orderId: String(orderId),
         updateType: update.type,
         clientOrderId: String(execution.clientOrderId),
-        reservationKind: execution.reservation.kind,
-        released: remaining.toString(),
+        reservationRemaining: execution.reservation.remaining,
       });
+      // Pending cancel marker НЕ снимаем — снимет settle-резолвер.
+      return Ok(undefined);
     }
 
-    // Шаг 4: settlement подтверждён (или нечего было освобождать) → снимаем
-    // pending cancel marker, чтобы hasUnsettledFills не остался true навсегда.
+    // Шаг 4: нечего освобождать (резервация уже settled) → снимаем pending
+    // cancel marker, чтобы hasUnsettledFills не остался true навсегда.
     this._clearPendingCancelMarker(orderId);
     return Ok(undefined);
   }
@@ -608,6 +565,35 @@ export class UpdateOrderStatusUseCase {
     // best-effort reconciliation issue и продолжаем к публикации/Ok.
     if (update.type === 'CANCELLED' || update.type === 'EXPIRED' || update.type === 'REJECTED') {
       const instrumentId = assetIdToInstrumentId(updatedOrder.asset);
+
+      // Delayed-fill race guard (Шаг 5): partial fill мог произойти на venue,
+      // а terminal update пришёл ПЕРВЫМ. Немедленный release остатка завысил
+      // бы available (незаработанный капитал), а поздний fill дебетовал бы
+      // available второй раз. При held journal-резервации капитал НЕ
+      // освобождаем: ставим TerminalSettlementPending (блокирует Place/Cancel/
+      // strategy через hasUnsettledFills, но НЕ ProcessFillUseCase — delayed
+      // fill применится held-path). Release только authoritative остатка и
+      // снятие pending выполняет SettleTerminalOrdersUseCase после применения
+      // всех venue trades.
+      const execution = await this._deps.submissions.findByVenueOrderId(orderId);
+      if (execution && hasHeldReservation(execution.reservation)) {
+        this._deps.orderStateStore.markTerminalSettlementPending({
+          orderId,
+          instrumentId: execution.instrumentId,
+          venueStatus: update.type,
+          receivedAt: this._deps.clock?.now() ?? new Date(),
+        });
+        this._logger.info('Terminal venue update with held reservation — settlement deferred until delayed-fill window resolves', {
+          orderId: String(orderId),
+          updateType: update.type,
+          reservationRemaining: execution.reservation.remaining,
+        });
+        // Pending cancel marker НЕ снимаем — снимет settle-резолвер.
+        await this._enqueueAndFinish(orderId, accountId, update.type, events);
+        return Ok(undefined);
+      }
+
+      // Legacy-путь (нет journal-резервации): прежнее немедленное освобождение.
       const releaseResult = this._deps.portfolioService.releaseOrderReservation(accountId, updatedOrder);
       if (!releaseResult.ok) {
         // Portfolio release упал → journal НЕ settle (Этап 6.2): помечаем
@@ -663,10 +649,30 @@ export class UpdateOrderStatusUseCase {
     }
 
     // Шаг 6: ENQUEUE OrderEvent[] в ordered outbox (aggregateId=orderId).
-    // Бизнес-коммит уже состоялся (CAS save + возможный reservation release) —
-    // публикация (flush ПОСЛЕ lock) является notification path, НЕ частью
-    // транзакции. Сбой enqueue НЕ откатывает состояние и НЕ делает committed
-    // update retryable: helper логирует EVENT_PUBLISH_FAILED + issue.
+    await this._enqueueAndFinish(orderId, accountId, update.type, events);
+    return Ok(undefined);
+  }
+
+  /**
+   * ENQUEUE OrderEvent[] в ordered outbox + финальный лог.
+   *
+   * @param orderId - venue orderId (aggregateId)
+   * @param accountId - ID аккаунта (для issue)
+   * @param updateType - Тип update (для лога/issue)
+   * @param events - События committed update
+   *
+   * @remarks
+   * Бизнес-коммит уже состоялся (CAS save + возможный reservation release /
+   * settlement pending) — публикация (flush ПОСЛЕ lock) является notification
+   * path, НЕ частью транзакции. Сбой enqueue НЕ откатывает состояние и НЕ
+   * делает committed update retryable: helper логирует EVENT_PUBLISH_FAILED + issue.
+   */
+  private async _enqueueAndFinish(
+    orderId: OrderId,
+    accountId: AccountId,
+    updateType: string,
+    events: readonly unknown[],
+  ): Promise<void> {
     await enqueueCommittedEvents({
       outbox: this._deps.orderedEventOutbox,
       logger: this._logger,
@@ -679,15 +685,13 @@ export class UpdateOrderStatusUseCase {
         stage: 'outbox-enqueue',
         orderId,
         accountId,
-        extra: { updateType: update.type },
+        extra: { updateType },
       },
     });
 
     this._logger.info('Order update applied', {
       orderId: String(orderId),
-      updateType: update.type,
+      updateType,
     });
-
-    return Ok(undefined);
   }
 }

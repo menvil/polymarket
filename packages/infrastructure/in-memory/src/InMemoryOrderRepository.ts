@@ -47,6 +47,7 @@ import type {
   FillProcessingStatus,
   MarkFillProcessingInput,
   ManualReconciliationBlock,
+  TerminalSettlementPending,
   DeleteOrderResult,
 } from '@polymarket/ports';
 import { pendingMatchFillId, VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
@@ -139,6 +140,16 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * `clearManualReconciliationBlock` (оператор/recovery-тулинг).
    */
   private readonly _manualBlocksByOrder = new Map<string, ManualReconciliationBlock>();
+
+  /**
+   * Terminal settlement pending: orderId(строкой) → запись.
+   *
+   * @remarks
+   * Авторитетный terminal venue-update получен, но held-резервация ещё не
+   * освобождена (окно delayed fill). Участвует в `hasUnsettledFills`, снимается
+   * ТОЛЬКО `SettleTerminalOrdersUseCase` после Portfolio + journal settlement.
+   */
+  private readonly _terminalSettlementByOrder = new Map<string, TerminalSettlementPending>();
 
   /**
    * Возвращает Order по ID или undefined если не найден.
@@ -647,6 +658,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
     this._fillProcessingByInstrument.clear();
     this._fillProcessingInstrumentIndex.clear();
     this._manualBlocksByOrder.clear();
+    this._terminalSettlementByOrder.clear();
   }
 
   // ── In-flight fills (instrument-level) ─────────────────
@@ -824,8 +836,67 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
     return (
       this.hasInFlightFills(instrumentId) ||
       this.hasFillProcessingBlocks(instrumentId) ||
-      this.hasManualReconciliationBlocks(instrumentId)
+      this.hasManualReconciliationBlocks(instrumentId) ||
+      this.hasTerminalSettlementPending(instrumentId)
     );
+  }
+
+  // ── Terminal settlement pending ─────────────────────────────────────────────
+
+  /**
+   * Ставит terminal settlement pending (идемпотентно по orderId).
+   *
+   * @param pending - `{ orderId, instrumentId, venueStatus, receivedAt }`
+   */
+  public markTerminalSettlementPending(pending: TerminalSettlementPending): void {
+    this._terminalSettlementByOrder.set(String(pending.orderId), {
+      orderId: pending.orderId,
+      instrumentId: pending.instrumentId,
+      venueStatus: pending.venueStatus,
+      receivedAt: new Date(pending.receivedAt.getTime()),
+    });
+  }
+
+  /**
+   * Снимает terminal settlement pending (no-op если нет).
+   *
+   * @param orderId - ID ордера
+   */
+  public clearTerminalSettlementPending(orderId: OrderId): void {
+    this._terminalSettlementByOrder.delete(String(orderId));
+  }
+
+  /**
+   * Есть ли terminal settlement pending на конкретном ордере.
+   *
+   * @param orderId - ID ордера
+   * @returns true если settlement не разрешён
+   */
+  public hasTerminalSettlementPendingForOrder(orderId: OrderId): boolean {
+    return this._terminalSettlementByOrder.has(String(orderId));
+  }
+
+  /**
+   * Есть ли на инструменте хотя бы один terminal settlement pending.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns true если есть неразрешённые terminal settlements
+   */
+  public hasTerminalSettlementPending(instrumentId: InstrumentId): boolean {
+    const key = String(instrumentId);
+    for (const pending of this._terminalSettlementByOrder.values()) {
+      if (String(pending.instrumentId) === key) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Возвращает все terminal settlement pending записи.
+   *
+   * @returns Readonly массив pending записей
+   */
+  public getTerminalSettlementPending(): readonly TerminalSettlementPending[] {
+    return [...this._terminalSettlementByOrder.values()];
   }
 
   // ── Manual reconciliation blocks ─────────────────────────────────────────────

@@ -32,7 +32,7 @@ import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
 import type { IExchangeClient, ICurrentBalanceProvider, IOrderedEventOutbox } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import { ReconcileTradesUseCase, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
+import { ReconcileTradesUseCase, ReconcileUnknownSubmissionsUseCase, ResolveUnknownSubmissionUseCase, SettleTerminalOrdersUseCase, venueTradeToFill, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
 import { UserEventFeedAdapter } from '@polymarket/exchange/adapters';
 import { PolymarketExchangeClientAdapter } from '@polymarket/exchange/adapters';
@@ -115,6 +115,21 @@ export interface LiveInfra {
   readonly orderReconciler: { reconcile(accountId: AccountId): Promise<void> };
   /** Fallback polling: сверка fills через REST (safety net) */
   readonly reconcileTradesUseCase: ReconcileTradesUseCase;
+  /**
+   * DISCOVERY-ONLY обнаружение venue-кандидатов для ambiguous submissions без
+   * venueOrderId: только findings + issues, никаких автоматических bind/release.
+   */
+  readonly reconcileUnknownSubmissionsUseCase: ReconcileUnknownSubmissionsUseCase;
+  /**
+   * ЯВНОЕ операторское разрешение UNKNOWN submission (bind venueOrderId /
+   * подтверждённое отсутствие) — единственный путь снятия manual block.
+   */
+  readonly resolveUnknownSubmissionUseCase: ResolveUnknownSubmissionUseCase;
+  /**
+   * Разрешение terminal settlement pending: применение delayed fills (held path)
+   * + release только authoritative остатка резервации.
+   */
+  readonly settleTerminalOrdersUseCase: SettleTerminalOrdersUseCase;
   /** Проверка баланса токена на CLOB (для диагностики SELL rejection) */
   readonly balanceRestClient: PolymarketBalanceRestClient;
   /** Провайдер текущего USDC-баланса от venue (для периодической синхронизации) */
@@ -240,10 +255,68 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
 
   const orderUpdateHandler = new OrderUpdateHandler(eventBus, clock, accountId, logger);
 
-// Inline reconciler: сверяет локальные ордера с venue (LIVE + MATCHED).
+  // DISCOVERY-ONLY обнаружение venue-кандидатов для ambiguous submissions без
+  // venueOrderId (fail-closed): работает НЕЗАВИСИМО от наличия локальных Order,
+  // только создаёт findings/issues — решение принимает оператор через
+  // resolveUnknownSubmissionUseCase.
+  const reconcileUnknownSubmissionsUseCase = new ReconcileUnknownSubmissionsUseCase({
+    submissions: orderSubmissionRepo,
+    exchangeClient,
+    clock,
+    logger,
+    reconciliationIssues: reconciliationIssueRepo,
+  });
+
+  // Явное операторское разрешение UNKNOWN submission — единственный путь
+  // bind/release/снятия manual block (админ-команды/tooling).
+  const resolveUnknownSubmissionUseCase = new ResolveUnknownSubmissionUseCase({
+    submissions: orderSubmissionRepo,
+    exchangeClient,
+    portfolioService,
+    orderStateStore: orderRepo,
+    keyedMutex,
+    clock,
+    logger,
+    reconciliationIssues: reconciliationIssueRepo,
+  });
+
+  // Разрешение terminal settlement pending: delayed fills применяются held-path,
+  // затем release только authoritative остатка (см. SettleTerminalOrdersUseCase).
+  const settleTerminalOrdersUseCase = new SettleTerminalOrdersUseCase({
+    orderStateStore: orderRepo,
+    submissions: orderSubmissionRepo,
+    portfolioService,
+    exchangeClient,
+    processedFillRepo,
+    fillProcessor: processFillUseCase,
+    tradeToFill: venueTradeToFill,
+    keyedMutex,
+    clock,
+    logger,
+    reconciliationIssues: reconciliationIssueRepo,
+  });
+
+  // Inline reconciler: сверяет локальные ордера с venue (LIVE + MATCHED).
   // Вызываем updateOrderStatusUseCase напрямую (не через EventBus) для синхронной обработки.
   const orderReconciler = {
     async reconcile(reconcileAccountId: AccountId): Promise<void> {
+      // Сначала — UNKNOWN submissions discovery (НЕ зависит от наличия локальных
+      // Order: ambiguous submit без venueOrderId локального Order не имеет).
+      const unknownResult = await reconcileUnknownSubmissionsUseCase.execute({ accountId: reconcileAccountId });
+      if (!unknownResult.ok) {
+        logger.warn('Unknown-submission discovery failed (will retry next cycle)', {
+          error: unknownResult.error.message,
+        });
+      }
+
+      // Затем — terminal settlement pending (delayed fills + authoritative release).
+      const settleResult = await settleTerminalOrdersUseCase.execute({ accountId: reconcileAccountId });
+      if (!settleResult.ok) {
+        logger.warn('Terminal settlement run failed (will retry next cycle)', {
+          error: settleResult.error.message,
+        });
+      }
+
       const localOrders = await orderRepo.getAll();
       if (localOrders.length === 0) {
         logger.info('No local orders to reconcile');
@@ -333,6 +406,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     initializePortfolioUseCase,
     orderReconciler,
     reconcileTradesUseCase,
+    reconcileUnknownSubmissionsUseCase,
+    resolveUnknownSubmissionUseCase,
+    settleTerminalOrdersUseCase,
     balanceRestClient,
     currentBalanceProvider,
     updateOrderStatusUseCase,

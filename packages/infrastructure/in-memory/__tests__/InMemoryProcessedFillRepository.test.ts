@@ -114,4 +114,51 @@ describe('InMemoryProcessedFillRepository', () => {
       expect(await repo.getStatus(FILL_1)).toBeUndefined();
     });
   });
+
+  // ── PROCESSING lease (recovery зависшего worker-а) ────────────────────────
+
+  describe('PROCESSING lease', () => {
+    const T0 = new Date('2026-01-01T00:00:00.000Z');
+    const lease = (nowMs: number, workerId = 'w1') => ({ workerId, now: new Date(nowMs), leaseMs: 60_000 });
+
+    it('до истечения lease повторный begin → BUSY', async () => {
+      const first = await repo.begin(FILL_1, lease(T0.getTime()));
+      expect(first.outcome).toBe('ACQUIRED');
+      const second = await repo.begin(FILL_1, lease(T0.getTime() + 30_000, 'w2'));
+      expect(second.outcome).toBe('BUSY');
+    });
+
+    it('stale PROCESSING reclaimable после lease expiry (reclaimed=true, fencing token растёт)', async () => {
+      const first = await repo.begin(FILL_1, lease(T0.getTime()));
+      expect(first.outcome).toBe('ACQUIRED');
+      const firstToken = first.outcome === 'ACQUIRED' ? first.leaseToken : undefined;
+
+      // Worker w1 «завис»: lease истёк → w2 перехватывает.
+      const reclaimed = await repo.begin(FILL_1, lease(T0.getTime() + 61_000, 'w2'));
+      expect(reclaimed.outcome).toBe('ACQUIRED');
+      if (reclaimed.outcome === 'ACQUIRED') {
+        expect(reclaimed.reclaimed).toBe(true);
+        expect(reclaimed.isRetry).toBe(true);
+        expect(reclaimed.leaseToken).toBeGreaterThan(firstToken ?? 0);
+      }
+      expect(await repo.getStatus(FILL_1)).toBe('PROCESSING');
+    });
+
+    it('legacy begin без lease → PROCESSING остаётся BUSY (нет доказательства зависания)', async () => {
+      await repo.begin(FILL_1); // без lease
+      const second = await repo.begin(FILL_1, lease(T0.getTime() + 999_999_999));
+      expect(second.outcome).toBe('BUSY');
+    });
+
+    it('терминальный mark* снимает lease; следующий begin — обычный acquire (reclaimed отсутствует)', async () => {
+      await repo.begin(FILL_1, lease(T0.getTime()));
+      await repo.markFailed(FILL_1, 'boom');
+      const again = await repo.begin(FILL_1, lease(T0.getTime() + 1_000));
+      expect(again.outcome).toBe('ACQUIRED');
+      if (again.outcome === 'ACQUIRED') {
+        expect(again.isRetry).toBe(true);
+        expect(again.reclaimed).toBeUndefined();
+      }
+    });
+  });
 });

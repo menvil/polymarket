@@ -783,6 +783,37 @@ describe('ExecutionEngine', () => {
       expect(report.errors).toHaveLength(1); // только Err
     });
 
+    it('ALREADY_FILLED → PENDING: не cancelled++, блокирует PLACE того же цикла', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Ok({ status: 'ALREADY_FILLED' }));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ]);
+
+      expect(report.cancelled).toBe(0);
+      expect(report.placed).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('ALREADY_TERMINAL (REJECTED/EXPIRED) → TERMINAL_NOOP: не cancelled++, PLACE НЕ блокируется', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
+        Ok({ status: 'ALREADY_TERMINAL', orderStatus: 'REJECTED' }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      ]);
+
+      expect(report.cancelled).toBe(0);
+      expect(report.errors).toHaveLength(0);
+      // PLACE выполняется: ордер умер сам, fill не ожидается.
+      expect(report.placed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+    });
+
     it('PENDING cancel НЕ ставит post-cancel cooldown (cooldown не подтверждение отмены)', async () => {
       (deps.cancelOrderUseCase as any).execute.mockResolvedValueOnce(Ok({ status: 'FILL_PENDING' }));
 

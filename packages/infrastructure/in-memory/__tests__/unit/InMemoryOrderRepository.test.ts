@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { asOrderId, asFillId } from '@polymarket/ids';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
@@ -389,6 +390,37 @@ describe('InMemoryOrderRepository', () => {
       expect(repo.hasInFlightFills(instrumentId)).toBe(false);
       expect(repo.getMatchedFillIds(orderId)).toHaveLength(0);
       expect(repo.getInFlightFills(instrumentId)).toHaveLength(0);
+    });
+  });
+
+  // ── Contract: placeholder cleanup при clearOrderFillMatched ──
+  describe('placeholder cleanup contract (clearOrderFillMatched)', () => {
+    const ORDER_ID = asOrderId('order-ph')!;
+    const REAL_FILL_1 = asFillId('real-fill-1')!;
+    const REAL_FILL_2 = asFillId('real-fill-2')!;
+
+    it('clear первого реального fill удаляет placeholder и ТОЛЬКО этот fillId; второй partial fill сохраняется', () => {
+      // 1. Placeholder (uncertain cancel / submit FILLED без fillId).
+      repo.markOrderFillMatched(ORDER_ID, pendingMatchFillId(ORDER_ID));
+      // 2. Два реальных matched fill ID (partial fills).
+      repo.markOrderFillMatched(ORDER_ID, REAL_FILL_1);
+      repo.markOrderFillMatched(ORDER_ID, REAL_FILL_2);
+      expect(repo.getMatchedFillIds(ORDER_ID)).toHaveLength(3);
+
+      // 3. Обработан первый Fill.
+      repo.clearOrderFillMatched(ORDER_ID, REAL_FILL_1);
+
+      // 4. Placeholder удалён; первый fillId удалён; второй сохранён.
+      const remaining = repo.getMatchedFillIds(ORDER_ID).map(String);
+      expect(remaining).not.toContain(String(pendingMatchFillId(ORDER_ID)));
+      expect(remaining).not.toContain(String(REAL_FILL_1));
+      expect(remaining).toContain(String(REAL_FILL_2));
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(true);
+
+      // 5. После второго Fill matched-состояния не остаётся.
+      repo.clearOrderFillMatched(ORDER_ID, REAL_FILL_2);
+      expect(repo.hasMatchedFills(ORDER_ID)).toBe(false);
+      expect(repo.getMatchedFillIds(ORDER_ID)).toHaveLength(0);
     });
   });
 

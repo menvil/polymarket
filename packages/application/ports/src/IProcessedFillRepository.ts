@@ -94,6 +94,27 @@ export type ProcessedFillStatus =
   | 'RECONCILIATION_REQUIRED';
 
 /**
+ * Lease-параметры `begin()` — recovery устаревшего `PROCESSING`.
+ *
+ * @remarks
+ * Без lease крэш/зависание worker-а между `begin()` и `mark*()` оставляет fill
+ * навсегда `PROCESSING` (`BUSY` для всех последующих попыток). С lease
+ * просроченная запись (`now > leaseUntil`) reclaim-ится новым `begin()`.
+ * Для single-process in-memory реализации достаточно clock-based lease;
+ * персистентная реализация обязана делать acquire/reclaim атомарно (например,
+ * `UPDATE ... WHERE lease_until < now` + инкремент fencing token) и отклонять
+ * `mark*` со старым token.
+ */
+export interface FillProcessingLease {
+  /** Идентификатор worker-а, захватывающего lease */
+  readonly workerId: string;
+  /** Текущее время (сравнение с leaseUntil предыдущего держателя) */
+  readonly now: Date;
+  /** Длительность lease (мс): leaseUntil = now + leaseMs */
+  readonly leaseMs: number;
+}
+
+/**
  * Результат `begin()`.
  *
  * @remarks
@@ -101,12 +122,22 @@ export type ProcessedFillStatus =
  * или `markReconciliationRequired()`.
  * `isRetry: true` означает, что предыдущая попытка обработки этого fillId
  * закончилась `FAILED` или `REVERTED` — это не первая попытка.
+ * `reclaimed: true` — предыдущая попытка зависла в `PROCESSING`, её lease истёк
+ * и запись перехвачена (см. {@link FillProcessingLease}).
+ * `leaseToken` — монотонный fencing token захвата (растёт при каждом
+ * acquire/reclaim); защита от «воскресшего» старого worker-а в персистентной
+ * реализации.
  * `RECONCILIATION_REQUIRED` — terminal, retry НЕ разрешён: частичный commit
  * оставил Order/Portfolio рассинхронизированными, нужна ручная реконсиляция
  * (см. `markReconciliationRequired()`).
  */
 export type BeginFillProcessingResult =
-  | { readonly outcome: 'ACQUIRED'; readonly isRetry: boolean }
+  | {
+      readonly outcome: 'ACQUIRED';
+      readonly isRetry: boolean;
+      readonly reclaimed?: boolean;
+      readonly leaseToken?: number;
+    }
   | { readonly outcome: 'DUPLICATE' }
   | { readonly outcome: 'BUSY' }
   | { readonly outcome: 'RECONCILIATION_REQUIRED' };
@@ -116,9 +147,11 @@ export interface IProcessedFillRepository {
    * Атомарно резервирует fillId под обработку.
    *
    * @param fillId - ID fill-события
+   * @param lease - Опциональный lease: с ним просроченный `PROCESSING`
+   *   reclaim-ится вместо вечного `BUSY` (см. {@link FillProcessingLease})
    * @returns `BeginFillProcessingResult` — см. диаграмму переходов в doc пакета
    */
-  begin(fillId: FillId): Promise<BeginFillProcessingResult>;
+  begin(fillId: FillId, lease?: FillProcessingLease): Promise<BeginFillProcessingResult>;
 
   /**
    * Помечает fill как успешно применённый (терминальный статус).

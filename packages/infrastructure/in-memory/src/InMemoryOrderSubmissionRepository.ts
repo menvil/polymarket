@@ -52,6 +52,7 @@ import { Ok, Err } from '@polymarket/result';
 import type {
   IOrderSubmissionRepository,
   OrderSubmissionRecord,
+  OrderSubmissionStatus,
   BeginOrderSubmissionResult,
   OrderSide,
   ReservationStatus,
@@ -415,6 +416,20 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
   public async get(clientOrderId: OrderId): Promise<OrderSubmissionRecord | undefined> {
     const record = this._records.get(String(clientOrderId));
     return record ? this._snapshot(record) : undefined;
+  }
+
+  /**
+   * Возвращает все записи с указанным статусом submission.
+   *
+   * @param status - Статус (например `UNKNOWN`)
+   * @returns Snapshot-массив записей (пустой, если таких нет)
+   */
+  public async listByStatus(status: OrderSubmissionStatus): Promise<readonly OrderSubmissionRecord[]> {
+    const result: OrderSubmissionRecord[] = [];
+    for (const record of this._records.values()) {
+      if (record.status === status) result.push(this._snapshot(record));
+    }
+    return result;
   }
 
   /**

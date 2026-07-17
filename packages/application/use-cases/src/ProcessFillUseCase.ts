@@ -106,6 +106,32 @@ import type { LedgerService } from './services/LedgerService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 import { lockKey } from './lockKeys.js';
 
+/**
+ * Фаза commit обработки fill — для классификации неожиданных исключений.
+ *
+ * @remarks
+ * Обновляется СРАЗУ после каждой успешной необратимой мутации:
+ * - `ORDER_COMMITTED` — Order сохранён (`saveSync`);
+ * - `PORTFOLIO_COMMITTED` — Portfolio изменён (applyFill/held/direct);
+ * - `LEDGER_COMMITTED` — Ledger записан;
+ * - `JOURNAL_COMMITTED` — reservation journal применён.
+ *
+ * `NONE` при исключении → business mutation не было → fill retryable.
+ * Любая другая фаза → частичный commit → автоматический retry запрещён
+ * (RECONCILIATION_REQUIRED + manual block).
+ */
+export type FillCommitPhase =
+  | 'NONE'
+  | 'ORDER_COMMITTED'
+  | 'PORTFOLIO_COMMITTED'
+  | 'LEDGER_COMMITTED'
+  | 'JOURNAL_COMMITTED';
+
+/** Mutable tracker фазы commit (передаётся в locked processing). */
+interface FillCommitTracker {
+  phase: FillCommitPhase;
+}
+
 /** Зависимости ProcessFillUseCase */
 export interface ProcessFillDeps {
   readonly orderStateStore: IOrderStateStore;
@@ -159,7 +185,22 @@ export interface ProcessFillDeps {
    * времени не использует).
    */
   readonly clock?: IClock;
+  /**
+   * Идентификатор worker-а для PROCESSING lease (опционально, default `main`).
+   */
+  readonly workerId?: string;
+  /**
+   * Длительность PROCESSING lease в мс (опционально, default 120_000).
+   *
+   * @remarks
+   * Просроченный `PROCESSING` (крэш/зависание между begin и mark*) reclaim-ится
+   * следующим `begin()` вместо вечного `BUSY` (см. `FillProcessingLease`).
+   */
+  readonly processingLeaseMs?: number;
 }
+
+/** Дефолтная длительность PROCESSING lease (мс). */
+const DEFAULT_PROCESSING_LEASE_MS = 120_000;
 
 /**
  * Use case обработки Fill исполнения.
@@ -195,8 +236,13 @@ export class ProcessFillUseCase {
    * вызове, чтобы не молчать о нерешённой проблеме.
    */
   public async execute(fill: Fill): Promise<Result<void, TradingError>> {
-    // Шаг 1: Idempotency guard
-    const begin = await this._deps.processedFillRepo.begin(fill.id);
+    // Шаг 1: Idempotency guard + PROCESSING lease (recovery зависшего PROCESSING:
+    // просроченный lease reclaim-ится вместо вечного BUSY).
+    const begin = await this._deps.processedFillRepo.begin(fill.id, {
+      workerId: this._deps.workerId ?? 'main',
+      now: this._deps.clock?.now() ?? new Date(),
+      leaseMs: this._deps.processingLeaseMs ?? DEFAULT_PROCESSING_LEASE_MS,
+    });
     if (begin.outcome === 'DUPLICATE') {
       this._logger.debug('Fill already applied, skipping (idempotent)', { fillId: String(fill.id) });
       return Ok(undefined);
@@ -218,6 +264,12 @@ export class ProcessFillUseCase {
     if (begin.isRetry) {
       this._logger.info('Retrying previously failed/reverted fill', { fillId: String(fill.id) });
     }
+    if (begin.reclaimed) {
+      this._logger.warn('Reclaimed stale PROCESSING fill after lease expiry — previous worker likely crashed/hung', {
+        fillId: String(fill.id),
+        leaseToken: begin.leaseToken,
+      });
+    }
 
     // Шаг 2: Keyed mutex — сериализует относительно CancelOrderUseCase и других
     // конкурентных fill-ов того же ордера/инструмента/аккаунта.
@@ -230,10 +282,120 @@ export class ProcessFillUseCase {
       lockKey.instrument(instrumentId ? String(instrumentId) : String(fill.tokenId)),
     ];
 
-    const result = await this._deps.keyedMutex.runExclusive(lockKeys, () => this._processLocked(fill));
-    // flush() ВНЕ lock: публикует enqueued Order-события (никогда не бросает).
-    await this._deps.orderedEventOutbox.flush();
+    // Exception boundary + commit tracker: ACQUIRED fill ОБЯЗАН закончиться
+    // APPLIED / FAILED / RECONCILIATION_REQUIRED — неожиданный throw не должен
+    // оставить его навсегда в PROCESSING. Классификация по фазе commit:
+    // NONE → мутаций не было → retryable; иначе — частичный commit → reconciliation.
+    const tracker: FillCommitTracker = { phase: 'NONE' };
+    let result: Result<void, TradingError>;
+    try {
+      result = await this._deps.keyedMutex.runExclusive(lockKeys, () => this._processLocked(fill, tracker));
+    } catch (err) {
+      result = await this._handleUnexpectedException(fill, tracker.phase, err);
+    } finally {
+      // flush() ВНЕ lock, в finally: уже enqueued события committed мутаций не
+      // остаются без попытки публикации даже при неожиданном исключении.
+      await this._deps.orderedEventOutbox.flush();
+    }
     return result;
+  }
+
+  /**
+   * Обрабатывает неожиданное исключение locked processing (P1 safety).
+   *
+   * @param fill - Обрабатываемый fill
+   * @param phase - Фаза commit на момент исключения
+   * @param err - Исключение
+   * @returns Err — retryable при `NONE`, reconciliation при частичном commit
+   *
+   * @remarks
+   * ### phase === NONE (business mutation не было):
+   * `markFailed` → processing-блок `FAILED_RETRYABLE` → retry разрешён.
+   * ### phase !== NONE (частичный commit):
+   * `markReconciliationRequired` → journal `RECONCILIATION_REQUIRED` best-effort
+   * → manual block → reconciliation issue → retry запрещён.
+   *
+   * В ОБОИХ случаях venue MATCHED/in-flight markers НЕ снимаются: fill не
+   * применён и не отменён — evidence должен сохраниться до применения/отката/
+   * явного операторского разрешения.
+   */
+  private async _handleUnexpectedException(
+    fill: Fill,
+    phase: FillCommitPhase,
+    err: unknown,
+  ): Promise<Result<void, TradingError>> {
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (phase === 'NONE') {
+      const reason = `UNEXPECTED_EXCEPTION_PRECOMMIT: ${message}`;
+      this._logger.error('Unexpected exception during fill processing BEFORE any business mutation — fill retryable', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        error: message,
+      });
+      this._deps.orderStateStore.updateFillProcessingStatus(fill.id, 'FAILED_RETRYABLE');
+      try {
+        await this._deps.processedFillRepo.markFailed(fill.id, reason);
+      } catch (markErr) {
+        this._logger.error('markFailed threw in exception handler — fill stays PROCESSING until lease expiry', {
+          fillId: String(fill.id),
+          err: markErr instanceof Error ? markErr : new Error(String(markErr)),
+        });
+      }
+      return Err(new TradingError(
+        `Fill processing failed before any mutation (retryable): ${message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId), retryable: true } },
+      ));
+    }
+
+    const reason = `UNEXPECTED_EXCEPTION_POSTCOMMIT (phase=${phase}): ${message}`;
+    this._logger.error('Unexpected exception during fill processing AFTER business commit — manual reconciliation required', {
+      fillId: String(fill.id),
+      orderId: String(fill.orderId),
+      phase,
+      error: message,
+    });
+    this._deps.orderStateStore.updateFillProcessingStatus(fill.id, 'RECONCILIATION_REQUIRED');
+    try {
+      await this._deps.processedFillRepo.markReconciliationRequired(fill.id, reason);
+    } catch (markErr) {
+      this._logger.error('markReconciliationRequired threw in exception handler', {
+        fillId: String(fill.id),
+        err: markErr instanceof Error ? markErr : new Error(String(markErr)),
+      });
+    }
+    // Journal RECONCILIATION_REQUIRED best-effort + manual block (двухслойно).
+    try {
+      const execution = await this._deps.submissions.findByVenueOrderId(fill.orderId);
+      if (execution) {
+        await this._lockJournalDesync(fill, execution, reason);
+      } else {
+        const blockInstrumentId = assetIdToInstrumentId(fill.tokenId);
+        if (blockInstrumentId) {
+          this._deps.orderStateStore.markManualReconciliationBlock({
+            orderId: fill.orderId,
+            instrumentId: blockInstrumentId,
+            reason,
+          });
+        }
+      }
+    } catch (lockErr) {
+      this._logger.error('Failed to lock journal/manual block in exception handler', {
+        fillId: String(fill.id),
+        err: lockErr instanceof Error ? lockErr : new Error(String(lockErr)),
+      });
+    }
+    await this._addReconciliationIssue(fill, {
+      idSuffix: 'unexpected-exception-postcommit',
+      reason,
+      stage: 'unexpected-exception-boundary',
+      error: message,
+      extraContext: { commitPhase: phase },
+    });
+    return Err(new TradingError(
+      `Fill processing threw after partial commit (manual reconciliation required): ${message}`,
+      { context: { fillId: String(fill.id), orderId: String(fill.orderId), commitPhase: phase } },
+    ));
   }
 
   /**
@@ -255,7 +417,7 @@ export class ProcessFillUseCase {
    * Инвариант: каждый Fill использует ровно ОДИН источник (held reservation ЛИБО
    * available) — никогда одновременно списание available и оставленную held-резервацию.
    */
-  private async _processLocked(fill: Fill): Promise<Result<void, TradingError>> {
+  private async _processLocked(fill: Fill, tracker: FillCommitTracker): Promise<Result<void, TradingError>> {
     // Stage 6: application-level processing-блок (PROCESSING) на весь период
     // обработки. Снимается ТОЛЬКО на реально settled (markApplied); на
     // retryable/reconciliation остаётся (FAILED_RETRYABLE/RECONCILIATION_REQUIRED)
@@ -275,6 +437,13 @@ export class ProcessFillUseCase {
     // release) разрешает ТОЛЬКО человек. Реальный Fill manual block НЕ снимает
     // (в отличие от MATCHED placeholder) — иначе задержанный fill на
     // desync-ордере потребил бы чужой reserved-капитал и замёл бы блок.
+    //
+    // ВАЖНО (P1): fill к этому моменту НИЧЕГО не мутировал, поэтому он
+    // откладывается как FAILED_RETRYABLE (deferred), а НЕ terminal
+    // RECONCILIATION_REQUIRED: после того как оператор разрешит корневой блок
+    // (clearManualReconciliationBlock), повторный execute(fill) обработает его
+    // нормально. Безопасность обеспечивает сам manual block — каждый retry при
+    // живом блоке снова откладывается без мутаций.
     const manualBlockedByOrder = this._deps.orderStateStore.hasManualReconciliationBlockForOrder(fill.orderId);
     const manualBlockedByInstrument = procInstrumentId
       ? this._deps.orderStateStore.hasManualReconciliationBlocks(procInstrumentId)
@@ -283,17 +452,11 @@ export class ProcessFillUseCase {
       const blocks = procInstrumentId
         ? this._deps.orderStateStore.getManualReconciliationBlocks(procInstrumentId)
         : [];
-      return this._blockFillOnReconciliation(fill, {
-        idSuffix: 'manual-reconciliation-block',
-        reason: 'MANUAL_RECONCILIATION_BLOCK: order/instrument is under manual reconciliation block',
-        stage: 'manual-reconciliation-block-guard',
-        error: manualBlockedByOrder
+      return this._deferFillOnManualBlock(fill, {
+        blockedByOrder: manualBlockedByOrder,
+        blockDetails: manualBlockedByOrder
           ? `manual block set for orderId ${String(fill.orderId)}`
           : `manual block(s) on instrument: ${blocks.map((b) => String(b.orderId)).join(',')}`,
-        extraContext: {
-          blockedByOrder: manualBlockedByOrder,
-          blockedByInstrument: manualBlockedByInstrument,
-        },
       });
     }
 
@@ -320,7 +483,7 @@ export class ProcessFillUseCase {
     }
 
     if (order && !order.isTerminal) {
-      return this._applyNormalFill(order, fill, execution);
+      return this._applyNormalFill(order, fill, execution, tracker);
     }
     // Held-reservation проверяется и для отсутствующего, и для terminal Order:
     // ambiguous submit мог не сохранить Order, но капитал заморожен.
@@ -328,9 +491,51 @@ export class ProcessFillUseCase {
     // RECONCILIATION_REQUIRED отсеян guard'ом выше и НИКОГДА не потребляется
     // автоматически.
     if (execution && canConsumeHeldReservation(execution.reservation)) {
-      return this._applyHeldReservationFill(fill, execution);
+      return this._applyHeldReservationFill(fill, execution, tracker);
     }
-    return this._applyDirectFill(fill);
+    return this._applyDirectFill(fill, tracker);
+  }
+
+  /**
+   * Откладывает fill, остановленный manual reconciliation block, как RETRYABLE.
+   *
+   * @param fill - Отложенный fill
+   * @param params - `blockedByOrder` (блок на самом ордере или инструменте),
+   *   `blockDetails` (какие блоки сработали)
+   * @returns Err(TradingError) — fill отложен до снятия блока
+   *
+   * @remarks
+   * Fill ещё НИЧЕГО не мутировал — поэтому статус НЕ terminal:
+   * - processing-блок → `FAILED_RETRYABLE` (держит `hasUnsettledFills`);
+   * - processed fill → `markFailed` (retry разрешён).
+   *
+   * После `clearManualReconciliationBlock` (оператор) повторный `execute(fill)`
+   * обработает fill нормально; пока блок жив — каждый retry снова откладывается
+   * без мутаций. Terminal `RECONCILIATION_REQUIRED` здесь сделал бы корректный
+   * fill соседнего ордера навсегда необрабатываемым (вечный no-op в begin()).
+   * Issue НЕ создаётся: у корневого manual block уже есть своя issue.
+   */
+  private async _deferFillOnManualBlock(
+    fill: Fill,
+    params: {
+      readonly blockedByOrder: boolean;
+      readonly blockDetails: string;
+    },
+  ): Promise<Result<void, TradingError>> {
+    const reason = `MANUAL_RECONCILIATION_BLOCK_DEFERRED: ${params.blockDetails}`;
+    this._logger.warn('Fill deferred — order/instrument is under manual reconciliation block (retry after block is cleared)', {
+      fillId: String(fill.id),
+      orderId: String(fill.orderId),
+      blockedByOrder: params.blockedByOrder,
+      blockDetails: params.blockDetails,
+    });
+    this._clearInFlightFlags(fill);
+    this._deps.orderStateStore.updateFillProcessingStatus(fill.id, 'FAILED_RETRYABLE');
+    await this._deps.processedFillRepo.markFailed(fill.id, reason);
+    return Err(new TradingError(
+      `Fill deferred pending manual reconciliation block resolution: ${params.blockDetails}`,
+      { context: { fillId: String(fill.id), orderId: String(fill.orderId), retryable: true } },
+    ));
   }
 
   /**
@@ -345,6 +550,8 @@ export class ProcessFillUseCase {
    * провал prevalidation held-fill): processed fill → RECONCILIATION_REQUIRED
    * (retry запрещён), instrument processing-блок сохраняется (`hasUnsettledFills`
    * остаётся true), создаётся queryable issue с фактическими значениями.
+   * Для fill-ов, остановленных manual block ДО мутаций, используется
+   * `_deferFillOnManualBlock` (retryable) — НЕ этот метод.
    */
   private async _blockFillOnReconciliation(
     fill: Fill,
@@ -380,7 +587,7 @@ export class ProcessFillUseCase {
    * @param fill - Исполнение ордера
    * @returns Ok(void) при успехе, Err при ошибке
    */
-  private async _applyDirectFill(fill: Fill): Promise<Result<void, TradingError>> {
+  private async _applyDirectFill(fill: Fill, tracker: FillCommitTracker): Promise<Result<void, TradingError>> {
     const order = await this._deps.orderRepo.get(fill.orderId);
     {
       const reason = !order ? 'not found' : `terminal (${order.status})`;
@@ -407,6 +614,9 @@ export class ProcessFillUseCase {
           { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
         ));
       }
+
+      // Portfolio изменён — с этого момента retry небезопасен.
+      tracker.phase = 'PORTFOLIO_COMMITTED';
 
       // Запись в Ledger. Portfolio уже применён (applyDirectFill выше) —
       // если recordFill бросит, retry этого fillId повторно применил бы
@@ -436,6 +646,9 @@ export class ProcessFillUseCase {
           { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
         ));
       }
+      // Ledger записан.
+      tracker.phase = 'LEDGER_COMMITTED';
+
       this._clearInFlightFlags(fill);
 
       // Диагностика fee для direct fill (BUY).
@@ -524,6 +737,7 @@ export class ProcessFillUseCase {
     order: Order,
     fill: Fill,
     execution: OrderSubmissionRecord | undefined,
+    tracker: FillCommitTracker,
   ): Promise<Result<void, TradingError>> {
     // Шаги ниже выполняются синхронно (без yield) — атомарное обновление состояния.
     // Первый await появляется только на публикации событий.
@@ -574,6 +788,8 @@ export class ProcessFillUseCase {
     // (CancelOrderUseCase/UpdateOrderStatusUseCase) со stale-версией корректно
     // получит VersionConflictError и не перетрёт применённый fill.
     this._deps.orderStateStore.saveSync(updatedOrder);
+    // Order сохранён — первая необратимая мутация.
+    tracker.phase = 'ORDER_COMMITTED';
 
     // Обновить Portfolio (sync)
     // Передаём цену ордера, чтобы точно совпасть с зарезервированной суммой
@@ -626,6 +842,9 @@ export class ProcessFillUseCase {
       ));
     }
 
+    // Portfolio изменён — вторая необратимая мутация.
+    tracker.phase = 'PORTFOLIO_COMMITTED';
+
     // Запись в Ledger (sync) — ДО dust release.
     // Order+Portfolio уже committed выше. Ledger пишем РАНЬШЕ dust release,
     // чтобы при сбое dust release Ledger уже был записан, и dust-issue касался
@@ -657,6 +876,9 @@ export class ProcessFillUseCase {
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
       ));
     }
+
+    // Ledger записан.
+    tracker.phase = 'LEDGER_COMMITTED';
 
     // Снять остаток резервации при FILLED через dust threshold.
     // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
@@ -774,6 +996,9 @@ export class ProcessFillUseCase {
       ));
     }
 
+    // Journal применён — все стороны консистентны.
+    tracker.phase = 'JOURNAL_COMMITTED';
+
     // Снимаем все in-flight флаги ПЕРЕД публикацией событий.
     // КРИТИЧНО: publishAll ниже — await, создаёт yield-окно.
     // Обработчики ORDER_FILLED (OrderEventBridge) запланируют тик стратегии
@@ -852,6 +1077,7 @@ export class ProcessFillUseCase {
   private async _applyHeldReservationFill(
     fill: Fill,
     execution: OrderSubmissionRecord,
+    tracker: FillCommitTracker,
   ): Promise<Result<void, TradingError>> {
     this._logger.warn('Fill arrived without live local Order but held reservation exists — recovery path (consume held reservation)', {
       fillId: String(fill.id),
@@ -902,6 +1128,9 @@ export class ProcessFillUseCase {
       ));
     }
 
+    // Portfolio изменён — с этого момента retry небезопасен.
+    tracker.phase = 'PORTFOLIO_COMMITTED';
+
     // Ledger. Portfolio уже применён — сбой recordFill → RECONCILIATION_REQUIRED.
     try {
       this._deps.ledgerService.recordFill(fill);
@@ -927,6 +1156,9 @@ export class ProcessFillUseCase {
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
       ));
     }
+
+    // Ledger записан.
+    tracker.phase = 'LEDGER_COMMITTED';
 
     // Journal consume — commit-critical: journal источник истины для held-пути.
     // Attempt-scoped operationId: операции разных попыток не считаются дубликатами.
@@ -971,6 +1203,9 @@ export class ProcessFillUseCase {
         { context: { fillId: String(fill.id), orderId: String(fill.orderId) } },
       ));
     }
+
+    // Journal применён.
+    tracker.phase = 'JOURNAL_COMMITTED';
 
     this._clearInFlightFlags(fill);
     // Portfolio/Ledger/journal committed → APPLIED до публикации (см. direct path).

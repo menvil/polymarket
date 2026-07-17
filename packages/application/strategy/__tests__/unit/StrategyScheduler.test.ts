@@ -77,6 +77,11 @@ function makeOrderStateStore(): IOrderStateStore {
     hasManualReconciliationBlockForOrder: fn().mockReturnValue(false),
     hasManualReconciliationBlocks: fn().mockReturnValue(false),
     getManualReconciliationBlocks: fn().mockReturnValue([]),
+    markTerminalSettlementPending: fn(),
+    clearTerminalSettlementPending: fn(),
+    hasTerminalSettlementPendingForOrder: fn().mockReturnValue(false),
+    hasTerminalSettlementPending: fn().mockReturnValue(false),
+    getTerminalSettlementPending: fn().mockReturnValue([]),
   };
 }
 

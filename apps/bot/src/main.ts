@@ -4684,6 +4684,36 @@ async function runLive(): Promise<void> {
     });
   }, RECONCILE_INTERVAL_MS);
 
+  // Recovery ambiguous submissions без venueOrderId (P0): периодическая
+  // привязка к venue open orders/trades либо освобождение резервации.
+  // Реже, чем fill-reconciliation: сопоставление осторожное и требует
+  // «устоявшегося» venue-состояния (minAbsenceAgeMs).
+  const UNKNOWN_SUBMISSIONS_INTERVAL_MS = 30_000;
+  const unknownSubmissionsIntervalId = setInterval(() => {
+    // Discovery UNKNOWN submissions (findings/issues, без автоматических решений).
+    void liveInfra.reconcileUnknownSubmissionsUseCase.execute({ accountId }).then((result) => {
+      if (!result.ok) {
+        logger.warn('Periodic unknown-submission discovery failed', { error: result.error.message });
+      } else if (result.value.scanned > 0) {
+        logger.info('Periodic unknown-submission discovery', {
+          scanned: result.value.scanned,
+          candidatesFound: result.value.candidatesFound,
+          ambiguous: result.value.ambiguous,
+          noCandidates: result.value.noCandidates,
+          incomplete: result.value.incomplete,
+        });
+      }
+    });
+    // Разрешение terminal settlement pending (delayed fills + authoritative release).
+    void liveInfra.settleTerminalOrdersUseCase.execute({ accountId }).then((result) => {
+      if (!result.ok) {
+        logger.warn('Periodic terminal settlement failed', { error: result.error.message });
+      } else if (result.value.scanned > 0) {
+        logger.info('Periodic terminal settlement', { ...result.value });
+      }
+    });
+  }, UNKNOWN_SUBMISSIONS_INTERVAL_MS);
+
   // ── Периодическая синхронизация USDC-баланса с venue ──────────────────
   // Каждые 60 секунд запрашиваем актуальный баланс с venue (REST API).
   // Учитывает settled позиции (claim) и внешние зачисления.
@@ -5002,6 +5032,7 @@ async function runLive(): Promise<void> {
 
     rotation.stopTimers();
     clearInterval(reconcileIntervalId);
+    clearInterval(unknownSubmissionsIntervalId);
     clearInterval(balanceSyncIntervalId);
     if (_liveArbExpiryIntervalId !== undefined) clearInterval(_liveArbExpiryIntervalId);
     // clearInterval(tokenBalanceSyncId); // DISABLED — token balance sync

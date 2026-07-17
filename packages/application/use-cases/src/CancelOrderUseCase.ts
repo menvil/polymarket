@@ -74,7 +74,11 @@ export interface CancelOrderInput {
  * Типизированный исход отмены.
  *
  * @remarks
- * - `CANCELLED` / `ALREADY_CANCELLED` — venue подтвердил, локально committed.
+ * - `CANCELLED` / `ALREADY_CANCELLED` — venue подтвердил (или локально уже
+ *   CANCELED), локально committed.
+ * - `ALREADY_FILLED` — локальный ордер уже FILLED: отменять нечего, но это НЕ
+ *   отмена — экспозиция получена.
+ * - `ALREADY_TERMINAL` — локальный ордер уже REJECTED/EXPIRED (см. `orderStatus`).
  * - `FILL_PENDING` — venue вернул ALREADY_FILLED (или локально matched/in-flight):
  *   ордер НЕ отменён, ждём Fill.
  * - `RECONCILIATION_REQUIRED` — исход venue неоднозначен (NOT_FOUND/UNKNOWN/
@@ -83,6 +87,8 @@ export interface CancelOrderInput {
 export type CancelOrderOutcome =
   | { readonly status: 'CANCELLED' }
   | { readonly status: 'ALREADY_CANCELLED' }
+  | { readonly status: 'ALREADY_FILLED' }
+  | { readonly status: 'ALREADY_TERMINAL'; readonly orderStatus: 'REJECTED' | 'EXPIRED' }
   | { readonly status: 'FILL_PENDING' }
   | { readonly status: 'RECONCILIATION_REQUIRED'; readonly reason: string };
 
@@ -174,6 +180,34 @@ export class CancelOrderUseCase {
   }
 
   /**
+   * Маппит terminal-статус локального Order в типизированный исход отмены.
+   *
+   * @param status - Терминальный `OrderStatus`
+   * @returns `ALREADY_CANCELLED` (CANCELED), `ALREADY_FILLED` (FILLED),
+   *   `ALREADY_TERMINAL` (REJECTED/EXPIRED)
+   *
+   * @remarks
+   * Раньше ЛЮБОЙ terminal возвращал `ALREADY_CANCELLED` — caller (ExecutionEngine)
+   * засчитывал FILLED-ордер как успешную отмену и ставил post-cancel cooldown,
+   * хотя экспозиция уже получена.
+   */
+  private _terminalOutcome(status: Order['status']): CancelOrderOutcome {
+    switch (status) {
+      case 'CANCELED':
+        return { status: 'ALREADY_CANCELLED' };
+      case 'FILLED':
+        return { status: 'ALREADY_FILLED' };
+      case 'REJECTED':
+      case 'EXPIRED':
+        return { status: 'ALREADY_TERMINAL', orderStatus: status };
+      default:
+        // Не-терминальный статус сюда не попадает (guard isTerminal у caller);
+        // защитный fallback — консервативный ALREADY_CANCELLED.
+        return { status: 'ALREADY_CANCELLED' };
+    }
+  }
+
+  /**
    * Выполняет venue-first отмену ордера.
    *
    * @param input - Входные данные с orderId и accountId
@@ -241,12 +275,14 @@ export class CancelOrderUseCase {
     }
 
     // Уже в терминальном статусе — идемпотентный выход (venue-запрос не нужен).
+    // Terminal statuses РАЗЛИЧАЮТСЯ (Шаг 6): FILLED — не отмена (экспозиция
+    // получена), REJECTED/EXPIRED — не отмена (ордер умер сам).
     if (order.isTerminal) {
       this._logger.debug('Order already in terminal status, skipping cancel', {
         orderId: String(input.orderId),
         status: order.status,
       });
-      return Ok({ status: 'ALREADY_CANCELLED' });
+      return Ok(this._terminalOutcome(order.status));
     }
 
     // Matched fills на ордере — fill уже исполнен/в пути. НЕ отменяем (fill идёт),
@@ -388,12 +424,13 @@ export class CancelOrderUseCase {
       }
       if (latest.isTerminal) {
         // Конкурирующий fill/cancel довёл до terminal — резервация обработана той
-        // мутацией. Venue подтвердил cancel, но локально уже terminal → no-op.
+        // мутацией. Venue подтвердил cancel, но локально уже terminal → no-op
+        // (с различением реального terminal-статуса, Шаг 6).
         this._logger.info('Order reached terminal state concurrently during cancel — no-op', {
           orderId: String(input.orderId),
           status: latest.status,
         });
-        return Ok({ status: 'ALREADY_CANCELLED' });
+        return Ok(this._terminalOutcome(latest.status));
       }
       // Venue подтвердил отмену, но локально не смогли зафиксировать (genuine
       // non-terminal conflict): НЕ release вслепую, desync issue, reconciliation.
