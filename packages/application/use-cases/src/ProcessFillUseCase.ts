@@ -236,42 +236,7 @@ export class ProcessFillUseCase {
    * вызове, чтобы не молчать о нерешённой проблеме.
    */
   public async execute(fill: Fill): Promise<Result<void, TradingError>> {
-    // Шаг 1: Idempotency guard + PROCESSING lease (recovery зависшего PROCESSING:
-    // просроченный lease reclaim-ится вместо вечного BUSY).
-    const begin = await this._deps.processedFillRepo.begin(fill.id, {
-      workerId: this._deps.workerId ?? 'main',
-      now: this._deps.clock?.now() ?? new Date(),
-      leaseMs: this._deps.processingLeaseMs ?? DEFAULT_PROCESSING_LEASE_MS,
-    });
-    if (begin.outcome === 'DUPLICATE') {
-      this._logger.debug('Fill already applied, skipping (idempotent)', { fillId: String(fill.id) });
-      return Ok(undefined);
-    }
-    if (begin.outcome === 'BUSY') {
-      this._logger.warn('Fill already being processed concurrently, skipping', { fillId: String(fill.id) });
-      return Ok(undefined);
-    }
-    if (begin.outcome === 'RECONCILIATION_REQUIRED') {
-      // Терминально — НЕ ACQUIRED, значит НЕ мутируем Order/Portfolio/Ledger
-      // повторно. Ok (no-op), а не Err: caller (WS handler / ReconcileTradesUseCase)
-      // не должен трактовать это как retryable ошибку. Error-лог на каждый
-      // вызов — чтобы нерешённая проблема оставалась видимой в мониторинге.
-      this._logger.error('ORDER_PORTFOLIO_DESYNC: fill requires manual reconciliation — retry not attempted, skipping', {
-        fillId: String(fill.id),
-      });
-      return Ok(undefined);
-    }
-    if (begin.isRetry) {
-      this._logger.info('Retrying previously failed/reverted fill', { fillId: String(fill.id) });
-    }
-    if (begin.reclaimed) {
-      this._logger.warn('Reclaimed stale PROCESSING fill after lease expiry — previous worker likely crashed/hung', {
-        fillId: String(fill.id),
-        leaseToken: begin.leaseToken,
-      });
-    }
-
-    // Шаг 2: Keyed mutex — сериализует относительно CancelOrderUseCase и других
+    // Шаг 1: Keyed mutex — сериализует относительно CancelOrderUseCase и других
     // конкурентных fill-ов того же ордера/инструмента/аккаунта.
     // Namespaced keys (lockKey.*) — пересечение с Place ([account,instrument]),
     // Cancel/Update ([account,order,...]) по общим сущностям.
@@ -287,11 +252,70 @@ export class ProcessFillUseCase {
     // оставить его навсегда в PROCESSING. Классификация по фазе commit:
     // NONE → мутаций не было → retryable; иначе — частичный commit → reconciliation.
     const tracker: FillCommitTracker = { phase: 'NONE' };
+    // acquired: mark* в exception handler разрешены ТОЛЬКО после нашего
+    // ACQUIRED — иначе handler затёр бы PROCESSING/APPLIED чужого worker-а.
+    let acquired = false;
     let result: Result<void, TradingError>;
     try {
-      result = await this._deps.keyedMutex.runExclusive(lockKeys, () => this._processLocked(fill, tracker));
+      result = await this._deps.keyedMutex.runExclusive(lockKeys, async () => {
+        // P1: try/catch ВНУТРИ callback (не вокруг runExclusive(...) снаружи) —
+        // InMemoryKeyedMutex.runExclusive освобождает lock в `finally` СРАЗУ
+        // после того, как этот callback settle-нется (см. doc InMemoryKeyedMutex).
+        // Если классифицировать исключение ПОСЛЕ await runExclusive(...), lock
+        // уже отпущен — конкурентный worker мог reclaim-ить lease и начать
+        // обработку ДО того, как этот worker пометит fill FAILED/RECONCILIATION_REQUIRED.
+        // Классификация здесь гарантирует: mark* выполняется, пока lock ещё наш.
+        try {
+          // Шаг 2: Idempotency guard + PROCESSING lease — ВНУТРИ mutex (P0
+          // lease-fencing). Порядок критичен: воскресший worker A (просроченный
+          // lease, но живой) сначала ЗАВЕРШАЕТ обработку и выходит из mutex;
+          // worker B входит ПОСЛЕ и его begin() видит актуальный APPLIED, а не
+          // заранее сохранённый ACQUIRED — повторное применение исключено.
+          // Reclaim по lease остаётся для случая «mutex освобождён, а mark* так
+          // и не случился» (проглоченный сбой/крэш persistent-инфраструктуры).
+          const begin = await this._deps.processedFillRepo.begin(fill.id, {
+            workerId: this._deps.workerId ?? 'main',
+            now: this._deps.clock?.now() ?? new Date(),
+            leaseMs: this._deps.processingLeaseMs ?? DEFAULT_PROCESSING_LEASE_MS,
+          });
+          if (begin.outcome === 'DUPLICATE') {
+            this._logger.debug('Fill already applied, skipping (idempotent)', { fillId: String(fill.id) });
+            return Ok(undefined);
+          }
+          if (begin.outcome === 'BUSY') {
+            this._logger.warn('Fill already being processed concurrently, skipping', { fillId: String(fill.id) });
+            return Ok(undefined);
+          }
+          if (begin.outcome === 'RECONCILIATION_REQUIRED') {
+            // Терминально — НЕ ACQUIRED, значит НЕ мутируем Order/Portfolio/Ledger
+            // повторно. Ok (no-op), а не Err: caller (WS handler / ReconcileTradesUseCase)
+            // не должен трактовать это как retryable ошибку. Error-лог на каждый
+            // вызов — чтобы нерешённая проблема оставалась видимой в мониторинге.
+            this._logger.error('ORDER_PORTFOLIO_DESYNC: fill requires manual reconciliation — retry not attempted, skipping', {
+              fillId: String(fill.id),
+            });
+            return Ok(undefined);
+          }
+          acquired = true;
+          if (begin.isRetry) {
+            this._logger.info('Retrying previously failed/reverted fill', { fillId: String(fill.id) });
+          }
+          if (begin.reclaimed) {
+            this._logger.warn('Reclaimed stale PROCESSING fill after lease expiry — previous worker likely crashed/hung', {
+              fillId: String(fill.id),
+              leaseToken: begin.leaseToken,
+            });
+          }
+          return await this._processLocked(fill, tracker);
+        } catch (err) {
+          return await this._handleUnexpectedException(fill, tracker.phase, err, acquired);
+        }
+      });
     } catch (err) {
-      result = await this._handleUnexpectedException(fill, tracker.phase, err);
+      // Defensive fallback ТОЛЬКО для исключений самого runExclusive (например,
+      // сбой мьютекса ДО входа в callback) — acquired гарантированно false
+      // (begin() ещё не мог случиться), поэтому mark* не выполняется.
+      result = await this._handleUnexpectedException(fill, tracker.phase, err, acquired);
     } finally {
       // flush() ВНЕ lock, в finally: уже enqueued события committed мутаций не
       // остаются без попытки публикации даже при неожиданном исключении.
@@ -306,6 +330,9 @@ export class ProcessFillUseCase {
    * @param fill - Обрабатываемый fill
    * @param phase - Фаза commit на момент исключения
    * @param err - Исключение
+   * @param acquired - Был ли этот вызов ACQUIRED в processedFillRepo:
+   *   без ACQUIRED никакие `mark*` не выполняются (fill может принадлежать
+   *   другому worker-у / быть уже APPLIED — затирать его статус нельзя)
    * @returns Err — retryable при `NONE`, reconciliation при частичном commit
    *
    * @remarks
@@ -323,8 +350,25 @@ export class ProcessFillUseCase {
     fill: Fill,
     phase: FillCommitPhase,
     err: unknown,
+    acquired: boolean,
   ): Promise<Result<void, TradingError>> {
     const message = err instanceof Error ? err.message : String(err);
+
+    if (!acquired) {
+      // Throw ДО/ВО ВРЕМЯ begin(): мы не владеем записью processed fill —
+      // mark* запрещены (могли бы затереть PROCESSING/APPLIED другого
+      // worker-а). Мутаций не было (phase === NONE гарантированно) → caller
+      // может повторить позже.
+      this._logger.error('Unexpected exception before fill processing was acquired — no marks applied, retry later', {
+        fillId: String(fill.id),
+        orderId: String(fill.orderId),
+        error: message,
+      });
+      return Err(new TradingError(
+        `Fill processing failed before idempotency acquire (retryable): ${message}`,
+        { context: { fillId: String(fill.id), orderId: String(fill.orderId), retryable: true } },
+      ));
+    }
 
     if (phase === 'NONE') {
       const reason = `UNEXPECTED_EXCEPTION_PRECOMMIT: ${message}`;
@@ -1538,17 +1582,20 @@ export class ProcessFillUseCase {
    * ордера/инструмента с ДРУГИМИ fillId не затрагиваются. Вызывается после
    * обработки fill (или на error path).
    *
-   * Дополнительно снимается instrument-level placeholder
-   * `pendingMatchFillId(fill.orderId)`: реальный fill «разрешает» более раннюю
-   * неоднозначную пометку от cancel ALREADY_FILLED / submit FILLED (там
-   * конкретный fillId неизвестен). Order-level placeholder аналогично снимает
-   * `clearOrderFillMatched`. Placeholder снимается при ПЕРВОМ реальном fill
-   * ордера; реальные fillId других partial fills не затрагиваются
-   * (clearInFlightFill — no-op для неизвестных id).
+   * Дополнительно ЯВНО снимается placeholder `pendingMatchFillId(fill.orderId)`
+   * на ОБОИХ уровнях (order-level matched + instrument-level in-flight):
+   * реальный fill «разрешает» более раннюю неоднозначную пометку от cancel
+   * ALREADY_FILLED / submit FILLED (там конкретный fillId неизвестен).
+   * Контракт store — exact-ID cleanup (никакой скрытой семантики): удаление
+   * placeholder — ответственность вызывающего кода. Placeholder снимается при
+   * ПЕРВОМ реальном fill ордера; реальные fillId других partial fills не
+   * затрагиваются (clear* — no-op для неизвестных id).
    */
   private _clearInFlightFlags(fill: Fill): void {
+    const placeholder = pendingMatchFillId(fill.orderId);
     this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, fill.id);
+    this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, placeholder);
     this._deps.orderStateStore.clearInFlightFill(fill.id);
-    this._deps.orderStateStore.clearInFlightFill(pendingMatchFillId(fill.orderId));
+    this._deps.orderStateStore.clearInFlightFill(placeholder);
   }
 }

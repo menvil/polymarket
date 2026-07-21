@@ -50,10 +50,8 @@ import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId } from '@polymarket/ids';
-import { asVenueId, AssetIdHelpers, accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
+import { accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
-import { Fee } from '@polymarket/value-objects';
-import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import type {
   IExchangeClient,
   IProcessedFillRepository,
@@ -63,6 +61,8 @@ import type {
 } from '@polymarket/ports';
 import { Fill } from '@polymarket/fill';
 import type { ProcessFillUseCase } from './ProcessFillUseCase.js';
+import { venueTradeToFill } from './services/venueTradeToFill.js';
+import { isProcessableVenueTradeStatus, isFailedVenueTradeStatus } from './services/venueTradeStatusPolicy.js';
 
 /** Зависимости ReconcileTradesUseCase */
 export interface ReconcileTradesDeps {
@@ -200,7 +200,7 @@ export class ReconcileTradesUseCase {
       // но автоматически здесь НЕ выполняется (future work): создаём queryable
       // issue и пропускаем. Локальный статус НЕ APPLIED — просто skip (WS
       // reversal не нужен или fill не применялся).
-      if (trade.status === 'FAILED') {
+      if (isFailedVenueTradeStatus(trade.status)) {
         const localStatus = await this._deps.processedFillRepo.getStatus(trade.fillId);
         if (localStatus === 'APPLIED') {
           this._logger.error('VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED: venue reports FAILED for locally APPLIED fill — reversal required, manual reconciliation', {
@@ -246,8 +246,9 @@ export class ReconcileTradesUseCase {
       // MINED / RETRYING / undefined → пропускаем.
       // MINED: cross-outcome MINT fills — CLOB отклоняет SELL до CONFIRMED.
       // FAILED обработан отдельной веткой ВЫШЕ (issue при local APPLIED).
-      const PROCESSABLE_STATUSES = new Set(['CONFIRMED', 'MATCHED']);
-      if (!PROCESSABLE_STATUSES.has(trade.status ?? '')) {
+      // Классификация вынесена в общий venueTradeStatusPolicy (используется
+      // также SettleTerminalOrdersUseCase с более строгим профилем).
+      if (!isProcessableVenueTradeStatus(trade.status, 'recovery')) {
         this._logger.debug('Trade not in processable status, skipping', {
           fillId: fillIdStr,
           status: trade.status ?? 'undefined',
@@ -333,37 +334,8 @@ export class ReconcileTradesUseCase {
     snapshot: VenueTradeSnapshot,
     accountId: AccountId,
   ): Result<Fill, TradingError> {
-    const venueId = asVenueId('POLYMARKET');
-    if (!venueId) {
-      return Err(new TradingError('Cannot create POLYMARKET venueId', {}));
-    }
-
-    // Собрать Fee из FeeSnapshot
-    const feeAssetQuantity = new AssetQuantity(snapshot.fee.asset, snapshot.fee.amount);
-    const fee = Fee.of(feeAssetQuantity);
-
-    const fillResult = Fill.create({
-      id: snapshot.fillId,
-      orderId: snapshot.orderId,
-      accountId,
-      venueId,
-      marketId: snapshot.marketId,
-      tokenId: snapshot.asset,
-      settlementAssetId: AssetIdHelpers.USDC,
-      price: snapshot.price,
-      size: snapshot.size,
-      side: snapshot.side,
-      timestamp: snapshot.executedAt,
-      fee,
-    });
-
-    if (!fillResult.ok) {
-      return Err(new TradingError(
-        `Failed to create Fill from venue snapshot: ${fillResult.error.message}`,
-        { context: { fillId: String(snapshot.fillId) } },
-      ));
-    }
-
-    return fillResult;
+    // Общий маппер (используется также SettleTerminalOrdersUseCase) — единая
+    // реализация вместо двух расходящихся копий.
+    return venueTradeToFill(snapshot, accountId);
   }
 }

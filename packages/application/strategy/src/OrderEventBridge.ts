@@ -37,6 +37,7 @@ import type { OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
+import { pendingMatchFillId } from '@polymarket/ports';
 import type { OrderStatus } from '@polymarket/order';
 import type { StrategyScheduler } from './StrategyScheduler.js';
 import type { ExecutionEngine } from './ExecutionEngine.js';
@@ -158,8 +159,14 @@ export class OrderEventBridge {
         for (const fill of event.fills) {
           // fillId-scoped: снимает ТОЛЬКО этот fill — другой ещё не подтверждённый
           // partial fill того же ордера/инструмента не затрагивается.
+          // Placeholder pendingMatchFillId снимается ЯВНО (контракт store —
+          // exact-ID cleanup): CONFIRMED реального fill «разрешает» более
+          // раннюю неоднозначную пометку (cancel ALREADY_FILLED / submit FILLED).
+          const placeholder = pendingMatchFillId(fill.orderId);
           this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, fill.id);
+          this._deps.orderStateStore.clearOrderFillMatched(fill.orderId, placeholder);
           this._deps.orderStateStore.clearInFlightFill(fill.id);
+          this._deps.orderStateStore.clearInFlightFill(placeholder);
           const instrumentId = assetIdToInstrumentId(fill.tokenId);
           if (instrumentId) {
             this._deps.executionEngine.clearExchangeRejectionCooldown(instrumentId);

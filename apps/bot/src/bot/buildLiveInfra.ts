@@ -32,7 +32,7 @@ import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
 import type { IExchangeClient, ICurrentBalanceProvider, IOrderedEventOutbox } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
-import { ReconcileTradesUseCase, ReconcileUnknownSubmissionsUseCase, ResolveUnknownSubmissionUseCase, SettleTerminalOrdersUseCase, venueTradeToFill, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
+import { ReconcileTradesUseCase, ReconcileUnknownSubmissionsUseCase, ResolveUnknownSubmissionUseCase, CancelBoundVenueOrderUseCase, SettleTerminalOrdersUseCase, venueTradeToFill, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
 import { FillEventHandler, OrderUpdateHandler } from '@polymarket/handlers';
 import { UserEventFeedAdapter } from '@polymarket/exchange/adapters';
 import { PolymarketExchangeClientAdapter } from '@polymarket/exchange/adapters';
@@ -130,6 +130,11 @@ export interface LiveInfra {
    * + release только authoritative остатка резервации.
    */
   readonly settleTerminalOrdersUseCase: SettleTerminalOrdersUseCase;
+  /**
+   * Операторская отмена привязанного live venue-ордера без локального Order —
+   * закрытие workflow BOUND_AWAITING_ORDER_RECOVERY.
+   */
+  readonly cancelBoundVenueOrderUseCase: CancelBoundVenueOrderUseCase;
   /** Проверка баланса токена на CLOB (для диагностики SELL rejection) */
   readonly balanceRestClient: PolymarketBalanceRestClient;
   /** Провайдер текущего USDC-баланса от venue (для периодической синхронизации) */
@@ -278,6 +283,25 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     clock,
     logger,
     reconciliationIssues: reconciliationIssueRepo,
+    // Немедленное применение уже полученных trade snapshots при TRADE bind
+    // (см. ResolveUnknownSubmissionUseCase._applyBoundTrades) — вне lock,
+    // fillProcessor берёт свой mutex сам.
+    fillProcessor: processFillUseCase,
+    processedFillRepo,
+  });
+
+  // Операторская отмена привязанного live venue-ордера (закрытие
+  // BOUND_AWAITING_ORDER_RECOVERY): venue cancel → release → снятие блока.
+  const cancelBoundVenueOrderUseCase = new CancelBoundVenueOrderUseCase({
+    submissions: orderSubmissionRepo,
+    exchangeClient,
+    portfolioService,
+    orderStateStore: orderRepo,
+    orderRepo,
+    keyedMutex,
+    clock,
+    logger,
+    reconciliationIssues: reconciliationIssueRepo,
   });
 
   // Разрешение terminal settlement pending: delayed fills применяются held-path,
@@ -408,6 +432,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     reconcileTradesUseCase,
     reconcileUnknownSubmissionsUseCase,
     resolveUnknownSubmissionUseCase,
+    cancelBoundVenueOrderUseCase,
     settleTerminalOrdersUseCase,
     balanceRestClient,
     currentBalanceProvider,

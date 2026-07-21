@@ -26,7 +26,7 @@
  * 5. Portfolio не найден → Err
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
@@ -52,7 +52,7 @@ import { Balance } from '@polymarket/value-objects/balance';
 import { Order } from '@polymarket/order';
 import { Fill } from '@polymarket/fill';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
+import type { IPortfolioStore, VersionConflictError, IProcessedFillRepository, ProcessedFillStatus } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
 // Прямые импорты (избегаем @polymarket/backtesting — подтягивает транзитивные зависимости)
@@ -417,5 +417,102 @@ describe('ProcessFillUseCase (integration)', () => {
     if (!result.ok) {
       expect(result.error.message).toMatch(/Portfolio not found/);
     }
+  });
+
+  // ── P1: exception classification держит mutex до завершения markReconciliationRequired ──
+
+  /**
+   * Controllable fake `IProcessedFillRepository` для регрессионного теста
+   * mutex-ordering: `markReconciliationRequired` блокируется на управляемом
+   * gate, `events` фиксирует порядок вызовов `begin`/`markReconciliationRequired`.
+   */
+  function makeControllableProcessedFillRepo(): {
+    readonly repo: IProcessedFillRepository;
+    readonly events: string[];
+    readonly releaseGate: () => void;
+  } {
+    const status = new Map<string, ProcessedFillStatus>();
+    const events: string[] = [];
+    let beginCallCount = 0;
+    let releaseGateFn!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseGateFn = resolve; });
+    const repo: IProcessedFillRepository = {
+      begin: async (fillId) => {
+        beginCallCount++;
+        events.push(`begin:call${beginCallCount}`);
+        const s = status.get(String(fillId));
+        if (s === 'APPLIED') return { outcome: 'DUPLICATE' };
+        if (s === 'RECONCILIATION_REQUIRED') return { outcome: 'RECONCILIATION_REQUIRED' };
+        if (s === 'PROCESSING') return { outcome: 'BUSY' };
+        status.set(String(fillId), 'PROCESSING');
+        return { outcome: 'ACQUIRED', isRetry: false };
+      },
+      markApplied: async (fillId) => { status.set(String(fillId), 'APPLIED'); },
+      markFailed: async (fillId) => { status.set(String(fillId), 'FAILED'); },
+      markReverted: async () => undefined,
+      markReconciliationRequired: async (fillId) => {
+        events.push('markReconciliationRequired:start');
+        await gate; // блокируется, пока тест явно не отпустит (releaseGate)
+        status.set(String(fillId), 'RECONCILIATION_REQUIRED');
+        events.push('markReconciliationRequired:end');
+      },
+      getStatus: async (fillId) => status.get(String(fillId)),
+    };
+    return { repo, events, releaseGate: () => releaseGateFn() };
+  }
+
+  it('P1 regression: post-commit throw держит keyed mutex до завершения markReconciliationRequired — конкурентный execute() не входит в begin() раньше времени', async () => {
+    const order = makeOpenOrder();
+    await orderRepo.save(order, 0);
+    portfolioStore.save(makePortfolio(), 0);
+
+    const { repo: controllableRepo, events, releaseGate } = makeControllableProcessedFillRepo();
+    const portfolioService = new PortfolioService(portfolioStore, LOGGER);
+    // applyFill бросает СИНХРОННО, ПОСЛЕ saveSync (tracker.phase уже ORDER_COMMITTED) —
+    // симулирует "unexpected exception после business commit".
+    jest.spyOn(portfolioService, 'applyFill').mockImplementationOnce(() => {
+      throw new Error('injected post-commit failure');
+    });
+
+    const useCase = new ProcessFillUseCase({
+      ...deps,
+      portfolioService,
+      processedFillRepo: controllableRepo,
+    });
+
+    const fill = makeFill();
+    const p1 = useCase.execute(fill);
+
+    // Дать p1 продвинуться до markReconciliationRequired (заблокируется на gate),
+    // но не дальше — все промежуточные await в цепочке резолвятся микротасками,
+    // которые полностью вычерпываются ДО любого macrotask (setImmediate).
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    expect(events).toContain('markReconciliationRequired:start');
+    expect(events.filter((e) => e.startsWith('begin:'))).toHaveLength(1);
+
+    // Конкурентный execute() того же fill — те же lock keys, должен ЖДАТЬ
+    // освобождения мьютекса (которое наступит ТОЛЬКО после того, как gate
+    // отпустят и p1's callback внутри runExclusive settle-нется).
+    const p2 = useCase.execute(fill);
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    // p2 НЕ вошёл в begin() — mutex всё ещё держит p1 (markReconciliationRequired
+    // ещё не завершился, значит runExclusive callback p1 ещё не settle-нулся).
+    expect(events.filter((e) => e.startsWith('begin:'))).toHaveLength(1);
+
+    releaseGate();
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    expect(r1.ok).toBe(false); // post-commit error, manual reconciliation required
+    expect(r2.ok).toBe(true); // видит RECONCILIATION_REQUIRED → Ok no-op, НЕ ACQUIRED повторно
+
+    // Порядок: begin() второго execute() ОБЯЗАН случиться ПОСЛЕ завершения
+    // markReconciliationRequired первого — mutex не освобождался раньше времени.
+    const idxEnd = events.indexOf('markReconciliationRequired:end');
+    const idxBegin2 = events.indexOf('begin:call2');
+    expect(idxEnd).toBeGreaterThan(-1);
+    expect(idxBegin2).toBeGreaterThan(idxEnd);
   });
 });

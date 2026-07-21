@@ -20,10 +20,13 @@
  * - `BIND_VENUE_ORDER` + `candidateKind: 'TRADE'` — ордер уже исполнен:
  *   verify через `getTrades` → `markVenueAccepted` → matched/in-flight markers
  *   на КОНКРЕТНЫЕ fillId trade-ов (strategy продолжает видеть unsettled
- *   execution) → только потом снятие manual block → исход `BOUND_AWAITING_FILL`.
- *   Сами fills придут через WS/reconciliation polling и применятся
- *   held-reservation path (`findByVenueOrderId` теперь работает); markers
- *   снимаются `ProcessFillUseCase` после успешного применения.
+ *   execution) → снятие manual block → исход `BOUND_AWAITING_FILL`. Сразу
+ *   ПОСЛЕ выхода из lock уже полученные trade snapshots прогоняются через
+ *   `fillProcessor` (не отбрасываются — если trade исчезнет со следующей
+ *   неполной страницы venue API, markers/pending иначе остались бы навсегда
+ *   без применённого fill). Неуспех этой попытки НЕ меняет исход резолюции —
+ *   markers/held-резервация остаются, fill будет ретраится через
+ *   WS/`ReconcileTradesUseCase`/`SettleTerminalOrdersUseCase`.
  * - `CONFIRM_NOT_SUBMITTED` — оператор подтверждает, что заявка на venue не
  *   создавалась: Portfolio release → journal release (`SETTLED`) → `markFailed`
  *   (retry разрешён) → снятие manual block. Любой частичный сбой оставляет
@@ -55,15 +58,19 @@ import type { AccountId, OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import type {
   IExchangeClient,
+  IFillProcessor,
   IKeyedMutex,
   IOrderStateStore,
   IOrderSubmissionRepository,
+  IProcessedFillRepository,
   IReconciliationIssueRepository,
   OrderSubmissionRecord,
+  VenueTradeSnapshot,
 } from '@polymarket/ports';
 import { canConsumeHeldReservation } from '@polymarket/ports';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { lockKey } from './lockKeys.js';
+import { venueTradeToFill } from './services/venueTradeToFill.js';
 
 /** Операторская резолюция UNKNOWN submission. */
 export type UnknownSubmissionResolution =
@@ -115,6 +122,13 @@ export interface ResolveUnknownSubmissionDeps {
   readonly clock: IClock;
   readonly logger: ILogger;
   readonly reconciliationIssues?: IReconciliationIssueRepository;
+  /**
+   * Обработчик fill (ProcessFillUseCase) — для немедленного применения
+   * trade-snapshots, уже полученных при TRADE bind (см. `_applyBoundTrades`).
+   */
+  readonly fillProcessor: IFillProcessor;
+  /** Для верификации APPLIED-статуса после `fillProcessor.execute()`. */
+  readonly processedFillRepo: IProcessedFillRepository;
 }
 
 /**
@@ -153,17 +167,30 @@ export class ResolveUnknownSubmissionUseCase {
       lockKey.account(input.accountId),
       lockKey.instrument(String(preflight.instrumentId)),
     ];
-    return this._deps.keyedMutex.runExclusive(lockKeys, () => this._resolveLocked(input));
+    // outTrades — closure-local out-param (НЕ instance field: этот use case
+    // может обрабатывать конкурентные вызовы для разных clientOrderId под
+    // разными lock-ключами, shared instance state гонялся бы между ними).
+    // _bindTrade заполняет его уже полученными snapshot'ами ПОД lock; после
+    // выхода из lock они прогоняются через fillProcessor (см. doc класса).
+    const outTrades: { trades?: readonly VenueTradeSnapshot[] } = {};
+    const result = await this._deps.keyedMutex.runExclusive(lockKeys, () => this._resolveLocked(input, outTrades));
+    if (result.ok && result.value.status === 'BOUND_AWAITING_FILL' && outTrades.trades) {
+      await this._applyBoundTrades(input, outTrades.trades);
+    }
+    return result;
   }
 
   /**
    * Тело резолюции — вызывается ВНУТРИ keyed mutex.
    *
    * @param input - Входные данные
+   * @param outTrades - Out-param: `_bindTrade` записывает сюда уже полученные
+   *   trade snapshots для пост-lock обработки (см. `execute`)
    * @returns Ok(outcome) либо Err
    */
   private async _resolveLocked(
     input: ResolveUnknownSubmissionInput,
+    outTrades: { trades?: readonly VenueTradeSnapshot[] },
   ): Promise<Result<ResolveUnknownSubmissionOutcome, TradingError>> {
     const accountKey = (id: AccountId): string => (typeof id === 'string' ? id : accountIdToString(id));
 
@@ -221,7 +248,7 @@ export class ResolveUnknownSubmissionUseCase {
       }
       return resolution.candidateKind === 'OPEN_ORDER'
         ? this._bindOpenOrder(input, record, resolution.venueOrderId)
-        : this._bindTrade(input, record, resolution.venueOrderId);
+        : this._bindTrade(input, record, resolution.venueOrderId, outTrades);
     }
 
     return this._confirmNotSubmitted(input, record, resolution.operatorId, resolution.reason);
@@ -266,6 +293,16 @@ export class ResolveUnknownSubmissionUseCase {
         { context: { clientOrderId: String(input.clientOrderId) } },
       ));
     }
+    // Size-проверка (P1/P2): venue open order создаётся на ПОЛНЫЙ размер —
+    // он обязан совпасть с effectiveSize ?? requestedSize записи. Ордер того же
+    // инструмента/стороны/цены, но другого размера — чужой.
+    const expectedSize = new Decimal(record.effectiveSize ?? record.requestedSize);
+    if (!snapshot.size.value().equals(expectedSize)) {
+      return Err(new TradingError(
+        `Open order ${String(venueOrderId)} size mismatch: venue=${snapshot.size.value().toString()}, expected=${expectedSize.toString()}`,
+        { context: { clientOrderId: String(input.clientOrderId) } },
+      ));
+    }
 
     try {
       await this._deps.submissions.markVenueAccepted(input.clientOrderId, venueOrderId, this._deps.clock.now());
@@ -302,6 +339,7 @@ export class ResolveUnknownSubmissionUseCase {
     input: ResolveUnknownSubmissionInput,
     record: OrderSubmissionRecord,
     venueOrderId: OrderId,
+    outTrades: { trades?: readonly VenueTradeSnapshot[] },
   ): Promise<Result<ResolveUnknownSubmissionOutcome, TradingError>> {
     let orderTrades;
     try {
@@ -336,6 +374,21 @@ export class ResolveUnknownSubmissionUseCase {
         ));
       }
     }
+    // Size-проверка (P1/P2): trades могут быть частичными, но их СУММАРНЫЙ
+    // размер не может превышать effective/requested size заявки — иначе это
+    // trades чужого (большего) ордера, и binding записал бы ошибочную связь
+    // (over-consume позже поймал бы journal, но лучше не bind-ить вовсе).
+    const maxSize = new Decimal(record.effectiveSize ?? record.requestedSize);
+    const cumulativeSize = orderTrades.reduce(
+      (sum, trade) => sum.plus(trade.size.value()),
+      new Decimal(0),
+    );
+    if (cumulativeSize.greaterThan(maxSize)) {
+      return Err(new TradingError(
+        `Cumulative trade size exceeds submission size: trades=${cumulativeSize.toString()}, max=${maxSize.toString()}`,
+        { context: { clientOrderId: String(input.clientOrderId), venueOrderId: String(venueOrderId) } },
+      ));
+    }
 
     try {
       await this._deps.submissions.markVenueAccepted(input.clientOrderId, venueOrderId, this._deps.clock.now());
@@ -363,7 +416,69 @@ export class ResolveUnknownSubmissionUseCase {
       venueOrderId: String(venueOrderId),
       fillIds: orderTrades.map((t) => String(t.fillId)),
     });
+    // Пробрасываем уже полученные snapshots наружу (execute() прогонит их
+    // через fillProcessor ПОСЛЕ выхода из lock — см. doc _bindTrade).
+    outTrades.trades = orderTrades;
     return Ok({ status: 'BOUND_AWAITING_FILL' });
+  }
+
+  /**
+   * Прогоняет уже полученные при TRADE bind trade-snapshots через
+   * `fillProcessor` — ВНЕ keyed mutex (fillProcessor берёт свой lock сам,
+   * вложенный захват дал бы deadlock, тот же паттерн, что и
+   * `SettleTerminalOrdersUseCase._settleOne`).
+   *
+   * @param input - Входные данные резолюции
+   * @param trades - Trade snapshots, полученные в `_bindTrade`
+   *
+   * @remarks
+   * Best-effort ускорение: если trade исчезнет со следующей неполной
+   * страницы venue API (см. `PolymarketExchangeClientAdapter.getTrades`
+   * completeness contract), fill, применённый ЗДЕСЬ и СЕЙЧАС, уже не будет
+   * потерян. Неуспех (fillProcessor Err либо финальный статус не `APPLIED`)
+   * НЕ меняет исход резолюции — markers/held-резервация остаются нетронутыми,
+   * fill будет ретраится обычным путём (WS/`ReconcileTradesUseCase`/
+   * `SettleTerminalOrdersUseCase`).
+   */
+  private async _applyBoundTrades(
+    input: ResolveUnknownSubmissionInput,
+    trades: readonly VenueTradeSnapshot[],
+  ): Promise<void> {
+    for (const trade of trades) {
+      const fillResult = venueTradeToFill(trade, input.accountId);
+      if (!fillResult.ok) {
+        this._logger.warn('Failed to convert bound trade snapshot to Fill — will retry via WS/reconciliation', {
+          clientOrderId: String(input.clientOrderId),
+          fillId: String(trade.fillId),
+          error: fillResult.error.message,
+        });
+        continue;
+      }
+      const processResult = await this._deps.fillProcessor.execute(fillResult.value);
+      if (!processResult.ok) {
+        this._logger.warn('Immediate processing of bound trade failed — markers kept, will retry via WS/reconciliation', {
+          clientOrderId: String(input.clientOrderId),
+          fillId: String(trade.fillId),
+          error: processResult.error.message,
+        });
+        continue;
+      }
+      // Ok НЕ означает APPLIED (BUSY/DUPLICATE/RECONCILIATION no-op тоже Ok) —
+      // авторитетен только перечитанный статус.
+      const finalStatus = await this._deps.processedFillRepo.getStatus(trade.fillId);
+      if (finalStatus !== 'APPLIED') {
+        this._logger.info('Bound trade not yet APPLIED after immediate processing attempt — will retry via WS/reconciliation', {
+          clientOrderId: String(input.clientOrderId),
+          fillId: String(trade.fillId),
+          finalStatus: finalStatus ?? 'undefined',
+        });
+        continue;
+      }
+      this._logger.info('Bound trade applied immediately after operator TRADE bind', {
+        clientOrderId: String(input.clientOrderId),
+        fillId: String(trade.fillId),
+      });
+    }
   }
 
   /**

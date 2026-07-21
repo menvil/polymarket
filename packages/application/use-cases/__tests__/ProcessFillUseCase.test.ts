@@ -19,6 +19,8 @@ import type {
 import { pendingMatchFillId } from '@polymarket/ports';
 import { InMemoryOrderedEventOutbox } from '../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
+import { InMemoryKeyedMutex } from '../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
+import { InMemoryProcessedFillRepository } from '../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
@@ -1544,6 +1546,58 @@ describe('ProcessFillUseCase', () => {
         .map((c) => c[0] as { id: string })
         .find((i) => i.id.endsWith(':unexpected-exception-postcommit'));
       expect(issue).toBeDefined();
+    });
+
+    it('begin() выполняется ВНУТРИ критической секции mutex (lease-fencing ordering)', async () => {
+      const events: string[] = [];
+      const trackingMutex = {
+        runExclusive: jest.fn(async <T,>(_keys: readonly string[], fn: () => Promise<T>) => {
+          events.push('mutex-enter');
+          const r = await fn();
+          events.push('mutex-exit');
+          return r;
+        }),
+      } as unknown as IKeyedMutex;
+      const trackingRepo = {
+        ...makeProcessedFillRepo(),
+        begin: jest.fn(async () => {
+          events.push('begin');
+          return { outcome: 'ACQUIRED' as const, isRetry: false };
+        }),
+      } as unknown as IProcessedFillRepository;
+      const useCase = new ProcessFillUseCase({ ...deps, keyedMutex: trackingMutex, processedFillRepo: trackingRepo });
+
+      await useCase.execute(makeFill());
+
+      // begin строго между входом и выходом из mutex: воскресший worker
+      // не может пронести «протухший» ACQUIRED через границу критсекции.
+      expect(events[0]).toBe('mutex-enter');
+      expect(events[1]).toBe('begin');
+      expect(events[events.length - 1]).toBe('mutex-exit');
+    });
+
+    it('конкурентные execute одного fill (реальные mutex + idempotency repo): применяется РОВНО один раз, второй видит DUPLICATE', async () => {
+      const portfolio = makePortfolioMock();
+      const store = makePortfolioStore(portfolio);
+      const realMutex = new InMemoryKeyedMutex();
+      const realRepo = new InMemoryProcessedFillRepository();
+      const useCase = new ProcessFillUseCase({
+        ...deps,
+        portfolioService: new PortfolioService(store, logger),
+        keyedMutex: realMutex,
+        processedFillRepo: realRepo,
+      });
+
+      const [first, second] = await Promise.all([
+        useCase.execute(makeFill()),
+        useCase.execute(makeFill()),
+      ]);
+
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+      // Fill применён ровно один раз (второй вызов — DUPLICATE no-op под mutex).
+      expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
+      expect(await realRepo.getStatus(FILL_ID)).toBe('APPLIED');
     });
 
     it('journal NONE (резервация не фиксировалась) → sync пропускается, fill применяется', async () => {

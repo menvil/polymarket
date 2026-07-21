@@ -381,6 +381,7 @@ export class UpdateOrderStatusUseCase {
     // остатка выполнит SettleTerminalOrdersUseCase после применения venue trades.
     if (canConsumeHeldReservation(execution.reservation)) {
       this._deps.orderStateStore.markTerminalSettlementPending({
+        accountId,
         orderId,
         instrumentId: execution.instrumentId,
         venueStatus: update.type as 'CANCELLED' | 'EXPIRED' | 'REJECTED',
@@ -578,6 +579,7 @@ export class UpdateOrderStatusUseCase {
       const execution = await this._deps.submissions.findByVenueOrderId(orderId);
       if (execution && hasHeldReservation(execution.reservation)) {
         this._deps.orderStateStore.markTerminalSettlementPending({
+          accountId,
           orderId,
           instrumentId: execution.instrumentId,
           venueStatus: update.type,

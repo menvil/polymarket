@@ -399,21 +399,28 @@ describe('InMemoryOrderRepository', () => {
     const REAL_FILL_1 = asFillId('real-fill-1')!;
     const REAL_FILL_2 = asFillId('real-fill-2')!;
 
-    it('clear первого реального fill удаляет placeholder и ТОЛЬКО этот fillId; второй partial fill сохраняется', () => {
+    it('EXACT-ID: clear реального fill НЕ трогает placeholder и другой partial fill; явный clear placeholder снимает только его', () => {
       // 1. Placeholder (uncertain cancel / submit FILLED без fillId).
-      repo.markOrderFillMatched(ORDER_ID, pendingMatchFillId(ORDER_ID));
+      const placeholder = pendingMatchFillId(ORDER_ID);
+      repo.markOrderFillMatched(ORDER_ID, placeholder);
       // 2. Два реальных matched fill ID (partial fills).
       repo.markOrderFillMatched(ORDER_ID, REAL_FILL_1);
       repo.markOrderFillMatched(ORDER_ID, REAL_FILL_2);
       expect(repo.getMatchedFillIds(ORDER_ID)).toHaveLength(3);
 
-      // 3. Обработан первый Fill.
+      // 3. Обработан первый Fill: снимается ТОЛЬКО его fillId (никакой
+      // скрытой семантики — placeholder снимает вызывающий код явно).
       repo.clearOrderFillMatched(ORDER_ID, REAL_FILL_1);
-
-      // 4. Placeholder удалён; первый fillId удалён; второй сохранён.
-      const remaining = repo.getMatchedFillIds(ORDER_ID).map(String);
-      expect(remaining).not.toContain(String(pendingMatchFillId(ORDER_ID)));
+      let remaining = repo.getMatchedFillIds(ORDER_ID).map(String);
       expect(remaining).not.toContain(String(REAL_FILL_1));
+      expect(remaining).toContain(String(placeholder));
+      expect(remaining).toContain(String(REAL_FILL_2));
+
+      // 4. Явный clear placeholder (как делает ProcessFillUseCase) снимает
+      // только placeholder; второй partial fill сохраняется.
+      repo.clearOrderFillMatched(ORDER_ID, placeholder);
+      remaining = repo.getMatchedFillIds(ORDER_ID).map(String);
+      expect(remaining).not.toContain(String(placeholder));
       expect(remaining).toContain(String(REAL_FILL_2));
       expect(repo.hasMatchedFills(ORDER_ID)).toBe(true);
 

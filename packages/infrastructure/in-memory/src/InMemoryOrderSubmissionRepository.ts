@@ -15,6 +15,8 @@
  * - `VENUE_ACCEPTED` → `{ outcome: 'VENUE_ACCEPTED', record }` (не трогаем).
  * - `SUBMITTING` → `{ outcome: 'IN_PROGRESS', record }` (не трогаем).
  * - `UNKNOWN` → `{ outcome: 'UNKNOWN', record }` (не трогаем — не retry-им авто).
+ * - `CANCELLED` → `{ outcome: 'CANCELLED_NO_RESUBMIT', record }` (терминально —
+ *   retry под этим clientOrderId запрещён навсегда, резервация не проверяется).
  * - `FAILED` + reservation безопасна (`NONE`, либо `SETTLED` с `remaining === 0`)
  *   → `SUBMITTING`, attempt+1, `{ outcome: 'FAILED_RETRYABLE', record: <prev> }`.
  * - `FAILED` + reservation НЕ безопасна (`HELD`/`PARTIALLY_SETTLED`/
@@ -135,6 +137,8 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
     readonly side: OrderSide;
     readonly orderPrice: string;
     readonly requestedSize: string;
+    readonly assetId?: string;
+    readonly strategyId?: string;
     readonly now: Date;
   }): Promise<BeginOrderSubmissionResult> {
     const key = String(input.clientOrderId);
@@ -162,6 +166,13 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
       }
       if (existing.status === 'UNKNOWN') {
         return { outcome: 'UNKNOWN', record: this._snapshot(existing) };
+      }
+      // CANCELLED: venue-ордер существовал и был операторски отменён — retry
+      // ПОД ЭТИМ clientOrderId запрещён навсегда (в отличие от FAILED, где
+      // ордер точно не был создан). Резервация не проверяется — статус сам
+      // по себе терминален.
+      if (existing.status === 'CANCELLED') {
+        return { outcome: 'CANCELLED_NO_RESUBMIT', record: this._snapshot(existing) };
       }
       // FAILED: retry разрешён ТОЛЬКО если резервация в безопасном состоянии —
       // NONE, либо SETTLED с remaining === 0. HELD/PARTIALLY_SETTLED/
@@ -198,6 +209,8 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
       side: input.side,
       orderPrice: input.orderPrice,
       requestedSize: input.requestedSize,
+      ...(input.assetId !== undefined ? { assetId: input.assetId } : {}),
+      ...(input.strategyId !== undefined ? { strategyId: input.strategyId } : {}),
       reservation: emptyReservation(input.side === 'BUY' ? 'USDC' : 'TOKENS'),
       createdAt: input.now,
       updatedAt: input.now,
@@ -405,6 +418,18 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
    */
   public async markFailed(clientOrderId: OrderId, reason: string, now: Date): Promise<void> {
     this._transition(clientOrderId, { status: 'FAILED', reason, updatedAt: now });
+  }
+
+  /**
+   * Помечает submission как CANCELLED (venue-ордер существовал, операторски
+   * отменён, retry под этим clientOrderId запрещён навсегда).
+   *
+   * @param clientOrderId - Клиентский ID ордера
+   * @param reason - Причина (audit)
+   * @param now - updatedAt
+   */
+  public async markCancelled(clientOrderId: OrderId, reason: string, now: Date): Promise<void> {
+    this._transition(clientOrderId, { status: 'CANCELLED', reason, updatedAt: now });
   }
 
   /**

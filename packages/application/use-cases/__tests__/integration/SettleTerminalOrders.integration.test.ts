@@ -16,7 +16,6 @@ import type { IClock } from '@polymarket/time';
 import type { IEventBus } from '@polymarket/event-bus';
 import type {
   IExchangeClient,
-  IKeyedMutex,
   IPortfolioStore,
   IOrderedEventOutbox,
   VenueTradeSnapshot,
@@ -36,6 +35,7 @@ import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/sr
 import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
 import { InMemoryOrderedEventOutbox } from '../../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
+import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -71,12 +71,6 @@ function makeOutbox(bus: IEventBus): IOrderedEventOutbox {
     publish: (events) => bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
     logger: makeLogger(),
   });
-}
-
-function makeKeyedMutex(): IKeyedMutex {
-  return {
-    runExclusive: jest.fn(<T>(_keys: readonly string[], fn: () => Promise<T>) => fn()) as unknown as IKeyedMutex['runExclusive'],
-  };
 }
 
 function makePortfolioMock(): Portfolio {
@@ -149,7 +143,7 @@ function makeFill(id: string, size = '50'): Fill {
   } as unknown as Fill;
 }
 
-function makeTradeSnapshot(size = '50'): VenueTradeSnapshot {
+function makeTradeSnapshot(size = '50', status: VenueTradeSnapshot['status'] = 'CONFIRMED'): VenueTradeSnapshot {
   return {
     fillId: TRADE_FILL_ID,
     orderId: ORDER_ID,
@@ -161,7 +155,7 @@ function makeTradeSnapshot(size = '50'): VenueTradeSnapshot {
     size: Quantity.of(new Decimal(size)),
     fee: { amount: Quantity.of(new Decimal('0')), asset: 'USDC' } as never,
     executedAt: { toNumber: () => Date.now() } as never,
-    status: 'CONFIRMED',
+    status,
   } as unknown as VenueTradeSnapshot;
 }
 
@@ -178,6 +172,12 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
   let portfolioService: PortfolioService;
   let ledgerService: LedgerService;
   let processFill: ProcessFillUseCase;
+  /**
+   * РЕАЛЬНЫЙ non-reentrant mutex, ОБЩИЙ для settle и ProcessFill — регрессия
+   * на nested-lock deadlock: до two-phase фикса settle держал ключи и вызывал
+   * fillProcessor, который ждал те же ключи (зависание навсегда).
+   */
+  let realMutex: InMemoryKeyedMutex;
 
   beforeEach(async () => {
     logger = makeLogger();
@@ -190,13 +190,14 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     portfolioService = new PortfolioService(makePortfolioStore(portfolio), logger);
     ledgerService = new LedgerService(makeLogger());
     jest.spyOn(ledgerService as unknown as { recordFill: (f: Fill) => void }, 'recordFill').mockReturnValue(undefined);
+    realMutex = new InMemoryKeyedMutex();
     processFill = new ProcessFillUseCase({
       orderStateStore: store,
       portfolioService,
       ledgerService,
       orderRepo: store,
       processedFillRepo,
-      keyedMutex: makeKeyedMutex(),
+      keyedMutex: realMutex,
       eventBus,
       orderedEventOutbox: makeOutbox(eventBus),
       submissions,
@@ -220,7 +221,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
       orderRepo: store,
       orderStateStore: store,
       portfolioService,
-      keyedMutex: makeKeyedMutex(),
+      keyedMutex: realMutex,
       orderedEventOutbox: makeOutbox(eventBus),
       submissions,
       logger,
@@ -230,7 +231,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
 
   function makeSettle(
     trades: readonly VenueTradeSnapshot[],
-    opts: { tradesOk?: boolean } = {},
+    opts: { tradesOk?: boolean; minSettleDelayMs?: number } = {},
   ): SettleTerminalOrdersUseCase {
     const exchangeClient: IExchangeClient = {
       submitOrder: jest.fn<IExchangeClient['submitOrder']>(),
@@ -249,11 +250,25 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
       fillProcessor: processFill,
       // Конвертер использует те же мок-VO, что и fill-фикстура.
       tradeToFill: (trade) => Ok(makeFill(String(trade.fillId), trade.size.value().toString())),
-      keyedMutex: makeKeyedMutex(),
+      // ТОТ ЖЕ реальный mutex, что у ProcessFillUseCase — ловит nested-lock deadlock.
+      keyedMutex: realMutex,
       clock,
       logger,
+      // Grace period отключён по умолчанию в тестах (проверяется отдельным тестом).
+      minSettleDelayMs: opts.minSettleDelayMs ?? 0,
     });
   }
+
+  it('grace period: свежий pending (моложе minSettleDelayMs) НЕ settle-ится', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+    const settleResult = await makeSettle([], { minSettleDelayMs: 30_000 }).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ kept: 1, settled: 0 });
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+  });
 
   it('ОБЯЗАТЕЛЬНЫЙ: partial fill на venue → CANCELLED первым → available не завышен → delayed fill через held reservation → освобождён только остаток → block снят', async () => {
     // 1. CANCELLED update приходит РАНЬШЕ delayed fill.
@@ -292,6 +307,49 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     // 6. Block снят.
     expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(false);
     expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(false);
+  });
+
+  it('P0: MATCHED (не CONFIRMED) trade → pending остаётся, НЕ применяется, НЕ release-ится (settlement необратим, ждём finality)', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'MATCHED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 0, kept: 1 });
+    expect(portfolio.applyDebit).not.toHaveBeenCalled();
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+    expect((await submissions.get(CLIENT_ID))?.reservation).toMatchObject({ status: 'HELD', remaining: '65' });
+  });
+
+  it('P0: FAILED trade (не применён локально) исключается из settlement — остальной остаток release-ится нормально', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'FAILED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 1, kept: 0, escalated: 0 });
+    // FAILED trade не применяется (contributes 0) — весь held остаток (65) освобождён.
+    expect(portfolio.applyDebit).not.toHaveBeenCalled();
+    expect(portfolio.releaseReservation).toHaveBeenCalledTimes(1);
+    const record = await submissions.get(CLIENT_ID);
+    expect(record?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0', released: '65' });
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(false);
+  });
+
+  it('P0: FAILED trade, УЖЕ применённый локально (WS доставил раньше отката) → эскалация, pending снят в manual block', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+    // Локально fill уже APPLIED (например, WS MATCHED пришёл и был обработан
+    // ДО того, как venue откатил trade в FAILED).
+    await processedFillRepo.begin(TRADE_FILL_ID, { workerId: 'w', now: new Date(), leaseMs: 60_000 });
+    await processedFillRepo.markApplied(TRADE_FILL_ID);
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'FAILED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 0, escalated: 1 });
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
   });
 
   it('trades API недоступен → pending ОСТАЁТСЯ (timeout — не доказательство отсутствия fill)', async () => {
@@ -334,6 +392,86 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     expect((await submissions.get(CLIENT_ID))?.reservation.status).toBe('RECONCILIATION_REQUIRED');
     // Инструмент по-прежнему заблокирован (через manual block).
     expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
+  });
+
+  it('BUSY ≠ APPLIED: Ok от fillProcessor при незавершённой обработке НЕ считается применением — pending остаётся, release НЕ выполняется', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+    // Fill занят другим worker-ом: статус PROCESSING; ProcessFillUseCase в
+    // таком случае возвращает Ok (BUSY no-op) БЕЗ применения.
+    await processedFillRepo.begin(TRADE_FILL_ID);
+    const busyProcessor = { execute: jest.fn().mockImplementation(async () => Ok(undefined)) };
+    const settle = new SettleTerminalOrdersUseCase({
+      orderStateStore: store,
+      submissions,
+      portfolioService,
+      exchangeClient: {
+        submitOrder: jest.fn(), cancelOrder: jest.fn(),
+        getOpenOrders: jest.fn().mockImplementation(async () => Ok([])),
+        getTrades: jest.fn().mockImplementation(async () => Ok([makeTradeSnapshot('50')])),
+      } as unknown as IExchangeClient,
+      processedFillRepo,
+      fillProcessor: busyProcessor as never,
+      tradeToFill: (trade) => Ok(makeFill(String(trade.fillId), trade.size.value().toString())),
+      keyedMutex: realMutex,
+      clock,
+      logger,
+      minSettleDelayMs: 0,
+    });
+
+    const settleResult = await settle.execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    // Ok получен, но re-read показал PROCESSING → kept, НИКАКОГО release.
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ kept: 1, settled: 0, escalated: 0 });
+    expect(busyProcessor.execute).toHaveBeenCalledTimes(1);
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+  });
+
+  it('pending чужого аккаунта НЕ виден settle-резолвером (scanned=0)', async () => {
+    store.markTerminalSettlementPending({
+      accountId: 'acc-OTHER' as unknown as AccountId,
+      orderId: ORDER_ID,
+      instrumentId: INSTRUMENT_ID,
+      venueStatus: 'CANCELLED',
+      receivedAt: new Date(0),
+    });
+
+    const settleResult = await makeSettle([]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 0 });
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+  });
+
+  it('journal record чужого аккаунта → escalate (release в чужой Portfolio невозможен)', async () => {
+    // Journal-запись под order-2 принадлежит ДРУГОМУ аккаунту.
+    const ORDER_2 = 'order-2' as unknown as OrderId;
+    const CLIENT_2 = 'client-2' as unknown as OrderId;
+    await submissions.begin({
+      clientOrderId: CLIENT_2, accountId: 'acc-OTHER' as unknown as AccountId, instrumentId: INSTRUMENT_ID,
+      fingerprint: 'fp2', side: 'BUY', orderPrice: '0.65', requestedSize: '100', now: new Date(),
+    });
+    await submissions.markReservationHeld(CLIENT_2, '65', new Date());
+    await submissions.markCommitted(CLIENT_2, ORDER_2, new Date());
+    // Pending (ошибочно) числится за НАШИМ аккаунтом.
+    store.markTerminalSettlementPending({
+      accountId: ACCOUNT_ID,
+      orderId: ORDER_2,
+      instrumentId: INSTRUMENT_ID,
+      venueStatus: 'CANCELLED',
+      receivedAt: new Date(0),
+    });
+
+    const settleResult = await makeSettle([]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ escalated: 1, settled: 0 });
+    // Release НЕ выполнен, журнал чужого аккаунта не тронут, manual block поставлен.
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect((await submissions.get(CLIENT_2))?.reservation.status).toBe('HELD');
+    expect(store.hasManualReconciliationBlockForOrder(ORDER_2)).toBe(true);
   });
 
   it('delayed fill, который ещё не применился (processing failure) → pending остаётся, release НЕ выполняется', async () => {

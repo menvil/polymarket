@@ -203,6 +203,7 @@ function makeSubmissionsStub(
     markCommitted: jest.fn<IOrderSubmissionRepository['markCommitted']>().mockResolvedValue(undefined),
     markUnknown: jest.fn<IOrderSubmissionRepository['markUnknown']>().mockResolvedValue(undefined),
     markFailed: jest.fn<IOrderSubmissionRepository['markFailed']>().mockResolvedValue(undefined),
+    markCancelled: jest.fn<IOrderSubmissionRepository['markCancelled']>().mockResolvedValue(undefined),
     get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue(undefined),
     findByVenueOrderId: jest.fn<IOrderSubmissionRepository['findByVenueOrderId']>().mockResolvedValue(undefined),
     listByStatus: jest.fn<IOrderSubmissionRepository['listByStatus']>().mockResolvedValue([]),

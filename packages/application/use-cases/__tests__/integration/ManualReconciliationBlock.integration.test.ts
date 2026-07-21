@@ -361,6 +361,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
       keyedMutex: makeKeyedMutex(),
       clock: { now: () => new Date() },
       logger,
+      minSettleDelayMs: 0,
     });
     const settleResult = await settle.execute({ accountId: ACCOUNT_ID });
     expect(settleResult.ok).toBe(true);
@@ -423,6 +424,51 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
     const third = await useCase.execute(fillB);
     expect(third.ok).toBe(true);
     expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
+  });
+
+  it('placeholder e2e: Cancel ALREADY_FILLED ставит placeholder → реальный Fill снимает его ЯВНО (hasMatchedFills=false)', async () => {
+    // Cancel получает ALREADY_FILLED → placeholder на order+instrument.
+    const exchangeClient: IExchangeClient = {
+      submitOrder: jest.fn<IExchangeClient['submitOrder']>(),
+      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>().mockResolvedValue(
+        Ok({ status: 'ALREADY_FILLED', reason: 'matched' }),
+      ),
+      getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+      getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
+    };
+    const cancelUseCase = new CancelOrderUseCase({
+      portfolioService,
+      orderRepo: store,
+      orderStateStore: store,
+      keyedMutex: makeKeyedMutex(),
+      exchangeClient,
+      orderedEventOutbox: makeOutbox(eventBus),
+      submissions: realJournal,
+      logger,
+    });
+    const cancelResult = await cancelUseCase.execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID });
+    expect(cancelResult.ok).toBe(true);
+    if (cancelResult.ok) expect(cancelResult.value.status).toBe('FILL_PENDING');
+    expect(store.hasMatchedFills(ORDER_ID)).toBe(true);
+    expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
+
+    // Реальный Fill (нормальный path, живой Order) снимает placeholder ЯВНО
+    // (контракт store — exact-ID): hasMatchedFills больше не залипает.
+    const fillProcessor = new ProcessFillUseCase({
+      orderStateStore: store,
+      portfolioService,
+      ledgerService,
+      orderRepo: store,
+      processedFillRepo,
+      keyedMutex: makeKeyedMutex(),
+      eventBus,
+      orderedEventOutbox: makeOutbox(eventBus),
+      submissions: realJournal,
+      logger,
+    });
+    const fillResult = await fillProcessor.execute(makeFill('real-fill-1'));
+    expect(fillResult.ok).toBe(true);
+    expect(store.hasMatchedFills(ORDER_ID)).toBe(false);
   });
 
   it('fill A journal failure → другой fillId B блокируется, Portfolio/Ledger не мутируются повторно, block остаётся', async () => {

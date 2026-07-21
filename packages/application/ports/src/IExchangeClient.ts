@@ -270,5 +270,17 @@ export interface IExchangeClient {
    * Используется `ReconcileTradesUseCase` для обнаружения пропущенных исполнений.
    * Параметр `since` позволяет ограничить выборку по времени.
    */
+  /**
+   * ### Контракт полноты (КРИТИЧЕН для settlement/reconciliation):
+   * Вызывающие (`SettleTerminalOrdersUseCase`, `ReconcileTradesUseCase`)
+   * трактуют `Ok([])` как authoritative «fills отсутствуют». Реализация обязана
+   * обеспечивать: (1) достаточное временное окно/пагинацию, покрывающее все
+   * незакрытые ордера; (2) включение partial И final fills; (3) минимальный
+   * eventual-consistency лаг. Если полнота НЕ гарантируется (например, только
+   * последние N fills первой страницы) — это ограничение обязано быть явно
+   * задокументировано в адаптере, а вызывающие должны компенсировать grace
+   * period-ом (см. `SettleTerminalOrdersUseCase.minSettleDelayMs`).
+   * При невозможности дать полный ответ возвращать `Err`, НЕ пустой `Ok`.
+   */
   getTrades(accountId: AccountId, since?: Timestamp): Promise<Result<VenueTradeSnapshot[], ExchangeError>>;
 }

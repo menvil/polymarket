@@ -35,7 +35,7 @@
  * ```
  */
 import type { Order } from '@polymarket/order';
-import type { OrderId, InstrumentId, FillId } from '@polymarket/ids';
+import type { AccountId, OrderId, InstrumentId, FillId } from '@polymarket/ids';
 import { asFillId } from '@polymarket/ids';
 
 /**
@@ -89,11 +89,12 @@ export interface MarkInFlightFillInput {
  * @returns Детерминированный placeholder `FillId`, уникальный per-orderId
  *
  * @remarks
- * `clearOrderFillMatched(orderId, fillId)` ВСЕГДА дополнительно снимает
- * placeholder-запись для того же orderId (если она есть) — как только приходит
- * РЕАЛЬНЫЙ fillId для ордера, он «разрешает» более раннюю неоднозначную пометку.
- * Это гарантирует, что placeholder не протекает навсегда, даже если конкретный
- * fillId, под которым он был поставлен, никогда явно не совпадёт.
+ * Снятие placeholder — ОТВЕТСТВЕННОСТЬ ВЫЗЫВАЮЩЕГО КОДА: store-контракт —
+ * exact-ID cleanup (`clearOrderFillMatched`/`clearInFlightFill` снимают ТОЛЬКО
+ * переданный fillId, без скрытой семантики). `ProcessFillUseCase` при обработке
+ * реального fill явно снимает и сам fillId, и `pendingMatchFillId(orderId)` на
+ * обоих уровнях — так placeholder не протекает навсегда, а контракт store
+ * остаётся однозначным (нет двойной скрытой/явной семантики).
  */
 export function pendingMatchFillId(orderId: OrderId): FillId {
   // Формат `pending-match:<orderId>` гарантированно проходит валидацию asFillId
@@ -178,6 +179,16 @@ export interface ManualReconciliationBlock {
  * только authoritative остатка (Portfolio + journal settlement).
  */
 export interface TerminalSettlementPending {
+  /**
+   * ID аккаунта-владельца ордера.
+   *
+   * @remarks
+   * ОБЯЗАТЕЛЕН: settle-резолвер использует accountId для lock-ключей, venue
+   * trades, Portfolio release и issues — без явной привязки резолвер одного
+   * аккаунта мог бы подобрать pending другого и освободить не тот Portfolio
+   * (если store общий для нескольких аккаунтов).
+   */
+  readonly accountId: AccountId;
   readonly orderId: OrderId;
   readonly instrumentId: InstrumentId;
   /** Терминальный venue-статус, инициировавший settlement. */
@@ -250,7 +261,7 @@ export interface IOrderStateStore {
   markOrderFillMatched(orderId: OrderId, fillId: FillId): void;
 
   /**
-   * Снимает пометку matched с конкретного fill ордера.
+   * Снимает пометку matched с конкретного fill ордера (EXACT-ID cleanup).
    *
    * @param orderId - ID ордера
    * @param fillId - ID fill-события, который был передан в `markOrderFillMatched`
@@ -258,8 +269,9 @@ export interface IOrderStateStore {
    * @remarks
    * Снимает ТОЛЬКО этот fillId — если у ордера есть другой ещё не подтверждённый
    * partial fill (другой fillId), его matched-состояние не затрагивается.
-   * Дополнительно снимает placeholder-запись `pendingMatchFillId(orderId)` для
-   * этого ордера (см. doc `pendingMatchFillId`).
+   * НИКАКОЙ скрытой семантики: placeholder `pendingMatchFillId(orderId)`
+   * снимается ТОЛЬКО если передан явно (это делает `ProcessFillUseCase` при
+   * обработке реального fill — см. doc `pendingMatchFillId`).
    *
    * Вызывается после обработки CONFIRMED fill в `ProcessFillUseCase`.
    * CONFIRMED = fill осел on-chain (finality) → опасность "in-flight" миновала.
@@ -464,11 +476,13 @@ export interface IOrderStateStore {
   hasTerminalSettlementPending(instrumentId: InstrumentId): boolean;
 
   /**
-   * Возвращает ВСЕ terminal settlement pending записи (для settle-резолвера).
+   * Возвращает terminal settlement pending записи УКАЗАННОГО аккаунта.
    *
+   * @param accountId - ID аккаунта (обязательный фильтр — резолвер не должен
+   *   видеть pending чужих аккаунтов)
    * @returns Readonly массив pending записей (пустой, если нет)
    */
-  getTerminalSettlementPending(): readonly TerminalSettlementPending[];
+  getTerminalSettlementPending(accountId: AccountId): readonly TerminalSettlementPending[];
 
   // ── Manual reconciliation blocks ─────────────────────────────────────────────
 

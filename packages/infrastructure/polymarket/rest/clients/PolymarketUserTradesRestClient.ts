@@ -84,8 +84,26 @@ export interface UserFillResponse {
    */
   match_time?: string;
 
-  /** Ордера мейкеров (массив). Используется когда trader_side === 'MAKER'. */
-  maker_orders?: Array<{ order_id: string; matched_amount: string; fee_rate_bps: string }>;
+  /**
+   * Ордера мейкеров (массив). Один trade может matched-иться против
+   * НЕСКОЛЬКИХ maker-ордеров одновременно — каждый элемент представляет
+   * отдельный fill отдельного maker-ордера со своим `order_id`.
+   * Используется когда `trader_side === 'MAKER'`.
+   */
+  maker_orders?: Array<{
+    order_id: string;
+    matched_amount: string;
+    price?: string;
+    asset_id?: string;
+    side?: 'BUY' | 'SELL';
+    fee_rate_bps?: string;
+  }>;
+
+  /**
+   * On-chain статус сделки (реальный формат API — `TRADE_STATUS_*` префикс,
+   * например `TRADE_STATUS_CONFIRMED`). Нормализация — в вызывающем адаптере.
+   */
+  status?: string;
 
   /** Последнее обновление (Unix epoch, строка) */
   last_update?: string;
@@ -121,12 +139,21 @@ export interface UserFillsParams {
   /** Фильтр исполнений после этой временной метки */
   after?: number;
 
-  /** Максимальное количество исполнений для возврата */
+  /** Максимальное количество исполнений для возврата (на одну страницу) */
   limit?: number;
 
-  /** Возвращать только первую страницу (по умолчанию: false) */
+  /** Возвращать только первую страницу, БЕЗ следования по `next_cursor` (по умолчанию: false) */
   only_first_page?: boolean;
 }
+
+/**
+ * Значение `next_cursor`, означающее «страниц больше нет» (см. Polymarket API
+ * reference: `/data/trades`).
+ */
+const NO_MORE_PAGES_CURSOR = 'LTE=';
+
+/** Защита от бесконечного цикла пагинации при неожиданном поведении API. */
+const MAX_PAGES = 40;
 
 /**
  * REST-клиент пользовательских сделок Polymarket
@@ -171,52 +198,90 @@ export class PolymarketUserTradesRestClient {
    *   asset_id: '108770292557037291842343444956827763454878470740965721806292624574119111069516',
    * });
    * ```
+   *
+   * @remarks
+   * ### Полнота (пагинация):
+   * `/data/trades` пагинирован через `next_cursor` (base64 offset, `"LTE="` —
+   * сентинел «страниц больше нет»). По умолчанию (`only_first_page` не `true`)
+   * этот метод СЛЕДУЕТ по `next_cursor` до сентинела и возвращает ПОЛНЫЙ
+   * набор — вызывающие (`getTrades()` → settlement/reconciliation) трактуют
+   * пустой/неполный ответ как authoritative, поэтому частичный результат здесь
+   * недопустим. Ограничение `MAX_PAGES` защищает от бесконечного цикла при
+   * неожиданном поведении API — при его исчерпании БЕЗ сентинела метод
+   * бросает `Error` (НЕ возвращает частичный список молча).
    */
   async getUserFills(params?: UserFillsParams): Promise<UserFillResponse[]> {
     this.logger.debug('Getting user fills', params);
 
     // Формируем параметры запроса (API ожидает snake_case)
-    const queryParams: Record<string, string> = {};
+    const baseParams: Record<string, string> = {};
 
     if (params?.market) {
-      queryParams.market = params.market;
+      baseParams.market = params.market;
     }
 
     if (params?.asset_id) {
-      queryParams.asset_id = params.asset_id;
+      baseParams.asset_id = params.asset_id;
     }
 
     if (params?.maker_address) {
-      queryParams.maker_address = params.maker_address;
+      baseParams.maker_address = params.maker_address;
     }
 
     if (params?.before !== undefined) {
-      queryParams.before = params.before.toString();
+      baseParams.before = params.before.toString();
     }
 
     if (params?.after !== undefined) {
-      queryParams.after = params.after.toString();
+      baseParams.after = params.after.toString();
     }
 
     if (params?.limit !== undefined) {
-      queryParams.limit = params.limit.toString();
+      baseParams.limit = params.limit.toString();
     }
 
     if (params?.only_first_page !== undefined) {
-      queryParams.only_first_page = params.only_first_page.toString();
+      baseParams.only_first_page = params.only_first_page.toString();
     }
 
-    // Вызываем аутентифицированный endpoint
-    // API может вернуть массив или пагинированный объект { data: [...], next_cursor: "..." }
-    const raw = await this.restClient.get<UserFillResponse[] | { data: UserFillResponse[]; next_cursor?: string }>(
-      '/data/trades',
-      queryParams
-    );
+    const onlyFirstPage = params?.only_first_page === true;
+    const fills: UserFillResponse[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
 
-    const fills = Array.isArray(raw) ? raw : (raw?.data ?? []);
+    for (;;) {
+      pages++;
+      const queryParams: Record<string, string> = { ...baseParams };
+      if (cursor !== undefined) {
+        queryParams.next_cursor = cursor;
+      }
+
+      // API может вернуть массив (без пагинации) или пагинированный объект
+      // { data: [...], next_cursor: "..." }.
+      const raw = await this.restClient.get<UserFillResponse[] | { data: UserFillResponse[]; next_cursor?: string }>(
+        '/data/trades',
+        queryParams
+      );
+
+      const pageFills = Array.isArray(raw) ? raw : (raw?.data ?? []);
+      fills.push(...pageFills);
+      const nextCursor = Array.isArray(raw) ? undefined : raw?.next_cursor;
+
+      if (onlyFirstPage || nextCursor === undefined || nextCursor === NO_MORE_PAGES_CURSOR) {
+        break;
+      }
+      if (pages >= MAX_PAGES) {
+        throw new Error(
+          `PolymarketUserTradesRestClient.getUserFills: pagination did not terminate after ${MAX_PAGES} pages ` +
+          `(no "${NO_MORE_PAGES_CURSOR}" sentinel) — refusing to return a possibly incomplete trade list`,
+        );
+      }
+      cursor = nextCursor;
+    }
 
     this.logger.info('User fills retrieved', {
       count: fills.length,
+      pages,
       params,
     });
 

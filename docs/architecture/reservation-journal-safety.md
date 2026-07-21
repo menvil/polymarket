@@ -201,6 +201,146 @@ Manual block здесь НЕ подходит (заблокировал бы и 
   Portfolio release remaining → journal release → `SETTLED` → снятие pending +
   placeholder. Частичный сбой settlement → эскалация в manual block + issue.
 
+## Deadlock-safe settlement и lease-fencing (итерация hardening)
+
+### Двухфазный SettleTerminalOrdersUseCase
+
+Settle НЕ вызывает `fillProcessor` под settlement-lock (вложенный захват тех же
+`[account, order, instrument]` ключей — deadlock на non-reentrant mutex):
+
+- **Фаза 1 (без lock)**: непримененные trades → `fillProcessor.execute()`
+  (ProcessFill берёт mutex сам). `Ok` от processor НЕ означает «применён»
+  (BUSY/DUPLICATE/RECONCILIATION no-op тоже `Ok`) — после каждого вызова статус
+  ОБЯЗАТЕЛЬНО перечитывается (`getStatus`): только `APPLIED` продолжает.
+- **Фаза 2 (под lock)**: re-read pending → re-check статусов всех trades →
+  matched-evidence → re-read journal → только затем release + settle.
+
+Интеграционные тесты settle гоняются на РЕАЛЬНОМ общем `InMemoryKeyedMutex`
+(регрессия на deadlock).
+
+### begin() внутри keyed mutex (ProcessFillUseCase)
+
+Idempotency guard + lease выполняются ВНУТРИ критической секции: воскресший
+worker A (просроченный lease) сначала завершает обработку и выходит из mutex;
+worker B входит после и его `begin()` видит актуальный `APPLIED` — «протухший»
+ACQUIRED не проносится через границу критсекции. `mark*` в exception handler
+разрешены только после нашего ACQUIRED (флаг `acquired`). Reclaim по lease
+остаётся для случая «mutex освобождён, а mark* не случился».
+
+### Exact-ID контракт matched/in-flight
+
+`clearOrderFillMatched`/`clearInFlightFill` снимают ТОЛЬКО переданный fillId —
+никакой скрытой семантики. Placeholder `pendingMatchFillId(orderId)` снимает
+вызывающий код ЯВНО (`ProcessFillUseCase._clearInFlightFlags`, OrderEventBridge
+FILL_CONFIRMED, Settle/Update при settlement). Reversal-path (FILL_FAILED)
+placeholder намеренно НЕ снимает.
+
+### Account-изоляция terminal settlement
+
+`TerminalSettlementPending.accountId` обязателен;
+`getTerminalSettlementPending(accountId)` фильтрует по аккаунту; перед release
+сверяется `journalRecord.accountId === pending.accountId` (несовпадение →
+эскалация, НЕ release). Grace period `minSettleDelayMs` (default 30s) — время
+venue trades API догнать terminal update перед доверием к пустому ответу.
+
+### Операторский bind: size-проверки
+
+`BIND_VENUE_ORDER`/OPEN_ORDER — полный `size` venue-ордера обязан равняться
+`effectiveSize ?? requestedSize`; TRADE — суммарный размер trades не превышает
+его. Несовпадение → Err без записи binding-связи.
+
+### CancelBoundVenueOrderUseCase (закрытие BOUND_AWAITING_ORDER_RECOVERY)
+
+Операторская отмена привязанного live venue-ордера без локального Order:
+venue cancel → confirmed. Held-остаток (если был) **НЕ освобождается сразу**
+(та же delayed-fill race, что и в `UpdateOrderStatusUseCase` — partial fill мог
+случиться на venue до/во время cancel, а событие о нём ещё не дошло локально):
+ставится `TerminalSettlementPending` + blocking placeholder →
+`submissions.markCancelled` (терминальный статус `CANCELLED`, НЕ `FAILED` — см.
+ниже) → снятие manual block (delayed Fill должен пройти) →
+`CANCELLED_SETTLEMENT_PENDING`. Authoritative release остатка выполняет
+`SettleTerminalOrdersUseCase` ПОСЛЕ применения всех venue trades — тот же
+механизм, что и для CANCELLED/EXPIRED/REJECTED update-ов на живом Order.
+`ALREADY_FILLED` → placeholder markers + снятие блока (fill придёт held-path).
+Неоднозначные исходы → блок остаётся + issue. Для будущего восстановления
+локального Order submission record расширен `assetId`/`strategyId`
+(заполняются в `begin()`).
+
+### CANCELLED — терминальный submission-статус без права на resubmit
+
+`markFailed` семантически означает «ордер точно не создан, retry безопасен».
+Для `CancelBoundVenueOrderUseCase` это неверно: venue-ордер ДЕЙСТВИТЕЛЬНО
+существовал и был операторски отменён. Отдельный статус `CANCELLED`
+(`IOrderSubmissionRepository.markCancelled`) не даёт `begin()` под тем же
+`clientOrderId` перейти в `FAILED_RETRYABLE` — вместо этого возвращается
+`{ outcome: 'CANCELLED_NO_RESUBMIT' }` НАВСЕГДА (резервация не проверяется,
+статус сам по себе терминален). `PlaceOrderUseCase` обрабатывает этот outcome
+как `UNKNOWN` — Err + issue, без submit. Новый ордер обязан использовать
+новый `clientOrderId`.
+
+### Контракт полноты getTrades — реализован (cursor pagination + maker unroll + статус)
+
+`IExchangeClient.getTrades` документирует контракт: `Ok([])` трактуется как
+authoritative отсутствие fills — реализация обязана обеспечивать окно/
+пагинацию/лаг либо возвращать `Err`. Polymarket-адаптер теперь ЭТОТ контракт
+реально выполняет:
+
+- **Cursor pagination**: `PolymarketUserTradesRestClient.getUserFills` следует
+  по `next_cursor` (base64 offset) до сентинела `"LTE="` (страниц больше нет);
+  `MAX_PAGES` (40) — защита от бесконечного цикла: при его исчерпании БЕЗ
+  сентинела метод бросает `Error` вместо молчаливого возврата частичного
+  списка (адаптер конвертирует throw → `Err`, settle держит pending).
+- **MAKER unroll**: реальный API хранит maker order id в `maker_orders[]`
+  (НЕ в несуществующем top-level `maker_order_id`) — один trade может matched-
+  иться против НЕСКОЛЬКИХ maker-ордеров одновременно. Каждый элемент
+  `maker_orders[]` разворачивается в ОТДЕЛЬНЫЙ `VenueTradeSnapshot` с составным
+  `fillId` (`${tradeId}:${orderId}`) — не коллизирует под одним ID.
+- **On-chain статус**: реальный API возвращает `status` с префиксом
+  `TRADE_STATUS_*` (`TRADE_STATUS_CONFIRMED` и т.д.) — раньше терялся при
+  парсинге и хардкодился в `'CONFIRMED'`; теперь нормализуется (префикс
+  снимается) и попадает в `VenueTradeSnapshot.status`.
+
+### Классификация on-chain статуса trade (`venueTradeStatusPolicy`)
+
+Общий helper (`services/venueTradeStatusPolicy.ts`) с двумя профилями:
+
+- `recovery` (`ReconcileTradesUseCase`) — `CONFIRMED` И `MATCHED` (осознанное
+  исключение: не терять fill, если REST вернул `MATCHED`, но WS-событие не
+  пришло; дубли исключены `IProcessedFillRepository`).
+- `settlement` (`SettleTerminalOrdersUseCase`) — ТОЛЬКО `CONFIRMED`.
+  Settlement необратим (снимает блокировку капитала) — `MATCHED` ещё может
+  стать `RETRYING`/`FAILED`. `FAILED`-trade, НЕ применённый локально,
+  исключается из орбиты settlement (contributes 0, не блокирует release
+  остального остатка); `FAILED`-trade, УЖЕ применённый локально (WS доставил
+  раньше отката) — эскалация в manual block, а не тихий пропуск.
+
+### ProcessFillUseCase: exception classification внутри keyed mutex
+
+`try/catch` вокруг `_processLocked` перенесён ВНУТРЬ callback,
+переданного в `runExclusive` (не вокруг `await runExclusive(...)` снаружи).
+`InMemoryKeyedMutex.runExclusive` освобождает lock в `finally` СРАЗУ после
+settle-а callback — если классифицировать исключение (`markFailed`/
+`markReconciliationRequired`) ПОСЛЕ `await runExclusive(...)`, lock уже
+отпущен, и конкурентный `execute()` того же fillId мог бы войти в `begin()`
+ДО того, как первый вызов пометит fill терминальным статусом. Перенос
+try/catch внутрь callback гарантирует: mark* выполняется, пока lock ещё наш.
+Регрессионный тест (`ProcessFillUseCase.integration.test.ts`) использует
+controllable fake `IProcessedFillRepository` с управляемым gate на
+`markReconciliationRequired`, чтобы детерминированно проверить порядок
+`begin()` конкурентного вызова относительно завершения exception handler-а.
+
+### ResolveUnknownSubmissionUseCase: TRADE bind применяет fetched trades немедленно
+
+`_bindTrade` больше не отбрасывает уже полученные trade snapshots после
+верификации/bind — `execute()` (ПОСЛЕ выхода из lock, `fillProcessor` берёт
+свой mutex сам) прогоняет их через `fillProcessor.execute()` и проверяет
+`processedFillRepo.getStatus() === APPLIED`. Раньше расчёт был полностью на
+WS/`ReconcileTradesUseCase`: если trade исчезал со следующей неполной
+страницы venue API (см. контракт полноты выше), markers/held-резервация могли
+остаться зависшими навсегда без применённого fill. Неуспех немедленной
+попытки НЕ меняет исход резолюции (`BOUND_AWAITING_FILL`) — markers остаются,
+fill будет ретраится обычным путём.
+
 ## CancelOrderOutcome: различение terminal-статусов
 
 `CancelOrderOutcome` различает: `ALREADY_CANCELLED` (CANCELED),

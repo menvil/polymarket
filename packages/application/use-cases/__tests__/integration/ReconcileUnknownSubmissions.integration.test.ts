@@ -35,6 +35,7 @@ import { PlaceOrderUseCase } from '../../src/PlaceOrderUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { ReconcileUnknownSubmissionsUseCase } from '../../src/ReconcileUnknownSubmissionsUseCase.js';
 import { ResolveUnknownSubmissionUseCase } from '../../src/ResolveUnknownSubmissionUseCase.js';
+import { CancelBoundVenueOrderUseCase } from '../../src/CancelBoundVenueOrderUseCase.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import { InMemoryOrderRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderRepository.js';
@@ -274,6 +275,8 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
       clock,
       logger,
       reconciliationIssues,
+      fillProcessor: makeProcessFill(),
+      processedFillRepo,
     });
   }
 
@@ -433,7 +436,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     expect(portfolio.releaseReservation).not.toHaveBeenCalled();
   });
 
-  it('ручной trade bind: ставит matched/in-flight marker ДО снятия block; unsettled evidence сохраняется до применения Fill', async () => {
+  it('ручной trade bind: ставит matched/in-flight marker ДО снятия block, затем сразу применяет уже полученный trade (вне lock)', async () => {
     await placeAmbiguous();
     const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID)]));
 
@@ -447,20 +450,21 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     if (r.ok) expect(r.value.status).toBe('BOUND_AWAITING_FILL');
     const record = await submissions.get(CLIENT_ID);
     expect(String(record?.venueOrderId)).toBe(String(VENUE_ID));
-    // Block снят, но matched/in-flight markers держат hasUnsettledFills=true.
     expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(false);
-    expect(store.hasMatchedFills(VENUE_ID)).toBe(true);
-    expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
-
-    // Fill (тот же fillId, что у trade) применяется held-reservation path.
-    const fillResult = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID)));
-    expect(fillResult.ok).toBe(true);
-    expect(portfolio.applyDebit).toHaveBeenCalledTimes(1); // consume reserved
+    // Trade уже применён ВНУТРИ execute() (_applyBoundTrades, вне lock) — не
+    // отброшен, как раньше: held-резервация потреблена, markers сняты сразу.
+    expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
     expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();
-    // Marker снят ПОСЛЕ успешного применения Fill.
     expect(store.hasMatchedFills(VENUE_ID)).toBe(false);
+    expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(false);
     const after = await submissions.get(CLIENT_ID);
     expect(after?.reservation).toMatchObject({ status: 'PARTIALLY_SETTLED', consumed: '32.5', remaining: '32.5' });
+
+    // Idempotency: тот же fillId, пришедший позже через WS/reconciliation —
+    // DUPLICATE, без повторного списания.
+    const fillResult = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID)));
+    expect(fillResult.ok).toBe(true);
+    expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
   });
 
   it('explicit CONFIRM_NOT_SUBMITTED освобождает reservation РОВНО один раз (повтор — Err)', async () => {
@@ -534,6 +538,155 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.message).toMatch(/does not match/i);
     await expectStillHeldAndBlocked();
+  });
+
+  // ── Size-проверки operator bind (P1/P2) ───────────────────────────────────
+
+  it('OPEN_ORDER bind отклоняется при несовпадении size (та же цена/сторона, другой размер)', async () => {
+    await placeAmbiguous(); // requestedSize 100
+    const wrongSize = makeOpenOrderSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('250')) });
+    const resolver = makeResolver(makeExchange([wrongSize], []));
+
+    const r = await resolver.execute({
+      clientOrderId: CLIENT_ID,
+      accountId: ACCOUNT_ID,
+      resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'OPEN_ORDER', operatorId: 'ops-1', reason: 'oops' },
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/size mismatch/i);
+    await expectStillHeldAndBlocked();
+  });
+
+  it('TRADE bind отклоняется, если суммарный размер trades превышает requested size', async () => {
+    await placeAmbiguous(); // requestedSize 100
+    const bigTrades = [
+      makeTradeSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('80')) }),
+      makeTradeSnapshot(VENUE_ID, { fillId: 'venue-fill-2' as unknown as FillId, size: Quantity.of(new Decimal('60')) }),
+    ];
+    const resolver = makeResolver(makeExchange([], bigTrades));
+
+    const r = await resolver.execute({
+      clientOrderId: CLIENT_ID,
+      accountId: ACCOUNT_ID,
+      resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'TRADE', operatorId: 'ops-1', reason: 'oops' },
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/Cumulative trade size exceeds/i);
+    await expectStillHeldAndBlocked();
+  });
+
+  // ── CancelBoundVenueOrderUseCase (закрытие BOUND_AWAITING_ORDER_RECOVERY) ──
+
+  describe('CancelBoundVenueOrderUseCase', () => {
+    async function bindOpenOrder(): Promise<void> {
+      await placeAmbiguous();
+      const resolver = makeResolver(makeExchange([makeOpenOrderSnapshot(VENUE_ID)], []));
+      const r = await resolver.execute({
+        clientOrderId: CLIENT_ID,
+        accountId: ACCOUNT_ID,
+        resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'OPEN_ORDER', operatorId: 'ops-1', reason: 'verified' },
+      });
+      expect(r.ok).toBe(true);
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(true);
+    }
+
+    function makeCanceller(cancelOutcome: { status: string; reason?: string } | Error): CancelBoundVenueOrderUseCase {
+      const cancelOrder = cancelOutcome instanceof Error
+        ? jest.fn().mockImplementation(async () => { throw cancelOutcome; })
+        : jest.fn().mockImplementation(async () => Ok(cancelOutcome));
+      const exchangeClient = { ...makeExchange([], []), cancelOrder } as unknown as IExchangeClient;
+      return new CancelBoundVenueOrderUseCase({
+        submissions,
+        exchangeClient,
+        portfolioService,
+        orderStateStore: store,
+        orderRepo: store,
+        keyedMutex: makeKeyedMutex(),
+        clock,
+        logger,
+        reconciliationIssues,
+      });
+    }
+
+    it('confirmed cancel: settlement DEFERRED (не release сразу), submission CANCELLED (retry навсегда запрещён), block снят', async () => {
+      await bindOpenOrder();
+      const canceller = makeCanceller({ status: 'CANCELLED' });
+
+      const r = await canceller.execute({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, operatorId: 'ops-1', reason: 'closing stray order',
+      });
+
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.status).toBe('CANCELLED_SETTLEMENT_PENDING');
+      // НЕ released сразу — delayed-fill race window, authoritative release
+      // выполнит SettleTerminalOrdersUseCase.
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.status).toBe('CANCELLED');
+      expect(record?.reason).toContain('OPERATOR_CANCELLED_BOUND_VENUE_ORDER by ops-1');
+      expect(record?.reservation).toMatchObject({ status: 'HELD', remaining: '65' });
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(false);
+      // TerminalSettlementPending + blocking placeholder держат unsettled evidence.
+      expect(store.hasTerminalSettlementPendingForOrder(VENUE_ID)).toBe(true);
+      expect(store.hasMatchedFills(VENUE_ID)).toBe(true);
+      expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
+
+      // Retry под тем же clientOrderId запрещён НАВСЕГДА (в отличие от FAILED).
+      const retry = await submissions.begin({
+        clientOrderId: CLIENT_ID,
+        accountId: ACCOUNT_ID,
+        instrumentId: INSTRUMENT_ID,
+        fingerprint: record!.fingerprint,
+        side: record!.side,
+        orderPrice: record!.orderPrice,
+        requestedSize: record!.requestedSize,
+        now: NOW,
+      });
+      expect(retry.outcome).toBe('CANCELLED_NO_RESUBMIT');
+    });
+
+    it('ALREADY_FILLED: markers поставлены, block снят, резервация held (fill придёт held path)', async () => {
+      await bindOpenOrder();
+      const canceller = makeCanceller({ status: 'ALREADY_FILLED', reason: 'matched' });
+
+      const r = await canceller.execute({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, operatorId: 'ops-1', reason: 'closing',
+      });
+
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.status).toBe('FILL_PENDING');
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(false);
+      expect(store.hasMatchedFills(VENUE_ID)).toBe(true);
+      expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(true);
+      expect((await submissions.get(CLIENT_ID))?.reservation.status).toBe('HELD');
+    });
+
+    it('uncertain (UNKNOWN_RETRY_NEEDED / throw): block ОСТАЁТСЯ, резервация held, issue', async () => {
+      await bindOpenOrder();
+      const canceller = makeCanceller({ status: 'UNKNOWN_RETRY_NEEDED', reason: 'gateway timeout' });
+
+      const r = await canceller.execute({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, operatorId: 'ops-1', reason: 'closing',
+      });
+
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.status).toBe('RECONCILIATION_REQUIRED');
+      expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(true);
+      expect((await submissions.get(CLIENT_ID))?.reservation.status).toBe('HELD');
+
+      // Rejected Promise → тот же RECONCILIATION_REQUIRED без throw.
+      const throwing = makeCanceller(new Error('socket hang up'));
+      const r2 = await throwing.execute({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, operatorId: 'ops-1', reason: 'retry',
+      });
+      expect(r2.ok).toBe(true);
+      if (r2.ok) expect(r2.value.status).toBe('RECONCILIATION_REQUIRED');
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(true);
+    });
   });
 
   // ── Сквозной сценарий: deferred fill до резолюции, held path после ────────

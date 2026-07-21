@@ -91,13 +91,21 @@ import type {
  *   venue-ордер мог быть создан, автоматический retry НЕ разрешён.
  * - `FAILED` — submit точно не создал ордер (DEFINITELY_NOT_SUBMITTED / REJECTED):
  *   retry допустим (см. `BeginOrderSubmissionResult.FAILED_RETRYABLE`).
+ * - `CANCELLED` — venue-ордер ДЕЙСТВИТЕЛЬНО существовал и был операторски
+ *   отменён (подтверждённый cancel живого venue-ордера, см.
+ *   `CancelBoundVenueOrderUseCase`): retry ПОД ТЕМ ЖЕ clientOrderId запрещён
+ *   НАВСЕГДА (см. `BeginOrderSubmissionResult.CANCELLED_NO_RESUBMIT`) — в
+ *   отличие от `FAILED`, здесь ордер был создан, поэтому переиспользование
+ *   clientOrderId для нового submit было бы некорректной idempotency-семантикой.
+ *   Новый ордер обязан использовать НОВЫЙ clientOrderId.
  */
 export type OrderSubmissionStatus =
   | 'SUBMITTING'
   | 'VENUE_ACCEPTED'
   | 'COMMITTED'
   | 'UNKNOWN'
-  | 'FAILED';
+  | 'FAILED'
+  | 'CANCELLED';
 
 /**
  * Запись о submission + reservation journal по clientOrderId.
@@ -132,6 +140,18 @@ export interface OrderSubmissionRecord {
   readonly fingerprint: string;
   /** Сторона заявки (определяет kind резервации: BUY→USDC, SELL→TOKENS). */
   readonly side: OrderSide;
+  /**
+   * Сериализованный AssetId заявки (`assetIdToString`), опционально.
+   *
+   * @remarks
+   * Сохраняется в `begin()` — вместе с side/price/size даёт достаточно данных
+   * для восстановления доменного Order из привязанного live venue-ордера
+   * (recovery после операторского BIND_VENUE_ORDER/OPEN_ORDER). Optional для
+   * совместимости со старыми записями.
+   */
+  readonly assetId?: string;
+  /** ID стратегии заявки (для восстановления Order), опционально. */
+  readonly strategyId?: string;
   /** Цена ордера (exact decimal-строка) — для recovery-расчёта fill. */
   readonly orderPrice: string;
   /** Запрошенный размер (exact decimal-строка). */
@@ -169,6 +189,10 @@ export interface OrderSubmissionRecord {
  *   risk/reserve/submit, создаёт reconciliation issue и возвращает Err.
  * - `FINGERPRINT_MISMATCH` — clientOrderId переиспользован под ДРУГИЕ параметры:
  *   caller возвращает Err и создаёт issue, НЕ submit/cancel/release.
+ * - `CANCELLED_NO_RESUBMIT` — прошлый venue-ордер под этим clientOrderId был
+ *   подтверждённо отменён оператором (`markCancelled`): retry НАВСЕГДА
+ *   запрещён под тем же clientOrderId (в отличие от `FAILED_RETRYABLE`) —
+ *   caller возвращает Err, требует новый clientOrderId для нового ордера.
  */
 export type BeginOrderSubmissionResult =
   | { readonly outcome: 'ACQUIRED' }
@@ -178,6 +202,7 @@ export type BeginOrderSubmissionResult =
   | { readonly outcome: 'UNKNOWN'; readonly record: OrderSubmissionRecord }
   | { readonly outcome: 'FAILED_RETRYABLE'; readonly record: OrderSubmissionRecord }
   | { readonly outcome: 'RECONCILIATION_REQUIRED'; readonly record: OrderSubmissionRecord }
+  | { readonly outcome: 'CANCELLED_NO_RESUBMIT'; readonly record: OrderSubmissionRecord }
   | {
       readonly outcome: 'FINGERPRINT_MISMATCH';
       readonly record: OrderSubmissionRecord;
@@ -207,6 +232,10 @@ export interface IOrderSubmissionRepository {
     readonly side: OrderSide;
     readonly orderPrice: string;
     readonly requestedSize: string;
+    /** Сериализованный AssetId (`assetIdToString`) — для recovery Order. */
+    readonly assetId?: string;
+    /** ID стратегии — для recovery Order. */
+    readonly strategyId?: string;
     readonly now: Date;
   }): Promise<BeginOrderSubmissionResult>;
 
@@ -328,6 +357,23 @@ export interface IOrderSubmissionRepository {
    * @param now - Текущее время
    */
   markFailed(clientOrderId: OrderId, reason: string, now: Date): Promise<void>;
+
+  /**
+   * Помечает submission как `CANCELLED` (venue-ордер существовал и был
+   * операторски отменён — retry под этим clientOrderId запрещён навсегда).
+   *
+   * @param clientOrderId - Клиентский ID ордера
+   * @param reason - Причина (audit, обычно включает operatorId/время)
+   * @param now - Текущее время
+   *
+   * @remarks
+   * В отличие от `markFailed` (retry разрешён после `FAILED` + безопасная
+   * резервация), `CANCELLED` — терминальный статус: `begin()` под тем же
+   * clientOrderId ВСЕГДА возвращает `CANCELLED_NO_RESUBMIT`, независимо от
+   * состояния резервации. Используется `CancelBoundVenueOrderUseCase` после
+   * подтверждённой venue-отмены живого ордера без локального Order.
+   */
+  markCancelled(clientOrderId: OrderId, reason: string, now: Date): Promise<void>;
 
   /**
    * Возвращает текущую запись submission по clientOrderId.

@@ -34,8 +34,8 @@
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { Order, OrderStatus } from '@polymarket/order';
-import type { OrderId, MarketId, InstrumentId, FillId } from '@polymarket/ids';
-import { assetIdToInstrumentId } from '@polymarket/ids';
+import type { AccountId, OrderId, MarketId, InstrumentId, FillId } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import type {
   IOrderRepository,
   IOrderStateStore,
@@ -50,7 +50,7 @@ import type {
   TerminalSettlementPending,
   DeleteOrderResult,
 } from '@polymarket/ports';
-import { pendingMatchFillId, VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
+import { VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
 
 /**
  * Запись хранилища: Order + версия для optimistic concurrency.
@@ -590,8 +590,9 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
     const key = String(orderId);
     const set = this._matchedFillsByOrder.get(key);
     if (!set) return;
+    // EXACT-ID cleanup (контракт порта): снимается ТОЛЬКО переданный fillId.
+    // Placeholder pendingMatchFillId(orderId) снимает вызывающий код явно.
     set.delete(fillId);
-    set.delete(pendingMatchFillId(orderId));
     if (set.size === 0) {
       this._matchedFillsByOrder.delete(key);
     }
@@ -850,6 +851,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public markTerminalSettlementPending(pending: TerminalSettlementPending): void {
     this._terminalSettlementByOrder.set(String(pending.orderId), {
+      accountId: pending.accountId,
       orderId: pending.orderId,
       instrumentId: pending.instrumentId,
       venueStatus: pending.venueStatus,
@@ -891,12 +893,15 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
   }
 
   /**
-   * Возвращает все terminal settlement pending записи.
+   * Возвращает terminal settlement pending записи указанного аккаунта.
    *
+   * @param accountId - ID аккаунта (обязательный фильтр)
    * @returns Readonly массив pending записей
    */
-  public getTerminalSettlementPending(): readonly TerminalSettlementPending[] {
-    return [...this._terminalSettlementByOrder.values()];
+  public getTerminalSettlementPending(accountId: AccountId): readonly TerminalSettlementPending[] {
+    const accountKey = (id: AccountId): string => (typeof id === 'string' ? id : accountIdToString(id));
+    const key = accountKey(accountId);
+    return [...this._terminalSettlementByOrder.values()].filter((p) => accountKey(p.accountId) === key);
   }
 
   // ── Manual reconciliation blocks ─────────────────────────────────────────────

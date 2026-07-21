@@ -4688,6 +4688,17 @@ async function runLive(): Promise<void> {
   // привязка к venue open orders/trades либо освобождение резервации.
   // Реже, чем fill-reconciliation: сопоставление осторожное и требует
   // «устоявшегося» venue-состояния (minAbsenceAgeMs).
+  //
+  // Automatic terminal settlement release (Portfolio release авторитетного
+  // остатка) — за flag'ом ENABLE_AUTO_TERMINAL_SETTLEMENT (default OFF).
+  // Discovery (reconcileUnknownSubmissionsUseCase) НЕ гейтится — read-only,
+  // мутаций не делает. Флаг снимается оператором после верификации на
+  // реальном venue-трафике полноты getTrades()-пагинации/maker-mapping и
+  // CONFIRMED-only статус-gating (см. docs/architecture/reservation-journal-safety.md).
+  const autoTerminalSettlementEnabled = process.env.ENABLE_AUTO_TERMINAL_SETTLEMENT === 'true';
+  if (!autoTerminalSettlementEnabled) {
+    logger.warn('Automatic terminal settlement is DISABLED (ENABLE_AUTO_TERMINAL_SETTLEMENT != "true") — terminal settlement pending will accumulate until settleTerminalOrdersUseCase is run manually or the flag is enabled');
+  }
   const UNKNOWN_SUBMISSIONS_INTERVAL_MS = 30_000;
   const unknownSubmissionsIntervalId = setInterval(() => {
     // Discovery UNKNOWN submissions (findings/issues, без автоматических решений).
@@ -4704,6 +4715,7 @@ async function runLive(): Promise<void> {
         });
       }
     });
+    if (!autoTerminalSettlementEnabled) return;
     // Разрешение terminal settlement pending (delayed fills + authoritative release).
     void liveInfra.settleTerminalOrdersUseCase.execute({ accountId }).then((result) => {
       if (!result.ok) {

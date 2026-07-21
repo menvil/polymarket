@@ -109,6 +109,23 @@ describe('InMemoryOrderSubmissionRepository', () => {
     expect(after?.status).toBe('SUBMITTING');
   });
 
+  it('markCancelled → begin() ВСЕГДА возвращает CANCELLED_NO_RESUBMIT (в отличие от FAILED — retry запрещён навсегда, held-резервация не влияет)', async () => {
+    await repo.begin(makeBeginInput());
+    await repo.markVenueAccepted(CLIENT_ID, VENUE_ID, NOW);
+    await repo.markCancelled(CLIENT_ID, 'operator cancelled bound venue order', NOW);
+
+    const result = await repo.begin(makeBeginInput(new Date('2024-01-02T00:00:00.000Z')));
+    expect(result.outcome).toBe('CANCELLED_NO_RESUBMIT');
+    if (result.outcome === 'CANCELLED_NO_RESUBMIT') {
+      expect(result.record.status).toBe('CANCELLED');
+      expect(result.record.venueOrderId).toBe(VENUE_ID);
+    }
+    // Запись НЕ переведена в SUBMITTING (в отличие от FAILED_RETRYABLE) —
+    // терминальный статус сохраняется.
+    const after = await repo.get(CLIENT_ID);
+    expect(after?.status).toBe('CANCELLED');
+  });
+
   it('mark* для неизвестного clientOrderId — no-op (не бросает)', async () => {
     await expect(repo.markCommitted(asOrderId('unknown')!, VENUE_ID, NOW)).resolves.toBeUndefined();
     expect(await repo.get(asOrderId('unknown')!)).toBeUndefined();

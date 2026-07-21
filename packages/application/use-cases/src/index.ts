@@ -50,6 +50,13 @@ export type {
   UnknownSubmissionResolution,
 } from './ResolveUnknownSubmissionUseCase.js';
 
+export { CancelBoundVenueOrderUseCase } from './CancelBoundVenueOrderUseCase.js';
+export type {
+  CancelBoundVenueOrderDeps,
+  CancelBoundVenueOrderInput,
+  CancelBoundVenueOrderOutcome,
+} from './CancelBoundVenueOrderUseCase.js';
+
 export { SettleTerminalOrdersUseCase } from './SettleTerminalOrdersUseCase.js';
 export type {
   SettleTerminalOrdersDeps,
@@ -57,6 +64,8 @@ export type {
   SettleTerminalOrdersSummary,
 } from './SettleTerminalOrdersUseCase.js';
 export { venueTradeToFill } from './services/venueTradeToFill.js';
+export { isProcessableVenueTradeStatus, isFailedVenueTradeStatus } from './services/venueTradeStatusPolicy.js';
+export type { VenueTradeStatusProfile } from './services/venueTradeStatusPolicy.js';
 
 export { InitializePortfolioUseCase } from './InitializePortfolioUseCase.js';
 export type { InitializePortfolioDeps } from './InitializePortfolioUseCase.js';

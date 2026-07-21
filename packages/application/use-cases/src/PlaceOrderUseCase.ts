@@ -98,7 +98,7 @@ import type { IClock } from '@polymarket/time';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
-import { accountIdToString } from '@polymarket/ids';
+import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type {
   IExchangeClient,
   IKeyedMutex,
@@ -117,6 +117,21 @@ import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 import { lockKey } from './lockKeys.js';
+
+/**
+ * Защищённая сериализация AssetId для submission record.
+ *
+ * @param asset - AssetId (union-объект либо legacy string-представление)
+ * @returns Сериализованная строка либо `undefined`, если сериализация невозможна
+ */
+function safeAssetId(asset: AssetId): string | undefined {
+  if (typeof asset === 'string') return asset;
+  try {
+    return assetIdToString(asset);
+  } catch {
+    return undefined;
+  }
+}
 
 /** Входные данные для PlaceOrderUseCase */
 export interface PlaceOrderInput {
@@ -1023,6 +1038,11 @@ export class PlaceOrderUseCase {
       side: input.side,
       orderPrice: input.price.value().toString(),
       requestedSize: input.size.value().toString(),
+      // Для recovery Order из привязанного venue-ордера (см. запись порта).
+      // Защищённая сериализация: legacy string-представление AssetId проходит
+      // как есть, сбой сериализации не блокирует размещение (поле optional).
+      ...(safeAssetId(input.asset) !== undefined ? { assetId: safeAssetId(input.asset) } : {}),
+      strategyId: input.strategyId,
       now: this._deps.clock.now(),
     });
     if (begin.outcome === 'FINGERPRINT_MISMATCH') {
@@ -1163,6 +1183,31 @@ export class PlaceOrderUseCase {
       });
       return Err(new TradingError(
         `Order submission blocked — prior UNKNOWN outcome for clientOrderId: ${String(input.orderId)}`,
+        { context: { clientOrderId: String(input.orderId) } },
+      ));
+    }
+    if (begin.outcome === 'CANCELLED_NO_RESUBMIT') {
+      // Прошлый venue-ордер под этим clientOrderId ДЕЙСТВИТЕЛЬНО существовал
+      // и был операторски отменён (CancelBoundVenueOrderUseCase) — в отличие
+      // от FAILED (ордер точно не создан), здесь retry под тем же
+      // clientOrderId навсегда запрещён. НЕ resubmit — issue + Err.
+      this._logger.error('PlaceOrder blocked — clientOrderId was CANCELLED after a confirmed venue order, reuse forbidden', {
+        clientOrderId: String(input.orderId),
+        venueOrderId: begin.record.venueOrderId ? String(begin.record.venueOrderId) : undefined,
+      });
+      await this._addReconciliationIssue({
+        id: `reconciliation:submit-client:${String(input.orderId)}:cancelled-no-resubmit`,
+        type: 'SUBMIT_UNKNOWN_OUTCOME',
+        status: 'OPEN',
+        reason: `PRIOR_SUBMISSION_CANCELLED: ${begin.record.reason ?? 'operator-cancelled bound venue order'}`,
+        createdAt: this._deps.clock.now(),
+        ...(begin.record.venueOrderId ? { orderId: begin.record.venueOrderId } : {}),
+        accountId: input.accountId,
+        instrumentId: input.instrumentId,
+        context: { clientOrderId: String(input.orderId), submissionStatus: 'CANCELLED' },
+      });
+      return Err(new TradingError(
+        `Order submission blocked — clientOrderId was CANCELLED, use a new clientOrderId: ${String(input.orderId)}`,
         { context: { clientOrderId: String(input.orderId) } },
       ));
     }
