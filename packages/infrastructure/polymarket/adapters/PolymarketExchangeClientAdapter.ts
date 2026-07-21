@@ -40,17 +40,16 @@ import Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
-import type { OrderId, AccountId, AssetId, MarketId } from '@polymarket/ids';
-import { asOrderId, assetIdToString, isPolymarketCtfToken, asFillId, asMarketId, unsafeMarketId, AssetIdHelpers } from '@polymarket/ids';
+import type { OrderId, AccountId, AssetId } from '@polymarket/ids';
+import { asOrderId, assetIdToString, isPolymarketCtfToken } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import { calculatePolymarketTakerFee } from '@polymarket/fill';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, CancelOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
-import type { UserFillResponse } from '../rest/clients/PolymarketUserTradesRestClient.js';
 import type { CancelOrderExecutionResponse, OrderResponse } from '../ports/IExecutionAdapter.js';
 import type { PolymarketBalancePolicy } from '../rest/policies/PolymarketBalancePolicy.js';
+import { mapUserFillToVenueTradeSnapshots } from './mapUserFillsToVenueTrades.js';
 
 /**
  * Статусы venue, которые данный маппер умеет распознавать.
@@ -85,6 +84,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
   private readonly _logger: ILogger;
   private readonly _userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient;
   private readonly _balancePolicy?: PolymarketBalancePolicy;
+  private readonly _makerAddress?: string;
   private _sellDustAdjustCount = 0;
 
   /**
@@ -92,6 +92,12 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * @param logger - Logger
    * @param userTradesClient - L2-аутентифицированный клиент user trades (опционально)
    * @param balancePolicy - Политика проверки баланса (опционально, для SELL pre-check по on-chain балансу)
+   * @param makerAddress - ETH-адрес нашего кошелька (опционально; тот же
+   *   параметр, что `UserEventFeedAdapter._makerAddress`). Используется
+   *   `getTrades()` для MAKER ownership matching в `maker_orders[]` — ВСЕГДА
+   *   наш собственный адрес (credentials), а не значение из ответа API (см.
+   *   `mapUserFillsToVenueTrades`). Без него ownership matching деградирует
+   *   до owner UUID-only (см. `FillMapper.allFromPolymarketTradeEvent`).
    *
    * @remarks
    * Если передан `balancePolicy` — перед каждым SELL вызывается `checkBalance()`
@@ -106,10 +112,12 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     logger: ILogger,
     userTradesClient?: import('../rest/clients/PolymarketUserTradesRestClient.js').PolymarketUserTradesRestClient,
     balancePolicy?: PolymarketBalancePolicy,
+    makerAddress?: string,
   ) {
     this._logger = logger.child({ component: 'PolymarketExchangeClientAdapter' });
     this._userTradesClient = userTradesClient;
     this._balancePolicy = balancePolicy;
+    this._makerAddress = makerAddress;
   }
 
   /**
@@ -534,213 +542,56 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * @returns Ok(VenueTradeSnapshot[]) при успехе, Err(ExchangeError) при ошибке
    *
    * @remarks
-   * Вызывает `/data/trades` через `_executionAdapter.getFilledOrders()`.
-   * Маппинг `TradeResponse → VenueTradeSnapshot`:
-   * - `id`           → `fillId` (asFillId)
-   * - `order_id`     → `orderId` (asOrderId); сделки без orderId пропускаются
-   * - `market`       → `marketId` (asMarketId); если отсутствует — unsafeMarketId('')
-   * - `asset_id`     → `asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId }`
-   * - `side`         → уже 'BUY' | 'SELL'
-   * - `price`/`size` → Price/Quantity VOs
-   * - `fee_rate_bps` → fee amount = price × size × bps / 10000, asset = USDC
-   * - `match_time`   → executedAt (ISO → epoch ms через Date.parse)
+   * Требует L2-аутентифицированный `_userTradesClient` — БЕЗ него полноту
+   * ответа доказать нельзя (см. контракт `IExchangeClient.getTrades`), поэтому
+   * возвращается `Err`, а не молчаливо неполный `Ok` через `getFilledOrders`.
+   * `requireCursor: true` в `getUserFills` — schema drift (bare-array ответ
+   * либо объект без `next_cursor` не на сентинеле) тоже становится `Err`.
    *
-   * Фильтрация по `since`: применяется после получения данных (API не поддерживает since-фильтр).
+   * Маппинг `UserFillResponse → VenueTradeSnapshot[]` делегирован
+   * `mapUserFillToVenueTradeSnapshots` — тот же `FillMapper`, что и WS
+   * user-channel путь (единая логика ownership/fillId, см. doc файла
+   * `mapUserFillsToVenueTrades.ts`).
    */
   public async getTrades(
     accountId: AccountId,
     since?: Timestamp,
   ): Promise<Result<VenueTradeSnapshot[], ExchangeError>> {
+    if (!this._userTradesClient) {
+      return Err(new ExchangeErrorClass(
+        'Exchange getTrades failed: no L2-authenticated user trades client configured — ' +
+        'cannot guarantee completeness required by the getTrades contract',
+      ));
+    }
     try {
-      // Используем L2-аутентифицированный endpoint для user-specific trades
-      // (публичный endpoint без maker_address возвращает все trades всех пользователей)
-      let trades: Array<{ id: string; order_id?: string; market?: string; asset_id: string; side: string; price: string; size: string; fee_rate_bps?: string; trader_side?: string; match_time?: string; status?: string }>;
-      if (this._userTradesClient) {
-        // Cursor pagination выполняется ВНУТРИ getUserFills (следует по
-        // next_cursor до сентинела `"LTE="`, бросает при незавершённой
-        // пагинации — см. контракт IExchangeClient.getTrades: полнота ответа
-        // обязательна, частичный список недопустим). `since` пробрасывается
-        // в `after` для сужения окна.
-        const userFills = await this._userTradesClient.getUserFills({
-          limit: 500,
-          ...(since !== undefined ? { after: Math.floor(since.toNumber() / 1000) } : {}),
-        });
-        trades = userFills.flatMap(f => this._expandUserFill(f));
-        this._logger.info('User fills retrieved via L2 auth', { count: trades.length, rawCount: userFills.length });
-      } else {
-        trades = await this._executionAdapter.getFilledOrders(undefined, { onlyFirstPage: true });
-      }
-      const snapshots: VenueTradeSnapshot[] = [];
+      // Cursor pagination выполняется ВНУТРИ getUserFills (следует по
+      // next_cursor до сентинела `"LTE="`, бросает при незавершённой
+      // пагинации/schema drift — см. контракт IExchangeClient.getTrades:
+      // полнота ответа обязательна, частичный список недопустим). `since`
+      // пробрасывается в `after` для сужения окна.
+      const userFills = await this._userTradesClient.getUserFills({
+        limit: 500,
+        requireCursor: true,
+        ...(since !== undefined ? { after: Math.floor(since.toNumber() / 1000) } : {}),
+      });
 
-      for (const t of trades) {
-        const fillId = asFillId(t.id);
-        if (!fillId) {
-          this._logger.warn('Skipping trade with invalid fillId', { id: t.id });
-          continue;
-        }
+      const snapshots = userFills.flatMap((f) =>
+        mapUserFillToVenueTradeSnapshots(f, accountId, this._makerAddress, this._logger));
 
-        // order_id обязателен для VenueTradeSnapshot
-        if (!t.order_id) {
-          this._logger.debug('Skipping trade without order_id', { fillId: t.id });
-          continue;
-        }
-        const orderId = asOrderId(t.order_id);
-        if (!orderId) {
-          this._logger.warn('Skipping trade with invalid order_id', { order_id: t.order_id });
-          continue;
-        }
-
-        // Время исполнения
-        const matchTimeMs = t.match_time ? Date.parse(t.match_time) : NaN;
-        if (isNaN(matchTimeMs)) {
-          this._logger.warn('Skipping trade with invalid match_time', { fillId: t.id });
-          continue;
-        }
-        const executedAtResult = TimestampService.create(matchTimeMs);
-        if (!executedAtResult.ok) continue;
-
-        // Фильтр по since
-        if (since && executedAtResult.value.value().lessThan(since.value())) continue;
-
-        const marketId: MarketId = t.market
-          ? (asMarketId(t.market) ?? unsafeMarketId(t.market))
-          : unsafeMarketId('');
-
-        try {
-          const price = Price.of(new Decimal(t.price));
-          const size = Quantity.of(new Decimal(t.size));
-          // MAKER fee = 0 на Polymarket. Комиссию платит только TAKER.
-          const isMaker = t.trader_side === 'MAKER';
-          const feeAmount = (!isMaker && t.fee_rate_bps && parseFloat(t.fee_rate_bps) > 0)
-            ? calculatePolymarketTakerFee(size.value(), price.value())
-            : new Decimal(0);
-
-          const knownStatuses = ['MATCHED', 'MINED', 'CONFIRMED', 'RETRYING', 'FAILED'] as const;
-          type KnownStatus = typeof knownStatuses[number];
-          const status = knownStatuses.includes(t.status as KnownStatus)
-            ? (t.status as KnownStatus)
-            : undefined;
-
-          snapshots.push({
-            fillId,
-            orderId,
-            accountId,
-            marketId,
-            asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: t.asset_id } as AssetId,
-            side: t.side as 'BUY' | 'SELL',
-            price,
-            size,
-            fee: {
-              amount: Quantity.of(feeAmount),
-              asset: AssetIdHelpers.USDC,
-            },
-            executedAt: executedAtResult.value,
-            status,
-          });
-        } catch {
-          this._logger.warn('Skipping trade with invalid price/size values', { fillId: t.id });
-        }
-      }
+      const filtered = since
+        ? snapshots.filter((s) => !s.executedAt.value().lessThan(since.value()))
+        : snapshots;
 
       this._logger.info('Trades converted to snapshots', {
-        rawCount: trades.length,
-        snapshotCount: snapshots.length,
-        firstTradeId: trades[0]?.id?.slice(0, 20),
-        firstMatchTime: trades[0]?.match_time?.slice(0, 25),
-        firstStatus: trades[0]?.status,
+        rawCount: userFills.length,
+        snapshotCount: filtered.length,
       });
-      return Ok(snapshots);
+      return Ok(filtered);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._logger.error('Exchange getTrades failed', { error: message });
       return Err(new ExchangeErrorClass(`Exchange getTrades failed: ${message}`));
     }
-  }
-
-  /**
-   * Разворачивает один сырой `UserFillResponse` в один или несколько
-   * intermediate-trade record-ов для `getTrades()`.
-   *
-   * @param f - Сырой ответ `/data/trades`
-   * @returns Массив intermediate-record'ов (обычно 1; несколько — для MAKER
-   *   trade, matched-нувшегося против нескольких maker-ордеров одновременно)
-   *
-   * @remarks
-   * Реальный Polymarket API хранит maker order id ТОЛЬКО внутри `maker_orders[]`
-   * (не в несуществующем top-level `maker_order_id`) — один trade может
-   * включать несколько maker-ордеров (каждый со своим `order_id` и
-   * `matched_amount`). Каждый элемент `maker_orders[]` разворачивается в
-   * ОТДЕЛЬНЫЙ record с составным `id` (`${trade.id}:${order_id}`), чтобы не
-   * коллизировать fillId разных maker-ордеров одного trade под одним ID
-   * (сломало бы `IProcessedFillRepository` idempotency-guard).
-   */
-  private _expandUserFill(
-    f: UserFillResponse,
-  ): Array<{ id: string; order_id?: string; market?: string; asset_id: string; side: string; price: string; size: string; fee_rate_bps?: string; trader_side?: string; match_time?: string; status?: string }> {
-    // Polymarket API возвращает match_time как numeric string (Unix секунды): "1775457709".
-    // Date.parse() не понимает такой формат — нужно конвертировать явно.
-    const matchTime = (() => {
-      const raw = f.match_time;
-      if (!raw) return undefined;
-      const numVal = Number(raw);
-      if (!isNaN(numVal) && numVal > 0) {
-        return new Date(numVal < 1e12 ? numVal * 1000 : numVal).toISOString();
-      }
-      return raw; // уже ISO строка — возвращаем как есть
-    })();
-    const status = this._mapVenueTradeStatus(f.status);
-
-    if (f.trader_side === 'MAKER' && f.maker_orders && f.maker_orders.length > 0) {
-      return f.maker_orders.map((mo) => ({
-        id: `${f.id}:${mo.order_id}`,
-        order_id: mo.order_id,
-        market: f.market,
-        asset_id: mo.asset_id ?? f.asset_id,
-        side: mo.side ?? f.side,
-        price: mo.price ?? f.price,
-        size: mo.matched_amount,
-        fee_rate_bps: mo.fee_rate_bps ?? f.fee_rate_bps,
-        trader_side: f.trader_side,
-        match_time: matchTime,
-        status,
-      }));
-    }
-
-    return [{
-      id: f.id,
-      // TAKER — наш ордер в taker_order_id. Fallback на legacy top-level
-      // maker_order_id (не задокументирован текущим API, но безопасен: если
-      // отсутствует, downstream отфильтрует record по отсутствующему order_id).
-      order_id: f.trader_side === 'MAKER' ? f.maker_order_id : f.taker_order_id,
-      market: f.market,
-      asset_id: f.asset_id,
-      side: f.side,
-      price: f.price,
-      size: f.size,
-      fee_rate_bps: f.fee_rate_bps,
-      trader_side: f.trader_side,
-      match_time: matchTime,
-      status,
-    }];
-  }
-
-  /**
-   * Нормализует on-chain статус trade от Polymarket API.
-   *
-   * @param raw - Сырой статус (`TRADE_STATUS_CONFIRMED` и т.д.), опционально
-   * @returns Строка без префикса `TRADE_STATUS_`, либо `undefined`
-   *
-   * @remarks
-   * Реальный API возвращает статус с префиксом `TRADE_STATUS_` (например
-   * `TRADE_STATUS_CONFIRMED`). Downstream-классификатор в `getTrades()`
-   * (`knownStatuses`) дополнительно валидирует значение — неизвестная строка
-   * после снятия префикса безопасно превращается в `undefined` (не мешает
-   * обработке, просто трактуется как «не финализировано»).
-   */
-  private _mapVenueTradeStatus(raw: string | undefined): string | undefined {
-    if (!raw) return undefined;
-    const prefix = 'TRADE_STATUS_';
-    return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
   }
 
   /**

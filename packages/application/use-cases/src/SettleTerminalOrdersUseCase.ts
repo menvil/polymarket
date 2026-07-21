@@ -261,16 +261,12 @@ export class SettleTerminalOrdersUseCase {
     }
 
     for (const trade of orderTrades) {
-      const status = await this._deps.processedFillRepo.getStatus(trade.fillId);
-      if (status === 'APPLIED') continue;
-      if (status === 'RECONCILIATION_REQUIRED') {
-        // Fill сам требует ручной реконсиляции — settlement невозможен автоматикой.
-        await this._escalate(input, pending, `trade ${String(trade.fillId)} is RECONCILIATION_REQUIRED`);
-        summary.escalated++;
-        return;
-      }
-      // Settlement необратим (снимает блокировку капитала) — только CONFIRMED
-      // (finality) допускается к применению. MATCHED/MINED/RETRYING/undefined
+      // Venue finality проверяется ПЕРВОЙ, ДО local APPLIED — иначе fill,
+      // применённый `ReconcileTradesUseCase` по более мягкому 'recovery'
+      // профилю (MATCHED допустим там для WS-race), обошёл бы CONFIRMED-gate
+      // здесь: local APPLIED != venue finality. Settlement необратим (снимает
+      // блокировку капитала) — только CONFIRMED допускается продолжить, даже
+      // если fill уже локально применён. MATCHED/MINED/RETRYING/undefined
       // ещё могут стать RETRYING/FAILED — весь pending остаётся до следующего
       // прогона (профиль 'settlement' строже, чем 'recovery' у ReconcileTrades).
       if (!isProcessableVenueTradeStatus(trade.status, 'settlement')) {
@@ -280,6 +276,14 @@ export class SettleTerminalOrdersUseCase {
           status: trade.status ?? 'undefined',
         });
         summary.kept++;
+        return;
+      }
+      const status = await this._deps.processedFillRepo.getStatus(trade.fillId);
+      if (status === 'APPLIED') continue;
+      if (status === 'RECONCILIATION_REQUIRED') {
+        // Fill сам требует ручной реконсиляции — settlement невозможен автоматикой.
+        await this._escalate(input, pending, `trade ${String(trade.fillId)} is RECONCILIATION_REQUIRED`);
+        summary.escalated++;
         return;
       }
       const fillResult = this._deps.tradeToFill(trade, input.accountId);
@@ -363,8 +367,14 @@ export class SettleTerminalOrdersUseCase {
       return;
     }
 
-    // Re-check статусов ВСЕХ trades ПОД lock.
+    // Re-check ВСЕХ trades ПОД lock — venue finality ПЕРВОЙ (см. фаза 1: local
+    // APPLIED не заменяет CONFIRMED-gate — состояние могло измениться со
+    // времени фазы 1, повторяем ту же проверку в том же порядке).
     for (const trade of orderTrades) {
+      if (!isProcessableVenueTradeStatus(trade.status, 'settlement')) {
+        summary.kept++;
+        return;
+      }
       const status = await this._deps.processedFillRepo.getStatus(trade.fillId);
       if (status === 'RECONCILIATION_REQUIRED') {
         await this._escalate(input, pending, `trade ${String(trade.fillId)} is RECONCILIATION_REQUIRED (locked re-check)`);

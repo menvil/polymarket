@@ -577,6 +577,60 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     await expectStillHeldAndBlocked();
   });
 
+  // ── P0: TRADE bind status/still-open gates ─────────────────────────────────
+
+  it('TRADE bind отклоняется, если venue order всё ещё открыт (partial fill — remaining в стакане)', async () => {
+    await placeAmbiguous(); // requestedSize 100
+    // Trade на 20 существует, но остаток 80 всё ещё LIVE на venue.
+    const resolver = makeResolver(makeExchange(
+      [makeOpenOrderSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('100')), filledSize: Quantity.of(new Decimal('20')) })],
+      [makeTradeSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('20')) })],
+    ));
+
+    const r = await resolver.execute({
+      clientOrderId: CLIENT_ID,
+      accountId: ACCOUNT_ID,
+      resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'TRADE', operatorId: 'ops-1', reason: 'oops' },
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/still open/i);
+    await expectStillHeldAndBlocked();
+  });
+
+  it.each<'MATCHED' | 'MINED' | 'RETRYING' | undefined>(['MATCHED', 'MINED', 'RETRYING', undefined])(
+    'TRADE bind отклоняется, если trade не CONFIRMED (status=%s) — оператор bind необратим как settlement',
+    async (status) => {
+      await placeAmbiguous();
+      const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID, { status })]));
+
+      const r = await resolver.execute({
+        clientOrderId: CLIENT_ID,
+        accountId: ACCOUNT_ID,
+        resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'TRADE', operatorId: 'ops-1', reason: 'oops' },
+      });
+
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.message).toMatch(/not yet finalized|CONFIRMED/i);
+      await expectStillHeldAndBlocked();
+    },
+  );
+
+  it('TRADE bind отклоняется, если venue сообщает FAILED для trade — не bind-им заведомо отменённое исполнение', async () => {
+    await placeAmbiguous();
+    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID, { status: 'FAILED' })]));
+
+    const r = await resolver.execute({
+      clientOrderId: CLIENT_ID,
+      accountId: ACCOUNT_ID,
+      resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'TRADE', operatorId: 'ops-1', reason: 'oops' },
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/FAILED/);
+    await expectStillHeldAndBlocked();
+  });
+
   // ── CancelBoundVenueOrderUseCase (закрытие BOUND_AWAITING_ORDER_RECOVERY) ──
 
   describe('CancelBoundVenueOrderUseCase', () => {
@@ -645,6 +699,27 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
         now: NOW,
       });
       expect(retry.outcome).toBe('CANCELLED_NO_RESUBMIT');
+    });
+
+    it('confirmed cancel БЕЗ held-остатка (уже settled) → outcome CANCELLED (не намекает на несуществующий pending)', async () => {
+      await bindOpenOrder();
+      // Резервация уже settled ДО отмены (например, оператор освободил её
+      // отдельно) — нечего ставить в TerminalSettlementPending.
+      await submissions.applyReservationTransition(CLIENT_ID, {
+        operationId: 'test-pre-release', release: '65', now: NOW,
+      });
+      const canceller = makeCanceller({ status: 'CANCELLED' });
+
+      const r = await canceller.execute({
+        clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, operatorId: 'ops-1', reason: 'closing stray order',
+      });
+
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.status).toBe('CANCELLED');
+      expect(store.hasTerminalSettlementPendingForOrder(VENUE_ID)).toBe(false);
+      expect(store.hasManualReconciliationBlockForOrder(CLIENT_ID)).toBe(false);
+      const record = await submissions.get(CLIENT_ID);
+      expect(record?.status).toBe('CANCELLED');
     });
 
     it('ALREADY_FILLED: markers поставлены, block снят, резервация held (fill придёт held path)', async () => {

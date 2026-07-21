@@ -278,7 +278,12 @@ venue cancel → confirmed. Held-остаток (если был) **НЕ осв�
 как `UNKNOWN` — Err + issue, без submit. Новый ордер обязан использовать
 новый `clientOrderId`.
 
-### Контракт полноты getTrades — реализован (cursor pagination + maker unroll + статус)
+`CancelBoundVenueOrderOutcome` различает `CANCELLED_SETTLEMENT_PENDING` (был
+held-остаток — `TerminalSettlementPending` реально создан) и `CANCELLED`
+(нечего было ждать — held-остаток отсутствовал, `TerminalSettlementPending`
+НЕ создавался). Outcome не должен намекать на pending, которого нет.
+
+### Контракт полноты getTrades — реализован (cursor pagination + `requireCursor` + статус)
 
 `IExchangeClient.getTrades` документирует контракт: `Ok([])` трактуется как
 authoritative отсутствие fills — реализация обязана обеспечивать окно/
@@ -290,15 +295,69 @@ authoritative отсутствие fills — реализация обязана
   `MAX_PAGES` (40) — защита от бесконечного цикла: при его исчерпании БЕЗ
   сентинела метод бросает `Error` вместо молчаливого возврата частичного
   списка (адаптер конвертирует throw → `Err`, settle держит pending).
-- **MAKER unroll**: реальный API хранит maker order id в `maker_orders[]`
-  (НЕ в несуществующем top-level `maker_order_id`) — один trade может matched-
-  иться против НЕСКОЛЬКИХ maker-ордеров одновременно. Каждый элемент
-  `maker_orders[]` разворачивается в ОТДЕЛЬНЫЙ `VenueTradeSnapshot` с составным
-  `fillId` (`${tradeId}:${orderId}`) — не коллизирует под одним ID.
+- **`requireCursor: true`** (используется ТОЛЬКО `getTrades()`): bare-array
+  ответ либо объектный ответ БЕЗ `next_cursor` (не на сентинеле) — schema
+  drift, а НЕ «страниц больше нет» — бросает `Error`. Non-critical helper-
+  методы (`getTotalVolume`/`getFillStats`) НЕ передают этот флаг, сохраняют
+  прежнее толерантное поведение (не authoritative).
+- **Без `_userTradesClient`**: `getTrades()` возвращает `Err` немедленно —
+  legacy `getFilledOrders()` fallback (только первая страница) удалён из
+  этого пути: полноту без L2-аутентифицированного клиента доказать нельзя.
 - **On-chain статус**: реальный API возвращает `status` с префиксом
   `TRADE_STATUS_*` (`TRADE_STATUS_CONFIRMED` и т.д.) — раньше терялся при
   парсинге и хардкодился в `'CONFIRMED'`; теперь нормализуется (префикс
   снимается) и попадает в `VenueTradeSnapshot.status`.
+
+### Единый WS/REST fill-mapper (P0: fillId mismatch + чужие maker-ордера)
+
+REST и WS раньше использовали РАЗНЫЕ реализации разворачивания
+`maker_orders[]`:
+
+- REST (`_expandUserFill`) безусловно разворачивал ВЕСЬ массив в составной
+  `${tradeId}:${orderId}` fillId — без проверки владения (чужой maker-ордер
+  в том же match-событии принимался бы за наш → **Portfolio/Ledger corruption
+  чужими данными**);
+- WS (`FillMapper.allFromPolymarketTradeEvent`) уже фильтровал по `owner`
+  UUID/`maker_address` и использовал bare `tradeId` при ЕДИНСТВЕННОМ своём
+  ордере — composite ID только при НЕСКОЛЬКИХ. Расхождение схемы fillId
+  означало, что WS применял fill как `trade-1`, а REST reconciliation того же
+  fill видел `trade-1:order-a` — **другой fillId** → `IProcessedFillRepository`
+  считал его новым → direct-fill path применял его ПОВТОРНО (double
+  accounting).
+
+Исправление: `packages/infrastructure/polymarket/adapters/mapUserFillsToVenueTrades.ts`
+переиспользует `FillMapper.allFromPolymarketTradeEvent` (ту же реализацию,
+что и WS) — REST-запись лишь нормализуется под ожидаемые поля (`match_time`
+→ `timestamp`, статус без `TRADE_STATUS_` префикса), `maker_address`
+инжектируется из credentials (`PolymarketExchangeClientAdapter`-конструктор,
+параметр `makerAddress`, тот же, что уже передавался в `UserEventFeedAdapter`)
+— НЕ берётся из ответа API (server-provided top-level `maker_address`
+ненадёжен для cross-outcome записей, тот же принцип, что
+`UserEventFeedAdapter._mapFillDto`). `_expandUserFill`/собственная fillId-схема
+REST-адаптера удалены полностью — один маппер, одно правило владения, одно
+правило fillId, используемое ОБОИМИ путями.
+
+### Единая классификация on-chain статуса trade (`venueTradeStatusPolicy`)
+
+Общий helper (`services/venueTradeStatusPolicy.ts`) с двумя профилями:
+
+- `recovery` (`ReconcileTradesUseCase`) — `CONFIRMED` И `MATCHED` (осознанное
+  исключение: не терять fill, если REST вернул `MATCHED`, но WS-событие не
+  пришло; дубли исключены `IProcessedFillRepository`).
+- `settlement` (`SettleTerminalOrdersUseCase`, операторский TRADE bind) —
+  ТОЛЬКО `CONFIRMED`. Settlement необратим (снимает блокировку капитала) —
+  `MATCHED` ещё может стать `RETRYING`/`FAILED`. `FAILED`-trade, НЕ
+  применённый локально, исключается из орбиты settlement (contributes 0, не
+  блокирует release остального остатка); `FAILED`-trade, УЖЕ применённый
+  локально (WS доставил раньше отката) — эскалация в manual block, а не
+  тихий пропуск.
+
+**Venue finality проверяется ПЕРВОЙ, ДО local APPLIED** (и в фазе 1, и в
+фазе 2 под lock `SettleTerminalOrdersUseCase`): иначе fill, применённый
+`ReconcileTradesUseCase` по более мягкому `'recovery'` профилю (MATCHED
+допустим там для WS-race), обошёл бы CONFIRMED-gate здесь — local `APPLIED`
+не равно venue finality. Порядок проверки НЕ «сначала local status, потом
+venue status» — ровно наоборот.
 
 ### Классификация on-chain статуса trade (`venueTradeStatusPolicy`)
 
@@ -329,17 +388,30 @@ controllable fake `IProcessedFillRepository` с управляемым gate на
 `markReconciliationRequired`, чтобы детерминированно проверить порядок
 `begin()` конкурентного вызова относительно завершения exception handler-а.
 
-### ResolveUnknownSubmissionUseCase: TRADE bind применяет fetched trades немедленно
+### ResolveUnknownSubmissionUseCase: TRADE bind — гейты + немедленное применение
 
-`_bindTrade` больше не отбрасывает уже полученные trade snapshots после
-верификации/bind — `execute()` (ПОСЛЕ выхода из lock, `fillProcessor` берёт
-свой mutex сам) прогоняет их через `fillProcessor.execute()` и проверяет
-`processedFillRepo.getStatus() === APPLIED`. Раньше расчёт был полностью на
-WS/`ReconcileTradesUseCase`: если trade исчезал со следующей неполной
-страницы venue API (см. контракт полноты выше), markers/held-резервация могли
-остаться зависшими навсегда без применённого fill. Неуспех немедленной
-попытки НЕ меняет исход резолюции (`BOUND_AWAITING_FILL`) — markers остаются,
-fill будет ретраится обычным путём.
+`_bindTrade` — операторский bind, необратим как settlement (снимает manual
+block, потребляет held reservation), поэтому ПЕРЕД bind обязательны два гейта:
+
+1. **Order всё ещё открыт на venue** — `getOpenOrders` вызывается ДО bind;
+   если `venueOrderId` там присутствует, ордер лишь ЧАСТИЧНО исполнен —
+   bind-ить как TRADE означало бы снять manual block и оставить остаток
+   (ещё стоящий в стакане) невидимым локально ("invisible live order"). Err
+   с указанием использовать `candidateKind: 'OPEN_ORDER'` вместо.
+2. **On-chain finality** — любой `FAILED` trade → Err немедленно; любой
+   НЕ-`CONFIRMED` trade (MATCHED/MINED/RETRYING/undefined) → Err (submission
+   остаётся `UNKNOWN`, block держится) — профиль `'settlement'` из
+   `venueTradeStatusPolicy`, НЕ более мягкий `'recovery'`.
+
+После прохождения гейтов `_bindTrade` больше не отбрасывает уже полученные
+trade snapshots после верификации/bind — `execute()` (ПОСЛЕ выхода из lock,
+`fillProcessor` берёт свой mutex сам) прогоняет их через
+`fillProcessor.execute()` и проверяет `processedFillRepo.getStatus() ===
+APPLIED`. Раньше расчёт был полностью на WS/`ReconcileTradesUseCase`: если
+trade исчезал со следующей неполной страницы venue API (см. контракт полноты
+выше), markers/held-резервация могли остаться зависшими навсегда без
+применённого fill. Неуспех немедленной попытки НЕ меняет исход резолюции
+(`BOUND_AWAITING_FILL`) — markers остаются, fill будет ретраится обычным путём.
 
 ## CancelOrderOutcome: различение terminal-статусов
 

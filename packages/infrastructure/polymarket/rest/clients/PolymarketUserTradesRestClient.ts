@@ -57,6 +57,19 @@ export interface UserFillResponse {
   /** Роль пользователя в сделке: 'TAKER' или 'MAKER' */
   trader_side?: string;
 
+  /**
+   * UUID владельца записи трейда (Polymarket internal user id).
+   *
+   * @remarks
+   * НЕ доказывает единоличное владение всей записью: `maker_orders[]` может
+   * содержать элементы ДРУГИХ пользователей (один trade — один matched-event,
+   * может объединять несколько maker-ордеров разных владельцев). Используется
+   * ТОЛЬКО как один из двух ключей matching для собственных `maker_orders[]`
+   * записей (см. `owner`/`maker_address` внутри `maker_orders[]`), как и в WS
+   * `FillMapper.allFromPolymarketTradeEvent`.
+   */
+  owner?: string;
+
   /** Condition ID маркета */
   market: string;
 
@@ -87,8 +100,16 @@ export interface UserFillResponse {
   /**
    * Ордера мейкеров (массив). Один trade может matched-иться против
    * НЕСКОЛЬКИХ maker-ордеров одновременно — каждый элемент представляет
-   * отдельный fill отдельного maker-ордера со своим `order_id`.
-   * Используется когда `trader_side === 'MAKER'`.
+   * отдельный fill отдельного maker-ордера со своим `order_id`, и элементы
+   * МОГУТ принадлежать РАЗНЫМ пользователям (не только нам). Используется
+   * когда `trader_side === 'MAKER'`.
+   *
+   * @remarks
+   * `owner`/`maker_address` — ключи принадлежности КОНКРЕТНОГО элемента (не
+   * top-level trade record целиком). Владение обязано проверяться на уровне
+   * элемента — см. `owner`/`maker_address` матчинг в
+   * `FillMapper.allFromPolymarketTradeEvent` (та же логика переиспользуется
+   * REST-адаптером).
    */
   maker_orders?: Array<{
     order_id: string;
@@ -97,6 +118,10 @@ export interface UserFillResponse {
     asset_id?: string;
     side?: 'BUY' | 'SELL';
     fee_rate_bps?: string;
+    /** UUID владельца ЭТОГО maker-ордера. */
+    owner?: string;
+    /** ETH-адрес владельца ЭТОГО maker-ордера. */
+    maker_address?: string;
   }>;
 
   /**
@@ -144,6 +169,22 @@ export interface UserFillsParams {
 
   /** Возвращать только первую страницу, БЕЗ следования по `next_cursor` (по умолчанию: false) */
   only_first_page?: boolean;
+
+  /**
+   * Требовать канонический пагинированный объектный ответ (`{ data, next_cursor }`)
+   * на КАЖДОЙ странице — используется authoritative-вызывающими (`getTrades()`
+   * для settlement/reconciliation).
+   *
+   * @remarks
+   * Официальная схема `/data/trades` ВСЕГДА возвращает объект с `next_cursor`
+   * (`"LTE="` — сентинел завершения). Bare-array ответ или объект БЕЗ
+   * `next_cursor` (ни на сентинеле) — признак schema drift/неполного ответа,
+   * а не «страниц больше нет»: с `requireCursor: true` это бросает `Error`
+   * вместо молчаливого принятия за «готово». Non-critical helper-методы
+   * (`getTotalVolume`/`getFillStats`) НЕ передают этот флаг — сохраняют
+   * прежнее толерантное поведение.
+   */
+  requireCursor?: boolean;
 }
 
 /**
@@ -245,6 +286,7 @@ export class PolymarketUserTradesRestClient {
     }
 
     const onlyFirstPage = params?.only_first_page === true;
+    const requireCursor = params?.requireCursor === true;
     const fills: UserFillResponse[] = [];
     let cursor: string | undefined;
     let pages = 0;
@@ -263,9 +305,23 @@ export class PolymarketUserTradesRestClient {
         queryParams
       );
 
+      if (requireCursor && Array.isArray(raw)) {
+        throw new Error(
+          'PolymarketUserTradesRestClient.getUserFills: expected canonical paginated object response ' +
+          '({ data, next_cursor }), got a bare array — schema drift, refusing to treat as complete',
+        );
+      }
+
       const pageFills = Array.isArray(raw) ? raw : (raw?.data ?? []);
       fills.push(...pageFills);
       const nextCursor = Array.isArray(raw) ? undefined : raw?.next_cursor;
+
+      if (nextCursor === undefined && requireCursor && nextCursor !== NO_MORE_PAGES_CURSOR) {
+        throw new Error(
+          'PolymarketUserTradesRestClient.getUserFills: paginated response is missing next_cursor ' +
+          '(not at the "LTE=" sentinel) — schema drift, refusing to treat as complete',
+        );
+      }
 
       if (onlyFirstPage || nextCursor === undefined || nextCursor === NO_MORE_PAGES_CURSOR) {
         break;

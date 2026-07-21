@@ -220,6 +220,9 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     logger,
     userTradesClient,
     onChainBalancePolicy,
+    // MAKER ownership matching в getTrades() (см. mapUserFillsToVenueTrades) —
+    // тот же makerAddress, что уже передаётся в UserEventFeedAdapter ниже.
+    makerAddress,
   );
 
   // Inline adapter: ICurrentBalanceProvider → PolymarketBalanceProvider.getAvailableBalance()

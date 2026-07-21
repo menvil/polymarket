@@ -303,6 +303,20 @@ export class ReconcileTradesUseCase {
         continue;
       }
 
+      // Ok НЕ означает APPLIED (BUSY/DUPLICATE/RECONCILIATION no-op тоже Ok) —
+      // авторитетен только перечитанный статус. Без этой перепроверки
+      // конкурентно обрабатываемый (BUSY) или уже реконсиляционно-блокированный
+      // fill попадал бы в processedCount, хотя эта попытка ничего не применила.
+      const finalStatus = await this._deps.processedFillRepo.getStatus(trade.fillId);
+      if (finalStatus !== 'APPLIED') {
+        this._logger.debug('Reconciled fill did not reach APPLIED this attempt (BUSY/DUPLICATE/RECONCILIATION no-op) — not counted as processed', {
+          fillId: fillIdStr,
+          finalStatus: finalStatus ?? 'undefined',
+        });
+        skippedCount++;
+        continue;
+      }
+
       processedCount++;
       this._logger.info('Reconciled fill processed', { fillId: fillIdStr, orderId: String(trade.orderId), status: trade.status });
     }

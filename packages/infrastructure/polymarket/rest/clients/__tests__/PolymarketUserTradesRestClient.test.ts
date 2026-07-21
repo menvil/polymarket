@@ -69,4 +69,44 @@ describe('PolymarketUserTradesRestClient.getUserFills — cursor pagination', ()
 
     await expect(client.getUserFills()).rejects.toThrow(/pagination did not terminate/i);
   });
+
+  describe('requireCursor: true (authoritative getTrades() path)', () => {
+    it('плоский bare-array ответ → бросает (schema drift, НЕ трактуется как «одна полная страница»)', async () => {
+      const get = jest.fn<(endpoint: string, params?: Record<string, string>) => Promise<unknown>>()
+        .mockResolvedValueOnce([{ id: 'fill-1' }]);
+      const restClient = { get } as unknown as PolymarketRestClient;
+      const client = new PolymarketUserTradesRestClient(restClient, makeLogger());
+
+      await expect(client.getUserFills({ requireCursor: true })).rejects.toThrow(/bare array/i);
+    });
+
+    it('объектный ответ БЕЗ next_cursor (не на сентинеле) → бросает (schema drift, НЕ «страниц больше нет»)', async () => {
+      const get = jest.fn<(endpoint: string, params?: Record<string, string>) => Promise<unknown>>()
+        .mockResolvedValueOnce({ data: [{ id: 'fill-1' }] });
+      const restClient = { get } as unknown as PolymarketRestClient;
+      const client = new PolymarketUserTradesRestClient(restClient, makeLogger());
+
+      await expect(client.getUserFills({ requireCursor: true })).rejects.toThrow(/missing next_cursor/i);
+    });
+
+    it('канонический объектный ответ с сентинелом "LTE=" — принимается без ошибок', async () => {
+      const get = jest.fn<(endpoint: string, params?: Record<string, string>) => Promise<unknown>>()
+        .mockResolvedValueOnce({ data: [{ id: 'fill-1' }], next_cursor: 'LTE=' });
+      const restClient = { get } as unknown as PolymarketRestClient;
+      const client = new PolymarketUserTradesRestClient(restClient, makeLogger());
+
+      const fills = await client.getUserFills({ requireCursor: true });
+      expect(fills.map((f) => f.id)).toEqual(['fill-1']);
+    });
+
+    it('без requireCursor (default) — bare-array и объект-без-cursor толерантно приняты (non-critical helpers)', async () => {
+      const get = jest.fn<(endpoint: string, params?: Record<string, string>) => Promise<unknown>>()
+        .mockResolvedValueOnce([{ id: 'fill-1' }]);
+      const restClient = { get } as unknown as PolymarketRestClient;
+      const client = new PolymarketUserTradesRestClient(restClient, makeLogger());
+
+      const fills = await client.getUserFills();
+      expect(fills.map((f) => f.id)).toEqual(['fill-1']);
+    });
+  });
 });

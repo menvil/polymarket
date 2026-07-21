@@ -76,10 +76,13 @@ export interface CancelBoundVenueOrderInput {
  * Типизированный исход отмены привязанного venue-ордера.
  *
  * @remarks
- * - `CANCELLED_SETTLEMENT_PENDING` — venue подтвердил отмену; `markCancelled`
- *   применён (retry под этим clientOrderId запрещён навсегда), manual block
- *   снят. Held-остаток (если был) НЕ освобождён немедленно — ждёт
- *   `SettleTerminalOrdersUseCase` (delayed-fill race window).
+ * - `CANCELLED_SETTLEMENT_PENDING` — venue подтвердил отмену, БЫЛ held-
+ *   остаток; `markCancelled` применён (retry под этим clientOrderId запрещён
+ *   навсегда), manual block снят. Held-остаток НЕ освобождён немедленно —
+ *   ждёт `SettleTerminalOrdersUseCase` (delayed-fill race window).
+ * - `CANCELLED` — venue подтвердил отмену, held-остатка НЕ было (нечего
+ *   освобождать/ждать) — `markCancelled` применён, block снят немедленно, БЕЗ
+ *   `TerminalSettlementPending` (не создавался бы вовсе).
  * - `FILL_PENDING` — ордер уже исполнен: markers поставлены, block снят,
  *   fill применится held-reservation path.
  * - `RECONCILIATION_REQUIRED` — неоднозначный venue-исход либо частичный сбой
@@ -87,6 +90,7 @@ export interface CancelBoundVenueOrderInput {
  */
 export type CancelBoundVenueOrderOutcome =
   | { readonly status: 'CANCELLED_SETTLEMENT_PENDING' }
+  | { readonly status: 'CANCELLED' }
   | { readonly status: 'FILL_PENDING' }
   | { readonly status: 'RECONCILIATION_REQUIRED'; readonly reason: string };
 
@@ -248,7 +252,8 @@ export class CancelBoundVenueOrderUseCase {
    * @param input - Входные данные
    * @param record - Запись под lock
    * @param venueOrderId - venue orderId
-   * @returns `CANCELLED_SETTLEMENT_PENDING` либо `RECONCILIATION_REQUIRED`
+   * @returns `CANCELLED_SETTLEMENT_PENDING` (был held-остаток), `CANCELLED`
+   *   (нечего было ждать) либо `RECONCILIATION_REQUIRED`
    *
    * @remarks
    * Held-остаток (если был) НЕ освобождается здесь — та же delayed-fill race,
@@ -298,13 +303,16 @@ export class CancelBoundVenueOrderUseCase {
     // Delayed Fill должен пройти держит evidence сам placeholder/pending —
     // manual block снимается для этого.
     this._deps.orderStateStore.clearManualReconciliationBlock(input.clientOrderId);
-    this._logger.info('Bound venue order cancelled by operator — settlement deferred (authoritative release by SettleTerminalOrdersUseCase)', {
+    this._logger.info('Bound venue order cancelled by operator', {
       clientOrderId: String(input.clientOrderId),
       venueOrderId: String(venueOrderId),
       operatorId: input.operatorId,
       hadHeldReservation,
     });
-    return Ok({ status: 'CANCELLED_SETTLEMENT_PENDING' });
+    // CANCELLED_SETTLEMENT_PENDING только если реально есть что settle-ить
+    // (TerminalSettlementPending создан выше); иначе — plain CANCELLED (outcome
+    // не должен намекать на pending, которого нет).
+    return Ok(hadHeldReservation ? { status: 'CANCELLED_SETTLEMENT_PENDING' } : { status: 'CANCELLED' });
   }
 
   /**

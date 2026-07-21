@@ -322,6 +322,25 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     expect((await submissions.get(CLIENT_ID))?.reservation).toMatchObject({ status: 'HELD', remaining: '65' });
   });
 
+  it('P0 regression: fill уже APPLIED локально (recovery-профиль ReconcileTrades), но venue ещё НЕ CONFIRMED → settlement всё равно kept, а не release по local-статусу', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+    // Симулируем: ReconcileTradesUseCase уже применил fill по 'recovery'
+    // профилю (MATCHED достаточен там) — локально он уже APPLIED, хотя venue
+    // ещё не подтвердил CONFIRMED finality.
+    await processedFillRepo.begin(TRADE_FILL_ID, { workerId: 'w', now: new Date(), leaseMs: 60_000 });
+    await processedFillRepo.markApplied(TRADE_FILL_ID);
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'MATCHED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    // БЕЗ реордеринга venue-finality-check settle бы увидел local APPLIED
+    // ПЕРВЫМ и продолжил бы к release, несмотря на MATCHED (не CONFIRMED).
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 0, kept: 1 });
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+    expect((await submissions.get(CLIENT_ID))?.reservation).toMatchObject({ status: 'HELD', remaining: '65' });
+  });
+
   it('P0: FAILED trade (не применён локально) исключается из settlement — остальной остаток release-ится нормально', async () => {
     await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 

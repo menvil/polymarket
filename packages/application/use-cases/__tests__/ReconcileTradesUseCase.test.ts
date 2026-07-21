@@ -211,14 +211,41 @@ describe('ReconcileTradesUseCase', () => {
     const snapshot = { ...makeTradeSnapshot('fill-matched'), status: 'MATCHED' as const };
     (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
       .mockResolvedValue(Ok([snapshot]));
-    processedFillRepo.getStatus.mockResolvedValue(undefined);
+    // Первый вызов (stats-only pre-check) — ещё не применён; второй (re-check
+    // ПОСЛЕ execute(), см. P1 processedCount fix) — подтверждает APPLIED.
+    processedFillRepo.getStatus
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce('APPLIED');
     processFillUseCase.execute.mockResolvedValue(Ok(undefined));
 
     const result = await useCase.execute({ accountId: ACCOUNT_ID });
 
     expect(result.ok).toBe(true);
-    expect(processedFillRepo.getStatus).toHaveBeenCalledTimes(1);
+    expect(processedFillRepo.getStatus).toHaveBeenCalledTimes(2);
     expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ok от processFillUseCase.execute() БЕЗ APPLIED (BUSY/DUPLICATE/RECONCILIATION no-op) НЕ считается processed', async () => {
+    const snapshot = { ...makeTradeSnapshot('fill-busy'), status: 'CONFIRMED' as const };
+    (exchangeClient.getTrades as jest.MockedFunction<IExchangeClient['getTrades']>)
+      .mockResolvedValue(Ok([snapshot]));
+    // Ok, но статус так и не стал APPLIED — конкурентная обработка (BUSY) либо
+    // no-op (DUPLICATE/RECONCILIATION_REQUIRED).
+    processedFillRepo.getStatus
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+    processFillUseCase.execute.mockResolvedValue(Ok(undefined));
+
+    const result = await useCase.execute({ accountId: ACCOUNT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(processFillUseCase.execute).toHaveBeenCalledTimes(1);
+    expect(processedFillRepo.getStatus).toHaveBeenCalledTimes(2);
+    // НЕ processed (не APPLIED) — summary-лог обязан отразить это как skipped.
+    expect(logger.info).toHaveBeenCalledWith('Trade reconciliation complete', expect.objectContaining({
+      processed: 0,
+      skipped: 1,
+    }));
   });
 
   // ── venue FAILED после local APPLIED ────────────────────────────────────────

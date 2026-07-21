@@ -71,6 +71,7 @@ import { canConsumeHeldReservation } from '@polymarket/ports';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { lockKey } from './lockKeys.js';
 import { venueTradeToFill } from './services/venueTradeToFill.js';
+import { isFailedVenueTradeStatus, isProcessableVenueTradeStatus } from './services/venueTradeStatusPolicy.js';
 
 /** Операторская резолюция UNKNOWN submission. */
 export type UnknownSubmissionResolution =
@@ -334,6 +335,21 @@ export class ResolveUnknownSubmissionUseCase {
    * Fill придёт через WS/reconciliation polling (после выхода из mutex) и
    * применится held-reservation path; markers снимет `ProcessFillUseCase`
    * после успешного применения.
+   *
+   * ### Гейты ПЕРЕД bind (P0):
+   * 1. **Order всё ещё открыт на venue** — `getOpenOrders` проверяется ДО bind:
+   *    если `venueOrderId` там присутствует, ордер лишь ЧАСТИЧНО исполнен —
+   *    bind-ить как TRADE означало бы снять manual block и оставить остаток
+   *    (ещё стоящий в стакане) невидимым локально ("invisible live order",
+   *    та же проблема, что `BOUND_AWAITING_ORDER_RECOVERY` решает для
+   *    OPEN_ORDER). Оператор должен использовать `candidateKind: 'OPEN_ORDER'`.
+   * 2. **On-chain finality** — операторский bind так же необратим, как
+   *    settlement (снимает manual block, потребляет held reservation): любой
+   *    `FAILED` trade → Err немедленно; любой НЕ-`CONFIRMED` trade (MATCHED/
+   *    MINED/RETRYING/undefined) → Err (submission остаётся `UNKNOWN`, block
+   *    держится) — профиль `'settlement'` из `venueTradeStatusPolicy`, НЕ
+   *    более мягкий `'recovery'` (тот допускает MATCHED для WS-race, здесь
+   *    гонки нет — оператор явно решает сейчас).
    */
   private async _bindTrade(
     input: ResolveUnknownSubmissionInput,
@@ -341,6 +357,16 @@ export class ResolveUnknownSubmissionUseCase {
     venueOrderId: OrderId,
     outTrades: { trades?: readonly VenueTradeSnapshot[] },
   ): Promise<Result<ResolveUnknownSubmissionOutcome, TradingError>> {
+    const stillOpenResult = await this._safeGetOpenOrders(input.accountId);
+    if (!stillOpenResult.ok) return stillOpenResult;
+    const stillOpen = stillOpenResult.value.some((o) => String(o.orderId) === String(venueOrderId));
+    if (stillOpen) {
+      return Err(new TradingError(
+        `Venue order ${String(venueOrderId)} is still open — bind it as OPEN_ORDER, not TRADE`,
+        { context: { clientOrderId: String(input.clientOrderId) } },
+      ));
+    }
+
     let orderTrades;
     try {
       const tradesResult = await this._deps.exchangeClient.getTrades(input.accountId);
@@ -359,6 +385,20 @@ export class ResolveUnknownSubmissionUseCase {
       return Err(new TradingError(
         `No venue trades found for ${String(venueOrderId)} — cannot bind as TRADE`,
         { context: { clientOrderId: String(input.clientOrderId) } },
+      ));
+    }
+    const failedTrades = orderTrades.filter((trade) => isFailedVenueTradeStatus(trade.status));
+    if (failedTrades.length > 0) {
+      return Err(new TradingError(
+        `Cannot bind as executed: venue reports FAILED for trade(s) ${failedTrades.map((t) => String(t.fillId)).join(', ')}`,
+        { context: { clientOrderId: String(input.clientOrderId), venueOrderId: String(venueOrderId) } },
+      ));
+    }
+    const unsettledTrades = orderTrades.filter((trade) => !isProcessableVenueTradeStatus(trade.status, 'settlement'));
+    if (unsettledTrades.length > 0) {
+      return Err(new TradingError(
+        `Cannot bind as executed until all trades are CONFIRMED — not yet finalized: ${unsettledTrades.map((t) => `${String(t.fillId)}=${t.status ?? 'undefined'}`).join(', ')}`,
+        { context: { clientOrderId: String(input.clientOrderId), venueOrderId: String(venueOrderId) } },
       ));
     }
     for (const trade of orderTrades) {
