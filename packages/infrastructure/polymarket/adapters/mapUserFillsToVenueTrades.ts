@@ -23,12 +23,28 @@
  * server-provided top-level `maker_address` не гарантированно надёжен для
  * cross-outcome записей).
  *
+ * ### Fail-closed на ошибку маппинга (P0):
+ * `/data/trades` с L2-аутентификацией возвращает ТОЛЬКО записи, где мы
+ * участник (taker ЛИБО хотя бы один maker в matched-событии) — это не
+ * публичный feed. Значит ЛЮБОЙ `Err` от `FillMapper` на такой записи (не
+ * распознан наш maker_order, невалидный timestamp/asset/market, что угодно)
+ * означает: эта запись — НАША, но мы не смогли её разобрать (баг маппинга/
+ * schema drift), а НЕ «легитимно не наша». Раньше такая запись логировалась
+ * и превращалась в `[]` — `getTrades()` возвращал `Ok` БЕЗ неё, и
+ * `SettleTerminalOrdersUseCase` видел authoritative-пустой список там, где
+ * fill реально был, освобождая held reservation ошибочно. Теперь любой `Err`
+ * от `FillMapper` пробрасывается наружу как `Err` — вызывающий (`getTrades()`)
+ * обязан провалить ВЕСЬ запрос, а не тихо потерять запись: лучше оставить
+ * капитал frozen (retry на следующем прогоне), чем ошибочно освободить его.
+ *
  * @example
  * ```typescript
- * const snapshots = mapUserFillToVenueTradeSnapshots(rawFill, accountId, makerAddress, logger);
+ * const result = mapUserFillToVenueTradeSnapshots(rawFill, accountId, makerAddress);
+ * if (!result.ok) throw new Error(`Failed to map user fill ${rawFill.id}: ${result.error.message}`);
  * ```
  */
-import type { ILogger } from '@polymarket/logger';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 import type { AccountId, MarketId } from '@polymarket/ids';
 import type { VenueTradeSnapshot } from '@polymarket/ports';
 import { FillMapper } from '@polymarket/fill';
@@ -54,10 +70,11 @@ function normalizeTradeStatus(raw: string | undefined): string | undefined {
  * @param accountId - Наш AccountId
  * @param makerAddress - ETH-адрес нашего кошелька (для MAKER ownership match;
  *   тот же параметр, что `UserEventFeedAdapter._makerAddress`), опционально
- * @param logger - Logger для skip-диагностики (невалидная/чужая запись — не ошибка,
- *   просто пропускается, как и раньше)
- * @returns Массив `VenueTradeSnapshot` (обычно 1; несколько — MAKER trade с
- *   несколькими НАШИМИ ордерами; 0 — запись невалидна либо не наша)
+ * @returns `Ok(snapshots)` (обычно 1 элемент; несколько — MAKER trade с
+ *   несколькими НАШИМИ ордерами) либо `Err`, если `FillMapper` не смог
+ *   разобрать/идентифицировать запись — см. doc файла (fail-closed: authoritated
+ *   endpoint возвращает ТОЛЬКО наши записи, `Err` значит баг маппинга, НЕ
+ *   «легитимно не наша запись»)
  *
  * @remarks
  * `FillMapper.allFromPolymarketTradeEvent` уже реализует владение (`owner`
@@ -69,8 +86,7 @@ export function mapUserFillToVenueTradeSnapshots(
   f: UserFillResponse,
   accountId: AccountId,
   makerAddress: string | undefined,
-  logger: ILogger,
-): VenueTradeSnapshot[] {
+): Result<VenueTradeSnapshot[], Error> {
   const rawEvent: Record<string, unknown> = {
     id: f.id,
     taker_order_id: f.taker_order_id,
@@ -95,14 +111,10 @@ export function mapUserFillToVenueTradeSnapshots(
 
   const result = FillMapper.allFromPolymarketTradeEvent(rawEvent, accountId);
   if (!result.ok) {
-    logger.debug('Skipping user fill — not identifiable as ours or invalid', {
-      id: f.id,
-      error: result.error.message,
-    });
-    return [];
+    return Err(new Error(`Failed to map authoritative user fill ${f.id}: ${result.error.message}`));
   }
 
-  return result.value.map(({ fill, metadata }): VenueTradeSnapshot => ({
+  return Ok(result.value.map(({ fill, metadata }): VenueTradeSnapshot => ({
     fillId: fill.id,
     orderId: fill.orderId,
     accountId: fill.accountId,
@@ -114,5 +126,5 @@ export function mapUserFillToVenueTradeSnapshots(
     fee: { amount: fill.fee.quantity.amount(), asset: fill.fee.asset },
     executedAt: fill.timestamp,
     status: metadata.tradeStatus,
-  }));
+  })));
 }

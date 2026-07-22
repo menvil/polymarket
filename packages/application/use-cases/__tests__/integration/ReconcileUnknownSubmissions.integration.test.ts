@@ -437,8 +437,11 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
   });
 
   it('ручной trade bind: ставит matched/in-flight marker ДО снятия block, затем сразу применяет уже полученный trade (вне lock)', async () => {
-    await placeAmbiguous();
-    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID)]));
+    await placeAmbiguous(); // requestedSize 100
+    // P0: TRADE bind требует ТОЧНОГО совпадения cumulative size с requested —
+    // partial bind оставлял бы остаток без recovery-механизма (см. size-тесты
+    // ниже). Trade на полный размер (100).
+    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('100')) })]));
 
     const r = await resolver.execute({
       clientOrderId: CLIENT_ID,
@@ -458,11 +461,12 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     expect(store.hasMatchedFills(VENUE_ID)).toBe(false);
     expect(store.hasUnsettledFills(INSTRUMENT_ID)).toBe(false);
     const after = await submissions.get(CLIENT_ID);
-    expect(after?.reservation).toMatchObject({ status: 'PARTIALLY_SETTLED', consumed: '32.5', remaining: '32.5' });
+    // Полный размер потреблён атомарно → remaining=0 → SETTLED (не PARTIALLY_SETTLED).
+    expect(after?.reservation).toMatchObject({ status: 'SETTLED', consumed: '65', remaining: '0' });
 
     // Idempotency: тот же fillId, пришедший позже через WS/reconciliation —
     // DUPLICATE, без повторного списания.
-    const fillResult = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID)));
+    const fillResult = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID), '100'));
     expect(fillResult.ok).toBe(true);
     expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
   });
@@ -573,7 +577,24 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     });
 
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.message).toMatch(/Cumulative trade size exceeds/i);
+    if (!r.ok) expect(r.error.message).toMatch(/does not match submission size exactly/i);
+    await expectStillHeldAndBlocked();
+  });
+
+  it('P0: TRADE bind отклоняется при partial fill (cumulativeSize < requested) — остаток иначе завис бы без recovery-механизма', async () => {
+    await placeAmbiguous(); // requestedSize 100
+    // 50/100 исполнено, order больше не в getOpenOrders (уже отсеян бы гейтом
+    // "still open" — здесь именно случай "исчез с книги без объяснения").
+    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('50')) })]));
+
+    const r = await resolver.execute({
+      clientOrderId: CLIENT_ID,
+      accountId: ACCOUNT_ID,
+      resolution: { type: 'BIND_VENUE_ORDER', venueOrderId: VENUE_ID, candidateKind: 'TRADE', operatorId: 'ops-1', reason: 'partial fill seen' },
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/does not match submission size exactly/i);
     await expectStillHeldAndBlocked();
   });
 
@@ -767,17 +788,18 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
   // ── Сквозной сценарий: deferred fill до резолюции, held path после ────────
 
   it('venue Fill до резолюции откладывается БЕЗ мутаций; после trade bind тот же fill применяется через held path', async () => {
-    await placeAmbiguous();
+    await placeAmbiguous(); // requestedSize 100
 
     // Fill приходит ДО резолюции: deferred (manual block), никаких мутаций.
-    const blocked = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID)));
+    const blocked = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID), '100'));
     expect(blocked.ok).toBe(false);
     expect(portfolio.applyDebit).not.toHaveBeenCalled();
     expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();
     expect(ledgerSpy).not.toHaveBeenCalled();
 
-    // Оператор bind-ит trade → block снят, markers стоят.
-    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID)]));
+    // Оператор bind-ит trade (полный размер — P0 exact-size requirement) →
+    // block снят, markers стоят.
+    const resolver = makeResolver(makeExchange([], [makeTradeSnapshot(VENUE_ID, { size: Quantity.of(new Decimal('100')) })]));
     const resolved = await resolver.execute({
       clientOrderId: CLIENT_ID,
       accountId: ACCOUNT_ID,
@@ -786,7 +808,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
     expect(resolved.ok).toBe(true);
 
     // Retry того же fill (deferred → FAILED → retryable) — held path.
-    const retried = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID)));
+    const retried = await makeProcessFill().execute(makeFill(String(TRADE_FILL_ID), '100'));
     expect(retried.ok).toBe(true);
     expect(portfolio.applyDebit).toHaveBeenCalledTimes(1);
     expect(portfolio.applyDirectDebit).not.toHaveBeenCalled();

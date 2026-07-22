@@ -371,6 +371,40 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
   });
 
+  it('P1: FAILED trade с local RECONCILIATION_REQUIRED → эскалация (unresolved partial commit, НЕ безопасно исключить)', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+    // Предыдущая попытка обработки этого fillId уже частично закоммитила
+    // Order/Portfolio/Ledger/journal (см. FillCommitPhase) и застряла в
+    // RECONCILIATION_REQUIRED — это НЕ «fill не применён».
+    await processedFillRepo.begin(TRADE_FILL_ID, { workerId: 'w', now: new Date(), leaseMs: 60_000 });
+    await processedFillRepo.markReconciliationRequired(TRADE_FILL_ID, 'partial commit');
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'FAILED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 0, escalated: 1 });
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(true);
+  });
+
+  it('P1: FAILED trade с local PROCESSING → pending kept (конкурентный ProcessFillUseCase ещё может завершиться APPLIED — нельзя release-ить сейчас)', async () => {
+    await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
+    // Конкурентный ProcessFillUseCase.execute() держит PROCESSING для этого
+    // fillId (начал обработку, когда trade ещё был MATCHED, до отката в
+    // FAILED) — begin() без mark* оставляет запись в PROCESSING.
+    await processedFillRepo.begin(TRADE_FILL_ID, { workerId: 'other-worker', now: new Date(), leaseMs: 60_000 });
+
+    const settleResult = await makeSettle([makeTradeSnapshot('50', 'FAILED')]).execute({ accountId: ACCOUNT_ID });
+
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 0, kept: 1, escalated: 0 });
+    // НЕ excluded-as-contributes-0 и НЕ released — остаётся pending до
+    // следующего прогона, когда конкурентный процесс завершится.
+    expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+    expect(store.hasManualReconciliationBlockForOrder(ORDER_ID)).toBe(false);
+  });
+
   it('trades API недоступен → pending ОСТАЁТСЯ (timeout — не доказательство отсутствия fill)', async () => {
     await makeUpdate().execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
     expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);

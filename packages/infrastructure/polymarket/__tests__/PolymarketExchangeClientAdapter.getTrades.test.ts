@@ -141,11 +141,14 @@ describe('PolymarketExchangeClientAdapter.getTrades — maker ownership filterin
     expect(result.value.some((s) => String(s.orderId) === 'maker-order-foreign')).toBe(false);
   });
 
-  it('P0 регрессия: trade целиком без наших maker_orders (все чужие) → исключён полностью (0 результатов, НЕ 500 ошибка)', async () => {
+  it('P0 fail-closed: trade целиком без наших maker_orders (все чужие) → ВЕСЬ getTrades() проваливается (Err), НЕ тихо теряет запись', async () => {
     // Top-level owner остаётся OUR_OWNER_UUID (как реально было бы в ответе
     // L2-аутентифицированного /data/trades), но ЭТА конкретная maker_orders[]
     // запись принадлежит другому участнику матча (ни owner, ни maker_address
-    // не совпадают) — именно это должно исключить её, а не top-level owner.
+    // не совпадают). Authoritative endpoint возвращает ТОЛЬКО наши trades —
+    // значит эта запись НАША, просто не распознана (баг маппинга/schema
+    // drift), а НЕ «легитимно чужая»: молчаливое исключение отдало бы
+    // SettleTerminalOrdersUseCase ложно-полный snapshot без реального fill.
     const fill = makeMakerFill({
       maker_orders: [
         { order_id: 'maker-order-foreign', matched_amount: '999', price: '0.65', asset_id: '123456', side: 'BUY', owner: FOREIGN_OWNER_UUID, maker_address: FOREIGN_MAKER_ADDRESS },
@@ -154,18 +157,34 @@ describe('PolymarketExchangeClientAdapter.getTrades — maker ownership filterin
     const adapter = makeAdapter(makeUserTradesClient([fill]));
     const result = await adapter.getTrades(ACCOUNT_ID);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).toHaveLength(0);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/Failed to map authoritative user fill/i);
   });
 
-  it('MAKER trade без maker_orders (пустой массив) — исключён, без crash', async () => {
+  it('P0 fail-closed: MAKER trade без maker_orders (пустой массив) → getTrades() проваливается (Err), не молчаливый пропуск', async () => {
     const adapter = makeAdapter(makeUserTradesClient([makeMakerFill({ maker_orders: [] })]));
     const result = await adapter.getTrades(ACCOUNT_ID);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).toHaveLength(0);
+    expect(result.ok).toBe(false);
+  });
+
+  it('makerAddress не настроен, но _userTradesClient сконфигурирован → Err немедленно (misconfiguration, не непредсказуемые сбои)', async () => {
+    const executionAdapter = {
+      cancelOrder: jest.fn(),
+      postOrder: jest.fn(),
+      getFilledOrders: jest.fn(async () => []),
+    } as unknown as PolymarketExecutionAdapter;
+    // Конструктор напрямую (не через makeAdapter — тот дефолтит makerAddress):
+    // 5-й параметр отсутствует вовсе, а не передан как undefined.
+    const adapter = new PolymarketExchangeClientAdapter(
+      executionAdapter, makeLogger(), makeUserTradesClient([makeMakerFill()]),
+    );
+    const result = await adapter.getTrades(ACCOUNT_ID);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/makerAddress is not/i);
   });
 
   it('TAKER trade маппится в один snapshot через taker_order_id (владение не проверяется — L2 auth уже наш trade)', async () => {

@@ -337,6 +337,69 @@ REST и WS раньше использовали РАЗНЫЕ реализаци
 REST-адаптера удалены полностью — один маппер, одно правило владения, одно
 правило fillId, используемое ОБОИМИ путями.
 
+### Fail-closed на ошибку маппинга (P0, итерация после единого маппера)
+
+Изначальная версия `mapUserFillToVenueTradeSnapshots` логировала `Err` от
+`FillMapper` и возвращала `[]` — казалось безопасным («не наша запись,
+пропускаем»), но `/data/trades` с L2-аутентификацией возвращает ТОЛЬКО записи,
+где мы участник (taker либо хотя бы один maker в matched-событии) — это НЕ
+публичный feed. Значит `Err` от `FillMapper` на такой записи означает «это
+наша запись, но мы не смогли её разобрать» (баг маппинга/schema drift), а НЕ
+«легитимно не наша». Молчаливое исключение отдавало `SettleTerminalOrdersUseCase`
+authoritative-пустой snapshot там, где fill реально существовал → release
+held reservation ошибочно.
+
+Исправление: `mapUserFillToVenueTradeSnapshots` теперь возвращает
+`Result<VenueTradeSnapshot[], Error>`; `PolymarketExchangeClientAdapter.getTrades`
+пробрасывает ПЕРВЫЙ же `Err` наружу как `Err` всего запроса (не частичный
+`Ok`) — retry на следующем прогоне, капитал остаётся held, а не ошибочно
+released. Дополнительно: `getTrades()` требует настроенный `makerAddress`,
+если сконфигурирован `_userTradesClient` — без него cross-outcome MAKER-записи
+систематически не проходили бы owner-matching (fallback только по
+`maker_address`), и с fail-closed маппингом это превратилось бы в постоянно
+проваливающийся `getTrades()` без явного объяснения; теперь — явная ошибка
+конфигурации при первом вызове.
+
+### Операторский TRADE bind: только полное покрытие size (P1)
+
+`_bindTrade` снимает manual block и снимает fill-markers СРАЗУ после bind
+(держится и до этого только сам факт unsettled evidence) — до этой правки
+size-проверка допускала `cumulativeSize <= requestedSize`, то есть PARTIAL
+исполнение (например 50 из 100) успешно bind-илось. После этого: block снят,
+markers сняты (`ProcessFillUseCase` снимает их при успешном применении),
+`TerminalSettlementPending` для этого пути НЕ создаётся (в отличие от
+CANCELLED/EXPIRED/REJECTED через `UpdateOrderStatusUseCase`/
+`CancelBoundVenueOrderUseCase`) — остаток reservation (`PARTIALLY_SETTLED`,
+remaining > 0) оставался БЕЗ какого-либо recovery-механизма: ничто и никогда
+больше на него не смотрело.
+
+Гейт "order всё ещё открыт" (см. выше) уже отсеивает опасный случай, когда
+остаток реально ещё стоит в стакане — значит partial trades здесь означают
+ордер, который частично исполнился и после этого исчез с venue книги без
+объяснения (недостаточно данных для безопасного bind в любом случае).
+Исправление: `_bindTrade` требует `cumulativeSize.equals(requestedSize)`
+(было `<=`) — Err при любом несовпадении, в т.ч. partial. Симметрично уже
+существующему требованию `_bindOpenOrder` (тот всегда требовал точного
+совпадения size). Полноценный recovery для genuinely-partial-then-terminated
+ордеров (например отдельный `BOUND_PARTIAL_SETTLEMENT_PENDING`, маршрутизация
+остатка через `SettleTerminalOrdersUseCase`) — возможное будущее расширение,
+не реализовано: пока безопаснее оставить капитал frozen под manual block, чем
+разрешить bind без recovery-пути для остатка.
+
+### ENABLE_AUTO_TERMINAL_SETTLEMENT: единая точка гейтинга (P1)
+
+Флаг изначально гейтил только периодический таймер в `main.ts` — но
+`orderReconciler.reconcile()` (`buildLiveInfra.ts`) безусловно вызывал
+`settleTerminalOrdersUseCase.execute()` независимо от таймера, а сам
+`reconcile()` вызывается на КАЖДЫЙ startup И на КАЖДЫЙ WS reconnect —
+`ENABLE_AUTO_TERMINAL_SETTLEMENT=false` фактически НЕ гарантировал отключение
+automatic release. Исправление: `BuildLiveInfraParams.enableAutoTerminalSettlement`
+(default `false`) — `main.ts` читает `process.env.ENABLE_AUTO_TERMINAL_SETTLEMENT`
+ОДИН раз (до `buildLiveInfra()`) и передаёт ОДНО и то же значение и в
+`buildLiveInfra()` (гейтит `reconcile()`), и для гейтинга периодического
+прямого вызова `settleTerminalOrdersUseCase.execute()` — единственный источник
+истины, оба места читают из одной переменной, не из `process.env` дважды.
+
 ### Единая классификация on-chain статуса trade (`venueTradeStatusPolicy`)
 
 Общий helper (`services/venueTradeStatusPolicy.ts`) с двумя профилями:
@@ -346,11 +409,25 @@ REST-адаптера удалены полностью — один маппе�
   пришло; дубли исключены `IProcessedFillRepository`).
 - `settlement` (`SettleTerminalOrdersUseCase`, операторский TRADE bind) —
   ТОЛЬКО `CONFIRMED`. Settlement необратим (снимает блокировку капитала) —
-  `MATCHED` ещё может стать `RETRYING`/`FAILED`. `FAILED`-trade, НЕ
-  применённый локально, исключается из орбиты settlement (contributes 0, не
-  блокирует release остального остатка); `FAILED`-trade, УЖЕ применённый
-  локально (WS доставил раньше отката) — эскалация в manual block, а не
-  тихий пропуск.
+  `MATCHED` ещё может стать `RETRYING`/`FAILED`. Для `FAILED`-trade решение
+  зависит от local `IProcessedFillRepository` статуса этого fillId (P1,
+  проверено на всех трёх опасных состояниях):
+  - `undefined`/`FAILED`/`REVERTED` — локальной commit-активности точно не
+    было → безопасно исключить из орбиты settlement (contributes 0, не
+    блокирует release остального остатка);
+  - `APPLIED` — fill уже применён локально (WS доставил раньше отката) —
+    desync, эскалация в manual block, а НЕ тихий пропуск;
+  - `RECONCILIATION_REQUIRED` — предыдущая попытка уже ЧАСТИЧНО закоммитила
+    Order/Portfolio/Ledger/journal (см. `FillCommitPhase` в
+    `ProcessFillUseCase`) — unresolved partial commit, НЕ «fill не применён»
+    → тоже эскалация (исключение отсюда посчитало бы authoritative remaining
+    БЕЗ учёта уже применённой частичной мутации);
+  - `PROCESSING` — конкурентный `ProcessFillUseCase.execute()` МОГ начать
+    обработку ДО того, как venue сообщил `FAILED` (trade был `MATCHED` на
+    момент `begin()`), и ещё не завершился → `kept` (НЕ excluded): если
+    settle release-ит remaining, считая trade «не случившимся», а
+    конкурентный процесс тем временем завершится `APPLIED` — та же
+    резервация окажется released И consumed одновременно (double-use).
 
 **Venue finality проверяется ПЕРВОЙ, ДО local APPLIED** (и в фазе 1, и в
 фазе 2 под lock `SettleTerminalOrdersUseCase`): иначе fill, применённый
@@ -358,20 +435,6 @@ REST-адаптера удалены полностью — один маппе�
 допустим там для WS-race), обошёл бы CONFIRMED-gate здесь — local `APPLIED`
 не равно venue finality. Порядок проверки НЕ «сначала local status, потом
 venue status» — ровно наоборот.
-
-### Классификация on-chain статуса trade (`venueTradeStatusPolicy`)
-
-Общий helper (`services/venueTradeStatusPolicy.ts`) с двумя профилями:
-
-- `recovery` (`ReconcileTradesUseCase`) — `CONFIRMED` И `MATCHED` (осознанное
-  исключение: не терять fill, если REST вернул `MATCHED`, но WS-событие не
-  пришло; дубли исключены `IProcessedFillRepository`).
-- `settlement` (`SettleTerminalOrdersUseCase`) — ТОЛЬКО `CONFIRMED`.
-  Settlement необратим (снимает блокировку капитала) — `MATCHED` ещё может
-  стать `RETRYING`/`FAILED`. `FAILED`-trade, НЕ применённый локально,
-  исключается из орбиты settlement (contributes 0, не блокирует release
-  остального остатка); `FAILED`-trade, УЖЕ применённый локально (WS доставил
-  раньше отката) — эскалация в manual block, а не тихий пропуск.
 
 ### ProcessFillUseCase: exception classification внутри keyed mutex
 

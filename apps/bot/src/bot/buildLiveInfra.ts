@@ -101,6 +101,16 @@ export interface BuildLiveInfraParams {
   readonly userWsAdapter: PolymarketWsAdapter;
   readonly accountId: AccountId;
   readonly dnsOverride?: DnsOverride;
+  /**
+   * Разрешает automatic terminal settlement release (Portfolio release
+   * authoritative остатка) внутри `orderReconciler.reconcile()` — вызывается
+   * на startup И на КАЖДЫЙ WS reconnect, а не только из периодического
+   * таймера. Default `false` (safe): единственный источник истины для флага —
+   * main.ts читает `ENABLE_AUTO_TERMINAL_SETTLEMENT` ОДИН раз при старте и
+   * передаёт сюда то же значение, что использует для гейта периодического
+   * вызова — исключает рассинхрон между двумя местами вызова settle.
+   */
+  readonly enableAutoTerminalSettlement?: boolean;
 }
 
 /** Результат построения live инфраструктуры */
@@ -156,7 +166,7 @@ export interface LiveInfra {
  * после инициализации strategy engine.
  */
 export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
-  const { credentials, infra, repos, processFillUseCase, orderedEventOutbox, userWsAdapter, accountId, dnsOverride } = params;
+  const { credentials, infra, repos, processFillUseCase, orderedEventOutbox, userWsAdapter, accountId, dnsOverride, enableAutoTerminalSettlement = false } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
@@ -336,12 +346,19 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
         });
       }
 
-      // Затем — terminal settlement pending (delayed fills + authoritative release).
-      const settleResult = await settleTerminalOrdersUseCase.execute({ accountId: reconcileAccountId });
-      if (!settleResult.ok) {
-        logger.warn('Terminal settlement run failed (will retry next cycle)', {
-          error: settleResult.error.message,
-        });
+      // Затем — terminal settlement pending (delayed fills + authoritative
+      // release). Гейт flag'ом: reconcile() вызывается на startup и на
+      // КАЖДЫЙ WS reconnect, не только из периодического таймера — без этой
+      // проверки ENABLE_AUTO_TERMINAL_SETTLEMENT=false не гарантировал бы
+      // отключение automatic release (main.ts гейтит только свой собственный
+      // прямой вызов settleTerminalOrdersUseCase, не этот reconciler).
+      if (enableAutoTerminalSettlement) {
+        const settleResult = await settleTerminalOrdersUseCase.execute({ accountId: reconcileAccountId });
+        if (!settleResult.ok) {
+          logger.warn('Terminal settlement run failed (will retry next cycle)', {
+            error: settleResult.error.message,
+          });
+        }
       }
 
       const localOrders = await orderRepo.getAll();

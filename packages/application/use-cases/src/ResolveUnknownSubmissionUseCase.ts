@@ -414,18 +414,27 @@ export class ResolveUnknownSubmissionUseCase {
         ));
       }
     }
-    // Size-проверка (P1/P2): trades могут быть частичными, но их СУММАРНЫЙ
-    // размер не может превышать effective/requested size заявки — иначе это
-    // trades чужого (большего) ордера, и binding записал бы ошибочную связь
-    // (over-consume позже поймал бы journal, но лучше не bind-ить вовсе).
+    // Size-проверка (P0/P1/P2): TRADE bind сразу снимает manual block и
+    // markers (см. ниже) — для partial fill (cumulativeSize < requested) это
+    // оставляет неучтённый остаток резервации PARTIALLY_SETTLED БЕЗ какого-либо
+    // recovery-механизма: block снят, markers сняты, TerminalSettlementPending
+    // не создаётся (в отличие от CANCELLED/EXPIRED/REJECTED через
+    // UpdateOrderStatusUseCase/CancelBoundVenueOrderUseCase) — остаток может
+    // зависнуть навсегда. "Order всё ещё открыт" уже отсеян гейтом выше
+    // (getOpenOrders) — значит partial trades здесь означают ордер, который
+    // частично исполнился и после этого исчез с venue книги без объяснения:
+    // недостаточно данных для безопасного bind. Требуем ТОЧНОЕ совпадение —
+    // trades чужого (большего/меньшего) ордера тоже были бы отсеяны этим же
+    // требованием.
     const maxSize = new Decimal(record.effectiveSize ?? record.requestedSize);
     const cumulativeSize = orderTrades.reduce(
       (sum, trade) => sum.plus(trade.size.value()),
       new Decimal(0),
     );
-    if (cumulativeSize.greaterThan(maxSize)) {
+    if (!cumulativeSize.equals(maxSize)) {
       return Err(new TradingError(
-        `Cumulative trade size exceeds submission size: trades=${cumulativeSize.toString()}, max=${maxSize.toString()}`,
+        `Cumulative trade size does not match submission size exactly (partial TRADE bind unsafe — no recovery `
+        + `path for the remainder): trades=${cumulativeSize.toString()}, expected=${maxSize.toString()}`,
         { context: { clientOrderId: String(input.clientOrderId), venueOrderId: String(venueOrderId) } },
       ));
     }

@@ -563,6 +563,19 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         'cannot guarantee completeness required by the getTrades contract',
       ));
     }
+    // MAKER ownership matching в mapUserFillToVenueTradeSnapshots требует
+    // makerAddress как fallback к owner UUID (cross-outcome fills, где
+    // top-level owner — тейкер, не мы). Без него FillMapper систематически не
+    // распознавал бы наши cross-outcome maker-ордера — а с fail-closed
+    // маппингом (см. ниже) КАЖДЫЙ такой Err теперь проваливает ВЕСЬ getTrades().
+    // Явная ошибка конфигурации лучше, чем непредсказуемые "settlement
+    // почему-то никогда не проходит" в проде.
+    if (!this._makerAddress) {
+      return Err(new ExchangeErrorClass(
+        'Exchange getTrades failed: authoritative user trades client is configured but makerAddress ' +
+        'is not — MAKER ownership matching would be unreliable for cross-outcome fills',
+      ));
+    }
     try {
       // Cursor pagination выполняется ВНУТРИ getUserFills (следует по
       // next_cursor до сентинела `"LTE="`, бросает при незавершённой
@@ -575,8 +588,24 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         ...(since !== undefined ? { after: Math.floor(since.toNumber() / 1000) } : {}),
       });
 
-      const snapshots = userFills.flatMap((f) =>
-        mapUserFillToVenueTradeSnapshots(f, accountId, this._makerAddress, this._logger));
+      // Fail-closed на КАЖДУЮ запись (P0, см. doc mapUserFillsToVenueTrades):
+      // authoritative endpoint возвращает ТОЛЬКО наши trades — Err от маппера
+      // значит баг маппинга/schema drift на НАШЕЙ записи, а не «не наша,
+      // пропустить». Один необработанный fill не должен молча исчезнуть из
+      // authoritative-ответа — вся выборка проваливается, retry на следующем
+      // прогоне (капитал остаётся held, а не ошибочно released).
+      const snapshots: VenueTradeSnapshot[] = [];
+      for (const f of userFills) {
+        const mapped = mapUserFillToVenueTradeSnapshots(f, accountId, this._makerAddress);
+        if (!mapped.ok) {
+          this._logger.error('Exchange getTrades failed — unmappable authoritative user fill', {
+            id: f.id,
+            error: mapped.error.message,
+          });
+          return Err(new ExchangeErrorClass(`Exchange getTrades failed: ${mapped.error.message}`));
+        }
+        snapshots.push(...mapped.value);
+      }
 
       const filtered = since
         ? snapshots.filter((s) => !s.executedAt.value().lessThan(since.value()))

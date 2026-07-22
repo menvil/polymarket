@@ -237,18 +237,43 @@ export class SettleTerminalOrdersUseCase {
     // сделка окончательно не прошла on-chain, значит она никогда не станет
     // APPLIED через fillProcessor — если оставить её в `orderTrades`, ниже по
     // коду (и в фазе 2) trade вечно не проходил бы "все APPLIED" gate,
-    // навсегда блокируя settlement. Исключение: если trade УЖЕ был применён
-    // локально (WS доставил MATCHED/APPLIED раньше, чем venue откатил в
-    // FAILED) — это не "пропустить", а desync, требующий эскалации.
+    // навсегда блокируя settlement. Но исключать можно ТОЛЬКО если локально
+    // точно не было commit-активности:
+    // - `APPLIED` — fill уже применён локально (WS доставил MATCHED/APPLIED
+    //   раньше, чем venue откатил в FAILED) → desync, требующий эскалации;
+    // - `RECONCILIATION_REQUIRED` — предыдущая попытка уже частично
+    //   закоммитила Order/Portfolio/Ledger/journal (см. FillCommitPhase в
+    //   ProcessFillUseCase) — это unresolved partial commit, а НЕ «fill не
+    //   применён»; исключение отсюда означало бы, что authoritative remaining
+    //   в фазе 2 посчитан БЕЗ учёта уже частично применённой мутации → тоже
+    //   эскалация;
+    // - `PROCESSING` — конкурентный `ProcessFillUseCase.execute()` МОГ начать
+    //   обработку этого fillId ДО того, как venue сообщил FAILED (например,
+    //   trade был MATCHED на момент begin()), и ещё не завершился. Если
+    //   settle исключит trade здесь и продолжит к release remaining, а
+    //   конкурентный процесс тем временем завершится `APPLIED` — та же
+    //   резервация окажется одновременно released (как «fill не случился») и
+    //   consumed (fill реально применился) — double-use капитала. `kept`, а
+    //   НЕ excluded: следующий прогон увидит финальный статус.
+    // - `undefined`/`FAILED`/`REVERTED` — локальной commit-активности точно
+    //   не было → безопасно исключить (contributes 0).
     const allOrderTrades = trades.filter((t) => String(t.orderId) === String(pending.orderId));
     const orderTrades: typeof allOrderTrades = [];
     for (const trade of allOrderTrades) {
       if (isFailedVenueTradeStatus(trade.status)) {
         const localStatus = await this._deps.processedFillRepo.getStatus(trade.fillId);
-        if (localStatus === 'APPLIED') {
+        if (localStatus === 'APPLIED' || localStatus === 'RECONCILIATION_REQUIRED') {
           await this._escalate(input, pending,
-            `trade ${String(trade.fillId)} was applied locally but venue reports FAILED — reversal required`);
+            `trade ${String(trade.fillId)} has local status ${String(localStatus)} but venue reports FAILED — reversal/reconciliation required`);
           summary.escalated++;
+          return;
+        }
+        if (localStatus === 'PROCESSING') {
+          this._logger.info('FAILED venue trade is still PROCESSING locally — settlement kept pending (concurrent ProcessFillUseCase may still complete)', {
+            orderId: String(pending.orderId),
+            fillId: String(trade.fillId),
+          });
+          summary.kept++;
           return;
         }
         this._logger.info('Trade FAILED on-chain and never applied locally — excluded from terminal settlement', {

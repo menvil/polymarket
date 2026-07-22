@@ -3634,6 +3634,16 @@ async function runLive(): Promise<void> {
 
   const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase({ infra, repos });
 
+  // Единственное чтение флага — переиспользуется И здесь (гейтит settle
+  // внутри orderReconciler.reconcile(), вызываемого на startup/WS reconnect),
+  // И ниже для периодического таймера. Читать в двух местах рисковало бы
+  // рассинхроном (например, если env изменится между двумя process.env
+  // чтениями в теории — на практике исключаем саму возможность).
+  const autoTerminalSettlementEnabled = process.env.ENABLE_AUTO_TERMINAL_SETTLEMENT === 'true';
+  if (!autoTerminalSettlementEnabled) {
+    logger.warn('Automatic terminal settlement is DISABLED (ENABLE_AUTO_TERMINAL_SETTLEMENT != "true") — terminal settlement pending will accumulate until settleTerminalOrdersUseCase is run manually or the flag is enabled');
+  }
+
   const liveInfra = buildLiveInfra({
     credentials,
     infra,
@@ -3642,6 +3652,7 @@ async function runLive(): Promise<void> {
     orderedEventOutbox,
     userWsAdapter,
     accountId,
+    enableAutoTerminalSettlement: autoTerminalSettlementEnabled,
   });
 
   const orderUseCases = buildOrderUseCases({
@@ -4690,15 +4701,14 @@ async function runLive(): Promise<void> {
   // «устоявшегося» venue-состояния (minAbsenceAgeMs).
   //
   // Automatic terminal settlement release (Portfolio release авторитетного
-  // остатка) — за flag'ом ENABLE_AUTO_TERMINAL_SETTLEMENT (default OFF).
-  // Discovery (reconcileUnknownSubmissionsUseCase) НЕ гейтится — read-only,
-  // мутаций не делает. Флаг снимается оператором после верификации на
-  // реальном venue-трафике полноты getTrades()-пагинации/maker-mapping и
+  // остатка) — за flag'ом ENABLE_AUTO_TERMINAL_SETTLEMENT (default OFF,
+  // см. `autoTerminalSettlementEnabled` выше — ОДНО чтение env на весь
+  // runLive(), тот же флаг уже передан в buildLiveInfra() для гейтинга
+  // orderReconciler.reconcile() на startup/WS reconnect). Discovery
+  // (reconcileUnknownSubmissionsUseCase) НЕ гейтится — read-only, мутаций не
+  // делает. Флаг снимается оператором после верификации на реальном
+  // venue-трафике полноты getTrades()-пагинации/maker-mapping и
   // CONFIRMED-only статус-gating (см. docs/architecture/reservation-journal-safety.md).
-  const autoTerminalSettlementEnabled = process.env.ENABLE_AUTO_TERMINAL_SETTLEMENT === 'true';
-  if (!autoTerminalSettlementEnabled) {
-    logger.warn('Automatic terminal settlement is DISABLED (ENABLE_AUTO_TERMINAL_SETTLEMENT != "true") — terminal settlement pending will accumulate until settleTerminalOrdersUseCase is run manually or the flag is enabled');
-  }
   const UNKNOWN_SUBMISSIONS_INTERVAL_MS = 30_000;
   const unknownSubmissionsIntervalId = setInterval(() => {
     // Discovery UNKNOWN submissions (findings/issues, без автоматических решений).
