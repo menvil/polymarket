@@ -8,7 +8,9 @@
  * - `PlaceOrderUseCase`, `ProcessFillUseCase`, `CancelOrderUseCase`
  * - `PortfolioService`, `LedgerService`
  * - `InMemoryOrderRepository`, `InMemoryProcessedFillRepository`
- * - `TestPortfolioStore` (без CAS)
+ * - `TestPortfolioStore` (упрощённое хранилище без CAS-проверки — удобство
+ *   фикстур, НЕ обход несовместимости; см. отдельный describe-блок ниже с
+ *   настоящим `InMemoryPortfolioStore` и реальным CAS)
  * - `EventBus`
  *
  * ### Мок только:
@@ -20,9 +22,12 @@
  * 1. Place → Fill: ордер размещён, исполнен, portfolio.reserved = 0
  * 2. Place → Exchange rejected: резервация откатилась, orderRepo пуст
  * 3. Place → Cancel: ордер отменён, portfolio.reserved = 0
+ * 4. CAS Portfolio (отдельный describe): Place → partial Fill → second Fill,
+ *    и Place → partial Fill → Cancel remaining — на РЕАЛЬНОМ
+ *    `InMemoryPortfolioStore`, version увеличивается корректно на каждом шаге
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { PlaceOrderUseCase } from '../../src/PlaceOrderUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { CancelOrderUseCase } from '../../src/CancelOrderUseCase.js';
@@ -50,7 +55,7 @@ import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value
 import { Balance } from '@polymarket/value-objects/balance';
 import { Fill } from '@polymarket/fill';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import type { IPortfolioStore, IExchangeClient, VersionConflictError } from '@polymarket/ports';
+import type { IPortfolioStore, IExchangeClient, VersionConflictError, IKeyedMutex } from '@polymarket/ports';
 import { ExchangeError } from '@polymarket/ports';
 import type { IOrderRiskChecker } from '@polymarket/risk';
 import type { IClock } from '@polymarket/time';
@@ -61,11 +66,23 @@ import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-m
 import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
 import { InMemoryOrderedEventOutbox } from '../../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
+import { InMemoryPortfolioStore } from '../../../../infrastructure/in-memory/src/InMemoryPortfolioStore.js';
 
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
 /**
- * Упрощённое хранилище Portfolio без CAS (см. Phase 1 объяснение).
+ * Упрощённое хранилище Portfolio без CAS-проверки.
+ *
+ * @remarks
+ * Раньше здесь была причина «PortfolioService всегда вызывает save(_, 0),
+ * что несовместимо с InMemoryPortfolioStore» — это устарело: `PortfolioService`
+ * читает `store.getVersion(accountId)` свежим значением перед каждым `save()`,
+ * реальный CAS работает корректно на протяжении многошаговых flow (см. отдельный
+ * describe-блок ниже — `TradingFlow (integration) — CAS Portfolio`, где те же
+ * сценарии проходят на настоящем `InMemoryPortfolioStore` без единого
+ * `VersionConflictError`). `TestPortfolioStore` здесь остаётся исключительно
+ * ради простоты существующих фикстур (не нужно синхронизировать version
+ * вручную при ручных `portfolioStore.save(portfolio, 0)` в Arrange-блоках).
  */
 class TestPortfolioStore implements IPortfolioStore {
   private readonly _map = new Map<string, Portfolio>();
@@ -142,7 +159,6 @@ function makeClock(): IClock {
 function makePassRiskChecker(): IOrderRiskChecker {
   return {
     checkBeforeOrder: () => Ok(undefined),
-    updateParams: () => {},
   };
 }
 
@@ -169,10 +185,18 @@ function makeExchangeClient(
 
 /**
  * Создаёт Fill для существующего ордера.
+ *
+ * @param orderId - ID ордера (по умолчанию ORDER_ID)
+ * @param overrides - `size`/`fillId` для partial-fill сценариев (несколько
+ *   fill-ов одного ордера требуют РАЗНЫЕ fillId — idempotency guard иначе
+ *   счёл бы второй fill дубликатом первого)
  */
-function makeFill(orderId: OrderId = ORDER_ID): Fill {
+function makeFill(
+  orderId: OrderId = ORDER_ID,
+  overrides: { readonly size?: Quantity; readonly fillId?: string } = {},
+): Fill {
   return unwrap(Fill.create({
-    id: asFillId('fill-trading-flow-001')!,
+    id: asFillId(overrides.fillId ?? 'fill-trading-flow-001')!,
     orderId,
     accountId: ACCOUNT_ID,
     venueId: VENUE_ID,
@@ -180,7 +204,7 @@ function makeFill(orderId: OrderId = ORDER_ID): Fill {
     tokenId: TOKEN_ASSET_ID,
     settlementAssetId: AssetIdHelpers.USDC,
     price: ORDER_PRICE,
-    size: ORDER_SIZE,
+    size: overrides.size ?? ORDER_SIZE,
     side: 'BUY',
     timestamp: unwrap(TimestampService.create(Date.now())),
     fee: Fee.zero(AssetIdHelpers.USDC),
@@ -420,104 +444,10 @@ describe('TradingFlow (integration)', () => {
     expect(portfolioAfterCancel.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
   });
 
-  // ── Конкурентность: ProcessFillUseCase и CancelOrderUseCase сериализуются ──
-
-  it('concurrent ProcessFillUseCase.execute() и CancelOrderUseCase.execute() для одного ордера не пересекаются (реальный InMemoryKeyedMutex)', async () => {
-    // Arrange: размещаем ордер обычным путём
-    const portfolio = makeInitialPortfolio();
-    portfolioStore.save(portfolio, 0);
-
-    const placeDeps: PlaceOrderDeps = {
-      riskChecker: makePassRiskChecker(),
-      orderRepo,
-      portfolioService,
-      keyedMutex,
-      exchangeClient: makeExchangeClient(),
-      orderStateStore: orderRepo,
-      orderedEventOutbox,
-      submissions: orderSubmissionRepo,
-      clock: makeClock(),
-      logger: LOGGER,
-    };
-    const input: PlaceOrderInput = {
-      orderId: ORDER_ID,
-      accountId: ACCOUNT_ID,
-      asset: TOKEN_ASSET_ID,
-      instrumentId: INSTRUMENT_ID,
-      side: 'BUY',
-      price: ORDER_PRICE,
-      size: ORDER_SIZE,
-      portfolio,
-      openOrdersCount: 0,
-    };
-    const placeResult = await new PlaceOrderUseCase(placeDeps).execute(input);
-    expect(placeResult.ok).toBe(true);
-
-    // Инструментируем РЕАЛЬНЫЙ InMemoryKeyedMutex — считаем максимум одновременных
-    // "владений" ключом. Если сериализация сломана, concurrent-счётчик превысит 1.
-    let active = 0;
-    let maxActive = 0;
-    const originalRunExclusive = keyedMutex.runExclusive.bind(keyedMutex);
-    const instrumentedMutex = {
-      runExclusive: async <T>(keys: readonly string[], fn: () => Promise<T>): Promise<T> =>
-        originalRunExclusive(keys, async () => {
-          active++;
-          maxActive = Math.max(maxActive, active);
-          try {
-            // Искусственная задержка внутри критической секции — увеличивает
-            // окно, в котором конкурентный вызов мог бы вклиниться, если бы
-            // сериализация не работала.
-            await new Promise((resolve) => setTimeout(resolve, 5));
-            return await fn();
-          } finally {
-            active--;
-          }
-        }),
-    };
-
-    const processFillUseCase = new ProcessFillUseCase({
-      orderStateStore: orderRepo,
-      portfolioService,
-      ledgerService,
-      orderRepo,
-      processedFillRepo,
-      keyedMutex: instrumentedMutex,
-      eventBus,
-      orderedEventOutbox,
-      submissions: orderSubmissionRepo,
-      logger: LOGGER,
-    });
-    const cancelOrderUseCase = new CancelOrderUseCase({
-      portfolioService,
-      orderRepo,
-      orderStateStore: orderRepo,
-      keyedMutex: instrumentedMutex,
-      exchangeClient: makeExchangeClient(),
-      orderedEventOutbox,
-      submissions: orderSubmissionRepo,
-      logger: LOGGER,
-    });
-
-    // Act: запускаем fill и cancel КОНКУРЕНТНО для одного и того же orderId
-    const [fillResult, cancelResult] = await Promise.all([
-      processFillUseCase.execute(makeFill()),
-      cancelOrderUseCase.execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID, reason: 'race test' }),
-    ]);
-
-    // Assert: оба вызова завершились без исключений (успех или контролируемый skip)
-    expect(fillResult.ok).toBe(true);
-    expect(cancelResult.ok).toBe(true);
-
-    // Assert: критическая секция никогда не выполнялась параллельно
-    expect(maxActive).toBe(1);
-
-    // Assert: итоговое состояние ордера согласовано — либо FILLED (fill выиграл
-    // гонку, cancel увидел terminal/matched и стал no-op), либо CANCELED (cancel
-    // выиграл, fill применился как direct-fill на уже terminal ордер) — но НЕ
-    // повреждённое промежуточное состояние.
-    const finalOrder = await orderRepo.get(ORDER_ID);
-    expect(['FILLED', 'CANCELED']).toContain(finalOrder?.status);
-  });
+  // ── Конкурентность Fill vs Cancel: см. отдельный describe ниже ─────────────
+  // ("TradingFlow (integration) — CAS Portfolio", два детерминированных
+  // сценария Fill-first/Cancel-first с promise-защёлками вместо setTimeout
+  // и полными accounting-инвариантами вместо только maxActive+status).
 
   // ── Сценарий A (P0): ambiguous submit → held reservation → Fill ─────────────
 
@@ -610,5 +540,396 @@ describe('TradingFlow (integration)', () => {
     // 5. reserved → 0 (потреблено РОВНО один раз), позиция создана.
     expect(portfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
     expect(portfolioStore.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeGreaterThan(0);
+  });
+});
+
+// ── CAS Portfolio: реальный InMemoryPortfolioStore (не TestPortfolioStore) ────
+
+/**
+ * @remarks
+ * `TestPortfolioStore` выше (и в `ProcessFillUseCase.integration.test.ts`)
+ * документирован как обход несовместимости с CAS: «PortfolioService всегда
+ * вызывает save(_, 0)». Это устарело — `PortfolioService` читает
+ * `store.getVersion(accountId)` СВЕЖИМ значением непосредственно перед КАЖДЫМ
+ * `save()` (см. `reserveForOrder`/`applyFill`/`releaseReservation` и т.д.), а
+ * не хардкодит версию. Эти тесты используют РЕАЛЬНЫЙ `InMemoryPortfolioStore`
+ * (с настоящим CAS: конфликт версии → `VersionConflictError`) через полный
+ * многошаговый flow, чтобы эмпирически подтвердить это — а не полагаться на
+ * статическое чтение кода.
+ */
+describe('TradingFlow (integration) — CAS Portfolio (реальный InMemoryPortfolioStore)', () => {
+  let orderRepo: InMemoryOrderRepository;
+  let processedFillRepo: InMemoryProcessedFillRepository;
+  let keyedMutex: InMemoryKeyedMutex;
+  let realPortfolioStore: InMemoryPortfolioStore;
+  let eventBus: EventBus;
+  let portfolioService: PortfolioService;
+  let ledgerService: LedgerService;
+  let orderedEventOutbox: InMemoryOrderedEventOutbox;
+  let orderSubmissionRepo: InMemoryOrderSubmissionRepository;
+
+  beforeEach(() => {
+    orderRepo = new InMemoryOrderRepository();
+    processedFillRepo = new InMemoryProcessedFillRepository();
+    keyedMutex = new InMemoryKeyedMutex();
+    realPortfolioStore = new InMemoryPortfolioStore();
+    eventBus = new EventBus(LOGGER);
+    portfolioService = new PortfolioService(realPortfolioStore, LOGGER);
+    ledgerService = new LedgerService(LOGGER);
+    orderedEventOutbox = new InMemoryOrderedEventOutbox({
+      publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+      logger: LOGGER,
+    });
+    orderSubmissionRepo = new InMemoryOrderSubmissionRepository();
+  });
+
+  afterEach(() => {
+    orderRepo.clear();
+    processedFillRepo.clear();
+    realPortfolioStore.clear();
+  });
+
+  it('Place → partial Fill → second Fill: версия увеличивается на каждом шаге (без VersionConflictError), reserved=0, position/available корректны', async () => {
+    const portfolio = makeInitialPortfolio();
+    expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
+    let version = realPortfolioStore.getVersion(ACCOUNT_ID);
+    expect(version).toBe(1);
+
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo,
+      portfolioService,
+      keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
+      clock: makeClock(),
+      logger: LOGGER,
+    };
+    const input: PlaceOrderInput = {
+      orderId: ORDER_ID,
+      accountId: ACCOUNT_ID,
+      asset: TOKEN_ASSET_ID,
+      instrumentId: INSTRUMENT_ID,
+      side: 'BUY',
+      price: ORDER_PRICE,
+      size: ORDER_SIZE,
+      portfolio,
+      openOrdersCount: 0,
+    };
+
+    // Place: reserve NOTIONAL под CAS.
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute(input);
+    expect(placeResult.ok).toBe(true);
+    expect(realPortfolioStore.getVersion(ACCOUNT_ID)).toBeGreaterThan(version);
+    version = realPortfolioStore.getVersion(ACCOUNT_ID);
+    expect(realPortfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(NOTIONAL.toNumber(), 6);
+
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo,
+      portfolioService,
+      ledgerService,
+      orderRepo,
+      processedFillRepo,
+      keyedMutex,
+      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
+      logger: LOGGER,
+    });
+
+    // Partial fill: 30 из 50 — Order → PARTIALLY_FILLED, ВТОРОЙ real save() под CAS.
+    const firstFill = makeFill(ORDER_ID, { size: Quantity.of(new Decimal('30')), fillId: 'fill-cas-partial-1' });
+    const firstFillResult = await processFillUseCase.execute(firstFill);
+    expect(firstFillResult.ok).toBe(true);
+    expect(realPortfolioStore.getVersion(ACCOUNT_ID)).toBeGreaterThan(version);
+    version = realPortfolioStore.getVersion(ACCOUNT_ID);
+    expect((await orderRepo.get(ORDER_ID))?.status).toBe('PARTIALLY_FILLED');
+
+    // Второй fill: оставшиеся 20 — Order → FILLED, ТРЕТИЙ real save() под CAS
+    // (если бы CAS был сломан несовместимостью версий — этот вызов вернул бы
+    // VersionConflictError, и execute() вернул бы Err).
+    const secondFill = makeFill(ORDER_ID, { size: Quantity.of(new Decimal('20')), fillId: 'fill-cas-partial-2' });
+    const secondFillResult = await processFillUseCase.execute(secondFill);
+    expect(secondFillResult.ok).toBe(true);
+    expect(realPortfolioStore.getVersion(ACCOUNT_ID)).toBeGreaterThan(version);
+
+    const finalOrder = await orderRepo.get(ORDER_ID);
+    expect(finalOrder?.status).toBe('FILLED');
+
+    const finalPortfolio = realPortfolioStore.get(ACCOUNT_ID)!;
+    expect(finalPortfolio.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    expect(finalPortfolio.balance.available().value().toNumber()).toBeCloseTo(
+      new Decimal('1000').minus(NOTIONAL).toNumber(), 6,
+    );
+    expect(finalPortfolio.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeCloseTo(50, 6);
+  });
+
+  it('Place → partial Fill → Cancel remaining: journal consumed + released = исходная reservation, CAS работает на протяжении всего flow', async () => {
+    const portfolio = makeInitialPortfolio();
+    expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
+
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo,
+      portfolioService,
+      keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
+      clock: makeClock(),
+      logger: LOGGER,
+    };
+    const input: PlaceOrderInput = {
+      orderId: ORDER_ID,
+      accountId: ACCOUNT_ID,
+      asset: TOKEN_ASSET_ID,
+      instrumentId: INSTRUMENT_ID,
+      side: 'BUY',
+      price: ORDER_PRICE,
+      size: ORDER_SIZE,
+      portfolio,
+      openOrdersCount: 0,
+    };
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute(input);
+    expect(placeResult.ok).toBe(true);
+
+    const initialReservation = (await orderSubmissionRepo.get(ORDER_ID))?.reservation;
+    expect(initialReservation?.status).toBe('HELD');
+    const initialAmount = new Decimal(initialReservation!.initial);
+    expect(initialAmount.toNumber()).toBeCloseTo(NOTIONAL.toNumber(), 6);
+
+    // Partial fill: 30 из 50.
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo,
+      portfolioService,
+      ledgerService,
+      orderRepo,
+      processedFillRepo,
+      keyedMutex,
+      eventBus,
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
+      logger: LOGGER,
+    });
+    const partialFill = makeFill(ORDER_ID, { size: Quantity.of(new Decimal('30')), fillId: 'fill-cas-cancel-partial' });
+    const partialFillResult = await processFillUseCase.execute(partialFill);
+    expect(partialFillResult.ok).toBe(true);
+    expect((await orderRepo.get(ORDER_ID))?.status).toBe('PARTIALLY_FILLED');
+
+    // Cancel остатка (20 из 50 непокрыты) — под тем же реальным CAS Portfolio.
+    const cancelDeps: CancelOrderDeps = {
+      portfolioService,
+      orderRepo,
+      orderStateStore: orderRepo,
+      keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderedEventOutbox,
+      submissions: orderSubmissionRepo,
+      logger: LOGGER,
+    };
+    const cancelResult = await new CancelOrderUseCase(cancelDeps).execute({
+      orderId: ORDER_ID, accountId: ACCOUNT_ID, reason: 'cancel remaining after partial fill',
+    });
+    expect(cancelResult.ok).toBe(true);
+    expect((await orderRepo.get(ORDER_ID))?.status).toBe('CANCELED');
+
+    // Journal: consumed (fill) + released (cancel) = исходная reservation, remaining = 0.
+    const finalReservation = (await orderSubmissionRepo.get(ORDER_ID))?.reservation;
+    expect(finalReservation?.status).toBe('SETTLED');
+    expect(new Decimal(finalReservation!.remaining).toNumber()).toBeCloseTo(0, 6);
+    const consumedPlusReleased = new Decimal(finalReservation!.consumed).plus(finalReservation!.released);
+    expect(consumedPlusReleased.toNumber()).toBeCloseTo(initialAmount.toNumber(), 6);
+
+    // Portfolio: reserved = 0 (ничего не осталось замороженным), CAS не сломался.
+    const finalPortfolio = realPortfolioStore.get(ACCOUNT_ID)!;
+    expect(finalPortfolio.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    expect(finalPortfolio.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeCloseTo(30, 6);
+  });
+
+  // ── Race Fill vs Cancel: детерминированные сценарии (promise-защёлки) ─────
+
+  /**
+   * Оборачивает реальный `IKeyedMutex` так, что ПЕРВЫЙ вызов `runExclusive`
+   * приостанавливается ВНУТРИ критической секции (держит lock) до явного
+   * `releaseFirst()`. `entered` резолвится, когда первый вызов действительно
+   * вошёл (держит lock) — с этого момента безопасно запускать второй
+   * (конкурентный) вызов и проверять, что ОН заблокирован на том же ключе,
+   * НЕ полагаясь на `setTimeout`-окно.
+   */
+  function makeControllableMutex(real: IKeyedMutex): {
+    readonly mutex: IKeyedMutex;
+    readonly entered: Promise<void>;
+    readonly releaseFirst: () => void;
+  } {
+    let firstSeen = false;
+    let resolveEntered!: () => void;
+    const entered = new Promise<void>((resolve) => { resolveEntered = resolve; });
+    let resolveRelease!: () => void;
+    const release = new Promise<void>((resolve) => { resolveRelease = resolve; });
+    const mutex: IKeyedMutex = {
+      runExclusive: async <T>(keys: readonly string[], fn: () => Promise<T>): Promise<T> =>
+        real.runExclusive(keys, async () => {
+          if (!firstSeen) {
+            firstSeen = true;
+            resolveEntered();
+            await release;
+          }
+          return fn();
+        }),
+    };
+    return { mutex, entered, releaseFirst: () => resolveRelease() };
+  }
+
+  it('Race (детерминированный): Fill выигрывает — Cancel НИКОГДА не достигает venue, Order=FILLED, reservation=SETTLED, Portfolio изменён ровно один раз', async () => {
+    const portfolio = makeInitialPortfolio();
+    expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
+
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo, portfolioService, keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo, orderedEventOutbox, submissions: orderSubmissionRepo,
+      clock: makeClock(), logger: LOGGER,
+    };
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute({
+      orderId: ORDER_ID, accountId: ACCOUNT_ID, asset: TOKEN_ASSET_ID, instrumentId: INSTRUMENT_ID,
+      side: 'BUY', price: ORDER_PRICE, size: ORDER_SIZE, portfolio, openOrdersCount: 0,
+    });
+    expect(placeResult.ok).toBe(true);
+
+    const { mutex, entered, releaseFirst } = makeControllableMutex(keyedMutex);
+    const applyFillSpy = jest.spyOn(portfolioService, 'applyFill');
+    const releaseReservationSpy = jest.spyOn(portfolioService, 'releaseReservation');
+    const cancelOrder = jest.fn(async () => Ok({ status: 'CANCELLED' as const }));
+    const exchangeClient: IExchangeClient = { ...makeExchangeClient(), cancelOrder };
+
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
+      keyedMutex: mutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+    const cancelOrderUseCase = new CancelOrderUseCase({
+      portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex: mutex,
+      exchangeClient, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+
+    // Fill входит в mutex первым и приостанавливается там (управляемый gate).
+    const fillId = 'fill-race-fill-wins';
+    const fillPromise = processFillUseCase.execute(makeFill(ORDER_ID, { fillId }));
+    await entered;
+
+    // Cancel запускается, ПОКА Fill держит lock — обязан встать в очередь и
+    // НЕ достигнуть venue (cancelOrder вызывается только внутри lock).
+    const cancelPromise = cancelOrderUseCase.execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID, reason: 'race: fill wins' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(cancelOrder).not.toHaveBeenCalled();
+
+    releaseFirst(); // Fill продолжает и завершается; затем Cancel разблокируется.
+    const [fillResult, cancelResult] = await Promise.all([fillPromise, cancelPromise]);
+
+    expect(fillResult.ok).toBe(true);
+    expect(cancelResult.ok).toBe(true);
+    if (cancelResult.ok) expect(cancelResult.value.status).toBe('ALREADY_FILLED');
+    // Cancel НИКОГДА не достиг venue — увидел terminal Order (FILLED) до контакта с exchangeClient.
+    expect(cancelOrder).not.toHaveBeenCalled();
+
+    const finalOrder = await orderRepo.get(ORDER_ID);
+    expect(finalOrder?.status).toBe('FILLED');
+    expect(await processedFillRepo.getStatus(asFillId(fillId)!)).toBe('APPLIED');
+    expect((await orderSubmissionRepo.get(ORDER_ID))?.reservation.status).toBe('SETTLED');
+
+    const finalPortfolio = realPortfolioStore.get(ACCOUNT_ID)!;
+    expect(finalPortfolio.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    expect(finalPortfolio.balance.available().value().toNumber()).toBeCloseTo(
+      new Decimal('1000').minus(NOTIONAL).toNumber(), 6,
+    );
+    expect(finalPortfolio.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeCloseTo(50, 6);
+
+    // Portfolio изменён РОВНО один раз (normal fill path); Cancel НИКОГДА не
+    // освобождал резервацию повторно.
+    expect(applyFillSpy).toHaveBeenCalledTimes(1);
+    expect(releaseReservationSpy).not.toHaveBeenCalled();
+
+    // Ledger записан один раз (POSITION_DELTA + CASH_DELTA — 2 баланса, не 4).
+    expect(ledgerService.ledger.getAllBalances(ACCOUNT_ID).size).toBe(2);
+  });
+
+  it('Race (детерминированный): Cancel выигрывает — release выполнен один раз, delayed Fill идёт через direct-fill path, итоговый баланс без двойного release/debit', async () => {
+    const portfolio = makeInitialPortfolio();
+    expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
+
+    const placeDeps: PlaceOrderDeps = {
+      riskChecker: makePassRiskChecker(),
+      orderRepo, portfolioService, keyedMutex,
+      exchangeClient: makeExchangeClient(),
+      orderStateStore: orderRepo, orderedEventOutbox, submissions: orderSubmissionRepo,
+      clock: makeClock(), logger: LOGGER,
+    };
+    const placeResult = await new PlaceOrderUseCase(placeDeps).execute({
+      orderId: ORDER_ID, accountId: ACCOUNT_ID, asset: TOKEN_ASSET_ID, instrumentId: INSTRUMENT_ID,
+      side: 'BUY', price: ORDER_PRICE, size: ORDER_SIZE, portfolio, openOrdersCount: 0,
+    });
+    expect(placeResult.ok).toBe(true);
+
+    const { mutex, entered, releaseFirst } = makeControllableMutex(keyedMutex);
+    const releaseReservationSpy = jest.spyOn(portfolioService, 'releaseReservation');
+    const applyDirectFillSpy = jest.spyOn(portfolioService, 'applyDirectFill');
+    const applyFillSpy = jest.spyOn(portfolioService, 'applyFill');
+
+    const cancelOrderUseCase = new CancelOrderUseCase({
+      portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex: mutex,
+      exchangeClient: makeExchangeClient(), orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+    const processFillUseCase = new ProcessFillUseCase({
+      orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
+      keyedMutex: mutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
+    });
+
+    // Cancel входит в mutex первым и приостанавливается там.
+    const cancelPromise = cancelOrderUseCase.execute({ orderId: ORDER_ID, accountId: ACCOUNT_ID, reason: 'race: cancel wins' });
+    await entered;
+
+    // Fill запускается, ПОКА Cancel держит lock — begin() (P1: внутри mutex)
+    // не мог ещё выполниться, fillId остаётся неизвестным processedFillRepo.
+    const fillId = 'fill-race-cancel-wins';
+    const fillPromise = processFillUseCase.execute(makeFill(ORDER_ID, { fillId }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await processedFillRepo.getStatus(asFillId(fillId)!)).toBeUndefined();
+
+    releaseFirst(); // Cancel продолжает и завершается; затем Fill разблокируется.
+    const [cancelResult, fillResult] = await Promise.all([cancelPromise, fillPromise]);
+
+    expect(cancelResult.ok).toBe(true);
+    if (cancelResult.ok) expect(cancelResult.value.status).toBe('CANCELLED');
+    expect(fillResult.ok).toBe(true);
+
+    // Order остаётся CANCELED — direct-fill path НЕ переписывает Order.
+    const finalOrder = await orderRepo.get(ORDER_ID);
+    expect(finalOrder?.status).toBe('CANCELED');
+    expect(await processedFillRepo.getStatus(asFillId(fillId)!)).toBe('APPLIED');
+
+    const finalReservation = (await orderSubmissionRepo.get(ORDER_ID))?.reservation;
+    expect(finalReservation?.status).toBe('SETTLED');
+    expect(new Decimal(finalReservation!.remaining).toNumber()).toBeCloseTo(0, 6);
+
+    const finalPortfolio = realPortfolioStore.get(ACCOUNT_ID)!;
+    expect(finalPortfolio.balance.reserved().value().toNumber()).toBeCloseTo(0, 6);
+    // Итоговый available соответствует venue outcome: release вернул NOTIONAL,
+    // затем direct-fill списал ровно NOTIONAL обратно — net идентичен normal fill.
+    expect(finalPortfolio.balance.available().value().toNumber()).toBeCloseTo(
+      new Decimal('1000').minus(NOTIONAL).toNumber(), 6,
+    );
+    expect(finalPortfolio.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeCloseTo(50, 6);
+
+    // release выполнен РОВНО один раз (Cancel); direct-fill применён РОВНО один
+    // раз (Fill); normal-fill path НЕ вызывался (Order уже terminal к моменту Fill).
+    expect(releaseReservationSpy).toHaveBeenCalledTimes(1);
+    expect(applyDirectFillSpy).toHaveBeenCalledTimes(1);
+    expect(applyFillSpy).not.toHaveBeenCalled();
+
+    // Ledger записан один раз (через direct-fill path).
+    expect(ledgerService.ledger.getAllBalances(ACCOUNT_ID).size).toBe(2);
   });
 });

@@ -8,21 +8,17 @@
  * - `ProcessFillUseCase` — оркестратор
  * - `InMemoryOrderRepository` — хранилище ордеров
  * - `InMemoryProcessedFillRepository` — idempotency guard
- * - `TestPortfolioStore` — упрощённое хранилище (без CAS)
+ * - `TestPortfolioStore` — упрощённое хранилище без CAS-проверки (удобство
+ *   фикстур; `PortfolioService` корректно работает и с реальным CAS-хранилищем
+ *   — см. `TradingFlow.integration.test.ts`, describe-блок «CAS Portfolio»)
  * - `LedgerService` + `Ledger` — учёт операций
  * - `EventBus` — реальная шина событий
- *
- * ### Почему TestPortfolioStore вместо InMemoryPortfolioStore:
- * `PortfolioService` всегда вызывает `store.save(portfolio, 0)`.
- * `InMemoryPortfolioStore` после первого save увеличивает версию до 1,
- * и следующий `save(_, 0)` возвращает `VersionConflictError`.
- * `TestPortfolioStore` игнорирует version — корректно для тестов одного потока.
  *
  * ### Сценарии:
  * 1. BUY fill happy path: Order → FILLED, Ledger содержит записи, событие опубликовано
  * 2. Idempotency: повторный fill → Ok без изменений
  * 3. Partial fill × 2: VWAP и статусы корректны
- * 4. Order не найден → Err
+ * 4. Order не найден → Ok, portfolio обновлён через direct-fill path
  * 5. Portfolio не найден → Err
  */
 
@@ -65,17 +61,14 @@ import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in
 // ── TestPortfolioStore ────────────────────────────────────────────────────────
 
 /**
- * Упрощённое хранилище Portfolio без CAS-защиты.
+ * Упрощённое хранилище Portfolio без CAS-проверки.
  *
  * @remarks
- * `IPortfolioStore.save(portfolio, expectedVersion)` в `InMemoryPortfolioStore`
- * реализует CAS: после первого save версия становится 1, второй вызов
- * `save(_, 0)` завершается `VersionConflictError`. `PortfolioService` всегда
- * вызывает `save(_, 0)`, что делает `InMemoryPortfolioStore` несовместимым
- * с многошаговыми тестами (2+ fills на одном аккаунте).
- *
- * `TestPortfolioStore` игнорирует `expectedVersion` — корректно для
- * однопоточных тестов где конкурентных writes нет.
+ * `PortfolioService` читает `store.getVersion(accountId)` свежим значением
+ * перед каждым `save()` — реальный `InMemoryPortfolioStore` (с настоящим CAS)
+ * корректно работает и в многошаговых тестах (см. `TradingFlow.integration.test.ts`,
+ * describe «CAS Portfolio»). `TestPortfolioStore` здесь — просто удобство
+ * фикстур (не нужно синхронизировать version вручную).
  */
 class TestPortfolioStore implements IPortfolioStore {
   private readonly _map = new Map<string, Portfolio>();

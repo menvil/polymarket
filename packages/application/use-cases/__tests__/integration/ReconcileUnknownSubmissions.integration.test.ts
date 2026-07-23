@@ -147,7 +147,6 @@ function makeStatefulProcessedFillRepo(): IProcessedFillRepository {
 function makeRiskChecker(): IOrderRiskChecker {
   return {
     checkBeforeOrder: jest.fn<IOrderRiskChecker['checkBeforeOrder']>().mockReturnValue(Ok(undefined)),
-    updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
   };
 }
 

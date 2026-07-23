@@ -22,10 +22,12 @@ import type {
 } from '@polymarket/ports';
 import { ExchangeError } from '@polymarket/ports';
 import type { AccountId, AssetId, FillId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { IPosition } from '@polymarket/portfolio';
+import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import type { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, Money } from '@polymarket/value-objects';
+import { Balance } from '@polymarket/value-objects/balance';
 import { UpdateOrderStatusUseCase } from '../../src/UpdateOrderStatusUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { SettleTerminalOrdersUseCase } from '../../src/SettleTerminalOrdersUseCase.js';
@@ -36,6 +38,7 @@ import { InMemoryOrderSubmissionRepository } from '../../../../infrastructure/in
 import { InMemoryOrderedEventOutbox } from '../../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import { InMemoryProcessedFillRepository } from '../../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
 import { InMemoryKeyedMutex } from '../../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
+import { InMemoryPortfolioStore } from '../../../../infrastructure/in-memory/src/InMemoryPortfolioStore.js';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -540,5 +543,159 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     if (settleResult.ok) expect(settleResult.value).toMatchObject({ kept: 1, settled: 0 });
     expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
     expect(portfolio.releaseReservation).not.toHaveBeenCalled();
+  });
+});
+
+// ── Stateful: реальный Portfolio (не мок с фиксированными значениями) ─────────
+
+/**
+ * @remarks
+ * Основной describe выше проверяет "available не завышен" КОСВЕННО — через
+ * отсутствие вызова `releaseReservation` на мок-Portfolio с фиксированными
+ * `available=10000`/`reserved=65`, которые НЕ меняются от `applyDebit`/
+ * `releaseReservation` (это jest.fn(), просто возвращающие `Ok`). Этот блок
+ * использует РЕАЛЬНЫЙ `Portfolio` + `PortfolioService` + `InMemoryPortfolioStore`
+ * — числа baseline/available/reserved проверяются напрямую на каждом шаге, а
+ * не через факт вызова/невызова мок-метода.
+ */
+describe('TerminalSettlementPending + SettleTerminalOrdersUseCase — stateful (реальный Portfolio)', () => {
+  let logger: ILogger;
+  let eventBus: IEventBus;
+  let clock: IClock;
+  let store: InMemoryOrderRepository;
+  let submissions: InMemoryOrderSubmissionRepository;
+  let processedFillRepo: InMemoryProcessedFillRepository;
+  let realPortfolioStore: InMemoryPortfolioStore;
+  let portfolioService: PortfolioService;
+  let ledgerService: LedgerService;
+  let processFill: ProcessFillUseCase;
+  let realMutex: InMemoryKeyedMutex;
+
+  beforeEach(async () => {
+    logger = makeLogger();
+    eventBus = makeEventBus();
+    clock = { now: jest.fn(() => new Date('2026-01-01T00:00:00.000Z')) };
+    store = new InMemoryOrderRepository();
+    submissions = new InMemoryOrderSubmissionRepository();
+    processedFillRepo = new InMemoryProcessedFillRepository();
+    realPortfolioStore = new InMemoryPortfolioStore();
+    portfolioService = new PortfolioService(realPortfolioStore, logger);
+    ledgerService = new LedgerService(makeLogger());
+    jest.spyOn(ledgerService as unknown as { recordFill: (f: Fill) => void }, 'recordFill').mockReturnValue(undefined);
+    realMutex = new InMemoryKeyedMutex();
+    processFill = new ProcessFillUseCase({
+      orderStateStore: store,
+      portfolioService,
+      ledgerService,
+      orderRepo: store,
+      processedFillRepo,
+      keyedMutex: realMutex,
+      eventBus,
+      orderedEventOutbox: makeOutbox(eventBus),
+      submissions,
+      logger,
+      clock,
+    });
+
+    // Seed: 1000 USDC available, 0 reserved — реальный Portfolio aggregate.
+    const initialPortfolio = Portfolio.create({
+      id: asPortfolioId('portfolio-settle-stateful')!,
+      accountId: ACCOUNT_ID,
+      balance: Balance.withZeroReserved(Money.of(new Decimal('1000'), 'USDC'), ACCOUNT_ID, 'POLYMARKET' as never),
+    });
+    if (!initialPortfolio.ok) throw new Error('Failed to create initial Portfolio');
+    const saveResult = realPortfolioStore.save(initialPortfolio.value, 0);
+    if (!saveResult.ok) throw new Error('Failed to save initial Portfolio');
+
+    // Reserve 65 USDC под BUY 100 @ 0.65 (как PlaceOrderUseCase перед submit) —
+    // available: 1000 → 935, reserved: 0 → 65.
+    const reserveResult = portfolioService.reserveForOrder(ACCOUNT_ID, new Decimal('65'));
+    if (!reserveResult.ok) throw new Error('Failed to reserve');
+
+    // Seed: live Order + held journal 65 USDC (BUY 100 @ 0.65).
+    const save = await store.save(makeOpenOrder(), 0);
+    if (!save.ok) throw new Error('seed order save failed');
+    await submissions.begin({
+      clientOrderId: CLIENT_ID, accountId: ACCOUNT_ID, instrumentId: INSTRUMENT_ID,
+      fingerprint: 'fp', side: 'BUY', orderPrice: '0.65', requestedSize: '100', now: new Date(),
+    });
+    await submissions.markReservationHeld(CLIENT_ID, '65', new Date());
+    await submissions.markCommitted(CLIENT_ID, ORDER_ID, new Date());
+  });
+
+  function makeUpdate(): UpdateOrderStatusUseCase {
+    return new UpdateOrderStatusUseCase({
+      orderRepo: store,
+      orderStateStore: store,
+      portfolioService,
+      keyedMutex: realMutex,
+      orderedEventOutbox: makeOutbox(eventBus),
+      submissions,
+      logger,
+      clock,
+    });
+  }
+
+  function makeSettle(trades: readonly VenueTradeSnapshot[]): SettleTerminalOrdersUseCase {
+    const exchangeClient: IExchangeClient = {
+      submitOrder: jest.fn<IExchangeClient['submitOrder']>(),
+      cancelOrder: jest.fn<IExchangeClient['cancelOrder']>(),
+      getOpenOrders: jest.fn<IExchangeClient['getOpenOrders']>().mockResolvedValue(Ok([])),
+      getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([...trades])),
+    };
+    return new SettleTerminalOrdersUseCase({
+      orderStateStore: store,
+      submissions,
+      portfolioService,
+      exchangeClient,
+      processedFillRepo,
+      fillProcessor: processFill,
+      tradeToFill: (trade) => Ok(makeFill(String(trade.fillId), trade.size.value().toString())),
+      keyedMutex: realMutex,
+      clock,
+      logger,
+      minSettleDelayMs: 0,
+    });
+  }
+
+  it('partial fill на venue → CANCELLED первым → delayed fill → settlement: точные available/reserved/position на каждом шаге', async () => {
+    const balanceOf = (): { available: number; reserved: number } => {
+      const p = realPortfolioStore.get(ACCOUNT_ID)!;
+      return {
+        available: p.balance.available().value().toNumber(),
+        reserved: p.balance.reserved().value().toNumber(),
+      };
+    };
+
+    // 1. До CANCELLED: available=935, reserved=65 (reserve уже выполнен в beforeEach).
+    expect(balanceOf()).toEqual({ available: 935, reserved: 65 });
+
+    // 2. CANCELLED приходит ПЕРВЫМ (до delayed fill) — held reservation НЕ
+    //    освобождается немедленно (TerminalSettlementPending), баланс не меняется.
+    const updateResult = await makeUpdate().execute({
+      update: { type: 'CANCELLED', orderId: ORDER_ID },
+      accountId: ACCOUNT_ID,
+    });
+    expect(updateResult.ok).toBe(true);
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(true);
+    expect(balanceOf()).toEqual({ available: 935, reserved: 65 });
+
+    // 3. Settle-резолвер: venue сообщает partial trade 50 @ 0.65 (delayed fill).
+    //    Fill применяется held-reservation path: available НЕ трогается, только
+    //    reserved уменьшается на потреблённую часть (32.5).
+    const settleResult = await makeSettle([makeTradeSnapshot('50')]).execute({ accountId: ACCOUNT_ID });
+    expect(settleResult.ok).toBe(true);
+    if (settleResult.ok) expect(settleResult.value).toMatchObject({ scanned: 1, settled: 1, kept: 0, escalated: 0 });
+
+    // 4. После settlement: fill потреблён (reserved 65→32.5 held, затем remaining
+    //    32.5 освобождён в available) → available=967.5, reserved=0, position=50.
+    expect(balanceOf()).toEqual({ available: 967.5, reserved: 0 });
+    const finalPortfolio = realPortfolioStore.get(ACCOUNT_ID)!;
+    expect(finalPortfolio.getPosition(INSTRUMENT_ID)?.quantity.value().toNumber()).toBeCloseTo(50, 6);
+
+    // 5. Journal: SETTLED, remaining=0; block снят.
+    const record = await submissions.get(CLIENT_ID);
+    expect(record?.reservation).toMatchObject({ status: 'SETTLED', remaining: '0', consumed: '32.5', released: '32.5' });
+    expect(store.hasTerminalSettlementPendingForOrder(ORDER_ID)).toBe(false);
   });
 });

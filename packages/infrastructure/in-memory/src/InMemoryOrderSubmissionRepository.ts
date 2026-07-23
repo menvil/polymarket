@@ -49,6 +49,7 @@
  */
 import Decimal from 'decimal.js';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
+import { accountIdToString } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type {
@@ -455,6 +456,69 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
       if (record.status === status) result.push(this._snapshot(record));
     }
     return result;
+  }
+
+  /**
+   * Суммарное количество токенов по held BUY-резервациям (accountId, instrumentId).
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента
+   * @returns `Ok(Decimal)` с суммой токенов, `Err` при повреждённых данных (fail-closed)
+   *
+   * @remarks
+   * Итерирует все записи, отбирает BUY по совпадению account+instrument с held
+   * резервацией (`HELD`/`PARTIALLY_SETTLED`/`RECONCILIATION_REQUIRED`,
+   * `remaining > 0`), суммирует `remaining / orderPrice`. Запись с
+   * `reservation.status === 'NONE'` (текущая submission до held) не проходит фильтр
+   * (`remaining === 0`). При невалидных `orderPrice`/`remaining` — `Err`
+   * (fail-closed: caller блокирует BUY). См. doc порта.
+   */
+  public async getPendingBuyQuantityForInstrument(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+  ): Promise<Result<Decimal, ReservationTransitionError>> {
+    const accKey = accountIdToString(accountId);
+    const instKey = String(instrumentId);
+    let total = new Decimal(0);
+    for (const record of this._records.values()) {
+      if (record.side !== 'BUY') continue;
+      if (accountIdToString(record.accountId) !== accKey) continue;
+      if (String(record.instrumentId) !== instKey) continue;
+
+      const res = record.reservation;
+      const heldStatus =
+        res.status === 'HELD' ||
+        res.status === 'PARTIALLY_SETTLED' ||
+        res.status === 'RECONCILIATION_REQUIRED';
+      if (!heldStatus) continue;
+
+      let remaining: Decimal;
+      let price: Decimal;
+      try {
+        remaining = new Decimal(res.remaining);
+        price = new Decimal(record.orderPrice);
+      } catch {
+        return Err(new ReservationTransitionError(
+          'INVARIANT_VIOLATION',
+          `getPendingBuyQuantityForInstrument: corrupt reservation/price data for clientOrderId ${String(record.clientOrderId)} (remaining=${res.remaining}, orderPrice=${record.orderPrice})`,
+        ));
+      }
+      if (!remaining.isFinite() || remaining.isNegative()) {
+        return Err(new ReservationTransitionError(
+          'INVARIANT_VIOLATION',
+          `getPendingBuyQuantityForInstrument: invalid remaining=${res.remaining} for clientOrderId ${String(record.clientOrderId)}`,
+        ));
+      }
+      if (remaining.isZero()) continue;
+      if (!price.isFinite() || price.lessThanOrEqualTo(0)) {
+        return Err(new ReservationTransitionError(
+          'INVARIANT_VIOLATION',
+          `getPendingBuyQuantityForInstrument: invalid orderPrice=${record.orderPrice} for clientOrderId ${String(record.clientOrderId)}`,
+        ));
+      }
+      total = total.plus(remaining.dividedBy(price));
+    }
+    return Ok(total);
   }
 
   /**

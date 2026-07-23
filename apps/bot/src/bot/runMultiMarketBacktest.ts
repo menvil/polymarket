@@ -183,7 +183,8 @@ function buildRiskParams(config: BotConfig): RiskParams {
     maxPositionSize: new Decimal(qMax * orderSize),
     maxTotalExposure: new Decimal(initialBalance * 2),
     minAvailableBalance: new Decimal('1'),
-    minTimeToExpiryMs: 0,
+    // minTimeToExpiryMs НЕ задаём: timing управляет стратегия. При fail-closed
+    // логике 0 блокировал бы BUY без доступного expiry (RISK_INPUT_INCOMPLETE).
   };
 }
 

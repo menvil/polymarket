@@ -45,9 +45,9 @@ import {
   LedgerService,
 } from '@polymarket/use-cases';
 import { InMemoryOrderedEventOutbox } from '@polymarket/in-memory';
-import { OrderRiskChecker } from '@polymarket/risk';
+import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { RiskParams } from '@polymarket/risk';
-import type { IExchangeClient, IOrderedEventOutbox } from '@polymarket/ports';
+import type { IExchangeClient, IMarketCatalog, IOrderedEventOutbox } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 
@@ -83,6 +83,12 @@ export interface BuildOrderUseCasesParams {
    * порядка событий.
    */
   readonly orderedEventOutbox: IOrderedEventOutbox;
+  /**
+   * Каталог инструментов (опционально) — источник `expiresAt` для expiry-gate в
+   * `PlaceOrderUseCase`. В production передавай его; без него expiry-проверка
+   * fail-closed блокирует BUY при включённом `minTimeToExpiryMs`.
+   */
+  readonly marketCatalog?: IMarketCatalog;
 }
 
 /** Результат: PlaceOrderUseCase + CancelOrderUseCase */
@@ -165,12 +171,19 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
  * @returns Объект с placeOrderUseCase и cancelOrderUseCase
  */
 export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCases {
-  const { infra, repos, exchangeClient, riskParams, orderedEventOutbox } = params;
+  const { infra, repos, exchangeClient, riskParams, orderedEventOutbox, marketCatalog } = params;
   const { clock, logger } = infra;
   const { orderRepo, portfolioStore, reconciliationIssueRepo, orderSubmissionRepo, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
-  const riskChecker = new OrderRiskChecker(riskParams, logger);
+  // Валидируем RiskParams через иммутабельную RiskPolicy — невалидная конфигурация
+  // (NaN/Infinity/отрицательные/дробные счётчики) fail-fast на старте, а не молча
+  // в runtime.
+  const policyResult = RiskPolicy.create(riskParams);
+  if (!policyResult.ok) {
+    throw new Error(`Invalid risk configuration (${policyResult.error.field}): ${policyResult.error.message}`);
+  }
+  const riskChecker = new OrderRiskChecker(policyResult.value, logger);
 
   const placeOrderUseCase = new PlaceOrderUseCase({
     riskChecker,
@@ -189,6 +202,8 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
     reconciliationIssues: reconciliationIssueRepo,
     // Guard от небезопасного повторного submit того же clientOrderId (обязателен).
     submissions: orderSubmissionRepo,
+    // Источник expiresAt для expiry-gate (опционально; см. deps doc).
+    ...(marketCatalog ? { marketCatalog } : {}),
   });
 
   const cancelOrderUseCase = new CancelOrderUseCase({
@@ -221,7 +236,11 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
  * @returns Объект со всеми тремя use cases
  */
 export function buildAllUseCases(
-  params: BuildProcessFillParams & { exchangeClient: IExchangeClient; riskParams: RiskParams },
+  params: BuildProcessFillParams & {
+    exchangeClient: IExchangeClient;
+    riskParams: RiskParams;
+    marketCatalog?: IMarketCatalog;
+  },
 ): UseCases {
   const { processFillUseCase, portfolioService, orderedEventOutbox } = buildProcessFillUseCase(params);
   // ТОТ ЖЕ outbox прокидывается в order use-cases — per-order FIFO Place↔Fill.

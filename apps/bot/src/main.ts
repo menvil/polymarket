@@ -520,7 +520,7 @@ async function runPaper(): Promise<void> {
     config: config.paper,
   });
 
-  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox, marketCatalog });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   const engine = buildStrategyEngine({
@@ -2859,7 +2859,7 @@ async function runBacktest(): Promise<void> {
     config: config.paper,
   });
 
-  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });
+  const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox, marketCatalog });
   const useCases = { processFillUseCase, portfolioService, ...orderUseCases };
 
   // ── Crypto price infrastructure (backtest) ──────────────────────────────
@@ -3661,6 +3661,7 @@ async function runLive(): Promise<void> {
     exchangeClient: liveInfra.exchangeClient,
     riskParams,
     orderedEventOutbox,
+    marketCatalog,
   });
   const useCases = {
     processFillUseCase,
@@ -5192,7 +5193,9 @@ function toStoreCexVenue(venue: string): StoreCexVenue | undefined {
  * - `maxPositionSize` = qMax × orderSize (AS) или orderSize × 5 (dumb)
  * - `maxOrderNotional` = orderSize × 1 (максимальная стоимость одного ордера)
  * - `maxTotalExposure` = initialBalance × 2 (с запасом на нереализованные позиции)
- * - `minTimeToExpiryMs` = hardStopSec × 1000 (синхронизировано с hard stop стратегии)
+ * - `minTimeToExpiryMs` НЕ задаётся: timing (unwind/hard-stop) управляет стратегия,
+ *   risk checker не блокирует по времени (fail-closed логика при отсутствии expiry
+ *   блокировала бы BUY, что нежелательно для strategy-managed timing).
  */
 function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): RiskParams {
   const params = config?.strategyParams as unknown as Record<string, unknown> | undefined;
@@ -5207,7 +5210,9 @@ function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): Ri
       maxPositionSize: new Decimal(maxPositionUnits),
       maxTotalExposure: new Decimal(initialBalance),
       minAvailableBalance: new Decimal('1'),
-      minTimeToExpiryMs: 0,
+      // minTimeToExpiryMs НЕ задаём: timing (unwind phase) управляет стратегия,
+      // а не risk checker. Значение 0 при fail-closed логике блокировало бы BUY
+      // при недоступном expiry (RISK_INPUT_INCOMPLETE) — отсутствие лимита корректнее.
     };
   }
   const orderSize = params?.['orderSize'] instanceof Decimal
@@ -5222,8 +5227,8 @@ function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): Ri
     maxPositionSize: new Decimal(qMax * orderSize),
     maxTotalExposure: new Decimal(initialBalance * 2),
     minAvailableBalance: new Decimal('1'),
-    // Стратегия сама управляет timing (unwind phase), risk checker не блокирует по времени
-    minTimeToExpiryMs: 0,
+    // Стратегия сама управляет timing (unwind phase), risk checker не блокирует по времени.
+    // minTimeToExpiryMs НЕ задаём (при fail-closed логике 0 блокировал бы BUY без expiry).
   };
 }
 

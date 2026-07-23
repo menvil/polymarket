@@ -16,8 +16,10 @@ import type {
   OrderSubmissionRecord,
   CancelOrderResult,
 } from '@polymarket/ports';
-import { VersionConflictError, ExchangeError, emptyReservation } from '@polymarket/ports';
+import { VersionConflictError, ExchangeError, emptyReservation, ReservationTransitionError } from '@polymarket/ports';
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
+import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
+import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
@@ -207,6 +209,8 @@ function makeSubmissionsStub(
     get: jest.fn<IOrderSubmissionRepository['get']>().mockResolvedValue(undefined),
     findByVenueOrderId: jest.fn<IOrderSubmissionRepository['findByVenueOrderId']>().mockResolvedValue(undefined),
     listByStatus: jest.fn<IOrderSubmissionRepository['listByStatus']>().mockResolvedValue([]),
+    getPendingBuyQuantityForInstrument: jest.fn<IOrderSubmissionRepository['getPendingBuyQuantityForInstrument']>()
+      .mockResolvedValue(Ok(new Decimal(0))),
     ...overrides,
   };
 }
@@ -218,7 +222,6 @@ function makeRiskChecker(pass = true): IOrderRiskChecker {
         ? Ok(undefined)
         : Err(new RiskViolationErrorClass('MAX_OPEN_ORDERS_EXCEEDED', 'Too many open orders', {})),
     ),
-    updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
   };
 }
 
@@ -1084,7 +1087,6 @@ describe('PlaceOrderUseCase', () => {
           .mockReturnValueOnce(
             Err(new RiskViolationErrorClass('MAX_OPEN_ORDERS_EXCEEDED', 'Too many open orders', {})),
           ),
-        updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
       };
       const useCase = new PlaceOrderUseCase({ ...deps, orderRepo, riskChecker });
 
@@ -1118,7 +1120,6 @@ describe('PlaceOrderUseCase', () => {
             callOrder.push('authoritative-check');
             return Err(new RiskViolationErrorClass('MAX_OPEN_ORDERS_EXCEEDED', 'too many', {}));
           }),
-        updateParams: jest.fn<IOrderRiskChecker['updateParams']>(),
       };
       const useCase = new PlaceOrderUseCase({ ...deps, keyedMutex: trackingMutex, riskChecker });
 
@@ -2215,6 +2216,114 @@ describe('PlaceOrderUseCase', () => {
         .find((i) => i.type === 'EVENT_PUBLISH_FAILED');
       expect(issue).toBeDefined();
       expect(issue!.reason).toContain('queue full');
+    });
+  });
+
+  // ── Регрессия: risk projection (Phase 1) + expiry gate (Phase 3) ──────────
+
+  describe('risk projection + expiry gate (реальный OrderRiskChecker)', () => {
+    /**
+     * Минимальный стаб IMarketCatalog: `get()` возвращает инструмент с заданным
+     * `expiresAt.toNumber()` (ms) либо undefined (инструмент неизвестен).
+     */
+    function makeCatalog(expiresAtMs?: number): IMarketCatalog {
+      const info = expiresAtMs === undefined
+        ? undefined
+        : ({ expiresAt: { toNumber: () => expiresAtMs } } as unknown as InstrumentInfo);
+      return {
+        get: jest.fn<IMarketCatalog['get']>().mockReturnValue(info),
+        getByMarketId: jest.fn(),
+        getAnyInstrumentByMarketIdForMetadataOnly: jest.fn(),
+        getAllByMarketId: jest.fn().mockReturnValue([]),
+        getAll: jest.fn().mockReturnValue([]),
+        register: jest.fn(),
+        registerMarket: jest.fn(),
+        removeMarket: jest.fn(),
+        remove: jest.fn(),
+        clear: jest.fn(),
+      } as unknown as IMarketCatalog;
+    }
+
+    function makeRealChecker(params: Parameters<typeof RiskPolicy.create>[0]): IOrderRiskChecker {
+      const r = RiskPolicy.create(params);
+      if (!r.ok) throw r.error;
+      return new OrderRiskChecker(r.value, logger);
+    }
+
+    it('BUY блокируется RISK_INPUT_INCOMPLETE, если expiry-лимит включён, а инструмента нет в каталоге', async () => {
+      const riskChecker = makeRealChecker({ minTimeToExpiryMs: 60_000 });
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker, marketCatalog: makeCatalog(undefined) });
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect((result.error as RiskViolationError).riskCode).toBe('RISK_INPUT_INCOMPLETE');
+      }
+      // Ордер не отправлялся на биржу.
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
+    });
+
+    it('BUY проходит при доступном будущем expiry', async () => {
+      const riskChecker = makeRealChecker({ minTimeToExpiryMs: 60_000 });
+      // clock = 2024-01-01; expiry через час.
+      const expiresAtMs = new Date('2024-01-01T01:00:00.000Z').getTime();
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker, marketCatalog: makeCatalog(expiresAtMs) });
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(true);
+    });
+
+    it('BUY блокируется TOO_CLOSE_TO_EXPIRY, если рынок уже истёк (отрицательное время)', async () => {
+      const riskChecker = makeRealChecker({ minTimeToExpiryMs: 0 });
+      const expiresAtMs = new Date('2023-12-31T23:59:00.000Z').getTime(); // в прошлом
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker, marketCatalog: makeCatalog(expiresAtMs) });
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect((result.error as RiskViolationError).riskCode).toBe('TOO_CLOSE_TO_EXPIRY');
+      }
+    });
+
+    it('SELL проходит при недоступном expiry (expiry-лимит включён)', async () => {
+      const riskChecker = makeRealChecker({ minTimeToExpiryMs: 60_000 });
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker, marketCatalog: makeCatalog(undefined) });
+      const result = await useCase.execute(makeInput({ side: 'SELL' }));
+      expect(result.ok).toBe(true);
+    });
+
+    it('position limit: pending BUY первого ордера учитывается — второй BUY отклоняется', async () => {
+      // maxPositionSize=150 токенов. A: price 0.5 × size 100 = 50 USDC held →
+      // pending = 50/0.5 = 100 токенов. A: 0 + 0 + 100 = 100 <= 150 → проходит.
+      // B (тот же account+instrument): 0 (filled) + 100 (pending A) + 100 (new) = 200 > 150 → reject.
+      const riskChecker = makeRealChecker({ maxPositionSize: new Decimal('150') });
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker });
+
+      const orderA = 'order-A' as unknown as OrderId;
+      const orderB = 'order-B' as unknown as OrderId;
+
+      const resA = await useCase.execute(makeInput({ orderId: orderA, price: makePrice('0.5'), size: makeQty('100') }));
+      expect(resA.ok).toBe(true);
+
+      const resB = await useCase.execute(makeInput({ orderId: orderB, price: makePrice('0.5'), size: makeQty('100') }));
+      expect(resB.ok).toBe(false);
+      if (!resB.ok) {
+        expect((resB.error as RiskViolationError).riskCode).toBe('POSITION_LIMIT_EXCEEDED');
+      }
+    });
+
+    it('fail-closed: сбой getPendingBuyQuantityForInstrument блокирует BUY', async () => {
+      const riskChecker = makeRealChecker({ maxPositionSize: new Decimal('150') });
+      const failingSubmissions = makeSubmissionsStub({
+        getPendingBuyQuantityForInstrument: jest.fn<IOrderSubmissionRepository['getPendingBuyQuantityForInstrument']>()
+          .mockResolvedValue(Err(new ReservationTransitionError('INVARIANT_VIOLATION', 'corrupt reservation/price data'))),
+      });
+      const useCase = new PlaceOrderUseCase({ ...deps, riskChecker, submissions: failingSubmissions });
+      const result = await useCase.execute(makeInput());
+      expect(result.ok).toBe(false);
+      // Типизированный RISK_STATE_UNAVAILABLE (метрики отличают от нарушения лимита).
+      if (!result.ok) {
+        expect((result.error as RiskViolationError).riskCode).toBe('RISK_STATE_UNAVAILABLE');
+      }
+      // Ордер не отправлялся на биржу (fail-closed до reserve/submit).
+      expect(exchangeClient.submitOrder).not.toHaveBeenCalled();
     });
   });
 });

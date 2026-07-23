@@ -461,4 +461,129 @@ describe('InMemoryOrderSubmissionRepository', () => {
       if (!release.ok) expect(release.error.code).toBe('RECONCILIATION_LOCKED');
     });
   });
+
+  // ── getPendingBuyQuantityForInstrument ────────────────────────────────────
+
+  describe('getPendingBuyQuantityForInstrument', () => {
+    /**
+     * Создаёт held BUY-запись под указанным clientOrderId с заданными
+     * account/instrument/price/side и суммой held. По умолчанию — BUY того же
+     * ACCOUNT_ID/INSTRUMENT_ID.
+     */
+    async function seedHeld(opts: {
+      readonly clientOrderId: ReturnType<typeof asOrderId>;
+      readonly held: string;
+      readonly orderPrice?: string;
+      readonly side?: 'BUY' | 'SELL';
+      readonly accountId?: AccountId;
+      readonly instrumentId?: ReturnType<typeof asInstrumentId>;
+      readonly fingerprint?: string;
+    }): Promise<void> {
+      await repo.begin({
+        clientOrderId: opts.clientOrderId!,
+        accountId: opts.accountId ?? ACCOUNT_ID,
+        instrumentId: opts.instrumentId ?? INSTRUMENT_ID,
+        fingerprint: opts.fingerprint ?? `fp-${String(opts.clientOrderId)}`,
+        side: opts.side ?? 'BUY',
+        orderPrice: opts.orderPrice ?? '0.60',
+        requestedSize: '100',
+        now: NOW,
+      });
+      await repo.markReservationHeld(opts.clientOrderId!, opts.held, NOW);
+    }
+
+    it('нет записей → Ok(0)', async () => {
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('одна held BUY: remaining 60 USDC / price 0.60 = 100 токенов', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0.60' });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('100');
+    });
+
+    it('NONE-резервация (begin без markReservationHeld) НЕ учитывается', async () => {
+      await repo.begin(makeBeginInput()); // reservation NONE, remaining 0
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('несколько held BUY того же account+instrument (разные стратегии) суммируются', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '30', orderPrice: '0.60', fingerprint: 'strat-A' });
+      await seedHeld({ clientOrderId: asOrderId('c-2'), held: '30', orderPrice: '0.60', fingerprint: 'strat-B' });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      // 30/0.6 + 30/0.6 = 50 + 50 = 100
+      if (r.ok) expect(r.value.toString()).toBe('100');
+    });
+
+    it('UNKNOWN submission с held-резервацией учитывается', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0.60' });
+      await repo.markUnknown(asOrderId('c-1')!, 'ambiguous', undefined, NOW);
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('100');
+    });
+
+    it('другой инструмент НЕ учитывается', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', instrumentId: asInstrumentId('999') });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('другой аккаунт НЕ учитывается', async () => {
+      // Реальные (различимые accountIdToString) VENUE-аккаунты: сырые
+      // string-касты все сериализуются в одинаковый placeholder и не различимы.
+      const accountA = { kind: 'VENUE', venueId: 'polymarket', userId: 'a' } as unknown as AccountId;
+      const accountB = { kind: 'VENUE', venueId: 'polymarket', userId: 'b' } as unknown as AccountId;
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', accountId: accountB });
+      const r = await repo.getPendingBuyQuantityForInstrument(accountA, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('тот же реальный аккаунт учитывается', async () => {
+      const accountA = { kind: 'VENUE', venueId: 'polymarket', userId: 'a' } as unknown as AccountId;
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0.60', accountId: accountA });
+      const r = await repo.getPendingBuyQuantityForInstrument(accountA, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('100');
+    });
+
+    it('SELL-резервация НЕ учитывается (только BUY)', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '100', side: 'SELL' });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('SETTLED (remaining 0) НЕ учитывается', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0.60' });
+      await repo.applyReservationTransition(asOrderId('c-1')!, { operationId: 'fill', consume: '60', now: NOW });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.toString()).toBe('0');
+    });
+
+    it('PARTIALLY_SETTLED учитывается по остатку', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0.60' });
+      await repo.applyReservationTransition(asOrderId('c-1')!, { operationId: 'fill', consume: '30', now: NOW });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(true);
+      // remaining 30 / 0.60 = 50
+      if (r.ok) expect(r.value.toString()).toBe('50');
+    });
+
+    it('fail-closed: повреждённая цена (orderPrice=0) → Err', async () => {
+      await seedHeld({ clientOrderId: asOrderId('c-1'), held: '60', orderPrice: '0' });
+      const r = await repo.getPendingBuyQuantityForInstrument(ACCOUNT_ID, INSTRUMENT_ID);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('INVARIANT_VIOLATION');
+    });
+  });
 });

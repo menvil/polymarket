@@ -3,21 +3,22 @@
  *
  * @remarks
  * ### Содержимое пакета:
- * - `OrderRiskChecker` — синхронный пре-трейд риск-чекер (O(1)/O(N))
+ * - `OrderRiskChecker` — синхронный пре-трейд риск-чекер (O(1)/O(N)), иммутабельный
+ * - `RiskPolicy` — валидированная иммутабельная политика (`create` → Result)
+ * - `RiskConfigError` — ошибка невалидной риск-конфигурации
  * - `RiskViolationError` — ошибка нарушения риск-лимита
- * - `RiskParams` — параметры риска (все опциональные)
+ * - `RiskParams` — «сырые» параметры риска (все опциональные)
  * - `PreOrderCheckInput` — входные данные для пре-трейд проверки
  * - `IOrderRiskChecker` — интерфейс риск-чекера
  *
  * @example
  * ```typescript
- * import { OrderRiskChecker, type RiskParams } from '@polymarket/risk';
+ * import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
  * import Decimal from 'decimal.js';
  *
- * const checker = new OrderRiskChecker(
- *   { maxOpenOrders: 10, maxOrderNotional: new Decimal(5000) },
- *   logger,
- * );
+ * const policy = RiskPolicy.create({ maxOpenOrders: 10, maxOrderNotional: new Decimal(5000) });
+ * if (!policy.ok) throw policy.error;
+ * const checker = new OrderRiskChecker(policy.value, logger);
  *
  * const result = checker.checkBeforeOrder(input);
  * if (!result.ok) {
@@ -26,6 +27,7 @@
  * ```
  */
 export { OrderRiskChecker } from './OrderRiskChecker.js';
+export { RiskPolicy, RiskConfigError } from './RiskPolicy.js';
 export { RiskViolationError } from './RiskViolation.js';
 export type { RiskViolationCode } from './RiskViolation.js';
 export type { RiskParams } from './RiskParams.js';

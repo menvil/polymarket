@@ -98,7 +98,8 @@ const RISK_PARAMS: RiskParams = {
   maxPositionSize: new Decimal('100'),
   maxTotalExposure: new Decimal('2000'),
   minAvailableBalance: new Decimal('1'),
-  minTimeToExpiryMs: 0,
+  // minTimeToExpiryMs НЕ задаём: без marketCatalog в этих тестах expiry-лимит
+  // fail-closed заблокировал бы BUY (RISK_INPUT_INCOMPLETE). Тесты не про expiry.
 };
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────

@@ -102,6 +102,7 @@ import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type {
   IExchangeClient,
   IKeyedMutex,
+  IMarketCatalog,
   IOrderedEventOutbox,
   IOrderRepository,
   IOrderStateStore,
@@ -113,7 +114,8 @@ import type {
 import { pendingMatchFillId, ExchangeError } from '@polymarket/ports';
 import { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
-import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
+import type { IOrderRiskChecker } from '@polymarket/risk';
+import { RiskViolationError } from '@polymarket/risk';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 import { lockKey } from './lockKeys.js';
@@ -218,8 +220,26 @@ export interface PlaceOrderDeps {
    * submission не отменяет venue-ордер; ambiguous submit блокирует авто-retry;
    * fingerprint mismatch блокирует переиспользование clientOrderId под другой
    * ордер. Вызывается ВНУТРИ keyed mutex (см. `_placeLocked`).
+   *
+   * Также источник authoritative pending BUY-экспозиции по инструменту
+   * (`getPendingBuyQuantityForInstrument`) для `maxPositionSize`-проверки.
    */
   readonly submissions: IOrderSubmissionRepository;
+  /**
+   * Каталог инструментов (опционально) — источник `expiresAt` для expiry-gate.
+   *
+   * @remarks
+   * `timeToExpiryMs` вычисляется как `instrument.expiresAt.toNumber() -
+   * clock.now().getTime()` и передаётся в риск-чекер (пересчитывается отдельно
+   * для precheck и authoritative-проверки под lock — время идёт).
+   *
+   * Fail-closed: если каталог не передан ИЛИ инструмент в нём отсутствует,
+   * `timeToExpiryMs` = `undefined`. При включённом `minTimeToExpiryMs` риск-чекер
+   * вернёт `RISK_INPUT_INCOMPLETE` для BUY (SELL не блокируется). В production
+   * каталог ОБЯЗАН быть передан; optional — чтобы не ломать конструкторы/тесты,
+   * где expiry-лимит не используется.
+   */
+  readonly marketCatalog?: IMarketCatalog;
 }
 
 /** Ошибки PlaceOrderUseCase */
@@ -251,6 +271,26 @@ export class PlaceOrderUseCase {
    */
   constructor(private readonly _deps: PlaceOrderDeps) {
     this._logger = _deps.logger.child({ component: 'PlaceOrderUseCase' });
+  }
+
+  /**
+   * Вычисляет время до экспирации инструмента (ms) на текущий момент часов.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns `timeToExpiryMs` = `expiresAt - now`, либо `undefined`, если каталог
+   *   не передан ИЛИ инструмент в нём отсутствует (fail-closed на стороне
+   *   риск-чекера: BUY при включённом лимите → `RISK_INPUT_INCOMPLETE`)
+   *
+   * @remarks
+   * Читает `clock.now()` при каждом вызове — поэтому precheck (вне lock) и
+   * authoritative-проверка (под lock) получают АКТУАЛЬНОЕ значение (между ними
+   * прошло время ожидания lock и network call). Отрицательный результат означает
+   * уже истёкший рынок.
+   */
+  private _computeTimeToExpiryMs(instrumentId: InstrumentId): number | undefined {
+    const info = this._deps.marketCatalog?.get(instrumentId);
+    if (!info) return undefined;
+    return info.expiresAt.toNumber() - this._deps.clock.now().getTime();
   }
 
   /**
@@ -946,6 +986,11 @@ export class PlaceOrderUseCase {
       size: input.size,
       instrumentId: input.instrumentId,
       strategyId: input.strategyId,
+      // Precheck — fail-fast вне lock: pending BUY-экспозиция считается только
+      // под lock (authoritative), здесь консервативно 0 (не приведёт к ложному
+      // reject). timeToExpiryMs пересчитывается отдельно и здесь, и под lock.
+      pendingBuyQuantityForInstrument: new Decimal(0),
+      timeToExpiryMs: this._computeTimeToExpiryMs(input.instrumentId),
     });
     if (!precheckResult.ok) {
       this._logger.warn('Pre-trade risk precheck failed (stale snapshot)', {
@@ -1269,6 +1314,35 @@ export class PlaceOrderUseCase {
       }));
     }
     const freshOpenOrdersCount = await this._deps.orderRepo.countByStrategyId(input.strategyId);
+
+    // Authoritative pending BUY-экспозиция по инструменту (submission journal).
+    // Только для BUY: SELL пропускает position/exposure gates, значение не нужно.
+    // Fail-closed: повреждённые price/reservation данные → блокируем BUY (нельзя
+    // проверить position-лимит). Ордер ещё не отправлялся — submission retryable.
+    let pendingBuyQuantityForInstrument = new Decimal(0);
+    if (input.side === 'BUY') {
+      const pendingResult = await this._deps.submissions.getPendingBuyQuantityForInstrument(
+        input.accountId,
+        input.instrumentId,
+      );
+      if (!pendingResult.ok) {
+        this._logger.error('Failed to compute pending BUY exposure (fail-closed) — blocking order', {
+          clientOrderId: String(input.orderId),
+          instrumentId: String(input.instrumentId),
+          error: pendingResult.error.message,
+        });
+        await this._markSubmissionFailed(input.orderId, `PENDING_BUY_QUERY_FAILED: ${pendingResult.error.message}`);
+        // Типизированный RISK_STATE_UNAVAILABLE (а не общий TradingError) — метрики
+        // отличают недоступность authoritative-состояния от нарушения лимита.
+        return Err(new RiskViolationError(
+          'RISK_STATE_UNAVAILABLE',
+          `Cannot compute pending BUY exposure — risk state unavailable: ${pendingResult.error.message}`,
+          { clientOrderId: String(input.orderId), instrumentId: String(input.instrumentId) },
+        ));
+      }
+      pendingBuyQuantityForInstrument = pendingResult.value;
+    }
+
     const riskResult = this._deps.riskChecker.checkBeforeOrder({
       portfolio: freshPortfolio,
       openOrdersCount: freshOpenOrdersCount,
@@ -1277,6 +1351,9 @@ export class PlaceOrderUseCase {
       size: input.size,
       instrumentId: input.instrumentId,
       strategyId: input.strategyId,
+      pendingBuyQuantityForInstrument,
+      // Пересчитываем expiry под lock (время ожидания lock + network могло пройти).
+      timeToExpiryMs: this._computeTimeToExpiryMs(input.instrumentId),
     });
     if (!riskResult.ok) {
       this._logger.warn('Pre-trade risk check failed (authoritative, under lock)', {

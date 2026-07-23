@@ -2,6 +2,9 @@
   "name": "@polymarket/risk",
   "version": "0.1.0",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -10,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "jest",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
@@ -19,11 +23,9 @@
     "@polymarket/errors": "0.1.0",
     "@polymarket/result": "0.1.0",
     "@polymarket/ids": "0.1.0",
-    "@polymarket/time": "0.1.0",
     "@polymarket/value-objects": "0.1.0",
-    "@polymarket/ports": "0.1.0",
-    "@polymarket/event-bus": "0.1.0",
-    "@polymarket/portfolio": "0.1.0"
+    "@polymarket/portfolio": "0.1.0",
+    "decimal.js": "^10.4.3"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

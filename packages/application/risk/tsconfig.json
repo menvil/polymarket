@@ -3,10 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "paths": {
-      "@polymarket/order":      ["../../domain/entities/order/dist/index.d.ts"],
-      "@polymarket/portfolio":  ["../../domain/entities/portfolio/dist/index.d.ts"],
-      "@polymarket/ports":      ["../ports/dist/index.d.ts"],
-      "@polymarket/event-bus":  ["../event-bus/dist/index.d.ts"]
+      "@polymarket/portfolio":  ["../../domain/entities/portfolio/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

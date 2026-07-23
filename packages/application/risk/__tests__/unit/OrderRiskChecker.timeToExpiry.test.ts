@@ -5,13 +5,16 @@
  * Покрывает приватный метод `_checkTimeToExpiry` через публичный `checkBeforeOrder()`.
  * Проверяемые сценарии:
  * - minTimeToExpiryMs не задан в параметрах → пропуск проверки
- * - timeToExpiryMs не передан во входных данных → пропуск проверки
+ * - BUY + лимит включён + timeToExpiryMs недоступно → RISK_INPUT_INCOMPLETE (fail-closed)
+ * - SELL при недоступном/близком expiry → пропуск (ликвидация не блокируется)
  * - timeToExpiryMs >= minTimeToExpiryMs → проверка пройдена
- * - timeToExpiryMs < minTimeToExpiryMs → TOO_CLOSE_TO_EXPIRY
+ * - timeToExpiryMs < minTimeToExpiryMs (или отрицательное) → TOO_CLOSE_TO_EXPIRY
  * - граничное значение: timeToExpiryMs === minTimeToExpiryMs → проверка пройдена
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { OrderRiskChecker } from '../../src/OrderRiskChecker.js';
+import { RiskPolicy } from '../../src/RiskPolicy.js';
+import type { RiskParams } from '../../src/RiskParams.js';
 import type { PreOrderCheckInput } from '../../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
@@ -33,6 +36,13 @@ function makeLogger(): ILogger {
     fatal: jest.fn() as ILogger['fatal'],
     child: jest.fn<ILogger['child']>().mockReturnThis() as ILogger['child'],
   };
+}
+
+/** Строит OrderRiskChecker из валидных RiskParams (через RiskPolicy.create). */
+function makeChecker(params: RiskParams, logger: ILogger): OrderRiskChecker {
+  const r = RiskPolicy.create(params);
+  if (!r.ok) throw r.error;
+  return new OrderRiskChecker(r.value, logger);
 }
 
 /** Создаёт mock Price с заданным Decimal-значением */
@@ -78,6 +88,7 @@ function makeInput(overrides: Partial<PreOrderCheckInput> = {}): PreOrderCheckIn
     price: makePrice('0.50'),
     size: makeQty('10'),
     instrumentId: INSTRUMENT_ID,
+    pendingBuyQuantityForInstrument: new Decimal(0),
     strategyId: 'test-strategy',
     ...overrides,
   };
@@ -95,28 +106,31 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   // ── Пропуск проверки (параметр не задан) ────────────────────────────────
 
   it('Ok если minTimeToExpiryMs не задан в RiskParams', () => {
-    const checker = new OrderRiskChecker({}, logger);
+    const checker = makeChecker({}, logger);
     const result = checker.checkBeforeOrder(
       makeInput({ timeToExpiryMs: 1000 }),
     );
     expect(result.ok).toBe(true);
   });
 
-  // ── Пропуск проверки (входное значение не передано) ─────────────────────
+  // ── Fail-closed (BUY + лимит включён + значение недоступно) ──────────────
 
-  it('Ok если timeToExpiryMs не передан во входных данных', () => {
-    const checker = new OrderRiskChecker(
+  it('Err RISK_INPUT_INCOMPLETE для BUY если timeToExpiryMs не передан, а лимит включён', () => {
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
     const result = checker.checkBeforeOrder(
       makeInput({ timeToExpiryMs: undefined }),
     );
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
+    }
   });
 
   it('Ok если оба параметра не заданы', () => {
-    const checker = new OrderRiskChecker({}, logger);
+    const checker = makeChecker({}, logger);
     const result = checker.checkBeforeOrder(
       makeInput({ timeToExpiryMs: undefined }),
     );
@@ -126,7 +140,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   // ── Проверка пройдена (timeToExpiryMs >= minTimeToExpiryMs) ─────────────
 
   it('Ok если timeToExpiryMs > minTimeToExpiryMs', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -137,7 +151,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   });
 
   it('Ok если timeToExpiryMs === minTimeToExpiryMs (граничное значение)', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -150,7 +164,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   // ── Нарушение (timeToExpiryMs < minTimeToExpiryMs) ──────────────────────
 
   it('Err TOO_CLOSE_TO_EXPIRY если timeToExpiryMs < minTimeToExpiryMs', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -164,7 +178,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   });
 
   it('Err TOO_CLOSE_TO_EXPIRY если timeToExpiryMs === 0', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 1000 },
       logger,
     );
@@ -178,7 +192,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   });
 
   it('Err TOO_CLOSE_TO_EXPIRY содержит контекст с timeToExpiryMs и minTimeToExpiryMs', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -195,7 +209,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   // ── Логирование ─────────────────────────────────────────────────────────
 
   it('логирует warn при нарушении minTimeToExpiryMs', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -211,7 +225,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   });
 
   it('не логирует warn если проверка пройдена', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -223,7 +237,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
 
   it('Ok для SELL даже если timeToExpiryMs === 0', () => {
     // SELL ликвидирует позицию — блокировать нельзя, даже у самой экспирации
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000 },
       logger,
     );
@@ -234,7 +248,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   });
 
   it('Ok для SELL если timeToExpiryMs < minTimeToExpiryMs', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 30_000 },
       logger,
     );
@@ -247,7 +261,7 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
   // ── fail-fast: проверка expiry первая в цепочке ─────────────────────────
 
   it('fail-fast: TOO_CLOSE_TO_EXPIRY возвращается раньше MAX_OPEN_ORDERS_EXCEEDED', () => {
-    const checker = new OrderRiskChecker(
+    const checker = makeChecker(
       { minTimeToExpiryMs: 60_000, maxOpenOrders: 1 },
       logger,
     );
@@ -260,23 +274,14 @@ describe('OrderRiskChecker — minTimeToExpiryMs', () => {
     }
   });
 
-  // ── updateParams: обновление minTimeToExpiryMs ──────────────────────────
-
-  it('updateParams обновляет minTimeToExpiryMs в runtime', () => {
-    const checker = new OrderRiskChecker({}, logger);
-    // до обновления: нет лимита → ok
-    expect(
-      checker.checkBeforeOrder(makeInput({ timeToExpiryMs: 1_000 })).ok,
-    ).toBe(true);
-
-    // после обновления: 1000 < 60000 → fail
-    checker.updateParams({ minTimeToExpiryMs: 60_000 });
-    const result = checker.checkBeforeOrder(
-      makeInput({ timeToExpiryMs: 1_000 }),
+  it('Ok для SELL даже если timeToExpiryMs не передан (лимит включён)', () => {
+    const checker = makeChecker(
+      { minTimeToExpiryMs: 60_000 },
+      logger,
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.riskCode).toBe('TOO_CLOSE_TO_EXPIRY');
-    }
+    const result = checker.checkBeforeOrder(
+      makeInput({ side: SELL, timeToExpiryMs: undefined }),
+    );
+    expect(result.ok).toBe(true);
   });
 });

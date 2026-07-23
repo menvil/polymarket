@@ -232,7 +232,8 @@ describe('Backtest — два рынка одновременно', () => {
       maxPositionSize: new Decimal('100'),
       maxTotalExposure: new Decimal('2000'),
       minAvailableBalance: new Decimal('1'),
-      minTimeToExpiryMs: 0,
+      // minTimeToExpiryMs НЕ задаём: timing управляет стратегия, а marketCatalog
+      // в этот buildOrderUseCases не передаётся (fail-closed заблокировал бы BUY).
     };
 
     const orderUseCases = buildOrderUseCases({ infra, repos, exchangeClient, riskParams, orderedEventOutbox });

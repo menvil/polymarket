@@ -69,6 +69,7 @@
  * await submissions.markCommitted(clientOrderId, venueOrderId, now);
  * ```
  */
+import type Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
 import type {
@@ -396,4 +397,46 @@ export interface IOrderSubmissionRepository {
    * orders/trades, чтобы привязать venueOrderId либо освободить резервацию.
    */
   listByStatus(status: OrderSubmissionStatus): Promise<readonly OrderSubmissionRecord[]>;
+
+  /**
+   * Authoritative-агрегат: суммарное КОЛИЧЕСТВО ТОКЕНОВ по held BUY-резервациям
+   * для (accountId, instrumentId) — pending BUY-экспозиция по инструменту.
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента
+   * @returns `Ok(Decimal)` с суммой токенов; `Err(ReservationTransitionError)` при
+   *   повреждённых price/reservation данных (fail-closed)
+   *
+   * @remarks
+   * ### Зачем:
+   * `maxPositionSize` в `OrderRiskChecker` должен учитывать не только исполненную
+   * позицию (`Portfolio.getPosition`), но и капитал, замороженный под ещё не
+   * исполненные/ambiguous BUY-ордера того же инструмента. Позиция появляется
+   * только после fill, а резервация — уже при submit; без этого агрегата поток
+   * одновременных BUY суммарно пробил бы лимит.
+   *
+   * ### Что суммируется (по каждой подходящей записи):
+   * ```
+   * tokens = reservation.remaining (USDC) / orderPrice
+   * ```
+   * (BUY-резервация хранится в USDC-notional; делим на цену → количество токенов.)
+   *
+   * ### Критерии включения записи:
+   * - `side === 'BUY'` и совпадают `accountId` + `instrumentId`;
+   * - резервация ещё held: `status ∈ {HELD, PARTIALLY_SETTLED,
+   *   RECONCILIATION_REQUIRED}` и `remaining > 0`;
+   * - submission-статус НЕ фильтруется — учитываются в т.ч.
+   *   `UNKNOWN`/`VENUE_ACCEPTED`/`COMMITTED` (капитал заморожен независимо от него);
+   * - текущая submission ДО создания резервации (`reservation.status === 'NONE'`)
+   *   НЕ учитывается (её `remaining === 0`).
+   *
+   * ### Fail-closed:
+   * Если у подходящей записи `orderPrice`/`remaining` не парсятся или
+   * `orderPrice <= 0` — возвращается `Err`, и caller ОБЯЗАН заблокировать BUY
+   * (нельзя проверить position-лимит, не зная pending-экспозицию).
+   */
+  getPendingBuyQuantityForInstrument(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+  ): Promise<Result<Decimal, ReservationTransitionError>>;
 }

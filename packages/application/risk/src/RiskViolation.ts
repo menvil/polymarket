@@ -23,7 +23,14 @@ import { TradingError } from '@polymarket/errors';
  * Коды нарушений пре-трейд риск-проверок.
  *
  * @remarks
- * - TOO_CLOSE_TO_EXPIRY — слишком близко к экспирации рынка
+ * - TOO_CLOSE_TO_EXPIRY — слишком близко к экспирации рынка (или рынок уже истёк)
+ * - RISK_INPUT_INCOMPLETE — обязательные для проверки данные недоступны/повреждены
+ *   (expiry-лимит включён, а метаданные/expiry отсутствуют; NaN/отрицательный
+ *   pending; невалидный openOrdersCount): fail-closed — BUY блокируется
+ * - RISK_STATE_UNAVAILABLE — не удалось ПОЛУЧИТЬ authoritative risk-состояние
+ *   (например, submission journal вернул ошибку при расчёте pending BUY-экспозиции):
+ *   fail-closed на уровне оркестрации (PlaceOrderUseCase), метрики отличают его
+ *   от нарушения лимита
  * - MAX_OPEN_ORDERS_EXCEEDED — слишком много открытых ордеров
  * - ORDER_NOTIONAL_EXCEEDED — notional одного ордера превышает лимит
  * - INSUFFICIENT_AVAILABLE_BALANCE — недостаточно свободного баланса
@@ -32,6 +39,8 @@ import { TradingError } from '@polymarket/errors';
  */
 export type RiskViolationCode =
   | 'TOO_CLOSE_TO_EXPIRY'
+  | 'RISK_INPUT_INCOMPLETE'
+  | 'RISK_STATE_UNAVAILABLE'
   | 'MAX_OPEN_ORDERS_EXCEEDED'
   | 'ORDER_NOTIONAL_EXCEEDED'
   | 'INSUFFICIENT_AVAILABLE_BALANCE'
