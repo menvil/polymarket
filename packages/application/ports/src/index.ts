@@ -23,6 +23,9 @@
  * - `IFillReverter` — откат применённого fill из Portfolio (для FILL_FAILED handler)
  * - `IFillProcessor` — обработка fill (для FillOrchestrator, реализует ProcessFillUseCase)
  * - `IKeyedMutex` — сериализация конкурентных мутаций Order/Portfolio по ключам
+ * - `IStrategyCommitmentReader` / `StrategyCommitment` — authoritative reader
+ *   незавершённых submission/reservation/fill commitments стратегии (final
+ *   cleanup post-check в `StrategyScheduler`)
  *
  * @example
  * ```typescript
@@ -123,3 +126,8 @@ export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
 export type { IFillReverter } from './IFillReverter.js';
 export type { IFillProcessor } from './IFillProcessor.js';
 export type { IKeyedMutex } from './IKeyedMutex.js';
+export type {
+  IStrategyCommitmentReader,
+  StrategyCommitment,
+  StrategyCommitmentKind,
+} from './IStrategyCommitmentReader.js';

@@ -45,7 +45,8 @@ import type {
   ISchedulerTimer,
   IOrderIdGenerator,
 } from '@polymarket/strategy';
-import type { IMarketCatalog } from '@polymarket/ports';
+import type { IMarketCatalog, IStrategyCommitmentReader } from '@polymarket/ports';
+import { SubmissionJournalStrategyCommitmentReader } from '@polymarket/use-cases';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 import type { UseCases } from './buildUseCases.js';
@@ -77,6 +78,15 @@ export interface BuildStrategyEngineParams {
    * Для replay/backtest передайте SequentialOrderIdGenerator.
    */
   readonly orderIdGenerator?: IOrderIdGenerator;
+  /**
+   * Authoritative reader незавершённых commitments стратегии (по умолчанию
+   * `SubmissionJournalStrategyCommitmentReader` поверх `repos.orderSubmissionRepo`
+   * + `repos.orderRepo`). Передайте свою реализацию для persistent/live
+   * submission journal, когда таковой появится — НЕ подставляйте no-op/fake
+   * в production (final cleanup post-check зависит от него, см.
+   * `StrategySchedulerDeps.commitmentReader`).
+   */
+  readonly commitmentReader?: IStrategyCommitmentReader;
 }
 
 /** Результат построения стратегического движка */
@@ -112,13 +122,19 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     cryptoSignalRegistry,
     schedulerTimer,
     orderIdGenerator,
+    commitmentReader,
   } = params;
   const { clock, logger, eventBus } = infra;
-  const { orderRepo, portfolioStore } = repos;
+  const { orderRepo, portfolioStore, orderSubmissionRepo } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
 
   const timer = schedulerTimer ?? new NodeSchedulerTimer();
   const idGenerator = orderIdGenerator ?? new UuidOrderIdGenerator();
+  const commitments = commitmentReader ?? new SubmissionJournalStrategyCommitmentReader({
+    submissions: orderSubmissionRepo,
+    orderStateStore: orderRepo,
+    logger,
+  });
 
   const executionEngine = new ExecutionEngine({
     placeOrderUseCase,
@@ -140,6 +156,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     executionEngine,
     clock,
     timer,
+    commitmentReader: commitments,
     logger,
     cryptoResolutionStore,
     cryptoMarketDataStore,

@@ -351,3 +351,130 @@ if (!stopResult.ok) {
   });
 }
 ```
+
+## Третья волна hardening (2026-07-30): execution timeout, authoritative commitments, dispose()
+
+Вторая волна ввела `FAULTED`/typed `StopStrategyError`, но watchdog оставался
+привязан к lifecycle, а final cleanup проверял только локальные `Order`.
+
+### Execution timeout независим от lifecycle
+
+`StrategyEntry.activeExecution: ActiveExecution | undefined` заменяет
+разрозненные `running`/`executionPromise` единым состоянием:
+
+```typescript
+interface ActiveExecution {
+  readonly promise: Promise<void>;
+  readonly startedAtMs: number;
+  timedOut: boolean;
+  completed: boolean;
+  readonly timeoutHandle: TimerHandle;
+  readonly timeoutSignal: Promise<void>; // resolves В ТОЧНОСТИ когда watchdog сработал
+}
+```
+
+Watchdog-таймер в `_executeTick` мутирует `current.timedOut`/резолвит
+`timeoutSignal` **независимо** от текущего lifecycle — только сама
+lifecycle-мутация в `FAULTED` guarded (`if (entry.lifecycle === 'ACTIVE')`).
+Раньше guard стоял на ВСЁМ watchdog-коллбэке (`if (entry.lifecycle !==
+'ACTIVE') return;`), из-за чего сценарий:
+
+```text
+unregister() вызван → ACTIVE → STOPPING (до срабатывания watchdog)
+watchdog видит lifecycle !== 'ACTIVE' → ничего не делает
+execution зависает НАВСЕГДА
+unregister/stopAll ждут execution.promise, который никогда не resolve
+```
+
+приводил к вечному зависанию. `_attemptStop` теперь ждёт **гонку**, а не
+голый `await`:
+
+```typescript
+const outcome = await Promise.race([
+  execution.promise.then(() => 'completed' as const),
+  execution.timeoutSignal.then(() => 'timed-out' as const),
+]);
+if (outcome === 'timed-out') return Err(new StopStrategyError('EXECUTION_TIMED_OUT', ...));
+```
+
+Если timeout выигрывает гонку — `strategy.stop()`/final intents НЕ
+запускаются, entry не удаляется, `Err(EXECUTION_TIMED_OUT)` retryable.
+`stopAll()` с одной зависшей execution тоже не виснет — попадает в aggregate
+`StopStrategyError[]`.
+
+### Authoritative commitment post-check (`IStrategyCommitmentReader`)
+
+`getOpenOrders(strategyId)` доказывает отсутствие ЛОКАЛЬНОГО `Order`, но не
+отсутствие commitment: submission может быть `UNKNOWN`/`VENUE_ACCEPTED` (venue
+принял ордер, локальный `Order` ещё не сохранён), reservation —
+`RECONCILIATION_REQUIRED`, либо есть unsettled fill. Новый порт:
+
+```typescript
+interface IStrategyCommitmentReader {
+  getActiveCommitments(input: {
+    strategyId: string; accountId: AccountId; instrumentIds: readonly InstrumentId[];
+  }): Promise<readonly StrategyCommitment[]>;
+}
+```
+
+Реализация — `SubmissionJournalStrategyCommitmentReader`
+(`@polymarket/use-cases`) поверх УЖЕ существующих `IOrderSubmissionRepository`
+(`listByStatus` + `reservation.status`) и `IOrderStateStore.hasUnsettledFills`
+— БЕЗ нового параллельного source of truth. `StrategySchedulerDeps.commitmentReader`
+**обязателен** (не optional) — composition root (`buildStrategyEngine.ts`)
+строит default из `repos.orderSubmissionRepo` + `repos.orderRepo`. Reader
+exception — fail-closed (`FINAL_CLEANUP_UNCONFIRMED`, НЕ проглатывается).
+
+### `dispose()` — cleanup отменённой (до публикации) регистрации
+
+Если `unregister()`/`stopAll()` пришли, пока `strategy.initialize()` ещё
+выполнялся, а `initialize()` в итоге вернул `Ok` — ресурсы уже открыты, но
+ACTIVE entry никогда не публикуется (нет routing/execution context для
+`strategy.stop()`). Новый lifecycle hook:
+
+```typescript
+dispose(): Promise<Result<void, Error>>; // default в BaseStrategy — Ok(undefined)
+```
+
+Вызывается `StrategyScheduler` РОВНО ОДИН РАЗ, ТОЛЬКО если `initialize()`
+вернул `Ok` И регистрация была отменена. `initialize()` вернувший `Err`/
+бросивший исключение — `dispose()` НЕ вызывается (ресурсы не считаются
+открытыми). `dispose()` bросивший/вернувший `Err` — `DISPOSE_FAILED`,
+видимый в `stopAll()` aggregate (обычная успешная отмена регистрации Err НЕ
+считается stopAll-failure — только явный сбой `dispose()`).
+
+### `strategy.stop()` exception — НЕ считается успехом
+
+Раньше exception из `strategy.stop()` логировался, но `rawIntents`
+оставался `[]`, который проходил валидацию — стратегия могла быть удалена
+как «успешно остановленная», хотя `stop()` не выполнил свою работу. Теперь:
+exception → `Err(STOP_HOOK_FAILED, { cause })`, `entry.finalIntents` НЕ
+кэшируется — следующий `unregister()` вызовет `strategy.stop()` заново.
+
+### Fresh `CANCEL_ALL` на каждом retry
+
+`strategy.stop()` кэшируется и вызывается один раз, но список открытых
+ордеров мог измениться МЕЖДУ retry-попытками (поздний PLACE, recovery). Final
+batch = кэшированные intents + **гарантированный** `CANCEL_ALL` на каждой
+попытке (без дублирования, если `stop()` уже вернул один).
+
+### `additionalTradableTargets` теперь автоматически routing
+
+Каждый `additionalTradableTargets` instrumentId добавляется в
+`routingInstrumentKeys` при регистрации — раньше tradable target МОГ не
+получать tick, если caller не продублировал его в `additionalInstrumentIds`.
+
+### `ExecutionEngine`: CANCEL_ALL expansion изолирован
+
+`orderRepo.getByStrategyId(ctx.strategyId)` (expansion `CANCEL_ALL`) обёрнут
+в try/catch — сбой repo раньше ронял весь `execute()` (Promise rejects,
+typed report терялся). Теперь — `CANCEL_FAILED` outcome для `CANCEL_ALL`,
+блокирует все PLACE batch-а (`BLOCKED_BY_UNSAFE_CANCEL`), `execute()`
+всё равно возвращает typed `ExecutionReport`.
+
+### `KNOWN_TRIGGER_REASONS` — `Object.freeze`, `TriggerReason` из tuple
+
+`readonly TriggerReason[]` (TypeScript-only readonly) заменён на
+`Object.freeze([...] as const)` — runtime-immutability (`.push()`/индексное
+присваивание бросают в strict mode). `TriggerReason` выводится
+(`typeof KNOWN_TRIGGER_REASONS[number]`) из tuple, а не объявляется отдельно.

@@ -56,6 +56,7 @@ import type {
   StrategyIntent,
   PlaceIntent,
   CancelIntent,
+  CancelAllIntent,
 } from './types/StrategyIntent.js';
 import type { IOrderIdGenerator } from './ports/OrderIdGenerator.js';
 
@@ -404,13 +405,13 @@ export class ExecutionEngine {
 
     // ── 0. Валидация target-пары КАЖДОГО PLACE (fail-closed, до dedupe) ──
     const resolvedPlaces: ResolvedPlace[] = [];
-    let hasCancelAll = false;
+    let cancelAllIntent: CancelAllIntent | undefined;
     const cancelMap = new Map<string, CancelIntent>();
 
     for (const intent of intents) {
       switch (intent.type) {
         case 'CANCEL_ALL':
-          hasCancelAll = true;
+          cancelAllIntent = intent;
           break;
         case 'CANCEL':
           cancelMap.set(String(intent.orderId), intent);
@@ -490,25 +491,49 @@ export class ExecutionEngine {
     // ── 2. CANCEL_ALL → разворачиваем в ордера ТЕКУЩЕЙ стратегии ─
     // getByStrategyId уже scoped по strategyId; дополнительная ownership-проверка
     // per-order выполняется в _executeCancel (authoritative lookup).
-    const cancels: CancelIntent[] = hasCancelAll ? [] : [...cancelMap.values()];
-    if (hasCancelAll) {
-      const orders = await this._deps.orderRepo.getByStrategyId(ctx.strategyId);
-      for (const order of orders) {
-        cancels.push({ type: 'CANCEL', orderId: order.id });
-      }
-    }
-
-    if (cancels.length === 0 && places.length === 0) {
-      return { placed, cancelled, skipped, localRejected, blockedByUnsafeCancel, failed, errors, outcomes };
-    }
-
-    // ── 3. Cancels параллельно ──────────────────────────────
+    //
     // Fail-closed cancel-replace: PLACE разрешён ТОЛЬКО если КАЖДЫЙ cancel
-    // завершился безопасно (CONFIRMED/TERMINAL_NOOP). PENDING, FAILED,
+    // (включая expansion CANCEL_ALL) завершился безопасно. PENDING, FAILED,
     // rejected Promise, exception, unknown result — блокируют все PLACE.
     let allCancelsSafeForReplace = true;
     const unsafeCancelReasons: string[] = [];
 
+    const cancels: CancelIntent[] = cancelAllIntent ? [] : [...cancelMap.values()];
+    if (cancelAllIntent) {
+      // Exception isolation: getByStrategyId может бросить (repo blip) — это
+      // НЕ должно ронять весь execute() (Promise rejects, typed report
+      // теряется). Сбой expansion — небезопасный cancel-исход: блокирует ВСЕ
+      // PLACE этого batch (fail-closed), но execute() всё равно возвращает
+      // typed ExecutionReport.
+      try {
+        const orders = await this._deps.orderRepo.getByStrategyId(ctx.strategyId);
+        for (const order of orders) {
+          cancels.push({ type: 'CANCEL', orderId: order.id });
+        }
+      } catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        allCancelsSafeForReplace = false;
+        unsafeCancelReasons.push(`CANCEL_ALL expansion threw: ${error.message}`);
+        failed++;
+        errors.push({ intent: cancelAllIntent, error });
+        outcomes.push({
+          intent: cancelAllIntent,
+          kind: 'CANCEL_FAILED',
+          error,
+          reason: 'CANCEL_ALL expansion failed',
+        });
+        this._logger.error('ExecutionEngine: CANCEL_ALL expansion threw — blocking all PLACE this batch (fail-closed)', {
+          strategyId: ctx.strategyId,
+          error: error.message,
+        });
+      }
+    }
+
+    if (cancels.length === 0 && places.length === 0 && allCancelsSafeForReplace) {
+      return { placed, cancelled, skipped, localRejected, blockedByUnsafeCancel, failed, errors, outcomes };
+    }
+
+    // ── 3. Cancels параллельно ──────────────────────────────
     if (cancels.length > 0) {
       const cancelResults = await Promise.allSettled(
         cancels.map((intent) => this._executeCancel(ctx, intent)),

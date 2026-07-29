@@ -377,6 +377,12 @@ export class CrossMarketArbStrategy implements IStrategy {
     return Ok(undefined);
   }
 
+  async dispose(): Promise<Result<void, Error>> {
+    // Нечего освобождать — initialize() не открывает внешних ресурсов
+    // (подписки на market data управляются вызывающим кодом, не стратегией).
+    return Ok(undefined);
+  }
+
   /**
    * Основной tick: назначаем easy/hard по strike'ам, детектим расхождение.
    *

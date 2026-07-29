@@ -129,6 +129,20 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
   }
 
   /**
+   * Освобождение ресурсов по умолчанию — noop.
+   *
+   * @returns Ok(undefined)
+   *
+   * @remarks
+   * Переопределите, если `initialize()` открывает ресурсы, которые нужно
+   * закрыть при отменённой (до публикации) регистрации. См. различие
+   * `initialize()`/`dispose()`/`stop()` в {@link IStrategy}.
+   */
+  public async dispose(): Promise<Result<void, Error>> {
+    return Ok(undefined);
+  }
+
+  /**
    * Остановка по умолчанию — отменить все ордера.
    *
    * @returns [{ type: 'CANCEL_ALL' }]

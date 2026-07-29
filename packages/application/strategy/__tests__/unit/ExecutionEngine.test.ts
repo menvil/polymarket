@@ -407,6 +407,32 @@ describe('ExecutionEngine', () => {
       expect(report.cancelled).toBe(0);
       expect(report.errors).toHaveLength(0);
     });
+
+    it('CANCEL_ALL expansion (getByStrategyId) бросает → typed report, execute НЕ rejects, PLACE заблокирован', async () => {
+      (deps.orderRepo as any).getByStrategyId.mockRejectedValue(new Error('repo blip'));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL_ALL' },
+        place({ side: BUY }),
+      ]);
+
+      expect(report.failed).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const cancelOutcome = report.outcomes.find((o) => o.kind === 'CANCEL_FAILED');
+      expect(cancelOutcome?.reason).toBe('CANCEL_ALL expansion failed');
+      expect(cancelOutcome?.error?.message).toBe('repo blip');
+    });
+
+    it('batch = только CANCEL_ALL, getByStrategyId бросает → report.failed=1, execute НЕ rejects', async () => {
+      (deps.orderRepo as any).getByStrategyId.mockRejectedValue(new Error('repo blip'));
+
+      const report = await engine.execute(ctx, [{ type: 'CANCEL_ALL' }]);
+
+      expect(report.failed).toBe(1);
+      expect(report.cancelled).toBe(0);
+    });
   });
 
   // ── Нормализация / dedupe ────────────────────────────

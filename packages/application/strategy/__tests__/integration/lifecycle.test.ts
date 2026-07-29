@@ -176,6 +176,7 @@ function makeHarness(opts: {
   });
 
   const marketDataStore = makeMarketDataStore();
+  const commitmentReader = { getActiveCommitments: fn().mockResolvedValue([]) };
   const deps: StrategySchedulerDeps = {
     marketDataStore,
     orderStateStore: makeOrderStateStore(),
@@ -184,6 +185,7 @@ function makeHarness(opts: {
     executionEngine,
     clock: clock as any,
     timer,
+    commitmentReader: commitmentReader as any,
     logger,
   };
 

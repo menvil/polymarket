@@ -11,6 +11,9 @@
  * - **ReconcileUnknownSubmissionsUseCase** — привязка/разрешение ambiguous
  *   submissions без venueOrderId (recovery reservation)
  * - **InitializePortfolioUseCase** — инициализация Portfolio из баланса venue
+ * - **SubmissionJournalStrategyCommitmentReader** — authoritative reader
+ *   незавершённых submission/reservation/fill commitments стратегии
+ *   (`IStrategyCommitmentReader` для `StrategyScheduler` final cleanup)
  *
  * Вспомогательные сервисы:
  * - **PortfolioService** — операции над Portfolio aggregate
@@ -79,6 +82,9 @@ export type { InitializePortfolioDeps } from './InitializePortfolioUseCase.js';
 
 export { UpdateOrderStatusUseCase } from './UpdateOrderStatusUseCase.js';
 export type { UpdateOrderStatusInput, UpdateOrderStatusDeps } from './UpdateOrderStatusUseCase.js';
+
+export { SubmissionJournalStrategyCommitmentReader } from './SubmissionJournalStrategyCommitmentReader.js';
+export type { SubmissionJournalStrategyCommitmentReaderDeps } from './SubmissionJournalStrategyCommitmentReader.js';
 
 // Services
 export { PortfolioService } from './services/PortfolioService.js';

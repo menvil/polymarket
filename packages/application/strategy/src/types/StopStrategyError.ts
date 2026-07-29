@@ -24,8 +24,10 @@ export type StopStrategyErrorCode =
   | 'EXECUTION_STILL_RUNNING'
   | 'EXECUTION_TIMED_OUT'
   | 'FINAL_CLEANUP_UNCONFIRMED'
+  | 'STOP_HOOK_FAILED'
   | 'UNSAFE_FINAL_INTENT'
   | 'REGISTRATION_CANCELLED'
+  | 'DISPOSE_FAILED'
   | 'OTHER';
 
 /**
@@ -39,13 +41,23 @@ export type StopStrategyErrorCode =
  *   (стратегия `FAULTED`), и hung promise ещё не разрешился; final cleanup
  *   НЕ запускается, пока promise не завершится — повторите unregister позже.
  * - `FINAL_CLEANUP_UNCONFIRMED` — final intents исполнены, но исход небезопасен
- *   (см. `metadata.report`) либо authoritative post-check нашёл живые ордера —
- *   entry НЕ удалена, lifecycle остаётся `STOPPING`/`FAULTED`, повторите unregister.
+ *   (см. `metadata.report`), authoritative post-check нашёл живые ордера, либо
+ *   `metadata.commitments` содержит unresolved submission/reservation/fill
+ *   commitments (см. `IStrategyCommitmentReader`) — entry НЕ удалена,
+ *   lifecycle остаётся `STOPPING`/`FAULTED`, повторите unregister.
+ * - `STOP_HOOK_FAILED` — `strategy.stop()` бросил исключение: это НЕ считается
+ *   успешным вызовом (в отличие от пустого `[]`) — final intents НЕ
+ *   исполнялись, `entry.finalIntents` НЕ закэширован, следующий unregister
+ *   вызовет `strategy.stop()` заново (см. `metadata.cause`).
  * - `UNSAFE_FINAL_INTENT` — `strategy.stop()` вернул intent, отличный от
  *   CANCEL/CANCEL_ALL (например, PLACE) — programming/configuration error;
  *   final batch НЕ исполнялся вообще.
  * - `REGISTRATION_CANCELLED` — unregister пришёл во время `initialize()`;
- *   регистрация отменена, ACTIVE entry никогда не была создана.
+ *   регистрация отменена, ACTIVE entry никогда не была создана (`dispose()`
+ *   вызван и завершился успешно).
+ * - `DISPOSE_FAILED` — регистрация была отменена во время `initialize()`, и
+ *   `strategy.dispose()` бросил либо вернул `Err` — неторговые ресурсы могли
+ *   остаться не освобождены (см. `metadata.cause`).
  * - `OTHER` — необработанное исключение в stop-flow.
  */
 export class StopStrategyError extends Error {

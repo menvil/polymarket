@@ -13,7 +13,21 @@
  * 1. `StrategyScheduler.register(registration)` → `strategy.initialize()`
  * 2. Данные обновляются → scheduler вызывает `strategy.tick(snapshot, reasons)`
  * 3. tick() возвращает StrategyIntent[] — декларативные намерения
- * 4. При остановке: `strategy.stop()` → финальные intents (обычно CANCEL_ALL)
+ * 4. При остановке ЗАРЕГИСТРИРОВАННОЙ (ACTIVE) стратегии: `strategy.stop()` →
+ *    финальные intents (только CANCEL/CANCEL_ALL, см. {@link StrategyStopIntent})
+ *
+ * ### `initialize()` vs `dispose()` vs `stop()`:
+ * - `initialize()` — открыть внешние ресурсы (подключения, подписки и т.п.)
+ *   ПЕРЕД тем, как стратегия станет ACTIVE и начнёт получать `tick()`.
+ * - `dispose()` — освободить эти же ресурсы, если регистрация была ОТМЕНЕНА
+ *   (`unregister()`/`stopAll()` пришли ПОКА `initialize()` ещё выполнялся, ДО
+ *   того как стратегия стала ACTIVE). Стратегия в этот момент НЕ имеет
+ *   безопасного execution context (routing/heartbeat никогда не создавались)
+ *   — `dispose()` НЕ возвращает торговые intents, только освобождает ресурсы.
+ * - `stop()` — штатная остановка УЖЕ ACTIVE стратегии: возвращает
+ *   CANCEL/CANCEL_ALL для отмены открытых ордеров. Не вызывается, если
+ *   регистрация была отменена до публикации (в этом случае вызывается
+ *   `dispose()` вместо `stop()`).
  *
  * @example
  * ```typescript
@@ -24,6 +38,11 @@
  *
  *   async initialize(): Promise<Result<void, Error>> {
  *     // Без подписок — стратегия работает через tick()
+ *     return Ok(undefined);
+ *   }
+ *
+ *   async dispose(): Promise<Result<void, Error>> {
+ *     // Нечего освобождать — initialize() ничего не открывал
  *     return Ok(undefined);
  *   }
  *
@@ -38,7 +57,7 @@
  *     ];
  *   }
  *
- *   stop(): StrategyIntent[] {
+ *   stop(): StrategyStopIntent[] {
  *     return [{ type: 'CANCEL_ALL' }];
  *   }
  *
@@ -90,6 +109,32 @@ export interface IStrategy {
    * - Возвращает ошибку вызывающей стороне
    */
   initialize(): Promise<Result<void, Error>>;
+
+  /**
+   * Освобождает ресурсы, открытые в `initialize()`, если регистрация была
+   * отменена ДО того, как стратегия стала ACTIVE.
+   *
+   * @returns `Ok(undefined)` при успехе или `Err(Error)` при ошибке
+   *
+   * @remarks
+   * Вызывается `StrategyScheduler` ТОЛЬКО когда:
+   * - `initialize()` вернул `Ok` (успешно открыл ресурсы), И
+   * - `unregister()`/`stopAll()` пришли ПОКА регистрация ещё обрабатывалась
+   *   (стратегия никогда не публиковалась как ACTIVE entry).
+   *
+   * НЕ вызывается, если `initialize()` вернул `Err` или бросил — в этом
+   * случае предполагается, что ресурсы не были успешно открыты.
+   * НЕ вызывается для уже ACTIVE стратегий — для них используется `stop()`.
+   *
+   * В отличие от `stop()`, `dispose()`:
+   * - НЕ возвращает `StrategyIntent[]` — у стратегии на этом этапе нет
+   *   безопасного execution context (routing/heartbeat не создавались);
+   * - НЕ должен размещать или отменять ордера;
+   * - должен быть безопасен для вызова ровно один раз после успешного
+   *   `initialize()` (scheduler вызывает его не более одного раза на
+   *   попытку регистрации).
+   */
+  dispose(): Promise<Result<void, Error>>;
 
   /**
    * Один цикл: данные → решение → намерения.

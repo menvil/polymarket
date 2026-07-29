@@ -176,6 +176,21 @@ describe('BaseStrategy', () => {
     });
   });
 
+  // ── dispose() ─────────────────────────────────────────
+
+  describe('dispose()', () => {
+    it('should return Ok(undefined) by default', async () => {
+      const strategy = new TestStrategy();
+
+      const result = await strategy.dispose();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeUndefined();
+      }
+    });
+  });
+
   // ── stop() ────────────────────────────────────────────
 
   describe('stop()', () => {
