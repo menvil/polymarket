@@ -221,9 +221,16 @@ export class DeterministicSchedulerTimer implements ISchedulerTimer {
    * перепланируются и могут сработать несколько раз за один advance.
    * Исключение из callback НЕ прерывает остальные таймеры (логировать должен
    * сам callback — у адаптера нет logger-зависимости).
+   *
+   * ### Zero-delay edge case:
+   * Guard — строго `nowMs < this._nowMs` (не `<=`). Таймер, поставленный
+   * с `delayMs=0` в ТЕКУЩИЙ момент (`dueAtMs === this._nowMs`), обязан
+   * сработать при следующем `advanceTo(this._nowMs)` — даже когда время
+   * формально не продвигается. Прежний guard `nowMs <= this._nowMs` считал
+   * такой вызов no-op и молча терял due-таймер.
    */
   public advanceTo(nowMs: number): void {
-    if (nowMs <= this._nowMs) return;
+    if (nowMs < this._nowMs) return;
 
     // Цикл: на каждом шаге берём самый ранний просроченный таймер.
     // Пере-сканирование после каждого срабатывания корректно обрабатывает

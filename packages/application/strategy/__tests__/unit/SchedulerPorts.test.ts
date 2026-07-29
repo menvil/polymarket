@@ -3,7 +3,11 @@ import {
   DeterministicSchedulerTimer,
   NodeSchedulerTimer,
 } from '../../src/ports/SchedulerTimer.js';
-import { SequentialOrderIdGenerator, UuidOrderIdGenerator } from '../../src/ports/OrderIdGenerator.js';
+import {
+  SequentialOrderIdGenerator,
+  UuidOrderIdGenerator,
+  OrderIdGeneratorConfigError,
+} from '../../src/ports/OrderIdGenerator.js';
 
 describe('DeterministicSchedulerTimer', () => {
   it('setTimeout срабатывает только при advance до due-времени', () => {
@@ -88,6 +92,45 @@ describe('DeterministicSchedulerTimer', () => {
     expect(fired).toEqual([]);
     expect(timer.nowMs).toBe(500);
   });
+
+  it('setTimeout(0) + advanceTo(current) → callback срабатывает ровно один раз', () => {
+    const timer = new DeterministicSchedulerTimer(100);
+    let calls = 0;
+
+    timer.setTimeout(() => { calls++; }, 0);
+    // nowMs не продвигается (dueAtMs === текущее время) — раньше это было
+    // no-op (guard `nowMs <= this._nowMs`) и callback терялся.
+    timer.advanceTo(100);
+
+    expect(calls).toBe(1);
+  });
+
+  it('equal dueAt ordering сохраняет insertion order (повторный вызов advanceTo той же цели — идемпотентен)', () => {
+    const timer = new DeterministicSchedulerTimer(0);
+    const fired: string[] = [];
+
+    timer.setTimeout(() => fired.push('first'), 100);
+    timer.setTimeout(() => fired.push('second'), 100);
+
+    timer.advanceTo(100);
+    timer.advanceTo(100); // повторный вызов — нет due-таймеров, no-op
+
+    expect(fired).toEqual(['first', 'second']);
+  });
+
+  it('callback создаёт zero-delay callback → детерминированное исполнение в том же advanceTo', () => {
+    const timer = new DeterministicSchedulerTimer(0);
+    const fired: string[] = [];
+
+    timer.setTimeout(() => {
+      fired.push('outer');
+      timer.setTimeout(() => fired.push('zero-delay-inner'), 0);
+    }, 50);
+
+    timer.advanceTo(50);
+
+    expect(fired).toEqual(['outer', 'zero-delay-inner']);
+  });
 });
 
 describe('NodeSchedulerTimer', () => {
@@ -135,6 +178,24 @@ describe('SequentialOrderIdGenerator', () => {
     const seq1 = [gen1.next(), gen1.next()].map(String);
     const seq2 = [gen2.next(), gen2.next()].map(String);
     expect(seq1).toEqual(seq2);
+  });
+
+  it('пустой prefix отклонён (OrderIdGeneratorConfigError)', () => {
+    expect(() => new SequentialOrderIdGenerator('')).toThrow(OrderIdGeneratorConfigError);
+  });
+
+  it('whitespace-only prefix отклонён', () => {
+    expect(() => new SequentialOrderIdGenerator('   ')).toThrow(OrderIdGeneratorConfigError);
+  });
+
+  it('control characters в prefix отклонены', () => {
+    expect(() => new SequentialOrderIdGenerator('bad\u0000prefix')).toThrow(OrderIdGeneratorConfigError);
+  });
+
+  it('валидный prefix даёт стабильную детерминированную последовательность', () => {
+    const gen = new SequentialOrderIdGenerator('valid-prefix');
+    expect(String(gen.next())).toBe('valid-prefix-1');
+    expect(String(gen.next())).toBe('valid-prefix-2');
   });
 });
 

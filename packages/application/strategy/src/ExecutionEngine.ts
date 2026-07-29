@@ -106,13 +106,17 @@ export interface ExecutionContext {
   readonly instrumentId: InstrumentId;
   readonly asset: AssetId;
   /**
-   * Инструменты, разрешённые регистрацией стратегии (string-ключи InstrumentId).
+   * Инструменты, на которых разрешена ТОРГОВЛЯ (string-ключи InstrumentId).
    *
    * @remarks
-   * Primary + complementary + additional instruments. `PlaceIntent.targetInstrumentId`
-   * вне этого набора — typed failure (fail-closed), venue не вызывается.
+   * ТОЛЬКО primary + complementary (+ явные `additionalTradableTargets`, если
+   * заданы регистрацией) — НЕ включает routing-only `additionalInstrumentIds`
+   * (они лишь триггерят tick, но не являются разрешёнными PLACE-таргетами).
+   * `PlaceIntent.targetInstrumentId` вне этого набора — typed failure
+   * (fail-closed), venue не вызывается. Применяется ОДИНАКОВО к primary
+   * (implicit target) и explicit target — никакого trusted bypass для primary.
    */
-  readonly allowedInstruments: ReadonlySet<string>;
+  readonly tradableInstrumentKeys: ReadonlySet<string>;
 }
 
 /**
@@ -127,9 +131,15 @@ export interface EffectiveOrderTarget {
  * Типизированный результат исполнения CANCEL intent.
  *
  * @remarks
- * - `CONFIRMED` — venue подтвердил отмену (`CANCELLED`/`ALREADY_CANCELLED`):
- *   капитал освобождён, cancel успешен (только эти исходы инкрементируют
- *   `cancelled` и ставят post-cancel cooldown).
+ * - `CONFIRMED` — venue подтвердил отмену (`CANCELLED`/`ALREADY_CANCELLED`)
+ *   И инструмент отменённого ордера определён: капитал освобождён, cancel
+ *   успешен (только этот исход и `CONFIRMED_TARGET_UNKNOWN` инкрементируют
+ *   `cancelled`; только `CONFIRMED` ставит post-cancel cooldown).
+ * - `CONFIRMED_TARGET_UNKNOWN` — venue подтвердил отмену BUY-ордера, но
+ *   `assetIdToInstrumentId(order.asset)` не определён: cancel фактически
+ *   произошёл (инкрементирует `cancelled`), но НЕ безопасен для replace —
+ *   блокирует ВСЕ PLACE текущего batch (fail-closed) и НЕ ставит cooldown
+ *   (guessing инструмента запрещён).
  * - `TERMINAL_NOOP` — ордер уже terminal НЕ отменой (`ALREADY_TERMINAL`:
  *   REJECTED/EXPIRED): отменять нечего; PLACE НЕ блокируется.
  * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`/`ALREADY_FILLED`/
@@ -137,7 +147,12 @@ export interface EffectiveOrderTarget {
  * - `FAILED` — use case вернул Err, бросил, либо ownership-проверка
  *   отклонила cancel: блокирует ВСЕ PLACE текущего batch (fail-closed).
  */
-export type CancelExecutionResult = 'CONFIRMED' | 'TERMINAL_NOOP' | 'PENDING' | 'FAILED';
+export type CancelExecutionResult =
+  | 'CONFIRMED'
+  | 'CONFIRMED_TARGET_UNKNOWN'
+  | 'TERMINAL_NOOP'
+  | 'PENDING'
+  | 'FAILED';
 
 /** Типизированный исход одного intent в отчёте. */
 export type IntentOutcomeKind =
@@ -147,6 +162,7 @@ export type IntentOutcomeKind =
   | 'BLOCKED_BY_UNSAFE_CANCEL'
   | 'FAILED'
   | 'CANCEL_CONFIRMED'
+  | 'CANCEL_CONFIRMED_TARGET_UNKNOWN'
   | 'CANCEL_TERMINAL_NOOP'
   | 'CANCEL_PENDING'
   | 'CANCEL_FAILED';
@@ -238,6 +254,7 @@ export class LocalIntentRejectionError extends Error {
       | 'MIN_ORDER_SIZE_VIOLATION'
       | 'MIN_ORDER_VALUE_VIOLATION'
       | 'CANCEL_OWNERSHIP_MISMATCH'
+      | 'CANCEL_ACCOUNT_UNKNOWN'
       | 'CANCEL_ORDER_NOT_FOUND',
     message: string,
   ) {
@@ -399,26 +416,43 @@ export class ExecutionEngine {
           cancelMap.set(String(intent.orderId), intent);
           break;
         case 'PLACE': {
-          const targetResult = this._resolveEffectiveTarget(ctx, intent);
-          if (!targetResult.ok) {
-            localRejected++;
-            skipped++;
-            errors.push({ intent, error: targetResult.error });
-            outcomes.push({
-              intent,
-              kind: 'LOCAL_REJECTED',
-              error: targetResult.error,
-              reason: targetResult.error.message,
-            });
-            this._logger.warn('ExecutionEngine: PLACE rejected — invalid target pair', {
+          // Exception isolation: target resolution изолирована per-intent —
+          // сбой одного PLACE (например, неожиданное исключение в catalog/
+          // asset-mapping коде) не должен прерывать классификацию остальных
+          // intents этого batch и, тем более, CANCEL_ALL/CANCEL, которые
+          // исполняются позже в этой же функции.
+          try {
+            const targetResult = this._resolveEffectiveTarget(ctx, intent);
+            if (!targetResult.ok) {
+              localRejected++;
+              skipped++;
+              errors.push({ intent, error: targetResult.error });
+              outcomes.push({
+                intent,
+                kind: 'LOCAL_REJECTED',
+                error: targetResult.error,
+                reason: targetResult.error.message,
+              });
+              this._logger.warn('ExecutionEngine: PLACE rejected — invalid target pair', {
+                strategyId: ctx.strategyId,
+                side: intent.side,
+                code: targetResult.error.code,
+                error: targetResult.error.message,
+              });
+              break;
+            }
+            resolvedPlaces.push({ intent, target: targetResult.value });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            failed++;
+            errors.push({ intent, error });
+            outcomes.push({ intent, kind: 'FAILED', error, reason: 'target resolution threw unexpectedly' });
+            this._logger.error('ExecutionEngine: PLACE target resolution threw unexpectedly — isolated', {
               strategyId: ctx.strategyId,
               side: intent.side,
-              code: targetResult.error.code,
-              error: targetResult.error.message,
+              error: error.message,
             });
-            break;
           }
-          resolvedPlaces.push({ intent, target: targetResult.value });
           break;
         }
       }
@@ -426,15 +460,30 @@ export class ExecutionEngine {
 
     // ── 1. Нормализация PLACE: dedupe по effective instrument + side +
     //       точному Decimal-представлению цены + postOnly (последний побеждает).
+    // Exception isolation: генерация ключа читает price.value() — сбой на
+    // ОДНОМ intent (повреждённый Price/Decimal) не должен прервать dedupe
+    // для остальных и, тем более, не должен помешать CANCEL_ALL/CANCEL ниже.
     const placeMap = new Map<string, ResolvedPlace>();
     for (const place of resolvedPlaces) {
-      const key = [
-        String(place.target.instrumentId),
-        place.intent.side,
-        place.intent.price.value().toString(),
-        place.intent.postOnly === true ? 'po' : 'no',
-      ].join('|');
-      placeMap.set(key, place);
+      try {
+        const key = [
+          String(place.target.instrumentId),
+          place.intent.side,
+          place.intent.price.value().toString(),
+          place.intent.postOnly === true ? 'po' : 'no',
+        ].join('|');
+        placeMap.set(key, place);
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        failed++;
+        errors.push({ intent: place.intent, error });
+        outcomes.push({ intent: place.intent, kind: 'FAILED', error, reason: 'dedupe key generation threw unexpectedly' });
+        this._logger.error('ExecutionEngine: PLACE dedupe key generation threw unexpectedly — isolated', {
+          strategyId: ctx.strategyId,
+          side: place.intent.side,
+          error: error.message,
+        });
+      }
     }
     const places = [...placeMap.values()];
 
@@ -487,6 +536,15 @@ export class ExecutionEngine {
             cancelled++;
             outcomes.push({ intent, kind: 'CANCEL_CONFIRMED' });
             break;
+          case 'CONFIRMED_TARGET_UNKNOWN':
+            // Venue подтвердил cancel (капитал реально освобождён) — считаем
+            // cancelled, но НЕ safe-for-replace: инструмент отменённого BUY
+            // не определён, guessing запрещён — блокирует весь PLACE batch.
+            cancelled++;
+            allCancelsSafeForReplace = false;
+            unsafeCancelReasons.push(`${String(intent.orderId)}: CONFIRMED_TARGET_UNKNOWN (${attempt.reason ?? 'instrument undetermined'})`);
+            outcomes.push({ intent, kind: 'CANCEL_CONFIRMED_TARGET_UNKNOWN', reason: attempt.reason });
+            break;
           case 'TERMINAL_NOOP':
             outcomes.push({ intent, kind: 'CANCEL_TERMINAL_NOOP', reason: attempt.reason });
             break;
@@ -538,27 +596,44 @@ export class ExecutionEngine {
         continue;
       }
 
-      const attempt = await this._executePlace(ctx, intent, place.target);
-      switch (attempt.kind) {
-        case 'placed':
-          placed++;
-          outcomes.push({ intent, kind: 'PLACED' });
-          break;
-        case 'skipped':
-          skipped++;
-          outcomes.push({ intent, kind: 'SKIPPED', reason: attempt.reason });
-          break;
-        case 'local_rejected':
-          skipped++;
-          localRejected++;
-          errors.push({ intent, error: attempt.error });
-          outcomes.push({ intent, kind: 'LOCAL_REJECTED', error: attempt.error, reason: attempt.reason });
-          break;
-        case 'failed':
-          failed++;
-          errors.push({ intent, error: attempt.error });
-          outcomes.push({ intent, kind: 'FAILED', error: attempt.error, failureCode: attempt.failureCode });
-          break;
+      // Exception isolation: КАЖДЫЙ PLACE — отдельный boundary. Неожиданное
+      // исключение (repo/portfolio/use-case) не должно прервать цикл — оно
+      // становится FAILED-исходом ЭТОГО intent, следующий PLACE обрабатывается
+      // как обычно. Cancels (в т.ч. CANCEL_ALL) уже исполнены выше и не зависят
+      // от этого цикла — их безопасность не может пострадать от PLACE-сбоя.
+      try {
+        const attempt = await this._executePlace(ctx, intent, place.target);
+        switch (attempt.kind) {
+          case 'placed':
+            placed++;
+            outcomes.push({ intent, kind: 'PLACED' });
+            break;
+          case 'skipped':
+            skipped++;
+            outcomes.push({ intent, kind: 'SKIPPED', reason: attempt.reason });
+            break;
+          case 'local_rejected':
+            skipped++;
+            localRejected++;
+            errors.push({ intent, error: attempt.error });
+            outcomes.push({ intent, kind: 'LOCAL_REJECTED', error: attempt.error, reason: attempt.reason });
+            break;
+          case 'failed':
+            failed++;
+            errors.push({ intent, error: attempt.error });
+            outcomes.push({ intent, kind: 'FAILED', error: attempt.error, failureCode: attempt.failureCode });
+            break;
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        failed++;
+        errors.push({ intent, error });
+        outcomes.push({ intent, kind: 'FAILED', error, reason: 'PLACE intent threw unexpectedly' });
+        this._logger.error('ExecutionEngine: PLACE intent threw unexpectedly — isolated, continuing batch', {
+          strategyId: ctx.strategyId,
+          side: intent.side,
+          error: error.message,
+        });
       }
     }
 
@@ -578,12 +653,12 @@ export class ExecutionEngine {
    * Fail-closed правила (venue/use case НЕ вызываются при нарушении):
    * 1. Заданы ОБА поля пары или НИ ОДНОГО (runtime-защита в дополнение к
    *    compile-time union — intents могут прийти из JS/`as`-кода).
-   * 2. Target instrument существует в каталоге.
-   * 3. `targetAsset` маппится ровно на target instrument
-   *    (`assetIdToInstrumentId(asset) === instrumentId`).
-   * 4. Target instrument разрешён текущей регистрацией стратегии.
-   * Никаких независимых fallback `targetX ?? ctx.X` — сначала валидация
-   * пары, затем единый EffectiveOrderTarget.
+   * 2. Effective pair (explicit target ?? primary из ctx) строится ОДИН раз,
+   *    затем проходит ЕДИНУЮ валидацию — {@link _validateEffectiveTarget}.
+   *    Primary НЕ имеет trusted bypass: те же три проверки (tradable-allowed,
+   *    catalog entry, asset↔instrument mapping), что и explicit target.
+   * Никаких независимых fallback `targetX ?? ctx.X` без валидации — сначала
+   * собирается effective pair, затем единая проверка.
    */
   private _resolveEffectiveTarget(
     ctx: ExecutionContext,
@@ -593,7 +668,7 @@ export class ExecutionEngine {
     const targetAsset = intent.targetAsset;
 
     if (targetInstrumentId === undefined && targetAsset === undefined) {
-      return { ok: true, value: { instrumentId: ctx.instrumentId, asset: ctx.asset } };
+      return this._validateEffectiveTarget({ instrumentId: ctx.instrumentId, asset: ctx.asset }, ctx);
     }
 
     if (targetInstrumentId === undefined || targetAsset === undefined) {
@@ -606,39 +681,62 @@ export class ExecutionEngine {
       };
     }
 
-    if (!ctx.allowedInstruments.has(String(targetInstrumentId))) {
+    return this._validateEffectiveTarget({ instrumentId: targetInstrumentId, asset: targetAsset }, ctx);
+  }
+
+  /**
+   * Единая fail-closed валидация effective target — общая для primary и explicit.
+   *
+   * @param target - Кандидат `{ instrumentId, asset }` (уже собранная атомарная пара)
+   * @param ctx - Контекст исполнения (tradable set + логирование)
+   * @returns Ok(target) либо Err(LocalIntentRejectionError)
+   *
+   * @remarks
+   * Три проверки, в этом порядке:
+   * 1. `target.instrumentId` разрешён текущей регистрацией стратегии
+   *    (`ctx.tradableInstrumentKeys`).
+   * 2. `target.instrumentId` существует в каталоге.
+   * 3. `target.asset` маппится ровно на `target.instrumentId`.
+   * Вызывается ОДИНАКОВО для primary (implicit target из ExecutionContext) и
+   * explicit target — primary не имеет привилегированного bypass.
+   */
+  private _validateEffectiveTarget(
+    target: EffectiveOrderTarget,
+    ctx: ExecutionContext,
+  ): { ok: true; value: EffectiveOrderTarget } | { ok: false; error: LocalIntentRejectionError } {
+    if (!ctx.tradableInstrumentKeys.has(String(target.instrumentId))) {
       return {
         ok: false,
         error: new LocalIntentRejectionError(
           'TARGET_NOT_ALLOWED',
-          `PLACE target instrument ${String(targetInstrumentId)} is not allowed by strategy registration`,
+          `PLACE target instrument ${String(target.instrumentId)} is not allowed by strategy registration`,
         ),
       };
     }
 
-    const info = this._deps.catalog.get(targetInstrumentId);
+    const info = this._deps.catalog.get(target.instrumentId);
     if (!info) {
       return {
         ok: false,
         error: new LocalIntentRejectionError(
           'TARGET_UNKNOWN_INSTRUMENT',
-          `PLACE target instrument ${String(targetInstrumentId)} is missing from catalog (fail-closed)`,
+          `PLACE target instrument ${String(target.instrumentId)} is missing from catalog (fail-closed)`,
         ),
       };
     }
 
-    const assetInstrument = assetIdToInstrumentId(targetAsset);
-    if (assetInstrument === undefined || String(assetInstrument) !== String(targetInstrumentId)) {
+    const assetInstrument = assetIdToInstrumentId(target.asset);
+    if (assetInstrument === undefined || String(assetInstrument) !== String(target.instrumentId)) {
       return {
         ok: false,
         error: new LocalIntentRejectionError(
           'TARGET_ASSET_MISMATCH',
-          `PLACE targetAsset does not map to target instrument ${String(targetInstrumentId)}`,
+          `PLACE targetAsset does not map to target instrument ${String(target.instrumentId)}`,
         ),
       };
     }
 
-    return { ok: true, value: { instrumentId: targetInstrumentId, asset: targetAsset } };
+    return { ok: true, value: target };
   }
 
   // ── Исполнение отдельных intents ─────────────────────────
@@ -678,6 +776,8 @@ export class ExecutionEngine {
    * вызывается, если:
    * - ордер не найден (владелец неизвестен);
    * - `order.strategyId !== ctx.strategyId` (чужая стратегия);
+   * - `order.accountId === undefined` (владелец-аккаунт неизвестен — legacy
+   *   Order без account identity НЕ получает production fallback);
    * - `order.accountId` задан и не совпадает с `ctx.accountId` (чужой аккаунт).
    * Любой из этих случаев → `FAILED` → PLACE текущего batch блокируется.
    *
@@ -726,7 +826,22 @@ export class ExecutionEngine {
       return { intent, result: 'FAILED', error, reason: 'strategy ownership mismatch' };
     }
 
-    if (order.accountId !== undefined && !ExecutionEngine._sameAccount(order.accountId, ctx.accountId)) {
+    if (order.accountId === undefined) {
+      // Fail-closed: неизвестный владелец-аккаунт НЕ получает trusted fallback
+      // (например, на ctx.accountId) — legacy/corrupted Order без account
+      // identity не может быть безопасно приписан текущему аккаунту.
+      const error = new LocalIntentRejectionError(
+        'CANCEL_ACCOUNT_UNKNOWN',
+        `Cancel rejected — order ${String(intent.orderId)} has no accountId (owner unknown)`,
+      );
+      this._logger.error('ExecutionEngine: cancel rejected — order has unknown account owner (fail-closed)', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+      });
+      return { intent, result: 'FAILED', error, reason: 'account owner unknown' };
+    }
+
+    if (!ExecutionEngine._sameAccount(order.accountId, ctx.accountId)) {
       const error = new LocalIntentRejectionError(
         'CANCEL_OWNERSHIP_MISMATCH',
         `Cancel rejected — order ${String(intent.orderId)} belongs to a different account`,
@@ -796,7 +911,21 @@ export class ExecutionEngine {
       return { intent, result: 'TERMINAL_NOOP', reason: `ALREADY_TERMINAL:${outcome.orderStatus}` };
     }
 
-    // CANCELLED / ALREADY_CANCELLED — подтверждённая отмена.
+    // CANCELLED / ALREADY_CANCELLED — подтверждённая отмена venue.
+    // BUY с неопределяемым инструментом отменённого ордера: venue-cancel
+    // подтверждён (капитал реально освобождён), но replace-safety НЕ может
+    // быть подтверждена — guessing инструмента для cooldown/safe-for-replace
+    // запрещён. Блокирует ВСЕ PLACE текущего batch (fail-closed), но НЕ
+    // считается провалом cancel-а самого по себе.
+    if (cancelledSide === 'BUY' && cancelledInstrumentId === undefined) {
+      this._logger.error('ExecutionEngine: BUY cancel confirmed but instrument could not be determined — blocking replace', {
+        strategyId: ctx.strategyId,
+        orderId: String(intent.orderId),
+        asset: String(order.asset),
+      });
+      return { intent, result: 'CONFIRMED_TARGET_UNKNOWN', reason: 'cancelled BUY order asset does not map to a known instrument' };
+    }
+
     // Post-cancel cooldown: ТОЛЬКО для отменённого risk-increasing BUY и
     // ТОЛЬКО на фактический инструмент отменённого Order. Cancel на CLOB не
     // отменяет on-chain fill — MINT может быть уже в пути; без cooldown:

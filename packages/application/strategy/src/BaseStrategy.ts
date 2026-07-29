@@ -59,7 +59,7 @@ import type { Result } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
-import type { StrategyIntent } from './types/StrategyIntent.js';
+import type { StrategyIntent, StrategyStopIntent } from './types/StrategyIntent.js';
 import type { TriggerReason } from './types/TriggerReason.js';
 
 export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
@@ -134,10 +134,12 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    * @returns [{ type: 'CANCEL_ALL' }]
    *
    * @remarks
-   * Переопределите если нужна другая логика остановки
-   * (например, ликвидация позиции вместо простой отмены).
+   * Переопределите если нужна другая логика остановки (например, набор
+   * точечных CANCEL вместо CANCEL_ALL). `stop()` не предназначен для
+   * liquidation PLACE или новых торговых операций — возвращаемый тип
+   * ограничен CANCEL/CANCEL_ALL.
    */
-  public stop(): StrategyIntent[] {
+  public stop(): StrategyStopIntent[] {
     return [{ type: 'CANCEL_ALL' }];
   }
 
@@ -222,6 +224,11 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    * Если стратегии нужен явный opt-in overbuy до venue-минимумов —
    * используйте {@link BaseStrategy.adjustBuySizeAllowingIncrease}.
    *
+   * Fail-closed на некорректном вводе: `NaN`/`Infinity`/не-finite значения
+   * любого аргумента, либо отрицательные `minOrderValue`/`minOrderSize`,
+   * возвращают `undefined` — так же, как и нарушение размерных ограничений.
+   * Никогда не создаёт `Decimal` из `number` там, где на входе уже `Decimal`.
+   *
    * @example
    * ```typescript
    * // desired=5, price=0.55, minOrderValue=1, minOrderSize=5 → 5 (валиден)
@@ -232,6 +239,9 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    *
    * // price=0.11, desired=5 → notional 0.55 < minOrderValue=1 → undefined
    * adjustBuySize(new Decimal(5), new Decimal('0.11'), new Decimal(1), new Decimal(5))
+   *
+   * // price=NaN → undefined (fail-closed на некорректном вводе)
+   * adjustBuySize(new Decimal(5), new Decimal(NaN), new Decimal(1), new Decimal(5))
    * ```
    */
   protected adjustBuySize(
@@ -240,9 +250,17 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
     minOrderValue: Decimal,
     minOrderSize: Decimal,
   ): Decimal | undefined {
-    if (!desiredSize.gt(0)) return undefined;
+    if (
+      !desiredSize.isFinite() ||
+      !price.isFinite() ||
+      !minOrderValue.isFinite() ||
+      !minOrderSize.isFinite()
+    ) {
+      return undefined;
+    }
+    if (!desiredSize.gt(0) || !price.gt(0) || minOrderValue.lt(0) || minOrderSize.lt(0)) return undefined;
     if (desiredSize.lt(minOrderSize)) return undefined;
-    if (price.gt(0) && price.mul(desiredSize).lt(minOrderValue)) return undefined;
+    if (price.mul(desiredSize).lt(minOrderValue)) return undefined;
     return desiredSize;
   }
 
@@ -254,13 +272,16 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    * @param minOrderValue - Минимальная стоимость ордера в USDC (notional)
    * @param minOrderSize - Минимальный размер ордера в токенах
    * @returns Минимальный размер >= desiredSize, удовлетворяющий обоим
-   *   ограничениям; `undefined` если desiredSize <= 0 или price <= 0
+   *   ограничениям; `undefined` если desiredSize <= 0, price <= 0, любой
+   *   аргумент non-finite, либо minOrderValue/minOrderSize отрицательны
    *
    * @remarks
    * В отличие от {@link BaseStrategy.adjustBuySize} МОЖЕТ вернуть размер
    * БОЛЬШЕ desiredSize (покупка сверх конфигурации стратегии) — вызывающая
    * стратегия обязана осознанно допускать overbuy. Размер под minOrderValue
    * округляется вверх до 2 знаков (шаг размера Polymarket).
+   * Fail-closed на некорректном вводе — те же правила, что и у
+   * {@link BaseStrategy.adjustBuySize}.
    *
    * @example
    * ```typescript
@@ -274,7 +295,15 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
     minOrderValue: Decimal,
     minOrderSize: Decimal,
   ): Decimal | undefined {
-    if (!desiredSize.gt(0) || !price.gt(0)) return undefined;
+    if (
+      !desiredSize.isFinite() ||
+      !price.isFinite() ||
+      !minOrderValue.isFinite() ||
+      !minOrderSize.isFinite()
+    ) {
+      return undefined;
+    }
+    if (!desiredSize.gt(0) || !price.gt(0) || minOrderValue.lt(0) || minOrderSize.lt(0)) return undefined;
     let size = Decimal.max(desiredSize, minOrderSize);
     if (price.mul(size).lt(minOrderValue)) {
       size = Decimal.max(size, minOrderValue.div(price).toDecimalPlaces(2, Decimal.ROUND_UP));

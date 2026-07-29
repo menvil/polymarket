@@ -47,7 +47,7 @@ import type { InstrumentId } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { IStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot } from '@polymarket/strategy';
-import type { StrategyIntent } from '@polymarket/strategy';
+import type { StrategyIntent, StrategyStopIntent } from '@polymarket/strategy';
 import type { TriggerReason } from '@polymarket/strategy';
 import type { TopOfBook } from '@polymarket/event-bus';
 import type { OrderBookHistory, OrderBookSnapshot } from '@polymarket/order-book';
@@ -896,7 +896,7 @@ export class CrossMarketArbStrategy implements IStrategy {
     return levels;
   }
 
-  stop(): StrategyIntent[] {
+  stop(): StrategyStopIntent[] {
     this._logger?.info('CrossMarketArbStrategy stopping', {
       trades: this._tradeCount,
       divergences: this._divergenceCount,

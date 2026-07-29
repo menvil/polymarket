@@ -30,8 +30,14 @@ export type TriggerReason =
  * Используется runtime-валидацией `ScheduleConfig.priorityTriggers`:
  * значения вне этого набора (например, из caller-кода на `as any`)
  * приводят к `Err` регистрации, а не к молчаливо мёртвому триггеру.
+ *
+ * Readonly tuple, а НЕ `Set` — экземпляр `Set`, даже типизированный как
+ * `ReadonlySet`, остаётся мутабельным объектом в рантайме
+ * (`(KNOWN_TRIGGER_REASONS as Set<any>).add(...)` молча расширил бы разделяемый
+ * singleton для всех caller-ов). Код, которому нужен `Set` для `.has()`,
+ * строит собственную приватную копию из этого tuple.
  */
-export const KNOWN_TRIGGER_REASONS: ReadonlySet<TriggerReason> = new Set<TriggerReason>([
+export const KNOWN_TRIGGER_REASONS: readonly TriggerReason[] = [
   'BOOK',
   'TRADE',
   'FILL',
@@ -39,4 +45,4 @@ export const KNOWN_TRIGGER_REASONS: ReadonlySet<TriggerReason> = new Set<Trigger
   'TIMER',
   'CRYPTO_PRICE',
   'CRYPTO_MARKET_DATA',
-]);
+] as const;

@@ -16,8 +16,11 @@ export type {
   PlaceIntent,
   CancelIntent,
   CancelAllIntent,
+  StrategyStopIntent,
 } from './StrategyIntent.js';
 export { placeTarget } from './StrategyIntent.js';
+export type { StopStrategyErrorCode } from './StopStrategyError.js';
+export { StopStrategyError } from './StopStrategyError.js';
 export type {
   CexBookTick,
   CexTradeTick,
@@ -36,4 +39,4 @@ export type {
 } from './StrategySnapshot.js';
 export type { InstrumentConstraints } from './InstrumentConstraints.js';
 export type { ScheduleConfig } from './ScheduleConfig.js';
-export { DEFAULT_SCHEDULE_CONFIG, validateScheduleConfig } from './ScheduleConfig.js';
+export { createDefaultScheduleConfig, validateScheduleConfig } from './ScheduleConfig.js';

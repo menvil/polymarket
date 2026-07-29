@@ -29,6 +29,9 @@ import { Ok, Err } from '@polymarket/result';
 import type { TriggerReason } from './TriggerReason.js';
 import { KNOWN_TRIGGER_REASONS } from './TriggerReason.js';
 
+/** Приватный Set для O(1)-проверки — построен один раз из readonly tuple. */
+const KNOWN_TRIGGER_REASON_SET: ReadonlySet<TriggerReason> = new Set<TriggerReason>(KNOWN_TRIGGER_REASONS);
+
 export interface ScheduleConfig {
   /**
    * Минимальный интервал между tick (throttle).
@@ -115,7 +118,7 @@ export function validateScheduleConfig(config: ScheduleConfig): Result<void, Err
     ));
   }
   for (const trigger of config.priorityTriggers) {
-    if (!KNOWN_TRIGGER_REASONS.has(trigger)) {
+    if (!KNOWN_TRIGGER_REASON_SET.has(trigger)) {
       return Err(new Error(
         `Invalid ScheduleConfig.priorityTriggers: unknown TriggerReason "${String(trigger)}"`,
       ));
@@ -125,16 +128,32 @@ export function validateScheduleConfig(config: ScheduleConfig): Result<void, Err
 }
 
 /**
- * Default конфигурация расписания.
+ * Строит default конфигурацию расписания.
+ *
+ * @returns Свежий `ScheduleConfig` с новым `priorityTriggers` Set
  *
  * @remarks
+ * Фабрика, а НЕ экспортированная константа — экспортированный объект с
+ * `Set`-полем был бы разделяемым mutable singleton-ом: один caller,
+ * мутировавший `.priorityTriggers` (например, через `as Set<any>`), незаметно
+ * менял бы default для всех остальных регистраций. Каждый вызов
+ * `createDefaultScheduleConfig()` возвращает независимый экземпляр.
+ *
  * - minIntervalMs: 50ms — баланс между latency и CPU
  * - priorityTriggers: FILL — немедленная реакция на исполнение
  * - maxIdleMs: 5000ms — heartbeat каждые 5 секунд
+ * - executionTimeoutMs: 30000ms — watchdog-таймаут execute()
+ *
+ * @example
+ * ```typescript
+ * const config = createDefaultScheduleConfig();
+ * ```
  */
-export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
-  minIntervalMs: 50,
-  priorityTriggers: new Set<TriggerReason>(['FILL']),
-  maxIdleMs: 5000,
-  executionTimeoutMs: 30_000,
-};
+export function createDefaultScheduleConfig(): ScheduleConfig {
+  return {
+    minIntervalMs: 50,
+    priorityTriggers: new Set<TriggerReason>(['FILL']),
+    maxIdleMs: 5000,
+    executionTimeoutMs: 30_000,
+  };
+}

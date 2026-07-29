@@ -52,7 +52,10 @@ export type {
   PlaceIntent,
   CancelIntent,
   CancelAllIntent,
+  StrategyStopIntent,
 } from './types/index.js';
+export type { StopStrategyErrorCode } from './types/index.js';
+export { StopStrategyError } from './types/index.js';
 export type {
   CexBookTick,
   CexTradeTick,
@@ -71,13 +74,18 @@ export type {
 } from './types/index.js';
 export type { InstrumentConstraints } from './types/index.js';
 export type { ScheduleConfig } from './types/index.js';
-export { DEFAULT_SCHEDULE_CONFIG, validateScheduleConfig } from './types/index.js';
+export { createDefaultScheduleConfig, validateScheduleConfig } from './types/index.js';
 
 // ── Ports: timers + order ID generation (determinism) ───────
 export type { ISchedulerTimer, TimerHandle } from './ports/SchedulerTimer.js';
 export { NodeSchedulerTimer, DeterministicSchedulerTimer } from './ports/SchedulerTimer.js';
 export type { IOrderIdGenerator } from './ports/OrderIdGenerator.js';
-export { UuidOrderIdGenerator, SequentialOrderIdGenerator } from './ports/OrderIdGenerator.js';
+export {
+  UuidOrderIdGenerator,
+  SequentialOrderIdGenerator,
+  OrderIdGeneratorConfigError,
+  OrderIdGeneratorInvariantError,
+} from './ports/OrderIdGenerator.js';
 
 // ── Новая архитектура: интерфейсы ───────────────────────────
 export type { IStrategy } from './IStrategy.js';

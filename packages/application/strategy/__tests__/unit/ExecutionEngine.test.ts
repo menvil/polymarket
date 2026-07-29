@@ -61,7 +61,13 @@ function makePortfolio() {
   return {} as any; // Portfolio is only passed through to PlaceOrderUseCase
 }
 
-/** Ордер в repo: по умолчанию BUY нашей стратегии на PRIMARY инструменте. */
+/**
+ * Ордер в repo: по умолчанию BUY нашей стратегии, нашего аккаунта, на PRIMARY
+ * инструменте. `accountId` по умолчанию — ACCOUNT_ID (owned), а НЕ undefined:
+ * unknown owner теперь fail-closed (см. 'unknown account owner' тесты) —
+ * тесты, которым нужен конкретно unknown-owner сценарий, передают
+ * `{ accountId: undefined }` явно.
+ */
 function makeOrder(id: OrderId, overrides: Partial<{
   strategyId: string | undefined;
   accountId: AccountId | undefined;
@@ -71,7 +77,7 @@ function makeOrder(id: OrderId, overrides: Partial<{
   return {
     id,
     strategyId: 'strategyId' in overrides ? overrides.strategyId : STRATEGY_ID,
-    accountId: 'accountId' in overrides ? overrides.accountId : undefined,
+    accountId: 'accountId' in overrides ? overrides.accountId : ACCOUNT_ID,
     side: overrides.side ?? 'BUY',
     asset: overrides.asset ?? ASSET_ID,
   } as any;
@@ -139,7 +145,7 @@ function makeCtx(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
     accountId: ACCOUNT_ID,
     instrumentId: INSTRUMENT_ID,
     asset: ASSET_ID,
-    allowedInstruments: new Set([PRIMARY_TOKEN, COMPLEMENTARY_TOKEN]),
+    tradableInstrumentKeys: new Set([PRIMARY_TOKEN, COMPLEMENTARY_TOKEN]),
     ...overrides,
   };
 }
@@ -356,6 +362,26 @@ describe('ExecutionEngine', () => {
       expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(1);
       expect(report.cancelled).toBe(1);
     });
+
+    it('ownership: unknown account owner (accountId undefined) → CANCEL_FAILED, use case не вызывается, PLACE заблокирован', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { accountId: undefined }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: BUY }),
+      ]);
+
+      expect(deps.cancelOrderUseCase.execute).not.toHaveBeenCalled();
+      expect(report.cancelled).toBe(0);
+      expect(report.failed).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      const outcome = report.outcomes.find((o) => o.kind === 'CANCEL_FAILED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('CANCEL_ACCOUNT_UNKNOWN');
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
   });
 
   // ── CANCEL_ALL ───────────────────────────────────────
@@ -564,6 +590,88 @@ describe('ExecutionEngine', () => {
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
       const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
       expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_UNKNOWN_INSTRUMENT');
+    });
+
+    // ── Primary проходит ТУ ЖЕ валидацию, что explicit target (нет trusted bypass) ──
+
+    it('primary (implicit target) вне ctx.tradableInstrumentKeys → TARGET_NOT_ALLOWED (нет privileged bypass)', async () => {
+      const restrictedCtx = makeCtx({ tradableInstrumentKeys: new Set([COMPLEMENTARY_TOKEN]) }); // без PRIMARY_TOKEN
+
+      const report = await engine.execute(restrictedCtx, [place({ side: BUY })]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_NOT_ALLOWED');
+    });
+
+    it('primary (implicit target) с ctx.asset, не соответствующим ctx.instrumentId → TARGET_ASSET_MISMATCH', async () => {
+      const mismatchedCtx = makeCtx({ asset: COMP_ASSET_ID }); // instrumentId=PRIMARY, asset=COMPLEMENTARY
+
+      const report = await engine.execute(mismatchedCtx, [place({ side: BUY })]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_ASSET_MISMATCH');
+    });
+  });
+
+  // ── Exception isolation (P1) ──────────────────────────
+
+  describe('exception isolation', () => {
+    it('CANCEL_ALL исполняется даже если один PLACE в том же batch повреждён (бросает при dedupe key generation)', async () => {
+      const corruptPrice = { value: () => { throw new Error('corrupted price'); }, toNumber: () => 0 } as any;
+      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([makeOrder(ORDER_1)]);
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL_ALL' },
+        place({ side: BUY, price: corruptPrice }),
+      ]);
+
+      // CANCEL_ALL не пострадал от соседнего повреждённого PLACE.
+      expect(report.cancelled).toBe(1);
+      expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(report.failed).toBe(1);
+      const outcome = report.outcomes.find((o) => o.kind === 'FAILED');
+      expect(outcome?.reason).toMatch(/dedupe key generation/);
+    });
+
+    it('исключение в одном PLACE (_executePlace) не прерывает следующий PLACE в том же batch', async () => {
+      (deps.placeOrderUseCase as any).execute
+        .mockRejectedValueOnce(new Error('unexpected repo blip'))
+        .mockResolvedValueOnce(Ok(ORDER_2));
+
+      const report = await engine.execute(ctx, [
+        place({ side: BUY, price: PRICE_55 }),
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
+
+      expect(report.failed).toBe(1);
+      expect(report.placed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(2);
+      const failedOutcome = report.outcomes.find((o) => o.kind === 'FAILED');
+      expect(failedOutcome?.reason).toMatch(/threw unexpectedly/);
+    });
+
+    it('исключение в target resolution одного PLACE не мешает CANCEL_ALL или другим PLACE', async () => {
+      const badCatalog = makeCatalog();
+      (badCatalog.get as any).mockImplementation((id: InstrumentId) => {
+        if (String(id) === PRIMARY_TOKEN) throw new Error('catalog blip');
+        return makeInstrumentInfo();
+      });
+      deps = makeDeps({ catalog: badCatalog });
+      engine = new ExecutionEngine(deps);
+      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([makeOrder(ORDER_1)]);
+
+      const report = await engine.execute(makeCtx(), [
+        { type: 'CANCEL_ALL' },
+        place({ side: BUY }), // primary → catalog.get throws during target resolution
+      ]);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.failed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -800,6 +908,53 @@ describe('ExecutionEngine', () => {
     });
   });
 
+  // ── Cancelled BUY с неопределяемым инструментом ──────
+
+  describe('CANCEL_CONFIRMED_TARGET_UNKNOWN', () => {
+    // Невалидный (пустой tokenId) CTF asset — assetIdToInstrumentId() возвращает
+    // undefined (asInstrumentId('') отклоняет пустую строку), эмулируя
+    // corrupted/legacy Order, у которого инструмент отменённого ордера
+    // невозможно определить по данным самого Order.
+    const UNMAPPABLE_ASSET = { type: 'POLYMARKET_CTF_TOKEN', tokenId: '' } as unknown as AssetId;
+
+    it('cancelled BUY, order.asset не маппится на instrument → CONFIRMED_TARGET_UNKNOWN: cancelled++, PLACE заблокирован, cooldown НЕ ставится', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { side: 'BUY', asset: UNMAPPABLE_ASSET }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      const outcome = report.outcomes.find((o) => o.kind === 'CANCEL_CONFIRMED_TARGET_UNKNOWN');
+      expect(outcome).toBeDefined();
+
+      // cooldown НЕ поставлен на guessed инструмент: следующий BUY на PRIMARY проходит.
+      const followUp = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+      expect(followUp.placed).toBe(1);
+      expect(followUp.skipped).toBe(0);
+    });
+
+    it('cancelled SELL с неопределяемым инструментом остаётся CONFIRMED (обычный путь, без cooldown)', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { side: 'SELL', asset: UNMAPPABLE_ASSET }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: BUY, price: PRICE_55 }),
+      ]);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.blockedByUnsafeCancel).toBe(0);
+      expect(report.placed).toBe(1);
+    });
+  });
+
   // ── Constraints (reject-only) ────────────────────────
 
   describe('constraints validation (reject, no clamping)', () => {
@@ -833,7 +988,11 @@ describe('ExecutionEngine', () => {
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('catalog entry отсутствует → PLACE fail-closed (venue не вызывается)', async () => {
+    it('catalog entry отсутствует для primary (implicit target) → PLACE fail-closed через unified target validation (venue не вызывается)', async () => {
+      // Primary больше НЕ имеет trusted bypass: отсутствие catalog entry для
+      // ctx.instrumentId ловится ТЕМ ЖЕ путём, что и explicit target
+      // (_resolveEffectiveTarget → TARGET_UNKNOWN_INSTRUMENT), раньше, чем
+      // _executePlace успевает выполнить свою собственную (freshness) проверку.
       deps = makeDeps({ catalog: makeCatalog({}) });
       engine = new ExecutionEngine(deps);
 
@@ -843,7 +1002,7 @@ describe('ExecutionEngine', () => {
       expect(report.localRejected).toBe(1);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
       const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
-      expect((outcome?.error as LocalIntentRejectionError).code).toBe('CATALOG_ENTRY_MISSING');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_UNKNOWN_INSTRUMENT');
     });
 
     it('price не кратна tickSize → local rejection, use case не вызывается', async () => {

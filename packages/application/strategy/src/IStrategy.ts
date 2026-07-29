@@ -50,7 +50,7 @@
  */
 import type { Result } from '@polymarket/result';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
-import type { StrategyIntent } from './types/StrategyIntent.js';
+import type { StrategyIntent, StrategyStopIntent } from './types/StrategyIntent.js';
 import type { TriggerReason } from './types/TriggerReason.js';
 
 /**
@@ -119,8 +119,15 @@ export interface IStrategy {
    * - Системной остановке: `scheduler.stopAll()`
    *
    * Возвращённые intents исполняются ExecutionEngine перед удалением стратегии.
+   *
+   * `stop()` прекращает активность и отменяет ордера. `stop()` НЕ предназначен
+   * для liquidation PLACE или новых торговых операций — возвращаемый тип
+   * ограничен CANCEL/CANCEL_ALL на уровне компиляции; `StrategyScheduler`
+   * дополнительно проверяет это в рантайме (стратегия может прийти из JS или
+   * использовать unsafe casts) и блокирует ВЕСЬ final batch, если обнаружит
+   * PLACE.
    */
-  stop(): StrategyIntent[];
+  stop(): StrategyStopIntent[];
 
   /**
    * Текущие метрики стратегии.

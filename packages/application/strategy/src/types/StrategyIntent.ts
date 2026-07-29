@@ -145,3 +145,16 @@ export interface CancelIntent {
 export interface CancelAllIntent {
   readonly type: 'CANCEL_ALL';
 }
+
+/**
+ * Намерения, допустимые в качестве возврата {@link IStrategy.stop}.
+ *
+ * @remarks
+ * `stop()` прекращает активность и отменяет ордера — он НЕ предназначен для
+ * liquidation PLACE или размещения новых торговых ордеров. Compile-time
+ * ограничивает возврат `stop()` только CANCEL/CANCEL_ALL; `StrategyScheduler`
+ * дополнительно валидирует это в рантайме (fail-closed), поскольку стратегия
+ * может прийти из JavaScript или использовать unsafe casts — PLACE в
+ * `stop()` блокирует ВЕСЬ final batch и возвращает typed `UNSAFE_FINAL_INTENT`.
+ */
+export type StrategyStopIntent = CancelIntent | CancelAllIntent;

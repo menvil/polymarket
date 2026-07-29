@@ -1,7 +1,10 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
-import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
-import { asInstrumentId } from '@polymarket/ids';
+import type { Result } from '@polymarket/result';
+import type { AccountId, InstrumentId } from '@polymarket/ids';
+import { asInstrumentId, asPolymarketCtfToken } from '@polymarket/ids';
+import { Quantity, Price, Money } from '@polymarket/value-objects';
 import type { IStrategy } from '../../src/IStrategy.js';
 import type { StrategySnapshot } from '../../src/types/StrategySnapshot.js';
 import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
@@ -14,10 +17,15 @@ import type { IOrderStateStore } from '@polymarket/ports';
 // ── Constants ──────────────────────────────────────────────
 
 const ACCOUNT_ID = 'venue:POLYMARKET:test' as unknown as AccountId;
-const INSTRUMENT_ID = asInstrumentId('token-1')!;
-const COMP_INSTRUMENT_ID = asInstrumentId('token-2')!;
-const ASSET_ID = 'asset-1' as unknown as AssetId;
-const COMP_ASSET_ID = 'asset-2' as unknown as AssetId;
+
+// Числовые CTF tokenId (как в ExecutionEngine.test.ts): assetIdToInstrumentId(asset) === instrument key.
+const PRIMARY_TOKEN = '111';
+const COMP_TOKEN = '222';
+
+const INSTRUMENT_ID = asInstrumentId(PRIMARY_TOKEN)!;
+const ASSET_ID = asPolymarketCtfToken(PRIMARY_TOKEN)!;
+const COMP_INSTRUMENT_ID = asInstrumentId(COMP_TOKEN)!;
+const COMP_ASSET_ID = asPolymarketCtfToken(COMP_TOKEN)!;
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -140,9 +148,30 @@ function makeRegistration(strategy: IStrategy, overrides: Partial<StrategyRegist
   };
 }
 
-function makeCatalog() {
+/** InstrumentInfo с реальными value objects (для constraints/registration identity). */
+function makeInstrumentInfo(opts: Partial<{
+  minOrderSize: Quantity;
+  minOrderValue: Money;
+  tickSize: Price;
+}> = {}) {
   return {
-    get: fn().mockReturnValue(undefined),
+    minOrderSize: opts.minOrderSize ?? Quantity.of(new Decimal('1')),
+    minOrderValue: opts.minOrderValue ?? Money.of(new Decimal('1'), 'USDC'),
+    tickSize: opts.tickSize ?? Price.of(new Decimal('0.01')),
+  } as any;
+}
+
+/**
+ * Каталог: по умолчанию знает PRIMARY и COMPLEMENTARY инструменты — registration-time
+ * identity validation (catalog entry + asset↔instrument mapping) требует этого для
+ * ЛЮБОЙ успешной регистрации, использующей primary/complementary константы этого файла.
+ */
+function makeCatalog(known: Record<string, any> = {
+  [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+  [String(COMP_INSTRUMENT_ID)]: makeInstrumentInfo(),
+}) {
+  return {
+    get: fn().mockImplementation((id: InstrumentId) => known[String(id)]),
     getByMarketId: fn().mockReturnValue(undefined),
     getAll: fn().mockReturnValue([]),
     register: fn(),
@@ -272,6 +301,81 @@ describe('StrategyScheduler', () => {
       expect(strategy.initialize).not.toHaveBeenCalled();
     });
 
+    // ── Primary/complementary identity validation (P0) ──
+
+    describe('target identity validation', () => {
+      it('primary instrument отсутствует в каталоге → Err до initialize()', async () => {
+        const d = makeDeps({ catalog: makeCatalog({}) as any });
+        const s = new StrategyScheduler(d.deps);
+        const strategy = makeStrategy('s1');
+
+        const result = await s.register(makeRegistration(strategy));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('primary asset не соответствует primary instrument → Err до initialize()', async () => {
+        const strategy = makeStrategy('s1');
+        // COMP_ASSET_ID маппится на COMP_INSTRUMENT_ID, не на primary INSTRUMENT_ID.
+        const result = await scheduler.register(makeRegistration(strategy, { asset: COMP_ASSET_ID }));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('complementary instrument отсутствует в каталоге → Err до initialize()', async () => {
+        const d = makeDeps({ catalog: makeCatalog({ [String(INSTRUMENT_ID)]: makeInstrumentInfo() }) as any });
+        const s = new StrategyScheduler(d.deps);
+        const strategy = makeStrategy('s1');
+
+        const result = await s.register(makeRegistration(strategy, {
+          complementaryInstrumentId: COMP_INSTRUMENT_ID,
+          complementaryAsset: COMP_ASSET_ID,
+        }));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('complementary asset не соответствует complementary instrument → Err до initialize()', async () => {
+        const strategy = makeStrategy('s1');
+        const result = await scheduler.register(makeRegistration(strategy, {
+          complementaryInstrumentId: COMP_INSTRUMENT_ID,
+          complementaryAsset: ASSET_ID, // primary asset, не complementary
+        }));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('complementary instrument совпадает с primary → Err', async () => {
+        const strategy = makeStrategy('s1');
+        const result = await scheduler.register(makeRegistration(strategy, {
+          complementaryInstrumentId: INSTRUMENT_ID,
+          complementaryAsset: ASSET_ID,
+        }));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('additionalTradableTargets валидируется так же строго (catalog + asset mapping)', async () => {
+        const foreignToken = '999';
+        const foreignInstrumentId = asInstrumentId(foreignToken)!;
+        const foreignAsset = asPolymarketCtfToken(foreignToken)!;
+        // foreign НЕ зарегистрирован в каталоге.
+        const strategy = makeStrategy('s1');
+
+        const result = await scheduler.register(makeRegistration(strategy, {
+          additionalTradableTargets: [{ instrumentId: foreignInstrumentId, asset: foreignAsset }],
+        }));
+
+        expect(result.ok).toBe(false);
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+    });
+
     describe('ScheduleConfig validation', () => {
       it.each([
         ['minIntervalMs = -1', { minIntervalMs: -1 }],
@@ -289,7 +393,7 @@ describe('StrategyScheduler', () => {
         const result = await scheduler.register(makeRegistration(strategy, { config: config as any }));
 
         expect(result.ok).toBe(false);
-        // initialize не должен был вызываться — config валидируется раньше.
+        // initialize не должен был вызываться — identity/config валидируются раньше.
         expect(strategy.initialize).not.toHaveBeenCalled();
       });
 
@@ -326,6 +430,66 @@ describe('StrategyScheduler', () => {
         expect(strategy.tick).toHaveBeenCalledTimes(1); // deferred, не bypass
       });
     });
+
+    describe('pending registration cancellation', () => {
+      it('unregister во время strategy.initialize() отменяет публикацию — ACTIVE entry никогда не создаётся', async () => {
+        let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+        const strategy = makeStrategy('s1');
+        (strategy.initialize as any).mockImplementation(
+          () => new Promise((resolve) => { resolveInit = resolve; }),
+        );
+
+        const registerPromise = scheduler.register(makeRegistration(strategy));
+        await flush();
+
+        const unregisterPromise = scheduler.unregister('s1');
+        await flush();
+
+        resolveInit!(Ok(undefined));
+        const [registerResult, unregisterResult] = await Promise.all([registerPromise, unregisterPromise]);
+
+        expect(registerResult.ok).toBe(false);
+        expect(unregisterResult.ok).toBe(false);
+        if (!unregisterResult.ok) {
+          expect(unregisterResult.error.code).toBe('REGISTRATION_CANCELLED');
+        }
+        expect(scheduler.getMetrics('s1')).toBeUndefined();
+
+        // Событие не тикает отменённую стратегию.
+        scheduler.start();
+        marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+        await flush();
+        expect(strategy.tick).not.toHaveBeenCalled();
+      });
+
+      it('stopAll ждёт pending registrations и блокирует новые после барьера', async () => {
+        let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+        const strategy = makeStrategy('s1');
+        (strategy.initialize as any).mockImplementation(
+          () => new Promise((resolve) => { resolveInit = resolve; }),
+        );
+
+        const registerPromise = scheduler.register(makeRegistration(strategy));
+        await flush();
+
+        const stopAllPromise = scheduler.stopAll();
+        await flush();
+
+        resolveInit!(Ok(undefined));
+        const registerResult = await registerPromise;
+        const stopAllResult = await stopAllPromise;
+
+        expect(registerResult.ok).toBe(false);
+        expect(stopAllResult.ok).toBe(true);
+        expect(scheduler.getMetrics('s1')).toBeUndefined();
+
+        // Регистрация ПОСЛЕ stopAll отклоняется (global barrier).
+        const strategy2 = makeStrategy('s2');
+        const lateResult = await scheduler.register(makeRegistration(strategy2));
+        expect(lateResult.ok).toBe(false);
+        expect(strategy2.initialize).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ── unregister lifecycle ─────────────────────────────
@@ -335,8 +499,9 @@ describe('StrategyScheduler', () => {
       const strategy = makeStrategy('s1');
       await scheduler.register(makeRegistration(strategy));
 
-      await scheduler.unregister('s1');
+      const result = await scheduler.unregister('s1');
 
+      expect(result.ok).toBe(true);
       expect(strategy.stop).toHaveBeenCalled();
       expect(executionEngine.execute).toHaveBeenCalledWith(
         expect.objectContaining({ strategyId: 's1' }),
@@ -345,16 +510,20 @@ describe('StrategyScheduler', () => {
       expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
 
-    it('should be safe for unknown strategy', async () => {
-      await expect(scheduler.unregister('unknown')).resolves.toBeUndefined();
+    it('should be safe for unknown strategy (typed STRATEGY_NOT_FOUND)', async () => {
+      const result = await scheduler.unregister('unknown');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('STRATEGY_NOT_FOUND');
     });
 
-    it('should handle strategy.stop() throwing', async () => {
+    it('should handle strategy.stop() throwing (empty final batch, safe post-check → STOPPED)', async () => {
       const strategy = makeStrategy('s1');
       (strategy.stop as any).mockImplementation(() => { throw new Error('Stop boom'); });
 
       await scheduler.register(makeRegistration(strategy));
-      await expect(scheduler.unregister('s1')).resolves.toBeUndefined();
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(true);
       expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
 
@@ -396,8 +565,9 @@ describe('StrategyScheduler', () => {
 
       // Завершаем PLACE — после этого stop + final intents.
       resolveExec!();
-      await unregisterPromise;
+      const result = await unregisterPromise;
 
+      expect(result.ok).toBe(true);
       expect(strategy.stop).toHaveBeenCalledTimes(1);
       expect(events).toEqual([
         'normal-execution-started',
@@ -412,8 +582,10 @@ describe('StrategyScheduler', () => {
       await scheduler.register(makeRegistration(strategy));
 
       const [a, b] = [scheduler.unregister('s1'), scheduler.unregister('s1')];
-      await Promise.all([a, b]);
+      const [ra, rb] = await Promise.all([a, b]);
 
+      expect(ra.ok).toBe(true);
+      expect(rb.ok).toBe(true);
       expect(strategy.stop).toHaveBeenCalledTimes(1);
       // Ровно один вызов executionEngine.execute — final intents.
       expect(executionEngine.execute).toHaveBeenCalledTimes(1);
@@ -454,6 +626,83 @@ describe('StrategyScheduler', () => {
 
       // Только первый tick — новых нет.
       expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+
+    // ── strategy.stop() safety (P0) ────────────────────
+
+    it('strategy.stop() возвращает PLACE → UNSAFE_FINAL_INTENT, final batch не исполняется, entry не удаляется', async () => {
+      const strategy = makeStrategy('s1', {
+        stopResult: [{ type: 'PLACE', side: 'BUY', price: {} as any, size: {} as any }],
+      });
+      await scheduler.register(makeRegistration(strategy));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('UNSAFE_FINAL_INTENT');
+      expect(executionEngine.execute).not.toHaveBeenCalled();
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    // ── Final cleanup verification (P0) ────────────────
+
+    it('final execution с blockedByUnsafeCancel > 0 → FINAL_CLEANUP_UNCONFIRMED, entry не удаляется', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      executionEngine.execute.mockResolvedValueOnce({
+        ...emptyReport(),
+        blockedByUnsafeCancel: 1,
+        skipped: 1,
+        outcomes: [{ intent: { type: 'CANCEL_ALL' }, kind: 'CANCEL_PENDING' }],
+      });
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('final execution с failed > 0 (CANCEL_FAILED) → FINAL_CLEANUP_UNCONFIRMED, entry не удаляется', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      executionEngine.execute.mockResolvedValueOnce({
+        ...emptyReport(),
+        failed: 1,
+        errors: [{ intent: { type: 'CANCEL_ALL' }, error: new Error('cancel failed') }],
+        outcomes: [{ intent: { type: 'CANCEL_ALL' }, kind: 'CANCEL_FAILED' }],
+      });
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('authoritative post-check находит живые ордера стратегии → FINAL_CLEANUP_UNCONFIRMED', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      (deps.orderStateStore.getOpenOrders as any).mockReturnValue([{ id: 'still-open' }]);
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('успешный final cleanup (CONFIRMED, authoritative post-check пуст) → STOPPED, entry удалена', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      executionEngine.execute.mockResolvedValueOnce({ ...emptyReport(), cancelled: 1 });
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(true);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
   });
 
@@ -543,12 +792,15 @@ describe('StrategyScheduler', () => {
       expect(strategy.tick).toHaveBeenCalledTimes(1);
     });
 
-    it('snapshot содержит complementaryConstraints из каталога', async () => {
-      const constraints = { minOrderSize: {}, minOrderValue: {}, tickSize: {} };
+    it('snapshot содержит РАЗНЫЕ constraints и complementaryConstraints из каталога', async () => {
+      const primaryInfo = makeInstrumentInfo();
+      const compInfo = makeInstrumentInfo({ minOrderSize: Quantity.of(new Decimal('7')) });
       const catalog = makeCatalog();
-      (catalog.get as any).mockImplementation((id: InstrumentId) =>
-        String(id) === String(COMP_INSTRUMENT_ID) ? constraints : undefined,
-      );
+      (catalog.get as any).mockImplementation((id: InstrumentId) => {
+        if (String(id) === String(INSTRUMENT_ID)) return primaryInfo;
+        if (String(id) === String(COMP_INSTRUMENT_ID)) return compInfo;
+        return undefined;
+      });
       const d = makeDeps({ catalog: catalog as any });
       const s = new StrategyScheduler(d.deps);
 
@@ -568,9 +820,12 @@ describe('StrategyScheduler', () => {
       d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
       await flush();
 
+      // _constraintsFor() строит новый объект из полей catalog entry — сравниваем
+      // по value-object ссылкам полей, а не по identity целого объекта.
       expect(captured).toBeDefined();
-      expect(captured!.complementaryConstraints).toEqual(constraints);
-      expect(captured!.constraints).toBeUndefined();
+      expect(captured!.constraints?.minOrderSize).toBe(primaryInfo.minOrderSize);
+      expect(captured!.complementaryConstraints?.minOrderSize).toBe(compInfo.minOrderSize);
+      expect(captured!.constraints?.minOrderSize).not.toBe(captured!.complementaryConstraints?.minOrderSize);
 
       await s.stopAll();
       s.stop();
@@ -802,13 +1057,16 @@ describe('StrategyScheduler', () => {
   // ── Watchdog ─────────────────────────────────────────
 
   describe('execution watchdog', () => {
-    it('зависший execute → faulted: новые тики блокируются, unregister не виснет', async () => {
+    it('watchdog → FAULTED: тики блокированы; unregister во время hung execution НЕ запускает final intents параллельно; после завершения — fresh cleanup', async () => {
       const strategy = makeStrategy('s1', {
         tickResult: [{ type: 'CANCEL_ALL' }],
       });
 
-      // Execution никогда не завершается (hung).
-      executionEngine.execute.mockImplementationOnce(() => new Promise(() => { /* hung */ }));
+      // Execution зависает управляемо (можно разрешить позже).
+      let resolveExec: (() => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveExec = () => resolve(emptyReport());
+      }));
 
       await scheduler.register(makeRegistration(strategy, {
         config: { executionTimeoutMs: 1000 },
@@ -819,7 +1077,7 @@ describe('StrategyScheduler', () => {
       await flush();
       expect(strategy.tick).toHaveBeenCalledTimes(1);
 
-      // Watchdog срабатывает.
+      // Watchdog срабатывает → FAULTED.
       advanceTime(clock, timer, 1000);
       await flush();
 
@@ -828,8 +1086,23 @@ describe('StrategyScheduler', () => {
       await flush();
       expect(strategy.tick).toHaveBeenCalledTimes(1);
 
-      // Unregister НЕ виснет на hung execution (controlled recovery).
-      await scheduler.unregister('s1');
+      // unregister пока hung execution ЕЩЁ НЕ завершилась: НЕ запускает
+      // strategy.stop()/final intents параллельно с ordinary execution —
+      // typed retryable error, entry остаётся tracked.
+      const blockedResult = await scheduler.unregister('s1');
+      expect(blockedResult.ok).toBe(false);
+      if (!blockedResult.ok) expect(blockedResult.error.code).toBe('EXECUTION_TIMED_OUT');
+      expect(strategy.stop).not.toHaveBeenCalled();
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1); // только исходный hung execute
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+
+      // Hung execution наконец завершается.
+      resolveExec!();
+      await flush();
+
+      // Повторный (явный) unregister теперь продолжает fresh cleanup.
+      const finalResult = await scheduler.unregister('s1');
+      expect(finalResult.ok).toBe(true);
       expect(strategy.stop).toHaveBeenCalledTimes(1);
       expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
@@ -915,15 +1188,14 @@ describe('StrategyScheduler', () => {
       expect(capturedSnapshot!.tradeTape).toBe(tradeTape);
       expect(capturedSnapshot!.openOrders).toStrictEqual(openOrders);
       expect(capturedSnapshot!.matchedOrders).toEqual([]);
-      expect(capturedSnapshot!.constraints).toBeUndefined();
+      // Каталог по умолчанию (makeCatalog()) знает INSTRUMENT_ID — registration
+      // identity validation этого требует — поэтому constraints ОПРЕДЕЛЕНЫ.
+      expect(capturedSnapshot!.constraints).toBeDefined();
       expect(capturedSnapshot!.portfolio).toBe(portfolio);
       expect(typeof capturedSnapshot!.nowMs).toBe('number');
     });
 
     it('should populate constraints from catalog when available', async () => {
-      const { Quantity, Price, Money } = await import('@polymarket/value-objects');
-      const { default: Decimal } = await import('decimal.js');
-
       const minOrderSize = Quantity.of(new Decimal('5'));
       const minOrderValue = Money.of(new Decimal('1'), 'USDC');
       const tickSize = Price.of(new Decimal('0.01'));
@@ -988,10 +1260,10 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── ExecutionContext ─────────────────────────────────
+  // ── ExecutionContext: routing vs tradable ────────────
 
   describe('execution context', () => {
-    it('allowedInstruments содержит primary + additional + complementary', async () => {
+    it('tradableInstrumentKeys содержит primary + complementary, НО НЕ routing-only additional', async () => {
       const strategy = makeStrategy('s1', { tickResult: [{ type: 'CANCEL_ALL' }] });
       const additional = asInstrumentId('token-3')!;
       await scheduler.register(makeRegistration(strategy, {
@@ -1001,13 +1273,42 @@ describe('StrategyScheduler', () => {
       }));
       scheduler.start();
 
-      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      // additionalInstrumentIds триггерит tick (routing) даже не будучи tradable.
+      marketDataStore._onChange!(additional, 'BOOK');
       await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
 
       const ctx = executionEngine.execute.mock.calls[0][0] as any;
-      expect(ctx.allowedInstruments.has(String(INSTRUMENT_ID))).toBe(true);
-      expect(ctx.allowedInstruments.has(String(COMP_INSTRUMENT_ID))).toBe(true);
-      expect(ctx.allowedInstruments.has(String(additional))).toBe(true);
+      expect(ctx.tradableInstrumentKeys.has(String(INSTRUMENT_ID))).toBe(true);
+      expect(ctx.tradableInstrumentKeys.has(String(COMP_INSTRUMENT_ID))).toBe(true);
+      expect(ctx.tradableInstrumentKeys.has(String(additional))).toBe(false);
+    });
+
+    it('additionalTradableTargets становятся разрешёнными tradable-таргетами', async () => {
+      const extraToken = '777';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const strategy = makeStrategy('s1', { tickResult: [{ type: 'CANCEL_ALL' }] });
+      await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [{ instrumentId: extraInstrumentId, asset: extraAsset }],
+      }));
+      s.start();
+
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      const ctx = d.executionEngine.execute.mock.calls[0][0] as any;
+      expect(ctx.tradableInstrumentKeys.has(String(extraInstrumentId))).toBe(true);
+
+      await s.stopAll();
+      s.stop();
     });
   });
 
@@ -1018,14 +1319,42 @@ describe('StrategyScheduler', () => {
       const s1 = makeStrategy('s1');
       const s2 = makeStrategy('s2');
       await scheduler.register(makeRegistration(s1));
-      await scheduler.register(makeRegistration(s2));
+      await scheduler.register(makeRegistration(s2, {
+        instrumentId: COMP_INSTRUMENT_ID,
+        asset: COMP_ASSET_ID,
+      }));
 
-      await scheduler.stopAll();
+      const result = await scheduler.stopAll();
 
+      expect(result.ok).toBe(true);
       expect(s1.stop).toHaveBeenCalled();
       expect(s2.stop).toHaveBeenCalled();
       expect(scheduler.getMetrics('s1')).toBeUndefined();
       expect(scheduler.getMetrics('s2')).toBeUndefined();
+    });
+
+    it('stopAll возвращает aggregate Err, если хотя бы одна стратегия не остановлена подтверждённо', async () => {
+      const s1 = makeStrategy('s1');
+      const s2 = makeStrategy('s2');
+      await scheduler.register(makeRegistration(s1));
+      await scheduler.register(makeRegistration(s2, {
+        instrumentId: COMP_INSTRUMENT_ID,
+        asset: COMP_ASSET_ID,
+      }));
+
+      // s2 cleanup небезопасен.
+      executionEngine.execute.mockImplementation(async (ctx: any) => {
+        if (ctx.strategyId === 's2') {
+          return { ...emptyReport(), failed: 1, errors: [{ intent: { type: 'CANCEL_ALL' }, error: new Error('x') }] };
+        }
+        return emptyReport();
+      });
+
+      const result = await scheduler.stopAll();
+
+      expect(result.ok).toBe(false);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+      expect(scheduler.getMetrics('s2')).toBeDefined();
     });
   });
 

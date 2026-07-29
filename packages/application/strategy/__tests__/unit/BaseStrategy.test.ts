@@ -278,6 +278,38 @@ describe('BaseStrategy', () => {
     it('desired <= 0 → undefined', () => {
       expect(strategy.publicAdjustBuySize(d('0'), d('0.55'), d('1'), d('5'))).toBeUndefined();
     });
+
+    it('price = 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), d('0'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), d('-0.5'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price = NaN → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), new Decimal(NaN), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price = Infinity → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), new Decimal(Infinity), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('desiredSize = NaN → undefined', () => {
+      expect(strategy.publicAdjustBuySize(new Decimal(NaN), d('0.55'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('desiredSize = Infinity → undefined', () => {
+      expect(strategy.publicAdjustBuySize(new Decimal(Infinity), d('0.55'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('minOrderValue < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), d('0.55'), d('-1'), d('5'))).toBeUndefined();
+    });
+
+    it('minOrderSize < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('10'), d('0.55'), d('1'), d('-5'))).toBeUndefined();
+    });
   });
 
   // ── adjustBuySizeAllowingIncrease() ───────────────────
@@ -302,6 +334,30 @@ describe('BaseStrategy', () => {
     it('desired <= 0 или price <= 0 → undefined', () => {
       expect(strategy.publicAdjustBuySizeAllowingIncrease(d('0'), d('0.55'), d('1'), d('5'))).toBeUndefined();
       expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('0'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('-0.5'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price = NaN → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), new Decimal(NaN), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('price = Infinity → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), new Decimal(Infinity), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('desiredSize = NaN → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(new Decimal(NaN), d('0.55'), d('1'), d('5'))).toBeUndefined();
+    });
+
+    it('minOrderValue < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('0.55'), d('-1'), d('5'))).toBeUndefined();
+    });
+
+    it('minOrderSize < 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('0.55'), d('1'), d('-5'))).toBeUndefined();
     });
   });
 });
