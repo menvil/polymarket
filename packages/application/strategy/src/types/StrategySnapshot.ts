@@ -311,6 +311,17 @@ export interface StrategySnapshot {
   readonly complementaryMatchedOrders?: readonly Order[];
 
   /**
+   * Ограничения комплементарного инструмента из каталога.
+   *
+   * @remarks
+   * `undefined` если комплементарный инструмент не зарегистрирован или
+   * отсутствует в каталоге. Стратегии с auto-selection обязаны использовать
+   * эти constraints (а не primary `constraints`) при адаптации размеров
+   * ордеров на комплементарный инструмент.
+   */
+  readonly complementaryConstraints: InstrumentConstraints | undefined;
+
+  /**
    * true если на комплементарном инструменте есть in-flight fills.
    */
   readonly hasComplementaryInFlightFills?: boolean;

@@ -48,14 +48,8 @@ function makeOrder(id: OrderId, strategyId?: string) {
 function makeScheduler() {
   return {
     onOrderChanged: jest.fn(),
-    onFillForInstrument: jest.fn(),
-  };
-}
-
-function makeExecutionEngine() {
-  return {
-    clearExchangeRejectionCooldown: jest.fn(),
-    clearPostCancelCooldown: jest.fn(),
+    onFillReceivedForInstrument: jest.fn(),
+    onFillConfirmedForInstrument: jest.fn(),
   };
 }
 
@@ -95,7 +89,6 @@ function makeDeps(overrides: Partial<OrderEventBridgeDeps> = {}): OrderEventBrid
   return {
     eventBus: makeEventBus() as any,
     scheduler: makeScheduler() as any,
-    executionEngine: makeExecutionEngine() as any,
     orderStateStore: makeOrderStateStore() as any,
     orderRepo: makeOrderRepo() as any,
     logger: makeLogger() as any,
@@ -266,7 +259,7 @@ describe('OrderEventBridge', () => {
   // ── FILL_RECEIVED ─────────────────────────────────
 
   describe('FILL_RECEIVED', () => {
-    it('should notify scheduler via onFillForInstrument', () => {
+    it('should notify scheduler via onFillReceivedForInstrument (received semantics only)', () => {
       bridge.start();
 
       const eventBus = deps.eventBus as any;
@@ -276,14 +269,16 @@ describe('OrderEventBridge', () => {
         receivedAt: {},
       });
 
-      expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
+      expect((deps.scheduler as any).onFillReceivedForInstrument).toHaveBeenCalled();
+      // Confirmed-семантика НЕ вызывается из received-события.
+      expect((deps.scheduler as any).onFillConfirmedForInstrument).not.toHaveBeenCalled();
     });
   });
 
   // ── FILL_CONFIRMED ──────────────────────────────────
 
   describe('FILL_CONFIRMED', () => {
-    it('should clear in-flight fills, exchange rejection cooldown, and notify scheduler', () => {
+    it('should clear in-flight fills and notify scheduler via onFillConfirmedForInstrument', () => {
       bridge.start();
 
       const eventBus = deps.eventBus as any;
@@ -295,8 +290,9 @@ describe('OrderEventBridge', () => {
 
       expect((deps.orderStateStore as any).clearOrderFillMatched).toHaveBeenCalledWith(ORDER_1, 'fill-1');
       expect((deps.orderStateStore as any).clearInFlightFill).toHaveBeenCalledWith('fill-1');
-      expect((deps.executionEngine as any).clearExchangeRejectionCooldown).toHaveBeenCalled();
-      expect((deps.scheduler as any).onFillForInstrument).toHaveBeenCalled();
+      expect((deps.scheduler as any).onFillConfirmedForInstrument).toHaveBeenCalled();
+      // Received-семантика НЕ вызывается из confirmed-события.
+      expect((deps.scheduler as any).onFillReceivedForInstrument).not.toHaveBeenCalled();
     });
   });
 

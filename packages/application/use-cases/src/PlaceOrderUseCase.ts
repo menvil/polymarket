@@ -117,6 +117,7 @@ import type { Portfolio } from '@polymarket/portfolio';
 import type { IOrderRiskChecker } from '@polymarket/risk';
 import { RiskViolationError } from '@polymarket/risk';
 import type { PortfolioService } from './services/PortfolioService.js';
+import { PlaceOrderFailureError } from './PlaceOrderFailure.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 import { lockKey } from './lockKeys.js';
 
@@ -1226,7 +1227,8 @@ export class PlaceOrderUseCase {
         instrumentId: input.instrumentId,
         context: { clientOrderId: String(input.orderId), submissionStatus: 'UNKNOWN' },
       });
-      return Err(new TradingError(
+      return Err(new PlaceOrderFailureError(
+        'SUBMISSION_OUTCOME_UNKNOWN',
         `Order submission blocked — prior UNKNOWN outcome for clientOrderId: ${String(input.orderId)}`,
         { context: { clientOrderId: String(input.orderId) } },
       ));
@@ -1309,7 +1311,7 @@ export class PlaceOrderUseCase {
         clientOrderId: String(input.orderId),
       });
       await this._markSubmissionFailed(input.orderId, 'PORTFOLIO_NOT_INITIALIZED');
-      return Err(new TradingError('Portfolio not initialized', {
+      return Err(new PlaceOrderFailureError('PORTFOLIO_UNAVAILABLE', 'Portfolio not initialized', {
         context: { accountId: accountIdToString(input.accountId), clientOrderId: String(input.orderId) },
       }));
     }
@@ -1520,7 +1522,8 @@ export class PlaceOrderUseCase {
         });
         // Submission ambiguous — блокируем авто-retry (begin вернёт UNKNOWN).
         await this._markSubmissionUnknown(input.orderId, `SUBMIT_TRANSPORT_MAY_HAVE_BEEN_SUBMITTED: ${submitResult.error.message}`);
-        return Err(new TradingError(
+        return Err(new PlaceOrderFailureError(
+          'SUBMISSION_OUTCOME_UNKNOWN',
           `Exchange submit transport error (may have been submitted, reservation held, manual reconciliation): ${submitResult.error.message}`,
           { context: { clientOrderId: String(input.orderId), submitOutcome, reservationHeld: true } },
         ));
@@ -1546,7 +1549,8 @@ export class PlaceOrderUseCase {
         failReason: `SUBMIT_DEFINITELY_NOT_SUBMITTED: ${submitResult.error.message}`,
         stage: 'submit-definitely-not-submitted-rollback',
       });
-      return Err(new TradingError(
+      return Err(new PlaceOrderFailureError(
+        'DEFINITELY_REJECTED',
         `Exchange submission failed: ${submitResult.error.message}`,
         {
           context: {
@@ -1581,13 +1585,32 @@ export class PlaceOrderUseCase {
         failReason: `SUBMIT_REJECTED: ${submitValue.reason}`,
         stage: 'rejected-submit-rollback',
       });
-      return Err(new TradingError(
+      // Типизированный маппинг venue-классификации (adapter → ports → use case).
+      // POST_ONLY_WOULD_TAKE / INSUFFICIENT_TOKEN_BALANCE / INSUFFICIENT_ALLOWANCE
+      // выставляются ТОЛЬКО из definite REJECTED-исхода; balance-metadata
+      // пробрасывается как есть (Decimal, микроединицы) — без парсинга текста.
+      const rejectionCode = submitValue.rejectionCode;
+      const failureCode: import('./PlaceOrderFailure.js').PlaceFailureCode =
+        rejectionCode === 'POST_ONLY_WOULD_TAKE' ? 'POST_ONLY_WOULD_TAKE'
+          : rejectionCode === 'INSUFFICIENT_TOKEN_BALANCE' ? 'INSUFFICIENT_TOKEN_BALANCE'
+          : rejectionCode === 'INSUFFICIENT_ALLOWANCE' ? 'INSUFFICIENT_ALLOWANCE'
+          : 'DEFINITELY_REJECTED';
+      return Err(new PlaceOrderFailureError(
+        failureCode,
         `Exchange rejected order: ${submitValue.reason}`,
         {
           context: {
             clientOrderId: String(input.orderId),
             rollbackError: rollback.releaseError,
           },
+          ...(submitValue.balance !== undefined
+            ? {
+                balance: {
+                  onChainBalanceMicro: submitValue.balance.onChainBalanceMicro,
+                  orderAmountMicro: submitValue.balance.orderAmountMicro,
+                },
+              }
+            : {}),
         },
       ));
     }
@@ -1699,7 +1722,8 @@ export class PlaceOrderUseCase {
       });
       // Submission ambiguous — блокируем авто-retry (begin вернёт UNKNOWN).
       await this._markSubmissionUnknown(input.orderId, `SUBMIT_UNKNOWN: ${submitValue.reason}`, submitValue.orderId);
-      return Err(new TradingError(
+      return Err(new PlaceOrderFailureError(
+        'SUBMISSION_OUTCOME_UNKNOWN',
         `Exchange submit result ambiguous: ${submitValue.reason}`,
         {
           context: {
@@ -1941,6 +1965,7 @@ export class PlaceOrderUseCase {
       size: orderSize,
       timestamp: timestampResult.value,
       strategyId: input.strategyId,
+      accountId: input.accountId,
     });
     if (!orderResult.ok) {
       await this._rollbackPostSubmit({

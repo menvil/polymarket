@@ -85,6 +85,8 @@ export type {
   SubmitOrderParams,
   SubmitOrderResult,
   SubmitAmbiguity,
+  SubmitRejectionCode,
+  SubmitRejectionBalanceMetadata,
   CancelOrderResult,
   OpenOrderSnapshot,
   VenueTradeSnapshot,

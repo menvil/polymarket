@@ -44,6 +44,7 @@
  * ```
  */
 import { BaseStrategy } from '@polymarket/strategy';
+import { placeTarget } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
@@ -1003,15 +1004,16 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
 
       // BUY: cancel existing + place new
       intents.push({ type: 'CANCEL_ALL' });
-      intents.push({
-        type: 'PLACE',
-        side: 'BUY',
+      // Атомарная пара target-полей: либо оба, либо ни одного (placeTarget).
+      const target = placeTarget(action.targetInstrumentId, action.targetAsset);
+      const base = {
+        type: 'PLACE' as const,
+        side: 'BUY' as const,
         price: Price.of(new Decimal(action.price).div(100)),
         size: Quantity.of(action.size),
         postOnly: this._postOnly,
-        targetInstrumentId: action.targetInstrumentId,
-        targetAsset: action.targetAsset,
-      });
+      };
+      intents.push(target ? { ...base, ...target } : base);
     }
 
     return intents;

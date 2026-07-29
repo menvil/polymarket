@@ -22,3 +22,21 @@ export type TriggerReason =
   | 'TIMER'
   | 'CRYPTO_PRICE'
   | 'CRYPTO_MARKET_DATA';
+
+/**
+ * Полный набор известных TriggerReason.
+ *
+ * @remarks
+ * Используется runtime-валидацией `ScheduleConfig.priorityTriggers`:
+ * значения вне этого набора (например, из caller-кода на `as any`)
+ * приводят к `Err` регистрации, а не к молчаливо мёртвому триггеру.
+ */
+export const KNOWN_TRIGGER_REASONS: ReadonlySet<TriggerReason> = new Set<TriggerReason>([
+  'BOOK',
+  'TRADE',
+  'FILL',
+  'ORDER_UPDATE',
+  'TIMER',
+  'CRYPTO_PRICE',
+  'CRYPTO_MARKET_DATA',
+]);

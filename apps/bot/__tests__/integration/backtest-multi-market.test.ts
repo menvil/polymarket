@@ -179,7 +179,7 @@ describe('Backtest — два рынка одновременно', () => {
     const baseInfo = {
       tickSize: Price.of(new Decimal('0.001')),
       minOrderSize: Quantity.of(new Decimal('1')),
-      minOrderValue: Quantity.of(new Decimal('1')),
+      minOrderValue: Money.of(new Decimal('1'), 'USDC'),
       active: true,
       expiresAt: expiresAt.value,
     };

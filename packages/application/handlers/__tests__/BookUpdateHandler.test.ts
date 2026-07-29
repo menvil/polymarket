@@ -6,7 +6,7 @@ import type { IMarketCatalog } from '@polymarket/ports';
 import type { ILogger } from '@polymarket/logger';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
 import { TimestampService, PriceService } from '@polymarket/value-objects';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
@@ -58,7 +58,7 @@ function makeInstrumentInfo(): InstrumentInfo {
     marketId:     MARKET_ID,
     tickSize:     {} as Price,
     minOrderSize:  {} as Quantity,
-    minOrderValue: {} as Quantity,
+    minOrderValue: {} as Money,
     active:        true,
     expiresAt:     {} as Timestamp,
   };

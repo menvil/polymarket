@@ -12,8 +12,10 @@
  * - ORDER_CANCELLED / ORDER_EXPIRED → scheduler.onOrderChanged(strategyId, 'ORDER_UPDATE') + delete from repo
  * - ORDER_PARTIALLY_FILLED → scheduler.onOrderChanged(strategyId, 'FILL')
  * - ORDER_FILLED → scheduler.onOrderChanged(strategyId, 'FILL') + delete from repo
- * - FILL_RECEIVED → scheduler.onFillForInstrument(instrumentId) — fallback для direct fill path
- * - FILL_CONFIRMED → scheduler.onFillConfirmed(instrumentId) — сброс rejection cooldown + тик
+ * - FILL_RECEIVED → scheduler.onFillReceivedForInstrument(instrumentId) — ТОЛЬКО dirty+enqueue
+ *   (до finality: cooldown НЕ снимается, finality-dependent cleanup НЕ выполняется)
+ * - FILL_CONFIRMED → scheduler.onFillConfirmedForInstrument(instrumentId) — finality cleanup:
+ *   сброс post-cancel и exchange-rejection cooldown + dirty+enqueue
  *
  * ### Определение strategyId:
  * OrderEvent содержит только orderId. Bridge ищет Order через IOrderStateStore
@@ -40,7 +42,6 @@ import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { OrderStatus } from '@polymarket/order';
 import type { StrategyScheduler } from './StrategyScheduler.js';
-import type { ExecutionEngine } from './ExecutionEngine.js';
 
 /**
  * Терминальные статусы Order — только в них cleanup-удаление разрешено.
@@ -60,7 +61,6 @@ const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = ['FILLED', 'CANCELED', '
 export interface OrderEventBridgeDeps {
   readonly eventBus: IEventBus;
   readonly scheduler: StrategyScheduler;
-  readonly executionEngine: ExecutionEngine;
   readonly orderStateStore: IOrderStateStore;
   readonly orderRepo: IOrderRepository;
   readonly logger: ILogger;
@@ -134,15 +134,15 @@ export class OrderEventBridge {
       }),
     );
 
-    // FILL_RECEIVED → notify scheduler по instrumentId (для direct fill path).
-    // Когда fill приходит на отсутствующий/terminal ордер, ProcessFillUseCase
-    // обновляет Portfolio, но не публикует ORDER_* событий.
-    // Этот fallback гарантирует, что стратегия тикнет после любого fill.
+    // FILL_RECEIVED → received-семантика: ТОЛЬКО dirty+enqueue связанных
+    // стратегий (direct fill path). Finality-dependent cleanup (снятие
+    // post-cancel cooldown) здесь ЗАПРЕЩЁН: fill ещё не финален, размещение
+    // поверх него небезопасно — cleanup выполняет ТОЛЬКО FILL_CONFIRMED.
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_RECEIVED', (event) => {
         const instrumentId = assetIdToInstrumentId(event.fill.tokenId);
         if (instrumentId) {
-          this._deps.scheduler.onFillForInstrument(instrumentId);
+          this._deps.scheduler.onFillReceivedForInstrument(instrumentId);
         }
       }),
     );
@@ -169,8 +169,9 @@ export class OrderEventBridge {
           this._deps.orderStateStore.clearInFlightFill(placeholder);
           const instrumentId = assetIdToInstrumentId(fill.tokenId);
           if (instrumentId) {
-            this._deps.executionEngine.clearExchangeRejectionCooldown(instrumentId);
-            this._deps.scheduler.onFillForInstrument(instrumentId);
+            // Confirmed-семантика: finality-dependent cleanup (post-cancel +
+            // exchange-rejection cooldown) выполняется внутри scheduler-метода.
+            this._deps.scheduler.onFillConfirmedForInstrument(instrumentId);
           }
         }
       }),

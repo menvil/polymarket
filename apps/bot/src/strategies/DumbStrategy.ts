@@ -116,6 +116,8 @@ export interface DumbData {
   readonly minOrderSize: Decimal | undefined;
   /** Минимальная стоимость ордера в USDC (из constraints, undefined если нет данных) */
   readonly minOrderValue: Decimal | undefined;
+  /** Минимальный шаг цены (из constraints, undefined если нет данных) */
+  readonly tickSize: Decimal | undefined;
 }
 
 /** Действие стратегии */
@@ -206,6 +208,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       hasMatchedOrders,
       minOrderSize: snapshot.constraints?.minOrderSize.value(),
       minOrderValue: snapshot.constraints?.minOrderValue.value(),
+      tickSize: snapshot.constraints?.tickSize.value(),
     };
   }
 
@@ -256,8 +259,10 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
       // Есть открытый BUY-ордер — проверяем нужен ли REPRICE
       if (data.openBuyOrders.length > 0) {
-        const targetPrice = data.refPrice.mul(
-          new Decimal(1).minus(this._config.buyOffsetPct.div(ONE_HUNDRED)),
+        const targetPrice = quantizePriceToTick(
+          data.refPrice.mul(new Decimal(1).minus(this._config.buyOffsetPct.div(ONE_HUNDRED))),
+          data.tickSize,
+          Decimal.ROUND_DOWN,
         );
         const openOrder = data.openBuyOrders[0]!;
 
@@ -288,8 +293,13 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
       // Целевая цена покупки: на buyOffsetPct% ниже refPrice
       // При buyOffsetPct=0 → BUY по refPrice (taker, мгновенный fill)
-      const targetBuyPrice = data.refPrice.mul(
-        new Decimal(1).minus(this._config.buyOffsetPct.div(ONE_HUNDRED)),
+      // ExecutionEngine отклоняет цены, не кратные tickSize (reject-only,
+      // без молчаливого округления) — стратегия сама квантует цену:
+      // BUY округляется ВНИЗ (консервативно — не переплачиваем).
+      const targetBuyPrice = quantizePriceToTick(
+        data.refPrice.mul(new Decimal(1).minus(this._config.buyOffsetPct.div(ONE_HUNDRED))),
+        data.tickSize,
+        Decimal.ROUND_DOWN,
       );
       if (targetBuyPrice.lte(0)) {
         this._logger?.debug('DumbStrategy: skip — targetBuyPrice <= 0', {
@@ -358,8 +368,11 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
       return [];
     }
 
-    const sellPrice = data.entryPrice.mul(
-      new Decimal(1).plus(this._config.profitMarginPct.div(new Decimal(100))),
+    // SELL округляется ВВЕРХ к tickSize (не продаём дешевле целевой цены).
+    const sellPrice = quantizePriceToTick(
+      data.entryPrice.mul(new Decimal(1).plus(this._config.profitMarginPct.div(new Decimal(100)))),
+      data.tickSize,
+      Decimal.ROUND_UP,
     );
 
     // Не продаём если цена вне допустимого диапазона
@@ -428,4 +441,22 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
 
     return intents;
   }
+}
+
+
+/**
+ * Квантует цену к сетке tickSize.
+ *
+ * @param price - Сырая цена (Decimal)
+ * @param tickSize - Шаг цены из constraints (undefined — цена не меняется)
+ * @param rounding - Направление округления (ROUND_DOWN для BUY, ROUND_UP для SELL)
+ * @returns Цена, кратная tickSize
+ */
+function quantizePriceToTick(
+  price: Decimal,
+  tickSize: Decimal | undefined,
+  rounding: Decimal.Rounding,
+): Decimal {
+  if (tickSize === undefined || tickSize.lte(0)) return price;
+  return price.div(tickSize).toDecimalPlaces(0, rounding).mul(tickSize);
 }

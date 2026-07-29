@@ -3,22 +3,26 @@
  *
  * @remarks
  * ### Ответственности:
- * 1. **Нормализация** — dedupe и очистка intents перед исполнением
- * 2. **Порядок** — CANCEL_ALL → CANCEL → PLACE
- * 3. **Параллелизм** — Cancels параллельно, Places последовательно
- * 4. **Валидация** — reject (skip) если size/value нарушает constraints каталога
- * 5. **Отчёт** — ExecutionReport с результатами и ошибками
+ * 1. **Валидация target-пары** — targetInstrumentId/targetAsset проверяются
+ *    атомарно (fail-closed) ДО нормализации и любых venue-вызовов
+ * 2. **Нормализация** — dedupe intents по effective instrument + side +
+ *    точному Decimal-представлению цены + postOnly
+ * 3. **Порядок** — CANCEL_ALL → CANCEL → PLACE
+ * 4. **Ownership** — CANCEL разрешён только для ордеров ЭТОЙ стратегии и
+ *    ЭТОГО аккаунта (authoritative lookup перед CancelOrderUseCase)
+ * 5. **Cancel-replace safety** — PLACE выполняется ТОЛЬКО если каждый cancel
+ *    batch-а завершился безопасно (CONFIRMED/TERMINAL_NOOP); любой
+ *    PENDING/FAILED/exception блокирует ВСЕ PLACE текущего batch (fail-closed)
+ * 6. **Валидация constraints** — reject-only (minOrderSize, minOrderValue,
+ *    tickSize); отсутствие catalog entry для PLACE — fail-closed reject
+ * 7. **Отчёт** — типизированный ExecutionReport с точными исходами intents
  *
- * ### Нормализация intents:
- * - Если есть CANCEL_ALL → убрать все отдельные CANCEL (дублирование)
- * - Dedupe CANCEL по orderId (один orderId → один cancel)
- * - Dedupe PLACE по `${side}:${price}` — оставить последний
- *
- * ### Валидация размера (reject-only, без коррекции):
- * Стратегия получает `InstrumentConstraints` через snapshot и сама адаптирует
- * размеры ордеров (BaseStrategy.adjustBuySize/adjustSellSize).
- * ExecutionEngine только валидирует: если intent нарушает constraints — reject (skip).
- * Никакого молчаливого клампирования — стратегия и execution полностью прозрачны.
+ * ### Типизированные failure-коды:
+ * Классификация ошибок размещения — ТОЛЬКО через
+ * `getPlaceFailureCode`/`getPlaceFailureBalance` (@polymarket/use-cases).
+ * Никакого парсинга `error.message` в execution-слое: benign post-only skip
+ * требует точного кода `POST_ONLY_WOULD_TAKE`, SELL dust-retry — точного
+ * `INSUFFICIENT_TOKEN_BALANCE` с числовой balance-metadata.
  *
  * ### Делегация:
  * - Risk check — внутри PlaceOrderUseCase (не дублируем)
@@ -31,28 +35,29 @@
  *
  * const report = await engine.execute(ctx, [
  *   { type: 'CANCEL_ALL' },
- *   { type: 'CANCEL', orderId: someOrderId }, // будет удалён — дубль CANCEL_ALL
  *   { type: 'PLACE', side: 'BUY', price, size },
  * ]);
  *
- * console.log(report.placed, report.cancelled, report.errors.length);
+ * console.log(report.placed, report.cancelled, report.blockedByUnsafeCancel);
  * ```
  */
-import { randomUUID } from 'node:crypto';
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
-import { asOrderId } from '@polymarket/ids';
+import { accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
 import { Quantity } from '@polymarket/value-objects';
-import type { PlaceOrderUseCase } from '@polymarket/use-cases';
-import type { CancelOrderUseCase } from '@polymarket/use-cases';
-import type { IPortfolioStore, IMarketCatalog } from '@polymarket/ports';
+import type { Side } from '@polymarket/value-objects';
+import type { PlaceOrderUseCase, CancelOrderUseCase, PlaceFailureCode } from '@polymarket/use-cases';
+import { getPlaceFailureCode, getPlaceFailureBalance } from '@polymarket/use-cases';
+import type { IOrderRepository, IPortfolioStore, IMarketCatalog } from '@polymarket/ports';
+import type { Order } from '@polymarket/order';
 import type {
   StrategyIntent,
   PlaceIntent,
   CancelIntent,
 } from './types/StrategyIntent.js';
+import type { IOrderIdGenerator } from './ports/OrderIdGenerator.js';
 
 // ── Публичные типы ─────────────────────────────────────────
 
@@ -85,6 +90,8 @@ export interface ExecutionEngineDeps {
   readonly catalog: IMarketCatalog;
   /** Источник времени (IClock) — для cooldown-таймеров. В backtest используется ReplayClock. */
   readonly clock: IClock;
+  /** Генератор клиентских Order ID (детерминированный в replay/backtest). */
+  readonly orderIdGenerator: IOrderIdGenerator;
   readonly logger: ILogger;
   /** Опциональный: проверка баланса токена на CLOB при SELL rejection */
   readonly tokenBalanceChecker?: ITokenBalanceChecker;
@@ -98,6 +105,22 @@ export interface ExecutionContext {
   readonly accountId: AccountId;
   readonly instrumentId: InstrumentId;
   readonly asset: AssetId;
+  /**
+   * Инструменты, разрешённые регистрацией стратегии (string-ключи InstrumentId).
+   *
+   * @remarks
+   * Primary + complementary + additional instruments. `PlaceIntent.targetInstrumentId`
+   * вне этого набора — typed failure (fail-closed), venue не вызывается.
+   */
+  readonly allowedInstruments: ReadonlySet<string>;
+}
+
+/**
+ * Провалидированная атомарная пара target instrument + asset.
+ */
+export interface EffectiveOrderTarget {
+  readonly instrumentId: InstrumentId;
+  readonly asset: AssetId;
 }
 
 /**
@@ -105,43 +128,123 @@ export interface ExecutionContext {
  *
  * @remarks
  * - `CONFIRMED` — venue подтвердил отмену (`CANCELLED`/`ALREADY_CANCELLED`):
- *   капитал освобождён, можно считать cancel успешным (только эти два исхода
- *   инкрементируют `cancelled` и ставят post-cancel cooldown).
+ *   капитал освобождён, cancel успешен (только эти исходы инкрементируют
+ *   `cancelled` и ставят post-cancel cooldown).
  * - `TERMINAL_NOOP` — ордер уже terminal НЕ отменой (`ALREADY_TERMINAL`:
- *   REJECTED/EXPIRED): отменять нечего, но это НЕ подтверждённая отмена —
- *   не считается в `cancelled`, PLACE не блокирует.
- * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`/`ALREADY_FILLED`: fill
- *   исполнен/в пути; `RECONCILIATION_REQUIRED`: venue-исход неоднозначен):
- *   PLACE intents текущего цикла блокируются — размещение поверх
- *   неопределённого состояния могло бы задвоить экспозицию.
- * - `FAILED` — use case вернул Err (например, ордер не найден).
+ *   REJECTED/EXPIRED): отменять нечего; PLACE НЕ блокируется.
+ * - `PENDING` — отмена НЕ подтверждена (`FILL_PENDING`/`ALREADY_FILLED`/
+ *   `RECONCILIATION_REQUIRED`): блокирует ВСЕ PLACE текущего batch.
+ * - `FAILED` — use case вернул Err, бросил, либо ownership-проверка
+ *   отклонила cancel: блокирует ВСЕ PLACE текущего batch (fail-closed).
  */
 export type CancelExecutionResult = 'CONFIRMED' | 'TERMINAL_NOOP' | 'PENDING' | 'FAILED';
 
+/** Типизированный исход одного intent в отчёте. */
+export type IntentOutcomeKind =
+  | 'PLACED'
+  | 'SKIPPED'
+  | 'LOCAL_REJECTED'
+  | 'BLOCKED_BY_UNSAFE_CANCEL'
+  | 'FAILED'
+  | 'CANCEL_CONFIRMED'
+  | 'CANCEL_TERMINAL_NOOP'
+  | 'CANCEL_PENDING'
+  | 'CANCEL_FAILED';
+
+/**
+ * Типизированный исход одного intent.
+ */
+export interface IntentOutcome {
+  readonly intent: StrategyIntent;
+  readonly kind: IntentOutcomeKind;
+  /** Точный typed failure-код (для FAILED place). */
+  readonly failureCode?: PlaceFailureCode;
+  /** Исходная ошибка (НЕ заменяется на synthetic `new Error(...)`). */
+  readonly error?: Error;
+  /** Человекочитаемая причина skip/reject/block (English). */
+  readonly reason?: string;
+}
+
 /**
  * Отчёт об исполнении intents.
+ *
+ * @remarks
+ * `skipped` — суммарный счётчик намеренно НЕ исполненных PLACE
+ * (cooldown, benign post-only, local constraint reject, блокировка после
+ * небезопасного cancel). Детализация — в `localRejected`,
+ * `blockedByUnsafeCancel` и типизированных `outcomes`.
  */
 export interface ExecutionReport {
   /** Количество успешно размещённых ордеров */
   readonly placed: number;
-  /** Количество успешно отменённых ордеров */
+  /** Количество подтверждённо отменённых ордеров */
   readonly cancelled: number;
-  /**
-   * Количество намеренно пропущенных размещений (skip).
-   *
-   * @remarks
-   * Skip ≠ ошибка. Пример: size < minOrderSize или value < minOrderValue.
-   * Стратегия должна использовать constraints из snapshot для корректных размеров.
-   */
+  /** Суммарно пропущенные размещения (см. remarks) */
   readonly skipped: number;
-  /** Ошибки при исполнении отдельных intents */
+  /** Из них: отклонено локальной валидацией constraints/target (venue не вызывался) */
+  readonly localRejected: number;
+  /** Из них: заблокировано небезопасным cancel в этом же batch */
+  readonly blockedByUnsafeCancel: number;
+  /** Количество intents, завершившихся ошибкой */
+  readonly failed: number;
+  /** Ошибки при исполнении отдельных intents (исходные ошибки, не synthetic) */
   readonly errors: ReadonlyArray<{ intent: StrategyIntent; error: Error }>;
+  /** Полные типизированные исходы всех intents */
+  readonly outcomes: ReadonlyArray<IntentOutcome>;
 }
 
-// ── Импорт IOrderRepository через inline type ──────────────
-// (чтобы не добавлять лишнюю зависимость на ports — уже есть)
+// ── Внутренние типы ────────────────────────────────────────
 
-import type { IOrderRepository } from '@polymarket/ports';
+/** Результат ownership/authoritative lookup + исполнения одного cancel. */
+interface CancelAttempt {
+  readonly intent: CancelIntent;
+  readonly result: CancelExecutionResult;
+  /** Исходная ошибка (для FAILED). */
+  readonly error?: Error;
+  /** Описание исхода (для отчёта/логов). */
+  readonly reason?: string;
+}
+
+/** Внутренний исход попытки размещения. */
+type PlaceAttempt =
+  | { readonly kind: 'placed' }
+  | { readonly kind: 'skipped'; readonly reason: string }
+  | { readonly kind: 'local_rejected'; readonly reason: string; readonly error: Error }
+  | { readonly kind: 'failed'; readonly error: Error; readonly failureCode: PlaceFailureCode };
+
+/** PLACE intent с провалидированным effective target. */
+interface ResolvedPlace {
+  readonly intent: PlaceIntent;
+  readonly target: EffectiveOrderTarget;
+}
+
+/**
+ * Ошибка локального отклонения intent (venue/use case не вызывались).
+ */
+export class LocalIntentRejectionError extends Error {
+  /**
+   * @param code - Типизированный код локального отклонения
+   * @param message - Человекочитаемое описание (English)
+   */
+  constructor(
+    public readonly code:
+      | 'TARGET_PAIR_INCOMPLETE'
+      | 'TARGET_UNKNOWN_INSTRUMENT'
+      | 'TARGET_ASSET_MISMATCH'
+      | 'TARGET_NOT_ALLOWED'
+      | 'CATALOG_ENTRY_MISSING'
+      | 'TICK_SIZE_VIOLATION'
+      | 'NON_POSITIVE_ORDER'
+      | 'MIN_ORDER_SIZE_VIOLATION'
+      | 'MIN_ORDER_VALUE_VIOLATION'
+      | 'CANCEL_OWNERSHIP_MISMATCH'
+      | 'CANCEL_ORDER_NOT_FOUND',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'LocalIntentRejectionError';
+  }
+}
 
 // ── Реализация ─────────────────────────────────────────────
 
@@ -166,9 +269,9 @@ export class ExecutionEngine {
    *
    * @remarks
    * Защищает от бесконечного retry-цикла когда биржа стабильно отклоняет ордер
-   * (например, SELL с "not enough balance/allowance" из-за отсутствия token approval).
-   * Без этого cooldown каждое новое рыночное событие триггерит стратегию →
-   * SELL → rejection → откат резервации → следующий тик → снова SELL → 10+ RPS.
+   * (например, SELL с недостаточным allowance). Без этого cooldown каждое новое
+   * рыночное событие триггерит стратегию → rejection → откат резервации →
+   * следующий тик → снова rejection → 10+ RPS.
    */
   private readonly _exchangeRejectionCooldowns = new Map<string, number>();
 
@@ -176,14 +279,16 @@ export class ExecutionEngine {
   private static readonly _EXCHANGE_REJECTION_COOLDOWN_MS = 5_000;
 
   /**
-   * Cooldown per instrumentId после cancel ордера.
-   * Ключ: instrumentId. Значение: timestamp последнего cancel (clock.now()).
+   * Cooldown per instrumentId после ПОДТВЕРЖДЁННОЙ отмены BUY-ордера.
+   * Ключ: instrumentId ФАКТИЧЕСКИ отменённого Order. Значение: timestamp (clock.now()).
    *
    * @remarks
    * Защищает от cancel-and-replace race condition на Polymarket:
    * cancel на CLOB НЕ отменяет on-chain fill (MINT уже в пути).
-   * Без этого cooldown стратегия отменяет BUY-ордер, сразу ставит новый BUY,
-   * а fill на отменённый ордер всё равно приходит → двойная/тройная покупка.
+   * Cooldown ставится ТОЛЬКО по данным отменённого Order
+   * (`order.instrumentId`, `order.side === 'BUY'`) — НЕ по ctx.instrumentId:
+   * отмена комплементарного ордера не должна блокировать primary инструмент,
+   * отмена SELL не должна блокировать BUY.
    */
   private readonly _postCancelCooldowns = new Map<string, number>();
 
@@ -208,14 +313,14 @@ export class ExecutionEngine {
    * @param instrumentId - ID инструмента
    *
    * @remarks
-   * Вызывается при получении CONFIRMED fill для инструмента.
-   * On-chain settlement завершён → безопасно размещать новые ордера.
-   * Без этого стратегия ждёт полные 20 секунд даже если fill пришёл раньше.
+   * Вызывается ТОЛЬКО при FILL_CONFIRMED (finality) — см.
+   * `StrategyScheduler.onFillConfirmedForInstrument`. FILL_RECEIVED cooldown
+   * НЕ снимает: до finality размещение поверх in-flight fill опасно.
    */
   public clearPostCancelCooldown(instrumentId: InstrumentId): void {
     const key = String(instrumentId);
     if (this._postCancelCooldowns.delete(key)) {
-      this._logger.debug('ExecutionEngine: post-cancel cooldown cleared (fill received)', {
+      this._logger.debug('ExecutionEngine: post-cancel cooldown cleared (fill confirmed)', {
         instrumentId: key,
       });
     }
@@ -257,130 +362,402 @@ export class ExecutionEngine {
   /**
    * Нормализует и исполняет intents.
    *
-   * @param ctx - Контекст: strategyId, accountId, instrumentId, asset
+   * @param ctx - Контекст: strategyId, accountId, instrumentId, asset, allowedInstruments
    * @param intents - Сырые intents от стратегии
-   * @returns ExecutionReport с результатами
+   * @returns ExecutionReport с типизированными исходами
    *
    * @remarks
-   * Порядок: normalize → CANCEL_ALL → CANCEL → PLACE.
+   * Порядок: validate targets → normalize → CANCEL_ALL → CANCEL → PLACE.
    * Cancels параллельно (Promise.allSettled), places последовательно (баланс).
-   * Ошибки не прерывают исполнение — собираются в report.errors.
+   * ЛЮБОЙ небезопасный cancel (PENDING/FAILED/rejected Promise/exception)
+   * блокирует ВСЕ PLACE текущего batch — и BUY, и SELL (fail-closed).
    */
   public async execute(
     ctx: ExecutionContext,
     intents: readonly StrategyIntent[],
   ): Promise<ExecutionReport> {
-    const normalized = _normalize(intents);
-    if (!normalized.hasCancelAll && normalized.cancels.length === 0 && normalized.places.length === 0) {
-      return { placed: 0, cancelled: 0, skipped: 0, errors: [] };
-    }
-
-    let cancelled = 0;
     let placed = 0;
+    let cancelled = 0;
     let skipped = 0;
+    let localRejected = 0;
+    let blockedByUnsafeCancel = 0;
+    let failed = 0;
     const errors: Array<{ intent: StrategyIntent; error: Error }> = [];
+    const outcomes: IntentOutcome[] = [];
 
-    // ── 1. CANCEL_ALL → разворачиваем в конкретные orderIds ─
-    if (normalized.hasCancelAll) {
-      const orders = await this._deps.orderRepo.getByStrategyId(ctx.strategyId);
-      for (const order of orders) {
-        normalized.cancels.push({ type: 'CANCEL', orderId: order.id });
+    // ── 0. Валидация target-пары КАЖДОГО PLACE (fail-closed, до dedupe) ──
+    const resolvedPlaces: ResolvedPlace[] = [];
+    let hasCancelAll = false;
+    const cancelMap = new Map<string, CancelIntent>();
+
+    for (const intent of intents) {
+      switch (intent.type) {
+        case 'CANCEL_ALL':
+          hasCancelAll = true;
+          break;
+        case 'CANCEL':
+          cancelMap.set(String(intent.orderId), intent);
+          break;
+        case 'PLACE': {
+          const targetResult = this._resolveEffectiveTarget(ctx, intent);
+          if (!targetResult.ok) {
+            localRejected++;
+            skipped++;
+            errors.push({ intent, error: targetResult.error });
+            outcomes.push({
+              intent,
+              kind: 'LOCAL_REJECTED',
+              error: targetResult.error,
+              reason: targetResult.error.message,
+            });
+            this._logger.warn('ExecutionEngine: PLACE rejected — invalid target pair', {
+              strategyId: ctx.strategyId,
+              side: intent.side,
+              code: targetResult.error.code,
+              error: targetResult.error.message,
+            });
+            break;
+          }
+          resolvedPlaces.push({ intent, target: targetResult.value });
+          break;
+        }
       }
     }
 
-    // ── 2. Cancels параллельно ──────────────────────────────
-    // PENDING (FILL_PENDING / RECONCILIATION_REQUIRED) — отмена НЕ подтверждена:
-    // блокируем ВСЕ PLACE intents текущего цикла (включая SELL — reconciliation
-    // block не обходится по стороне). Финальный контроль остаётся в
-    // PlaceOrderUseCase (unsettled-fills guard под mutex).
-    let hasPendingCancel = false;
-    if (normalized.cancels.length > 0) {
+    // ── 1. Нормализация PLACE: dedupe по effective instrument + side +
+    //       точному Decimal-представлению цены + postOnly (последний побеждает).
+    const placeMap = new Map<string, ResolvedPlace>();
+    for (const place of resolvedPlaces) {
+      const key = [
+        String(place.target.instrumentId),
+        place.intent.side,
+        place.intent.price.value().toString(),
+        place.intent.postOnly === true ? 'po' : 'no',
+      ].join('|');
+      placeMap.set(key, place);
+    }
+    const places = [...placeMap.values()];
+
+    // ── 2. CANCEL_ALL → разворачиваем в ордера ТЕКУЩЕЙ стратегии ─
+    // getByStrategyId уже scoped по strategyId; дополнительная ownership-проверка
+    // per-order выполняется в _executeCancel (authoritative lookup).
+    const cancels: CancelIntent[] = hasCancelAll ? [] : [...cancelMap.values()];
+    if (hasCancelAll) {
+      const orders = await this._deps.orderRepo.getByStrategyId(ctx.strategyId);
+      for (const order of orders) {
+        cancels.push({ type: 'CANCEL', orderId: order.id });
+      }
+    }
+
+    if (cancels.length === 0 && places.length === 0) {
+      return { placed, cancelled, skipped, localRejected, blockedByUnsafeCancel, failed, errors, outcomes };
+    }
+
+    // ── 3. Cancels параллельно ──────────────────────────────
+    // Fail-closed cancel-replace: PLACE разрешён ТОЛЬКО если КАЖДЫЙ cancel
+    // завершился безопасно (CONFIRMED/TERMINAL_NOOP). PENDING, FAILED,
+    // rejected Promise, exception, unknown result — блокируют все PLACE.
+    let allCancelsSafeForReplace = true;
+    const unsafeCancelReasons: string[] = [];
+
+    if (cancels.length > 0) {
       const cancelResults = await Promise.allSettled(
-        normalized.cancels.map((intent) => this._executeCancel(ctx, intent)),
+        cancels.map((intent) => this._executeCancel(ctx, intent)),
       );
 
       for (let i = 0; i < cancelResults.length; i++) {
-        const result = cancelResults[i];
-        if (result.status === 'rejected') {
-          errors.push({
-            intent: normalized.cancels[i],
-            error: result.reason instanceof Error
-              ? result.reason
-              : new Error(String(result.reason)),
-          });
+        const settled = cancelResults[i];
+        const intent = cancels[i];
+
+        if (settled.status === 'rejected') {
+          const error = settled.reason instanceof Error
+            ? settled.reason
+            : new Error(String(settled.reason));
+          allCancelsSafeForReplace = false;
+          unsafeCancelReasons.push(`${String(intent.orderId)}: threw ${error.message}`);
+          failed++;
+          errors.push({ intent, error });
+          outcomes.push({ intent, kind: 'CANCEL_FAILED', error, reason: 'cancel threw' });
           continue;
         }
-        switch (result.value) {
+
+        const attempt = settled.value;
+        switch (attempt.result) {
           case 'CONFIRMED':
-            // cancelled++ ТОЛЬКО для подтверждённой отмены (CANCELLED/ALREADY_CANCELLED).
             cancelled++;
+            outcomes.push({ intent, kind: 'CANCEL_CONFIRMED' });
             break;
           case 'TERMINAL_NOOP':
-            // Ордер умер сам (REJECTED/EXPIRED): не отмена, не блокировка.
+            outcomes.push({ intent, kind: 'CANCEL_TERMINAL_NOOP', reason: attempt.reason });
             break;
           case 'PENDING':
-            hasPendingCancel = true;
+            allCancelsSafeForReplace = false;
+            unsafeCancelReasons.push(`${String(intent.orderId)}: PENDING (${attempt.reason ?? 'unconfirmed'})`);
+            outcomes.push({ intent, kind: 'CANCEL_PENDING', reason: attempt.reason });
             break;
-          case 'FAILED':
-            // Cancel failed via Result.err — already logged in _executeCancel
-            errors.push({
-              intent: normalized.cancels[i],
-              error: new Error('Cancel failed'),
-            });
+          case 'FAILED': {
+            const error = attempt.error ?? new Error(attempt.reason ?? 'Cancel failed');
+            allCancelsSafeForReplace = false;
+            unsafeCancelReasons.push(`${String(intent.orderId)}: FAILED (${error.message})`);
+            failed++;
+            errors.push({ intent, error });
+            outcomes.push({ intent, kind: 'CANCEL_FAILED', error, reason: attempt.reason });
             break;
+          }
+          default: {
+            // Неизвестный результат — fail-closed.
+            const _exhaustive: never = attempt.result;
+            allCancelsSafeForReplace = false;
+            unsafeCancelReasons.push(`${String(intent.orderId)}: unknown result ${String(_exhaustive)}`);
+            break;
+          }
         }
       }
     }
 
-    // ── 3. Places последовательно ───────────────────────────
-    for (const intent of normalized.places) {
-      if (hasPendingCancel) {
-        // Неопределённый cancel в этом же цикле: размещение (BUY И SELL)
+    // ── 4. Places последовательно ───────────────────────────
+    for (const place of places) {
+      const intent = place.intent;
+
+      if (!allCancelsSafeForReplace) {
+        // Любой небезопасный cancel этого batch: размещение (BUY И SELL)
         // блокируется до подтверждения/реконсиляции — SELL не обходит блок.
-        this._logger.warn('ExecutionEngine: skip PLACE — unconfirmed cancel in same execution cycle', {
+        this._logger.warn('ExecutionEngine: PLACE blocked — unsafe cancel outcome in same execution batch', {
           strategyId: ctx.strategyId,
-          instrumentId: String(intent.targetInstrumentId ?? ctx.instrumentId),
+          instrumentId: String(place.target.instrumentId),
           side: intent.side,
+          unsafeCancelOutcomes: unsafeCancelReasons,
         });
         skipped++;
+        blockedByUnsafeCancel++;
+        outcomes.push({
+          intent,
+          kind: 'BLOCKED_BY_UNSAFE_CANCEL',
+          reason: `Unsafe cancel outcomes in batch: ${unsafeCancelReasons.join('; ')}`,
+        });
         continue;
       }
-      const result = await this._executePlace(ctx, intent);
-      if (result === 'placed') {
-        placed++;
-      } else if (result === 'skipped') {
-        skipped++;
-      } else {
-        errors.push({ intent, error: new Error('Place failed') });
+
+      const attempt = await this._executePlace(ctx, intent, place.target);
+      switch (attempt.kind) {
+        case 'placed':
+          placed++;
+          outcomes.push({ intent, kind: 'PLACED' });
+          break;
+        case 'skipped':
+          skipped++;
+          outcomes.push({ intent, kind: 'SKIPPED', reason: attempt.reason });
+          break;
+        case 'local_rejected':
+          skipped++;
+          localRejected++;
+          errors.push({ intent, error: attempt.error });
+          outcomes.push({ intent, kind: 'LOCAL_REJECTED', error: attempt.error, reason: attempt.reason });
+          break;
+        case 'failed':
+          failed++;
+          errors.push({ intent, error: attempt.error });
+          outcomes.push({ intent, kind: 'FAILED', error: attempt.error, failureCode: attempt.failureCode });
+          break;
       }
     }
 
-    return { placed, cancelled, skipped, errors };
+    return { placed, cancelled, skipped, localRejected, blockedByUnsafeCancel, failed, errors, outcomes };
+  }
+
+  // ── Target validation ────────────────────────────────────
+
+  /**
+   * Валидирует атомарную пару target instrument/asset и строит EffectiveOrderTarget.
+   *
+   * @param ctx - Контекст исполнения
+   * @param intent - PLACE intent
+   * @returns Ok(EffectiveOrderTarget) либо Err(LocalIntentRejectionError)
+   *
+   * @remarks
+   * Fail-closed правила (venue/use case НЕ вызываются при нарушении):
+   * 1. Заданы ОБА поля пары или НИ ОДНОГО (runtime-защита в дополнение к
+   *    compile-time union — intents могут прийти из JS/`as`-кода).
+   * 2. Target instrument существует в каталоге.
+   * 3. `targetAsset` маппится ровно на target instrument
+   *    (`assetIdToInstrumentId(asset) === instrumentId`).
+   * 4. Target instrument разрешён текущей регистрацией стратегии.
+   * Никаких независимых fallback `targetX ?? ctx.X` — сначала валидация
+   * пары, затем единый EffectiveOrderTarget.
+   */
+  private _resolveEffectiveTarget(
+    ctx: ExecutionContext,
+    intent: PlaceIntent,
+  ): { ok: true; value: EffectiveOrderTarget } | { ok: false; error: LocalIntentRejectionError } {
+    const targetInstrumentId = intent.targetInstrumentId;
+    const targetAsset = intent.targetAsset;
+
+    if (targetInstrumentId === undefined && targetAsset === undefined) {
+      return { ok: true, value: { instrumentId: ctx.instrumentId, asset: ctx.asset } };
+    }
+
+    if (targetInstrumentId === undefined || targetAsset === undefined) {
+      return {
+        ok: false,
+        error: new LocalIntentRejectionError(
+          'TARGET_PAIR_INCOMPLETE',
+          `PLACE intent has incomplete target pair: targetInstrumentId=${String(targetInstrumentId)}, targetAsset=${targetAsset === undefined ? 'undefined' : 'set'} (both or neither required)`,
+        ),
+      };
+    }
+
+    if (!ctx.allowedInstruments.has(String(targetInstrumentId))) {
+      return {
+        ok: false,
+        error: new LocalIntentRejectionError(
+          'TARGET_NOT_ALLOWED',
+          `PLACE target instrument ${String(targetInstrumentId)} is not allowed by strategy registration`,
+        ),
+      };
+    }
+
+    const info = this._deps.catalog.get(targetInstrumentId);
+    if (!info) {
+      return {
+        ok: false,
+        error: new LocalIntentRejectionError(
+          'TARGET_UNKNOWN_INSTRUMENT',
+          `PLACE target instrument ${String(targetInstrumentId)} is missing from catalog (fail-closed)`,
+        ),
+      };
+    }
+
+    const assetInstrument = assetIdToInstrumentId(targetAsset);
+    if (assetInstrument === undefined || String(assetInstrument) !== String(targetInstrumentId)) {
+      return {
+        ok: false,
+        error: new LocalIntentRejectionError(
+          'TARGET_ASSET_MISMATCH',
+          `PLACE targetAsset does not map to target instrument ${String(targetInstrumentId)}`,
+        ),
+      };
+    }
+
+    return { ok: true, value: { instrumentId: targetInstrumentId, asset: targetAsset } };
   }
 
   // ── Исполнение отдельных intents ─────────────────────────
 
   /**
-   * Исполняет CANCEL intent.
+   * Сравнение AccountId с защитой от legacy string-представлений.
    *
-   * @returns Типизированный {@link CancelExecutionResult}:
-   *   `CONFIRMED` — venue подтвердил (CANCELLED/ALREADY_CANCELLED);
-   *   `PENDING` — не подтверждено (FILL_PENDING/RECONCILIATION_REQUIRED);
-   *   `FAILED` — use case вернул Err
+   * @param a - Первый AccountId
+   * @param b - Второй AccountId
+   * @returns true если идентификаторы указывают на один аккаунт
+   */
+  private static _sameAccount(a: AccountId, b: AccountId): boolean {
+    const keyOf = (id: AccountId): string => {
+      // Legacy/test-представление: AccountId может прийти строкой (см.
+      // safeAssetId-паттерн в PlaceOrderUseCase) — сериализатор для неё
+      // вернул бы одинаковый '[INVALID:...]' placeholder для РАЗНЫХ строк.
+      if (typeof (id as unknown) === 'string') return String(id);
+      try {
+        return accountIdToString(id);
+      } catch {
+        return String(id);
+      }
+    };
+    return keyOf(a) === keyOf(b);
+  }
+
+  /**
+   * Исполняет CANCEL intent: ownership-проверка → CancelOrderUseCase → typed результат.
+   *
+   * @param ctx - Контекст исполнения
+   * @param intent - CANCEL intent
+   * @returns Типизированный {@link CancelAttempt}
    *
    * @remarks
-   * Раньше ЛЮБОЙ Ok считался успешной отменой — но `CancelOrderOutcome`
-   * включает FILL_PENDING/RECONCILIATION_REQUIRED, которые отменой НЕ являются.
-   * Cooldown ставится только для CONFIRMED: он — защита от on-chain fill после
-   * подтверждённого cancel, а НЕ подтверждение отмены. Окончательный контроль
-   * всё равно в PlaceOrderUseCase (unsettled-fills guard).
+   * ### Ownership (fail-closed, ДО use case):
+   * Authoritative lookup ордера в репозитории. `CancelOrderUseCase` НЕ
+   * вызывается, если:
+   * - ордер не найден (владелец неизвестен);
+   * - `order.strategyId !== ctx.strategyId` (чужая стратегия);
+   * - `order.accountId` задан и не совпадает с `ctx.accountId` (чужой аккаунт).
+   * Любой из этих случаев → `FAILED` → PLACE текущего batch блокируется.
+   *
+   * ### Post-cancel cooldown:
+   * Ставится ТОЛЬКО при `CANCELLED`/`ALREADY_CANCELLED` И ТОЛЬКО для
+   * risk-increasing BUY-ордера — на ФАКТИЧЕСКИЙ инструмент отменённого Order
+   * (`assetIdToInstrumentId(order.asset)`), а не на ctx.instrumentId.
    */
-  private async _executeCancel(ctx: ExecutionContext, intent: CancelIntent): Promise<CancelExecutionResult> {
-    const result = await this._deps.cancelOrderUseCase.execute({
-      orderId: intent.orderId,
-      accountId: ctx.accountId,
-      reason: `Strategy ${ctx.strategyId} requested cancel`,
-    });
+  private async _executeCancel(ctx: ExecutionContext, intent: CancelIntent): Promise<CancelAttempt> {
+    // ── Ownership: authoritative lookup ─────────────────────
+    let order: Order | undefined;
+    try {
+      order = await this._deps.orderRepo.get(intent.orderId);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this._logger.warn('ExecutionEngine: cancel ownership lookup threw', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+        error: error.message,
+      });
+      return { intent, result: 'FAILED', error, reason: 'ownership lookup threw' };
+    }
+
+    if (!order) {
+      const error = new LocalIntentRejectionError(
+        'CANCEL_ORDER_NOT_FOUND',
+        `Cancel rejected — order ${String(intent.orderId)} not found (owner unknown)`,
+      );
+      this._logger.warn('ExecutionEngine: cancel rejected — order not found (owner unknown)', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+      });
+      return { intent, result: 'FAILED', error, reason: 'order not found' };
+    }
+
+    if (order.strategyId !== ctx.strategyId) {
+      const error = new LocalIntentRejectionError(
+        'CANCEL_OWNERSHIP_MISMATCH',
+        `Cancel rejected — order ${String(intent.orderId)} belongs to strategy "${order.strategyId ?? 'unknown'}", not "${ctx.strategyId}"`,
+      );
+      this._logger.error('ExecutionEngine: cancel rejected — strategy ownership mismatch', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+        orderStrategyId: order.strategyId,
+      });
+      return { intent, result: 'FAILED', error, reason: 'strategy ownership mismatch' };
+    }
+
+    if (order.accountId !== undefined && !ExecutionEngine._sameAccount(order.accountId, ctx.accountId)) {
+      const error = new LocalIntentRejectionError(
+        'CANCEL_OWNERSHIP_MISMATCH',
+        `Cancel rejected — order ${String(intent.orderId)} belongs to a different account`,
+      );
+      this._logger.error('ExecutionEngine: cancel rejected — account ownership mismatch', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+      });
+      return { intent, result: 'FAILED', error, reason: 'account ownership mismatch' };
+    }
+
+    // Данные фактически отменяемого Order — для cooldown ПОСЛЕ use case.
+    const cancelledInstrumentId = assetIdToInstrumentId(order.asset);
+    const cancelledSide: Side = order.side;
+
+    let result: Awaited<ReturnType<CancelOrderUseCase['execute']>>;
+    try {
+      result = await this._deps.cancelOrderUseCase.execute({
+        orderId: intent.orderId,
+        accountId: ctx.accountId,
+        reason: `Strategy ${ctx.strategyId} requested cancel`,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this._logger.error('ExecutionEngine: cancel use case threw', {
+        orderId: String(intent.orderId),
+        strategyId: ctx.strategyId,
+        error: error.message,
+      });
+      return { intent, result: 'FAILED', error, reason: 'cancel use case threw' };
+    }
 
     if (!result.ok) {
       this._logger.warn('ExecutionEngine: cancel failed', {
@@ -388,7 +765,7 @@ export class ExecutionEngine {
         strategyId: ctx.strategyId,
         error: result.error.message,
       });
-      return 'FAILED';
+      return { intent, result: 'FAILED', error: result.error, reason: result.error.message };
     }
 
     const outcome = result.value;
@@ -399,14 +776,14 @@ export class ExecutionEngine {
     ) {
       // Отмена НЕ подтверждена: ордер исполнен/matched (fill получен или в
       // пути) либо venue-исход неоднозначен. cancelled НЕ инкрементируется,
-      // PLACE intents текущего цикла будут заблокированы (см. execute()).
+      // PLACE intents текущего batch будут заблокированы (см. execute()).
       this._logger.warn('ExecutionEngine: cancel not confirmed — blocking PLACE intents this cycle', {
         orderId: String(intent.orderId),
         strategyId: ctx.strategyId,
         outcome: outcome.status,
         ...(outcome.status === 'RECONCILIATION_REQUIRED' ? { reason: outcome.reason } : {}),
       });
-      return 'PENDING';
+      return { intent, result: 'PENDING', reason: outcome.status };
     }
     if (outcome.status === 'ALREADY_TERMINAL') {
       // REJECTED/EXPIRED: ордер умер сам — не отмена (без cooldown/cancelled++),
@@ -416,55 +793,63 @@ export class ExecutionEngine {
         strategyId: ctx.strategyId,
         orderStatus: outcome.orderStatus,
       });
-      return 'TERMINAL_NOOP';
+      return { intent, result: 'TERMINAL_NOOP', reason: `ALREADY_TERMINAL:${outcome.orderStatus}` };
     }
 
     // CANCELLED / ALREADY_CANCELLED — подтверждённая отмена.
-    // Post-cancel cooldown: блокируем новые BUY на этом инструменте.
-    // Cancel на CLOB не отменяет on-chain fill — MINT может быть уже в пути.
-    // Без cooldown: cancel → place(новый) → fill(старый) приходит → двойная покупка.
-    const instrumentKey = String(ctx.instrumentId);
-    this._postCancelCooldowns.set(instrumentKey, this._deps.clock.now().getTime());
-    this._logger.info('ExecutionEngine: post-cancel cooldown set', {
-      strategyId: ctx.strategyId,
-      instrumentId: instrumentKey,
-      orderId: String(intent.orderId),
-      cooldownMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS,
-    });
+    // Post-cancel cooldown: ТОЛЬКО для отменённого risk-increasing BUY и
+    // ТОЛЬКО на фактический инструмент отменённого Order. Cancel на CLOB не
+    // отменяет on-chain fill — MINT может быть уже в пути; без cooldown:
+    // cancel → place(новый BUY) → fill(старый) приходит → двойная покупка.
+    // Отмена SELL BUY-cooldown НЕ ставит (SELL-fill не увеличивает экспозицию
+    // повторной покупкой), отмена комплементарного ордера primary не блокирует.
+    if (cancelledSide === 'BUY' && cancelledInstrumentId !== undefined) {
+      const instrumentKey = String(cancelledInstrumentId);
+      this._postCancelCooldowns.set(instrumentKey, this._deps.clock.now().getTime());
+      this._logger.info('ExecutionEngine: post-cancel cooldown set (cancelled BUY order)', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        orderId: String(intent.orderId),
+        cooldownMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS,
+      });
+    }
 
-    return 'CONFIRMED';
+    return { intent, result: 'CONFIRMED' };
   }
 
   /**
-   * Исполняет PLACE intent.
+   * Исполняет PLACE intent для провалидированного effective target.
    *
-   * @returns `'placed'` при успехе, `'skipped'` при намеренном пропуске, `'failed'` при ошибке
+   * @param ctx - Контекст исполнения
+   * @param intent - PLACE intent
+   * @param target - Провалидированная пара instrument/asset
+   * @returns Типизированный {@link PlaceAttempt}
    *
    * @remarks
-   * Генерирует orderId, получает portfolio из store,
-   * считает openOrdersCount и вызывает PlaceOrderUseCase.
-   *
    * ### Валидация (reject-only, без коррекции):
-   * - Reject если `size < minOrderSize`
-   * - Reject BUY если `price × size < minOrderValue`
-   * Стратегия должна сама адаптировать размеры через `InstrumentConstraints`
-   * в snapshot и helpers `BaseStrategy.adjustBuySize()/adjustSellSize()`.
+   * - Fail-closed: отсутствие catalog entry → local reject (без catalog
+   *   невозможно проверить minOrderSize/minOrderValue/tickSize)
+   * - Reject если цена не кратна tickSize (Decimal-арифметика, без float `%`)
+   * - Reject BUY если `size < minOrderSize` или `price × size < minOrderValue`
    *
-   * ### Exchange rejection cooldown:
-   * При rejection от биржи устанавливается 5-секундный cooldown per `instrumentId:side`.
-   * Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
+   * ### Классификация ошибок:
+   * ТОЛЬКО typed `PlaceFailureCode` (getPlaceFailureCode). Benign post-only
+   * skip — только точный код `POST_ONLY_WOULD_TAKE`. SELL dust-retry — только
+   * `INSUFFICIENT_TOKEN_BALANCE` (definite reject) + числовая balance-metadata.
    */
-  private async _executePlace(ctx: ExecutionContext, intent: PlaceIntent): Promise<'placed' | 'skipped' | 'failed'> {
+  private async _executePlace(
+    ctx: ExecutionContext,
+    intent: PlaceIntent,
+    target: EffectiveOrderTarget,
+  ): Promise<PlaceAttempt> {
     const nowForCooldown = this._deps.clock.now().getTime();
-    // Если intent указывает целевой инструмент (auto-selection) — используем его
-    const effectiveInstrumentId = intent.targetInstrumentId ?? ctx.instrumentId;
-    const effectiveAsset = intent.targetAsset ?? ctx.asset;
+    const effectiveInstrumentId = target.instrumentId;
+    const effectiveAsset = target.asset;
     const instrumentKey = String(effectiveInstrumentId);
 
     // ── Post-cancel cooldown ────────────────────────────────
-    // Блокируем только новые BUY после cancel. SELL-выходы нельзя задерживать:
-    // hard stop / emergency exit должен пройти даже если перед этим отменяли
-    // stale BUY. Иначе на 5m binary market позиция может уйти к 1c за cooldown.
+    // Блокируем только новые BUY после подтверждённой отмены BUY. SELL-выходы
+    // нельзя задерживать: hard stop / emergency exit должен пройти.
     const lastCancelMs = this._postCancelCooldowns.get(instrumentKey);
     if (
       intent.side === 'BUY' &&
@@ -477,17 +862,12 @@ export class ExecutionEngine {
         side: intent.side,
         cooldownRemainingMs: ExecutionEngine._POST_CANCEL_COOLDOWN_MS - (nowForCooldown - lastCancelMs),
       });
-      return 'skipped';
+      return { kind: 'skipped', reason: 'post-cancel cooldown active' };
     }
 
     // ── Exchange rejection cooldown ──────────────────────────
-    // Если биржа недавно отклонила ордер по этому инструменту/стороне —
-    // пропускаем размещение до истечения cooldown.
-    // Предотвращает retry-цикл: rejection → откат резервации → новый тик → снова rejection.
-    //
-    // SELL-выходы (SL/TP) исключаем из cooldown: стратегия сама контролирует темп retry
-    // через FOK-логику (не чаще чем раз в 0.5s). Cooldown блокировал бы критические
-    // SELL на 5s — слишком долго для stop-loss на 5-минутном рынке.
+    // SELL-выходы (SL/TP) исключаем из cooldown: стратегия сама контролирует
+    // темп retry. Cooldown блокировал бы критические SELL на 5s.
     const rejectionKey = `${instrumentKey}:${intent.side}`;
     if (intent.side !== 'SELL') {
       const lastRejectedMs = this._exchangeRejectionCooldowns.get(rejectionKey);
@@ -498,29 +878,18 @@ export class ExecutionEngine {
           side: intent.side,
           cooldownRemainingMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS - (nowForCooldown - lastRejectedMs),
         });
-        return 'skipped';
+        return { kind: 'skipped', reason: 'exchange rejection cooldown active' };
       }
     }
 
-    const orderId = asOrderId(randomUUID())!;
-    const portfolio = this._deps.portfolioStore.get(ctx.accountId);
-
-    if (portfolio === undefined) {
-      this._logger.warn('ExecutionEngine: portfolio not found, skipping place', {
-        strategyId: ctx.strategyId,
-        accountId: String(ctx.accountId),
-      });
-      return 'failed';
-    }
-
-    // Валидация size по каталогу — reject без коррекции.
-    // Стратегия должна сама адаптировать size используя constraints из snapshot
-    // и helpers BaseStrategy.adjustBuySize() / adjustSellSize().
-    const info = this._deps.catalog.get(effectiveInstrumentId);
     const effectiveSize = intent.size;
     const effectivePrice = intent.price;
 
     if (!effectiveSize.value().gt(0) || !effectivePrice.value().gt(0)) {
+      const error = new LocalIntentRejectionError(
+        'NON_POSITIVE_ORDER',
+        `Non-positive order price or size: price=${effectivePrice.toNumber()}, size=${effectiveSize.toNumber()}`,
+      );
       this._logger.warn('ExecutionEngine: reject — non-positive order price or size', {
         strategyId: ctx.strategyId,
         instrumentId: instrumentKey,
@@ -528,39 +897,96 @@ export class ExecutionEngine {
         price: effectivePrice.toNumber(),
         size: effectiveSize.toNumber(),
       });
-      return 'skipped';
+      return { kind: 'local_rejected', reason: error.message, error };
     }
 
-    if (info) {
-      // 1. Reject BUY если size < minOrderSize.
-      // SELL не блокируем по minOrderSize — Polymarket позволяет продать остаток
-      // целиком даже если он меньше minOrderSize (после fee deduction и т.п.).
-      if (intent.side === 'BUY' && effectiveSize.value().lt(info.minOrderSize.value())) {
-        this._logger.warn('ExecutionEngine: reject — size below minOrderSize (strategy must use constraints)', {
+    // ── Fail-closed: catalog entry обязателен для PLACE ─────
+    // Без catalog невозможно проверить instrument/asset mapping, minOrderSize,
+    // minOrderValue, tickSize и разрешённость target — ордер НЕ отправляется.
+    const info = this._deps.catalog.get(effectiveInstrumentId);
+    if (!info) {
+      const error = new LocalIntentRejectionError(
+        'CATALOG_ENTRY_MISSING',
+        `Catalog entry missing for instrument ${instrumentKey} — PLACE fail-closed`,
+      );
+      this._logger.warn('ExecutionEngine: reject — catalog entry missing (fail-closed)', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        side: intent.side,
+      });
+      return { kind: 'local_rejected', reason: error.message, error };
+    }
+
+    // ── Tick size: reject-only, Decimal-арифметика ──────────
+    // Цену НЕ округляем и НЕ меняем молча — стратегия обязана прислать
+    // цену, кратную tickSize (constraints доступны ей в snapshot).
+    const tickSize = info.tickSize.value();
+    if (tickSize.gt(0) && !effectivePrice.value().mod(tickSize).isZero()) {
+      const error = new LocalIntentRejectionError(
+        'TICK_SIZE_VIOLATION',
+        `Price ${effectivePrice.value().toString()} is not a multiple of tickSize ${tickSize.toString()}`,
+      );
+      this._logger.warn('ExecutionEngine: reject — price violates tickSize (no silent rounding)', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        side: intent.side,
+        price: effectivePrice.value().toString(),
+        tickSize: tickSize.toString(),
+      });
+      return { kind: 'local_rejected', reason: error.message, error };
+    }
+
+    // 1. Reject BUY если size < minOrderSize.
+    // SELL не блокируем по minOrderSize — Polymarket позволяет продать остаток
+    // целиком даже если он меньше minOrderSize (после fee deduction и т.п.).
+    if (intent.side === 'BUY' && effectiveSize.value().lt(info.minOrderSize.value())) {
+      const error = new LocalIntentRejectionError(
+        'MIN_ORDER_SIZE_VIOLATION',
+        `BUY size ${effectiveSize.toNumber()} below minOrderSize ${info.minOrderSize.toNumber()}`,
+      );
+      this._logger.warn('ExecutionEngine: reject — size below minOrderSize (strategy must use constraints)', {
+        strategyId: ctx.strategyId,
+        instrumentId: instrumentKey,
+        side: intent.side,
+        size: effectiveSize.toNumber(),
+        minOrderSize: info.minOrderSize.toNumber(),
+      });
+      return { kind: 'local_rejected', reason: error.message, error };
+    }
+
+    // 2. Reject BUY если orderValue < minOrderValue (Money, денежный notional)
+    if (intent.side === 'BUY' && info.minOrderValue.value().gt(0)) {
+      const orderValue = intent.price.value().mul(effectiveSize.value());
+      if (orderValue.lt(info.minOrderValue.value())) {
+        const error = new LocalIntentRejectionError(
+          'MIN_ORDER_VALUE_VIOLATION',
+          `BUY order value ${orderValue.toNumber()} below minOrderValue ${info.minOrderValue.toNumber()}`,
+        );
+        this._logger.warn('ExecutionEngine: reject — order value below minOrderValue (strategy must use constraints)', {
           strategyId: ctx.strategyId,
           instrumentId: instrumentKey,
-          side: intent.side,
+          price: intent.price.toNumber(),
           size: effectiveSize.toNumber(),
-          minOrderSize: info.minOrderSize.toNumber(),
+          orderValue: orderValue.toNumber(),
+          minOrderValue: info.minOrderValue.toNumber(),
         });
-        return 'skipped';
+        return { kind: 'local_rejected', reason: error.message, error };
       }
+    }
 
-      // 2. Reject BUY если orderValue < minOrderValue
-      if (intent.side === 'BUY' && info.minOrderValue.value().gt(0)) {
-        const orderValue = intent.price.value().mul(effectiveSize.value());
-        if (orderValue.lt(info.minOrderValue.value())) {
-          this._logger.warn('ExecutionEngine: reject — order value below minOrderValue (strategy must use constraints)', {
-            strategyId: ctx.strategyId,
-            instrumentId: instrumentKey,
-            price: intent.price.toNumber(),
-            size: effectiveSize.toNumber(),
-            orderValue: orderValue.toNumber(),
-            minOrderValue: info.minOrderValue.toNumber(),
-          });
-          return 'skipped';
-        }
-      }
+    const orderId = this._deps.orderIdGenerator.next();
+    const portfolio = this._deps.portfolioStore.get(ctx.accountId);
+
+    if (portfolio === undefined) {
+      this._logger.warn('ExecutionEngine: portfolio not found, skipping place', {
+        strategyId: ctx.strategyId,
+        accountId: String(ctx.accountId),
+      });
+      return {
+        kind: 'failed',
+        error: new Error(`Portfolio not found for account ${String(ctx.accountId)}`),
+        failureCode: 'PORTFOLIO_UNAVAILABLE',
+      };
     }
 
     const openOrdersCount = await this._deps.orderRepo.countByStrategyId(ctx.strategyId);
@@ -580,37 +1006,39 @@ export class ExecutionEngine {
       strategyId: ctx.strategyId,
       portfolio,
       openOrdersCount,
-    } as any);
+    });
 
-    // L2 safety net: при SELL rejection с dust-дефицитом (<1%) парсим on-chain balance
-    // из текста ошибки и повторяем ОДИН раз с adjusted size. Страхует случаи,
-    // когда L1 pre-check в адаптере не сконфигурирован или проигнорировал race condition
-    // (баланс упал между pre-check и postOrder).
+    // L2 safety net: SELL dust-retry. Разрешён ТОЛЬКО при typed
+    // INSUFFICIENT_TOKEN_BALANCE (definite venue reject) С числовой
+    // balance-metadata. НИКОГДА не парсим текст ошибки; никакого retry при
+    // SUBMISSION_OUTCOME_UNKNOWN / transport ambiguity / прочих кодах.
     if (!result.ok && intent.side === 'SELL') {
-      const retryHint = _parseBalanceRejection(result.error.message);
-      if (retryHint) {
-        const { onChainBalance, orderAmount } = retryHint;
-        const deficit = orderAmount - onChainBalance;
-        const deficitPct = orderAmount > 0 ? deficit / orderAmount : 1;
+      const failureCode = getPlaceFailureCode(result.error);
+      const balanceMetadata = getPlaceFailureBalance(result.error);
+      if (failureCode === 'INSUFFICIENT_TOKEN_BALANCE' && balanceMetadata !== undefined) {
+        const onChainBalance = balanceMetadata.onChainBalanceMicro;
+        const orderAmount = balanceMetadata.orderAmountMicro;
+        const deficit = orderAmount.minus(onChainBalance);
+        const deficitPct = orderAmount.gt(0) ? deficit.div(orderAmount) : new Decimal(1);
 
-        if (deficit > 0 && deficitPct < ExecutionEngine._SELL_DUST_RETRY_MAX_DEFICIT) {
-          // Polymarket маскшабирует amounts в микроединицах (1e6). Округляем вниз до 2 dp
-          // (требование API для SELL makerAmount).
-          const adjustedTokens = Math.floor((onChainBalance / 1e6) * 100) / 100;
+        if (deficit.gt(0) && deficitPct.lt(ExecutionEngine._SELL_DUST_RETRY_MAX_DEFICIT)) {
+          // Polymarket масштабирует amounts в микроединицах (1e6). Округляем
+          // вниз до 2 dp (требование API для SELL makerAmount).
+          const adjustedTokens = onChainBalance.div(1e6).toDecimalPlaces(2, Decimal.ROUND_DOWN);
 
-          if (adjustedTokens > 0) {
+          if (adjustedTokens.gt(0)) {
             try {
-              const adjustedQty = Quantity.of(new Decimal(adjustedTokens));
-              const newOrderId = asOrderId(randomUUID())!;
+              const adjustedQty = Quantity.of(adjustedTokens);
+              const newOrderId = this._deps.orderIdGenerator.next();
               this._sellDustRetryCount++;
-              this._logger.warn('ExecutionEngine: SELL retry with on-chain adjusted size', {
+              this._logger.warn('ExecutionEngine: SELL retry with on-chain adjusted size (typed metadata)', {
                 strategyId: ctx.strategyId,
                 instrumentId: instrumentKey,
                 originalSize: activeSize.toNumber(),
-                adjustedSize: adjustedTokens,
+                adjustedSize: adjustedTokens.toNumber(),
                 deficitPct: deficitPct.toFixed(4),
                 newOrderId: String(newOrderId),
-                previousError: result.error.message,
+                failureCode,
               });
 
               const refreshedPortfolio = this._deps.portfolioStore.get(ctx.accountId);
@@ -630,13 +1058,13 @@ export class ExecutionEngine {
                   strategyId: ctx.strategyId,
                   portfolio: refreshedPortfolio,
                   openOrdersCount: retryOpenOrdersCount,
-                } as any);
+                });
               }
             } catch (err) {
               this._logger.warn('ExecutionEngine: SELL retry skipped — invalid adjusted size', {
                 strategyId: ctx.strategyId,
                 instrumentId: instrumentKey,
-                adjustedTokens,
+                adjustedTokens: adjustedTokens.toNumber(),
                 error: err instanceof Error ? err.message : String(err),
               });
             }
@@ -646,28 +1074,28 @@ export class ExecutionEngine {
     }
 
     if (!result.ok) {
-      if (intent.postOnly === true && _isBenignPostOnlyReject(result.error.message)) {
+      const failureCode = getPlaceFailureCode(result.error);
+
+      // Benign skip — ТОЛЬКО точный typed код POST_ONLY_WOULD_TAKE.
+      if (intent.postOnly === true && failureCode === 'POST_ONLY_WOULD_TAKE') {
         this._benignPostOnlyRejects++;
-        this._logger.info('ExecutionEngine: skip — benign post-only reject', {
+        this._logger.info('ExecutionEngine: skip — benign post-only reject (typed)', {
           strategyId: ctx.strategyId,
           instrumentId: instrumentKey,
           side: intent.side,
           price: intent.price.toNumber(),
           size: intent.size.toNumber(),
-          error: result.error.message,
+          failureCode,
         });
-        return 'skipped';
+        return { kind: 'skipped', reason: 'post-only would take (benign)' };
       }
 
       // Устанавливаем cooldown чтобы не спамить биржу при стабильном rejection.
-      // Cooldown сбросится сам через _EXCHANGE_REJECTION_COOLDOWN_MS (5s).
       // SELL не блокируем: стратегия сама контролирует темп через FOK-логику.
       if (intent.side !== 'SELL') {
         this._exchangeRejectionCooldowns.set(rejectionKey, this._deps.clock.now().getTime());
       }
       // portfolioTokenQty: диагностика десинка in-memory vs on-chain.
-      // Если qty совпадает с размером ордера — скорее всего token approval не выставлен.
-      // Если qty=0 или меньше — fill не дошёл, портфолио не обновлён.
       const currentPortfolio = this._deps.portfolioStore.get(ctx.accountId);
       const portfolioTokenQty = currentPortfolio
         ?.getPosition?.(effectiveInstrumentId)?.quantity.value().toNumber();
@@ -679,6 +1107,7 @@ export class ExecutionEngine {
         side: intent.side,
         price: intent.price.toNumber(),
         size: intent.size.toNumber(),
+        failureCode,
         error: result.error.message,
         cooldownMs: ExecutionEngine._EXCHANGE_REJECTION_COOLDOWN_MS,
         portfolioTokenQty,
@@ -686,7 +1115,6 @@ export class ExecutionEngine {
       });
 
       // Диагностика: при SELL rejection проверяем реальный баланс токена на CLOB.
-      // Позволяет отличить settlement lag от allowance проблемы.
       if (intent.side === 'SELL' && this._deps.tokenBalanceChecker) {
         const rawTokenId = effectiveAsset.type === 'POLYMARKET_CTF_TOKEN'
           ? effectiveAsset.tokenId
@@ -707,7 +1135,7 @@ export class ExecutionEngine {
           .catch(() => { /* best effort */ });
       }
 
-      return 'failed';
+      return { kind: 'failed', error: result.error, failureCode };
     }
 
     this._logger.info('ExecutionEngine: order placed', {
@@ -719,82 +1147,6 @@ export class ExecutionEngine {
       ...(activeOrderId !== orderId ? { retriedAfterDust: true, originalSize: effectiveSize.toNumber() } : {}),
     });
 
-    return 'placed';
+    return { kind: 'placed' };
   }
-
-  /**
-   * Парсит сообщение rejection от Polymarket CLOB для извлечения фактического баланса.
-   *
-   * @param message - Текст ошибки от биржи (обычно обёрнут в TradingError)
-   * @returns Числа в микроединицах (1e6) или null если формат не распознан
-   *
-   * @remarks
-   * Ожидаемый формат (стабильный на текущей версии CLOB):
-   * `not enough balance / allowance: the balance is not enough -> balance: 9557200, order amount: 9560000`
-   *
-   * Значения в микроединицах USDC/token (6 dp). Парсер толерантен к префиксу: ищет
-   * подстроку `balance: X, order amount: Y` в любом месте сообщения.
-   */
-}
-
-// ── Внутренние чистые функции ──────────────────────────────
-
-/**
- * Нормализует intents: dedupe и сортировка.
- *
- * @remarks
- * 1. Если CANCEL_ALL → все отдельные CANCEL удаляются
- * 2. CANCEL dedupe по orderId
- * 3. PLACE dedupe по `${side}:${price}` — последний побеждает
- */
-function _normalize(intents: readonly StrategyIntent[]): NormalizedIntents {
-  let hasCancelAll = false;
-  const cancelMap = new Map<string, CancelIntent>();
-  const placeMap = new Map<string, PlaceIntent>();
-
-  for (const intent of intents) {
-    switch (intent.type) {
-      case 'CANCEL_ALL':
-        hasCancelAll = true;
-        break;
-      case 'CANCEL':
-        cancelMap.set(String(intent.orderId), intent);
-        break;
-      case 'PLACE':
-        placeMap.set(`${intent.side}:${intent.price.toNumber()}`, intent);
-        break;
-    }
-  }
-
-  return {
-    hasCancelAll,
-    cancels: hasCancelAll ? [] : [...cancelMap.values()],
-    places: [...placeMap.values()],
-  };
-}
-
-function _parseBalanceRejection(message: string): { onChainBalance: number; orderAmount: number } | null {
-  const match = message.match(/balance:\s*(\d+),\s*order amount:\s*(\d+)/i);
-  if (!match) return null;
-  const onChainBalance = Number(match[1]);
-  const orderAmount = Number(match[2]);
-  if (!Number.isFinite(onChainBalance) || !Number.isFinite(orderAmount)) return null;
-  return { onChainBalance, orderAmount };
-}
-
-function _isBenignPostOnlyReject(message: string): boolean {
-  const text = message.toLowerCase();
-  return (
-    text.includes('post only') ||
-    text.includes('post-only') ||
-    text.includes('defer') ||
-    text.includes('marketable') ||
-    text.includes('would execute immediately')
-  );
-}
-
-interface NormalizedIntents {
-  readonly hasCancelAll: boolean;
-  readonly cancels: CancelIntent[];
-  readonly places: PlaceIntent[];
 }

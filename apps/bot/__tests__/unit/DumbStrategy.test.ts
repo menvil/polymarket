@@ -84,6 +84,7 @@ function makeSnapshot(overrides: Partial<{
     nowMs: Date.now(),
     hasInFlightFills: false,
     constraints: undefined,
+    complementaryConstraints: undefined,
   };
 }
 
@@ -121,6 +122,7 @@ describe('DumbStrategy', () => {
       portfolio: undefined,
       hasInFlightFills: false,
       constraints: undefined,
+      complementaryConstraints: undefined,
       nowMs: Date.now(),
     };
 

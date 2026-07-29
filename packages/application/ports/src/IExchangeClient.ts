@@ -15,6 +15,7 @@
  * - ReconcileOrdersUseCase — `getOpenOrders()` → сверить открытые ордера
  * - ReconcileTradesUseCase — `getTrades()` → сверить исполнения
  */
+import type Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import type { OrderId, AssetId, AccountId } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
@@ -136,6 +137,44 @@ export interface SubmitOrderParams {
  *   некорректные/противоречивые size-поля). Вызывающий код обязан считать ордер
  *   потенциально live и требовать ручной reconciliation — НЕ создавать обычный OPEN order.
  */
+/**
+ * Типизированная причина venue-отклонения ордера (REJECTED).
+ *
+ * @remarks
+ * Классификация venue-специфичных текстов ошибок выполняется ИСКЛЮЧИТЕЛЬНО
+ * в infrastructure adapter (единственное место, где парсинг сообщений venue
+ * допустим). Application layer (`PlaceOrderUseCase`, `ExecutionEngine`)
+ * переключается ТОЛЬКО по этому коду и НИКОГДА не парсит `reason`.
+ *
+ * - `POST_ONLY_WOULD_TAKE` — post-only ордер был бы исполнен немедленно
+ *   (marketable) и потому отклонён. Benign-исход для quoting-стратегий.
+ * - `INSUFFICIENT_TOKEN_BALANCE` — недостаточно токенов (SELL). Адаптер
+ *   ОБЯЗАН заполнить `balance` (числовая metadata) — без неё автоматический
+ *   dust-retry на стороне вызывающего кода запрещён.
+ * - `INSUFFICIENT_ALLOWANCE` — не выставлен token allowance/approval.
+ * - `OTHER` — venue отклонил по иной/нераспознанной причине.
+ */
+export type SubmitRejectionCode =
+  | 'POST_ONLY_WOULD_TAKE'
+  | 'INSUFFICIENT_TOKEN_BALANCE'
+  | 'INSUFFICIENT_ALLOWANCE'
+  | 'OTHER';
+
+/**
+ * Числовая metadata venue-отклонения по балансу (микроединицы, 1e6).
+ *
+ * @remarks
+ * Заполняется адаптером ТОЛЬКО из авторитетного структурированного ответа
+ * venue (не из свободного текста в application layer). Значения — Decimal
+ * в микроединицах USDC/token (6 dp), как их возвращает Polymarket CLOB.
+ */
+export interface SubmitRejectionBalanceMetadata {
+  /** Фактический on-chain баланс (микроединицы). */
+  readonly onChainBalanceMicro: Decimal;
+  /** Требуемый объём ордера (микроединицы). */
+  readonly orderAmountMicro: Decimal;
+}
+
 export type SubmitOrderResult =
   | {
       readonly status: 'OPEN';
@@ -159,6 +198,16 @@ export type SubmitOrderResult =
   | {
       readonly status: 'REJECTED';
       readonly reason: string;
+      /**
+       * Типизированная причина отклонения (см. {@link SubmitRejectionCode}).
+       * `undefined` — адаптер не смог классифицировать (эквивалент `OTHER`).
+       */
+      readonly rejectionCode?: SubmitRejectionCode;
+      /**
+       * Числовая metadata для `INSUFFICIENT_TOKEN_BALANCE`
+       * (см. {@link SubmitRejectionBalanceMetadata}).
+       */
+      readonly balance?: SubmitRejectionBalanceMetadata;
     }
   | {
       readonly status: 'UNKNOWN';

@@ -30,12 +30,20 @@
  * ```
  */
 
-import { ExecutionEngine, StrategyScheduler, OrderEventBridge } from '@polymarket/strategy';
+import {
+  ExecutionEngine,
+  StrategyScheduler,
+  OrderEventBridge,
+  NodeSchedulerTimer,
+  UuidOrderIdGenerator,
+} from '@polymarket/strategy';
 import type {
   ITokenBalanceChecker,
   ICryptoResolutionStore,
   ICryptoMarketDataStore,
   ICryptoSignalRegistry,
+  ISchedulerTimer,
+  IOrderIdGenerator,
 } from '@polymarket/strategy';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { CoreInfra } from './buildCoreInfra.js';
@@ -59,6 +67,16 @@ export interface BuildStrategyEngineParams {
   readonly cryptoMarketDataStore?: ICryptoMarketDataStore;
   /** Опциональный: shared crypto signal calculator registry */
   readonly cryptoSignalRegistry?: ICryptoSignalRegistry;
+  /**
+   * Порт таймеров планировщика (по умолчанию NodeSchedulerTimer).
+   * Для replay/backtest передайте DeterministicSchedulerTimer.
+   */
+  readonly schedulerTimer?: ISchedulerTimer;
+  /**
+   * Генератор клиентских Order ID (по умолчанию UuidOrderIdGenerator).
+   * Для replay/backtest передайте SequentialOrderIdGenerator.
+   */
+  readonly orderIdGenerator?: IOrderIdGenerator;
 }
 
 /** Результат построения стратегического движка */
@@ -92,10 +110,15 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     cryptoResolutionStore,
     cryptoMarketDataStore,
     cryptoSignalRegistry,
+    schedulerTimer,
+    orderIdGenerator,
   } = params;
   const { clock, logger, eventBus } = infra;
   const { orderRepo, portfolioStore } = repos;
   const { placeOrderUseCase, cancelOrderUseCase } = useCases;
+
+  const timer = schedulerTimer ?? new NodeSchedulerTimer();
+  const idGenerator = orderIdGenerator ?? new UuidOrderIdGenerator();
 
   const executionEngine = new ExecutionEngine({
     placeOrderUseCase,
@@ -104,6 +127,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     portfolioStore,
     catalog: marketCatalog,
     clock,
+    orderIdGenerator: idGenerator,
     logger,
     tokenBalanceChecker,
   });
@@ -115,6 +139,7 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
     catalog: marketCatalog,
     executionEngine,
     clock,
+    timer,
     logger,
     cryptoResolutionStore,
     cryptoMarketDataStore,
@@ -124,7 +149,6 @@ export function buildStrategyEngine(params: BuildStrategyEngineParams): Strategy
   const orderEventBridge = new OrderEventBridge({
     eventBus,
     scheduler,
-    executionEngine,
     orderStateStore: orderRepo,
     orderRepo,
     logger,

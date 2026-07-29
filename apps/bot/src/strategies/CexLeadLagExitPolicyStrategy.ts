@@ -1,4 +1,5 @@
 import { BaseStrategy } from '@polymarket/strategy';
+import { placeTarget } from '@polymarket/strategy';
 import type {
   CexVenue,
   CryptoSignalDirection,
@@ -1689,14 +1690,17 @@ export class CexLeadLagExitPolicyStrategy extends BaseStrategy<CexLeadLagData, C
       if (action.type === 'SELL') {
         // При выходе снимаем все ордера (в т.ч. открытый BUY) перед SELL
         intents.push({ type: 'CANCEL_ALL' });
-        intents.push({
-          type: 'PLACE',
-          side: 'SELL',
-          price: Price.of(new Decimal(action.price).div(100)),
-          size: Quantity.of(action.size),
-          ...(action.targetInstrumentId !== undefined ? { targetInstrumentId: action.targetInstrumentId } : {}),
-          ...(action.targetAsset !== undefined ? { targetAsset: action.targetAsset } : {}),
-        });
+        {
+          // Атомарная пара target-полей: либо оба, либо ни одного (placeTarget).
+          const target = placeTarget(action.targetInstrumentId, action.targetAsset);
+          const base = {
+            type: 'PLACE' as const,
+            side: 'SELL' as const,
+            price: Price.of(new Decimal(action.price).div(100)),
+            size: Quantity.of(action.size),
+          };
+          intents.push(target ? { ...base, ...target } : base);
+        }
         continue;
       }
 
@@ -1705,14 +1709,17 @@ export class CexLeadLagExitPolicyStrategy extends BaseStrategy<CexLeadLagData, C
         if (action.cancelOrderId !== undefined) {
           intents.push({ type: 'CANCEL', orderId: action.cancelOrderId });
         }
-        intents.push({
-          type: 'PLACE',
-          side: 'BUY',
-          price: Price.of(new Decimal(action.price).div(100)),
-          size: Quantity.of(action.size),
-          ...(action.targetInstrumentId !== undefined ? { targetInstrumentId: action.targetInstrumentId } : {}),
-          ...(action.targetAsset !== undefined ? { targetAsset: action.targetAsset } : {}),
-        });
+        {
+          // Атомарная пара target-полей: либо оба, либо ни одного (placeTarget).
+          const target = placeTarget(action.targetInstrumentId, action.targetAsset);
+          const base = {
+            type: 'PLACE' as const,
+            side: 'BUY' as const,
+            price: Price.of(new Decimal(action.price).div(100)),
+            size: Quantity.of(action.size),
+          };
+          intents.push(target ? { ...base, ...target } : base);
+        }
       }
     }
 

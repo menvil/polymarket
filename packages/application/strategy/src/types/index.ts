@@ -9,12 +9,15 @@
  * - `ScheduleConfig` + DEFAULT_SCHEDULE_CONFIG — конфигурация расписания
  */
 export type { TriggerReason } from './TriggerReason.js';
+export { KNOWN_TRIGGER_REASONS } from './TriggerReason.js';
 export type {
   StrategyIntent,
+  BasePlaceIntent,
   PlaceIntent,
   CancelIntent,
   CancelAllIntent,
 } from './StrategyIntent.js';
+export { placeTarget } from './StrategyIntent.js';
 export type {
   CexBookTick,
   CexTradeTick,
@@ -33,4 +36,4 @@ export type {
 } from './StrategySnapshot.js';
 export type { InstrumentConstraints } from './InstrumentConstraints.js';
 export type { ScheduleConfig } from './ScheduleConfig.js';
-export { DEFAULT_SCHEDULE_CONFIG } from './ScheduleConfig.js';
+export { DEFAULT_SCHEDULE_CONFIG, validateScheduleConfig } from './ScheduleConfig.js';

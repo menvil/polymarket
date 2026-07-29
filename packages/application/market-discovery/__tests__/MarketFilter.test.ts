@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Money, Price, Quantity } from '@polymarket/value-objects';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { MarketFilter } from '../src/MarketFilter.js';
@@ -50,7 +50,7 @@ function makeMarket(overrides: Partial<{
     expiresAt: expiresAtResult.value,
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
-    minOrderValue: Quantity.of(new Decimal('1')),
+    minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
     spread: spread !== null ? new Decimal(spread) : undefined,
     liquidity: new Decimal(liquidity),

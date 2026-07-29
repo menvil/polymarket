@@ -24,7 +24,10 @@
  * };
  * ```
  */
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 import type { TriggerReason } from './TriggerReason.js';
+import { KNOWN_TRIGGER_REASONS } from './TriggerReason.js';
 
 export interface ScheduleConfig {
   /**
@@ -59,6 +62,66 @@ export interface ScheduleConfig {
    * @defaultValue 5000
    */
   readonly maxIdleMs: number;
+
+  /**
+   * Watchdog-таймаут одного `ExecutionEngine.execute()` (ms).
+   *
+   * @remarks
+   * Если execution не завершился за это время, стратегия помечается
+   * `faulted`: новые тики блокируются до `unregister()` (controlled
+   * recovery), параллельный execution НЕ запускается. Это state-machine
+   * защита от «зависшей навсегда running-стратегии», а НЕ отмена Promise —
+   * JavaScript не может отменить неотменяемую операцию.
+   *
+   * @defaultValue 30000
+   */
+  readonly executionTimeoutMs: number;
+}
+
+/**
+ * Валидирует ScheduleConfig перед регистрацией стратегии.
+ *
+ * @param config - Полная (уже слитая с default) конфигурация
+ * @returns Ok при валидной конфигурации; Err с причиной — при невалидной
+ *
+ * @remarks
+ * Fail-closed на границе register(): невалидный config не должен дожить до
+ * запуска heartbeat. Проверки:
+ * - `minIntervalMs` — конечное целое >= 0;
+ * - `maxIdleMs` — конечное целое > 0;
+ * - `executionTimeoutMs` — конечное целое > 0;
+ * - `priorityTriggers` — только известные {@link TriggerReason}.
+ *
+ * @example
+ * ```typescript
+ * const r = validateScheduleConfig(config);
+ * if (!r.ok) return Err(r.error);
+ * ```
+ */
+export function validateScheduleConfig(config: ScheduleConfig): Result<void, Error> {
+  if (!Number.isInteger(config.minIntervalMs) || config.minIntervalMs < 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.minIntervalMs: ${String(config.minIntervalMs)} (must be a finite integer >= 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.maxIdleMs) || config.maxIdleMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.maxIdleMs: ${String(config.maxIdleMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.executionTimeoutMs) || config.executionTimeoutMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.executionTimeoutMs: ${String(config.executionTimeoutMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  for (const trigger of config.priorityTriggers) {
+    if (!KNOWN_TRIGGER_REASONS.has(trigger)) {
+      return Err(new Error(
+        `Invalid ScheduleConfig.priorityTriggers: unknown TriggerReason "${String(trigger)}"`,
+      ));
+    }
+  }
+  return Ok(undefined);
 }
 
 /**
@@ -73,4 +136,5 @@ export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
   minIntervalMs: 50,
   priorityTriggers: new Set<TriggerReason>(['FILL']),
   maxIdleMs: 5000,
+  executionTimeoutMs: 30_000,
 };

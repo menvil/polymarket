@@ -376,7 +376,7 @@ export class MarketRotation {
       marketId: slot.marketId,
       tickSize,
       minOrderSize,
-      minOrderValue: Quantity.of(new Decimal('1')),
+      minOrderValue: Money.of(new Decimal('1'), 'USDC'),
       active: true,
       expiresAt: expiresAtResult.value,
     };

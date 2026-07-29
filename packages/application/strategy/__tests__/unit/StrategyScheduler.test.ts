@@ -1,19 +1,23 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { Ok, Err } from '@polymarket/result';
 import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
+import { asInstrumentId } from '@polymarket/ids';
 import type { IStrategy } from '../../src/IStrategy.js';
 import type { StrategySnapshot } from '../../src/types/StrategySnapshot.js';
 import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
 import type { TriggerReason } from '../../src/types/TriggerReason.js';
 import { StrategyScheduler } from '../../src/StrategyScheduler.js';
 import type { StrategySchedulerDeps, StrategyRegistration, IMarketDataStore } from '../../src/StrategyScheduler.js';
+import { DeterministicSchedulerTimer } from '../../src/ports/SchedulerTimer.js';
 import type { IOrderStateStore } from '@polymarket/ports';
 
 // ── Constants ──────────────────────────────────────────────
 
 const ACCOUNT_ID = 'venue:POLYMARKET:test' as unknown as AccountId;
-const INSTRUMENT_ID = 'token-1' as unknown as InstrumentId;
+const INSTRUMENT_ID = asInstrumentId('token-1')!;
+const COMP_INSTRUMENT_ID = asInstrumentId('token-2')!;
 const ASSET_ID = 'asset-1' as unknown as AssetId;
+const COMP_ASSET_ID = 'asset-2' as unknown as AssetId;
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -35,6 +39,7 @@ function makeClock(nowMs = 1000) {
     now: jest.fn(() => new Date(current)) as any,
     advance(ms: number) { current += ms; },
     set(ms: number) { current = ms; },
+    get currentMs() { return current; },
   };
 }
 
@@ -85,9 +90,18 @@ function makeOrderStateStore(): IOrderStateStore {
   };
 }
 
+function emptyReport() {
+  return {
+    placed: 0, cancelled: 0, skipped: 0, localRejected: 0,
+    blockedByUnsafeCancel: 0, failed: 0, errors: [], outcomes: [],
+  };
+}
+
 function makeExecutionEngine() {
   return {
-    execute: fn().mockResolvedValue({ placed: 0, cancelled: 0, skipped: 0, errors: [] }),
+    execute: fn().mockResolvedValue(emptyReport()),
+    clearPostCancelCooldown: fn(),
+    clearExchangeRejectionCooldown: fn(),
   };
 }
 
@@ -140,27 +154,38 @@ function makeCatalog() {
 function makeDeps(overrides: Partial<StrategySchedulerDeps> = {}) {
   const marketDataStore = makeMarketDataStore();
   const clock = makeClock();
+  const timer = new DeterministicSchedulerTimer(clock.currentMs);
+  const executionEngine = makeExecutionEngine();
   return {
     deps: {
       marketDataStore,
       orderStateStore: makeOrderStateStore(),
       portfolioStore: makePortfolioStore() as any,
       catalog: makeCatalog() as any,
-      executionEngine: makeExecutionEngine() as any,
+      executionEngine: executionEngine as any,
       clock: clock as any,
+      timer,
       logger: makeLogger() as any,
       ...overrides,
     } as StrategySchedulerDeps,
     marketDataStore,
     clock,
+    timer,
+    executionEngine,
   };
 }
 
-/** Ждём microtask queue (Promise.resolve().then() chains) */
-async function flush(count = 5) {
+/** Ждём microtask queue (Promise.resolve().then() chains) — БЕЗ реальных sleeps. */
+async function flush(count = 8) {
   for (let i = 0; i < count; i++) {
     await Promise.resolve();
   }
+}
+
+/** Продвигает clock и deterministic timer синхронно (единая ось времени). */
+function advanceTime(clock: ReturnType<typeof makeClock>, timer: DeterministicSchedulerTimer, ms: number) {
+  clock.advance(ms);
+  timer.advanceTo(clock.currentMs);
 }
 
 // ── Tests ──────────────────────────────────────────────────
@@ -169,24 +194,21 @@ describe('StrategyScheduler', () => {
   let scheduler: StrategyScheduler;
   let marketDataStore: ReturnType<typeof makeMarketDataStore>;
   let clock: ReturnType<typeof makeClock>;
+  let timer: DeterministicSchedulerTimer;
+  let executionEngine: ReturnType<typeof makeExecutionEngine>;
   let deps: StrategySchedulerDeps;
 
   beforeEach(() => {
-    jest.useFakeTimers();
     const d = makeDeps();
     deps = d.deps;
     marketDataStore = d.marketDataStore;
     clock = d.clock;
+    timer = d.timer;
+    executionEngine = d.executionEngine;
     scheduler = new StrategyScheduler(deps);
   });
 
-  afterEach(async () => {
-    await scheduler.stopAll();
-    scheduler.stop();
-    jest.useRealTimers();
-  });
-
-  // ── register / unregister ────────────────────────────
+  // ── register ─────────────────────────────────────────
 
   describe('register', () => {
     it('should call strategy.initialize() and register', async () => {
@@ -215,17 +237,100 @@ describe('StrategyScheduler', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('should skip duplicate registration', async () => {
+    it('duplicate register → Err (не Ok)', async () => {
       const strategy = makeStrategy('s1');
       await scheduler.register(makeRegistration(strategy));
       const result = await scheduler.register(makeRegistration(strategy));
 
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
       expect(strategy.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    it('два concurrent register одного ID → initialize вызывается один раз, одна entry', async () => {
+      const s1 = makeStrategy('s1');
+      const s1dup = makeStrategy('s1');
+
+      const [r1, r2] = await Promise.all([
+        scheduler.register(makeRegistration(s1)),
+        scheduler.register(makeRegistration(s1dup)),
+      ]);
+
+      const okCount = [r1, r2].filter((r) => r.ok).length;
+      expect(okCount).toBe(1);
+      const initCalls =
+        (s1.initialize as any).mock.calls.length + (s1dup.initialize as any).mock.calls.length;
+      expect(initCalls).toBe(1);
+    });
+
+    it('complementaryInstrumentId без complementaryAsset → Err', async () => {
+      const strategy = makeStrategy('s1');
+      const result = await scheduler.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+      }));
+
+      expect(result.ok).toBe(false);
+      expect(strategy.initialize).not.toHaveBeenCalled();
+    });
+
+    describe('ScheduleConfig validation', () => {
+      it.each([
+        ['minIntervalMs = -1', { minIntervalMs: -1 }],
+        ['minIntervalMs = NaN', { minIntervalMs: NaN }],
+        ['minIntervalMs = Infinity', { minIntervalMs: Infinity }],
+        ['minIntervalMs = 1.5 (fractional)', { minIntervalMs: 1.5 }],
+        ['maxIdleMs = 0', { maxIdleMs: 0 }],
+        ['maxIdleMs = -5', { maxIdleMs: -5 }],
+        ['maxIdleMs = NaN', { maxIdleMs: NaN }],
+        ['maxIdleMs = Infinity', { maxIdleMs: Infinity }],
+        ['maxIdleMs = 2.5 (fractional)', { maxIdleMs: 2.5 }],
+        ['executionTimeoutMs = 0', { executionTimeoutMs: 0 }],
+      ])('%s → Err до запуска heartbeat', async (_label, config) => {
+        const strategy = makeStrategy('s1');
+        const result = await scheduler.register(makeRegistration(strategy, { config: config as any }));
+
+        expect(result.ok).toBe(false);
+        // initialize не должен был вызываться — config валидируется раньше.
+        expect(strategy.initialize).not.toHaveBeenCalled();
+      });
+
+      it('unknown TriggerReason в priorityTriggers → Err', async () => {
+        const strategy = makeStrategy('s1');
+        const result = await scheduler.register(makeRegistration(strategy, {
+          config: { priorityTriggers: new Set(['NOT_A_REASON' as TriggerReason]) },
+        }));
+
+        expect(result.ok).toBe(false);
+      });
+
+      it('внешний priorityTriggers Set копируется — мутация после register не влияет', async () => {
+        const externalSet = new Set<TriggerReason>(['FILL']);
+        const strategy = makeStrategy('s1');
+        await scheduler.register(makeRegistration(strategy, {
+          config: { minIntervalMs: 100, priorityTriggers: externalSet },
+        }));
+        scheduler.start();
+
+        // Первый tick.
+        marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+        await flush();
+        expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+        // Мутируем ВНЕШНИЙ Set: BOOK теперь «приоритетный» в внешней копии.
+        externalSet.add('BOOK');
+
+        // BOOK в throttle-окне: stored копия НЕ содержит BOOK → должен отложиться.
+        advanceTime(clock, timer, 10);
+        marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+        await flush();
+
+        expect(strategy.tick).toHaveBeenCalledTimes(1); // deferred, не bypass
+      });
     });
   });
 
-  describe('unregister', () => {
+  // ── unregister lifecycle ─────────────────────────────
+
+  describe('unregister lifecycle', () => {
     it('should call strategy.stop() and execute final intents', async () => {
       const strategy = makeStrategy('s1');
       await scheduler.register(makeRegistration(strategy));
@@ -233,7 +338,7 @@ describe('StrategyScheduler', () => {
       await scheduler.unregister('s1');
 
       expect(strategy.stop).toHaveBeenCalled();
-      expect(deps.executionEngine.execute).toHaveBeenCalledWith(
+      expect(executionEngine.execute).toHaveBeenCalledWith(
         expect.objectContaining({ strategyId: 's1' }),
         [{ type: 'CANCEL_ALL' }],
       );
@@ -252,6 +357,104 @@ describe('StrategyScheduler', () => {
       await expect(scheduler.unregister('s1')).resolves.toBeUndefined();
       expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
+
+    it('unregister ЖДЁТ активный execution; final intents выполняются ПОСЛЕ него', async () => {
+      const events: string[] = [];
+      const strategy = makeStrategy('s1', {
+        tickResult: [{ type: 'PLACE', side: 'BUY', price: {} as any, size: {} as any }],
+      });
+
+      let resolveExec: (() => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() => {
+        events.push('normal-execution-started');
+        return new Promise((resolve) => {
+          resolveExec = () => {
+            events.push('normal-execution-finished');
+            resolve(emptyReport());
+          };
+        });
+      });
+      executionEngine.execute.mockImplementationOnce(async () => {
+        events.push('final-intents-executed');
+        return emptyReport();
+      });
+
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(events).toEqual(['normal-execution-started']);
+
+      // unregister пока PLACE ещё in-flight.
+      const unregisterPromise = scheduler.unregister('s1');
+      await flush();
+
+      // strategy.stop() НЕ вызывается, пока execution не завершён.
+      expect(strategy.stop).not.toHaveBeenCalled();
+      expect(events).toEqual(['normal-execution-started']);
+
+      // Завершаем PLACE — после этого stop + final intents.
+      resolveExec!();
+      await unregisterPromise;
+
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([
+        'normal-execution-started',
+        'normal-execution-finished',
+        'final-intents-executed',
+      ]);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('два concurrent unregister: stop и final intents ровно один раз, оба caller завершаются', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      const [a, b] = [scheduler.unregister('s1'), scheduler.unregister('s1')];
+      await Promise.all([a, b]);
+
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+      // Ровно один вызов executionEngine.execute — final intents.
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('события во время STOPPING не запускают новый tick', async () => {
+      const strategy = makeStrategy('s1', {
+        tickResult: [{ type: 'CANCEL_ALL' }],
+      });
+
+      let resolveExec: (() => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          resolveExec = () => resolve(emptyReport());
+        }),
+      );
+
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+      const unregisterPromise = scheduler.unregister('s1');
+      await flush();
+
+      // BOOK/FILL/ORDER_UPDATE во время STOPPING.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      scheduler.onOrderChanged('s1', 'ORDER_UPDATE');
+      scheduler.onFillReceivedForInstrument(INSTRUMENT_ID);
+      await flush();
+
+      resolveExec!();
+      await unregisterPromise;
+      await flush();
+
+      // Только первый tick — новых нет.
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── Dirty routing → tick ─────────────────────────────
@@ -262,9 +465,7 @@ describe('StrategyScheduler', () => {
       await scheduler.register(makeRegistration(strategy));
       scheduler.start();
 
-      // Simulate market data change
       marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
-
       await flush();
 
       expect(strategy.tick).toHaveBeenCalledWith(
@@ -289,8 +490,7 @@ describe('StrategyScheduler', () => {
       await scheduler.register(makeRegistration(strategy));
       scheduler.start();
 
-      const otherInstrument = 'token-other' as unknown as InstrumentId;
-      marketDataStore._onChange!(otherInstrument, 'BOOK');
+      marketDataStore._onChange!(asInstrumentId('token-other')!, 'BOOK');
       await flush();
 
       expect(strategy.tick).not.toHaveBeenCalled();
@@ -301,7 +501,6 @@ describe('StrategyScheduler', () => {
       await scheduler.register(makeRegistration(strategy));
       scheduler.start();
 
-      // Multiple reasons before processing
       scheduler.onOrderChanged('s1', 'FILL');
       scheduler.onOrderChanged('s1', 'ORDER_UPDATE');
 
@@ -313,38 +512,110 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── Throttle ─────────────────────────────────────────
+  // ── Complementary routing ────────────────────────────
+
+  describe('complementary instrument routing', () => {
+    it('события комплементарного инструмента тикают стратегию (без additionalInstrumentIds)', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+        complementaryAsset: COMP_ASSET_ID,
+      }));
+      scheduler.start();
+
+      marketDataStore._onChange!(COMP_INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('fills комплементарного инструмента тикают стратегию', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+        complementaryAsset: COMP_ASSET_ID,
+      }));
+      scheduler.start();
+
+      scheduler.onFillReceivedForInstrument(COMP_INSTRUMENT_ID);
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('snapshot содержит complementaryConstraints из каталога', async () => {
+      const constraints = { minOrderSize: {}, minOrderValue: {}, tickSize: {} };
+      const catalog = makeCatalog();
+      (catalog.get as any).mockImplementation((id: InstrumentId) =>
+        String(id) === String(COMP_INSTRUMENT_ID) ? constraints : undefined,
+      );
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      let captured: StrategySnapshot | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.tick as any).mockImplementation((snap: StrategySnapshot) => {
+        captured = snap;
+        return [];
+      });
+
+      await s.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+        complementaryAsset: COMP_ASSET_ID,
+      }));
+      s.start();
+
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      expect(captured).toBeDefined();
+      expect(captured!.complementaryConstraints).toEqual(constraints);
+      expect(captured!.constraints).toBeUndefined();
+
+      await s.stopAll();
+      s.stop();
+    });
+
+    it('unregister удаляет complementary routing', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+        complementaryAsset: COMP_ASSET_ID,
+      }));
+      scheduler.start();
+      await scheduler.unregister('s1');
+
+      marketDataStore._onChange!(COMP_INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      expect(strategy.tick).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Throttle / priority / heartbeat (deterministic timers) ──
 
   describe('throttle', () => {
-    it('should defer tick when within minIntervalMs', async () => {
+    it('should defer tick when within minIntervalMs (deterministic timer)', async () => {
       const strategy = makeStrategy('s1');
       await scheduler.register(makeRegistration(strategy, { config: { minIntervalMs: 100 } }));
       scheduler.start();
 
-      // First tick
-      clock.set(1000);
       marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
       await flush();
       expect(strategy.tick).toHaveBeenCalledTimes(1);
 
-      // Second event within 100ms
-      clock.set(1050); // only 50ms passed
+      advanceTime(clock, timer, 50);
       marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
       await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1); // throttled
 
-      // Should NOT have ticked again (throttled)
-      expect(strategy.tick).toHaveBeenCalledTimes(1);
-
-      // After deferred timer fires (remaining ~50ms)
-      clock.set(1100);
-      jest.advanceTimersByTime(50);
+      // Догоняем остаток интервала — deferred timer срабатывает без wall-clock.
+      advanceTime(clock, timer, 50);
       await flush();
 
       expect(strategy.tick).toHaveBeenCalledTimes(2);
     });
   });
-
-  // ── Priority trigger ─────────────────────────────────
 
   describe('priority trigger', () => {
     it('should bypass throttle for FILL', async () => {
@@ -354,14 +625,11 @@ describe('StrategyScheduler', () => {
       }));
       scheduler.start();
 
-      // First tick
-      clock.set(1000);
       marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
       await flush();
       expect(strategy.tick).toHaveBeenCalledTimes(1);
 
-      // FILL within throttle window — should bypass
-      clock.set(1010); // only 10ms passed
+      advanceTime(clock, timer, 10);
       scheduler.onOrderChanged('s1', 'FILL');
       await flush();
 
@@ -369,18 +637,15 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── Heartbeat ────────────────────────────────────────
-
-  describe('heartbeat', () => {
-    it('should tick with TIMER reason after maxIdleMs', async () => {
+  describe('heartbeat (deterministic)', () => {
+    it('advance(maxIdleMs) → TIMER tick без ожидания wall-clock', async () => {
       const strategy = makeStrategy('s1');
       await scheduler.register(makeRegistration(strategy, {
         config: { maxIdleMs: 200 },
       }));
       scheduler.start();
 
-      // Advance past maxIdleMs
-      jest.advanceTimersByTime(200);
+      advanceTime(clock, timer, 200);
       await flush();
 
       const tickCalls = (strategy.tick as any).mock.calls;
@@ -390,112 +655,225 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── Coalescing ───────────────────────────────────────
+  // ── Queue lifecycle: stop/start ──────────────────────
 
-  describe('coalescing', () => {
-    it('should set rerunRequested when event arrives during execution', async () => {
-      jest.useRealTimers();
-
-      const localClock = makeClock();
-      const localDeps = { ...deps, clock: localClock as any };
-      const localScheduler = new StrategyScheduler(localDeps);
-      const localStore = localDeps.marketDataStore as ReturnType<typeof makeMarketDataStore>;
-
-      const tickResults: number[] = [];
-
+  describe('queue stop/start', () => {
+    it('start() идемпотентен', async () => {
+      scheduler.start();
+      scheduler.start(); // no-op
       const strategy = makeStrategy('s1');
-      (strategy.tick as any).mockImplementation(() => {
-        tickResults.push(Date.now());
-        return [{ type: 'CANCEL_ALL' }];
+      await scheduler.register(makeRegistration(strategy));
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('queued стратегия обрабатывается после stop()/start() без нового события', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      // Останавливаем ДО обработки microtask queue: стратегия остаётся в очереди.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      scheduler.stop();
+      await flush();
+      expect(strategy.tick).not.toHaveBeenCalled();
+
+      // start() возобновляет обработку сохранённой queue.
+      scheduler.start();
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('dirty-но-не-queued стратегия (событие во время паузы) обрабатывается после start()', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      // Событие ДО start(): dirty сохраняется, очередь пуста (enqueue при stopped — no-op).
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).not.toHaveBeenCalled();
+
+      scheduler.start();
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Exception isolation ──────────────────────────────
+
+  describe('exception isolation', () => {
+    it('snapshot builder стратегии A бросил → стратегия B в той же очереди выполняется', async () => {
+      const strategyA = makeStrategy('sA');
+      const strategyB = makeStrategy('sB');
+
+      // buildSnapshot для A бросает (первое обращение к store — getOpenOrdersByInstrument).
+      (deps.orderStateStore.getOpenOrdersByInstrument as any).mockImplementation(
+        (strategyId: string) => {
+          if (strategyId === 'sA') throw new Error('snapshot boom');
+          return [];
+        },
+      );
+
+      await scheduler.register(makeRegistration(strategyA));
+      await scheduler.register(makeRegistration(strategyB));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      expect(strategyA.tick).not.toHaveBeenCalled();
+      expect(strategyB.tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('tick бросил → dirty reasons не теряются, controlled retry с backoff (без tight loop)', async () => {
+      const strategy = makeStrategy('s1');
+      (strategy.tick as any)
+        .mockImplementationOnce(() => { throw new Error('Tick boom'); })
+        .mockReturnValue([]);
+
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+      // Tight loop отсутствует: без продвижения времени retry не происходит.
+      await flush(20);
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+      // Deferred retry (backoff 100ms) срабатывает через deterministic timer,
+      // reasons сохранены (BOOK передан повторно).
+      advanceTime(clock, timer, 100);
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(2);
+      const retryReasons = (strategy.tick as any).mock.calls[1][1] as ReadonlySet<TriggerReason>;
+      expect(retryReasons.has('BOOK')).toBe(true);
+    });
+
+    it('scheduler остаётся работоспособным после tick throw', async () => {
+      const strategy = makeStrategy('s1');
+      (strategy.tick as any).mockImplementation(() => { throw new Error('Tick boom'); });
+
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+  });
+
+  // ── FILL received vs confirmed ───────────────────────
+
+  describe('FILL_RECEIVED / FILL_CONFIRMED split', () => {
+    it('onFillReceivedForInstrument: dirty+tick, cooldown НЕ снимается', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      scheduler.onFillReceivedForInstrument(INSTRUMENT_ID);
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+      const reasons = (strategy.tick as any).mock.calls[0][1] as ReadonlySet<TriggerReason>;
+      expect(reasons.has('FILL')).toBe(true);
+      expect(executionEngine.clearPostCancelCooldown).not.toHaveBeenCalled();
+      expect(executionEngine.clearExchangeRejectionCooldown).not.toHaveBeenCalled();
+    });
+
+    it('onFillConfirmedForInstrument: finality cleanup (оба cooldown) + dirty+tick', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      scheduler.onFillConfirmedForInstrument(INSTRUMENT_ID);
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+      expect(executionEngine.clearPostCancelCooldown).toHaveBeenCalledWith(INSTRUMENT_ID);
+      expect(executionEngine.clearExchangeRejectionCooldown).toHaveBeenCalledWith(INSTRUMENT_ID);
+    });
+  });
+
+  // ── Watchdog ─────────────────────────────────────────
+
+  describe('execution watchdog', () => {
+    it('зависший execute → faulted: новые тики блокируются, unregister не виснет', async () => {
+      const strategy = makeStrategy('s1', {
+        tickResult: [{ type: 'CANCEL_ALL' }],
       });
 
-      // First call: controlled execution. Subsequent calls: immediate resolve.
+      // Execution никогда не завершается (hung).
+      executionEngine.execute.mockImplementationOnce(() => new Promise(() => { /* hung */ }));
+
+      await scheduler.register(makeRegistration(strategy, {
+        config: { executionTimeoutMs: 1000 },
+      }));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+      // Watchdog срабатывает.
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      // Новые события не тикают faulted стратегию.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+
+      // Unregister НЕ виснет на hung execution (controlled recovery).
+      await scheduler.unregister('s1');
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+  });
+
+  // ── Coalescing (microtask-only, без реальных sleeps) ──
+
+  describe('coalescing', () => {
+    it('события во время execution коалесцируются в один rerun', async () => {
+      const strategy = makeStrategy('s1', { tickResult: [{ type: 'CANCEL_ALL' }] });
+
       let resolveExec: (() => void) | undefined;
       let callCount = 0;
-      (localDeps.executionEngine as any).execute.mockImplementation(() => {
+      executionEngine.execute.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
           return new Promise((resolve) => {
-            resolveExec = () => resolve({ placed: 0, cancelled: 0, skipped: 0, errors: [] });
+            resolveExec = () => resolve(emptyReport());
           });
         }
-        return Promise.resolve({ placed: 0, cancelled: 0, skipped: 0, errors: [] });
+        return Promise.resolve(emptyReport());
       });
 
-      await localScheduler.register(makeRegistration(strategy));
-      localScheduler.start();
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
 
-      // Event 1 → tick + start execution
-      localStore._onChange!(INSTRUMENT_ID, 'BOOK');
-      await new Promise<void>((r) => setTimeout(r, 20));
-      expect(tickResults.length).toBe(1);
+      // Event 1 → tick + начало execution.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
 
-      // Event 2 while executing → coalescing
-      localStore._onChange!(INSTRUMENT_ID, 'TRADE');
-      await new Promise<void>((r) => setTimeout(r, 20));
-      expect(tickResults.length).toBe(1); // NOT 2 — coalesced
+      // События 2-4 во время execution → коалесцируются.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'TRADE');
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      marketDataStore._onChange!(INSTRUMENT_ID, 'TRADE');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1); // ещё не rerun
 
-      // Finish first execution → rerun with fresh data
-      localClock.advance(100); // Past throttle window
+      // Завершение execution → ровно один rerun (за пределами throttle).
+      advanceTime(clock, timer, 100);
       resolveExec!();
-      await new Promise<void>((r) => setTimeout(r, 50));
-      expect(tickResults.length).toBe(2); // Rerun happened
+      await flush(12);
 
-      localScheduler.stop();
-      jest.useFakeTimers();
-    });
-
-    it('should coalesce multiple events during execution into single rerun', async () => {
-      jest.useRealTimers();
-
-      const localClock = makeClock();
-      const localDeps = { ...deps, clock: localClock as any };
-      const localScheduler = new StrategyScheduler(localDeps);
-      const localStore = localDeps.marketDataStore as ReturnType<typeof makeMarketDataStore>;
-
-      let tickCount = 0;
-      let callCount = 0;
-      let resolveExec: (() => void) | undefined;
-
-      const strategy = makeStrategy('s1');
-      (strategy.tick as any).mockImplementation(() => {
-        tickCount++;
-        return [{ type: 'CANCEL_ALL' }];
-      });
-
-      (localDeps.executionEngine as any).execute.mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return new Promise((resolve: any) => {
-            resolveExec = () => resolve({ placed: 0, cancelled: 0, skipped: 0, errors: [] });
-          });
-        }
-        return Promise.resolve({ placed: 0, cancelled: 0, skipped: 0, errors: [] });
-      });
-
-      await localScheduler.register(makeRegistration(strategy));
-      localScheduler.start();
-
-      // Event 1 → tick
-      localStore._onChange!(INSTRUMENT_ID, 'BOOK');
-      await new Promise<void>((r) => setTimeout(r, 20));
-
-      // Events 2, 3, 4 while executing → all coalesce into 1 rerun
-      localStore._onChange!(INSTRUMENT_ID, 'TRADE');
-      localStore._onChange!(INSTRUMENT_ID, 'BOOK');
-      localStore._onChange!(INSTRUMENT_ID, 'TRADE');
-      await new Promise<void>((r) => setTimeout(r, 20));
-      expect(tickCount).toBe(1); // Still 1
-
-      localClock.advance(100);
-      resolveExec!();
-      await new Promise<void>((r) => setTimeout(r, 50));
-
-      // Exactly 1 rerun (not 3)
-      expect(tickCount).toBe(2);
-
-      localScheduler.stop();
-      jest.useFakeTimers();
+      expect(strategy.tick).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -543,18 +921,17 @@ describe('StrategyScheduler', () => {
     });
 
     it('should populate constraints from catalog when available', async () => {
-      const { Quantity } = await import('@polymarket/value-objects');
-      const { Price } = await import('@polymarket/value-objects');
+      const { Quantity, Price, Money } = await import('@polymarket/value-objects');
       const { default: Decimal } = await import('decimal.js');
 
       const minOrderSize = Quantity.of(new Decimal('5'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
+      const minOrderValue = Money.of(new Decimal('1'), 'USDC');
       const tickSize = Price.of(new Decimal('0.01'));
       const catalog = makeCatalog();
       (catalog.get as any).mockReturnValue({ minOrderSize, minOrderValue, tickSize });
 
-      const { deps: d, marketDataStore: mds, clock: clk } = makeDeps({ catalog: catalog as any });
-      const s = new StrategyScheduler(d);
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
 
       let capturedSnapshot: StrategySnapshot | undefined;
       const strategy = makeStrategy('s1');
@@ -566,8 +943,8 @@ describe('StrategyScheduler', () => {
       await s.register(makeRegistration(strategy));
       s.start();
 
-      clk.advance(100);
-      mds._onChange!(INSTRUMENT_ID, 'BOOK');
+      d.clock.advance(100);
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
       await flush(10);
 
       expect(capturedSnapshot).toBeDefined();
@@ -579,12 +956,65 @@ describe('StrategyScheduler', () => {
       await s.stopAll();
       s.stop();
     });
+
+    it('should split orders into openOrders and matchedOrders', async () => {
+      const orderMatched = { id: 'order-matched' } as any;
+      const orderNormal = { id: 'order-normal' } as any;
+
+      const orderStateStore = makeOrderStateStore();
+      (orderStateStore.getOpenOrdersByInstrument as any).mockReturnValue([orderMatched, orderNormal]);
+      (orderStateStore.hasMatchedFills as any).mockImplementation(
+        (id: any) => String(id) === 'order-matched',
+      );
+
+      const d = makeDeps({ orderStateStore });
+      const s = new StrategyScheduler(d.deps);
+
+      const strategy = makeStrategy('s1');
+      await s.register(makeRegistration(strategy));
+      s.start();
+
+      d.clock.advance(100);
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush(10);
+
+      expect(strategy.tick).toHaveBeenCalled();
+      const snapshot: StrategySnapshot = (strategy.tick as any).mock.calls[0][0];
+      expect(snapshot.openOrders).toEqual([orderNormal]);
+      expect(snapshot.matchedOrders).toEqual([orderMatched]);
+
+      await s.stopAll();
+      s.stop();
+    });
+  });
+
+  // ── ExecutionContext ─────────────────────────────────
+
+  describe('execution context', () => {
+    it('allowedInstruments содержит primary + additional + complementary', async () => {
+      const strategy = makeStrategy('s1', { tickResult: [{ type: 'CANCEL_ALL' }] });
+      const additional = asInstrumentId('token-3')!;
+      await scheduler.register(makeRegistration(strategy, {
+        complementaryInstrumentId: COMP_INSTRUMENT_ID,
+        complementaryAsset: COMP_ASSET_ID,
+        additionalInstrumentIds: [additional],
+      }));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      const ctx = executionEngine.execute.mock.calls[0][0] as any;
+      expect(ctx.allowedInstruments.has(String(INSTRUMENT_ID))).toBe(true);
+      expect(ctx.allowedInstruments.has(String(COMP_INSTRUMENT_ID))).toBe(true);
+      expect(ctx.allowedInstruments.has(String(additional))).toBe(true);
+    });
   });
 
   // ── stopAll ──────────────────────────────────────────
 
   describe('stopAll', () => {
-    it('should unregister all strategies', async () => {
+    it('should unregister all strategies via safe flow', async () => {
       const s1 = makeStrategy('s1');
       const s2 = makeStrategy('s2');
       await scheduler.register(makeRegistration(s1));
@@ -599,21 +1029,16 @@ describe('StrategyScheduler', () => {
     });
   });
 
-  // ── tick() error handling ────────────────────────────
+  // ── getMetrics boundary ──────────────────────────────
 
-  describe('tick error handling', () => {
-    it('should not crash when strategy.tick() throws', async () => {
+  describe('getMetrics', () => {
+    it('getMetrics() бросил → безопасный {} (scheduler не падает)', async () => {
       const strategy = makeStrategy('s1');
-      (strategy.tick as any).mockImplementation(() => { throw new Error('Tick boom'); });
+      (strategy.getMetrics as any).mockImplementation(() => { throw new Error('metrics boom'); });
 
       await scheduler.register(makeRegistration(strategy));
-      scheduler.start();
 
-      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
-      await flush();
-
-      // Scheduler should still be operational
-      expect(scheduler.getMetrics('s1')).toBeDefined();
+      expect(scheduler.getMetrics('s1')).toEqual({});
     });
   });
 
@@ -625,47 +1050,9 @@ describe('StrategyScheduler', () => {
       await scheduler.register(makeRegistration(strategy, { config: { maxIdleMs: 999999 } }));
       scheduler.start();
 
-      // No events triggered
       await flush();
 
       expect(strategy.tick).not.toHaveBeenCalled();
-    });
-  });
-
-  // ── Snapshot: MATCHED ордера скрыты ────────────────
-
-  describe('snapshot: MATCHED orders separated', () => {
-    it('should split orders into openOrders and matchedOrders', async () => {
-      const orderMatched = { id: 'order-matched' } as any;
-      const orderNormal = { id: 'order-normal' } as any;
-
-      const orderStateStore = makeOrderStateStore();
-      (orderStateStore.getOpenOrdersByInstrument as any).mockReturnValue([orderMatched, orderNormal]);
-      (orderStateStore.hasMatchedFills as any).mockImplementation(
-        (id: any) => String(id) === 'order-matched',
-      );
-
-      const { deps: d, marketDataStore: mds, clock: clk } = makeDeps({ orderStateStore });
-      const s = new StrategyScheduler(d);
-
-      const strategy = makeStrategy('s1');
-      await s.register(makeRegistration(strategy));
-      s.start();
-
-      // Trigger tick
-      clk.advance(100);
-      mds._onChange!(INSTRUMENT_ID, 'BOOK');
-      await flush(10);
-
-      expect(strategy.tick).toHaveBeenCalled();
-      const snapshot: StrategySnapshot = (strategy.tick as any).mock.calls[0][0];
-      expect(snapshot.openOrders).toEqual([orderNormal]);
-      expect(snapshot.openOrders).not.toContainEqual(orderMatched);
-      expect(snapshot.matchedOrders).toEqual([orderMatched]);
-      expect(snapshot.matchedOrders).not.toContainEqual(orderNormal);
-
-      await s.stopAll();
-      s.stop();
     });
   });
 });

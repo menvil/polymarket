@@ -203,37 +203,82 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
   }
 
   /**
-   * Корректирует размер BUY с учётом minOrderSize.
+   * Проверяет размер BUY против minOrderSize и minOrderValue (честный контракт).
    *
    * @param desiredSize - Желаемый размер покупки
-   * @param price - Цена ордера
-   * @param _minOrderValue - Минимальная стоимость ордера в USDC (не используется —
-   *   увеличение size сверх desiredSize вызывает overbuy; если биржа отклонит
-   *   по minOrderValue, стратегия попробует снова на следующем тике)
+   * @param price - Цена ордера (USDC за токен)
+   * @param minOrderValue - Минимальная стоимость ордера в USDC (notional)
    * @param minOrderSize - Минимальный размер ордера в токенах
-   * @returns Скорректированный размер
+   * @returns `desiredSize`, если он проходит ОБА ограничения; `undefined`,
+   *   если ордер невозможен без увеличения размера (overbuy запрещён)
    *
    * @remarks
-   * Только клампирует вверх до minOrderSize. НЕ увеличивает ради minOrderValue —
-   * при дешёвых токенах ($0.11) это удваивало size (5→10), покупая больше
-   * конфигурации пользователя.
+   * Helper НИКОГДА не увеличивает размер молча:
+   * 1. `desiredSize < minOrderSize` → `undefined` (клампирование вверх
+   *    покупало бы больше конфигурации стратегии);
+   * 2. `price × desiredSize < minOrderValue` → `undefined` (то же самое);
+   * 3. Иначе → `desiredSize` без изменений.
+   *
+   * Если стратегии нужен явный opt-in overbuy до venue-минимумов —
+   * используйте {@link BaseStrategy.adjustBuySizeAllowingIncrease}.
    *
    * @example
    * ```typescript
-   * // price=0.11, desired=5, minOrderSize=5 → 5 (не 10!)
-   * adjustBuySize(5, 0.11, 1, 5) // → 5
+   * // desired=5, price=0.55, minOrderValue=1, minOrderSize=5 → 5 (валиден)
+   * adjustBuySize(new Decimal(5), new Decimal('0.55'), new Decimal(1), new Decimal(5))
    *
-   * // price=0.55, desired=3, minOrderSize=5 → 5
-   * adjustBuySize(3, 0.55, 1, 5) // → 5
+   * // desired=3 < minOrderSize=5 → undefined (не overbuy до 5)
+   * adjustBuySize(new Decimal(3), new Decimal('0.55'), new Decimal(1), new Decimal(5))
+   *
+   * // price=0.11, desired=5 → notional 0.55 < minOrderValue=1 → undefined
+   * adjustBuySize(new Decimal(5), new Decimal('0.11'), new Decimal(1), new Decimal(5))
    * ```
    */
   protected adjustBuySize(
     desiredSize: Decimal,
-    _price: Decimal,
-    _minOrderValue: Decimal,
+    price: Decimal,
+    minOrderValue: Decimal,
     minOrderSize: Decimal,
-  ): Decimal {
-    // Клампируем к minOrderSize если ниже
-    return Decimal.max(desiredSize, minOrderSize);
+  ): Decimal | undefined {
+    if (!desiredSize.gt(0)) return undefined;
+    if (desiredSize.lt(minOrderSize)) return undefined;
+    if (price.gt(0) && price.mul(desiredSize).lt(minOrderValue)) return undefined;
+    return desiredSize;
+  }
+
+  /**
+   * Увеличивает размер BUY до venue-минимумов (ЯВНЫЙ opt-in overbuy).
+   *
+   * @param desiredSize - Желаемый размер покупки
+   * @param price - Цена ордера (USDC за токен)
+   * @param minOrderValue - Минимальная стоимость ордера в USDC (notional)
+   * @param minOrderSize - Минимальный размер ордера в токенах
+   * @returns Минимальный размер >= desiredSize, удовлетворяющий обоим
+   *   ограничениям; `undefined` если desiredSize <= 0 или price <= 0
+   *
+   * @remarks
+   * В отличие от {@link BaseStrategy.adjustBuySize} МОЖЕТ вернуть размер
+   * БОЛЬШЕ desiredSize (покупка сверх конфигурации стратегии) — вызывающая
+   * стратегия обязана осознанно допускать overbuy. Размер под minOrderValue
+   * округляется вверх до 2 знаков (шаг размера Polymarket).
+   *
+   * @example
+   * ```typescript
+   * // desired=3, minOrderSize=5 → 5 (overbuy разрешён явно)
+   * adjustBuySizeAllowingIncrease(new Decimal(3), new Decimal('0.55'), new Decimal(1), new Decimal(5))
+   * ```
+   */
+  protected adjustBuySizeAllowingIncrease(
+    desiredSize: Decimal,
+    price: Decimal,
+    minOrderValue: Decimal,
+    minOrderSize: Decimal,
+  ): Decimal | undefined {
+    if (!desiredSize.gt(0) || !price.gt(0)) return undefined;
+    let size = Decimal.max(desiredSize, minOrderSize);
+    if (price.mul(size).lt(minOrderValue)) {
+      size = Decimal.max(size, minOrderValue.div(price).toDecimalPlaces(2, Decimal.ROUND_UP));
+    }
+    return size;
   }
 }

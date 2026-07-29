@@ -1,21 +1,36 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
-import { asOrderId } from '@polymarket/ids';
+import { asOrderId, asInstrumentId, asPolymarketCtfToken } from '@polymarket/ids';
 import type { OrderId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Money, Price, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import { TradingError } from '@polymarket/errors';
-import { ExecutionEngine } from '../../src/ExecutionEngine.js';
+import { PlaceOrderFailureError } from '@polymarket/use-cases';
+import { ExecutionEngine, LocalIntentRejectionError } from '../../src/ExecutionEngine.js';
 import type { ExecutionEngineDeps, ExecutionContext } from '../../src/ExecutionEngine.js';
-import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
+import { SequentialOrderIdGenerator } from '../../src/ports/OrderIdGenerator.js';
+import type { StrategyIntent, PlaceIntent } from '../../src/types/StrategyIntent.js';
 
 // ── Constants ──────────────────────────────────────────────
 
 const STRATEGY_ID = 'strategy-1';
+const OTHER_STRATEGY_ID = 'strategy-2';
 const ACCOUNT_ID = 'venue:POLYMARKET:test' as unknown as AccountId;
-const INSTRUMENT_ID = 'token-1' as unknown as InstrumentId;
-const ASSET_ID = 'asset-1' as unknown as AssetId;
+const OTHER_ACCOUNT_ID = 'venue:POLYMARKET:other' as unknown as AccountId;
+
+// Числовые CTF tokenId: assetIdToInstrumentId(asset) === instrument key.
+const PRIMARY_TOKEN = '111';
+const COMPLEMENTARY_TOKEN = '222';
+const FOREIGN_TOKEN = '333';
+
+const INSTRUMENT_ID = asInstrumentId(PRIMARY_TOKEN)!;
+const COMP_INSTRUMENT_ID = asInstrumentId(COMPLEMENTARY_TOKEN)!;
+const FOREIGN_INSTRUMENT_ID = asInstrumentId(FOREIGN_TOKEN)!;
+
+const ASSET_ID: AssetId = asPolymarketCtfToken(PRIMARY_TOKEN)!;
+const COMP_ASSET_ID: AssetId = asPolymarketCtfToken(COMPLEMENTARY_TOKEN)!;
+const FOREIGN_ASSET_ID: AssetId = asPolymarketCtfToken(FOREIGN_TOKEN)!;
 
 const ORDER_1 = asOrderId('order-1')!;
 const ORDER_2 = asOrderId('order-2')!;
@@ -46,15 +61,41 @@ function makePortfolio() {
   return {} as any; // Portfolio is only passed through to PlaceOrderUseCase
 }
 
-function makeOrder(id: OrderId) {
-  return { id } as any;
+/** Ордер в repo: по умолчанию BUY нашей стратегии на PRIMARY инструменте. */
+function makeOrder(id: OrderId, overrides: Partial<{
+  strategyId: string | undefined;
+  accountId: AccountId | undefined;
+  side: Side;
+  asset: AssetId;
+}> = {}) {
+  return {
+    id,
+    strategyId: 'strategyId' in overrides ? overrides.strategyId : STRATEGY_ID,
+    accountId: 'accountId' in overrides ? overrides.accountId : undefined,
+    side: overrides.side ?? 'BUY',
+    asset: overrides.asset ?? ASSET_ID,
+  } as any;
 }
 
-function makeCatalog(minOrderSize?: Quantity, minOrderValue?: Quantity) {
+function makeInstrumentInfo(opts: Partial<{
+  minOrderSize: Quantity;
+  minOrderValue: Money;
+  tickSize: Price;
+}> = {}) {
   return {
-    get: jest.fn().mockReturnValue(
-      minOrderSize ? { minOrderSize, minOrderValue: minOrderValue ?? Quantity.of(new Decimal('1')) } : undefined,
-    ),
+    minOrderSize: opts.minOrderSize ?? Quantity.of(new Decimal('1')),
+    minOrderValue: opts.minOrderValue ?? Money.of(new Decimal('1'), 'USDC'),
+    tickSize: opts.tickSize ?? Price.of(new Decimal('0.01')),
+  } as any;
+}
+
+/** Каталог: по умолчанию знает PRIMARY и COMPLEMENTARY инструменты. */
+function makeCatalog(infoByInstrument: Record<string, any> = {
+  [PRIMARY_TOKEN]: makeInstrumentInfo(),
+  [COMPLEMENTARY_TOKEN]: makeInstrumentInfo(),
+}) {
+  return {
+    get: jest.fn((id: InstrumentId) => infoByInstrument[String(id)]),
     getByMarketId: jest.fn().mockReturnValue(undefined),
     getAll: jest.fn().mockReturnValue([]),
     register: jest.fn(),
@@ -63,33 +104,58 @@ function makeCatalog(minOrderSize?: Quantity, minOrderValue?: Quantity) {
   } as any;
 }
 
+const fn = jest.fn as any;
+
+function makeOrderRepo() {
+  return {
+    // Ownership lookup: по умолчанию любой orderId принадлежит нашей стратегии.
+    get: fn().mockImplementation(async (id: OrderId) => makeOrder(id)),
+    getByStrategyId: fn().mockResolvedValue([]),
+    countByStrategyId: fn().mockResolvedValue(0),
+  } as any;
+}
+
 function makeDeps(overrides: Partial<ExecutionEngineDeps> = {}): ExecutionEngineDeps {
-  const fn = jest.fn as any;
   return {
     placeOrderUseCase: { execute: fn().mockResolvedValue(Ok(ORDER_1)) } as any,
     // CancelOrderUseCase возвращает типизированный CancelOrderOutcome:
     // ExecutionEngine засчитывает cancelled ТОЛЬКО для CANCELLED/ALREADY_CANCELLED.
     cancelOrderUseCase: { execute: fn().mockResolvedValue(Ok({ status: 'CANCELLED' })) } as any,
-    orderRepo: {
-      getByStrategyId: fn().mockResolvedValue([]),
-      countByStrategyId: fn().mockResolvedValue(0),
-    } as any,
+    orderRepo: makeOrderRepo(),
     portfolioStore: {
       get: fn().mockReturnValue(makePortfolio()),
     } as any,
     catalog: makeCatalog(),
     clock: { now: jest.fn().mockReturnValue(new Date(0)) } as any,
+    orderIdGenerator: new SequentialOrderIdGenerator('test'),
     logger: makeLogger() as any,
     ...overrides,
   };
 }
 
-function makeCtx(): ExecutionContext {
+function makeCtx(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
   return {
     strategyId: STRATEGY_ID,
     accountId: ACCOUNT_ID,
     instrumentId: INSTRUMENT_ID,
     asset: ASSET_ID,
+    allowedInstruments: new Set([PRIMARY_TOKEN, COMPLEMENTARY_TOKEN]),
+    ...overrides,
+  };
+}
+
+function place(overrides: Partial<{
+  side: Side;
+  price: Price;
+  size: Quantity;
+  postOnly: boolean;
+}> = {}): PlaceIntent {
+  return {
+    type: 'PLACE',
+    side: overrides.side ?? BUY,
+    price: overrides.price ?? PRICE_55,
+    size: overrides.size ?? SIZE_100,
+    ...(overrides.postOnly !== undefined ? { postOnly: overrides.postOnly } : {}),
   };
 }
 
@@ -115,7 +181,9 @@ describe('ExecutionEngine', () => {
       expect(report.placed).toBe(0);
       expect(report.cancelled).toBe(0);
       expect(report.skipped).toBe(0);
+      expect(report.failed).toBe(0);
       expect(report.errors).toHaveLength(0);
+      expect(report.outcomes).toHaveLength(0);
     });
   });
 
@@ -123,11 +191,7 @@ describe('ExecutionEngine', () => {
 
   describe('PLACE', () => {
     it('should call placeOrderUseCase for PLACE intent', async () => {
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [place()]);
 
       expect(report.placed).toBe(1);
       expect(report.errors).toHaveLength(0);
@@ -151,69 +215,59 @@ describe('ExecutionEngine', () => {
         return Ok(ORDER_1);
       });
 
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [
+        place({ side: BUY, price: PRICE_55 }),
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
 
       expect(report.placed).toBe(2);
       expect(callOrder).toEqual(['BUY', 'SELL']);
     });
 
-    it('should report error when portfolio not found', async () => {
+    it('should fail typed PORTFOLIO_UNAVAILABLE when portfolio not found', async () => {
       (deps.portfolioStore as any).get.mockReturnValue(undefined);
 
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [place()]);
 
       expect(report.placed).toBe(0);
+      expect(report.failed).toBe(1);
       expect(report.errors).toHaveLength(1);
+      expect(report.outcomes[0]).toMatchObject({ kind: 'FAILED', failureCode: 'PORTFOLIO_UNAVAILABLE' });
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should report error when placeOrderUseCase fails', async () => {
-      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
-        Err(new TradingError('Risk violation')),
-      );
+    it('should preserve original error when placeOrderUseCase fails', async () => {
+      const originalError = new TradingError('Risk violation');
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(Err(originalError));
 
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [place()]);
 
       expect(report.placed).toBe(0);
+      expect(report.failed).toBe(1);
       expect(report.errors).toHaveLength(1);
+      // Исходная ошибка сохранена (НЕ заменена на synthetic new Error(...)).
+      expect(report.errors[0].error).toBe(originalError);
+      expect(report.outcomes.find((o) => o.kind === 'FAILED')?.error).toBe(originalError);
+      expect(report.outcomes.find((o) => o.kind === 'FAILED')?.failureCode).toBe('OTHER');
     });
 
-    it('should skip non-positive PLACE size before calling use case', async () => {
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: Quantity.ZERO },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+    it('should reject non-positive PLACE size before calling use case', async () => {
+      const report = await engine.execute(ctx, [
+        place({ side: SELL, price: PRICE_65, size: Quantity.ZERO }),
+      ]);
 
       expect(report.placed).toBe(0);
       expect(report.skipped).toBe(1);
-      expect(report.errors).toHaveLength(0);
+      expect(report.localRejected).toBe(1);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
   });
 
-  // ── CANCEL ───────────────────────────────────────────
+  // ── CANCEL + ownership ───────────────────────────────
 
   describe('CANCEL', () => {
-    it('should call cancelOrderUseCase for CANCEL intent', async () => {
-      const intents: StrategyIntent[] = [
-        { type: 'CANCEL', orderId: ORDER_1 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+    it('should call cancelOrderUseCase for owned CANCEL intent', async () => {
+      const report = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
 
       expect(report.cancelled).toBe(1);
       expect(report.errors).toHaveLength(0);
@@ -226,540 +280,410 @@ describe('ExecutionEngine', () => {
     });
 
     it('should execute multiple cancels in parallel', async () => {
-      const intents: StrategyIntent[] = [
+      const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
         { type: 'CANCEL', orderId: ORDER_2 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      ]);
 
       expect(report.cancelled).toBe(2);
       expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(2);
     });
 
-    it('should report error when cancel fails', async () => {
-      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
-        Err(new TradingError('Order not found')),
-      );
+    it('should report error with original error when cancel use case fails', async () => {
+      const originalError = new TradingError('Order not found');
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Err(originalError));
 
-      const intents: StrategyIntent[] = [
-        { type: 'CANCEL', orderId: ORDER_1 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
 
       expect(report.cancelled).toBe(0);
       expect(report.errors).toHaveLength(1);
+      expect(report.errors[0].error).toBe(originalError);
+    });
+
+    it('ownership: CANCEL чужой стратегии → use case НЕ вызывается, FAILED, PLACE заблокирован', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { strategyId: OTHER_STRATEGY_ID }),
+      );
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: BUY }),
+      ]);
+
+      expect(deps.cancelOrderUseCase.execute).not.toHaveBeenCalled();
+      expect(report.cancelled).toBe(0);
+      expect(report.failed).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      const cancelOutcome = report.outcomes.find((o) => o.kind === 'CANCEL_FAILED');
+      expect(cancelOutcome?.error).toBeInstanceOf(LocalIntentRejectionError);
+      expect((cancelOutcome?.error as LocalIntentRejectionError).code).toBe('CANCEL_OWNERSHIP_MISMATCH');
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('ownership: CANCEL ордера другого account → отклонено без use case', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { accountId: OTHER_ACCOUNT_ID }),
+      );
+
+      const report = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      expect(deps.cancelOrderUseCase.execute).not.toHaveBeenCalled();
+      expect(report.cancelled).toBe(0);
+      expect(report.failed).toBe(1);
+      const outcome = report.outcomes.find((o) => o.kind === 'CANCEL_FAILED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('CANCEL_OWNERSHIP_MISMATCH');
+    });
+
+    it('ownership: order не найден (owner unknown) → FAILED без use case', async () => {
+      (deps.orderRepo as any).get.mockResolvedValue(undefined);
+
+      const report = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      expect(deps.cancelOrderUseCase.execute).not.toHaveBeenCalled();
+      expect(report.failed).toBe(1);
+      const outcome = report.outcomes.find((o) => o.kind === 'CANCEL_FAILED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('CANCEL_ORDER_NOT_FOUND');
+    });
+
+    it('ownership: совпадающий accountId на ордере → cancel разрешён', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { accountId: ACCOUNT_ID }),
+      );
+
+      const report = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(report.cancelled).toBe(1);
     });
   });
 
   // ── CANCEL_ALL ───────────────────────────────────────
 
   describe('CANCEL_ALL', () => {
-    it('should cancel all open orders from repo', async () => {
+    it('should cancel all open orders from repo (scoped by strategyId)', async () => {
       (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
         makeOrder(ORDER_1),
         makeOrder(ORDER_2),
         makeOrder(ORDER_3),
       ]);
 
-      const intents: StrategyIntent[] = [{ type: 'CANCEL_ALL' }];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [{ type: 'CANCEL_ALL' }]);
 
       expect(report.cancelled).toBe(3);
+      expect(deps.orderRepo.getByStrategyId).toHaveBeenCalledWith(STRATEGY_ID);
       expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(3);
     });
 
     it('should be no-op when no open orders', async () => {
-      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([]);
-
-      const intents: StrategyIntent[] = [{ type: 'CANCEL_ALL' }];
-
-      const report = await engine.execute(ctx, intents);
+      const report = await engine.execute(ctx, [{ type: 'CANCEL_ALL' }]);
 
       expect(report.cancelled).toBe(0);
       expect(report.errors).toHaveLength(0);
     });
   });
 
-  // ── Нормализация ─────────────────────────────────────
+  // ── Нормализация / dedupe ────────────────────────────
 
   describe('normalization', () => {
     it('should remove individual CANCELs when CANCEL_ALL present', async () => {
-      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
-        makeOrder(ORDER_1),
+      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([makeOrder(ORDER_1)]);
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL_ALL' },
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'CANCEL', orderId: ORDER_2 },
       ]);
 
-      const intents: StrategyIntent[] = [
-        { type: 'CANCEL_ALL' },
-        { type: 'CANCEL', orderId: ORDER_1 },  // дубль — должен быть удалён
-        { type: 'CANCEL', orderId: ORDER_2 },  // дубль — должен быть удалён
-      ];
-
-      const report = await engine.execute(ctx, intents);
-
-      // Только 1 cancel (из CANCEL_ALL → getByStrategyId = [ORDER_1])
       expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(1);
       expect(report.cancelled).toBe(1);
     });
 
     it('should dedupe CANCEL by orderId', async () => {
-      const intents: StrategyIntent[] = [
+      const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'CANCEL', orderId: ORDER_1 },  // дубль
+        { type: 'CANCEL', orderId: ORDER_1 },
         { type: 'CANCEL', orderId: ORDER_2 },
-      ];
+      ]);
 
-      const report = await engine.execute(ctx, intents);
-
-      // 2 unique cancels (ORDER_1, ORDER_2)
       expect(deps.cancelOrderUseCase.execute).toHaveBeenCalledTimes(2);
       expect(report.cancelled).toBe(2);
     });
 
-    it('should dedupe PLACE by side:price — last wins', async () => {
-      const size50 = Quantity.of(new Decimal('50'));
+    it('should dedupe identical PLACE (instrument+side+price+postOnly) — last wins', async () => {
       const size200 = Quantity.of(new Decimal('200'));
 
-      const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: size200 },  // same side:price — overwrites
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: size50 },
-      ];
+      const report = await engine.execute(ctx, [
+        place({ side: BUY, price: PRICE_55, size: SIZE_100 }),
+        place({ side: BUY, price: PRICE_55, size: size200 }),
+        place({ side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('50')) }),
+      ]);
 
-      const report = await engine.execute(ctx, intents);
-
-      // 2 unique places: BUY@0.55 (size 200), SELL@0.65 (size 50)
       expect(report.placed).toBe(2);
       expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(2);
 
-      // Verify the last BUY@0.55 won (size 200)
       const calls = (deps.placeOrderUseCase as any).execute.mock.calls;
       const buyCall = calls.find((c: any[]) => c[0].side === 'BUY') as any[];
       expect(buyCall[0].size).toBe(size200);
     });
-  });
 
-  // ── Порядок: cancels before places ───────────────────
-
-  describe('execution order', () => {
-    it('should execute cancels before places', async () => {
-      const order: string[] = [];
-
-      (deps.cancelOrderUseCase as any).execute.mockImplementation(async () => {
-        order.push('cancel');
-        return Ok({ status: 'CANCELLED' });
-      });
-      (deps.placeOrderUseCase as any).execute.mockImplementation(async () => {
-        order.push('place');
-        return Ok(ORDER_1);
-      });
-
+    it('BUY primary @0.55 и BUY complementary @0.55 НЕ схлопываются (оба исполняются)', async () => {
       const intents: StrategyIntent[] = [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'CANCEL', orderId: ORDER_1 },
-      ];
-
-      await engine.execute(ctx, intents);
-
-      // Cancel выполняется первым
-      expect(order[0]).toBe('cancel');
-      // BUY place пропущен из-за post-cancel cooldown.
-      expect(order).toHaveLength(1);
-    });
-
-    it('should not apply post-cancel cooldown to SELL exits', async () => {
-      const intents: StrategyIntent[] = [
-        { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: SELL, price: PRICE_55, size: SIZE_100 },
+        place({ side: BUY, price: PRICE_55 }),
+        {
+          type: 'PLACE',
+          side: BUY,
+          price: PRICE_55,
+          size: SIZE_100,
+          targetInstrumentId: COMP_INSTRUMENT_ID,
+          targetAsset: COMP_ASSET_ID,
+        },
       ];
 
       const report = await engine.execute(ctx, intents);
 
-      expect(report.cancelled).toBe(1);
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
-      expect((deps.placeOrderUseCase.execute as any).mock.calls[0][0].side).toBe(SELL);
+      expect(report.placed).toBe(2);
+      const instruments = (deps.placeOrderUseCase as any).execute.mock.calls.map(
+        (c: any[]) => String(c[0].instrumentId),
+      );
+      expect(instruments).toContain(PRIMARY_TOKEN);
+      expect(instruments).toContain(COMPLEMENTARY_TOKEN);
     });
 
-    it('should allow place after post-cancel cooldown is cleared', async () => {
-      // Сначала cancel — устанавливает cooldown
-      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
-
-      // Симулируем получение fill — сбрасывает cooldown
-      engine.clearPostCancelCooldown(INSTRUMENT_ID);
-
-      // Теперь place должен пройти
+    it('postOnly=true и postOnly=false при одинаковой цене НЕ схлопываются', async () => {
       const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ]);
-
-      expect(report.placed).toBe(1);
-    });
-  });
-
-  // ── Смешанный сценарий ───────────────────────────────
-
-  describe('mixed scenario', () => {
-    it('should handle CANCEL_ALL + PLACE — only BUY places skipped by post-cancel cooldown', async () => {
-      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
-        makeOrder(ORDER_1),
-        makeOrder(ORDER_2),
-      ]);
-
-      const intents: StrategyIntent[] = [
-        { type: 'CANCEL_ALL' },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
-      ];
-
-      const report = await engine.execute(ctx, intents);
-
-      expect(report.cancelled).toBe(2);
-      // BUY пропущен из-за cooldown; SELL exit должен проходить сразу.
-      expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(1);
-      expect(report.errors).toHaveLength(0);
-    });
-
-    it('should handle CANCEL_ALL + PLACE after cooldown cleared', async () => {
-      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
-        makeOrder(ORDER_1),
-        makeOrder(ORDER_2),
-      ]);
-
-      // Cancel all
-      await engine.execute(ctx, [{ type: 'CANCEL_ALL' }]);
-
-      // Симулируем fill — сбрасывает cooldown
-      engine.clearPostCancelCooldown(INSTRUMENT_ID);
-
-      // Теперь place проходят
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+        place({ side: BUY, price: PRICE_55, postOnly: true }),
+        place({ side: BUY, price: PRICE_55, postOnly: false }),
       ]);
 
       expect(report.placed).toBe(2);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(2);
     });
 
-    it('should continue placing after partial cancel failure (no successful cancel = no cooldown)', async () => {
-      // Оба cancel-а фейлятся → cooldown НЕ устанавливается
-      (deps.cancelOrderUseCase as any).execute
-        .mockResolvedValueOnce(Err(new TradingError('Not found')))
-        .mockResolvedValueOnce(Err(new TradingError('Not found')));
+  });
 
-      const intents: StrategyIntent[] = [
+  // ── Target identity (атомарная пара) ─────────────────
+
+  describe('target identity validation', () => {
+    it('targetInstrumentId без targetAsset → typed failure, use case не вызывается', async () => {
+      // Runtime-вход (например из JS) — обходим compile-time union через as.
+      const intent = {
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetInstrumentId: COMP_INSTRUMENT_ID,
+      } as unknown as PlaceIntent;
+
+      const report = await engine.execute(ctx, [intent]);
+
+      expect(report.placed).toBe(0);
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_PAIR_INCOMPLETE');
+    });
+
+    it('targetAsset без targetInstrumentId → typed failure', async () => {
+      const intent = {
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetAsset: COMP_ASSET_ID,
+      } as unknown as PlaceIntent;
+
+      const report = await engine.execute(ctx, [intent]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_PAIR_INCOMPLETE');
+    });
+
+    it('asset не соответствует target instrument → typed failure', async () => {
+      const intent: PlaceIntent = {
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetInstrumentId: COMP_INSTRUMENT_ID,
+        targetAsset: ASSET_ID, // asset PRIMARY, instrument COMPLEMENTARY
+      };
+
+      const report = await engine.execute(ctx, [intent]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_ASSET_MISMATCH');
+    });
+
+    it('target instrument не разрешён registration → typed failure', async () => {
+      const catalogWithForeign = makeCatalog({
+        [PRIMARY_TOKEN]: makeInstrumentInfo(),
+        [FOREIGN_TOKEN]: makeInstrumentInfo(),
+      });
+      deps = makeDeps({ catalog: catalogWithForeign });
+      engine = new ExecutionEngine(deps);
+
+      const intent: PlaceIntent = {
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetInstrumentId: FOREIGN_INSTRUMENT_ID,
+        targetAsset: FOREIGN_ASSET_ID,
+      };
+
+      const report = await engine.execute(ctx, [intent]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_NOT_ALLOWED');
+    });
+
+    it('target instrument отсутствует в catalog → typed failure (fail-closed)', async () => {
+      const catalogPrimaryOnly = makeCatalog({ [PRIMARY_TOKEN]: makeInstrumentInfo() });
+      deps = makeDeps({ catalog: catalogPrimaryOnly });
+      engine = new ExecutionEngine(deps);
+
+      const intent: PlaceIntent = {
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetInstrumentId: COMP_INSTRUMENT_ID,
+        targetAsset: COMP_ASSET_ID,
+      };
+
+      const report = await engine.execute(ctx, [intent]);
+
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TARGET_UNKNOWN_INSTRUMENT');
+    });
+  });
+
+  // ── Cancel-replace safety (fail-closed) ──────────────
+
+  describe('cancel-replace safety', () => {
+    it('cancel → FAILED (Err): PLACE не вызывается', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Err(new TradingError('boom')));
+
+      const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'CANCEL', orderId: ORDER_2 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ];
+        place({ side: BUY }),
+      ]);
 
-      const report = await engine.execute(ctx, intents);
-
-      expect(report.cancelled).toBe(0);
-      expect(report.placed).toBe(1);
-      expect(report.errors).toHaveLength(2);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      expect(report.skipped).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should skip place when at least one cancel succeeds (cooldown set)', async () => {
-      (deps.cancelOrderUseCase as any).execute
-        .mockResolvedValueOnce(Err(new TradingError('Not found')))
-        .mockResolvedValueOnce(Ok({ status: 'CANCELLED' }));
+    it('cancel Promise rejected: PLACE не вызывается', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockRejectedValue(new Error('network down'));
 
-      const intents: StrategyIntent[] = [
+      const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'CANCEL', orderId: ORDER_2 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ];
+        place({ side: BUY }),
+      ]);
 
-      const report = await engine.execute(ctx, intents);
-
-      expect(report.cancelled).toBe(1);
-      // Place пропущен — cooldown от успешного cancel ORDER_2
-      expect(report.skipped).toBe(1);
       expect(report.placed).toBe(0);
-      expect(report.errors).toHaveLength(1);
-    });
-  });
-
-  // ── Валидация minOrderSize (reject-only) ──────────────
-
-  describe('minOrderSize validation (reject, no clamping)', () => {
-    it('should pass through intent size when >= minOrderSize', async () => {
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
-      engine = new ExecutionEngine(deps);
-
-      const size10 = Quantity.of(new Decimal('10'));
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size10 }]);
-
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(10);
-    });
-
-    it('should reject (skip) when intent size < minOrderSize', async () => {
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
-      engine = new ExecutionEngine(deps);
-
-      const size2 = Quantity.of(new Decimal('2'));
-      const report = await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
-
-      expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      expect(report.failed).toBe(1);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should log warn when rejecting for minOrderSize', async () => {
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
-      engine = new ExecutionEngine(deps);
-      const logger = deps.logger as ReturnType<typeof makeLogger>;
-
-      const size2 = Quantity.of(new Decimal('2'));
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('size below minOrderSize'),
-        expect.objectContaining({ size: 2, minOrderSize: 5 }),
-      );
-    });
-
-    it('should pass through when catalog returns undefined (unknown instrument)', async () => {
-      deps = makeDeps({ catalog: makeCatalog(undefined) });
-      engine = new ExecutionEngine(deps);
-
-      const size2 = Quantity.of(new Decimal('2'));
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: size2 }]);
-
-      const call = (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mock.calls[0][0] as any;
-      expect(call.size.toNumber()).toBe(2);
-    });
-
-    it('should allow SELL even when size < minOrderSize (Polymarket allows selling remainder)', async () => {
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
-      engine = new ExecutionEngine(deps);
-
-      const size3 = Quantity.of(new Decimal('3'));
-      const report = await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: size3 }]);
-
-      // SELL не блокируется по minOrderSize — Polymarket позволяет продать остаток
-      // целиком даже если он меньше minOrderSize (после fee deduction и т.п.).
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-
-    it('should pass SELL when size >= minOrderSize', async () => {
-      const minOrderSize = Quantity.of(new Decimal('5'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize) });
-      engine = new ExecutionEngine(deps);
-
-      const size5 = Quantity.of(new Decimal('5'));
-      const report = await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: size5 }]);
-
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-  });
-
-  // ── Валидация minOrderValue (reject-only, BUY only) ───
-
-  describe('minOrderValue validation (reject BUY, no clamping)', () => {
-    it('should reject BUY when price × size < minOrderValue', async () => {
-      // price=0.01, size=5 → value=$0.05 < $1 → reject
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      const lowPrice = Price.of(new Decimal('0.01'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: lowPrice, size: Quantity.of(new Decimal('5')) },
-      ]);
-
-      expect(report.skipped).toBe(1);
-      expect(report.placed).toBe(0);
-      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
-    });
-
-    it('should pass BUY when price × size >= minOrderValue', async () => {
-      // price=0.55, size=2 → value=$1.10 >= $1 → pass
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: Quantity.of(new Decimal('2')) },
-      ]);
-
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-
-    it('should not apply minOrderValue check to SELL orders', async () => {
-      // SELL: value=$0.05 < $1 but SELL is not subject to minOrderValue check
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      const lowPrice = Price.of(new Decimal('0.01'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: lowPrice, size: Quantity.of(new Decimal('5')) },
-      ]);
-
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-
-    it('should log warn when rejecting for minOrderValue', async () => {
-      const minOrderSize = Quantity.of(new Decimal('1'));
-      const minOrderValue = Quantity.of(new Decimal('1'));
-      const lowPrice = Price.of(new Decimal('0.01'));
-      deps = makeDeps({ catalog: makeCatalog(minOrderSize, minOrderValue) });
-      engine = new ExecutionEngine(deps);
-      const logger = deps.logger as ReturnType<typeof makeLogger>;
-
-      await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: lowPrice, size: Quantity.of(new Decimal('5')) },
-      ]);
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('order value below minOrderValue'),
-        expect.objectContaining({ minOrderValue: 1 }),
-      );
-    });
-  });
-
-  // ── Exchange rejection cooldown ──────────────────────────
-
-  describe('exchange rejection cooldown', () => {
-    it('should return failed on first exchange rejection', async () => {
-      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
-        Err(new TradingError('not enough balance/allowance')),
-      );
-
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
-      ]);
-
-      expect(report.errors).toHaveLength(1);
-      expect(report.placed).toBe(0);
-      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
-    });
-
-    it('should skip second attempt immediately after rejection (cooldown active)', async () => {
-      // SELL намеренно исключён из cooldown (см. ExecutionEngine.ts: "SELL-выходы (SL/TP)
-      // исключаем из cooldown... cooldown блокировал бы критические SELL на 5s") —
-      // используем BUY, для которого cooldown реально применяется.
-      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
-        Err(new TradingError('not enough balance/allowance')),
-      );
-
-      // Первая попытка → rejection + cooldown установлен
-      await engine.execute(ctx, [{ type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 }]);
-      (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
-
-      // Вторая попытка сразу → cooldown активен → skip
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ]);
-
-      expect(report.skipped).toBe(1);
-      expect(report.errors).toHaveLength(0);
-      // Биржа НЕ вызывается в cooldown
-      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
-    });
-
-    it('should NOT apply cooldown to SELL (SL/TP exits must not be blocked)', async () => {
-      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
-        Err(new TradingError('not enough balance/allowance')),
-      );
-
-      // Первая попытка SELL → rejection, но cooldown НЕ устанавливается для SELL
-      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
-      (deps.placeOrderUseCase.execute as ReturnType<typeof jest.fn>).mockClear();
-
-      // Вторая попытка SELL сразу → биржа вызывается снова (нет cooldown-skip)
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
-      ]);
-
-      expect(report.skipped).toBe(0);
-      expect(report.errors).toHaveLength(1);
-      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
-    });
-
-    it('should not apply cooldown to different side', async () => {
-      (deps.placeOrderUseCase as any).execute
-        .mockResolvedValueOnce(Err(new TradingError('not enough balance/allowance')))
-        .mockResolvedValueOnce(Ok(ORDER_1));
-
-      // SELL fails → cooldown для SELL
-      await engine.execute(ctx, [{ type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 }]);
-
-      // BUY для того же инструмента — cooldown не затрагивает BUY
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ]);
-
-      expect(report.placed).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-  });
-
-  // ── CancelExecutionResult (Этап 7) ─────────────────────
-
-  describe('cancel outcome mapping (Этап 7)', () => {
-    it('FILL_PENDING не считается успешной отменой (cancelled=0), PLACE того же цикла блокируется', async () => {
+    it('cancel → PENDING (FILL_PENDING): BUY и SELL оба заблокированы', async () => {
       (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Ok({ status: 'FILL_PENDING' }));
 
       const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+        place({ side: BUY, price: PRICE_55 }),
+        place({ side: SELL, price: PRICE_65 }),
       ]);
 
-      expect(report.cancelled).toBe(0);
       expect(report.placed).toBe(0);
-      expect(report.skipped).toBe(1);
+      expect(report.blockedByUnsafeCancel).toBe(2);
+      expect(report.skipped).toBe(2);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
       expect(report.errors).toHaveLength(0); // PENDING — не ошибка
     });
 
-    it('RECONCILIATION_REQUIRED блокирует PLACE intents того же cycle', async () => {
+    it('RECONCILIATION_REQUIRED блокирует PLACE intents того же batch', async () => {
       (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
         Ok({ status: 'RECONCILIATION_REQUIRED', reason: 'venue outcome unknown' }),
       );
 
       const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+        place({ side: SELL, price: PRICE_65 }),
       ]);
 
-      expect(report.cancelled).toBe(0);
       expect(report.placed).toBe(0);
-      expect(report.skipped).toBe(2);
+      expect(report.blockedByUnsafeCancel).toBe(1);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('SELL тоже НЕ обходит reconciliation block (в отличие от cooldown)', async () => {
+    it('один FAILED cancel из нескольких блокирует ВСЕ PLACE (fail-closed)', async () => {
+      (deps.cancelOrderUseCase as any).execute
+        .mockResolvedValueOnce(Ok({ status: 'CANCELLED' }))
+        .mockResolvedValueOnce(Err(new TradingError('Not found')));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        { type: 'CANCEL', orderId: ORDER_2 },
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.placed).toBe(0);
+      expect(report.blockedByUnsafeCancel).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('cancel → CONFIRMED: SELL PLACE разрешён (BUY заблокирован только cooldown-ом)', async () => {
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
+
+      expect(report.cancelled).toBe(1);
+      expect(report.placed).toBe(1);
+      expect(report.blockedByUnsafeCancel).toBe(0);
+    });
+
+    it('cancel → TERMINAL_NOOP: PLACE разрешён', async () => {
       (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
-        Ok({ status: 'RECONCILIATION_REQUIRED', reason: 'transport error' }),
+        Ok({ status: 'ALREADY_TERMINAL', orderStatus: 'REJECTED' }),
       );
 
       const report = await engine.execute(ctx, [
         { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: SELL, price: PRICE_65, size: SIZE_100 },
+        place({ side: BUY, price: PRICE_55 }),
       ]);
 
+      expect(report.cancelled).toBe(0);
+      expect(report.placed).toBe(1);
+      expect(report.blockedByUnsafeCancel).toBe(0);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('ALREADY_FILLED → PENDING: не cancelled++, блокирует PLACE', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Ok({ status: 'ALREADY_FILLED' }));
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL', orderId: ORDER_1 },
+        place({ side: BUY }),
+      ]);
+
+      expect(report.cancelled).toBe(0);
       expect(report.placed).toBe(0);
-      expect(report.skipped).toBe(1);
+      expect(report.blockedByUnsafeCancel).toBe(1);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
@@ -779,53 +703,434 @@ describe('ExecutionEngine', () => {
         { type: 'CANCEL', orderId: asOrderId('order-5')! },
       ]);
 
-      expect(report.cancelled).toBe(2); // только CANCELLED + ALREADY_CANCELLED
-      expect(report.errors).toHaveLength(1); // только Err
+      expect(report.cancelled).toBe(2);
+      expect(report.errors).toHaveLength(1);
     });
 
-    it('ALREADY_FILLED → PENDING: не cancelled++, блокирует PLACE того же цикла', async () => {
-      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(Ok({ status: 'ALREADY_FILLED' }));
+    it('PENDING cancel НЕ ставит post-cancel cooldown', async () => {
+      (deps.cancelOrderUseCase as any).execute.mockResolvedValueOnce(Ok({ status: 'FILL_PENDING' }));
 
-      const report = await engine.execute(ctx, [
-        { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      // Второй цикл: BUY place — cooldown НЕ должен блокировать.
+      const report = await engine.execute(ctx, [place({ side: BUY })]);
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+  });
+
+  // ── Post-cancel cooldown (по фактическому Order) ─────
+
+  describe('post-cancel cooldown', () => {
+    it('cancel BUY → cooldown на инструменте ордера: следующий BUY skip, SELL проходит', async () => {
+      const report1 = await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+      expect(report1.cancelled).toBe(1);
+
+      const report2 = await engine.execute(ctx, [
+        place({ side: BUY, price: PRICE_55 }),
+        place({ side: SELL, price: PRICE_65 }),
       ]);
 
-      expect(report.cancelled).toBe(0);
-      expect(report.placed).toBe(0);
+      expect(report2.skipped).toBe(1); // BUY в cooldown
+      expect(report2.placed).toBe(1);  // SELL проходит
+      expect((deps.placeOrderUseCase.execute as any).mock.calls[0][0].side).toBe(SELL);
+    });
+
+    it('отменён комплементарный BUY → cooldown на complementary, primary НЕ блокируется', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { asset: COMP_ASSET_ID }),
+      );
+
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      // BUY на primary — проходит (cooldown стоит на complementary).
+      const primaryReport = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+      expect(primaryReport.placed).toBe(1);
+
+      // BUY на complementary — в cooldown.
+      const compReport = await engine.execute(ctx, [{
+        type: 'PLACE',
+        side: BUY,
+        price: PRICE_55,
+        size: SIZE_100,
+        targetInstrumentId: COMP_INSTRUMENT_ID,
+        targetAsset: COMP_ASSET_ID,
+      }]);
+      expect(compReport.skipped).toBe(1);
+      expect(compReport.placed).toBe(0);
+    });
+
+    it('отменён SELL → BUY post-cancel cooldown НЕ устанавливается', async () => {
+      (deps.orderRepo as any).get.mockImplementation(async (id: OrderId) =>
+        makeOrder(id, { side: 'SELL' }),
+      );
+
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+
+    it('clearPostCancelCooldown (FILL_CONFIRMED) снимает cooldown', async () => {
+      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+
+      engine.clearPostCancelCooldown(INSTRUMENT_ID);
+
+      const report = await engine.execute(ctx, [place({ side: BUY })]);
+      expect(report.placed).toBe(1);
+    });
+
+    it('CANCEL_ALL + PLACE: BUY skip по cooldown, SELL проходит', async () => {
+      (deps.orderRepo as any).getByStrategyId.mockResolvedValue([
+        makeOrder(ORDER_1),
+        makeOrder(ORDER_2),
+      ]);
+
+      const report = await engine.execute(ctx, [
+        { type: 'CANCEL_ALL' },
+        place({ side: BUY, price: PRICE_55 }),
+        place({ side: SELL, price: PRICE_65 }),
+      ]);
+
+      expect(report.cancelled).toBe(2);
       expect(report.skipped).toBe(1);
+      expect(report.placed).toBe(1);
+      expect(report.errors).toHaveLength(0);
+    });
+  });
+
+  // ── Constraints (reject-only) ────────────────────────
+
+  describe('constraints validation (reject, no clamping)', () => {
+    it('should pass through intent size when >= minOrderSize', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ minOrderSize: Quantity.of(new Decimal('5')) }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
+
+      await engine.execute(ctx, [place({ side: BUY, size: Quantity.of(new Decimal('10')) })]);
+
+      const call = (deps.placeOrderUseCase.execute as any).mock.calls[0][0] as any;
+      expect(call.size.toNumber()).toBe(10);
+    });
+
+    it('should reject (local) when BUY size < minOrderSize', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ minOrderSize: Quantity.of(new Decimal('5')) }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, size: Quantity.of(new Decimal('2')) })]);
+
+      expect(report.skipped).toBe(1);
+      expect(report.localRejected).toBe(1);
+      expect(report.placed).toBe(0);
       expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('ALREADY_TERMINAL (REJECTED/EXPIRED) → TERMINAL_NOOP: не cancelled++, PLACE НЕ блокируется', async () => {
-      (deps.cancelOrderUseCase as any).execute.mockResolvedValue(
-        Ok({ status: 'ALREADY_TERMINAL', orderStatus: 'REJECTED' }),
-      );
+    it('catalog entry отсутствует → PLACE fail-closed (venue не вызывается)', async () => {
+      deps = makeDeps({ catalog: makeCatalog({}) });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, size: Quantity.of(new Decimal('2')) })]);
+
+      expect(report.placed).toBe(0);
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('CATALOG_ENTRY_MISSING');
+    });
+
+    it('price не кратна tickSize → local rejection, use case не вызывается', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: Price.of(new Decimal('0.1')) }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]); // 0.55 % 0.1 ≠ 0
+
+      expect(report.placed).toBe(0);
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+      const outcome = report.outcomes.find((o) => o.kind === 'LOCAL_REJECTED');
+      expect((outcome?.error as LocalIntentRejectionError).code).toBe('TICK_SIZE_VIOLATION');
+    });
+
+    it('price кратна tickSize → проходит (Decimal-арифметика, не float %)', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          // 0.55 / 0.05 = 11 — кратно; float (0.55 % 0.05) дал бы погрешность.
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: Price.of(new Decimal('0.05')) }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+
+      expect(report.placed).toBe(1);
+    });
+
+    it('should allow SELL even when size < minOrderSize (sell remainder)', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ minOrderSize: Quantity.of(new Decimal('5')) }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65, size: Quantity.of(new Decimal('3')) })]);
+
+      expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+
+    it('should reject BUY when price × size < minOrderValue (Money)', async () => {
+      deps = makeDeps({
+        catalog: makeCatalog({
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ minOrderValue: Money.of(new Decimal('1'), 'USDC') }),
+        }),
+      });
+      engine = new ExecutionEngine(deps);
 
       const report = await engine.execute(ctx, [
-        { type: 'CANCEL', orderId: ORDER_1 },
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
+        place({ side: BUY, price: Price.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
       ]);
 
-      expect(report.cancelled).toBe(0);
-      expect(report.errors).toHaveLength(0);
-      // PLACE выполняется: ордер умер сам, fill не ожидается.
+      expect(report.skipped).toBe(1);
+      expect(report.localRejected).toBe(1);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should not apply minOrderValue check to SELL orders', async () => {
+      const report = await engine.execute(ctx, [
+        place({ side: SELL, price: Price.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
+      ]);
+
       expect(report.placed).toBe(1);
+      expect(report.skipped).toBe(0);
+    });
+  });
+
+  // ── Exchange rejection cooldown ──────────────────────────
+
+  describe('exchange rejection cooldown', () => {
+    it('should return failed on first exchange rejection', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('venue rejected')),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.errors).toHaveLength(1);
+      expect(report.placed).toBe(0);
       expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
     });
 
-    it('PENDING cancel НЕ ставит post-cancel cooldown (cooldown не подтверждение отмены)', async () => {
-      (deps.cancelOrderUseCase as any).execute.mockResolvedValueOnce(Ok({ status: 'FILL_PENDING' }));
+    it('should skip second BUY attempt immediately after rejection (cooldown active)', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('venue rejected')),
+      );
 
-      // Первый цикл: PENDING cancel (без PLACE).
-      await engine.execute(ctx, [{ type: 'CANCEL', orderId: ORDER_1 }]);
+      await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+      (deps.placeOrderUseCase.execute as any).mockClear();
 
-      // Второй цикл: BUY place — cooldown НЕ должен блокировать (не был поставлен).
-      const report = await engine.execute(ctx, [
-        { type: 'PLACE', side: BUY, price: PRICE_55, size: SIZE_100 },
-      ]);
+      const report = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+
+      expect(report.skipped).toBe(1);
+      expect(report.errors).toHaveLength(0);
+      expect(deps.placeOrderUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should NOT apply cooldown to SELL (SL/TP exits must not be blocked)', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new TradingError('venue rejected')),
+      );
+
+      await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+      (deps.placeOrderUseCase.execute as any).mockClear();
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.skipped).toBe(0);
+      expect(report.errors).toHaveLength(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not apply cooldown to different side', async () => {
+      (deps.placeOrderUseCase as any).execute
+        .mockResolvedValueOnce(Err(new TradingError('venue rejected')))
+        .mockResolvedValueOnce(Ok(ORDER_1));
+
+      await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      const report = await engine.execute(ctx, [place({ side: BUY, price: PRICE_55 })]);
+
       expect(report.placed).toBe(1);
       expect(report.skipped).toBe(0);
+    });
+  });
+
+  // ── Typed failure codes ──────────────────────────────
+
+  describe('typed failure codes', () => {
+    it('POST_ONLY_WOULD_TAKE (typed) + postOnly → benign skipped', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError('POST_ONLY_WOULD_TAKE', 'Exchange rejected order: post only')),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: BUY, postOnly: true })]);
+
+      expect(report.skipped).toBe(1);
+      expect(report.errors).toHaveLength(0);
+      expect(engine.stats.benignPostOnlyRejects).toBe(1);
+    });
+
+    it('обычная ошибка с текстом "defer"/"marketable" НЕ классифицируется как benign', async () => {
+      const err = new TradingError('order deferred: marketable post-only would execute immediately');
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(Err(err));
+
+      const report = await engine.execute(ctx, [place({ side: BUY, postOnly: true })]);
+
+      // Текст похож на post-only reject, но typed-кода нет → это FAILED, не skip.
+      expect(report.skipped).toBe(0);
+      expect(report.failed).toBe(1);
+      expect(report.errors[0].error).toBe(err);
+      expect(engine.stats.benignPostOnlyRejects).toBe(0);
+    });
+
+    it('POST_ONLY_WOULD_TAKE без postOnly=true в intent → НЕ benign', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError('POST_ONLY_WOULD_TAKE', 'post only reject')),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: BUY })]);
+
+      expect(report.failed).toBe(1);
+      expect(engine.stats.benignPostOnlyRejects).toBe(0);
+    });
+  });
+
+  // ── SELL dust retry (typed metadata only) ────────────
+
+  describe('SELL dust retry', () => {
+    const balanceMetadata = {
+      onChainBalanceMicro: new Decimal('99500000'),  // 99.5 tokens
+      orderAmountMicro: new Decimal('100000000'),    // 100 tokens (deficit 0.5%)
+    };
+
+    it('DEFINITELY_REJECTED + INSUFFICIENT_TOKEN_BALANCE + typed metadata → ровно один retry', async () => {
+      (deps.placeOrderUseCase as any).execute
+        .mockResolvedValueOnce(Err(new PlaceOrderFailureError(
+          'INSUFFICIENT_TOKEN_BALANCE',
+          'Exchange rejected order: not enough balance',
+          { balance: balanceMetadata },
+        )))
+        .mockResolvedValueOnce(Ok(ORDER_2));
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.placed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(engine.stats.sellDustRetryCount).toBe(1);
+      const retryCall = (deps.placeOrderUseCase.execute as any).mock.calls[1][0] as any;
+      expect(retryCall.size.toNumber()).toBe(99.5);
+    });
+
+    it('retry максимум один: повторный typed reject → failed без второго retry', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError(
+          'INSUFFICIENT_TOKEN_BALANCE',
+          'not enough balance',
+          { balance: balanceMetadata },
+        )),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.failed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(2); // 1 исходный + 1 retry
+    });
+
+    it('SUBMISSION_OUTCOME_UNKNOWN + текст похожий на balance rejection → retry НЕ выполняется', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError(
+          'SUBMISSION_OUTCOME_UNKNOWN',
+          'transport error: not enough balance / allowance -> balance: 99500000, order amount: 100000000',
+        )),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.failed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(engine.stats.sellDustRetryCount).toBe(0);
+    });
+
+    it('INSUFFICIENT_TOKEN_BALANCE БЕЗ typed metadata → retry НЕ выполняется', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError(
+          'INSUFFICIENT_TOKEN_BALANCE',
+          'not enough balance / allowance -> balance: 99500000, order amount: 100000000',
+        )),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.failed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(engine.stats.sellDustRetryCount).toBe(0);
+    });
+
+    it('дефицит > 1% → retry НЕ выполняется', async () => {
+      (deps.placeOrderUseCase as any).execute.mockResolvedValue(
+        Err(new PlaceOrderFailureError(
+          'INSUFFICIENT_TOKEN_BALANCE',
+          'not enough balance',
+          {
+            balance: {
+              onChainBalanceMicro: new Decimal('90000000'),  // 90 tokens
+              orderAmountMicro: new Decimal('100000000'),    // deficit 10%
+            },
+          },
+        )),
+      );
+
+      const report = await engine.execute(ctx, [place({ side: SELL, price: PRICE_65 })]);
+
+      expect(report.failed).toBe(1);
+      expect(deps.placeOrderUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(engine.stats.sellDustRetryCount).toBe(0);
+    });
+  });
+
+  // ── Determinism (order IDs) ──────────────────────────
+
+  describe('deterministic order IDs', () => {
+    it('одинаковый replay дважды → одинаковая последовательность order IDs', async () => {
+      const runOnce = async (): Promise<string[]> => {
+        const localDeps = makeDeps({ orderIdGenerator: new SequentialOrderIdGenerator('replay') });
+        const localEngine = new ExecutionEngine(localDeps);
+        await localEngine.execute(makeCtx(), [
+          place({ side: BUY, price: PRICE_55 }),
+          place({ side: SELL, price: PRICE_65 }),
+        ]);
+        return (localDeps.placeOrderUseCase.execute as any).mock.calls.map(
+          (c: any[]) => String(c[0].orderId),
+        );
+      };
+
+      const ids1 = await runOnce();
+      const ids2 = await runOnce();
+
+      expect(ids1).toEqual(['replay-1', 'replay-2']);
+      expect(ids2).toEqual(ids1);
     });
   });
 });

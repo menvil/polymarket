@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { PaperClock } from '@polymarket/time';
-import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Money, Price, Quantity } from '@polymarket/value-objects';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import { MarketScorer } from '../src/MarketScorer.js';
@@ -45,7 +45,7 @@ function makeMarket(params: {
     expiresAt: expiresAtResult.value,
     tickSize: Price.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
-    minOrderValue: Quantity.of(new Decimal('1')),
+    minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
     spread: new Decimal('0.05'),
     liquidity: new Decimal(liquidity),

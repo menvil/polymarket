@@ -31,37 +31,96 @@ export type StrategyIntent =
   | CancelAllIntent;
 
 /**
- * Намерение разместить новый ордер.
+ * Общие поля намерения разместить новый ордер.
  *
  * @remarks
  * ExecutionEngine генерирует orderId, привязывает strategyId и instrumentId
  * из ExecutionContext, затем вызывает PlaceOrderUseCase.
  * Risk check — внутри PlaceOrderUseCase (не дублируем).
  */
-export interface PlaceIntent {
+export interface BasePlaceIntent {
   readonly type: 'PLACE';
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
   /** true = post-only order; exchange must reject if order would execute immediately */
   readonly postOnly?: boolean;
-  /**
-   * Целевой инструмент для размещения ордера. Если указан — ордер размещается
-   * на этом инструменте вместо основного из ExecutionContext.
-   *
-   * @remarks
-   * Используется для auto-selection: стратегия зарегистрирована на UP токене,
-   * но решает купить DOWN токен — указывает его ID здесь.
-   * Если не указан — ордер идёт на основной instrumentId из контекста.
-   */
-  readonly targetInstrumentId?: InstrumentId;
-  /**
-   * Торговый актив целевого инструмента. Обязателен если указан targetInstrumentId.
-   *
-   * @remarks
-   * AssetId нужен для PlaceOrderUseCase — определяет какой CTF токен торгуется.
-   */
-  readonly targetAsset?: AssetId;
+}
+
+/**
+ * Намерение разместить новый ордер.
+ *
+ * @remarks
+ * ### Атомарная пара target instrument + asset:
+ * `targetInstrumentId` и `targetAsset` — discriminated union: либо ОБА поля
+ * заданы (auto-selection на комплементарный инструмент), либо НИ ОДНО
+ * (ордер идёт на основной instrumentId/asset из ExecutionContext).
+ * Compile-time исключает рассинхрон «target instrument + primary asset»,
+ * который отправлял ордер на чужой CTF токен.
+ *
+ * ExecutionEngine дополнительно выполняет fail-closed runtime-валидацию пары
+ * (catalog lookup, соответствие asset ↔ instrument, разрешённость target
+ * текущей регистрацией стратегии).
+ *
+ * @example
+ * ```typescript
+ * // Основной инструмент (пара отсутствует целиком):
+ * const primary: PlaceIntent = { type: 'PLACE', side: 'BUY', price, size };
+ *
+ * // Комплементарный инструмент (пара присутствует целиком):
+ * const comp: PlaceIntent = {
+ *   type: 'PLACE', side: 'BUY', price, size,
+ *   targetInstrumentId: complementaryInstrumentId,
+ *   targetAsset: complementaryAsset,
+ * };
+ * ```
+ */
+export type PlaceIntent =
+  | (BasePlaceIntent & {
+      readonly targetInstrumentId?: never;
+      readonly targetAsset?: never;
+    })
+  | (BasePlaceIntent & {
+      /** Целевой инструмент для размещения (auto-selection). */
+      readonly targetInstrumentId: InstrumentId;
+      /** Торговый актив целевого инструмента (обязателен вместе с targetInstrumentId). */
+      readonly targetAsset: AssetId;
+    });
+
+/**
+ * Собирает атомарную пару target-полей для {@link PlaceIntent}.
+ *
+ * @param instrumentId - Целевой инструмент (или undefined)
+ * @param asset - Целевой актив (или undefined)
+ * @returns Пара `{ targetInstrumentId, targetAsset }`, если заданы ОБА поля;
+ *   `undefined` — если не задано ни одно
+ * @throws {Error} Если задано ровно одно поле из пары (программная ошибка
+ *   стратегии — fail-fast вместо тихой подмены asset)
+ *
+ * @remarks
+ * Helper для стратегий, у которых target-поля опциональны в domain actions:
+ * вместо независимых спредов (`...(a ? { targetInstrumentId: a } : {})`),
+ * которые не проходят compile-time union, собирает пару целиком.
+ *
+ * @example
+ * ```typescript
+ * const target = placeTarget(data.complementaryInstrumentId, data.complementaryAsset);
+ * const intent: PlaceIntent = target
+ *   ? { type: 'PLACE', side, price, size, ...target }
+ *   : { type: 'PLACE', side, price, size };
+ * ```
+ */
+export function placeTarget(
+  instrumentId: InstrumentId | undefined,
+  asset: AssetId | undefined,
+): { readonly targetInstrumentId: InstrumentId; readonly targetAsset: AssetId } | undefined {
+  if (instrumentId === undefined && asset === undefined) return undefined;
+  if (instrumentId === undefined || asset === undefined) {
+    throw new Error(
+      'placeTarget: targetInstrumentId and targetAsset must be provided together (atomic pair)',
+    );
+  }
+  return { targetInstrumentId: instrumentId, targetAsset: asset };
 }
 
 /**

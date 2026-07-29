@@ -22,7 +22,7 @@ import type { IBookRegistry } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { OrderBook, PriceLevel } from '@polymarket/order-book';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 
@@ -92,7 +92,7 @@ function makeDeps(logger: ILogger): {
       marketId: 'market-backtest' as unknown as MarketId,
       tickSize: {} as Price,
       minOrderSize: {} as Quantity,
-      minOrderValue: {} as Quantity,
+      minOrderValue: {} as Money,
       active: true,
       expiresAt: {} as Timestamp,
     }) as InstrumentInfo),

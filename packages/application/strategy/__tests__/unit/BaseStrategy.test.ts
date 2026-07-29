@@ -53,8 +53,17 @@ class TestStrategy extends BaseStrategy<TestData, TestAction> {
     return this.adjustSellSize(desired, positionQty, minOrderSize);
   }
 
-  publicAdjustBuySize(desired: Decimal, price: Decimal, minOrderValue: Decimal, minOrderSize: Decimal): Decimal {
+  publicAdjustBuySize(desired: Decimal, price: Decimal, minOrderValue: Decimal, minOrderSize: Decimal): Decimal | undefined {
     return this.adjustBuySize(desired, price, minOrderValue, minOrderSize);
+  }
+
+  publicAdjustBuySizeAllowingIncrease(
+    desired: Decimal,
+    price: Decimal,
+    minOrderValue: Decimal,
+    minOrderSize: Decimal,
+  ): Decimal | undefined {
+    return this.adjustBuySizeAllowingIncrease(desired, price, minOrderValue, minOrderSize);
   }
 }
 
@@ -71,6 +80,7 @@ function makeSnapshot(overrides: Partial<StrategySnapshot> = {}): StrategySnapsh
     matchedOrders: [],
     hasInFlightFills: false,
     constraints: undefined,
+    complementaryConstraints: undefined,
     portfolio: undefined,
     nowMs: 1000,
     ...overrides,
@@ -249,29 +259,49 @@ describe('BaseStrategy', () => {
       expect(strategy.publicAdjustBuySize(d('10'), d('0.55'), d('1'), d('5'))).toEqual(d('10'));
     });
 
-    it('should clamp up to minOrderSize when desired < minOrderSize', () => {
-      // desired=3, price=0.55, minOrderValue=1, minOrderSize=5 → effective=5, value=2.75>=1 → 5
-      expect(strategy.publicAdjustBuySize(d('3'), d('0.55'), d('1'), d('5'))).toEqual(d('5'));
+    it('desired < minOrderSize → undefined (молчаливый overbuy запрещён)', () => {
+      // desired=3, minOrderSize=5: клампирование вверх покупало бы больше
+      // конфигурации стратегии → helper возвращает undefined.
+      expect(strategy.publicAdjustBuySize(d('3'), d('0.55'), d('1'), d('5'))).toBeUndefined();
     });
 
-    it('does NOT scale up for minOrderValue even when order value is below it (avoids overbuy)', () => {
-      // desired=5, price=0.117, minOrderValue=1, minOrderSize=5 → value=0.585<1, но
-      // adjustBuySize больше НЕ увеличивает size ради minOrderValue (см. @remarks
-      // на adjustBuySize: при дешёвых токенах это удваивало size 5→10, покупая
-      // больше конфигурации пользователя). Биржа отклонит по minOrderValue —
-      // стратегия попробует снова на следующем тике.
-      expect(strategy.publicAdjustBuySize(d('5'), d('0.117'), d('1'), d('5'))).toEqual(d('5'));
+    it('price × desired < minOrderValue → undefined (не увеличивает size)', () => {
+      // desired=5, price=0.117 → notional 0.585 < minOrderValue=1 → undefined.
+      expect(strategy.publicAdjustBuySize(d('5'), d('0.117'), d('1'), d('5'))).toBeUndefined();
     });
 
-    it('should not clamp when value exactly meets minOrderValue', () => {
-      // desired=5, price=0.20, minOrderValue=1, minOrderSize=5 → value=1.0>=1 → 5
+    it('value ровно равен minOrderValue → desired проходит', () => {
+      // desired=5, price=0.20 → value=1.0 >= 1 → 5
       expect(strategy.publicAdjustBuySize(d('5'), d('0.20'), d('1'), d('5'))).toEqual(d('5'));
     });
 
-    it('игнорирует minOrderValue даже при очень низкой цене (не удваивает size)', () => {
-      // desired=5, price=0.01, minOrderValue=1, minOrderSize=5 → value=0.05<1, но
-      // clamp только к minOrderSize=5, а НЕ к ceil(1/0.01)=100.
-      expect(strategy.publicAdjustBuySize(d('5'), d('0.01'), d('1'), d('5'))).toEqual(d('5'));
+    it('desired <= 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySize(d('0'), d('0.55'), d('1'), d('5'))).toBeUndefined();
+    });
+  });
+
+  // ── adjustBuySizeAllowingIncrease() ───────────────────
+
+  describe('adjustBuySizeAllowingIncrease()', () => {
+    const strategy = new TestStrategy();
+    const d = (v: string) => new Decimal(v);
+
+    it('увеличивает до minOrderSize (явный opt-in overbuy)', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('3'), d('0.55'), d('1'), d('5'))).toEqual(d('5'));
+    });
+
+    it('увеличивает до размера, покрывающего minOrderValue (ceil до 2 dp)', () => {
+      // price=0.01, minOrderValue=1 → нужен size 100 (> minOrderSize=5).
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('0.01'), d('1'), d('5'))).toEqual(d('100'));
+    });
+
+    it('валидный desired возвращается без изменений', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('10'), d('0.55'), d('1'), d('5'))).toEqual(d('10'));
+    });
+
+    it('desired <= 0 или price <= 0 → undefined', () => {
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('0'), d('0.55'), d('1'), d('5'))).toBeUndefined();
+      expect(strategy.publicAdjustBuySizeAllowingIncrease(d('5'), d('0'), d('1'), d('5'))).toBeUndefined();
     });
   });
 });

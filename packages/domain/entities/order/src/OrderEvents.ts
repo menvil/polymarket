@@ -11,7 +11,7 @@
  * - Событие — факт (применяется без валидации)
  */
 
-import type { OrderId } from '@polymarket/ids';
+import type { AccountId, OrderId } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId } from '@polymarket/ids';
 import type { FillData } from './OrderState.js';
@@ -25,6 +25,8 @@ export interface OrderCreatedEvent {
   readonly size: Quantity;
   readonly timestamp: Timestamp;
   readonly strategyId?: string;
+  /** ID аккаунта-владельца заявки (для ownership-проверок execution-слоя) */
+  readonly accountId?: AccountId;
 }
 
 export interface OrderAcceptedEvent {

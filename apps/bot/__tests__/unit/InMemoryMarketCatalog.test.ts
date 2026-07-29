@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { InMemoryMarketCatalog } from '../../src/InMemoryMarketCatalog.js';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
 
 const MARKET_ID = asMarketId('market-1')!;
 const YES_TOKEN = asInstrumentId('yes-token')!;
@@ -16,7 +16,7 @@ function makeInstrument(instrumentId: typeof YES_TOKEN, marketId: typeof MARKET_
     marketId,
     tickSize: {} as Price,
     minOrderSize: {} as Quantity,
-    minOrderValue: {} as Quantity,
+    minOrderValue: {} as Money,
     active: true,
     expiresAt: {} as Timestamp,
   };

@@ -32,6 +32,7 @@
  * ```
  */
 import { BaseStrategy } from '@polymarket/strategy';
+import { placeTarget } from '@polymarket/strategy';
 import type {
   CexVenue,
   CryptoSignalDirection,
@@ -1733,26 +1734,26 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         continue;
       }
       intents.push({ type: 'CANCEL_ALL' });
+      // Атомарная пара target-полей: либо оба, либо ни одного (placeTarget).
+      const target = placeTarget(a.targetInstrumentId, a.targetAsset);
       if (a.type === 'POST_BID') {
-      intents.push({
-        type: 'PLACE',
-        side: 'BUY',
-        price: Price.of(new Decimal(a.bidCents).div(100)),
-        size: Quantity.of(a.size),
+        const base = {
+          type: 'PLACE' as const,
+          side: 'BUY' as const,
+          price: Price.of(new Decimal(a.bidCents).div(100)),
+          size: Quantity.of(a.size),
           postOnly: a.postOnly,
-          targetInstrumentId: a.targetInstrumentId,
-          targetAsset: a.targetAsset,
-        });
+        };
+        intents.push(target ? { ...base, ...target } : base);
       } else {
-        intents.push({
-          type: 'PLACE',
-          side: 'SELL',
+        const base = {
+          type: 'PLACE' as const,
+          side: 'SELL' as const,
           price: Price.of(new Decimal(a.askCents).div(100)),
           size: Quantity.of(a.size),
           postOnly: !a.taker,
-          targetInstrumentId: a.targetInstrumentId,
-          targetAsset: a.targetAsset,
-        });
+        };
+        intents.push(target ? { ...base, ...target } : base);
       }
     }
     return intents;

@@ -23,7 +23,7 @@
  * }
  * ```
  */
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { Money, Price, Quantity } from '@polymarket/value-objects';
 
 export interface InstrumentConstraints {
   /** Минимальный размер ордера в токенах */
@@ -31,8 +31,12 @@ export interface InstrumentConstraints {
   /**
    * Минимальная стоимость ордера в USDC (price × size >= minOrderValue).
    * Polymarket требует >= $1 для BUY-ордеров.
+   *
+   * @remarks
+   * Money, а НЕ Quantity: это денежный notional (USDC), а не количество
+   * токенов. Стратегии читают числовое значение через `.value()` (Decimal).
    */
-  readonly minOrderValue: Quantity;
+  readonly minOrderValue: Money;
   /** Минимальный шаг цены */
   readonly tickSize: Price;
 }

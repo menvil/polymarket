@@ -22,6 +22,13 @@
 // Use Cases
 export { PlaceOrderUseCase } from './PlaceOrderUseCase.js';
 export type { PlaceOrderInput, PlaceOrderDeps, PlaceOrderError } from './PlaceOrderUseCase.js';
+export {
+  PlaceOrderFailureError,
+  getPlaceFailureCode,
+  getPlaceFailureBalance,
+} from './PlaceOrderFailure.js';
+export type { PlaceFailureCode, PlaceFailureBalanceMetadata } from './PlaceOrderFailure.js';
+export type { CancelOrderOutcome } from './CancelOrderUseCase.js';
 
 export { ProcessFillUseCase } from './ProcessFillUseCase.js';
 export type { ProcessFillDeps } from './ProcessFillUseCase.js';

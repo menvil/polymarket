@@ -45,8 +45,10 @@
 
 // ── Новая архитектура: types ────────────────────────────────
 export type { TriggerReason } from './types/index.js';
+export { KNOWN_TRIGGER_REASONS, placeTarget } from './types/index.js';
 export type {
   StrategyIntent,
+  BasePlaceIntent,
   PlaceIntent,
   CancelIntent,
   CancelAllIntent,
@@ -69,19 +71,35 @@ export type {
 } from './types/index.js';
 export type { InstrumentConstraints } from './types/index.js';
 export type { ScheduleConfig } from './types/index.js';
-export { DEFAULT_SCHEDULE_CONFIG } from './types/index.js';
+export { DEFAULT_SCHEDULE_CONFIG, validateScheduleConfig } from './types/index.js';
+
+// ── Ports: timers + order ID generation (determinism) ───────
+export type { ISchedulerTimer, TimerHandle } from './ports/SchedulerTimer.js';
+export { NodeSchedulerTimer, DeterministicSchedulerTimer } from './ports/SchedulerTimer.js';
+export type { IOrderIdGenerator } from './ports/OrderIdGenerator.js';
+export { UuidOrderIdGenerator, SequentialOrderIdGenerator } from './ports/OrderIdGenerator.js';
 
 // ── Новая архитектура: интерфейсы ───────────────────────────
 export type { IStrategy } from './IStrategy.js';
 
 // ── Новая архитектура: реализации ───────────────────────────
 export { BaseStrategy } from './BaseStrategy.js';
-export { ExecutionEngine } from './ExecutionEngine.js';
-export type { ExecutionEngineDeps, ExecutionContext, ExecutionReport, ITokenBalanceChecker } from './ExecutionEngine.js';
+export { ExecutionEngine, LocalIntentRejectionError } from './ExecutionEngine.js';
+export type {
+  ExecutionEngineDeps,
+  ExecutionContext,
+  ExecutionReport,
+  EffectiveOrderTarget,
+  CancelExecutionResult,
+  IntentOutcome,
+  IntentOutcomeKind,
+  ITokenBalanceChecker,
+} from './ExecutionEngine.js';
 export { StrategyScheduler } from './StrategyScheduler.js';
 export type {
   StrategySchedulerDeps,
   StrategyRegistration,
+  StrategyLifecycle,
   IMarketDataStore,
   ICryptoMarketDataStore,
   ICryptoResolutionStore,

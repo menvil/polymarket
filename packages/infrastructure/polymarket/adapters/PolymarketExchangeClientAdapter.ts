@@ -212,6 +212,22 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
       return mapped;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
+      // Venue boundary: ЕДИНСТВЕННОЕ место, где допустима классификация
+      // venue-специфичных текстов ошибок. Известные СИНХРОННЫЕ API-отклонения
+      // CLOB (ордер определённо НЕ создан) конвертируются в typed REJECTED,
+      // чтобы application-слой не парсил error.message.
+      const definiteRejection = _classifyDefiniteSubmitRejection(message);
+      if (definiteRejection !== undefined) {
+        this._logger.warn('Exchange submitOrder definitively rejected by venue (typed classification)', {
+          tokenId,
+          side: params.side,
+          rejectionCode: definiteRejection.rejectionCode,
+          error: message,
+        });
+        return Ok(definiteRejection);
+      }
+
       this._logger.error('Exchange submitOrder failed', {
         tokenId,
         side: params.side,
@@ -735,4 +751,71 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
     });
     return str;
   }
+}
+
+
+/**
+ * Классифицирует ИЗВЕСТНЫЕ синхронные API-отклонения CLOB на submit.
+ *
+ * @param message - Текст ошибки, брошенной execution adapter-ом
+ * @returns Typed REJECTED SubmitOrderResult, если сообщение соответствует
+ *   известному ОПРЕДЕЛЁННОМУ отклонению venue (ордер точно не создан);
+ *   `undefined` — если исход неоднозначен (транспорт/timeout/неизвестный текст)
+ *
+ * @remarks
+ * ### Почему это допустимо здесь (и только здесь):
+ * Порт `IExchangeClient` документирует, что классификация venue-специфичных
+ * текстов выполняется ИСКЛЮЧИТЕЛЬНО в infrastructure adapter. Application-слой
+ * (`PlaceOrderUseCase`, `ExecutionEngine`) переключается только по typed
+ * `rejectionCode`/`balance` metadata.
+ *
+ * ### Классифицируемые исходы:
+ * 1. `not enough balance / allowance ... balance: X, order amount: Y` —
+ *    синхронный HTTP 400 CLOB ДО матчинга: ордер определённо не создан.
+ *    → `INSUFFICIENT_TOKEN_BALANCE` + числовая metadata (микроединицы).
+ * 2. Тот же текст БЕЗ парсабельных чисел → `INSUFFICIENT_ALLOWANCE`/OTHER
+ *    не различимы без метаданных → `OTHER` (definite reject, без retry).
+ * 3. `post only`/`post-only` отклонение → `POST_ONLY_WOULD_TAKE`.
+ * Любой другой текст → `undefined` (НЕ определённое отклонение — caller
+ * обязан трактовать как ambiguous MAY_HAVE_BEEN_SUBMITTED).
+ */
+function _classifyDefiniteSubmitRejection(
+  message: string,
+): Extract<SubmitOrderResult, { status: 'REJECTED' }> | undefined {
+  const text = message.toLowerCase();
+
+  // Известный формат CLOB: "not enough balance / allowance: the balance is not
+  // enough -> balance: 9557200, order amount: 9560000" (микроединицы, 1e6).
+  if (/not enough balance\s*\/\s*allowance/.test(text)) {
+    const match = message.match(/balance:\s*(\d+),\s*order amount:\s*(\d+)/i);
+    if (match) {
+      return {
+        status: 'REJECTED',
+        reason: message,
+        rejectionCode: 'INSUFFICIENT_TOKEN_BALANCE',
+        balance: {
+          onChainBalanceMicro: new Decimal(match[1]),
+          orderAmountMicro: new Decimal(match[2]),
+        },
+      };
+    }
+    // Balance/allowance-отклонение без числовой metadata: definite reject,
+    // но авто-retry невозможен (нет authoritative чисел).
+    return {
+      status: 'REJECTED',
+      reason: message,
+      rejectionCode: 'INSUFFICIENT_ALLOWANCE',
+    };
+  }
+
+  // Post-only отклонение: CLOB отклоняет marketable post-only ордер.
+  if (/post[- ]?only/.test(text)) {
+    return {
+      status: 'REJECTED',
+      reason: message,
+      rejectionCode: 'POST_ONLY_WOULD_TAKE',
+    };
+  }
+
+  return undefined;
 }

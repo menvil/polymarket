@@ -1160,7 +1160,7 @@ async function runPaper(): Promise<void> {
         marketId: easyCandidate.marketId,
         tickSize: Price.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
-        minOrderValue: Quantity.of(new Decimal('1')),
+        minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
         expiresAt: easyExpiresAtResult.value,
       });
@@ -1199,7 +1199,7 @@ async function runPaper(): Promise<void> {
         marketId: hardCandidate.marketId,
         tickSize: Price.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
-        minOrderValue: Quantity.of(new Decimal('1')),
+        minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
         expiresAt: hardDownExpiresAtResult.value,
       });
@@ -1214,7 +1214,7 @@ async function runPaper(): Promise<void> {
           marketId: easyCandidate.marketId,
           tickSize: Price.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
-          minOrderValue: Quantity.of(new Decimal('1')),
+          minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
           expiresAt: easyDownExpiresAtResult.value,
         });
@@ -2148,7 +2148,7 @@ async function runPaper(): Promise<void> {
           marketId: easyCand.marketId,
           tickSize: Price.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
-          minOrderValue: Quantity.of(new Decimal('1')),
+          minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
           expiresAt: easyExpiresAtResult.value,
         });
@@ -2160,7 +2160,7 @@ async function runPaper(): Promise<void> {
           marketId: hardCand.marketId,
           tickSize: Price.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
-          minOrderValue: Quantity.of(new Decimal('1')),
+          minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
           expiresAt: hardUpExpiresAtResult.value,
         });
@@ -2172,7 +2172,7 @@ async function runPaper(): Promise<void> {
           marketId: hardCand.marketId,
           tickSize: Price.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
-          minOrderValue: Quantity.of(new Decimal('1')),
+          minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
           expiresAt: hardDownExpiresAtResult.value,
         });
@@ -2185,7 +2185,7 @@ async function runPaper(): Promise<void> {
             marketId: easyCand.marketId,
             tickSize: Price.of(new Decimal('0.001')),
             minOrderSize: Quantity.of(new Decimal('1')),
-            minOrderValue: Quantity.of(new Decimal('1')),
+            minOrderValue: Money.of(new Decimal('1'), 'USDC'),
             active: true,
             expiresAt: easyDownExpiresAtResult.value,
           });
@@ -2901,7 +2901,7 @@ async function runBacktest(): Promise<void> {
     marketId,
     tickSize: Price.of(new Decimal('0.001')),
     minOrderSize: Quantity.of(new Decimal('1')),
-    minOrderValue: Quantity.of(new Decimal('1')),
+    minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
     expiresAt: expiresAtResult.value,
   };
@@ -4241,7 +4241,7 @@ async function runLive(): Promise<void> {
         marketId: item.marketId,
         tickSize: Price.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
-        minOrderValue: Quantity.of(new Decimal('1')),
+        minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
         expiresAt: item.expiresAt,
       });

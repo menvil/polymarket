@@ -9,20 +9,36 @@
  * 1. State store обновляется → `_onStateChanged(instrumentId, reason)`
  * 2. _markDirty() → стратегия ставится в очередь
  * 3. Microtask worker обрабатывает очередь:
- *    - Throttle check: если рано — deferred re-queue (setTimeout)
+ *    - Throttle check: если рано — deferred re-queue (timer port)
  *    - Coalescing: если стратегия running — rerunRequested = true
  *    - Иначе: buildSnapshot → tick → execute
  * 4. После execute: если rerunRequested — немедленный rerun с fresh snapshot
  *
- * ### Event-driven, не polling:
- * Нет `setInterval(5ms)`. Стратегии обрабатываются ТОЛЬКО когда есть данные.
- * - O(events) вместо O(strategies × time)
- * - Zero CPU при idle
- * - Latency < 1ms (microtask)
+ * ### Lifecycle стратегии (ACTIVE → STOPPING → STOPPED):
+ * `unregister()` — единственный безопасный stop-flow:
+ * 1. атомарный переход ACTIVE → STOPPING (повторный unregister ждёт тот же Promise);
+ * 2. немедленный detach: heartbeat, routing, deferred timer, queue;
+ * 3. ожидание активного `executionPromise` (обычный execution);
+ * 4. `strategy.stop()` → final intents;
+ * 5. исполнение final intents (никогда не параллельно с обычным execution);
+ * 6. только после этого — удаление entry и переход в STOPPED.
+ * События (BOOK/FILL/ORDER_UPDATE) во время STOPPING не ставят стратегию в очередь.
  *
- * ### Heartbeat:
- * Per-strategy `setInterval(maxIdleMs)` гарантирует periodic tick
- * даже при отсутствии событий (TIMER reason).
+ * ### Exception isolation:
+ * Каждый queue item обёрнут в exception boundary: сбой snapshot/tick одной
+ * стратегии не останавливает worker для остальных. Dirty reasons при сбое
+ * сливаются обратно (атомарный drain: take → try → merge-back on error),
+ * retry — deferred с backoff (без tight loop).
+ *
+ * ### Детерминизм:
+ * Все таймеры — через порт `ISchedulerTimer` (production: NodeSchedulerTimer;
+ * replay/backtest: DeterministicSchedulerTimer). Прямых setTimeout/setInterval
+ * в оркестрации нет.
+ *
+ * ### Watchdog:
+ * Зависший `ExecutionEngine.execute()` (> config.executionTimeoutMs) помечает
+ * стратегию `faulted`: новые тики блокируются до `unregister()` (controlled
+ * recovery). Параллельный второй execution НЕ запускается.
  *
  * @example
  * ```typescript
@@ -50,13 +66,26 @@ import type { Market } from '@polymarket/market';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
 import type { StrategyIntent } from './types/StrategyIntent.js';
+import type { InstrumentConstraints } from './types/InstrumentConstraints.js';
 import type { TriggerReason } from './types/TriggerReason.js';
 import type { ScheduleConfig } from './types/ScheduleConfig.js';
-import { DEFAULT_SCHEDULE_CONFIG } from './types/ScheduleConfig.js';
+import { DEFAULT_SCHEDULE_CONFIG, validateScheduleConfig } from './types/ScheduleConfig.js';
 import { ExecutionEngine } from './ExecutionEngine.js';
 import type { ExecutionContext } from './ExecutionEngine.js';
+import type { ISchedulerTimer, TimerHandle } from './ports/SchedulerTimer.js';
 
 // ── Публичные типы ─────────────────────────────────────────
+
+/**
+ * Lifecycle-состояние зарегистрированной стратегии.
+ *
+ * @remarks
+ * - `ACTIVE` — стратегия тикает и исполняет intents.
+ * - `STOPPING` — начат unregister: новые тики/enqueue запрещены, идёт
+ *   ожидание активного execution и исполнение final intents.
+ * - `STOPPED` — stop-flow завершён, entry удалена.
+ */
+export type StrategyLifecycle = 'ACTIVE' | 'STOPPING' | 'STOPPED';
 
 /**
  * Параметры регистрации стратегии.
@@ -86,7 +115,8 @@ export interface StrategyRegistration {
    * @remarks
    * Используется для арбитражных стратегий: стратегия зарегистрирована на hard_Up,
    * но должна тикать и при обновлении easy_Up книги.
-   * Snapshot.topOfBook по-прежнему содержит основной instrumentId.
+   * `complementaryInstrumentId` сюда дублировать НЕ нужно — он добавляется
+   * в routing автоматически.
    */
   readonly additionalInstrumentIds?: readonly InstrumentId[];
   /**
@@ -94,8 +124,9 @@ export interface StrategyRegistration {
    *
    * @remarks
    * Для binary рынков: если основной = UP (outcomeIndex=0), complementary = DOWN (outcomeIndex=1).
-   * Trade tape комплементарного токена включается в snapshot как `complementaryTradeTape`.
-   * Используется стратегиями для сравнения momentum обоих сторон.
+   * Автоматически добавляется в instrument routing (book/trade/fill/order
+   * события комплементарного токена триггерят тик стратегии).
+   * Обязателен ПАРОЙ с `complementaryAsset` (оба или ни одного).
    */
   readonly complementaryInstrumentId?: InstrumentId;
   /**
@@ -104,6 +135,7 @@ export interface StrategyRegistration {
    * @remarks
    * Нужен для auto-selection: стратегия передаёт в PlaceIntent.targetAsset
    * при размещении ордера на комплементарный инструмент.
+   * Обязателен ПАРОЙ с `complementaryInstrumentId`.
    */
   readonly complementaryAsset?: AssetId;
 }
@@ -170,6 +202,8 @@ export interface StrategySchedulerDeps {
   readonly catalog: IMarketCatalog;
   readonly executionEngine: ExecutionEngine;
   readonly clock: IClock;
+  /** Порт таймеров (production: NodeSchedulerTimer; replay: DeterministicSchedulerTimer). */
+  readonly timer: ISchedulerTimer;
   readonly logger: ILogger;
   /** Опциональный store strike/resolution (для крипто-рынков settlement/snapshot). */
   readonly cryptoResolutionStore?: ICryptoResolutionStore;
@@ -200,11 +234,28 @@ interface StrategyEntry {
   readonly complementaryInstrumentId?: InstrumentId;
   /** Торговый актив комплементарного токена */
   readonly complementaryAsset?: AssetId;
+  /** Дедуплицированные instrument-ключи routing-а (primary+additional+complementary). */
+  readonly routingInstrumentKeys: readonly string[];
+  /** Lifecycle-состояние (см. {@link StrategyLifecycle}). */
+  lifecycle: StrategyLifecycle;
+  /** Promise stop-flow (устанавливается при переходе в STOPPING). */
+  stopPromise: Promise<void> | undefined;
+  /** Promise текущего обычного execution (undefined, если execution не идёт). */
+  executionPromise: Promise<void> | undefined;
+  /** Watchdog сработал: execution завис, стратегия заблокирована до unregister. */
+  faulted: boolean;
+  /** Подряд неуспешных snapshot/tick — для deferred backoff. */
+  consecutiveFailures: number;
   lastRunMs: number;
   running: boolean;
   rerunRequested: boolean;
-  heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  heartbeatTimer: TimerHandle | undefined;
 }
+
+/** Максимальная задержка deferred retry при повторных сбоях snapshot/tick (ms). */
+const FAILURE_BACKOFF_MAX_MS = 5_000;
+/** Базовая задержка deferred retry при сбое snapshot/tick (ms). */
+const FAILURE_BACKOFF_BASE_MS = 100;
 
 // ── Реализация ─────────────────────────────────────────────
 
@@ -215,6 +266,8 @@ export class StrategyScheduler {
 
   /** strategyId → entry */
   private readonly _entries = new Map<string, StrategyEntry>();
+  /** Registrations-in-progress (single-flight guard от concurrent register одного ID). */
+  private readonly _registrationsInProgress = new Set<string>();
   /** instrumentId → Set<strategyId> */
   private readonly _instrumentToStrategies = new Map<string, Set<string>>();
   /** cryptoSymbol → Set<strategyId> */
@@ -226,8 +279,8 @@ export class StrategyScheduler {
   private readonly _queue: string[] = [];
   /** Set для O(1) проверки «уже в очереди?» */
   private readonly _queued = new Set<string>();
-  /** Timer IDs для deferred re-queue (throttled strategies) */
-  private readonly _deferredTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Timer handles для deferred re-queue (throttled strategies / failure backoff) */
+  private readonly _deferredTimers = new Map<string, TimerHandle>();
 
   private _stopped = true;
   private _processing = false;
@@ -250,29 +303,54 @@ export class StrategyScheduler {
   // ── Публичный API ────────────────────────────────────────
 
   /**
-   * Запускает scheduler.
+   * Запускает (или возобновляет) scheduler.
    *
    * @remarks
-   * Активирует обработку очереди. До вызова start() события накапливаются
-   * во внутреннем dirty state, но стратегии не tick'аются.
+   * Идемпотентен: повторный вызов на уже запущенном scheduler — no-op.
+   * Возобновление после `stop()`:
+   * - сохранённая queue продолжает обрабатываться;
+   * - dirty-но-не-queued стратегии ставятся обратно в очередь;
+   * - `_scheduleProcessing()` вызывается при наличии работы.
+   * Стратегия, находившаяся в queue до `stop()`, обрабатывается сразу после
+   * `start()` без ожидания нового внешнего события.
    */
   public start(): void {
+    if (!this._stopped) return;
     this._stopped = false;
+
+    // Resume: dirty стратегии, не попавшие в очередь (события пришли во время
+    // паузы — _enqueue при stopped return-ится, но dirty сохраняется).
+    for (const [strategyId, entry] of this._entries) {
+      if (entry.lifecycle !== 'ACTIVE') continue;
+      if (this._isDirty(strategyId)) {
+        this._enqueue(strategyId);
+      }
+    }
+
+    if (this._queue.length > 0) {
+      this._scheduleProcessing();
+    }
+
     this._logger.info('StrategyScheduler started');
   }
 
   /**
-   * Останавливает scheduler.
+   * Приостанавливает scheduler (pause).
    *
    * @remarks
-   * Прекращает обработку очереди. Очередь и dirty flags сохраняются.
-   * Стратегии остаются зарегистрированными.
+   * - новые тики не запускаются;
+   * - АКТИВНЫЕ execute не прерываются (докатываются до конца);
+   * - queue и dirty reasons сохраняются;
+   * - deferred timers очищаются (пересоздадутся после `start()` при
+   *   обработке сохранённой queue/dirty);
+   * - стратегии остаются зарегистрированными, heartbeat продолжает
+   *   помечать dirty (enqueue при stopped — no-op, dirty сохраняется).
    */
   public stop(): void {
     this._stopped = true;
-    // Очищаем все deferred timers
-    for (const timer of this._deferredTimers.values()) {
-      clearTimeout(timer);
+    // Очищаем все deferred timers — dirty state сохранён, start() восстановит.
+    for (const handle of this._deferredTimers.values()) {
+      this._deps.timer.clearTimeout(handle);
     }
     this._deferredTimers.clear();
     this._logger.info('StrategyScheduler stopped');
@@ -282,130 +360,173 @@ export class StrategyScheduler {
    * Регистрирует стратегию.
    *
    * @param reg - Параметры регистрации
-   * @returns Ok при успехе, Err если initialize() вернул ошибку
+   * @returns Ok при успехе; Err если: дубликат strategy.id (включая
+   *   registration-in-progress), невалидный ScheduleConfig, неполная
+   *   complementary-пара, либо initialize() вернул ошибку/бросил
    *
    * @remarks
    * Вызывает strategy.initialize(). При ошибке — стратегия не регистрируется.
    * При успехе — запускает heartbeat timer и стратегия готова к tick().
+   * Concurrent register одного ID защищён single-flight guard-ом
+   * (`_registrationsInProgress`): initialize() вызывается ровно один раз.
    */
   public async register(reg: StrategyRegistration): Promise<Result<void, Error>> {
     const strategyId = reg.strategy.id;
 
-    if (this._entries.has(strategyId)) {
-      this._logger.warn('Strategy already registered', { strategyId });
-      return Ok(undefined);
+    // Duplicate → Err (НЕ Ok): молчаливый Ok маскировал бы двойную регистрацию.
+    if (this._entries.has(strategyId) || this._registrationsInProgress.has(strategyId)) {
+      this._logger.warn('Strategy already registered (or registration in progress)', { strategyId });
+      return Err(new Error(`Strategy already registered: ${strategyId}`));
     }
 
-    // Initialize strategy
-    let initResult;
-    try {
-      initResult = await reg.strategy.initialize();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      this._logger.error('Strategy initialization threw', { strategyId, error: error.message });
-      return Err(error);
+    // Комплементарная пара — атомарно: оба поля или ни одного.
+    if ((reg.complementaryInstrumentId === undefined) !== (reg.complementaryAsset === undefined)) {
+      return Err(new Error(
+        `Strategy registration requires complementaryInstrumentId and complementaryAsset as a pair: ${strategyId}`,
+      ));
     }
 
-    if (!initResult.ok) {
-      this._logger.error('Strategy initialization failed', {
-        strategyId,
-        error: initResult.error.message,
-      });
-      return initResult;
-    }
-
+    // Конфигурация: копируем внешний Set (защита от последующей мутации caller-ом)
+    // и валидируем ДО initialize/heartbeat.
     const config: ScheduleConfig = {
       minIntervalMs: reg.config?.minIntervalMs ?? DEFAULT_SCHEDULE_CONFIG.minIntervalMs,
-      priorityTriggers: reg.config?.priorityTriggers ?? DEFAULT_SCHEDULE_CONFIG.priorityTriggers,
+      priorityTriggers: new Set(reg.config?.priorityTriggers ?? DEFAULT_SCHEDULE_CONFIG.priorityTriggers),
       maxIdleMs: reg.config?.maxIdleMs ?? DEFAULT_SCHEDULE_CONFIG.maxIdleMs,
+      executionTimeoutMs: reg.config?.executionTimeoutMs ?? DEFAULT_SCHEDULE_CONFIG.executionTimeoutMs,
     };
-
-    const entry: StrategyEntry = {
-      strategy: reg.strategy,
-      instrumentId: reg.instrumentId,
-      asset: reg.asset,
-      accountId: reg.accountId,
-      market: reg.market,
-      config,
-      cryptoSymbol: reg.cryptoSymbol,
-      cryptoAsset: reg.cryptoAsset ?? normalizeCryptoAsset(reg.cryptoSymbol),
-      eventStartMs: reg.eventStartMs,
-      additionalInstrumentIds: reg.additionalInstrumentIds,
-      complementaryInstrumentId: reg.complementaryInstrumentId,
-      complementaryAsset: reg.complementaryAsset,
-      lastRunMs: 0,
-      running: false,
-      rerunRequested: false,
-      heartbeatTimer: undefined,
-    };
-
-    this._entries.set(strategyId, entry);
-
-    // Маппинг instrument → strategies
-    const instrumentKey = String(reg.instrumentId);
-    let set = this._instrumentToStrategies.get(instrumentKey);
-    if (set === undefined) {
-      set = new Set<string>();
-      this._instrumentToStrategies.set(instrumentKey, set);
+    const configResult = validateScheduleConfig(config);
+    if (!configResult.ok) {
+      this._logger.error('Strategy registration rejected — invalid ScheduleConfig', {
+        strategyId,
+        error: configResult.error.message,
+      });
+      return Err(configResult.error);
     }
-    set.add(strategyId);
 
-    // Маппинг дополнительных instruments → та же стратегия (для арбитража)
-    if (reg.additionalInstrumentIds) {
-      for (const addId of reg.additionalInstrumentIds) {
-        const addKey = String(addId);
-        let addSet = this._instrumentToStrategies.get(addKey);
-        if (addSet === undefined) {
-          addSet = new Set<string>();
-          this._instrumentToStrategies.set(addKey, addSet);
+    // Single-flight: с этого момента concurrent register того же ID получает Err.
+    this._registrationsInProgress.add(strategyId);
+    try {
+      // Initialize strategy
+      let initResult;
+      try {
+        initResult = await reg.strategy.initialize();
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        this._logger.error('Strategy initialization threw', { strategyId, error: error.message });
+        return Err(error);
+      }
+
+      if (!initResult.ok) {
+        this._logger.error('Strategy initialization failed', {
+          strategyId,
+          error: initResult.error.message,
+        });
+        return initResult;
+      }
+
+      // Routing instruments: primary + additional + complementary, дедуплицированно.
+      const routingKeys = new Set<string>();
+      routingKeys.add(String(reg.instrumentId));
+      for (const addId of reg.additionalInstrumentIds ?? []) {
+        routingKeys.add(String(addId));
+      }
+      if (reg.complementaryInstrumentId !== undefined) {
+        routingKeys.add(String(reg.complementaryInstrumentId));
+      }
+
+      const entry: StrategyEntry = {
+        strategy: reg.strategy,
+        instrumentId: reg.instrumentId,
+        asset: reg.asset,
+        accountId: reg.accountId,
+        market: reg.market,
+        config,
+        cryptoSymbol: reg.cryptoSymbol,
+        cryptoAsset: reg.cryptoAsset ?? normalizeCryptoAsset(reg.cryptoSymbol),
+        eventStartMs: reg.eventStartMs,
+        additionalInstrumentIds: reg.additionalInstrumentIds,
+        complementaryInstrumentId: reg.complementaryInstrumentId,
+        complementaryAsset: reg.complementaryAsset,
+        routingInstrumentKeys: [...routingKeys],
+        lifecycle: 'ACTIVE',
+        stopPromise: undefined,
+        executionPromise: undefined,
+        faulted: false,
+        consecutiveFailures: 0,
+        lastRunMs: 0,
+        running: false,
+        rerunRequested: false,
+        heartbeatTimer: undefined,
+      };
+
+      this._entries.set(strategyId, entry);
+
+      // Маппинг instrument → strategies (primary + additional + complementary).
+      for (const key of entry.routingInstrumentKeys) {
+        let set = this._instrumentToStrategies.get(key);
+        if (set === undefined) {
+          set = new Set<string>();
+          this._instrumentToStrategies.set(key, set);
         }
-        addSet.add(strategyId);
+        set.add(strategyId);
       }
-    }
 
-    // Маппинг cryptoSymbol → strategies
-    if (reg.cryptoSymbol) {
-      let symSet = this._symbolToStrategies.get(reg.cryptoSymbol);
-      if (symSet === undefined) {
-        symSet = new Set<string>();
-        this._symbolToStrategies.set(reg.cryptoSymbol, symSet);
+      // Маппинг cryptoSymbol → strategies
+      if (reg.cryptoSymbol) {
+        let symSet = this._symbolToStrategies.get(reg.cryptoSymbol);
+        if (symSet === undefined) {
+          symSet = new Set<string>();
+          this._symbolToStrategies.set(reg.cryptoSymbol, symSet);
+        }
+        symSet.add(strategyId);
       }
-      symSet.add(strategyId);
-    }
 
-    const cryptoAsset = entry.cryptoAsset;
-    if (cryptoAsset) {
-      let assetSet = this._assetToStrategies.get(cryptoAsset);
-      if (assetSet === undefined) {
-        assetSet = new Set<string>();
-        this._assetToStrategies.set(cryptoAsset, assetSet);
+      const cryptoAsset = entry.cryptoAsset;
+      if (cryptoAsset) {
+        let assetSet = this._assetToStrategies.get(cryptoAsset);
+        if (assetSet === undefined) {
+          assetSet = new Set<string>();
+          this._assetToStrategies.set(cryptoAsset, assetSet);
+        }
+        assetSet.add(strategyId);
       }
-      assetSet.add(strategyId);
+
+      // Запуск heartbeat (через timer port — детерминизм в replay).
+      entry.heartbeatTimer = this._deps.timer.setInterval(() => {
+        const current = this._entries.get(strategyId);
+        if (!current || current.lifecycle !== 'ACTIVE') return;
+        this._markDirty(strategyId, 'TIMER');
+        this._enqueue(strategyId);
+      }, config.maxIdleMs);
+
+      this._logger.info('Strategy registered', {
+        strategyId,
+        name: reg.strategy.name,
+        instrumentId: String(reg.instrumentId),
+        routingInstruments: entry.routingInstrumentKeys,
+      });
+
+      return Ok(undefined);
+    } finally {
+      this._registrationsInProgress.delete(strategyId);
     }
-
-    // Запуск heartbeat
-    entry.heartbeatTimer = setInterval(() => {
-      this._markDirty(strategyId, 'TIMER');
-      this._enqueue(strategyId);
-    }, config.maxIdleMs).unref();
-
-    this._logger.info('Strategy registered', {
-      strategyId,
-      name: reg.strategy.name,
-      instrumentId: instrumentKey,
-    });
-
-    return Ok(undefined);
   }
 
   /**
-   * Снимает регистрацию стратегии.
+   * Безопасно снимает регистрацию стратегии (lifecycle-aware stop-flow).
    *
    * @param strategyId - ID стратегии
    *
    * @remarks
-   * Вызывает strategy.stop(), исполняет финальные intents,
-   * удаляет из всех внутренних структур.
+   * Инварианты:
+   * - ACTIVE → STOPPING атомарно (synchronous до первого await);
+   * - немедленно: heartbeat остановлен, routing удалён, deferred timer
+   *   отменён, стратегия убрана из queue — новые тики невозможны;
+   * - ждёт активный `executionPromise` (обычный execution) ДО strategy.stop();
+   * - final intents исполняются ПОСЛЕ обычного execution (никогда параллельно);
+   * - entry удаляется и lifecycle → STOPPED только после final intents;
+   * - повторный/concurrent unregister ждёт ТОТ ЖЕ stopPromise
+   *   (strategy.stop() и final intents выполняются ровно один раз).
    */
   public async unregister(strategyId: string): Promise<void> {
     const entry = this._entries.get(strategyId);
@@ -414,7 +535,49 @@ export class StrategyScheduler {
       return;
     }
 
-    // Финальные intents
+    if (entry.lifecycle !== 'ACTIVE') {
+      // Уже STOPPING/STOPPED — ждём существующий stop-flow (idempotent).
+      if (entry.stopPromise) {
+        await entry.stopPromise;
+      }
+      return;
+    }
+
+    // Атомарный переход ACTIVE → STOPPING (synchronous — второй unregister
+    // в этом же tick увидит STOPPING и уйдёт в ветку ожидания выше).
+    entry.lifecycle = 'STOPPING';
+    const stopPromise = this._stopEntry(strategyId, entry);
+    entry.stopPromise = stopPromise;
+    await stopPromise;
+  }
+
+  /**
+   * Полный stop-flow одной стратегии (вызывается ровно один раз).
+   *
+   * @param strategyId - ID стратегии
+   * @param entry - Entry в состоянии STOPPING
+   */
+  private async _stopEntry(strategyId: string, entry: StrategyEntry): Promise<void> {
+    // Шаг 1: немедленный detach — новые тики/enqueue невозможны.
+    this._detachEntry(strategyId, entry);
+
+    // Шаг 2: дождаться текущего обычного execution (если идёт).
+    // Faulted (watchdog сработал) — НЕ ждём: promise может никогда не
+    // завершиться; исход уже классифицирован как небезопасный.
+    if (entry.executionPromise !== undefined && !entry.faulted) {
+      try {
+        await entry.executionPromise;
+      } catch {
+        // executionPromise обёрнут (.catch в _executeTick) и не должен
+        // отклоняться; boundary на случай нарушения инварианта.
+      }
+    } else if (entry.faulted) {
+      this._logger.error('Unregister proceeding without waiting for faulted (hung) execution', {
+        strategyId,
+      });
+    }
+
+    // Шаг 3: strategy.stop() → final intents (ПОСЛЕ завершения execution).
     let finalIntents: StrategyIntent[] = [];
     try {
       finalIntents = entry.strategy.stop();
@@ -425,14 +588,10 @@ export class StrategyScheduler {
       });
     }
 
-    // Cleanup ДО execute: удаляем из _entries и останавливаем таймеры
-    // прежде чем любой await даст возможность heartbeat/market-data событиям
-    // поставить стратегию в очередь ещё раз (race condition fix).
-    const ctx = this._makeExecutionContext(entry);
-    this._cleanup(strategyId, entry);
-
-    // Исполнение финальных intents (entry уже удалена — новых тиков не будет)
+    // Шаг 4: исполнение final intents (обычный execution уже завершён —
+    // final CANCEL_ALL видит в repo и ордера, сохранённые «поздним» PLACE).
     if (finalIntents.length > 0) {
+      const ctx = this._makeExecutionContext(entry);
       try {
         await this._deps.executionEngine.execute(ctx, finalIntents);
       } catch (err) {
@@ -443,11 +602,14 @@ export class StrategyScheduler {
       }
     }
 
+    // Шаг 5: финализация — только после final intents.
+    entry.lifecycle = 'STOPPED';
+    this._entries.delete(strategyId);
     this._logger.info('Strategy unregistered', { strategyId });
   }
 
   /**
-   * Останавливает и снимает регистрацию всех стратегий.
+   * Останавливает и снимает регистрацию всех стратегий (безопасный flow).
    */
   public async stopAll(): Promise<void> {
     const ids = [...this._entries.keys()];
@@ -466,46 +628,84 @@ export class StrategyScheduler {
    *
    * @remarks
    * Вызывается OrderEventBridge при получении ORDER_* событий.
+   * Стратегии в STOPPING/STOPPED не enqueue-ятся.
    */
   public onOrderChanged(strategyId: string, reason: TriggerReason): void {
-    if (!this._entries.has(strategyId)) return;
+    const entry = this._entries.get(strategyId);
+    if (!entry || entry.lifecycle !== 'ACTIVE') return;
     this._markDirty(strategyId, reason);
     this._enqueue(strategyId);
   }
 
   /**
-   * Вызывается при получении FILL_RECEIVED для инструмента.
+   * Вызывается при получении FILL_RECEIVED для инструмента (до finality).
    *
    * @param instrumentId - Инструмент (tokenId → InstrumentId)
    *
    * @remarks
-   * Маршрутизирует fill-уведомление ко всем стратегиям, подписанным на инструмент.
-   * Необходим для direct fill path: когда fill приходит на отсутствующий/terminal ордер,
-   * ProcessFillUseCase обновляет Portfolio, но не публикует ORDER_* событий.
-   * Без этого метода scheduler никогда не узнает о direct fill → стратегия не тикнет.
+   * ТОЛЬКО пометка dirty + enqueue связанных стратегий. НЕ снимает
+   * post-cancel cooldown и НЕ выполняет finality-dependent cleanup:
+   * received-fill ещё не финален — размещение поверх него небезопасно.
    */
-  public onFillForInstrument(instrumentId: InstrumentId): void {
-    // CONFIRMED fill пришёл → on-chain settlement завершён.
-    // Сбрасываем post-cancel cooldown — безопасно размещать новые ордера.
-    this._deps.executionEngine.clearPostCancelCooldown(instrumentId);
-
+  public onFillReceivedForInstrument(instrumentId: InstrumentId): void {
     const strategyIds = this._instrumentToStrategies.get(String(instrumentId));
     if (!strategyIds) return;
 
     for (const id of strategyIds) {
+      const entry = this._entries.get(id);
+      if (!entry || entry.lifecycle !== 'ACTIVE') continue;
       this._markDirty(id, 'FILL');
       this._enqueue(id);
     }
   }
 
   /**
-   * Возвращает метрики стратегии.
+   * Вызывается при получении FILL_CONFIRMED для инструмента (finality).
+   *
+   * @param instrumentId - Инструмент (tokenId → InstrumentId)
+   *
+   * @remarks
+   * Finality-dependent cleanup: снимает post-cancel cooldown и exchange
+   * rejection cooldown (on-chain settlement завершён — безопасно размещать
+   * новые ордера), затем помечает связанные стратегии dirty и enqueue-ит.
+   */
+  public onFillConfirmedForInstrument(instrumentId: InstrumentId): void {
+    this._deps.executionEngine.clearPostCancelCooldown(instrumentId);
+    this._deps.executionEngine.clearExchangeRejectionCooldown(instrumentId);
+
+    const strategyIds = this._instrumentToStrategies.get(String(instrumentId));
+    if (!strategyIds) return;
+
+    for (const id of strategyIds) {
+      const entry = this._entries.get(id);
+      if (!entry || entry.lifecycle !== 'ACTIVE') continue;
+      this._markDirty(id, 'FILL');
+      this._enqueue(id);
+    }
+  }
+
+  /**
+   * Возвращает метрики стратегии (с exception boundary).
    *
    * @param strategyId - ID стратегии
-   * @returns Метрики или undefined если стратегия не найдена
+   * @returns Метрики; `{}` если getMetrics() бросил; undefined если стратегия не найдена
+   *
+   * @remarks
+   * Ошибка метрик не ломает scheduler/caller: логируется, возвращается
+   * безопасный пустой объект.
    */
   public getMetrics(strategyId: string): Record<string, unknown> | undefined {
-    return this._entries.get(strategyId)?.strategy.getMetrics();
+    const entry = this._entries.get(strategyId);
+    if (!entry) return undefined;
+    try {
+      return entry.strategy.getMetrics();
+    } catch (err) {
+      this._logger.error('Strategy.getMetrics() threw', {
+        strategyId,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+      return {};
+    }
   }
 
   // ── Внутренний механизм: event-driven queue ──────────────
@@ -515,6 +715,8 @@ export class StrategyScheduler {
     if (strategyIds.size === 0) return;
 
     for (const id of strategyIds) {
+      const entry = this._entries.get(id);
+      if (!entry || entry.lifecycle !== 'ACTIVE') continue;
       this._markDirty(id, reason);
       this._enqueue(id);
     }
@@ -543,14 +745,17 @@ export class StrategyScheduler {
    * Маршрутизация market data events к стратегиям.
    *
    * @remarks
-   * Находит все стратегии подписанные на данный инструмент,
-   * помечает их dirty и ставит в очередь.
+   * Находит все стратегии подписанные на данный инструмент (включая
+   * complementary/additional routing), помечает их dirty и ставит в очередь.
+   * STOPPING/STOPPED стратегии игнорируются.
    */
   private _onMarketDataChanged(instrumentId: InstrumentId, reason: TriggerReason): void {
     const strategyIds = this._instrumentToStrategies.get(String(instrumentId));
     if (!strategyIds) return;
 
     for (const id of strategyIds) {
+      const entry = this._entries.get(id);
+      if (!entry || entry.lifecycle !== 'ACTIVE') continue;
       this._markDirty(id, reason);
       this._enqueue(id);
     }
@@ -565,6 +770,9 @@ export class StrategyScheduler {
     if (this._stopped) return;
     if (this._queued.has(strategyId)) return;
 
+    const entry = this._entries.get(strategyId);
+    if (!entry || entry.lifecycle !== 'ACTIVE' || entry.faulted) return;
+
     this._queued.add(strategyId);
     this._queue.push(strategyId);
     this._scheduleProcessing();
@@ -578,10 +786,18 @@ export class StrategyScheduler {
    * подхватит новые элементы.
    * Используем Promise.resolve().then() вместо queueMicrotask() чтобы
    * корректно работать с jest.useFakeTimers() в тестах.
+   * `.catch()` обязателен: unhandled rejection из worker-а не должен
+   * ронять процесс.
    */
   private _scheduleProcessing(): void {
     if (this._processing) return;
-    void Promise.resolve().then(() => this._processQueue());
+    void Promise.resolve()
+      .then(() => this._processQueue())
+      .catch((err) => {
+        this._logger.error('StrategyScheduler queue processing failed', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
   }
 
   /**
@@ -589,7 +805,8 @@ export class StrategyScheduler {
    *
    * @remarks
    * Microtask worker: берёт стратегии из очереди, проверяет throttle,
-   * вызывает tick и запускает execution.
+   * вызывает tick и запускает execution. КАЖДЫЙ item обёрнут в exception
+   * boundary — сбой одной стратегии не останавливает worker для остальных.
    */
   private _processQueue(): void {
     if (this._processing) return;
@@ -600,28 +817,16 @@ export class StrategyScheduler {
         const strategyId = this._queue.shift()!;
         this._queued.delete(strategyId);
 
-        const entry = this._entries.get(strategyId);
-        if (!entry) continue;
-
-        // ── Throttle check ──────────────────────────────
-        const hasPriority = this._hasPriorityTrigger(strategyId, entry.config.priorityTriggers);
-        const now = this._deps.clock.now().getTime();
-        const elapsed = now - entry.lastRunMs;
-        const remaining = entry.config.minIntervalMs - elapsed;
-
-        if (remaining > 0 && !hasPriority) {
-          this._deferRequeue(strategyId, remaining);
-          continue;
+        try {
+          this._processQueueItem(strategyId);
+        } catch (err) {
+          // Boundary последней линии: _processQueueItem сам изолирует
+          // snapshot/tick; сюда попадают только неожиданные сбои.
+          this._logger.error('StrategyScheduler: queue item processing threw', {
+            strategyId,
+            err: err instanceof Error ? err : new Error(String(err)),
+          });
         }
-
-        // ── Coalescing: если уже running → запомнить и вернуться ──
-        if (entry.running) {
-          entry.rerunRequested = true;
-          continue;
-        }
-
-        // ── Execute tick ────────────────────────────────
-        this._executeTick(strategyId, entry);
       }
     } finally {
       this._processing = false;
@@ -629,7 +834,37 @@ export class StrategyScheduler {
   }
 
   /**
-   * Откладывает re-queue стратегии на delayMs.
+   * Обрабатывает один элемент очереди (throttle → coalescing → tick).
+   *
+   * @param strategyId - ID стратегии
+   */
+  private _processQueueItem(strategyId: string): void {
+    const entry = this._entries.get(strategyId);
+    if (!entry || entry.lifecycle !== 'ACTIVE' || entry.faulted) return;
+
+    // ── Throttle check ──────────────────────────────
+    const hasPriority = this._hasPriorityTrigger(strategyId, entry.config.priorityTriggers);
+    const now = this._deps.clock.now().getTime();
+    const elapsed = now - entry.lastRunMs;
+    const remaining = entry.config.minIntervalMs - elapsed;
+
+    if (remaining > 0 && !hasPriority) {
+      this._deferRequeue(strategyId, remaining);
+      return;
+    }
+
+    // ── Coalescing: если уже running → запомнить и вернуться ──
+    if (entry.running) {
+      entry.rerunRequested = true;
+      return;
+    }
+
+    // ── Execute tick ────────────────────────────────
+    this._executeTick(strategyId, entry);
+  }
+
+  /**
+   * Откладывает re-queue стратегии на delayMs (через timer port).
    *
    * @param strategyId - ID стратегии
    * @param delayMs - Задержка в ms
@@ -638,18 +873,61 @@ export class StrategyScheduler {
     // Отменяем предыдущий таймер если есть
     const existing = this._deferredTimers.get(strategyId);
     if (existing !== undefined) {
-      clearTimeout(existing);
+      this._deps.timer.clearTimeout(existing);
     }
 
     this._deferredTimers.set(
       strategyId,
-      setTimeout(() => {
+      this._deps.timer.setTimeout(() => {
         this._deferredTimers.delete(strategyId);
         if (this._isDirty(strategyId)) {
           this._enqueue(strategyId);
         }
-      }, delayMs).unref(),
+      }, delayMs),
     );
+  }
+
+  /**
+   * Обрабатывает сбой snapshot/tick: merge reasons обратно + deferred retry с backoff.
+   *
+   * @param strategyId - ID стратегии
+   * @param entry - Entry
+   * @param reasons - Reasons, взятые для этого tick (возвращаются в dirty)
+   * @param err - Ошибка
+   * @param stage - Этап сбоя ('snapshot' | 'tick')
+   *
+   * @remarks
+   * Атомарный drain-контракт: reasons считаются обработанными ТОЛЬКО при
+   * успешном tick; при сбое они сливаются обратно в dirty state. Retry —
+   * deferred с экспоненциальным backoff (base 100ms, cap 5s) — никакого
+   * tight loop на постоянно падающей стратегии; плюс её всё равно
+   * подстрахует следующий heartbeat/event.
+   */
+  private _handleTickFailure(
+    strategyId: string,
+    entry: StrategyEntry,
+    reasons: ReadonlySet<TriggerReason>,
+    err: unknown,
+    stage: 'snapshot' | 'tick',
+  ): void {
+    this._logger.error(`Strategy ${stage} failed — controlled retry with backoff`, {
+      strategyId,
+      stage,
+      consecutiveFailures: entry.consecutiveFailures + 1,
+      err: err instanceof Error ? err : new Error(String(err)),
+    });
+
+    // Merge reasons обратно (dirty не теряется).
+    for (const reason of reasons) {
+      this._markDirty(strategyId, reason);
+    }
+
+    entry.consecutiveFailures += 1;
+    const backoffMs = Math.min(
+      FAILURE_BACKOFF_MAX_MS,
+      FAILURE_BACKOFF_BASE_MS * 2 ** Math.min(entry.consecutiveFailures - 1, 10),
+    );
+    this._deferRequeue(strategyId, backoffMs);
   }
 
   /**
@@ -659,24 +937,37 @@ export class StrategyScheduler {
    * @param entry - Запись стратегии
    *
    * @remarks
-   * Coalescing pattern: если rerunRequested после execute — enqueue немедленно.
+   * Exception boundaries: buildSnapshot и strategy.tick() изолированы —
+   * сбой приводит к merge-back dirty reasons + deferred retry (см.
+   * {@link _handleTickFailure}), worker продолжает остальные стратегии.
+   * `entry.lastRunMs` обновляется ТОЛЬКО после успешного tick.
+   * Execution обёрнут в watchdog (config.executionTimeoutMs).
    */
   private _executeTick(strategyId: string, entry: StrategyEntry): void {
-    const snapshot = this._buildSnapshot(entry);
+    // Атомарный drain: take reasons → try snapshot/tick → merge-back on error.
     const reasons = this._getDirtyReasons(strategyId);
     this._clearDirty(strategyId);
-    entry.lastRunMs = this._deps.clock.now().getTime();
+
+    let snapshot: StrategySnapshot;
+    try {
+      snapshot = this._buildSnapshot(entry);
+    } catch (err) {
+      this._handleTickFailure(strategyId, entry, reasons, err, 'snapshot');
+      return;
+    }
 
     let intents: StrategyIntent[];
     try {
       intents = entry.strategy.tick(snapshot, reasons);
     } catch (err) {
-      this._logger.error('Strategy.tick() threw', {
-        strategyId,
-        err: err instanceof Error ? err : new Error(String(err)),
-      });
+      this._handleTickFailure(strategyId, entry, reasons, err, 'tick');
       return;
     }
+
+    // Успешный tick: reasons обработаны, failure-счётчик сбрасывается,
+    // lastRunMs фиксируется (throttle отсчитывается от успешного tick).
+    entry.consecutiveFailures = 0;
+    entry.lastRunMs = this._deps.clock.now().getTime();
 
     if (intents.length === 0) return;
 
@@ -686,11 +977,24 @@ export class StrategyScheduler {
       types: intents.map((i) => i.type === 'PLACE' ? `${i.type}:${i.side}` : i.type).join(','),
     });
 
-    // Async execution с coalescing
+    // Async execution с coalescing + watchdog.
     entry.running = true;
     const ctx = this._makeExecutionContext(entry);
 
-    this._deps.executionEngine
+    // Watchdog: state-machine защита от зависшего execute(). Мы НЕ отменяем
+    // Promise (JS не может отменить неотменяемую операцию) — стратегия
+    // помечается faulted и блокируется до unregister (controlled recovery).
+    let watchdogFired = false;
+    const watchdogHandle = this._deps.timer.setTimeout(() => {
+      watchdogFired = true;
+      entry.faulted = true;
+      this._logger.error('CRITICAL: ExecutionEngine.execute() exceeded executionTimeoutMs — strategy marked faulted, requires unregister/manual recovery', {
+        strategyId,
+        executionTimeoutMs: entry.config.executionTimeoutMs,
+      });
+    }, entry.config.executionTimeoutMs);
+
+    const executionPromise = this._deps.executionEngine
       .execute(ctx, intents)
       .then((report) => {
         if (report.errors.length > 0) {
@@ -698,6 +1002,7 @@ export class StrategyScheduler {
             strategyId,
             placed: report.placed,
             cancelled: report.cancelled,
+            blockedByUnsafeCancel: report.blockedByUnsafeCancel,
             errors: report.errors.length,
           });
         } else if (report.skipped > 0) {
@@ -714,16 +1019,45 @@ export class StrategyScheduler {
         });
       })
       .finally(() => {
+        this._deps.timer.clearTimeout(watchdogHandle);
         entry.running = false;
+        if (entry.executionPromise === executionPromise) {
+          entry.executionPromise = undefined;
+        }
+        if (watchdogFired) {
+          // Watchdog уже сработал: исход НЕ считается безопасным, faulted
+          // остаётся до unregister (controlled recovery).
+          this._logger.error('Execution finished AFTER watchdog timeout — strategy remains faulted until unregister', {
+            strategyId,
+          });
+          return;
+        }
         // Coalescing: новые данные пришли пока мы исполняли
         if (entry.rerunRequested) {
           entry.rerunRequested = false;
-          this._enqueue(strategyId);
+          if (entry.lifecycle === 'ACTIVE') {
+            this._enqueue(strategyId);
+          }
         }
       });
+
+    entry.executionPromise = executionPromise;
   }
 
   // ── Snapshot building ────────────────────────────────────
+
+  /**
+   * Собирает InstrumentConstraints из каталога.
+   *
+   * @param instrumentId - ID инструмента
+   * @returns Constraints или undefined если инструмент неизвестен каталогу
+   */
+  private _constraintsFor(instrumentId: InstrumentId): InstrumentConstraints | undefined {
+    const info = this._deps.catalog.get(instrumentId);
+    return info
+      ? { minOrderSize: info.minOrderSize, minOrderValue: info.minOrderValue, tickSize: info.tickSize }
+      : undefined;
+  }
 
   /**
    * Собирает StrategySnapshot из in-memory stores.
@@ -778,14 +1112,10 @@ export class StrategyScheduler {
     // Ограничения инструмента из каталога.
     // Стратегия использует для адаптации размеров ордеров вместо
     // молчаливого клампирования в ExecutionEngine.
-    const info = this._deps.catalog.get(id);
-    const constraints = info
-      ? { minOrderSize: info.minOrderSize, minOrderValue: info.minOrderValue, tickSize: info.tickSize }
-      : undefined;
+    const constraints = this._constraintsFor(id);
 
     // Крипто-цена: проекция из единых источников истины — цены из
     // CryptoMarketDataStore, strike/resolution из CryptoResolutionStore.
-    // (Раньше собиралось из CryptoPriceStore, который дублировал ценовой поток.)
     let cryptoPrice: StrategySnapshot['cryptoPrice'];
     if (entry.cryptoSymbol && this._deps.cryptoMarketDataStore) {
       const ph = this._deps.cryptoMarketDataStore.getPriceHistory(entry.cryptoSymbol);
@@ -878,6 +1208,7 @@ export class StrategyScheduler {
       complementaryTopOfBook: compId ? this._deps.marketDataStore.getTopOfBook(compId) : undefined,
       complementaryOpenOrders,
       complementaryMatchedOrders,
+      complementaryConstraints: compId ? this._constraintsFor(compId) : undefined,
       hasComplementaryInFlightFills,
       complementaryTradeTape: compId ? this._deps.marketDataStore.getTradeTape(compId) : undefined,
     };
@@ -885,6 +1216,11 @@ export class StrategyScheduler {
 
   /**
    * Создаёт ExecutionContext из entry.
+   *
+   * @remarks
+   * `allowedInstruments` — routing-инструменты регистрации (primary +
+   * additional + complementary): ExecutionEngine отклоняет PLACE с
+   * targetInstrumentId вне этого набора (fail-closed).
    */
   private _makeExecutionContext(entry: StrategyEntry): ExecutionContext {
     return {
@@ -892,45 +1228,43 @@ export class StrategyScheduler {
       accountId: entry.accountId,
       instrumentId: entry.instrumentId,
       asset: entry.asset,
+      allowedInstruments: new Set(entry.routingInstrumentKeys),
     };
   }
 
   /**
-   * Очищает все внутренние структуры для стратегии.
+   * Немедленный detach стратегии из всех активных структур (шаг 1 stop-flow).
+   *
+   * @param strategyId - ID стратегии
+   * @param entry - Entry
+   *
+   * @remarks
+   * Останавливает heartbeat, отменяет deferred timer, удаляет routing
+   * (instrument/symbol/asset), убирает из queue и dirty. Entry остаётся в
+   * `_entries` (в состоянии STOPPING) до завершения final intents — чтобы
+   * concurrent unregister мог дождаться того же stopPromise.
    */
-  private _cleanup(strategyId: string, entry: StrategyEntry): void {
+  private _detachEntry(strategyId: string, entry: StrategyEntry): void {
     // Stop heartbeat
     if (entry.heartbeatTimer !== undefined) {
-      clearInterval(entry.heartbeatTimer);
+      this._deps.timer.clearInterval(entry.heartbeatTimer);
+      entry.heartbeatTimer = undefined;
     }
 
     // Cancel deferred timer
     const deferred = this._deferredTimers.get(strategyId);
     if (deferred !== undefined) {
-      clearTimeout(deferred);
+      this._deps.timer.clearTimeout(deferred);
       this._deferredTimers.delete(strategyId);
     }
 
-    // Remove from instrument map
-    const instrumentKey = String(entry.instrumentId);
-    const set = this._instrumentToStrategies.get(instrumentKey);
-    if (set) {
-      set.delete(strategyId);
-      if (set.size === 0) {
-        this._instrumentToStrategies.delete(instrumentKey);
-      }
-    }
-
-    // Remove additional instrument mappings
-    if (entry.additionalInstrumentIds) {
-      for (const addId of entry.additionalInstrumentIds) {
-        const addKey = String(addId);
-        const addSet = this._instrumentToStrategies.get(addKey);
-        if (addSet) {
-          addSet.delete(strategyId);
-          if (addSet.size === 0) {
-            this._instrumentToStrategies.delete(addKey);
-          }
+    // Remove all instrument routing (primary + additional + complementary)
+    for (const key of entry.routingInstrumentKeys) {
+      const set = this._instrumentToStrategies.get(key);
+      if (set) {
+        set.delete(strategyId);
+        if (set.size === 0) {
+          this._instrumentToStrategies.delete(key);
         }
       }
     }
@@ -958,12 +1292,16 @@ export class StrategyScheduler {
 
     // Remove from queue
     this._queued.delete(strategyId);
+    const queueIndex = this._queue.indexOf(strategyId);
+    if (queueIndex >= 0) {
+      this._queue.splice(queueIndex, 1);
+    }
 
     // Remove dirty tracking
     this._removeDirty(strategyId);
 
-    // Remove entry
-    this._entries.delete(strategyId);
+    // Coalescing rerun после detach невозможен.
+    entry.rerunRequested = false;
   }
 
   // ── Dirty tracking (инлайн из DirtyTracker) ───────────────

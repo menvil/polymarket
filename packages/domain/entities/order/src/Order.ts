@@ -53,8 +53,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
-import type { AssetId, FillId, OrderId } from '@polymarket/ids';
-import { AssetIdHelpers, assetIdToString } from '@polymarket/ids';
+import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
+import { AssetIdHelpers, accountIdToString, assetIdToString } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import {
   TERMINAL_STATUSES,
@@ -125,6 +125,9 @@ export class Order {
 
   /** ID стратегии (для изоляции multi-strategy) */
   get strategyId(): string | undefined { return this._s.strategyId; }
+
+  /** ID аккаунта-владельца (для ownership-проверок execution-слоя) */
+  get accountId(): AccountId | undefined { return this._s.accountId; }
 
   // ─── Fill state ────────────────────────────────────────────────────────────
 
@@ -286,6 +289,7 @@ export class Order {
       size: params.size,
       timestamp: params.timestamp,
       strategyId: params.strategyId,
+      accountId: params.accountId,
     };
 
     return Ok(new Order(Order._applyEventToState({} as OrderState, event), [event]));
@@ -402,6 +406,7 @@ export class Order {
       status: 'PENDING',
       timestamp: first.timestamp,
       strategyId: first.strategyId,
+      accountId: first.accountId,
       fill: emptyFill(),
     };
 
@@ -449,6 +454,7 @@ export class Order {
           status: 'PENDING',
           timestamp: event.timestamp,
           strategyId: event.strategyId,
+          accountId: event.accountId,
           fill: emptyFill(),
         };
 
@@ -748,6 +754,7 @@ export class Order {
       fillIds: this._s.fill.fillIds.map(id => id as string),
       reason: this._s.reason,
       strategyId: this._s.strategyId,
+      accountId: this._s.accountId !== undefined ? accountIdToString(this._s.accountId) : undefined,
     };
   }
 

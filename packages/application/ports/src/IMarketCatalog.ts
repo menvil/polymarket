@@ -15,7 +15,7 @@
  * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
 
 /**
  * Метаданные торгового инструмента.
@@ -36,9 +36,12 @@ export interface InstrumentInfo {
   /**
    * Минимальная стоимость ордера в USDC (price × size >= minOrderValue).
    * Polymarket требует >= $1 для BUY-ордеров.
-   * Дефолт: Quantity.of(new Decimal('1'))
+   * Дефолт: Money.of(new Decimal('1'), 'USDC')
+   *
+   * @remarks
+   * Money, а НЕ Quantity: это денежный notional (USDC), а не количество токенов.
    */
-  readonly minOrderValue: Quantity;
+  readonly minOrderValue: Money;
   /** Активен ли рынок */
   readonly active: boolean;
   /** Время истечения рынка (используется ExpirationRemovalPolicy) */

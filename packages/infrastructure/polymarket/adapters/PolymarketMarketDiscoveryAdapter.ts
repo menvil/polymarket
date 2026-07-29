@@ -45,7 +45,7 @@
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
-import { TimestampService, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Money, Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient, GammaMarketDto } from '../rest/clients/PolymarketMarketDataRestClient.js';
 import type { MarketFilter } from '@polymarket/market-discovery';
@@ -388,7 +388,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       expiresAt: expiresAtResult.value,
       tickSize,
       minOrderSize,
-      minOrderValue: Quantity.of(new Decimal('1')), // Polymarket требует >= $1 для BUY-ордеров
+      minOrderValue: Money.of(new Decimal('1'), 'USDC'), // Polymarket требует >= $1 для BUY-ордеров
       active: true,
       spread,
       liquidity,
