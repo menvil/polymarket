@@ -59,28 +59,38 @@ stateDiagram-v2
 ```
 
 Шаги `unregister()` (`StrategyScheduler._attemptStop`) — может быть вызван
-повторно (retry), если предыдущая попытка вернула `Err`:
+повторно (retry), если предыдущая попытка вернула `Err`. Актуальный (после
+третьей волны, см. ниже) 13-шаговый порядок, повторяемый ПОЛНОСТЬЮ на каждом
+attempt (кроме шага 9 — dispose пропускается, если уже выполнен успешно):
 
-1. `ACTIVE → STOPPING`: немедленный detach (heartbeat/routing/queue).
-   `FAULTED` с **ещё не разрешившимся** `executionPromise` — **НЕ** идёт
-   дальше: `strategy.stop()`/final intents не запускаются, entry не
-   удаляется, возвращается `Err(EXECUTION_TIMED_OUT)` (retryable). Только
-   когда hung promise фактически завершится, следующий explicit
-   `unregister()` продолжает как `STOPPING`.
-2. Ожидание `entry.executionPromise` (гарантированно завершится — либо его
-   не было, либо он уже разрешился на шаге 1).
-3. `strategy.stop()` вызывается **ровно один раз** — результат validated
-   (только `CANCEL`/`CANCEL_ALL`, см. ниже) и кэшируется в
-   `entry.finalIntents` для retry.
-4. Исполнение final intents — **никогда** параллельно с обычным execution.
-5. **Verification**: `report.errors/failed/blockedByUnsafeCancel`, unsafe
-   cancel outcomes (`CANCEL_PENDING`/`CANCEL_FAILED`/
-   `CANCEL_CONFIRMED_TARGET_UNKNOWN`) И authoritative post-check
-   (`orderStateStore.getOpenOrders(strategyId)` пуст) — только при полном
-   подтверждении переходим дальше.
-6. Только после этого entry удаляется, lifecycle → `STOPPED`,
-   логируется `Strategy unregistered`. Иначе — `Err(FINAL_CLEANUP_UNCONFIRMED)`,
-   entry остаётся tracked для retry.
+1. `ACTIVE`/`FAULTED → STOPPING`.
+2. Немедленный detach (heartbeat/routing/queue) — идемпотентен.
+3. Ожидание `entry.activeExecution` — результат **или** timeout-сигнал
+   (`Promise.race`), см. Watchdog ниже. `FAULTED` с **ещё не разрешившимся**
+   execution — **НЕ** идёт дальше: entry не удаляется, `Err(EXECUTION_TIMED_OUT)`.
+4. `strategy.stop()` вызывается **ровно один раз** — результат validated
+   (только `CANCEL`/`CANCEL_ALL`) и кэшируется в `entry.finalIntents`.
+5. **Final cleanup** — ОДНА tracked `ExecutionEngine.execute()` (см. Bounded
+   final cleanup ниже): completion либо `finalCleanupTimeoutMs` timeout.
+   Fresh `CANCEL_ALL` добавляется ТОЛЬКО когда операция реально
+   (пере)запускается (не при join уже идущей).
+6. Верификация `ExecutionReport` (`errors/failed/blockedByUnsafeCancel`,
+   unsafe cancel outcomes).
+7. Authoritative open-order post-check (`orderStateStore.getOpenOrders`).
+8. Commitment post-check — tracked (см. ниже): completion либо
+   `commitmentCheckTimeoutMs` timeout.
+9. `strategy.dispose()` — tracked (см. Bounded ACTIVE dispose ниже):
+   completion либо `disposeTimeoutMs` timeout; пропускается, если
+   `entry.disposed === true`.
+10. Повторный open-order post-check (dispose мог занять время).
+11. Повторный commitment post-check.
+12. `STOPPED`.
+13. Удаление entry, лог `Strategy unregistered`.
+
+Любой timeout/небезопасный исход на ЛЮБОМ шаге возвращает retryable `Err`
+БЕЗ выполнения последующих шагов и БЕЗ очистки соответствующего
+tracked-state — retry коалесцируется на ту же операцию, никогда не
+запускает параллельную вторую попытку (см. `TrackedAsyncOperation` ниже).
 
 Повторный/конкурентный `unregister()` коалесцируется на **тот же**
 `entry.stopAttemptPromise` (`strategy.stop()` и final intents не
@@ -91,8 +101,11 @@ global stopping barrier (см. ниже).
 
 `unregister()`/`stopAll()` возвращают `Result<void, StopStrategyError>` —
 не `Promise<void>`. Коды: `STRATEGY_NOT_FOUND`, `EXECUTION_STILL_RUNNING`,
-`EXECUTION_TIMED_OUT`, `FINAL_CLEANUP_UNCONFIRMED`, `UNSAFE_FINAL_INTENT`,
-`REGISTRATION_CANCELLED`, `OTHER`. Все — retryable (кроме `STRATEGY_NOT_FOUND`).
+`EXECUTION_TIMED_OUT`, `FINAL_CLEANUP_TIMED_OUT`, `FINAL_CLEANUP_UNCONFIRMED`,
+`COMMITMENT_CHECK_TIMED_OUT`, `STOP_HOOK_FAILED`, `UNSAFE_FINAL_INTENT`,
+`REGISTRATION_CANCELLED`, `INITIALIZATION_CANCELLATION_TIMED_OUT`,
+`DISPOSE_FAILED`, `DISPOSE_TIMED_OUT`, `OTHER`. Все — retryable (кроме
+`STRATEGY_NOT_FOUND`).
 
 ### `strategy.stop()` ограничен CANCEL/CANCEL_ALL
 
@@ -478,3 +491,153 @@ typed report терялся). Теперь — `CANCEL_FAILED` outcome для `C
 `Object.freeze([...] as const)` — runtime-immutability (`.push()`/индексное
 присваивание бросают в strict mode). `TriggerReason` выводится
 (`typeof KNOWN_TRIGGER_REASONS[number]`) из tuple, а не объявляется отдельно.
+
+## Четвёртая волна hardening (2026-07-30): bounded shutdown state machine
+
+Третья волна закрыла watchdog/lifecycle race и добавила authoritative
+commitment post-check, но оставила несколько **неограниченных** (unbounded)
+async-операций внутри самого stop-flow: final cleanup `execute()` не имел
+собственного таймаута, `strategy.dispose()` для ACTIVE-стратегии не
+существовал вовсе (только для отменённой регистрации, причём результат
+терялся при сбое), `commitmentReader.getActiveCommitments()` мог зависнуть
+навсегда, а ожидание зависшего `initialize()` в `unregister()` было
+безусловным `await`. Четвёртая волна закрывает все эти пробелы одним общим
+паттерном.
+
+### Generic `TrackedAsyncOperation<T>` — единая модель bounded-операций
+
+```typescript
+interface TrackedAsyncOperation<T> {
+  readonly promise: Promise<void>;    // resolves ПОСЛЕ того как result/error уже записаны; никогда не rejects
+  readonly startedAtMs: number;
+  timedOut: boolean;                  // watchdog сработал, promise ещё не завершился
+  completed: boolean;                 // promise фактически завершился
+  readonly timeoutHandle: TimerHandle;
+  readonly timeoutSignal: Promise<void>; // resolves В ТОЧНОСТИ когда watchdog сработал
+  result: T | undefined;
+  error: Error | undefined;
+}
+```
+
+Единая пара helper-ов (`StrategyScheduler._startTrackedOperation` /
+`_runOrJoinTrackedOperation`) закрывает final cleanup, dispose (и для
+`StrategyEntry`, и для `PendingDisposal`) и commitment-check — БЕЗ
+дублирования кода и БЕЗ усложнения публичного API (`ActiveExecution`,
+существующая с третьей волны, намеренно НЕ объединена с этой моделью —
+она уже работала и не тронута). Контракт:
+
+- максимум одна in-flight операция данного типа (single-flight: start-or-join);
+- watchdog через `ISchedulerTimer`, **не отменяющий** underlying `run()` —
+  JS не может отменить неотменяемую операцию;
+- `timeoutSignal` resolves В ТОЧНОСТИ когда watchdog сработал — caller ждёт
+  `Promise.race([op.promise, op.timeoutSignal])`;
+- на timeout — state остаётся tracked, **не** очищается, retry коалесцируется
+  на ТУ ЖЕ операцию (никогда не запускает вторую параллельно);
+- на фактическое завершение (safe или unsafe) — result обрабатывается,
+  state очищается ТОЛЬКО ПОСЛЕ обработки, разрешая следующему вызову
+  начать СВЕЖУЮ операцию (например, final cleanup со свежим `CANCEL_ALL`).
+
+### Bounded, retryable final cleanup (`FINAL_CLEANUP_TIMED_OUT`)
+
+`ScheduleConfig.finalCleanupTimeoutMs` (default 30s). `StrategyEntry.
+finalCleanupExecution: TrackedAsyncOperation<ExecutionReport> | undefined`.
+Timeout → `Err(FINAL_CLEANUP_TIMED_OUT)` БЕЗ post-check/dispose/удаления
+entry. Fresh `CANCEL_ALL` вычисляется ВНУТРИ `run()`, поэтому пересчитывается
+заново при каждом РЕАЛЬНОМ (пере)запуске операции, но НЕ при join уже
+идущей — join переиспользует batch, с которым операция была запущена
+изначально.
+
+### `dispose()` теперь также покрывает нормальную остановку ACTIVE стратегии
+
+Раньше `dispose()` вызывался ТОЛЬКО для регистрации, отменённой во время
+`initialize()`. Новый, окончательный контракт `initialize()`/`stop()`/
+`dispose()`:
+
+- `initialize()` — открывает ресурсы;
+- `stop()` — ТОЛЬКО торговый cleanup (CANCEL/CANCEL_ALL);
+- `dispose()` — закрывает НЕторговые ресурсы, вызывается в ДВУХ случаях:
+  1. отменённая регистрация (как раньше);
+  2. как шаг 9 нормального `_attemptStop` — ПОСЛЕ `stop()`+final CANCEL_ALL
+     и authoritative post-check (шаги 4-8), ПЕРЕД удалением entry (шаги 12-13).
+
+`StrategyEntry.disposeExecution: TrackedAsyncOperation<Result<void,Error>>
+| undefined` + `entry.disposed: boolean`. `disposed === true` → dispose()
+пропускается на всех последующих attempt (не вызывается повторно). Timeout →
+`DISPOSE_TIMED_OUT`. `Err`/throw → `DISPOSE_FAILED`, tracked state очищен,
+retry вызывает `dispose()` заново. После успешного `dispose()` — ОБЯЗАТЕЛЬНЫЙ
+повторный open-order + commitment post-check (шаги 10-11): dispose мог занять
+время, за которое могли появиться поздние ордера/commitments; если этот
+re-check небезопасен — entry остаётся, `disposed` остаётся `true` (dispose
+НЕ вызывается повторно), следующий ОТДЕЛЬНЫЙ retry делает fresh `CANCEL_ALL`
+(final cleanup restart с нуля, т.к. `finalCleanupExecution` уже был очищен).
+
+### Persistent `PendingDisposal` tombstone — retry для отменённой регистрации
+
+Раньше `dispose()` отменённой регистрации вызывался инлайново внутри
+`_completeRegistration()`; при сбое результат терялся — strategy instance
+была недостижима для повторной попытки, повторный `unregister(id)` получал
+`STRATEGY_NOT_FOUND`. Теперь — persistent tombstone:
+
+```typescript
+interface PendingDisposal {
+  readonly strategyId: string;
+  readonly strategy: IStrategy;
+  disposeExecution: TrackedAsyncOperation<Result<void, Error>> | undefined;
+  disposed: boolean;
+  attemptPromise: Promise<Result<void, StopStrategyError>> | undefined;
+  readonly disposeTimeoutMs: number;
+}
+```
+
+`_completeRegistration()`, обнаружив cancellation, создаёт tombstone в
+`_pendingDisposals`, синхронно (до первого `await`, через
+`_joinOrStartPendingDisposalAttempt`) стартует bounded dispose и **не ждёт**
+его завершения — возвращает cancellation `Err` немедленно, чтобы
+`pending.completion` разрешился быстро. `unregister()`/`stopAll()`, найдя
+tombstone, ПРИСОЕДИНЯЮТСЯ к этой же попытке (никогда не запускают второй
+параллельный dispose). Tombstone удаляется ТОЛЬКО после фактического успеха.
+`register()` с тем же ID отклоняется, пока tombstone существует
+(`_entries` ИЛИ `_pendingRegistrations` ИЛИ `_pendingDisposals`).
+
+`unregister()` lookup-порядок: 1) `_pendingDisposals` (retry — никогда не
+`STRATEGY_NOT_FOUND`); 2) `_pendingRegistrations`; 3) `_entries`; 4) not
+found. Контракт: явный retry-вызов, нашедший tombstone напрямую, возвращает
+`Ok(undefined)` при успехе; ПЕРВИЧНЫЙ вызов, сам отменивший ещё выполнявшуюся
+регистрацию, возвращает `Err(REGISTRATION_CANCELLED)` даже при успешном
+dispose (регистрация всё равно не была опубликована).
+
+### Bounded wait для pending `initialize()`
+
+`await pending.completion` в `unregister()` мог висеть вечно, если
+`initialize()` никогда не резолвится. `ScheduleConfig.
+initializationCancellationTimeoutMs` (default 30s), снимок — `PendingRegistration.
+cancellationTimeoutMs`. На timeout — `Err(INITIALIZATION_CANCELLATION_TIMED_OUT)`,
+pending registration НЕ удаляется, `initialize()` **не отменяется** —
+продолжает выполняться в фоне. Когда он в итоге завершится, cancellation-ветка
+`_completeRegistration()` (как обычно) создаёт `PendingDisposal` и выполняет
+`dispose()`. ACTIVE entry в любом случае никогда не публикуется.
+`stopAll()` агрегирует этот timeout, а не виснет.
+
+### Bounded commitment reader (`COMMITMENT_CHECK_TIMED_OUT`)
+
+`ScheduleConfig.commitmentCheckTimeoutMs` (default 30s). `StrategyEntry.
+commitmentCheckExecution: TrackedAsyncOperation<readonly StrategyCommitment[]>
+| undefined` — ОДНО поле, переиспользуемое ОБОИМИ вызовами post-check
+(шаги 7-8 и 10-11) внутри одного `_attemptStop`. Timeout → `Err
+(COMMITMENT_CHECK_TIMED_OUT)`, underlying call остаётся tracked, retry
+коалесцируется, не дублирует call.
+
+### `additionalTradableTargets` — полноценный end-to-end контракт
+
+`StrategyEntry.additionalTradableTargets: readonly {instrumentId, asset}[]`
+хранит ПОЛНЫЕ пары (не только string-ключи). `_commitmentInstrumentIds()`
+включает primary + complementary + все additional targets (deduplicated) —
+раньше commitment-reader не проверял additional targets вообще.
+`StrategySnapshot.additionalTradableInstruments: ReadonlyMap<string,
+TradableInstrumentSnapshot>` — per-инструмент срез (topOfBook/bookHistory/
+tradeTape/constraints/openOrders/matchedOrders/hasUnsettledFills) для КАЖДОГО
+additional target, построенный `_buildSnapshot()` той же логикой разделения
+ордеров, что и для primary/complementary (`_splitOrdersForInstrument`
+helper). Registration-time валидация: дубликат instrumentId с ДРУГИМ asset →
+`Err`; дубликат ТОЙ ЖЕ пары → silently dedupe; совпадение с primary/
+complementary instrumentId → `Err`.

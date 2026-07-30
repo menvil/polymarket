@@ -69,6 +69,37 @@ export type {
   CryptoVenueStateView,
 };
 
+/**
+ * Per-инструмент срез данных для ОДНОГО `additionalTradableTargets` элемента.
+ *
+ * @remarks
+ * Те же поля и та же логика разделения open/matched ордеров, что и для
+ * primary/complementary (см. `StrategyScheduler._buildSnapshot`) — без этого
+ * стратегия могла бы получить разрешение торговать инструментом
+ * (`ExecutionContext.tradableInstrumentKeys`), не видя при этом его book/
+ * constraints/orders в snapshot.
+ */
+export interface TradableInstrumentSnapshot {
+  /** ID инструмента (совпадает с ключом в `additionalTradableInstruments`) */
+  readonly instrumentId: InstrumentId;
+  /** Торговый актив этого инструмента */
+  readonly asset: AssetId;
+  /** Лучшие bid/ask/spread; undefined если данных ещё нет */
+  readonly topOfBook: TopOfBook | undefined;
+  /** Rolling history снапшотов стакана; undefined если BookDepth ещё не приходил */
+  readonly bookHistory: OrderBookHistory | undefined;
+  /** Rolling лента публичных трейдов; undefined если трейдов ещё не было */
+  readonly tradeTape: TradeTape | undefined;
+  /** Ограничения инструмента из каталога; undefined если инструмент неизвестен каталогу */
+  readonly constraints: InstrumentConstraints | undefined;
+  /** Открытые ордера ЭТОЙ стратегии на этом инструменте (cancellable) */
+  readonly openOrders: readonly Order[];
+  /** MATCHED-ордера ЭТОЙ стратегии на этом инструменте (in-flight fills, не отменить) */
+  readonly matchedOrders: readonly Order[];
+  /** true если на инструменте есть in-flight fills (MATCHED/MINED, не CONFIRMED) */
+  readonly hasUnsettledFills: boolean;
+}
+
 export interface StrategySnapshot {
   /** ID инструмента (outcome token) */
   readonly instrumentId: InstrumentId;
@@ -344,4 +375,23 @@ export interface StrategySnapshot {
    * ```
    */
   readonly complementaryTradeTape?: TradeTape;
+
+  // ── Additional Tradable Targets ───────────────────────────
+  /**
+   * Per-инструмент срез данных для каждого `additionalTradableTargets`,
+   * заданного при регистрации — ключ: `String(instrumentId)`.
+   *
+   * @remarks
+   * В отличие от primary/complementary (плоские поля snapshot верхнего
+   * уровня), дополнительных tradable targets может быть произвольное
+   * количество — представлены как `ReadonlyMap`. Пустая `Map`, если
+   * `additionalTradableTargets` не задавались при регистрации.
+   *
+   * @example
+   * ```typescript
+   * const extra = snapshot.additionalTradableInstruments.get(String(otherInstrumentId));
+   * if (extra?.topOfBook) { ... }
+   * ```
+   */
+  readonly additionalTradableInstruments: ReadonlyMap<string, TradableInstrumentSnapshot>;
 }

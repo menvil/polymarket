@@ -79,6 +79,54 @@ export interface ScheduleConfig {
    * @defaultValue 30000
    */
   readonly executionTimeoutMs: number;
+
+  /**
+   * Watchdog-таймаут final cleanup execution (`ExecutionEngine.execute()`
+   * для final batch) в `_attemptStop()` (ms).
+   *
+   * @remarks
+   * Final cleanup — тот же `ExecutionEngine.execute()`, что и обычный tick,
+   * но без собственного watchdog (в отличие от ordinary execution, у него нет
+   * lifecycle-состояния FAULTED, в которое можно перейти). Без отдельного
+   * таймаута зависший final `CANCEL_ALL` (repository/use case/venue adapter)
+   * заставил бы `unregister()`/`stopAll()` ждать бесконечно. Timeout НЕ
+   * означает отмену Promise — операция остаётся tracked
+   * (`entry.finalCleanupExecution`), retry коалесцируется на неё же, пока она
+   * не завершится фактически.
+   *
+   * @defaultValue 30000
+   */
+  readonly finalCleanupTimeoutMs: number;
+
+  /**
+   * Watchdog-таймаут `strategy.dispose()` (ms) — и для отменённой регистрации,
+   * и для нормально остановленной ACTIVE стратегии.
+   *
+   * @defaultValue 30000
+   */
+  readonly disposeTimeoutMs: number;
+
+  /**
+   * Watchdog-таймаут ожидания `strategy.initialize()` при cancellation
+   * (`unregister()`/`stopAll()`, вызванные во время pending registration), ms.
+   *
+   * @remarks
+   * Сам `initialize()` не отменяется — таймаут лишь ограничивает, сколько
+   * ИМЕННО ЭТОТ вызов `unregister()`/`stopAll()` готов ждать, прежде чем
+   * вернуть `INITIALIZATION_CANCELLATION_TIMED_OUT`. `initialize()` продолжает
+   * выполняться в фоне; когда он в итоге завершится, cancellation-ветка
+   * `_completeRegistration()` создаст `PendingDisposal` и выполнит `dispose()`.
+   *
+   * @defaultValue 30000
+   */
+  readonly initializationCancellationTimeoutMs: number;
+
+  /**
+   * Watchdog-таймаут `IStrategyCommitmentReader.getActiveCommitments()` (ms).
+   *
+   * @defaultValue 30000
+   */
+  readonly commitmentCheckTimeoutMs: number;
 }
 
 /**
@@ -93,6 +141,10 @@ export interface ScheduleConfig {
  * - `minIntervalMs` — конечное целое >= 0;
  * - `maxIdleMs` — конечное целое > 0;
  * - `executionTimeoutMs` — конечное целое > 0;
+ * - `finalCleanupTimeoutMs` — конечное целое > 0;
+ * - `disposeTimeoutMs` — конечное целое > 0;
+ * - `initializationCancellationTimeoutMs` — конечное целое > 0;
+ * - `commitmentCheckTimeoutMs` — конечное целое > 0;
  * - `priorityTriggers` — только известные {@link TriggerReason}.
  *
  * @example
@@ -115,6 +167,26 @@ export function validateScheduleConfig(config: ScheduleConfig): Result<void, Err
   if (!Number.isInteger(config.executionTimeoutMs) || config.executionTimeoutMs <= 0) {
     return Err(new Error(
       `Invalid ScheduleConfig.executionTimeoutMs: ${String(config.executionTimeoutMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.finalCleanupTimeoutMs) || config.finalCleanupTimeoutMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.finalCleanupTimeoutMs: ${String(config.finalCleanupTimeoutMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.disposeTimeoutMs) || config.disposeTimeoutMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.disposeTimeoutMs: ${String(config.disposeTimeoutMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.initializationCancellationTimeoutMs) || config.initializationCancellationTimeoutMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.initializationCancellationTimeoutMs: ${String(config.initializationCancellationTimeoutMs)} (must be a finite integer > 0)`,
+    ));
+  }
+  if (!Number.isInteger(config.commitmentCheckTimeoutMs) || config.commitmentCheckTimeoutMs <= 0) {
+    return Err(new Error(
+      `Invalid ScheduleConfig.commitmentCheckTimeoutMs: ${String(config.commitmentCheckTimeoutMs)} (must be a finite integer > 0)`,
     ));
   }
   for (const trigger of config.priorityTriggers) {
@@ -143,6 +215,10 @@ export function validateScheduleConfig(config: ScheduleConfig): Result<void, Err
  * - priorityTriggers: FILL — немедленная реакция на исполнение
  * - maxIdleMs: 5000ms — heartbeat каждые 5 секунд
  * - executionTimeoutMs: 30000ms — watchdog-таймаут execute()
+ * - finalCleanupTimeoutMs: 30000ms — watchdog-таймаут final cleanup execute()
+ * - disposeTimeoutMs: 30000ms — watchdog-таймаут strategy.dispose()
+ * - initializationCancellationTimeoutMs: 30000ms — таймаут ожидания cancelled initialize()
+ * - commitmentCheckTimeoutMs: 30000ms — watchdog-таймаут commitment reader
  *
  * @example
  * ```typescript
@@ -155,5 +231,9 @@ export function createDefaultScheduleConfig(): ScheduleConfig {
     priorityTriggers: new Set<TriggerReason>(['FILL']),
     maxIdleMs: 5000,
     executionTimeoutMs: 30_000,
+    finalCleanupTimeoutMs: 30_000,
+    disposeTimeoutMs: 30_000,
+    initializationCancellationTimeoutMs: 30_000,
+    commitmentCheckTimeoutMs: 30_000,
   };
 }

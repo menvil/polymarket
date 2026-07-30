@@ -16,25 +16,39 @@
  *
  * ### Lifecycle стратегии (ACTIVE → STOPPING/FAULTED → STOPPED):
  * `unregister()` возвращает `Result<void, StopStrategyError>` — единственный
- * безопасный stop-flow:
- * 1. атомарный переход ACTIVE → STOPPING (повторный/concurrent unregister
- *    коалесцируется на тот же in-flight attempt);
- * 2. немедленный detach: heartbeat, routing, deferred timer, queue
- *    (идемпотентно — безопасен на каждом retry-attempt);
- * 3. ожидание `entry.activeExecution` — РЕЗУЛЬТАТ execution ИЛИ TIMEOUT
- *    сигнал через `Promise.race` (см. Watchdog) — НЕЗАВИСИМО от lifecycle;
+ * безопасный stop-flow, 13 шагов (см. `_attemptStop` doc для деталей):
+ * 1. атомарный переход ACTIVE/FAULTED → STOPPING;
+ * 2. немедленный detach: heartbeat, routing, deferred timer, queue (идемпотентно);
+ * 3. ожидание `entry.activeExecution` — РЕЗУЛЬТАТ execution ИЛИ TIMEOUT сигнал
+ *    (см. Watchdog) — НЕЗАВИСИМО от lifecycle;
  * 4. `strategy.stop()` → final intents (кэшируются при успехе — вызывается
  *    ровно один раз; исключение НЕ кэшируется, см. `STOP_HOOK_FAILED`);
- * 5. исполнение final batch (cached intents + гарантированный fresh
- *    `CANCEL_ALL` на каждом attempt) — никогда не параллельно с обычным execution;
- * 6. authoritative post-check (нет живых ордеров + нет unresolved
- *    submission/reservation/fill commitments через `IStrategyCommitmentReader`)
- *    — только после этого entry удаляется и lifecycle → STOPPED.
- * Любой небезопасный исход (execution ещё выполняется, `strategy.stop()`
- * бросил/вернул небезопасный intent, final cleanup не подтверждён) возвращает
- * typed `Err(StopStrategyError)`, НЕ удаляет entry и оставляет стратегию
- * retryable. События (BOOK/FILL/ORDER_UPDATE) во время STOPPING/FAULTED не
- * ставят стратегию в очередь.
+ * 5. final cleanup — ОДНА tracked `ExecutionEngine.execute()` (completion либо
+ *    `finalCleanupTimeoutMs` timeout), fresh `CANCEL_ALL` добавляется только
+ *    когда операция РЕАЛЬНО (пере)запускается (не при join уже идущей);
+ * 6-7. верификация `ExecutionReport` + authoritative open-order post-check;
+ * 8. commitment post-check — tracked (completion либо `commitmentCheckTimeoutMs`);
+ * 9. `strategy.dispose()` — tracked (completion либо `disposeTimeoutMs`),
+ *    пропускается, если уже успешно выполнен ранее (`entry.disposed`);
+ * 10-11. ПОВТОРНЫЙ open-order + commitment post-check (dispose мог занять
+ *    время, за которое могли появиться поздние ордера/commitments);
+ * 12-13. STOPPED, удаление entry.
+ * Любой timeout/небезопасный исход НА ЛЮБОМ шаге возвращает typed
+ * `Err(StopStrategyError)` БЕЗ выполнения последующих шагов, НЕ удаляет entry
+ * и оставляет стратегию retryable — retry никогда не запускает вторую
+ * параллельную попытку того же шага (single-flight tracked operations, см.
+ * {@link TrackedAsyncOperation}). События (BOOK/FILL/ORDER_UPDATE) во время
+ * STOPPING/FAULTED не ставят стратегию в очередь.
+ *
+ * ### Persistent disposal для отменённых регистраций (`PendingDisposal`):
+ * Если регистрация отменяется (`unregister()`/`stopAll()` во время
+ * `initialize()`) ПОСЛЕ того как `initialize()` успешно вернул `Ok`,
+ * `dispose()` вызывается через persistent tombstone в `_pendingDisposals` —
+ * НЕ инлайново. Если `dispose()` зависнет/бросит/вернёт `Err`, strategy
+ * instance НЕ теряется: tombstone остаётся до фактического успеха, следующий
+ * `unregister(strategyId)` (или `stopAll()`) находит его и повторяет попытку
+ * (коалесцируясь с любым уже идущим attempt через `attemptPromise`).
+ * `register()` с тем же ID отклоняется, пока tombstone существует.
  *
  * ### Exception isolation:
  * Каждый queue item обёрнут в exception boundary: сбой snapshot/tick одной
@@ -85,8 +99,9 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { IPortfolioStore, IOrderStateStore, IMarketCatalog, IStrategyCommitmentReader, StrategyCommitment } from '@polymarket/ports';
 import type { Market } from '@polymarket/market';
+import type { Order } from '@polymarket/order';
 import type { IStrategy } from './IStrategy.js';
-import type { StrategySnapshot } from './types/StrategySnapshot.js';
+import type { StrategySnapshot, TradableInstrumentSnapshot } from './types/StrategySnapshot.js';
 import type { StrategyIntent, StrategyStopIntent } from './types/StrategyIntent.js';
 import type { InstrumentConstraints } from './types/InstrumentConstraints.js';
 import type { TriggerReason } from './types/TriggerReason.js';
@@ -292,7 +307,20 @@ interface StrategyEntry {
   readonly complementaryInstrumentId?: InstrumentId;
   /** Торговый актив комплементарного токена */
   readonly complementaryAsset?: AssetId;
-  /** Дедуплицированные instrument-ключи routing-а (primary+additional+complementary). */
+  /**
+   * Полные пары дополнительных tradable targets (instrumentId + asset).
+   *
+   * @remarks
+   * В отличие от `tradableInstrumentKeys` (string-ключи, для fail-closed
+   * проверки в `ExecutionEngine`), здесь хранятся ПОЛНЫЕ пары — нужны для
+   * построения `StrategySnapshot.additionalTradableInstruments` (book/
+   * constraints/orders per-target) и для {@link _commitmentInstrumentIds}.
+   */
+  readonly additionalTradableTargets: readonly {
+    readonly instrumentId: InstrumentId;
+    readonly asset: AssetId;
+  }[];
+  /** Дедуплицированные instrument-ключи routing-а (primary+additional+complementary+additionalTradableTargets). */
   readonly routingInstrumentKeys: readonly string[];
   /**
    * Разрешённые PLACE-таргеты (primary+complementary+additionalTradableTargets).
@@ -318,6 +346,14 @@ interface StrategyEntry {
    * означает «running» и служит источником timeout-сигнала для `_attemptStop`.
    */
   activeExecution: ActiveExecution | undefined;
+  /** Tracked final cleanup execution (см. {@link TrackedAsyncOperation}) — не более одной in-flight. */
+  finalCleanupExecution: TrackedAsyncOperation<ExecutionReport> | undefined;
+  /** Tracked `strategy.dispose()` (ACTIVE shutdown) — не более одной in-flight. */
+  disposeExecution: TrackedAsyncOperation<Result<void, Error>> | undefined;
+  /** Tracked `commitmentReader.getActiveCommitments()` — не более одной in-flight. */
+  commitmentCheckExecution: TrackedAsyncOperation<readonly StrategyCommitment[]> | undefined;
+  /** `true` после фактически успешного `dispose()` — не вызывается повторно. */
+  disposed: boolean;
   /** Подряд неуспешных snapshot/tick — для deferred backoff. */
   consecutiveFailures: number;
   lastRunMs: number;
@@ -351,6 +387,44 @@ interface ActiveExecution {
 }
 
 /**
+ * Generic bounded async operation — единая модель для final cleanup, dispose
+ * и commitment check tracked operations.
+ *
+ * @remarks
+ * `ActiveExecution` (ordinary tick execution, см. выше) НЕ переиспользует эту
+ * модель — она уже работала и специально не тронута этой доработкой. Эта
+ * generic-структура закрывает ТРИ НОВЫХ tracked operations, которые до этой
+ * доработки были неограниченными (`await ...` без watchdog): final cleanup
+ * execute(), `strategy.dispose()`, `commitmentReader.getActiveCommitments()`.
+ *
+ * Один и тот же паттерн для всех трёх:
+ * - максимум одна in-flight операция данного типа (single-flight);
+ * - watchdog через `ISchedulerTimer`, НЕ отменяющий underlying Promise;
+ * - `timeoutSignal` resolves В ТОЧНОСТИ когда watchdog сработал — caller
+ *   ждёт `Promise.race([promise, timeoutSignal])`;
+ * - state (`result`/`error`) сохраняется до explicit processing caller-ом —
+ *   `_startTrackedOperation` НЕ решает, когда state можно чистить.
+ */
+interface TrackedAsyncOperation<T> {
+  /** Обёрнутый promise — resolves после того, как `result`/`error` уже записаны. Никогда не rejects. */
+  readonly promise: Promise<void>;
+  /** Когда операция начата (epoch ms, из IClock). */
+  readonly startedAtMs: number;
+  /** Watchdog сработал (timeoutMs истёк, promise ещё не завершился). */
+  timedOut: boolean;
+  /** Promise фактически завершился (successfully или с ошибкой). */
+  completed: boolean;
+  /** Handle watchdog-таймера (идентификация «та же попытка» + clearTimeout). */
+  readonly timeoutHandle: TimerHandle;
+  /** Resolves В ТОЧНОСТИ когда watchdog сработал. */
+  readonly timeoutSignal: Promise<void>;
+  /** Результат `run()`, если он успешно вернул значение (не бросил/не rejected). */
+  result: T | undefined;
+  /** Ошибка, если `run()` бросил/promise rejected. */
+  error: Error | undefined;
+}
+
+/**
  * Registration-in-progress: control record вместо plain `Set<string>`.
  *
  * @remarks
@@ -367,22 +441,41 @@ interface PendingRegistration {
   completion: Promise<Result<void, Error>>;
   /** Выставляется unregister()-ом, вызванным во время initialize(). */
   cancelled: boolean;
+  /**
+   * Сколько ИМЕННО ЭТОТ `unregister()`/`stopAll()` готов ждать `completion`,
+   * прежде чем вернуть `INITIALIZATION_CANCELLATION_TIMED_OUT` (см.
+   * `ScheduleConfig.initializationCancellationTimeoutMs`). Снимок сделан при
+   * регистрации — `initialize()` сам по себе НЕ отменяется этим таймаутом.
+   */
+  readonly cancellationTimeoutMs: number;
 }
 
 /**
- * Внутренний маркер: `pending.completion` завершился с Err ИМЕННО из-за
- * `strategy.dispose()` (бросил либо вернул Err), а не по другой причине
- * (например, `initialize()` сам по себе провалился независимо от отмены).
+ * Persistent retry state для регистрации, отменённой во время `initialize()`,
+ * ПОСЛЕ того как `initialize()` успешно вернул `Ok` (ресурсы уже открыты).
  *
  * @remarks
- * Различает typed код `DISPOSE_FAILED` от `REGISTRATION_CANCELLED` в
- * `unregister()`/`stopAll()` без хрупкого сравнения текста сообщения.
+ * Раньше `dispose()` вызывался inline внутри `_completeRegistration()` и, при
+ * неудаче, состояние просто терялось — strategy instance был недостижим для
+ * повторной попытки cleanup-а, повторный `unregister(strategyId)` получал
+ * `STRATEGY_NOT_FOUND`. `PendingDisposal` — persistent tombstone: остаётся в
+ * `_pendingDisposals` до тех пор, пока `dispose()` фактически НЕ завершится
+ * успехом; `unregister()`/`stopAll()` могут найти его снова и повторить попытку.
  */
-class StrategyDisposeFailedError extends Error {
-  constructor(strategyId: string, public readonly cause: Error) {
-    super(`Strategy.dispose() failed for ${strategyId}: ${cause.message}`);
-    this.name = 'StrategyDisposeFailedError';
-  }
+interface PendingDisposal {
+  readonly strategyId: string;
+  readonly strategy: IStrategy;
+  /** Tracked dispose operation (см. {@link TrackedAsyncOperation}) — не более одной in-flight. */
+  disposeExecution: TrackedAsyncOperation<Result<void, Error>> | undefined;
+  /** `true` только после фактически успешного `dispose()`. */
+  disposed: boolean;
+  /**
+   * Коалесцирует concurrent `unregister()`/`stopAll()` попытки на один
+   * in-flight attempt (аналог `StrategyEntry.stopAttemptPromise`).
+   */
+  attemptPromise: Promise<Result<void, StopStrategyError>> | undefined;
+  /** Снимок `config.disposeTimeoutMs` на момент создания tombstone. */
+  readonly disposeTimeoutMs: number;
 }
 
 /** Максимальная задержка deferred retry при повторных сбоях snapshot/tick (ms). */
@@ -404,6 +497,12 @@ export class StrategyScheduler {
    * `unregister()`, вызванного во время `initialize()`.
    */
   private readonly _pendingRegistrations = new Map<string, PendingRegistration>();
+  /**
+   * Persistent retry-tombstones для регистраций, отменённых во время
+   * `initialize()` ПОСЛЕ успешного `Ok` (см. {@link PendingDisposal}).
+   * Запись удаляется ТОЛЬКО после фактически успешного `dispose()`.
+   */
+  private readonly _pendingDisposals = new Map<string, PendingDisposal>();
   /**
    * Global stopping barrier — выставляется `stopAll()`. Как только `true`,
    * никакая новая регистрация (ACTIVE entry) не публикуется.
@@ -557,8 +656,11 @@ export class StrategyScheduler {
     }
 
     // Duplicate → Err (НЕ Ok): молчаливый Ok маскировал бы двойную регистрацию.
-    if (this._entries.has(strategyId) || this._pendingRegistrations.has(strategyId)) {
-      this._logger.warn('Strategy already registered (or registration in progress)', { strategyId });
+    // _pendingDisposals включён: strategyId с незавершённым retry-tombstone
+    // (dispose() ещё не подтверждён) не должен получить новый register(),
+    // пока старая strategy instance не будет гарантированно disposed.
+    if (this._entries.has(strategyId) || this._pendingRegistrations.has(strategyId) || this._pendingDisposals.has(strategyId)) {
+      this._logger.warn('Strategy already registered (or registration/disposal in progress)', { strategyId });
       return Err(new Error(`Strategy already registered: ${strategyId}`));
     }
 
@@ -594,12 +696,36 @@ export class StrategyScheduler {
       }
     }
 
+    // additionalTradableTargets: identity check (catalog + asset↔instrument
+    // mapping) — та же строгость, что и primary/complementary. Плюс:
+    // - дубликат instrumentId с ДРУГИМ asset → Err (конфликтующая пара);
+    // - дубликат ТОЙ ЖЕ пары → silently dedupe (не Err, см. _completeRegistration);
+    // - совпадение с primary/complementary instrumentId → Err (нельзя торговать
+    //   ту же пару дважды через два разных механизма).
+    const seenAdditionalTargets = new Map<string, AssetId>();
     for (const target of reg.additionalTradableTargets ?? []) {
       const check = this._validateTargetIdentity(target.instrumentId, target.asset, 'additional tradable target');
       if (!check.ok) {
         this._logger.error(check.error.message, { strategyId });
         return check;
       }
+      const key = String(target.instrumentId);
+      if (key === String(reg.instrumentId) || (reg.complementaryInstrumentId !== undefined && key === String(reg.complementaryInstrumentId))) {
+        const error = new Error(
+          `Strategy registration rejected — additionalTradableTargets must not duplicate primary/complementary instrument: ${strategyId}`,
+        );
+        this._logger.error(error.message, { strategyId });
+        return Err(error);
+      }
+      const existingAsset = seenAdditionalTargets.get(key);
+      if (existingAsset !== undefined && assetIdToString(existingAsset) !== assetIdToString(target.asset)) {
+        const error = new Error(
+          `Strategy registration rejected — additionalTradableTargets has conflicting assets for instrument ${key}: ${strategyId}`,
+        );
+        this._logger.error(error.message, { strategyId });
+        return Err(error);
+      }
+      seenAdditionalTargets.set(key, target.asset);
     }
 
     // Конфигурация: копируем внешний Set (защита от последующей мутации caller-ом)
@@ -610,6 +736,11 @@ export class StrategyScheduler {
       priorityTriggers: new Set(reg.config?.priorityTriggers ?? defaultConfig.priorityTriggers),
       maxIdleMs: reg.config?.maxIdleMs ?? defaultConfig.maxIdleMs,
       executionTimeoutMs: reg.config?.executionTimeoutMs ?? defaultConfig.executionTimeoutMs,
+      finalCleanupTimeoutMs: reg.config?.finalCleanupTimeoutMs ?? defaultConfig.finalCleanupTimeoutMs,
+      disposeTimeoutMs: reg.config?.disposeTimeoutMs ?? defaultConfig.disposeTimeoutMs,
+      initializationCancellationTimeoutMs:
+        reg.config?.initializationCancellationTimeoutMs ?? defaultConfig.initializationCancellationTimeoutMs,
+      commitmentCheckTimeoutMs: reg.config?.commitmentCheckTimeoutMs ?? defaultConfig.commitmentCheckTimeoutMs,
     };
     const configResult = validateScheduleConfig(config);
     if (!configResult.ok) {
@@ -628,6 +759,7 @@ export class StrategyScheduler {
       strategy: reg.strategy,
       completion: Promise.resolve(Ok(undefined)),
       cancelled: false,
+      cancellationTimeoutMs: config.initializationCancellationTimeoutMs,
     };
     this._pendingRegistrations.set(strategyId, pending);
     const completion = this._completeRegistration(reg, config, pending);
@@ -683,34 +815,60 @@ export class StrategyScheduler {
     // Post-init re-check: unregister() может было отменить регистрацию, пока
     // initialize() выполнялся; stopAll() может было поднять global barrier.
     if (pending.cancelled || this._globalStopping) {
-      this._logger.warn('Strategy registration aborted — cancelled during initialize(), disposing resources', {
+      this._logger.warn('Strategy registration aborted — cancelled during initialize(), scheduling bounded dispose', {
         strategyId,
       });
 
       // dispose() — НЕторговый cleanup hook. Стратегия ещё НИКОГДА не была
       // опубликована (нет routing/heartbeat/execution context) — strategy.stop()
       // здесь неприменим (он возвращает trading intents для ACTIVE стратегии).
-      let disposeResult: Result<void, Error>;
-      try {
-        disposeResult = await reg.strategy.dispose();
-      } catch (cause) {
-        const error = cause instanceof Error ? cause : new Error(String(cause));
-        this._logger.error('Strategy.dispose() threw after cancelled registration', {
-          strategyId,
-          error: error.message,
-        });
-        return Err(new StrategyDisposeFailedError(strategyId, error));
-      }
+      //
+      // Persistent tombstone (см. {@link PendingDisposal}): если dispose()
+      // зависнет/бросит, strategy instance НЕ теряется — она остаётся
+      // достижимой через `_pendingDisposals` для последующего retry через
+      // unregister()/stopAll(), вместо того чтобы результат просто терялся
+      // здесь. `attemptPromise` выставляется СИНХРОННО внутри
+      // `_joinOrStartPendingDisposalAttempt` (до первого await) — конкурентный
+      // unregister(), нашедший tombstone, коалесцируется на ЭТУ ЖЕ попытку.
+      const pendingDisposal: PendingDisposal = {
+        strategyId,
+        strategy: reg.strategy,
+        disposeExecution: undefined,
+        disposed: false,
+        attemptPromise: undefined,
+        disposeTimeoutMs: config.disposeTimeoutMs,
+      };
+      this._pendingDisposals.set(strategyId, pendingDisposal);
 
-      if (!disposeResult.ok) {
-        this._logger.error('Strategy.dispose() failed after cancelled registration', {
-          strategyId,
-          error: disposeResult.error.message,
-        });
-        return Err(new StrategyDisposeFailedError(strategyId, disposeResult.error));
-      }
+      // Стартуем bounded dispose СИНХРОННО (attemptPromise выставляется до
+      // возврата из `_joinOrStartPendingDisposalAttempt`, т.к. присваивание
+      // происходит ДО первого await внутри async-функции) — НЕ ждём его
+      // завершения здесь: `unregister()`/`stopAll()`, найдя tombstone в
+      // `_pendingDisposals`, JOIN-ятся на ЭТУ ЖЕ попытку. Если бы мы здесь
+      // await-или её до конца, повторная проверка tombstone в `unregister()`
+      // нашла бы attemptPromise УЖЕ очищенным и запустила бы dispose() ВТОРОЙ
+      // раз параллельно — именно этого не должно происходить.
+      void this._joinOrStartPendingDisposalAttempt(pendingDisposal);
 
+      // Реальный исход dispose() (Ok/DISPOSE_FAILED/DISPOSE_TIMED_OUT)
+      // сообщается вызывающему unregister()/stopAll() через отдельную
+      // проверку `_pendingDisposals` ПОСЛЕ того как `pending.completion`
+      // (этот promise) разрешится — см. `unregister()`. Здесь всегда
+      // возвращаем единообразный cancellation Error: регистрация в любом
+      // случае никогда не была опубликована.
       return Err(new Error(`Strategy registration cancelled during initialize(): ${strategyId}`));
+    }
+
+    // Дедупликация additionalTradableTargets по instrumentId — конфликтующие
+    // пары уже отклонены в register(), одинаковые дубли здесь молча схлопываются
+    // в одну запись (сохраняем ПЕРВОЕ вхождение).
+    const dedupedAdditionalTargets: { readonly instrumentId: InstrumentId; readonly asset: AssetId }[] = [];
+    const seenAdditionalKeys = new Set<string>();
+    for (const target of reg.additionalTradableTargets ?? []) {
+      const key = String(target.instrumentId);
+      if (seenAdditionalKeys.has(key)) continue;
+      seenAdditionalKeys.add(key);
+      dedupedAdditionalTargets.push(target);
     }
 
     // Routing instruments: primary + additional + complementary + КАЖДЫЙ
@@ -725,7 +883,7 @@ export class StrategyScheduler {
     if (reg.complementaryInstrumentId !== undefined) {
       routingKeys.add(String(reg.complementaryInstrumentId));
     }
-    for (const target of reg.additionalTradableTargets ?? []) {
+    for (const target of dedupedAdditionalTargets) {
       routingKeys.add(String(target.instrumentId));
     }
 
@@ -737,7 +895,7 @@ export class StrategyScheduler {
     if (reg.complementaryInstrumentId !== undefined) {
       tradableKeys.add(String(reg.complementaryInstrumentId));
     }
-    for (const target of reg.additionalTradableTargets ?? []) {
+    for (const target of dedupedAdditionalTargets) {
       tradableKeys.add(String(target.instrumentId));
     }
 
@@ -754,12 +912,17 @@ export class StrategyScheduler {
       additionalInstrumentIds: reg.additionalInstrumentIds,
       complementaryInstrumentId: reg.complementaryInstrumentId,
       complementaryAsset: reg.complementaryAsset,
+      additionalTradableTargets: dedupedAdditionalTargets,
       routingInstrumentKeys: [...routingKeys],
       tradableInstrumentKeys: tradableKeys,
       lifecycle: 'ACTIVE',
       stopAttemptPromise: undefined,
       finalIntents: undefined,
       activeExecution: undefined,
+      finalCleanupExecution: undefined,
+      disposeExecution: undefined,
+      commitmentCheckExecution: undefined,
+      disposed: false,
       consecutiveFailures: 0,
       lastRunMs: 0,
       rerunRequested: false,
@@ -822,22 +985,50 @@ export class StrategyScheduler {
    *
    * @param strategyId - ID стратегии
    * @returns Ok(void) при подтверждённой остановке; Err(StopStrategyError)
-   *   при любом небезопасном/незавершённом исходе (retryable)
+   *   при любом небезопасном/незавершённом/timeout исходе (retryable)
    *
    * @remarks
-   * Обрабатывает три случая:
-   * 1. Pending registration (initialize() ещё выполняется) — отменяет
-   *    публикацию, дожидается completion, возвращает `REGISTRATION_CANCELLED`.
-   * 2. Неизвестный ID — `STRATEGY_NOT_FOUND`.
-   * 3. Существующая entry — коалесцирует concurrent вызовы на один
+   * Порядок поиска (см. также class-level doc):
+   * 1. `_pendingDisposals` (persistent tombstone) — strategy instance здесь
+   *    НЕДОСТИЖИМА никаким другим путём: НИКОГДА не возвращает
+   *    `STRATEGY_NOT_FOUND`, коалесцирует concurrent вызовы, удаляется
+   *    ТОЛЬКО после фактически успешного `dispose()`.
+   * 2. Pending registration (`initialize()` ещё выполняется) — отменяет
+   *    публикацию; ждёт completion максимум `cancellationTimeoutMs`
+   *    (`INITIALIZATION_CANCELLATION_TIMED_OUT` при превышении — `initialize()`
+   *    НЕ отменяется, продолжает выполняться в фоне). После завершения:
+   *    если возникла `PendingDisposal` — коалесцируется на ту же попытку и
+   *    транслирует Ok→`REGISTRATION_CANCELLED` (успешная отмена ЭТИМ вызовом),
+   *    Err→реальный код (`DISPOSE_FAILED`/`DISPOSE_TIMED_OUT`).
+   * 3. Неизвестный ID — `STRATEGY_NOT_FOUND`.
+   * 4. Существующая entry — коалесцирует concurrent вызовы на один
    *    in-flight attempt (`entry.stopAttemptPromise`) и делегирует в
    *    {@link _attemptStop}.
    */
   public async unregister(strategyId: string): Promise<Result<void, StopStrategyError>> {
+    // 1. Persistent pending-disposal tombstone — retry на ранее провалившийся/
+    // зависший dispose() отменённой регистрации.
+    const pendingDisposal = this._pendingDisposals.get(strategyId);
+    if (pendingDisposal) {
+      return this._joinOrStartPendingDisposalAttempt(pendingDisposal);
+    }
+
+    // 2. Pending registration — initialize() ещё выполняется.
     const pending = this._pendingRegistrations.get(strategyId);
     if (pending) {
       pending.cancelled = true;
-      const completionResult = await pending.completion; // никогда не rejects (см. _completeRegistration)
+
+      const waitOutcome = await this._raceWithTimeout(pending.completion, pending.cancellationTimeoutMs);
+      if (waitOutcome.kind === 'timed-out') {
+        this._logger.error('Unregister blocked — initialize() has not completed yet within cancellationTimeoutMs, retry later', {
+          strategyId,
+        });
+        return Err(new StopStrategyError(
+          'INITIALIZATION_CANCELLATION_TIMED_OUT',
+          strategyId,
+          `Strategy ${strategyId} initialize() has not completed yet — cancellation requested, retry unregister later`,
+        ));
+      }
 
       // Race: register() мог уже опубликовать entry до того, как заметил
       // cancelled (например, cancelled выставлен ПОСЛЕ post-init check, но
@@ -849,15 +1040,27 @@ export class StrategyScheduler {
         return this.unregister(strategyId);
       }
 
-      if (!completionResult.ok && completionResult.error instanceof StrategyDisposeFailedError) {
+      // Cancelled-ветка _completeRegistration уже создала PendingDisposal и
+      // запустила bounded dispose (attemptPromise выставлен синхронно) —
+      // коалесцируемся на ТУ ЖЕ попытку, НЕ запускаем второй параллельный dispose.
+      const tombstone = this._pendingDisposals.get(strategyId);
+      if (tombstone) {
+        const result = await this._joinOrStartPendingDisposalAttempt(tombstone);
+        if (!result.ok) {
+          return result;
+        }
+        // Успешный dispose: именно ЭТОТ вызов инициировал отмену — по контракту
+        // возвращает REGISTRATION_CANCELLED (а не Ok), в отличие от отдельного
+        // retry-вызова через ветку #1 выше.
         return Err(new StopStrategyError(
-          'DISPOSE_FAILED',
+          'REGISTRATION_CANCELLED',
           strategyId,
-          completionResult.error.message,
-          { cause: completionResult.error.cause },
+          `Strategy registration cancelled during initialize(): ${strategyId}`,
         ));
       }
 
+      // Нет tombstone — initialize() сам провалился/бросил (dispose()
+      // неприменим, см. _completeRegistration) либо cancelled без успешного init.
       return Err(new StopStrategyError(
         'REGISTRATION_CANCELLED',
         strategyId,
@@ -865,13 +1068,14 @@ export class StrategyScheduler {
       ));
     }
 
+    // 3. Неизвестный ID.
     const entry = this._entries.get(strategyId);
     if (!entry) {
       this._logger.warn('Strategy not found for unregister', { strategyId });
       return Err(new StopStrategyError('STRATEGY_NOT_FOUND', strategyId, `Strategy not found: ${strategyId}`));
     }
 
-    // Коалесцирование: concurrent/repeated unregister ждёт ТОТ ЖЕ attempt —
+    // 4. Коалесцирование: concurrent/repeated unregister ждёт ТОТ ЖЕ attempt —
     // strategy.stop() и final intents не запускаются параллельно дважды.
     if (entry.stopAttemptPromise) {
       return entry.stopAttemptPromise;
@@ -890,42 +1094,52 @@ export class StrategyScheduler {
 
   /**
    * Один attempt lifecycle-aware stop-flow (может быть вызван повторно —
-   * retry после небезопасного final cleanup).
+   * retry после timeout/небезопасного исхода на ЛЮБОМ шаге).
    *
    * @param strategyId - ID стратегии
    * @param entry - Entry (в состоянии ACTIVE/FAULTED/STOPPING)
    * @returns Ok(void) только при authoritative-подтверждённой остановке
    *
    * @remarks
-   * ### Порядок:
-   * 1. ACTIVE → STOPPING; detach (routing/heartbeat/queue) идемпотентен —
-   *    безопасно вызывать на каждом attempt (первый вызов из ACTIVE/FAULTED,
-   *    либо retry из STOPPING).
-   * 2. Дождаться `entry.activeExecution` — РЕЗУЛЬТАТ execution ИЛИ TIMEOUT
-   *    сигнал (см. {@link ActiveExecution}), что бы ни произошло раньше.
-   *    Watchdog в `_executeTick` работает НЕЗАВИСИМО от lifecycle — сигнал
-   *    сработает, даже если entry уже STOPPING (unregister вызван ДО того,
-   *    как watchdog успел сработать).
-   * 3. `strategy.stop()` → validated final intents (кэшируются в
-   *    `entry.finalIntents`, вызывается РОВНО ОДИН РАЗ — исключение НЕ
-   *    считается успехом и НЕ кэшируется, следующий retry вызовет снова).
-   * 4. Исполнить final batch — CANCEL/CANCEL_ALL из `strategy.stop()` ПЛЮС
-   *    ГАРАНТИРОВАННЫЙ fresh `CANCEL_ALL` на каждой попытке (authoritative
-   *    sweep — список открытых ордеров мог измениться между retry).
-   * 5. Оценить безопасность: report (errors/failed/blockedByUnsafeCancel/
-   *    unsafe cancel outcomes) + authoritative post-check (нет открытых
-   *    ордеров стратегии) + `IStrategyCommitmentReader` (нет unresolved
-   *    submission/reservation/fill commitments).
-   * 6. Только при подтверждённой безопасности — STOPPED + удаление entry.
+   * ### 13-шаговый порядок (полностью повторяется на КАЖДОМ retry-attempt,
+   * кроме шага 9 — dispose пропускается, если `entry.disposed === true`):
+   * 1. ACTIVE/FAULTED → STOPPING.
+   * 2. detach (routing/heartbeat/queue) — идемпотентен.
+   * 3. ordinary execution: `Promise.race([execution.promise, timeoutSignal])`
+   *    — таймаут НЕ отменяет Promise, просто возвращает retryable Err.
+   * 4. `strategy.stop()` — вызывается РОВНО ОДИН РАЗ при успехе (кэш в
+   *    `entry.finalIntents`); исключение НЕ кэшируется.
+   * 5. final cleanup — ОДНА tracked `ExecutionEngine.execute()` (см.
+   *    {@link TrackedAsyncOperation}), completion либо timeout. Fresh
+   *    `CANCEL_ALL` добавляется, только когда операция РЕАЛЬНО (пере)запускается
+   *    (не при join уже идущей).
+   * 6. верификация `ExecutionReport` (errors/failed/blockedByUnsafeCancel/
+   *    unsafe cancel outcomes).
+   * 7. open-order post-check (authoritative, синхронный).
+   * 8. commitment post-check — tracked, completion либо timeout.
+   * 9. dispose — tracked, completion либо timeout; пропускается, если уже
+   *    `disposed === true` (dispose() не вызывается повторно после успеха).
+   * 10. ПОВТОРНЫЙ open-order post-check (после dispose могли появиться
+   *     поздние ордера/recovery).
+   * 11. ПОВТОРНЫЙ commitment post-check.
+   * 12. STOPPED.
+   * 13. удаление entry.
+   *
+   * Любой timeout (шаги 3/5/8/9) возвращает retryable `Err` БЕЗ выполнения
+   * последующих шагов и БЕЗ очистки соответствующего tracked-state — retry
+   * коалесцируется на ту же операцию (single-flight), никогда не запускает
+   * параллельную вторую попытку.
    */
   private async _attemptStop(strategyId: string, entry: StrategyEntry): Promise<Result<void, StopStrategyError>> {
+    // 1.
     if (entry.lifecycle === 'ACTIVE') {
       entry.lifecycle = 'STOPPING';
     }
-    // Detach идемпотентен (heartbeat/routing/queue guards уже no-op при
+    // 2. Detach идемпотентен (heartbeat/routing/queue guards уже no-op при
     // повторном вызове) — безопасно на КАЖДОМ attempt, включая retry.
     this._detachEntry(strategyId, entry);
 
+    // 3.
     const execution = entry.activeExecution;
     if (execution !== undefined) {
       const outcome = await Promise.race([
@@ -958,7 +1172,7 @@ export class StrategyScheduler {
       entry.lifecycle = 'STOPPING';
     }
 
-    // strategy.stop() вызывается РОВНО ОДИН РАЗ ПРИ УСПЕХЕ — исключение НЕ
+    // 4. strategy.stop() вызывается РОВНО ОДИН РАЗ ПРИ УСПЕХЕ — исключение НЕ
     // кэшируется (entry.finalIntents остаётся undefined), следующий
     // unregister() вызовет strategy.stop() заново.
     if (entry.finalIntents === undefined) {
@@ -990,26 +1204,45 @@ export class StrategyScheduler {
       entry.finalIntents = validated.value;
     }
 
-    // Fresh CANCEL_ALL на КАЖДОЙ попытке: strategy.stop() hook кэширован, но
-    // authoritative sweep обязателен заново — между retry мог появиться
-    // новый Order (поздний PLACE, recovery и т.п.), которого cached intents
-    // не знают.
-    const finalBatch = this._withFreshCancelAll(entry.finalIntents);
-
-    let report: ExecutionReport | undefined;
-    let executionThrew: Error | undefined;
+    // 5. Final cleanup — ОДНА tracked execute(), fresh CANCEL_ALL добавляется
+    // ТОЛЬКО когда операция реально (пере)запускается (не при join).
+    // Захватываем entry.finalIntents в локальную const СРАЗУ после того, как
+    // шаг 4 гарантировал её определённость — TS корректно сужает тип этой
+    // const-переменной внутри замыкания ниже (в отличие от mutable-поля).
+    const cachedFinalIntents = entry.finalIntents;
     const ctx = this._makeExecutionContext(entry);
-    try {
-      report = await this._deps.executionEngine.execute(ctx, finalBatch);
-    } catch (err) {
-      executionThrew = err instanceof Error ? err : new Error(String(err));
-      this._logger.error('Failed to execute final intents', { strategyId, err: executionThrew });
+    const cleanupOutcome = await this._runOrJoinTrackedOperation<ExecutionReport>(
+      () => entry.finalCleanupExecution,
+      (op) => { entry.finalCleanupExecution = op; },
+      () => {
+        // Fresh CANCEL_ALL вычисляется ЗДЕСЬ (внутри run()), а не снаружи,
+        // чтобы batch строился заново при каждом РЕАЛЬНОМ (пере)запуске
+        // операции, а не при join уже идущей.
+        const finalBatch = this._withFreshCancelAll(cachedFinalIntents);
+        return this._deps.executionEngine.execute(ctx, finalBatch);
+      },
+      entry.config.finalCleanupTimeoutMs,
+    );
+
+    if (cleanupOutcome.kind === 'timed-out') {
+      this._logger.error('Final cleanup execution exceeded finalCleanupTimeoutMs — entry retained, retry unregister later', {
+        strategyId,
+      });
+      return Err(new StopStrategyError(
+        'FINAL_CLEANUP_TIMED_OUT',
+        strategyId,
+        `Strategy ${strategyId} final cleanup execution exceeded finalCleanupTimeoutMs and has not resolved yet — retry unregister later`,
+      ));
     }
 
+    // 6.
+    let report: ExecutionReport | undefined;
     let unsafeReason: string | undefined;
-    if (executionThrew) {
-      unsafeReason = `final execution threw: ${executionThrew.message}`;
-    } else if (report) {
+    if (cleanupOutcome.kind === 'error') {
+      unsafeReason = `final execution threw: ${cleanupOutcome.error.message}`;
+      this._logger.error('Failed to execute final intents', { strategyId, err: cleanupOutcome.error });
+    } else {
+      report = cleanupOutcome.result;
       const unsafeOutcome = report.outcomes.find(
         (o) => o.kind === 'CANCEL_PENDING' || o.kind === 'CANCEL_FAILED' || o.kind === 'CANCEL_CONFIRMED_TARGET_UNKNOWN',
       );
@@ -1018,40 +1251,20 @@ export class StrategyScheduler {
       }
     }
 
+    // 7-8.
     let commitments: readonly StrategyCommitment[] = [];
-
     if (unsafeReason === undefined) {
-      // Authoritative post-condition #1: нет открытых ордеров этой стратегии.
-      // Переиспользуем orderStateStore (тот же authoritative repo, что и у
-      // ExecutionEngine — см. buildStrategyEngine: orderStateStore: orderRepo).
-      try {
-        const remaining = this._deps.orderStateStore.getOpenOrders(strategyId);
-        if (remaining.length > 0) {
-          unsafeReason = `authoritative post-check found ${remaining.length} live order(s) for strategy`;
-        }
-      } catch (err) {
-        unsafeReason = `authoritative post-check (open orders) threw: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-
-    if (unsafeReason === undefined) {
-      // Authoritative post-condition #2: нет unresolved submission/
-      // reservation/fill commitments (UNKNOWN submission, VENUE_ACCEPTED без
-      // локального Order, RECONCILIATION_REQUIRED reservation, unsettled
-      // fill). Отсутствие локального Order (#1) НЕ доказывает их отсутствие —
-      // см. `IStrategyCommitmentReader` doc. Reader-исключение — fail-closed
-      // (НЕ ловим отдельно: unsafeReason выставляется в catch).
-      try {
-        commitments = await this._deps.commitmentReader.getActiveCommitments({
+      const postCheck = await this._runPostCheck(strategyId, entry);
+      if (postCheck.kind === 'commitment-check-timed-out') {
+        return Err(new StopStrategyError(
+          'COMMITMENT_CHECK_TIMED_OUT',
           strategyId,
-          accountId: entry.accountId,
-          instrumentIds: this._commitmentInstrumentIds(entry),
-        });
-        if (commitments.length > 0) {
-          unsafeReason = `authoritative post-check found ${commitments.length} unresolved commitment(s): ${commitments.map((c) => c.kind).join(', ')}`;
-        }
-      } catch (err) {
-        unsafeReason = `authoritative commitment post-check threw: ${err instanceof Error ? err.message : String(err)}`;
+          `Strategy ${strategyId} commitment post-check exceeded commitmentCheckTimeoutMs — retry unregister later`,
+        ));
+      }
+      if (postCheck.kind === 'unsafe') {
+        unsafeReason = postCheck.reason;
+        commitments = postCheck.commitments;
       }
     }
 
@@ -1063,10 +1276,394 @@ export class StrategyScheduler {
       return Err(new StopStrategyError('FINAL_CLEANUP_UNCONFIRMED', strategyId, unsafeReason, { report, commitments }));
     }
 
+    // 9. dispose — пропускается, если уже успешно выполнен ранее.
+    if (!entry.disposed) {
+      const disposeOutcome = await this._runEntryDispose(entry);
+      if (disposeOutcome.kind === 'timed-out') {
+        this._logger.error('Strategy.dispose() exceeded disposeTimeoutMs — entry retained, retry unregister later', {
+          strategyId,
+        });
+        return Err(new StopStrategyError(
+          'DISPOSE_TIMED_OUT',
+          strategyId,
+          `Strategy.dispose() for ${strategyId} exceeded disposeTimeoutMs — retry unregister later`,
+        ));
+      }
+      if (disposeOutcome.kind === 'error') {
+        this._logger.error('Strategy.dispose() failed for ACTIVE shutdown — entry retained, retryable', {
+          strategyId,
+          error: disposeOutcome.error.message,
+        });
+        return Err(new StopStrategyError('DISPOSE_FAILED', strategyId, disposeOutcome.error.message, { cause: disposeOutcome.error }));
+      }
+      entry.disposed = true;
+    }
+
+    // 10-11. Повторный post-check: dispose() мог занять время, за которое
+    // могли появиться поздние ордера/commitments (recovery, late fill и т.п.).
+    const postCheck2 = await this._runPostCheck(strategyId, entry);
+    if (postCheck2.kind === 'commitment-check-timed-out') {
+      return Err(new StopStrategyError(
+        'COMMITMENT_CHECK_TIMED_OUT',
+        strategyId,
+        `Strategy ${strategyId} post-dispose commitment post-check exceeded commitmentCheckTimeoutMs — retry unregister later`,
+      ));
+    }
+    if (postCheck2.kind === 'unsafe') {
+      this._logger.error('Strategy final cleanup unconfirmed AFTER dispose — entry NOT removed, unregister must be retried', {
+        strategyId,
+        reason: postCheck2.reason,
+      });
+      return Err(new StopStrategyError('FINAL_CLEANUP_UNCONFIRMED', strategyId, postCheck2.reason, { commitments: postCheck2.commitments }));
+    }
+
+    // 12-13.
     entry.lifecycle = 'STOPPED';
     this._entries.delete(strategyId);
     this._logger.info('Strategy unregistered', { strategyId });
     return Ok(undefined);
+  }
+
+  /**
+   * Authoritative post-check: нет открытых ордеров стратегии + нет unresolved
+   * submission/reservation/fill commitments (bounded, tracked).
+   *
+   * @param strategyId - ID стратегии
+   * @param entry - Entry (для `commitmentCheckExecution`/timeout/instrumentIds)
+   * @returns `safe` — можно продолжать; `unsafe` — с причиной и commitments;
+   *   `commitment-check-timed-out` — reader завис, retry позже (state tracked)
+   *
+   * @remarks
+   * Переиспользуется ДВАЖДЫ в `_attemptStop` (до и после dispose) — единое
+   * поле `entry.commitmentCheckExecution` гарантирует, что обе точки вызова
+   * используют один и тот же single-flight tracked-slot.
+   */
+  private async _runPostCheck(
+    strategyId: string,
+    entry: StrategyEntry,
+  ): Promise<
+    | { kind: 'safe' }
+    | { kind: 'unsafe'; reason: string; commitments: readonly StrategyCommitment[] }
+    | { kind: 'commitment-check-timed-out' }
+  > {
+    // Authoritative post-condition #1: нет открытых ордеров этой стратегии.
+    // Переиспользуем orderStateStore (тот же authoritative repo, что и у
+    // ExecutionEngine — см. buildStrategyEngine: orderStateStore: orderRepo).
+    // Синхронный вызов — не нуждается в watchdog.
+    try {
+      const remaining = this._deps.orderStateStore.getOpenOrders(strategyId);
+      if (remaining.length > 0) {
+        return { kind: 'unsafe', reason: `authoritative post-check found ${remaining.length} live order(s) for strategy`, commitments: [] };
+      }
+    } catch (err) {
+      return {
+        kind: 'unsafe',
+        reason: `authoritative post-check (open orders) threw: ${err instanceof Error ? err.message : String(err)}`,
+        commitments: [],
+      };
+    }
+
+    // Authoritative post-condition #2: нет unresolved submission/reservation/
+    // fill commitments (UNKNOWN submission, VENUE_ACCEPTED без локального
+    // Order, RECONCILIATION_REQUIRED reservation, unsettled fill). Отсутствие
+    // локального Order (#1) НЕ доказывает их отсутствие — см.
+    // `IStrategyCommitmentReader` doc. Bounded + tracked (single-flight).
+    const commitOutcome = await this._runOrJoinTrackedOperation<readonly StrategyCommitment[]>(
+      () => entry.commitmentCheckExecution,
+      (op) => { entry.commitmentCheckExecution = op; },
+      () => this._deps.commitmentReader.getActiveCommitments({
+        strategyId,
+        accountId: entry.accountId,
+        instrumentIds: this._commitmentInstrumentIds(entry),
+      }),
+      entry.config.commitmentCheckTimeoutMs,
+    );
+
+    if (commitOutcome.kind === 'timed-out') {
+      return { kind: 'commitment-check-timed-out' };
+    }
+    if (commitOutcome.kind === 'error') {
+      return {
+        kind: 'unsafe',
+        reason: `authoritative commitment post-check threw: ${commitOutcome.error.message}`,
+        commitments: [],
+      };
+    }
+    if (commitOutcome.result.length > 0) {
+      return {
+        kind: 'unsafe',
+        reason: `authoritative post-check found ${commitOutcome.result.length} unresolved commitment(s): ${commitOutcome.result.map((c) => c.kind).join(', ')}`,
+        commitments: commitOutcome.result,
+      };
+    }
+    return { kind: 'safe' };
+  }
+
+  /**
+   * Bounded, tracked `entry.strategy.dispose()` для НОРМАЛЬНОЙ ACTIVE остановки.
+   *
+   * @param entry - Entry (использует `entry.disposeExecution`/`config.disposeTimeoutMs`)
+   * @returns `timed-out` | `ok` | `error` (Err ИЛИ throw из `dispose()` — объединены)
+   */
+  private async _runEntryDispose(entry: StrategyEntry): Promise<
+    | { kind: 'timed-out' }
+    | { kind: 'ok' }
+    | { kind: 'error'; error: Error }
+  > {
+    const outcome = await this._runOrJoinTrackedOperation<Result<void, Error>>(
+      () => entry.disposeExecution,
+      (op) => { entry.disposeExecution = op; },
+      () => entry.strategy.dispose(),
+      entry.config.disposeTimeoutMs,
+    );
+    if (outcome.kind === 'timed-out') return { kind: 'timed-out' };
+    if (outcome.kind === 'error') return { kind: 'error', error: outcome.error };
+    if (!outcome.result.ok) return { kind: 'error', error: outcome.result.error };
+    return { kind: 'ok' };
+  }
+
+  /**
+   * Bounded, tracked `dispose()` для `PendingDisposal` (отменённая во время
+   * `initialize()` регистрация).
+   *
+   * @param pd - Persistent tombstone
+   * @returns `timed-out` | `ok` | `error`
+   */
+  private async _runPendingDisposal(pd: PendingDisposal): Promise<
+    | { kind: 'timed-out' }
+    | { kind: 'ok' }
+    | { kind: 'error'; error: Error }
+  > {
+    const outcome = await this._runOrJoinTrackedOperation<Result<void, Error>>(
+      () => pd.disposeExecution,
+      (op) => { pd.disposeExecution = op; },
+      () => pd.strategy.dispose(),
+      pd.disposeTimeoutMs,
+    );
+    if (outcome.kind === 'timed-out') return { kind: 'timed-out' };
+    if (outcome.kind === 'error') return { kind: 'error', error: outcome.error };
+    if (!outcome.result.ok) return { kind: 'error', error: outcome.result.error };
+    return { kind: 'ok' };
+  }
+
+  /**
+   * Один attempt bounded disposal для `PendingDisposal` tombstone — может
+   * быть вызван повторно (retry после timeout/Err), коалесцирует concurrent
+   * вызовы через `attemptPromise`.
+   *
+   * @param pd - Persistent tombstone (из `_pendingDisposals`)
+   * @returns Ok(void) только после фактически успешного `dispose()` (tombstone
+   *   удалена); Err(DISPOSE_FAILED/DISPOSE_TIMED_OUT) — tombstone остаётся
+   *
+   * @remarks
+   * Если `pd.disposed === true` УЖЕ (не должно происходить — tombstone
+   * удаляется сразу после успеха — оставлено как defensive no-op) —
+   * немедленно возвращает Ok и удаляет запись.
+   */
+  private async _attemptPendingDisposal(pd: PendingDisposal): Promise<Result<void, StopStrategyError>> {
+    if (!pd.disposed) {
+      const outcome = await this._runPendingDisposal(pd);
+      if (outcome.kind === 'timed-out') {
+        this._logger.error('Pending disposal dispose() exceeded disposeTimeoutMs — tombstone retained, retry unregister later', {
+          strategyId: pd.strategyId,
+        });
+        return Err(new StopStrategyError(
+          'DISPOSE_TIMED_OUT',
+          pd.strategyId,
+          `Strategy.dispose() for ${pd.strategyId} exceeded disposeTimeoutMs — retry unregister later`,
+        ));
+      }
+      if (outcome.kind === 'error') {
+        this._logger.error('Pending disposal dispose() failed — tombstone retained, retryable', {
+          strategyId: pd.strategyId,
+          error: outcome.error.message,
+        });
+        return Err(new StopStrategyError('DISPOSE_FAILED', pd.strategyId, outcome.error.message, { cause: outcome.error }));
+      }
+      pd.disposed = true;
+    }
+
+    this._pendingDisposals.delete(pd.strategyId);
+    this._logger.info('Pending disposal completed — cancelled strategy registration fully cleaned up', { strategyId: pd.strategyId });
+    return Ok(undefined);
+  }
+
+  /**
+   * Коалесцирует concurrent `unregister()`/`stopAll()` попытки на один
+   * in-flight `_attemptPendingDisposal` для данного tombstone.
+   *
+   * @param pd - Persistent tombstone
+   * @returns Результат in-flight (joined) либо только что стартовавшего attempt
+   */
+  private async _joinOrStartPendingDisposalAttempt(pd: PendingDisposal): Promise<Result<void, StopStrategyError>> {
+    if (pd.attemptPromise) {
+      return pd.attemptPromise;
+    }
+    const attempt = this._attemptPendingDisposal(pd);
+    pd.attemptPromise = attempt;
+    try {
+      return await attempt;
+    } finally {
+      if (pd.attemptPromise === attempt) {
+        pd.attemptPromise = undefined;
+      }
+    }
+  }
+
+  /**
+   * Generic single-flight bounded async operation: старт-или-join + timeout +
+   * explicit-processing-then-clear.
+   *
+   * @param getOp - Читает текущий tracked-slot (например, `entry.disposeExecution`)
+   * @param setOp - Записывает tracked-slot (`undefined` — после обработки результата)
+   * @param run - Запускается ТОЛЬКО если `getOp()` вернул `undefined` (нет
+   *   in-flight операции данного типа) — никогда не запускается параллельно
+   * @param timeoutMs - Watchdog-таймаут ДЛЯ ЭТОЙ операции
+   * @returns `timed-out` (state остаётся tracked, НЕ очищается) | `ok` | `error`
+   *   (оба последних — operation ФАКТИЧЕСКИ завершилась, state уже очищен)
+   *
+   * @remarks
+   * `run()` НЕ считается отменённым при timeout — Promise остаётся tracked в
+   * slot-е (через `getOp`), следующий вызов с тем же `getOp`/`setOp` увидит
+   * его и присоединится (`Promise.race` вернёт `'completed'` немедленно, если
+   * он уже успел завершиться). State очищается (`setOp(undefined)`) ТОЛЬКО
+   * когда `run()` фактически разрешился — что позволяет следующему вызову
+   * стартовать СВЕЖУЮ операцию (например, final cleanup с fresh CANCEL_ALL).
+   */
+  private async _runOrJoinTrackedOperation<T>(
+    getOp: () => TrackedAsyncOperation<T> | undefined,
+    setOp: (op: TrackedAsyncOperation<T> | undefined) => void,
+    run: () => Promise<T>,
+    timeoutMs: number,
+  ): Promise<
+    | { kind: 'timed-out' }
+    | { kind: 'ok'; result: T }
+    | { kind: 'error'; error: Error }
+  > {
+    let op = getOp();
+    if (op === undefined) {
+      op = this._startTrackedOperation(run, timeoutMs);
+      setOp(op);
+    }
+
+    const raceOutcome = await Promise.race([
+      op.promise.then((): 'completed' => 'completed'),
+      op.timeoutSignal.then((): 'timed-out' => 'timed-out'),
+    ]);
+
+    if (raceOutcome === 'timed-out') {
+      return { kind: 'timed-out' };
+    }
+
+    // Завершилось фактически — обрабатываем результат и очищаем tracked
+    // state, разрешая следующему вызову начать СВЕЖУЮ операцию.
+    setOp(undefined);
+    if (op.error !== undefined) {
+      return { kind: 'error', error: op.error };
+    }
+    return { kind: 'ok', result: op.result as T };
+  }
+
+  /**
+   * Стартует новый {@link TrackedAsyncOperation} — watchdog через
+   * `ISchedulerTimer`, НЕ отменяющий `run()`.
+   *
+   * @param run - Асинхронная операция (синхронные throws тоже перехватываются)
+   * @param timeoutMs - Watchdog-таймаут
+   * @returns Новый `TrackedAsyncOperation` (уже запущенный)
+   *
+   * @remarks
+   * `op` объявлена `let` и присваивается ПОСЛЕ настройки timeout callback-а и
+   * `promise`-цепочки, но ОБА замыкания ссылаются на неё по имени — оба
+   * выполняются асинхронно (таймер callback, `.then/.catch/.finally`), уже
+   * ПОСЛЕ синхронного присваивания `op = {...}` в конце функции. TypeScript
+   * definite-assignment анализ не отслеживает через отложенные
+   * function-expression замыкания, поэтому это НЕ вызывает TS2454 (проверено
+   * эмпирически под `--strict`) — тот же паттерн, что и `ActiveExecution` в
+   * `_executeTick`.
+   */
+  private _startTrackedOperation<T>(run: () => Promise<T>, timeoutMs: number): TrackedAsyncOperation<T> {
+    const startedAtMs = this._deps.clock.now().getTime();
+
+    let resolveTimeoutSignal: () => void = () => {};
+    const timeoutSignal = new Promise<void>((resolve) => {
+      resolveTimeoutSignal = resolve;
+    });
+
+    // `op` присваивается РОВНО ОДИН РАЗ, но ПОСЛЕ объявления closures (timeout
+    // callback, promise chain), которые ссылаются на неё по имени — `const`
+    // невозможен: значение ещё не построено (зависит от `timeoutHandle`/
+    // `promise`, которые сами ссылаются на `op`). Forward-reference pattern,
+    // см. doc выше.
+    // eslint-disable-next-line prefer-const
+    let op: TrackedAsyncOperation<T>;
+
+    const timeoutHandle = this._deps.timer.setTimeout(() => {
+      if (op.completed) return;
+      op.timedOut = true;
+      resolveTimeoutSignal();
+    }, timeoutMs);
+
+    // Promise.resolve().then(run) нормализует СИНХРОННЫЕ throws из run()
+    // (например, стратегия/reader с багом, бросающие до возврата Promise) в
+    // rejection — чтобы .catch() ниже гарантированно их поймал.
+    const promise = Promise.resolve()
+      .then(() => run())
+      .then((result) => {
+        op.result = result;
+      })
+      .catch((err: unknown) => {
+        op.error = err instanceof Error ? err : new Error(String(err));
+      })
+      .finally(() => {
+        op.completed = true;
+        this._deps.timer.clearTimeout(timeoutHandle);
+      });
+
+    op = {
+      promise,
+      startedAtMs,
+      timedOut: false,
+      completed: false,
+      timeoutHandle,
+      timeoutSignal,
+      result: undefined,
+      error: undefined,
+    };
+
+    return op;
+  }
+
+  /**
+   * Ограничивает ожидание произвольного (не-tracked) Promise таймаутом —
+   * используется для `pending.completion` в `unregister()` (нет
+   * single-flight/join семантики — каждый вызов ставит СВОЙ таймер).
+   *
+   * @param promise - Promise, который никогда не rejects (например,
+   *   `PendingRegistration.completion`)
+   * @param timeoutMs - Таймаут ожидания
+   * @returns `completed` с результатом, либо `timed-out` (promise остаётся
+   *   pending — НЕ отменяется)
+   */
+  private async _raceWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+  ): Promise<{ kind: 'completed'; result: T } | { kind: 'timed-out' }> {
+    let resolveTimeoutSignal: () => void = () => {};
+    const timeoutSignal = new Promise<void>((resolve) => {
+      resolveTimeoutSignal = resolve;
+    });
+    const timeoutHandle = this._deps.timer.setTimeout(() => {
+      resolveTimeoutSignal();
+    }, timeoutMs);
+
+    const outcome = await Promise.race([
+      promise.then((result): { kind: 'completed'; result: T } => ({ kind: 'completed', result })),
+      timeoutSignal.then((): { kind: 'timed-out' } => ({ kind: 'timed-out' })),
+    ]);
+
+    this._deps.timer.clearTimeout(timeoutHandle);
+    return outcome;
   }
 
   /**
@@ -1119,12 +1716,24 @@ export class StrategyScheduler {
    * Инструменты, для которых `IStrategyCommitmentReader` проверяет unsettled fills.
    *
    * @param entry - Entry стратегии
-   * @returns Primary + complementary (если задан)
+   * @returns Primary + complementary (если задан) + все `additionalTradableTargets` (deduplicated)
    */
   private _commitmentInstrumentIds(entry: StrategyEntry): readonly InstrumentId[] {
     const ids: InstrumentId[] = [entry.instrumentId];
+    const seen = new Set<string>([String(entry.instrumentId)]);
     if (entry.complementaryInstrumentId !== undefined) {
-      ids.push(entry.complementaryInstrumentId);
+      const key = String(entry.complementaryInstrumentId);
+      if (!seen.has(key)) {
+        seen.add(key);
+        ids.push(entry.complementaryInstrumentId);
+      }
+    }
+    for (const target of entry.additionalTradableTargets) {
+      const key = String(target.instrumentId);
+      if (!seen.has(key)) {
+        seen.add(key);
+        ids.push(target.instrumentId);
+      }
     }
     return ids;
   }
@@ -1132,66 +1741,99 @@ export class StrategyScheduler {
   /**
    * Останавливает и снимает регистрацию всех стратегий (безопасный flow).
    *
-   * @returns Ok(void) если все стратегии (и pending registrations) успешно
-   *   остановлены; Err(readonly StopStrategyError[]) с накопленными ошибками
+   * @returns Ok(void) если все стратегии (pending registrations, pending
+   *   disposals и registered entries) успешно остановлены; иначе
+   *   Err(readonly StopStrategyError[]) с накопленными ошибками
    *
    * @remarks
    * Порядок:
    * 1. Поднимает global stopping barrier — `register()` немедленно отклоняет
    *    новые регистрации.
    * 2. Отменяет ВСЕ pending registrations (initialize() в процессе) и ждёт
-   *    их completion (`dispose()` вызывается внутри `_completeRegistration`) —
-   *    гарантирует, что ни одна не опубликует ACTIVE entry после начала
-   *    stopAll(), И что `dispose()`-failure виден в aggregate результате.
-   * 3. Останавливает все существующие entries через safe `unregister()`.
-   * НЕ логирует «All strategies stopped», если хотя бы одна регистрация или
-   * стратегия не остановлена подтверждённо (включая `dispose()` failure).
+   *    их completion — BOUNDED (каждая своим `cancellationTimeoutMs`), чтобы
+   *    зависший `initialize()` не заблокировал `stopAll()` навсегда
+   *    (`INITIALIZATION_CANCELLATION_TIMED_OUT` — retryable, не отменяет
+   *    `initialize()`).
+   * 3. Отдельно агрегирует ВСЕ `_pendingDisposals` (созданные шагом 2 либо
+   *    оставшиеся от предыдущих неудачных `unregister()`-попыток) — каждый
+   *    коалесцируется на свой in-flight attempt через
+   *    `_joinOrStartPendingDisposalAttempt` (никогда не запускает
+   *    параллельный второй dispose).
+   * 4. Останавливает все существующие entries через safe `unregister()`.
+   * НЕ логирует «All strategies stopped», если хотя бы одна регистрация,
+   * disposal или стратегия не остановлена подтверждённо, ЛИБО если
+   * `_pendingDisposals` всё ещё непусто по завершении шага 3.
    */
   public async stopAll(): Promise<Result<void, readonly StopStrategyError[]>> {
     this._globalStopping = true;
 
-    const pendingIds = [...this._pendingRegistrations.keys()];
-    for (const id of pendingIds) {
-      const p = this._pendingRegistrations.get(id);
-      if (p) p.cancelled = true;
+    // 2. Pending registrations — bounded wait (каждая своим cancellationTimeoutMs).
+    const pendingEntries = [...this._pendingRegistrations.entries()];
+    for (const [, p] of pendingEntries) {
+      p.cancelled = true;
     }
-    const pendingCompletions = await Promise.all(
-      pendingIds.map((id) => this._pendingRegistrations.get(id)?.completion ?? Promise.resolve(Ok(undefined))),
+    const pendingWaitOutcomes = await Promise.all(
+      pendingEntries.map(([, p]) => this._raceWithTimeout(p.completion, p.cancellationTimeoutMs)),
     );
-
-    // ВАЖНО: обычная отмена pending registration (без сбоя dispose) — это
-    // ОЖИДАЕМЫЙ, успешный для stopAll исход (_completeRegistration ВСЕГДА
-    // возвращает Err на cancelled-ветке, даже когда dispose() отработал
-    // штатно — Err здесь означает «регистрация не завершилась публикацией»,
-    // а не «stopAll не справился»). Только `StrategyDisposeFailedError`
-    // означает, что ресурсы могли остаться не освобождены — ТОЛЬКО это
-    // считается failure для stopAll.
     const pendingErrors: StopStrategyError[] = [];
-    for (let i = 0; i < pendingIds.length; i++) {
-      const result = pendingCompletions[i];
-      if (!result.ok && result.error instanceof StrategyDisposeFailedError) {
-        pendingErrors.push(new StopStrategyError('DISPOSE_FAILED', pendingIds[i], result.error.message, { cause: result.error }));
+    for (let i = 0; i < pendingEntries.length; i++) {
+      const [id] = pendingEntries[i];
+      const outcome = pendingWaitOutcomes[i];
+      if (outcome.kind === 'timed-out') {
+        pendingErrors.push(new StopStrategyError(
+          'INITIALIZATION_CANCELLATION_TIMED_OUT',
+          id,
+          `Strategy ${id} initialize() has not completed yet — cancellation requested, retry unregister later`,
+        ));
       }
+      // 'completed' (Ok ИЛИ Err от _completeRegistration) само по себе не
+      // failure для stopAll — реальный dispose-исход агрегируется отдельно
+      // на шаге 3 через _pendingDisposals (tombstone, если он появился).
     }
 
+    // 3. Pending disposals — ЛЮБЫЕ, включая только что созданные шагом 2.
+    const disposalEntries = [...this._pendingDisposals.entries()];
+    const disposalResults = disposalEntries.length > 0
+      ? await Promise.all(disposalEntries.map(([, pd]) => this._joinOrStartPendingDisposalAttempt(pd)))
+      : [];
+    const disposalErrors = disposalResults
+      .filter((r): r is { ok: false; error: StopStrategyError } => !r.ok)
+      .map((r) => r.error);
+
+    // 4. Существующие entries.
     const entryIds = [...this._entries.keys()];
     const entryResults = entryIds.length > 0 ? await Promise.all(entryIds.map((id) => this.unregister(id))) : [];
     const entryErrors = entryResults
       .filter((r): r is { ok: false; error: StopStrategyError } => !r.ok)
       .map((r) => r.error);
 
-    const failures = [...pendingErrors, ...entryErrors];
+    // Defensive fallback: если после шага 3 в _pendingDisposals всё ещё
+    // что-то осталось (не должно происходить при disposalErrors.length===0 —
+    // _attemptPendingDisposal удаляет tombstone ТОЛЬКО при успехе — но
+    // явно проверяем контракт "никогда не молчать про pending disposal").
+    const staleDisposalErrors = [...this._pendingDisposals.keys()].map(
+      (id) => new StopStrategyError('DISPOSE_FAILED', id, `Pending disposal for ${id} remains unresolved after stopAll`),
+    );
+
+    const failures = [...pendingErrors, ...disposalErrors, ...entryErrors, ...staleDisposalErrors];
     if (failures.length > 0) {
       this._logger.error('stopAll: some strategies failed to stop cleanly', {
         pendingFailures: pendingErrors.length,
+        disposalFailures: disposalErrors.length,
         entryFailures: entryErrors.length,
-        totalPending: pendingIds.length,
+        totalPending: pendingEntries.length,
+        totalDisposals: disposalEntries.length,
         totalEntries: entryIds.length,
+        remainingPendingDisposals: this._pendingDisposals.size,
       });
       return Err(failures);
     }
 
-    this._logger.info('All strategies stopped', { count: entryIds.length, pendingCancelled: pendingIds.length });
+    this._logger.info('All strategies stopped', {
+      count: entryIds.length,
+      pendingCancelled: pendingEntries.length,
+      disposalsResolved: disposalEntries.length,
+    });
     return Ok(undefined);
   }
 
@@ -1674,6 +2316,33 @@ export class StrategyScheduler {
    * @remarks
    * Все данные доступны синхронно. O(1) для каждого поля.
    */
+  /**
+   * Разделяет открытые ордера стратегии на инструменте на cancellable
+   * (openOrders) и in-flight (matchedOrders).
+   *
+   * @param strategyId - ID стратегии
+   * @param instrumentId - Инструмент
+   * @returns `{ openOrders, matchedOrders }` — та же логика разделения, что
+   *   для primary/complementary (см. {@link _buildSnapshot}), переиспользуется
+   *   для каждого `additionalTradableTargets` элемента.
+   */
+  private _splitOrdersForInstrument(
+    strategyId: string,
+    instrumentId: InstrumentId,
+  ): { openOrders: Order[]; matchedOrders: Order[] } {
+    const all = this._deps.orderStateStore.getOpenOrdersByInstrument(strategyId, instrumentId);
+    const openOrders: Order[] = [];
+    const matchedOrders: Order[] = [];
+    for (const o of all) {
+      if (this._deps.orderStateStore.hasMatchedFills(o.id)) {
+        matchedOrders.push(o);
+      } else {
+        openOrders.push(o);
+      }
+    }
+    return { openOrders, matchedOrders };
+  }
+
   private _buildSnapshot(entry: StrategyEntry): StrategySnapshot {
     const id = entry.instrumentId;
 
@@ -1681,16 +2350,7 @@ export class StrategyScheduler {
     // MATCHED = fill(ы) в пути (MATCHED → MINED → CONFIRMED), отменить нельзя.
     // openOrders — стратегия может отменять/переставлять.
     // matchedOrders — стратегия должна учитывать (чтобы не перекупать), но не отменять.
-    const allOpen = this._deps.orderStateStore.getOpenOrdersByInstrument(entry.strategy.id, id);
-    const openOrders: import('@polymarket/order').Order[] = [];
-    const matchedOrders: import('@polymarket/order').Order[] = [];
-    for (const o of allOpen) {
-      if (this._deps.orderStateStore.hasMatchedFills(o.id)) {
-        matchedOrders.push(o);
-      } else {
-        openOrders.push(o);
-      }
-    }
+    const { openOrders, matchedOrders } = this._splitOrdersForInstrument(entry.strategy.id, id);
 
     // Instrument-level unsettled detection (Stage 6): venue in-flight (MATCHED/
     // MINED без CONFIRMED) ЛИБО application processing-блок (FAILED_RETRYABLE/
@@ -1766,21 +2426,14 @@ export class StrategyScheduler {
       : undefined;
 
     const compId = entry.complementaryInstrumentId;
-    let complementaryOpenOrders: import('@polymarket/order').Order[] | undefined;
-    let complementaryMatchedOrders: import('@polymarket/order').Order[] | undefined;
+    let complementaryOpenOrders: Order[] | undefined;
+    let complementaryMatchedOrders: Order[] | undefined;
     let hasComplementaryInFlightFills = false;
 
     if (compId) {
-      const allCompOpen = this._deps.orderStateStore.getOpenOrdersByInstrument(entry.strategy.id, compId);
-      complementaryOpenOrders = [];
-      complementaryMatchedOrders = [];
-      for (const o of allCompOpen) {
-        if (this._deps.orderStateStore.hasMatchedFills(o.id)) {
-          complementaryMatchedOrders.push(o);
-        } else {
-          complementaryOpenOrders.push(o);
-        }
-      }
+      const split = this._splitOrdersForInstrument(entry.strategy.id, compId);
+      complementaryOpenOrders = split.openOrders;
+      complementaryMatchedOrders = split.matchedOrders;
 
       hasComplementaryInFlightFills = this._deps.orderStateStore.hasUnsettledFills(compId);
       if (hasComplementaryInFlightFills && complementaryMatchedOrders.length === 0) {
@@ -1789,6 +2442,29 @@ export class StrategyScheduler {
           instrumentId: String(compId),
         });
       }
+    }
+
+    // additionalTradableTargets: тот же per-инструмент срез (book/constraints/
+    // orders/unsettled), что и primary/complementary — иначе стратегия могла
+    // бы получить разрешение торговать инструментом (tradableInstrumentKeys),
+    // не видя его данных в snapshot.
+    const additionalTradableInstruments = new Map<string, TradableInstrumentSnapshot>();
+    for (const target of entry.additionalTradableTargets) {
+      const { openOrders: targetOpen, matchedOrders: targetMatched } = this._splitOrdersForInstrument(
+        entry.strategy.id,
+        target.instrumentId,
+      );
+      additionalTradableInstruments.set(String(target.instrumentId), {
+        instrumentId: target.instrumentId,
+        asset: target.asset,
+        topOfBook: this._deps.marketDataStore.getTopOfBook(target.instrumentId),
+        bookHistory: this._deps.marketDataStore.getBookHistory(target.instrumentId),
+        tradeTape: this._deps.marketDataStore.getTradeTape(target.instrumentId),
+        constraints: this._constraintsFor(target.instrumentId),
+        openOrders: targetOpen,
+        matchedOrders: targetMatched,
+        hasUnsettledFills: this._deps.orderStateStore.hasUnsettledFills(target.instrumentId),
+      });
     }
 
     return {
@@ -1817,6 +2493,7 @@ export class StrategyScheduler {
       complementaryConstraints: compId ? this._constraintsFor(compId) : undefined,
       hasComplementaryInFlightFills,
       complementaryTradeTape: compId ? this._deps.marketDataStore.getTradeTape(compId) : undefined,
+      additionalTradableInstruments,
     };
   }
 

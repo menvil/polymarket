@@ -862,7 +862,10 @@ describe('StrategyScheduler', () => {
 
       expect(result.ok).toBe(true);
       expect(scheduler.getMetrics('s1')).toBeUndefined();
-      expect(commitmentReader.getActiveCommitments).toHaveBeenCalledTimes(1);
+      // Вызывается ДВАЖДЫ: pre-dispose post-check (шаги 7-8) + post-dispose
+      // re-check (шаги 10-11) — dispose() мог занять время, за которое могли
+      // появиться поздние ордера/commitments (см. _attemptStop 13-шаговый порядок).
+      expect(commitmentReader.getActiveCommitments).toHaveBeenCalledTimes(2);
     });
 
     // ── Fresh CANCEL_ALL on every retry (P1) ─────────────
@@ -1701,6 +1704,663 @@ describe('StrategyScheduler', () => {
       await flush();
 
       expect(strategy.tick).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── final cleanup lifecycle (P0: bounded, retryable final cleanup) ──
+
+  describe('final cleanup lifecycle', () => {
+    it('hung final execute() → timeout → Err(FINAL_CLEANUP_TIMED_OUT), entry остаётся, dispose/post-check НЕ запускаются', async () => {
+      const strategy = makeStrategy('s1');
+      executionEngine.execute.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+      await scheduler.register(makeRegistration(strategy, { config: { finalCleanupTimeoutMs: 1000 } }));
+
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const result = await unregPromise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('FINAL_CLEANUP_TIMED_OUT');
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+      expect(strategy.dispose).not.toHaveBeenCalled();
+      expect(commitmentReader.getActiveCommitments).not.toHaveBeenCalled();
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('repeated unregister() пока final cleanup ещё зависший — НЕ запускает второй параллельный execute()', async () => {
+      const strategy = makeStrategy('s1');
+      executionEngine.execute.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+      await scheduler.register(makeRegistration(strategy, { config: { finalCleanupTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(false);
+      if (!second.ok) expect(second.error.code).toBe('FINAL_CLEANUP_TIMED_OUT');
+
+      // execute() вызван РОВНО ОДИН раз за оба unregister — retry коалесцируется
+      // на ТУ ЖЕ tracked-операцию вместо второго параллельного запуска.
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1);
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('поздний БЕЗОПАСНЫЙ результат ПОСЛЕ timeout → следующий unregister() использует его и завершает stop', async () => {
+      const strategy = makeStrategy('s1');
+      let resolveExec: (() => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveExec = () => resolve(emptyReport());
+      }));
+      await scheduler.register(makeRegistration(strategy, { config: { finalCleanupTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('FINAL_CLEANUP_TIMED_OUT');
+
+      // Hung execute() наконец завершается БЕЗОПАСНО.
+      resolveExec!();
+      await flush();
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(true);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1); // не перезапускался — использован поздний результат
+    });
+
+    it('поздний НЕБЕЗОПАСНЫЙ результат ПОСЛЕ timeout → обрабатывающий вызов возвращает FINAL_CLEANUP_UNCONFIRMED, следующий ОТДЕЛЬНЫЙ attempt делает fresh CANCEL_ALL', async () => {
+      const strategy = makeStrategy('s1');
+      let resolveExec: ((report: any) => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveExec = resolve;
+      }));
+      await scheduler.register(makeRegistration(strategy, { config: { finalCleanupTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('FINAL_CLEANUP_TIMED_OUT');
+
+      // Hung execute() завершается, но НЕБЕЗОПАСНО (failed > 0).
+      resolveExec!({
+        ...emptyReport(),
+        failed: 1,
+        errors: [{ intent: { type: 'CANCEL_ALL' }, error: new Error('x') }],
+      });
+      await flush();
+
+      // Обрабатывающий вызов: видит поздний (небезопасный) результат зависшей операции.
+      const processing = await scheduler.unregister('s1');
+      expect(processing.ok).toBe(false);
+      if (!processing.ok) expect(processing.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1); // всё ещё только исходный hung
+
+      // Следующий ОТДЕЛЬНЫЙ attempt — fresh CANCEL_ALL (новый execute()).
+      executionEngine.execute.mockResolvedValueOnce(emptyReport());
+      const retry = await scheduler.unregister('s1');
+      expect(retry.ok).toBe(true);
+      expect(executionEngine.execute).toHaveBeenCalledTimes(2);
+    });
+
+    it('stopAll() с зависшим final cleanup → aggregate FINAL_CLEANUP_TIMED_OUT, не зависает навсегда', async () => {
+      const strategy = makeStrategy('s1');
+      executionEngine.execute.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+      await scheduler.register(makeRegistration(strategy, { config: { finalCleanupTimeoutMs: 1000 } }));
+
+      const stopAllPromise = scheduler.stopAll();
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const result = await stopAllPromise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.some((e) => e.code === 'FINAL_CLEANUP_TIMED_OUT')).toBe(true);
+      }
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+  });
+
+  // ── disposal lifecycle (P1: bounded, non-reentrant ACTIVE dispose) ──
+
+  describe('disposal lifecycle', () => {
+    it('dispose() успешен → Ok, entry удалена, dispose() вызван ровно один раз', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(true);
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('dispose() возвращает Err → DISPOSE_FAILED, entry остаётся, retry вызывает dispose() снова', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      (strategy.dispose as any).mockResolvedValueOnce(Err(new Error('dispose boom')));
+
+      const first = await scheduler.unregister('s1');
+      expect(first.ok).toBe(false);
+      if (!first.ok) expect(first.error.code).toBe('DISPOSE_FAILED');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(true);
+      expect(strategy.dispose).toHaveBeenCalledTimes(2);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('dispose() бросает исключение (ACTIVE shutdown) → DISPOSE_FAILED, не проглатывается', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+      (strategy.dispose as any).mockRejectedValueOnce(new Error('dispose threw'));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('DISPOSE_FAILED');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('dispose() зависает → DISPOSE_TIMED_OUT, entry остаётся, retry коалесцируется (НЕ второй параллельный dispose)', async () => {
+      const strategy = makeStrategy('s1');
+      let resolveDispose: ((r: Result<void, Error>) => void) | undefined;
+      (strategy.dispose as any).mockImplementationOnce(() => new Promise((resolve) => { resolveDispose = resolve; }));
+      await scheduler.register(makeRegistration(strategy, { config: { disposeTimeoutMs: 1000 } }));
+
+      // Больше итераций flush: перед dispose() (шаг 9) должны фактически
+      // ЗАВЕРШИТЬСЯ final cleanup (шаг 5) и pre-dispose commitment-check (шаг
+      // 8) — каждый из них сам по себе цепочка из нескольких microtask-хопов
+      // (tracked-operation promise chain + Promise.race), поэтому watchdog
+      // dispose() регистрируется НЕ сразу после вызова unregister().
+      const first = scheduler.unregister('s1');
+      await flush(30);
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('DISPOSE_TIMED_OUT');
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(false);
+      if (!second.ok) expect(second.error.code).toBe('DISPOSE_TIMED_OUT');
+      expect(strategy.dispose).toHaveBeenCalledTimes(1); // не второй параллельный вызов
+
+      resolveDispose!(Ok(undefined));
+    });
+
+    it('поздний Ok ПОСЛЕ dispose timeout → следующий unregister() видит завершённую операцию (disposed=true), продолжает', async () => {
+      const strategy = makeStrategy('s1');
+      let resolveDispose: ((r: Result<void, Error>) => void) | undefined;
+      (strategy.dispose as any).mockImplementationOnce(() => new Promise((resolve) => { resolveDispose = resolve; }));
+      await scheduler.register(makeRegistration(strategy, { config: { disposeTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush(30);
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('DISPOSE_TIMED_OUT');
+
+      resolveDispose!(Ok(undefined));
+      await flush();
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(true);
+      expect(strategy.dispose).toHaveBeenCalledTimes(1); // не вызван повторно
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('пост-dispose recheck небезопасен → entry остаётся, disposed=true (dispose НЕ вызывается повторно), следующий retry делает fresh CANCEL_ALL', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      commitmentReader.getActiveCommitments
+        .mockResolvedValueOnce([]) // pre-dispose (шаг 8) — чисто
+        .mockResolvedValueOnce([{ kind: 'UNKNOWN_SUBMISSION', id: 'x', instrumentId: INSTRUMENT_ID }]); // post-dispose (шаг 11)
+
+      const first = await scheduler.unregister('s1');
+      expect(first.ok).toBe(false);
+      if (!first.ok) expect(first.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+
+      commitmentReader.getActiveCommitments.mockResolvedValue([]);
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(true);
+      expect(strategy.dispose).toHaveBeenCalledTimes(1); // всё ещё один раз — disposed=true, не переисполняется
+      expect(executionEngine.execute).toHaveBeenCalledTimes(2); // fresh CANCEL_ALL на retry
+    });
+  });
+
+  // ── pending registration disposal (persistent tombstone) ──
+
+  describe('pending registration disposal', () => {
+    it('retry после dispose() Err успевает — tombstone удаляется, повторный unregister ПОСЛЕ этого возвращает STRATEGY_NOT_FOUND', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockResolvedValueOnce(Err(new Error('dispose boom')));
+
+      void scheduler.register(makeRegistration(strategy));
+      await flush();
+
+      const firstUnreg = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      const firstResult = await firstUnreg;
+
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('DISPOSE_FAILED');
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+
+      const retryResult = await scheduler.unregister('s1');
+      expect(retryResult.ok).toBe(true);
+      expect(strategy.dispose).toHaveBeenCalledTimes(2);
+
+      const afterResult = await scheduler.unregister('s1');
+      expect(afterResult.ok).toBe(false);
+      if (!afterResult.ok) expect(afterResult.error.code).toBe('STRATEGY_NOT_FOUND');
+    });
+
+    it('зависший dispose() (PendingDisposal) блокирует новую регистрацию с тем же ID', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+
+      void scheduler.register(makeRegistration(strategy, { config: { disposeTimeoutMs: 1000 } }));
+      await flush();
+
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const unregResult = await unregPromise;
+      expect(unregResult.ok).toBe(false);
+      if (!unregResult.ok) expect(unregResult.error.code).toBe('DISPOSE_TIMED_OUT');
+
+      const strategy2 = makeStrategy('s1');
+      const registerResult = await scheduler.register(makeRegistration(strategy2));
+      expect(registerResult.ok).toBe(false);
+    });
+
+    it('stopAll видит PendingDisposal (dispose() Err) и возвращает aggregate DISPOSE_FAILED', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockResolvedValue(Err(new Error('dispose boom')));
+
+      void scheduler.register(makeRegistration(strategy));
+      await flush();
+
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      const unregResult = await unregPromise;
+      expect(unregResult.ok).toBe(false);
+      if (!unregResult.ok) expect(unregResult.error.code).toBe('DISPOSE_FAILED');
+
+      const stopAllResult = await scheduler.stopAll();
+      expect(stopAllResult.ok).toBe(false);
+      if (!stopAllResult.ok) {
+        expect(stopAllResult.error.some((e) => e.code === 'DISPOSE_FAILED')).toBe(true);
+      }
+    });
+
+    it('после успешного retry dispose() — новая регистрация с тем же ID снова разрешена', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockResolvedValueOnce(Err(new Error('dispose boom')));
+
+      void scheduler.register(makeRegistration(strategy));
+      await flush();
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      await unregPromise;
+
+      const retryResult = await scheduler.unregister('s1');
+      expect(retryResult.ok).toBe(true);
+
+      const strategy2 = makeStrategy('s1');
+      const registerResult = await scheduler.register(makeRegistration(strategy2));
+      expect(registerResult.ok).toBe(true);
+    });
+  });
+
+  // ── additional tradable snapshots (end-to-end additionalTradableTargets) ──
+
+  describe('additional tradable snapshots', () => {
+    it('snapshot.additionalTradableInstruments содержит корректный per-инструмент срез', async () => {
+      const extraToken = '999';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const extraConstraints = makeInstrumentInfo();
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: extraConstraints,
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const extraOrder = { id: 'order-extra-1' } as any;
+      (d.orderStateStore.getOpenOrdersByInstrument as any).mockImplementation(
+        (_sid: string, instrId: InstrumentId) => (String(instrId) === String(extraInstrumentId) ? [extraOrder] : []),
+      );
+      (d.orderStateStore.hasUnsettledFills as any).mockImplementation(
+        (instrId: InstrumentId) => String(instrId) === String(extraInstrumentId),
+      );
+
+      const strategy = makeStrategy('s1', { tickResult: [] });
+      await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [{ instrumentId: extraInstrumentId, asset: extraAsset }],
+      }));
+      s.start();
+
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+
+      const snapshot = (strategy.tick as any).mock.calls[0][0] as StrategySnapshot;
+      const extraSnapshot = snapshot.additionalTradableInstruments.get(String(extraInstrumentId));
+      expect(extraSnapshot).toBeDefined();
+      expect(extraSnapshot?.instrumentId).toBe(extraInstrumentId);
+      expect(extraSnapshot?.asset).toBe(extraAsset);
+      expect(extraSnapshot?.openOrders).toEqual([extraOrder]);
+      expect(extraSnapshot?.hasUnsettledFills).toBe(true);
+      expect(extraSnapshot?.constraints).toEqual({
+        minOrderSize: extraConstraints.minOrderSize,
+        minOrderValue: extraConstraints.minOrderValue,
+        tickSize: extraConstraints.tickSize,
+      });
+
+      await s.stopAll();
+      s.stop();
+    });
+
+    it('commitmentReader получает additional instrumentId в instrumentIds', async () => {
+      const extraToken = '555';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const strategy = makeStrategy('s1');
+      await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [{ instrumentId: extraInstrumentId, asset: extraAsset }],
+      }));
+
+      await s.unregister('s1');
+
+      expect(d.commitmentReader.getActiveCommitments).toHaveBeenCalledWith(
+        expect.objectContaining({
+          instrumentIds: expect.arrayContaining([INSTRUMENT_ID, extraInstrumentId]),
+        }),
+      );
+    });
+
+    it('unresolved commitment на additional target блокирует удаление (FINAL_CLEANUP_UNCONFIRMED)', async () => {
+      const extraToken = '444';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      d.commitmentReader.getActiveCommitments.mockResolvedValueOnce([
+        { kind: 'UNKNOWN_SUBMISSION', id: 'x', instrumentId: extraInstrumentId },
+      ]);
+
+      const strategy = makeStrategy('s1');
+      await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [{ instrumentId: extraInstrumentId, asset: extraAsset }],
+      }));
+
+      const result = await s.unregister('s1');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('FINAL_CLEANUP_UNCONFIRMED');
+
+      d.commitmentReader.getActiveCommitments.mockResolvedValue([]);
+      await s.stopAll();
+      s.stop();
+    });
+
+    it('additionalTradableTargets: совпадение с primary instrumentId отклоняется при регистрации', async () => {
+      const strategy = makeStrategy('s1');
+      const result = await scheduler.register(makeRegistration(strategy, {
+        additionalTradableTargets: [{ instrumentId: INSTRUMENT_ID, asset: ASSET_ID }],
+      }));
+      expect(result.ok).toBe(false);
+    });
+
+    it('additionalTradableTargets: дубликат ТОЙ ЖЕ пары молча схлопывается (не Err)', async () => {
+      const extraToken = '222999';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const strategy = makeStrategy('s1', { tickResult: [] });
+      const result = await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [
+          { instrumentId: extraInstrumentId, asset: extraAsset },
+          { instrumentId: extraInstrumentId, asset: extraAsset },
+        ],
+      }));
+
+      expect(result.ok).toBe(true);
+
+      await s.stopAll();
+      s.stop();
+    });
+
+    it('additionalTradableTargets: дубликат instrumentId с несовпадающим (невалидным для него) asset отклоняется при регистрации', async () => {
+      const extraToken = '333';
+      const extraInstrumentId = asInstrumentId(extraToken)!;
+      const extraAsset = asPolymarketCtfToken(extraToken)!;
+      const otherAsset = asPolymarketCtfToken('333999')!; // валиден, но НЕ соответствует extraInstrumentId
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(extraInstrumentId)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const strategy = makeStrategy('s1');
+      const result = await s.register(makeRegistration(strategy, {
+        additionalTradableTargets: [
+          { instrumentId: extraInstrumentId, asset: extraAsset },
+          { instrumentId: extraInstrumentId, asset: otherAsset },
+        ],
+      }));
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  // ── shutdown timeouts (bounded pending-initialize wait + bounded commitment reader) ──
+
+  describe('shutdown timeouts', () => {
+    it('unregister() во время hung initialize() превышает cancellationTimeoutMs → Err(INITIALIZATION_CANCELLATION_TIMED_OUT), initialize() продолжает выполняться', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+
+      const registerPromise = scheduler.register(makeRegistration(strategy, {
+        config: { initializationCancellationTimeoutMs: 1000 },
+      }));
+      await flush();
+
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const unregResult = await unregPromise;
+      expect(unregResult.ok).toBe(false);
+      if (!unregResult.ok) expect(unregResult.error.code).toBe('INITIALIZATION_CANCELLATION_TIMED_OUT');
+
+      // initialize() НЕ отменяется — завершаем его штатно.
+      resolveInit!(Ok(undefined));
+      const registerResult = await registerPromise;
+      expect(registerResult.ok).toBe(false); // регистрация всё равно отменена (cancelled=true)
+      expect(scheduler.getMetrics('s1')).toBeUndefined(); // ACTIVE entry никогда не публикуется
+    });
+
+    it('repeated unregister() пока initialize() ещё hung — не дублирует; после завершения создаётся PendingDisposal и вызывается dispose()', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+
+      void scheduler.register(makeRegistration(strategy, {
+        config: { initializationCancellationTimeoutMs: 1000 },
+      }));
+      await flush();
+
+      const first = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('INITIALIZATION_CANCELLATION_TIMED_OUT');
+
+      const second = scheduler.unregister('s1');
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const secondResult = await second;
+      expect(secondResult.ok).toBe(false);
+      if (!secondResult.ok) expect(secondResult.error.code).toBe('INITIALIZATION_CANCELLATION_TIMED_OUT');
+
+      expect(strategy.initialize).toHaveBeenCalledTimes(1); // не перезапущен
+
+      resolveInit!(Ok(undefined));
+      await flush();
+
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
+    });
+
+    it('stopAll() с зависшим initialize() → aggregate INITIALIZATION_CANCELLATION_TIMED_OUT, не зависает', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+
+      void scheduler.register(makeRegistration(strategy, {
+        config: { initializationCancellationTimeoutMs: 1000 },
+      }));
+      await flush();
+
+      const stopAllPromise = scheduler.stopAll();
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const result = await stopAllPromise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.some((e) => e.code === 'INITIALIZATION_CANCELLATION_TIMED_OUT')).toBe(true);
+      }
+
+      resolveInit!(Ok(undefined));
+      await flush();
+    });
+
+    it('зависший commitmentReader.getActiveCommitments() → timeout → Err(COMMITMENT_CHECK_TIMED_OUT), entry остаётся', async () => {
+      const strategy = makeStrategy('s1');
+      commitmentReader.getActiveCommitments.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+      await scheduler.register(makeRegistration(strategy, { config: { commitmentCheckTimeoutMs: 1000 } }));
+
+      // Больше итераций flush: перед commitment-check (шаг 8) должен фактически
+      // ЗАВЕРШИТЬСЯ final cleanup (шаг 5) — сам по себе цепочка из нескольких
+      // microtask-хопов (tracked-operation promise chain + Promise.race).
+      const unregPromise = scheduler.unregister('s1');
+      await flush(30);
+      advanceTime(clock, timer, 1000);
+      await flush();
+
+      const result = await unregPromise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('COMMITMENT_CHECK_TIMED_OUT');
+      expect(strategy.dispose).not.toHaveBeenCalled();
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('repeated unregister() пока commitmentReader ещё hung — не дублирует вызов', async () => {
+      const strategy = makeStrategy('s1');
+      commitmentReader.getActiveCommitments.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+      await scheduler.register(makeRegistration(strategy, { config: { commitmentCheckTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush(30);
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(false);
+      if (!second.ok) expect(second.error.code).toBe('COMMITMENT_CHECK_TIMED_OUT');
+
+      expect(commitmentReader.getActiveCommitments).toHaveBeenCalledTimes(1);
+    });
+
+    it('поздний safe результат ПОСЛЕ commitment-check timeout → следующий unregister() обрабатывает его и продолжает', async () => {
+      const strategy = makeStrategy('s1');
+      let resolveCommitments: ((r: unknown[]) => void) | undefined;
+      commitmentReader.getActiveCommitments.mockImplementationOnce(() => new Promise((resolve) => { resolveCommitments = resolve; }));
+      await scheduler.register(makeRegistration(strategy, { config: { commitmentCheckTimeoutMs: 1000 } }));
+
+      const first = scheduler.unregister('s1');
+      await flush(30);
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const firstResult = await first;
+      expect(firstResult.ok).toBe(false);
+      if (!firstResult.ok) expect(firstResult.error.code).toBe('COMMITMENT_CHECK_TIMED_OUT');
+
+      resolveCommitments!([]);
+      await flush();
+
+      const second = await scheduler.unregister('s1');
+      expect(second.ok).toBe(true);
+      // 2 вызова: исходный (поздно обработанный на шаге pre-dispose post-check) +
+      // fresh на post-dispose re-check (см. _attemptStop 13-шаговый порядок).
+      expect(commitmentReader.getActiveCommitments).toHaveBeenCalledTimes(2);
+      expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
   });
 });

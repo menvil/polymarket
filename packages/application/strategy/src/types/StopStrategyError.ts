@@ -23,11 +23,15 @@ export type StopStrategyErrorCode =
   | 'STRATEGY_NOT_FOUND'
   | 'EXECUTION_STILL_RUNNING'
   | 'EXECUTION_TIMED_OUT'
+  | 'FINAL_CLEANUP_TIMED_OUT'
   | 'FINAL_CLEANUP_UNCONFIRMED'
+  | 'COMMITMENT_CHECK_TIMED_OUT'
   | 'STOP_HOOK_FAILED'
   | 'UNSAFE_FINAL_INTENT'
   | 'REGISTRATION_CANCELLED'
+  | 'INITIALIZATION_CANCELLATION_TIMED_OUT'
   | 'DISPOSE_FAILED'
+  | 'DISPOSE_TIMED_OUT'
   | 'OTHER';
 
 /**
@@ -40,11 +44,19 @@ export type StopStrategyErrorCode =
  * - `EXECUTION_TIMED_OUT` — watchdog уже пометил execution как зависший
  *   (стратегия `FAULTED`), и hung promise ещё не разрешился; final cleanup
  *   НЕ запускается, пока promise не завершится — повторите unregister позже.
+ * - `FINAL_CLEANUP_TIMED_OUT` — final `ExecutionEngine.execute()` превысил
+ *   `finalCleanupTimeoutMs`; underlying Promise НЕ считается отменённым и
+ *   остаётся tracked (`entry.finalCleanupExecution`) — повторный cleanup НЕ
+ *   запускается параллельно, следующий unregister коалесцируется на ту же
+ *   операцию (или обработает её результат, если она успела завершиться).
  * - `FINAL_CLEANUP_UNCONFIRMED` — final intents исполнены, но исход небезопасен
  *   (см. `metadata.report`), authoritative post-check нашёл живые ордера, либо
  *   `metadata.commitments` содержит unresolved submission/reservation/fill
  *   commitments (см. `IStrategyCommitmentReader`) — entry НЕ удалена,
  *   lifecycle остаётся `STOPPING`/`FAULTED`, повторите unregister.
+ * - `COMMITMENT_CHECK_TIMED_OUT` — `IStrategyCommitmentReader.getActiveCommitments()`
+ *   превысил `commitmentCheckTimeoutMs`; underlying call остаётся tracked
+ *   (`entry.commitmentCheckExecution`), retry коалесцируется, не дублирует call.
  * - `STOP_HOOK_FAILED` — `strategy.stop()` бросил исключение: это НЕ считается
  *   успешным вызовом (в отличие от пустого `[]`) — final intents НЕ
  *   исполнялись, `entry.finalIntents` НЕ закэширован, следующий unregister
@@ -52,12 +64,22 @@ export type StopStrategyErrorCode =
  * - `UNSAFE_FINAL_INTENT` — `strategy.stop()` вернул intent, отличный от
  *   CANCEL/CANCEL_ALL (например, PLACE) — programming/configuration error;
  *   final batch НЕ исполнялся вообще.
- * - `REGISTRATION_CANCELLED` — unregister пришёл во время `initialize()`;
- *   регистрация отменена, ACTIVE entry никогда не была создана (`dispose()`
- *   вызван и завершился успешно).
- * - `DISPOSE_FAILED` — регистрация была отменена во время `initialize()`, и
- *   `strategy.dispose()` бросил либо вернул `Err` — неторговые ресурсы могли
- *   остаться не освобождены (см. `metadata.cause`).
+ * - `REGISTRATION_CANCELLED` — unregister пришёл во время `initialize()`,
+ *   registration отменена, и `dispose()` завершился успешно (ACTIVE entry
+ *   никогда не была создана).
+ * - `INITIALIZATION_CANCELLATION_TIMED_OUT` — `unregister()`/`stopAll()`
+ *   выставил `cancelled = true`, но `strategy.initialize()` не завершился за
+ *   `initializationCancellationTimeoutMs`; `initialize()` продолжает
+ *   выполняться (НЕ отменяется) — когда он завершится, cancellation-логика
+ *   сама создаст `PendingDisposal` и выполнит `dispose()`; ACTIVE entry в
+ *   любом случае не будет опубликована.
+ * - `DISPOSE_FAILED` — `strategy.dispose()` бросил либо вернул `Err` (для
+ *   отменённой регистрации ИЛИ для нормально остановленной ACTIVE стратегии)
+ *   — неторговые ресурсы могли остаться не освобождены; retryable (см.
+ *   `metadata.cause`).
+ * - `DISPOSE_TIMED_OUT` — `strategy.dispose()` превысил `disposeTimeoutMs`;
+ *   underlying Promise остаётся tracked, повторный dispose НЕ запускается
+ *   параллельно.
  * - `OTHER` — необработанное исключение в stop-flow.
  */
 export class StopStrategyError extends Error {

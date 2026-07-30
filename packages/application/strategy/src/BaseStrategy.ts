@@ -134,9 +134,11 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
    * @returns Ok(undefined)
    *
    * @remarks
-   * Переопределите, если `initialize()` открывает ресурсы, которые нужно
-   * закрыть при отменённой (до публикации) регистрации. См. различие
-   * `initialize()`/`dispose()`/`stop()` в {@link IStrategy}.
+   * Переопределите, если `initialize()` открывает НЕторговые ресурсы —
+   * `dispose()` вызывается И при отменённой (до публикации) регистрации, И
+   * как последний шаг нормальной остановки УЖЕ ACTIVE стратегии (после
+   * `stop()`/authoritative post-check, перед удалением entry). См. различие
+   * `initialize()`/`stop()`/`dispose()` в {@link IStrategy}.
    */
   public async dispose(): Promise<Result<void, Error>> {
     return Ok(undefined);

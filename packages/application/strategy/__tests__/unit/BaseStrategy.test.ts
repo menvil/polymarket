@@ -83,6 +83,7 @@ function makeSnapshot(overrides: Partial<StrategySnapshot> = {}): StrategySnapsh
     complementaryConstraints: undefined,
     portfolio: undefined,
     nowMs: 1000,
+    additionalTradableInstruments: new Map(),
     ...overrides,
   };
 }
