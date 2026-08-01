@@ -93,7 +93,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
-import { assetIdToInstrumentId, assetIdToString } from '@polymarket/ids';
+import { assetIdToInstrumentId, assetIdToString, asOrderId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
@@ -1176,7 +1176,13 @@ export class StrategyScheduler {
     // кэшируется (entry.finalIntents остаётся undefined), следующий
     // unregister() вызовет strategy.stop() заново.
     if (entry.finalIntents === undefined) {
-      let rawIntents: StrategyIntent[];
+      // Тип возврата `entry.strategy.stop()` — `StrategyStopIntent[]` на
+      // уровне compile-time контракта `IStrategy`, но runtime boundary ниже
+      // (`_validateStopIntents`) обязана относиться к нему как к `unknown` —
+      // стратегия может прийти из JavaScript, через unsafe cast, либо быть
+      // повреждённым плагином. `unknown` здесь — ТОЛЬКО внутри scheduler-а,
+      // публичный контракт `IStrategy.stop()` не меняется.
+      let rawIntents: unknown;
       try {
         rawIntents = entry.strategy.stop();
       } catch (cause) {
@@ -1669,27 +1675,94 @@ export class StrategyScheduler {
   /**
    * Валидирует, что `strategy.stop()` вернул ТОЛЬКО CANCEL/CANCEL_ALL.
    *
-   * @param raw - Сырые intents из `strategy.stop()`
-   * @returns Ok(StrategyStopIntent[]) либо Err, если найден PLACE (или
-   *   любой другой не-CANCEL/CANCEL_ALL intent)
+   * @param raw - Сырое (untrusted) значение из `strategy.stop()` — `unknown`,
+   *   НЕ `StrategyStopIntent[]`
+   * @returns Ok(StrategyStopIntent[]) — с ПЕРЕСТРОЕННЫМИ safe-объектами;
+   *   либо Err, если `raw` — не массив, содержит malformed/PLACE/неизвестный
+   *   intent, либо CANCEL с невалидным `orderId`
    *
    * @remarks
-   * Runtime-защита в дополнение к compile-time типу `StrategyStopIntent` —
-   * стратегия может прийти из JavaScript или использовать unsafe casts.
-   * `stop()` не предназначен для liquidation PLACE или новых торговых
-   * операций: PLACE здесь — programming/configuration error.
+   * Настоящая runtime boundary, а не просто дополнение к compile-time типу
+   * `StrategyStopIntent` — `entry.strategy.stop()` может прийти из
+   * JavaScript-реализации, повреждённого plugin-а или unsafe cast, и вернуть
+   * ЛЮБОЕ runtime-значение (`undefined`, `42`, `{}`, `[{ type: 'CANCEL' }]`
+   * без `orderId`, getter, бросающий при чтении `type`, и т.п.). Ни один из
+   * этих случаев не должен приводить к брошенному исключению внутри
+   * `_attemptStop` (что превратило бы `unregister()` в rejected Promise) —
+   * ВСЕГДА возвращается `Err`, конвертируемый в typed
+   * `StopStrategyError('UNSAFE_FINAL_INTENT', ...)`. Парсинг каждого
+   * элемента изолирован `try/catch` в `_validateStopIntents` — сбойный
+   * getter/proxy на одном элементе не бросает наружу.
    */
-  private _validateStopIntents(raw: readonly StrategyIntent[]): Result<StrategyStopIntent[], Error> {
+  private _validateStopIntents(raw: unknown): Result<StrategyStopIntent[], Error> {
+    if (!Array.isArray(raw)) {
+      return Err(new Error(
+        `strategy.stop() must return an array of CANCEL/CANCEL_ALL intents, got ${typeof raw}`,
+      ));
+    }
+
     const validated: StrategyStopIntent[] = [];
-    for (const intent of raw) {
-      if (intent.type !== 'CANCEL' && intent.type !== 'CANCEL_ALL') {
-        return Err(new Error(
-          `strategy.stop() returned an unsafe intent type "${intent.type}" — only CANCEL/CANCEL_ALL are allowed from stop()`,
-        ));
+    for (const rawIntent of raw) {
+      let parsed: Result<StrategyStopIntent, Error>;
+      try {
+        parsed = this._parseStopIntent(rawIntent);
+      } catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        parsed = Err(new Error(`strategy.stop() intent parsing threw: ${error.message}`));
       }
-      validated.push(intent);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      validated.push(parsed.value);
     }
     return Ok(validated);
+  }
+
+  /**
+   * Парсит и валидирует ОДИН runtime-элемент из `strategy.stop()`.
+   *
+   * @param value - Сырой (untrusted) элемент массива
+   * @returns Ok с НОВЫМ, пересобранным safe-объектом (никогда не
+   *   `value as StrategyStopIntent`) либо Err с описанием нарушения
+   *
+   * @remarks
+   * Возврат ПЕРЕСТРОЕННОГO объекта (а не приведение типа исходного `value`)
+   * гарантирует, что дальнейший код (`_withFreshCancelAll`,
+   * `ExecutionEngine.execute`) никогда не получает объект с посторонними
+   * полями или повторно читаемыми getter-ами, которые могли бы бросить при
+   * следующем доступе. `orderId` валидируется через authoritative
+   * `asOrderId()` из `@polymarket/ids` (та же валидация non-empty/length/
+   * control-chars, что и везде в системе) — не через локальную ad-hoc
+   * проверку. `'type' in value` безопасен даже для getter-based `type`:
+   * оператор `in` проверяет только наличие ключа, не вызывает getter.
+   */
+  private _parseStopIntent(value: unknown): Result<StrategyStopIntent, Error> {
+    if (typeof value !== 'object' || value === null || !('type' in value)) {
+      return Err(new Error(
+        `strategy.stop() returned a malformed intent (expected an object with "type"), got ${JSON.stringify(value)}`,
+      ));
+    }
+
+    const type: unknown = Reflect.get(value, 'type');
+
+    if (type === 'CANCEL_ALL') {
+      return Ok({ type: 'CANCEL_ALL' });
+    }
+
+    if (type === 'CANCEL') {
+      const rawOrderId: unknown = Reflect.get(value, 'orderId');
+      const orderId = typeof rawOrderId === 'string' ? asOrderId(rawOrderId) : undefined;
+      if (orderId === undefined) {
+        return Err(new Error(
+          `strategy.stop() returned CANCEL with invalid orderId: ${JSON.stringify(rawOrderId)}`,
+        ));
+      }
+      return Ok({ type: 'CANCEL', orderId });
+    }
+
+    return Err(new Error(
+      `strategy.stop() returned an unsafe intent type "${String(type)}" — only CANCEL/CANCEL_ALL are allowed from stop()`,
+    ));
   }
 
   /**
@@ -1746,32 +1819,64 @@ export class StrategyScheduler {
    *   Err(readonly StopStrategyError[]) с накопленными ошибками
    *
    * @remarks
-   * Порядок:
+   * ### Порядок (критично — existing entries детачатся ДО любого await):
    * 1. Поднимает global stopping barrier — `register()` немедленно отклоняет
-   *    новые регистрации.
-   * 2. Отменяет ВСЕ pending registrations (initialize() в процессе) и ждёт
-   *    их completion — BOUNDED (каждая своим `cancellationTimeoutMs`), чтобы
-   *    зависший `initialize()` не заблокировал `stopAll()` навсегда
-   *    (`INITIALIZATION_CANCELLATION_TIMED_OUT` — retryable, не отменяет
-   *    `initialize()`).
-   * 3. Отдельно агрегирует ВСЕ `_pendingDisposals` (созданные шагом 2 либо
-   *    оставшиеся от предыдущих неудачных `unregister()`-попыток) — каждый
+   *    новые регистрации; ЛЮБАЯ pending registration, чей `initialize()`
+   *    разрешится ПОСЛЕ этой точки, тоже пойдёт по cancelled-ветке
+   *    `_completeRegistration` (barrier проверяется ТАМ, не только `cancelled`).
+   * 2. Помечает ВСЕ текущие pending registrations `cancelled = true`.
+   * 3. **Синхронно, ДО первого await**, стартует `unregister()` для КАЖДОЙ
+   *    существующей entry (`this.unregister(id)` — вызов async-функции
+   *    исполняет её тело синхронно вплоть до первого await; `_attemptStop`
+   *    переводит ACTIVE/FAULTED → STOPPING и выполняет detach
+   *    (routing/heartbeat/queue/deferred timers) ДО того, как этот метод
+   *    дойдёт до своего первого await). Гарантия: сразу после синхронного
+   *    возврата `stopAll()` (т.е. до того, как caller успеет сделать
+   *    `await`), НИ ОДНА из существовавших на тот момент entries уже не
+   *    тикает, не в routing и не в queue — единственное, что ещё может
+   *    продолжаться — уже запущенный ДО stopAll() ordinary execution,
+   *    который донашивается штатным bounded stop-flow (см. `_attemptStop`).
+   * 4. Bounded ожидание completion всех pending registrations (каждая своим
+   *    `cancellationTimeoutMs`) — `initialize()` НЕ отменяется.
+   * 5. Снимок `_pendingDisposals` берётся ПОСЛЕ шага 4 (не раньше!) — только
+   *    так он гарантированно включает tombstones, созданные cancelled-веткой
+   *    `_completeRegistration()` для регистраций, чей `initialize()` успел
+   *    завершиться именно во время ожидания на шаге 4, ПЛЮС любые tombstones,
+   *    оставшиеся от предыдущих неудачных `unregister()`. Каждый
    *    коалесцируется на свой in-flight attempt через
    *    `_joinOrStartPendingDisposalAttempt` (никогда не запускает
    *    параллельный второй dispose).
-   * 4. Останавливает все существующие entries через safe `unregister()`.
+   * 6. Параллельно дожидается: (a) все `unregister()` promises, запущенные
+   *    на шаге 3, (b) все disposal attempts с шага 5.
+   * 7. Агрегирует ошибки БЕЗ дублей — если конкретная disposal-ошибка
+   *    (`DISPOSE_TIMED_OUT`/`DISPOSE_FAILED`) уже получена с шага 6b, generic
+   *    "remains unresolved" fallback для ТОГО ЖЕ strategyId не добавляется
+   *    повторно.
    * НЕ логирует «All strategies stopped», если хотя бы одна регистрация,
    * disposal или стратегия не остановлена подтверждённо, ЛИБО если
-   * `_pendingDisposals` всё ещё непусто по завершении шага 3.
+   * `_pendingDisposals` всё ещё непусто по завершении.
    */
   public async stopAll(): Promise<Result<void, readonly StopStrategyError[]>> {
     this._globalStopping = true;
 
-    // 2. Pending registrations — bounded wait (каждая своим cancellationTimeoutMs).
+    // 2. Pending registrations — пометить cancelled СИНХРОННО, ДО старта
+    // unregister() существующих entries (шаг 3).
     const pendingEntries = [...this._pendingRegistrations.entries()];
     for (const [, p] of pendingEntries) {
       p.cancelled = true;
     }
+
+    // 3. КРИТИЧНО: unregister() для ВСЕХ существующих entries запускается
+    // ЗДЕСЬ — синхронно, ДО первого await этого метода (см. class-level doc
+    // выше). Raньше unregister() существующих entries откладывался ДО того,
+    // как разрешатся pending registrations/disposals — всё это время ACTIVE
+    // стратегии оставались в routing/queue и продолжали тикать/торговать
+    // ПОСЛЕ вызова stopAll(), что нарушало ожидание caller-а «shutdown начат
+    // немедленно».
+    const entryIds = [...this._entries.keys()];
+    const entryStopPromises = entryIds.map((id) => this.unregister(id));
+
+    // 4. Bounded wait — каждая pending registration своим cancellationTimeoutMs.
     const pendingWaitOutcomes = await Promise.all(
       pendingEntries.map(([, p]) => this._raceWithTimeout(p.completion, p.cancellationTimeoutMs)),
     );
@@ -1788,32 +1893,39 @@ export class StrategyScheduler {
       }
       // 'completed' (Ok ИЛИ Err от _completeRegistration) само по себе не
       // failure для stopAll — реальный dispose-исход агрегируется отдельно
-      // на шаге 3 через _pendingDisposals (tombstone, если он появился).
+      // на шаге 5 через _pendingDisposals (tombstone, если он появился).
     }
 
-    // 3. Pending disposals — ЛЮБЫЕ, включая только что созданные шагом 2.
+    // 5. Pending disposals — снимок ПОСЛЕ ожидания pending registrations
+    // (шаг 4), чтобы включить tombstones, созданные ИМЕННО во время этого
+    // ожидания, а не только уже существовавшие на момент вызова stopAll().
     const disposalEntries = [...this._pendingDisposals.entries()];
-    const disposalResults = disposalEntries.length > 0
-      ? await Promise.all(disposalEntries.map(([, pd]) => this._joinOrStartPendingDisposalAttempt(pd)))
-      : [];
+    const disposalPromises = disposalEntries.map(([, pd]) => this._joinOrStartPendingDisposalAttempt(pd));
+
+    // 6. Параллельное ожидание entry-stop (запущенных на шаге 3) и disposal
+    // attempts (запущенных на шаге 5).
+    const [entryResults, disposalResults] = await Promise.all([
+      Promise.all(entryStopPromises),
+      Promise.all(disposalPromises),
+    ]);
+
+    const entryErrors = entryResults
+      .filter((r): r is { ok: false; error: StopStrategyError } => !r.ok)
+      .map((r) => r.error);
     const disposalErrors = disposalResults
       .filter((r): r is { ok: false; error: StopStrategyError } => !r.ok)
       .map((r) => r.error);
 
-    // 4. Существующие entries.
-    const entryIds = [...this._entries.keys()];
-    const entryResults = entryIds.length > 0 ? await Promise.all(entryIds.map((id) => this.unregister(id))) : [];
-    const entryErrors = entryResults
-      .filter((r): r is { ok: false; error: StopStrategyError } => !r.ok)
-      .map((r) => r.error);
-
-    // Defensive fallback: если после шага 3 в _pendingDisposals всё ещё
-    // что-то осталось (не должно происходить при disposalErrors.length===0 —
-    // _attemptPendingDisposal удаляет tombstone ТОЛЬКО при успехе — но
-    // явно проверяем контракт "никогда не молчать про pending disposal").
-    const staleDisposalErrors = [...this._pendingDisposals.keys()].map(
-      (id) => new StopStrategyError('DISPOSE_FAILED', id, `Pending disposal for ${id} remains unresolved after stopAll`),
-    );
+    // 7. Defensive fallback — максимум ОДНА disposal-ошибка на strategyId:
+    // если конкретная причина (DISPOSE_TIMED_OUT/DISPOSE_FAILED) для этого ID
+    // уже попала в disposalErrors выше, generic "remains unresolved" НЕ
+    // дублирует её — иначе одна и та же зависшая disposal-операция считалась
+    // бы ДВАЖДЫ в aggregate failures (искажает счётчик и маскирует точный
+    // timeout под generic сообщением).
+    const reportedDisposalIds = new Set(disposalErrors.map((e) => e.strategyId));
+    const staleDisposalErrors = [...this._pendingDisposals.keys()]
+      .filter((id) => !reportedDisposalIds.has(id))
+      .map((id) => new StopStrategyError('DISPOSE_FAILED', id, `Pending disposal for ${id} remains unresolved after stopAll`));
 
     const failures = [...pendingErrors, ...disposalErrors, ...entryErrors, ...staleDisposalErrors];
     if (failures.length > 0) {

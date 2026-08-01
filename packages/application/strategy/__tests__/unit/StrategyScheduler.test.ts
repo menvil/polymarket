@@ -2363,4 +2363,309 @@ describe('StrategyScheduler', () => {
       expect(scheduler.getMetrics('s1')).toBeUndefined();
     });
   });
+
+  // ── stopAll immediate detach (P0) ─────────────────────
+
+  describe('stopAll immediate detach', () => {
+    it('stopAll() детачит ACTIVE entry СИНХРОННО — до ожидания зависшего pending initialize() другой стратегии', async () => {
+      const strategy1 = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy1));
+      scheduler.start();
+
+      // Отдельная pending registration с зависшим initialize() — раньше
+      // stopAll() ждал бы ЕЁ completion ПЕРЕД тем как вообще начать
+      // unregister() существующих ACTIVE entries.
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy2 = makeStrategy('s2');
+      (strategy2.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      void scheduler.register(makeRegistration(strategy2, {
+        instrumentId: COMP_INSTRUMENT_ID,
+        asset: COMP_ASSET_ID,
+      }));
+      await flush();
+
+      const stopAllPromise = scheduler.stopAll();
+
+      // Никакого timer advance — initialize() s2 всё ещё висит. Проверяем
+      // НЕМЕДЛЕННО, что s1 уже detached: события её больше не тикают.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy1.tick).not.toHaveBeenCalled();
+
+      scheduler.onOrderChanged('s1', 'ORDER_UPDATE');
+      await flush();
+      expect(strategy1.tick).not.toHaveBeenCalled();
+
+      scheduler.onFillReceivedForInstrument(INSTRUMENT_ID);
+      await flush();
+      expect(strategy1.tick).not.toHaveBeenCalled();
+
+      // heartbeat: продвигаем время ЗА s1.config.maxIdleMs (default 5000), но
+      // СИЛЬНО МЕНЬШЕ default cancellationTimeoutMs (30000) — иначе s2's
+      // pending-init wait сам истёк бы раньше, чем мы успеем разрешить
+      // initialize() вручную. Если heartbeat не был очищен при detach — TIMER
+      // поставил бы s1 обратно в очередь.
+      advanceTime(clock, timer, 6000);
+      await flush();
+      expect(strategy1.tick).not.toHaveBeenCalled();
+
+      resolveInit!(Ok(undefined));
+      const result = await stopAllPromise;
+      expect(result.ok).toBe(true);
+    });
+
+    it('stopAll(): ACTIVE entry с уже идущим ordinary execution немедленно STOPPING+detached; stopAll ждёт его через существующий bounded stop-flow; второй ordinary execution не запускается', async () => {
+      const strategy = makeStrategy('s1', { tickResult: [{ type: 'CANCEL_ALL' }] });
+      let resolveExec: (() => void) | undefined;
+      executionEngine.execute.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveExec = () => resolve(emptyReport());
+      }));
+      await scheduler.register(makeRegistration(strategy));
+      scheduler.start();
+
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1);
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1); // ordinary execution зависла
+
+      const stopAllPromise = scheduler.stopAll();
+      await flush();
+
+      // Detach уже произошёл — новые события больше не тикают s1.
+      marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(strategy.tick).toHaveBeenCalledTimes(1); // не увеличилось
+
+      // execute() всё ещё вызван только один раз — stopAll НЕ запускает
+      // второй (ordinary) execute параллельно зависшему.
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1);
+
+      resolveExec!();
+      const result = await stopAllPromise;
+      expect(result.ok).toBe(true);
+    });
+
+    it('stopAll(): несколько ACTIVE strategies + pending registration + pre-existing PendingDisposal — ACTIVE entries детачатся немедленно, дальше все bounded operations ждутся параллельно', async () => {
+      const tok3 = '777001';
+      const tok4 = '777002';
+      const id3 = asInstrumentId(tok3)!;
+      const asset3 = asPolymarketCtfToken(tok3)!;
+      const id4 = asInstrumentId(tok4)!;
+      const asset4 = asPolymarketCtfToken(tok4)!;
+      const catalog = makeCatalog({
+        [String(INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(COMP_INSTRUMENT_ID)]: makeInstrumentInfo(),
+        [String(id3)]: makeInstrumentInfo(),
+        [String(id4)]: makeInstrumentInfo(),
+      });
+      const d = makeDeps({ catalog: catalog as any });
+      const s = new StrategyScheduler(d.deps);
+
+      const s1 = makeStrategy('s1');
+      const s2 = makeStrategy('s2');
+      await s.register(makeRegistration(s1));
+      await s.register(makeRegistration(s2, { instrumentId: COMP_INSTRUMENT_ID, asset: COMP_ASSET_ID }));
+      s.start();
+
+      // Pre-existing PendingDisposal (создан ДО вызова stopAll — предыдущая
+      // неудачная попытка dispose() отменённой регистрации s3).
+      let resolveInit3: ((r: Result<void, Error>) => void) | undefined;
+      const s3 = makeStrategy('s3');
+      (s3.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit3 = resolve; }));
+      (s3.dispose as any).mockResolvedValueOnce(Err(new Error('dispose boom')));
+      void s.register(makeRegistration(s3, { instrumentId: id3, asset: asset3 }));
+      await flush();
+      const unreg3 = s.unregister('s3');
+      await flush();
+      resolveInit3!(Ok(undefined));
+      const unreg3Result = await unreg3;
+      expect(unreg3Result.ok).toBe(false);
+      if (!unreg3Result.ok) expect(unreg3Result.error.code).toBe('DISPOSE_FAILED');
+
+      // Отдельная pending registration с зависшим initialize() (s4).
+      let resolveInit4: ((r: Result<void, Error>) => void) | undefined;
+      const s4 = makeStrategy('s4');
+      (s4.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit4 = resolve; }));
+      void s.register(makeRegistration(s4, { instrumentId: id4, asset: asset4 }));
+      await flush();
+
+      const stopAllPromise = s.stopAll();
+      await flush();
+
+      // ACTIVE entries (s1/s2) уже detached — немедленно, до разрешения
+      // pending initialize s4 и pending disposal s3.
+      d.marketDataStore._onChange!(INSTRUMENT_ID, 'BOOK');
+      d.marketDataStore._onChange!(COMP_INSTRUMENT_ID, 'BOOK');
+      await flush();
+      expect(s1.tick).not.toHaveBeenCalled();
+      expect(s2.tick).not.toHaveBeenCalled();
+
+      // Разрешаем зависший initialize s4 — stopAll может продолжить.
+      resolveInit4!(Ok(undefined));
+      const result = await stopAllPromise;
+
+      expect(result.ok).toBe(true);
+      // s3's dispose() retried и на этот раз успел (default mock Ok) — как
+      // часть stopAll's disposal-aggregation шага.
+      expect(s3.dispose).toHaveBeenCalledTimes(2);
+
+      s.stop();
+    });
+  });
+
+  // ── strategy.stop() runtime intent validation (P1) ────
+
+  describe('strategy.stop() runtime intent validation', () => {
+    const malformedStopResults: readonly (readonly [string, unknown])[] = [
+      ['undefined', undefined],
+      ['null', null],
+      ['number (42)', 42],
+      ['empty object ({})', {}],
+      ['string ("cancel")', 'cancel'],
+      ['[null]', [null]],
+      ['[42]', [42]],
+      ['[{}]', [{}]],
+      ['[{ type: PLACE, ... }]', [{ type: 'PLACE', side: 'BUY', price: 1, size: 1 }]],
+      ['[{ type: CANCEL }] (без orderId)', [{ type: 'CANCEL' }]],
+      ['[{ type: CANCEL, orderId: undefined }]', [{ type: 'CANCEL', orderId: undefined }]],
+      ['[{ type: CANCEL, orderId: "" }]', [{ type: 'CANCEL', orderId: '' }]],
+      ['[{ type: UNKNOWN }]', [{ type: 'UNKNOWN' }]],
+    ];
+
+    it.each(malformedStopResults)(
+      'malformed strategy.stop() результат (%s) → Err(UNSAFE_FINAL_INTENT), unregister() НЕ rejects',
+      async (_label, malformed) => {
+        const strategy = makeStrategy('s1');
+        // Симуляция стратегии, пришедшей из JavaScript/повреждённого plugin-а —
+        // TypeScript-контракт `stop(): StrategyStopIntent[]` здесь намеренно
+        // обходится unsafe cast ТОЛЬКО в тесте (не в production-коде), чтобы
+        // проверить runtime boundary на реально произвольном значении.
+        (strategy.stop as any).mockReturnValue(malformed);
+        await scheduler.register(makeRegistration(strategy));
+
+        const result = await scheduler.unregister('s1');
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.code).toBe('UNSAFE_FINAL_INTENT');
+        expect(executionEngine.execute).not.toHaveBeenCalled();
+        expect(strategy.dispose).not.toHaveBeenCalled();
+        expect(scheduler.getMetrics('s1')).toBeDefined();
+      },
+    );
+
+    it('getter, бросающий при чтении type → Err(UNSAFE_FINAL_INTENT), unregister() НЕ rejects', async () => {
+      const strategy = makeStrategy('s1');
+      const malformed = {
+        get type(): never {
+          throw new Error('getter failure');
+        },
+      };
+      (strategy.stop as any).mockReturnValue([malformed]);
+      await scheduler.register(makeRegistration(strategy));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('UNSAFE_FINAL_INTENT');
+      expect(scheduler.getMetrics('s1')).toBeDefined();
+    });
+
+    it('корректный CANCEL_ALL → validation проходит, final cleanup исполняется', async () => {
+      const strategy = makeStrategy('s1', { stopResult: [{ type: 'CANCEL_ALL' }] });
+      await scheduler.register(makeRegistration(strategy));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(true);
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('корректный CANCEL с валидным orderId → validation проходит, orderId сохраняется в final batch', async () => {
+      const strategy = makeStrategy('s1');
+      (strategy.stop as any).mockReturnValue([{ type: 'CANCEL', orderId: 'order-abc-123' }]);
+      await scheduler.register(makeRegistration(strategy));
+
+      const result = await scheduler.unregister('s1');
+
+      expect(result.ok).toBe(true);
+      const finalBatch = (executionEngine.execute as any).mock.calls[0][1];
+      expect(finalBatch).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'CANCEL', orderId: 'order-abc-123' }),
+        expect.objectContaining({ type: 'CANCEL_ALL' }),
+      ]));
+    });
+  });
+
+  // ── stopAll pending disposal error dedup (P2) ─────────
+
+  describe('stopAll pending disposal error dedup', () => {
+    it('PendingDisposal dispose() timeout → stopAll возвращает РОВНО ОДНУ ошибку для strategyId (DISPOSE_TIMED_OUT, без дублирующего generic DISPOSE_FAILED)', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+
+      void scheduler.register(makeRegistration(strategy, { config: { disposeTimeoutMs: 1000 } }));
+      await flush();
+
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      await flush();
+      advanceTime(clock, timer, 1000);
+      await flush();
+      const unregResult = await unregPromise;
+      expect(unregResult.ok).toBe(false);
+      if (!unregResult.ok) expect(unregResult.error.code).toBe('DISPOSE_TIMED_OUT');
+
+      const stopAllResult = await scheduler.stopAll();
+      expect(stopAllResult.ok).toBe(false);
+      if (!stopAllResult.ok) {
+        const s1Errors = stopAllResult.error.filter((e) => e.strategyId === 's1');
+        expect(s1Errors).toHaveLength(1);
+        expect(s1Errors[0].code).toBe('DISPOSE_TIMED_OUT');
+      }
+    });
+
+    it('PendingDisposal dispose() Err → stopAll возвращает РОВНО ОДНУ DISPOSE_FAILED для strategyId', async () => {
+      let resolveInit: ((r: Result<void, Error>) => void) | undefined;
+      const strategy = makeStrategy('s1');
+      (strategy.initialize as any).mockImplementation(() => new Promise((resolve) => { resolveInit = resolve; }));
+      (strategy.dispose as any).mockResolvedValue(Err(new Error('dispose boom')));
+
+      void scheduler.register(makeRegistration(strategy));
+      await flush();
+      const unregPromise = scheduler.unregister('s1');
+      await flush();
+      resolveInit!(Ok(undefined));
+      const unregResult = await unregPromise;
+      expect(unregResult.ok).toBe(false);
+      if (!unregResult.ok) expect(unregResult.error.code).toBe('DISPOSE_FAILED');
+
+      const stopAllResult = await scheduler.stopAll();
+      expect(stopAllResult.ok).toBe(false);
+      if (!stopAllResult.ok) {
+        const s1Errors = stopAllResult.error.filter((e) => e.strategyId === 's1');
+        expect(s1Errors).toHaveLength(1);
+        expect(s1Errors[0].code).toBe('DISPOSE_FAILED');
+      }
+    });
+  });
+
+  // ── concurrent stopAll() consistency ──────────────────
+
+  describe('concurrent stopAll()', () => {
+    it('два одновременных stopAll(): strategy.stop()/final cleanup/dispose вызываются РОВНО один раз (не дублируются)', async () => {
+      const strategy = makeStrategy('s1');
+      await scheduler.register(makeRegistration(strategy));
+
+      const [r1, r2] = await Promise.all([scheduler.stopAll(), scheduler.stopAll()]);
+
+      expect(r1.ok).toBe(true);
+      expect(r2.ok).toBe(true);
+      expect(strategy.stop).toHaveBeenCalledTimes(1);
+      expect(executionEngine.execute).toHaveBeenCalledTimes(1);
+      expect(strategy.dispose).toHaveBeenCalledTimes(1);
+    });
+  });
 });
