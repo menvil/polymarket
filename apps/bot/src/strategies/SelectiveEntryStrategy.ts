@@ -237,7 +237,6 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private _compTradeCount = 0;
   private _compLastTradeTimestampMs = 0;
 
-
   /** Snapshot at warmup end (для rise и deltaAccel) */
   private _ewmaAtWarmup: number | null = null;
   private _deltaAtWarmup: number | null = null;

@@ -801,7 +801,6 @@ logger.info('Feed started, collecting data', {
   markets: subscribedMarkets.size,
 });
 
-
 // Процесс 1: обновление кэша дискавери (пауза ПОСЛЕ завершения).
 // Не знает о слотах — просто обновляет кэш каждые ~30с.
 async function scheduleScanLoop(): Promise<void> {

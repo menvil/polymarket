@@ -156,7 +156,6 @@ export class UserEventsFeedService {
     this.logger.debug(`[UserEventsFeedService] Untracked order ${orderId}`);
   }
 
-
   /**
    * Возвращает статистику (для диагностики)
    *

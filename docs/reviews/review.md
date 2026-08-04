@@ -1,3 +1,35 @@
+> **Статус: устарел, все 10 findings закрыты.**
+> Перенесено из корня репозитория в `docs/reviews/` в рамках Этапа 0.5 плана миграции
+> (`/Users/menvil/.claude/plans/synthetic-swimming-heron.md`). Исходно план называл живыми
+> только 2 косметических пункта (typo в `Portfolio.ts`, пример в `portfolio-entity.md`) —
+> при повторной проверке 2026-08-04 выяснилось, что фактически закрыты все 10, в основном
+> более ранними коммитами "hardening" на этой же ветке (`git log`: `f5f16bff`, `02febf83`,
+> `e765f302` и др.), не требуют доп. действий:
+>
+> 1. `Portfolio.ts` — typo "positon"→"position": исправлено (docstring `reserveTokensForOrder`
+>    уже содержит "position").
+> 2. `Portfolio.ts` `releaseTokenReservation` — валидация `qty > 0`: добавлена (guard в начале метода).
+> 3. `Portfolio.ts` `reserveTokensForOrder` — валидация `qty > 0`: добавлена (guard в начале метода).
+> 4. `OrderBook.ts` `applyFullState` — поведение при отсутствующем `timestamp`: задокументировано
+>    в `@remarks` как намеренное (сохранение `_lastUpdatedAt` при backtest-воспроизведении).
+> 5. `OrderUpdateHandler.ts` — риск потери событий между `pullEvents`/`save`/`publishAll`:
+>    файл полностью переписан в тонкий адаптер (WS → `EventBus`), доменная логика с
+>    `pullEvents`/`save` перенесена в `UpdateOrderStatusUseCase`/`OrderUpdateOrchestrator` —
+>    класс с исходной проблемой больше не существует.
+> 6. `TradeTape.test.ts` — тест "readonly массив" без проверки иммутабельности: переименован
+>    в "возвращает массив (readonly — compile-time гарантия TypeScript)", ложная claim снята.
+> 7. `OrderBookHistory.test.ts` — не хватало assert на `h.size()` в boundary-тесте `maxAgeMs`:
+>    добавлено `expect(h.size()).toBe(2)` с комментарием про строгое неравенство на границе.
+> 8. `EventBus.ts` — несогласованность `publish`/`publishAll` на границе `_maxQueueSize`:
+>    оба метода теперь используют единую семантику "итоговый размер > maxQueueSize".
+> 9. `portfolio-entity.md:253` — пример проверял `tokenReservations.size` вместо конкретной
+>    записи: исправлено на `tokenReservations.has(instrumentId)`.
+> 10. `BalanceAllocator.ts` — отсутствие проверки существования allocation перед мутацией
+>     баланса: пакет `packages/application/balance-allocator` удалён из репозитория целиком,
+>     класс нигде не встречается — проблема снята вместе с кодом.
+>
+> Ниже — исходный вывод CodeRabbit без изменений (для истории).
+
 Starting CodeRabbit review in plain text mode...
 
 Connecting to review service

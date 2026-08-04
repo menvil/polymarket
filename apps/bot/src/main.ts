@@ -635,11 +635,9 @@ async function runPaper(): Promise<void> {
   }
   portfolioStore.save(portfolioResult.value, 0);
 
-
   // ── Ротация рынков — управляется через MarketRotation ──────────────────
   // registerMarketAndStrategy, openMarket, closeMarket, fillMarketSlots,
   // checkExpiredMarkets, scheduleScanLoop — все в rotation.
-
 
   // ── Кросс-маркетный арбитраж (paper) ────────────────────────────────────
 
@@ -2583,10 +2581,8 @@ async function runPaper(): Promise<void> {
     },
   });
 
-
   // Fill tracking — управляется через MarketRotation
   rotation.registerFillTracking();
-
 
   // Регистрируем все начальные слоты
   for (const slot of activeMarkets.values()) {
@@ -3891,7 +3887,6 @@ async function runLive(): Promise<void> {
         new Promise<void>((resolve) => {
           const remaining = new Set(orderIds);
           let settled = false;
-          let timer: ReturnType<typeof setTimeout>;
           const done = () => {
             if (settled) return;
             settled = true;
@@ -3903,7 +3898,7 @@ async function runLive(): Promise<void> {
             remaining.delete(String(event.fill.orderId));
             if (remaining.size === 0) done();
           });
-          timer = setTimeout(done, timeoutMs);
+          const timer: ReturnType<typeof setTimeout> = setTimeout(done, timeoutMs);
         });
       const qtyOf = (instrumentId: InstrumentId): number =>
         portfolioStore.get(accountId!)?.getPosition(instrumentId)?.quantity.value().toNumber() ?? 0;
@@ -4542,12 +4537,10 @@ async function runLive(): Promise<void> {
     }
   });
 
-
   // ── Ротация рынков — управляется через MarketRotation ──────────────────
   // registerMarketAndStrategy, openMarket, closeMarket, fillMarketSlots,
   // checkExpiredMarkets, scheduleScanLoop, printMarketSummary — все в rotation.
   rotation.registerFillTracking();
-
 
   // ── Real-time logging ─────────────────────────────────────────────────────
 

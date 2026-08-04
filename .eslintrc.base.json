@@ -22,7 +22,19 @@
     ],
     "eol-last": ["error", "always"],
     "no-trailing-spaces": "error",
-    "no-multiple-empty-lines": ["error", { "max": 1, "maxEOF": 0 }]
+    "no-multiple-empty-lines": ["error", { "max": 1, "maxEOF": 0 }],
+    "no-constant-condition": ["error", { "checkLoops": false }],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "paths": [
+          {
+            "name": "decimal.js",
+            "message": "Decimal — внутреннее представление value-objects (см. docs/architecture/boundary-contract.md, Решение 1). Используй Money/Price/Quantity/Timestamp/... из @polymarket/value-objects вместо голого Decimal. Легитимно только внутри packages/domain/value-objects и packages/foundation/math — там правило выключено локально."
+          }
+        ]
+      }
+    ]
   },
   "overrides": [
     {

@@ -615,7 +615,6 @@ export class CcxtExchangeWatcher {
     if (ms <= 0 || signal.aborted) return;
     await new Promise<void>((resolve) => {
       let resolved = false;
-      let timer: ReturnType<typeof setTimeout>;
       const finish = (): void => {
         if (resolved) return;
         resolved = true;
@@ -623,7 +622,7 @@ export class CcxtExchangeWatcher {
         signal.removeEventListener('abort', finish);
         resolve();
       };
-      timer = setTimeout(finish, ms);
+      const timer: ReturnType<typeof setTimeout> = setTimeout(finish, ms);
       timer.unref?.();
       signal.addEventListener('abort', finish, { once: true });
     });

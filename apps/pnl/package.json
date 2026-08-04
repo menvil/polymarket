@@ -6,7 +6,8 @@
     "start": "npx tsx --env-file=.env src/main.ts",
     "dev": "npx tsx --env-file=.env src/main.ts",
     "build": "tsc -b tsconfig.build.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
   },
   "dependencies": {
     "@polymarket/logger": "0.1.0",

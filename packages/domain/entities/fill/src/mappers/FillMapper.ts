@@ -302,8 +302,10 @@ export class FillMapper {
     let side: 'BUY' | 'SELL';
     let priceDecimal: Decimal;
     let sizeDecimal: Decimal;
-    // По умолчанию — top-level tokenId. MAKER-ветка может переопределить.
-    let effectiveTokenId = tokenId;
+    // Используется только TAKER-веткой (свой токен = top-level asset_id, без переопределения).
+    // MAKER считает токен отдельно на каждый maker_order — см. makerTokenId ниже, эта
+    // переменная в MAKER-ветке не участвует (та ветка возвращается раньше).
+    const effectiveTokenId = tokenId;
 
     if (!isMaker) {
       // TAKER: orderId из taker_order_id, side/size/price из верхнего уровня

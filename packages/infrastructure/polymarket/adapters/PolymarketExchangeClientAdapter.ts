@@ -753,7 +753,6 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
   }
 }
 
-
 /**
  * Классифицирует ИЗВЕСТНЫЕ синхронные API-отклонения CLOB на submit.
  *

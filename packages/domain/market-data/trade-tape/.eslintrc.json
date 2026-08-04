@@ -1,11 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/eslintrc",
-  "extends": "../../../.eslintrc.base.json",
+  "extends": "../../../../.eslintrc.base.json",
   "parserOptions": {
-    "project": "./tsconfig.lint.json"
-  },
-  "rules": {
-    "no-restricted-imports": "off"
+    "project": "./tsconfig.json"
   },
   "ignorePatterns": ["dist/", "node_modules/", "coverage/", "*.js", "jest.config.ts"]
 }

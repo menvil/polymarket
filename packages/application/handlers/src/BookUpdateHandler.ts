@@ -200,4 +200,3 @@ export class BookUpdateHandler {
     this._logger.info('Book registry cleaned up for closed market', { marketId: marketKey });
   }
 }
-

@@ -114,7 +114,6 @@ export class PolymarketWsAdapter implements IPolymarketWsEmitter {
   /** Время последнего connect (для подавления INVALID OPERATION сразу после reconnect) */
   private _lastConnectMs = 0;
 
-
   /**
    * Создаёт PolymarketWsAdapter.
    *

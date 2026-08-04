@@ -443,7 +443,6 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
   }
 }
 
-
 /**
  * Квантует цену к сетке tickSize.
  *

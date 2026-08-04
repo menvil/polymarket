@@ -165,7 +165,6 @@ export class RestartingTask {
 
     return new Promise((resolve) => {
       let resolved = false;
-      let timer: ReturnType<typeof setTimeout>;
 
       const finish = (): void => {
         if (resolved) return;
@@ -175,7 +174,7 @@ export class RestartingTask {
         resolve();
       };
 
-      timer = setTimeout(finish, ms);
+      const timer: ReturnType<typeof setTimeout> = setTimeout(finish, ms);
       timer.unref?.();
 
       signal.addEventListener('abort', finish, { once: true });

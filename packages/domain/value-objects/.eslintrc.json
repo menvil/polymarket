@@ -3,5 +3,8 @@
   "parserOptions": {
     "project": "./tsconfig.json",
     "tsconfigRootDir": "."
+  },
+  "rules": {
+    "no-restricted-imports": "off"
   }
 }

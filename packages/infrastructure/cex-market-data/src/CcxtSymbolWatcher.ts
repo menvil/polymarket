@@ -411,26 +411,22 @@ export class CcxtSymbolWatcher {
   }
 
   private async _closeInstanceOnce(instance: CcxtExchangeInstance): Promise<void> {
-    try {
-      if (instance?.clients) {
-        for (const clientKey of Object.keys(instance.clients)) {
-          const client = instance.clients[clientKey];
-          try {
-            if (client?.close) {
-              await client.close();
-            } else if (client?.connection?.close) {
-              await client.connection.close();
-            }
-          } catch {
-            // ignore individual client close errors
+    if (instance?.clients) {
+      for (const clientKey of Object.keys(instance.clients)) {
+        const client = instance.clients[clientKey];
+        try {
+          if (client?.close) {
+            await client.close();
+          } else if (client?.connection?.close) {
+            await client.connection.close();
           }
+        } catch {
+          // ignore individual client close errors
         }
       }
-      if (instance?.close) {
-        await instance.close();
-      }
-    } catch (err) {
-      throw err;
+    }
+    if (instance?.close) {
+      await instance.close();
     }
   }
 

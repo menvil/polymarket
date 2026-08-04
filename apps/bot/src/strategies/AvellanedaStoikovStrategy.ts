@@ -1700,7 +1700,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
     }
 
     const midClamped = Math.max(2, Math.min(98, data.ewmaMid));
-    let ask = Math.max(1, Math.round(midClamped) - this._cryptoExitDiscountCents);
+    const ask = Math.max(1, Math.round(midClamped) - this._cryptoExitDiscountCents);
 
     let askSize = data.availableTokenQty;
 
@@ -1757,7 +1757,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
 
     // Дисконт от mid: чем ближе к концу, тем ниже цена
     const discountCents = Math.floor(progress * this._unwindMaxDiscountCents);
-    let ask = Math.max(1, Math.round(midClamped) - discountCents);
+    const ask = Math.max(1, Math.round(midClamped) - discountCents);
 
     // Продаём ВСЕ доступные токены
     let askSize = data.availableTokenQty;
