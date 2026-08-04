@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T12:04:43.529Z",
+  "generatedAt": "2026-08-04T17:08:50.494Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -295,10 +295,10 @@
       "rawDecimal": 0,
       "rawNumber": 4,
       "rawString": 32,
-      "throwSites": 97,
-      "undocumentedExports": 6,
-      "totalExports": 57,
-      "fileCount": 43,
+      "throwSites": 98,
+      "undocumentedExports": 7,
+      "totalExports": 58,
+      "fileCount": 45,
       "hasDocs": true
     },
     {
@@ -306,11 +306,11 @@
       "relPath": "packages/foundation/ids",
       "rawDecimal": 0,
       "rawNumber": 8,
-      "rawString": 45,
+      "rawString": 47,
       "throwSites": 5,
-      "undocumentedExports": 19,
-      "totalExports": 125,
-      "fileCount": 25,
+      "undocumentedExports": 20,
+      "totalExports": 129,
+      "fileCount": 26,
       "hasDocs": true
     },
     {
@@ -347,6 +347,18 @@
       "undocumentedExports": 0,
       "totalExports": 31,
       "fileCount": 7,
+      "hasDocs": true
+    },
+    {
+      "name": "@polymarket/rolling-window",
+      "relPath": "packages/foundation/rolling-window",
+      "rawDecimal": 0,
+      "rawNumber": 6,
+      "rawString": 0,
+      "throwSites": 1,
+      "undocumentedExports": 0,
+      "totalExports": 2,
+      "fileCount": 2,
       "hasDocs": true
     },
     {

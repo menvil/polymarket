@@ -9,6 +9,7 @@ import {
   asOrderId,
   asFillId,
   asPositionId,
+  asStrategyId,
 } from '../src/index.js';
 
 describe('Execution IDs', () => {
@@ -276,6 +277,57 @@ describe('Execution IDs', () => {
       expect(asPositionId(undefined as any)).toBeUndefined();
       expect(asPositionId(0 as any)).toBeUndefined();
       expect(asPositionId({} as any)).toBeUndefined();
+    });
+  });
+
+  describe('StrategyId', () => {
+    it('should parse valid strategy IDs', () => {
+      expect(asStrategyId('strategy-123')).toBe('strategy-123');
+      expect(asStrategyId('CROWD_DEVIATION_456')).toBe('CROWD_DEVIATION_456');
+      expect(asStrategyId('strategy-uuid-1234')).toBe('strategy-uuid-1234');
+      expect(asStrategyId('67890')).toBe('67890');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asStrategyId('  strategy-123  ')).toBe('strategy-123');
+      expect(asStrategyId('\tstrategy-456\n')).toBe('strategy-456');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asStrategyId('')).toBeUndefined();
+      expect(asStrategyId('  ')).toBeUndefined();
+      expect(asStrategyId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(256);
+      const tooLong = 'x'.repeat(257);
+
+      expect(asStrategyId(maxLength)).toBe(maxLength);
+      expect(asStrategyId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asStrategyId('strategy\x00id')).toBeUndefined(); // null
+      expect(asStrategyId('strategy\x01id')).toBeUndefined(); // start of heading
+      expect(asStrategyId('strategy\x1Fid')).toBeUndefined(); // unit separator
+      expect(asStrategyId('strategy\x7Fid')).toBeUndefined(); // delete
+      expect(asStrategyId('strategy\x9Fid')).toBeUndefined(); // application program command
+    });
+
+    it('should accept special characters except control chars', () => {
+      expect(asStrategyId('strategy-123')).toBe('strategy-123');
+      expect(asStrategyId('strategy_456')).toBe('strategy_456');
+      expect(asStrategyId('strategy.789')).toBe('strategy.789');
+      expect(asStrategyId('strategy@account')).toBe('strategy@account');
+    });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any через validateBrandedId — не должен вызывать null.trim()
+      expect(asStrategyId(null as any)).toBeUndefined();
+      expect(asStrategyId(undefined as any)).toBeUndefined();
+      expect(asStrategyId(0 as any)).toBeUndefined();
+      expect(asStrategyId({} as any)).toBeUndefined();
     });
   });
 });

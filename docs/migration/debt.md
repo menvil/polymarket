@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-04T12:04:43.529Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-04T17:08:50.494Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -33,11 +33,12 @@
 | `packages/domain/market-data/order-book` | 13 | 23 | 5 | 9 | 6/16 | ❌ |
 | `packages/domain/market-data/trade-tape` | 6 | 7 | 0 | 1 | 1/7 | ❌ |
 | `packages/domain/value-objects` | 0 | 91 | 151 | 0 | 21/156 | ✅ |
-| `packages/foundation/errors` | 0 | 4 | 32 | 97 | 6/57 | ✅ |
-| `packages/foundation/ids` | 0 | 8 | 45 | 5 | 19/125 | ✅ |
+| `packages/foundation/errors` | 0 | 4 | 32 | 98 | 7/58 | ✅ |
+| `packages/foundation/ids` | 0 | 8 | 47 | 5 | 20/129 | ✅ |
 | `packages/foundation/logger` | 0 | 1 | 30 | 1 | 2/11 | ✅ |
 | `packages/foundation/math` | 0 | 3 | 8 | 0 | 1/46 | ✅ |
 | `packages/foundation/result` | 0 | 1 | 7 | 9 | 0/31 | ✅ |
+| `packages/foundation/rolling-window` | 0 | 6 | 0 | 1 | 0/2 | ✅ |
 | `packages/foundation/time` | 0 | 3 | 6 | 7 | 3/12 | ✅ |
 | `packages/infrastructure/adapters` | 0 | 0 | 6 | 0 | 1/1 | ❌ |
 | `packages/infrastructure/backtesting` | 0 | 116 | 55 | 3 | 5/27 | ❌ |
@@ -46,6 +47,6 @@
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 69 | 22/178 | ❌ |
-| **ИТОГО** | **203** | **2518** | **1546** | **314** | **352/1494** | **20 пакетов без docs/** |
+| **ИТОГО** | **203** | **2524** | **1548** | **316** | **354/1501** | **20 пакетов без docs/** |
 
 `decimal.js` импортируется вне `value-objects`/`math` в 85 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

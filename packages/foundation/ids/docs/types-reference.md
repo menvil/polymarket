@@ -681,6 +681,24 @@ const fillId = asFillId('fill-456');  // → FillId | undefined
 
 ---
 
+### StrategyId
+
+Идентификатор экземпляра торговой стратегии (`IStrategy.id`).
+
+```typescript
+type StrategyId = string & { readonly __brand: 'StrategyId' };
+```
+
+**Helper функции**:
+
+```typescript
+import { asStrategyId } from '@polymarket/ids';
+
+const strategyId = asStrategyId('crowd-deviation-1');  // → StrategyId | undefined
+```
+
+---
+
 ## Сравнительная таблица
 
 | Type                | Category      | Purpose                           | Example                                    |
@@ -699,6 +717,7 @@ const fillId = asFillId('fill-456');  // → FillId | undefined
 | ExecutionVenueId    | Execution     | Куда ОТПРАВЛЯЕМ ордера            | 'POLYMARKET'                               |
 | OrderId             | Execution     | ID ордера                         | 'order-123'                                |
 | FillId              | Execution     | ID fill                           | 'fill-456'                                 |
+| StrategyId          | Execution     | ID экземпляра стратегии           | 'crowd-deviation-1'                        |
 
 ---
 
