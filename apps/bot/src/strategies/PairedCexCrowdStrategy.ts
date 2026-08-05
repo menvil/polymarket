@@ -778,7 +778,7 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
     const metrics = TradeFlowCalculator.compute(tape.getRecent(15_000, nowMs));
     return {
       imbalance: metrics.orderFlowImbalance.toNumber(),
-      vwapCents: metrics.vwap ? metrics.vwap.mul(100).toNumber() : undefined,
+      vwapCents: metrics.vwap ? metrics.vwap.value().mul(100).toNumber() : undefined,
       tradeCount: metrics.tradeCount,
     };
   }

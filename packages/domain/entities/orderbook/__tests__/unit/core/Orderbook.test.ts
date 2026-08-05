@@ -4,11 +4,22 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { Orderbook } from '../../../src/core/Orderbook.js';
+import { OrderbookLevel } from '../../../src/core/OrderbookLevel.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
+import { PriceService, QuantityService, Timestamp } from '@polymarket/value-objects';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
+
+/** Создаёт OrderbookLevel из примитивов (для fromLevels() — минует нормализатор). */
+function testLevel(price: number, quantity: number): OrderbookLevel {
+  const p = PriceService.create(price);
+  const q = QuantityService.create(quantity);
+  if (!p.ok) throw new Error(`Invalid price: ${price}`);
+  if (!q.ok) throw new Error(`Invalid quantity: ${quantity}`);
+  return OrderbookLevel.create(p.value, q.value);
+}
 
 describe('Orderbook', () => {
   const createTestOrderbook = (rawData: Partial<RawOrderbook> = {}) => {
@@ -78,6 +89,79 @@ describe('Orderbook', () => {
       expect(orderbook.isEmpty()).toBe(true);
       expect(orderbook.bids.length).toBe(0);
       expect(orderbook.asks.length).toBe(0);
+    });
+  });
+
+  describe('fromLevels()', () => {
+    const instrumentId = 'market-123' as InstrumentId;
+    const asset = 'token-yes' as InstrumentId;
+
+    it('создаёт Orderbook напрямую из уровней, минуя нормализатор', () => {
+      const orderbook = Orderbook.fromLevels(
+        instrumentId,
+        asset,
+        [testLevel(0.52, 100)],
+        [testLevel(0.53, 150)],
+        Timestamp.now(),
+      );
+
+      expect(orderbook.instrumentId).toBe('market-123');
+      expect(orderbook.asset).toBe('token-yes');
+      expect(orderbook.bids.length).toBe(1);
+      expect(orderbook.asks.length).toBe(1);
+    });
+
+    it('возвращает frozen объект', () => {
+      const orderbook = Orderbook.fromLevels(instrumentId, asset, [], [], Timestamp.now());
+      expect(Object.isFrozen(orderbook)).toBe(true);
+    });
+
+    it('сортирует bids по убыванию цены, даже если переданы не по порядку', () => {
+      const orderbook = Orderbook.fromLevels(
+        instrumentId,
+        asset,
+        [testLevel(0.51, 100), testLevel(0.53, 50), testLevel(0.52, 200)], // намеренно не отсортированы
+        [],
+        Timestamp.now(),
+      );
+
+      expect(orderbook.bids.map((l) => l.price.value().toNumber())).toEqual([0.53, 0.52, 0.51]);
+    });
+
+    it('сортирует asks по возрастанию цены, даже если переданы не по порядку', () => {
+      const orderbook = Orderbook.fromLevels(
+        instrumentId,
+        asset,
+        [],
+        [testLevel(0.55, 100), testLevel(0.53, 50), testLevel(0.54, 200)], // намеренно не отсортированы
+        Timestamp.now(),
+      );
+
+      expect(orderbook.asks.map((l) => l.price.value().toNumber())).toEqual([0.53, 0.54, 0.55]);
+    });
+
+    it('неотсортированный вход не ломает getBestBid()/getBestAsk() (защитная сортировка)', () => {
+      const orderbook = Orderbook.fromLevels(
+        instrumentId,
+        asset,
+        [testLevel(0.51, 100), testLevel(0.53, 50)],
+        [testLevel(0.56, 100), testLevel(0.54, 50)],
+        Timestamp.now(),
+      );
+
+      expect(orderbook.getBestBid()?.value().toNumber()).toBe(0.53);
+      expect(orderbook.getBestAsk()?.value().toNumber()).toBe(0.54);
+    });
+
+    it('сохраняет receivedAt (обязателен) и venueTimestamp (опционален)', () => {
+      const receivedAt = Timestamp.now();
+      const withVenue = Orderbook.fromLevels(instrumentId, asset, [], [], receivedAt, receivedAt);
+      const withoutVenue = Orderbook.fromLevels(instrumentId, asset, [], [], receivedAt);
+
+      expect(withVenue.receivedAt).toBe(receivedAt);
+      expect(withVenue.venueTimestamp).toBe(receivedAt);
+      expect(withoutVenue.receivedAt).toBe(receivedAt);
+      expect(withoutVenue.venueTimestamp).toBeUndefined();
     });
   });
 

@@ -2,6 +2,14 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { ImbalanceHistory } from '../../src/ImbalanceHistory.js';
 
+/** Разворачивает Result, падает тестом при Err — сокращает шум в happy-path тестах. */
+function unwrap<T>(result: { ok: boolean; value?: T; error?: unknown }): T {
+  if (!result.ok) {
+    throw new Error(`Expected Ok, got Err: ${JSON.stringify(result.error)}`);
+  }
+  return result.value as T;
+}
+
 describe('ImbalanceHistory', () => {
   let history: ImbalanceHistory;
   const BASE_TIME = 1700000000000;
@@ -9,7 +17,7 @@ describe('ImbalanceHistory', () => {
   const d = (n: number) => new Decimal(n);
 
   beforeEach(() => {
-    history = ImbalanceHistory.create();
+    history = unwrap(ImbalanceHistory.create());
   });
 
   // ==================== create ====================
@@ -21,7 +29,7 @@ describe('ImbalanceHistory', () => {
     });
 
     it('использует maxSize по умолчанию 1000', () => {
-      const h = ImbalanceHistory.create();
+      const h = unwrap(ImbalanceHistory.create());
       for (let i = 0; i < 1001; i++) {
         h.record(d(0.1), BASE_TIME + i);
       }
@@ -29,11 +37,17 @@ describe('ImbalanceHistory', () => {
     });
 
     it('принимает кастомный maxSize', () => {
-      const h = ImbalanceHistory.create(5);
+      const h = unwrap(ImbalanceHistory.create(5));
       for (let i = 0; i < 6; i++) {
         h.record(d(0.1), BASE_TIME + i);
       }
       expect(h.size()).toBe(5);
+    });
+
+    it('возвращает Err если maxSize не положительное целое', () => {
+      expect(ImbalanceHistory.create(0).ok).toBe(false);
+      expect(ImbalanceHistory.create(-5).ok).toBe(false);
+      expect(ImbalanceHistory.create(1.5).ok).toBe(false);
     });
   });
 
@@ -54,7 +68,7 @@ describe('ImbalanceHistory', () => {
     });
 
     it('удаляет старую запись при превышении maxSize (FIFO)', () => {
-      const h = ImbalanceHistory.create(3);
+      const h = unwrap(ImbalanceHistory.create(3));
       h.record(d(0.1), BASE_TIME);
       h.record(d(0.2), BASE_TIME + 1);
       h.record(d(0.3), BASE_TIME + 2);
@@ -155,7 +169,7 @@ describe('ImbalanceHistory', () => {
     });
 
     it('вычисляет дельту (last - first) в окне', () => {
-      const h = ImbalanceHistory.create();
+      const h = unwrap(ImbalanceHistory.create());
       const now = BASE_TIME + 10_000; // детерминированное время
       h.record(d(0.1), now - 4000);
       h.record(d(0.2), now - 3000);
@@ -168,7 +182,7 @@ describe('ImbalanceHistory', () => {
     });
 
     it('возвращает отрицательную дельту при убывании', () => {
-      const h = ImbalanceHistory.create();
+      const h = unwrap(ImbalanceHistory.create());
       const now = BASE_TIME + 10_000; // детерминированное время
       h.record(d(0.8), now - 3000);
       h.record(d(0.3), now - 1000);

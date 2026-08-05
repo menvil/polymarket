@@ -17,18 +17,24 @@
  * ### Содержимое пакета:
  * - `BookDepthCollector` — буфер снапшотов стакана в `OrderBookHistory` per tokenId
  * - `TradeTapeCollector` — буфер ленты трейдов в `TradeTape` per tokenId
- * - `MarketDataStore` — фасад/владелец подписок: объединяет оба коллектора +
+ * - `TradeIndexCollector` — индекс построенных `Trade` по `VenueTradeId` (для будущего
+ *   `ExecutionLinker`, Этап 7)
+ * - `MarketDataStore` — фасад/владелец подписок: объединяет коллекторы +
  *   TopOfBook tracking; единая точка доступа к рыночным данным для StrategyScheduler
  * - `CryptoMarketDataStore` — long-lived история цен/CEX-стаканов per asset
  * - `CryptoResolutionStore` — strike/resolution lifecycle крипто-рынков
  *
  * @example
  * ```typescript
- * import { BookDepthCollector, TradeTapeCollector, MarketDataStore } from '@polymarket/market-state';
+ * import { BookDepthCollector, TradeTapeCollector, TradeIndexCollector, MarketDataStore } from '@polymarket/market-state';
  *
  * const bookCollector = new BookDepthCollector({ logger, clock }, { maxCount: 500 });
  * const tapeCollector = new TradeTapeCollector({ catalog, logger, clock }, { maxAgeMs: 300_000 });
- * const store = new MarketDataStore({ eventBus, bookCollector, tapeCollector, logger });
+ * const tradeIndexResult = TradeIndexCollector.create({ maxAgeMs: 300_000 }, clock);
+ * if (!tradeIndexResult.ok) throw tradeIndexResult.error;
+ * const store = new MarketDataStore({
+ *   eventBus, bookCollector, tapeCollector, tradeIndex: tradeIndexResult.value, logger,
+ * });
  *
  * store.setOnChange((instrumentId, reason) => scheduler.onStateChanged(instrumentId, reason));
  * store.start(); // только store владеет подписками
@@ -40,6 +46,9 @@ export type { BookDepthCollectorDeps, BookDepthCollectorConfig } from './BookDep
 
 export { TradeTapeCollector } from './TradeTapeCollector.js';
 export type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from './TradeTapeCollector.js';
+
+export { TradeIndexCollector } from './TradeIndexCollector.js';
+export type { TradeIndexCollectorConfig } from './TradeIndexCollector.js';
 
 export { MarketDataStore } from './MarketDataStore.js';
 export type { MarketDataStoreDeps, MarketDataReason, TopOfBookState } from './MarketDataStore.js';

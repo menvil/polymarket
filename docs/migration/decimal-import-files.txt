@@ -71,7 +71,6 @@ packages/domain/market-data/order-book/src/ImbalanceCalculator.ts
 packages/domain/market-data/order-book/src/ImbalanceHistory.ts
 packages/domain/market-data/order-book/src/OrderBook.ts
 packages/domain/market-data/trade-tape/src/TradeFlowCalculator.ts
-packages/domain/market-data/trade-tape/src/TradeFlowMetrics.ts
 packages/foundation/errors/src/utils/errorUtils.ts
 packages/infrastructure/backtesting/src/BacktestEngine.ts
 packages/infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.ts

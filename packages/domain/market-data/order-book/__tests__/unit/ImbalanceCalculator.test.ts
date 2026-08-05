@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { PriceService, QuantityService } from '@polymarket/value-objects';
-import { ImbalanceCalculator } from '../../src/ImbalanceCalculator.js';
+import { ImbalanceCalculator, type ImbalanceMode } from '../../src/ImbalanceCalculator.js';
 import type { PriceLevel } from '../../src/PriceLevel.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -26,6 +26,15 @@ function level(price: number | string, size: number | string): PriceLevel {
   if (!p.ok) throw new Error(`Invalid price: ${price}`);
   if (!s.ok) throw new Error(`Invalid size: ${size}`);
   return { price: p.value, size: s.value };
+}
+
+/** Вызывает calculate() и разворачивает Result — сокращает шум в happy-path тестах. */
+function calc(bids: PriceLevel[], asks: PriceLevel[], mode: ImbalanceMode) {
+  const result = ImbalanceCalculator.calculate(bids, asks, mode);
+  if (!result.ok) {
+    throw new Error(`Expected Ok, got Err: ${JSON.stringify(result.error)}`);
+  }
+  return result.value;
 }
 
 /**
@@ -69,27 +78,27 @@ describe('ImbalanceCalculator', () => {
 
   describe('ALL_LEVELS', () => {
     it('вычисляет объёмный имбаланс по всем уровням', () => {
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'ALL_LEVELS' });
+      const result = calc(BIDS, ASKS, { type: 'ALL_LEVELS' });
       const expected = expectedVolume(BIDS, ASKS);
       expect(result.toNumber()).toBeCloseTo(expected, 10);
     });
 
     it('возвращает 0 для пустого стакана', () => {
-      expect(ImbalanceCalculator.calculate([], [], { type: 'ALL_LEVELS' }).toNumber()).toBe(0);
+      expect(calc([], [], { type: 'ALL_LEVELS' }).toNumber()).toBe(0);
     });
 
     it('возвращает +1 если ask side пустой', () => {
-      expect(ImbalanceCalculator.calculate(BIDS, [], { type: 'ALL_LEVELS' }).toNumber()).toBe(1);
+      expect(calc(BIDS, [], { type: 'ALL_LEVELS' }).toNumber()).toBe(1);
     });
 
     it('возвращает -1 если bid side пустой', () => {
-      expect(ImbalanceCalculator.calculate([], ASKS, { type: 'ALL_LEVELS' }).toNumber()).toBe(-1);
+      expect(calc([], ASKS, { type: 'ALL_LEVELS' }).toNumber()).toBe(-1);
     });
 
     it('возвращает 0 для симметричного стакана', () => {
       const bids = [level('0.49', '1000')];
       const asks = [level('0.51', '1000')];
-      expect(ImbalanceCalculator.calculate(bids, asks, { type: 'ALL_LEVELS' }).toNumber()).toBe(0);
+      expect(calc(bids, asks, { type: 'ALL_LEVELS' }).toNumber()).toBe(0);
     });
   });
 
@@ -99,7 +108,7 @@ describe('ImbalanceCalculator', () => {
     it('учитывает только топ N уровней с каждой стороны', () => {
       // TOP_1: bids=[0.65×1000], asks=[0.66×500]
       // (1000-500)/(1000+500) = 500/1500 ≈ 0.333
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 1 });
+      const result = calc(BIDS, ASKS, { type: 'TOP_N', levels: 1 });
       expect(result.toNumber()).toBeCloseTo(500 / 1500, 10);
     });
 
@@ -111,36 +120,30 @@ describe('ImbalanceCalculator', () => {
       // TOP_2: (1100-1400)/(1100+1400) = -300/2500 = -0.12
       const asymBids = [level('0.65', '1000'), level('0.64', '100')];
       const asymAsks = [level('0.66', '500'), level('0.67', '900')];
-      const top1 = ImbalanceCalculator.calculate(asymBids, asymAsks, { type: 'TOP_N', levels: 1 });
-      const top2 = ImbalanceCalculator.calculate(asymBids, asymAsks, { type: 'TOP_N', levels: 2 });
+      const top1 = calc(asymBids, asymAsks, { type: 'TOP_N', levels: 1 });
+      const top2 = calc(asymBids, asymAsks, { type: 'TOP_N', levels: 2 });
       expect(top1.toNumber()).not.toBeCloseTo(top2.toNumber(), 5);
     });
 
     it('TOP_N >= размера стакана эквивалентен ALL_LEVELS', () => {
-      const all = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'ALL_LEVELS' });
-      const topMany = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 100 });
+      const all = calc(BIDS, ASKS, { type: 'ALL_LEVELS' });
+      const topMany = calc(BIDS, ASKS, { type: 'TOP_N', levels: 100 });
       expect(topMany.toNumber()).toBeCloseTo(all.toNumber(), 10);
     });
 
     it('возвращает 0 для пустого стакана', () => {
       expect(
-        ImbalanceCalculator.calculate([], [], { type: 'TOP_N', levels: 5 }).toNumber()
+        calc([], [], { type: 'TOP_N', levels: 5 }).toNumber()
       ).toBe(0);
     });
 
-    it('бросает RangeError если levels <= 0', () => {
-      expect(() =>
-        ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 0 })
-      ).toThrow(RangeError);
-      expect(() =>
-        ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: -1 })
-      ).toThrow(RangeError);
+    it('возвращает Err если levels <= 0', () => {
+      expect(ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 0 }).ok).toBe(false);
+      expect(ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: -1 }).ok).toBe(false);
     });
 
-    it('бросает RangeError если levels не целое', () => {
-      expect(() =>
-        ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 1.5 })
-      ).toThrow(RangeError);
+    it('возвращает Err если levels не целое', () => {
+      expect(ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'TOP_N', levels: 1.5 }).ok).toBe(false);
     });
   });
 
@@ -152,7 +155,7 @@ describe('ImbalanceCalculator', () => {
       // 5% от mid = 0.03275 → диапазон [0.655-0.03275, 0.655+0.03275] = [0.622, 0.688]
       // Все 3 bid уровня (0.65, 0.64, 0.63) входят в [0.622, 0.688]
       // Все 3 ask уровня (0.66, 0.67, 0.68) входят в [0.622, 0.688]
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, {
+      const result = calc(BIDS, ASKS, {
         type: 'PRICE_RANGE',
         rangePercent: 0.05,
       });
@@ -166,7 +169,7 @@ describe('ImbalanceCalculator', () => {
       // Bids: 0.65 входит (|0.65-0.655|=0.005 <= 0.00655); 0.64 вне (0.015 > 0.00655); 0.63 вне
       // Asks: 0.66 входит (|0.66-0.655|=0.005 <= 0.00655); 0.67 вне; 0.68 вне
       // Результат: bids=[1000], asks=[500] → (1000-500)/(1000+500) ≈ 0.333
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, {
+      const result = calc(BIDS, ASKS, {
         type: 'PRICE_RANGE',
         rangePercent: 0.01,
       });
@@ -175,23 +178,19 @@ describe('ImbalanceCalculator', () => {
 
     it('возвращает 0 если стакан пустой', () => {
       expect(
-        ImbalanceCalculator.calculate([], [], { type: 'PRICE_RANGE', rangePercent: 0.05 }).toNumber()
+        calc([], [], { type: 'PRICE_RANGE', rangePercent: 0.05 }).toNumber()
       ).toBe(0);
     });
 
     it('возвращает 0 если bid side пустой (mid не определён)', () => {
       expect(
-        ImbalanceCalculator.calculate([], ASKS, { type: 'PRICE_RANGE', rangePercent: 0.05 }).toNumber()
+        calc([], ASKS, { type: 'PRICE_RANGE', rangePercent: 0.05 }).toNumber()
       ).toBe(0);
     });
 
-    it('бросает RangeError если rangePercent <= 0', () => {
-      expect(() =>
-        ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'PRICE_RANGE', rangePercent: 0 })
-      ).toThrow(RangeError);
-      expect(() =>
-        ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'PRICE_RANGE', rangePercent: -0.1 })
-      ).toThrow(RangeError);
+    it('возвращает Err если rangePercent <= 0', () => {
+      expect(ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'PRICE_RANGE', rangePercent: 0 }).ok).toBe(false);
+      expect(ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'PRICE_RANGE', rangePercent: -0.1 }).ok).toBe(false);
     });
   });
 
@@ -199,20 +198,20 @@ describe('ImbalanceCalculator', () => {
 
   describe('WEIGHTED', () => {
     it('возвращает Decimal в диапазоне [-1, +1]', () => {
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'WEIGHTED' });
+      const result = calc(BIDS, ASKS, { type: 'WEIGHTED' });
       expect(result.toNumber()).toBeGreaterThanOrEqual(-1);
       expect(result.toNumber()).toBeLessThanOrEqual(1);
     });
 
     it('возвращает 0 для пустого стакана', () => {
       expect(
-        ImbalanceCalculator.calculate([], [], { type: 'WEIGHTED' }).toNumber()
+        calc([], [], { type: 'WEIGHTED' }).toNumber()
       ).toBe(0);
     });
 
     it('возвращает +1 если ask side пустой', () => {
       expect(
-        ImbalanceCalculator.calculate(BIDS, [], { type: 'WEIGHTED' }).toNumber()
+        calc(BIDS, [], { type: 'WEIGHTED' }).toNumber()
       ).toBe(1);
     });
 
@@ -224,8 +223,8 @@ describe('ImbalanceCalculator', () => {
       ];
       const asks = [level('0.66', '100')];
 
-      const allLevels = ImbalanceCalculator.calculate(bids, asks, { type: 'ALL_LEVELS' });
-      const weighted = ImbalanceCalculator.calculate(bids, asks, { type: 'WEIGHTED' });
+      const allLevels = calc(bids, asks, { type: 'ALL_LEVELS' });
+      const weighted = calc(bids, asks, { type: 'WEIGHTED' });
 
       // ALL_LEVELS: (100+10000-100)/(100+10000+100) = 10000/10200 ≈ 0.98
       // WEIGHTED: bid_weighted = 100×1 + 10000×0.5 = 5100; ask_weighted = 100×1 = 100
@@ -237,8 +236,8 @@ describe('ImbalanceCalculator', () => {
     it('для единственного уровня на каждой стороне эквивалентен ALL_LEVELS', () => {
       const bids = [level('0.65', '1000')];
       const asks = [level('0.66', '500')];
-      const allLevels = ImbalanceCalculator.calculate(bids, asks, { type: 'ALL_LEVELS' });
-      const weighted = ImbalanceCalculator.calculate(bids, asks, { type: 'WEIGHTED' });
+      const allLevels = calc(bids, asks, { type: 'ALL_LEVELS' });
+      const weighted = calc(bids, asks, { type: 'WEIGHTED' });
       // Оба используют rank=0, weight=1 → результаты идентичны
       expect(weighted.toNumber()).toBeCloseTo(allLevels.toNumber(), 10);
     });
@@ -248,7 +247,7 @@ describe('ImbalanceCalculator', () => {
 
   describe('NOTIONAL', () => {
     it('возвращает Decimal в диапазоне [-1, +1]', () => {
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'NOTIONAL' });
+      const result = calc(BIDS, ASKS, { type: 'NOTIONAL' });
       expect(result.toNumber()).toBeGreaterThanOrEqual(-1);
       expect(result.toNumber()).toBeLessThanOrEqual(1);
     });
@@ -257,7 +256,7 @@ describe('ImbalanceCalculator', () => {
       // bid notional: 0.65×1000 + 0.64×800 + 0.63×600 = 650 + 512 + 378 = 1540
       // ask notional: 0.66×500 + 0.67×400 + 0.68×300 = 330 + 268 + 204 = 802
       // (1540-802)/(1540+802) = 738/2342 ≈ 0.315
-      const result = ImbalanceCalculator.calculate(BIDS, ASKS, { type: 'NOTIONAL' });
+      const result = calc(BIDS, ASKS, { type: 'NOTIONAL' });
       const bidNotional = 0.65 * 1000 + 0.64 * 800 + 0.63 * 600;
       const askNotional = 0.66 * 500 + 0.67 * 400 + 0.68 * 300;
       const expected = (bidNotional - askNotional) / (bidNotional + askNotional);
@@ -272,8 +271,8 @@ describe('ImbalanceCalculator', () => {
       const asks = [
         level('0.10', '100'), // низкая цена
       ];
-      const allLevels = ImbalanceCalculator.calculate(bids, asks, { type: 'ALL_LEVELS' });
-      const notional = ImbalanceCalculator.calculate(bids, asks, { type: 'NOTIONAL' });
+      const allLevels = calc(bids, asks, { type: 'ALL_LEVELS' });
+      const notional = calc(bids, asks, { type: 'NOTIONAL' });
 
       // ALL_LEVELS: (100-100)/(100+100) = 0 (симметричный по объёму)
       expect(allLevels.toNumber()).toBe(0);
@@ -283,7 +282,7 @@ describe('ImbalanceCalculator', () => {
 
     it('возвращает 0 для пустого стакана', () => {
       expect(
-        ImbalanceCalculator.calculate([], [], { type: 'NOTIONAL' }).toNumber()
+        calc([], [], { type: 'NOTIONAL' }).toNumber()
       ).toBe(0);
     });
   });
@@ -293,7 +292,9 @@ describe('ImbalanceCalculator', () => {
   describe('интеграция с ImbalanceHistory', () => {
     it('результат calculate() можно передать в ImbalanceHistory.record()', async () => {
       const { ImbalanceHistory } = await import('../../src/ImbalanceHistory.js');
-      const history = ImbalanceHistory.create(100);
+      const historyResult = ImbalanceHistory.create(100);
+      if (!historyResult.ok) throw new Error('Expected Ok');
+      const history = historyResult.value;
 
       const modes = [
         { type: 'ALL_LEVELS' },
@@ -304,7 +305,7 @@ describe('ImbalanceCalculator', () => {
 
       let t = 1_700_000_000_000;
       for (const mode of modes) {
-        const imbalance = ImbalanceCalculator.calculate(BIDS, ASKS, mode);
+        const imbalance = calc(BIDS, ASKS, mode);
         history.record(imbalance, t++);
       }
 

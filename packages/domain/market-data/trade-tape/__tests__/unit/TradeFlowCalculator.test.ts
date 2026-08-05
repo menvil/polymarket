@@ -8,13 +8,13 @@
  * - Один SELL трейд — sellVolume, OFI=-1, VWAP
  * - Несколько трейдов — VWAP, OFI
  * - Записи с side=undefined — учитываются в VWAP, не в OFI
- * - Типы Decimal в результате
+ * - VO-типы в результате (Quantity/Ratio/Price/Money)
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { TradeFlowCalculator } from '../../src/TradeFlowCalculator.js';
 import type { TapeRecord } from '../../src/TapeRecord.js';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity, Ratio, Money, Timestamp } from '@polymarket/value-objects';
 
 // ==================== Вспомогательные функции ====================
 
@@ -38,7 +38,7 @@ function makeRecord(params: {
 
 describe('TradeFlowCalculator', () => {
   describe('compute() с пустым массивом', () => {
-    it('возвращает нулевые Decimal метрики', () => {
+    it('возвращает нулевые метрики', () => {
       const metrics = TradeFlowCalculator.compute([]);
 
       expect(metrics.buyVolume.isZero()).toBe(true);
@@ -50,10 +50,13 @@ describe('TradeFlowCalculator', () => {
       expect(metrics.tradeCount).toBe(0);
     });
 
-    it('возвращает Decimal типы', () => {
+    it('возвращает VO-типы (Этап 2: Quantity/Ratio/Price/Money вместо Decimal)', () => {
       const metrics = TradeFlowCalculator.compute([]);
-      expect(metrics.buyVolume).toBeInstanceOf(Decimal);
-      expect(metrics.orderFlowImbalance).toBeInstanceOf(Decimal);
+      expect(metrics.buyVolume).toBeInstanceOf(Quantity);
+      expect(metrics.sellVolume).toBeInstanceOf(Quantity);
+      expect(metrics.totalVolume).toBeInstanceOf(Quantity);
+      expect(metrics.orderFlowImbalance).toBeInstanceOf(Ratio);
+      expect(metrics.totalNotional).toBeInstanceOf(Money);
     });
   });
 

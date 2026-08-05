@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T17:08:50.494Z",
+  "generatedAt": "2026-08-05T07:16:44.368Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -7,7 +7,7 @@
       "rawDecimal": 104,
       "rawNumber": 1615,
       "rawString": 209,
-      "throwSites": 16,
+      "throwSites": 18,
       "undocumentedExports": 79,
       "totalExports": 234,
       "fileCount": 59,
@@ -77,12 +77,12 @@
       "name": "@polymarket/market-state",
       "relPath": "packages/application/market-state",
       "rawDecimal": 0,
-      "rawNumber": 105,
+      "rawNumber": 106,
       "rawString": 52,
-      "throwSites": 2,
-      "undocumentedExports": 22,
-      "totalExports": 41,
-      "fileCount": 7,
+      "throwSites": 6,
+      "undocumentedExports": 23,
+      "totalExports": 44,
+      "fileCount": 8,
       "hasDocs": false
     },
     {
@@ -246,7 +246,7 @@
       "relPath": "packages/domain/entities/trade",
       "rawDecimal": 5,
       "rawNumber": 2,
-      "rawString": 10,
+      "rawString": 16,
       "throwSites": 0,
       "undocumentedExports": 2,
       "totalExports": 6,
@@ -256,26 +256,26 @@
     {
       "name": "@polymarket/order-book",
       "relPath": "packages/domain/market-data/order-book",
-      "rawDecimal": 13,
+      "rawDecimal": 11,
       "rawNumber": 23,
       "rawString": 5,
-      "throwSites": 9,
+      "throwSites": 4,
       "undocumentedExports": 6,
       "totalExports": 16,
       "fileCount": 7,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/trade-tape",
       "relPath": "packages/domain/market-data/trade-tape",
-      "rawDecimal": 6,
+      "rawDecimal": 0,
       "rawNumber": 7,
       "rawString": 0,
-      "throwSites": 1,
+      "throwSites": 2,
       "undocumentedExports": 1,
       "totalExports": 7,
       "fileCount": 5,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/value-objects",

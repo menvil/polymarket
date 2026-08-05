@@ -19,6 +19,8 @@
 
 import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal } from '@polymarket/math';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ValidationError } from '@polymarket/errors';
 
 /**
  * Точка истории дисбаланса
@@ -47,8 +49,12 @@ export interface ImbalancePoint {
  *
  * @example
  * ```typescript
- * const history = ImbalanceHistory.create(500);
- * history.record(book.getImbalance(), Date.now());
+ * const historyResult = ImbalanceHistory.create(500);
+ * if (!historyResult.ok) throw historyResult.error;
+ * const history = historyResult.value;
+ *
+ * const imbalanceResult = book.getImbalance();
+ * if (imbalanceResult.ok) history.record(imbalanceResult.value, Date.now());
  *
  * const avg = history.getAverage(); // Decimal | undefined
  * const delta = history.getDelta(5000); // Decimal | undefined
@@ -72,19 +78,27 @@ export class ImbalanceHistory {
    * Создаёт новую историю дисбаланса
    *
    * @param maxSize - Максимальный размер истории (по умолчанию 1000)
-   * @returns Новая ImbalanceHistory
+   * @returns `Result` с новой `ImbalanceHistory` либо `ValidationError`, если `maxSize`
+   *   невалиден
    *
    * @example
    * ```typescript
-   * const history = ImbalanceHistory.create(500);
+   * const result = ImbalanceHistory.create(500);
+   * if (!result.ok) throw result.error;
+   * const history = result.value;
    * ```
    */
-  public static create(maxSize?: number): ImbalanceHistory {
+  public static create(maxSize?: number): Result<ImbalanceHistory, ValidationError> {
     const size = maxSize ?? ImbalanceHistory.DEFAULT_MAX_SIZE;
     if (!Number.isInteger(size) || size <= 0) {
-      throw new RangeError(`ImbalanceHistory: maxSize must be a positive integer, got ${size}`);
+      return Err(
+        new ValidationError(
+          `ImbalanceHistory: maxSize must be a positive integer, got ${size}`,
+          { context: { maxSize: size } },
+        ),
+      );
     }
-    return new ImbalanceHistory(size);
+    return Ok(new ImbalanceHistory(size));
   }
 
   /**

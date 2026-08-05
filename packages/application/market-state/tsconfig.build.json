@@ -43,6 +43,21 @@
     },
     {
       "path": "../../domain/market-data/trade-tape/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/trade/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/rolling-window/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/errors/tsconfig.build.json"
     }
   ]
 }

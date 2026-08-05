@@ -29,17 +29,21 @@
  * @example
  * ```typescript
  * // Из живого стакана:
- * const imbalance = ImbalanceCalculator.calculate(
- *   book.getBids(),
- *   book.getAsks(),
- *   { type: 'WEIGHTED' }
- * );
- * history.record(imbalance, Date.now());
+ * const bidsResult = book.getBids();
+ * const asksResult = book.getAsks();
+ * if (bidsResult.ok && asksResult.ok) {
+ *   const imbalanceResult = ImbalanceCalculator.calculate(
+ *     bidsResult.value,
+ *     asksResult.value,
+ *     { type: 'WEIGHTED' }
+ *   );
+ *   if (imbalanceResult.ok) history.record(imbalanceResult.value, Date.now());
+ * }
  *
  * // Из исторического снапшота:
  * const snapshot = bookHistory.getLatest();
  * if (snapshot) {
- *   const imbalance = ImbalanceCalculator.calculate(
+ *   const imbalanceResult = ImbalanceCalculator.calculate(
  *     snapshot.bids,
  *     snapshot.asks,
  *     { type: 'TOP_N', levels: 5 }
@@ -50,6 +54,8 @@
 
 import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal, isZeroDecimal } from '@polymarket/math';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ValidationError } from '@polymarket/errors';
 import type { PriceLevel } from './PriceLevel.js';
 
 /**
@@ -99,11 +105,8 @@ export type ImbalanceMode =
  *
  * @example
  * ```typescript
- * const imbalance = ImbalanceCalculator.calculate(
- *   book.getBids(5),
- *   book.getAsks(5),
- *   { type: 'WEIGHTED' }
- * );
+ * const result = ImbalanceCalculator.calculate(bids, asks, { type: 'WEIGHTED' });
+ * if (result.ok) console.log(result.value.toNumber());
  * ```
  */
 export class ImbalanceCalculator {
@@ -113,55 +116,58 @@ export class ImbalanceCalculator {
    * @param bids - Уровни покупки, отсортированные по убыванию цены (best bid первый)
    * @param asks - Уровни продажи, отсортированные по возрастанию цены (best ask первый)
    * @param mode - Режим вычисления дисбаланса
-   * @returns Значение дисбаланса в диапазоне `[-1, +1]`, или `Decimal(0)` если данных нет
-   *
-   * @throws {RangeError} Если параметры режима невалидны (TOP_N.levels <= 0, PRICE_RANGE.rangePercent <= 0 и т.д.)
+   * @returns `Result` со значением дисбаланса в диапазоне `[-1, +1]` (`Decimal(0)` если данных
+   *   нет) либо `ValidationError`, если параметры режима невалидны (`TOP_N.levels <= 0`,
+   *   `PRICE_RANGE.rangePercent <= 0` и т.д.)
    *
    * @example
    * ```typescript
    * // Нотиональный имбаланс по топ-5 уровням:
-   * ImbalanceCalculator.calculate(bids, asks, { type: 'TOP_N', levels: 5 });
-   *
-   * // Только уровни в пределах 10% от mid:
-   * ImbalanceCalculator.calculate(bids, asks, { type: 'PRICE_RANGE', rangePercent: 0.1 });
-   *
-   * // Гармонически взвешенный:
-   * ImbalanceCalculator.calculate(bids, asks, { type: 'WEIGHTED' });
+   * const result = ImbalanceCalculator.calculate(bids, asks, { type: 'TOP_N', levels: 5 });
+   * if (result.ok) console.log(result.value.toNumber());
    * ```
    */
   public static calculate(
     bids: readonly PriceLevel[],
     asks: readonly PriceLevel[],
     mode: ImbalanceMode,
-  ): Decimal {
+  ): Result<Decimal, ValidationError> {
     switch (mode.type) {
       case 'ALL_LEVELS':
-        return ImbalanceCalculator._volumeImbalance(bids, asks);
+        return Ok(ImbalanceCalculator._volumeImbalance(bids, asks));
 
       case 'TOP_N':
         if (!Number.isInteger(mode.levels) || mode.levels <= 0) {
-          throw new RangeError(
-            `ImbalanceCalculator: TOP_N.levels must be a positive integer, got ${mode.levels}`,
+          return Err(
+            new ValidationError(
+              `ImbalanceCalculator: TOP_N.levels must be a positive integer, got ${mode.levels}`,
+              { context: { levels: mode.levels } },
+            ),
           );
         }
-        return ImbalanceCalculator._volumeImbalance(
-          bids.slice(0, mode.levels),
-          asks.slice(0, mode.levels),
+        return Ok(
+          ImbalanceCalculator._volumeImbalance(
+            bids.slice(0, mode.levels),
+            asks.slice(0, mode.levels),
+          ),
         );
 
       case 'PRICE_RANGE':
         if (!Number.isFinite(mode.rangePercent) || mode.rangePercent <= 0) {
-          throw new RangeError(
-            `ImbalanceCalculator: PRICE_RANGE.rangePercent must be a positive number, got ${mode.rangePercent}`,
+          return Err(
+            new ValidationError(
+              `ImbalanceCalculator: PRICE_RANGE.rangePercent must be a positive number, got ${mode.rangePercent}`,
+              { context: { rangePercent: mode.rangePercent } },
+            ),
           );
         }
-        return ImbalanceCalculator._priceRangeImbalance(bids, asks, mode.rangePercent);
+        return Ok(ImbalanceCalculator._priceRangeImbalance(bids, asks, mode.rangePercent));
 
       case 'WEIGHTED':
-        return ImbalanceCalculator._weightedImbalance(bids, asks);
+        return Ok(ImbalanceCalculator._weightedImbalance(bids, asks));
 
       case 'NOTIONAL':
-        return ImbalanceCalculator._notionalImbalance(bids, asks);
+        return Ok(ImbalanceCalculator._notionalImbalance(bids, asks));
     }
   }
 

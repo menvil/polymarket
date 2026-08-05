@@ -5,7 +5,9 @@
  * Создаёт стек обработки рыночных данных:
  * - `BookDepthCollector` — собирает обновления стакана из EventBus, хранит историю
  * - `TradeTapeCollector` — собирает сделки из EventBus, хранит ленту
- * - `MarketDataStore` — агрегирует данные от обоих коллекторов, предоставляет
+ * - `TradeIndexCollector` — индексирует построенные Trade по VenueTradeId (для
+ *   будущего ExecutionLinker, Этап 7 плана миграции)
+ * - `MarketDataStore` — агрегирует данные от коллекторов, предоставляет
  *   единое API для стратегий через `StrategyScheduler`
  * - `InMemoryMarketCatalog` — маппинг instrumentId → marketId для TradeTapeCollector
  *
@@ -20,7 +22,7 @@
  * ```
  */
 
-import { BookDepthCollector, TradeTapeCollector, MarketDataStore } from '@polymarket/market-state';
+import { BookDepthCollector, TradeTapeCollector, TradeIndexCollector, MarketDataStore } from '@polymarket/market-state';
 import { InMemoryMarketCatalog } from '../InMemoryMarketCatalog.js';
 import type { CoreInfra } from './buildCoreInfra.js';
 
@@ -44,6 +46,13 @@ export interface MarketDataInfra {
  *
  * @param params - Зависимости и настройки
  * @returns Объект с marketDataStore и marketCatalog
+ * @throws {RangeError} Если политика хранения bookCollector/tapeCollector невалидна
+ *   (fail-fast на старте приложения — composition root, см. BookDepthCollector/
+ *   TradeTapeCollector)
+ * @throws {Error} Если политика хранения TradeIndexCollector невалидна (тот же
+ *   fail-fast принцип; `TradeIndexCollector.create()` сам по себе Result-based —
+ *   Result конвертируется в throw именно здесь, на границе composition root, чтобы
+ *   не менять сигнатуру `buildMarketData()` под один Result-возврат)
  *
  * @example
  * ```typescript
@@ -69,10 +78,18 @@ export function buildMarketData(params: BuildMarketDataParams): MarketDataInfra 
     { maxCount: tapeMaxCount },
   );
 
+  const tradeIndexResult = TradeIndexCollector.create({ maxCount: tapeMaxCount }, clock);
+  if (!tradeIndexResult.ok) {
+    throw new Error(
+      `buildMarketData: invalid TradeIndexCollector retention policy — ${tradeIndexResult.error.message}`,
+    );
+  }
+
   const marketDataStore = new MarketDataStore({
     eventBus,
     bookCollector,
     tapeCollector,
+    tradeIndex: tradeIndexResult.value,
     logger,
   });
 

@@ -77,6 +77,7 @@ console.log(ob.venueTimestamp?.toNumber());         // 1767463213110
 ```
 
 Парсер делегирует всю валидацию в `OrderbookNormalizer`:
+
 - `PriceService.create()` — диапазон [0.0001, 0.9999]
 - `QuantityService.create()` — quantity >= 0
 - Сортировка bids ↓, asks ↑
@@ -104,6 +105,49 @@ const normalized = OrderbookNormalizer.normalize(raw);
 if (normalized.ok) {
   const ob = Orderbook.fromNormalized(normalized.value);
 }
+```
+
+### Из уже готовых уровней (минуя нормализатор)
+
+Для сценария, когда `OrderbookLevel[]` уже собраны каким-то другим путём (например,
+смапплены из другого представления стакана) — `fromLevels` строит `Orderbook` напрямую,
+без прохода через `OrderbookNormalizer` (тот рассчитан на сырые непроверенные данные —
+парсинг цен/quantity из строк, crossed book detection; другой сценарий).
+
+```typescript
+import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
+import { Timestamp } from '@polymarket/value-objects';
+
+const ob = Orderbook.fromLevels(
+  instrumentId,
+  asset,
+  [OrderbookLevel.create(price1, qty1), OrderbookLevel.create(price2, qty2)], // bids, в любом порядке
+  [OrderbookLevel.create(price3, qty3)],                                      // asks, в любом порядке
+  Timestamp.now(clock), // receivedAt — обязателен
+);
+```
+
+`fromLevels` — plain return (не `Result`), как `fromNormalized`/`empty`: конструктор класса
+не валидирует, вся входная валидация (crossed book, price/quantity парсинг) — забота
+вызывающего кода или `OrderbookNormalizer` (для сырых данных). Единственное, что делает
+`fromLevels` сам — **сортирует** `bids`/`asks` (bids по убыванию цены, asks по возрастанию)
+тем же компаратором, что и `OrderbookNormalizer.sortLevels()` — класс сам нигде не
+сортирует (`getBestBid()`/`getBestAsk()` берут первый элемент на веру), так что без этой
+защиты неупорядоченный вход дал бы молча неверные результаты без единого сигнала об ошибке.
+
+**Будущая история через `RollingWindow<Orderbook>`** (готовность появилась вместе с
+`fromLevels` — обязательный `receivedAt: Timestamp` на каждом `Orderbook` делает это
+возможным; сам класс-обёртка/store для этого не строится в этом пакете — владение и
+конструирование `RollingWindow<Orderbook>` не здесь, см. план миграции, Этап 6):
+
+```typescript
+import { RollingWindow } from '@polymarket/rolling-window';
+
+const historyResult = RollingWindow.create<Orderbook>(
+  { maxCount: 1000, maxAgeMs: 300_000 },
+  clock,
+  (ob) => ob.receivedAt.toNumber(),
+);
 ```
 
 ### Из JSON (сериализация)
@@ -163,6 +207,15 @@ PolymarketBookEventParser.parse(event, {
 // Фабрики
 Orderbook.fromNormalized(normalized: NormalizedOrderbook): Orderbook
 Orderbook.empty(instrumentId: InstrumentId, asset: InstrumentId): Orderbook
+Orderbook.fromLevels(
+  instrumentId: InstrumentId,
+  asset: InstrumentId,
+  bids: readonly OrderbookLevel[],   // в любом порядке — сортируются внутри
+  asks: readonly OrderbookLevel[],   // в любом порядке — сортируются внутри
+  receivedAt: Timestamp,             // обязателен
+  venueTimestamp?: Timestamp,
+  clock?: IClock,
+): Orderbook
 
 // Поля
 ob.instrumentId: InstrumentId   // market condition ID

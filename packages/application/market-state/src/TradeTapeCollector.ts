@@ -122,15 +122,20 @@ export class TradeTapeCollector {
    * @param _deps - Зависимости (catalog, logger, clock)
    * @param _config - Политика хранения (maxCount и/или maxAgeMs)
    *
-   * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
+   * @throws {RangeError} Если политика невалидна — пустая, `maxCount`/`maxAgeMs` вне
+   *   допустимого диапазона (полная проверка через `TradeTape.create()`, не только
+   *   "оба поля не заданы" — раньше невалидный конфиг тихо проходил конструктор и падал
+   *   только на первом живом трейде, внутри лениво вызываемого `TradeTape.create()`
+   *   в `_record()`)
    */
   constructor(
     private readonly _deps: TradeTapeCollectorDeps,
     private readonly _config: TradeTapeCollectorConfig,
   ) {
-    if (_config.maxCount === undefined && _config.maxAgeMs === undefined) {
+    const validation = TradeTape.create(_config, _deps.clock);
+    if (!validation.ok) {
       throw new RangeError(
-        'TradeTapeCollector: config must specify maxCount and/or maxAgeMs',
+        `TradeTapeCollector: invalid retention policy — ${validation.error.message}`,
       );
     }
   }
@@ -243,8 +248,17 @@ export class TradeTapeCollector {
 
     let entry = this._entries.get(instrumentId);
     if (entry === undefined) {
-      const tape = TradeTape.create(this._config, this._deps.clock);
-      entry = { tape };
+      const tapeResult = TradeTape.create(this._config, this._deps.clock);
+      if (!tapeResult.ok) {
+        // Не должно происходить: _config уже прошёл ту же валидацию в конструкторе.
+        // Fail-closed вместо throw в горячем пути — пропускаем трейд, логируем громко.
+        this._deps.logger.error('TradeTapeCollector: unexpected invalid retention policy', {
+          tokenId: String(instrumentId),
+          error: tapeResult.error.message,
+        });
+        return;
+      }
+      entry = { tape: tapeResult.value };
       this._entries.set(instrumentId, entry);
       this._deps.logger.debug('TradeTapeCollector: new tape created', {
         tokenId: String(instrumentId),

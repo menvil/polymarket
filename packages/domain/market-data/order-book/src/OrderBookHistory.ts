@@ -21,15 +21,18 @@
  * а не `snapshot.timestamp` (биржевое время, может быть `undefined`).
  * Это делает вытеснение детерминированным и не зависящим от биржевых задержек.
  *
- * ### Почему не TTL как в TradeTape:
- * `TradeTape` требует ручного вызова `evictBefore()` — это подходит для трейдов,
- * которые приходят редко. Стакан обновляется постоянно, поэтому авто-вытеснение
- * при каждом `record()` предпочтительнее.
+ * ### Почему авто-вытеснение, а не только по вызову:
+ * Трейды приходят относительно редко — ретеншн по времени можно проверять лениво
+ * (при следующем `append()`, как это делает `TradeTape`). Стакан обновляется
+ * постоянно, поэтому авто-вытеснение при каждом `record()` предпочтительнее —
+ * не накапливает произвольно устаревшие снапшоты между обновлениями.
  *
  * @example
  * ```typescript
  * // Последние 5 минут ИЛИ не более 10000 снапшотов:
- * const history = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 });
+ * const result = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 }, clock);
+ * if (!result.ok) throw result.error;
+ * const history = result.value;
  *
  * // При каждом обновлении стакана:
  * history.record(book.toSnapshot());
@@ -46,6 +49,8 @@
  */
 
 import type { IClock } from '@polymarket/time';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ValidationError } from '@polymarket/errors';
 import type { OrderBookSnapshot } from './OrderBook.js';
 
 /**
@@ -110,28 +115,45 @@ export class OrderBookHistory {
    *
    * @param policy - Политика вытеснения (maxCount и/или maxAgeMs)
    * @param clock - Источник времени для детерминированной работы (используется как fallback в record/getRecent)
-   * @returns Новый экземпляр OrderBookHistory
-   *
-   * @throws {RangeError} Если политика пустая или содержит невалидные значения
+   * @returns `Result` с новым экземпляром `OrderBookHistory` либо `ValidationError`, если
+   *   политика пустая или содержит невалидные значения
    *
    * @example
    * ```typescript
-   * const history = OrderBookHistory.create({ maxCount: 1000 }, clock);
-   * const history = OrderBookHistory.create({ maxAgeMs: 300_000 }, clock);
-   * const history = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 }, clock);
+   * const result = OrderBookHistory.create({ maxCount: 10_000, maxAgeMs: 300_000 }, clock);
+   * if (!result.ok) throw result.error;
+   * const history = result.value;
    * ```
    */
-  public static create(policy: OrderBookRetentionPolicy, clock: IClock): OrderBookHistory {
+  public static create(
+    policy: OrderBookRetentionPolicy,
+    clock: IClock,
+  ): Result<OrderBookHistory, ValidationError> {
     if (policy.maxCount === undefined && policy.maxAgeMs === undefined) {
-      throw new RangeError('OrderBookHistory: retention policy must specify maxCount and/or maxAgeMs');
+      return Err(
+        new ValidationError(
+          'OrderBookHistory: retention policy must specify maxCount and/or maxAgeMs',
+          { context: { policy } },
+        ),
+      );
     }
     if (policy.maxCount !== undefined && (!Number.isInteger(policy.maxCount) || policy.maxCount <= 0)) {
-      throw new RangeError(`OrderBookHistory: maxCount must be a positive integer, got ${policy.maxCount}`);
+      return Err(
+        new ValidationError(
+          `OrderBookHistory: maxCount must be a positive integer, got ${policy.maxCount}`,
+          { context: { maxCount: policy.maxCount } },
+        ),
+      );
     }
     if (policy.maxAgeMs !== undefined && (!Number.isFinite(policy.maxAgeMs) || policy.maxAgeMs <= 0)) {
-      throw new RangeError(`OrderBookHistory: maxAgeMs must be a positive number, got ${policy.maxAgeMs}`);
+      return Err(
+        new ValidationError(
+          `OrderBookHistory: maxAgeMs must be a positive number, got ${policy.maxAgeMs}`,
+          { context: { maxAgeMs: policy.maxAgeMs } },
+        ),
+      );
     }
-    return new OrderBookHistory(policy, clock);
+    return Ok(new OrderBookHistory(policy, clock));
   }
 
   /**

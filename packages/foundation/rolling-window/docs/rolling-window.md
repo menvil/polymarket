@@ -97,7 +97,11 @@ const latest = window.getLatest();
 происходит позже — сама постройка класса не меняет поведение существующего кода:
 
 - `TradeTape` — Этап 2 (`packages/domain/market-data/trade-tape/docs/trade-tape.md`).
-- Новая история для `Orderbook`-entity — Этап 2 (заменяет `OrderBookHistory`).
+- История для `Orderbook`-entity (заменяет `OrderBookHistory`) — **готова к использованию**
+  с Этапа 2 (`Orderbook.fromLevels()` даёт обязательный `receivedAt: Timestamp`, ключ для
+  `getTimestampMs`), но само владение/конструирование `RollingWindow<Orderbook>` — Этап 6
+  (`IBookRegistry`/`BookUpdateHandler`, единственные реальные кандидаты на владение —
+  сейчас history не строится нигде, см. `docs/orderbook-entity.md`).
 - `CryptoMarketDataStore.pruneAndCap()` — Этап 8.
 
 См. `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`, раздел "Новый foundation-пакет:

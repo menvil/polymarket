@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-04T17:08:50.494Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-05T07:16:44.368Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -9,13 +9,13 @@
 
 | Пакет | rawDecimal | rawNumber | rawString | throw | undocumented/total exports | docs/ |
 |---|---:|---:|---:|---:|---:|:---:|
-| `apps/bot` | 104 | 1615 | 209 | 16 | 79/234 | ✅ |
+| `apps/bot` | 104 | 1615 | 209 | 18 | 79/234 | ✅ |
 | `apps/collect-data` | 0 | 27 | 14 | 39 | 0/18 | ❌ |
 | `apps/pnl` | 0 | 57 | 88 | 4 | 0/24 | ❌ |
 | `packages/application/event-bus` | 0 | 4 | 2 | 6 | 13/32 | ❌ |
 | `packages/application/handlers` | 0 | 0 | 3 | 0 | 6/6 | ❌ |
 | `packages/application/market-discovery` | 0 | 7 | 3 | 0 | 0/2 | ❌ |
-| `packages/application/market-state` | 0 | 105 | 52 | 2 | 22/41 | ❌ |
+| `packages/application/market-state` | 0 | 106 | 52 | 6 | 23/44 | ❌ |
 | `packages/application/orchestrators` | 0 | 0 | 0 | 0 | 2/7 | ✅ |
 | `packages/application/ports` | 5 | 54 | 80 | 3 | 30/97 | ❌ |
 | `packages/application/risk` | 16 | 6 | 8 | 5 | 10/12 | ❌ |
@@ -29,9 +29,9 @@
 | `packages/domain/entities/orderbook` | 0 | 17 | 21 | 2 | 0/16 | ✅ |
 | `packages/domain/entities/portfolio` | 12 | 1 | 3 | 1 | 3/14 | ✅ |
 | `packages/domain/entities/position` | 2 | 1 | 5 | 0 | 6/19 | ✅ |
-| `packages/domain/entities/trade` | 5 | 2 | 10 | 0 | 2/6 | ✅ |
-| `packages/domain/market-data/order-book` | 13 | 23 | 5 | 9 | 6/16 | ❌ |
-| `packages/domain/market-data/trade-tape` | 6 | 7 | 0 | 1 | 1/7 | ❌ |
+| `packages/domain/entities/trade` | 5 | 2 | 16 | 0 | 2/6 | ✅ |
+| `packages/domain/market-data/order-book` | 11 | 23 | 5 | 4 | 6/16 | ✅ |
+| `packages/domain/market-data/trade-tape` | 0 | 7 | 0 | 2 | 1/7 | ✅ |
 | `packages/domain/value-objects` | 0 | 91 | 151 | 0 | 21/156 | ✅ |
 | `packages/foundation/errors` | 0 | 4 | 32 | 98 | 7/58 | ✅ |
 | `packages/foundation/ids` | 0 | 8 | 47 | 5 | 20/129 | ✅ |
@@ -47,6 +47,6 @@
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 69 | 22/178 | ❌ |
-| **ИТОГО** | **203** | **2524** | **1548** | **316** | **354/1501** | **20 пакетов без docs/** |
+| **ИТОГО** | **195** | **2525** | **1554** | **318** | **355/1504** | **18 пакетов без docs/** |
 
-`decimal.js` импортируется вне `value-objects`/`math` в 85 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).
+`decimal.js` импортируется вне `value-objects`/`math` в 84 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

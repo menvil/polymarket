@@ -207,6 +207,69 @@ export class Orderbook {
     );
   }
 
+  /**
+   * Создаёт Orderbook напрямую из уже распарсенных уровней, минуя `OrderbookNormalizer`.
+   *
+   * @param instrumentId - Идентификатор инструмента/рынка
+   * @param asset - Идентификатор asset/outcome token
+   * @param bids - Уровни покупки (`OrderbookLevel[]`, в любом порядке — сортируются внутри)
+   * @param asks - Уровни продажи (`OrderbookLevel[]`, в любом порядке — сортируются внутри)
+   * @param receivedAt - Timestamp получения данных (локально) — обязателен, используется
+   *   для `getAgeMs()`/`isStale()` и как ключ ретеншна при истории через `RollingWindow<Orderbook>`
+   * @param venueTimestamp - Timestamp от venue/exchange (опционально)
+   * @param clock - Источник времени для `getAgeMs()`/`isStale()` без явного `nowMs`
+   * @returns Новый `Orderbook`
+   *
+   * @remarks
+   * Для сценария "уже есть готовые `OrderbookLevel[]`" (например, смаппленные из другого
+   * представления стакана) — `OrderbookNormalizer` рассчитан на сырые непроверенные данные
+   * (парсинг цен/quantity из строк, детекция crossed book), другой сценарий.
+   *
+   * `fromLevels` — plain return, как `fromNormalized`/`empty` (симметрично: приватный
+   * конструктор класса вообще не валидирует, вся валидация либо предшествует вызову
+   * факторики (`OrderbookNormalizer`), либо доступна post-hoc через `getSpread()`).
+   * Единственная защита здесь — **сортировка** `bids`/`asks` внутри метода (bids по
+   * убыванию цены, asks по возрастанию — тем же компаратором, что и
+   * `OrderbookNormalizer.sortLevels()`): класс нигде не сортирует уровни сам
+   * (`getBestBid()`/`getBestAsk()` берут `bids[0]`/`asks[0]` на веру), поэтому без
+   * сортировки здесь вызывающий код с неупорядоченным входом получил бы молча неверные
+   * `getBestBid()`/`getMicroprice()`/`toObject()` без единого сигнала об ошибке — хуже,
+   * чем crossed book (тот хотя бы ловится `getSpread()`).
+   *
+   * @example
+   * ```typescript
+   * const orderbook = Orderbook.fromLevels(
+   *   instrumentId,
+   *   asset,
+   *   [OrderbookLevel.create(price1, qty1), OrderbookLevel.create(price2, qty2)],
+   *   [OrderbookLevel.create(price3, qty3)],
+   *   Timestamp.now(clock),
+   * );
+   * ```
+   */
+  public static fromLevels(
+    instrumentId: InstrumentId,
+    asset: InstrumentId,
+    bids: readonly OrderbookLevel[],
+    asks: readonly OrderbookLevel[],
+    receivedAt: Timestamp,
+    venueTimestamp?: Timestamp,
+    clock?: IClock,
+  ): Orderbook {
+    const sortedBids = [...bids].sort((a, b) => b.price.value().comparedTo(a.price.value()));
+    const sortedAsks = [...asks].sort((a, b) => a.price.value().comparedTo(b.price.value()));
+
+    return new Orderbook(
+      instrumentId,
+      asset,
+      sortedBids,
+      sortedAsks,
+      venueTimestamp,
+      receivedAt,
+      clock
+    );
+  }
+
   // ==================== BEST BID/ASK ====================
 
   /**

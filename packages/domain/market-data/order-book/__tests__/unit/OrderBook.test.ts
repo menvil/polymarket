@@ -28,6 +28,14 @@ function price(v: number | string): Price {
   return r.value;
 }
 
+/** Разворачивает Result, падает тестом при Err — сокращает шум в happy-path тестах. */
+function unwrap<T>(result: { ok: boolean; value?: T; error?: unknown }): T {
+  if (!result.ok) {
+    throw new Error(`Expected Ok, got Err: ${JSON.stringify(result.error)}`);
+  }
+  return result.value as T;
+}
+
 // ==================== Тесты ====================
 
 describe('OrderBook', () => {
@@ -80,7 +88,7 @@ describe('OrderBook', () => {
       );
 
       expect(book.getBestBid()).toBeUndefined();
-      expect(book.getBids()).toHaveLength(0);
+      expect(unwrap(book.getBids())).toHaveLength(0);
     });
   });
 
@@ -112,7 +120,7 @@ describe('OrderBook', () => {
       };
       book.applyDelta(delta);
 
-      const bids = book.getBids();
+      const bids = unwrap(book.getBids());
       expect(bids).toHaveLength(3);
       expect(bids[bids.length - 1]!.price.value().toNumber()).toBe(0.63);
       expect(bids[bids.length - 1]!.size.value().toNumber()).toBe(750);
@@ -125,7 +133,7 @@ describe('OrderBook', () => {
       };
       book.applyDelta(delta);
 
-      const asks = book.getAsks();
+      const asks = unwrap(book.getAsks());
       expect(asks).toHaveLength(1);
       expect(asks[0]!.price.value().toNumber()).toBe(0.67);
     });
@@ -203,21 +211,21 @@ describe('OrderBook', () => {
 
   describe('getImbalance()', () => {
     it('возвращает Decimal(0) для пустого стакана', () => {
-      expect(book.getImbalance().isZero()).toBe(true);
+      expect(unwrap(book.getImbalance()).isZero()).toBe(true);
     });
 
     it('вычисляет дисбаланс корректно (bid > ask)', () => {
       book.applyFullState([level(0.65, 1500)], [level(0.66, 500)]);
 
       // (1500 - 500) / (1500 + 500) = 1000/2000 = 0.5
-      expect(book.getImbalance().toNumber()).toBeCloseTo(0.5);
+      expect(unwrap(book.getImbalance()).toNumber()).toBeCloseTo(0.5);
     });
 
     it('вычисляет дисбаланс корректно (ask > bid)', () => {
       book.applyFullState([level(0.65, 300)], [level(0.66, 700)]);
 
       // (300 - 700) / (300 + 700) = -400/1000 = -0.4
-      expect(book.getImbalance().toNumber()).toBeCloseTo(-0.4);
+      expect(unwrap(book.getImbalance()).toNumber()).toBeCloseTo(-0.4);
     });
 
     it('учитывает только topLevels уровней', () => {
@@ -227,25 +235,30 @@ describe('OrderBook', () => {
       );
 
       // top 1: bid=1000, ask=800 → (1000-800)/(1000+800) ≈ 0.111
-      expect(book.getImbalance(1).toNumber()).toBeCloseTo(0.111, 2);
+      expect(unwrap(book.getImbalance(1)).toNumber()).toBeCloseTo(0.111, 2);
 
       // все уровни: bid=6000, ask=800 → (6000-800)/(6000+800) ≈ 0.765
-      expect(book.getImbalance().toNumber()).toBeCloseTo(0.765, 2);
+      expect(unwrap(book.getImbalance()).toNumber()).toBeCloseTo(0.765, 2);
     });
 
     it('возвращает Decimal(1) если только bids', () => {
       book.applyFullState([level(0.65, 1000)], []);
-      expect(book.getImbalance().toNumber()).toBe(1);
+      expect(unwrap(book.getImbalance()).toNumber()).toBe(1);
     });
 
     it('возвращает Decimal(-1) если только asks', () => {
       book.applyFullState([], [level(0.66, 800)]);
-      expect(book.getImbalance().toNumber()).toBe(-1);
+      expect(unwrap(book.getImbalance()).toNumber()).toBe(-1);
     });
 
     it('возвращает Decimal, а не number', () => {
       book.applyFullState([level(0.65, 1000)], []);
-      expect(book.getImbalance()).toBeInstanceOf(Decimal);
+      expect(unwrap(book.getImbalance())).toBeInstanceOf(Decimal);
+    });
+
+    it('возвращает Err если topLevels отрицательный или не целое', () => {
+      expect(book.getImbalance(-1).ok).toBe(false);
+      expect(book.getImbalance(1.5).ok).toBe(false);
     });
   });
 
@@ -260,7 +273,7 @@ describe('OrderBook', () => {
     });
 
     it('возвращает bids отсортированные по убыванию цены', () => {
-      const bids = book.getBids();
+      const bids = unwrap(book.getBids());
       expect(bids).toHaveLength(3);
       expect(bids[0]!.price.value().toNumber()).toBe(0.65);
       expect(bids[1]!.price.value().toNumber()).toBe(0.64);
@@ -268,7 +281,7 @@ describe('OrderBook', () => {
     });
 
     it('возвращает asks отсортированные по возрастанию цены', () => {
-      const asks = book.getAsks();
+      const asks = unwrap(book.getAsks());
       expect(asks).toHaveLength(3);
       expect(asks[0]!.price.value().toNumber()).toBe(0.66);
       expect(asks[1]!.price.value().toNumber()).toBe(0.67);
@@ -276,8 +289,15 @@ describe('OrderBook', () => {
     });
 
     it('ограничивает количество уровней', () => {
-      expect(book.getBids(2)).toHaveLength(2);
-      expect(book.getAsks(1)).toHaveLength(1);
+      expect(unwrap(book.getBids(2))).toHaveLength(2);
+      expect(unwrap(book.getAsks(1))).toHaveLength(1);
+    });
+
+    it('возвращает Err если levels отрицательный или не целое', () => {
+      expect(book.getBids(-1).ok).toBe(false);
+      expect(book.getBids(1.5).ok).toBe(false);
+      expect(book.getAsks(-1).ok).toBe(false);
+      expect(book.getAsks(1.5).ok).toBe(false);
     });
   });
 

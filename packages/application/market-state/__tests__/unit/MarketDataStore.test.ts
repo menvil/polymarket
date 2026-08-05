@@ -1,5 +1,8 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
+import { asInstrumentId } from '@polymarket/ids';
+import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import { MarketDataStore } from '../../src/MarketDataStore.js';
 import type { MarketDataStoreDeps, MarketDataReason } from '../../src/MarketDataStore.js';
 import type { TopOfBook } from '@polymarket/event-bus';
@@ -69,6 +72,29 @@ function makeTapeCollector() {
   };
 }
 
+function makeTradeIndex() {
+  return {
+    record: jest.fn(),
+    get: jest.fn().mockReturnValue(undefined),
+    size: jest.fn().mockReturnValue(0),
+    isEmpty: jest.fn().mockReturnValue(true),
+  };
+}
+
+/** Валидный numeric CTF token ID — parseAssetId() распознаёт как POLYMARKET_CTF_TOKEN. */
+const REAL_INSTRUMENT_1 = asInstrumentId('62305814799875783974460176688386847666394972778903073967664089920408777315323')!;
+
+function makeRealTradeEvent(overrides?: { instrumentId?: InstrumentId; timestampMs?: number }) {
+  return {
+    type: 'TRADE_RECEIVED' as const,
+    instrumentId: overrides?.instrumentId ?? REAL_INSTRUMENT_1,
+    price: Price.of(new Decimal(0.6)),
+    size: Quantity.of(new Decimal(50)),
+    side: 'BUY' as const,
+    timestamp: Timestamp.of(new Decimal(overrides?.timestampMs ?? 1_700_000_000_000)),
+  };
+}
+
 function makeTopOfBook(): TopOfBook {
   return {
     bestBid: undefined,
@@ -84,6 +110,7 @@ function makeDeps(overrides: Partial<MarketDataStoreDeps> = {}): MarketDataStore
     eventBus: makeEventBus() as any,
     bookCollector: makeBookCollector() as any,
     tapeCollector: makeTapeCollector() as any,
+    tradeIndex: makeTradeIndex() as any,
     logger: makeLogger() as any,
     ...overrides,
   };
@@ -310,6 +337,69 @@ describe('MarketDataStore', () => {
     });
   });
 
+  // ── Trade construction (Этап 2.5) ────────────────────
+
+  describe('TRADE_RECEIVED → Trade construction (TradeMapper.fromParsedTrade)', () => {
+    function depth(eventBus: any, id: InstrumentId, marketId: string): void {
+      eventBus._emit('BOOK_DEPTH', {
+        type: 'BOOK_DEPTH', instrumentId: id,
+        snapshot: { marketId } as any, timestamp: { toNumber: () => 1000 },
+      });
+    }
+
+    it('строит Trade и индексирует в tradeIndex, когда marketId уже известен', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      depth(eventBus, REAL_INSTRUMENT_1, 'market-1');
+      eventBus._emit('TRADE_RECEIVED', makeRealTradeEvent());
+
+      expect((deps.tradeIndex as any).record).toHaveBeenCalledTimes(1);
+      const trade = (deps.tradeIndex as any).record.mock.calls[0][0];
+      expect(trade.marketId).toBe('market-1');
+      expect(trade.aggressorSide).toBe('BUY');
+      expect(trade.price.value().toNumber()).toBeCloseTo(0.6, 5);
+      expect(trade.size.value().toNumber()).toBeCloseTo(50, 5);
+    });
+
+    it('не строит Trade и не логирует warn, когда marketId ещё неизвестен (лог debug)', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      eventBus._emit('TRADE_RECEIVED', makeRealTradeEvent());
+
+      expect((deps.tradeIndex as any).record).not.toHaveBeenCalled();
+      expect((deps.logger as any).warn).not.toHaveBeenCalled();
+      expect((deps.logger as any).debug).toHaveBeenCalled();
+    });
+
+    it('не падает и логирует warn, если fromParsedTrade возвращает Err (невалидный instrumentId)', () => {
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      // INSTRUMENT_1 = 'token-1' — не numeric CTF token, parseAssetId() вернёт undefined
+      depth(eventBus, INSTRUMENT_1, 'market-1');
+
+      expect(() => {
+        eventBus._emit('TRADE_RECEIVED', makeRealTradeEvent({ instrumentId: INSTRUMENT_1 }));
+      }).not.toThrow();
+
+      expect((deps.tradeIndex as any).record).not.toHaveBeenCalled();
+      expect((deps.logger as any).warn).toHaveBeenCalled();
+    });
+
+    it('onChange(TRADE) вызывается независимо от результата построения Trade', () => {
+      const onChange = jest.fn<(id: InstrumentId, reason: MarketDataReason) => void>();
+      store.setOnChange(onChange);
+      store.start();
+      const eventBus = deps.eventBus as any;
+
+      eventBus._emit('TRADE_RECEIVED', makeRealTradeEvent());
+
+      expect(onChange).toHaveBeenCalledWith(REAL_INSTRUMENT_1, 'TRADE');
+    });
+  });
+
   // ── Delegating reads ─────────────────────────────────
 
   describe('delegating reads', () => {
@@ -327,6 +417,15 @@ describe('MarketDataStore', () => {
 
       expect(store.getTradeTape(INSTRUMENT_1)).toBe(tape);
       expect((deps.tapeCollector as any).getTape).toHaveBeenCalledWith(INSTRUMENT_1);
+    });
+
+    it('should delegate getTradeByVenueId to tradeIndex', () => {
+      const trade = {} as any;
+      (deps.tradeIndex as any).get.mockReturnValue(trade);
+
+      const id = 'venue-trade-1' as any;
+      expect(store.getTradeByVenueId(id)).toBe(trade);
+      expect((deps.tradeIndex as any).get).toHaveBeenCalledWith(id);
     });
   });
 

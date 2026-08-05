@@ -10,9 +10,12 @@
  * 1. Хранит последний TopOfBook per instrumentId
  * 2. Делегирует getBookHistory → BookDepthCollector
  * 3. Делегирует getTradeTape → TradeTapeCollector
- * 4. Подписывается на EventBus: BOOK_UPDATED, BOOK_DEPTH, TRADE_RECEIVED, MARKET_CLOSED
- * 5. При обновлении вызывает `_onChange(instrumentId, reason)` callback
- * 6. При закрытии рынка чистит TopOfBook и делегирует cleanup коллекторам
+ * 4. Строит Trade из TRADE_RECEIVED через `TradeMapper.fromParsedTrade()` и
+ *    индексирует в TradeIndexCollector (по VenueTradeId, для будущего ExecutionLinker,
+ *    Этап 7 плана миграции)
+ * 5. Подписывается на EventBus: BOOK_UPDATED, BOOK_DEPTH, TRADE_RECEIVED, MARKET_CLOSED
+ * 6. При обновлении вызывает `_onChange(instrumentId, reason)` callback
+ * 7. При закрытии рынка чистит TopOfBook и делегирует cleanup коллекторам
  *
  * ### Владение подписками:
  * MarketDataStore — **единственный владелец** подписок EventBus. Коллекторы
@@ -26,9 +29,15 @@
  *   Depth-only изменения (стенки, ликвидность, исчезновение уровней) теперь
  *   будят стратегию. Scheduler коалесцирует dirty-флаги per tick, поэтому
  *   парный BOOK_UPDATED + BOOK_DEPTH не вызывает двойную переоценку.
- * - TRADE_RECEIVED → записывает в TradeTapeCollector + onChange('TRADE')
+ * - TRADE_RECEIVED → записывает в TradeTapeCollector + строит Trade через
+ *   `TradeMapper.fromParsedTrade()` и индексирует в TradeIndexCollector (пропуск с
+ *   логом, если instrumentId ещё не связан с marketId — не вызываем маппер с пустым
+ *   marketId) + onChange('TRADE')
  * - MARKET_CLOSED → удаляет TopOfBook рынка + `bookCollector.clearMarket()`
- *   + `tapeCollector.clearMarket()` (защита от утечки по закрытым рынкам)
+ *   + `tapeCollector.clearMarket()` (защита от утечки по закрытым рынкам).
+ *   `tradeIndex` НЕ чистится по рынку — это единый `RollingWindow<Trade>` без
+ *   per-market индекса, размер уже ограничен retention policy (см. TSDoc
+ *   `TradeIndexCollector`), нет утечки по ротации рынков
  *
  * @example
  * ```typescript
@@ -45,12 +54,15 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId, MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
 import type { IEventBus, TopOfBook } from '@polymarket/event-bus';
 import type { OrderBookHistory } from '@polymarket/order-book';
 import type { TradeTape } from '@polymarket/trade-tape';
+import type { Trade } from '@polymarket/trade';
+import { TradeMapper } from '@polymarket/trade';
 import type { BookDepthCollector } from './BookDepthCollector.js';
 import type { TradeTapeCollector } from './TradeTapeCollector.js';
+import type { TradeIndexCollector } from './TradeIndexCollector.js';
 
 // ── Публичные типы ─────────────────────────────────────────
 
@@ -91,6 +103,8 @@ export interface MarketDataStoreDeps {
   readonly bookCollector: BookDepthCollector;
   /** Коллектор ленты трейдов */
   readonly tapeCollector: TradeTapeCollector;
+  /** Индекс построенных Trade по VenueTradeId (для будущего ExecutionLinker, Этап 7) */
+  readonly tradeIndex: TradeIndexCollector;
   /** Logger */
   readonly logger: ILogger;
 }
@@ -184,14 +198,45 @@ export class MarketDataStore {
     this._unsubTradeReceived = this._deps.eventBus.subscribe(
       'TRADE_RECEIVED',
       (event) => {
+        const marketId = this._instrumentToMarket.get(event.instrumentId);
+
         this._deps.tapeCollector.recordDirect(
           event.instrumentId,
           event.price,
           event.size,
           event.side,
           event.timestamp,
-          this._instrumentToMarket.get(event.instrumentId),
+          marketId,
         );
+
+        // Trade строится, только если инструмент уже связан с рынком (marketId
+        // известен) — не вызываем маппер с пустым marketId, тот всё равно отклонит.
+        // MarketDataStoreDeps не имеет catalog-фолбэка, который есть у
+        // TradeTapeCollector.recordDirect — на промахе Trade просто не строится
+        // для этого события (в отличие от TapeRecord, который catalog иногда спасает).
+        if (marketId === undefined) {
+          this._logger.debug('MarketDataStore: skipping Trade construction — instrument market unknown', {
+            tokenId: String(event.instrumentId),
+          });
+        } else {
+          const tradeResult = TradeMapper.fromParsedTrade({
+            instrumentId: event.instrumentId,
+            marketId: String(marketId),
+            price: event.price,
+            size: event.size,
+            side: event.side,
+            timestamp: event.timestamp,
+          });
+          if (tradeResult.ok) {
+            this._deps.tradeIndex.record(tradeResult.value);
+          } else {
+            this._logger.warn('MarketDataStore: failed to build Trade from TRADE_RECEIVED event', {
+              tokenId: String(event.instrumentId),
+              error: tradeResult.error.message,
+            });
+          }
+        }
+
         this._onChange?.(event.instrumentId, 'TRADE');
       },
     );
@@ -314,6 +359,23 @@ export class MarketDataStore {
    */
   public getTradeTape(instrumentId: InstrumentId): TradeTape | undefined {
     return this._deps.tapeCollector.getTape(instrumentId);
+  }
+
+  /**
+   * Возвращает построенный рыночный Trade по VenueTradeId.
+   *
+   * @param id - VenueTradeId для поиска
+   * @returns Trade или undefined, если не найден в текущем окне TradeIndexCollector
+   *
+   * @remarks
+   * ⚠️ Для реального трафика `id`, равный `Fill.venueTradeId`, почти никогда не
+   * совпадёт с ключом, под которым Trade был проиндексирован — см. известное
+   * ограничение в TSDoc {@link TradeIndexCollector}. Точка входа для будущего
+   * `ExecutionLinker` (Этап 7), который должен проектировать fuzzy/windowed
+   * matching, а не точный lookup по этому методу.
+   */
+  public getTradeByVenueId(id: VenueTradeId): Trade | undefined {
+    return this._deps.tradeIndex.get(id);
   }
 
   /**

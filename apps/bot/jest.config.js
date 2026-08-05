@@ -30,6 +30,7 @@ export default {
     '^@polymarket/logger$': '<rootDir>/../../packages/foundation/logger/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../../packages/foundation/time/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../../packages/foundation/math/src/index.ts',
+    '^@polymarket/rolling-window$': '<rootDir>/../../packages/foundation/rolling-window/src/index.ts',
     '^@polymarket/order$': '<rootDir>/../../packages/domain/entities/order/src/index.ts',
     '^@polymarket/portfolio$': '<rootDir>/../../packages/domain/entities/portfolio/src/index.ts',
     '^@polymarket/market$': '<rootDir>/../../packages/domain/entities/market/src/index.ts',

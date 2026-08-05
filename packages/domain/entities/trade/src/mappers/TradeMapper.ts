@@ -51,10 +51,12 @@
  * ```
  */
 
-import { Result, Err } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { asVenueTradeId, asVenueId, parseAssetId, asTxHash } from '@polymarket/ids';
+import type { InstrumentId, VenueId, VenueTradeId, TxHash } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import type { Side, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import { Trade } from '../Trade.js';
 import type { TradeSnapshot } from '../TradeSnapshot.js';
@@ -274,24 +276,21 @@ export class TradeMapper {
     // Генерировать VenueTradeId из transaction_hash + '_' + timestamp (оригинальное значение из raw)
     // Если txHash недоступен — добавляем price и size для снижения вероятности коллизий
     // (одновременные трейды с разными размерами/ценами на том же рынке/токене будут различаться)
-    const tsStr = String(timestampRaw).trim();
     // Нормализуем числовые поля через Decimal для детерминизма ("0.50" → "0.5")
     let priceNorm = String(priceRaw).trim();
     let sizeNorm = String(sizeRaw).trim();
     try { priceNorm = new Decimal(priceNorm).toFixed(); } catch { /* оставляем raw */ }
     try { sizeNorm = new Decimal(sizeNorm).toFixed(); } catch { /* оставляем raw */ }
-    const tradeIdString =
-      txHash !== undefined
-        ? `${txHash}_${tsStr}`
-        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}_${priceNorm}_${sizeNorm}`;
-
-    const tradeId = asVenueTradeId(tradeIdString);
-    if (!tradeId) {
-      return Err(
-        new ValidationError('Cannot generate VenueTradeId from event data', {
-          context: { tradeIdString },
-        })
-      );
+    const idResult = TradeMapper._buildVenueTradeId({
+      txHash,
+      tsStr: String(timestampRaw).trim(),
+      marketId: marketId.trim(),
+      assetIdStr: assetIdRaw.trim(),
+      priceStr: priceNorm,
+      sizeStr: sizeNorm,
+    });
+    if (!idResult.ok) {
+      return Err(idResult.error);
     }
 
     // Извлечь aggressorSide (опционально)
@@ -299,19 +298,14 @@ export class TradeMapper {
     const aggressorSide =
       sideRaw === 'BUY' || sideRaw === 'SELL' ? sideRaw : undefined;
 
-    // venueId — Polymarket
-    const venueId = asVenueId(POLYMARKET_VENUE_ID);
-    if (!venueId) {
-      return Err(
-        new ValidationError('Cannot create POLYMARKET venue ID', {
-          context: { venueId: POLYMARKET_VENUE_ID },
-        })
-      );
+    const venueIdResult = TradeMapper._buildPolymarketVenueId();
+    if (!venueIdResult.ok) {
+      return Err(venueIdResult.error);
     }
 
     return Trade.create({
-      id: tradeId,
-      venueId,
+      id: idResult.value,
+      venueId: venueIdResult.value,
       marketId: marketId.trim(),
       tokenId,
       price,
@@ -319,6 +313,116 @@ export class TradeMapper {
       aggressorSide,
       timestamp,
       txHash,
+    });
+  }
+
+  /**
+   * Создаёт Trade из уже распакованных value objects (application-layer событие)
+   *
+   * @param params - Уже распарсенные поля трейда
+   * @param params.instrumentId - ID токена (branded, из market-data слоя)
+   * @param params.marketId - ID рынка
+   * @param params.price - Цена трейда (VO)
+   * @param params.size - Объём трейда (VO)
+   * @param params.side - Сторона агрессора (VO-уровня, всегда известна на этом пути)
+   * @param params.timestamp - Время трейда (VO)
+   * @returns Result<Trade, ValidationError>
+   *
+   * @remarks
+   * В отличие от {@link fromPolymarketLastTradeEvent} (парсит сырые строки из WS JSON,
+   * защищается от произвольного untyped-входа), этот метод принимает уже готовые VO —
+   * точка врезки: `MarketDataStore`'s обработчик `TRADE_RECEIVED`
+   * (`@polymarket/market-state`) получает `TradeReceivedEvent` из `@polymarket/event-bus`
+   * с уже распакованными `instrumentId`/`price`/`size`/`side`/`timestamp`. Сериализовать
+   * их обратно в строки ради повторного парсинга было бы архитектурно задом наперёд —
+   * `price`/`size` как VO уже гарантированно валидны (VO-конструктор бросает на
+   * невалидном входе, см. `docs/architecture/boundary-contract.md`, Решение 2), поэтому
+   * повторная проверка положительности здесь не нужна.
+   *
+   * `transaction_hash` недоступен нигде в цепочке поставки данных для этого события —
+   * ни в live WS DTO (`WsTradeDto`), ни в backtest replay (`RawTradeEvent`). VenueTradeId
+   * здесь **всегда** строится по composite-формуле (`marketId_assetId_ts_price_size`) —
+   * ветка с txHash в общем хелпере {@link _buildVenueTradeId} для этого метода
+   * недостижима на практике (в отличие от {@link fromPolymarketLastTradeEvent}, где
+   * txHash иногда присутствует).
+   *
+   * ⚠️ **Известное ограничение**: из-за отсутствия txHash в реальном трафике,
+   * `Trade.id` (этот метод) и `Fill.venueTradeId` (`FillMapper.ts`, всегда bare txHash
+   * или `undefined`, без composite-фолбэка) для одного и того же реального трейда
+   * структурно НИКОГДА не совпадают при точном сравнении ключей — не "иногда не находит,
+   * потому что трейд ещё не долетел до public tape" (это ожидаемо и не проблема), а
+   * гарантированное несовпадение всегда. `ExecutionLinker` (Этап 7) должен проектировать
+   * fuzzy/windowed matching (`tokenId` + price + size + временное окно), а не точный
+   * lookup по `venueTradeId` — иначе связка не сработает никогда для реального трафика.
+   *
+   * @example
+   * ```typescript
+   * const result = TradeMapper.fromParsedTrade({
+   *   instrumentId: event.instrumentId,
+   *   marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+   *   price: event.price,
+   *   size: event.size,
+   *   side: event.side,
+   *   timestamp: event.timestamp,
+   * });
+   * if (result.ok) {
+   *   const trade = result.value;
+   * }
+   * ```
+   */
+  public static fromParsedTrade(params: {
+    readonly instrumentId: InstrumentId;
+    readonly marketId: string;
+    readonly price: Price;
+    readonly size: Quantity;
+    readonly side: Side;
+    readonly timestamp: Timestamp;
+  }): Result<Trade, ValidationError> {
+    const { instrumentId, marketId, price, size, side, timestamp } = params;
+
+    if (typeof marketId !== 'string' || marketId.trim().length === 0) {
+      return Err(
+        new ValidationError('Invalid parsed trade: missing or invalid marketId', {
+          context: { field: 'marketId', value: marketId },
+        })
+      );
+    }
+
+    const tokenId = parseAssetId(instrumentId);
+    if (!tokenId) {
+      return Err(
+        new ValidationError('Invalid parsed trade: cannot parse instrumentId as AssetId', {
+          context: { field: 'instrumentId', value: instrumentId },
+        })
+      );
+    }
+
+    const idResult = TradeMapper._buildVenueTradeId({
+      txHash: undefined,
+      tsStr: String(timestamp.toNumber()),
+      marketId: marketId.trim(),
+      assetIdStr: String(instrumentId),
+      priceStr: price.value().toFixed(),
+      sizeStr: size.value().toFixed(),
+    });
+    if (!idResult.ok) {
+      return Err(idResult.error);
+    }
+
+    const venueIdResult = TradeMapper._buildPolymarketVenueId();
+    if (!venueIdResult.ok) {
+      return Err(venueIdResult.error);
+    }
+
+    return Trade.create({
+      id: idResult.value,
+      venueId: venueIdResult.value,
+      marketId: marketId.trim(),
+      tokenId,
+      price,
+      size,
+      aggressorSide: side,
+      timestamp,
     });
   }
 
@@ -477,5 +581,66 @@ export class TradeMapper {
       timestamp: timestampResult.value,
       txHash,
     });
+  }
+
+  // ── Приватные хелперы ────────────────────────────────────────────────────
+  // Общая логика для fromPolymarketLastTradeEvent() и fromParsedTrade() — не
+  // дублируется, оба метода строят Trade.id/venueId через одни и те же функции.
+
+  /**
+   * Генерирует VenueTradeId по общей формуле
+   *
+   * @param parts - Уже нормализованные в строки компоненты (каждый вызывающий метод
+   *   нормализует price/size/timestamp по-своему — из raw JSON строк или из VO)
+   * @returns Result<VenueTradeId, ValidationError>
+   *
+   * @remarks
+   * Формула: `{txHash}_{ts}` при наличии txHash, иначе composite-ключ
+   * `{marketId}_{assetId}_{ts}_{price}_{size}` — снижает вероятность коллизий для
+   * одновременных трейдов с разными размерами/ценами на одном рынке/токене.
+   *
+   * @internal
+   */
+  private static _buildVenueTradeId(parts: {
+    readonly txHash: TxHash | undefined;
+    readonly tsStr: string;
+    readonly marketId: string;
+    readonly assetIdStr: string;
+    readonly priceStr: string;
+    readonly sizeStr: string;
+  }): Result<VenueTradeId, ValidationError> {
+    const tradeIdString =
+      parts.txHash !== undefined
+        ? `${parts.txHash}_${parts.tsStr}`
+        : `${parts.marketId}_${parts.assetIdStr}_${parts.tsStr}_${parts.priceStr}_${parts.sizeStr}`;
+
+    const tradeId = asVenueTradeId(tradeIdString);
+    if (!tradeId) {
+      return Err(
+        new ValidationError('Cannot generate VenueTradeId from event data', {
+          context: { tradeIdString },
+        })
+      );
+    }
+    return Ok(tradeId);
+  }
+
+  /**
+   * Строит VenueId константу Polymarket
+   *
+   * @returns Result<VenueId, ValidationError>
+   *
+   * @internal
+   */
+  private static _buildPolymarketVenueId(): Result<VenueId, ValidationError> {
+    const venueId = asVenueId(POLYMARKET_VENUE_ID);
+    if (!venueId) {
+      return Err(
+        new ValidationError('Cannot create POLYMARKET venue ID', {
+          context: { venueId: POLYMARKET_VENUE_ID },
+        })
+      );
+    }
+    return Ok(venueId);
   }
 }

@@ -3,13 +3,16 @@
  *
  * @remarks
  * Покрывает:
- * - create(): создание с политикой хранения, RangeError при пустой политике
+ * - create(): создание с политикой хранения (Result), Err при пустой политике
  * - append(): добавление записей, вытеснение по maxAgeMs, FIFO по maxCount
  * - getAll(): возвращает все записи
+ * - getLatest() / getLast(): доступ к записям с конца (делегировано RollingWindow)
  * - getWindow(): фильтрация по временному диапазону (включительно)
  * - getRecent(): выборка за последние N мс
- * - evictBefore(): явное удаление устаревших записей
  * - isEmpty() / size(): проверка состояния
+ *
+ * `evictBefore()` снят вместе с миграцией на `RollingWindow<TapeRecord>` (Этап 2 плана
+ * миграции) — у метода не было ни одного реального вызывающего в репозитории.
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
@@ -39,6 +42,14 @@ function makeRecord(params: {
   };
 }
 
+/** Разворачивает Result, падает тестом при Err — сокращает шум в happy-path тестах. */
+function unwrap<T>(result: { ok: boolean; value?: T; error?: unknown }): T {
+  if (!result.ok) {
+    throw new Error(`Expected Ok, got Err: ${JSON.stringify(result.error)}`);
+  }
+  return result.value as T;
+}
+
 // ==================== Тесты ====================
 
 describe('TradeTape', () => {
@@ -46,23 +57,23 @@ describe('TradeTape', () => {
 
   describe('create()', () => {
     it('создаёт пустую ленту с maxCount', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       expect(tape.isEmpty()).toBe(true);
       expect(tape.size()).toBe(0);
     });
 
     it('создаёт пустую ленту с maxAgeMs', () => {
-      const tape = TradeTape.create({ maxAgeMs: 60_000 }, clock);
+      const tape = unwrap(TradeTape.create({ maxAgeMs: 60_000 }, clock));
       expect(tape.isEmpty()).toBe(true);
     });
 
     it('создаёт ленту с обоими ограничениями', () => {
-      const tape = TradeTape.create({ maxCount: 500, maxAgeMs: 300_000 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 500, maxAgeMs: 300_000 }, clock));
       expect(tape.isEmpty()).toBe(true);
     });
 
-    it('бросает RangeError если политика пустая', () => {
-      expect(() => TradeTape.create({}, clock)).toThrow(RangeError);
+    it('возвращает Err если политика пустая', () => {
+      expect(TradeTape.create({}, clock).ok).toBe(false);
     });
   });
 
@@ -72,7 +83,7 @@ describe('TradeTape', () => {
     let tape: TradeTape;
 
     beforeEach(() => {
-      tape = TradeTape.create({ maxCount: 100 }, clock);
+      tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
     });
 
     it('добавляет запись', () => {
@@ -89,7 +100,7 @@ describe('TradeTape', () => {
     });
 
     it('вытесняет самую старую при превышении maxCount (FIFO)', () => {
-      const tape3 = TradeTape.create({ maxCount: 3 }, clock);
+      const tape3 = unwrap(TradeTape.create({ maxCount: 3 }, clock));
       for (let i = 0; i < 5; i++) {
         tape3.append(makeRecord({ timestampMs: BASE_TIME + i * 1000 }));
       }
@@ -101,7 +112,7 @@ describe('TradeTape', () => {
     });
 
     it('вытесняет устаревшие по maxAgeMs', () => {
-      const tape60 = TradeTape.create({ maxAgeMs: 60_000 }, clock);
+      const tape60 = unwrap(TradeTape.create({ maxAgeMs: 60_000 }, clock));
 
       tape60.append(makeRecord({ timestampMs: BASE_TIME }));
       tape60.append(makeRecord({ timestampMs: BASE_TIME + 30_000 }));
@@ -117,7 +128,7 @@ describe('TradeTape', () => {
 
     it('оба ограничения работают вместе', () => {
       // maxAgeMs=60s + maxCount=3
-      const tapeCombined = TradeTape.create({ maxCount: 3, maxAgeMs: 60_000 }, clock);
+      const tapeCombined = unwrap(TradeTape.create({ maxCount: 3, maxAgeMs: 60_000 }, clock));
       // Добавим 4 записи в разное время
       tapeCombined.append(makeRecord({ timestampMs: BASE_TIME }));
       tapeCombined.append(makeRecord({ timestampMs: BASE_TIME + 10_000 }));
@@ -138,22 +149,56 @@ describe('TradeTape', () => {
 
   describe('getAll()', () => {
     it('возвращает пустой массив для новой ленты', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       expect(tape.getAll()).toHaveLength(0);
     });
 
     it('возвращает все добавленные записи', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({ timestampMs: BASE_TIME }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
       expect(tape.getAll()).toHaveLength(2);
     });
 
     it('возвращает массив (readonly — compile-time гарантия TypeScript)', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({}));
       const all = tape.getAll();
       expect(Array.isArray(all)).toBe(true);
+    });
+  });
+
+  // ==================== getLatest / getLast ====================
+
+  describe('getLatest() / getLast()', () => {
+    it('getLatest() возвращает undefined для пустой ленты', () => {
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
+      expect(tape.getLatest()).toBeUndefined();
+    });
+
+    it('getLatest() возвращает последнюю добавленную запись', () => {
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
+      tape.append(makeRecord({ timestampMs: BASE_TIME, price: 0.5 }));
+      tape.append(makeRecord({ timestampMs: BASE_TIME + 1000, price: 0.6 }));
+      expect(tape.getLatest()?.price.value().toNumber()).toBe(0.6);
+    });
+
+    it('getLast(n) возвращает последние n записей в хронологическом порядке', () => {
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
+      tape.append(makeRecord({ timestampMs: BASE_TIME }));
+      tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
+      tape.append(makeRecord({ timestampMs: BASE_TIME + 2000 }));
+
+      const last2 = tape.getLast(2);
+      expect(last2).toHaveLength(2);
+      expect(last2[0]!.timestamp.toNumber()).toBe(BASE_TIME + 1000);
+      expect(last2[1]!.timestamp.toNumber()).toBe(BASE_TIME + 2000);
+    });
+
+    it('getLast(n) возвращает пустой массив для n <= 0', () => {
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
+      tape.append(makeRecord({}));
+      expect(tape.getLast(0)).toEqual([]);
     });
   });
 
@@ -163,7 +208,7 @@ describe('TradeTape', () => {
     let tape: TradeTape;
 
     beforeEach(() => {
-      tape = TradeTape.create({ maxCount: 100 }, clock);
+      tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({ timestampMs: BASE_TIME }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 2000 }));
@@ -195,7 +240,7 @@ describe('TradeTape', () => {
 
   describe('getRecent()', () => {
     it('использует nowMs для определения окна', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({ timestampMs: BASE_TIME }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 500 }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
@@ -206,7 +251,7 @@ describe('TradeTape', () => {
     });
 
     it('возвращает пустой массив если нет записей в окне', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({ timestampMs: BASE_TIME }));
 
       const recent = tape.getRecent(100, BASE_TIME + 1_000_000);
@@ -214,7 +259,7 @@ describe('TradeTape', () => {
     });
 
     it('возвращает все записи при очень большой duration', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({ timestampMs: BASE_TIME }));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
 
@@ -223,63 +268,22 @@ describe('TradeTape', () => {
     });
   });
 
-  // ==================== evictBefore ====================
-
-  describe('evictBefore()', () => {
-    let tape: TradeTape;
-
-    beforeEach(() => {
-      tape = TradeTape.create({ maxCount: 100 }, clock);
-      tape.append(makeRecord({ timestampMs: BASE_TIME }));
-      tape.append(makeRecord({ timestampMs: BASE_TIME + 1000 }));
-      tape.append(makeRecord({ timestampMs: BASE_TIME + 2000 }));
-      tape.append(makeRecord({ timestampMs: BASE_TIME + 3000 }));
-    });
-
-    it('удаляет записи старше cutoff', () => {
-      const evicted = tape.evictBefore(BASE_TIME + 2000);
-      expect(evicted).toBe(2);
-      expect(tape.size()).toBe(2);
-    });
-
-    it('оставляет записи с timestamp >= cutoff', () => {
-      tape.evictBefore(BASE_TIME + 2000);
-      const all = tape.getAll();
-      for (const record of all) {
-        expect(record.timestamp.toNumber()).toBeGreaterThanOrEqual(BASE_TIME + 2000);
-      }
-    });
-
-    it('возвращает 0 если нечего удалять', () => {
-      const evicted = tape.evictBefore(BASE_TIME - 1000);
-      expect(evicted).toBe(0);
-      expect(tape.size()).toBe(4);
-    });
-
-    it('удаляет все записи при большом cutoff', () => {
-      const evicted = tape.evictBefore(BASE_TIME + 99999);
-      expect(evicted).toBe(4);
-      expect(tape.size()).toBe(0);
-      expect(tape.isEmpty()).toBe(true);
-    });
-  });
-
   // ==================== isEmpty / size ====================
 
   describe('isEmpty() / size()', () => {
     it('isEmpty() = true для новой ленты', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       expect(tape.isEmpty()).toBe(true);
     });
 
     it('isEmpty() = false после добавления записи', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({}));
       expect(tape.isEmpty()).toBe(false);
     });
 
     it('size() возвращает корректное количество', () => {
-      const tape = TradeTape.create({ maxCount: 100 }, clock);
+      const tape = unwrap(TradeTape.create({ maxCount: 100 }, clock));
       tape.append(makeRecord({}));
       tape.append(makeRecord({ timestampMs: BASE_TIME + 1 }));
       expect(tape.size()).toBe(2);

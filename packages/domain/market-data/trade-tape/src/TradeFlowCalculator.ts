@@ -13,6 +13,8 @@
  *    накапливаем через `addDecimal()`.
  * 4. OFI = (buy - sell) / (buy + sell): `subtractDecimal`, `divideDecimal`
  * 5. VWAP = totalNotional / totalVolume: `divideDecimal`, `isZeroDecimal`
+ * 6. Промежуточные суммы — на голом `Decimal` (внутренняя реализация, не публичная
+ *    граница); в VO (`Quantity`/`Ratio`/`Price`/`Money`) оборачиваются только перед `return`.
  *
  * ### Обработка записей без side:
  * Записи с `side === undefined` не учитываются в buy/sell volume,
@@ -21,6 +23,7 @@
 
 import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal, isZeroDecimal } from '@polymarket/math';
+import { Quantity, Ratio, Price, Money } from '@polymarket/value-objects';
 import type { TapeRecord } from './TapeRecord.js';
 import type { TradeFlowMetrics } from './TradeFlowMetrics.js';
 
@@ -31,7 +34,7 @@ import type { TradeFlowMetrics } from './TradeFlowMetrics.js';
  * ```typescript
  * const metrics = TradeFlowCalculator.compute(tape.getRecent(60_000));
  * if (metrics.orderFlowImbalance.toNumber() > 0.3) {
- *   // сильное давление покупателей
+ *   // сильное давление покупателей — Ratio.toNumber() существует, как и у Decimal
  * }
  * ```
  */
@@ -62,12 +65,12 @@ export class TradeFlowCalculator {
   public static compute(records: readonly TapeRecord[]): TradeFlowMetrics {
     if (records.length === 0) {
       return {
-        buyVolume: new Decimal(0),
-        sellVolume: new Decimal(0),
-        totalVolume: new Decimal(0),
-        orderFlowImbalance: new Decimal(0),
+        buyVolume: Quantity.of(new Decimal(0)),
+        sellVolume: Quantity.of(new Decimal(0)),
+        totalVolume: Quantity.of(new Decimal(0)),
+        orderFlowImbalance: Ratio.of(new Decimal(0)),
         vwap: undefined,
-        totalNotional: new Decimal(0),
+        totalNotional: Money.of(new Decimal(0), 'USDC'),
         tradeCount: 0,
       };
     }
@@ -99,17 +102,17 @@ export class TradeFlowCalculator {
       : divideDecimal(subtractDecimal(buyVolume, sellVolume), classifiedVolume);
 
     // VWAP: по всем записям включая без side
-    const vwap = isZeroDecimal(totalVolume)
+    const vwapDecimal = isZeroDecimal(totalVolume)
       ? undefined
       : divideDecimal(totalNotional, totalVolume);
 
     return {
-      buyVolume,
-      sellVolume,
-      totalVolume,
-      orderFlowImbalance,
-      vwap,
-      totalNotional,
+      buyVolume: Quantity.of(buyVolume),
+      sellVolume: Quantity.of(sellVolume),
+      totalVolume: Quantity.of(totalVolume),
+      orderFlowImbalance: Ratio.of(orderFlowImbalance),
+      vwap: vwapDecimal !== undefined ? Price.of(vwapDecimal) : undefined,
+      totalNotional: Money.of(totalNotional, 'USDC'),
       tradeCount: records.length,
     };
   }

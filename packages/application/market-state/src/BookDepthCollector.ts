@@ -124,15 +124,20 @@ export class BookDepthCollector {
    * @param _deps - Зависимости (logger, clock)
    * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
    *
-   * @throws {RangeError} Если конфиг пустой (ни maxCount ни maxAgeMs не заданы)
+   * @throws {RangeError} Если политика невалидна — пустая, `maxCount`/`maxAgeMs` вне
+   *   допустимого диапазона (полная проверка через `OrderBookHistory.create()`, не только
+   *   "оба поля не заданы" — раньше невалидный конфиг тихо проходил конструктор и падал
+   *   только на первом живом `BOOK_DEPTH`-событии, внутри лениво вызываемого
+   *   `OrderBookHistory.create()` в `_record()`)
    */
   constructor(
     private readonly _deps: BookDepthCollectorDeps,
     private readonly _config: BookDepthCollectorConfig,
   ) {
-    if (_config.maxCount === undefined && _config.maxAgeMs === undefined) {
+    const validation = OrderBookHistory.create(_config, _deps.clock);
+    if (!validation.ok) {
       throw new RangeError(
-        'BookDepthCollector: retention policy must specify maxCount and/or maxAgeMs',
+        `BookDepthCollector: invalid retention policy — ${validation.error.message}`,
       );
     }
   }
@@ -237,8 +242,17 @@ export class BookDepthCollector {
 
     let entry = this._entries.get(tokenId);
     if (entry === undefined) {
-      const history = OrderBookHistory.create(this._config, this._deps.clock);
-      entry = { history };
+      const historyResult = OrderBookHistory.create(this._config, this._deps.clock);
+      if (!historyResult.ok) {
+        // Не должно происходить: _config уже прошёл ту же валидацию в конструкторе.
+        // Fail-closed вместо throw в горячем пути — пропускаем снапшот, логируем громко.
+        this._deps.logger.error('BookDepthCollector: unexpected invalid retention policy', {
+          tokenId: String(tokenId),
+          error: historyResult.error.message,
+        });
+        return;
+      }
+      entry = { history: historyResult.value };
       this._entries.set(tokenId, entry);
       this._deps.logger.debug('BookDepthCollector: new history created', {
         tokenId: String(tokenId),

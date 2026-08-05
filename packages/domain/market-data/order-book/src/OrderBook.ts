@@ -25,6 +25,8 @@ import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal, averageDecimal, isZeroDecimal } from '@polymarket/math';
 import type { MarketId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ValidationError } from '@polymarket/errors';
 import type { PriceLevel } from './PriceLevel.js';
 import type { OrderBookDelta } from './OrderBookDelta.js';
 
@@ -71,7 +73,8 @@ export interface OrderBookSnapshot {
  *   [{ price: ask, size: askSize }]
  * );
  * console.log(book.getBestBid()?.price.value().toString()); // '0.65'
- * console.log(book.getImbalance().toNumber()); // ≈ 0.111
+ * const imbalance = book.getImbalance();
+ * if (imbalance.ok) console.log(imbalance.value.toNumber()); // ≈ 0.111
  * ```
  */
 export class OrderBook {
@@ -264,22 +267,28 @@ export class OrderBook {
    * Вычисляет дисбаланс стакана
    *
    * @param topLevels - Количество верхних уровней для подсчёта (по умолчанию все)
-   * @returns (bidSize - askSize) / (bidSize + askSize), диапазон [-1, +1], 0 если пусто
+   * @returns `Result` с (bidSize - askSize) / (bidSize + askSize) (диапазон [-1, +1], 0 если
+   *   пусто) либо `ValidationError` если `topLevels` невалиден
    *
    * @remarks
    * Положительное значение → больше объёма на bid стороне (бычий сигнал).
    * Отрицательное значение → больше объёма на ask стороне (медвежий сигнал).
-   * Возвращает Decimal(0) (не undefined) для удобства использования в стратегиях.
+   * Возвращает `Ok(Decimal(0))` (не `undefined`) для удобства использования в стратегиях.
    *
    * @example
    * ```typescript
-   * const imbalance = book.getImbalance(5); // топ 5 уровней
-   * console.log(imbalance.toNumber()); // 0.304
+   * const result = book.getImbalance(5); // топ 5 уровней
+   * if (result.ok) console.log(result.value.toNumber()); // 0.304
    * ```
    */
-  public getImbalance(topLevels?: number): Decimal {
+  public getImbalance(topLevels?: number): Result<Decimal, ValidationError> {
     if (topLevels !== undefined && (!Number.isInteger(topLevels) || topLevels < 0)) {
-      throw new RangeError(`OrderBook.getImbalance: topLevels must be a non-negative integer, got ${topLevels}`);
+      return Err(
+        new ValidationError(
+          `OrderBook.getImbalance: topLevels must be a non-negative integer, got ${topLevels}`,
+          { context: { topLevels } },
+        ),
+      );
     }
 
     const bids = this._getSortedBids();
@@ -292,49 +301,61 @@ export class OrderBook {
     const askSize = askSlice.reduce((sum, l) => addDecimal(sum, l.size.value()), new Decimal(0));
 
     const total = addDecimal(bidSize, askSize);
-    if (isZeroDecimal(total)) return new Decimal(0);
+    if (isZeroDecimal(total)) return Ok(new Decimal(0));
 
-    return divideDecimal(subtractDecimal(bidSize, askSize), total);
+    return Ok(divideDecimal(subtractDecimal(bidSize, askSize), total));
   }
 
   /**
    * Возвращает уровни покупки, отсортированные по убыванию цены
    *
    * @param levels - Максимальное количество уровней (по умолчанию все)
-   * @returns Отсортированные уровни bid
+   * @returns `Result` с отсортированными уровнями bid либо `ValidationError` если `levels`
+   *   невалиден
    *
    * @example
    * ```typescript
-   * const top5Bids = book.getBids(5);
-   * top5Bids.forEach(l => console.log(l.price.value().toString()));
+   * const result = book.getBids(5);
+   * if (result.ok) result.value.forEach(l => console.log(l.price.value().toString()));
    * ```
    */
-  public getBids(levels?: number): readonly PriceLevel[] {
+  public getBids(levels?: number): Result<readonly PriceLevel[], ValidationError> {
     if (levels !== undefined && (!Number.isInteger(levels) || levels < 0)) {
-      throw new RangeError(`OrderBook.getBids: levels must be a non-negative integer, got ${levels}`);
+      return Err(
+        new ValidationError(
+          `OrderBook.getBids: levels must be a non-negative integer, got ${levels}`,
+          { context: { levels } },
+        ),
+      );
     }
     const sorted = this._getSortedBids();
-    return levels !== undefined ? sorted.slice(0, levels) : sorted;
+    return Ok(levels !== undefined ? sorted.slice(0, levels) : sorted);
   }
 
   /**
    * Возвращает уровни продажи, отсортированные по возрастанию цены
    *
    * @param levels - Максимальное количество уровней (по умолчанию все)
-   * @returns Отсортированные уровни ask
+   * @returns `Result` с отсортированными уровнями ask либо `ValidationError` если `levels`
+   *   невалиден
    *
    * @example
    * ```typescript
-   * const top5Asks = book.getAsks(5);
-   * top5Asks.forEach(l => console.log(l.price.value().toString()));
+   * const result = book.getAsks(5);
+   * if (result.ok) result.value.forEach(l => console.log(l.price.value().toString()));
    * ```
    */
-  public getAsks(levels?: number): readonly PriceLevel[] {
+  public getAsks(levels?: number): Result<readonly PriceLevel[], ValidationError> {
     if (levels !== undefined && (!Number.isInteger(levels) || levels < 0)) {
-      throw new RangeError(`OrderBook.getAsks: levels must be a non-negative integer, got ${levels}`);
+      return Err(
+        new ValidationError(
+          `OrderBook.getAsks: levels must be a non-negative integer, got ${levels}`,
+          { context: { levels } },
+        ),
+      );
     }
     const sorted = this._getSortedAsks();
-    return levels !== undefined ? sorted.slice(0, levels) : sorted;
+    return Ok(levels !== undefined ? sorted.slice(0, levels) : sorted);
   }
 
   /**
