@@ -581,21 +581,17 @@ export class FillMapper {
 
     // TAKER fee по формуле Polymarket. MAKER fee = 0 (обработан выше, isMaker=true → return).
     const feeRateBpsRaw = raw['fee_rate_bps'];
-    let feeAmount = new Decimal(0);
+    let fee = Fee.zero(AssetIdHelpers.USDC);
     if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
       try {
         const feeRateBps = new Decimal(String(feeRateBpsRaw));
         if (feeRateBps.isFinite() && feeRateBps.gt(0)) {
-          feeAmount = calculatePolymarketTakerFee(sizeDecimal, priceDecimal);
+          fee = calculatePolymarketTakerFee(size, price);
         }
       } catch {
         // Невалидный fee_rate_bps → комиссия = 0
       }
     }
-
-    const feeQuantity = Quantity.of(feeAmount);
-    const feeAssetQuantity = new AssetQuantity(AssetIdHelpers.USDC, feeQuantity);
-    const fee = Fee.of(feeAssetQuantity);
 
     // venueId — Polymarket
     const venueId = asVenueId(POLYMARKET_VENUE_ID);
@@ -675,11 +671,11 @@ export class FillMapper {
       marketId: fill.marketId,
       tokenId: assetIdToString(fill.tokenId),
       settlementAssetId: assetIdToString(fill.settlementAssetId),
-      price: fill.price.value().toNumber(),
-      size: fill.size.value().toNumber(),
+      price: fill.price.value().toString(),
+      size: fill.size.value().toString(),
       side: fill.side,
       timestampMs: fill.timestamp.toNumber(),
-      feeAmount: fill.fee.quantity.amount().value().toNumber(),
+      feeAmount: fill.fee.quantity.amount().value().toString(),
       feeAsset: assetIdToString(fill.fee.asset),
       liquidity: metadata?.liquidity,
       venueTradeId: metadata?.venueTradeId,

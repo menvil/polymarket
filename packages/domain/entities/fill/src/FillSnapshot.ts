@@ -12,9 +12,10 @@
  * ### Отличие от Fill:
  * Fill использует value objects (Price, Quantity, Fee, Timestamp).
  * FillSnapshot использует только примитивы (number, string).
- * Это обеспечивает совместимость с JSON.stringify(), однако числа (price, size, feeAmount)
- * хранятся как number — при экстремальных значениях возможна потеря точности Decimal.
- * Для высокоточных требований рекомендуется сериализовать числа как строки.
+ * Это обеспечивает совместимость с JSON.stringify(). `price`/`size`/`feeAmount`
+ * сериализуются как **строки** (Этап 3 плана миграции — было `number`, что могло
+ * терять точность Decimal при экстремальных значениях; `timestampMs` остаётся
+ * `number` — это epoch ms, целое число, не Decimal-значение).
  *
  * ### Инфраструктурные метаданные:
  * liquidity и venueTradeId хранятся в снапшоте как опциональные поля
@@ -49,16 +50,16 @@ export interface FillSnapshot {
   readonly tokenId: string;
   /** Расчётный актив — JSON сериализованный AssetId (USDC для Polymarket) */
   readonly settlementAssetId: string;
-  /** Цена исполнения */
-  readonly price: number;
-  /** Размер исполнения */
-  readonly size: number;
+  /** Цена исполнения (строка — сохраняет точность Decimal) */
+  readonly price: string;
+  /** Размер исполнения (строка — сохраняет точность Decimal) */
+  readonly size: string;
   /** Сторона (BUY/SELL) */
   readonly side: 'BUY' | 'SELL';
   /** Время исполнения в epoch milliseconds */
   readonly timestampMs: number;
-  /** Fee amount */
-  readonly feeAmount: number;
+  /** Fee amount (строка — сохраняет точность Decimal) */
+  readonly feeAmount: string;
   /** Fee asset (JSON сериализованный AssetId) */
   readonly feeAsset: string;
   /** Тип ликвидности (MAKER/TAKER) — опциональные метаданные */

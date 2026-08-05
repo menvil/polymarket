@@ -56,6 +56,12 @@ function makeActiveMarket() {
   });
 }
 
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
+
 // ==================== Тесты ====================
 
 describe('MarketViewModel.getMarketUrl()', () => {
@@ -96,7 +102,7 @@ describe('MarketViewModel.toSnapshot()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const snapshot = MarketViewModel.toSnapshot(result.value.close(NOW));
+    const snapshot = MarketViewModel.toSnapshot(unwrap(result.value.close(NOW)));
     expect(snapshot.state).toEqual({ status: 'CLOSED' });
   });
 
@@ -105,7 +111,8 @@ describe('MarketViewModel.toSnapshot()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const snapshot = MarketViewModel.toSnapshot(result.value.close(NOW).resolve(1, NOW));
+    const closed = unwrap(result.value.close(NOW));
+    const snapshot = MarketViewModel.toSnapshot(unwrap(closed.resolve(1, NOW)));
     expect(snapshot.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
   });
 });
@@ -134,7 +141,7 @@ describe('MarketViewModel.toSnapshot() — round-trip через Market.fromSnap
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const resolved = result.value.close(NOW).resolve(0, NOW);
+    const resolved = unwrap(unwrap(result.value.close(NOW)).resolve(0, NOW));
     const snapshot = MarketViewModel.toSnapshot(resolved);
     const restoredResult = Market.fromSnapshot(snapshot);
     expect(restoredResult.ok).toBe(true);

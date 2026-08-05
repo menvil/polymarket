@@ -57,6 +57,12 @@ function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {
   return result.value;
 }
 
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
+
 const BEFORE_EXPIRY = EXPIRATION_MS - 1; // рынок ещё не истёк
 const AT_EXPIRY = EXPIRATION_MS;          // рынок истёк (nowMs >= expirationMs)
 const AFTER_EXPIRY = EXPIRATION_MS + 1;
@@ -157,11 +163,11 @@ describe('Policy + Entity — полный lifecycle', () => {
     expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
 
     // close() переводит в CLOSED
-    const closed = market.close(AT_EXPIRY);
+    const closed = unwrap(market.close(AT_EXPIRY));
     expect(MarketTradingPolicy.getTradingState(closed, AT_EXPIRY)).toBe('CLOSED');
 
     // resolve() переводит в RESOLVED
-    const resolved = closed.resolve(0, AT_EXPIRY);
+    const resolved = unwrap(closed.resolve(0, AT_EXPIRY));
     expect(MarketTradingPolicy.getTradingState(resolved, AT_EXPIRY)).toBe('RESOLVED');
   });
 

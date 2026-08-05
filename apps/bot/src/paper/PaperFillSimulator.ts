@@ -58,7 +58,7 @@ import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polym
 import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
-import { AssetQuantity, Fee, Price, Quantity } from '@polymarket/value-objects';
+import { Fee, Price, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
@@ -402,11 +402,10 @@ export class PaperFillSimulator {
     }
 
     // Комиссия: taker платит, maker — нет (Polymarket taker-only fee model)
-    const feeAmount = isTaker
-      ? calculatePolymarketTakerFee(fillSize, fillPrice)
-      : new Decimal(0);
-    const fee = feeAmount.gt(0)
-      ? Fee.of(AssetQuantity.usdc(Quantity.of(feeAmount)))
+    const price = Price.of(fillPrice);
+    const size = Quantity.of(fillSize);
+    const fee = isTaker
+      ? calculatePolymarketTakerFee(size, price)
       : Fee.zero(AssetIdHelpers.USDC);
 
     const fillResult = Fill.create({
@@ -417,8 +416,8 @@ export class PaperFillSimulator {
       marketId: order.marketId,
       tokenId: order.asset,
       settlementAssetId: AssetIdHelpers.USDC,
-      price: Price.of(fillPrice),
-      size: Quantity.of(fillSize),
+      price,
+      size,
       side: order.side,
       timestamp: timestampResult.value,
       fee,

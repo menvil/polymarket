@@ -21,9 +21,11 @@
  * const closed = MarketState.closed();
  * const resolved = MarketState.resolved(0); // YES победил
  *
- * // FSM-переходы (бросают при нарушении)
- * const next = MarketState.close(active);
- * const final = MarketState.resolve(next, 1);
+ * // FSM-переходы (Result — нарушение FSM не throw, см. Этап 3 плана миграции)
+ * const nextResult = MarketState.close(active);
+ * if (nextResult.ok) {
+ *   const finalResult = MarketState.resolve(nextResult.value, 1);
+ * }
  *
  * // Type guards
  * if (isActive(state)) {
@@ -36,6 +38,7 @@
  * ```
  */
 
+import { Result, Ok, Err } from '@polymarket/result';
 import {
   MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
@@ -121,9 +124,7 @@ export const MarketState = {
    *
    * @param state - Текущее состояние
    * @param context - Контекст для ошибки (например, marketId)
-   * @returns Новое состояние CLOSED
-   * @throws {MarketAlreadyClosedError} Если state.status === 'CLOSED'
-   * @throws {MarketAlreadyResolvedError} Если state.status === 'RESOLVED'
+   * @returns `Result` с новым состоянием CLOSED либо ошибкой нарушения FSM
    *
    * @remarks
    * Единственный разрешённый источник нового CLOSED состояния.
@@ -131,21 +132,27 @@ export const MarketState = {
    *
    * @example
    * ```typescript
-   * const closed = MarketState.close(MarketState.active(), { marketId: 'market-abc' });
+   * const result = MarketState.close(MarketState.active(), { marketId: 'market-abc' });
+   * if (result.ok) {
+   *   const closed = result.value;
+   * }
    * ```
    */
-  close(state: MarketState, context?: Record<string, unknown>): MarketState {
+  close(
+    state: MarketState,
+    context?: Record<string, unknown>,
+  ): Result<MarketState, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
     if (state.status === 'CLOSED') {
-      throw new MarketAlreadyClosedError('Market is already closed', {
+      return Err(new MarketAlreadyClosedError('Market is already closed', {
         context: { ...context, currentStatus: state.status },
-      });
+      }));
     }
     if (state.status === 'RESOLVED') {
-      throw new MarketAlreadyResolvedError('Cannot close a resolved market', {
+      return Err(new MarketAlreadyResolvedError('Cannot close a resolved market', {
         context: { ...context, currentStatus: state.status },
-      });
+      }));
     }
-    return MarketState.closed();
+    return Ok(MarketState.closed());
   },
 
   /**
@@ -154,35 +161,40 @@ export const MarketState = {
    * @param state - Текущее состояние
    * @param index - Индекс победившего исхода
    * @param context - Контекст для ошибки (например, marketId)
-   * @returns Новое состояние RESOLVED
-   * @throws {MarketAlreadyResolvedError} Если state.status === 'RESOLVED'
-   * @throws {MarketInvalidTransitionError} Если state.status === 'ACTIVE' (нужно сначала close())
+   * @returns `Result` с новым состоянием RESOLVED либо ошибкой нарушения FSM
    *
    * @remarks
    * Единственный разрешённый источник нового RESOLVED состояния.
    *
    * @example
    * ```typescript
-   * const resolved = MarketState.resolve(MarketState.closed(), 0, { marketId: 'market-abc' });
+   * const result = MarketState.resolve(MarketState.closed(), 0, { marketId: 'market-abc' });
+   * if (result.ok) {
+   *   const resolved = result.value;
+   * }
    * ```
    */
-  resolve(state: MarketState, index: OutcomeIndex, context?: Record<string, unknown>): MarketState {
+  resolve(
+    state: MarketState,
+    index: OutcomeIndex,
+    context?: Record<string, unknown>,
+  ): Result<MarketState, MarketAlreadyResolvedError | MarketInvalidTransitionError> {
     if (state.status === 'RESOLVED') {
-      throw new MarketAlreadyResolvedError('Market is already resolved', {
+      return Err(new MarketAlreadyResolvedError('Market is already resolved', {
         context: {
           ...context,
           currentStatus: state.status,
           resolvedOutcomeIndex: (state as { resolvedOutcomeIndex: OutcomeIndex }).resolvedOutcomeIndex,
         },
-      });
+      }));
     }
     if (state.status === 'ACTIVE') {
-      throw new MarketInvalidTransitionError(
+      return Err(new MarketInvalidTransitionError(
         'Cannot resolve an active market. Call close() first.',
         { context: { ...context, currentStatus: state.status } }
-      );
+      ));
     }
-    return MarketState.resolved(index);
+    return Ok(MarketState.resolved(index));
   },
 } as const;
 

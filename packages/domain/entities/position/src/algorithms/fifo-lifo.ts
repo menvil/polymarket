@@ -31,11 +31,11 @@ import { ValidationError } from '@polymarket/errors';
 import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
 import { Position, type CloseResult } from '../Position.js';
 
-// Re-export вспомогательных типов из lot-closing.ts
+/** Реэкспорт вспомогательных типов вычисления close (см. `lot-closing.ts`). */
 export type { ClosedLotInfo, LotCloseComputation } from './lot-closing.js';
 export { calculateWeightedAveragePrice } from './lot-closing.js';
 
-// Re-export CloseResult из Position.ts (содержит ссылку на Position)
+/** Реэкспорт результата close из `Position.ts` (содержит ссылку на обновлённую Position). */
 export type { CloseResult };
 
 /**

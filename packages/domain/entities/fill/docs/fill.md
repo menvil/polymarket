@@ -122,6 +122,27 @@ export const ALL_LIQUIDITY: readonly Liquidity[] = ['MAKER', 'TAKER'];
 export function isValidLiquidity(v: unknown): v is Liquidity;
 ```
 
+## polymarket-fee.ts
+
+Формула taker-комиссии Polymarket для crypto-рынков: `fee = size × feeRate × p × (1 - p)`
+(округление до 5 знаков, ROUND_HALF_UP; меньше `POLYMARKET_MIN_FEE_USDC` = 0.00001 → 0).
+
+```typescript
+// VO-based (Этап 3 плана миграции) — по ADR Decimal легитимен только внутри
+// value-objects/math, публичная граница здесь типизирована через Quantity/Price/Fee
+calculatePolymarketTakerFee(size: Quantity, price: Price): Fee
+calculatePolymarketTakerFeeWithRate(size: Quantity, price: Price, feeRate: number | Decimal): Fee
+
+// Примитивы (не переводится на VO — сигнатура уже полностью на number,
+// 11+ реальных потребителей в apps/bot/strategies/*, apps/pnl, domain/cross-market)
+calculatePolymarketTakerFeeNumber(size: number, price: number, feeRate?: number): number
+```
+
+`calculatePolymarketTakerFeeNumber` сохраняет старый контракт "невалидный вход (NaN,
+Infinity, price вне [0.0001, 0.9999], size/feeRate <= 0) → тихо `0`, не throw" —
+guard-проверки выполняются на сырых `number` до конструирования `Quantity`/`Price` VO
+(которые бросают исключение при значении вне инварианта).
+
 ## FillMapper
 
 ### fromPolymarketTradeEvent
@@ -165,8 +186,15 @@ FillMapper.fromPolymarketTradeEvent(
 | `price` | `price` | `maker_orders[n].price` |
 
 **Расчёт комиссии:**
+
+`fee_rate_bps` из события используется только как флаг "комиссия ненулевая" (значение
+`fee_rate_bps` в бинарных рынках Polymarket всегда одно и то же для taker — 0 или "есть
+комиссия"; к MAKER не применяется вообще, MAKER fee = 0). Реальная формула — через
+`calculatePolymarketTakerFee(size, price)` (см. `polymarket-fee.ts` ниже), не через сам
+`fee_rate_bps`:
+
 ```
-fee_amount = price × size × fee_rate_bps / 10000
+fee = size × POLYMARKET_CRYPTO_TAKER_FEE_RATE × price × (1 - price)
 ```
 
 **Маппинг в ExecutionMetadata:**
@@ -178,6 +206,13 @@ fee_amount = price × size × fee_rate_bps / 10000
 
 Round-trip сериализация через `FillSnapshot` (плоские примитивы).
 `tradeStatus` сохраняется в снапшоте и восстанавливается.
+
+**Точность (Этап 3 плана миграции)**: `price`/`size`/`feeAmount` сериализуются как
+**строки** (было `number` — при экстремальных значениях возможна потеря точности
+Decimal через IEEE-754 double; `.toString()` сохраняет точность, `.toNumber()`
+раньше — нет). `timestampMs` остаётся `number` — epoch ms, целое число, не Decimal-
+значение. `fromSnapshot()`'s парсинг (`new Decimal(snapshot.price)`) не потребовал
+изменений — `Decimal`-конструктор одинаково принимает `string` и `number`.
 
 ## Пример использования
 
@@ -204,8 +239,8 @@ const result = FillMapper.fromPolymarketTradeEvent({
 
 if (result.ok) {
   const { fill, metadata } = result.value;
-  console.log(fill.getCashFlow().amount.toNumber()); // -32.5
-  console.log(fill.hasFee());                        // true (0.65*50*20/10000 = 0.065)
+  console.log(fill.getCashFlow().amount.toNumber()); // -32.5 (price × size = 0.65 × 50)
+  console.log(fill.hasFee());                        // true (50 × 0.072 × 0.65 × 0.35 ≈ 0.819)
   console.log(metadata.liquidity);                   // 'TAKER'
   console.log(metadata.tradeStatus);                 // 'MATCHED'
 }

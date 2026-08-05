@@ -29,14 +29,13 @@
  *   MarketInvalidTransitionError,
  * } from '@polymarket/errors/market';
  *
- * try {
- *   closedMarket.close();
- * } catch (e) {
- *   if (e instanceof MarketAlreadyClosedError) {
+ * const result = closedMarket.close(nowMs);
+ * if (!result.ok) {
+ *   if (result.error instanceof MarketAlreadyClosedError) {
  *     // Рынок уже закрыт — операция идемпотентна, можно продолжить
- *   } else if (e instanceof MarketAlreadyResolvedError) {
+ *   } else if (result.error instanceof MarketAlreadyResolvedError) {
  *     // Рынок в терминальном состоянии — переход невозможен
- *   } else if (e instanceof MarketLifecycleError) {
+ *   } else if (result.error instanceof MarketLifecycleError) {
  *     // Любое другое нарушение FSM
  *   }
  * }
@@ -51,7 +50,8 @@ import { TradingError, ValidationError } from '../base/index.js';
  * MarketValidationError — ошибка валидации данных рынка
  *
  * @remarks
- * Выбрасывается в Market.create() при невалидных входных данных.
+ * Возвращается как `Err` из `Market.create()` при невалидных входных данных, а также
+ * из `Market.resolve()` при невалидном `outcomeIndex` (не целое число / вне диапазона).
  * Уровень серьёзности: low (данные можно исправить).
  *
  * ### Причины:
@@ -76,19 +76,17 @@ export class MarketValidationError extends ValidationError {}
  * MarketLifecycleError — базовый класс для нарушений FSM рынка
  *
  * @remarks
- * Выбрасывается при попытке недопустимого перехода состояния.
+ * Возвращается как `Err` при попытке недопустимого перехода состояния
+ * (`Market.close()`/`Market.resolve()` — `Result`-based, см. `@polymarket/market`).
  * Используй конкретные подклассы для точной обработки ошибок.
  *
  * Уровень серьёзности: medium (нарушение бизнес-логики в коде).
  *
  * @example
  * ```typescript
- * try {
- *   market.close();
- * } catch (e) {
- *   if (e instanceof MarketLifecycleError) {
- *     console.log('FSM violation:', e.context?.currentStatus);
- *   }
+ * const result = market.close(nowMs);
+ * if (!result.ok && result.error instanceof MarketLifecycleError) {
+ *   console.log('FSM violation:', result.error.context?.currentStatus);
  * }
  * ```
  */
@@ -100,16 +98,13 @@ export class MarketLifecycleError extends TradingError {
  * MarketAlreadyClosedError — попытка закрыть уже закрытый рынок
  *
  * @remarks
- * Выбрасывается при вызове `close()` на рынке в состоянии CLOSED.
+ * Возвращается как `Err` при вызове `close()` на рынке в состоянии CLOSED.
  *
  * @example
  * ```typescript
- * try {
- *   closedMarket.close();
- * } catch (e) {
- *   if (e instanceof MarketAlreadyClosedError) {
- *     // Рынок уже закрыт — повторный вызов не нужен
- *   }
+ * const result = closedMarket.close(nowMs);
+ * if (!result.ok && result.error instanceof MarketAlreadyClosedError) {
+ *   // Рынок уже закрыт — повторный вызов не нужен
  * }
  * ```
  */
@@ -121,7 +116,7 @@ export class MarketAlreadyClosedError extends MarketLifecycleError {
  * MarketAlreadyResolvedError — попытка перехода из терминального состояния RESOLVED
  *
  * @remarks
- * Выбрасывается при:
+ * Возвращается как `Err` при:
  * - `close()` на RESOLVED рынке
  * - `resolve()` на RESOLVED рынке
  *
@@ -129,12 +124,9 @@ export class MarketAlreadyClosedError extends MarketLifecycleError {
  *
  * @example
  * ```typescript
- * try {
- *   resolvedMarket.resolve(1);
- * } catch (e) {
- *   if (e instanceof MarketAlreadyResolvedError) {
- *     // Рынок уже разрешён — результат финален
- *   }
+ * const result = resolvedMarket.resolve(1, nowMs);
+ * if (!result.ok && result.error instanceof MarketAlreadyResolvedError) {
+ *   // Рынок уже разрешён — результат финален
  * }
  * ```
  */
@@ -146,18 +138,17 @@ export class MarketAlreadyResolvedError extends MarketLifecycleError {
  * MarketInvalidTransitionError — недопустимый переход состояния
  *
  * @remarks
- * Выбрасывается при `resolve()` на ACTIVE рынке.
+ * Возвращается как `Err` при `resolve()` на ACTIVE рынке.
  * Правило: рынок нужно сначала закрыть (`close()`), затем разрешить (`resolve()`).
  *
  * @example
  * ```typescript
- * try {
- *   activeMarket.resolve(0);
- * } catch (e) {
- *   if (e instanceof MarketInvalidTransitionError) {
- *     // Нужно сначала вызвать close()
- *     const closed = activeMarket.close();
- *     closed.resolve(0);
+ * const result = activeMarket.resolve(0, nowMs);
+ * if (!result.ok && result.error instanceof MarketInvalidTransitionError) {
+ *   // Нужно сначала вызвать close()
+ *   const closeResult = activeMarket.close(nowMs);
+ *   if (closeResult.ok) {
+ *     closeResult.value.resolve(0, nowMs);
  *   }
  * }
  * ```

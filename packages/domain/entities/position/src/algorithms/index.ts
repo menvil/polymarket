@@ -13,4 +13,5 @@ export {
   calculateWeightedAveragePrice,
 } from './fifo-lifo.js';
 
+/** Реэкспорт типов результата close (см. `fifo-lifo.ts`/`lot-closing.ts`). */
 export type { CloseResult, ClosedLotInfo, LotCloseComputation } from './fifo-lifo.js';

@@ -25,6 +25,7 @@ packages/domain/entities/market/
 ```
 
 > **Branded types из других пакетов:**
+>
 > - `MarketId` — из `@polymarket/ids`
 > - `OutcomeToken` — из `@polymarket/value-objects/outcome-token`
 > - Ошибки — из `@polymarket/errors/market` (re-exported)
@@ -60,8 +61,9 @@ type MarketState =
 
 ```typescript
 // В Market.close():
-const nextState = MarketState.close(this.state, { marketId: this.id });
-// ↑ MarketState знает что можно, что нельзя — Market не знает
+const nextStateResult = MarketState.close(this.state, { marketId: this.id });
+// ↑ MarketState знает что можно, что нельзя — Market не знает,
+//   только пробрасывает Result наверх (см. п.5)
 ```
 
 ### 4. Expiration — ответственность `MarketTradingPolicy`
@@ -77,9 +79,19 @@ const nextState = MarketState.close(this.state, { marketId: this.id });
 | В каком торговом состоянии рынок? (policy) | `MarketTradingPolicy.getTradingState(market, nowMs)` |
 | Можно ли досрочно закрыть? (policy) | `MarketTradingPolicy.evaluateForceClose(market)` |
 
-### 5. Lifecycle методы бросают, не возвращают Result
+### 5. Lifecycle методы возвращают Result (пересмотрено в Этапе 3 миграции)
 
-`close()` и `resolve()` бросают конкретные подклассы `MarketLifecycleError`. Это сигнализирует: "ты вызвал метод в неверном состоянии — это баг в коде".
+**Было** (до Этапа 3 плана миграции `docs/architecture/boundary-contract.md`): `close()` и
+`resolve()` бросали конкретные подклассы `MarketLifecycleError` — обоснование было в том,
+что это сигнализирует "ты вызвал метод в неверном состоянии — это баг в коде" (различение
+programmer error vs expected failure).
+
+**Стало**: throw заменён на `Result` — по ADR (`docs/architecture/boundary-contract.md`,
+Решение 2) throw легитимен только внутри `packages/domain/value-objects`; ADR имеет
+приоритет над локальным pre-ADR обоснованием пакета. Конверсия была полностью inert для
+прода — на момент миграции ни один реальный вызывающий код нигде в репозитории не вызывал
+`Market.close()`/`Market.resolve()` (только `type`-импорт `Market` как поля данных в
+`StrategyScheduler`/`StrategySnapshot`).
 
 ```
 MarketLifecycleError
@@ -88,14 +100,20 @@ MarketLifecycleError
 └── MarketInvalidTransitionError (resolve() на ACTIVE — нужно сначала close())
 ```
 
+`MarketState.close()`/`MarketState.resolve()` (FSM-уровень) и `Market.close()`/
+`Market.resolve()` (entity-уровень) оба возвращают `Result` — `Market` не разворачивает
+Result от `MarketState` обратно в throw, а пробрасывает его наверх без изменений.
+
 ### 6. Notification Events (Outbox pattern)
 
 `close(nowMs)` и `resolve(index, nowMs)` эмитируют уведомления в буфер. Application-слой вызывает `pullNotifications()` и публикует в event bus.
 
 ```typescript
-const closed = market.close(Date.now());
-const notifications = closed.pullNotifications(); // [MarketClosedNotification]
-await eventBus.publish(notifications);
+const closeResult = market.close(Date.now());
+if (closeResult.ok) {
+  const notifications = closeResult.value.pullNotifications(); // [MarketClosedNotification]
+  await eventBus.publish(notifications);
+}
 ```
 
 Типы именуются с суффиксом `Notification` — явное разграничение с event-sourcing events.
@@ -146,7 +164,7 @@ Market
 ACTIVE → CLOSED → RESOLVED
 ```
 
-| Переход | Entity метод | Что бросает |
+| Переход | Entity метод | `Err(...)` при нарушении FSM |
 |---------|-------------|------------|
 | ACTIVE → CLOSED | `market.close(nowMs)` | `MarketAlreadyClosedError`, `MarketAlreadyResolvedError` |
 | CLOSED → RESOLVED | `market.resolve(index, nowMs)` | `MarketAlreadyResolvedError`, `MarketInvalidTransitionError` |
@@ -200,8 +218,10 @@ switch (MarketTradingPolicy.getTradingState(market, now)) {
     break;
   case 'EXPIRED':
     // рынок активен, но истёк — пора закрывать
-    const closed = market.close(now);
-    await eventBus.publish(closed.pullNotifications());
+    const closeResult = market.close(now);
+    if (closeResult.ok) {
+      await eventBus.publish(closeResult.value.pullNotifications());
+    }
     break;
   case 'CLOSED':
     // ждём результата от оракула
@@ -214,8 +234,10 @@ switch (MarketTradingPolicy.getTradingState(market, now)) {
 // Досрочное закрытие (admin/dispute — без проверки expiration)
 const decision = MarketTradingPolicy.evaluateForceClose(market);
 if (decision.allowed) {
-  const closed = market.close(now);
-  await eventBus.publish(closed.pullNotifications());
+  const closeResult = market.close(now);
+  if (closeResult.ok) {
+    await eventBus.publish(closeResult.value.pullNotifications());
+  }
 } else {
   logger.warn('Force-close rejected', { reason: decision.reason });
 }
@@ -230,17 +252,22 @@ import {
 } from '@polymarket/errors/market';
 
 const now = Date.now();
-const closed = market.close(now);     // ACTIVE → CLOSED
-const resolved = closed.resolve(0, now); // CLOSED → RESOLVED
+const closeResult = market.close(now); // ACTIVE → CLOSED
+if (!closeResult.ok) {
+  throw closeResult.error; // или обработать явно
+}
+const closed = closeResult.value;
+
+const resolveResult = closed.resolve(0, now); // CLOSED → RESOLVED
+if (resolveResult.ok) {
+  const resolved = resolveResult.value;
+}
 
 // FSM guard:
-try {
-  market.resolve(0, now); // throws: нельзя resolve из ACTIVE
-} catch (e) {
-  if (e instanceof MarketInvalidTransitionError) {
-    console.log(e.message); // 'Cannot resolve an active market. Call close() first.'
-    console.log(e.context?.currentStatus); // 'ACTIVE'
-  }
+const invalidResult = market.resolve(0, now); // Err: нельзя resolve из ACTIVE
+if (!invalidResult.ok && invalidResult.error instanceof MarketInvalidTransitionError) {
+  console.log(invalidResult.error.message); // 'Cannot resolve an active market. Call close() first.'
+  console.log(invalidResult.error.context?.currentStatus); // 'ACTIVE'
 }
 ```
 
@@ -249,13 +276,17 @@ try {
 ```typescript
 const now = Date.now();
 
-// close() эмитирует MarketClosedNotification
-const closed = market.close(now);
+// close() эмитирует MarketClosedNotification (при успехе — Ok)
+const closeResult = market.close(now);
+if (!closeResult.ok) throw closeResult.error;
+const closed = closeResult.value;
 const closeNotifications = closed.pullNotifications();
 // [{ type: 'MARKET_CLOSED', marketId, slug, occurredAt: now }]
 
-// resolve() эмитирует MarketResolvedNotification
-const resolved = closed.resolve(0, now);
+// resolve() эмитирует MarketResolvedNotification (при успехе — Ok)
+const resolveResult = closed.resolve(0, now);
+if (!resolveResult.ok) throw resolveResult.error;
+const resolved = resolveResult.value;
 const resolveNotifications = resolved.pullNotifications();
 // [{ type: 'MARKET_RESOLVED', marketId, slug, resolvedOutcomeIndex: 0, occurredAt: now }]
 
@@ -312,8 +343,10 @@ expect(MarketTradingPolicy.getTradingState(market, 500_000)).toBe('TRADING');
 expect(MarketTradingPolicy.getTradingState(market, 1_000_000)).toBe('EXPIRED');
 
 // Notifications (nowMs явно):
-const closed = market.close(1_000_000);
-expect(closed.pullNotifications()[0].occurredAt).toBe(1_000_000);
+const closeResult = market.close(1_000_000);
+if (closeResult.ok) {
+  expect(closeResult.value.pullNotifications()[0].occurredAt).toBe(1_000_000);
+}
 ```
 
 ---
@@ -328,9 +361,11 @@ const active   = MarketState.active();
 const closed   = MarketState.closed();
 const resolved = MarketState.resolved(0); // 0 = YES, 1 = NO
 
-// FSM-переходы (бросают при нарушении)
-const next  = MarketState.close(active, { marketId: 'market-abc' });
-const final = MarketState.resolve(next, 0, { marketId: 'market-abc' });
+// FSM-переходы (Result — Err при нарушении)
+const nextResult = MarketState.close(active, { marketId: 'market-abc' });
+if (nextResult.ok) {
+  const finalResult = MarketState.resolve(nextResult.value, 0, { marketId: 'market-abc' });
+}
 
 // Type guards с сужением типов
 if (isResolved(market.state)) {

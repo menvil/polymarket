@@ -91,6 +91,8 @@
 
 import Decimal from 'decimal.js';
 import type { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import type { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { Result, Ok, Err } from '@polymarket/result';
 import type { InstrumentId, AccountId } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
@@ -113,25 +115,34 @@ import { PortfolioValidationError } from '@polymarket/errors/portfolio';
  * Единый интерфейс устраняет необходимость в IValuablePosition —
  * getTotalValue / getTotalUnrealizedPnL принимают Iterable<IPosition>
  * без каких-либо cast на стороне caller.
+ *
+ * ### Почему `Pick<Quantity, 'value'>`, а не голый `{ value(): Decimal }`:
+ * По ADR (`docs/architecture/boundary-contract.md`, Решение 1) голый `Decimal`
+ * легитимен только внутри `value-objects`/`math`. `Pick<Quantity, 'value'>`/
+ * `Pick<Price, 'value'>`/`Pick<SignedQuantity, 'value'>` — явные структурные типы,
+ * привязанные к реальным VO-классам (а не анонимный inline-тип), но **не требуют
+ * прямой зависимости от конкретного класса** — `Pick` берёт только сигнатуру метода
+ * `value()`, поэтому любой объект со совместимым `.value(): Decimal` (включая
+ * `SimplePosition`, `Position` и тестовые заглушки) остаётся совместим без изменений.
  */
 export interface IPosition {
   /** Идентификатор торгового инструмента */
   readonly instrumentId: InstrumentId;
   /** Текущее количество в позиции */
-  readonly quantity: { value(): Decimal };
+  readonly quantity: Pick<Quantity, 'value'>;
   /** Сторона позиции */
   readonly side: 'LONG' | 'SHORT';
   /** Средневзвешенная цена входа */
-  readonly averageEntryPrice: { value(): Decimal };
+  readonly averageEntryPrice: Pick<Price, 'value'>;
   /** Проверяет, закрыта ли позиция (quantity = 0) */
   isClosed(): boolean;
   /**
    * Вычисляет unrealized P&L для заданной текущей цены
    *
    * @param currentPrice - Текущая цена инструмента (Price VO)
-   * @returns Объект с методом value(): Decimal (совместим с SignedQuantity)
+   * @returns Объект с методом value(): Decimal (структурно совместим с SignedQuantity)
    */
-  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
 }
 
 /**
@@ -147,7 +158,7 @@ export interface PortfolioParams {
   /** Начальные позиции (опционально) */
   readonly positions?: ReadonlyMap<InstrumentId, IPosition>;
   /** Резервации outcome-токенов для открытых SELL ордеров (опционально) */
-  readonly tokenReservations?: ReadonlyMap<InstrumentId, Decimal>;
+  readonly tokenReservations?: ReadonlyMap<InstrumentId, Quantity>;
 }
 
 /**
@@ -174,12 +185,12 @@ export class Portfolio {
    *
    * @remarks
    * Ключ — InstrumentId (тот же, что в positions).
-   * Значение — суммарный зарезервированный объём (Decimal, >= 0).
+   * Значение — суммарный зарезервированный объём (Quantity, >= 0).
    *
    * Инвариант: reservedQty <= position.quantity (нельзя зарезервировать больше, чем есть).
    * Проверяется при вызове `reserveTokensForOrder`.
    */
-  public readonly tokenReservations: ReadonlyMap<InstrumentId, Decimal>;
+  public readonly tokenReservations: ReadonlyMap<InstrumentId, Quantity>;
 
   /**
    * Приватный конструктор — используйте Portfolio.create()
@@ -193,7 +204,7 @@ export class Portfolio {
       : new Map<InstrumentId, IPosition>();
     this.tokenReservations = params.tokenReservations
       ? new Map(params.tokenReservations)
-      : new Map<InstrumentId, Decimal>();
+      : new Map<InstrumentId, Quantity>();
   }
 
   /**
@@ -562,7 +573,7 @@ export class Portfolio {
     if (!position) return new Decimal(0);
 
     const posQty = position.quantity.value();
-    const reserved = this.tokenReservations.get(instrumentId) ?? new Decimal(0);
+    const reserved = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
     const available = posQty.minus(reserved);
     return available.isNegative() ? new Decimal(0) : available;
   }
@@ -615,9 +626,9 @@ export class Portfolio {
       );
     }
 
-    const current = this.tokenReservations.get(instrumentId) ?? new Decimal(0);
-    const newMap = new Map<InstrumentId, Decimal>(this.tokenReservations);
-    newMap.set(instrumentId, current.plus(qty));
+    const current = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
+    const newMap = new Map<InstrumentId, Quantity>(this.tokenReservations);
+    newMap.set(instrumentId, Quantity.of(current.plus(qty)));
     return Ok(this.withTokenReservations(newMap));
   }
 
@@ -653,7 +664,7 @@ export class Portfolio {
         ),
       );
     }
-    const current = this.tokenReservations.get(instrumentId) ?? new Decimal(0);
+    const current = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
     if (current.lt(qty)) {
       return Err(
         new InvalidBalanceError(
@@ -669,12 +680,12 @@ export class Portfolio {
       );
     }
 
-    const newMap = new Map<InstrumentId, Decimal>(this.tokenReservations);
+    const newMap = new Map<InstrumentId, Quantity>(this.tokenReservations);
     const newReserved = current.minus(qty);
     if (newReserved.isZero()) {
       newMap.delete(instrumentId);
     } else {
-      newMap.set(instrumentId, newReserved);
+      newMap.set(instrumentId, Quantity.of(newReserved));
     }
     return Ok(this.withTokenReservations(newMap));
   }
@@ -705,7 +716,7 @@ export class Portfolio {
    * @param tokenReservations - Новая карта резерваций
    * @returns Новый Portfolio
    */
-  private withTokenReservations(tokenReservations: ReadonlyMap<InstrumentId, Decimal>): Portfolio {
+  private withTokenReservations(tokenReservations: ReadonlyMap<InstrumentId, Quantity>): Portfolio {
     return new Portfolio({
       id: this.id,
       accountId: this.accountId,

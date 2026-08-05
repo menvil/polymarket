@@ -26,6 +26,7 @@
     "@polymarket/fill": "0.1.0",
     "@polymarket/order": "0.1.0",
     "@polymarket/portfolio": "0.1.0",
+    "@polymarket/position": "0.1.0",
     "@polymarket/ledger": "0.1.0",
     "@polymarket/risk": "0.1.0"
   },

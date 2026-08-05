@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-05T07:16:44.368Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-05T17:02:41.061Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -23,12 +23,12 @@
 | `packages/application/use-cases` | 12 | 21 | 84 | 5 | 16/70 | ✅ |
 | `packages/domain/accounting/ledger` | 1 | 0 | 0 | 1 | 3/10 | ❌ |
 | `packages/domain/cross-market` | 0 | 35 | 13 | 0 | 3/23 | ❌ |
-| `packages/domain/entities/fill` | 10 | 9 | 11 | 0 | 8/20 | ✅ |
-| `packages/domain/entities/market` | 0 | 12 | 10 | 8 | 1/23 | ✅ |
-| `packages/domain/entities/order` | 2 | 10 | 24 | 0 | 11/27 | ✅ |
+| `packages/domain/entities/fill` | 6 | 6 | 14 | 1 | 7/20 | ✅ |
+| `packages/domain/entities/market` | 0 | 12 | 10 | 4 | 1/23 | ✅ |
+| `packages/domain/entities/order` | 2 | 10 | 24 | 0 | 0/27 | ✅ |
 | `packages/domain/entities/orderbook` | 0 | 17 | 21 | 2 | 0/16 | ✅ |
-| `packages/domain/entities/portfolio` | 12 | 1 | 3 | 1 | 3/14 | ✅ |
-| `packages/domain/entities/position` | 2 | 1 | 5 | 0 | 6/19 | ✅ |
+| `packages/domain/entities/portfolio` | 9 | 1 | 3 | 1 | 3/14 | ✅ |
+| `packages/domain/entities/position` | 2 | 1 | 5 | 0 | 0/19 | ✅ |
 | `packages/domain/entities/trade` | 5 | 2 | 16 | 0 | 2/6 | ✅ |
 | `packages/domain/market-data/order-book` | 11 | 23 | 5 | 4 | 6/16 | ✅ |
 | `packages/domain/market-data/trade-tape` | 0 | 7 | 0 | 2 | 1/7 | ✅ |
@@ -47,6 +47,6 @@
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 69 | 22/178 | ❌ |
-| **ИТОГО** | **195** | **2525** | **1554** | **318** | **355/1504** | **18 пакетов без docs/** |
+| **ИТОГО** | **188** | **2522** | **1557** | **315** | **337/1504** | **18 пакетов без docs/** |
 
 `decimal.js` импортируется вне `value-objects`/`math` в 84 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

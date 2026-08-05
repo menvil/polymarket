@@ -57,6 +57,9 @@
       "path": "../../domain/entities/portfolio/tsconfig.build.json"
     },
     {
+      "path": "../../domain/entities/position/tsconfig.build.json"
+    },
+    {
       "path": "../../domain/accounting/ledger/tsconfig.build.json"
     },
     {

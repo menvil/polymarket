@@ -13,10 +13,12 @@
 
 // Main Entity
 export { Position } from './Position.js';
+/** Реэкспорт типов Position entity (см. `Position.ts`). */
 export type { PositionParams, PositionSide, PositionStatus, CloseResult } from './Position.js';
 
 // Value Objects
 export { PositionLot } from './core/PositionLot.js';
+/** Реэкспорт параметров создания лота (см. `core/PositionLot.ts`). */
 export type { PositionLotParams } from './core/PositionLot.js';
 
 // FIFO/LIFO Algorithms
@@ -25,4 +27,5 @@ export {
   closeLIFO,
   calculateWeightedAveragePrice,
 } from './algorithms/index.js';
+/** Реэкспорт вспомогательных типов FIFO/LIFO-вычислений (см. `algorithms/`). */
 export type { ClosedLotInfo, LotCloseComputation } from './algorithms/index.js';

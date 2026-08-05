@@ -13,6 +13,7 @@ import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
 
 // ─── Status ──────────────────────────────────────────────────────
 
+/** Статус заявки в жизненном цикле — от создания до терминального состояния. */
 export type OrderStatus =
   | 'PENDING'
   | 'OPEN'

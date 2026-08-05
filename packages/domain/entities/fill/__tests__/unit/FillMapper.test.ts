@@ -640,11 +640,11 @@ describe('FillMapper', () => {
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
@@ -663,11 +663,11 @@ describe('FillMapper', () => {
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
@@ -690,18 +690,18 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       };
     }
 
     it('price=0 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 0 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: '0' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
@@ -709,7 +709,7 @@ describe('FillMapper', () => {
     });
 
     it('price=-1 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: -1 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: '-1' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
@@ -717,7 +717,7 @@ describe('FillMapper', () => {
     });
 
     it('size=0 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: 0 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: '0' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -725,7 +725,7 @@ describe('FillMapper', () => {
     });
 
     it('size=-0.001 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: -0.001 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: '-0.001' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -733,7 +733,7 @@ describe('FillMapper', () => {
     });
 
     it('feeAmount=-0.01 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: -0.01 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: '-0.01' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('feeAmount');
@@ -753,11 +753,11 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       };
@@ -832,26 +832,26 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       } as FillSnapshot;
     }
 
     it('price="abc" → Err (Decimal parsing fails)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'abc' as unknown as number }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'abc' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
       }
     });
 
-    it('size=NaN → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: NaN }));
+    it('size="NaN" → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: 'NaN' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -859,15 +859,15 @@ describe('FillMapper', () => {
     });
 
     it('feeAmount="abc" → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: 'abc' as unknown as number }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: 'abc' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('fee');
       }
     });
 
-    it('price=Infinity → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: Infinity }));
+    it('price="Infinity" → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'Infinity' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');

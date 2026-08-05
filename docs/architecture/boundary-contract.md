@@ -110,7 +110,7 @@
 
 | Сущность | Решение | Этап плана |
 |---|---|---|
-| `Position` (lot-based FIFO/LIFO) | Рефакторить `Portfolio.applyFill` сейчас, с детерминированным shadow-compare гейтом (полный исторический бэктест-корпус, точное равенство Decimal, не time-based ожидание) | Этап 3 |
+| `Position` (lot-based FIFO/LIFO) | Подключена в `PortfolioService._applyPositionUpdate` (не `Portfolio.applyFill` — такого метода не существует, ошибка в исходном тексте этого ADR) | Этап 3 |
 | `Trade` + `ExecutionLinker` | Строить сейчас — `TradeMapper.fromPolymarketLastTradeEvent()` уже реализован, нужно только подключить (`MarketDataStore` TRADE_RECEIVED-обработчик + новый `ExecutionLinker`) | Этапы 2, 7 |
 | `Ledger` read/replay API | Подключить реального потребителя (`LedgerService.ts`, reconciliation-сценарий) | Этап 7 |
 
@@ -119,6 +119,20 @@
 functional gap (PnL при частичном закрытии позиции без честного FIFO/LIFO).
 `Fill.venueTradeId` спроектирован под связь с `Trade`, но `ExecutionLinker` не существует
 нигде в коде. `Ledger` пишется (`.append()`), но не читается никем.
+
+**Пересмотр валидационной стратегии для Position (при реализации Этапа 3):** исходная
+формулировка этого ADR ("детерминированный shadow-compare гейт, полный исторический
+бэктест-корпус, точное равенство Decimal") предполагала сравнение realized+unrealized PnL
+между `SimplePosition`-путём и lot-based путём. Расследование при реализации показало:
+production fill-путь (`PortfolioService._applyPositionUpdate`, до Этапа 3) **вообще не
+вычислял** realized PnL — не приблизительно, а буквально нигде не накапливал такое число.
+Сравнивать lot-based `realizedPnL` было не с чем. Пересмотренная стратегия (см.
+`docs/architecture/position-accounting.md`): `quantity` — точное совпадение всегда
+(проверяет корректность BUY/SELL/fee-проводки); `averageEntryPrice` — точное совпадение
+только для single-price-lot сценариев, **математически ожидаемое расхождение** для
+multi-lot partial close (не баг — сама причина, почему lot-based учёт вообще нужен);
+`realizedPnL` — новая способность, валидируется выделенными unit-тестами с заранее
+известными ожидаемыми значениями, не diff против несуществующего бейзлайна.
 
 ### 5. Deprecation-мост
 
@@ -164,6 +178,31 @@ lint && typecheck`) не дожидаясь, пока смигрируют вс�
   `coordinator`, `ReconcileOrdersUseCase`) — не реализуются. Фиксируется только то, что
   миграция не должна закрывать возможность их появления (не переименовывать/не удалять
   точки интеграции без явной причины).
+
+### 8. Market lifecycle throw→Result: ADR приоритетнее pre-ADR package-local обоснования
+
+**Решение:** `Market.close()`/`Market.resolve()` и `MarketState.close()`/`MarketState.resolve()`
+(`@polymarket/market`) переведены с throw на `Result` в Этапе 3, несмотря на то, что
+`docs/market-entity.md` (написан до этого ADR) содержал явное архитектурное обоснование
+throw-поведения: "сигнализирует — ты вызвал метод в неверном состоянии, это баг в коде"
+(различение programmer error vs expected failure).
+
+**Обоснование:** Решение 1 этого ADR не делает исключения для "programmer error" —
+throw легитимен только внутри `value-objects`, без оговорок. Конкретная, самосогласованная
+pre-ADR позиция пакета не отменяет общий контракт, принятый для всей миграции: если бы
+каждый пакет мог обосновать свой собственный throw своей локальной логикой, единого
+контракта не было бы вообще. Конверсия оказалась полностью inert для прода — на момент
+миграции ни один реальный вызывающий код нигде в репозитории не вызывал
+`Market.close()`/`Market.resolve()` (только `type`-импорт `Market` как поля данных в
+`StrategyScheduler`/`StrategySnapshot`) — нулевой риск сделал решение простым: не
+потребовалось взвешивать "ценность строгого contract vs breaking real callers", реальных
+callers не было.
+
+**Общий принцип для будущих этапов:** там, где план (Этапы 4-9) встречает похожий
+pre-ADR-обоснованный throw в других пакетах — то же правило: ADR имеет приоритет,
+если у throw-сайта нет собственного, отдельно принятого исключения в этом документе
+(как "static utility class constructor guard" ниже, Решение 1, или конструкторы-invariant
+guards в `OrderIdGenerator`, зафиксированные отдельно для Этапа 9).
 
 ---
 

@@ -59,7 +59,7 @@ getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
 - При отмене SELL ничего не освобождалось
 - При fill SELL резервация не снималась
 
-**Решение**: `tokenReservations: ReadonlyMap<InstrumentId, Decimal>` — симметрично `balance.reserved` для USDC.
+**Решение**: `tokenReservations: ReadonlyMap<InstrumentId, Quantity>` — симметрично `balance.reserved` для USDC.
 
 ```typescript
 // Баланс USDC (BUY):
@@ -71,24 +71,40 @@ availableTokenQuantity(id)          // токены доступно (= position
 tokenReservations.get(id)           // токены под открытые SELL ордера
 ```
 
-Не используется `Quantity` VO (требует значение >= 0.0001) — для Map достаточно `Decimal`.
+**Этап 3 плана миграции**: внутреннее хранилище переведено с голого `Decimal` на `Quantity`
+VO — по ADR (`docs/architecture/boundary-contract.md`, Решение 1) `Decimal` легитимен
+только внутри `value-objects`/`math`. `Quantity.of()` не имеет инварианта на минимальное
+значение (только NaN/finite/non-negative — прежняя формулировка "требует >= 0.0001" была
+неточной, путала с диапазоном `Price`), поэтому оборачивание безопасно для любого
+неотрицательного остатка резервации. **Публичные сигнатуры** `availableTokenQuantity()`/
+`reserveTokensForOrder()`/`releaseTokenReservation()` осознанно остались на `Decimal` —
+у них 30+ реальных вызывающих в `apps/bot/strategies/*` и `application/use-cases`; смена
+этих сигнатур — отдельная, более масштабная задача вне объёма Этапа 3.
 
 ### 6. Структурная типизация для позиций (IPosition)
 
 **Проблема**: Прямая зависимость от `Position` entity из другого package требовала, чтобы тот package был скомпилирован. При build errors в position — portfolio тоже не собирался.
 
 **Решение**: Portfolio определяет единый интерфейс `IPosition` — контракт для управления и оценки стоимости:
+
 ```typescript
 export interface IPosition {
   readonly instrumentId: InstrumentId;
-  readonly quantity: { value(): Decimal };
+  readonly quantity: Pick<Quantity, 'value'>;
   readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: { value(): Decimal };
+  readonly averageEntryPrice: Pick<Price, 'value'>;
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
 }
 ```
-Реальный `Position` структурно совместим с `IPosition`. `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
+
+`Pick<Quantity, 'value'>` (Этап 3 плана миграции, было `{ value(): Decimal }`) — явный
+структурный тип, привязанный к реальному VO-классу (устраняет голый `Decimal` со
+структурной границы по ADR), но **не требует прямой зависимости от конкретного класса**:
+`Pick` берёт только сигнатуру метода `value()`, поэтому `SimplePosition`, реальный
+`Position` entity и тестовые заглушки остаются совместимы без единого изменения — принцип
+структурной типизации сохранён полностью. `getTotalValue` / `getTotalUnrealizedPnL`
+принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
 
 ### 7. `applyCredit()` вместо прямой манипуляции с балансом
 
@@ -286,11 +302,11 @@ Portfolio работает с любым объектом, реализующи�
 ```typescript
 export interface IPosition {
   readonly instrumentId: InstrumentId;
-  readonly quantity: { value(): Decimal };
+  readonly quantity: Pick<Quantity, 'value'>;
   readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: { value(): Decimal };
+  readonly averageEntryPrice: Pick<Price, 'value'>;
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
 }
 ```
 
@@ -298,4 +314,73 @@ export interface IPosition {
 так и оценку стоимости и риска (`quantity`, `side`, `getUnrealizedPnL`).
 `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` напрямую — без промежуточных интерфейсов.
 
-Реальный `Position` entity структурно совместим с `IPosition`.
+Реальный `Position` entity структурно совместим с `IPosition`. `Pick<Quantity, 'value'>`/
+`Pick<Price, 'value'>`/`Pick<SignedQuantity, 'value'>` (Этап 3 плана миграции, было
+`{ value(): Decimal }`) — явные структурные типы, привязанные к реальным VO-классам, без
+номинативной зависимости от них (см. раздел 6 выше).
+
+---
+
+## Lot-based учёт в PortfolioService (Этап 3 плана миграции)
+
+**Portfolio и IPosition сами не изменились ради этого — и это не случайность.** Структурная
+типизация из раздела 6 существовала в коде до Этапа 3 именно для того, чтобы такое
+подключение не потребовало менять сам агрегат. `Position` (lot-based FIFO/LIFO,
+`packages/domain/entities/position`) был построен и полностью протестирован (130 тестов)
+задолго до Этапа 3, но не был подключён ни к одному реальному писателю позиций — единственным
+живым путём оставался блендированный `SimplePosition` (агрегированные `quantity` +
+`averageEntryPrice`, без истории отдельных входов) внутри
+`packages/application/use-cases/src/services/PortfolioService.ts`.
+
+Проверка перед реализацией показала: `Position` **уже** удовлетворяет `IPosition`
+поле-в-поле (`quantity`/`averageEntryPrice` — геттеры на `Quantity`/`Price`, `side`,
+`isClosed()`, `getUnrealizedPnL()` — все той же формы, что и `SimplePosition`). Значит вся
+работа по подключению локализуется в `PortfolioService`, единственном реальном писателе
+позиций в live fill-пути — сам `Portfolio`/`IPosition` не нуждаются в изменении.
+
+### Механизм подключения — `instanceof Position`, не изменение интерфейса
+
+`IPosition` намеренно не выставляет `lots[]` — это деталь конкретной реализации, которую
+структурная типизация скрывает по дизайну. Значит код, имеющий только `IPosition`, не может
+вызвать `.addLots()`/`.close()`. `PortfolioService._applyPositionUpdate` решает это через
+`instanceof Position`:
+
+```typescript
+// Существующая позиция — это либо Position (полная история лотов),
+// либо SimplePosition/структурный мок, оставшийся от reverseFill() или теста.
+if (existing instanceof Position) {
+  // Полная история лотов сохранена — работаем напрямую.
+  position = existing;
+} else {
+  // Graceful reconstruction: строим Position с одним лотом
+  // из известных quantity/averageEntryPrice.
+  position = reconstructFromSingleLot(existing);
+}
+```
+
+Реконструкция — не заглушка на крайний случай, а осознанное поведение: `reverseFill()`
+(откат fill при on-chain FAILED) намеренно остаётся на `SimplePosition`-подобной логике
+в Этапе 3 (редкий путь, уже задокументированная принятая неточность) — значит после отката
+`PortfolioService` может увидеть позицию без истории лотов. Реконструкция с одним
+синтетическим лотом позволяет системе продолжить работу корректно, вместо жёсткого отказа.
+
+### BUY / SELL проводка
+
+- **BUY** — рассчитывает `netFillQty` (объём за вычетом комиссии в токенах, логика не
+  менялась), строит новый `PositionLot` по цене филла и добавляет его через
+  `position.addLots([lot], timestamp)` (или `Position.create(...)`, если позиции ещё нет).
+- **SELL** — закрывает объём через `position.close(quantity, price, 'FIFO', timestamp)`.
+  FIFO выбран как единственный режим (стандартная бухгалтерская конвенция, наименее
+  неожиданное поведение) — явного текущего потребителя, требующего LIFO, не нашлось.
+  Результат `close()` включает `realizedPnL` — реально накопленное число, которого
+  предыдущая (`SimplePosition`-based) реализация не считала вообще.
+
+### Почему `averageEntryPrice` может разойтись со старой моделью — не баг
+
+Blended-pool модель (`SimplePosition`) хранит один пул с единой средней ценой; partial close
+уменьшает `quantity`, но не трогает `averageEntryPrice`. Lot-based модель (FIFO) закрывает
+конкретные лоты в порядке добавления — если закрытые и оставшиеся лоты куплены по разным
+ценам, средняя цена оставшихся лотов после close математически отличается от средней цены
+всех лотов до close. Полный числовой пример (лот 50@0.60 + лот 50@0.70, SELL 30 → blended
+avg остаётся 0.65, FIFO avg становится ≈0.6714) и практические правила валидации —
+в [`docs/architecture/position-accounting.md`](../../../../../docs/architecture/position-accounting.md).

@@ -6,5 +6,6 @@
  */
 
 export { OrderViewModel } from './OrderViewModel.js';
+/** Реэкспорт интерфейса summary-представления Order (см. `OrderViewModel.ts`). */
 export type { OrderSummary } from './OrderViewModel.js';
 export { OrderDeserializer } from './OrderDeserializer.js';

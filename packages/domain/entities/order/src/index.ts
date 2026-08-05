@@ -54,6 +54,7 @@
 export { Order } from './Order.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────
+/** Реэкспорт типов состояния Order (см. `OrderState.ts` — только структуры, ноль логики). */
 export type {
   OrderStatus,
   OrderState,
@@ -65,6 +66,7 @@ export type {
 export { TERMINAL_STATUSES, FILLABLE_STATUSES } from './OrderState.js';
 
 // ─── Domain Events ─────────────────────────────────────────────────────────
+/** Реэкспорт domain-событий Order (см. `OrderEvents.ts` — для `fromEvents()`/replay). */
 export type {
   OrderEvent,
   OrderCreatedEvent,
@@ -78,4 +80,5 @@ export type {
 
 // ─── View Layer ────────────────────────────────────────────────────────────
 export { OrderViewModel, OrderDeserializer } from './view/index.js';
+/** Реэкспорт интерфейса summary-представления Order (см. `view/OrderViewModel.ts`). */
 export type { OrderSummary } from './view/index.js';
