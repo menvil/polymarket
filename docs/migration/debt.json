@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T15:30:57.089Z",
+  "generatedAt": "2026-08-11T16:21:23.331Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -71,7 +71,7 @@
       "undocumentedExports": 0,
       "totalExports": 2,
       "fileCount": 3,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/market-state",
@@ -83,7 +83,7 @@
       "undocumentedExports": 0,
       "totalExports": 44,
       "fileCount": 8,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/orchestrators",
@@ -126,12 +126,12 @@
       "relPath": "packages/application/strategy",
       "rawDecimal": 11,
       "rawNumber": 41,
-      "rawString": 50,
+      "rawString": 49,
       "throwSites": 6,
-      "undocumentedExports": 30,
+      "undocumentedExports": 0,
       "totalExports": 69,
       "fileCount": 15,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/use-cases",

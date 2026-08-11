@@ -62,6 +62,13 @@ import type { StrategySnapshot } from './types/StrategySnapshot.js';
 import type { StrategyIntent, StrategyStopIntent } from './types/StrategyIntent.js';
 import type { TriggerReason } from './types/TriggerReason.js';
 
+/**
+ * Опциональный базовый класс для стратегий с gather → decide → toIntents pipeline.
+ *
+ * @remarks
+ * Подробное описание pipeline, типовых параметров и дефолтного поведения —
+ * см. TSDoc модуля в начале файла.
+ */
 export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
   abstract readonly id: string;
   abstract readonly name: string;

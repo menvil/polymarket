@@ -53,6 +53,7 @@ import type {
 } from '@polymarket/market-state';
 import type { InstrumentConstraints } from './InstrumentConstraints.js';
 
+/** Реэкспорт crypto market data типов из @polymarket/market-state (сквозной pass-through). */
 export type {
   CexBookTick,
   CexTradeTick,
@@ -100,6 +101,16 @@ export interface TradableInstrumentSnapshot {
   readonly hasUnsettledFills: boolean;
 }
 
+/**
+ * Readonly snapshot состояния — передаётся стратегии в `tick()`.
+ *
+ * @remarks
+ * Полное описание принципа сборки и иммутабельности — см. TSDoc модуля в
+ * начале файла. Собирается заново на каждый tick (см. `docs/architecture/
+ * boundary-contract.md`, Решение 10 — это делает даже "холодные" по частоте
+ * данные (например, crypto price timestamps) хот-путными в контексте
+ * конкретно этого снапшота).
+ */
 export interface StrategySnapshot {
   /** ID инструмента (outcome token) */
   readonly instrumentId: InstrumentId;
@@ -235,8 +246,6 @@ export interface StrategySnapshot {
     readonly resolved: boolean;
     /** Chainlink цена (приоритет) или Binance — для обратной совместимости */
     readonly currentPrice: number;
-    /** @deprecated Используй asset */
-    readonly symbol: string;
   } | undefined;
 
   /**

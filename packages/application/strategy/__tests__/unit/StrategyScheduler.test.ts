@@ -62,6 +62,18 @@ function makeMarketDataStore(): IMarketDataStore & { _onChange?: (id: Instrument
   return store;
 }
 
+/** Мок ICryptoMarketDataStore — для тестов crypto-asset routing (CryptoAssetId, Этап 9). */
+function makeCryptoMarketDataStore(): { _onChange?: (asset: string, reason: any) => void } {
+  const store: any = {
+    _onChange: undefined,
+    setOnChange(cb: any) { store._onChange = cb; },
+    getPriceHistory: jest.fn().mockReturnValue(undefined),
+    getVenueState: jest.fn().mockReturnValue(undefined),
+    getVenueHistory: jest.fn().mockReturnValue(undefined),
+  };
+  return store;
+}
+
 const fn = jest.fn as any;
 
 function makeOrderStateStore(): IOrderStateStore {
@@ -984,6 +996,52 @@ describe('StrategyScheduler', () => {
       const reasons = (strategy.tick as any).mock.calls[0][1] as ReadonlySet<TriggerReason>;
       expect(reasons.has('FILL')).toBe(true);
       expect(reasons.has('ORDER_UPDATE')).toBe(true);
+    });
+  });
+
+  // ── Crypto-asset routing (CryptoAssetId, Этап 9) ─────
+
+  describe('crypto-asset routing', () => {
+    it('should tick strategy when its normalized cryptoSymbol asset changes', async () => {
+      const cryptoMarketDataStore = makeCryptoMarketDataStore();
+      const d = makeDeps({ cryptoMarketDataStore: cryptoMarketDataStore as any });
+      const localScheduler = new StrategyScheduler(d.deps);
+      const strategy = makeStrategy('s1');
+      await localScheduler.register(makeRegistration(strategy, { cryptoSymbol: 'BTCUSDT' }));
+      localScheduler.start();
+
+      cryptoMarketDataStore._onChange!('btc', 'CRYPTO_PRICE');
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalled();
+    });
+
+    it('should not tick strategy for a different crypto asset', async () => {
+      const cryptoMarketDataStore = makeCryptoMarketDataStore();
+      const d = makeDeps({ cryptoMarketDataStore: cryptoMarketDataStore as any });
+      const localScheduler = new StrategyScheduler(d.deps);
+      const strategy = makeStrategy('s1');
+      await localScheduler.register(makeRegistration(strategy, { cryptoSymbol: 'BTCUSDT' }));
+      localScheduler.start();
+
+      cryptoMarketDataStore._onChange!('eth', 'CRYPTO_PRICE');
+      await flush();
+
+      expect(strategy.tick).not.toHaveBeenCalled();
+    });
+
+    it('should normalize cryptoSymbol variants (slash/dash/usd-suffix) to the same asset', async () => {
+      const cryptoMarketDataStore = makeCryptoMarketDataStore();
+      const d = makeDeps({ cryptoMarketDataStore: cryptoMarketDataStore as any });
+      const localScheduler = new StrategyScheduler(d.deps);
+      const strategy = makeStrategy('s1');
+      await localScheduler.register(makeRegistration(strategy, { cryptoSymbol: 'BTC/USD' }));
+      localScheduler.start();
+
+      cryptoMarketDataStore._onChange!('btc', 'CRYPTO_MARKET_DATA');
+      await flush();
+
+      expect(strategy.tick).toHaveBeenCalled();
     });
   });
 

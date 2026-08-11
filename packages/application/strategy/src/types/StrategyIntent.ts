@@ -25,6 +25,13 @@
 import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 
+/**
+ * Декларативное намерение стратегии — PLACE, CANCEL или CANCEL_ALL.
+ *
+ * @remarks
+ * Подробное описание нормализации/исполнения — см. TSDoc модуля в начале
+ * файла.
+ */
 export type StrategyIntent =
   | PlaceIntent
   | CancelIntent

@@ -92,8 +92,8 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
-import { assetIdToInstrumentId, assetIdToString, asOrderId } from '@polymarket/ids';
+import type { AccountId, AssetId, InstrumentId, CryptoAssetId } from '@polymarket/ids';
+import { assetIdToInstrumentId, assetIdToString, asOrderId, asCryptoAssetId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
@@ -231,8 +231,19 @@ export interface ICryptoResolutionStore {
   getResolutionPrice(symbolOrAsset: string): number | undefined;
 }
 
+/** Подмножество {@link TriggerReason}, которое несёт `ICryptoMarketDataStore.setOnChange`. */
 export type CryptoMarketDataReason = Extract<TriggerReason, 'CRYPTO_PRICE' | 'CRYPTO_MARKET_DATA'>;
 
+/**
+ * Интерфейс long-lived crypto market data store для StrategyScheduler.
+ *
+ * @remarks
+ * Реализуется `CryptoMarketDataStore` (`@polymarket/market-state`).
+ * `symbolOrAsset` — сырая строка (символ биржи или уже нормализованный asset)
+ * — тот же контракт, что у реального стора; внутри `StrategyScheduler`
+ * нормализованный asset хранится как `CryptoAssetId` (см. `entry.cryptoAsset`),
+ * но на границе вызова в этот интерфейс распаковывается обратно в `string`.
+ */
 export interface ICryptoMarketDataStore {
   getPriceHistory(symbolOrAsset: string): StrategySnapshot['cryptoPriceHistory'];
   getVenueState(symbolOrAsset: string): StrategySnapshot['cryptoVenueState'];
@@ -240,6 +251,14 @@ export interface ICryptoMarketDataStore {
   setOnChange(cb: (asset: string, reason: CryptoMarketDataReason) => void): void;
 }
 
+/**
+ * Интерфейс реестра переиспользуемых crypto signal calculators.
+ *
+ * @remarks
+ * Реализуется `CryptoSignalRegistry` (`@polymarket/market-state`). Один
+ * scheduler-managed `createView()` на снапшот — сама стратегия выбирает,
+ * какой calculator/venues/weights использовать через возвращённый view.
+ */
 export interface ICryptoSignalRegistry {
   createView(context: {
     readonly asset: string;
@@ -298,7 +317,7 @@ interface StrategyEntry {
   /** Символ крипто-актива (e.g. 'btcusdt') — для CryptoPriceStore lookup */
   readonly cryptoSymbol?: string;
   /** Базовый crypto asset (e.g. 'btc') — для долгоживущей истории. */
-  readonly cryptoAsset?: string;
+  readonly cryptoAsset?: CryptoAssetId;
   /** Время начала торговли на рынке (epoch ms) */
   readonly eventStartMs?: number;
   /** Дополнительные инструменты для триггера тика */
@@ -485,6 +504,14 @@ const FAILURE_BACKOFF_BASE_MS = 100;
 
 // ── Реализация ─────────────────────────────────────────────
 
+/**
+ * Ядро reactive scheduling архитектуры — связывает state stores, стратегии и
+ * `ExecutionEngine` в единый event-driven цикл.
+ *
+ * @remarks
+ * Подробное описание алгоритма, lifecycle стратегии (`unregister()`'s 13
+ * шагов) и persistent disposal — см. TSDoc модуля в начале файла.
+ */
 export class StrategyScheduler {
   private readonly _logger: ILogger;
   /** strategyId → накопленные reasons для следующего tick */
@@ -513,7 +540,7 @@ export class StrategyScheduler {
   /** cryptoSymbol → Set<strategyId> */
   private readonly _symbolToStrategies = new Map<string, Set<string>>();
   /** normalized asset → Set<strategyId> */
-  private readonly _assetToStrategies = new Map<string, Set<string>>();
+  private readonly _assetToStrategies = new Map<CryptoAssetId, Set<string>>();
 
   /** Event-driven queue: стратегии ожидающие tick */
   private readonly _queue: string[] = [];
@@ -907,7 +934,8 @@ export class StrategyScheduler {
       market: reg.market,
       config,
       cryptoSymbol: reg.cryptoSymbol,
-      cryptoAsset: reg.cryptoAsset ?? normalizeCryptoAsset(reg.cryptoSymbol),
+      cryptoAsset: (reg.cryptoAsset !== undefined ? asCryptoAssetId(reg.cryptoAsset) : undefined)
+        ?? normalizeCryptoAsset(reg.cryptoSymbol),
       eventStartMs: reg.eventStartMs,
       additionalInstrumentIds: reg.additionalInstrumentIds,
       complementaryInstrumentId: reg.complementaryInstrumentId,
@@ -2511,7 +2539,6 @@ export class StrategyScheduler {
           resolutionPrice,
           resolved: resolutionPrice !== undefined,
           currentPrice: current.price,
-          symbol: entry.cryptoSymbol,
         };
       }
     }
@@ -2742,13 +2769,16 @@ export class StrategyScheduler {
   }
 }
 
-function normalizeCryptoAsset(symbolOrAsset: string | undefined): string | undefined {
+function normalizeCryptoAsset(symbolOrAsset: string | undefined): CryptoAssetId | undefined {
   if (!symbolOrAsset) return undefined;
   const normalized = symbolOrAsset.trim().toLowerCase();
   if (!normalized) return undefined;
-  if (normalized.includes('/')) return normalized.split('/')[0] || undefined;
-  if (normalized.includes('-')) return normalized.split('-')[0] || undefined;
-  return normalized.replace(/usd[tc]?$/i, '') || undefined;
+  const asset = normalized.includes('/')
+    ? normalized.split('/')[0]
+    : normalized.includes('-')
+      ? normalized.split('-')[0]
+      : normalized.replace(/usd[tc]?$/i, '');
+  return asset ? asCryptoAssetId(asset) : undefined;
 }
 
 /** Singleton пустой Set для _getDirtyReasons() — не аллоцируем объект каждый вызов */

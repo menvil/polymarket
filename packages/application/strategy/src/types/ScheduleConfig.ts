@@ -32,6 +32,13 @@ import { KNOWN_TRIGGER_REASONS } from './TriggerReason.js';
 /** Приватный Set для O(1)-проверки — построен один раз из readonly tuple. */
 const KNOWN_TRIGGER_REASON_SET: ReadonlySet<TriggerReason> = new Set<TriggerReason>(KNOWN_TRIGGER_REASONS);
 
+/**
+ * Конфигурация того, как часто `StrategyScheduler` вызывает `tick()`.
+ *
+ * @remarks
+ * Подробное описание throttle/priority/heartbeat-механизма — см. TSDoc модуля
+ * в начале файла.
+ */
 export interface ScheduleConfig {
   /**
    * Минимальный интервал между tick (throttle).

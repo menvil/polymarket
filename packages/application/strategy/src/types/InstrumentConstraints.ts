@@ -25,6 +25,12 @@
  */
 import type { Money, Price, Quantity } from '@polymarket/value-objects';
 
+/**
+ * Ограничения инструмента, передаваемые стратегии в `StrategySnapshot`.
+ *
+ * @remarks
+ * Подробное обоснование ("зачем") — см. TSDoc модуля в начале файла.
+ */
 export interface InstrumentConstraints {
   /** Минимальный размер ордера в токенах */
   readonly minOrderSize: Quantity;

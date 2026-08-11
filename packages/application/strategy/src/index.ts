@@ -44,8 +44,10 @@
  */
 
 // ── Новая архитектура: types ────────────────────────────────
+/** Реэкспорт причины пересчёта тика (см. types/TriggerReason.ts). */
 export type { TriggerReason } from './types/index.js';
 export { KNOWN_TRIGGER_REASONS, placeTarget } from './types/index.js';
+/** Реэкспорт декларативных намерений стратегии (см. types/StrategyIntent.ts). */
 export type {
   StrategyIntent,
   BasePlaceIntent,
@@ -54,8 +56,10 @@ export type {
   CancelAllIntent,
   StrategyStopIntent,
 } from './types/index.js';
+/** Реэкспорт кода ошибки остановки стратегии (см. types/StopStrategyError.ts). */
 export type { StopStrategyErrorCode } from './types/index.js';
 export { StopStrategyError } from './types/index.js';
+/** Реэкспорт типов снапшота/crypto market data (см. types/StrategySnapshot.ts). */
 export type {
   CexBookTick,
   CexTradeTick,
@@ -72,13 +76,17 @@ export type {
   CryptoVenueStateView,
   StrategySnapshot,
 } from './types/index.js';
+/** Реэкспорт ограничений инструмента (см. types/InstrumentConstraints.ts). */
 export type { InstrumentConstraints } from './types/index.js';
+/** Реэкспорт конфигурации расписания (см. types/ScheduleConfig.ts). */
 export type { ScheduleConfig } from './types/index.js';
 export { createDefaultScheduleConfig, validateScheduleConfig } from './types/index.js';
 
 // ── Ports: timers + order ID generation (determinism) ───────
+/** Реэкспорт порта таймера scheduler'а (см. ports/SchedulerTimer.ts). */
 export type { ISchedulerTimer, TimerHandle } from './ports/SchedulerTimer.js';
 export { NodeSchedulerTimer, DeterministicSchedulerTimer } from './ports/SchedulerTimer.js';
+/** Реэкспорт порта генерации Order ID (см. ports/OrderIdGenerator.ts). */
 export type { IOrderIdGenerator } from './ports/OrderIdGenerator.js';
 export {
   UuidOrderIdGenerator,
@@ -88,11 +96,13 @@ export {
 } from './ports/OrderIdGenerator.js';
 
 // ── Новая архитектура: интерфейсы ───────────────────────────
+/** Реэкспорт контракта пользовательской стратегии (см. IStrategy.ts). */
 export type { IStrategy } from './IStrategy.js';
 
 // ── Новая архитектура: реализации ───────────────────────────
 export { BaseStrategy } from './BaseStrategy.js';
 export { ExecutionEngine, LocalIntentRejectionError } from './ExecutionEngine.js';
+/** Реэкспорт зависимостей/контекста/отчёта ExecutionEngine (см. ExecutionEngine.ts). */
 export type {
   ExecutionEngineDeps,
   ExecutionContext,
@@ -104,6 +114,7 @@ export type {
   ITokenBalanceChecker,
 } from './ExecutionEngine.js';
 export { StrategyScheduler } from './StrategyScheduler.js';
+/** Реэкспорт зависимостей/структурных портов StrategyScheduler (см. StrategyScheduler.ts). */
 export type {
   StrategySchedulerDeps,
   StrategyRegistration,
@@ -114,8 +125,10 @@ export type {
   ICryptoSignalRegistry,
 } from './StrategyScheduler.js';
 // IOrderStateStore re-exported from ports for backward compatibility
+/** Реэкспорт IOrderStateStore из @polymarket/ports (обратная совместимость). */
 export type { IOrderStateStore } from '@polymarket/ports';
 
 // ── Интеграция ───────────────────────────────────────────────
 export { OrderEventBridge } from './OrderEventBridge.js';
+/** Реэкспорт зависимостей OrderEventBridge (см. OrderEventBridge.ts). */
 export type { OrderEventBridgeDeps } from './OrderEventBridge.js';

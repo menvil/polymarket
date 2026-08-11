@@ -266,6 +266,14 @@ export class LocalIntentRejectionError extends Error {
 
 // ── Реализация ─────────────────────────────────────────────
 
+/**
+ * Исполняет `StrategyIntent[]` от стратегии: валидация, нормализация, порядок,
+ * ownership-проверка, cancel-replace safety, типизированный отчёт.
+ *
+ * @remarks
+ * Подробное описание всех семи обязанностей и делегации — см. TSDoc модуля в
+ * начале файла.
+ */
 export class ExecutionEngine {
   private readonly _logger: ILogger;
   private _benignPostOnlyRejects = 0;

@@ -68,6 +68,13 @@ export interface OrderEventBridgeDeps {
 
 // ── Реализация ─────────────────────────────────────────────
 
+/**
+ * Мост между Order domain events (EventBus) и `StrategyScheduler`.
+ *
+ * @remarks
+ * Подробное описание маршрутизации событий и правил unreserve — см. TSDoc
+ * модуля в начале файла.
+ */
 export class OrderEventBridge {
   private readonly _logger: ILogger;
   private readonly _unsubs: Array<() => void> = [];
