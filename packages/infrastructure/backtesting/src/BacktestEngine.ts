@@ -1036,7 +1036,7 @@ export class BacktestEngine {
     this._advanceClock(new Date(Number(event.timestamp)));
 
     // price и size точно инициализированы — try/catch выше вернул бы false при ошибке
-    await this._deps.eventBus.publish({
+    await this._deps.eventBus.publishOrThrow({
       type: 'TRADE_RECEIVED',
       instrumentId,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

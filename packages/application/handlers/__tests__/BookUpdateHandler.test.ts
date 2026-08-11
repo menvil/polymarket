@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { Ok } from '@polymarket/result';
 import { BookUpdateHandler } from '../src/BookUpdateHandler.js';
 import type { IBookRegistry } from '../src/IBookRegistry.js';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -83,8 +84,10 @@ describe('BookUpdateHandler', () => {
       deleteMarket: jest.fn<IBookRegistry['deleteMarket']>(),
     };
     eventBus = {
-      publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-      publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+      publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+      publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+      publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+      publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
       subscribe: jest.fn() as IEventBus['subscribe'],
     };
     catalog = {

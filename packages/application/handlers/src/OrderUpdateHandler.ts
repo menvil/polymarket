@@ -27,6 +27,12 @@ import { TimestampService } from '@polymarket/value-objects';
 
 export { type VenueOrderUpdate } from '@polymarket/event-bus';
 
+/**
+ * Тонкий адаптер: принимает `VenueOrderUpdate`, публикует `ORDER_UPDATE_RECEIVED`.
+ *
+ * @remarks
+ * Без доменной логики — см. докблок модуля выше.
+ */
 export class OrderUpdateHandler {
   /**
    * Создаёт тонкий OrderUpdateHandler.
@@ -62,18 +68,17 @@ export class OrderUpdateHandler {
       return;
     }
 
-    try {
-      await this._eventBus.publish({
-        type: 'ORDER_UPDATE_RECEIVED',
-        update,
-        accountId: this._accountId,
-        receivedAt: receivedAtResult.value,
-      });
-    } catch (err) {
+    const result = await this._eventBus.publish({
+      type: 'ORDER_UPDATE_RECEIVED',
+      update,
+      accountId: this._accountId,
+      receivedAt: receivedAtResult.value,
+    });
+    if (!result.ok) {
       this._logger.error('Failed to publish ORDER_UPDATE_RECEIVED', {
         orderId: String(update.orderId),
         updateType: update.type,
-        err: err instanceof Error ? err : new Error(String(err)),
+        error: result.error.message,
       });
     }
   }

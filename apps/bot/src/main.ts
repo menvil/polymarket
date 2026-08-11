@@ -609,7 +609,7 @@ async function runPaper(): Promise<void> {
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
-      await eventBus.publish({
+      await eventBus.publishOrThrow({
         type: 'TRADE_RECEIVED',
         instrumentId: tradeInstrumentId,
         price: Price.of(new Decimal(dto.price)),
@@ -4527,7 +4527,7 @@ async function runLive(): Promise<void> {
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
-      await eventBus.publish({
+      await eventBus.publishOrThrow({
         type: 'TRADE_RECEIVED',
         instrumentId: tradeInstrumentId,
         price: Price.of(new Decimal(dto.price)),

@@ -234,7 +234,7 @@ describe('TradingFlow (integration)', () => {
     ledgerService = new LedgerService(LOGGER);
     // Единый ordered outbox (Place↔Fill per-order FIFO), публикует в реальный EventBus.
     orderedEventOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+      publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
       logger: LOGGER,
     });
     orderSubmissionRepo = new InMemoryOrderSubmissionRepository();
@@ -577,7 +577,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     portfolioService = new PortfolioService(realPortfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
     orderedEventOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+      publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
       logger: LOGGER,
     });
     orderSubmissionRepo = new InMemoryOrderSubmissionRepository();

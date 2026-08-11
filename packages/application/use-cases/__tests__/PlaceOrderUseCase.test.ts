@@ -51,8 +51,10 @@ function makeClock(date = new Date('2024-01-01T00:00:00.000Z')): IClock {
 
 function makeEventBus(): IEventBus {
   return {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }
@@ -72,7 +74,10 @@ function makeOutbox(
   reconciliationIssues?: IReconciliationIssueRepository,
 ): InMemoryOrderedEventOutbox {
   return new InMemoryOrderedEventOutbox({
-    publish: (events) => bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+    publish: async (events) => {
+      const result = await bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+      if (!result.ok) throw result.error;
+    },
     logger: makeLogger(),
     reconciliationIssues,
   });
@@ -723,7 +728,10 @@ describe('PlaceOrderUseCase', () => {
     const outboxLogger = makeLogger();
     const reconciliationIssues = makeReconciliationIssueRepo();
     const failingOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => failingBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+      publish: async (events) => {
+        const result = await failingBus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+        if (!result.ok) throw result.error;
+      },
       logger: outboxLogger,
       reconciliationIssues,
     });
@@ -1145,8 +1153,10 @@ describe('PlaceOrderUseCase', () => {
       };
       // publishAll теперь вызывается outbox'ом на flush() ПОСЛЕ выхода из lock.
       const eventBusSpy: IEventBus = {
-        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-        publishAll: jest.fn(async () => { callOrder.push('publishAll'); }) as unknown as IEventBus['publishAll'],
+        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+        publishAll: jest.fn(async () => { callOrder.push('publishAll'); return Ok(undefined); }) as unknown as IEventBus['publishAll'],
+        publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+        publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
         subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
       };
       const useCase = new PlaceOrderUseCase({
@@ -1464,8 +1474,10 @@ describe('PlaceOrderUseCase', () => {
         markOrderFillMatched: jest.fn(() => { callOrder.push('markOrderFillMatched'); }),
       } as unknown as IOrderStateStore;
       const eventBusSpy: IEventBus = {
-        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-        publishAll: jest.fn(async () => { callOrder.push('publishAll'); }) as unknown as IEventBus['publishAll'],
+        publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+        publishAll: jest.fn(async () => { callOrder.push('publishAll'); return Ok(undefined); }) as unknown as IEventBus['publishAll'],
+        publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+        publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
         subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
       };
       const exchangeClient: IExchangeClient = {

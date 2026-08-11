@@ -23,5 +23,7 @@
 export { BookUpdateHandler } from './BookUpdateHandler.js';
 export { FillEventHandler } from './FillEventHandler.js';
 export { OrderUpdateHandler } from './OrderUpdateHandler.js';
+/** Реэкспорт типа venue-обновления (см. OrderUpdateHandler.ts). */
 export type { VenueOrderUpdate } from './OrderUpdateHandler.js';
+/** Реэкспорт порта реестра стаканов (см. IBookRegistry.ts). */
 export type { IBookRegistry } from './IBookRegistry.js';

@@ -1,4 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { Ok, Err } from '@polymarket/result';
+import { QueueOverflowError } from '@polymarket/errors/event-bus';
 import { OrderUpdateHandler } from '../src/OrderUpdateHandler.js';
 import type { VenueOrderUpdate } from '../src/OrderUpdateHandler.js';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -22,8 +24,10 @@ function makeLogger(): ILogger {
 
 function makeEventBus(): IEventBus {
   return {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }
@@ -80,14 +84,16 @@ describe('OrderUpdateHandler (thin adapter)', () => {
     expect(published['receivedAt']).toBeDefined();
   });
 
-  it('eventBus.publish выбрасывает → error логируется, не выбрасывает', async () => {
-    (eventBus.publish as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('bus down'));
+  it('eventBus.publish возвращает Err → error логируется, не выбрасывает', async () => {
+    (eventBus.publish as ReturnType<typeof jest.fn>).mockResolvedValue(
+      Err(new QueueOverflowError('bus down')),
+    );
     const update: VenueOrderUpdate = { type: 'REJECTED', orderId: ORDER_ID, reason: 'bad price' };
 
     await expect(handler.handle(update)).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to publish ORDER_UPDATE_RECEIVED',
-      expect.objectContaining({ orderId: String(ORDER_ID) }),
+      expect.objectContaining({ orderId: String(ORDER_ID), error: 'bus down' }),
     );
   });
 });

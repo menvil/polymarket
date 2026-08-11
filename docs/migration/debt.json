@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T12:02:05.699Z",
+  "generatedAt": "2026-08-11T13:24:17.056Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -43,11 +43,11 @@
       "rawDecimal": 0,
       "rawNumber": 4,
       "rawString": 2,
-      "throwSites": 6,
-      "undocumentedExports": 13,
+      "throwSites": 9,
+      "undocumentedExports": 0,
       "totalExports": 32,
       "fileCount": 9,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/handlers",
@@ -56,10 +56,10 @@
       "rawNumber": 0,
       "rawString": 3,
       "throwSites": 0,
-      "undocumentedExports": 6,
+      "undocumentedExports": 0,
       "totalExports": 6,
       "fileCount": 5,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/market-discovery",
@@ -92,7 +92,7 @@
       "rawNumber": 0,
       "rawString": 0,
       "throwSites": 0,
-      "undocumentedExports": 2,
+      "undocumentedExports": 0,
       "totalExports": 7,
       "fileCount": 3,
       "hasDocs": true
@@ -297,8 +297,8 @@
       "rawString": 32,
       "throwSites": 98,
       "undocumentedExports": 7,
-      "totalExports": 58,
-      "fileCount": 45,
+      "totalExports": 59,
+      "fileCount": 46,
       "hasDocs": true
     },
     {
@@ -451,7 +451,7 @@
       "rawDecimal": 2,
       "rawNumber": 171,
       "rawString": 421,
-      "throwSites": 69,
+      "throwSites": 70,
       "undocumentedExports": 22,
       "totalExports": 178,
       "fileCount": 75,

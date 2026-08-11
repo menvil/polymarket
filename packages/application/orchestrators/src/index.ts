@@ -23,7 +23,9 @@
  * ```
  */
 export { FillOrchestrator } from './FillOrchestrator.js';
+/** Реэкспорт зависимостей {@link FillOrchestrator} (см. FillOrchestrator.ts). */
 export type { FillOrchestratorDeps } from './FillOrchestrator.js';
 
 export { OrderUpdateOrchestrator } from './OrderUpdateOrchestrator.js';
+/** Реэкспорт зависимостей {@link OrderUpdateOrchestrator} (см. OrderUpdateOrchestrator.ts). */
 export type { OrderUpdateOrchestratorDeps } from './OrderUpdateOrchestrator.js';

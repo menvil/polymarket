@@ -11,6 +11,7 @@
  * - Обработку граничных случаев (пустая директория, невалидный JSON, невалидный asset_id)
  */
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { Ok } from '@polymarket/result';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -79,8 +80,10 @@ function makeDeps(logger: ILogger): {
   };
 
   const eventBusMock: IEventBus = {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn() as IEventBus['subscribe'],
   };
 

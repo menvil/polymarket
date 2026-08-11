@@ -66,15 +66,20 @@ function makeLogger(): ILogger {
 
 function makeEventBus(): IEventBus {
   return {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }
 
 function makeOutbox(bus: IEventBus): IOrderedEventOutbox {
   return new InMemoryOrderedEventOutbox({
-    publish: (events) => bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]),
+    publish: async (events) => {
+      const result = await bus.publishAll(events as Parameters<IEventBus['publishAll']>[0]);
+      if (!result.ok) throw result.error;
+    },
     logger: makeLogger(),
   });
 }

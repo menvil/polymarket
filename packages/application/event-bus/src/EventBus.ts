@@ -11,9 +11,11 @@
  * Гарантия: publishAll([A,B]) → handler(A) вызывает publish(C) → порядок A→B→C.
  *
  * #### 2. Critical handlers
- * subscribe(type, handler, { critical: true }) — ошибки пробрасываются.
+ * subscribe(type, handler, { critical: true }) — ошибки возвращаются как
+ * Err(CriticalHandlerError) из publish()/publishAll() (бросаются из
+ * publishOrThrow()/publishAllOrThrow()).
  * Non-critical (по умолчанию) — ошибки логируются, не останавливают других.
- * Critical ошибка: drain прерывается, ошибка пробрасывается caller'у.
+ * Critical ошибка: drain прерывается, ошибка возвращается/пробрасывается caller'у.
  * Очередь НЕ очищается — события легитимны, следующий publish() возобновит drain.
  * Bus остаётся работоспособным. Caller решает: перезапустить, остановить систему, alerting.
  *
@@ -24,11 +26,12 @@
  * #### 4. Infinite loop guard
  * maxEventsPerDrain ограничивает количество событий за один drain цикл.
  * Защищает от handler(A)→publish(B)→handler(B)→publish(A) петель.
- * При превышении: throw + очистка очереди (события — артефакт бага, не легитимные данные).
+ * При превышении: Err(QueueOverflowError) + очистка очереди (события — артефакт бага,
+ * не легитимные данные).
  *
  * #### 5. Queue overflow guard
  * maxQueueSize ограничивает размер очереди.
- * publish()/publishAll() бросают ошибку если лимит превышен.
+ * publish()/publishAll() возвращают Err(QueueOverflowError) если лимит превышен.
  * Защищает от OOM при медленном drain и высокочастотных событиях.
  *
  * #### Осознанные trade-offs:
@@ -39,6 +42,9 @@
  *   завершаться или обрабатывать собственный timeout.
  */
 import type { ILogger } from '@polymarket/logger';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import type { ApplicationEvent } from './events/index.js';
 import type { IEventBus, EventHandler } from './IEventBus.js';
 
@@ -69,7 +75,8 @@ type HandlerEntry = {
  * // Critical — drain прерывается, bus остаётся работоспособным:
  * bus.subscribe('RISK_LIMIT_BREACHED', riskHandler, { critical: true });
  *
- * await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
+ * const result = await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
+ * if (!result.ok) logger.error('Publish failed', { error: result.error.message });
  * ```
  */
 export class EventBus implements IEventBus {
@@ -85,9 +92,10 @@ export class EventBus implements IEventBus {
    *
    * @param logger - Logger для диагностики
    * @param maxEventsPerDrain - Лимит событий за один drain цикл (защита от infinite loops).
-   *   По умолчанию 10 000. При превышении: throw + очистка очереди.
+   *   По умолчанию 10 000. При превышении: Err(QueueOverflowError) + очистка очереди.
    * @param maxQueueSize - Максимальный размер очереди (защита от OOM).
-   *   По умолчанию 100 000. publish()/publishAll() бросают если лимит превышен.
+   *   По умолчанию 100 000. publish()/publishAll() возвращают Err(QueueOverflowError)
+   *   если лимит превышен.
    */
   constructor(logger: ILogger, maxEventsPerDrain = 10_000, maxQueueSize = 100_000) {
     this._logger = logger.child({ component: 'EventBus' });
@@ -130,8 +138,9 @@ export class EventBus implements IEventBus {
    * @returns Функция отписки. При отписке последнего handler'а — удаляет entry из Map.
    *
    * @remarks
-   * critical=true: ошибка handler пробрасывается, drain прерывается.
-   * Используется для RISK-событий, нарушение которых требует немедленной реакции caller'а.
+   * critical=true: ошибка handler возвращается как Err(CriticalHandlerError), drain
+   * прерывается. Используется для RISK-событий, нарушение которых требует немедленной
+   * реакции caller'а.
    */
   public subscribe<K extends ApplicationEvent['type']>(
     type: K,
@@ -160,51 +169,106 @@ export class EventBus implements IEventBus {
    * Публикует событие: помещает в очередь и запускает drain если не запущен.
    *
    * @param event - ApplicationEvent для публикации
-   * @throws - Если очередь переполнена (maxQueueSize) или critical handler выбросил исключение
+   * @returns `Ok(void)`, либо `Err(QueueOverflowError)` при переполнении очереди/лимита
+   *   drain-цикла, либо `Err(CriticalHandlerError)` если critical-подписчик бросил
    *
    * @remarks
    * Reentrant-safe: если вызывается изнутри handler — событие ставится в очередь,
    * обрабатывается после текущего события, до следующего в publishAll.
+   *
+   * `_drainQueue()`/`_dispatch()` остаются throw-based внутри (private, не пересекают
+   * публичную границу) — `try/catch` здесь конвертирует в `Result`: `QueueOverflowError`
+   * пробрасывается как есть (её уже сконструировал `_drainQueue()` для drain-limit),
+   * что угодно ещё (raw throw из critical-подписчика через `_dispatch()`) оборачивается
+   * в `CriticalHandlerError`.
    */
-  public async publish(event: ApplicationEvent): Promise<void> {
+  public async publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     if (this._queue.length + 1 > this._maxQueueSize) {
-      throw new Error(
+      return Err(new QueueOverflowError(
         `EventBus queue overflow (${this._maxQueueSize}): cannot enqueue ${event.type}`,
-      );
+        { context: { maxQueueSize: this._maxQueueSize, eventType: event.type } },
+      ));
     }
     this._queue.push(event);
-    if (this._dispatching) return;
-    await this._drainQueue();
+    if (this._dispatching) return Ok(undefined);
+    return this._drainAndConvert();
   }
 
   /**
    * Публикует список событий: помещает все в очередь синхронно, запускает drain.
    *
    * @param events - Список событий для последовательной публикации
-   * @throws - Если очередь переполнена (maxQueueSize) или critical handler выбросил исключение
+   * @returns См. {@link EventBus.publish}
    *
    * @remarks
    * Гарантирует порядок: publishAll([A,B]) → handler(A) публикует C → порядок A→B→C.
    * Все события проверяются на overflow и добавляются в очередь в одном синхронном цикле
    * до запуска drain — interleave с другими событиями невозможен.
    */
-  public async publishAll(events: readonly ApplicationEvent[]): Promise<void> {
+  public async publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     if (this._queue.length + events.length > this._maxQueueSize) {
-      throw new Error(
+      return Err(new QueueOverflowError(
         `EventBus queue overflow (${this._maxQueueSize}): cannot enqueue ${events.length} events`,
-      );
+        { context: { maxQueueSize: this._maxQueueSize, eventCount: events.length } },
+      ));
     }
     for (const event of events) {
       this._queue.push(event);
     }
-    if (this._dispatching) return;
-    await this._drainQueue();
+    if (this._dispatching) return Ok(undefined);
+    return this._drainAndConvert();
+  }
+
+  /**
+   * Публикует событие; бросает вместо возврата `Err` (deprecation-мост, см. {@link IEventBus.publishOrThrow}).
+   *
+   * @param event - ApplicationEvent для публикации
+   * @throws {QueueOverflowError | CriticalHandlerError} См. `publish()`
+   */
+  public async publishOrThrow(event: ApplicationEvent): Promise<void> {
+    const result = await this.publish(event);
+    if (!result.ok) throw result.error;
+  }
+
+  /**
+   * Публикует список событий; бросает вместо возврата `Err` (deprecation-мост, см. {@link IEventBus.publishAllOrThrow}).
+   *
+   * @param events - Список событий для последовательной публикации
+   * @throws {QueueOverflowError | CriticalHandlerError} См. `publishAll()`
+   */
+  public async publishAllOrThrow(events: readonly ApplicationEvent[]): Promise<void> {
+    const result = await this.publishAll(events);
+    if (!result.ok) throw result.error;
+  }
+
+  /**
+   * Запускает `_drainQueue()` и конвертирует её throw-based исход в `Result`.
+   *
+   * @returns `Ok(void)` при успешном опустошении очереди; `Err(QueueOverflowError)` если
+   *   `_drainQueue()` бросила именно её (drain-limit); `Err(CriticalHandlerError)` для
+   *   любого другого брошенного значения (raw throw critical-подписчика)
+   */
+  private async _drainAndConvert(): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
+    try {
+      await this._drainQueue();
+      return Ok(undefined);
+    } catch (err) {
+      if (err instanceof QueueOverflowError) return Err(err);
+      return Err(new CriticalHandlerError(
+        'EventBus critical handler threw during dispatch',
+        { context: { originalError: err } },
+      ));
+    }
   }
 
   /**
    * Последовательно обрабатывает события из очереди до опустошения или лимита.
    *
-   * @throws - При critical ошибке handler'а или превышении maxEventsPerDrain.
+   * @throws {QueueOverflowError} При превышении maxEventsPerDrain (перехватывается и
+   *   конвертируется в `Err` на границе `publish()`/`publishAll()` — см.
+   *   `_drainAndConvert()`, этот метод остаётся throw-based как внутренняя деталь).
+   * @throws При critical ошибке handler'а — пробрасывается сырое значение из `_dispatch()`
+   *   (тоже перехватывается и конвертируется в `Err(CriticalHandlerError)` на границе).
    *
    * @remarks
    * ### Политика очистки очереди при ошибке:
@@ -227,9 +291,10 @@ export class EventBus implements IEventBus {
 
         if (processed >= this._maxEventsPerDrain) {
           drainLimitExceeded = true;
-          drainError = new Error(
+          drainError = new QueueOverflowError(
             `EventBus drain limit exceeded (${this._maxEventsPerDrain}): possible infinite event loop. ` +
               `Remaining events dropped.`,
+            { context: { maxEventsPerDrain: this._maxEventsPerDrain } },
           );
           break;
         }

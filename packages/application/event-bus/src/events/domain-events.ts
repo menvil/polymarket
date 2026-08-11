@@ -34,25 +34,6 @@ export interface FillReceivedEvent {
 }
 
 /**
- * Fill окончательно упал (WsFillStatus: FAILED).
- *
- * @remarks
- * Публикуется FillEventHandler при получении fill со статусом FAILED.
- * Требует reconciliation: ранее записанный fill нужно откатить или пометить как failed.
- * RiskOrchestrator и RecoveryService подписываются на это событие.
- *
- * @example
- * ```typescript
- * eventBus.subscribe('FILL_FAILED', async (event) => {
- *   logger.error('Fill failed, triggering reconciliation', {
- *     fillId: event.fillId,
- *     orderId: event.orderId,
- *   });
- *   await reconciliationService.handleFailedFill(event.fillId);
- * });
- * ```
- */
-/**
  * Fill подтверждён on-chain (WsFillStatus: CONFIRMED) после обработки при MATCHED.
  *
  * @remarks
@@ -72,6 +53,25 @@ export interface FillConfirmedEvent {
   readonly receivedAt: Timestamp;
 }
 
+/**
+ * Fill окончательно упал (WsFillStatus: FAILED).
+ *
+ * @remarks
+ * Публикуется FillEventHandler при получении fill со статусом FAILED.
+ * Требует reconciliation: ранее записанный fill нужно откатить или пометить как failed.
+ * RiskOrchestrator и RecoveryService подписываются на это событие.
+ *
+ * @example
+ * ```typescript
+ * eventBus.subscribe('FILL_FAILED', async (event) => {
+ *   logger.error('Fill failed, triggering reconciliation', {
+ *     fillId: event.fillId,
+ *     orderId: event.orderId,
+ *   });
+ *   await reconciliationService.handleFailedFill(event.fillId);
+ * });
+ * ```
+ */
 export interface FillFailedEvent {
   readonly type: 'FILL_FAILED';
   /** ID fail-события (совпадает с WsUserFillDto.id для трассировки) */

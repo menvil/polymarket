@@ -130,7 +130,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
   // Единый ordered event outbox: публикует Order-события ПОСЛЕ выхода из keyed
   // mutex (без deadlock) и сохраняет per-order FIFO порядок Place↔Fill.
   const orderedEventOutbox = new InMemoryOrderedEventOutbox({
-    publish: (events) => eventBus.publishAll(events as Parameters<typeof eventBus.publishAll>[0]),
+    publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
     logger,
     reconciliationIssues: reconciliationIssueRepo,
     now: () => clock.now(),

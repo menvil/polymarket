@@ -6,8 +6,9 @@
  *
  * @example
  * ```typescript
- * import { QueueOverflowError } from '@polymarket/errors/event-bus';
+ * import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
  * ```
  */
 
 export { QueueOverflowError } from './QueueOverflowError.js';
+export { CriticalHandlerError } from './CriticalHandlerError.js';

@@ -734,7 +734,7 @@ export class MarketRotation {
     // MARKET_CLOSED event
     const closeTimestamp = TimestampService.create(Date.now());
     if (closeTimestamp.ok) {
-      await eventBus.publish({
+      await eventBus.publishOrThrow({
         type: 'MARKET_CLOSED',
         marketId: slot.marketId,
         reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',

@@ -30,8 +30,10 @@ function makeEventBus(): IEventBus & {
   let fillFailedHandler: ((event: FillFailedEvent) => Promise<void>) | undefined;
 
   const bus = {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockImplementation(
       (type: string, handler: (event: any) => Promise<void>) => {
         if (type === 'FILL_RECEIVED') {

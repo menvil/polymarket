@@ -37,6 +37,13 @@ import type { TopOfBook } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { IBookRegistry } from './IBookRegistry.js';
 
+/**
+ * Обработчик снапшотов стакана — применяет к реестру, публикует BOOK_UPDATED/BOOK_DEPTH.
+ *
+ * @remarks
+ * Полное поведение (staleness detection, reconnect) и пример использования —
+ * см. докблок модуля выше.
+ */
 export class BookUpdateHandler {
   /** Последний timestamp снапшота per tokenId — для staleness detection */
   private readonly _lastTimestamps = new Map<string, Timestamp>();
@@ -138,7 +145,7 @@ export class BookUpdateHandler {
       bestAskSize: bestAskLevel?.size,
     };
 
-    await this._eventBus.publish({
+    const bookUpdatedResult = await this._eventBus.publish({
       type: 'BOOK_UPDATED',
       topOfBook,
       instrumentId: tokenId,
@@ -146,13 +153,25 @@ export class BookUpdateHandler {
       sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
       timestamp,
     });
+    if (!bookUpdatedResult.ok) {
+      this._logger.error('Failed to publish BOOK_UPDATED', {
+        tokenId: String(tokenId),
+        error: bookUpdatedResult.error.message,
+      });
+    }
 
-    await this._eventBus.publish({
+    const bookDepthResult = await this._eventBus.publish({
       type: 'BOOK_DEPTH',
       instrumentId: tokenId,
       snapshot: book.toSnapshot(),
       timestamp,
     });
+    if (!bookDepthResult.ok) {
+      this._logger.error('Failed to publish BOOK_DEPTH', {
+        tokenId: String(tokenId),
+        error: bookDepthResult.error.message,
+      });
+    }
   }
 
   /**

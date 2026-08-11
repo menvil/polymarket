@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { Ok } from '@polymarket/result';
 import { FillEventHandler } from '../src/FillEventHandler.js';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IClock } from '@polymarket/time';
@@ -22,8 +23,10 @@ function makeLogger(): ILogger {
 
 function makeEventBus(): IEventBus {
   return {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn() as IEventBus['subscribe'],
   };
 }

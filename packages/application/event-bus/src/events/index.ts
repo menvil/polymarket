@@ -11,21 +11,33 @@
  * - Никакой другой пакет не определяет application-level события
  */
 export type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
+/** Реэкспорт типов событий стакана/тейпа (см. market-events.ts). */
 export type {
   TopOfBook,
   BookUpdatedEvent,
   BookDepthEvent,
   TradeReceivedEvent,
 } from './market-events.js';
+/** Реэкспорт типов сигналов стратегии (см. strategy-events.ts). */
 export type { SignalDirection, StrategySignalEvent } from './strategy-events.js';
+/** Реэкспорт типов lifecycle-событий рынка (см. market-lifecycle-events.ts). */
 export type {
   MarketOpenedEvent,
   MarketClosedEvent,
   MarketCloseReason,
 } from './market-lifecycle-events.js';
+/** Реэкспорт типов venue-обновлений ордера (см. order-update-events.ts). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './order-update-events.js';
 // Re-export Order domain events (из @polymarket/order)
+/** Реэкспорт доменных событий Order (см. @polymarket/order). */
 export type { OrderEvent } from '@polymarket/order';
+
+import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
+import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
+import type { StrategySignalEvent } from './strategy-events.js';
+import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle-events.js';
+import type { OrderUpdateReceivedEvent } from './order-update-events.js';
+import type { OrderEvent } from '@polymarket/order';
 
 /**
  * Полный union всех application-level событий в системе.
@@ -44,15 +56,7 @@ export type { OrderEvent } from '@polymarket/order';
  * Lifecycle события:
  * - MARKET_OPENED — рынок открыт, аллоцирован баланс, запустить стратегию
  * - MARKET_CLOSED — рынок закрыт, баланс освобождён, остановить стратегию
- *
  */
-import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './domain-events.js';
-import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './market-events.js';
-import type { StrategySignalEvent } from './strategy-events.js';
-import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle-events.js';
-import type { OrderUpdateReceivedEvent } from './order-update-events.js';
-import type { OrderEvent } from '@polymarket/order';
-
 export type ApplicationEvent =
   | FillReceivedEvent
   | FillConfirmedEvent

@@ -58,8 +58,10 @@ function makeLogger(): ILogger {
 function makeInfra(): CoreInfra {
   const clock: IClock = { now: () => new Date(FIXED_NOW.getTime()) };
   const eventBus: IEventBus = {
-    publish: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publish'],
-    publishAll: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publishAll'],
+    publish: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publish'],
+    publishAll: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publishAll'],
+    publishOrThrow: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publishOrThrow'],
+    publishAllOrThrow: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publishAllOrThrow'],
     subscribe: jest.fn().mockReturnValue(() => {}) as unknown as IEventBus['subscribe'],
   };
   return { clock, logger: makeLogger(), eventBus };

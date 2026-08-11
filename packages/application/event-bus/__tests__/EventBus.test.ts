@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { ILogger } from '@polymarket/logger';
+import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import { EventBus } from '../src/EventBus.js';
 import type { ApplicationEvent } from '../src/events/index.js';
 import type { BookUpdatedEvent } from '../src/events/market-events.js';
@@ -126,7 +127,8 @@ describe('EventBus', () => {
   });
 
   it('не вызывает handlers если подписчиков нет', async () => {
-    await expect(bus.publish(makeBookEvent())).resolves.toBeUndefined();
+    const result = await bus.publish(makeBookEvent());
+    expect(result).toEqual({ ok: true, value: undefined });
   });
 
   it('reentrancy: publishAll([A,B]) → handler(A) публикует C → порядок A→B→C', async () => {
@@ -143,17 +145,22 @@ describe('EventBus', () => {
     expect(order).toEqual([1, 2, 3]);
   });
 
-  it('critical handler: ошибка пробрасывается из publish()', async () => {
+  it('critical handler: ошибка возвращается как Err(CriticalHandlerError) из publish()', async () => {
     bus.subscribe(
       'BOOK_UPDATED',
       async () => { throw new Error('critical boom'); },
       { critical: true },
     );
 
-    await expect(bus.publish(makeBookEvent())).rejects.toThrow('critical boom');
+    const result = await bus.publish(makeBookEvent());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(CriticalHandlerError);
+      expect((result.error.context?.originalError as Error).message).toBe('critical boom');
+    }
   });
 
-  it('critical handler: все handlers запускаются до пробрасывания ошибки', async () => {
+  it('critical handler: все handlers запускаются до возврата ошибки', async () => {
     let secondCalled = false;
     bus.subscribe(
       'BOOK_UPDATED',
@@ -162,7 +169,9 @@ describe('EventBus', () => {
     );
     bus.subscribe('BOOK_UPDATED', async () => { secondCalled = true; });
 
-    await expect(bus.publish(makeBookEvent())).rejects.toThrow('critical');
+    const result = await bus.publish(makeBookEvent());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBeInstanceOf(CriticalHandlerError);
     expect(secondCalled).toBe(true);
   });
 
@@ -174,16 +183,16 @@ describe('EventBus', () => {
     }, { critical: true });
 
     // seq=2 остаётся в очереди после critical failure на seq=1
-    await expect(
-      bus.publishAll([makeBookEvent(1), makeBookEvent(2)])
-    ).rejects.toThrow('critical');
+    const result = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBeInstanceOf(CriticalHandlerError);
 
     // следующий publish возобновляет drain: обрабатывает seq=2, потом seq=3
     await bus.publish(makeBookEvent(3));
     expect(processed).toEqual([2, 3]);
   });
 
-  it('drain limit: бесконечный event loop бросает ошибку и очищает очередь', async () => {
+  it('drain limit: бесконечный event loop возвращает Err(QueueOverflowError) и очищает очередь', async () => {
     const limitedBus = new EventBus(logger, 5);
     let count = 0;
     limitedBus.subscribe('BOOK_UPDATED', async (event) => {
@@ -191,11 +200,16 @@ describe('EventBus', () => {
       await limitedBus.publish(makeBookEvent(event.sequenceNumber + 1));
     });
 
-    await expect(limitedBus.publish(makeBookEvent(1))).rejects.toThrow('drain limit exceeded');
+    const result = await limitedBus.publish(makeBookEvent(1));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(QueueOverflowError);
+      expect(result.error.message).toContain('drain limit exceeded');
+    }
     expect(count).toBe(5);
   });
 
-  it('queue overflow: publish бросает если очередь переполнена', async () => {
+  it('queue overflow: publish возвращает Err(QueueOverflowError) если очередь переполнена', async () => {
     const tinyBus = new EventBus(logger, 10_000, 2);
 
     // handler зависает, чтобы очередь не опустошалась
@@ -211,7 +225,12 @@ describe('EventBus', () => {
     await tinyBus.publish(makeBookEvent(3)); // reentrant push, queue=[2,3]
 
     // четвёртый — переполнение
-    await expect(tinyBus.publish(makeBookEvent(4))).rejects.toThrow('queue overflow');
+    const result = await tinyBus.publish(makeBookEvent(4));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(QueueOverflowError);
+      expect(result.error.message).toContain('queue overflow');
+    }
 
     resolveBlock();
     await first;
@@ -254,15 +273,18 @@ describe('EventBus', () => {
     expect(order).toEqual([1, 2, 10, 11]);
   });
 
-  it('queue overflow: publishAll бросает если batch превышает лимит', async () => {
+  it('queue overflow: publishAll возвращает Err(QueueOverflowError) если batch превышает лимит', async () => {
     const tinyBus = new EventBus(logger, 10_000, 2);
 
-    await expect(
-      tinyBus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)])
-    ).rejects.toThrow('queue overflow');
+    const result = await tinyBus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(QueueOverflowError);
+      expect(result.error.message).toContain('queue overflow');
+    }
   });
 
-  it('два critical handler-а оба падают: первая ошибка пробрасывается, вторая логируется', async () => {
+  it('два critical handler-а оба падают: первая ошибка возвращается, вторая логируется', async () => {
     bus.subscribe(
       'BOOK_UPDATED',
       async () => { throw new Error('first critical'); },
@@ -274,20 +296,53 @@ describe('EventBus', () => {
       { critical: true },
     );
 
-    await expect(bus.publish(makeBookEvent())).rejects.toThrow('first critical');
+    const result = await bus.publish(makeBookEvent());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(CriticalHandlerError);
+      expect((result.error.context?.originalError as Error).message).toBe('first critical');
+    }
     expect(logger.error).toHaveBeenCalledWith(
       'EventBus critical handler threw an additional error',
       expect.objectContaining({ eventType: 'BOOK_UPDATED' }),
     );
   });
 
-  it('publishAll([]) резолвится без побочных эффектов', async () => {
+  it('publishAll([]) резолвится Ok без побочных эффектов', async () => {
     let handlerCalled = false;
     bus.subscribe('BOOK_UPDATED', async () => { handlerCalled = true; });
 
-    await expect(bus.publishAll([])).resolves.toBeUndefined();
+    const result = await bus.publishAll([]);
+    expect(result).toEqual({ ok: true, value: undefined });
     expect(handlerCalled).toBe(false);
     expect(bus.getStats().dispatching).toBe(false);
+  });
+
+  it('publishOrThrow: резолвится молча при Ok', async () => {
+    let handlerCalled = false;
+    bus.subscribe('BOOK_UPDATED', async () => { handlerCalled = true; });
+
+    await expect(bus.publishOrThrow(makeBookEvent())).resolves.toBeUndefined();
+    expect(handlerCalled).toBe(true);
+  });
+
+  it('publishOrThrow: бросает тот же объект ошибки, что publish() вернул бы в Err', async () => {
+    const tinyBus = new EventBus(logger, 10_000, 0);
+
+    await expect(tinyBus.publishOrThrow(makeBookEvent())).rejects.toBeInstanceOf(QueueOverflowError);
+  });
+
+  it('publishAllOrThrow: резолвится молча при Ok, бросает QueueOverflowError при overflow', async () => {
+    const order: number[] = [];
+    bus.subscribe('BOOK_UPDATED', async (event) => { order.push(event.sequenceNumber); });
+
+    await expect(bus.publishAllOrThrow([makeBookEvent(1), makeBookEvent(2)])).resolves.toBeUndefined();
+    expect(order).toEqual([1, 2]);
+
+    const tinyBus = new EventBus(logger, 10_000, 1);
+    await expect(
+      tinyBus.publishAllOrThrow([makeBookEvent(1), makeBookEvent(2)]),
+    ).rejects.toBeInstanceOf(QueueOverflowError);
   });
 
   it('subscribe с explicit critical:false ведёт себя как non-critical (ошибка логируется)', async () => {

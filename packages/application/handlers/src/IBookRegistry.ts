@@ -12,6 +12,12 @@
 import type { OrderBook } from '@polymarket/order-book';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
 
+/**
+ * Порт реестра стаканов — CRUD по ключу (marketId, tokenId).
+ *
+ * @remarks
+ * Подробности владения и жизненного цикла — см. докблок модуля выше.
+ */
 export interface IBookRegistry {
   /**
    * Возвращает OrderBook по ключу (marketId, tokenId) или undefined.

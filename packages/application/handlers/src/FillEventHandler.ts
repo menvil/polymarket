@@ -81,6 +81,13 @@ const FILL_CONFIRM_STATUSES = new Set(['CONFIRMED']);
 /** Статусы, сигнализирующие об ошибке исполнения */
 const FILL_FAILED_STATUSES = new Set(['FAILED']);
 
+/**
+ * Маршрутизирует fill-события по статусу, публикует FILL_RECEIVED/FILL_CONFIRMED/FILL_FAILED.
+ *
+ * @remarks
+ * Полное поведение (статусная машина, дедупликация, multi-maker) и пример
+ * использования — см. докблок модуля выше.
+ */
 export class FillEventHandler {
   /**
    * Кеш распарсенных fills, ожидающих on-chain подтверждения.
@@ -206,11 +213,19 @@ export class FillEventHandler {
     }
 
     for (const fill of fills) {
-      await this._eventBus.publish({
+      const publishResult = await this._eventBus.publish({
         type: 'FILL_RECEIVED',
         fill,
         receivedAt: tsResult.value,
       });
+      if (!publishResult.ok) {
+        this._logger.error('Failed to publish FILL_RECEIVED (MATCHED)', {
+          fillId: String(fill.id),
+          orderId: String(fill.orderId),
+          error: publishResult.error.message,
+        });
+        continue;
+      }
 
       this._logger.info('Fill published on MATCHED (early processing)', {
         fillId: String(fill.id),
@@ -256,11 +271,17 @@ export class FillEventHandler {
       if (confirmedFills && confirmedFills.length > 0) {
         const tsResult = TimestampService.fromDate(this._clock.now());
         if (tsResult.ok) {
-          await this._eventBus.publish({
+          const publishResult = await this._eventBus.publish({
             type: 'FILL_CONFIRMED',
             fills: confirmedFills,
             receivedAt: tsResult.value,
           });
+          if (!publishResult.ok) {
+            this._logger.error('Failed to publish FILL_CONFIRMED', {
+              rawId,
+              error: publishResult.error.message,
+            });
+          }
         }
       }
 
@@ -298,11 +319,19 @@ export class FillEventHandler {
     }
 
     for (const fill of fills) {
-      await this._eventBus.publish({
+      const publishResult = await this._eventBus.publish({
         type: 'FILL_RECEIVED',
         fill,
         receivedAt: tsResult.value,
       });
+      if (!publishResult.ok) {
+        this._logger.error('Failed to publish FILL_RECEIVED (CONFIRMED fallback)', {
+          fillId: String(fill.id),
+          orderId: String(fill.orderId),
+          error: publishResult.error.message,
+        });
+        continue;
+      }
 
       this._logger.info('Fill event published (CONFIRMED fallback)', {
         fillId: String(fill.id),
@@ -391,13 +420,21 @@ export class FillEventHandler {
 
         const effectiveFillId = asFillId(`${rawId}:${orderIdRaw}`) ?? fillId;
 
-        await this._eventBus.publish({
+        const publishResult = await this._eventBus.publish({
           type: 'FILL_FAILED',
           fillId: effectiveFillId,
           orderId,
           receivedAt: tsResult.value,
           fills: cachedFills,
         });
+        if (!publishResult.ok) {
+          this._logger.error('Failed to publish FILL_FAILED (maker)', {
+            fillId: String(effectiveFillId),
+            orderId: String(orderId),
+            error: publishResult.error.message,
+          });
+          continue;
+        }
         publishedCount++;
       }
 
@@ -428,13 +465,21 @@ export class FillEventHandler {
       return;
     }
 
-    await this._eventBus.publish({
+    const publishResult = await this._eventBus.publish({
       type: 'FILL_FAILED',
       fillId,
       orderId,
       receivedAt: tsResult.value,
       fills: cachedFills,
     });
+    if (!publishResult.ok) {
+      this._logger.error('Failed to publish FILL_FAILED (taker)', {
+        fillId: String(fillId),
+        orderId: String(orderId),
+        error: publishResult.error.message,
+      });
+      return;
+    }
 
     this._logger.warn('Fill failed event published', { fillId, orderId, hasFillsForRollback: !!cachedFills });
   }

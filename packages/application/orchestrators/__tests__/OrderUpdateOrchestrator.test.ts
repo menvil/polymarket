@@ -28,8 +28,10 @@ function makeEventBus(): IEventBus & { _trigger: (event: OrderUpdateReceivedEven
   let handler: EventHandler | undefined;
 
   const bus = {
-    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(undefined),
-    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(undefined),
+    publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
+    publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
+    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockImplementation(
       (type: string, h: (event: never) => Promise<void>) => {
         if (type === 'ORDER_UPDATE_RECEIVED') handler = h as EventHandler;
