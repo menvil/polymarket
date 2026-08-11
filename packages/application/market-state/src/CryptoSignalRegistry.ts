@@ -1,3 +1,4 @@
+import { Ratio, RatioService } from '@polymarket/value-objects';
 import type {
   CexVenue,
   CryptoPriceHistoryView,
@@ -5,6 +6,24 @@ import type {
   CryptoVenueHistoryView,
   CryptoVenueStateView,
 } from './CryptoMarketDataStore.js';
+
+/**
+ * Строит `Ratio` из уже вычисленного и заклэмпленного в [0..1] числа.
+ *
+ * @param clamped - Значение, уже гарантированно конечное и в [0..1]
+ * @returns `Ratio`
+ *
+ * @remarks
+ * `RatioService.fromDecimal()` возвращает `Result` (core `Ratio` в принципе
+ * не ограничен диапазоном [0..1] — только конечностью), но вызывающий код
+ * здесь уже клэмпит значение перед вызовом, поэтому `Err`-ветка практически
+ * недостижима; `Ratio.ZERO`-fallback — тот же смысл, что уже используют
+ * caller'ы для `stale`/невалидных случаев (confidence = 0 = "нет доверия").
+ */
+function toConfidenceRatio(clamped: number): Ratio {
+  const result = RatioService.fromDecimal(clamped);
+  return result.ok ? result.value : Ratio.ZERO;
+}
 
 /**
  * Направление торгового сигнала относительно базового актива.
@@ -57,12 +76,12 @@ export interface CryptoSignalResult {
    * **Внимание (#12):** это калиброванная вероятность ТОЛЬКО если в запросе передан
    * `confidenceByScore` (офлайн hit-rate по bucket). Иначе это эвристика
    * (нормированная величина × согласие), а НЕ вероятность — не используйте как
-   * калиброванный p без проверки источника. При `stale = true` равно 0.
+   * калиброванный p без проверки источника. При `stale = true` равно `Ratio.ZERO`.
    */
-  readonly confidence: number;
+  readonly confidence: Ratio;
   /**
    * Флаг: данные устарели (возраст > `staleMs`).
-   * При `stale = true` `confidence = 0`.
+   * При `stale = true` `confidence = Ratio.ZERO`.
    */
   readonly stale: boolean;
   /** Диагностические компоненты для отладки (venue prices, age и т.д.). */
@@ -576,9 +595,9 @@ function cexChainlinkLeadLag(
     ? Math.max(0, Math.min(1, rawCalibrated))
     : undefined;
   const stale = maxAgeMs > staleMs || chainlinkAgeMs > staleMs;
-  const confidence = stale
+  const confidence = toConfidenceRatio(stale
     ? 0
-    : calibratedConfidence ?? Math.max(0, Math.min(1, (strength / 10) * (0.5 + agreement / 2)));
+    : calibratedConfidence ?? Math.max(0, Math.min(1, (strength / 10) * (0.5 + agreement / 2))));
   // Качество данных (#12): свежесть худшей ноги × согласие бирж. Детерминировано,
   // не зависит от калибровки confidence.
   const quality = stale
@@ -1017,7 +1036,7 @@ function makeSignalResult(input: {
       : 'down';
   const strength = Math.max(0, Math.min(10, absValue / thresholdBps));
   // Эвристическая confidence (НЕ калибрована): нормированная величина.
-  const confidence = input.stale ? 0 : Math.max(0, Math.min(1, strength / 10));
+  const confidence = toConfidenceRatio(input.stale ? 0 : Math.max(0, Math.min(1, strength / 10)));
 
   return {
     id: input.id,

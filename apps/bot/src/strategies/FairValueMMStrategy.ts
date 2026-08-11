@@ -35,6 +35,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── Cumulative Normal Distribution ───────────────────────────────────────────
@@ -141,7 +143,7 @@ type FVAction =
 // ── Реализация ───────────────────────────────────────────────────────────────
 
 export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'FairValueMMStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -170,7 +172,7 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
   private _marketEventStartMs = 0;
   private _lastDiagMs = 0;
 
-  constructor(config: FairValueMMConfig, strategyId = 'fair-value-mm-1', logger?: ILogger) {
+  constructor(config: FairValueMMConfig, strategyId: StrategyId = unsafeStrategyId('fair-value-mm-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -222,8 +224,8 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
       this._lastTradeTimestampMs = 0;
       this._lastDiagMs = 0;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
         this._logger?.info('FairValueMM: new market', {
           expiresMs,
           instrumentId: snapshot.instrumentId,

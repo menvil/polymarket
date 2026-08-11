@@ -53,6 +53,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { readFileSync } from 'fs';
 
@@ -675,7 +677,7 @@ type ASAction =
 // ── Реализация ──────────────────────────────────────────────────────────────
 
 export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'AvellanedaStoikovStrategy';
 
   private readonly _config: ASStrategyConfig;
@@ -815,7 +817,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
    * @param strategyId - Уникальный ID экземпляра (по умолчанию 'as-mm-1')
    * @param logger - Логгер для диагностики
    */
-  constructor(config: ASStrategyConfig, strategyId = 'as-mm-1', logger?: ILogger) {
+  constructor(config: ASStrategyConfig, strategyId: StrategyId = unsafeStrategyId('as-mm-1'), logger?: ILogger) {
     super();
     this._config = config;
     this.id = strategyId;
@@ -946,9 +948,10 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
       this._trailStopPending = false;
       this._cryptoExitTriggered = false;
 
-      if (snapshot.eventStartMs) {
-        const durationMs = expiresMs - snapshot.eventStartMs;
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        const eventStartMs = snapshot.eventStartMs.toNumber();
+        const durationMs = expiresMs - eventStartMs;
+        this._marketEventStartMs = eventStartMs;
         this._marketDurationMs = durationMs;
         this._calibration = findCalibration(durationMs);
         const durationMin = (durationMs / 60_000).toFixed(1);

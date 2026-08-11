@@ -43,7 +43,8 @@ import type {
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
-import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
+import type { OrderId, InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { TradeFlowCalculator } from '@polymarket/trade-tape';
 import Decimal from 'decimal.js';
 import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
@@ -300,7 +301,7 @@ const PENDING_ORDER_GRACE_MS = 5_000;
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'PairedCexCrowdStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -391,7 +392,7 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
 
   constructor(
     config: PairedCexCrowdConfig,
-    strategyId = 'paired-cex-crowd-1',
+    strategyId: StrategyId = unsafeStrategyId('paired-cex-crowd-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {
@@ -539,8 +540,8 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
       this._sameSideBlockedUntilMs = 0;
       this._lastExitedSide = undefined;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       } else {
         return undefined;
       }
@@ -1383,7 +1384,7 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         tokenDirection: data.cexDirectionForToken,
         valueBps: round(data.cexSignal.value, 6),
         strength: round(data.cexSignal.strength, 6),
-        confidence: round(data.cexSignal.confidence, 6),
+        confidence: round(data.cexSignal.confidence.toNumber(), 6),
         stale: data.cexSignal.stale,
         fresh: data.cexFresh,
         ageMs: data.nowMs - data.cexSignal.tsMs,

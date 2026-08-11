@@ -12,8 +12,10 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Ok } from '@polymarket/result';
-import { asInstrumentId, asPolymarketCtfToken } from '@polymarket/ids';
+import { asInstrumentId, asPolymarketCtfToken, unsafeStrategyId } from '@polymarket/ids';
 import type { AccountId, OrderId } from '@polymarket/ids';
+
+const S1 = unsafeStrategyId('s1');
 import { Money, Price, Quantity } from '@polymarket/value-objects';
 import { ExecutionEngine } from '../../src/ExecutionEngine.js';
 import { StrategyScheduler } from '../../src/StrategyScheduler.js';
@@ -238,7 +240,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
         }),
     });
 
-    const strategy = makeBuyStrategy('s1');
+    const strategy = makeBuyStrategy(S1);
     await harness.scheduler.register({
       strategy,
       instrumentId: INSTRUMENT_ID,
@@ -255,7 +257,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
     expect(harness.orderRepo.orders.size).toBe(0);
 
     // unregister во время активного PLACE.
-    const unregisterPromise = harness.scheduler.unregister('s1');
+    const unregisterPromise = harness.scheduler.unregister(S1);
     await flush();
     expect(strategy.stop).not.toHaveBeenCalled();
 
@@ -272,7 +274,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
 
   it('unregister без активного execution: final CANCEL_ALL отменяет существующие ордера', async () => {
     const harness = makeHarness();
-    const strategy = makeBuyStrategy('s1');
+    const strategy = makeBuyStrategy(S1);
     await harness.scheduler.register({
       strategy,
       instrumentId: INSTRUMENT_ID,
@@ -286,7 +288,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
     await flush();
     expect(harness.orderRepo.orders.size).toBe(1);
 
-    await harness.scheduler.unregister('s1');
+    await harness.scheduler.unregister(S1);
 
     expect(harness.orderRepo.orders.size).toBe(0);
   });
@@ -294,7 +296,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
   it('replay determinism: одинаковый replay дважды → одинаковые order IDs и отчёты', async () => {
     const runReplay = async () => {
       const harness = makeHarness({ idPrefix: 'replay' });
-      const strategy = makeBuyStrategy('s1');
+      const strategy = makeBuyStrategy(S1);
       await harness.scheduler.register({
         strategy,
         instrumentId: INSTRUMENT_ID,
@@ -313,7 +315,7 @@ describe('Integration: lifecycle (real ExecutionEngine)', () => {
       harness.marketDataStore._onChange!(INSTRUMENT_ID, 'TRADE');
       await flush();
 
-      await harness.scheduler.unregister('s1');
+      await harness.scheduler.unregister(S1);
 
       const placedIds = harness.placeOrderUseCase.execute.mock.calls.map(
         (c: any[]) => String(c[0].orderId),

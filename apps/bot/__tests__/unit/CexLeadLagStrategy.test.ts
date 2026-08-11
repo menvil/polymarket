@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import {
   normalCdf,
@@ -161,7 +162,7 @@ describe('_updateSignalPersistence', () => {
   beforeEach(() => {
     strategy = new CexLeadLagStrategy(
       { orderSize: new Decimal(5), qMax: 2 },
-      'test-persistence',
+      unsafeStrategyId('test-persistence'),
     );
   });
 
@@ -274,7 +275,7 @@ describe('_checkEntrySignalFirst — entry gating', () => {
         // Явно задаём 300ms для совместимости с тестом persistence < 300
         minSignalPersistenceMs: 300,
       },
-      'test-entry',
+      unsafeStrategyId('test-entry'),
     );
   });
 
@@ -395,7 +396,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         exitTauSec: 20,
         stopLossCents: 10,
       },
-      'test-exit',
+      unsafeStrategyId('test-exit'),
     );
   });
 
@@ -424,7 +425,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         holdToExpiryMaxTauSec: 90,
         holdToExpiryStopBidCents: 95,
       },
-      'test-hold-tau',
+      unsafeStrategyId('test-hold-tau'),
     );
     strategy._entryPriceCents = 95;
 
@@ -448,7 +449,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         holdToExpiryMaxTauSec: 90,
         holdToExpiryStopBidCents: 95,
       },
-      'test-hold-tau-stop',
+      unsafeStrategyId('test-hold-tau-stop'),
     );
     strategy._entryPriceCents = 95;
 
@@ -514,7 +515,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         stopLossCents: 10,
         trailingExitRatio: 0.6,
       },
-      'test-partial-trailing',
+      unsafeStrategyId('test-partial-trailing'),
     );
     strategy._entryPriceCents = 40;
     strategy._trailingStopCents = 63;
@@ -549,7 +550,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         stopLossCents: 10,
         trailingExitRatio: 0.5,
       },
-      'test-partial-min-size',
+      unsafeStrategyId('test-partial-min-size'),
     );
     strategy._entryPriceCents = 40;
     strategy._trailingStopCents = 63;
@@ -578,7 +579,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         signalExitMinProfitCents: 2,
         signalExitRatio: 0.5,
       },
-      'test-signal-exit',
+      unsafeStrategyId('test-signal-exit'),
     );
     strategy._entryPriceCents = 40;
 
@@ -626,7 +627,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         holdToExpiryMaxTauSec: 90,
         holdToExpiryStopBidCents: 95,
       },
-      'test-hold-signal-collapse',
+      unsafeStrategyId('test-hold-signal-collapse'),
     );
     strategy._entryPriceCents = 98;
 
@@ -668,7 +669,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         adverseExitGraceMs: 300,
         adverseExitRatio: 1,
       },
-      'test-adverse-exit',
+      unsafeStrategyId('test-adverse-exit'),
     );
     strategy._entryPriceCents = 40;
 
@@ -712,7 +713,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         holdToExpiryMaxTauSec: 90,
         holdToExpiryStopBidCents: 95,
       },
-      'test-hold-adverse',
+      unsafeStrategyId('test-hold-adverse'),
     );
     strategy._entryPriceCents = 98;
 
@@ -752,7 +753,7 @@ describe('_checkExitSignalFirst — exit triggers', () => {
         stopLossCents: 10,
         trailingExitRatio: 0.6,
       },
-      'test-restart-runner',
+      unsafeStrategyId('test-restart-runner'),
     );
 
     const actions = strategy.decide(makeData({
@@ -857,7 +858,7 @@ describe('_venueAgreementByResidual', () => {
         maxSpreadBps: 20,
         venues: ['binance', 'coinbase', 'okx'],
       },
-      'test-agreement',
+      unsafeStrategyId('test-agreement'),
     );
   });
 

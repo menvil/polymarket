@@ -27,6 +27,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -89,7 +91,7 @@ type MSAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'MomentumScalpStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -129,7 +131,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
   // ── Price history для velocity ────────────────────────────────────────────
   private _priceHistory: { ms: number; cents: number }[] = [];
 
-  constructor(config: MomentumScalpConfig, strategyId = 'mom-scalp-1', logger?: ILogger) {
+  constructor(config: MomentumScalpConfig, strategyId: StrategyId = unsafeStrategyId('mom-scalp-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -179,8 +181,8 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
       this._totalPnlCents = 0;
       this._priceHistory = [];
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       } else {
         return undefined;
       }

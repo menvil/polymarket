@@ -53,6 +53,7 @@ import {
   assetIdToInstrumentId,
   parseAccountId,
   KnownVenues,
+  unsafeStrategyId,
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
@@ -804,7 +805,7 @@ async function runPaper(): Promise<void> {
     // Easy (15m) = peer market, читается из MarketDataStore.
     // slotStrike = hard (5m) strike, peerStrike = easy (15m) strike.
     // После получения обоих strikes стратегия сама назначит easy/hard по strike'ам.
-    const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
+    const strategyId = unsafeStrategyId(`cross-market-arb-slot-${_slotCounter++}`);
     const fullArbConfig: CrossMarketArbConfig = {
       peerInstrumentId: easyIId,
       slotDownInstrumentId: hardDownIId,
@@ -1600,7 +1601,7 @@ async function runPaper(): Promise<void> {
     }
 
     // ── Создание стратегии (strikes уже получены из Chainlink во время warming) ─
-    const strategyId = `cross-market-arb-slot-${_slotCounter++}`;
+    const strategyId = unsafeStrategyId(`cross-market-arb-slot-${_slotCounter++}`);
     const fullArbConfig: CrossMarketArbConfig = {
       peerInstrumentId: w.easyIId,
       slotDownInstrumentId: w.hardDownIId,
@@ -2998,9 +2999,10 @@ async function runBacktest(): Promise<void> {
     : Date.now() + 24 * 60 * 60 * 1000;
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
-  const eventStartMs = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
-    ? snapshotEventStartMs
+  const eventStartMsResult = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
+    ? TimestampService.create(snapshotEventStartMs)
     : undefined;
+  const eventStartMs = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
 
   const regResult = await engine.scheduler.register({
     strategy, instrumentId, asset, accountId, market: marketStub,
@@ -3750,7 +3752,7 @@ async function runLive(): Promise<void> {
     const hardExpiresMs = hardCandidate.expiresAt.toNumber();
     const easyStartMs = easyCryptoMeta?.eventStartTimeMs ?? 0;
     const hardStartMs = hardCryptoMeta?.eventStartTimeMs ?? 0;
-    const strategyId = `cross-market-arb-live-slot-${_slotCounter++}`;
+    const strategyId = unsafeStrategyId(`cross-market-arb-live-slot-${_slotCounter++}`);
     const arbConfig = config.strategyParams as CrossMarketArbConfig;
     const fullArbConfig: CrossMarketArbConfig = {
       peerInstrumentId: easyIId,

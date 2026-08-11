@@ -92,11 +92,12 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId, AssetId, InstrumentId, CryptoAssetId } from '@polymarket/ids';
+import type { AccountId, AssetId, InstrumentId, CryptoAssetId, StrategyId } from '@polymarket/ids';
 import { assetIdToInstrumentId, assetIdToString, asOrderId, asCryptoAssetId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
+import type { Timestamp } from '@polymarket/value-objects';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { IPortfolioStore, IOrderStateStore, IMarketCatalog, IStrategyCommitmentReader, StrategyCommitment } from '@polymarket/ports';
@@ -154,8 +155,8 @@ export interface StrategyRegistration {
   readonly cryptoSymbol?: string;
   /** Базовый крипто-актив для asset-scoped history/state (e.g. 'btc'). */
   readonly cryptoAsset?: string;
-  /** Время начала торговли на рынке (epoch ms). Из Gamma API eventStartTime. */
-  readonly eventStartMs?: number;
+  /** Время начала торговли на рынке. Из Gamma API eventStartTime. */
+  readonly eventStartMs?: Timestamp;
   /**
    * Дополнительные инструменты, обновления которых триггерят тик стратегии.
    *
@@ -320,8 +321,8 @@ interface StrategyEntry {
   readonly cryptoSymbol?: string;
   /** Базовый crypto asset (e.g. 'btc') — для долгоживущей истории. */
   readonly cryptoAsset?: CryptoAssetId;
-  /** Время начала торговли на рынке (epoch ms) */
-  readonly eventStartMs?: number;
+  /** Время начала торговли на рынке */
+  readonly eventStartMs?: Timestamp;
   /** Дополнительные инструменты для триггера тика */
   readonly additionalInstrumentIds?: readonly InstrumentId[];
   /** ID комплементарного токена */
@@ -456,7 +457,7 @@ interface TrackedAsyncOperation<T> {
  * точку зацепления: выставить `cancelled = true` и дождаться `completion`.
  */
 interface PendingRegistration {
-  readonly strategyId: string;
+  readonly strategyId: StrategyId;
   readonly strategy: IStrategy;
   /** Resolves когда register() полностью завершился (успешно или с Err). Никогда не rejects. */
   completion: Promise<Result<void, Error>>;
@@ -484,7 +485,7 @@ interface PendingRegistration {
  * успехом; `unregister()`/`stopAll()` могут найти его снова и повторить попытку.
  */
 interface PendingDisposal {
-  readonly strategyId: string;
+  readonly strategyId: StrategyId;
   readonly strategy: IStrategy;
   /** Tracked dispose operation (см. {@link TrackedAsyncOperation}) — не более одной in-flight. */
   disposeExecution: TrackedAsyncOperation<Result<void, Error>> | undefined;
@@ -517,39 +518,39 @@ const FAILURE_BACKOFF_BASE_MS = 100;
 export class StrategyScheduler {
   private readonly _logger: ILogger;
   /** strategyId → накопленные reasons для следующего tick */
-  private readonly _dirty = new Map<string, Set<TriggerReason>>();
+  private readonly _dirty = new Map<StrategyId, Set<TriggerReason>>();
 
   /** strategyId → entry */
-  private readonly _entries = new Map<string, StrategyEntry>();
+  private readonly _entries = new Map<StrategyId, StrategyEntry>();
   /**
    * Registrations-in-progress: single-flight guard + cancellation point для
    * `unregister()`, вызванного во время `initialize()`.
    */
-  private readonly _pendingRegistrations = new Map<string, PendingRegistration>();
+  private readonly _pendingRegistrations = new Map<StrategyId, PendingRegistration>();
   /**
    * Persistent retry-tombstones для регистраций, отменённых во время
    * `initialize()` ПОСЛЕ успешного `Ok` (см. {@link PendingDisposal}).
    * Запись удаляется ТОЛЬКО после фактически успешного `dispose()`.
    */
-  private readonly _pendingDisposals = new Map<string, PendingDisposal>();
+  private readonly _pendingDisposals = new Map<StrategyId, PendingDisposal>();
   /**
    * Global stopping barrier — выставляется `stopAll()`. Как только `true`,
    * никакая новая регистрация (ACTIVE entry) не публикуется.
    */
   private _globalStopping = false;
   /** instrumentId → Set<strategyId> */
-  private readonly _instrumentToStrategies = new Map<string, Set<string>>();
+  private readonly _instrumentToStrategies = new Map<string, Set<StrategyId>>();
   /** cryptoSymbol → Set<strategyId> */
-  private readonly _symbolToStrategies = new Map<string, Set<string>>();
+  private readonly _symbolToStrategies = new Map<string, Set<StrategyId>>();
   /** normalized asset → Set<strategyId> */
-  private readonly _assetToStrategies = new Map<CryptoAssetId, Set<string>>();
+  private readonly _assetToStrategies = new Map<CryptoAssetId, Set<StrategyId>>();
 
   /** Event-driven queue: стратегии ожидающие tick */
-  private readonly _queue: string[] = [];
+  private readonly _queue: StrategyId[] = [];
   /** Set для O(1) проверки «уже в очереди?» */
-  private readonly _queued = new Set<string>();
+  private readonly _queued = new Set<StrategyId>();
   /** Timer handles для deferred re-queue (throttled strategies / failure backoff) */
-  private readonly _deferredTimers = new Map<string, TimerHandle>();
+  private readonly _deferredTimers = new Map<StrategyId, TimerHandle>();
 
   private _stopped = true;
   private _processing = false;
@@ -965,7 +966,7 @@ export class StrategyScheduler {
     for (const key of entry.routingInstrumentKeys) {
       let set = this._instrumentToStrategies.get(key);
       if (set === undefined) {
-        set = new Set<string>();
+        set = new Set<StrategyId>();
         this._instrumentToStrategies.set(key, set);
       }
       set.add(strategyId);
@@ -975,7 +976,7 @@ export class StrategyScheduler {
     if (reg.cryptoSymbol) {
       let symSet = this._symbolToStrategies.get(reg.cryptoSymbol);
       if (symSet === undefined) {
-        symSet = new Set<string>();
+        symSet = new Set<StrategyId>();
         this._symbolToStrategies.set(reg.cryptoSymbol, symSet);
       }
       symSet.add(strategyId);
@@ -985,7 +986,7 @@ export class StrategyScheduler {
     if (cryptoAsset) {
       let assetSet = this._assetToStrategies.get(cryptoAsset);
       if (assetSet === undefined) {
-        assetSet = new Set<string>();
+        assetSet = new Set<StrategyId>();
         this._assetToStrategies.set(cryptoAsset, assetSet);
       }
       assetSet.add(strategyId);
@@ -1035,7 +1036,7 @@ export class StrategyScheduler {
    *    in-flight attempt (`entry.stopAttemptPromise`) и делегирует в
    *    {@link _attemptStop}.
    */
-  public async unregister(strategyId: string): Promise<Result<void, StopStrategyError>> {
+  public async unregister(strategyId: StrategyId): Promise<Result<void, StopStrategyError>> {
     // 1. Persistent pending-disposal tombstone — retry на ранее провалившийся/
     // зависший dispose() отменённой регистрации.
     const pendingDisposal = this._pendingDisposals.get(strategyId);
@@ -1160,7 +1161,7 @@ export class StrategyScheduler {
    * коалесцируется на ту же операцию (single-flight), никогда не запускает
    * параллельную вторую попытку.
    */
-  private async _attemptStop(strategyId: string, entry: StrategyEntry): Promise<Result<void, StopStrategyError>> {
+  private async _attemptStop(strategyId: StrategyId, entry: StrategyEntry): Promise<Result<void, StopStrategyError>> {
     // 1.
     if (entry.lifecycle === 'ACTIVE') {
       entry.lifecycle = 'STOPPING';
@@ -1375,7 +1376,7 @@ export class StrategyScheduler {
    * используют один и тот же single-flight tracked-slot.
    */
   private async _runPostCheck(
-    strategyId: string,
+    strategyId: StrategyId,
     entry: StrategyEntry,
   ): Promise<
     | { kind: 'safe' }
@@ -1989,7 +1990,7 @@ export class StrategyScheduler {
    * Вызывается OrderEventBridge при получении ORDER_* событий.
    * Стратегии в STOPPING/STOPPED не enqueue-ятся.
    */
-  public onOrderChanged(strategyId: string, reason: TriggerReason): void {
+  public onOrderChanged(strategyId: StrategyId, reason: TriggerReason): void {
     const entry = this._entries.get(strategyId);
     if (!entry || entry.lifecycle !== 'ACTIVE') return;
     this._markDirty(strategyId, reason);
@@ -2053,7 +2054,7 @@ export class StrategyScheduler {
    * Ошибка метрик не ломает scheduler/caller: логируется, возвращается
    * безопасный пустой объект.
    */
-  public getMetrics(strategyId: string): Record<string, unknown> | undefined {
+  public getMetrics(strategyId: StrategyId): Record<string, unknown> | undefined {
     const entry = this._entries.get(strategyId);
     if (!entry) return undefined;
     try {
@@ -2081,8 +2082,8 @@ export class StrategyScheduler {
     }
   }
 
-  private _collectCryptoStrategyIds(symbolOrAsset: string): Set<string> {
-    const result = new Set<string>();
+  private _collectCryptoStrategyIds(symbolOrAsset: string): Set<StrategyId> {
+    const result = new Set<StrategyId>();
 
     const exact = this._symbolToStrategies.get(symbolOrAsset);
     if (exact) {
@@ -2125,7 +2126,7 @@ export class StrategyScheduler {
    *
    * @param strategyId - ID стратегии
    */
-  private _enqueue(strategyId: string): void {
+  private _enqueue(strategyId: StrategyId): void {
     if (this._stopped) return;
     if (this._queued.has(strategyId)) return;
 
@@ -2197,7 +2198,7 @@ export class StrategyScheduler {
    *
    * @param strategyId - ID стратегии
    */
-  private _processQueueItem(strategyId: string): void {
+  private _processQueueItem(strategyId: StrategyId): void {
     const entry = this._entries.get(strategyId);
     if (!entry || entry.lifecycle !== 'ACTIVE') return;
 
@@ -2228,7 +2229,7 @@ export class StrategyScheduler {
    * @param strategyId - ID стратегии
    * @param delayMs - Задержка в ms
    */
-  private _deferRequeue(strategyId: string, delayMs: number): void {
+  private _deferRequeue(strategyId: StrategyId, delayMs: number): void {
     // Отменяем предыдущий таймер если есть
     const existing = this._deferredTimers.get(strategyId);
     if (existing !== undefined) {
@@ -2263,7 +2264,7 @@ export class StrategyScheduler {
    * подстрахует следующий heartbeat/event.
    */
   private _handleTickFailure(
-    strategyId: string,
+    strategyId: StrategyId,
     entry: StrategyEntry,
     reasons: ReadonlySet<TriggerReason>,
     err: unknown,
@@ -2302,7 +2303,7 @@ export class StrategyScheduler {
    * `entry.lastRunMs` обновляется ТОЛЬКО после успешного tick.
    * Execution обёрнут в watchdog (config.executionTimeoutMs).
    */
-  private _executeTick(strategyId: string, entry: StrategyEntry): void {
+  private _executeTick(strategyId: StrategyId, entry: StrategyEntry): void {
     // Атомарный drain: take reasons → try snapshot/tick → merge-back on error.
     const reasons = this._getDirtyReasons(strategyId);
     this._clearDirty(strategyId);
@@ -2469,7 +2470,7 @@ export class StrategyScheduler {
    *   для каждого `additionalTradableTargets` элемента.
    */
   private _splitOrdersForInstrument(
-    strategyId: string,
+    strategyId: StrategyId,
     instrumentId: InstrumentId,
   ): { openOrders: Order[]; matchedOrders: Order[] } {
     const all = this._deps.orderStateStore.getOpenOrdersByInstrument(strategyId, instrumentId);
@@ -2670,7 +2671,7 @@ export class StrategyScheduler {
    * `_entries` (в состоянии STOPPING/FAULTED) до завершения final intents —
    * чтобы concurrent unregister мог дождаться того же `stopAttemptPromise`.
    */
-  private _detachEntry(strategyId: string, entry: StrategyEntry): void {
+  private _detachEntry(strategyId: StrategyId, entry: StrategyEntry): void {
     // Stop heartbeat
     if (entry.heartbeatTimer !== undefined) {
       this._deps.timer.clearInterval(entry.heartbeatTimer);
@@ -2732,7 +2733,7 @@ export class StrategyScheduler {
 
   // ── Dirty tracking (инлайн из DirtyTracker) ───────────────
 
-  private _markDirty(strategyId: string, reason: TriggerReason): void {
+  private _markDirty(strategyId: StrategyId, reason: TriggerReason): void {
     let reasons = this._dirty.get(strategyId);
     if (reasons === undefined) {
       reasons = new Set<TriggerReason>();
@@ -2741,23 +2742,23 @@ export class StrategyScheduler {
     reasons.add(reason);
   }
 
-  private _isDirty(strategyId: string): boolean {
+  private _isDirty(strategyId: StrategyId): boolean {
     const reasons = this._dirty.get(strategyId);
     return reasons !== undefined && reasons.size > 0;
   }
 
   /** Возвращает копию накопленных reasons, чтобы внешний код не мог мутировать внутренний Set. */
-  private _getDirtyReasons(strategyId: string): ReadonlySet<TriggerReason> {
+  private _getDirtyReasons(strategyId: StrategyId): ReadonlySet<TriggerReason> {
     const reasons = this._dirty.get(strategyId);
     if (reasons === undefined || reasons.size === 0) return _EMPTY_DIRTY_SET;
     return new Set(reasons);
   }
 
-  private _clearDirty(strategyId: string): void {
+  private _clearDirty(strategyId: StrategyId): void {
     this._dirty.get(strategyId)?.clear();
   }
 
-  private _hasPriorityTrigger(strategyId: string, priorities: ReadonlySet<TriggerReason>): boolean {
+  private _hasPriorityTrigger(strategyId: StrategyId, priorities: ReadonlySet<TriggerReason>): boolean {
     const reasons = this._dirty.get(strategyId);
     if (!reasons || reasons.size === 0) return false;
     for (const reason of reasons) {
@@ -2766,7 +2767,7 @@ export class StrategyScheduler {
     return false;
   }
 
-  private _removeDirty(strategyId: string): void {
+  private _removeDirty(strategyId: StrategyId): void {
     this._dirty.delete(strategyId);
   }
 }

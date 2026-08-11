@@ -35,6 +35,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -113,7 +115,7 @@ type OMMAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'OscillationMMStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -168,7 +170,7 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
   private _rejectCounts = { ofi: 0, aas: 0, drop: 0, spread: 0, balance: 0, cooldown: 0 };
   private _emergencyExits = 0;
 
-  constructor(config: OscillationMMConfig, strategyId = 'osc-mm-1', logger?: ILogger) {
+  constructor(config: OscillationMMConfig, strategyId: StrategyId = unsafeStrategyId('osc-mm-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -234,8 +236,8 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
       this._rejectCounts = { ofi: 0, aas: 0, drop: 0, spread: 0, balance: 0, cooldown: 0 };
       this._emergencyExits = 0;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
         this._logger?.warn('OscMM: new market', { expiresMs, instrumentId: snapshot.instrumentId });
       } else {
         return undefined;

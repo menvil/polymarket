@@ -52,7 +52,8 @@ import { placeTarget } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId, AssetId } from '@polymarket/ids';
+import type { InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
@@ -134,7 +135,7 @@ type AEAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'AdaptiveEntryStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -172,7 +173,7 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
   private _marketDurationMs = 0;
   private _currentMarketId = '';
 
-  constructor(config: AdaptiveEntryConfig, strategyId = 'adaptive-entry-1', logger?: ILogger, journal?: IDecisionJournal) {
+  constructor(config: AdaptiveEntryConfig, strategyId: StrategyId = unsafeStrategyId('adaptive-entry-1'), logger?: ILogger, journal?: IDecisionJournal) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -224,9 +225,9 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
       this._decided = false;
       this._entered = false;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
-        this._marketDurationMs = expiresMs - snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
+        this._marketDurationMs = expiresMs - this._marketEventStartMs;
         this._currentMarketId = String(snapshot.instrumentId);
         this._logger?.info('AdaptiveEntry: new market', {
           durationSec: (this._marketDurationMs / 1000).toFixed(0),

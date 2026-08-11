@@ -406,6 +406,9 @@ export class MarketRotation {
 
     const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
     const compId = slot.complementaryInstrumentId;
+    const eventStartMsResult = slot.cryptoMeta?.eventStartTimeMs !== undefined
+      ? TimestampService.create(slot.cryptoMeta.eventStartTimeMs)
+      : undefined;
     const regResult = await engine.scheduler.register({
       strategy: slot.strategy,
       instrumentId: slot.instrumentId,
@@ -413,7 +416,7 @@ export class MarketRotation {
       accountId,
       market: marketStub,
       cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
-      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
+      eventStartMs: eventStartMsResult?.ok ? eventStartMsResult.value : undefined,
       additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),
       complementaryInstrumentId: compId,
       complementaryAsset: slot.complementaryAsset,

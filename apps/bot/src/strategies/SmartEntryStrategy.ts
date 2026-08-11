@@ -44,6 +44,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ type SEAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class SmartEntryStrategy extends BaseStrategy<SEData, SEAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'SmartEntryStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -131,7 +133,7 @@ export class SmartEntryStrategy extends BaseStrategy<SEData, SEAction> {
   /** Диагностический лог throttle */
   private _lastDiagMs = 0;
 
-  constructor(config: SmartEntryConfig, strategyId = 'smart-entry-1', logger?: ILogger) {
+  constructor(config: SmartEntryConfig, strategyId: StrategyId = unsafeStrategyId('smart-entry-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -178,12 +180,13 @@ export class SmartEntryStrategy extends BaseStrategy<SEData, SEAction> {
       this._ewmaAt25 = null;
       this._ewmaAt25Captured = false;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
-        this._marketDurationMs = expiresMs - snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        const eventStartMs = snapshot.eventStartMs.toNumber();
+        this._marketEventStartMs = eventStartMs;
+        this._marketDurationMs = expiresMs - eventStartMs;
         this._logger?.warn('SmartEntry: new market', {
           expiresMs,
-          eventStartMs: snapshot.eventStartMs,
+          eventStartMs,
           durationSec: (this._marketDurationMs / 1000).toFixed(0),
           instrumentId: snapshot.instrumentId,
         });

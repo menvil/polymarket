@@ -235,7 +235,7 @@ describe('CryptoSignalRegistry — покрытие сигналов', () => {
       expect(r).toBeDefined();
       expect(r!.direction).toBe('flat');
       expect(Number.isNaN(r!.strength)).toBe(false);
-      expect(Number.isNaN(r!.confidence)).toBe(false);
+      expect(Number.isNaN(r!.confidence.toNumber())).toBe(false);
       expect(r!.strength).toBe(0);
     });
 
@@ -304,7 +304,7 @@ describe('CryptoSignalRegistry — покрытие сигналов', () => {
       });
       expect(r).toBeDefined();
       const bucket = Number(r!.components.scoreBucket);
-      if (bucket === 10) expect(r!.confidence).toBe(0.77);
+      if (bucket === 10) expect(r!.confidence.toNumber()).toBe(0.77);
       expect(Boolean(r!.components.calibrated)).toBe(true);
     });
   });
@@ -405,12 +405,12 @@ describe('CryptoSignalRegistry — #1 sanitize офлайн-конфига', () 
     const over = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
       venues: ['binance', 'coinbase'], confidenceByScore: { '10': 1.5 },
     });
-    expect(over!.confidence).toBeLessThanOrEqual(1);
-    expect(over!.confidence).toBeGreaterThanOrEqual(0);
+    expect(over!.confidence.toNumber()).toBeLessThanOrEqual(1);
+    expect(over!.confidence.toNumber()).toBeGreaterThanOrEqual(0);
 
     const bad = registry.evaluate('cex_chainlink_lead_lag', makeContext(store, now), {
       venues: ['binance', 'coinbase'], confidenceByScore: { '10': Number.NaN },
     });
-    expect(Number.isFinite(bad!.confidence)).toBe(true);
+    expect(Number.isFinite(bad!.confidence.toNumber())).toBe(true);
   });
 });

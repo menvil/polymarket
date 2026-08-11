@@ -16,6 +16,7 @@ import Decimal from 'decimal.js';
 import type { IStrategy } from '@polymarket/strategy';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
+import { asStrategyId, unsafeStrategyId } from '@polymarket/ids';
 import { DumbStrategy } from './strategies/DumbStrategy.js';
 import type { DumbStrategyConfig } from './strategies/DumbStrategy.js';
 import { AvellanedaStoikovStrategy } from './strategies/AvellanedaStoikovStrategy.js';
@@ -103,6 +104,13 @@ export interface StrategyExecutionOverrides {
  * @returns Экземпляр IStrategy
  *
  * @throws {Error} Если тип стратегии неизвестен
+ *
+ * @remarks
+ * `config.id` — сырой внешний вход (границы `StrategyConfig`, не меняется этим
+ * этапом миграции); валидируется через `asStrategyId()` один раз здесь.
+ * Невалидный/незаданный `id` не считается ошибкой — стратегия просто
+ * использует собственный default-литерал конструктора (та же семантика, что
+ * и раньше, когда `config.id` был просто `undefined`).
  */
 export function createStrategy(
   config: StrategyConfig,
@@ -110,21 +118,23 @@ export function createStrategy(
   journal?: IDecisionJournal,
   execution?: StrategyExecutionOverrides,
 ): IStrategy {
+  const strategyId = config.id !== undefined ? asStrategyId(config.id) : undefined;
+
   switch (config.type) {
     case 'dumb':
-      return new DumbStrategy(config.params, config.id, logger);
+      return new DumbStrategy(config.params, strategyId, logger);
 
     case 'avellaneda-stoikov':
-      return new AvellanedaStoikovStrategy(config.params, config.id, logger);
+      return new AvellanedaStoikovStrategy(config.params, strategyId, logger);
 
     case 'cross-market-arb':
-      return new CrossMarketArbStrategy(config.params, config.reader, config.id, logger);
+      return new CrossMarketArbStrategy(config.params, config.reader, strategyId, logger);
 
     case 'prob-table':
-      return new ProbTableStrategy(config.params, config.id, logger);
+      return new ProbTableStrategy(config.params, strategyId, logger);
 
     case 'crypto-prob':
-      return new CryptoProbStrategy(config.params, config.id, logger);
+      return new CryptoProbStrategy(config.params, strategyId, logger);
 
     case 'selective-entry':
       return new SelectiveEntryStrategy(
@@ -132,37 +142,37 @@ export function createStrategy(
           ...config.params,
           postOnly: execution?.postOnly ?? config.params.postOnly,
         },
-        config.id,
+        strategyId,
         logger,
         journal,
       );
 
     case 'oscillation-mm':
-      return new OscillationMMStrategy(config.params, config.id, logger);
+      return new OscillationMMStrategy(config.params, strategyId, logger);
 
     case 'momentum-scalp':
-      return new MomentumScalpStrategy(config.params, config.id, logger);
+      return new MomentumScalpStrategy(config.params, strategyId, logger);
 
     case 'smart-entry':
-      return new SmartEntryStrategy(config.params, config.id, logger);
+      return new SmartEntryStrategy(config.params, strategyId, logger);
 
     case 'adaptive-entry':
-      return new AdaptiveEntryStrategy(config.params, config.id, logger, journal);
+      return new AdaptiveEntryStrategy(config.params, strategyId, logger, journal);
 
     case 'fair-value-mm':
-      return new FairValueMMStrategy(config.params, config.id, logger);
+      return new FairValueMMStrategy(config.params, strategyId, logger);
 
     case 'binance-prob-mm':
-      return new BinanceProbMMStrategy(config.params, config.id, logger);
+      return new BinanceProbMMStrategy(config.params, strategyId, logger);
 
     case 'cex-lead-lag':
-      return new CexLeadLagStrategy(config.params, config.id, logger, journal);
+      return new CexLeadLagStrategy(config.params, strategyId, logger, journal);
 
     case 'cex-lead-lag-exit-policy':
-      return new CexLeadLagExitPolicyStrategy(config.params, config.id, logger, journal);
+      return new CexLeadLagExitPolicyStrategy(config.params, strategyId, logger, journal);
 
     case 'cex-lead-lag-risk-budget':
-      return new CexLeadLagRiskBudgetStrategy(config.params, config.id, logger, journal);
+      return new CexLeadLagRiskBudgetStrategy(config.params, strategyId, logger, journal);
 
     case 'calibration-rules':
       return new CalibrationRulesStrategy(
@@ -170,25 +180,25 @@ export function createStrategy(
           ...config.params,
           postOnly: execution?.postOnly ?? config.params.postOnly,
         },
-        config.id,
+        strategyId,
         logger,
         journal,
       );
 
     case 'calibrated-crowd':
-      return new CalibratedCrowdStrategy(config.params, config.id, logger, journal);
+      return new CalibratedCrowdStrategy(config.params, strategyId, logger, journal);
 
     case 'calibrated-crowd-cex':
-      return new CexCrowdNotAdverseStrategy(config.params, config.id, logger, journal);
+      return new CexCrowdNotAdverseStrategy(config.params, strategyId, logger, journal);
 
     case 'paired-cex-crowd':
-      return new PairedCexCrowdStrategy(config.params, config.id, logger, journal);
+      return new PairedCexCrowdStrategy(config.params, strategyId, logger, journal);
 
     case 'baseline-paired-overlay':
-      return new BaselinePairedOverlayStrategy(config.params, config.id, logger, journal);
+      return new BaselinePairedOverlayStrategy(config.params, strategyId, logger, journal);
 
     case 'order-book-wall': {
-      const obwId = config.id ?? `obw-${(config.params as any).side}-${Date.now()}`;
+      const obwId = strategyId ?? unsafeStrategyId(`obw-${(config.params as any).side}-${Date.now()}`);
       return new OrderBookWallStrategy(obwId, config.params as any, logger);
     }
 
@@ -198,7 +208,7 @@ export function createStrategy(
           ...config.params,
           postOnly: execution?.postOnly ?? config.params.postOnly,
         },
-        config.id,
+        strategyId,
         logger,
         journal,
       );
@@ -209,7 +219,7 @@ export function createStrategy(
           ...config.params,
           postOnly: execution?.postOnly ?? config.params.postOnly,
         },
-        config.id,
+        strategyId,
         logger,
         journal,
       );

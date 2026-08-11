@@ -1,5 +1,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { CalibratedCrowdStrategy, type CalibratedCrowdConfig } from './CalibratedCrowdStrategy.js';
 
 /**
@@ -14,7 +16,7 @@ export interface CexCrowdNotAdverseConfig extends CalibratedCrowdConfig {}
 export class CexCrowdNotAdverseStrategy extends CalibratedCrowdStrategy {
   constructor(
     config: CexCrowdNotAdverseConfig,
-    strategyId = 'cex-crowd-not-adverse-1',
+    strategyId: StrategyId = unsafeStrategyId('cex-crowd-not-adverse-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {

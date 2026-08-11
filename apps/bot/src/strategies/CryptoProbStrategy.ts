@@ -30,6 +30,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── P(UP | delta%, tau) таблица ─────────────────────────────────────────────
@@ -147,7 +149,7 @@ type CPAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class CryptoProbStrategy extends BaseStrategy<CPData, CPAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'CryptoProbStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -186,7 +188,7 @@ export class CryptoProbStrategy extends BaseStrategy<CPData, CPAction> {
   private _entryCryptoPrice = 0;
   private _entryProbUp = 0;
 
-  constructor(config: CryptoProbConfig, strategyId = 'crypto-prob-1', logger?: ILogger) {
+  constructor(config: CryptoProbConfig, strategyId: StrategyId = unsafeStrategyId('crypto-prob-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -230,8 +232,8 @@ export class CryptoProbStrategy extends BaseStrategy<CPData, CPAction> {
       this._exitCount = 0;
       this._entryMs = 0;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       } else {
         return undefined;
       }

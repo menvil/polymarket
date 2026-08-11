@@ -43,7 +43,8 @@ import Decimal from 'decimal.js';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { IStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot } from '@polymarket/strategy';
@@ -214,7 +215,7 @@ export type ArbDirection = 'UP' | 'DOWN';
  * Детекция через DivergenceDetector (тот же код что в бектестах).
  */
 export class CrossMarketArbStrategy implements IStrategy {
-  readonly id: string;
+  readonly id: StrategyId;
   readonly name = 'CrossMarketArb';
 
   private _config: CrossMarketArbConfig;
@@ -280,13 +281,13 @@ export class CrossMarketArbStrategy implements IStrategy {
   constructor(
     config: CrossMarketArbConfig,
     reader: ITopOfBookReader,
-    id?: string,
+    id?: StrategyId,
     logger?: ILogger,
   ) {
     this._config = config;
     this._reader = reader;
     this._logger = logger?.child({ component: 'CrossMarketArbStrategy' });
-    this.id = id ?? `cross-market-arb-${Date.now()}`;
+    this.id = id ?? unsafeStrategyId(`cross-market-arb-${Date.now()}`);
 
     this._feeCalc = new FeeCalculator(config.feeModel ?? FEE_MODEL_CURRENT);
   }

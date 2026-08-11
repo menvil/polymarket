@@ -18,9 +18,10 @@ Reactive scheduling архитектура для торговых страте�
 ```typescript
 import { StrategyScheduler, BaseStrategy } from '@polymarket/strategy';
 import type { IStrategy, StrategySnapshot, TriggerReason, StrategyIntent } from '@polymarket/strategy';
+import { unsafeStrategyId } from '@polymarket/ids';
 
 class SimpleQuoter extends BaseStrategy<MyData, MyAction> {
-  readonly id = 'simple-quoter-1';
+  readonly id = unsafeStrategyId('simple-quoter-1');
   readonly name = 'SimpleQuoter';
 
   protected gather(snapshot: StrategySnapshot) { /* ... */ }
@@ -60,32 +61,95 @@ VO `create()`-фабрик: сырой вход снаружи, брендиро
 `CryptoSignalRegistry`) `CryptoAssetId` естественно присваивается в параметры типа
 `string` — branded string остаётся assignable к базовому `string` без явного `String()`.
 
-## Что отложено на Этап 10 и почему
+## `StrategyId` — реально подключён по всей цепочке (Этап 10b)
 
-Расследование этого этапа установило общее правило: `apps/bot/main.ts` и
-`apps/bot/src/bot/*.ts` (composition root) получают механические inline-правки в рамках
-ЛЮБОГО этапа, чья сигнатура их затронула (уже прецедент — Этапы 4/6/7/8). Но
-`apps/bot/src/strategies/*` (~20 конкретных реализаций `IStrategy`) содержат РЕАЛЬНУЮ
-бизнес-логику каждой стратегии — ни один этап этой миграции не редактировал эту
-директорию напрямую. Три пункта черновика Этапа 9 упёрлись именно в эту границу:
+Этап 9 констатировал: `apps/bot/src/strategies/*` (23 конкретные реализации `IStrategy`)
+блокируют конверсию `IStrategy.id`/`ExecutionContext.strategyId` на `StrategyId`, поскольку
+все 23 файла независимо объявляют `public readonly id`. Этап 10b — стадия, которая владеет
+этой директорией — довела конверсию до конца по всей цепочке:
 
-- **`IStrategy.id`/`ExecutionContext.strategyId` → `StrategyId`** (тип уже построен в
-  Этапе 1) — все 20 конкретных стратегий независимо объявляют `public readonly id: string`,
-  переопределяя `BaseStrategy`'s `abstract readonly id: string`. Конверсия сломала бы
-  компиляцию всех 20 разом.
-- **`StrategyRegistration.eventStartMs`/`StrategySnapshot.eventStartMs` → `Timestamp`** —
-  3 файла (`SelectiveEntryStrategy`, `SmartEntryStrategy`, `CrowdDeviationStrategy`) делают
-  реальную арифметику `expiresMs - eventStartMs`, не просто логируют значение.
-- **`CryptoSignalResult`/`CryptoSignalContext`'s поля** (`tsMs`/`asset`/`quality`/
-  `confidence`) — 6 файлов `apps/bot/strategies/*` читают их напрямую;
-  `StrategySnapshot.ts` только реэкспортирует типы, не строит и не читает поля сама.
+- `IStrategy.id`/`ExecutionContext.strategyId`/`BaseStrategy`'s `abstract readonly id` →
+  `StrategyId`.
+- `StrategyScheduler`'s внутреннее состояние (`_entries`/`_dirty`/`_pendingRegistrations`/
+  `_pendingDisposals`/`_queue`/`_queued`/`_deferredTimers` + routing-карт `Set`-значения,
+  `unregister()`/`getMetrics()`/`onOrderChanged()`'s параметры, `StopStrategyError.strategyId`)
+  — retyped на `StrategyId` **без единого внутреннего каста**: `StrategyId` структурно —
+  branded `string`, любое значение, производное от `IStrategy.id`, автоматически типизируется
+  верно; каста требует только ОБРАТНОЕ направление (сырой внешний `string` → `StrategyId`).
+- Все 23 конкретных стратегии (`apps/bot/src/strategies/*`) — конструкторный параметр
+  `strategyId`/`id` → `StrategyId`; 22 файла получили `unsafeStrategyId('литерал-по-
+  умолчанию')` (компайл-тайм известная, безопасная строка) вместо строкового литерала;
+  `CexCrowdNotAdverseStrategy.ts` не объявляет `id` сам, но имеет собственный default-
+  параметр, форвардящийся в `super(...)` — тоже требовал правки, несмотря на отсутствие
+  собственного `id`-поля.
+- `apps/bot/src/strategyFactory.ts` — единственная точка валидации: `config.id` (сырой,
+  `string | undefined`, граница `StrategyConfig` намеренно НЕ конвертируется) проверяется
+  через `asStrategyId()` один раз, результат протягивается во все 23 `new XStrategy(...)`.
+- `apps/bot/src/main.ts`/`MarketRotation.ts` — динамически вычисленные (`` `prefix-${n}` ``)
+  id оборачиваются `unsafeStrategyId(...)` в точке конструирования (composition root,
+  механическая правка).
+
+### 6 портов остаются `string` — граница сместилась, не исчезла
+
+Этап 1 отложил конверсию `strategyId` в 6 портов (`IOrderRepository`/`IOrderStateStore`/
+`IStrategyCommitmentReader`/`IDecisionJournal`/`IExchangeClient`/`IOrderSubmissionRepository`).
+Расследование Этапа 10b нашло точную причину: реальный источник хранимых значений — не эти
+6 портов, а `Order`/`OrderState`/`OrderEvent` (`@polymarket/order`, отдельный пакет, вне
+мандата этой миграции), чей собственный докблок называет `strategyId` частью explicit
+event-replay/journal формата (`Order.fromEvents()`). Даже если бы 6 портов сменили сигнатуру
+на `StrategyId`, реально хранимое/сравниваемое поле осталось бы `string`. `IExchangeClient`
+неожиданно оказался безопасен по другой причине: `strategyId` никогда не долетает до
+реального исходящего HTTP-запроса — используется только для лога и in-process domain-события.
+
+### `OrderEventBridge` — граница валидации между типизированным и сырым миром
+
+`OrderEventBridge` — единственное место, где сырой `Order`/`OrderEvent`-`strategyId` (`string`)
+пересекает границу в типизированный `StrategyScheduler` (`StrategyId`). Оба read-сайта
+(`ORDER_REJECTED`-handler, `_notifyScheduler()`) валидируют через `asStrategyId(...)` с тем
+же graceful-skip на невалид/`undefined`, что уже было — см. `docs/architecture/
+boundary-contract.md`, Решение 12, за обобщённым принципом.
+
+## `eventStartMs` → `Timestamp` (Этап 10b)
+
+`StrategyRegistration.eventStartMs`/`StrategyEntry.eventStartMs`/`StrategySnapshot.eventStartMs`
+— все три `?: number` → `?: Timestamp`. Расследование нашло, что реальный периметр — 20 из
+23 файлов (не 3, как предполагал Этап 9), с разными формами использования (только warmup-
+гейт — 14 файлов; реальная duration-арифметика — 4 файла, включая `AvellanedaStoikovStrategy`
+с 4 независимыми вычислениями; HTTP-граница + warmup — `BinanceProbMMStrategy`; только
+presence-check — `OrderBookWallStrategy`). Форма конверсии — граница, не сквозная
+`Timestamp`-арифметика: на "store"-сайте каждого файла — один `.toNumber()`-анврап в уже
+существующее `number`-поле, вся последующая арифметика (гейты, `pctElapsed`-вычисления)
+остаётся буквально без изменений.
+
+**Критический механический риск, закрытый этим этапом**: ~19 сайтов проверяли
+`eventStartMs` через truthy (`if (snapshot.eventStartMs)`), полагаясь на то, что `0` и
+`undefined` — оба falsy для `number`. `Timestamp`-объект (даже оборачивающий 0) —
+ВСЕГДА truthy. Каждый такой сайт переведён на явную проверку `!== undefined`/`===
+undefined` — иначе гвард компилировался бы чисто, но молча переставал бы защищать.
 
 `StrategySnapshot.cryptoPrice`-блок (`targetPrice`/`resolutionPrice`/`currentPrice`/
 `chainlink.price`/`binance.price`) остаётся `number` НАВСЕГДА, не отложено — та же
 крипто-спот-цена, несовместимая с `Price` VO, что уже дважды подтверждена в этой миграции
-(`cross-market`, Этап 4; `CryptoMarketDataStore`, Этап 8). Дополнительно: `StrategySnapshot`
-целиком пересобирается на каждый tick — это делает даже `timestampMs`-поля хот-путными в
-контексте конкретно этого снапшота.
+(`cross-market`, Этап 4; `CryptoMarketDataStore`, Этап 8). `.tsMs` на `CryptoSignalResult`
+(соседнее поле, всегда сравнивается с `nowMs`, который тоже остаётся `number`) — той же
+причиной остаётся `number`. `apps/bot/src/strategyRouter.ts`'s собственное отдельное поле
+`eventStartMs?: number` — структурно другой тип, не форсируется этой конверсией.
+
+## `CryptoSignalResult.confidence` → `Ratio` (Этап 10b)
+
+Единственное поле из `CryptoSignalResult`, реально сконвертированное в этом этапе.
+`.quality`/`.asset` — ноль читателей (подтверждено исчерпывающим repo-wide grep), остаются
+`number`/`string`. `.tsMs` — только diagnostic `nowMs - signal.tsMs`, тот же класс, что и
+`nowMs` само. `.strength` ([0..10], magnitude, не вероятность) — решение Этапа 8 не
+пересматривается. `CryptoSignalContext` — нерелевантен, не реэкспортируется этим пакетом и
+не упоминается ни в одном файле `apps/bot/strategies/*`.
+
+`Ratio` (core+facade) не имеет методов сравнения (`.gte`/`.lte` и т.п. не существуют) — любое
+пороговое сравнение требует `.toNumber()` независимо от того, один или оба операнда — `Ratio`;
+частичная конверсия (только `confidence`, `strength` остаётся `number`) поэтому не создаёт
+неудобного смешения типов в одном и том же гейте (`CexLeadLagStrategy`/
+`CexLeadLagExitPolicyStrategy`/`CexLeadLagRiskBudgetStrategy`) — просто один дополнительный
+`.toNumber()`-вызов на операнд.
 
 `getTokenBalanceAllowance` (`ITokenBalanceChecker`) не конвертирован вообще — не из-за
 блокирующих потребителей (единственный реальный имплементер — `apps/bot/main.ts`,
@@ -100,8 +164,10 @@ invariant-проверка над доверенным `randomUUID()`-вывод
 
 ## Ссылки
 
-- ADR: `docs/architecture/boundary-contract.md` (Решение 10 — частотный класс; Этап 9
-  установил дополнительное правило "composition-root vs apps/bot/strategies")
-- План миграции, Этап 9: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
+- ADR: `docs/architecture/boundary-contract.md` (Решение 10 — частотный класс; Решение 11 —
+  composition-root vs apps/bot/strategies; Решение 12 — валидация на мосту между
+  типизированным и сырым мирами)
+- План миграции, Этапы 9-10b: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
 - `@polymarket/market-state` — `docs/market-state.md` (источник `CryptoAssetId`,
-  `CryptoMarketDataStore`/`CryptoResolutionStore`/`CryptoSignalRegistry`)
+  `CryptoMarketDataStore`/`CryptoResolutionStore`/`CryptoSignalRegistry`,
+  `CryptoSignalResult.confidence`)

@@ -1,3 +1,5 @@
+import type { StrategyId } from '@polymarket/ids';
+
 /**
  * Типизированная ошибка `StrategyScheduler.unregister()` / `stopAll()`.
  *
@@ -11,7 +13,7 @@
  *
  * @example
  * ```typescript
- * const result = await scheduler.unregister('strategy-1');
+ * const result = await scheduler.unregister(strategy.id);
  * if (!result.ok) {
  *   if (result.error.code === 'EXECUTION_STILL_RUNNING') {
  *     // повторить позже — обычный execution ещё не завершился
@@ -91,7 +93,7 @@ export class StopStrategyError extends Error {
    */
   constructor(
     public readonly code: StopStrategyErrorCode,
-    public readonly strategyId: string,
+    public readonly strategyId: StrategyId,
     message: string,
     public readonly metadata?: Record<string, unknown>,
   ) {

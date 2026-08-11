@@ -2,6 +2,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategyIntent, StrategySnapshot, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 /**
@@ -364,7 +366,7 @@ function isDownLikeOutcome(name: string): boolean {
  * ```
  */
 export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'BinanceProbMMStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -404,7 +406,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
    * @param strategyId - Уникальный идентификатор экземпляра. Default: "binance-prob-mm-1"
    * @param logger - Опциональный логгер
    */
-  constructor(config: BinanceProbMMConfig, strategyId = 'binance-prob-mm-1', logger?: ILogger) {
+  constructor(config: BinanceProbMMConfig, strategyId: StrategyId = unsafeStrategyId('binance-prob-mm-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -454,7 +456,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
    */
   protected gather(snapshot: StrategySnapshot): BPMMData | undefined {
     if (!snapshot.cryptoPrice) return undefined;
-    if (!snapshot.eventStartMs) return undefined;
+    if (snapshot.eventStartMs === undefined) return undefined;
 
     const currentPrice = snapshot.cryptoPrice.currentPrice;
     const targetPrice = snapshot.cryptoPrice.targetPrice;
@@ -463,7 +465,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     }
 
     const marketId = String(snapshot.market.id ?? '');
-    const marketKey = `${marketId}:${snapshot.market.expirationMs}:${snapshot.eventStartMs}`;
+    const marketKey = `${marketId}:${snapshot.market.expirationMs}:${snapshot.eventStartMs.toNumber()}`;
     if (this._currentMarketKey !== marketKey) {
       this._resetForNewMarket(snapshot, marketKey);
       this._startModelBuild(snapshot, marketKey);
@@ -737,7 +739,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
   private _resetForNewMarket(snapshot: StrategySnapshot, marketKey: string): void {
     this._currentMarketKey = marketKey;
     this._currentQuestion = snapshot.market.question;
-    this._marketEventStartMs = snapshot.eventStartMs ?? 0;
+    this._marketEventStartMs = snapshot.eventStartMs?.toNumber() ?? 0;
     this._ewma = null;
     this._tradeCount = 0;
     this._lastTradeTimestampMs = 0;
@@ -792,7 +794,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
   private _startModelBuild(snapshot: StrategySnapshot, marketKey: string): void {
     if (this._modelLoading || this._modelReady) return;
 
-    const eventStartMs = snapshot.eventStartMs;
+    const eventStartMs = snapshot.eventStartMs?.toNumber();
     const asset = snapshot.cryptoPrice?.asset;
     const symbol = this._binanceSymbolOverride ?? inferBinanceSymbol(asset);
 

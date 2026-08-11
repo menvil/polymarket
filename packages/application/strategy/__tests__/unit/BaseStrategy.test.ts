@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { BaseStrategy } from '../../src/BaseStrategy.js';
 import type { StrategySnapshot } from '../../src/types/StrategySnapshot.js';
 import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
@@ -16,7 +17,7 @@ type TestAction = 'BUY' | 'SELL' | 'HOLD';
 // ── Тестовая реализация ────────────────────────────────────
 
 class TestStrategy extends BaseStrategy<TestData, TestAction> {
-  readonly id = 'test-1';
+  readonly id = unsafeStrategyId('test-1');
   readonly name = 'TestStrategy';
 
   /** Контроль возврата из gather() */

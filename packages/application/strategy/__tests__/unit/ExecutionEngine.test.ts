@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
-import { asOrderId, asInstrumentId, asPolymarketCtfToken } from '@polymarket/ids';
+import { asOrderId, asInstrumentId, asPolymarketCtfToken, unsafeStrategyId } from '@polymarket/ids';
 import type { OrderId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
 import { Money, Price, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
@@ -14,8 +14,8 @@ import type { StrategyIntent, PlaceIntent } from '../../src/types/StrategyIntent
 
 // ── Constants ──────────────────────────────────────────────
 
-const STRATEGY_ID = 'strategy-1';
-const OTHER_STRATEGY_ID = 'strategy-2';
+const STRATEGY_ID = unsafeStrategyId('strategy-1');
+const OTHER_STRATEGY_ID = unsafeStrategyId('strategy-2');
 const ACCOUNT_ID = 'venue:POLYMARKET:test' as unknown as AccountId;
 const OTHER_ACCOUNT_ID = 'venue:POLYMARKET:other' as unknown as AccountId;
 

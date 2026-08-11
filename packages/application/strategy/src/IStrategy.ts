@@ -40,7 +40,7 @@
  * @example
  * ```typescript
  * class SimpleQuoter implements IStrategy {
- *   readonly id = 'simple-quoter-1';
+ *   readonly id = unsafeStrategyId('simple-quoter-1');
  *   readonly name = 'SimpleQuoter';
  *   private _tickCount = 0;
  *
@@ -76,6 +76,7 @@
  * ```
  */
 import type { Result } from '@polymarket/result';
+import type { StrategyId } from '@polymarket/ids';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
 import type { StrategyIntent, StrategyStopIntent } from './types/StrategyIntent.js';
 import type { TriggerReason } from './types/TriggerReason.js';
@@ -95,7 +96,7 @@ export interface IStrategy {
    * Используется для трекинга в StrategyScheduler,
    * маршрутизации dirty flags и изоляции ордеров.
    */
-  readonly id: string;
+  readonly id: StrategyId;
 
   /**
    * Человекочитаемое имя стратегии (для логирования).

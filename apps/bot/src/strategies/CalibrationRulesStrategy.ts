@@ -12,6 +12,8 @@ import type { StrategyIntent, StrategySnapshot, TriggerReason } from '@polymarke
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { RegimeDetector } from './calibrated-crowd/RegimeDetector.js';
 import type { Regime } from './calibrated-crowd/EdgeTable.js';
 
@@ -95,7 +97,7 @@ function loadRules(path: string): readonly CalibrationRuleRow[] {
 }
 
 export class CalibrationRulesStrategy extends BaseStrategy<RuleData, RuleAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'CalibrationRulesStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -119,7 +121,7 @@ export class CalibrationRulesStrategy extends BaseStrategy<RuleData, RuleAction>
 
   constructor(
     config: CalibrationRulesConfig,
-    strategyId = 'calibration-rules-1',
+    strategyId: StrategyId = unsafeStrategyId('calibration-rules-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {
@@ -158,8 +160,8 @@ export class CalibrationRulesStrategy extends BaseStrategy<RuleData, RuleAction>
       this._currentExpirationMs = expiresMs;
       this._hasFilledEntryThisMarket = false;
       this._pendingPlace = false;
-      if (!snapshot.eventStartMs) return undefined;
-      this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs === undefined) return undefined;
+      this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       this._currentMarketId = String(snapshot.instrumentId);
     }
 

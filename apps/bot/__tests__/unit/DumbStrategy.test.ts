@@ -13,6 +13,7 @@ import { DumbStrategy } from '../../src/strategies/DumbStrategy.js';
 import type { DumbStrategyConfig } from '../../src/strategies/DumbStrategy.js';
 import type { StrategySnapshot, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // ── Хелперы ──────────────────────────────────────────────────────────────────
@@ -97,7 +98,7 @@ describe('DumbStrategy', () => {
   let strategy: DumbStrategy;
 
   beforeEach(() => {
-    strategy = new DumbStrategy(DEFAULT_CONFIG, 'test-dumb');
+    strategy = new DumbStrategy(DEFAULT_CONFIG, unsafeStrategyId('test-dumb'));
   });
 
   it('имеет корректный id и name', () => {
@@ -174,7 +175,7 @@ describe('DumbStrategy', () => {
         ...DEFAULT_CONFIG,
         buyOffsetPct: new Decimal('100'),
       };
-      const s = new DumbStrategy(config100, 'test');
+      const s = new DumbStrategy(config100, unsafeStrategyId('test'));
       const snapshot = makeSnapshot({ bestAsk: new Decimal('0.50') });
 
       expect(s.tick(snapshot, REASONS)).toHaveLength(0);

@@ -478,6 +478,10 @@ async function runSingleMarketBacktest(
   const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
   const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
   const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
+  // eventStartMs (raw number) остаётся для journal.startSession() ниже — IDecisionJournal
+  // хранит его как персистентное NDJSON-поле, не типизируется этим этапом миграции.
+  const eventStartMsResult = eventStartMs !== undefined ? TimestampService.create(eventStartMs) : undefined;
+  const eventStartTimestamp = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
 
   // Определяем нужен ли dual-token режим (стратегии, которые могут выбирать UP/DOWN).
   const needsComplementary = config.strategy === 'adaptive-entry'
@@ -507,7 +511,7 @@ async function runSingleMarketBacktest(
   const regResult = await engine.scheduler.register({
     strategy, instrumentId, asset, accountId, market: marketStub,
     cryptoSymbol: cryptoMeta?.rtdsFilter,
-    eventStartMs,
+    eventStartMs: eventStartTimestamp,
     complementaryInstrumentId: needsComplementary ? complementaryInstrumentId : undefined,
     complementaryAsset: complementaryAsset ?? undefined,
     additionalInstrumentIds: needsComplementary && complementaryInstrumentId ? [complementaryInstrumentId] : undefined,

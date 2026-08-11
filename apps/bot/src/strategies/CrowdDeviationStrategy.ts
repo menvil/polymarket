@@ -36,6 +36,8 @@ import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarke
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { RegimeDetector } from './calibrated-crowd/RegimeDetector.js';
 import type { Regime } from './calibrated-crowd/EdgeTable.js';
@@ -128,7 +130,7 @@ type BaselineMap = Map<string, number>;
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class CrowdDeviationStrategy extends BaseStrategy<CDData, CDAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'CrowdDeviationStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -173,7 +175,7 @@ export class CrowdDeviationStrategy extends BaseStrategy<CDData, CDAction> {
 
   constructor(
     config: CrowdDeviationConfig,
-    strategyId = 'crowd-deviation-1',
+    strategyId: StrategyId = unsafeStrategyId('crowd-deviation-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {
@@ -293,11 +295,11 @@ export class CrowdDeviationStrategy extends BaseStrategy<CDData, CDAction> {
       this._strikePrice = undefined;
       this._strikeLoggedMs = 0;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
         this._logger?.warn('CrowdDeviation: new market', {
           expiresMs,
-          eventStartMs: snapshot.eventStartMs,
+          eventStartMs: this._marketEventStartMs,
           instrumentId: snapshot.instrumentId,
         });
       } else {

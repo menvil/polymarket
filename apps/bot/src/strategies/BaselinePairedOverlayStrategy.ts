@@ -43,7 +43,8 @@ import type {
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
-import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
+import type { OrderId, InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
 import { EdgeTable, type EdgeZone, type Regime } from './calibrated-crowd/EdgeTable.js';
@@ -292,7 +293,7 @@ const PENDING_ORDER_GRACE_MS = 5_000;
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class BaselinePairedOverlayStrategy extends BaseStrategy<CCData, CCAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'BaselinePairedOverlayStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -389,7 +390,7 @@ export class BaselinePairedOverlayStrategy extends BaseStrategy<CCData, CCAction
 
   constructor(
     config: BaselinePairedOverlayConfig,
-    strategyId = 'baseline-paired-overlay-1',
+    strategyId: StrategyId = unsafeStrategyId('baseline-paired-overlay-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {
@@ -541,8 +542,8 @@ export class BaselinePairedOverlayStrategy extends BaseStrategy<CCData, CCAction
       this._pendingOverlayBuySide = undefined;
       this._overlayBuyUsed = false;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       } else {
         return undefined;
       }
@@ -1279,7 +1280,7 @@ export class BaselinePairedOverlayStrategy extends BaseStrategy<CCData, CCAction
         tokenDirection: data.cexDirectionForToken,
         valueBps: round(data.cexSignal.value, 6),
         strength: round(data.cexSignal.strength, 6),
-        confidence: round(data.cexSignal.confidence, 6),
+        confidence: round(data.cexSignal.confidence.toNumber(), 6),
         stale: data.cexSignal.stale,
         fresh: data.cexFresh,
         ageMs: data.nowMs - data.cexSignal.tsMs,

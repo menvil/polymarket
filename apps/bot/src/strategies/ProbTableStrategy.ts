@@ -28,6 +28,8 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { readFileSync } from 'fs';
 
@@ -87,7 +89,7 @@ type PTAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'ProbTableStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -121,7 +123,7 @@ export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
   /** Edge при входе (для логирования) */
   private _entryEdgeCents = 0;
 
-  constructor(config: ProbTableConfig, strategyId = 'prob-table-1', logger?: ILogger) {
+  constructor(config: ProbTableConfig, strategyId: StrategyId = unsafeStrategyId('prob-table-1'), logger?: ILogger) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -174,8 +176,8 @@ export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
       this._inPosition = false;
       this._entryEdgeCents = 0;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       } else {
         return undefined;
       }

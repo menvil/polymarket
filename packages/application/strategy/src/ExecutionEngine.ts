@@ -44,7 +44,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import type { AccountId, AssetId, InstrumentId } from '@polymarket/ids';
+import type { AccountId, AssetId, InstrumentId, StrategyId } from '@polymarket/ids';
 import { accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
 import { Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
@@ -102,7 +102,7 @@ export interface ExecutionEngineDeps {
  * Контекст исполнения — привязка intents к конкретной стратегии и инструменту.
  */
 export interface ExecutionContext {
-  readonly strategyId: string;
+  readonly strategyId: StrategyId;
   readonly accountId: AccountId;
   readonly instrumentId: InstrumentId;
   readonly asset: AssetId;

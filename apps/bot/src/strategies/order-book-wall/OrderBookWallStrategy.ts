@@ -27,6 +27,7 @@ import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategyIntent, StrategySnapshot, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import type { CexTradeTick, CexVenue } from '@polymarket/strategy';
 
@@ -90,7 +91,7 @@ function binaryUpProbability(
  * Стратегия анализа стенок в стакане CEX для торговли на Polymarket.
  */
 export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'OrderBookWallStrategy';
 
   // ── Параметры (resolved с defaults) ──────────────────────────────────────
@@ -147,7 +148,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
    * );
    * ```
    */
-  public constructor(id: string, config: OrderBookWallConfig, logger?: ILogger) {
+  public constructor(id: StrategyId, config: OrderBookWallConfig, logger?: ILogger) {
     super();
     this.id = id;
     this._side = config.side;
@@ -194,7 +195,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
    */
   protected gather(snapshot: StrategySnapshot): OBWData | undefined {
     const { cryptoPrice, cryptoVenueHistory, eventStartMs, portfolio, nowMs } = snapshot;
-    if (!cryptoPrice || !cryptoVenueHistory || !eventStartMs || !portfolio) return undefined;
+    if (!cryptoPrice || !cryptoVenueHistory || eventStartMs === undefined || !portfolio) return undefined;
 
     const chainlink = cryptoPrice.chainlink;
     if (!chainlink || !Number.isFinite(chainlink.price) || chainlink.price <= 0) return undefined;

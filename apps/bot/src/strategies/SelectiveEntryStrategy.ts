@@ -48,7 +48,8 @@ import { placeTarget } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId, AssetId } from '@polymarket/ids';
+import type { InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
 
@@ -199,7 +200,7 @@ type SEAction =
 // ── Реализация ────────────────────────────────────────────────────────────────
 
 export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'SelectiveEntryStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -268,7 +269,7 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
   private _cancelAfterPlace = 0;
   private _repricePending = false;
 
-  constructor(config: SelectiveEntryConfig, strategyId = 'selective-entry-1', logger?: ILogger, journal?: IDecisionJournal) {
+  constructor(config: SelectiveEntryConfig, strategyId: StrategyId = unsafeStrategyId('selective-entry-1'), logger?: ILogger, journal?: IDecisionJournal) {
     super();
     this.id = strategyId;
     this._logger = logger;
@@ -354,13 +355,14 @@ export class SelectiveEntryStrategy extends BaseStrategy<SEData, SEAction> {
       this._cancelAfterPlace = 0;
       this._repricePending = false;
 
-      if (snapshot.eventStartMs) {
-        this._marketEventStartMs = snapshot.eventStartMs;
-        this._marketDurationMs = expiresMs - snapshot.eventStartMs;
+      if (snapshot.eventStartMs !== undefined) {
+        const eventStartMs = snapshot.eventStartMs.toNumber();
+        this._marketEventStartMs = eventStartMs;
+        this._marketDurationMs = expiresMs - eventStartMs;
         this._currentMarketId = String(snapshot.instrumentId);
         this._logger?.warn('SelectiveEntry: new market', {
           expiresMs,
-          eventStartMs: snapshot.eventStartMs,
+          eventStartMs,
           instrumentId: snapshot.instrumentId,
         });
       } else {

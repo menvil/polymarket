@@ -21,6 +21,17 @@
  * OrderEvent содержит только orderId. Bridge ищет Order через IOrderStateStore
  * (sync read) для получения strategyId.
  *
+ * ### Граница валидации StrategyId (Этап 10b, ADR Решение 12):
+ * `Order`/`OrderEvent` (`@polymarket/order`) хранят `strategyId` как сырой
+ * `string` — явный event-replay/journal формат (`Order.fromEvents()`
+ * воспроизводит историю без валидации), вне мандата типизации этой миграции.
+ * `StrategyScheduler`, наоборот, типизирует `strategyId` как branded
+ * `StrategyId`. Этот файл — единственная точка, где сырое значение
+ * пересекает границу: оба read-сайта (`ORDER_REJECTED`-handler,
+ * `_notifyScheduler()`) валидируют через `asStrategyId()` перед вызовом
+ * `scheduler.onOrderChanged()`. Домен `Order`/`OrderEvent` не типизируется —
+ * валидация происходит здесь, а не распространяется внутрь сущности.
+ *
  * ### Unreserve баланса:
  * Для INTERNAL cancels (через CancelOrderUseCase) — unreserve выполняется в use case.
  * Для EXTERNAL cancels (venue-initiated) — unreserve должен выполняться в OrderUpdateHandler.
@@ -36,7 +47,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { OrderId } from '@polymarket/ids';
-import { assetIdToInstrumentId } from '@polymarket/ids';
+import { assetIdToInstrumentId, asStrategyId } from '@polymarket/ids';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
@@ -102,8 +113,10 @@ export class OrderEventBridge {
     // ORDER_REJECTED → notify scheduler
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_REJECTED', (event) => {
-        if ('strategyId' in event && typeof event.strategyId === 'string' && event.strategyId.length > 0) {
-          this._deps.scheduler.onOrderChanged(event.strategyId, 'ORDER_UPDATE');
+        const rawStrategyId = 'strategyId' in event ? event.strategyId : undefined;
+        const strategyId = typeof rawStrategyId === 'string' ? asStrategyId(rawStrategyId) : undefined;
+        if (strategyId !== undefined) {
+          this._deps.scheduler.onOrderChanged(strategyId, 'ORDER_UPDATE');
           return;
         }
         this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
@@ -220,9 +233,18 @@ export class OrderEventBridge {
       return;
     }
 
-    const strategyId = order.strategyId;
-    if (!strategyId) {
+    const rawStrategyId = order.strategyId;
+    if (!rawStrategyId) {
       return; // Ордер без стратегии — не маршрутизируем
+    }
+
+    const strategyId = asStrategyId(rawStrategyId);
+    if (strategyId === undefined) {
+      this._logger.warn('OrderEventBridge: order.strategyId failed StrategyId format validation, skipping', {
+        orderId: String(orderId),
+        rawStrategyId,
+      });
+      return;
     }
 
     this._deps.scheduler.onOrderChanged(strategyId, reason);

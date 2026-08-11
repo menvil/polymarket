@@ -51,7 +51,8 @@
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
-import type { OrderId } from '@polymarket/ids';
+import type { OrderId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import Decimal from 'decimal.js';
 
@@ -129,7 +130,7 @@ export type DumbAction =
 // ── Реализация ──────────────────────────────────────────────────────────────
 
 export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'DumbStrategy';
 
   private readonly _config: DumbStrategyConfig;
@@ -140,7 +141,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
    * @param strategyId - Уникальный идентификатор экземпляра (по умолчанию 'dumb-1')
    * @param logger - Опциональный логгер для диагностики тиков
    */
-  constructor(config: DumbStrategyConfig, strategyId = 'dumb-1', logger?: ILogger) {
+  constructor(config: DumbStrategyConfig, strategyId: StrategyId = unsafeStrategyId('dumb-1'), logger?: ILogger) {
     super();
     this._config = config;
     this.id = strategyId;

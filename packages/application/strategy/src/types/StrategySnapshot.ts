@@ -30,6 +30,7 @@
  * ```
  */
 import type { InstrumentId, AssetId } from '@polymarket/ids';
+import type { Timestamp } from '@polymarket/value-objects';
 import type { TopOfBook } from '@polymarket/event-bus';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
@@ -288,23 +289,29 @@ export interface StrategySnapshot {
   readonly nowMs: number;
 
   /**
-   * Время начала торговли на рынке (epoch ms).
+   * Время начала торговли на рынке.
    *
    * @remarks
    * Из Gamma API поле `eventStartTime` для крипто-рынков.
    * undefined если неизвестно.
    *
-   * Стратегия использует для вычисления длительности рынка:
-   * `durationMs = market.expirationMs - eventStartMs`
+   * Стратегия использует для вычисления длительности рынка (`market.expirationMs`
+   * остаётся `number` — hot-path/соседнее поле, см. `docs/architecture/
+   * boundary-contract.md`, Решение 10):
+   * `durationMs = market.expirationMs - eventStartMs.toNumber()`
+   *
+   * Важно: `Timestamp` (даже оборачивающий 0) — всегда truthy. Проверка
+   * "значение задано" должна быть явной (`!== undefined`), не полагаться
+   * на truthy/falsy, как было допустимо для `number`.
    *
    * @example
    * ```typescript
-   * const durationMs = snapshot.eventStartMs
-   *   ? snapshot.market.expirationMs - snapshot.eventStartMs
+   * const durationMs = snapshot.eventStartMs !== undefined
+   *   ? snapshot.market.expirationMs - snapshot.eventStartMs.toNumber()
    *   : undefined;
    * ```
    */
-  readonly eventStartMs?: number;
+  readonly eventStartMs?: Timestamp;
 
   // ── Complementary Token ───────────────────────────────────
   /**

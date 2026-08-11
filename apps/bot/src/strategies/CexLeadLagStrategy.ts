@@ -9,7 +9,8 @@ import type {
   TriggerReason,
 } from '@polymarket/strategy';
 import { Price, Quantity } from '@polymarket/value-objects';
-import type { AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import type { AssetId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import Decimal from 'decimal.js';
@@ -697,7 +698,7 @@ function toNumber(value: number | Decimal | undefined, fallback: number): number
  * ```
  */
 export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagAction> {
-  public readonly id: string;
+  public readonly id: StrategyId;
   public readonly name = 'CexLeadLagStrategy';
 
   private readonly _logger: ILogger | undefined;
@@ -882,7 +883,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    */
   constructor(
     config: CexLeadLagConfig,
-    strategyId = 'cex-lead-lag-1',
+    strategyId: StrategyId = unsafeStrategyId('cex-lead-lag-1'),
     logger?: ILogger,
     journal?: IDecisionJournal,
   ) {
@@ -1031,12 +1032,12 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
    * @returns Signal-first данные тика или undefined
    */
   protected gather(snapshot: StrategySnapshot): CexLeadLagData | undefined {
-    if (!snapshot.cryptoPrice || !snapshot.eventStartMs) return undefined;
+    if (!snapshot.cryptoPrice || snapshot.eventStartMs === undefined) return undefined;
 
     const expiresMs = snapshot.market.expirationMs;
     if (this._currentExpirationMs !== expiresMs) {
       this._currentExpirationMs = expiresMs;
-      this._marketEventStartMs = snapshot.eventStartMs;
+      this._marketEventStartMs = snapshot.eventStartMs.toNumber();
       this._ewma = null;
       this._tradeCount = 0;
       this._lastTradeTimestampMs = 0;
@@ -1123,7 +1124,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       !signal.stale &&
       signal.direction !== 'flat' &&
       signal.strength >= this._minSignalStrength &&
-      signal.confidence >= this._minSignalConfidence,
+      signal.confidence.toNumber() >= this._minSignalConfidence,
     );
 
     const signalFavorable = signalStrong && signalDirectionForToken === 'up';
@@ -1179,7 +1180,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
 
     // ── Signal quality and expected move ───────────────────────────────────
     const signalStrength01 = signalStrong ? Math.min(1, signal!.strength / 10) : 0;
-    const signalConfidence01 = signalStrong ? Math.min(1, signal!.confidence) : 0;
+    const signalConfidence01 = signalStrong ? Math.min(1, signal!.confidence.toNumber()) : 0;
 
     const signalExpectedMoveCents =
       signalStrong && signalDirectionForToken !== 'flat'
@@ -2831,7 +2832,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         value: data.signal?.value ?? null,
         unit: data.signal?.unit ?? null,
         strength: data.signal?.strength ?? null,
-        confidence: data.signal?.confidence ?? null,
+        confidence: data.signal?.confidence.toNumber() ?? null,
         stale: data.signal?.stale ?? null,
         ageMs: data.signal ? data.nowMs - data.signal.tsMs : null,
         strong: data.signalStrong,
@@ -2947,7 +2948,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
       direction: data.signalDirectionForToken as 'up' | 'down' | 'flat',
       residualBps: data.residualBps,
       signalStrength: data.signal?.strength ?? 0,
-      signalConfidence: data.signal?.confidence ?? 0,
+      signalConfidence: data.signal?.confidence.toNumber() ?? 0,
       persistenceMs: data.signalPersistenceMs,
       midCents: data.tradeEwmaCents,
       chainlinkPrice: data.chainlinkPrice,
@@ -3179,7 +3180,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
         value: data.signal?.value.toFixed(3) ?? 'none',
         unit: data.signal?.unit ?? 'none',
         strength: data.signal?.strength.toFixed(2) ?? 'none',
-        confidence: data.signal?.confidence.toFixed(3) ?? 'none',
+        confidence: data.signal?.confidence.toNumber().toFixed(3) ?? 'none',
         stale: data.signal?.stale ?? 'none',
         ageMs: data.signal ? data.nowMs - data.signal.tsMs : 'none',
         strong: data.signalStrong,

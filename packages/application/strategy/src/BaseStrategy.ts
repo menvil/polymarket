@@ -56,6 +56,7 @@
  */
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
+import type { StrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';
@@ -70,7 +71,7 @@ import type { TriggerReason } from './types/TriggerReason.js';
  * см. TSDoc модуля в начале файла.
  */
 export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
-  abstract readonly id: string;
+  abstract readonly id: StrategyId;
   abstract readonly name: string;
 
   /**
