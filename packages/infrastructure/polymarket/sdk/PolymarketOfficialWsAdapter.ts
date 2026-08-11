@@ -183,7 +183,7 @@
 
 import type { IMarketDataFeed } from '../ports/IMarketDataFeed.js';
 import type { ILogger } from '@polymarket/logger';
-import { OrderBook as Orderbook } from '@polymarket/order-book';
+import type { Orderbook } from '@polymarket/orderbook';
 
 /**
  * Конфигурация официального SDK WebSocket-клиента

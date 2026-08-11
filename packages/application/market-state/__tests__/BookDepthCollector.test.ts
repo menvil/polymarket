@@ -16,7 +16,9 @@ import { BookDepthCollector } from '../src/BookDepthCollector.js';
 import type { BookDepthCollectorDeps, BookDepthCollectorConfig } from '../src/BookDepthCollector.js';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { OrderBookSnapshot } from '@polymarket/order-book';
+import { Orderbook } from '@polymarket/orderbook';
+import { TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 
 /** Разворачивает `Result` для тестов, где конфиг заведомо валиден. */
 function makeCollector(
@@ -36,8 +38,22 @@ function makeLogger(): ILogger {
   } as unknown as ILogger;
 }
 
-function makeSnapshot(marketId: string, tokenId: string): OrderBookSnapshot {
-  return { marketId, tokenId, bids: [], asks: [], timestamp: undefined } as unknown as OrderBookSnapshot;
+/** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
+function makeTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) throw new Error(`Invalid timestamp: ${ms}`);
+  return result.value;
+}
+
+/** Создаёт пустой (без уровней) Orderbook — content самих bids/asks не важен для этих тестов. */
+function makeBook(marketId: string, tokenId: InstrumentId, receivedAtMs: number): Orderbook {
+  return Orderbook.fromLevels(
+    marketId as unknown as InstrumentId,
+    tokenId,
+    [],
+    [],
+    makeTimestamp(receivedAtMs),
+  );
 }
 
 const T0 = 1_700_000_000_000;
@@ -66,22 +82,22 @@ describe('BookDepthCollector (passive)', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
       expect(c.getHistory(TOKEN_A)).toBeUndefined();
 
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
       expect(c.getHistory(TOKEN_A)?.size()).toBe(1);
     });
 
     it('накапливает несколько снапшотов', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
       for (let i = 0; i < 3; i++) {
-        c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0 + i * 1000);
+        c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0 + i * 1000));
       }
       expect(c.getHistory(TOKEN_A)?.size()).toBe(3);
     });
 
     it('изолирует истории по инструментам', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
-      c.recordDirect(TOKEN_B, makeSnapshot('market-1', String(TOKEN_B)), T0);
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
+      c.recordDirect(TOKEN_B, makeBook('market-1', TOKEN_B, T0));
       expect(c.instrumentCount()).toBe(2);
     });
   });
@@ -90,7 +106,7 @@ describe('BookDepthCollector (passive)', () => {
     it('вытесняет старые снапшоты при превышении', () => {
       const c = makeCollector(makeDeps(), { maxCount: 3 });
       for (let i = 0; i < 5; i++) {
-        c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0 + i * 1000);
+        c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0 + i * 1000));
       }
       expect(c.getHistory(TOKEN_A)?.size()).toBe(3);
     });
@@ -99,8 +115,8 @@ describe('BookDepthCollector (passive)', () => {
   describe('clearMarket', () => {
     it('удаляет истории всех инструментов рынка', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
-      c.recordDirect(TOKEN_B, makeSnapshot('market-1', String(TOKEN_B)), T0);
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
+      c.recordDirect(TOKEN_B, makeBook('market-1', TOKEN_B, T0));
       expect(c.instrumentCount()).toBe(2);
 
       c.clearMarket('market-1' as unknown as MarketId);
@@ -111,7 +127,7 @@ describe('BookDepthCollector (passive)', () => {
 
     it('no-op для неизвестного рынка', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
       c.clearMarket('market-unknown' as unknown as MarketId);
       expect(c.getHistory(TOKEN_A)).toBeDefined();
       expect(c.instrumentCount()).toBe(1);
@@ -119,8 +135,8 @@ describe('BookDepthCollector (passive)', () => {
 
     it('#U4 смена marketId у инструмента → чистится по новому рынку', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
-      c.recordDirect(TOKEN_A, makeSnapshot('market-2', String(TOKEN_A)), T0 + 1); // «переехал»
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
+      c.recordDirect(TOKEN_A, makeBook('market-2', TOKEN_A, T0 + 1)); // «переехал»
 
       c.clearMarket('market-1' as unknown as MarketId); // старый рынок — инструмент уже не там
       expect(c.getHistory(TOKEN_A)).toBeDefined();
@@ -132,8 +148,8 @@ describe('BookDepthCollector (passive)', () => {
   describe('clear', () => {
     it('удаляет все истории', () => {
       const c = makeCollector(makeDeps(), { maxCount: 100 });
-      c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
-      c.recordDirect(TOKEN_B, makeSnapshot('market-2', String(TOKEN_B)), T0);
+      c.recordDirect(TOKEN_A, makeBook('market-1', TOKEN_A, T0));
+      c.recordDirect(TOKEN_B, makeBook('market-2', TOKEN_B, T0));
       c.clear();
       expect(c.instrumentCount()).toBe(0);
     });

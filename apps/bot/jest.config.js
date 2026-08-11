@@ -36,7 +36,7 @@ export default {
     '^@polymarket/market$': '<rootDir>/../../packages/domain/entities/market/src/index.ts',
     '^@polymarket/position$': '<rootDir>/../../packages/domain/entities/position/src/index.ts',
     '^@polymarket/trade-tape$': '<rootDir>/../../packages/domain/market-data/trade-tape/src/index.ts',
-    '^@polymarket/order-book$': '<rootDir>/../../packages/domain/market-data/order-book/src/index.ts',
+    '^@polymarket/orderbook$': '<rootDir>/../../packages/domain/entities/orderbook/src/index.ts',
     '^@polymarket/value-objects/asset-quantity$': '<rootDir>/../../packages/domain/value-objects/src/asset-quantity/index.ts',
     '^@polymarket/fill$': '<rootDir>/../../packages/domain/entities/fill/src/index.ts',
     '^@polymarket/fill/polymarket-fee$': '<rootDir>/../../packages/domain/entities/fill/src/polymarket-fee.ts',

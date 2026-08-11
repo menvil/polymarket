@@ -95,6 +95,8 @@ import type { ILogger } from '@polymarket/logger';
 import type { AccountId, AssetId, InstrumentId, CryptoAssetId } from '@polymarket/ids';
 import { assetIdToInstrumentId, assetIdToString, asOrderId, asCryptoAssetId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
+import type { RollingWindow } from '@polymarket/rolling-window';
+import type { Orderbook } from '@polymarket/orderbook';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { IPortfolioStore, IOrderStateStore, IMarketCatalog, IStrategyCommitmentReader, StrategyCommitment } from '@polymarket/ports';
@@ -212,7 +214,7 @@ export interface IMarketDataStore {
   /** Sync read: последний TopOfBook */
   getTopOfBook(instrumentId: InstrumentId): import('@polymarket/event-bus').TopOfBook | undefined;
   /** Sync read: история стакана */
-  getBookHistory(instrumentId: InstrumentId): import('@polymarket/order-book').OrderBookHistory | undefined;
+  getBookHistory(instrumentId: InstrumentId): RollingWindow<Orderbook> | undefined;
   /** Sync read: лента трейдов */
   getTradeTape(instrumentId: InstrumentId): import('@polymarket/trade-tape').TradeTape | undefined;
 }

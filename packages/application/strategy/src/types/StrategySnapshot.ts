@@ -31,7 +31,8 @@
  */
 import type { InstrumentId, AssetId } from '@polymarket/ids';
 import type { TopOfBook } from '@polymarket/event-bus';
-import type { OrderBookHistory } from '@polymarket/order-book';
+import type { RollingWindow } from '@polymarket/rolling-window';
+import type { Orderbook } from '@polymarket/orderbook';
 import type { TradeTape } from '@polymarket/trade-tape';
 import type { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
@@ -88,7 +89,7 @@ export interface TradableInstrumentSnapshot {
   /** Лучшие bid/ask/spread; undefined если данных ещё нет */
   readonly topOfBook: TopOfBook | undefined;
   /** Rolling history снапшотов стакана; undefined если BookDepth ещё не приходил */
-  readonly bookHistory: OrderBookHistory | undefined;
+  readonly bookHistory: RollingWindow<Orderbook> | undefined;
   /** Rolling лента публичных трейдов; undefined если трейдов ещё не было */
   readonly tradeTape: TradeTape | undefined;
   /** Ограничения инструмента из каталога; undefined если инструмент неизвестен каталогу */
@@ -141,7 +142,7 @@ export interface StrategySnapshot {
    * undefined если BookDepth ещё не приходил.
    * Стратегия может получить последний снапшот: `bookHistory.getLatest()`.
    */
-  readonly bookHistory: OrderBookHistory | undefined;
+  readonly bookHistory: RollingWindow<Orderbook> | undefined;
 
   /**
    * Rolling лента публичных трейдов.

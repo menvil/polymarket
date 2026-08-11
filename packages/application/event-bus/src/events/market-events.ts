@@ -7,7 +7,7 @@
  * потому что несколько стратегий получают это событие через fanout.
  * Если передать mutable OrderBook, стратегия А увидит изменения стратегии Б.
  */
-import type { OrderBookSnapshot } from '@polymarket/order-book';
+import type { Orderbook } from '@polymarket/orderbook';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
 import type { Price, Quantity, Timestamp, Side } from '@polymarket/value-objects';
 
@@ -55,16 +55,17 @@ export interface BookUpdatedEvent {
  * Низкочастотное событие — полный стакан по запросу или раз в N ms.
  *
  * @remarks
- * Несёт OrderBookSnapshot из @polymarket/order-book — типизированный тип.
- * Стратегии подписываются только если нужна полная глубина стакана.
- * BookUpdateHandler вызывает book.toSnapshot() при эмиссии.
+ * Несёт сам `Orderbook` (`@polymarket/orderbook`) — иммутабельная entity,
+ * безопасная для fanout-рассылки нескольким стратегиям без риска, что одна
+ * увидит мутацию другой (в отличие от старого mutable `OrderBook`, ради
+ * которого раньше строился отдельный `OrderBookSnapshot`-DTO).
  */
 export interface BookDepthEvent {
   readonly type: 'BOOK_DEPTH';
   /** ID токена (UP/DOWN outcome token) */
   readonly instrumentId: InstrumentId;
-  /** Полный снапшот стакана — типизированный, не массив строк */
-  readonly snapshot: OrderBookSnapshot;
+  /** Полный стакан — иммутабельная entity, не DTO */
+  readonly snapshot: Orderbook;
   /** Timestamp снапшота */
   readonly timestamp: Timestamp;
 }

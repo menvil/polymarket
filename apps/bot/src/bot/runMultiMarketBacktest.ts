@@ -36,9 +36,7 @@ import {
   CryptoResolutionStore,
 } from '@polymarket/market-state';
 import { BookUpdateHandler } from '@polymarket/handlers';
-import type { IBookRegistry } from '@polymarket/handlers';
-import { OrderBook } from '@polymarket/order-book';
-import type { OrderBook as OrderBookType } from '@polymarket/order-book';
+import { SimpleBookRegistry } from '../SimpleBookRegistry.js';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import {
@@ -46,7 +44,6 @@ import {
   KnownVenues,
   asPolymarketCtfToken,
 } from '@polymarket/ids';
-import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { parseCryptoMeta } from '@polymarket/exchange/adapters';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { SimplePosition } from '@polymarket/portfolio';
@@ -132,29 +129,6 @@ function matchesSnapshotFilter(
   }
 
   return true;
-}
-
-// ── SimpleBookRegistry (дубль из main.ts, нужен для BookUpdateHandler) ──────
-
-/**
- * Простая in-memory реализация IBookRegistry для backtest режима.
- * @internal
- */
-class SimpleBookRegistry implements IBookRegistry {
-  private readonly _books = new Map<string, OrderBookType>();
-  private _key(mId: MarketId, tId: InstrumentId): string { return `${String(mId)}:${String(tId)}`; }
-  get(mId: MarketId, tId: InstrumentId): OrderBookType | undefined { return this._books.get(this._key(mId, tId)); }
-  getOrCreate(mId: MarketId, tId: InstrumentId): OrderBookType {
-    const key = this._key(mId, tId);
-    let book = this._books.get(key);
-    if (!book) { book = OrderBook.create(mId, String(tId)); this._books.set(key, book); }
-    return book;
-  }
-  delete(mId: MarketId, tId: InstrumentId): void { this._books.delete(this._key(mId, tId)); }
-  deleteMarket(mId: MarketId): void {
-    const prefix = `${String(mId)}:`;
-    for (const key of [...this._books.keys()]) { if (key.startsWith(prefix)) this._books.delete(key); }
-  }
 }
 
 // ── Вспомогательные функции ─────────────────────────────────────────────────

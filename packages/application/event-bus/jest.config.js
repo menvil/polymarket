@@ -14,7 +14,7 @@ export default {
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
     '^@polymarket/order$': '<rootDir>/../../domain/entities/order/src/index.ts',
     '^@polymarket/fill$': '<rootDir>/../../domain/entities/fill/src/index.ts',
-    '^@polymarket/order-book$': '<rootDir>/../../domain/market-data/order-book/src/index.ts',
+    '^@polymarket/orderbook$': '<rootDir>/../../domain/entities/orderbook/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

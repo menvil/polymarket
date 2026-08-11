@@ -55,9 +55,9 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
-import { asMarketId } from '@polymarket/ids';
 import type { IEventBus, TopOfBook } from '@polymarket/event-bus';
-import type { OrderBookHistory } from '@polymarket/order-book';
+import type { RollingWindow } from '@polymarket/rolling-window';
+import type { Orderbook } from '@polymarket/orderbook';
 import type { TradeTape } from '@polymarket/trade-tape';
 import type { Trade } from '@polymarket/trade';
 import { TradeMapper } from '@polymarket/trade';
@@ -189,22 +189,16 @@ export class MarketDataStore {
         this._deps.bookCollector.recordDirect(
           event.instrumentId,
           event.snapshot,
-          event.timestamp.toNumber(),
         );
-        // Регистрируем instrument→market и из BOOK_DEPTH (snapshot несёт marketId):
-        // закрывает race, когда TRADE_RECEIVED приходит до BOOK_UPDATED — иначе
-        // лента трейдов не попала бы в reverse index и не очистилась при закрытии.
-        // snapshot.marketId — сырое поле старого @polymarket/order-book (string, не
-        // MarketId) — валидируем перед использованием вместо небезопасного каста.
-        const snapshotMarketId = asMarketId(event.snapshot.marketId);
-        if (snapshotMarketId === undefined) {
-          this._logger.warn('MarketDataStore: skipping instrument registration — invalid marketId in BOOK_DEPTH snapshot', {
-            tokenId: String(event.instrumentId),
-            rawMarketId: event.snapshot.marketId,
-          });
-        } else {
-          this._registerInstrument(snapshotMarketId, event.instrumentId);
-        }
+        // Регистрируем instrument→market и из BOOK_DEPTH (snapshot несёт marketId
+        // в поле instrumentId — см. TSDoc BookUpdateHandler про этот неймингный
+        // артефакт entity): закрывает race, когда TRADE_RECEIVED приходит до
+        // BOOK_UPDATED — иначе лента трейдов не попала бы в reverse index и не
+        // очистилась при закрытии.
+        // event.snapshot.instrumentId уже валидный MarketId (провалидирован при
+        // конструировании в BookUpdateHandler) — Этап-8's asMarketId()-воркэраунд
+        // для сырой строки старого @polymarket/order-book больше не нужен.
+        this._registerInstrument(event.snapshot.instrumentId as unknown as MarketId, event.instrumentId);
         // #2: уведомляем об изменении глубины. Reason 'BOOK' покрывает и
         // TopOfBook, и BookDepth; scheduler коалесцирует dirty-флаги per tick,
         // поэтому парный BOOK_UPDATED+BOOK_DEPTH даёт одну переоценку, не флудит.
@@ -363,9 +357,9 @@ export class MarketDataStore {
    * Возвращает историю снапшотов стакана.
    *
    * @param instrumentId - ID инструмента
-   * @returns OrderBookHistory или undefined
+   * @returns RollingWindow<Orderbook> или undefined
    */
-  public getBookHistory(instrumentId: InstrumentId): OrderBookHistory | undefined {
+  public getBookHistory(instrumentId: InstrumentId): RollingWindow<Orderbook> | undefined {
     return this._deps.bookCollector.getHistory(instrumentId);
   }
 

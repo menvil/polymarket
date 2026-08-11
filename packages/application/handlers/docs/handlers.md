@@ -13,8 +13,8 @@
 | `FillEventHandler` | Fill-событие user-channel (`WsFillStatus`) | `FILL_RECEIVED`, `FILL_CONFIRMED`, `FILL_FAILED` |
 | `OrderUpdateHandler` | `VenueOrderUpdate` (venue-статус ордера) | `ORDER_UPDATE_RECEIVED` |
 
-`IBookRegistry` — порт реестра `OrderBook`-экземпляров по ключу `(marketId, tokenId)`,
-которым владеет `BookUpdateHandler`.
+`IBookRegistry` — порт реестра `Orderbook`-экземпляров (`@polymarket/orderbook`, immutable
+entity) по ключу `(marketId, tokenId)`, которым владеет `BookUpdateHandler`.
 
 ## `IEventBus.publish()` → `Result` (Этап 6 плана миграции)
 
@@ -41,21 +41,42 @@
 либо оборачивалась в `try/catch`, который тоже просто логировал) — Этап 6 меняет механизм
 обработки ошибки (`Result` вместо throw/catch), не её семантику.
 
-## `IBookRegistry`/`OrderBook` — намеренно не тронуты в Этапе 6
+## `IBookRegistry`/`Orderbook` — immutable-паттерн (Этап 10a плана миграции)
 
-`BookUpdateHandler`/`IBookRegistry` работают с **mutable** `OrderBook`
-(`@polymarket/order-book`, market-data пакет, план на удаление). Миграция на immutable
-`Orderbook`-entity (`@polymarket/orderbook`, domain-пакет) требует: (а) новый метод
-интерфейса `IBookRegistry` (иммутабельное обновление не может мутировать существующий
-инстанс — реестр обязан явно "положить обновлённый экземпляр назад"), (б) решения о
-graceful-деградации при невалидном WS-вводе в `MarketDataFeedAdapter._convertLevels()`
-(единственном месте, конструирующем `PriceLevel[]` для `handleSnapshot()`) — оба вопроса
-вне периметра Этапа 6 и требуют отдельного расследования файла, явно закреплённого за
-Этапом 10 плана миграции. `BookUpdateHandler`/`IBookRegistry`/`MarketDataFeedAdapter.ts`
-мигрируют одним куском в Этапе 10, не растягиваясь через границу этапов.
+`BookUpdateHandler`/`IBookRegistry` изначально (до Этапа 10a) работали с **mutable**
+`OrderBook` (`@polymarket/order-book`, market-data пакет). Этап 6 сознательно не трогал
+этот периметр — требовались (а) новый метод интерфейса `IBookRegistry` (иммутабельное
+обновление не может мутировать существующий инстанс — реестр обязан явно "положить
+обновлённый экземпляр назад") и (б) решение о graceful-деградации при невалидном WS-вводе
+в `MarketDataFeedAdapter._convertLevels()` — оба вопроса были явно закреплены за Этапом 10.
+
+Реализовано в Этапе 10a — `IBookRegistry`/`BookUpdateHandler` теперь работают с
+**immutable** `Orderbook` (`@polymarket/orderbook`, domain-пакет, `Object.freeze()`):
+
+- `IBookRegistry` получил новый метод `set(marketId, tokenId, book: Orderbook): void` —
+  единственный способ "положить" обновлённый снапшот, поскольку мутации существующего
+  инстанса больше не бывает.
+- `BookUpdateHandler.handleSnapshot()` не читает реестр перед записью (ни `get`, ни
+  `getOrCreate`) — Polymarket шлёт только полные снапшоты, поэтому каждый вызов безусловно
+  строит новый `Orderbook.fromLevels(...)` и сразу вызывает `this._books.set(...)`.
+- `getBestBid()`/`getBestAsk()` возвращают `Price | null` (не `PriceLevel | undefined`) —
+  размер лучшего уровня читается отдельно через `book.bids[0]?.quantity`/
+  `book.asks[0]?.quantity`.
+- `getSpread()` возвращает `Result<Spread, OrderbookInvalidError>` — заменяет отдельную
+  проверку `rawSpread.gt(0)`, которая была нужна старому API (`getSpread()` уже сам
+  отсеивает `EMPTY_BOOK`/`ONE_SIDED`/`CROSSED_BOOK` через `Err`).
+- `MarketDataFeedAdapter._convertLevels()`/`BacktestEngine._convertLevels()` сохранили
+  прежнюю throw-and-skip форму (`Price.of()`/`Quantity.of()` в try/catch, невалидный
+  уровень пропускается с debug-логом, а не роняет весь снапшот) — просто строят
+  `OrderbookLevel.create(price, quantity)` вместо старого `{price, size}`-литерала.
+- Полная схема (нейминговый нюанс `instrumentId`-параметра, реальный код
+  `BookUpdateHandler`, `BookDepthCollector`'s `RollingWindow<Orderbook>`) —
+  `packages/domain/entities/orderbook/docs/orderbook-entity.md`, раздел "Реальное
+  подключение".
 
 ## Ссылки
 
 - ADR: `docs/architecture/boundary-contract.md`
 - `@polymarket/event-bus/docs/event-bus.md` — контракт `IEventBus`, deprecation-мост
-- План миграции, Этап 6: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
+- `@polymarket/orderbook/docs/orderbook-entity.md` — раздел "Реальное подключение"
+- План миграции, Этапы 6 и 10a: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`

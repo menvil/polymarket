@@ -22,6 +22,7 @@
     "@polymarket/value-objects": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/handlers": "0.1.0",
+    "@polymarket/orderbook": "0.1.0",
     "@polymarket/snapshot-readers": "0.1.0",
     "@polymarket/cross-market": "^0.1.0",
     "decimal.js": "^10.6.0"

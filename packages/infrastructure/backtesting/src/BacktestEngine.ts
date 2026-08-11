@@ -65,8 +65,8 @@ import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { OrderbookLevel } from '@polymarket/orderbook';
 import type { Side } from '@polymarket/value-objects';
-import type { PriceLevel } from '@polymarket/order-book';
 import type { BookUpdateHandler } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import { ReplayClock } from '@polymarket/time';
@@ -1099,23 +1099,23 @@ export class BacktestEngine {
   }
 
   /**
-   * Конвертирует raw уровни стакана в PriceLevel[] (Value Objects).
+   * Конвертирует raw уровни стакана в OrderbookLevel[] (Value Objects).
    *
    * @param levels - Массив { price, size } из JSON
    * @param filePath - Путь файла для логирования
-   * @returns PriceLevel[] с Value Objects
+   * @returns OrderbookLevel[] с Value Objects
    */
   private _convertLevels(
     levels: readonly RawLevel[],
     filePath: string,
-  ): PriceLevel[] {
-    const result: PriceLevel[] = [];
+  ): OrderbookLevel[] {
+    const result: OrderbookLevel[] = [];
     for (const level of levels) {
       try {
-        result.push({
-          price: Price.of(new Decimal(level.price)),
-          size: Quantity.of(new Decimal(level.size)),
-        });
+        result.push(OrderbookLevel.create(
+          Price.of(new Decimal(level.price)),
+          Quantity.of(new Decimal(level.size)),
+        ));
       } catch {
         this._logger.warn('Invalid price level, skipping', {
           price: level.price,

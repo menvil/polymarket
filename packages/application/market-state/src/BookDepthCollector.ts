@@ -2,23 +2,24 @@
  * Коллектор полных снапшотов стакана (Book Depth Collector)
  *
  * @remarks
- * **Пассивный буфер** rolling-истории снапшотов per tokenId в `OrderBookHistory`.
- * Подписками на EventBus владеет `MarketDataStore` — он пишет сюда через
- * `recordDirect()` и чистит через `clearMarket()`. У коллектора **нет**
- * `start()/stop()` и зависимости от EventBus (#1 — двойная запись невозможна).
+ * **Пассивный буфер** rolling-истории снапшотов per tokenId в
+ * `RollingWindow<Orderbook>`. Подписками на EventBus владеет `MarketDataStore` —
+ * он пишет сюда через `recordDirect()` и чистит через `clearMarket()`. У
+ * коллектора **нет** `start()/stop()` и зависимости от EventBus (#1 — двойная
+ * запись невозможна).
  *
  * ### Принцип: только запись, стратегия считает сама.
  * Коллектор НЕ вычисляет имбаланс, метрики или сигналы.
  * Он просто ведёт буфер снапшотов заданной глубины.
- * Стратегия сама забирает нужный кусок истории и применяет
- * `ImbalanceCalculator` с нужным ей режимом.
+ * Стратегия сама забирает нужный кусок истории и читает уже готовые методы
+ * `Orderbook` (`getImbalance()`, `getSpread()`, ...).
  *
  * ### Жизненный цикл:
- * 1. `recordDirect(tokenId, snapshot, nowMs)` → `history.record(...)` для tokenId
+ * 1. `recordDirect(tokenId, book)` → `window.append(book)` для tokenId
  * 2. `clearMarket(marketId)` → истории инструментов рынка удаляются (cleanup памяти)
  *
  * ### Изоляция по инструментам:
- * У каждого tokenId своя `OrderBookHistory` с единой политикой из конфига.
+ * У каждого tokenId своя `RollingWindow<Orderbook>` с единой политикой из конфига.
  * Создаётся лениво при первом снапшоте.
  *
  * ### Сложность операций:
@@ -34,18 +35,14 @@
  * );
  * if (!collectorResult.ok) throw collectorResult.error;
  * const collector = collectorResult.value;
- * // MarketDataStore пишет: collector.recordDirect(tokenId, snapshot, nowMs);
+ * // MarketDataStore пишет: collector.recordDirect(tokenId, book);
  *
  * // В стратегии — забрать данные и посчитать самостоятельно:
  * const history = collector.getHistory(tokenId);
  * if (history) {
- *   const snapshots = history.getRecent(60_000);
  *   const latest = history.getLatest();
  *   if (latest) {
- *     const imbalance = ImbalanceCalculator.calculate(
- *       latest.bids, latest.asks,
- *       { type: 'TOP_N', levels: 5 },
- *     );
+ *     const imbalance = latest.getImbalance(5);
  *   }
  * }
  * ```
@@ -57,8 +54,8 @@ import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { ValidationError } from '@polymarket/errors';
-import { OrderBookHistory } from '@polymarket/order-book';
-import type { OrderBookRetentionPolicy, OrderBookSnapshot } from '@polymarket/order-book';
+import { RollingWindow, type RetentionPolicy } from '@polymarket/rolling-window';
+import { Orderbook } from '@polymarket/orderbook';
 
 /**
  * Зависимости BookDepthCollector.
@@ -71,7 +68,7 @@ import type { OrderBookRetentionPolicy, OrderBookSnapshot } from '@polymarket/or
 export interface BookDepthCollectorDeps {
   /** Logger */
   readonly logger: ILogger;
-  /** Источник времени для детерминированной работы OrderBookHistory */
+  /** Источник времени для детерминированной работы RollingWindow */
   readonly clock: IClock;
 }
 
@@ -91,13 +88,13 @@ export interface BookDepthCollectorDeps {
  * const result2 = BookDepthCollector.create(deps, { maxCount: 200 });
  * ```
  */
-export type BookDepthCollectorConfig = OrderBookRetentionPolicy;
+export type BookDepthCollectorConfig = RetentionPolicy;
 
 /**
  * Внутренняя запись: история снапшотов per tokenId.
  */
 interface InternalEntry {
-  readonly history: OrderBookHistory;
+  readonly history: RollingWindow<Orderbook>;
 }
 
 /**
@@ -139,10 +136,11 @@ export class BookDepthCollector {
    *   политика невалидна
    *
    * @remarks
-   * Полная проверка политики происходит здесь, на старте (через `OrderBookHistory.create()`,
-   * тот же валидатор, что использует ленивое создание истории в `_record()`) — не только
-   * "оба поля не заданы". Раньше (до конверсии throw→Result) невалидный конфиг тихо проходил
-   * конструктор и падал только на первом живом `BOOK_DEPTH`-событии.
+   * Полная проверка политики происходит здесь, на старте (через
+   * `RollingWindow.create()`, тот же валидатор, что использует ленивое создание
+   * истории в `_record()`) — не только "оба поля не заданы". Раньше (до конверсии
+   * throw→Result) невалидный конфиг тихо проходил конструктор и падал только на
+   * первом живом `BOOK_DEPTH`-событии.
    *
    * @example
    * ```typescript
@@ -155,7 +153,11 @@ export class BookDepthCollector {
     deps: BookDepthCollectorDeps,
     config: BookDepthCollectorConfig,
   ): Result<BookDepthCollector, ValidationError> {
-    const validation = OrderBookHistory.create(config, deps.clock);
+    const validation = RollingWindow.create<Orderbook>(
+      config,
+      deps.clock,
+      (book) => book.receivedAt.toNumber(),
+    );
     if (!validation.ok) {
       return Err(validation.error);
     }
@@ -166,7 +168,7 @@ export class BookDepthCollector {
    * Возвращает историю снапшотов для данного инструмента.
    *
    * @param tokenId - ID токена (UP/DOWN outcome token)
-   * @returns `OrderBookHistory` или `undefined` если снапшотов ещё не было
+   * @returns `RollingWindow<Orderbook>` или `undefined` если снапшотов ещё не было
    *
    * @example
    * ```typescript
@@ -174,12 +176,10 @@ export class BookDepthCollector {
    * if (!history || history.isEmpty()) return;
    *
    * const latest = history.getLatest();
-   * const imbalance = ImbalanceCalculator.calculate(
-   *   latest.bids, latest.asks, { type: 'WEIGHTED' }
-   * );
+   * const imbalance = latest?.getImbalance(5);
    * ```
    */
-  public getHistory(tokenId: InstrumentId): OrderBookHistory | undefined {
+  public getHistory(tokenId: InstrumentId): RollingWindow<Orderbook> | undefined {
     return this._entries.get(tokenId)?.history;
   }
 
@@ -196,19 +196,19 @@ export class BookDepthCollector {
    * Записывает снапшот напрямую, минуя EventBus подписку.
    *
    * @param instrumentId - ID инструмента (tokenId)
-   * @param snapshot - Полный снапшот стакана
-   * @param nowMs - Текущее время в epoch ms
+   * @param book - Полный стакан (иммутабельная entity)
    *
    * @remarks
    * Используется MarketDataStore для записи BOOK_DEPTH событий
    * без дублирования EventBus подписки (MarketDataStore уже подписан).
+   * Без отдельного `nowMs` — `RollingWindow`'s retention-таймстамп берётся из
+   * `book.receivedAt` (см. `getTimestampMs` в `create()`).
    */
   public recordDirect(
     instrumentId: InstrumentId,
-    snapshot: OrderBookSnapshot,
-    nowMs: number,
+    book: Orderbook,
   ): void {
-    this._record(instrumentId, snapshot, nowMs);
+    this._record(instrumentId, book);
   }
 
   /**
@@ -245,24 +245,30 @@ export class BookDepthCollector {
    *
    * @remarks
    * История создаётся лениво при первом снапшоте.
-   * При создании сохраняет `marketId` из снапшота и регистрирует в reverse index.
+   * При создании сохраняет marketId (из `book.instrumentId` — см. TSDoc
+   * `BookUpdateHandler` про этот неймингный артефакт entity) и регистрирует в
+   * reverse index.
    *
    * @param tokenId - ID токена
-   * @param snapshot - Полный снапшот стакана (содержит `snapshot.marketId`)
-   * @param nowMs - Текущее время (из timestamp события)
+   * @param book - Полный стакан (иммутабельная entity)
    */
   private _record(
     tokenId: InstrumentId,
-    snapshot: OrderBookSnapshot,
-    nowMs: number,
+    book: Orderbook,
   ): void {
-    // #U4: регистрируем marketId на каждом снапшоте (snapshot всегда несёт marketId);
-    // обрабатывает смену рынка инструментом и держит индекс консистентным.
-    this._registerMarket(tokenId, snapshot.marketId);
+    // #U4: регистрируем marketId на каждом снапшоте (book всегда несёт marketId
+    // в поле instrumentId); обрабатывает смену рынка инструментом и держит
+    // индекс консистентным.
+    const marketId = String(book.instrumentId);
+    this._registerMarket(tokenId, marketId);
 
     let entry = this._entries.get(tokenId);
     if (entry === undefined) {
-      const historyResult = OrderBookHistory.create(this._config, this._deps.clock);
+      const historyResult = RollingWindow.create<Orderbook>(
+        this._config,
+        this._deps.clock,
+        (b) => b.receivedAt.toNumber(),
+      );
       if (!historyResult.ok) {
         // Не должно происходить: _config уже прошёл ту же валидацию в конструкторе.
         // Fail-closed вместо throw в горячем пути — пропускаем снапшот, логируем громко.
@@ -276,11 +282,11 @@ export class BookDepthCollector {
       this._entries.set(tokenId, entry);
       this._deps.logger.debug('BookDepthCollector: new history created', {
         tokenId: String(tokenId),
-        marketId: snapshot.marketId,
+        marketId,
       });
     }
 
-    entry.history.record(snapshot, nowMs);
+    entry.history.append(book);
   }
 
   /**

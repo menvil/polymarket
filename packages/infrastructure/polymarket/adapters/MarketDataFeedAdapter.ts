@@ -48,7 +48,7 @@ import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { PriceLevel } from '@polymarket/order-book';
+import { OrderbookLevel } from '@polymarket/orderbook';
 import type { IMarketDataRecorder } from '@polymarket/ports';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
 import type { BookUpdateHandler } from '@polymarket/handlers';
@@ -172,23 +172,23 @@ export class MarketDataFeedAdapter {
   }
 
   /**
-   * Конвертирует WS raw levels в PriceLevel[] (Value Objects).
+   * Конвертирует WS raw levels в OrderbookLevel[] (Value Objects).
    *
    * @param levels - Raw уровни из WS (цена и размер как строки)
-   * @returns Массив PriceLevel с типизированными VOs
+   * @returns Массив OrderbookLevel с типизированными VOs
    *
    * @remarks
    * Невалидные уровни пропускаются с предупреждением в лог.
    * Конвертация выполняется на границе инфраструктуры (до передачи в application layer).
    */
-  private _convertLevels(levels: Array<{ price: string; size: string }>): PriceLevel[] {
-    const result: PriceLevel[] = [];
+  private _convertLevels(levels: Array<{ price: string; size: string }>): OrderbookLevel[] {
+    const result: OrderbookLevel[] = [];
 
     for (const level of levels) {
       try {
         const price = Price.of(new Decimal(level.price));
-        const size = Quantity.of(new Decimal(level.size));
-        result.push({ price, size });
+        const quantity = Quantity.of(new Decimal(level.size));
+        result.push(OrderbookLevel.create(price, quantity));
       } catch {
         // price="1" или price="0" — ожидаемо для рынков у разрешения (losing-токен).
         // Уровень пропускается корректно — DEBUG, не WARN.

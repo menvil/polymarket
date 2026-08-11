@@ -1,12 +1,16 @@
 # @polymarket/order-book
 
-> **Статус: deprecated.** Заменяется сущностью `@polymarket/orderbook`
-> (`packages/domain/entities/orderbook`, immutable, `Result`-based). План удаления —
-> Этап 10 миграции (`/Users/menvil/.claude/plans/synthetic-swimming-heron.md`): каждый
-> потребитель мигрирует в рамках своего этапа (6/8/9), Этап 10 закрывает оставшиеся
-> `apps/*`/`infrastructure/*`, затем пакет удаляется физически. До этого момента пакет
-> продолжает использоваться в проде — не удалять и не переставать поддерживать раньше
-> времени.
+> **Статус: заменён, физическое удаление — Этап 10d.** Все продакшн-потребители переведены
+> на сущность `@polymarket/orderbook` (`packages/domain/entities/orderbook`, immutable,
+> `Result`-based) в рамках Этапа 10a миграции
+> (`/Users/menvil/.claude/plans/synthetic-swimming-heron.md`): `IBookRegistry`/
+> `BookUpdateHandler`, `MarketDataFeedAdapter`/`BacktestEngine`'s `_convertLevels()`,
+> `BookDepthCollector`, вся type-plumbing волна (`market-events.ts`, `StrategyScheduler`,
+> `StrategySnapshot`, `MarketDataStore`), `CrossMarketArbStrategy`. Этот пакет (`OrderBook`,
+> throw/mutable API ниже) больше нигде не импортируется в `src/` продакшн-кода — физическое
+> удаление пакета целиком гейтится repo-wide нулевым grep (включая тестовые фикстуры) и
+> происходит в Этапе 10d вместе со снятием `publishOrThrow`-моста. До удаления код этого
+> пакета не трогается и не расширяется.
 
 ## Почему это сделано так?
 

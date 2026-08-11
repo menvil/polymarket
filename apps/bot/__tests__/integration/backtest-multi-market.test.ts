@@ -28,9 +28,7 @@ import { ReplayClock } from '@polymarket/time';
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { EventBus } from '@polymarket/event-bus';
 import { BookUpdateHandler } from '@polymarket/handlers';
-import type { IBookRegistry } from '@polymarket/handlers';
-import { OrderBook } from '@polymarket/order-book';
-import type { OrderBook as OrderBookType } from '@polymarket/order-book';
+import { SimpleBookRegistry } from '../../src/SimpleBookRegistry.js';
 import { asInstrumentId, asMarketId, parseAccountId, KnownVenues, asPolymarketCtfToken, assetIdToString } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
@@ -81,41 +79,6 @@ const DUMB_CONFIG: DumbStrategyConfig = {
 
 const INITIAL_BALANCE = new Decimal('1000');
 const ACCOUNT_ID_RAW = 'venue:POLYMARKET:backtest-multi';
-
-// ── IBookRegistry ──────────────────────────────────────────────────────────
-
-class SimpleBookRegistry implements IBookRegistry {
-  private readonly _books = new Map<string, OrderBookType>();
-
-  private _key(mId: MarketId, tId: InstrumentId): string {
-    return `${String(mId)}:${String(tId)}`;
-  }
-
-  get(mId: MarketId, tId: InstrumentId): OrderBookType | undefined {
-    return this._books.get(this._key(mId, tId));
-  }
-
-  getOrCreate(mId: MarketId, tId: InstrumentId): OrderBookType {
-    const key = this._key(mId, tId);
-    let book = this._books.get(key);
-    if (!book) {
-      book = OrderBook.create(mId, String(tId));
-      this._books.set(key, book);
-    }
-    return book;
-  }
-
-  delete(mId: MarketId, tId: InstrumentId): void {
-    this._books.delete(this._key(mId, tId));
-  }
-
-  deleteMarket(mId: MarketId): void {
-    const prefix = `${String(mId)}:`;
-    for (const key of [...this._books.keys()]) {
-      if (key.startsWith(prefix)) this._books.delete(key);
-    }
-  }
-}
 
 // ── Хелпер: извлечь meta из снапшота ────────────────────────────────────────
 

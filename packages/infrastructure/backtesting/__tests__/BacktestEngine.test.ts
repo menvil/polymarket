@@ -5,7 +5,7 @@
  * Проверяет корректность оркестрации бектеста:
  * - Сканирование директории снапшотов
  * - Построчное чтение NDJSON файлов
- * - Конвертацию уровней стакана в PriceLevel[]
+ * - Конвертацию уровней стакана в OrderbookLevel[]
  * - Передачу событий в BookUpdateHandler
  * - Корректный подсчёт статистики (processedFiles, processedEvents, errors)
  * - Обработку граничных случаев (пустая директория, невалидный JSON, невалидный asset_id)
@@ -22,9 +22,9 @@ import type { ILogger } from '@polymarket/logger';
 import type { IBookRegistry } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
-import type { OrderBook, PriceLevel } from '@polymarket/order-book';
+import { Orderbook } from '@polymarket/orderbook';
 import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 
 // ── Вспомогательные фабрики ───────────────────────────────────────────────────
@@ -46,35 +46,19 @@ function makeLogger(): ILogger {
   return logger;
 }
 
-/** Создаёт мок OrderBook */
-function makeOrderBook(): OrderBook {
-  return {
-    applyFullState: jest.fn() as unknown as OrderBook['applyFullState'],
-    getBestBid: jest.fn<() => PriceLevel | undefined>().mockReturnValue(undefined),
-    getBestAsk: jest.fn<() => PriceLevel | undefined>().mockReturnValue(undefined),
-    applyDelta: jest.fn() as unknown as OrderBook['applyDelta'],
-    getSpread: jest.fn() as unknown as OrderBook['getSpread'],
-    getMidPrice: jest.fn() as unknown as OrderBook['getMidPrice'],
-    getBids: jest.fn() as unknown as OrderBook['getBids'],
-    getAsks: jest.fn() as unknown as OrderBook['getAsks'],
-    getImbalance: jest.fn() as unknown as OrderBook['getImbalance'],
-    isEmpty: jest.fn() as unknown as OrderBook['isEmpty'],
-    toSnapshot: jest.fn() as unknown as OrderBook['toSnapshot'],
-  } as unknown as OrderBook;
-}
-
-/** Создаёт полный BacktestDeps с замоканным BookUpdateHandler */
+/** Создаёт полный BacktestDeps с замоканным IBookRegistry */
 function makeDeps(logger: ILogger): {
   deps: BacktestDeps;
   bookUpdateHandler: BookUpdateHandler;
-  mockBook: OrderBook;
+  books: IBookRegistry;
   eventBusMock: IEventBus;
 } {
-  const mockBook = makeOrderBook();
-
   const books: IBookRegistry = {
     get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
-    getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(mockBook),
+    getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockImplementation(
+      (marketId, tokenId) => Orderbook.empty(marketId as unknown as InstrumentId, tokenId),
+    ),
+    set: jest.fn<IBookRegistry['set']>(),
     delete: jest.fn<IBookRegistry['delete']>(),
     deleteMarket: jest.fn<IBookRegistry['deleteMarket']>(),
   };
@@ -117,7 +101,7 @@ function makeDeps(logger: ILogger): {
     logger,
   };
 
-  return { deps, bookUpdateHandler, mockBook, eventBusMock };
+  return { deps, bookUpdateHandler, books, eventBusMock };
 }
 
 /** Строка NDJSON-события стакана */
@@ -227,7 +211,7 @@ describe('BacktestEngine', () => {
       ]);
 
       const config: BacktestConfig = { snapshotDir: tmpDir };
-      const { deps, mockBook } = makeDeps(logger);
+      const { deps, books } = makeDeps(logger);
       const engine = new BacktestEngine(config, deps);
 
       const result = await engine.run();
@@ -235,8 +219,8 @@ describe('BacktestEngine', () => {
       expect(result.processedFiles).toBe(1);
       expect(result.processedEvents).toBe(1);
       expect(result.errors).toBe(0);
-      // BookUpdateHandler должен вызвать applyFullState
-      expect(mockBook.applyFullState).toHaveBeenCalledTimes(1);
+      // BookUpdateHandler должен положить построенный Orderbook в реестр
+      expect(books.set).toHaveBeenCalledTimes(1);
     });
 
     it('обрабатывает несколько EVENT-записей в одном файле', async () => {
@@ -248,13 +232,13 @@ describe('BacktestEngine', () => {
       ]);
 
       const config: BacktestConfig = { snapshotDir: tmpDir };
-      const { deps, mockBook } = makeDeps(logger);
+      const { deps, books } = makeDeps(logger);
       const engine = new BacktestEngine(config, deps);
 
       const result = await engine.run();
 
       expect(result.processedEvents).toBe(3);
-      expect(mockBook.applyFullState).toHaveBeenCalledTimes(3);
+      expect(books.set).toHaveBeenCalledTimes(3);
     });
 
     it('игнорирует META-записи (_type !== "EVENT")', async () => {
@@ -264,7 +248,7 @@ describe('BacktestEngine', () => {
       ]);
 
       const config: BacktestConfig = { snapshotDir: tmpDir };
-      const { deps, mockBook } = makeDeps(logger);
+      const { deps, books } = makeDeps(logger);
       const engine = new BacktestEngine(config, deps);
 
       const result = await engine.run();
@@ -272,7 +256,7 @@ describe('BacktestEngine', () => {
       expect(result.processedFiles).toBe(1);
       expect(result.processedEvents).toBe(0);
       expect(result.errors).toBe(0);
-      expect(mockBook.applyFullState).not.toHaveBeenCalled();
+      expect(books.set).not.toHaveBeenCalled();
     });
   });
 
@@ -398,7 +382,7 @@ describe('BacktestEngine', () => {
       ]);
 
       const config: BacktestConfig = { snapshotDir: tmpDir };
-      const { deps, mockBook } = makeDeps(logger);
+      const { deps, books } = makeDeps(logger);
       const engine = new BacktestEngine(config, deps);
 
       const result = await engine.run();
@@ -406,7 +390,7 @@ describe('BacktestEngine', () => {
       expect(result.processedFiles).toBe(1);
       expect(result.processedEvents).toBe(0);
       expect(result.errors).toBe(1);
-      expect(mockBook.applyFullState).not.toHaveBeenCalled();
+      expect(books.set).not.toHaveBeenCalled();
     });
 
     it('пропускает невалидные уровни стакана и продолжает обработку', async () => {
@@ -427,7 +411,7 @@ describe('BacktestEngine', () => {
       ]);
 
       const config: BacktestConfig = { snapshotDir: tmpDir };
-      const { deps, mockBook } = makeDeps(logger);
+      const { deps, books } = makeDeps(logger);
       const engine = new BacktestEngine(config, deps);
 
       const result = await engine.run();
@@ -436,11 +420,11 @@ describe('BacktestEngine', () => {
       expect(result.processedFiles).toBe(1);
       expect(result.processedEvents).toBe(1);
       expect(result.errors).toBe(0);
-      // applyFullState вызван с массивом без невалидного уровня
-      expect(mockBook.applyFullState).toHaveBeenCalledTimes(1);
-      const callArgs = (mockBook.applyFullState as ReturnType<typeof jest.fn>).mock.calls[0];
+      // Orderbook, положенный в реестр, построен без невалидного уровня
+      expect(books.set).toHaveBeenCalledTimes(1);
+      const callArgs = (books.set as ReturnType<typeof jest.fn>).mock.calls[0] as [MarketId, InstrumentId, Orderbook];
       // bids должен содержать только валидный уровень
-      expect((callArgs[0] as unknown[]).length).toBe(1);
+      expect(callArgs[2].bids.length).toBe(1);
     });
   });
 

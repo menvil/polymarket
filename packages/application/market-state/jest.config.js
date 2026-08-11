@@ -5,6 +5,7 @@ export default {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/errors$':        '<rootDir>/../../foundation/errors/src/index.ts',
+    '^@polymarket/errors/(.*)$':   '<rootDir>/../../foundation/errors/src/$1',
     '^@polymarket/result$':        '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/ids$':           '<rootDir>/../../foundation/ids/src/index.ts',
     '^@polymarket/logger$':        '<rootDir>/../../foundation/logger/src/index.ts',
@@ -13,7 +14,7 @@ export default {
     '^@polymarket/rolling-window$': '<rootDir>/../../foundation/rolling-window/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
-    '^@polymarket/order-book$':    '<rootDir>/../../domain/market-data/order-book/src/index.ts',
+    '^@polymarket/orderbook$':     '<rootDir>/../../domain/entities/orderbook/src/index.ts',
     '^@polymarket/trade-tape$':    '<rootDir>/../../domain/market-data/trade-tape/src/index.ts',
     '^@polymarket/trade$':         '<rootDir>/../../domain/entities/trade/src/index.ts',
     '^@polymarket/ports$':         '<rootDir>/../ports/src/index.ts',

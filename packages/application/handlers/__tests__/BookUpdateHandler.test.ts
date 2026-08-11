@@ -5,9 +5,9 @@ import type { IBookRegistry } from '../src/IBookRegistry.js';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { ILogger } from '@polymarket/logger';
-import type { OrderBook, PriceLevel } from '@polymarket/order-book';
-import { TimestampService, PriceService } from '@polymarket/value-objects';
-import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
+import { Price, Quantity, TimestampService, PriceService } from '@polymarket/value-objects';
+import type { Money, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
@@ -17,6 +17,11 @@ function makeTimestamp(ms: number): Timestamp {
   const result = TimestampService.create(ms);
   if (!result.ok) throw new Error(`Invalid timestamp: ${ms}`);
   return result.value;
+}
+
+/** Создаёт OrderbookLevel из строковых price/quantity (реальные VO, не моки). */
+function level(price: string, qty: string): OrderbookLevel {
+  return OrderbookLevel.create(Price.of(new Decimal(price)), Quantity.of(new Decimal(qty)));
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,22 +36,6 @@ function makeLogger(): ILogger {
     fatal: jest.fn() as ILogger['fatal'],
     child: jest.fn() as ILogger['child'],
   };
-}
-
-function makeOrderBook(): OrderBook {
-  return {
-    applyFullState: jest.fn() as unknown as OrderBook['applyFullState'],
-    getBestBid: jest.fn<() => PriceLevel | undefined>().mockReturnValue(undefined),
-    getBestAsk: jest.fn<() => PriceLevel | undefined>().mockReturnValue(undefined),
-    applyDelta: jest.fn() as unknown as OrderBook['applyDelta'],
-    getSpread: jest.fn() as unknown as OrderBook['getSpread'],
-    getMidPrice: jest.fn() as unknown as OrderBook['getMidPrice'],
-    getBids: jest.fn() as unknown as OrderBook['getBids'],
-    getAsks: jest.fn() as unknown as OrderBook['getAsks'],
-    getImbalance: jest.fn() as unknown as OrderBook['getImbalance'],
-    isEmpty: jest.fn() as unknown as OrderBook['isEmpty'],
-    toSnapshot: jest.fn() as unknown as OrderBook['toSnapshot'],
-  } as unknown as OrderBook;
 }
 
 const TOKEN_ID  = 'token-abc'  as unknown as InstrumentId;
@@ -73,13 +62,14 @@ describe('BookUpdateHandler', () => {
   let catalog: IMarketCatalog;
   let logger: ILogger;
   let handler: BookUpdateHandler;
-  let mockBook: OrderBook;
 
   beforeEach(() => {
-    mockBook = makeOrderBook();
     books = {
       get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
-      getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(mockBook),
+      getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(
+        Orderbook.empty(MARKET_ID as unknown as InstrumentId, TOKEN_ID),
+      ),
+      set: jest.fn<IBookRegistry['set']>(),
       delete: jest.fn<IBookRegistry['delete']>(),
       deleteMarket: jest.fn<IBookRegistry['deleteMarket']>(),
     };
@@ -106,11 +96,11 @@ describe('BookUpdateHandler', () => {
     handler = new BookUpdateHandler(books, eventBus, catalog, logger);
   });
 
-  it('применяет снапшот к OrderBook и публикует BOOK_UPDATED и BOOK_DEPTH', async () => {
+  it('строит Orderbook из снапшота, кладёт в реестр и публикует BOOK_UPDATED и BOOK_DEPTH', async () => {
     const ts = makeTimestamp(1000);
     await handler.handleSnapshot(TOKEN_ID, [], [], ts);
 
-    expect(mockBook.applyFullState).toHaveBeenCalledWith([], [], ts);
+    expect(books.set).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID, expect.any(Orderbook));
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'BOOK_UPDATED' }),
     );
@@ -119,10 +109,10 @@ describe('BookUpdateHandler', () => {
     );
   });
 
-  it('использует marketId из каталога для getOrCreate и BOOK_UPDATED', async () => {
+  it('использует marketId из каталога для set() и BOOK_UPDATED', async () => {
     await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
 
-    expect(books.getOrCreate).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID);
+    expect(books.set).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID, expect.any(Orderbook));
     const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
     expect(published).toMatchObject({ type: 'BOOK_UPDATED', marketId: MARKET_ID });
   });
@@ -138,7 +128,7 @@ describe('BookUpdateHandler', () => {
       expect.stringContaining('unregistered instrument'),
       expect.any(Object),
     );
-    expect(books.getOrCreate).not.toHaveBeenCalled();
+    expect(books.set).not.toHaveBeenCalled();
     expect(eventBus.publish).not.toHaveBeenCalled();
   });
 
@@ -151,8 +141,8 @@ describe('BookUpdateHandler', () => {
       expect.stringContaining('Stale'),
       expect.any(Object),
     );
-    // Второй снапшот всё равно применён
-    expect(mockBook.applyFullState).toHaveBeenCalledTimes(2);
+    // Второй снапшот всё равно применён (положен в реестр)
+    expect(books.set).toHaveBeenCalledTimes(2);
   });
 
   it('логирует debug при равном timestamp (stale: equal не строго больше)', async () => {
@@ -170,29 +160,29 @@ describe('BookUpdateHandler', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('передаёт bids/asks и timestamp в applyFullState', async () => {
-    const bid = { price: {} as Price, size: {} as Quantity };
-    const ask = { price: {} as Price, size: {} as Quantity };
+  it('передаёт bids/asks в построенный Orderbook', async () => {
+    const bid = level('0.40', '10');
+    const ask = level('0.60', '20');
     const ts = makeTimestamp(1000);
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], ts);
 
-    expect(mockBook.applyFullState).toHaveBeenCalledWith([bid], [ask], ts);
+    const [, , book] = (books.set as ReturnType<typeof jest.fn>).mock.calls[0] as [MarketId, InstrumentId, Orderbook];
+    expect(book.bids).toEqual([bid]);
+    expect(book.asks).toEqual([ask]);
   });
 
-  it('публикует topOfBook из getBestBid/getBestAsk', async () => {
-    const bestBid: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    const bestAsk: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bestBid);
-    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(bestAsk);
+  it('публикует topOfBook из реальных лучших уровней', async () => {
+    const bestBid = level('0.40', '10');
+    const bestAsk = level('0.60', '20');
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+    await handler.handleSnapshot(TOKEN_ID, [bestBid], [bestAsk], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
-      topOfBook: { bestBid: Price; bestAsk: Price };
+      topOfBook: { bestBid: Price | undefined; bestAsk: Price | undefined };
     };
-    expect(event.topOfBook.bestBid).toBe(bestBid.price);
-    expect(event.topOfBook.bestAsk).toBe(bestAsk.price);
+    expect(event.topOfBook.bestBid?.equals(bestBid.price)).toBe(true);
+    expect(event.topOfBook.bestAsk?.equals(bestAsk.price)).toBe(true);
   });
 
   it('onReconnect очищает timestamps — следующий снапшот не считается stale', async () => {
@@ -213,28 +203,21 @@ describe('BookUpdateHandler', () => {
 
   // ── Spread calculation ─────────────────────────────────────────────────────
 
-  it('topOfBook.spread содержит Price если getSpread() > 0 и PriceService.create успешен', async () => {
-    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
-    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
-    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0.05'));
+  it('topOfBook.spread содержит Price если спред положительный и PriceService.create успешен', async () => {
+    const bid = level('0.40', '10');
+    const ask = level('0.60', '20');
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+    await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
       { topOfBook: { spread: Price | undefined } };
     expect(event.topOfBook.spread).toBeDefined();
   });
 
-  it('topOfBook.spread undefined если getSpread() === 0', async () => {
-    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
-    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
-    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0'));
+  it('topOfBook.spread undefined если книга однобокая (getSpread() возвращает Err)', async () => {
+    const bid = level('0.40', '10');
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+    await handler.handleSnapshot(TOKEN_ID, [bid], [], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
       { topOfBook: { spread: Price | undefined } };
@@ -242,17 +225,14 @@ describe('BookUpdateHandler', () => {
   });
 
   it('topOfBook.spread undefined если PriceService.create() возвращает Err', async () => {
-    const bid: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    const ask: PriceLevel = { price: {} as Price, size: {} as Quantity };
-    (mockBook.getBestBid as ReturnType<typeof jest.fn>).mockReturnValue(bid);
-    (mockBook.getBestAsk as ReturnType<typeof jest.fn>).mockReturnValue(ask);
-    (mockBook.getSpread as ReturnType<typeof jest.fn>).mockReturnValue(new Decimal('0.05'));
+    const bid = level('0.40', '10');
+    const ask = level('0.60', '20');
 
     const spy = jest.spyOn(PriceService, 'create').mockReturnValueOnce(
       { ok: false, error: new Error('mock price error') } as ReturnType<typeof PriceService.create>,
     );
 
-    await handler.handleSnapshot(TOKEN_ID, [], [], makeTimestamp(1000));
+    await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
       { topOfBook: { spread: Price | undefined } };

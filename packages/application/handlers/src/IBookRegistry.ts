@@ -1,44 +1,63 @@
 /**
- * Реестр стаканов — хранит OrderBook экземпляры per (marketId, tokenId).
+ * Реестр стаканов — хранит Orderbook экземпляры per (marketId, tokenId).
  *
  * @remarks
- * BookUpdateHandler владеет OrderBook экземплярами.
- * OrderBook mutable by design — high-frequency updates без аллокаций.
- * TopOfBook (immutable snapshot O(1)) создаётся при каждом BOOK_UPDATED publish.
+ * `Orderbook` (`@polymarket/orderbook`) иммутабелен — каждое обновление стакана
+ * строит НОВЫЙ экземпляр (`Object.freeze()`-нут в конструкторе), не мутирует
+ * существующий. `BookUpdateHandler` владеет записью: строит новый `Orderbook`
+ * через `Orderbook.fromLevels(...)` и кладёт его в реестр через `set()` —
+ * в отличие от старого mutable `OrderBook` (`@polymarket/order-book`, заменён в
+ * Этапе 10a, пакет физически удаляется в Этапе 10d), который вызывающий код
+ * мутировал напрямую через `getOrCreate()`.
  *
- * Ключ реестра: `${marketId}:${tokenId}` (составной, уникален в системе).
+ * Ключ реестра: `(marketId, tokenId)` (составной, уникален в системе).
  * MarketDataFeedAdapter управляет жизненным циклом реестра.
  */
-import type { OrderBook } from '@polymarket/order-book';
+import type { Orderbook } from '@polymarket/orderbook';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
 
 /**
  * Порт реестра стаканов — CRUD по ключу (marketId, tokenId).
  *
  * @remarks
- * Подробности владения и жизненного цикла — см. докблок модуля выше.
+ * Подробности владения и immutable-паттерна записи — см. докблок модуля выше.
  */
 export interface IBookRegistry {
   /**
-   * Возвращает OrderBook по ключу (marketId, tokenId) или undefined.
+   * Возвращает Orderbook по ключу (marketId, tokenId) или undefined.
    *
    * @param marketId - ID рынка (condition_id)
    * @param tokenId - ID токена (UP/DOWN outcome token)
-   * @returns OrderBook или undefined если не найден
+   * @returns Orderbook или undefined если не найден
    */
-  get(marketId: MarketId, tokenId: InstrumentId): OrderBook | undefined;
+  get(marketId: MarketId, tokenId: InstrumentId): Orderbook | undefined;
 
   /**
-   * Возвращает существующий OrderBook или создаёт новый.
+   * Возвращает существующий Orderbook или пустой (`Orderbook.empty(...)`), если
+   * для этого ключа ещё не было ни одного снапшота.
    *
    * @param marketId - ID рынка
    * @param tokenId - ID токена
-   * @returns OrderBook (всегда ненулевой)
+   * @returns Orderbook (всегда ненулевой)
    */
-  getOrCreate(marketId: MarketId, tokenId: InstrumentId): OrderBook;
+  getOrCreate(marketId: MarketId, tokenId: InstrumentId): Orderbook;
 
   /**
-   * Удаляет OrderBook из реестра.
+   * Кладёт (заменяет) Orderbook для ключа (marketId, tokenId).
+   *
+   * @param marketId - ID рынка
+   * @param tokenId - ID токена
+   * @param book - Новый (иммутабельный) экземпляр Orderbook
+   *
+   * @remarks
+   * Обязательная точка записи после immutable-обновления — `Orderbook` не
+   * мутируется на месте, вызывающий код обязан явно положить новый экземпляр
+   * назад в реестр.
+   */
+  set(marketId: MarketId, tokenId: InstrumentId, book: Orderbook): void;
+
+  /**
+   * Удаляет Orderbook из реестра.
    *
    * @param marketId - ID рынка
    * @param tokenId - ID токена
@@ -46,7 +65,7 @@ export interface IBookRegistry {
   delete(marketId: MarketId, tokenId: InstrumentId): void;
 
   /**
-   * Удаляет все OrderBook для указанного рынка.
+   * Удаляет все Orderbook для указанного рынка.
    *
    * @param marketId - ID рынка
    *

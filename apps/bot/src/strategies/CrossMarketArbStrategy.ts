@@ -50,7 +50,8 @@ import type { StrategySnapshot } from '@polymarket/strategy';
 import type { StrategyIntent, StrategyStopIntent } from '@polymarket/strategy';
 import type { TriggerReason } from '@polymarket/strategy';
 import type { TopOfBook } from '@polymarket/event-bus';
-import type { OrderBookHistory, OrderBookSnapshot } from '@polymarket/order-book';
+import type { RollingWindow } from '@polymarket/rolling-window';
+import type { Orderbook } from '@polymarket/orderbook';
 import {
   FeeCalculator,
   FEE_MODEL_CURRENT,
@@ -120,7 +121,7 @@ export interface CrossMarketArbConfig {
 export interface ITopOfBookReader {
   getTopOfBook(instrumentId: InstrumentId): TopOfBook | undefined;
   getTopOfBookTimestampMs?(instrumentId: InstrumentId): number | undefined;
-  getBookHistory?(instrumentId: InstrumentId): OrderBookHistory | undefined;
+  getBookHistory?(instrumentId: InstrumentId): RollingWindow<Orderbook> | undefined;
 }
 
 export interface ArbTradePlan {
@@ -848,13 +849,13 @@ export class CrossMarketArbStrategy implements IStrategy {
     }
   }
 
-  private _latestBookSnapshot(history: OrderBookHistory | undefined): OrderBookSnapshot | undefined {
+  private _latestBookSnapshot(history: RollingWindow<Orderbook> | undefined): Orderbook | undefined {
     return history?.getLatest();
   }
 
   private _buildDepthAuditLevels(
-    easySnapshot: OrderBookSnapshot | undefined,
-    hardDownSnapshot: OrderBookSnapshot | undefined,
+    easySnapshot: Orderbook | undefined,
+    hardDownSnapshot: Orderbook | undefined,
   ): readonly ArbDepthAuditLevel[] | undefined {
     const maxDepth = this._config.maxDepth ?? 1;
     if (maxDepth <= 1 || !easySnapshot || !hardDownSnapshot) return undefined;
@@ -986,11 +987,11 @@ function topOfBookToSimpleBook(tob: TopOfBook | undefined, nowMs: number): Simpl
   return { bids, asks, timestampMs: nowMs };
 }
 
-function snapshotAsksToNumeric(snapshot: OrderBookSnapshot): Array<{ price: number; size: number }> {
+function snapshotAsksToNumeric(snapshot: Orderbook): Array<{ price: number; size: number }> {
   return snapshot.asks
     .map(level => ({
       price: level.price.value().toNumber(),
-      size: level.size.value().toNumber(),
+      size: level.quantity.value().toNumber(),
     }))
     .filter(level => Number.isFinite(level.price) && Number.isFinite(level.size) && level.size > 0)
     .sort((a, b) => a.price - b.price);

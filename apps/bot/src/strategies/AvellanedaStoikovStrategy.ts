@@ -1076,8 +1076,8 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
       const topAsks = latestBook.asks.slice(0, 3);
       let bidSum = 0;
       let askSum = 0;
-      for (const l of topBids) bidSum += l.size.value().toNumber();
-      for (const l of topAsks) askSum += l.size.value().toNumber();
+      for (const l of topBids) bidSum += l.quantity.value().toNumber();
+      for (const l of topAsks) askSum += l.quantity.value().toNumber();
       topDepth = bidSum + askSum;
       if (topDepth > 0) bookImbalance = (bidSum - askSum) / topDepth;
     } else if (snapshot.topOfBook) {
@@ -2058,8 +2058,8 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
         const topAsks = latestBook.asks.slice(0, 3);
         let bidSum = 0;
         let askSum = 0;
-        for (const l of topBids) bidSum += l.size.value().toNumber();
-        for (const l of topAsks) askSum += l.size.value().toNumber();
+        for (const l of topBids) bidSum += l.quantity.value().toNumber();
+        for (const l of topAsks) askSum += l.quantity.value().toNumber();
         const total = bidSum + askSum;
         if (total > 0) {
           const imb = Math.abs(bidSum - askSum) / total;

@@ -236,7 +236,7 @@ describe('MarketDataStore', () => {
     it('should delegate to bookCollector.recordDirect', () => {
       store.start();
 
-      const snapshot = { marketId: 'market-1' } as any;
+      const snapshot = { instrumentId: 'market-1' } as any;
       const eventBus = deps.eventBus as any;
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
@@ -248,7 +248,6 @@ describe('MarketDataStore', () => {
       expect((deps.bookCollector as any).recordDirect).toHaveBeenCalledWith(
         INSTRUMENT_1,
         snapshot,
-        1000,
       );
     });
 
@@ -261,7 +260,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { marketId: 'market-1' },
+        snapshot: { instrumentId: 'market-1' },
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -279,7 +278,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { marketId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1' } as any,
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -343,7 +342,7 @@ describe('MarketDataStore', () => {
     function depth(eventBus: any, id: InstrumentId, marketId: string): void {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH', instrumentId: id,
-        snapshot: { marketId } as any, timestamp: { toNumber: () => 1000 },
+        snapshot: { instrumentId: marketId } as any, timestamp: { toNumber: () => 1000 },
       });
     }
 
@@ -471,7 +470,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { marketId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1' } as any,
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -515,7 +514,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { marketId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1' } as any,
         timestamp: { toNumber: () => 1000 },
       });
       eventBus._emit('TRADE_RECEIVED', {
@@ -541,7 +540,7 @@ describe('MarketDataStore', () => {
     function depth(eventBus: any, id: InstrumentId, marketId: string): void {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH', instrumentId: id,
-        snapshot: { marketId } as any, timestamp: { toNumber: () => 1000 },
+        snapshot: { instrumentId: marketId } as any, timestamp: { toNumber: () => 1000 },
       });
     }
     function bookUpdated(eventBus: any, id: InstrumentId, marketId: string): void {

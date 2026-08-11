@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-08-11T16:21:23.331Z",
+  "generatedAt": "2026-08-11T17:45:50.320Z",
   "packages": [
     {
       "name": "@polymarket/bot",
       "relPath": "apps/bot",
       "rawDecimal": 104,
       "rawNumber": 1615,
-      "rawString": 209,
+      "rawString": 210,
       "throwSites": 20,
       "undocumentedExports": 79,
-      "totalExports": 234,
-      "fileCount": 59,
+      "totalExports": 235,
+      "fileCount": 60,
       "hasDocs": true
     },
     {
@@ -77,7 +77,7 @@
       "name": "@polymarket/market-state",
       "relPath": "packages/application/market-state",
       "rawDecimal": 0,
-      "rawNumber": 107,
+      "rawNumber": 105,
       "rawString": 50,
       "throwSites": 12,
       "undocumentedExports": 0,

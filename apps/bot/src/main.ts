@@ -60,9 +60,7 @@ import { Balance, Money, Price, Quantity, Timestamp, TimestampService } from '@p
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { BookUpdateHandler } from '@polymarket/handlers';
-import type { IBookRegistry } from '@polymarket/handlers';
-import { OrderBook } from '@polymarket/order-book';
-import type { OrderBook as OrderBookType } from '@polymarket/order-book';
+import { SimpleBookRegistry } from './SimpleBookRegistry.js';
 
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
@@ -99,48 +97,6 @@ import { CrossMarketArbStrategy } from './strategies/CrossMarketArbStrategy.js';
 import { SelectiveEntryStrategy } from './strategies/SelectiveEntryStrategy.js';
 import { MarketRotation, MIN_VIABLE_TRADING_MS } from './bot/MarketRotation.js';
 import type { MarketSlot } from './bot/MarketRotation.js';
-
-// ── SimpleBookRegistry ─────────────────────────────────────────────────────────
-
-/**
- * Простая in-memory реализация IBookRegistry для backtest режима.
- *
- * @remarks
- * Хранит стаканы в Map по ключу `${marketId}:${instrumentId}`.
- * При отсутствии стакана `getOrCreate` создаёт новый `OrderBook`.
- */
-class SimpleBookRegistry implements IBookRegistry {
-  private readonly _books = new Map<string, OrderBookType>();
-
-  private _key(mId: MarketId, tId: InstrumentId): string {
-    return `${String(mId)}:${String(tId)}`;
-  }
-
-  get(mId: MarketId, tId: InstrumentId): OrderBookType | undefined {
-    return this._books.get(this._key(mId, tId));
-  }
-
-  getOrCreate(mId: MarketId, tId: InstrumentId): OrderBookType {
-    const key = this._key(mId, tId);
-    let book = this._books.get(key);
-    if (!book) {
-      book = OrderBook.create(mId, String(tId));
-      this._books.set(key, book);
-    }
-    return book;
-  }
-
-  delete(mId: MarketId, tId: InstrumentId): void {
-    this._books.delete(this._key(mId, tId));
-  }
-
-  deleteMarket(mId: MarketId): void {
-    const prefix = `${String(mId)}:`;
-    for (const key of [...this._books.keys()]) {
-      if (key.startsWith(prefix)) this._books.delete(key);
-    }
-  }
-}
 
 // ── Шаг 1: Парсинг конфигурации ──────────────────────────────────────────────
 

@@ -6,6 +6,13 @@
  * 'price_change' events существуют, но это batch-уведомления, не дельты стакана.
  * Текущий код их игнорирует.
  *
+ * ### Immutable-паттерн (Этап 10a):
+ * `Orderbook` (`@polymarket/orderbook`) иммутабелен — каждый снапшот строит НОВЫЙ
+ * экземпляр через `Orderbook.fromLevels(...)`, не мутирует предыдущий. Предыдущее
+ * состояние здесь не нужно (Polymarket не шлёт дельты — каждый новый снапшот
+ * полностью заменяет старый), поэтому обработчик не читает реестр перед записью,
+ * только пишет через `IBookRegistry.set(...)`.
+ *
  * ### Staleness detection:
  * Если timestamp нового снапшота ≤ предыдущему — логируем warn, но применяем.
  * Это может случиться при reconnect-дублях.
@@ -20,7 +27,7 @@
  *
  * // Подключить к WS-потоку:
  * wsEmitter.onOrderbookSnapshot(async (dto) => {
- *   // Конвертация в PriceLevel[] происходит в MarketDataFeedAdapter (Phase 8)
+ *   // Конвертация в OrderbookLevel[] происходит в MarketDataFeedAdapter
  * });
  *
  * // При reconnect:
@@ -28,7 +35,7 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { PriceLevel } from '@polymarket/order-book';
+import { Orderbook, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Price, Timestamp } from '@polymarket/value-objects';
 import { PriceService } from '@polymarket/value-objects';
@@ -41,8 +48,8 @@ import type { IBookRegistry } from './IBookRegistry.js';
  * Обработчик снапшотов стакана — применяет к реестру, публикует BOOK_UPDATED/BOOK_DEPTH.
  *
  * @remarks
- * Полное поведение (staleness detection, reconnect) и пример использования —
- * см. докблок модуля выше.
+ * Полное поведение (staleness detection, reconnect, immutable-паттерн записи) и
+ * пример использования — см. докблок модуля выше.
  */
 export class BookUpdateHandler {
   /** Последний timestamp снапшота per tokenId — для staleness detection */
@@ -53,7 +60,7 @@ export class BookUpdateHandler {
   /**
    * Создаёт BookUpdateHandler.
    *
-   * @param _books - Реестр OrderBook экземпляров
+   * @param _books - Реестр Orderbook экземпляров
    * @param _eventBus - Event bus для публикации BOOK_UPDATED и BOOK_DEPTH
    * @param _catalog - Каталог инструментов (tokenId → marketId)
    * @param _logger - Logger
@@ -69,12 +76,14 @@ export class BookUpdateHandler {
    * Обрабатывает полный снапшот стакана (Polymarket WS event: type='book').
    *
    * @param tokenId - ID токена (UP/DOWN outcome token)
-   * @param bids - Bids в формате PriceLevel[]
-   * @param asks - Asks в формате PriceLevel[]
+   * @param bids - Bids в формате OrderbookLevel[]
+   * @param asks - Asks в формате OrderbookLevel[]
    * @param timestamp - Timestamp снапшота из WS
    *
    * @remarks
-   * Polymarket не шлёт дельты — каждый 'book' event это полный снапшот.
+   * Polymarket не шлёт дельты — каждый 'book' event это полный снапшот, поэтому
+   * каждый вызов строит новый `Orderbook` с нуля (`Orderbook.fromLevels`), не
+   * читая предыдущее состояние.
    *
    * ### События:
    * - `BOOK_UPDATED` — высокочастотное событие с TopOfBook (лучшие уровни)
@@ -82,8 +91,8 @@ export class BookUpdateHandler {
    */
   public async handleSnapshot(
     tokenId: InstrumentId,
-    bids: readonly PriceLevel[],
-    asks: readonly PriceLevel[],
+    bids: readonly OrderbookLevel[],
+    asks: readonly OrderbookLevel[],
     timestamp: Timestamp,
   ): Promise<void> {
     const key   = String(tokenId);
@@ -105,8 +114,19 @@ export class BookUpdateHandler {
       });
       return;
     }
-    const book = this._books.getOrCreate(instrument.marketId, tokenId);
-    book.applyFullState(bids, asks, timestamp);
+
+    // `Orderbook.fromLevels`'s первый параметр называется `instrumentId`, но по
+    // установленному в Этапе 2 контракту сущности (см. `Orderbook.fromNormalized`)
+    // несёт то, что везде в остальном коде называется marketId — тот же неймингный
+    // артефакт entity, не вводится здесь заново, а следует уже принятому паттерну.
+    const book = Orderbook.fromLevels(
+      instrument.marketId as unknown as InstrumentId,
+      tokenId,
+      bids,
+      asks,
+      timestamp,
+    );
+    this._books.set(instrument.marketId, tokenId, book);
 
     // Индексируем tokenId → marketId для последующей очистки в onMarketClosed
     const marketKey = String(instrument.marketId);
@@ -124,25 +144,25 @@ export class BookUpdateHandler {
       asksCount: asks.length,
     });
 
-    const bestBidLevel = book.getBestBid();
-    const bestAskLevel = book.getBestAsk();
+    const bestBid = book.getBestBid();
+    const bestAsk = book.getBestAsk();
 
-    // Spread = bestAsk - bestBid (O(1)) — делегируем OrderBook для переиспользования логики
+    // Spread = bestAsk - bestBid — делегируем Orderbook для переиспользования логики.
+    // getSpread() уже само отсеивает crossed/empty/one-sided книги через Err —
+    // отдельная проверка "spread > 0" (как в старом mutable OrderBook) не нужна.
     let spread: Price | undefined;
-    if (bestBidLevel && bestAskLevel) {
-      const rawSpread = book.getSpread();
-      if (rawSpread !== undefined && rawSpread.gt(0)) {
-        const spreadResult = PriceService.create(rawSpread.toString());
-        if (spreadResult.ok) spread = spreadResult.value;
-      }
+    const spreadResult = book.getSpread();
+    if (spreadResult.ok) {
+      const priceResult = PriceService.create(spreadResult.value.width());
+      if (priceResult.ok) spread = priceResult.value;
     }
 
     const topOfBook: TopOfBook = {
-      bestBid: bestBidLevel?.price,
-      bestAsk: bestAskLevel?.price,
+      bestBid: bestBid ?? undefined,
+      bestAsk: bestAsk ?? undefined,
       spread,
-      bestBidSize: bestBidLevel?.size,
-      bestAskSize: bestAskLevel?.size,
+      bestBidSize: book.bids[0]?.quantity,
+      bestAskSize: book.asks[0]?.quantity,
     };
 
     const bookUpdatedResult = await this._eventBus.publish({
@@ -163,7 +183,7 @@ export class BookUpdateHandler {
     const bookDepthResult = await this._eventBus.publish({
       type: 'BOOK_DEPTH',
       instrumentId: tokenId,
-      snapshot: book.toSnapshot(),
+      snapshot: book,
       timestamp,
     });
     if (!bookDepthResult.ok) {
@@ -187,12 +207,12 @@ export class BookUpdateHandler {
   }
 
   /**
-   * Вызывается при закрытии рынка — очищает OrderBook и staleness timestamps.
+   * Вызывается при закрытии рынка — очищает Orderbook и staleness timestamps.
    *
    * @param marketId - ID закрытого рынка
    *
    * @remarks
-   * Удаляет все OrderBook для всех токенов (YES/NO) данного рынка из реестра.
+   * Удаляет все Orderbook для всех токенов (YES/NO) данного рынка из реестра.
    * Также удаляет staleness timestamps для этих токенов.
    * Освобождает память, занятую стаканами неактивного рынка.
    *

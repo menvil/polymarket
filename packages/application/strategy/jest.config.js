@@ -20,7 +20,7 @@ export default {
     '^@polymarket/position$':            '<rootDir>/../../domain/entities/position/src/index.ts',
     '^@polymarket/market$':              '<rootDir>/../../domain/entities/market/src/index.ts',
     '^@polymarket/ledger$':              '<rootDir>/../../domain/accounting/ledger/src/index.ts',
-    '^@polymarket/order-book$':          '<rootDir>/../../domain/market-data/order-book/src/index.ts',
+    '^@polymarket/orderbook$':           '<rootDir>/../../domain/entities/orderbook/src/index.ts',
     '^@polymarket/trade-tape$':          '<rootDir>/../../domain/market-data/trade-tape/src/index.ts',
     '^@polymarket/market-state$':        '<rootDir>/../market-state/src/index.ts',
     '^@polymarket/ports$':               '<rootDir>/../ports/src/index.ts',
