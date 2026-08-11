@@ -56,7 +56,7 @@ import {
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Balance, Money, Price, Quantity, Timestamp, TimestampService } from '@polymarket/value-objects';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { BookUpdateHandler } from '@polymarket/handlers';
@@ -2059,8 +2059,8 @@ async function runPaper(): Promise<void> {
         recurrence: parsed.recurrence,
         endDate: endDateStr,
         startDate: new Date(parsed.startEpoch * 1000).toISOString(),
-        startEpochMs: parsed.startEpoch * 1000,
-        endEpochMs: endDateMs,
+        startEpochMs: Timestamp.of(new Decimal(parsed.startEpoch * 1000)),
+        endEpochMs: Timestamp.of(new Decimal(endDateMs)),
         instrumentId: iId,
         filePath: '',
         ticker,
@@ -2087,16 +2087,17 @@ async function runPaper(): Promise<void> {
         type: p.pairType,
         hardTicker: p.hard.ticker,
         endDate: p.hard.endDate,
-        ttlSec: Math.round((p.hard.endEpochMs - nowMs) / 1000),
+        ttlSec: Math.round((p.hard.endEpochMs.toNumber() - nowMs) / 1000),
       })),
     });
 
     for (const pair of pairs) {
+      const hardEndEpochMs = pair.hard.endEpochMs.toNumber();
       // Warming пара должна иметь достаточно времени для торговли
-      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+      if (hardEndEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
 
       // Пропускаем пары которые expires до или одновременно с текущей активной
-      if (latestActiveExpiryMs > 0 && pair.hard.endEpochMs <= latestActiveExpiryMs) continue;
+      if (latestActiveExpiryMs > 0 && hardEndEpochMs <= latestActiveExpiryMs) continue;
 
       const easyCand = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
       const hardCand = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
@@ -2327,8 +2328,8 @@ async function runPaper(): Promise<void> {
         asset: parsed.asset, recurrence: parsed.recurrence,
         endDate: endDateStr,
         startDate: new Date(parsed.startEpoch * 1000).toISOString(),
-        startEpochMs: parsed.startEpoch * 1000,
-        endEpochMs: endDateMs,
+        startEpochMs: Timestamp.of(new Decimal(parsed.startEpoch * 1000)),
+        endEpochMs: Timestamp.of(new Decimal(endDateMs)),
         instrumentId: iId,
         filePath: '', ticker, priceToBeat: cryptoMeta?.priceToBeat, _candidate: c,
       });
@@ -2340,9 +2341,10 @@ async function runPaper(): Promise<void> {
     const activeHardTokens = new Set(hardTokenToArbPair.keys());
 
     for (const pair of pairs) {
-      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+      const hardEndEpochMs = pair.hard.endEpochMs.toNumber();
+      if (hardEndEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
       // Кандидат должен expires ПОСЛЕ активной пары (иначе warmNextArbPair его отфильтрует)
-      if (latestActiveExpiryMs > 0 && pair.hard.endEpochMs <= latestActiveExpiryMs) continue;
+      if (latestActiveExpiryMs > 0 && hardEndEpochMs <= latestActiveExpiryMs) continue;
 
       const hardCand = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
       if (!hardCand) continue;
@@ -2351,7 +2353,7 @@ async function runPaper(): Promise<void> {
       if (closedMarkets.has(String(hardCand.marketId))) continue;
 
       // Нашли ближайшую доступную пару — ближе текущей warming?
-      if (pair.hard.endEpochMs < warmingArbPair!.expiresAtMs) {
+      if (hardEndEpochMs < warmingArbPair!.expiresAtMs) {
         // Проверяем что это действительно ДРУГАЯ пара
         if (warmingArbPair!.hardUpTokenStr === hardTStr) {
           // Та же пара — upgrade не нужен
@@ -2427,8 +2429,8 @@ async function runPaper(): Promise<void> {
         recurrence: parsed.recurrence,
         endDate: endDateStr,
         startDate: new Date(parsed.startEpoch * 1000).toISOString(),
-        startEpochMs: parsed.startEpoch * 1000,
-        endEpochMs: endDateMs,
+        startEpochMs: Timestamp.of(new Decimal(parsed.startEpoch * 1000)),
+        endEpochMs: Timestamp.of(new Decimal(endDateMs)),
         instrumentId: iId,
         filePath: '',
         ticker,
@@ -2457,8 +2459,8 @@ async function runPaper(): Promise<void> {
         easyTicker: p.easy.ticker,
         hardTicker: p.hard.ticker,
         endDate: p.hard.endDate,
-        endEpochMs: p.hard.endEpochMs,
-        ttlSec: Math.round((p.hard.endEpochMs - nowMs) / 1000),
+        endEpochMs: p.hard.endEpochMs.toNumber(),
+        ttlSec: Math.round((p.hard.endEpochMs.toNumber() - nowMs) / 1000),
       })),
     });
 
@@ -2474,8 +2476,9 @@ async function runPaper(): Promise<void> {
     for (const pair of pairs) {
       if (activeMarkets.size >= maxConcurrentMarkets) { skippedFull++; continue; }
 
+      const hardEndEpochMs = pair.hard.endEpochMs.toNumber();
       // Проверяем не истекла ли пара
-      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) { skippedExpired++; continue; }
+      if (hardEndEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) { skippedExpired++; continue; }
 
       // Ищем кандидатов по instrumentId
       const easyCand = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
@@ -2491,7 +2494,7 @@ async function runPaper(): Promise<void> {
         logger.info('Arb pair selected for activation', {
           pairType: pair.pairType,
           endDate: pair.hard.endDate,
-          ttlSec: Math.round((pair.hard.endEpochMs - nowMs) / 1000),
+          ttlSec: Math.round((hardEndEpochMs - nowMs) / 1000),
           easyTicker: pair.easy.ticker,
           hardTicker: pair.hard.ticker,
         });
@@ -4362,8 +4365,8 @@ async function runLive(): Promise<void> {
         recurrence: parsed.recurrence,
         endDate: endDateStr,
         startDate: new Date(parsed.startEpoch * 1000).toISOString(),
-        startEpochMs: parsed.startEpoch * 1000,
-        endEpochMs: endDateMs,
+        startEpochMs: Timestamp.of(new Decimal(parsed.startEpoch * 1000)),
+        endEpochMs: Timestamp.of(new Decimal(endDateMs)),
         instrumentId,
         filePath: '',
         ticker,
@@ -4374,7 +4377,7 @@ async function runLive(): Promise<void> {
     const pairMatcher = new MarketPairMatcher();
     const pairs = pairMatcher.findPairs(marketInfos);
     for (const pair of pairs) {
-      if (pair.hard.endEpochMs <= nowMs + MIN_VIABLE_TRADING_MS) continue;
+      if (pair.hard.endEpochMs.toNumber() <= nowMs + MIN_VIABLE_TRADING_MS) continue;
       const easyCandidate = marketInfos.find(m => m.instrumentId === pair.easy.instrumentId)?._candidate;
       const hardCandidate = marketInfos.find(m => m.instrumentId === pair.hard.instrumentId)?._candidate;
       if (!easyCandidate || !hardCandidate) continue;

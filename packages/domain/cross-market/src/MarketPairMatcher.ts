@@ -20,13 +20,21 @@
  *
  * @example
  * ```typescript
+ * // Пример на основе реального потребителя (CrossMarketBacktestEngine._indexMarkets()):
+ * // parseSnapshotMeta вызывается по одному файлу за раз, сам обход директории — на
+ * // стороне вызывающего кода (класс не предоставляет bulk-метод).
+ * const infos = files
+ *   .map((f) => MarketPairMatcher.parseSnapshotMeta(readMetaLine(f), f))
+ *   .filter((info): info is MarketInfo => info !== undefined);
+ *
  * const matcher = new MarketPairMatcher();
- * const infos = await matcher.parseSnapshotDir('/snapshots/2026-03-23');
  * const pairs = matcher.findPairs(infos);
  * console.log(`Found ${pairs.length} pairs`);
  * ```
  */
 
+import Decimal from 'decimal.js';
+import { Timestamp } from '@polymarket/value-objects';
 import { asInstrumentId } from '@polymarket/ids';
 import type { MarketInfo, MarketPair, Recurrence } from './types.js';
 import { RECURRENCE_RANK, OVERLAP_DURATION_MS } from './types.js';
@@ -153,8 +161,8 @@ export class MarketPairMatcher {
       recurrence: parsed.recurrence,
       endDate,
       startDate: Number.isFinite(parsedStartMs) ? startDate : new Date(startEpochMs).toISOString(),
-      startEpochMs,
-      endEpochMs,
+      startEpochMs: Timestamp.of(new Decimal(startEpochMs)),
+      endEpochMs: Timestamp.of(new Decimal(endEpochMs)),
       instrumentId,
       downInstrumentId,
       filePath,
@@ -241,7 +249,7 @@ export class MarketPairMatcher {
     }
 
     // Сортировка по endDate
-    pairs.sort((a, b) => a.easy.endEpochMs - b.easy.endEpochMs);
+    pairs.sort((a, b) => a.easy.endEpochMs.toNumber() - b.easy.endEpochMs.toNumber());
 
     return pairs;
   }

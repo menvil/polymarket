@@ -44,7 +44,7 @@ import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { IStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot } from '@polymarket/strategy';
 import type { StrategyIntent, StrategyStopIntent } from '@polymarket/strategy';
@@ -610,7 +610,7 @@ export class CrossMarketArbStrategy implements IStrategy {
 
     return {
       pair: STUB_PAIR,
-      detectedAtMs: nowMs,
+      detectedAtMs: Timestamp.of(new Decimal(nowMs)),
       depthLevels,
       optimalDepth: optimal,
       hardUpBestBid: 1 - (hardLevels[0]?.price ?? 1),
@@ -1003,9 +1003,10 @@ function snapshotAsksToNumeric(snapshot: OrderBookSnapshot): Array<{ price: numb
  * Детектор не использует pair внутренне — только прокидывает в ArbitrageSignal.
  * Стратегия использует signal.optimalDepth, а не signal.pair.
  */
+const STUB_ZERO_TIMESTAMP = Timestamp.of(new Decimal(0));
 const STUB_PAIR = {
-  easy: { asset: '', recurrence: '5m' as const, endDate: '', endEpochMs: 0, instrumentId: '' as any, filePath: '' },
-  hard: { asset: '', recurrence: '5m' as const, endDate: '', endEpochMs: 0, instrumentId: '' as any, filePath: '' },
+  easy: { asset: '', recurrence: '5m' as const, endDate: '', endEpochMs: STUB_ZERO_TIMESTAMP, instrumentId: '' as any, filePath: '' },
+  hard: { asset: '', recurrence: '5m' as const, endDate: '', endEpochMs: STUB_ZERO_TIMESTAMP, instrumentId: '' as any, filePath: '' },
   pairType: 'live',
   overlapMs: 0,
 };

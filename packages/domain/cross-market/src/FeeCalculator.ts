@@ -26,14 +26,26 @@ import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-f
  *
  * @param model - Модель комиссий (feeRate + exponent)
  *
+ * @remarks
+ * `model.feeRate` (`Ratio`) распаковывается один раз здесь, в конструкторе — `takerFee()`
+ * вызывается на каждый depth-level каждого снапшота ордербука (хот-путь, см. TSDoc
+ * `NumericLevel` в `types.ts`), поэтому дальше используется сохранённый plain `number`,
+ * а не `Ratio.toNumber()` на каждый вызов.
+ *
  * @example
  * ```typescript
- * const calc = new FeeCalculator({ feeRate: 0.072, exponent: 1 });
+ * const calc = new FeeCalculator({ feeRate: Ratio.of(new Decimal('0.072')), exponent: 1 });
  * console.log(calc.takerFee(0.50)); // 0.018
  * ```
  */
 export class FeeCalculator {
-  constructor(private readonly _model: FeeModel) {}
+  private readonly _feeRate: number;
+  private readonly _exponent: number;
+
+  constructor(model: FeeModel) {
+    this._feeRate = model.feeRate.toNumber();
+    this._exponent = model.exponent;
+  }
 
   /**
    * Рассчитывает комиссию taker-ордера.
@@ -51,11 +63,11 @@ export class FeeCalculator {
   takerFee(price: number, size = 1): number {
     if (price <= 0 || price >= 1) return 0;
 
-    if (this._model.exponent === 1) {
-      return calculatePolymarketTakerFeeNumber(size, price, this._model.feeRate);
+    if (this._exponent === 1) {
+      return calculatePolymarketTakerFeeNumber(size, price, this._feeRate);
     }
 
-    const rawFee = size * this._model.feeRate * Math.pow(price * (1 - price), this._model.exponent);
+    const rawFee = size * this._feeRate * Math.pow(price * (1 - price), this._exponent);
     return this._roundFee(rawFee);
   }
 

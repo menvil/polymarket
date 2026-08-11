@@ -33,6 +33,8 @@
  * ```
  */
 
+import Decimal from 'decimal.js';
+import { Timestamp } from '@polymarket/value-objects';
 import type {
   SimpleBook,
   MarketPair,
@@ -136,7 +138,7 @@ export class DivergenceDetector {
 
     return {
       pair,
-      detectedAtMs: nowMs,
+      detectedAtMs: Timestamp.of(new Decimal(nowMs)),
       depthLevels,
       optimalDepth: optimal,
       hardUpBestBid,
@@ -212,7 +214,7 @@ export class DivergenceDetector {
 
     return {
       pair,
-      detectedAtMs: nowMs,
+      detectedAtMs: Timestamp.of(new Decimal(nowMs)),
       depthLevels,
       optimalDepth: optimal,
       hardUpBestBid: easyUpBestBid,  // семантика: «активная» сторона расхождения

@@ -549,28 +549,31 @@ apps/bot/src/arbitrage/                — CLI точка входа для бе
 
 #### Компоненты
 
-**`FeeCalculator`** — расчёт комиссий Polymarket.
+**`FeeCalculator`** — расчёт комиссий Polymarket. Инстанс-методы (не статические) —
+модель комиссий передаётся один раз в конструктор, не на каждый вызов.
 
 ```typescript
-// Формула: fee = price × feeRate × (price × (1-price))^exponent
-const fee = FeeCalculator.takerFee(0.65, FEE_MODEL_CURRENT);
-// → 0.65 × 0.25 × (0.65 × 0.35)^2 = 0.00842
+// Формула: fee = round5(size × feeRate × (price × (1-price))^exponent)
+const calc = new FeeCalculator(FEE_MODEL_CURRENT); // feeRate=0.072, exponent=1
+const fee = calc.takerFee(0.65);
+// → 0.65 × 0.072 × (0.65 × 0.35) ≈ 0.01064
 
 // Суммарная fee пары (maker = 0%):
-const pairFee = FeeCalculator.pairFee(0.40, false, 0.55, true, FEE_MODEL_CURRENT);
+const pairFee = calc.pairFee(0.40, false, 0.55, true);
 ```
 
-Две модели комиссий:
-- `FEE_MODEL_CURRENT`: rate=0.25, exp=2, peak 1.56% при p=0.50
-- `FEE_MODEL_MARCH30`: rate=0.072, exp=1, peak 1.80% при p=0.50
+`FEE_MODEL_MARCH30` — исторический alias, сейчас идентичен `FEE_MODEL_CURRENT` (см.
+"Смена комиссий 30 марта 2026" ниже про то, откуда взялись текущие rate/exponent).
 
-**`DepthAnalyzer`** — VWAP анализ по глубине ордербука.
+**`DepthAnalyzer`** — VWAP анализ по глубине ордербука. Тоже инстанс-методы — принимает
+`FeeCalculator` в конструктор (комиссия считается на каждом уровне глубины).
 
 ```typescript
-const levels = DepthAnalyzer.analyze(hardUpBids, easyUpAsks, { feeModel, maxDepth: 5 });
+const analyzer = new DepthAnalyzer(calc);
+const levels = analyzer.analyze(hardUpBids, easyUpAsks, { maxDepth: 5, easyIsTaker: true, hardIsMaker: true });
 // → DepthLevel[] с cumVwap, execSize, totalPnl на каждом уровне
 
-const optimal = DepthAnalyzer.findOptimal(levels);
+const optimal = analyzer.findOptimal(levels);
 // → уровень с максимальным totalPnl
 ```
 
@@ -612,6 +615,11 @@ const signal = detector.detect(easyBook, hardBook, pair, nowMs);
 2. Если да → полный depth-анализ через DepthAnalyzer
 3. Фильтр: `optimalDepth.pnlPerUnit >= minSpreadAfterFees`
 4. Возврат сигнала с оптимальной глубиной и PnL
+
+**Актуальный API-референс** (типы полей, что VO/что `number` и почему, полная сигнатура
+каждого метода) — в
+[`packages/domain/cross-market/docs/cross-market.md`](../../packages/domain/cross-market/docs/cross-market.md).
+Этот раздел — только иллюстративные примеры, не источник истины по сигнатурам.
 
 ### CrossMarketBacktestEngine
 

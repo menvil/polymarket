@@ -45,6 +45,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ILogger } from '@polymarket/logger';
+import type { Timestamp } from '@polymarket/value-objects';
 import {
   SnapshotReaderFactory,
 } from '@polymarket/snapshot-readers';
@@ -827,7 +828,7 @@ export class CrossMarketBacktestEngine {
     for (const pair of pairs) {
       // Overlap начинается за overlapMs до endDate.
       // Освобождаем капитал от пар, settled до начала overlap текущей пары.
-      const overlapStartMs = pair.easy.endEpochMs - pair.overlapMs;
+      const overlapStartMs = pair.easy.endEpochMs.toNumber() - pair.overlapMs;
 
       let released = 0;
       const remaining: typeof locks = [];
@@ -864,7 +865,7 @@ export class CrossMarketBacktestEngine {
       if (sim.totalCost > 0) {
         availableBalance -= sim.totalCost;
         locks.push({
-          endEpochMs: pair.easy.endEpochMs,
+          endEpochMs: pair.easy.endEpochMs.toNumber(),
           costLocked: sim.totalCost,
           payoff: sim.settlementPayoff,
         });
@@ -1171,9 +1172,10 @@ export class CrossMarketBacktestEngine {
     if (market.priceToBeat !== undefined) return market;
     if (market.startEpochMs === undefined) return market;
 
+    const startEpochMs = market.startEpochMs.toNumber();
     const restored = await this._readChainlinkPriceAtOrBefore(
       market.filePath,
-      market.startEpochMs,
+      startEpochMs,
     );
     if (restored === null) return market;
 
@@ -1181,11 +1183,11 @@ export class CrossMarketBacktestEngine {
       asset: market.asset,
       recurrence: market.recurrence,
       endDate: market.endDate,
-      startTime: new Date(market.startEpochMs).toISOString(),
+      startTime: new Date(startEpochMs).toISOString(),
       strikePrice: restored.price.toFixed(2),
       source: restored.source,
       priceTs: new Date(restored.timestampMs).toISOString(),
-      ageMs: market.startEpochMs - restored.timestampMs,
+      ageMs: startEpochMs - restored.timestampMs,
     });
 
     return {
@@ -1253,12 +1255,16 @@ export class CrossMarketBacktestEngine {
   }
 
   private _isInLiveWindow(pair: MarketPair, timestampMs: number): boolean {
+    const easyEndMs = pair.easy.endEpochMs.toNumber();
+    const hardEndMs = pair.hard.endEpochMs.toNumber();
     const knownStarts = [pair.easy.startEpochMs, pair.hard.startEpochMs]
-      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      .filter((v): v is Timestamp => v !== undefined)
+      .map((v) => v.toNumber())
+      .filter((v) => Number.isFinite(v));
     const liveStartMs = knownStarts.length > 0
       ? Math.max(...knownStarts)
-      : Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs) - pair.overlapMs;
-    const liveEndMs = Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs);
+      : Math.min(easyEndMs, hardEndMs) - pair.overlapMs;
+    const liveEndMs = Math.min(easyEndMs, hardEndMs);
     return timestampMs >= liveStartMs && timestampMs <= liveEndMs;
   }
 
@@ -1438,7 +1444,7 @@ export class CrossMarketBacktestEngine {
    */
   private async _readSoftSettlementPrice(pair: MarketPair): Promise<number | null> {
     const windowMs = this._config.approxResolutionWindowMs ?? 2_000;
-    const endMs = Math.min(pair.easy.endEpochMs, pair.hard.endEpochMs);
+    const endMs = Math.min(pair.easy.endEpochMs.toNumber(), pair.hard.endEpochMs.toNumber());
     const easy = await this._readLastChainlinkPriceInWindow(pair.easy.filePath, endMs - windowMs, endMs);
     const hard = await this._readLastChainlinkPriceInWindow(pair.hard.filePath, endMs - windowMs, endMs);
     const best = [easy, hard]

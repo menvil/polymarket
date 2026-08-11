@@ -14,7 +14,10 @@
  * @packageDocumentation
  */
 
+import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
+import { Ratio } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 
 // ── Recurrence (длительность рынка) ─────────────────────────────────────────
 
@@ -73,7 +76,7 @@ export const OVERLAP_DURATION_MS: Record<string, number> = {
  *   asset: 'BTC',
  *   recurrence: '15m',
  *   endDate: '2026-03-23T02:15:00Z',
- *   endEpochMs: 1774231200000,
+ *   endEpochMs: Timestamp.of(new Decimal(1774231200000)),
  *   instrumentId: asInstrumentId('108038...'),
  *   filePath: '/snapshots/2026-03-23/Bitcoin_Up_or_Down...jsonl.gz',
  * };
@@ -84,14 +87,22 @@ export interface MarketInfo {
   readonly asset: string;
   /** Длительность рынка */
   readonly recurrence: Recurrence;
-  /** ISO строка даты окончания */
+  /**
+   * ISO строка даты окончания.
+   *
+   * @remarks
+   * Дуальное представление наравне с `endEpochMs` — используется как ключ группировки по
+   * равенству (`` `${asset}:${endDate}` `` в `MarketPairMatcher.findPairs()`), не в
+   * арифметике. Не выводится из `endEpochMs` заново, чтобы избежать расхождений
+   * форматирования при round-trip через `Timestamp`.
+   */
   readonly endDate: string;
-  /** ISO строка даты старта, если известна */
+  /** ISO строка даты старта, если известна (см. `endDate` про дуальное представление) */
   readonly startDate?: string;
-  /** Epoch ms даты старта, если известна */
-  readonly startEpochMs?: number;
-  /** Epoch ms даты окончания */
-  readonly endEpochMs: number;
+  /** Timestamp даты старта, если известна */
+  readonly startEpochMs?: Timestamp;
+  /** Timestamp даты окончания */
+  readonly endEpochMs: Timestamp;
   /** ID токена Up-outcome (tokenIds[0]) */
   readonly instrumentId: InstrumentId;
   /** ID токена Down-outcome (tokenIds[1]), если известен */
@@ -107,9 +118,15 @@ export interface MarketInfo {
    * Цена актива на момент старта рынка. Up-токен выигрывает если цена на endDate >= priceToBeat.
    * Два рынка одной пары (5m + 15m) имеют **разные** strike'ы из-за разного startTime.
    * Safe-комбинация: lowerStrike_Up + higherStrike_Down.
+   *
+   * Остаётся `number`, не `Price`: это спот-цена базового крипто-актива в долларах
+   * (например ~78237 для BTC), а не вероятностная цена prediction market — `Price` VO
+   * ограничен диапазоном `[0.0001, 0.9999]` и не подходит. Готового VO для произвольной
+   * USD-цены крипто-актива в кодовой базе пока нет (тот же открытый вопрос — у аналогичных
+   * полей `CryptoMarketDataStore`/`CryptoSignalRegistry`, форма решается согласованно там).
    */
   readonly priceToBeat?: number;
-  /** Final settlement price из eventMetadata, если snapshot уже обогащён. */
+  /** Final settlement price из eventMetadata, если snapshot уже обогащён (см. `priceToBeat` про диапазон). */
   readonly finalPrice?: number;
 }
 
@@ -226,15 +243,29 @@ export interface DepthLevel {
 export interface ArbitrageSignal {
   /** Пара рынков */
   readonly pair: MarketPair;
-  /** Timestamp обнаружения (epoch ms) */
-  readonly detectedAtMs: number;
-  /** Профили по каждому уровню глубины */
+  /**
+   * Timestamp обнаружения.
+   *
+   * @remarks
+   * Строится один раз на сигнал (редкое событие — только когда расхождение реально
+   * прибыльно после комиссий), не на снапшот ордербука — в отличие от `depthLevels`/
+   * `optimalDepth` ниже, которые остаются `number` как часть хот-путного per-snapshot
+   * вычисления (см. `NumericLevel`/`DepthLevel`).
+   */
+  readonly detectedAtMs: Timestamp;
+  /**
+   * Профили по каждому уровню глубины.
+   *
+   * @remarks
+   * Числовые поля `DepthLevel` намеренно остаются `number` — хот-путная VWAP-петля,
+   * см. TSDoc `NumericLevel`.
+   */
   readonly depthLevels: readonly DepthLevel[];
   /** Оптимальный уровень — максимальный totalPnl */
   readonly optimalDepth: DepthLevel;
-  /** Best bid hard_Up (level 1) */
+  /** Best bid hard_Up (level 1) — `number`, та же хот-путная группа, что и `depthLevels` */
   readonly hardUpBestBid: number;
-  /** Best ask easy_Up (level 1) */
+  /** Best ask easy_Up (level 1) — `number`, та же хот-путная группа, что и `depthLevels` */
   readonly easyUpBestAsk: number;
   /**
    * Направление арбитража.
@@ -258,14 +289,21 @@ export interface ArbitrageSignal {
  * Для crypto-рынков Polymarket: feeRate=0.072, exponent=1.
  */
 export interface FeeModel {
-  /** Множитель в формуле комиссии */
-  readonly feeRate: number;
-  /** Степень `(p × (1-p))` в формуле */
+  /**
+   * Множитель в формуле комиссии (безразмерная доля).
+   *
+   * @remarks
+   * `FeeCalculator` распаковывает `.toNumber()` один раз в конструкторе и хранит plain
+   * `number` для хот-путной `takerFee()` (вызывается на каждый depth-level каждого
+   * снапшота — см. `FeeCalculator.ts`), не на каждый вызов.
+   */
+  readonly feeRate: Ratio;
+  /** Степень `(p × (1-p))` в формуле — показатель степени, не "величина", остаётся `number` */
   readonly exponent: number;
 }
 
 /** Текущая модель комиссий для crypto-рынков Polymarket. */
-export const FEE_MODEL_CURRENT: FeeModel = { feeRate: 0.072, exponent: 1 };
+export const FEE_MODEL_CURRENT: FeeModel = { feeRate: Ratio.of(new Decimal('0.072')), exponent: 1 };
 
 /** @deprecated Use FEE_MODEL_CURRENT. Kept for older configs/scripts. */
 export const FEE_MODEL_MARCH30: FeeModel = FEE_MODEL_CURRENT;

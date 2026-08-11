@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-05T17:02:41.061Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T10:35:10.766Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -22,7 +22,7 @@
 | `packages/application/strategy` | 11 | 41 | 50 | 6 | 30/69 | ❌ |
 | `packages/application/use-cases` | 12 | 21 | 84 | 5 | 16/70 | ✅ |
 | `packages/domain/accounting/ledger` | 1 | 0 | 0 | 1 | 3/10 | ❌ |
-| `packages/domain/cross-market` | 0 | 35 | 13 | 0 | 3/23 | ❌ |
+| `packages/domain/cross-market` | 0 | 33 | 13 | 0 | 3/23 | ✅ |
 | `packages/domain/entities/fill` | 6 | 6 | 14 | 1 | 7/20 | ✅ |
 | `packages/domain/entities/market` | 0 | 12 | 10 | 4 | 1/23 | ✅ |
 | `packages/domain/entities/order` | 2 | 10 | 24 | 0 | 0/27 | ✅ |
@@ -47,6 +47,6 @@
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 69 | 22/178 | ❌ |
-| **ИТОГО** | **188** | **2522** | **1557** | **315** | **337/1504** | **18 пакетов без docs/** |
+| **ИТОГО** | **188** | **2520** | **1557** | **315** | **337/1504** | **17 пакетов без docs/** |
 
-`decimal.js` импортируется вне `value-objects`/`math` в 84 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).
+`decimal.js` импортируется вне `value-objects`/`math` в 87 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

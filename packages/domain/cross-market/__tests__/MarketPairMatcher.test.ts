@@ -1,4 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
+import { Timestamp } from '@polymarket/value-objects';
 import { MarketPairMatcher } from '../src/MarketPairMatcher.js';
 import type { MarketInfo } from '../src/types.js';
 import { asInstrumentId } from '@polymarket/ids';
@@ -66,8 +68,8 @@ describe('MarketPairMatcher', () => {
       expect(result!.asset).toBe('BTC');
       expect(result!.recurrence).toBe('15m');
       expect(result!.endDate).toBe('2026-03-23T02:15:00Z');
-      expect(result!.startEpochMs).toBe(Date.parse('2026-03-23T02:00:00Z'));
-      expect(result!.endEpochMs).toBe(Date.parse('2026-03-23T02:15:00Z'));
+      expect(result!.startEpochMs?.toNumber()).toBe(Date.parse('2026-03-23T02:00:00Z'));
+      expect(result!.endEpochMs.toNumber()).toBe(Date.parse('2026-03-23T02:15:00Z'));
       expect(result!.priceToBeat).toBe(87250.5);
       expect(result!.finalPrice).toBe(87275);
       expect(result!.downInstrumentId).toBeDefined();
@@ -97,7 +99,7 @@ describe('MarketPairMatcher', () => {
         asset,
         recurrence: rec,
         endDate,
-        endEpochMs: new Date(endDate).getTime(),
+        endEpochMs: Timestamp.of(new Decimal(new Date(endDate).getTime())),
         instrumentId: asInstrumentId(`token-${asset}-${rec}-${endDate}`)!,
         filePath: `/path/${asset}_${rec}_${endDate}.jsonl.gz`,
       };

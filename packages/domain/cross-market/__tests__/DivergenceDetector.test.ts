@@ -1,15 +1,18 @@
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
+import { Timestamp } from '@polymarket/value-objects';
 import { DivergenceDetector } from '../src/DivergenceDetector.js';
 import { FEE_MODEL_CURRENT } from '../src/types.js';
 import type { SimpleBook, MarketPair, MarketInfo } from '../src/types.js';
 import { asInstrumentId } from '@polymarket/ids';
 
 function mkPair(): MarketPair {
+  const endEpochMs = Timestamp.of(new Decimal(1774231200000));
   const easy: MarketInfo = {
     asset: 'BTC',
     recurrence: '15m',
     endDate: '2026-03-23T02:15:00Z',
-    endEpochMs: 1774231200000,
+    endEpochMs,
     instrumentId: asInstrumentId('token-easy')!,
     filePath: '/easy.jsonl.gz',
   };
@@ -17,7 +20,7 @@ function mkPair(): MarketPair {
     asset: 'BTC',
     recurrence: '5m',
     endDate: '2026-03-23T02:15:00Z',
-    endEpochMs: 1774231200000,
+    endEpochMs,
     instrumentId: asInstrumentId('token-hard')!,
     filePath: '/hard.jsonl.gz',
   };
@@ -133,6 +136,6 @@ describe('DivergenceDetector', () => {
     const signal = detector.detect(easyBook, hardBook, pair, 12345678);
 
     expect(signal!.pair).toBe(pair);
-    expect(signal!.detectedAtMs).toBe(12345678);
+    expect(signal!.detectedAtMs.toNumber()).toBe(12345678);
   });
 });

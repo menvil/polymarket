@@ -52,6 +52,9 @@ packages/application/use-cases/src/SettleTerminalOrdersUseCase.ts
 packages/application/use-cases/src/UpdateOrderStatusUseCase.ts
 packages/application/use-cases/src/services/PortfolioService.ts
 packages/domain/accounting/ledger/src/Ledger.ts
+packages/domain/cross-market/src/DivergenceDetector.ts
+packages/domain/cross-market/src/MarketPairMatcher.ts
+packages/domain/cross-market/src/types.ts
 packages/domain/entities/fill/src/Fill.ts
 packages/domain/entities/fill/src/mappers/FillMapper.ts
 packages/domain/entities/fill/src/polymarket-fee.ts
