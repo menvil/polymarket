@@ -246,6 +246,11 @@ export class DecisionJournalRecorder implements IDecisionJournal {
 
     const keys = Array.from(this._writers.keys());
     for (const key of keys) {
+      // `_writers` хранит ключи как string (см. _appendRecord: lookup идёт и по marketId,
+      // и по instrumentId/tokenId через _instrumentIndex) — небезопасный каст здесь корректен,
+      // т.к. каждый ключ либо пришёл из уже валидного SessionMeta.marketId: MarketId
+      // (startSession), либо является instrumentId-строкой, зарегистрированной под тем же
+      // писателем. Не входит в мандат Этапа 10c (см. план миграции, находка A.4).
       await this.endSession(key as MarketId, 'SHUTDOWN');
     }
   }

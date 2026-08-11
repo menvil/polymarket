@@ -381,7 +381,7 @@ async function runSingleMarketBacktest(
 
   eventBus.subscribe('ORDER_CREATED', (event) => {
     const tokenId = String(event.asset ?? '');
-    const orderId = String(event.orderId);
+    const orderId = event.orderId;
     const priceCents = event.price.value().toNumber() * 100;
     if (tokenId) orderToToken.set(orderId, tokenId);
     orderToPriceCents.set(orderId, priceCents);
@@ -414,7 +414,7 @@ async function runSingleMarketBacktest(
 
     const price = event.fill.price.value();
     const size = event.fill.size.value();
-    const orderId = String(event.orderId);
+    const orderId = event.orderId;
     const tokenId = orderToToken.get(orderId) ?? '';
     const slippage = computeSlippage(orderId, price.toNumber() * 100);
     journal?.recordFill({
@@ -441,7 +441,7 @@ async function runSingleMarketBacktest(
 
     const price = event.fill.price.value();
     const size = event.fill.size.value();
-    const orderId = String(event.orderId);
+    const orderId = event.orderId;
     const tokenId = orderToToken.get(orderId) ?? '';
     const slippage = computeSlippage(orderId, price.toNumber() * 100);
     journal?.recordFill({
@@ -519,7 +519,7 @@ async function runSingleMarketBacktest(
   if (!regResult.ok) return null;
 
   journal?.startSession({
-    marketId: String(marketId),
+    marketId,
     mode: 'paper',
     strategyType: config.strategy,
     strategyConfig: config.strategyParams as unknown as Record<string, unknown>,
@@ -527,7 +527,7 @@ async function runSingleMarketBacktest(
     tokenIds: complementaryInstrumentId
       ? [String(instrumentId), String(complementaryInstrumentId)]
       : [String(instrumentId)],
-    instrumentId: String(instrumentId),
+    instrumentId,
     expiresAtMs: expirationMs,
     eventStartMs,
   });
@@ -643,7 +643,7 @@ async function runSingleMarketBacktest(
 
   const resolution = cryptoMeta ? cryptoResolutionStore.getResolution(cryptoMeta.rtdsFilter) : undefined;
   journal?.recordResolution({
-    marketId: String(marketId),
+    marketId,
     ts: Date.now(),
     resolution: resolution ?? 'UNKNOWN',
     pnl: pnl.toFixed(4),

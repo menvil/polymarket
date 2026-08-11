@@ -29,7 +29,7 @@ BACKTEST:       Disk → SnapshotReader → Adapters → Handlers → MockExchan
 ```typescript
 interface IMarketDataRecorder {
   registerMarket(meta: MarketMeta): void;
-  recordEvent(tokenId: string, rawEvent: unknown): void;  // синхронный, never throws
+  recordEvent(tokenId: InstrumentId, rawEvent: unknown): void;  // синхронный, never throws
   finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void>;
   flush(): Promise<void>;
   close(): Promise<void>;

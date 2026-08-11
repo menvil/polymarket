@@ -3071,7 +3071,7 @@ export class CexLeadLagStrategy extends BaseStrategy<CexLeadLagData, CexLeadLagA
     this._journal.recordCancel({
       marketId: data.marketId,
       ts: data.nowMs,
-      orderId: String(data.openBuyOrderId),
+      orderId: data.openBuyOrderId,
       reason,
       orderPriceCents: data.openBuyPriceCents,
       midAtPlacementCents: midAtPlacement,

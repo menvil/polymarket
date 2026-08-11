@@ -27,6 +27,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { IMarketDataRecorder, IDecisionJournal, MarketMeta, DiscoveredMarket } from '@polymarket/ports';
 import type { IEventBus } from '@polymarket/event-bus';
+import { asInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
 import type { CexNormalizedEvent } from '@polymarket/cex-market-data';
 import type { RecordingConfig } from '../config/BotConfig.js';
@@ -177,7 +178,12 @@ export function buildRecording(
     wireToWs(wsAdapter: WsEmitterForRecording): void {
       // Записываем ВСЕ сырые WS-сообщения (тот же подход что collect-data)
       wsAdapter.onRawMessage((tokenId, rawMsg) => {
-        dataRecorder.recordEvent(tokenId, rawMsg);
+        const instrumentId = asInstrumentId(tokenId);
+        if (instrumentId === undefined) {
+          log.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+          return;
+        }
+        dataRecorder.recordEvent(instrumentId, rawMsg);
       });
       log.debug('WS recording wired (onRawMessage)');
     },
@@ -189,7 +195,12 @@ export function buildRecording(
         if (!tokenIds || tokenIds.size === 0) return;
         const source = symbol.includes('/') ? 'chainlink' : 'binance';
         for (const tokenId of tokenIds) {
-          dataRecorder.recordEvent(tokenId, { t: 'crypto_price', symbol, price, ts, source });
+          const instrumentId = asInstrumentId(tokenId);
+          if (instrumentId === undefined) {
+            log.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+            continue;
+          }
+          dataRecorder.recordEvent(instrumentId, { t: 'crypto_price', symbol, price, ts, source });
         }
       });
       log.debug('RTDS recording wired (crypto_price)');
@@ -202,7 +213,12 @@ export function buildRecording(
       const tokenIds = symbolToTokenIds.get(normalizedSymbol);
       if (!tokenIds || tokenIds.size === 0) return;
       for (const tokenId of tokenIds) {
-        dataRecorder.recordEvent(tokenId, event);
+        const instrumentId = asInstrumentId(tokenId);
+        if (instrumentId === undefined) {
+          log.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+          continue;
+        }
+        dataRecorder.recordEvent(instrumentId, event);
       }
     },
 
@@ -216,7 +232,7 @@ export function buildRecording(
       eventBus.subscribe('ORDER_CREATED', (event) => {
         // AssetId → tokenId: используем конвертер если передан, иначе String
         const tokenId = assetToTokenId?.(event.asset) ?? String(event.asset ?? '');
-        const orderId = String(event.orderId);
+        const orderId = event.orderId;
         const priceCents = event.price.value().toNumber() * 100;
         if (tokenId) orderToToken.set(orderId, tokenId);
         // Сохраняем цену ордера для последующего расчёта slippage при fill
@@ -265,7 +281,7 @@ export function buildRecording(
           const price = event.fill.price.value();
           const size = event.fill.size.value();
           const tokenId = assetToTokenId?.(event.fill.tokenId) ?? String(event.fill.tokenId ?? '');
-          const orderId = String(event.fill.orderId);
+          const orderId = event.fill.orderId;
           const slippage = computeSlippage(orderId, price.toNumber() * 100);
           journal.recordFill({
             marketId: tokenId,
@@ -290,7 +306,7 @@ export function buildRecording(
 
         const price = event.fill.price.value();
         const size = event.fill.size.value();
-        const orderId = String(event.orderId);
+        const orderId = event.orderId;
         const tokenId = orderToToken.get(orderId) ?? '';
         const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
@@ -315,7 +331,7 @@ export function buildRecording(
 
         const price = event.fill.price.value();
         const size = event.fill.size.value();
-        const orderId = String(event.orderId);
+        const orderId = event.orderId;
         const tokenId = orderToToken.get(orderId) ?? '';
         const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
@@ -354,20 +370,25 @@ export function buildRecording(
 
       // Журнал решений
       journal.startSession({
-        marketId: String(meta.marketId),
+        marketId: meta.marketId,
         mode,
         strategyType: '',
         strategyConfig: {},
         marketQuestion: meta.question,
         tokenIds: Array.from(meta.tokenIds),
-        instrumentId: String(candidate.instrumentId),
+        instrumentId: candidate.instrumentId,
         expiresAtMs: candidate.expiresAt.toNumber(),
         eventStartMs: cryptoMeta?.eventStartTimeMs,
       });
     },
 
     recordResolved(tokenId: string, symbol: string, strikePrice: number, resolutionPrice: number, outcome: string): void {
-      dataRecorder.recordEvent(tokenId, {
+      const instrumentId = asInstrumentId(tokenId);
+      if (instrumentId === undefined) {
+        log.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+        return;
+      }
+      dataRecorder.recordEvent(instrumentId, {
         t: 'market_resolved',
         symbol,
         strikePrice,

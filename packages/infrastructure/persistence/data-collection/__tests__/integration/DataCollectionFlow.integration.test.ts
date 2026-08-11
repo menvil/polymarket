@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { DataRecorder, NDJSONFormatter, GzipCompressor } from '../../src/index.js';
 import type { DataRecorderConfig } from '../../src/index.js';
 import { NoOpLogger } from '@polymarket/logger';
-import { asMarketId } from '@polymarket/ids';
+import { asMarketId, unsafeInstrumentId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/value-objects';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,8 +59,8 @@ function findFirstFile(dir: string, suffix: string): string | undefined {
 
 const LOGGER = new NoOpLogger();
 const MARKET_ID = asMarketId('market-dc-integration-001')!;
-const TOKEN_YES = 'token-dc-yes';
-const TOKEN_NO = 'token-dc-no';
+const TOKEN_YES = unsafeInstrumentId('token-dc-yes');
+const TOKEN_NO = unsafeInstrumentId('token-dc-no');
 const MARKET_META = {
   marketId: MARKET_ID,
   question: 'Integration test market question',

@@ -38,6 +38,7 @@ import { PolymarketMarketDataRestClient } from '@polymarket/exchange/rest';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
+import { asInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
 import { Timestamp } from '@polymarket/value-objects';
 import { loadConfig } from './config.js';
@@ -143,7 +144,12 @@ const feed = new MarketDataFeedAdapter(ws, null, logger);
 
 // Записываем сырые WS-сообщения в оригинальном wire-формате (до DTO-маппинга)
 ws.onRawMessage((tokenId, rawMsg) => {
-  recorder.recordEvent(tokenId, rawMsg);
+  const instrumentId = asInstrumentId(tokenId);
+  if (instrumentId === undefined) {
+    logger.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+    return;
+  }
+  recorder.recordEvent(instrumentId, rawMsg);
 });
 
 // Market discovery: Gamma API → фильтрация → скоринг
@@ -193,7 +199,12 @@ rtdsClient.onPrice((symbol, price, ts) => {
   if (!tokenIds || tokenIds.size === 0) return;
   const source = symbol.includes('/') ? 'chainlink' : 'binance';
   for (const tokenId of tokenIds) {
-    recorder.recordEvent(tokenId, { t: 'crypto_price', symbol, price, ts, source });
+    const instrumentId = asInstrumentId(tokenId);
+    if (instrumentId === undefined) {
+      logger.debug('recordEvent: invalid tokenId, skipping', { tokenId });
+      continue;
+    }
+    recorder.recordEvent(instrumentId, { t: 'crypto_price', symbol, price, ts, source });
   }
 });
 
@@ -572,8 +583,8 @@ async function fillMarketSlots(): Promise<void> {
 
     // Определяем длительность рынка из eventStartMs (если есть)
     // Для крипто-рынков это обычно 5 или 15 минут
-    const durationMs = candidate.eventStartMs
-      ? expiresAtMs - candidate.eventStartMs
+    const durationMs = candidate.eventStartMs !== undefined
+      ? expiresAtMs - candidate.eventStartMs.toNumber()
       : 15 * 60_000; // fallback: 15 минут
 
     // Вычисляем примерное время начала: expiresAt - duration

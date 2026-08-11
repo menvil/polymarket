@@ -39,7 +39,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ILogger } from '@polymarket/logger';
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketDataRecorder, MarketMeta } from '@polymarket/ports';
 import type { DataRecorderConfig } from './config/DataRecorderConfig.js';
 import type { IFormatter } from './formatters/IFormatter.js';
@@ -325,7 +325,7 @@ export class DataRecorder implements IMarketDataRecorder {
    * Поддерживаемые поля: `timestamp` (string|number), `ts` (number).
    * Если рынок ещё не достиг `startsAt` — события игнорируются (не записываются).
    */
-  public recordEvent(tokenId: string, rawEvent: unknown): void {
+  public recordEvent(tokenId: InstrumentId, rawEvent: unknown): void {
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
 

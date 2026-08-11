@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T19:39:16.985Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T20:49:21.423Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -17,10 +17,10 @@
 | `packages/application/market-discovery` | 0 | 7 | 3 | 0 | 0/2 | ✅ |
 | `packages/application/market-state` | 0 | 104 | 50 | 12 | 0/44 | ✅ |
 | `packages/application/orchestrators` | 0 | 0 | 0 | 0 | 0/7 | ✅ |
-| `packages/application/ports` | 5 | 54 | 80 | 2 | 0/97 | ✅ |
+| `packages/application/ports` | 3 | 53 | 72 | 2 | 0/97 | ✅ |
 | `packages/application/risk` | 12 | 6 | 9 | 5 | 0/12 | ✅ |
 | `packages/application/strategy` | 11 | 39 | 26 | 6 | 0/69 | ✅ |
-| `packages/application/use-cases` | 6 | 22 | 84 | 5 | 0/73 | ✅ |
+| `packages/application/use-cases` | 3 | 22 | 84 | 5 | 0/72 | ✅ |
 | `packages/domain/accounting/ledger` | 1 | 0 | 0 | 1 | 3/10 | ❌ |
 | `packages/domain/cross-market` | 0 | 33 | 13 | 0 | 3/23 | ✅ |
 | `packages/domain/entities/fill` | 6 | 6 | 14 | 1 | 7/20 | ✅ |
@@ -44,9 +44,9 @@
 | `packages/infrastructure/backtesting` | 0 | 116 | 55 | 3 | 5/27 | ❌ |
 | `packages/infrastructure/cex-market-data` | 0 | 50 | 26 | 4 | 6/25 | ❌ |
 | `packages/infrastructure/in-memory` | 2 | 10 | 25 | 2 | 2/9 | ❌ |
-| `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
+| `packages/infrastructure/persistence/data-collection` | 0 | 3 | 20 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 70 | 22/178 | ❌ |
-| **ИТОГО** | **178** | **2517** | **1511** | **325** | **208/1513** | **10 пакетов без docs/** |
+| **ИТОГО** | **173** | **2516** | **1502** | **325** | **208/1512** | **10 пакетов без docs/** |
 
-`decimal.js` импортируется вне `value-objects`/`math` в 84 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).
+`decimal.js` импортируется вне `value-objects`/`math` в 80 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

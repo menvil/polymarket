@@ -43,7 +43,6 @@
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
-import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
 import { KnownVenues, accountIdToString } from '@polymarket/ids';
@@ -97,7 +96,7 @@ export class InitializePortfolioUseCase {
     }
 
     // Шаг 2: Получить текущий USDC-баланс от venue
-    let usdcBalance: Decimal;
+    let usdcBalance: Money;
     try {
       usdcBalance = await this._deps.balanceProvider.getUsdcBalance(accountId);
     } catch (err) {
@@ -114,7 +113,7 @@ export class InitializePortfolioUseCase {
     // Шаг 3: Создать Portfolio
     const portfolioId = asPortfolioId(`portfolio-${accountIdToString(accountId)}`);
     const balance = Balance.withZeroReserved(
-      Money.of(usdcBalance, 'USDC'),
+      usdcBalance,
       accountId,
       KnownVenues.POLYMARKET,
     );

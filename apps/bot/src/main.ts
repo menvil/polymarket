@@ -4710,7 +4710,7 @@ async function runLive(): Promise<void> {
         // Наш local total = available + reserved.
         // Если venue total > local available → зачислились средства (settlement/deposit).
         // Корректируем: new_available = venue_balance - local_reserved
-        const expectedAvailable = venueBalance.minus(localReserved);
+        const expectedAvailable = venueBalance.value().minus(localReserved);
         const diff = expectedAvailable.minus(localAvailable);
 
         // Порог: игнорируем расхождения < 0.01 USDC (dust)
@@ -4725,7 +4725,7 @@ async function runLive(): Promise<void> {
             const saveRes = portfolioStore.save(creditResult.value, version);
             if (saveRes.ok) {
               logger.info('Balance synced from venue: credited', {
-                venueTotalUsdc: venueBalance.toFixed(2),
+                venueTotalUsdc: venueBalance.value().toFixed(2),
                 localAvailable: localAvailable.toFixed(2),
                 localReserved: localReserved.toFixed(2),
                 credited: diff.toFixed(2),
@@ -4751,7 +4751,7 @@ async function runLive(): Promise<void> {
               const saveRes = portfolioStore.save(debitResult.value, version);
               if (saveRes.ok) {
                 logger.warn('Balance synced from venue: debited (local was inflated)', {
-                  venueTotalUsdc: venueBalance.toFixed(2),
+                  venueTotalUsdc: venueBalance.value().toFixed(2),
                   localAvailable: localAvailable.toFixed(2),
                   debited: diff.abs().toFixed(2),
                   newAvailable: expectedAvailable.toFixed(2),
@@ -4760,7 +4760,7 @@ async function runLive(): Promise<void> {
             }
           } else {
             logger.debug('Balance sync: venue < local, skipping (has reserved)', {
-              venueTotalUsdc: venueBalance.toFixed(2),
+              venueTotalUsdc: venueBalance.value().toFixed(2),
               localAvailable: localAvailable.toFixed(2),
               localReserved: localReserved.toFixed(2),
               diff: diff.toFixed(2),

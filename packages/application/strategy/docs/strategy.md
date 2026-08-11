@@ -89,17 +89,25 @@ VO `create()`-фабрик: сырой вход снаружи, брендиро
   id оборачиваются `unsafeStrategyId(...)` в точке конструирования (composition root,
   механическая правка).
 
-### 6 портов остаются `string` — граница сместилась, не исчезла
+### 5 портов остаются `string` — граница сместилась, не исчезла
 
 Этап 1 отложил конверсию `strategyId` в 6 портов (`IOrderRepository`/`IOrderStateStore`/
 `IStrategyCommitmentReader`/`IDecisionJournal`/`IExchangeClient`/`IOrderSubmissionRepository`).
 Расследование Этапа 10b нашло точную причину: реальный источник хранимых значений — не эти
-6 портов, а `Order`/`OrderState`/`OrderEvent` (`@polymarket/order`, отдельный пакет, вне
+порты, а `Order`/`OrderState`/`OrderEvent` (`@polymarket/order`, отдельный пакет, вне
 мандата этой миграции), чей собственный докблок называет `strategyId` частью explicit
-event-replay/journal формата (`Order.fromEvents()`). Даже если бы 6 портов сменили сигнатуру
+event-replay/journal формата (`Order.fromEvents()`). Даже если бы порты сменили сигнатуру
 на `StrategyId`, реально хранимое/сравниваемое поле осталось бы `string`. `IExchangeClient`
 неожиданно оказался безопасен по другой причине: `strategyId` никогда не долетает до
 реального исходящего HTTP-запроса — используется только для лога и in-process domain-события.
+
+**Уточнение (Этап 10c):** `IDecisionJournal` вышел из этого списка — `DecisionEntry.
+strategyId` брендирован как `StrategyId` в Этапе 10c (реальный источник для ЭТОГО поля —
+`this.id: StrategyId` на самой стратегии, не `Order`/`OrderEvent` — конверсия оказалась
+бесплатной на всех 44 сайтах конструирования). Остаются `string` 5 портов:
+`IOrderRepository`/`IOrderStateStore`/`IStrategyCommitmentReader`/`IExchangeClient`/
+`IOrderSubmissionRepository` — см. `@polymarket/ports`'s `docs/ports.md` за актуальным
+списком и обоснованием.
 
 ### `OrderEventBridge` — граница валидации между типизированным и сырым миром
 

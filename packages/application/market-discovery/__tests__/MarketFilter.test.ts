@@ -7,7 +7,8 @@
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { TimestampService, Money, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Money, Price, Quantity, Ratio } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { MarketFilter } from '../src/MarketFilter.js';
@@ -24,6 +25,7 @@ function makeMarket(overrides: Partial<{
   expiresAtMs: number;
   spread: number | null; // null = нет данных о спреде (undefined в DiscoveredMarket); omit = дефолт 0.05
   liquidity: number;
+  eventStartMs: number | null; // null/omit = нет данных (undefined в DiscoveredMarket)
   marketIdSuffix: string;
 }>): DiscoveredMarket {
   const {
@@ -31,6 +33,7 @@ function makeMarket(overrides: Partial<{
     expiresAtMs = NOW_MS + 48 * 60 * 60 * 1000, // +48 часов
     spread = 0.05,
     liquidity = 10_000,
+    eventStartMs = null,
     marketIdSuffix = '01',
   } = overrides;
 
@@ -43,6 +46,13 @@ function makeMarket(overrides: Partial<{
   const instrumentId = asInstrumentId(`0xtoken${marketIdSuffix}`);
   if (!instrumentId) throw new Error(`Invalid instrumentId`);
 
+  let eventStartTimestamp: Timestamp | undefined;
+  if (eventStartMs !== null) {
+    const eventStartResult = TimestampService.create(eventStartMs);
+    if (!eventStartResult.ok) throw new Error(`Invalid eventStartMs: ${eventStartResult.error.message}`);
+    eventStartTimestamp = eventStartResult.value;
+  }
+
   return {
     marketId,
     instrumentId,
@@ -52,9 +62,10 @@ function makeMarket(overrides: Partial<{
     minOrderSize: Quantity.of(new Decimal('1')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
-    spread: spread !== null ? new Decimal(spread) : undefined,
-    liquidity: new Decimal(liquidity),
+    spread: spread !== null ? Ratio.of(new Decimal(spread)) : undefined,
+    liquidity: Money.of(new Decimal(liquidity), 'USDC'),
     score: new Decimal(0),
+    eventStartMs: eventStartTimestamp,
   };
 }
 
@@ -146,6 +157,66 @@ describe('MarketFilter', () => {
       const config: IMarketFilterConfig = { ...BASE_CONFIG, minLiquidity: 10_000 };
       const result = filter.filterCandidates([market], config, NOW_MS);
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('фильтр по длительности рынка (eventStartMs)', () => {
+    // expiresAtMs фиксирован далеко в будущем (> minTimeToExpiryHours из BASE_CONFIG),
+    // чтобы фильтр по времени истечения не отклонял рынок раньше, чем сработает
+    // проверяемый duration-фильтр. Сама длительность задаётся через eventStartMs
+    // (duration = expiresAtMs − eventStartMs), независимо от времени истечения.
+    const FAR_EXPIRY_MS = NOW_MS + 25 * 60 * 60_000; // +25 часов (> minTimeToExpiryHours: 24)
+
+    function eventStartFor(durationMinutes: number): number {
+      return FAR_EXPIRY_MS - durationMinutes * 60_000;
+    }
+
+    it('minDurationMinutes и maxDurationMinutes не заданы → фильтр пропускается', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(5), expiresAtMs: FAR_EXPIRY_MS });
+      const result = filter.filterCandidates([market], BASE_CONFIG, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('eventStartMs === undefined (нет данных) → проходит фильтр даже с заданными границами', () => {
+      const market = makeMarket({ eventStartMs: null, expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDurationMinutes: 10, maxDurationMinutes: 20 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('длительность внутри [minDurationMinutes, maxDurationMinutes] → включён', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(15), expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDurationMinutes: 10, maxDurationMinutes: 20 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('длительность короче minDurationMinutes → исключён', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(5), expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDurationMinutes: 10, maxDurationMinutes: 20 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(0);
+    });
+
+    it('длительность длиннее maxDurationMinutes → исключён', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(30), expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDurationMinutes: 10, maxDurationMinutes: 20 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(0);
+    });
+
+    it('задан только minDurationMinutes → верхняя граница не ограничивает', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(120), expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, minDurationMinutes: 10 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
+    });
+
+    it('задан только maxDurationMinutes → нижняя граница не ограничивает', () => {
+      const market = makeMarket({ eventStartMs: eventStartFor(1), expiresAtMs: FAR_EXPIRY_MS });
+      const config: IMarketFilterConfig = { ...BASE_CONFIG, maxDurationMinutes: 20 };
+      const result = filter.filterCandidates([market], config, NOW_MS);
+      expect(result).toHaveLength(1);
     });
   });
 

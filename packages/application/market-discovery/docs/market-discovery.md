@@ -16,37 +16,52 @@ const filtered = new MarketFilter(config).apply(discoveredMarkets);
 const ranked = new MarketScorer().scoreAndSort(filtered);
 ```
 
-## Почему в Этапе 8 нет изменений кода
+## `IMarketFilterConfig` — пороги остаются `number` (не трогается)
 
-Оба класса читают ровно два внешних типа, оба уже пройдены другими этапами:
+Все 8 полей (`minSpread`, `minLiquidity`, `minTimeToExpiryHours`, ...) — пороги фильтрации,
+не единичные измеренные величины. Этап 5 явно оставил их `number` целиком ("не трогается
+вообще") — тот же прецедент, что `DetectorConfig.minSpreadAfterFees` (Этап 4).
 
-- **`IMarketFilterConfig`** (`@polymarket/ports`, Этап 5) — все 8 полей (`minSpread`,
-  `minLiquidity`, `minTimeToExpiryHours`, ...) — пороги фильтрации, не единичные
-  измеренные величины. Этап 5 явно оставил их `number` целиком ("не трогается вообще") —
-  тот же прецедент, что `DetectorConfig.minSpreadAfterFees` (Этап 4).
-- **`DiscoveredMarket`** (`@polymarket/ports`, `IMarketDiscoveryService.ts`, Этап 5) —
-  `spread?: Decimal`, `liquidity: Decimal`, `eventStartMs?: number`. При расследовании
-  Этапа 8 эти поля переоткрыты и **назначены Этапу 10**: реальные потребители вне уже
-  закоммиченного Этапа 4 (`domain/cross-market/MarketPairMatcher.ts`) — целиком
-  `apps/*`/`infrastructure/*` (`apps/collect-data/src/main.ts`, `apps/bot/src/main.ts`,
-  `apps/bot/src/bot/{buildRecording,MarketRotation}.ts`,
-  `infrastructure/polymarket/adapters/{PolymarketMarketDiscoveryAdapter,
-  CryptoMarketMeta}.ts`) — ровно периметр, которым Этап 10 уже владеет по master-плану.
-  Конверсия `DiscoveredMarket` реоткрывает закоммиченный Этап 5 файл — тот же паттерн, что
-  уже принят для `IBookRegistry`/`BookUpdateHandler` в том же Этапе 10.
+## `DiscoveredMarket` — брендированные поля (Этап 10c)
 
-`MarketFilter.ts`/`MarketScorer.ts` уже присутствуют в Этап-0 allowlist для правила
-"`decimal.js` вне `value-objects`/`math`" (`docs/migration/decimal-import-files.txt`) — их
-`decimal.js`-импорты entangled с тем же отложенным `DiscoveredMarket` (`MarketFilter`
-читает `.spread`/`.liquidity` напрямую; `MarketScorer` строит `Decimal`-скор из
-`.expiresAt.toNumber()`/сравнивает с `.liquidity`), не самостоятельная находка — allowlist-
-запись снимется вместе с миграцией `DiscoveredMarket` в Этапе 10, не раньше.
+`DiscoveredMarket` (`@polymarket/ports`, `IMarketDiscoveryService.ts`) — `spread?: Ratio`,
+`liquidity: Money`, `eventStartMs?: Timestamp` (были `Decimal`/`Decimal`/`number` до Этапа
+10c плана миграции; единственная точка конструирования — `PolymarketMarketDiscoveryAdapter.
+_mapToDiscoveredMarket()`). `score: Decimal` и `startsAt?: Timestamp` не меняются (см.
+`@polymarket/ports`'s `docs/ports.md` за полным обоснованием).
 
-Единственная работа пакета в Этапе 8 — этот файл документации (пакет ранее не имел
-`docs/` вообще; TSDoc-покрытие экспортов уже полное, `0/2` неаннотированных).
+Раз `Ratio`/`Money` не имеют методов сравнения на core-уровне, `MarketFilter`'s
+`_passesSpreadFilter()`/`_passesLiquidityFilter()`/`_passesDurationFilter()` и
+`MarketScorer`'s liquidity-компаратор используют VO-aware unwrap вместо прямых
+`Decimal`-методов:
+
+```typescript
+// MarketFilter.ts
+market.spread.toDecimal().greaterThanOrEqualTo(new Decimal(minSpread));  // Ratio
+market.liquidity.value().greaterThanOrEqualTo(new Decimal(minLiquidity)); // Money
+market.expiresAt.toNumber() - market.eventStartMs.toNumber();             // Timestamp
+
+// MarketScorer.ts
+b.liquidity.value().comparedTo(a.liquidity.value());                      // Money
+```
+
+`.toDecimal()`/`.value()` — точный unwrap без потери точности (не `.toNumber()`), тот же
+принцип, что уже применялся в `OrderRiskChecker`/`TradeFlowCalculator` (Этапы 2, 7):
+VO на публичной границе, `Decimal`-арифметика внутри реализации.
+
+`MarketFilter.test.ts`/`MarketScorer.test.ts`'s `makeMarket()`-фикстуры используют
+`Ratio.of(...)`/`Money.of(...)` напрямую (тот же паттерн, что уже применялся к `Price`/
+`Quantity` в этих же фикстурах) — не `RatioService`/`MoneyService`, поскольку значения
+компайл-тайм известны и валидны. `_passesDurationFilter()` получил недостающее тестовое
+покрытие (Этап 10c) — до этого не тестировался вообще.
+
+`MarketFilter.ts`/`MarketScorer.ts` больше не нуждаются в Этап-0 allowlist для правила
+"`decimal.js` вне `value-objects`/`math`" ради `DiscoveredMarket`'s полей — но остаются в
+allowlist из-за `score: Decimal` (сознательно не-VO, см. выше) и собственной внутренней
+`Decimal`-арифметики (`MarketScorer.scoreAndSort()`'s `hoursToExpiry`-вычисление).
 
 ## Ссылки
 
-- План миграции, Этап 8: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
-- План миграции, Этап 10 (владелец `DiscoveredMarket`): тот же файл, раздел "Этап 10"
-- `@polymarket/ports` — `IMarketFilterConfig`, `IMarketDiscoveryService.DiscoveredMarket`
+- План миграции, Этап 10c: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
+- `@polymarket/ports` — `IMarketFilterConfig`, `IMarketDiscoveryService.DiscoveredMarket`,
+  `docs/ports.md` (полное обоснование `DiscoveredMarket`'s per-field решений)

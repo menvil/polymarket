@@ -24,9 +24,10 @@
  * - `endDate` (ISO строка) → `Date.parse()` → `TimestampService.create()` → `Timestamp`
  * - `orderPriceMinTickSize` → `Price.of(new Decimal(value))` → `Price` (дефолт: 0.01)
  * - `orderMinSize` → `Quantity.of(new Decimal(value))` → `Quantity` (дефолт: 1)
- * - `liquidity` (строка) → `new Decimal()` → `Decimal`
- * - `spread` (number) → `new Decimal()` → `Decimal`
- * - `score = Decimal(0)` (будет установлен `MarketScorer`)
+ * - `liquidity` (строка) → `MoneyService.create()` → `Money` (деградация до 0 при ошибке)
+ * - `spread` (number) → `RatioService.fromDecimal()` → `Ratio` (деградация до `undefined`)
+ * - `eventStartTime` (ISO строка) → `TimestampService.create()` → `Timestamp` (деградация до `undefined`)
+ * - `score = Decimal(0)` (будет установлен `MarketScorer`, остаётся `Decimal` — не VO)
  *
  * @example
  * ```typescript
@@ -45,7 +46,8 @@
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
-import { TimestampService, Money, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService, Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
+import type { Ratio, Timestamp } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient, GammaMarketDto } from '../rest/clients/PolymarketMarketDataRestClient.js';
 import type { MarketFilter } from '@polymarket/market-discovery';
@@ -238,13 +240,22 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
    *
    * @remarks
    * ### Особенности маппинга:
+   *
+   * Два разных режима отказа в зависимости от важности поля:
+   * - **Обязательные поля** (`conditionId`/`clobTokenIds`/`endDate`) — при ошибке
+   *   парсинга весь рынок отбрасывается (`return null`).
+   * - **Второстепенные поля** (`liquidity`/`spread`/`eventStartTime`) — при ошибке
+   *   парсинга деградируют до дефолта/`undefined`, рынок НЕ отбрасывается.
+   *
    * - `conditionId` → `asMarketId()` → может вернуть `undefined` (логируем, пропускаем)
    * - `clobTokenIds` — JSON-строка или массив; берём `[0]` (UP token)
    * - `endDate` → `Date.parse()` → `TimestampService.create()` (может быть невалидным)
    * - `orderPriceMinTickSize` — дефолт 0.01 если не задан
    * - `orderMinSize` — дефолт 1 если не задан
    * - `Price.of()` и `Quantity.of()` могут бросать — обёрнуты в try/catch
-   * - `liquidity` — строка из API, парсим через `parseFloat()` (0 если NaN)
+   * - `liquidity` — строка из API → `MoneyService.create()` (деградация до `Money.of(0, 'USDC')`)
+   * - `spread` — number или `undefined` → `RatioService.fromDecimal()` (деградация до `undefined`)
+   * - `eventStartTime` — ISO-строка → `TimestampService.create()` (деградация до `undefined`)
    *
    * @example
    * ```typescript
@@ -368,18 +379,54 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       }
     }
 
-    // 7. Ликвидность — строка из API, конвертируем напрямую в Decimal (без потери точности)
-    const liquidity = new Decimal(raw.liquidity ?? '0');
+    // 7. Ликвидность — строка из API. Result-проверенное построение Money; при ошибке
+    // парсинга деградируем до Money.of(0, 'USDC') — второстепенное поле, не повод
+    // отбрасывать всю находку рынка (в отличие от marketId/instrumentId/expiresAt выше).
+    const liquidityResult = MoneyService.create(raw.liquidity ?? '0', 'USDC');
+    if (!liquidityResult.ok) {
+      this._logger.debug('Cannot parse liquidity as Money, defaulting to 0', {
+        conditionId: raw.conditionId,
+        liquidity: raw.liquidity,
+        error: liquidityResult.error.message,
+      });
+    }
+    const liquidity = liquidityResult.ok ? liquidityResult.value : Money.of(new Decimal(0), 'USDC');
 
-    // 8. Спред (number или undefined) — конвертируем в Decimal
-    // spread: undefined означает "данные недоступны" (Gamma API не вернул поле).
-    // В отличие от Decimal(0), undefined явно разделяет "нет данных" и "реальный нулевой спред".
-    const spread = raw.spread != null ? new Decimal(raw.spread) : undefined;
+    // 8. Спред (number или undefined). undefined означает "данные недоступны" (Gamma API
+    // не вернул поле) — сохраняем это отличие от "реальный нулевой спред", в т.ч. при
+    // ошибке парсинга (деградируем до undefined, не до Ratio(0)).
+    let spread: Ratio | undefined;
+    if (raw.spread != null) {
+      const spreadResult = RatioService.fromDecimal(raw.spread);
+      if (spreadResult.ok) {
+        spread = spreadResult.value;
+      } else {
+        this._logger.debug('Cannot parse spread as Ratio, treating as unavailable', {
+          conditionId: raw.conditionId,
+          spread: raw.spread,
+          error: spreadResult.error.message,
+        });
+      }
+    }
 
-    // eventStartTime → epoch ms (для фильтрации по длительности рынка)
-    const eventStartMs = raw.eventStartTime
-      ? Date.parse(raw.eventStartTime)
-      : undefined;
+    // eventStartTime → Timestamp (для фильтрации по длительности рынка). Второстепенное
+    // поле — при ошибке парсинга деградируем до undefined, не отбрасываем весь рынок.
+    let eventStartMs: Timestamp | undefined;
+    if (raw.eventStartTime) {
+      const eventStartRaw = Date.parse(raw.eventStartTime);
+      if (!isNaN(eventStartRaw)) {
+        const eventStartResult = TimestampService.create(eventStartRaw);
+        if (eventStartResult.ok) {
+          eventStartMs = eventStartResult.value;
+        } else {
+          this._logger.debug('Cannot create Timestamp from eventStartTime, skipping field', {
+            conditionId: raw.conditionId,
+            eventStartTime: raw.eventStartTime,
+            error: eventStartResult.error.message,
+          });
+        }
+      }
+    }
 
     return {
       marketId,
@@ -395,7 +442,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
       allTokenIds: tokenIds,
       rawMarket: raw as unknown as Record<string, unknown>,
-      eventStartMs: eventStartMs && !isNaN(eventStartMs) ? eventStartMs : undefined,
+      eventStartMs,
       // startsAt НЕ задаём — будет установлен в момент openMarket() = Date.now()
     };
   }

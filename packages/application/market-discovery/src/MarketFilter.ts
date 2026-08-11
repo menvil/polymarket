@@ -175,7 +175,7 @@ export class MarketFilter {
    */
   private _passesSpreadFilter(market: DiscoveredMarket, minSpread: number): boolean {
     if (market.spread === undefined) return true;
-    return market.spread.greaterThanOrEqualTo(new Decimal(minSpread));
+    return market.spread.toDecimal().greaterThanOrEqualTo(new Decimal(minSpread));
   }
 
   /**
@@ -186,7 +186,7 @@ export class MarketFilter {
    * @returns true если ликвидность >= minLiquidity
    */
   private _passesLiquidityFilter(market: DiscoveredMarket, minLiquidity: number): boolean {
-    return market.liquidity.greaterThanOrEqualTo(new Decimal(minLiquidity));
+    return market.liquidity.value().greaterThanOrEqualTo(new Decimal(minLiquidity));
   }
 
   /**
@@ -205,7 +205,7 @@ export class MarketFilter {
     if (minMinutes === undefined && maxMinutes === undefined) return true;
     if (market.eventStartMs === undefined) return true; // нет данных — пропускаем фильтр (не отклоняем)
 
-    const durationMs = market.expiresAt.toNumber() - market.eventStartMs;
+    const durationMs = market.expiresAt.toNumber() - market.eventStartMs.toNumber();
     const durationMin = durationMs / (1000 * 60);
 
     if (minMinutes !== undefined && durationMin < minMinutes) return false;

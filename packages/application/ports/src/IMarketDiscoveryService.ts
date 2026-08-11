@@ -20,7 +20,7 @@
  */
 import type Decimal from 'decimal.js';
 import type { InstrumentInfo } from './IMarketCatalog.js';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Money, Ratio, Timestamp } from '@polymarket/value-objects';
 
 /**
  * Обнаруженный рынок — кандидат для торговли.
@@ -39,13 +39,20 @@ export interface DiscoveredMarket extends InstrumentInfo {
   readonly active: true;
   /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
-  /** Текущий спред (bid-ask). `undefined` если недоступен (нет данных от API). */
-  readonly spread?: Decimal;
-  /** Ликвидность (объём торгов). Decimal('0') если недоступен */
-  readonly liquidity: Decimal;
+  /**
+   * Текущий спред (bid-ask), доля от 1 (0.02 = 2%, та же конвенция, что
+   * `IMarketFilterConfig.minSpread`). `undefined` если недоступен (нет данных от API).
+   */
+  readonly spread?: Ratio;
+  /** Ликвидность (объём торгов, USDC notional). `Money.of(0, 'USDC')` если недоступна. */
+  readonly liquidity: Money;
   /**
    * Скор рынка — устанавливается `MarketScorer`.
    * До скоринга = Decimal('0'). После = hoursToExpiry как Decimal.
+   *
+   * @remarks
+   * Остаётся `Decimal` (не VO) — внутренний sort-key без чистого VO-отображения,
+   * см. Этап 10c плана миграции.
    */
   readonly score: Decimal;
   /**
@@ -61,12 +68,14 @@ export interface DiscoveredMarket extends InstrumentInfo {
    */
   readonly rawMarket?: Record<string, unknown>;
   /**
-   * Время начала события (epoch ms). Парсится из `eventStartTime` в API.
-   * Используется вместе с `expiresAt` для вычисления длительности рынка.
+   * Время начала СОБЫТИЯ (не рынка/записи — см. `startsAt` ниже, другое поле).
+   * Парсится из `eventStartTime` в API. Используется вместе с `expiresAt`
+   * для вычисления длительности рынка.
    */
-  readonly eventStartMs?: number;
+  readonly eventStartMs?: Timestamp;
   /**
-   * Время начала рынка (когда начинается запись данных). Timestamp из `events[0].startDate`.
+   * Время начала ЗАПИСИ/торговли ботом (не начало самого события — см.
+   * `eventStartMs` выше, другое поле). Timestamp из `events[0].startDate`.
    * Используется для выравнивания по границе начала рынка (аналог CEX window alignment).
    */
   readonly startsAt?: Timestamp;

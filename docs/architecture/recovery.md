@@ -18,8 +18,9 @@ Phase 9 гарантирует консистентность состояния
 **Поток данных:**
 ```
 ICurrentBalanceProvider.getUsdcBalance(accountId)
-  → Decimal (текущий USDC баланс)
-  → Balance.withZeroReserved(Money.of(balance, 'USDC'), accountId, POLYMARKET)
+  → Money (текущий USDC баланс — порт возвращает Money напрямую, Этап 10c плана
+    миграции убрал промежуточный lossy Money.toNumber() → new Decimal(...) раунд-трип)
+  → Balance.withZeroReserved(balance, accountId, POLYMARKET)
   → Portfolio.create({ id, accountId, balance })
   → IPortfolioStore.save(portfolio, version=0)
 ```

@@ -1,5 +1,4 @@
 apps/bot/src/bot/MarketRotation.ts
-apps/bot/src/bot/buildLiveInfra.ts
 apps/bot/src/bot/runMultiMarketBacktest.ts
 apps/bot/src/config/parseConfig.ts
 apps/bot/src/main.ts
@@ -30,7 +29,6 @@ apps/bot/src/strategyFactory.ts
 apps/collect-data/src/main.ts
 packages/application/market-discovery/src/MarketFilter.ts
 packages/application/market-discovery/src/MarketScorer.ts
-packages/application/ports/src/ICurrentBalanceProvider.ts
 packages/application/ports/src/IExchangeClient.ts
 packages/application/ports/src/IMarketDiscoveryService.ts
 packages/application/ports/src/IOrderSubmissionRepository.ts
@@ -39,8 +37,6 @@ packages/application/risk/src/OrderRiskChecker.ts
 packages/application/strategy/src/BaseStrategy.ts
 packages/application/strategy/src/ExecutionEngine.ts
 packages/application/use-cases/src/CancelOrderUseCase.ts
-packages/application/use-cases/src/InitializePortfolioUseCase.ts
-packages/application/use-cases/src/PlaceOrderFailure.ts
 packages/application/use-cases/src/PlaceOrderUseCase.ts
 packages/application/use-cases/src/ProcessFillUseCase.ts
 packages/application/use-cases/src/ReconcileUnknownSubmissionsUseCase.ts

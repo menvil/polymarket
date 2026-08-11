@@ -6,6 +6,7 @@ import { DataRecorder } from '../src/DataRecorder.js';
 import { NDJSONFormatter } from '../src/formatters/NDJSONFormatter.js';
 import type { DataRecorderConfig } from '../src/config/DataRecorderConfig.js';
 import type { ILogger } from '@polymarket/logger';
+import { unsafeInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
 
@@ -100,7 +101,7 @@ describe('DataRecorder', () => {
   it('recordEvent записывает событие в файл после flush', async () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     recorder.registerMarket(makeMeta());
-    recorder.recordEvent('tok-yes', { event_type: 'book', ts: 1234, bids: [], asks: [] });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { event_type: 'book', ts: 1234, bids: [], asks: [] });
     await recorder.flush();
 
     const today = new Date().toISOString().slice(0, 10);
@@ -119,7 +120,7 @@ describe('DataRecorder', () => {
     recorder.registerMarket(makeMeta());
     // Не должно бросать
     expect(() => {
-      recorder.recordEvent('unknown-token', { event_type: 'book' });
+      recorder.recordEvent(unsafeInstrumentId('unknown-token'), { event_type: 'book' });
     }).not.toThrow();
   });
 
@@ -127,8 +128,8 @@ describe('DataRecorder', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordEvent('tok-yes', { ts: 1 });
-    recorder.recordEvent('tok-no', { ts: 2 });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { ts: 1 });
+    recorder.recordEvent(unsafeInstrumentId('tok-no'), { ts: 2 });
 
     await recorder.finalizeMarket(meta.marketId, 'EXPIRED');
 
@@ -156,7 +157,7 @@ describe('DataRecorder', () => {
     await recorder.finalizeMarket(meta.marketId, 'EXPIRED');
 
     // После финализации — молча игнорирует
-    recorder.recordEvent('tok-yes', { event_type: 'book' });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { event_type: 'book' });
 
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(tmpDir, today);
@@ -170,8 +171,8 @@ describe('DataRecorder', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     recorder.registerMarket(makeMeta('mkt-001', ['t1', 't2']));
     recorder.registerMarket(makeMeta('mkt-002', ['t3', 't4']));
-    recorder.recordEvent('t1', { ts: 1 });
-    recorder.recordEvent('t3', { ts: 2 });
+    recorder.recordEvent(unsafeInstrumentId('t1'), { ts: 1 });
+    recorder.recordEvent(unsafeInstrumentId('t3'), { ts: 2 });
 
     await recorder.close();
 
@@ -188,9 +189,9 @@ describe('DataRecorder', () => {
     recorder.registerMarket(makeMeta());
 
     // Записываем 3 события — должен триггернуть flush
-    recorder.recordEvent('tok-yes', { ts: 1 });
-    recorder.recordEvent('tok-yes', { ts: 2 });
-    recorder.recordEvent('tok-yes', { ts: 3 });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { ts: 1 });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { ts: 2 });
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { ts: 3 });
 
     // Даём время на async flush
     await new Promise((r) => setTimeout(r, 50));

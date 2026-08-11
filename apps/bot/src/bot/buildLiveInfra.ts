@@ -28,8 +28,8 @@
  * ```
  */
 
-import Decimal from 'decimal.js';
 import type { AccountId } from '@polymarket/ids';
+import type { Money } from '@polymarket/value-objects';
 import type { IExchangeClient, ICurrentBalanceProvider, IOrderedEventOutbox } from '@polymarket/ports';
 import type { ProcessFillUseCase } from '@polymarket/use-cases';
 import { ReconcileTradesUseCase, ReconcileUnknownSubmissionsUseCase, ResolveUnknownSubmissionUseCase, CancelBoundVenueOrderUseCase, SettleTerminalOrdersUseCase, venueTradeToFill, PortfolioService, InitializePortfolioUseCase, UpdateOrderStatusUseCase } from '@polymarket/use-cases';
@@ -236,10 +236,11 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   );
 
   // Inline adapter: ICurrentBalanceProvider → PolymarketBalanceProvider.getAvailableBalance()
+  // Чистый passthrough — getAvailableBalance() уже возвращает Money, лишний
+  // Money.toNumber() → new Decimal(...) раунд-трип (lossy) убран в Этапе 10c.
   const currentBalanceProvider: ICurrentBalanceProvider = {
-    async getUsdcBalance(_accountId: AccountId): Promise<Decimal> {
-      const money = await balanceProvider.getAvailableBalance();
-      return new Decimal(money.toNumber());
+    getUsdcBalance(_accountId: AccountId): Promise<Money> {
+      return balanceProvider.getAvailableBalance();
     },
   };
 

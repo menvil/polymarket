@@ -51,24 +51,57 @@ Result-сосед `applyReservationDelta()` уже был в этой форме
 
 ### Recorders (fire-and-forget запись на диск)
 
-`IMarketDataRecorder` — сырые WS-события до преобразования в доменные объекты (для
-воспроизведения в бектесте). `IDecisionJournal` — структурированные решения стратегии
-(NDJSON, отдельный файл на рынок) — см. "Что отложено и почему" ниже.
+`IMarketDataRecorder.recordEvent(tokenId: InstrumentId, rawEvent)` — сырые WS-события до
+преобразования в доменные объекты (для воспроизведения в бектесте); `tokenId` брендирован
+в Этапе 10c плана миграции, реальные вызывающие валидируют через `asInstrumentId(...)` с
+fail-open (skip + debug-лог) на невалид — recording не должно ронять trading path.
+`IDecisionJournal` — структурированные решения стратегии (NDJSON, отдельный файл на
+рынок). Брендированы (Этап 10c): `SessionMeta.marketId: MarketId`, `SessionMeta.
+instrumentId: InstrumentId`, `DecisionEntry.strategyId: StrategyId`, `OrderEntry`/
+`FillEntry`/`CancelEntry.orderId: OrderId`, `ResolutionEntry.marketId: MarketId`.
+**Намеренно остаётся `string`**: `marketId` на `DecisionEntry`/`OrderEntry`/`FillEntry`/
+`SignalEntry`/`CancelEntry` — это ключ роутинга журнала, на большинстве реальных сайтов
+конструирования несёт строковое представление `InstrumentId` (см.
+`DecisionJournalRecorder._appendRecord()`'s fallback через `_instrumentIndex`,
+резолвящий tokenId → marketId), а не подлинный `MarketId` — брендирование как `MarketId`
+было бы типово неверным здесь, не просто механической недоделкой. `SessionMeta.tokenIds`
+остаётся `readonly string[]` — нет подходящего branded-типа для списка токенов (тот же
+прецедент, что `IMarketDataRecorder.MarketMeta.tokenIds`).
 
 ### Exchange / discovery
 
 `IExchangeClient` — торговый клиент (submit/cancel/getTrades), `SubmitOrderResult`/
 `CancelOrderResult` — структурированные (не exception-based) исходы, включая ambiguous
-(`UNKNOWN` — сабмит ушёл, подтверждение не получено). `IMarketCatalog` — каталог
-инструментов. `IMarketDiscoveryService` — обнаружение новых рынков (Gamma API).
-`IMarketFilterConfig` — пороги фильтрации кандидатов (см. ниже, почему это не VO).
+(`UNKNOWN` — сабмит ушёл, подтверждение не получено). `SubmitRejectionBalanceMetadata` —
+числовая metadata venue-отклонения по балансу (микроединицы, `Decimal`); переиспользуется
+`use-cases`'s `PlaceOrderFailureError.balance` напрямую (дедуплицировано в Этапе 10c плана
+миграции — раньше `use-cases` держал побитовую копию той же структуры).
+`IMarketCatalog` — каталог инструментов. `IMarketDiscoveryService` — обнаружение новых
+рынков (Gamma API), см. `DiscoveredMarket` ниже. `IMarketFilterConfig` — пороги фильтрации
+кандидатов (см. ниже, почему это не VO).
+
+**`DiscoveredMarket`** (`IMarketDiscoveryService.ts`) — `spread?: Ratio`, `liquidity: Money`,
+`eventStartMs?: Timestamp` (все три — Этап 10c плана миграции). `score: Decimal` и
+`startsAt?: Timestamp` не меняются: `score` — внутренний sort-key без чистого
+VO-отображения (устанавливается `MarketScorer`), `startsAt` — семантически ДРУГОЕ поле,
+чем `eventStartMs` ("когда бот начал запись/торговлю", не "когда начинается сам ивент") —
+не путать. Единственная точка конструирования (`PolymarketMarketDiscoveryAdapter.
+_mapToDiscoveredMarket()`) использует Result-проверенное построение
+(`MoneyService.create`/`RatioService.fromDecimal`/`TimestampService.create`) с деградацией
+до дефолта/`undefined` при ошибке парсинга — в отличие от `marketId`/`instrumentId`/
+`expiresAt` (обязательные поля, ошибка парсинга отбрасывает весь рынок), эти три —
+второстепенные, отбрасывать всю находку рынка из-за них не оправдано.
 
 ### Прочее
 
-`ICurrentBalanceProvider`, `IFillReverter`, `IFillProcessor`, `IKeyedMutex`,
-`IStrategyCommitmentReader`, `IReconciliationIssueRepository`, `IOrderedEventOutbox` —
-однометодные/узкие порты для конкретных use-case-ов (см. TSDoc каждого файла — уже
-исчерпывающий, не дублируется здесь).
+`ICurrentBalanceProvider.getUsdcBalance(): Promise<Money>` (Этап 10c — было `Promise<
+Decimal>`; единственный реальный имплементер обёртывал уже-`Money`-результат
+`PolymarketBalanceProvider.getAvailableBalance()` через lossy `Money.toNumber() → new
+Decimal(...)` раунд-трип — конверсия порта на `Money` убрала этот раунд-трип полностью, не
+только типовой долг, реальный precision-фикс). `IFillReverter`, `IFillProcessor`,
+`IKeyedMutex`, `IStrategyCommitmentReader`, `IReconciliationIssueRepository`,
+`IOrderedEventOutbox` — однометодные/узкие порты для конкретных use-case-ов (см. TSDoc
+каждого файла — уже исчерпывающий, не дублируется здесь).
 
 ## Почему `IMarketFilterConfig`'s пороги остаются `number`
 
@@ -84,29 +117,34 @@ Result-сосед `applyReservationDelta()` уже был в этой форме
 
 ## Что отложено и почему
 
-Полное расследование — Этап 5 плана миграции
-(`/Users/menvil/.claude/plans/synthetic-swimming-heron.md`, раздел "### Этап 5"). Коротко:
+Полное расследование — Этапы 5 и 10c плана миграции
+(`/Users/menvil/.claude/plans/synthetic-swimming-heron.md`). Большая часть Этапа 5's
+исходного списка ("что отложено") уже решена в Этапе 10c — см. "Recorders" и "Exchange /
+discovery" выше для подробностей по `IDecisionJournal`/`IMarketDataRecorder`/
+`DiscoveredMarket`/`ICurrentBalanceProvider`. Остаётся отложенным:
 
-- **`IDecisionJournal.ts`** — record-типы (`DecisionEntry`/`OrderEntry`/`FillEntry`/
-  `SignalEntry`/`CancelEntry`/`SessionMeta`) остаются на `string`/`number`, несмотря на
-  внутреннюю несогласованность (`endSession(marketId: MarketId, ...)` уже типизирован,
-  сами записи — нет). Причина: реальная реализация (`DecisionJournalRecorder` в
-  `packages/infrastructure/persistence/data-collection`) и реальные потребители (12 файлов
-  `apps/bot/src/strategies/*` + 2 файла `apps/bot/src/bot/`) целиком в периметре Этапов
-  9-10 плана миграции — смена типов здесь без синхронной правки всех 14+ файлов сломала
-  бы сборку до завершения тех этапов.
-- **`IMarketDataRecorder.recordEvent(tokenId: string)`** — не переведён на `InstrumentId`.
-  Реальные вызывающие (`apps/collect-data/src/main.ts`, `apps/bot/src/bot/
-  buildRecording.ts`, `packages/infrastructure/polymarket/adapters/
-  MarketDataFeedAdapter.ts`) — тоже Этап 10 (последний файл явно назван в списке Этапа 10
-  master-плана). Остальная часть интерфейса (`MarketMeta.marketId: MarketId`, `startsAt`/
-  `expiresAt: Timestamp`) уже полностью на VO.
-- **`IMarketFilterConfig`** — не трогается вообще (см. раздел выше — пороги, не величины).
-- **`strategyId?: string`** (в `IOrderRepository`, `IOrderSubmissionRepository`,
-  `IExchangeClient`) — уже решено в Этапе 1 плана миграции: `StrategyId` (branded)
-  построен, но подключение к этим 6 портам явно отложено на Этап 9.
+- **`strategyId?: string`** в `IOrderRepository`, `IOrderStateStore`,
+  `IStrategyCommitmentReader`, `IExchangeClient`, `IOrderSubmissionRepository` (5 портов —
+  `IDecisionJournal` больше не входит в этот список: `DecisionEntry.strategyId` уже
+  брендирован в Этапе 10c). Реальный источник значений — `Order`/`OrderState`/
+  `OrderEvent` в `packages/domain/entities/order`, документированный event-replay/
+  журнальный формат (`Order.fromEvents(events)` воспроизводит историю без валидации) —
+  пакет вне мандата всей этой миграции (Этап 3 дал ему только TSDoc-backfill). Даже
+  полная конверсия сигнатур этих 5 портов была бы косметической: реально хранимое/
+  сравниваемое поле осталось бы примитивом. `StrategyId` сам по себе уже построен и
+  реально используется по всей цепочке `IStrategy`/`ExecutionEngine`/
+  `StrategyScheduler`/`apps/bot/strategies/*` (Этапы 1, 10b) — граница валидации между
+  этим типизированным миром и сырым `Order`/`OrderEvent`-миром находится в
+  `OrderEventBridge.ts` (см. Решение 12, `docs/architecture/boundary-contract.md`), не
+  в самих портах.
+- **`IMarketFilterConfig`** — не трогается вообще, пороги, не единичные величины (см.
+  раздел выше).
+- **`DecisionJournalRecorder.close()`'s небезопасный `as MarketId`-каст** — пре-
+  существующий, некритичный пробел типобезопасности на строковых ключах внутреннего
+  `Map`; не относится ни к одной находке Этапа 10c, не форсируется.
 
 ## Ссылки
 
-- ADR: `docs/architecture/boundary-contract.md`
-- План миграции, Этап 5: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
+- ADR: `docs/architecture/boundary-contract.md` (Решения 12, 13 — валидация на мосту
+  типизированный/сырой мир; персистентный/routing-key паттерн не значит "всё остаётся raw")
+- План миграции, Этапы 5 и 10c: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`

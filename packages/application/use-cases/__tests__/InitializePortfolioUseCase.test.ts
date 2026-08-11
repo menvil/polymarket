@@ -7,6 +7,7 @@ import { VersionConflictError } from '@polymarket/ports';
 import type { Portfolio } from '@polymarket/portfolio';
 import { parseAccountId } from '@polymarket/ids';
 import { Ok, Err } from '@polymarket/result';
+import { Money } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ function makeLogger(): ILogger {
 // и создаёт настоящий Balance/Portfolio с этим accountId.
 const ACCOUNT_ID = parseAccountId('venue:POLYMARKET:test-account')!;
 
-function makeBalanceProvider(balance = new Decimal('1500')): ICurrentBalanceProvider {
+function makeBalanceProvider(balance = Money.of(new Decimal('1500'), 'USDC')): ICurrentBalanceProvider {
   return {
     getUsdcBalance: jest.fn<ICurrentBalanceProvider['getUsdcBalance']>().mockResolvedValue(balance),
   };

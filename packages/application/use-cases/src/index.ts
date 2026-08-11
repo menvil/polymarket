@@ -33,8 +33,8 @@ export {
   getPlaceFailureCode,
   getPlaceFailureBalance,
 } from './PlaceOrderFailure.js';
-/** Реэкспорт кода/метаданных failure-ошибки (см. PlaceOrderFailure.ts). */
-export type { PlaceFailureCode, PlaceFailureBalanceMetadata } from './PlaceOrderFailure.js';
+/** Реэкспорт кода failure-ошибки (см. PlaceOrderFailure.ts). Balance-metadata — см. `SubmitRejectionBalanceMetadata` из `@polymarket/ports`. */
+export type { PlaceFailureCode } from './PlaceOrderFailure.js';
 /** Реэкспорт исхода отмены ордера (см. CancelOrderUseCase.ts). */
 export type { CancelOrderOutcome } from './CancelOrderUseCase.js';
 

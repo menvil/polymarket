@@ -1605,14 +1605,7 @@ export class PlaceOrderUseCase {
             clientOrderId: String(input.orderId),
             rollbackError: rollback.releaseError,
           },
-          ...(submitValue.balance !== undefined
-            ? {
-                balance: {
-                  onChainBalanceMicro: submitValue.balance.onChainBalanceMicro,
-                  orderAmountMicro: submitValue.balance.orderAmountMicro,
-                },
-              }
-            : {}),
+          ...(submitValue.balance !== undefined ? { balance: submitValue.balance } : {}),
         },
       ));
     }

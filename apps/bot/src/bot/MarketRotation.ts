@@ -725,7 +725,7 @@ export class MarketRotation {
       }
       if (settlementResult) {
         recording.journal.recordResolution({
-          marketId: String(slot.marketId), ts: Date.now(),
+          marketId: slot.marketId, ts: Date.now(),
           resolution: settlementResult.resolution as 'UP' | 'DOWN' | 'UNKNOWN',
           pnl: settlementResult.cashCredit.toFixed(4),
           settlementPrice: settlementResult.settlementPrice.toFixed(2),

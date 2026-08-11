@@ -42,7 +42,7 @@
  * ```
  */
 
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 
 /**
@@ -93,7 +93,7 @@ export interface IMarketDataRecorder {
    * @remarks
    * Никогда не бросает. Если tokenId не зарегистрирован — молча пропускает.
    */
-  recordEvent(tokenId: string, rawEvent: unknown): void;
+  recordEvent(tokenId: InstrumentId, rawEvent: unknown): void;
 
   /**
    * Завершает запись рынка: сбрасывает буфер, закрывает поток, сжимает файл.

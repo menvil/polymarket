@@ -104,8 +104,16 @@ export class MarketDataFeedAdapter {
    */
   public start(): void {
     const unsubSnapshot = this._wsEmitter.onOrderbookSnapshot(async (dto) => {
+      const tokenId = asInstrumentId(dto.asset_id);
+      if (!tokenId) {
+        this._logger.warn('Invalid asset_id in orderbook snapshot, skipping', {
+          asset_id: dto.asset_id,
+        });
+        return;
+      }
+
       // Записываем raw событие до доменной обработки (fire-and-forget, синхронно)
-      this._recorder?.recordEvent(dto.asset_id, dto);
+      this._recorder?.recordEvent(tokenId, dto);
 
       // В режиме только записи (bookHandler = null) конвертация уровней не нужна:
       // raw данные уже сохранены выше, а доменная обработка отсутствует.
@@ -120,14 +128,6 @@ export class MarketDataFeedAdapter {
           return;
         }
         this._lastHashes.set(dto.asset_id, dto.hash);
-      }
-
-      const tokenId = asInstrumentId(dto.asset_id);
-      if (!tokenId) {
-        this._logger.warn('Invalid asset_id in orderbook snapshot, skipping', {
-          asset_id: dto.asset_id,
-        });
-        return;
       }
 
       const bids = this._convertLevels(dto.bids);

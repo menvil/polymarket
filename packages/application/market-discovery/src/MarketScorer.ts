@@ -85,7 +85,7 @@ export class MarketScorer {
     scored.sort((a, b) => {
       const scoreDiff = a.score.comparedTo(b.score);
       if (scoreDiff !== 0) return scoreDiff;
-      const liquidityDiff = b.liquidity.comparedTo(a.liquidity);
+      const liquidityDiff = b.liquidity.value().comparedTo(a.liquidity.value());
       if (liquidityDiff !== 0) return liquidityDiff;
       const aId = String(a.marketId);
       const bId = String(b.marketId);

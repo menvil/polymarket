@@ -35,7 +35,7 @@
  * ```
  */
 
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId, OrderId, StrategyId } from '@polymarket/ids';
 
 // ── Типы записей журнала ─────────────────────────────────────────────────────
 
@@ -47,18 +47,20 @@ import type { MarketId } from '@polymarket/ids';
  * @param strategyType - Тип стратегии
  * @param strategyConfig - Конфигурация стратегии (JSON-serializable)
  * @param marketQuestion - Вопрос рынка
+ * @param tokenIds - ID токенов рынка (список CTF token id, без branded-типа —
+ *   см. `IMarketDataRecorder.MarketMeta.tokenIds` для того же прецедента)
  * @param instrumentId - ID инструмента
  * @param expiresAtMs - Время истечения (epoch ms)
  * @param eventStartMs - Время начала события (epoch ms)
  */
 export interface SessionMeta {
-  readonly marketId: string;
+  readonly marketId: MarketId;
   readonly mode: 'live' | 'paper';
   readonly strategyType: string;
   readonly strategyConfig: Record<string, unknown>;
   readonly marketQuestion: string;
   readonly tokenIds: readonly string[];
-  readonly instrumentId: string;
+  readonly instrumentId: InstrumentId;
   readonly expiresAtMs: number;
   readonly eventStartMs?: number;
 }
@@ -66,7 +68,11 @@ export interface SessionMeta {
 /**
  * Запись решения стратегии.
  *
- * @param marketId - ID рынка
+ * @param marketId - Ключ роутинга журнала, НЕ всегда подлинный `MarketId` — на
+ *   большинстве реальных сайтов конструирования несёт строковое представление
+ *   `InstrumentId` (см. `DecisionJournalRecorder._instrumentIndex`, который
+ *   резолвит tokenId → marketId при записи). Остаётся `string` намеренно —
+ *   брендирование как `MarketId` было бы типово неверным для этих сайтов.
  * @param strategyId - ID экземпляра стратегии
  * @param ts - Timestamp решения (epoch ms)
  * @param action - Действие: BUY, BUY_COMP, SELL, HOLD, SKIP, CANCEL
@@ -80,7 +86,7 @@ export interface SessionMeta {
  */
 export interface DecisionEntry {
   readonly marketId: string;
-  readonly strategyId: string;
+  readonly strategyId: StrategyId;
   readonly ts: number;
   readonly action: 'BUY' | 'BUY_COMP' | 'SELL' | 'HOLD' | 'SKIP' | 'CANCEL';
   readonly state: Record<string, unknown>;
@@ -95,7 +101,8 @@ export interface DecisionEntry {
 /**
  * Запись размещения ордера.
  *
- * @param marketId - ID рынка (tokenId для роутинга)
+ * @param marketId - Ключ роутинга журнала (обычно `InstrumentId`-строка для
+ *   конкретного tokenId, не подлинный `MarketId` — см. `DecisionEntry.marketId`)
  * @param ts - Timestamp размещения (epoch ms)
  * @param orderId - ID ордера
  * @param side - Сторона: BUY или SELL
@@ -108,7 +115,7 @@ export interface DecisionEntry {
 export interface OrderEntry {
   readonly marketId: string;
   readonly ts: number;
-  readonly orderId: string;
+  readonly orderId: OrderId;
   readonly side: 'BUY' | 'SELL';
   readonly price: string;
   readonly size: string;
@@ -123,7 +130,8 @@ export interface OrderEntry {
 /**
  * Запись fill.
  *
- * @param marketId - ID рынка
+ * @param marketId - Ключ роутинга журнала (обычно `InstrumentId`-строка для
+ *   конкретного tokenId, не подлинный `MarketId` — см. `DecisionEntry.marketId`)
  * @param ts - Timestamp fill (epoch ms)
  * @param orderId - ID ордера
  * @param side - Сторона: BUY или SELL
@@ -137,7 +145,7 @@ export interface OrderEntry {
 export interface FillEntry {
   readonly marketId: string;
   readonly ts: number;
-  readonly orderId: string;
+  readonly orderId: OrderId;
   readonly side: 'BUY' | 'SELL';
   readonly price: string;
   readonly size: string;
@@ -174,7 +182,8 @@ export interface FillEntry {
  * - `chainlinkMoveUsd` = chainlinkNow − chainlinkAtOn: абсолютное движение Chainlink
  * - `chainlinkMoveBps` = движение Chainlink в bps (нормировано)
  *
- * @param marketId - ID рынка
+ * @param marketId - Ключ роутинга журнала (обычно `InstrumentId`-строка для
+ *   конкретного tokenId, не подлинный `MarketId` — см. `DecisionEntry.marketId`)
  * @param ts - Timestamp события (epoch ms)
  * @param event - Тип перехода сигнала
  * @param direction - Текущее направление сигнала для токена
@@ -247,7 +256,8 @@ export interface SignalEntry {
  * - При каком состоянии сигнала ордер снимался
  * - Насколько цена ордера была актуальна к моменту снятия
  *
- * @param marketId - ID рынка
+ * @param marketId - Ключ роутинга журнала (обычно `InstrumentId`-строка для
+ *   конкретного tokenId, не подлинный `MarketId` — см. `DecisionEntry.marketId`)
  * @param ts - Timestamp снятия (epoch ms)
  * @param orderId - ID снятого ордера
  * @param reason - Причина снятия (STALE_CHAINLINK, NO_ENTRY, IN_FLIGHT_FILLS, ...)
@@ -261,7 +271,7 @@ export interface SignalEntry {
 export interface CancelEntry {
   readonly marketId: string;
   readonly ts: number;
-  readonly orderId: string;
+  readonly orderId: OrderId;
   readonly reason: string;
   /** Цена ордера при размещении (¢) */
   readonly orderPriceCents: number;
@@ -289,7 +299,7 @@ export interface CancelEntry {
  * @param settlementPrice - Цена settlement (0 или 1)
  */
 export interface ResolutionEntry {
-  readonly marketId: string;
+  readonly marketId: MarketId;
   readonly ts: number;
   readonly resolution: 'UP' | 'DOWN' | 'UNKNOWN';
   readonly pnl: string;

@@ -44,9 +44,9 @@
  * }
  * ```
  */
-import type Decimal from 'decimal.js';
 import { TradingError } from '@polymarket/errors';
 import { RiskViolationError } from '@polymarket/risk';
+import type { SubmitRejectionBalanceMetadata } from '@polymarket/ports';
 
 /** Типизированный код неуспеха размещения ордера. */
 export type PlaceFailureCode =
@@ -60,21 +60,6 @@ export type PlaceFailureCode =
   | 'OTHER';
 
 /**
- * Числовая metadata venue-отклонения по балансу (микроединицы, 1e6).
- *
- * @remarks
- * Копия структуры `SubmitRejectionBalanceMetadata` из ports — Decimal, не
- * строки: значения приходят из авторитетного структурированного ответа venue
- * (классифицированы в infrastructure adapter), а не парсятся из текста.
- */
-export interface PlaceFailureBalanceMetadata {
-  /** Фактический on-chain баланс (микроединицы). */
-  readonly onChainBalanceMicro: Decimal;
-  /** Требуемый объём ордера (микроединицы). */
-  readonly orderAmountMicro: Decimal;
-}
-
-/**
  * Ошибка размещения ордера с типизированным failure-кодом.
  *
  * @remarks
@@ -86,7 +71,7 @@ export class PlaceOrderFailureError extends TradingError {
   /** Типизированный код неуспеха (см. {@link PlaceFailureCode}). */
   public readonly failureCode: PlaceFailureCode;
   /** Числовая balance-metadata (только для `INSUFFICIENT_TOKEN_BALANCE`). */
-  public readonly balance?: PlaceFailureBalanceMetadata;
+  public readonly balance?: SubmitRejectionBalanceMetadata;
 
   /**
    * @param failureCode - Типизированный код неуспеха
@@ -99,7 +84,7 @@ export class PlaceOrderFailureError extends TradingError {
     message: string,
     options?: {
       readonly context?: Record<string, unknown>;
-      readonly balance?: PlaceFailureBalanceMetadata;
+      readonly balance?: SubmitRejectionBalanceMetadata;
     },
   ) {
     super(message, { code: failureCode, context: options?.context });
@@ -144,7 +129,7 @@ export function getPlaceFailureCode(error: Error): PlaceFailureCode {
  * `balance` (то есть для definite `INSUFFICIENT_TOKEN_BALANCE` от venue).
  * Никогда не парсит `error.message`.
  */
-export function getPlaceFailureBalance(error: Error): PlaceFailureBalanceMetadata | undefined {
+export function getPlaceFailureBalance(error: Error): SubmitRejectionBalanceMetadata | undefined {
   if (error instanceof PlaceOrderFailureError) {
     return error.balance;
   }
