@@ -2,13 +2,14 @@
  * Тесты валидации RiskPolicy.create.
  *
  * @remarks
- * Проверяет, что невалидная конфигурация (NaN, Infinity, отрицательные и дробные
- * integer-параметры, отрицательные/не-finite Decimal-лимиты) отклоняется на этапе
- * создания политики (`Err(RiskConfigError)`), а валидная — принимается и
- * замораживается (иммутабельность).
+ * Проверяет, что невалидная конфигурация (NaN/дробные integer-параметры,
+ * отрицательные Money-лимиты, значения, не являющиеся экземплярами `Money`/
+ * `Quantity`) отклоняется на этапе создания политики (`Err(RiskConfigError)`),
+ * а валидная — принимается и замораживается (иммутабельность).
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import { Money, Quantity } from '@polymarket/value-objects';
 import { RiskPolicy, RiskConfigError } from '../../src/RiskPolicy.js';
 
 describe('RiskPolicy.create', () => {
@@ -23,10 +24,10 @@ describe('RiskPolicy.create', () => {
     const r = RiskPolicy.create({
       maxOpenOrders: 5,
       minTimeToExpiryMs: 60_000,
-      maxPositionSize: new Decimal('100'),
-      maxTotalExposure: new Decimal('1000'),
-      maxOrderNotional: new Decimal('500'),
-      minAvailableBalance: new Decimal('1'),
+      maxPositionSize: Quantity.of(new Decimal('100')),
+      maxTotalExposure: Money.of(new Decimal('1000'), 'USDC'),
+      maxOrderNotional: Money.of(new Decimal('500'), 'USDC'),
+      minAvailableBalance: Money.of(new Decimal('1'), 'USDC'),
     });
     expect(r.ok).toBe(true);
   });
@@ -35,7 +36,7 @@ describe('RiskPolicy.create', () => {
     const r = RiskPolicy.create({
       maxOpenOrders: 0,
       minTimeToExpiryMs: 0,
-      maxPositionSize: new Decimal('0'),
+      maxPositionSize: Quantity.of(new Decimal('0')),
     });
     expect(r.ok).toBe(true);
   });
@@ -93,45 +94,53 @@ describe('RiskPolicy.create', () => {
     if (!r.ok) expect(r.error.field).toBe('minTimeToExpiryMs');
   });
 
-  // ── Невалидные Decimal-лимиты ─────────────────────────────────────────────
+  // ── Невалидные Money-лимиты (Money допускает отрицательные суммы на уровне
+  //    core — неотрицательность лимита проверяется явно в RiskPolicy) ────────
 
   it('Err для отрицательного maxTotalExposure', () => {
-    const r = RiskPolicy.create({ maxTotalExposure: new Decimal('-1') });
+    const r = RiskPolicy.create({ maxTotalExposure: Money.of(new Decimal('-1'), 'USDC') });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe('maxTotalExposure');
   });
 
-  it('Err для NaN maxPositionSize', () => {
-    const r = RiskPolicy.create({ maxPositionSize: new Decimal(NaN) });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe('maxPositionSize');
-  });
-
-  it('Err для не-finite maxOrderNotional', () => {
-    const r = RiskPolicy.create({ maxOrderNotional: new Decimal(Infinity) });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe('maxOrderNotional');
-  });
-
   it('Err для отрицательного minAvailableBalance', () => {
-    const r = RiskPolicy.create({ minAvailableBalance: new Decimal('-0.01') });
+    const r = RiskPolicy.create({ minAvailableBalance: Money.of(new Decimal('-0.01'), 'USDC') });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe('minAvailableBalance');
   });
 
   // ── Runtime-граница: не доверять статическому типу ────────────────────────
+  //
+  // NaN/Infinity/отрицательные Quantity и NaN/Infinity Money физически не могут
+  // быть сконструированы — `Quantity.of`/`Money.of` бросают на этих значениях в
+  // самом VO core, ещё до того, как объект попадёт в RiskPolicy.create(). Поэтому
+  // здесь тестируется другая, реально достижимая runtime-граница: значение
+  // ПРАВИЛЬНОГО вида (число/строка/голый Decimal — то, чем поле было ДО этой
+  // миграции), но НЕ являющееся экземпляром ожидаемого VO.
 
-  it('Err (НЕ throw) для number в Decimal-поле', () => {
+  it('Err (НЕ throw) для number в Money-поле', () => {
     // Раньше бросало TypeError: value.isNaN is not a function.
     const r = RiskPolicy.create({ maxTotalExposure: 100 } as never);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe('maxTotalExposure');
   });
 
-  it('Err (НЕ throw) для строки в Decimal-поле', () => {
+  it('Err (НЕ throw) для строки в Money-поле', () => {
     const r = RiskPolicy.create({ maxOrderNotional: '500' } as never);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe('maxOrderNotional');
+  });
+
+  it('Err (НЕ throw) для голого Decimal в Money-поле', () => {
+    const r = RiskPolicy.create({ maxOrderNotional: new Decimal(500) } as never);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe('maxOrderNotional');
+  });
+
+  it('Err (НЕ throw) для голого Decimal в Quantity-поле', () => {
+    const r = RiskPolicy.create({ maxPositionSize: new Decimal(100) } as never);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe('maxPositionSize');
   });
 
   it('Err для строки в integer-поле', () => {
@@ -141,7 +150,7 @@ describe('RiskPolicy.create', () => {
   });
 
   it('Err для неизвестного поля (удалённый лимит maxDrawdown не просачивается)', () => {
-    const r = RiskPolicy.create({ maxDrawdown: new Decimal('0.2') } as never);
+    const r = RiskPolicy.create({ maxDrawdown: Money.of(new Decimal('0.2'), 'USDC') } as never);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe('maxDrawdown');
   });
@@ -227,7 +236,7 @@ describe('RiskPolicy.create', () => {
   });
 
   it('canonical params заморожены и содержат только validated own-поля', () => {
-    const r = RiskPolicy.create({ maxOpenOrders: 5, maxTotalExposure: new Decimal('1000') });
+    const r = RiskPolicy.create({ maxOpenOrders: 5, maxTotalExposure: Money.of(new Decimal('1000'), 'USDC') });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(Object.isFrozen(r.value.params)).toBe(true);

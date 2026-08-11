@@ -18,18 +18,23 @@
  *   size,
  *   instrumentId,
  *   // Обязателен: pending BUY-экспозиция по инструменту (0, если нет/SELL).
- *   pendingBuyQuantityForInstrument: new Decimal(0),
+ *   pendingBuyQuantityForInstrument: Quantity.of(new Decimal(0)),
  *   strategyId: 'my-strategy',
  *   timeToExpiryMs: 300_000, // опционально; undefined = данные недоступны
  * };
  * const result = checker.checkBeforeOrder(input);
  * ```
  */
-import type Decimal from 'decimal.js';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { InstrumentId } from '@polymarket/ids';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 
+/**
+ * Входные данные пре-трейд риск-проверки.
+ *
+ * @remarks
+ * Назначение и пример конструирования — см. докблок модуля выше.
+ */
 export interface PreOrderCheckInput {
   /** Текущий portfolio пользователя */
   readonly portfolio: Portfolio;
@@ -78,7 +83,7 @@ export interface PreOrderCheckInput {
    * Precheck вне lock передаёт `0` (fail-fast; authoritative-значение считается
    * под mutex в `PlaceOrderUseCase`).
    */
-  readonly pendingBuyQuantityForInstrument: Decimal;
+  readonly pendingBuyQuantityForInstrument: Quantity;
   /** ID стратегии (опционально — для per-strategy лимитов) */
   readonly strategyId?: string;
   /**

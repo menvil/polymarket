@@ -101,9 +101,11 @@ import type { FillData, Order } from '@polymarket/order';
 import Decimal from 'decimal.js';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import { pendingMatchFillId, canConsumeHeldReservation } from '@polymarket/ports';
+import { Money, PriceService } from '@polymarket/value-objects';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
+import type { ExecutionLinker } from './services/ExecutionLinker.js';
 import { lockKey } from './lockKeys.js';
 
 /**
@@ -197,6 +199,16 @@ export interface ProcessFillDeps {
    * следующим `begin()` вместо вечного `BUSY` (см. `FillProcessingLease`).
    */
   readonly processingLeaseMs?: number;
+  /**
+   * Сшивка Fill с рыночным Trade (опционально).
+   *
+   * @remarks
+   * Optional — чтобы не ломать существующие конструкторы/тесты. Если передан,
+   * вызывается best-effort рядом с `ledgerService.recordFill()` (после записи в
+   * Ledger, во всех трёх путях: normal, direct-fill, held-reservation recovery).
+   * Никогда не бросает и не влияет на исход `execute()` — см. `ExecutionLinker`.
+   */
+  readonly executionLinker?: ExecutionLinker;
 }
 
 /** Дефолтная длительность PROCESSING lease (мс). */
@@ -692,6 +704,7 @@ export class ProcessFillUseCase {
       }
       // Ledger записан.
       tracker.phase = 'LEDGER_COMMITTED';
+      this._deps.executionLinker?.link(fill);
 
       this._clearInFlightFlags(fill);
 
@@ -847,7 +860,7 @@ export class ProcessFillUseCase {
       fillSize: fill.size.value().toNumber(),
       notional: order.price.value().times(fill.size.value()).toNumber(),
     });
-    const portfolioResult = this._deps.portfolioService.applyFill(fill, order.price.value());
+    const portfolioResult = this._deps.portfolioService.applyFill(fill, order.price);
     if (!portfolioResult.ok) {
       // ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ (нет полного Unit of Work — вне scope этого этапа):
       // Order уже сохранён ВЫШЕ (saveSync) с применённым fill.id, а Portfolio —
@@ -923,6 +936,7 @@ export class ProcessFillUseCase {
 
     // Ledger записан.
     tracker.phase = 'LEDGER_COMMITTED';
+    this._deps.executionLinker?.link(fill);
 
     // Снять остаток резервации при FILLED через dust threshold.
     // Биржа округляет fill size (5.147233 → 5.14), ордер закрывается через dust threshold
@@ -942,7 +956,7 @@ export class ProcessFillUseCase {
         // instrumentId для SELL здесь всегда резолвится — applyFill выше уже
         // вернул бы Err на invalid tokenId; guard оставлен как defence.
         const dustInstrumentId = isSell ? assetIdToInstrumentId(fill.tokenId) : undefined;
-        const dustNotional = isSell ? undefined : remainingQty.times(order.price.value());
+        const dustNotional = isSell ? undefined : Money.of(remainingQty.times(order.price.value()), 'USDC');
 
         let dustReleaseResult: ReturnType<PortfolioService['releaseReservation']> = Ok(undefined);
         if (isSell) {
@@ -950,7 +964,7 @@ export class ProcessFillUseCase {
             dustReleaseResult = this._deps.portfolioService.releaseTokenReservation(
               fill.accountId,
               dustInstrumentId,
-              remainingQty,
+              updatedOrder.remainingSize,
             );
           }
         } else {
@@ -1132,12 +1146,29 @@ export class ProcessFillUseCase {
       reservationRemaining: execution.reservation.remaining,
     });
 
-    const orderPrice = new Decimal(execution.orderPrice);
+    // Fail-closed парсинг: execution.orderPrice — decimal-строка из execution
+    // journal (persisted-DTO, Этап 5). PriceService.create() валидирует диапазон
+    // (не только "парсится как Decimal") — повреждённая/невалидная запись
+    // блокируется здесь, а не падает необработанным исключением ниже.
+    const orderPriceResult = PriceService.create(execution.orderPrice);
+    if (!orderPriceResult.ok) {
+      return this._blockFillOnReconciliation(fill, {
+        idSuffix: 'held-fill-invalid-order-price',
+        reason: `HELD_FILL_INVALID_ORDER_PRICE: ${orderPriceResult.error.message}`,
+        stage: 'held-fill-prevalidation',
+        error: orderPriceResult.error.message,
+        extraContext: {
+          clientOrderId: String(execution.clientOrderId),
+          orderPrice: execution.orderPrice,
+        },
+      });
+    }
+    const orderPrice = orderPriceResult.value;
 
     // ПРЕВАЛИДАЦИЯ (Этап 3): fill сверяется с execution journal ДО любых
     // мутаций Portfolio/Ledger/journal. Любое расхождение → reconciliation-блок
     // без изменения состояния (issue содержит фактические и ожидаемые значения).
-    const validationError = this._validateHeldFill(fill, execution, orderPrice);
+    const validationError = this._validateHeldFill(fill, execution, orderPrice.value());
     if (validationError) {
       return this._blockFillOnReconciliation(fill, {
         idSuffix: 'held-fill-validation-failed',
@@ -1203,11 +1234,12 @@ export class ProcessFillUseCase {
 
     // Ledger записан.
     tracker.phase = 'LEDGER_COMMITTED';
+    this._deps.executionLinker?.link(fill);
 
     // Journal consume — commit-critical: journal источник истины для held-пути.
     // Attempt-scoped operationId: операции разных попыток не считаются дубликатами.
     // Rejection репозитория (throw) обрабатывается как Err (P1: exception boundary).
-    const consumeAmount = this._consumeAmount(fill, orderPrice);
+    const consumeAmount = this._consumeAmount(fill, orderPrice.value());
     let journalError: string | undefined;
     try {
       const journalResult = await this._deps.submissions.applyReservationTransition(execution.clientOrderId, {

@@ -9,9 +9,9 @@
  * `TradeTapeCollector`, у коллектора нет `start()/stop()` и зависимости от EventBus.
  *
  * ### Назначение:
- * Единый источник построенных рыночных `Trade` для будущего `ExecutionLinker`
- * (Этап 7 плана миграции) — при обработке `Fill` он будет искать соответствующий
- * рыночный `Trade` через `get()`.
+ * Единый источник построенных рыночных `Trade` для `ExecutionLinker`
+ * (`@polymarket/use-cases`, Этап 7 плана миграции) — при обработке `Fill` он ищет
+ * соответствующий рыночный `Trade` через `findMatch()` (см. ниже, не `get()`).
  *
  * ### ⚠️ Известное ограничение — Trade.id vs Fill.venueTradeId:
  * `transaction_hash` недоступен нигде в реальной цепочке поставки данных Polymarket
@@ -23,8 +23,10 @@
  * `index.get(fill.venueTradeId)` не найдёт ничего для реальных данных. Это не баг этого
  * класса — существующее свойство уже смёрженного `TradeMapper`/`FillMapper` кода,
  * которое Этап 2 впервые делает не-inert (раньше оба маппера были мёртвым кодом).
- * `ExecutionLinker` должен с самого начала проектировать fuzzy/windowed matching
- * (`tokenId` + price + size + временное окно), а не точный lookup по ключу.
+ * `ExecutionLinker` (Этап 7) поэтому использует `findMatch()` — fuzzy/windowed
+ * matching (`tokenId` + точное совпадение price/size + временное окно), а не точный
+ * lookup по ключу. `get()` остаётся в публичном API (дёшев, тривиален), но реальный
+ * трафик через него почти никогда не найдёт совпадение — см. ограничение выше.
  *
  * ### Устройство: одна RollingWindow на весь стор, не per-instrument.
  * В отличие от `BookDepthCollector`/`TradeTapeCollector` (`Map<InstrumentId, ...>`,
@@ -57,6 +59,9 @@
  *
  * // Почти всегда undefined для реального трафика — см. ограничение выше
  * const found = index.get(fill.venueTradeId);
+ *
+ * // Реальный путь ExecutionLinker — fuzzy/windowed matching:
+ * const matched = index.findMatch(fill.tokenId, order.price, fill.size, fill.timestamp, 30_000);
  * ```
  */
 
@@ -64,8 +69,10 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { ValidationError } from '@polymarket/errors';
 import type { IClock } from '@polymarket/time';
-import type { VenueTradeId } from '@polymarket/ids';
+import type { AssetId, VenueTradeId } from '@polymarket/ids';
+import { assetIdToString } from '@polymarket/ids';
 import { RollingWindow, type RetentionPolicy } from '@polymarket/rolling-window';
+import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { Trade } from '@polymarket/trade';
 
 /**
@@ -143,6 +150,65 @@ export class TradeIndexCollector {
    */
   public get(id: VenueTradeId): Trade | undefined {
     return this._window.getAll().find((trade) => trade.id === id);
+  }
+
+  /**
+   * Ищет рыночный Trade по (tokenId, price, size) в пределах временного окна —
+   * реальный путь `ExecutionLinker` (см. TSDoc класса, п. "Известное ограничение").
+   *
+   * @param tokenId - ID токена fill'а (обычно `fill.tokenId`)
+   * @param price - Цена для сопоставления (точное совпадение — тот же трейд, тот же
+   *   принт, наблюдаемый через разные каналы; обычно `order.price` или `fill.price`)
+   * @param size - Размер для сопоставления (точное совпадение, обычно `fill.size`)
+   * @param atOrBefore - Верхняя граница окна поиска (обычно `fill.timestamp` —
+   *   рыночный трейд не может прийти позже собственного fill'а)
+   * @param windowMs - Ширина окна поиска назад от `atOrBefore`, миллисекунды
+   * @returns Ближайший по времени к `atOrBefore` подходящий Trade, либо `undefined`
+   *   если ни один трейд в окне не совпал по (tokenId, price, size)
+   *
+   * @remarks
+   * "Fuzzy" — про ОТСУТСТВИЕ точного ID-сопоставления (см. известное ограничение
+   * класса), не про допуски в price/size: они сравниваются ТОЧНО
+   * (`Price.equals`/`Quantity.equals`) — один и тот же реальный трейд имеет
+   * одинаковые price/size независимо от канала наблюдения (public tape vs user
+   * fill feed). Допуск — только по времени (`windowMs`), т.к. два канала могут
+   * доставить событие с небольшим relative delay. Линейный скан по тем же причинам,
+   * что и `get()` — вызывается на порядки реже, чем `record()`.
+   *
+   * @example
+   * ```typescript
+   * const matched = index.findMatch(fill.tokenId, order.price, fill.size, fill.timestamp, 30_000);
+   * if (matched) {
+   *   logger.info('ExecutionLinker matched fill to market trade', { tradeId: String(matched.id) });
+   * }
+   * ```
+   */
+  public findMatch(
+    tokenId: AssetId,
+    price: Price,
+    size: Quantity,
+    atOrBefore: Timestamp,
+    windowMs: number,
+  ): Trade | undefined {
+    const atOrBeforeMs = atOrBefore.toNumber();
+    const windowStartMs = atOrBeforeMs - windowMs;
+    const tokenIdStr = assetIdToString(tokenId);
+
+    let closest: Trade | undefined;
+    let closestDeltaMs = Infinity;
+    for (const trade of this._window.getAll()) {
+      const tradeMs = trade.timestamp.toNumber();
+      if (tradeMs > atOrBeforeMs || tradeMs < windowStartMs) continue;
+      if (assetIdToString(trade.tokenId) !== tokenIdStr) continue;
+      if (!trade.price.equals(price) || !trade.size.equals(size)) continue;
+
+      const deltaMs = atOrBeforeMs - tradeMs;
+      if (deltaMs < closestDeltaMs) {
+        closest = trade;
+        closestDeltaMs = deltaMs;
+      }
+    }
+    return closest;
   }
 
   /**

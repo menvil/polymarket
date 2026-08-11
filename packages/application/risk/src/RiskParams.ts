@@ -15,21 +15,27 @@
  * ```typescript
  * const policy = RiskPolicy.create({
  *   maxOpenOrders: 10,
- *   maxOrderNotional: new Decimal(5000),
+ *   maxOrderNotional: Money.of(new Decimal(5000), 'USDC'),
  * });
  * if (!policy.ok) throw policy.error;
  * const checker = new OrderRiskChecker(policy.value, logger);
  * ```
  */
-import type Decimal from 'decimal.js';
+import type { Money, Quantity } from '@polymarket/value-objects';
 
+/**
+ * «Сырые» параметры риск-менеджмента (до валидации).
+ *
+ * @remarks
+ * Иммутабельность и правила использования — см. докблок модуля выше.
+ */
 export interface RiskParams {
   /** Максимальный размер позиции по одному инструменту (в токенах) */
-  readonly maxPositionSize?: Decimal;
+  readonly maxPositionSize?: Quantity;
   /** Максимальный total notional exposure по всем позициям (в USDC, по cost basis) */
-  readonly maxTotalExposure?: Decimal;
+  readonly maxTotalExposure?: Money;
   /** Максимальный notional одного ордера (в USDC) */
-  readonly maxOrderNotional?: Decimal;
+  readonly maxOrderNotional?: Money;
   /**
    * Максимальное количество одновременно открытых ордеров.
    *
@@ -41,7 +47,7 @@ export interface RiskParams {
    */
   readonly maxOpenOrders?: number;
   /** Минимальный доступный баланс после резервирования (в USDC) */
-  readonly minAvailableBalance?: Decimal;
+  readonly minAvailableBalance?: Money;
   /** Минимальное время до экспирации рынка (ms) — не размещать BUY-ордера если осталось меньше. SELL разрешён. */
   readonly minTimeToExpiryMs?: number;
 }

@@ -179,10 +179,10 @@ function buildRiskParams(config: BotConfig): RiskParams {
 
   return {
     maxOpenOrders: 2,
-    maxOrderNotional: new Decimal(initialBalance),
-    maxPositionSize: new Decimal(qMax * orderSize),
-    maxTotalExposure: new Decimal(initialBalance * 2),
-    minAvailableBalance: new Decimal('1'),
+    maxOrderNotional: Money.of(new Decimal(initialBalance), 'USDC'),
+    maxPositionSize: Quantity.of(new Decimal(qMax * orderSize)),
+    maxTotalExposure: Money.of(new Decimal(initialBalance * 2), 'USDC'),
+    minAvailableBalance: Money.of(new Decimal('1'), 'USDC'),
     // minTimeToExpiryMs НЕ задаём: timing управляет стратегия. При fail-closed
     // логике 0 блокировал бы BUY без доступного expiry (RISK_INPUT_INCOMPLETE).
   };

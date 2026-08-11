@@ -99,7 +99,7 @@ function makePortfolio(tokenReservations?: ReadonlyMap<InstrumentId, Quantity>):
  * releaseTokenReservation раньше, чем достигает position-логики.
  */
 function reserveTokens(service: PortfolioService, qty: number): void {
-  const result = service.reserveTokensForOrder(ACCOUNT_ID, INSTRUMENT_ID, new Decimal(qty));
+  const result = service.reserveTokensForOrder(ACCOUNT_ID, INSTRUMENT_ID, Quantity.of(new Decimal(qty)));
   if (!result.ok) throw new Error(`Failed to reserve tokens in test setup: ${result.error.message}`);
 }
 
@@ -110,7 +110,7 @@ function reserveTokens(service: PortfolioService, qty: number): void {
  * BUY fill падает на balance-шаге раньше, чем достигает position-логики.
  */
 function reserveUSDC(service: PortfolioService, price: number, size: number): void {
-  const notional = new Decimal(price).times(size);
+  const notional = Money.of(new Decimal(price).times(size), 'USDC');
   const result = service.reserveForOrder(ACCOUNT_ID, notional);
   if (!result.ok) throw new Error(`Failed to reserve USDC in test setup: ${result.error.message}`);
 }

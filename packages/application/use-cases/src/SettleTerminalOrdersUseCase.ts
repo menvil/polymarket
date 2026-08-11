@@ -46,6 +46,7 @@ import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, OrderId } from '@polymarket/ids';
+import { Money, Quantity } from '@polymarket/value-objects';
 import type {
   IExchangeClient,
   IFillProcessor,
@@ -447,8 +448,8 @@ export class SettleTerminalOrdersUseCase {
     if (record && canConsumeHeldReservation(record.reservation)) {
       const remaining = new Decimal(record.reservation.remaining);
       const releaseResult = record.reservation.kind === 'USDC'
-        ? this._deps.portfolioService.releaseReservation(input.accountId, remaining)
-        : this._deps.portfolioService.releaseTokenReservation(input.accountId, record.instrumentId, remaining);
+        ? this._deps.portfolioService.releaseReservation(input.accountId, Money.of(remaining, 'USDC'))
+        : this._deps.portfolioService.releaseTokenReservation(input.accountId, record.instrumentId, Quantity.of(remaining));
       if (!releaseResult.ok) {
         await this._markJournalReconciliationRequired(record.clientOrderId, record.attempt, 'terminal-settle-release-failed');
         await this._escalate(input, pending, `Portfolio release failed: ${releaseResult.error.message}`);

@@ -17,8 +17,9 @@
  * ### Содержимое пакета:
  * - `BookDepthCollector` — буфер снапшотов стакана в `OrderBookHistory` per tokenId
  * - `TradeTapeCollector` — буфер ленты трейдов в `TradeTape` per tokenId
- * - `TradeIndexCollector` — индекс построенных `Trade` по `VenueTradeId` (для будущего
- *   `ExecutionLinker`, Этап 7)
+ * - `TradeIndexCollector` — индекс построенных `Trade` для `ExecutionLinker`
+ *   (`@polymarket/use-cases`, Этап 7); реальный путь поиска — `findMatch()`, не
+ *   точный `get()` по `VenueTradeId` (см. TSDoc класса)
  * - `MarketDataStore` — фасад/владелец подписок: объединяет коллекторы +
  *   TopOfBook tracking; единая точка доступа к рыночным данным для StrategyScheduler
  * - `CryptoMarketDataStore` — long-lived история цен/CEX-стаканов per asset

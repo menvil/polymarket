@@ -1353,7 +1353,7 @@ describe('ProcessFillUseCase', () => {
       const service = new PortfolioService(store, logger);
       const r = service.applyFillAgainstHeldReservation({
         fill: makeFill(), // BUY
-        orderPrice: new Decimal('0.65'),
+        orderPrice: Price.of(new Decimal('0.65')),
         reservationKind: 'TOKENS', // BUY обязан быть USDC
       });
       expect(r.ok).toBe(false);

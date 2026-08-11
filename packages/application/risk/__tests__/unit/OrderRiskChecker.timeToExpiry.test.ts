@@ -88,7 +88,7 @@ function makeInput(overrides: Partial<PreOrderCheckInput> = {}): PreOrderCheckIn
     price: makePrice('0.50'),
     size: makeQty('10'),
     instrumentId: INSTRUMENT_ID,
-    pendingBuyQuantityForInstrument: new Decimal(0),
+    pendingBuyQuantityForInstrument: makeQty('0'),
     strategyId: 'test-strategy',
     ...overrides,
   };

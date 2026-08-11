@@ -228,6 +228,11 @@ if (result.ok) {
    'ORDER_PORTFOLIO_LEDGER_DESYNC: ...')` + reconciliation issue
    (id `reconciliation:fill:${fillId}:order-portfolio-ledger-desync`), `Err`.
    То же в direct-fill path (там retry повторно применил бы Portfolio)
+7a. **ExecutionLinker** (опционально, Этап 7) — сразу после успешной записи в
+   Ledger, во всех трёх путях (normal/direct-fill/held-reservation recovery):
+   `executionLinker?.link(fill)` — best-effort сшивка с рыночным `Trade` (только
+   логирование, см. «ExecutionLinker» ниже). Никогда не бросает, не влияет на
+   исход `execute()`
 8. **`markApplied(fill.id)`** — сразу после успешного применения к Order/Portfolio/Ledger, ДО публикации
 9. **Публикация событий** — `eventBus.publishAll(order.pullEvents())` — ошибка
    публикации НЕ откатывает `markApplied` и НЕ меняет результат: логируется
@@ -247,6 +252,32 @@ if (result.ok) {
 `{ outcome: 'RECONCILIATION_REQUIRED' }` (не `ACQUIRED`), а `execute()` — `Ok` (no-op) с
 error-логом на каждый повторный вызов, чтобы проблема оставалась видимой в мониторинге, но не
 мутирует Order/Portfolio/Ledger повторно. Требуется ручная реконсиляция.
+
+## ExecutionLinker (Этап 7 плана миграции)
+
+Best-effort сшивка `Fill` с соответствующим рыночным `Trade` (`@polymarket/trade`,
+публичный принт). `Fill.venueTradeId` (`ExecutionMetadata`) спроектирован под эту
+сшивку, но до Этапа 7 её никто не выполнял — `TradeIndexCollector`
+(`@polymarket/market-state`, Этап 2) существовал, но не имел вызывающих.
+
+**Fuzzy/windowed matching, не точный lookup по ключу.** `Trade.id` (composite
+`marketId_assetId_ts_price_size`) и `Fill.venueTradeId` (bare `transaction_hash` или
+`undefined`) структурно никогда не пересекаются для реального трафика Polymarket
+(`transaction_hash` недоступен нигде в цепочке поставки данных). `ExecutionLinker`
+использует `TradeIndexCollector.findMatch(tokenId, price, size, atOrBefore, windowMs)` —
+точное совпадение (tokenId, price, size) + временное окно (допуск на relative delay
+между public tape и user fill feed). Матчинг — по `fill.price` (реальная цена
+исполнения), не `order.price` (лимитная цена ордера может отличаться).
+
+**Только логирование, не персистентность.** `ExecutionMetadata` сериализуется через
+`FillMapper.toSnapshot(fill, metadata)`, но эта функция не вызывается нигде в реальном
+коде — Fill/ExecutionMetadata персистентность не построена (вне объёма этой миграции).
+`link()` логирует found/not-found (+ `Trade.id` при находке) — делает
+`TradeIndexCollector`'s API реально вызываемым и даёт видимость реального match-rate,
+без строительства отдельной незапланированной задачи. Никогда не бросает — сбой
+матчинга не влияет на исход `ProcessFillUseCase.execute()`.
+
+Optional dependency (`ProcessFillDeps.executionLinker`) — без него поведение прежнее.
 
 ## Reconciliation issues (IReconciliationIssueRepository)
 
@@ -426,6 +457,20 @@ Order↔Portfolio desync (замороженная резервация), а н�
 Portfolio не имеет поля `.version` — always pass `0`. In-memory реализация
 всегда принимает сохранение.
 
+## PortfolioService: reserve/release — VO-параметры (Этап 7 плана миграции)
+
+`reserveForOrder`/`releaseReservation` принимают `Money` (было — `Decimal`, метод
+оборачивал в `Money.of(notional, 'USDC')` на первой строке тела — примитив на
+публичной границе с немедленной VO-обёрткой внутри). `reserveTokensForOrder`/
+`releaseTokenReservation` принимают `Quantity` (было — `Decimal`), распаковывают
+`.value()` НА ГРАНИЦЕ метода перед вызовом `Portfolio.reserveTokensForOrder`
+(`@polymarket/portfolio`, Этап 3, сознательно НЕ тронута — её собственная
+Decimal/Money-асимметрия между USDC- и token-резервацией остаётся, см. план миграции
+Этап 7 п.4). `applyFill`/`applyFillAgainstHeldReservation`'s опциональный/обязательный
+`orderPrice` — теперь `Price` (было `Decimal`); единственный вызывающий с явным
+`orderPrice` (`ProcessFillUseCase`) уже имел `Price` в памяти и делал `.value()`
+только чтобы передать его сюда — конверсия убрала этот `.value()`, не добавила работы.
+
 ## OrderRepository CAS (optimistic concurrency)
 
 ### Почему это сделано так?
@@ -475,11 +520,24 @@ Order и версию нужно читать атомарно через `getWi
 конкурирующий CAS save со stale-версией корректно получит `VersionConflictError`.
 `saveSync` должен быть устранён отдельным Unit of Work/CAS refactor.
 
-## Позиции: SimplePosition
+## Позиции: lot-based Position (Этап 3 плана миграции)
 
-`SimplePosition` — упрощённая реализация `IPosition` без lot-based FIFO/LIFO.
-Хранит агрегированные `quantity` и `averageEntryPrice`. Для lot-based tracking
-используйте `@polymarket/position` в отдельном слое.
+`PortfolioService._applyPositionUpdate` строит/обновляет позиции через lot-based
+`Position`/`PositionLot` (`@polymarket/position`, FIFO по умолчанию) — не через
+`SimplePosition` (blended-pool, только агрегированные `quantity`/`averageEntryPrice`,
+без cost-basis по отдельным лотам). Механизм подключения — `instanceof Position`-чтение
+существующей позиции из `Portfolio` (структурная типизация `IPosition` не требует
+изменений в самой `Portfolio`-entity — см. `packages/domain/entities/portfolio/docs/
+portfolio-entity.md`). `SimplePosition` остаётся в `@polymarket/portfolio` и
+используется только вне live fill-пути (settlement/resolution-сценарии, где
+`quantity: 0` тут же удаляется из карты `Portfolio.upsertPosition()` независимо от
+класса) и в `reverseFill()` (FAILED-откат, намеренно не lot-based — см. `PortfolioService.
+reverseFill`'s докблок).
+
+`averageEntryPrice` у lot-based `Position` и blended-pool-модели расходится ОЖИДАЕМО
+на multi-price partial close (FIFO закрывает старейший лот первым, blended-pool не
+пересчитывает cost basis остатка при продаже) — см. `docs/architecture/
+position-accounting.md` за числовым примером и обоснованием, почему это не баг.
 
 ## Submission guard (IOrderSubmissionRepository)
 

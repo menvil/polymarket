@@ -6,7 +6,8 @@ import type { PreOrderCheckInput } from '../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Price, Side } from '@polymarket/value-objects';
+import { Money, Quantity } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import { jest } from '@jest/globals';
 
@@ -99,7 +100,7 @@ function makeInput(overrides: Partial<PreOrderCheckInput> = {}): PreOrderCheckIn
     price: makePrice('0.65'),
     size: makeQty('100'),
     instrumentId: INSTRUMENT_ID,
-    pendingBuyQuantityForInstrument: new Decimal(0),
+    pendingBuyQuantityForInstrument: makeQty('0'),
     strategyId: 'test-strategy',
     ...overrides,
   };
@@ -140,7 +141,7 @@ describe('OrderRiskChecker', () => {
 
   it('fail-fast: не проверяет остальные лимиты после maxOpenOrders', () => {
     const checker = makeChecker(
-      { maxOpenOrders: 1, maxOrderNotional: new Decimal('10') }, // notional тоже нарушен
+      { maxOpenOrders: 1, maxOrderNotional: Money.of(new Decimal('10'), 'USDC') }, // notional тоже нарушен
       logger,
     );
     const result = checker.checkBeforeOrder(
@@ -156,13 +157,13 @@ describe('OrderRiskChecker', () => {
 
   it('Ok если notional <= maxOrderNotional', () => {
     // 0.65 * 100 = 65
-    const checker = makeChecker({ maxOrderNotional: new Decimal('65') }, logger);
+    const checker = makeChecker({ maxOrderNotional: Money.of(new Decimal('65'), 'USDC') }, logger);
     expect(checker.checkBeforeOrder(makeInput()).ok).toBe(true);
   });
 
   it('Err если notional > maxOrderNotional', () => {
     // 0.65 * 100 = 65 > 64
-    const checker = makeChecker({ maxOrderNotional: new Decimal('64') }, logger);
+    const checker = makeChecker({ maxOrderNotional: Money.of(new Decimal('64'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('ORDER_NOTIONAL_EXCEEDED');
@@ -173,7 +174,7 @@ describe('OrderRiskChecker', () => {
   it('Ok если balance после резервирования >= minAvailableBalance', () => {
     // available=10000, notional=65, after=9935 >= 9000
     const checker = makeChecker(
-      { minAvailableBalance: new Decimal('9000') },
+      { minAvailableBalance: Money.of(new Decimal('9000'), 'USDC') },
       logger,
     );
     expect(checker.checkBeforeOrder(makeInput()).ok).toBe(true);
@@ -182,7 +183,7 @@ describe('OrderRiskChecker', () => {
   it('Err если balance после резервирования < minAvailableBalance', () => {
     // available=100, notional=65, after=35 < 50
     const checker = makeChecker(
-      { minAvailableBalance: new Decimal('50') },
+      { minAvailableBalance: Money.of(new Decimal('50'), 'USDC') },
       logger,
     );
     const portfolio = makePortfolio({ availableUsdc: '100' });
@@ -196,7 +197,7 @@ describe('OrderRiskChecker', () => {
   it('Ok BUY если позиция + size <= maxPositionSize', () => {
     const position = makePosition(INSTRUMENT_ID, '50', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('200') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('200')) }, logger);
     // 50 + 100 = 150 <= 200
     expect(checker.checkBeforeOrder(makeInput({ portfolio })).ok).toBe(true);
   });
@@ -204,7 +205,7 @@ describe('OrderRiskChecker', () => {
   it('Err BUY если позиция + size > maxPositionSize', () => {
     const position = makePosition(INSTRUMENT_ID, '150', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('200') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('200')) }, logger);
     // 150 + 100 = 250 > 200
     const result = checker.checkBeforeOrder(makeInput({ portfolio }));
     expect(result.ok).toBe(false);
@@ -214,13 +215,13 @@ describe('OrderRiskChecker', () => {
   it('SELL не проверяет maxPositionSize (закрытие)', () => {
     const position = makePosition(INSTRUMENT_ID, '5000', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('1') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('1')) }, logger);
     // SELL — лимит на размер не применяется
     expect(checker.checkBeforeOrder(makeInput({ portfolio, side: SELL })).ok).toBe(true);
   });
 
   it('Ok BUY если нет существующей позиции', () => {
-    const checker = makeChecker({ maxPositionSize: new Decimal('200') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('200')) }, logger);
     // нет позиции → 0 + 100 = 100 <= 200
     expect(checker.checkBeforeOrder(makeInput()).ok).toBe(true);
   });
@@ -231,7 +232,7 @@ describe('OrderRiskChecker', () => {
     // positions exposure = 50 * 0.60 = 30, orderNotional = 65 → total = 95 <= 200
     const position = makePosition(INSTRUMENT_ID, '50', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('200') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('200'), 'USDC') }, logger);
     expect(checker.checkBeforeOrder(makeInput({ portfolio })).ok).toBe(true);
   });
 
@@ -239,7 +240,7 @@ describe('OrderRiskChecker', () => {
     // positions exposure = 500 * 0.80 = 400, orderNotional = 65 → total = 465 > 400
     const position = makePosition(INSTRUMENT_ID, '500', '0.80');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('400') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('400'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ portfolio }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('TOTAL_EXPOSURE_EXCEEDED');
@@ -248,7 +249,7 @@ describe('OrderRiskChecker', () => {
   it('total exposure учитывает reserved USDC (pending BUY-ордера)', () => {
     // costBasis=0, reserved=350, newNotional=65 → total=415 > 400
     const portfolio = makePortfolio({ reservedUsdc: '350' });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('400') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('400'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ portfolio }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('TOTAL_EXPOSURE_EXCEEDED');
@@ -258,7 +259,7 @@ describe('OrderRiskChecker', () => {
     // Экспозиция 150 при лимите 100 — SELL должен проходить.
     const position = makePosition(INSTRUMENT_ID, '150', '1.00');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }, logger);
     expect(checker.checkBeforeOrder(makeInput({ portfolio, side: SELL })).ok).toBe(true);
   });
 
@@ -268,11 +269,11 @@ describe('OrderRiskChecker', () => {
     // filled=40, pending=40, new=40 → 120 > 100
     const position = makePosition(INSTRUMENT_ID, '40', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     const result = checker.checkBeforeOrder(makeInput({
       portfolio,
       size: makeQty('40'),
-      pendingBuyQuantityForInstrument: new Decimal('40'),
+      pendingBuyQuantityForInstrument: makeQty('40'),
     }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('POSITION_LIMIT_EXCEEDED');
@@ -282,24 +283,24 @@ describe('OrderRiskChecker', () => {
     // filled=20, pending=20, new=20 → 60 <= 100
     const position = makePosition(INSTRUMENT_ID, '20', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     expect(checker.checkBeforeOrder(makeInput({
       portfolio,
       size: makeQty('20'),
-      pendingBuyQuantityForInstrument: new Decimal('20'),
+      pendingBuyQuantityForInstrument: makeQty('20'),
     })).ok).toBe(true);
   });
 
   it('SELL игнорирует pendingBuyQuantityForInstrument', () => {
     const position = makePosition(INSTRUMENT_ID, '90', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     // filled 90 + pending 90 + new 90 всё > 100, но SELL не проверяет position
     expect(checker.checkBeforeOrder(makeInput({
       portfolio,
       side: SELL,
       size: makeQty('90'),
-      pendingBuyQuantityForInstrument: new Decimal('90'),
+      pendingBuyQuantityForInstrument: makeQty('90'),
     })).ok).toBe(true);
   });
 
@@ -327,24 +328,25 @@ describe('OrderRiskChecker', () => {
   // ── Fail-closed валидация входов ──────────────────────────────────────────
 
   it('Err RISK_INPUT_INCOMPLETE для BUY если pendingBuyQuantityForInstrument = NaN', () => {
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
-    const result = checker.checkBeforeOrder(makeInput({ pendingBuyQuantityForInstrument: new Decimal(NaN) }));
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
+    const result = checker.checkBeforeOrder(makeInput({ pendingBuyQuantityForInstrument: makeQty('NaN') }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
   });
 
   it('Err RISK_INPUT_INCOMPLETE для BUY если pending отрицательный', () => {
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
-    const result = checker.checkBeforeOrder(makeInput({ pendingBuyQuantityForInstrument: new Decimal('-1') }));
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
+    const result = checker.checkBeforeOrder(makeInput({ pendingBuyQuantityForInstrument: makeQty('-1') }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
   });
 
-  it('Err RISK_INPUT_INCOMPLETE если pending не Decimal (сторонний adapter)', () => {
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
-    // Имитируем повреждённый adapter, вернувший number вместо Decimal.
+  it('Err RISK_INPUT_INCOMPLETE если pending не Quantity (сторонний adapter, .value() бросает)', () => {
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
+    // Имитируем повреждённый adapter, вернувший голый number вместо Quantity —
+    // .value() на числе бросает TypeError, перехватывается defensively.
     const result = checker.checkBeforeOrder(makeInput({
-      pendingBuyQuantityForInstrument: 50 as unknown as Decimal,
+      pendingBuyQuantityForInstrument: 50 as unknown as Quantity,
     }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
@@ -366,11 +368,11 @@ describe('OrderRiskChecker', () => {
   });
 
   it('SELL с невалидным pending НЕ блокируется (pending для SELL не используется)', () => {
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     // SELL: pending нерелевантен — даже мусорное значение не должно блокировать.
     const result = checker.checkBeforeOrder(makeInput({
       side: SELL,
-      pendingBuyQuantityForInstrument: new Decimal(NaN),
+      pendingBuyQuantityForInstrument: makeQty('NaN'),
     }));
     expect(result.ok).toBe(true);
   });
@@ -387,14 +389,14 @@ describe('OrderRiskChecker', () => {
   // ── price / size / notional fail-closed ───────────────────────────────────
 
   it('Err RISK_INPUT_INCOMPLETE если price.value() = NaN', () => {
-    const checker = makeChecker({ maxOrderNotional: new Decimal('1000') }, logger);
+    const checker = makeChecker({ maxOrderNotional: Money.of(new Decimal('1000'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ price: makePrice('NaN') }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
   });
 
   it('Err RISK_INPUT_INCOMPLETE если size.value() = Infinity', () => {
-    const checker = makeChecker({ maxOrderNotional: new Decimal('1000') }, logger);
+    const checker = makeChecker({ maxOrderNotional: Money.of(new Decimal('1000'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ size: makeQty('Infinity') }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
@@ -420,7 +422,7 @@ describe('OrderRiskChecker', () => {
 
   it('Err RISK_INPUT_INCOMPLETE если reserved = NaN при активном maxTotalExposure + BUY', () => {
     const portfolio = makePortfolio({ reservedUsdc: 'NaN' });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ portfolio }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');
@@ -432,11 +434,11 @@ describe('OrderRiskChecker', () => {
     // filled 40 + pending 30 + new 30 = 100 == limit 100 → allow
     const position = makePosition(INSTRUMENT_ID, '40', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     expect(checker.checkBeforeOrder(makeInput({
       portfolio,
       size: makeQty('30'),
-      pendingBuyQuantityForInstrument: new Decimal('30'),
+      pendingBuyQuantityForInstrument: makeQty('30'),
     })).ok).toBe(true);
   });
 
@@ -444,11 +446,11 @@ describe('OrderRiskChecker', () => {
     // filled 40 + pending 30 + new 31 = 101 > 100 → reject
     const position = makePosition(INSTRUMENT_ID, '40', '0.60');
     const portfolio = makePortfolio({ positions: [position] });
-    const checker = makeChecker({ maxPositionSize: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxPositionSize: Quantity.of(new Decimal('100')) }, logger);
     const result = checker.checkBeforeOrder(makeInput({
       portfolio,
       size: makeQty('31'),
-      pendingBuyQuantityForInstrument: new Decimal('30'),
+      pendingBuyQuantityForInstrument: makeQty('30'),
     }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('POSITION_LIMIT_EXCEEDED');
@@ -459,7 +461,7 @@ describe('OrderRiskChecker', () => {
   it('projectedExposure === maxTotalExposure → allow', () => {
     // costBasis 0 + reserved 40 + notional (0.6×100=60) = 100 == limit 100 → allow
     const portfolio = makePortfolio({ reservedUsdc: '40' });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }, logger);
     expect(checker.checkBeforeOrder(makeInput({
       portfolio,
       price: makePrice('0.6'),
@@ -470,7 +472,7 @@ describe('OrderRiskChecker', () => {
   it('projectedExposure > maxTotalExposure → reject', () => {
     // costBasis 0 + reserved 41 + notional 60 = 101 > 100 → reject
     const portfolio = makePortfolio({ reservedUsdc: '41' });
-    const checker = makeChecker({ maxTotalExposure: new Decimal('100') }, logger);
+    const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({
       portfolio,
       price: makePrice('0.6'),
@@ -491,7 +493,7 @@ describe('OrderRiskChecker', () => {
 
   it('SELL блокируется maxOrderNotional (fat-finger guard сохраняется)', () => {
     // 0.65 × 100 = 65 > 64
-    const checker = makeChecker({ maxOrderNotional: new Decimal('64') }, logger);
+    const checker = makeChecker({ maxOrderNotional: Money.of(new Decimal('64'), 'USDC') }, logger);
     const result = checker.checkBeforeOrder(makeInput({ side: SELL }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('ORDER_NOTIONAL_EXCEEDED');

@@ -22,6 +22,12 @@ import type { Result } from '@polymarket/result';
 import type { RiskViolationError } from './RiskViolation.js';
 import type { PreOrderCheckInput } from './PreOrderCheckInput.js';
 
+/**
+ * Порт синхронного пре-трейд риск-чекера.
+ *
+ * @remarks
+ * Реализация и пример использования — см. докблок модуля выше.
+ */
 export interface IOrderRiskChecker {
   /**
    * Выполняет пре-трейд риск-проверку синхронно (O(1) для большинства проверок).

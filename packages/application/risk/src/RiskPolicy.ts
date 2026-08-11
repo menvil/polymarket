@@ -23,8 +23,13 @@
  *   поля игнорируются, а не подставляются);
  * - `maxOpenOrders` — целое число >= 0 (счётчик ордеров);
  * - `minTimeToExpiryMs` — целое число >= 0 (миллисекунды);
- * - Decimal-лимиты (`maxPositionSize`, `maxTotalExposure`, `maxOrderNotional`,
- *   `minAvailableBalance`) — finite (не NaN, не Infinity) и >= 0.
+ * - `maxPositionSize` — обязан быть экземпляром `Quantity` (`instanceof`); отдельная
+ *   проверка на отрицательность не нужна — `Quantity` core уже enforces `>= 0` на
+ *   собственном конструкторе, невалидный экземпляр физически не существует;
+ * - `maxTotalExposure`/`maxOrderNotional`/`minAvailableBalance` — обязаны быть
+ *   экземплярами `Money` (`instanceof`) И `>= 0` — `Money` core сознательно допускает
+ *   отрицательные суммы (это НЕ invariant, см. `Money`'s докблок), поэтому
+ *   неотрицательность лимита проверяется здесь явно, как и раньше;
  * - `undefined` допустим только для ИЗВЕСТНОГО поля (лимит не задан); неизвестный
  *   ключ отклоняется независимо от значения, включая `undefined`.
  *
@@ -35,14 +40,17 @@
  *
  * @example
  * ```typescript
- * const result = RiskPolicy.create({ maxOpenOrders: 10, maxOrderNotional: new Decimal(5000) });
+ * const result = RiskPolicy.create({
+ *   maxOpenOrders: 10,
+ *   maxOrderNotional: Money.of(new Decimal(5000), 'USDC'),
+ * });
  * if (!result.ok) {
  *   throw new Error(`Invalid risk config: ${result.error.message}`);
  * }
  * const checker = new OrderRiskChecker(result.value, logger);
  * ```
  */
-import Decimal from 'decimal.js';
+import { Money, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { RiskParams } from './RiskParams.js';
@@ -69,6 +77,23 @@ export class RiskConfigError extends Error {
   }
 }
 
+/** Разрешённые integer-поля (счётчики). */
+const INTEGER_FIELDS = ['maxOpenOrders', 'minTimeToExpiryMs'] as const;
+/** Разрешённые `Quantity`-поля (лимиты в токенах). */
+const QUANTITY_FIELDS = ['maxPositionSize'] as const;
+/** Разрешённые `Money`-поля (лимиты в USDC). */
+const MONEY_FIELDS = [
+  'maxTotalExposure',
+  'maxOrderNotional',
+  'minAvailableBalance',
+] as const;
+/** Полный набор разрешённых полей `RiskParams` (whitelist). */
+const ALLOWED_FIELDS: ReadonlySet<string> = new Set<string>([
+  ...INTEGER_FIELDS,
+  ...QUANTITY_FIELDS,
+  ...MONEY_FIELDS,
+]);
+
 /**
  * Валидированная иммутабельная риск-политика.
  *
@@ -77,18 +102,6 @@ export class RiskConfigError extends Error {
  * возвращает `Result`. Конструктор приватный: снаружи невозможно создать
  * невалидную/непроверенную политику.
  */
-/** Разрешённые integer-поля (счётчики). */
-const INTEGER_FIELDS = ['maxOpenOrders', 'minTimeToExpiryMs'] as const;
-/** Разрешённые Decimal-поля (лимиты). */
-const DECIMAL_FIELDS = [
-  'maxPositionSize',
-  'maxTotalExposure',
-  'maxOrderNotional',
-  'minAvailableBalance',
-] as const;
-/** Полный набор разрешённых полей `RiskParams` (whitelist). */
-const ALLOWED_FIELDS: ReadonlySet<string> = new Set<string>([...INTEGER_FIELDS, ...DECIMAL_FIELDS]);
-
 export class RiskPolicy {
   /**
    * Compile-time brand: делает `RiskPolicy` номинальным типом. `declare` — поле
@@ -121,8 +134,10 @@ export class RiskPolicy {
    * - каждое поле читается ОДИН раз (устойчиво к getter'ам с side-effects);
    * - неизвестный own-ключ → `Err` независимо от значения (включая `undefined`);
    * - integer-поля — `typeof === 'number'`, finite, целые, `>= 0`;
-   * - Decimal-поля — сначала `Decimal.isDecimal(value)` (иначе `value.isNaN()`
-   *   бросил бы `TypeError`), затем finite и `>= 0`;
+   * - `Quantity`-поля — `instanceof Quantity` (сам тип уже enforces `>= 0` на
+   *   конструкторе — отдельная проверка диапазона не нужна);
+   * - `Money`-поля — `instanceof Money` И `>= 0` (`Money` core допускает отрицательные
+   *   суммы, поэтому неотрицательность лимита — отдельная явная проверка);
    * - собирается НОВЫЙ объект ТОЛЬКО из провалидированных whitelisted own-полей.
    *
    * ### Никогда не бросает:
@@ -134,7 +149,7 @@ export class RiskPolicy {
    * @example
    * ```typescript
    * RiskPolicy.create({ maxOpenOrders: -1 });          // Err(field='maxOpenOrders')
-   * RiskPolicy.create({ maxTotalExposure: 100 });       // Err (не Decimal), НЕ throw
+   * RiskPolicy.create({ maxTotalExposure: 100 });       // Err (не Money), НЕ throw
    * RiskPolicy.create({ maxDrawdown: '0.2' } as never); // Err(field='maxDrawdown', unknown)
    * RiskPolicy.create(new Date());                       // Err('<root>')
    * ```
@@ -190,13 +205,22 @@ export class RiskPolicy {
       validated[field] = value as number;
     }
 
-    for (const field of DECIMAL_FIELDS) {
+    for (const field of QUANTITY_FIELDS) {
       if (!Object.prototype.hasOwnProperty.call(raw, field)) continue;
       const value = raw[field]; // читаем ОДИН раз
       if (value === undefined) continue; // лимит не задан
-      const error = RiskPolicy._validateNonNegativeFiniteDecimal(field, value);
+      const error = RiskPolicy._validateQuantityField(field, value);
       if (error) return Err(error);
-      validated[field] = value as Decimal;
+      validated[field] = value as Quantity;
+    }
+
+    for (const field of MONEY_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(raw, field)) continue;
+      const value = raw[field]; // читаем ОДИН раз
+      if (value === undefined) continue; // лимит не задан
+      const error = RiskPolicy._validateMoneyField(field, value);
+      if (error) return Err(error);
+      validated[field] = value as Money;
     }
 
     // Замораживаем НОВЫЙ объект (только whitelisted validated own-поля) — внешние
@@ -232,30 +256,50 @@ export class RiskPolicy {
   }
 
   /**
-   * Проверяет, что значение (если задано) — Decimal, finite и >= 0.
+   * Проверяет, что значение (если задано) — экземпляр `Quantity`.
    *
    * @param field - Имя поля (для ошибки)
    * @param value - Сырое значение (unknown) или undefined
    * @returns `RiskConfigError` при нарушении, иначе `undefined`
    *
    * @remarks
-   * `Decimal.isDecimal(value)` проверяется ПЕРВЫМ: без этого `value.isNaN()` на
-   * не-Decimal (например `number`/`string`) бросил бы `TypeError`.
+   * Отдельной проверки на finite/`>= 0` не требуется: `Quantity` core enforces оба
+   * инварианта на собственном конструкторе — невалидный экземпляр `Quantity`
+   * физически не существует в runtime.
    */
-  private static _validateNonNegativeFiniteDecimal(
+  private static _validateQuantityField(
     field: string,
     value: unknown,
   ): RiskConfigError | undefined {
     if (value === undefined) return undefined;
-    if (!Decimal.isDecimal(value)) {
-      return new RiskConfigError(field, `${field} must be a Decimal, got ${describe(value)}`);
+    if (!(value instanceof Quantity)) {
+      return new RiskConfigError(field, `${field} must be a Quantity, got ${describe(value)}`);
     }
-    const dec = value as Decimal;
-    if (dec.isNaN() || !dec.isFinite()) {
-      return new RiskConfigError(field, `${field} must be a finite decimal, got ${dec.toString()}`);
+    return undefined;
+  }
+
+  /**
+   * Проверяет, что значение (если задано) — экземпляр `Money` и `>= 0`.
+   *
+   * @param field - Имя поля (для ошибки)
+   * @param value - Сырое значение (unknown) или undefined
+   * @returns `RiskConfigError` при нарушении, иначе `undefined`
+   *
+   * @remarks
+   * `instanceof Money` проверяется ПЕРВЫМ: `Money` core не enforces неотрицательность
+   * (это осознанно оставлено бизнес-логике вызывающего — см. `Money`'s докблок),
+   * поэтому `isNegative()` — отдельная явная проверка лимита, не инвариант типа.
+   */
+  private static _validateMoneyField(
+    field: string,
+    value: unknown,
+  ): RiskConfigError | undefined {
+    if (value === undefined) return undefined;
+    if (!(value instanceof Money)) {
+      return new RiskConfigError(field, `${field} must be a Money, got ${describe(value)}`);
     }
-    if (dec.isNegative()) {
-      return new RiskConfigError(field, `${field} must be >= 0, got ${dec.toString()}`);
+    if (value.isNegative()) {
+      return new RiskConfigError(field, `${field} must be >= 0, got ${value.value().toString()}`);
     }
     return undefined;
   }

@@ -183,10 +183,10 @@ describe('Backtest — DumbStrategy on snapshot', () => {
 
     const riskParams: RiskParams = {
       maxOpenOrders: 20,
-      maxOrderNotional: new Decimal('500'),
-      maxPositionSize: new Decimal('100'),
-      maxTotalExposure: new Decimal('2000'),
-      minAvailableBalance: new Decimal('1'),
+      maxOrderNotional: Money.of(new Decimal('500'), 'USDC'),
+      maxPositionSize: Quantity.of(new Decimal('100')),
+      maxTotalExposure: Money.of(new Decimal('2000'), 'USDC'),
+      minAvailableBalance: Money.of(new Decimal('1'), 'USDC'),
       // minTimeToExpiryMs НЕ задаём: timing управляет стратегия, а marketCatalog
       // в этот buildOrderUseCases не передаётся (fail-closed заблокировал бы BUY).
     };

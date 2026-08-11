@@ -37,7 +37,7 @@
  *
  * @example
  * ```typescript
- * const policy = RiskPolicy.create({ maxOpenOrders: 10, maxOrderNotional: new Decimal(5000) });
+ * const policy = RiskPolicy.create({ maxOpenOrders: 10, maxOrderNotional: Money.of(new Decimal(5000), 'USDC') });
  * if (!policy.ok) throw policy.error;
  * const checker = new OrderRiskChecker(policy.value, logger);
  *
@@ -58,6 +58,13 @@ import type { PreOrderCheckInput } from './PreOrderCheckInput.js';
 import type { IOrderRiskChecker } from './IOrderRiskChecker.js';
 import type { Result } from '@polymarket/result';
 
+/**
+ * Реализация синхронного пре-трейд риск-чекера.
+ *
+ * @remarks
+ * Полное описание архитектуры (порядок проверок, fail-closed, SELL-семантика) и
+ * пример использования — см. докблок модуля выше.
+ */
 export class OrderRiskChecker implements IOrderRiskChecker {
   private readonly _params: Readonly<RiskParams>;
   private readonly _logger: ILogger;
@@ -162,7 +169,9 @@ export class OrderRiskChecker implements IOrderRiskChecker {
    * прошёл бы) или отрицательное pending (занизило бы projected position).
    * Проверяется: `openOrdersCount` (целое `>= 0`, BUY и SELL); `timeToExpiryMs`
    * (finite, если задано); `pendingBuyQuantityForInstrument` (только BUY —
-   * `Decimal`, finite, `>= 0`; для SELL нерелевантен и не проверяется).
+   * `Quantity`, `.value()` извлекается defensively (может бросить на повреждённом
+   * VO-getter), извлечённый `Decimal` — finite, `>= 0`; для SELL нерелевантен и не
+   * проверяется).
    */
   private _validateInputsFailClosed(input: PreOrderCheckInput, isBuy: boolean): RiskViolationError | undefined {
     if (!Number.isInteger(input.openOrdersCount) || input.openOrdersCount < 0) {
@@ -179,12 +188,22 @@ export class OrderRiskChecker implements IOrderRiskChecker {
         { timeToExpiryMs: String(input.timeToExpiryMs) },
       );
     }
-    if (isBuy && !OrderRiskChecker._isFiniteNonNegativeDecimal(input.pendingBuyQuantityForInstrument)) {
-      return this._violation(
-        'RISK_INPUT_INCOMPLETE',
-        `pendingBuyQuantityForInstrument must be a finite non-negative Decimal, got ${String(input.pendingBuyQuantityForInstrument)}`,
-        { pendingBuyQuantityForInstrument: String(input.pendingBuyQuantityForInstrument) },
-      );
+    if (isBuy) {
+      let pending: Decimal;
+      try {
+        pending = input.pendingBuyQuantityForInstrument.value();
+      } catch (err) {
+        return this._violation('RISK_INPUT_INCOMPLETE', 'Failed to read pendingBuyQuantityForInstrument value', {
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+      if (!OrderRiskChecker._isFiniteNonNegativeDecimal(pending)) {
+        return this._violation(
+          'RISK_INPUT_INCOMPLETE',
+          `pendingBuyQuantityForInstrument must be a finite non-negative Decimal, got ${String(pending)}`,
+          { pendingBuyQuantityForInstrument: String(pending) },
+        );
+      }
     }
     return undefined;
   }
@@ -311,14 +330,15 @@ export class OrderRiskChecker implements IOrderRiskChecker {
 
   private _checkOrderNotional(orderNotional: Decimal): RiskViolationError | undefined {
     if (this._params.maxOrderNotional === undefined) return undefined;
-    if (!orderNotional.gt(this._params.maxOrderNotional)) return undefined;
+    const limit = this._params.maxOrderNotional.value();
+    if (!orderNotional.gt(limit)) return undefined;
 
     return this._violation(
       'ORDER_NOTIONAL_EXCEEDED',
-      `Order notional ${orderNotional.toFixed(2)} > limit ${this._params.maxOrderNotional.toFixed(2)} USDC`,
+      `Order notional ${orderNotional.toFixed(2)} > limit ${limit.toFixed(2)} USDC`,
       {
         notional: orderNotional.toString(),
-        limit: this._params.maxOrderNotional.toString(),
+        limit: limit.toString(),
       },
     );
   }
@@ -354,16 +374,17 @@ export class OrderRiskChecker implements IOrderRiskChecker {
       );
     }
 
+    const minRequired = this._params.minAvailableBalance.value();
     const afterReserve = available.minus(orderNotional);
-    if (!afterReserve.lt(this._params.minAvailableBalance)) return undefined;
+    if (!afterReserve.lt(minRequired)) return undefined;
 
     return this._violation(
       'INSUFFICIENT_AVAILABLE_BALANCE',
-      `Balance after reserve ${afterReserve.toFixed(2)} < min ${this._params.minAvailableBalance.toFixed(2)} USDC`,
+      `Balance after reserve ${afterReserve.toFixed(2)} < min ${minRequired.toFixed(2)} USDC`,
       {
         available: available.toString(),
         afterReserve: afterReserve.toString(),
-        minRequired: this._params.minAvailableBalance.toString(),
+        minRequired: minRequired.toString(),
       },
     );
   }
@@ -402,7 +423,7 @@ export class OrderRiskChecker implements IOrderRiskChecker {
       );
     }
 
-    const pending = input.pendingBuyQuantityForInstrument;
+    const pending = input.pendingBuyQuantityForInstrument.value();
     const after = current.plus(pending).plus(orderSize);
     if (!after.isFinite() || after.isNegative()) {
       return this._violation(
@@ -411,17 +432,18 @@ export class OrderRiskChecker implements IOrderRiskChecker {
         { after: String(after) },
       );
     }
-    if (!after.gt(this._params.maxPositionSize)) return undefined;
+    const limit = this._params.maxPositionSize.value();
+    if (!after.gt(limit)) return undefined;
 
     return this._violation(
       'POSITION_LIMIT_EXCEEDED',
-      `Position after order ${after.toString()} > limit ${this._params.maxPositionSize.toString()} tokens`,
+      `Position after order ${after.toString()} > limit ${limit.toString()} tokens`,
       {
         instrumentId: String(input.instrumentId),
         current: current.toString(),
         pending: pending.toString(),
         after: after.toString(),
-        limit: this._params.maxPositionSize.toString(),
+        limit: limit.toString(),
       },
     );
   }
@@ -504,17 +526,18 @@ export class OrderRiskChecker implements IOrderRiskChecker {
         { after: String(after) },
       );
     }
-    if (!after.gt(this._params.maxTotalExposure)) return undefined;
+    const limit = this._params.maxTotalExposure.value();
+    if (!after.gt(limit)) return undefined;
 
     return this._violation(
       'TOTAL_EXPOSURE_EXCEEDED',
-      `Total exposure ${after.toFixed(2)} > limit ${this._params.maxTotalExposure.toFixed(2)} USDC`,
+      `Total exposure ${after.toFixed(2)} > limit ${limit.toFixed(2)} USDC`,
       {
         costBasis: currentExposure.toString(),
         reserved: reserved.toString(),
         newNotional: orderNotional.toString(),
         after: after.toString(),
-        limit: this._params.maxTotalExposure.toString(),
+        limit: limit.toString(),
       },
     );
   }

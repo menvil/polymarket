@@ -5202,10 +5202,10 @@ function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): Ri
     const initialBalance = config.resources.initialBalance ?? 30;
     return {
       maxOpenOrders: 6,
-      maxOrderNotional: new Decimal(initialBalance),
-      maxPositionSize: new Decimal(maxPositionUnits),
-      maxTotalExposure: new Decimal(initialBalance),
-      minAvailableBalance: new Decimal('1'),
+      maxOrderNotional: Money.of(new Decimal(initialBalance), 'USDC'),
+      maxPositionSize: Quantity.of(new Decimal(maxPositionUnits)),
+      maxTotalExposure: Money.of(new Decimal(initialBalance), 'USDC'),
+      minAvailableBalance: Money.of(new Decimal('1'), 'USDC'),
       // minTimeToExpiryMs НЕ задаём: timing (unwind phase) управляет стратегия,
       // а не risk checker. Значение 0 при fail-closed логике блокировало бы BUY
       // при недоступном expiry (RISK_INPUT_INCOMPLETE) — отсутствие лимита корректнее.
@@ -5219,10 +5219,10 @@ function buildRiskParams(config?: import('./config/BotConfig.js').BotConfig): Ri
 
   return {
     maxOpenOrders: 2,
-    maxOrderNotional: new Decimal(initialBalance),
-    maxPositionSize: new Decimal(qMax * orderSize),
-    maxTotalExposure: new Decimal(initialBalance * 2),
-    minAvailableBalance: new Decimal('1'),
+    maxOrderNotional: Money.of(new Decimal(initialBalance), 'USDC'),
+    maxPositionSize: Quantity.of(new Decimal(qMax * orderSize)),
+    maxTotalExposure: Money.of(new Decimal(initialBalance * 2), 'USDC'),
+    minAvailableBalance: Money.of(new Decimal('1'), 'USDC'),
     // Стратегия сама управляет timing (unwind phase), risk checker не блокирует по времени.
     // minTimeToExpiryMs НЕ задаём (при fail-closed логике 0 блокировал бы BUY без expiry).
   };

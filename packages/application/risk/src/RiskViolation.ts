@@ -47,6 +47,12 @@ export type RiskViolationCode =
   | 'POSITION_LIMIT_EXCEEDED'
   | 'TOTAL_EXPOSURE_EXCEEDED';
 
+/**
+ * Типизированная ошибка нарушения риск-лимита.
+ *
+ * @remarks
+ * Назначение и пример использования — см. докблок модуля выше.
+ */
 export class RiskViolationError extends TradingError {
   public readonly severity = 'medium' as const;
   /** Код нарушенного лимита */

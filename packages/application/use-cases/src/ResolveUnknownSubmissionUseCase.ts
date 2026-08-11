@@ -56,6 +56,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
+import { Money, Quantity } from '@polymarket/value-objects';
 import type {
   IExchangeClient,
   IFillProcessor,
@@ -561,8 +562,8 @@ export class ResolveUnknownSubmissionUseCase {
     if (canConsumeHeldReservation(record.reservation)) {
       const remaining = new Decimal(record.reservation.remaining);
       const releaseResult = record.reservation.kind === 'USDC'
-        ? this._deps.portfolioService.releaseReservation(input.accountId, remaining)
-        : this._deps.portfolioService.releaseTokenReservation(input.accountId, record.instrumentId, remaining);
+        ? this._deps.portfolioService.releaseReservation(input.accountId, Money.of(remaining, 'USDC'))
+        : this._deps.portfolioService.releaseTokenReservation(input.accountId, record.instrumentId, Quantity.of(remaining));
       if (!releaseResult.ok) {
         await this._lockAsReconciliation(record, 'confirm-not-submitted-release-failed',
           `OPERATOR_CONFIRM_NOT_SUBMITTED_RELEASE_FAILED (${operatorId}): ${releaseResult.error.message}`);

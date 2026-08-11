@@ -89,6 +89,12 @@ function sameAccount(a: AccountId, b: AccountId): boolean {
   return accountIdEquals(a, b);
 }
 
+/**
+ * Authoritative reader незавершённых commitments стратегии.
+ *
+ * @remarks
+ * Алгоритм и пример использования — см. докблок модуля выше.
+ */
 export class SubmissionJournalStrategyCommitmentReader implements IStrategyCommitmentReader {
   private readonly _logger: ILogger;
 

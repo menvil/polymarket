@@ -105,7 +105,7 @@ export class PortfolioService {
    */
   public reserveForOrder(
     accountId: AccountId,
-    notional: Decimal,
+    notional: Money,
   ): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
@@ -113,12 +113,11 @@ export class PortfolioService {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
-    const amount = Money.of(notional, 'USDC');
-    const reserveResult = portfolio.reserveForOrder(amount);
+    const reserveResult = portfolio.reserveForOrder(notional);
     if (!reserveResult.ok) {
       return Err(new TradingError(
         `Failed to reserve balance: ${reserveResult.error.message}`,
-        { context: { accountId: accountIdToString(accountId), notional: notional.toString() } },
+        { context: { accountId: accountIdToString(accountId), notional: notional.value().toString() } },
       ));
     }
 
@@ -127,7 +126,7 @@ export class PortfolioService {
 
     this._logger.debug('Balance reserved for order', {
       accountId: accountIdToString(accountId),
-      notional: notional.toString(),
+      notional: notional.value().toString(),
     });
     return Ok(undefined);
   }
@@ -144,7 +143,7 @@ export class PortfolioService {
    */
   public releaseReservation(
     accountId: AccountId,
-    notional: Decimal,
+    notional: Money,
   ): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
@@ -152,12 +151,11 @@ export class PortfolioService {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
-    const amount = Money.of(notional, 'USDC');
-    const releaseResult = portfolio.releaseReservation(amount);
+    const releaseResult = portfolio.releaseReservation(notional);
     if (!releaseResult.ok) {
       return Err(new TradingError(
         `Failed to release reservation: ${releaseResult.error.message}`,
-        { context: { accountId: accountIdToString(accountId), notional: notional.toString() } },
+        { context: { accountId: accountIdToString(accountId), notional: notional.value().toString() } },
       ));
     }
 
@@ -166,7 +164,7 @@ export class PortfolioService {
 
     this._logger.debug('Reservation released', {
       accountId: accountIdToString(accountId),
-      notional: notional.toString(),
+      notional: notional.value().toString(),
     });
     return Ok(undefined);
   }
@@ -187,7 +185,7 @@ export class PortfolioService {
   public reserveTokensForOrder(
     accountId: AccountId,
     instrumentId: InstrumentId,
-    qty: Decimal,
+    qty: Quantity,
   ): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
@@ -195,11 +193,11 @@ export class PortfolioService {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
-    const reserveResult = portfolio.reserveTokensForOrder(instrumentId, qty);
+    const reserveResult = portfolio.reserveTokensForOrder(instrumentId, qty.value());
     if (!reserveResult.ok) {
       return Err(new TradingError(
         `Failed to reserve tokens: ${reserveResult.error.message}`,
-        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.value().toString() } },
       ));
     }
 
@@ -209,7 +207,7 @@ export class PortfolioService {
     this._logger.debug('Tokens reserved for SELL order', {
       accountId: accountIdToString(accountId),
       instrumentId: String(instrumentId),
-      qty: qty.toString(),
+      qty: qty.value().toString(),
     });
     return Ok(undefined);
   }
@@ -230,7 +228,7 @@ export class PortfolioService {
   public releaseTokenReservation(
     accountId: AccountId,
     instrumentId: InstrumentId,
-    qty: Decimal,
+    qty: Quantity,
   ): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(accountId);
     const portfolio = this._store.get(accountId);
@@ -238,11 +236,11 @@ export class PortfolioService {
       return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
     }
 
-    const releaseResult = portfolio.releaseTokenReservation(instrumentId, qty);
+    const releaseResult = portfolio.releaseTokenReservation(instrumentId, qty.value());
     if (!releaseResult.ok) {
       return Err(new TradingError(
         `Failed to release token reservation: ${releaseResult.error.message}`,
-        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.toString() } },
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.value().toString() } },
       ));
     }
 
@@ -252,7 +250,7 @@ export class PortfolioService {
     this._logger.debug('Token reservation released', {
       accountId: accountIdToString(accountId),
       instrumentId: String(instrumentId),
-      qty: qty.toString(),
+      qty: qty.value().toString(),
     });
     return Ok(undefined);
   }
@@ -288,7 +286,7 @@ export class PortfolioService {
     order: Order,
   ): Result<void, PortfolioSaveError> {
     if (order.side === 'BUY') {
-      const remainingNotional = order.price.value().times(order.remainingSize.value());
+      const remainingNotional = Money.of(order.price.value().times(order.remainingSize.value()), 'USDC');
       const result = this.releaseReservation(accountId, remainingNotional);
       if (!result.ok) {
         this._logger.error('Failed to release USDC reservation for cancelled order', {
@@ -310,7 +308,7 @@ export class PortfolioService {
         { context: { accountId: accountIdToString(accountId), orderId: String(order.id) } },
       ));
     }
-    const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize.value());
+    const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize);
     if (!result.ok) {
       this._logger.error('Failed to release token reservation for cancelled order', {
         accountId: accountIdToString(accountId),
@@ -325,7 +323,7 @@ export class PortfolioService {
    * Применяет Fill к Portfolio: обновляет баланс и позицию.
    *
    * @param fill - Исполнение ордера
-   * @param orderPrice - Цена ордера (Decimal). Если передана для BUY fill,
+   * @param orderPrice - Цена ордера. Если передана для BUY fill,
    *   используется вместо `fill.price` для расчёта дебета.
    *   Это устраняет ошибку «Cannot unfreeze/consume X: only Y reserved»,
    *   возникающую когда биржа округляет цену в fill-событии (0.829 → 0.83),
@@ -353,7 +351,7 @@ export class PortfolioService {
    *
    * tokenId используется как instrumentId для поиска/обновления позиции.
    */
-  public applyFill(fill: Fill, orderPrice?: Decimal): Result<void, PortfolioSaveError> {
+  public applyFill(fill: Fill, orderPrice?: Price): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
@@ -374,7 +372,7 @@ export class PortfolioService {
     const fillQty = fill.size.value();
     // Для BUY: используем цену ордера (если передана), чтобы точно совпасть с зарезервированной суммой.
     // Биржа может округлить цену в fill-событии (0.829 → 0.83), а резервация была по точной цене ордера.
-    const priceForDebit = (fill.side === 'BUY' && orderPrice !== undefined) ? orderPrice : fill.price.value();
+    const priceForDebit = (fill.side === 'BUY' && orderPrice !== undefined) ? orderPrice.value() : fill.price.value();
     const notional = priceForDebit.times(fillQty);
     const money = Money.of(notional, 'USDC');
 
@@ -498,7 +496,7 @@ export class PortfolioService {
    */
   public applyFillAgainstHeldReservation(params: {
     readonly fill: Fill;
-    readonly orderPrice: Decimal;
+    readonly orderPrice: Price;
     readonly reservationKind: 'USDC' | 'TOKENS';
   }): Result<void, PortfolioSaveError> {
     // Defensive: kind резервации обязан соответствовать стороне fill.
@@ -520,7 +518,7 @@ export class PortfolioService {
       accountId: accountIdToString(params.fill.accountId),
       fillId: String(params.fill.id),
       side: params.fill.side,
-      orderPrice: params.orderPrice.toString(),
+      orderPrice: params.orderPrice.value().toString(),
       reservationKind: params.reservationKind,
     });
     // Экономика идентична local-order fill: BUY дебетует reserved по orderPrice,

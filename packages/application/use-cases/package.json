@@ -28,7 +28,8 @@
     "@polymarket/portfolio": "0.1.0",
     "@polymarket/position": "0.1.0",
     "@polymarket/ledger": "0.1.0",
-    "@polymarket/risk": "0.1.0"
+    "@polymarket/risk": "0.1.0",
+    "@polymarket/market-state": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

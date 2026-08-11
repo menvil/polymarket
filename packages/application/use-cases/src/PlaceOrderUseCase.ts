@@ -95,8 +95,8 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import { TimestampService } from '@polymarket/value-objects';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import { TimestampService, Money, Quantity } from '@polymarket/value-objects';
+import type { Price, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type {
@@ -990,7 +990,7 @@ export class PlaceOrderUseCase {
       // Precheck — fail-fast вне lock: pending BUY-экспозиция считается только
       // под lock (authoritative), здесь консервативно 0 (не приведёт к ложному
       // reject). timeToExpiryMs пересчитывается отдельно и здесь, и под lock.
-      pendingBuyQuantityForInstrument: new Decimal(0),
+      pendingBuyQuantityForInstrument: Quantity.of(new Decimal(0)),
       timeToExpiryMs: this._computeTimeToExpiryMs(input.instrumentId),
     });
     if (!precheckResult.ok) {
@@ -1321,7 +1321,7 @@ export class PlaceOrderUseCase {
     // Только для BUY: SELL пропускает position/exposure gates, значение не нужно.
     // Fail-closed: повреждённые price/reservation данные → блокируем BUY (нельзя
     // проверить position-лимит). Ордер ещё не отправлялся — submission retryable.
-    let pendingBuyQuantityForInstrument = new Decimal(0);
+    let pendingBuyQuantityForInstrument = Quantity.of(new Decimal(0));
     if (input.side === 'BUY') {
       const pendingResult = await this._deps.submissions.getPendingBuyQuantityForInstrument(
         input.accountId,
@@ -1342,7 +1342,9 @@ export class PlaceOrderUseCase {
           { clientOrderId: String(input.orderId), instrumentId: String(input.instrumentId) },
         ));
       }
-      pendingBuyQuantityForInstrument = pendingResult.value;
+      // Порт (IOrderSubmissionRepository) остаётся Decimal-based (persisted-DTO
+      // граница, Этап 5) — оборачиваем в Quantity здесь, на границе use-cases.
+      pendingBuyQuantityForInstrument = Quantity.of(pendingResult.value);
     }
 
     const riskResult = this._deps.riskChecker.checkBeforeOrder({
@@ -1370,13 +1372,13 @@ export class PlaceOrderUseCase {
 
     // Шаг 2: Резервирование ресурсов (BUY → USDC, SELL → токены)
     const isBuy = input.side === 'BUY';
-    const notional = isBuy ? input.price.value().times(input.size.value()) : undefined;
+    const notional = isBuy ? Money.of(input.price.value().times(input.size.value()), 'USDC') : undefined;
     const reserveResult = isBuy
       ? this._deps.portfolioService.reserveForOrder(input.accountId, notional!)
       : this._deps.portfolioService.reserveTokensForOrder(
           input.accountId,
           input.instrumentId,
-          input.size.value(),
+          input.size,
         );
     if (!reserveResult.ok) {
       // Ордер не отправлялся — submission можно retry-ить.
@@ -1386,7 +1388,7 @@ export class PlaceOrderUseCase {
         {
           context: {
             clientOrderId: String(input.orderId),
-            ...(isBuy ? { notional: notional!.toString() } : { instrumentId: String(input.instrumentId), size: input.size.value().toString() }),
+            ...(isBuy ? { notional: notional!.value().toString() } : { instrumentId: String(input.instrumentId), size: input.size.value().toString() }),
           },
         },
       ));
@@ -1399,7 +1401,7 @@ export class PlaceOrderUseCase {
     //   journal остался NONE);
     // - компенсация упала → submission остаётся SUBMITTING (blocking, retry
     //   заблокирован), journal → RECONCILIATION_REQUIRED, ORDER_PORTFOLIO_DESYNC issue.
-    const reservationInitial = isBuy ? notional!.toString() : input.size.value().toString();
+    const reservationInitial = isBuy ? notional!.value().toString() : input.size.value().toString();
     const heldResult = await this._markReservationHeldCritical(input.orderId, reservationInitial);
     if (!heldResult.ok) {
       this._logger.error('Failed to mark reservation HELD in execution journal — aborting submit, compensating Portfolio release', {
@@ -1409,7 +1411,7 @@ export class PlaceOrderUseCase {
       });
       const compensateResult = isBuy
         ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value());
+        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size);
       if (compensateResult.ok) {
         // Portfolio восстановлен, journal пуст (NONE) — retry безопасен.
         await this._markSubmissionFailed(input.orderId, `JOURNAL_HELD_FAILED: ${heldResult.error.message}`);
@@ -1545,7 +1547,7 @@ export class PlaceOrderUseCase {
         releaseReservation: () =>
           isBuy
             ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value()),
+            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size),
         failReason: `SUBMIT_DEFINITELY_NOT_SUBMITTED: ${submitResult.error.message}`,
         stage: 'submit-definitely-not-submitted-rollback',
       });
@@ -1581,7 +1583,7 @@ export class PlaceOrderUseCase {
         releaseReservation: () =>
           isBuy
             ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value()),
+            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size),
         failReason: `SUBMIT_REJECTED: ${submitValue.reason}`,
         stage: 'rejected-submit-rollback',
       });
@@ -1632,7 +1634,7 @@ export class PlaceOrderUseCase {
       const releaseFullReservation = (): ReturnType<PortfolioService['releaseReservation']> =>
         isBuy
           ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-          : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value());
+          : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size);
 
       if (submitValue.orderId) {
         // Exception boundary: брошенный cancelOrder → транспортный Err (см. _rollbackPostSubmit).
@@ -1780,7 +1782,7 @@ export class PlaceOrderUseCase {
         releaseReservation: () =>
           isBuy
             ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value()),
+            : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size),
       });
       return Err(new TradingError(
         `Failed to record VENUE_ACCEPTED submission (venue order exists, manual reconciliation): ${message}`,
@@ -1808,7 +1810,7 @@ export class PlaceOrderUseCase {
     const releaseFullInputReservation = (): ReturnType<PortfolioService['releaseReservation']> =>
       isBuy
         ? this._deps.portfolioService.releaseReservation(input.accountId, notional!)
-        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size.value());
+        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, input.size);
 
     if (effectiveSize.isZero() || effectiveSize.isGreaterThan(input.size)) {
       this._logger.error('Exchange returned invalid effectiveSize — aborting and cancelling venue order', {
@@ -1846,12 +1848,12 @@ export class PlaceOrderUseCase {
       const excessReleaseResult = isBuy
         ? this._deps.portfolioService.releaseReservation(
             input.accountId,
-            input.price.value().times(excessSize),
+            Money.of(input.price.value().times(excessSize), 'USDC'),
           )
         : this._deps.portfolioService.releaseTokenReservation(
             input.accountId,
             input.instrumentId,
-            excessSize,
+            Quantity.of(excessSize),
           );
       if (!excessReleaseResult.ok) {
         // Излишек не освободился — полный input.size всё ещё held. Отменяем
@@ -1878,7 +1880,7 @@ export class PlaceOrderUseCase {
       }
 
       orderSize = effectiveSize;
-      orderNotional = isBuy ? input.price.value().times(effectiveSize.value()) : undefined;
+      orderNotional = isBuy ? Money.of(input.price.value().times(effectiveSize.value()), 'USDC') : undefined;
 
       // Journal: излишек резервации освобождён → released += excess, remaining
       // уменьшается; фиксируем effectiveSize. Attempt-scoped operationId.
@@ -1921,8 +1923,8 @@ export class PlaceOrderUseCase {
           transportErrorMessage: 'Failed to cancel exchange order after excess journal failure — venue order may still be live, manual reconciliation required',
           releaseReservation: () =>
             isBuy
-              ? this._deps.portfolioService.releaseReservation(input.accountId, input.price.value().times(effectiveSize.value()))
-              : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, effectiveSize.value()),
+              ? this._deps.portfolioService.releaseReservation(input.accountId, Money.of(input.price.value().times(effectiveSize.value()), 'USDC'))
+              : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, effectiveSize),
         });
         return Err(new TradingError(
           `Failed to record excess reservation release in execution journal (local Order not created): ${excessJournalError}`,
@@ -1936,7 +1938,7 @@ export class PlaceOrderUseCase {
     const releaseOrderReservation = (): ReturnType<PortfolioService['releaseReservation']> =>
       isBuy
         ? this._deps.portfolioService.releaseReservation(input.accountId, orderNotional!)
-        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, orderSize.value());
+        : this._deps.portfolioService.releaseTokenReservation(input.accountId, input.instrumentId, orderSize);
 
     // Шаг 4: Создание Order aggregate с venueOrderId
     const timestampResult = TimestampService.fromDate(this._deps.clock.now());
@@ -2155,7 +2157,7 @@ export class PlaceOrderUseCase {
       clientOrderId: String(input.orderId),
       side: input.side,
       submitStatus: submitValue.status,
-      ...(orderNotional !== undefined ? { notional: orderNotional.toString() } : { size: orderSize.value().toString() }),
+      ...(orderNotional !== undefined ? { notional: orderNotional.value().toString() } : { size: orderSize.value().toString() }),
     });
 
     return Ok({ venueOrderId });

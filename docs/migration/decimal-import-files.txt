@@ -36,9 +36,6 @@ packages/application/ports/src/IMarketDiscoveryService.ts
 packages/application/ports/src/IOrderSubmissionRepository.ts
 packages/application/ports/src/reservationJournal.ts
 packages/application/risk/src/OrderRiskChecker.ts
-packages/application/risk/src/PreOrderCheckInput.ts
-packages/application/risk/src/RiskParams.ts
-packages/application/risk/src/RiskPolicy.ts
 packages/application/strategy/src/BaseStrategy.ts
 packages/application/strategy/src/ExecutionEngine.ts
 packages/application/use-cases/src/CancelOrderUseCase.ts

@@ -2305,7 +2305,7 @@ describe('PlaceOrderUseCase', () => {
       // maxPositionSize=150 токенов. A: price 0.5 × size 100 = 50 USDC held →
       // pending = 50/0.5 = 100 токенов. A: 0 + 0 + 100 = 100 <= 150 → проходит.
       // B (тот же account+instrument): 0 (filled) + 100 (pending A) + 100 (new) = 200 > 150 → reject.
-      const riskChecker = makeRealChecker({ maxPositionSize: new Decimal('150') });
+      const riskChecker = makeRealChecker({ maxPositionSize: Quantity.of(new Decimal('150')) });
       const useCase = new PlaceOrderUseCase({ ...deps, riskChecker });
 
       const orderA = 'order-A' as unknown as OrderId;
@@ -2322,7 +2322,7 @@ describe('PlaceOrderUseCase', () => {
     });
 
     it('fail-closed: сбой getPendingBuyQuantityForInstrument блокирует BUY', async () => {
-      const riskChecker = makeRealChecker({ maxPositionSize: new Decimal('150') });
+      const riskChecker = makeRealChecker({ maxPositionSize: Quantity.of(new Decimal('150')) });
       const failingSubmissions = makeSubmissionsStub({
         getPendingBuyQuantityForInstrument: jest.fn<IOrderSubmissionRepository['getPendingBuyQuantityForInstrument']>()
           .mockResolvedValue(Err(new ReservationTransitionError('INVARIANT_VIOLATION', 'corrupt reservation/price data'))),

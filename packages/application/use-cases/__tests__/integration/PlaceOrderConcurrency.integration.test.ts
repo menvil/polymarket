@@ -151,7 +151,7 @@ describe('PlaceOrder concurrency (integration) — risk projection под keyed 
   it('два параллельных BUY на РАЗНЫХ инструментах по 60 при maxTotalExposure=100 → проходит ровно один', async () => {
     const portfolio = makePortfolio('1000');
     portfolioStore.save(portfolio, 0);
-    const useCase = new PlaceOrderUseCase(buildDeps({ maxTotalExposure: new Decimal('100') }));
+    const useCase = new PlaceOrderUseCase(buildDeps({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }));
 
     // Оба notional = 60 (price 0.6 × size 100). costBasis 0 + reserved(другого) 60 + new 60 = 120 > 100.
     const [rA, rB] = await Promise.all([
@@ -174,7 +174,7 @@ describe('PlaceOrder concurrency (integration) — risk projection под keyed 
   it('два параллельных BUY одного инструмента, совместно превышающих maxPositionSize=100 → проходит ровно один', async () => {
     const portfolio = makePortfolio('1000');
     portfolioStore.save(portfolio, 0);
-    const useCase = new PlaceOrderUseCase(buildDeps({ maxPositionSize: new Decimal('100') }));
+    const useCase = new PlaceOrderUseCase(buildDeps({ maxPositionSize: Quantity.of(new Decimal('100')) }));
 
     // Каждый: price 0.5 × size 60. pending первого = 30 USDC / 0.5 = 60 токенов.
     // Второй: 0 (filled) + 60 (pending) + 60 (new) = 120 > 100 → reject.

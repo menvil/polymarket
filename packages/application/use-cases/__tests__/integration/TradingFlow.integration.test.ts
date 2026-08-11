@@ -456,7 +456,7 @@ describe('TradingFlow (integration)', () => {
     portfolioStore.save(portfolio, 0);
 
     // 1. Reserve NOTIONAL (как PlaceOrderUseCase перед submit).
-    expect(portfolioService.reserveForOrder(ACCOUNT_ID, NOTIONAL).ok).toBe(true);
+    expect(portfolioService.reserveForOrder(ACCOUNT_ID, Money.of(NOTIONAL, 'USDC')).ok).toBe(true);
     const availableAfterReserve = portfolioStore.get(ACCOUNT_ID)!.balance.available().value().toNumber();
 
     // 2. Ambiguous submit с известным venue ID: journal HELD + venueAccepted, БЕЗ local Order.

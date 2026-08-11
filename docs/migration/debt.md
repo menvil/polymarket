@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T13:24:17.056Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T14:40:29.789Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -15,12 +15,12 @@
 | `packages/application/event-bus` | 0 | 4 | 2 | 9 | 0/32 | ✅ |
 | `packages/application/handlers` | 0 | 0 | 3 | 0 | 0/6 | ✅ |
 | `packages/application/market-discovery` | 0 | 7 | 3 | 0 | 0/2 | ❌ |
-| `packages/application/market-state` | 0 | 106 | 52 | 6 | 23/44 | ❌ |
+| `packages/application/market-state` | 0 | 107 | 52 | 6 | 23/44 | ❌ |
 | `packages/application/orchestrators` | 0 | 0 | 0 | 0 | 0/7 | ✅ |
 | `packages/application/ports` | 5 | 54 | 80 | 2 | 0/97 | ✅ |
-| `packages/application/risk` | 16 | 6 | 8 | 5 | 10/12 | ❌ |
+| `packages/application/risk` | 12 | 6 | 9 | 5 | 0/12 | ✅ |
 | `packages/application/strategy` | 11 | 41 | 50 | 6 | 30/69 | ❌ |
-| `packages/application/use-cases` | 12 | 21 | 84 | 5 | 16/70 | ✅ |
+| `packages/application/use-cases` | 6 | 22 | 84 | 5 | 0/73 | ✅ |
 | `packages/domain/accounting/ledger` | 1 | 0 | 0 | 1 | 3/10 | ❌ |
 | `packages/domain/cross-market` | 0 | 33 | 13 | 0 | 3/23 | ✅ |
 | `packages/domain/entities/fill` | 6 | 6 | 14 | 1 | 7/20 | ✅ |
@@ -47,6 +47,6 @@
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 70 | 22/178 | ❌ |
-| **ИТОГО** | **188** | **2520** | **1557** | **317** | **286/1505** | **14 пакетов без docs/** |
+| **ИТОГО** | **178** | **2522** | **1558** | **317** | **260/1508** | **13 пакетов без docs/** |
 
-`decimal.js` импортируется вне `value-objects`/`math` в 87 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).
+`decimal.js` импортируется вне `value-objects`/`math` в 84 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

@@ -614,7 +614,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase — stateful (
 
     // Reserve 65 USDC под BUY 100 @ 0.65 (как PlaceOrderUseCase перед submit) —
     // available: 1000 → 935, reserved: 0 → 65.
-    const reserveResult = portfolioService.reserveForOrder(ACCOUNT_ID, new Decimal('65'));
+    const reserveResult = portfolioService.reserveForOrder(ACCOUNT_ID, Money.of(new Decimal('65'), 'USDC'));
     if (!reserveResult.ok) throw new Error('Failed to reserve');
 
     // Seed: live Order + held journal 65 USDC (BUY 100 @ 0.65).

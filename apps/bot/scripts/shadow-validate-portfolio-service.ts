@@ -328,7 +328,7 @@ function processFile(mf: MarketFills, accountId: AccountId, venueId: VenueId): F
     if (record.side === 'BUY') {
       buyCount++;
       buyPrices.add(price.toString());
-      const reserveResult = service.reserveForOrder(accountId, price.times(size));
+      const reserveResult = service.reserveForOrder(accountId, Money.of(price.times(size), 'USDC'));
       if (!reserveResult.ok) {
         errors.push(`reserveForOrder failed for fill #${index}: ${reserveResult.error.message}`);
         break;
@@ -336,7 +336,7 @@ function processFile(mf: MarketFills, accountId: AccountId, venueId: VenueId): F
       blended = blendedBuy(blended, price, size);
     } else {
       sellCount++;
-      const reserveResult = service.reserveTokensForOrder(accountId, instrumentId, size);
+      const reserveResult = service.reserveTokensForOrder(accountId, instrumentId, Quantity.of(size));
       if (!reserveResult.ok) {
         errors.push(`reserveTokensForOrder failed for fill #${index}: ${reserveResult.error.message}`);
         break;
