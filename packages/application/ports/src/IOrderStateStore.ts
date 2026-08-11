@@ -197,6 +197,7 @@ export interface TerminalSettlementPending {
   readonly receivedAt: Date;
 }
 
+/** Порт синхронного чтения ордеров для стратегий — см. описание модуля выше. */
 export interface IOrderStateStore {
   /**
    * Возвращает все открытые ордера стратегии.

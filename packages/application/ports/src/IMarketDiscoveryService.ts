@@ -72,6 +72,8 @@ export interface DiscoveredMarket extends InstrumentInfo {
   readonly startsAt?: Timestamp;
 }
 
+// TODO(discovery): prefer catalog.registerMarket() when all outcome tokens for
+// a market are available, to avoid temporarily exposing partial markets.
 /**
  * Порт: сервис обнаружения рынков.
  *
@@ -84,8 +86,6 @@ export interface DiscoveredMarket extends InstrumentInfo {
  * }
  * ```
  */
-// TODO(discovery): prefer catalog.registerMarket() when all outcome tokens for
-// a market are available, to avoid temporarily exposing partial markets.
 export interface IMarketDiscoveryService {
   /**
    * Возвращает список отфильтрованных и проскоренных кандидатов.

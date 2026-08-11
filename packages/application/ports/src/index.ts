@@ -41,20 +41,24 @@
 
 export type { IOrderRepository, DeleteOrderResult } from './IOrderRepository.js';
 export { OrderStateConflictError } from './IOrderRepository.js';
+/** Реэкспорт порта CAS-хранилища Portfolio (см. `IPortfolioStore.ts`). */
 export type { IPortfolioStore } from './IPortfolioStore.js';
 export { VersionConflictError } from './VersionConflictError.js';
+/** Реэкспорт порта idempotency-guard для Fill (см. `IProcessedFillRepository.ts`). */
 export type {
   IProcessedFillRepository,
   ProcessedFillStatus,
   BeginFillProcessingResult,
   FillProcessingLease,
 } from './IProcessedFillRepository.js';
+/** Реэкспорт порта submission-журнала ордеров (см. `IOrderSubmissionRepository.ts`). */
 export type {
   IOrderSubmissionRepository,
   OrderSubmissionRecord,
   OrderSubmissionStatus,
   BeginOrderSubmissionResult,
 } from './IOrderSubmissionRepository.js';
+/** Реэкспорт типов учёта резервации капитала (см. `reservationJournal.ts`). */
 export type {
   ReservationKind,
   ReservationStatus,
@@ -71,18 +75,21 @@ export {
   canConsumeHeldReservation,
   applyReservationDelta,
 } from './reservationJournal.js';
+/** Реэкспорт queryable-хранилища issues, требующих ручной реконсиляции (см. `IReconciliationIssueRepository.ts`). */
 export type {
   IReconciliationIssueRepository,
   ReconciliationIssue,
   ReconciliationIssueType,
   ReconciliationIssueStatus,
 } from './IReconciliationIssueRepository.js';
+/** Реэкспорт порта упорядоченной доставки событий (см. `IOrderedEventOutbox.ts`). */
 export type {
   IOrderedEventOutbox,
   OrderedEventBatch,
 } from './IOrderedEventOutbox.js';
 export { OutboxEnqueueError } from './IOrderedEventOutbox.js';
 export { ExchangeError } from './IExchangeClient.js';
+/** Реэкспорт торгового клиента и связанных типов (см. `IExchangeClient.ts`). */
 export type {
   IExchangeClient,
   SubmitOrderParams,
@@ -96,8 +103,20 @@ export type {
   VenueTradeStatus,
   FeeSnapshot,
 } from './IExchangeClient.js';
+/** Реэкспорт каталога инструментов (см. `IMarketCatalog.ts`). */
 export type { IMarketCatalog, InstrumentInfo } from './IMarketCatalog.js';
+/** Реэкспорт порта записи сырых WS-событий на диск (см. `IMarketDataRecorder.ts`). */
 export type { IMarketDataRecorder, MarketMeta } from './IMarketDataRecorder.js';
+/**
+ * Реэкспорт журнала решений стратегии (см. `IDecisionJournal.ts`).
+ *
+ * @remarks
+ * Типы записей журнала намеренно НЕ переведены на VO/branded ID в Этапе 5 плана
+ * миграции — реальные потребители (12 файлов `apps/bot/src/strategies/*`) и
+ * реализация (`DecisionJournalRecorder` в `packages/infrastructure/persistence/
+ * data-collection`) относятся к Этапам 9-10, не к `application/ports`. См.
+ * `docs/ports.md`, раздел "Что отложено и почему".
+ */
 export type {
   IDecisionJournal,
   SessionMeta,
@@ -108,8 +127,11 @@ export type {
   SignalEntry,
   CancelEntry,
 } from './IDecisionJournal.js';
+/** Реэкспорт порта обнаружения рынков (см. `IMarketDiscoveryService.ts`). */
 export type { IMarketDiscoveryService, DiscoveredMarket } from './IMarketDiscoveryService.js';
+/** Реэкспорт конфигурации фильтрации рынков (см. `IMarketFilterConfig.ts`). */
 export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
+/** Реэкспорт порта синхронного чтения ордеров (см. `IOrderStateStore.ts`). */
 export type {
   IOrderStateStore,
   InFlightFill,
@@ -122,10 +144,15 @@ export type {
   TerminalSettlementPending,
 } from './IOrderStateStore.js';
 export { pendingMatchFillId } from './IOrderStateStore.js';
+/** Реэкспорт порта получения баланса venue (см. `ICurrentBalanceProvider.ts`). */
 export type { ICurrentBalanceProvider } from './ICurrentBalanceProvider.js';
+/** Реэкспорт порта отката fill (см. `IFillReverter.ts`). */
 export type { IFillReverter } from './IFillReverter.js';
+/** Реэкспорт порта обработки fill (см. `IFillProcessor.ts`). */
 export type { IFillProcessor } from './IFillProcessor.js';
+/** Реэкспорт порта сериализации конкурентных мутаций (см. `IKeyedMutex.ts`). */
 export type { IKeyedMutex } from './IKeyedMutex.js';
+/** Реэкспорт порта чтения commitments стратегии (см. `IStrategyCommitmentReader.ts`). */
 export type {
   IStrategyCommitmentReader,
   StrategyCommitment,

@@ -142,6 +142,7 @@ export type BeginFillProcessingResult =
   | { readonly outcome: 'BUSY' }
   | { readonly outcome: 'RECONCILIATION_REQUIRED' };
 
+/** Порт idempotency/lifecycle-guard для обработки Fill — см. описание модуля выше. */
 export interface IProcessedFillRepository {
   /**
    * Атомарно резервирует fillId под обработку.

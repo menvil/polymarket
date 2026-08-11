@@ -88,6 +88,7 @@ export class OrderStateConflictError extends Error {
   }
 }
 
+/** Порт CAS-хранилища Order — см. описание модуля выше. */
 export interface IOrderRepository {
   /**
    * Возвращает Order по ID или undefined если не найден.

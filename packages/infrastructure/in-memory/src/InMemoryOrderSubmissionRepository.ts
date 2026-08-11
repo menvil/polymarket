@@ -284,14 +284,9 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
         ));
       }
     }
-    let held;
-    try {
-      held = heldReservation(res.kind, initial);
-    } catch (err) {
-      if (err instanceof ReservationTransitionError) return Err(err);
-      throw err;
-    }
-    const updated = this._snapshot({ ...existing, reservation: held, updatedAt: now });
+    const heldResult = heldReservation(res.kind, initial);
+    if (!heldResult.ok) return heldResult;
+    const updated = this._snapshot({ ...existing, reservation: heldResult.value, updatedAt: now });
     this._records.set(key, updated);
     this._heldAtAttempt.set(key, existing.attempt);
     return Ok(updated);

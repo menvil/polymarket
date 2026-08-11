@@ -21,6 +21,7 @@ import type { Result } from '@polymarket/result';
 import type { TradingError } from '@polymarket/errors';
 import type { Fill } from '@polymarket/fill';
 
+/** Порт обработки fill-события — см. описание модуля выше. */
 export interface IFillProcessor {
   /**
    * Обрабатывает fill: применяет к ордеру, портфелю и леджеру.

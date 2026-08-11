@@ -30,6 +30,7 @@
  */
 import { TradingError } from '@polymarket/errors';
 
+/** Ошибка CAS-конфликта версий — см. описание модуля выше. */
 export class VersionConflictError extends TradingError {
   public readonly severity = 'low' as const;
 

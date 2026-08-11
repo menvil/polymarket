@@ -23,6 +23,7 @@ import type { Result } from '@polymarket/result';
 import type { TradingError } from '@polymarket/errors';
 import type { Fill } from '@polymarket/fill';
 
+/** Порт отката применённого fill — см. описание модуля выше. */
 export interface IFillReverter {
   /**
    * Откатывает ранее применённый fill из Portfolio.

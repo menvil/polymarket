@@ -1,6 +1,6 @@
 # Метрика архитектурного долга по пакетам
 
-Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T10:35:10.766Z
+Сгенерировано: `node scripts/scan-conventions.mjs` — 2026-08-11T12:02:05.699Z
 
 Эвристический скан (см. TSDoc в `scripts/scan-conventions.mjs`) — не типо-осведомлён,
 не судит отдельный файл. Задача: воспроизводимый счётчик, который должен монотонно
@@ -17,7 +17,7 @@
 | `packages/application/market-discovery` | 0 | 7 | 3 | 0 | 0/2 | ❌ |
 | `packages/application/market-state` | 0 | 106 | 52 | 6 | 23/44 | ❌ |
 | `packages/application/orchestrators` | 0 | 0 | 0 | 0 | 2/7 | ✅ |
-| `packages/application/ports` | 5 | 54 | 80 | 3 | 30/97 | ❌ |
+| `packages/application/ports` | 5 | 54 | 80 | 2 | 0/97 | ✅ |
 | `packages/application/risk` | 16 | 6 | 8 | 5 | 10/12 | ❌ |
 | `packages/application/strategy` | 11 | 41 | 50 | 6 | 30/69 | ❌ |
 | `packages/application/use-cases` | 12 | 21 | 84 | 5 | 16/70 | ✅ |
@@ -43,10 +43,10 @@
 | `packages/infrastructure/adapters` | 0 | 0 | 6 | 0 | 1/1 | ❌ |
 | `packages/infrastructure/backtesting` | 0 | 116 | 55 | 3 | 5/27 | ❌ |
 | `packages/infrastructure/cex-market-data` | 0 | 50 | 26 | 4 | 6/25 | ❌ |
-| `packages/infrastructure/in-memory` | 2 | 10 | 25 | 3 | 2/9 | ❌ |
+| `packages/infrastructure/in-memory` | 2 | 10 | 25 | 2 | 2/9 | ❌ |
 | `packages/infrastructure/persistence/data-collection` | 0 | 3 | 21 | 7 | 6/12 | ❌ |
 | `packages/infrastructure/persistence/snapshot-readers` | 0 | 3 | 18 | 1 | 6/11 | ❌ |
 | `packages/infrastructure/polymarket` | 2 | 171 | 421 | 69 | 22/178 | ❌ |
-| **ИТОГО** | **188** | **2520** | **1557** | **315** | **337/1504** | **17 пакетов без docs/** |
+| **ИТОГО** | **188** | **2520** | **1557** | **313** | **307/1504** | **16 пакетов без docs/** |
 
 `decimal.js` импортируется вне `value-objects`/`math` в 87 файлах — полный список в `docs/migration/decimal-import-files.txt` (allowlist для ESLint-правила Этапа 0.4).

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T10:35:10.766Z",
+  "generatedAt": "2026-08-11T12:02:05.699Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -103,11 +103,11 @@
       "rawDecimal": 5,
       "rawNumber": 54,
       "rawString": 80,
-      "throwSites": 3,
-      "undocumentedExports": 30,
+      "throwSites": 2,
+      "undocumentedExports": 0,
       "totalExports": 97,
       "fileCount": 23,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/risk",
@@ -415,7 +415,7 @@
       "rawDecimal": 2,
       "rawNumber": 10,
       "rawString": 25,
-      "throwSites": 3,
+      "throwSites": 2,
       "undocumentedExports": 2,
       "totalExports": 9,
       "fileCount": 8,

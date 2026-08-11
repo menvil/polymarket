@@ -119,27 +119,33 @@ export function emptyReservation(kind: ReservationKind): ReservationSnapshot {
  *
  * @param kind - Вид актива
  * @param initial - Зарезервированное количество (decimal-строка)
- * @returns Снимок `HELD` с `remaining === initial`
- * @throws {ReservationTransitionError} `NEGATIVE_AMOUNT` если `initial < 0`
+ * @returns `Ok` со снимком `HELD` (`remaining === initial`) или
+ *   `Err(ReservationTransitionError)` с кодом `NEGATIVE_AMOUNT`, если `initial < 0`
  *
  * @example
  * ```typescript
- * const snap = heldReservation('USDC', '65'); // initial=65, remaining=65, status='HELD'
+ * const result = heldReservation('USDC', '65');
+ * if (result.ok) {
+ *   const snap = result.value; // initial=65, remaining=65, status='HELD'
+ * }
  * ```
  */
-export function heldReservation(kind: ReservationKind, initial: string): ReservationSnapshot {
+export function heldReservation(
+  kind: ReservationKind,
+  initial: string,
+): Result<ReservationSnapshot, ReservationTransitionError> {
   const init = new Decimal(initial);
   if (init.isNegative()) {
-    throw new ReservationTransitionError('NEGATIVE_AMOUNT', `heldReservation: initial must be >= 0, got ${initial}`);
+    return Err(new ReservationTransitionError('NEGATIVE_AMOUNT', `heldReservation: initial must be >= 0, got ${initial}`));
   }
-  return {
+  return Ok({
     kind,
     initial: init.toString(),
     remaining: init.toString(),
     consumed: '0',
     released: '0',
     status: init.isZero() ? 'SETTLED' : 'HELD',
-  };
+  });
 }
 
 /**

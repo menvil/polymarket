@@ -74,7 +74,9 @@ export class ExchangeError extends TradingError {
 }
 
 // Re-export snapshot types для удобства импорта из @polymarket/ports
+/** Реэкспорт снимка открытого ордера биржи (см. `types/OpenOrderSnapshot.ts`). */
 export type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
+/** Реэкспорт типов снимка исполненной сделки (см. `types/VenueTradeSnapshot.ts`). */
 export type { VenueTradeSnapshot, VenueTradeStatus, FeeSnapshot } from './types/VenueTradeSnapshot.js';
 
 /**
@@ -175,6 +177,16 @@ export interface SubmitRejectionBalanceMetadata {
   readonly orderAmountMicro: Decimal;
 }
 
+/**
+ * Структурированный результат размещения ордера на venue.
+ *
+ * @remarks
+ * `OPEN`/`PARTIALLY_FILLED`/`FILLED` — успешные исходы (ордер принят, возможно уже
+ * частично/полностью исполнен при размещении). `REJECTED` — venue отклонил ордер
+ * (см. {@link SubmitRejectionCode}). `UNKNOWN` — сабмит ушёл, но подтверждение не
+ * получено (например, timeout/сетевая ошибка) — ambiguous-исход, требует reconciliation
+ * (см. `SubmitAmbiguity`).
+ */
 export type SubmitOrderResult =
   | {
       readonly status: 'OPEN';

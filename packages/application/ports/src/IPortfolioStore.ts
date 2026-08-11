@@ -31,6 +31,7 @@ import type { AccountId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import type { VersionConflictError } from './VersionConflictError.js';
 
+/** Порт CAS-хранилища Portfolio — см. описание модуля выше. */
 export interface IPortfolioStore {
   /**
    * Возвращает Portfolio по ID аккаунта или undefined.
