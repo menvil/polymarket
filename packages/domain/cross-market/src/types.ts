@@ -160,7 +160,8 @@ export interface MarketPair {
  * Уровень стакана в числовом формате для вычислений.
  *
  * @remarks
- * Упрощённая версия PriceLevel из @polymarket/order-book.
+ * Упрощённая версия PriceLevel из старого @polymarket/order-book (пакет физически
+ * удалён в Этапе 10d плана миграции — здесь сохранена только концептуальная связь).
  * Используется внутри DivergenceDetector и DepthAnalyzer
  * для быстрых вычислений без overhead Value Objects.
  */

@@ -12,8 +12,7 @@
  *
  * #### 2. Critical handlers
  * subscribe(type, handler, { critical: true }) — ошибки возвращаются как
- * Err(CriticalHandlerError) из publish()/publishAll() (бросаются из
- * publishOrThrow()/publishAllOrThrow()).
+ * Err(CriticalHandlerError) из publish()/publishAll().
  * Non-critical (по умолчанию) — ошибки логируются, не останавливают других.
  * Critical ошибка: drain прерывается, ошибка возвращается/пробрасывается caller'у.
  * Очередь НЕ очищается — события легитимны, следующий publish() возобновит drain.
@@ -217,28 +216,6 @@ export class EventBus implements IEventBus {
     }
     if (this._dispatching) return Ok(undefined);
     return this._drainAndConvert();
-  }
-
-  /**
-   * Публикует событие; бросает вместо возврата `Err` (deprecation-мост, см. {@link IEventBus.publishOrThrow}).
-   *
-   * @param event - ApplicationEvent для публикации
-   * @throws {QueueOverflowError | CriticalHandlerError} См. `publish()`
-   */
-  public async publishOrThrow(event: ApplicationEvent): Promise<void> {
-    const result = await this.publish(event);
-    if (!result.ok) throw result.error;
-  }
-
-  /**
-   * Публикует список событий; бросает вместо возврата `Err` (deprecation-мост, см. {@link IEventBus.publishAllOrThrow}).
-   *
-   * @param events - Список событий для последовательной публикации
-   * @throws {QueueOverflowError | CriticalHandlerError} См. `publishAll()`
-   */
-  public async publishAllOrThrow(events: readonly ApplicationEvent[]): Promise<void> {
-    const result = await this.publishAll(events);
-    if (!result.ok) throw result.error;
   }
 
   /**

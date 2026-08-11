@@ -53,8 +53,6 @@ function makeEventBus(): IEventBus {
   return {
     publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
-    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
-    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }
@@ -1155,8 +1153,6 @@ describe('PlaceOrderUseCase', () => {
       const eventBusSpy: IEventBus = {
         publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
         publishAll: jest.fn(async () => { callOrder.push('publishAll'); return Ok(undefined); }) as unknown as IEventBus['publishAll'],
-        publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
-        publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
         subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
       };
       const useCase = new PlaceOrderUseCase({
@@ -1476,8 +1472,6 @@ describe('PlaceOrderUseCase', () => {
       const eventBusSpy: IEventBus = {
         publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
         publishAll: jest.fn(async () => { callOrder.push('publishAll'); return Ok(undefined); }) as unknown as IEventBus['publishAll'],
-        publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
-        publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
         subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
       };
       const exchangeClient: IExchangeClient = {

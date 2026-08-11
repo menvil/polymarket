@@ -63,9 +63,6 @@ packages/domain/entities/position/src/algorithms/lot-closing.ts
 packages/domain/entities/position/src/core/PositionLot.ts
 packages/domain/entities/trade/src/Trade.ts
 packages/domain/entities/trade/src/mappers/TradeMapper.ts
-packages/domain/market-data/order-book/src/ImbalanceCalculator.ts
-packages/domain/market-data/order-book/src/ImbalanceHistory.ts
-packages/domain/market-data/order-book/src/OrderBook.ts
 packages/domain/market-data/trade-tape/src/TradeFlowCalculator.ts
 packages/foundation/errors/src/utils/errorUtils.ts
 packages/infrastructure/backtesting/src/BacktestEngine.ts

@@ -12,7 +12,6 @@ export default {
     '^@polymarket/time$':                    '<rootDir>/../../foundation/time/src/index.ts',
     '^@polymarket/math$':                    '<rootDir>/../../foundation/math/src/index.ts',
     '^@polymarket/rolling-window$':          '<rootDir>/../../foundation/rolling-window/src/index.ts',
-    '^@polymarket/order-book$':              '<rootDir>/../../domain/market-data/order-book/src/index.ts',
     '^@polymarket/trade-tape$':              '<rootDir>/../../domain/market-data/trade-tape/src/index.ts',
     '^@polymarket/trade$':                   '<rootDir>/../../domain/entities/trade/src/index.ts',
     '^@polymarket/value-objects$':           '<rootDir>/../../domain/value-objects/src/index.ts',

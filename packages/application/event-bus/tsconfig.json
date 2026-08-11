@@ -4,8 +4,7 @@
     "outDir": "./dist",
     "paths": {
       "@polymarket/order":     ["../../domain/entities/order/dist/index.d.ts"],
-      "@polymarket/fill":      ["../../domain/entities/fill/dist/index.d.ts"],
-      "@polymarket/order-book": ["../../domain/market-data/order-book/dist/index.d.ts"]
+      "@polymarket/fill":      ["../../domain/entities/fill/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

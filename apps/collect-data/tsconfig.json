@@ -25,7 +25,6 @@
       "@polymarket/value-objects/money":           ["../../packages/domain/value-objects/src/money/index.ts"],
       "@polymarket/order":            ["../../packages/domain/entities/order/src/index.ts"],
       "@polymarket/portfolio":        ["../../packages/domain/entities/portfolio/src/index.ts"],
-      "@polymarket/order-book":       ["../../packages/domain/market-data/order-book/src/index.ts"],
       "@polymarket/handlers":         ["../../packages/application/handlers/src/index.ts"],
       "@polymarket/event-bus":        ["../../packages/application/event-bus/src/index.ts"],
       "@polymarket/trade":            ["../../packages/domain/entities/trade/src/index.ts"],

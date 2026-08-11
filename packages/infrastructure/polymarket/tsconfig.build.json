@@ -48,9 +48,6 @@
       "path": "../../domain/value-objects/tsconfig.build.json"
     },
     {
-      "path": "../../domain/market-data/order-book/tsconfig.build.json"
-    },
-    {
       "path": "../../domain/entities/trade/tsconfig.build.json"
     },
     {

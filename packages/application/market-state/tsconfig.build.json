@@ -39,9 +39,6 @@
       "path": "../event-bus/tsconfig.build.json"
     },
     {
-      "path": "../../domain/market-data/order-book/tsconfig.build.json"
-    },
-    {
       "path": "../../domain/market-data/trade-tape/tsconfig.build.json"
     },
     {

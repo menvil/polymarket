@@ -318,33 +318,6 @@ describe('EventBus', () => {
     expect(bus.getStats().dispatching).toBe(false);
   });
 
-  it('publishOrThrow: резолвится молча при Ok', async () => {
-    let handlerCalled = false;
-    bus.subscribe('BOOK_UPDATED', async () => { handlerCalled = true; });
-
-    await expect(bus.publishOrThrow(makeBookEvent())).resolves.toBeUndefined();
-    expect(handlerCalled).toBe(true);
-  });
-
-  it('publishOrThrow: бросает тот же объект ошибки, что publish() вернул бы в Err', async () => {
-    const tinyBus = new EventBus(logger, 10_000, 0);
-
-    await expect(tinyBus.publishOrThrow(makeBookEvent())).rejects.toBeInstanceOf(QueueOverflowError);
-  });
-
-  it('publishAllOrThrow: резолвится молча при Ok, бросает QueueOverflowError при overflow', async () => {
-    const order: number[] = [];
-    bus.subscribe('BOOK_UPDATED', async (event) => { order.push(event.sequenceNumber); });
-
-    await expect(bus.publishAllOrThrow([makeBookEvent(1), makeBookEvent(2)])).resolves.toBeUndefined();
-    expect(order).toEqual([1, 2]);
-
-    const tinyBus = new EventBus(logger, 10_000, 1);
-    await expect(
-      tinyBus.publishAllOrThrow([makeBookEvent(1), makeBookEvent(2)]),
-    ).rejects.toBeInstanceOf(QueueOverflowError);
-  });
-
   it('subscribe с explicit critical:false ведёт себя как non-critical (ошибка логируется)', async () => {
     let secondCalled = false;
     bus.subscribe(

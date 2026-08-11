@@ -224,7 +224,10 @@ describe('ProcessFillUseCase (integration)', () => {
 
     // Реальный ordered outbox: публикует в реальный EventBus после flush().
     const orderedEventOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
+      publish: async (events) => {
+        const result = await eventBus.publishAll(events as ApplicationEvent[]);
+        if (!result.ok) throw result.error;
+      },
       logger: LOGGER,
     });
 

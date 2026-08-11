@@ -37,6 +37,7 @@ import type { PlaceOrderDeps, PlaceOrderInput } from '../../src/PlaceOrderUseCas
 import type { ProcessFillDeps } from '../../src/ProcessFillUseCase.js';
 import type { CancelOrderDeps } from '../../src/CancelOrderUseCase.js';
 import { EventBus } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/event-bus';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok, Err } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
@@ -234,7 +235,10 @@ describe('TradingFlow (integration)', () => {
     ledgerService = new LedgerService(LOGGER);
     // Единый ordered outbox (Place↔Fill per-order FIFO), публикует в реальный EventBus.
     orderedEventOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
+      publish: async (events) => {
+        const result = await eventBus.publishAll(events as ApplicationEvent[]);
+        if (!result.ok) throw result.error;
+      },
       logger: LOGGER,
     });
     orderSubmissionRepo = new InMemoryOrderSubmissionRepository();
@@ -577,7 +581,10 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     portfolioService = new PortfolioService(realPortfolioStore, LOGGER);
     ledgerService = new LedgerService(LOGGER);
     orderedEventOutbox = new InMemoryOrderedEventOutbox({
-      publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
+      publish: async (events) => {
+        const result = await eventBus.publishAll(events as ApplicationEvent[]);
+        if (!result.ok) throw result.error;
+      },
       logger: LOGGER,
     });
     orderSubmissionRepo = new InMemoryOrderSubmissionRepository();

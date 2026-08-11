@@ -566,7 +566,7 @@ async function runPaper(): Promise<void> {
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
-      await eventBus.publishOrThrow({
+      const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         instrumentId: tradeInstrumentId,
         price: Price.of(new Decimal(dto.price)),
@@ -574,6 +574,9 @@ async function runPaper(): Promise<void> {
         side: dto.side,
         timestamp: tsResult.value,
       });
+      if (!result.ok) {
+        logger.debug('TRADE_RECEIVED publish failed', { error: result.error.message });
+      }
     } catch {
       // невалидные уровни пропускаем (price=0 или price=1 на закрывающихся рынках)
     }
@@ -4485,7 +4488,7 @@ async function runLive(): Promise<void> {
     const tsResult = TimestampService.create(Number(dto.timestamp));
     if (!tsResult.ok) return;
     try {
-      await eventBus.publishOrThrow({
+      const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         instrumentId: tradeInstrumentId,
         price: Price.of(new Decimal(dto.price)),
@@ -4493,6 +4496,9 @@ async function runLive(): Promise<void> {
         side: dto.side,
         timestamp: tsResult.value,
       });
+      if (!result.ok) {
+        logger.debug('TRADE_RECEIVED publish failed', { error: result.error.message });
+      }
     } catch {
       // невалидные уровни пропускаем
     }

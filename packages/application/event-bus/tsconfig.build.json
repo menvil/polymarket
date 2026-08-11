@@ -37,9 +37,6 @@
     },
     {
       "path": "../../domain/entities/fill/tsconfig.build.json"
-    },
-    {
-      "path": "../../domain/market-data/order-book/tsconfig.build.json"
     }
   ]
 }

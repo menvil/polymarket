@@ -60,8 +60,6 @@ function makeInfra(): CoreInfra {
   const eventBus: IEventBus = {
     publish: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publish'],
     publishAll: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publishAll'],
-    publishOrThrow: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publishOrThrow'],
-    publishAllOrThrow: jest.fn().mockResolvedValue(undefined) as unknown as IEventBus['publishAllOrThrow'],
     subscribe: jest.fn().mockReturnValue(() => {}) as unknown as IEventBus['subscribe'],
   };
   return { clock, logger: makeLogger(), eventBus };

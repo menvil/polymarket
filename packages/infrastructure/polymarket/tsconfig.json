@@ -8,7 +8,6 @@
       "@polymarket/result":        ["../../foundation/result/src/index.ts"],
       "@polymarket/errors":        ["../../foundation/errors/src/index.ts"],
       "@polymarket/value-objects": ["../../domain/value-objects/src/index.ts"],
-      "@polymarket/order-book":    ["../../domain/market-data/order-book/src/index.ts"],
       "@polymarket/trade":         ["../../domain/entities/trade/src/index.ts"],
       "@polymarket/ports":         ["../../application/ports/src/index.ts"],
       "@polymarket/handlers":      ["../../application/handlers/src/index.ts"],

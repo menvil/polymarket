@@ -8,7 +8,6 @@
       "@polymarket/portfolio":    ["../../domain/entities/portfolio/dist/index.d.ts"],
       "@polymarket/market":       ["../../domain/entities/market/dist/index.d.ts"],
       "@polymarket/ledger":       ["../../domain/accounting/ledger/dist/index.d.ts"],
-      "@polymarket/order-book":   ["../../domain/market-data/order-book/dist/index.d.ts"],
       "@polymarket/trade-tape":   ["../../domain/market-data/trade-tape/dist/index.d.ts"],
       "@polymarket/ports":        ["../ports/dist/index.d.ts"],
       "@polymarket/event-bus":    ["../event-bus/dist/index.d.ts"],

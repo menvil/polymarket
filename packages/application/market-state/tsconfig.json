@@ -3,7 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist",
     "paths": {
-      "@polymarket/order-book":      ["../../domain/market-data/order-book/dist/index.d.ts"],
       "@polymarket/trade-tape":      ["../../domain/market-data/trade-tape/dist/index.d.ts"],
       "@polymarket/trade":           ["../../domain/entities/trade/dist/index.d.ts"],
       "@polymarket/rolling-window":  ["../../foundation/rolling-window/dist/index.d.ts"],

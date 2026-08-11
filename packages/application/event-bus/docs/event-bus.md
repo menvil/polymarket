@@ -73,7 +73,7 @@ CriticalHandlerError>>`:
 - **non-critical** (по умолчанию) — ошибка handler'а логируется, drain продолжается для
   остальных handlers этого же события и для остальных событий в очереди.
 - **critical** — ошибка останавливает `_drainQueue()`, возвращается как
-  `Err(CriticalHandlerError)` (или бросается из `publishOrThrow()`/`publishAllOrThrow()`).
+  `Err(CriticalHandlerError)`.
   Очередь **не очищается** — оставшиеся события легитимны, следующий `publish()`
   возобновит drain с того места, где он остановился. Bus остаётся работоспособным;
   caller решает, перезапустить обработку, остановить систему или алертить.
@@ -87,28 +87,35 @@ CriticalHandlerError>>`:
 зависеть от side-effects друг друга. Таймауты — не ответственность `EventBus`: каждый
 handler обязан сам завершаться или обрабатывать собственный timeout.
 
-## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост (Этап 6 плана миграции)
+## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост, снят в Этапе 10d
 
 До Этапа 6 `publish()`/`publishAll()` бросали `Error` напрямую. Реальные вызывающие на
-момент миграции — 19 сайтов в 8 файлах: 8 внутри `@polymarket/handlers` (полностью
-переведены на `Result`-обработку в Этапе 6) и 11 вне пакета —
-`apps/bot/src/main.ts` (2), `apps/bot/src/bot/buildUseCases.ts` (1, через
-`IOrderedEventOutbox`), `apps/bot/src/bot/MarketRotation.ts` (1),
+момент Этапа 6 — 19 сайтов в 8 файлах: 8 внутри `@polymarket/handlers` (сразу переведены
+на `Result`-обработку в Этапе 6) и 11 вне пакета — `apps/bot/src/main.ts` (2),
+`apps/bot/src/bot/buildUseCases.ts` (1, через `IOrderedEventOutbox`),
+`apps/bot/src/bot/MarketRotation.ts` (1),
 `packages/infrastructure/backtesting/src/BacktestEngine.ts` (1),
 `packages/infrastructure/polymarket/rest/adapters/PolymarketExecutionAdapter.ts` (6,
-fire-and-forget). Прямая правка сигнатуры `publish()`/`publishAll()` сломала бы сборку во
-всех 11 внешних сайтах, лежащих вне территории Этапа 6 (`apps/*`/`infrastructure/*` —
-Этап 10 плана миграции).
+fire-and-forget). Прямая правка сигнатуры `publish()`/`publishAll()` в Этапе 6 сломала бы
+сборку во всех 11 внешних сайтах, лежавших вне территории того этапа.
 
-Решение: `publishOrThrow()`/`publishAllOrThrow()` — throw-based обёртки над новыми
-`Result`-based `publish()`/`publishAll()` (`if (!result.ok) throw result.error;`). Бросают
-**тот же объект ошибки**, что `publish()` вернул бы в `Err` — поведение для существующих
-вызывающих не меняется, это чистое переименование (`.publish(` → `.publishOrThrow(`) без
-изменения семантики. Снимаются в Этапе 10 плана миграции, когда оставшиеся 11 сайтов
-переходят на `Result`-обработку вместе с остальным `apps/*`/`infrastructure/*`.
+Временное решение (Этап 6 — Этап 10c): `publishOrThrow()`/`publishAllOrThrow()` —
+throw-based обёртки над `Result`-based `publish()`/`publishAll()` (`if (!result.ok) throw
+result.error;`), бросавшие **тот же объект ошибки**, что `publish()` вернул бы в `Err`.
 
-**Не использовать в новом коде** — только для уже существующих вызывающих вне
-`@polymarket/handlers`, ожидающих снятия моста.
+**Этап 10d снял мост целиком** — оба метода удалены из `IEventBus`/`EventBus`. Все 11
+внешних сайтов переведены на `Result`-обработку тремя паттернами в зависимости от формы
+вызова: (1) awaited-сайты (`main.ts`, `MarketRotation.ts`, `BacktestEngine.ts`) —
+`if (!result.ok) { ...log...; }`; (2) fire-and-forget-сайты
+(`PolymarketExecutionAdapter.ts`, 6 штук) — `void eventBus.publish(...).then((result) =>
+{ if (!result.ok) ...log...; })`, что дополнительно потребовало починить
+`infrastructure/polymarket`'s собственный узкий локальный `IEventBus`-порт (тот держал
+`publish(): void` вместо `Promise<Result<...>>` — только структурно совместим с реальным
+`EventBus` благодаря нестрогой TS-проверке void-возврата); (3) `buildUseCases.ts`'s
+`InMemoryOrderedEventOutbox`-обёртка (+ 4 тестовых зеркала) — throw-конверсия инлайнится
+локально в `publish`-callback, поскольку `IOrderedEventOutboxDeps.publish` контрактно
+throw-based по архитектурному замыслу (декаплинг `@polymarket/in-memory` от
+`@polymarket/event-bus`'s `Result`-типа), не может перейти на `Result`-ветвление.
 
 ## Диагностика
 
@@ -119,5 +126,5 @@ fire-and-forget). Прямая правка сигнатуры `publish()`/`publ
 ## Ссылки
 
 - ADR: `docs/architecture/boundary-contract.md`
-- План миграции, Этап 6: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
+- План миграции, Этапы 6 и 10d: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
 - `packages/foundation/errors/src/event-bus/` — `QueueOverflowError`, `CriticalHandlerError`

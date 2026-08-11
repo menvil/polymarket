@@ -178,7 +178,10 @@ describe('FillOrchestrator (integration)', () => {
       keyedMutex,
       eventBus,
       orderedEventOutbox: new InMemoryOrderedEventOutbox({
-        publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
+        publish: async (events) => {
+          const result = await eventBus.publishAll(events as ApplicationEvent[]);
+          if (!result.ok) throw result.error;
+        },
         logger: LOGGER,
       }),
       submissions: new InMemoryOrderSubmissionRepository(),

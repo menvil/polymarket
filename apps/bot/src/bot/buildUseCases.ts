@@ -48,6 +48,7 @@ import { InMemoryOrderedEventOutbox } from '@polymarket/in-memory';
 import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { RiskParams } from '@polymarket/risk';
 import type { IExchangeClient, IMarketCatalog, IOrderedEventOutbox } from '@polymarket/ports';
+import type { ApplicationEvent } from '@polymarket/event-bus';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 
@@ -130,7 +131,10 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
   // Единый ordered event outbox: публикует Order-события ПОСЛЕ выхода из keyed
   // mutex (без deadlock) и сохраняет per-order FIFO порядок Place↔Fill.
   const orderedEventOutbox = new InMemoryOrderedEventOutbox({
-    publish: (events) => eventBus.publishAllOrThrow(events as Parameters<typeof eventBus.publishAllOrThrow>[0]),
+    publish: async (events) => {
+      const result = await eventBus.publishAll(events as ApplicationEvent[]);
+      if (!result.ok) throw result.error;
+    },
     logger,
     reconciliationIssues: reconciliationIssueRepo,
     now: () => clock.now(),

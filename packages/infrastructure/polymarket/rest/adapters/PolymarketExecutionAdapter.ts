@@ -155,7 +155,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       };
 
       const envelope = createProductionEnvelope(orderAcceptedEvent, this.executionContext);
-      this.eventBus.publishOrThrow(envelope);
+      void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
       this.logger.debug('Published OrderAccepted event (SIMULATION MODE)', {
         orderId: virtualOrder.orderId,
@@ -222,7 +226,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         this.executionContext
       );
 
-      this.eventBus.publishOrThrow(envelope);
+      void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
       this.logger.debug('Published OrderAccepted event', {
         orderId: domainOrder.orderId,
@@ -284,7 +292,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
             this.executionContext
           );
 
-          this.eventBus.publishOrThrow(envelope);
+          void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
           this.logger.info('Published OrderAccepted despite API error (verified via getOpenOrders)', {
             orderId: domainOrder.orderId,
@@ -319,7 +331,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         this.executionContext
       );
 
-      this.eventBus.publishOrThrow(envelope);
+      void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
       this.logger.debug('Published OrderRejected event', {
         orderId: orderRejectedEvent.orderId,
@@ -363,7 +379,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         this.executionContext
       );
 
-      this.eventBus.publishOrThrow(envelope);
+      void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
       this.logger.debug('Published OrderCancelled event (SIMULATION MODE)', { orderId });
       return { canceled: [orderId], not_canceled: {} };
@@ -397,7 +417,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         this.executionContext
       );
 
-      this.eventBus.publishOrThrow(envelope);
+      void this.eventBus.publish(envelope).then((result) => {
+        if (!result.ok) {
+          this.logger.error('Event publish failed', { error: result.error.message });
+        }
+      });
 
       this.logger.debug('Published OrderCancelled event', { orderId });
     } else {

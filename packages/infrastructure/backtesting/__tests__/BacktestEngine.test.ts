@@ -66,8 +66,6 @@ function makeDeps(logger: ILogger): {
   const eventBusMock: IEventBus = {
     publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
-    publishOrThrow: jest.fn<IEventBus['publishOrThrow']>().mockResolvedValue(undefined),
-    publishAllOrThrow: jest.fn<IEventBus['publishAllOrThrow']>().mockResolvedValue(undefined),
     subscribe: jest.fn() as IEventBus['subscribe'],
   };
 

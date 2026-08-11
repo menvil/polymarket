@@ -737,13 +737,16 @@ export class MarketRotation {
     // MARKET_CLOSED event
     const closeTimestamp = TimestampService.create(Date.now());
     if (closeTimestamp.ok) {
-      await eventBus.publishOrThrow({
+      const result = await eventBus.publish({
         type: 'MARKET_CLOSED',
         marketId: slot.marketId,
         reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
         realizedPnL: Money.of(new Decimal(0), 'USDC'),
         timestamp: closeTimestamp.value,
       });
+      if (!result.ok) {
+        logger.warn('MARKET_CLOSED publish failed', { error: result.error.message, marketId: String(slot.marketId) });
+      }
     }
 
     if (reason === 'EXPIRED') {
