@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T14:40:29.789Z",
+  "generatedAt": "2026-08-11T15:30:57.089Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -7,7 +7,7 @@
       "rawDecimal": 104,
       "rawNumber": 1615,
       "rawString": 209,
-      "throwSites": 18,
+      "throwSites": 20,
       "undocumentedExports": 79,
       "totalExports": 234,
       "fileCount": 59,
@@ -78,9 +78,9 @@
       "relPath": "packages/application/market-state",
       "rawDecimal": 0,
       "rawNumber": 107,
-      "rawString": 52,
-      "throwSites": 6,
-      "undocumentedExports": 23,
+      "rawString": 50,
+      "throwSites": 12,
+      "undocumentedExports": 0,
       "totalExports": 44,
       "fileCount": 8,
       "hasDocs": false
@@ -306,11 +306,11 @@
       "relPath": "packages/foundation/ids",
       "rawDecimal": 0,
       "rawNumber": 8,
-      "rawString": 47,
+      "rawString": 49,
       "throwSites": 5,
-      "undocumentedExports": 20,
-      "totalExports": 129,
-      "fileCount": 26,
+      "undocumentedExports": 21,
+      "totalExports": 133,
+      "fileCount": 27,
       "hasDocs": true
     },
     {

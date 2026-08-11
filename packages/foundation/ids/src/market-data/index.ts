@@ -22,3 +22,6 @@ export { asVenueTradeId, unsafeVenueTradeId } from './VenueTradeId.js';
 
 export type { MarketId } from './MarketId.js';
 export { asMarketId, unsafeMarketId } from './MarketId.js';
+
+export type { CryptoAssetId } from './CryptoAssetId.js';
+export { asCryptoAssetId, unsafeCryptoAssetId } from './CryptoAssetId.js';

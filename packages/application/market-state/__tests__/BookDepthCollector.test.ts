@@ -13,10 +13,20 @@
 import { describe, it, expect } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { BookDepthCollector } from '../src/BookDepthCollector.js';
-import type { BookDepthCollectorDeps } from '../src/BookDepthCollector.js';
+import type { BookDepthCollectorDeps, BookDepthCollectorConfig } from '../src/BookDepthCollector.js';
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { OrderBookSnapshot } from '@polymarket/order-book';
+
+/** Разворачивает `Result` для тестов, где конфиг заведомо валиден. */
+function makeCollector(
+  deps: BookDepthCollectorDeps,
+  config: BookDepthCollectorConfig,
+): BookDepthCollector {
+  const result = BookDepthCollector.create(deps, config);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
 
 function makeLogger(): ILogger {
   const noop = (): void => undefined;
@@ -39,20 +49,21 @@ function makeDeps(): BookDepthCollectorDeps {
 }
 
 describe('BookDepthCollector (passive)', () => {
-  describe('конструктор', () => {
-    it('бросает RangeError на пустой политике', () => {
-      expect(() => new BookDepthCollector(makeDeps(), {})).toThrow(RangeError);
+  describe('create', () => {
+    it('возвращает Err на пустой политике', () => {
+      const result = BookDepthCollector.create(makeDeps(), {});
+      expect(result.ok).toBe(false);
     });
 
-    it('принимает maxCount или maxAgeMs', () => {
-      expect(() => new BookDepthCollector(makeDeps(), { maxCount: 100 })).not.toThrow();
-      expect(() => new BookDepthCollector(makeDeps(), { maxAgeMs: 60_000 })).not.toThrow();
+    it('возвращает Ok при maxCount или maxAgeMs', () => {
+      expect(BookDepthCollector.create(makeDeps(), { maxCount: 100 }).ok).toBe(true);
+      expect(BookDepthCollector.create(makeDeps(), { maxAgeMs: 60_000 }).ok).toBe(true);
     });
   });
 
   describe('recordDirect', () => {
     it('лениво создаёт историю и пишет снапшот', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       expect(c.getHistory(TOKEN_A)).toBeUndefined();
 
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
@@ -60,7 +71,7 @@ describe('BookDepthCollector (passive)', () => {
     });
 
     it('накапливает несколько снапшотов', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       for (let i = 0; i < 3; i++) {
         c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0 + i * 1000);
       }
@@ -68,7 +79,7 @@ describe('BookDepthCollector (passive)', () => {
     });
 
     it('изолирует истории по инструментам', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
       c.recordDirect(TOKEN_B, makeSnapshot('market-1', String(TOKEN_B)), T0);
       expect(c.instrumentCount()).toBe(2);
@@ -77,7 +88,7 @@ describe('BookDepthCollector (passive)', () => {
 
   describe('maxCount (FIFO)', () => {
     it('вытесняет старые снапшоты при превышении', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 3 });
+      const c = makeCollector(makeDeps(), { maxCount: 3 });
       for (let i = 0; i < 5; i++) {
         c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0 + i * 1000);
       }
@@ -87,40 +98,40 @@ describe('BookDepthCollector (passive)', () => {
 
   describe('clearMarket', () => {
     it('удаляет истории всех инструментов рынка', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
       c.recordDirect(TOKEN_B, makeSnapshot('market-1', String(TOKEN_B)), T0);
       expect(c.instrumentCount()).toBe(2);
 
-      c.clearMarket('market-1');
+      c.clearMarket('market-1' as unknown as MarketId);
       expect(c.getHistory(TOKEN_A)).toBeUndefined();
       expect(c.getHistory(TOKEN_B)).toBeUndefined();
       expect(c.instrumentCount()).toBe(0);
     });
 
     it('no-op для неизвестного рынка', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
-      c.clearMarket('market-unknown');
+      c.clearMarket('market-unknown' as unknown as MarketId);
       expect(c.getHistory(TOKEN_A)).toBeDefined();
       expect(c.instrumentCount()).toBe(1);
     });
 
     it('#U4 смена marketId у инструмента → чистится по новому рынку', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
       c.recordDirect(TOKEN_A, makeSnapshot('market-2', String(TOKEN_A)), T0 + 1); // «переехал»
 
-      c.clearMarket('market-1'); // старый рынок — инструмент уже не там
+      c.clearMarket('market-1' as unknown as MarketId); // старый рынок — инструмент уже не там
       expect(c.getHistory(TOKEN_A)).toBeDefined();
-      c.clearMarket('market-2'); // новый рынок — чистится
+      c.clearMarket('market-2' as unknown as MarketId); // новый рынок — чистится
       expect(c.getHistory(TOKEN_A)).toBeUndefined();
     });
   });
 
   describe('clear', () => {
     it('удаляет все истории', () => {
-      const c = new BookDepthCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       c.recordDirect(TOKEN_A, makeSnapshot('market-1', String(TOKEN_A)), T0);
       c.recordDirect(TOKEN_B, makeSnapshot('market-2', String(TOKEN_B)), T0);
       c.clear();

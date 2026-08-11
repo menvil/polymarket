@@ -46,13 +46,11 @@ export interface MarketDataInfra {
  *
  * @param params - Зависимости и настройки
  * @returns Объект с marketDataStore и marketCatalog
- * @throws {RangeError} Если политика хранения bookCollector/tapeCollector невалидна
- *   (fail-fast на старте приложения — composition root, см. BookDepthCollector/
- *   TradeTapeCollector)
- * @throws {Error} Если политика хранения TradeIndexCollector невалидна (тот же
- *   fail-fast принцип; `TradeIndexCollector.create()` сам по себе Result-based —
- *   Result конвертируется в throw именно здесь, на границе composition root, чтобы
- *   не менять сигнатуру `buildMarketData()` под один Result-возврат)
+ * @throws {Error} Если политика хранения bookCollector/tapeCollector/TradeIndexCollector
+ *   невалидна (fail-fast на старте приложения — composition root). Все три коллектора
+ *   строятся через свой `static create(): Result<...>` — Result конвертируется в throw
+ *   именно здесь, на границе composition root, чтобы не менять сигнатуру
+ *   `buildMarketData()` под один Result-возврат
  *
  * @example
  * ```typescript
@@ -68,15 +66,27 @@ export function buildMarketData(params: BuildMarketDataParams): MarketDataInfra 
   const marketCatalog = new InMemoryMarketCatalog();
 
   // Коллекторы — пассивные буферы; подписками владеет MarketDataStore (#1).
-  const bookCollector = new BookDepthCollector(
+  const bookCollectorResult = BookDepthCollector.create(
     { logger, clock },
     { maxCount: bookMaxCount },
   );
+  if (!bookCollectorResult.ok) {
+    throw new Error(
+      `buildMarketData: invalid BookDepthCollector retention policy — ${bookCollectorResult.error.message}`,
+    );
+  }
+  const bookCollector = bookCollectorResult.value;
 
-  const tapeCollector = new TradeTapeCollector(
+  const tapeCollectorResult = TradeTapeCollector.create(
     { catalog: marketCatalog, logger, clock },
     { maxCount: tapeMaxCount },
   );
+  if (!tapeCollectorResult.ok) {
+    throw new Error(
+      `buildMarketData: invalid TradeTapeCollector retention policy — ${tapeCollectorResult.error.message}`,
+    );
+  }
+  const tapeCollector = tapeCollectorResult.value;
 
   const tradeIndexResult = TradeIndexCollector.create({ maxCount: tapeMaxCount }, clock);
   if (!tradeIndexResult.ok) {

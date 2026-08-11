@@ -29,8 +29,14 @@
  * ```typescript
  * import { BookDepthCollector, TradeTapeCollector, TradeIndexCollector, MarketDataStore } from '@polymarket/market-state';
  *
- * const bookCollector = new BookDepthCollector({ logger, clock }, { maxCount: 500 });
- * const tapeCollector = new TradeTapeCollector({ catalog, logger, clock }, { maxAgeMs: 300_000 });
+ * const bookCollectorResult = BookDepthCollector.create({ logger, clock }, { maxCount: 500 });
+ * if (!bookCollectorResult.ok) throw bookCollectorResult.error;
+ * const bookCollector = bookCollectorResult.value;
+ *
+ * const tapeCollectorResult = TradeTapeCollector.create({ catalog, logger, clock }, { maxAgeMs: 300_000 });
+ * if (!tapeCollectorResult.ok) throw tapeCollectorResult.error;
+ * const tapeCollector = tapeCollectorResult.value;
+ *
  * const tradeIndexResult = TradeIndexCollector.create({ maxAgeMs: 300_000 }, clock);
  * if (!tradeIndexResult.ok) throw tradeIndexResult.error;
  * const store = new MarketDataStore({
@@ -43,21 +49,27 @@
  */
 
 export { BookDepthCollector } from './BookDepthCollector.js';
+/** Реэкспорт зависимостей/конфига BookDepthCollector (см. BookDepthCollector.ts). */
 export type { BookDepthCollectorDeps, BookDepthCollectorConfig } from './BookDepthCollector.js';
 
 export { TradeTapeCollector } from './TradeTapeCollector.js';
+/** Реэкспорт зависимостей/конфига TradeTapeCollector (см. TradeTapeCollector.ts). */
 export type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from './TradeTapeCollector.js';
 
 export { TradeIndexCollector } from './TradeIndexCollector.js';
+/** Реэкспорт конфига TradeIndexCollector (см. TradeIndexCollector.ts). */
 export type { TradeIndexCollectorConfig } from './TradeIndexCollector.js';
 
 export { MarketDataStore } from './MarketDataStore.js';
+/** Реэкспорт зависимостей/типов MarketDataStore (см. MarketDataStore.ts). */
 export type { MarketDataStoreDeps, MarketDataReason, TopOfBookState } from './MarketDataStore.js';
 
 export { CryptoResolutionStore } from './CryptoResolutionStore.js';
+/** Реэкспорт интерфейса чтения последней цены (см. CryptoResolutionStore.ts). */
 export type { LatestPriceReader } from './CryptoResolutionStore.js';
 
 export { CryptoMarketDataStore } from './CryptoMarketDataStore.js';
+/** Реэкспорт типов конфигурации/данных CryptoMarketDataStore (см. CryptoMarketDataStore.ts). */
 export type {
   CexBookTick,
   CexTradeTick,
@@ -79,6 +91,7 @@ export {
   CryptoSignalRegistry,
   createDefaultCryptoSignalRegistry,
 } from './CryptoSignalRegistry.js';
+/** Реэкспорт типов запроса/результата/контекста CryptoSignalRegistry (см. CryptoSignalRegistry.ts). */
 export type {
   CryptoSignalCalculator,
   CryptoSignalContext,

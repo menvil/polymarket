@@ -28,10 +28,12 @@
  *
  * @example
  * ```typescript
- * const collector = new BookDepthCollector(
+ * const collectorResult = BookDepthCollector.create(
  *   { logger, clock },
  *   { maxCount: 500, maxAgeMs: 300_000 },
  * );
+ * if (!collectorResult.ok) throw collectorResult.error;
+ * const collector = collectorResult.value;
  * // MarketDataStore пишет: collector.recordDirect(tokenId, snapshot, nowMs);
  *
  * // В стратегии — забрать данные и посчитать самостоятельно:
@@ -50,8 +52,11 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import type { ValidationError } from '@polymarket/errors';
 import { OrderBookHistory } from '@polymarket/order-book';
 import type { OrderBookRetentionPolicy, OrderBookSnapshot } from '@polymarket/order-book';
 
@@ -75,15 +80,15 @@ export interface BookDepthCollectorDeps {
  *
  * @remarks
  * Политика применяется одинаково ко всем инструментам.
- * Хотя бы одно поле должно быть задано (иначе конструктор `BookDepthCollector` бросит `RangeError`).
+ * Хотя бы одно поле должно быть задано (иначе `BookDepthCollector.create()` вернёт `Err`).
  *
  * @example
  * ```typescript
  * // Последние 5 минут или 1000 снапшотов (что наступит раньше):
- * const collector = new BookDepthCollector(deps, { maxCount: 1000, maxAgeMs: 300_000 });
+ * const result = BookDepthCollector.create(deps, { maxCount: 1000, maxAgeMs: 300_000 });
  *
  * // Только последние 200 снапшотов:
- * const collector = new BookDepthCollector(deps, { maxCount: 200 });
+ * const result2 = BookDepthCollector.create(deps, { maxCount: 200 });
  * ```
  */
 export type BookDepthCollectorConfig = OrderBookRetentionPolicy;
@@ -120,26 +125,41 @@ export class BookDepthCollector {
    */
   private readonly _instrumentToMarket = new Map<InstrumentId, string>();
 
-  /**
-   * @param _deps - Зависимости (logger, clock)
-   * @param _config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
-   *
-   * @throws {RangeError} Если политика невалидна — пустая, `maxCount`/`maxAgeMs` вне
-   *   допустимого диапазона (полная проверка через `OrderBookHistory.create()`, не только
-   *   "оба поля не заданы" — раньше невалидный конфиг тихо проходил конструктор и падал
-   *   только на первом живом `BOOK_DEPTH`-событии, внутри лениво вызываемого
-   *   `OrderBookHistory.create()` в `_record()`)
-   */
-  constructor(
+  private constructor(
     private readonly _deps: BookDepthCollectorDeps,
     private readonly _config: BookDepthCollectorConfig,
-  ) {
-    const validation = OrderBookHistory.create(_config, _deps.clock);
+  ) {}
+
+  /**
+   * Создаёт `BookDepthCollector` с заданной политикой хранения снапшотов.
+   *
+   * @param deps - Зависимости (logger, clock)
+   * @param config - Политика хранения снапшотов (maxCount и/или maxAgeMs)
+   * @returns `Result` с новым `BookDepthCollector` либо `ValidationError`, если
+   *   политика невалидна
+   *
+   * @remarks
+   * Полная проверка политики происходит здесь, на старте (через `OrderBookHistory.create()`,
+   * тот же валидатор, что использует ленивое создание истории в `_record()`) — не только
+   * "оба поля не заданы". Раньше (до конверсии throw→Result) невалидный конфиг тихо проходил
+   * конструктор и падал только на первом живом `BOOK_DEPTH`-событии.
+   *
+   * @example
+   * ```typescript
+   * const result = BookDepthCollector.create({ logger, clock }, { maxCount: 500 });
+   * if (!result.ok) throw result.error;
+   * const collector = result.value;
+   * ```
+   */
+  public static create(
+    deps: BookDepthCollectorDeps,
+    config: BookDepthCollectorConfig,
+  ): Result<BookDepthCollector, ValidationError> {
+    const validation = OrderBookHistory.create(config, deps.clock);
     if (!validation.ok) {
-      throw new RangeError(
-        `BookDepthCollector: invalid retention policy — ${validation.error.message}`,
-      );
+      return Err(validation.error);
     }
+    return Ok(new BookDepthCollector(deps, config));
   }
 
   /**
@@ -202,7 +222,7 @@ export class BookDepthCollector {
    * и делегирует cleanup сюда, чтобы избежать дублирующей подписки.
    * Сложность O(k), где k = число инструментов рынка (обычно 2).
    */
-  public clearMarket(marketId: string): void {
+  public clearMarket(marketId: MarketId): void {
     this._cleanup(marketId);
   }
 
@@ -297,20 +317,21 @@ export class BookDepthCollector {
    * Использует reverse index `_byMarket` — не итерирует все записи.
    * Корректно работает даже если retention eviction очистил историю полностью.
    *
-   * @param marketId - String(marketId) закрытого рынка
+   * @param marketId - ID закрытого рынка
    */
-  private _cleanup(marketId: string): void {
-    const keys = this._byMarket.get(marketId);
+  private _cleanup(marketId: MarketId): void {
+    const marketIdStr = String(marketId);
+    const keys = this._byMarket.get(marketIdStr);
     if (keys === undefined || keys.size === 0) return;
 
     for (const key of keys) {
       this._entries.delete(key);
       this._instrumentToMarket.delete(key);
     }
-    this._byMarket.delete(marketId);
+    this._byMarket.delete(marketIdStr);
 
     this._deps.logger.debug('BookDepthCollector: histories cleaned up', {
-      marketId,
+      marketId: marketIdStr,
       removed: keys.size,
     });
   }

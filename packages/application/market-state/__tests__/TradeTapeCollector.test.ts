@@ -9,7 +9,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { TradeTapeCollector } from '../src/TradeTapeCollector.js';
-import type { TradeTapeCollectorDeps } from '../src/TradeTapeCollector.js';
+import type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from '../src/TradeTapeCollector.js';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketCatalog } from '@polymarket/ports';
@@ -52,27 +52,38 @@ function makeDeps(catalog: IMarketCatalog = makeCatalog()): TradeTapeCollectorDe
   return { catalog, logger: makeLogger(), clock: new PaperClock(new Date(T0)) };
 }
 
+/** Разворачивает `Result` для тестов, где конфиг заведомо валиден. */
+function makeCollector(
+  deps: TradeTapeCollectorDeps,
+  config: TradeTapeCollectorConfig,
+): TradeTapeCollector {
+  const result = TradeTapeCollector.create(deps, config);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
 function rec(c: TradeTapeCollector, id: InstrumentId, side: Side, ms: number, marketId?: MarketId): void {
   c.recordDirect(id, px('0.65'), qty('100'), side, makeTs(ms), marketId);
 }
 
 describe('TradeTapeCollector (passive)', () => {
-  describe('конструктор', () => {
-    it('бросает RangeError на пустой политике', () => {
-      expect(() => new TradeTapeCollector(makeDeps(), {})).toThrow(RangeError);
+  describe('create', () => {
+    it('возвращает Err на пустой политике', () => {
+      const result = TradeTapeCollector.create(makeDeps(), {});
+      expect(result.ok).toBe(false);
     });
   });
 
   describe('recordDirect', () => {
     it('лениво создаёт ленту и пишет трейд', () => {
-      const c = new TradeTapeCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       expect(c.getTape(TOKEN_A)).toBeUndefined();
       rec(c, TOKEN_A, 'BUY', T0);
       expect(c.getTape(TOKEN_A)?.size()).toBe(1);
     });
 
     it('накапливает трейды', () => {
-      const c = new TradeTapeCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0);
       rec(c, TOKEN_A, 'SELL', T0 + 1000);
       expect(c.getTape(TOKEN_A)?.size()).toBe(2);
@@ -81,7 +92,7 @@ describe('TradeTapeCollector (passive)', () => {
 
   describe('maxCount (FIFO)', () => {
     it('вытесняет старые трейды', () => {
-      const c = new TradeTapeCollector(makeDeps(), { maxCount: 3 });
+      const c = makeCollector(makeDeps(), { maxCount: 3 });
       for (let i = 0; i < 5; i++) rec(c, TOKEN_A, 'BUY', T0 + i * 1000);
       expect(c.getTape(TOKEN_A)?.size()).toBe(3);
     });
@@ -90,7 +101,7 @@ describe('TradeTapeCollector (passive)', () => {
   describe('clearMarket (#2)', () => {
     it('чистит по marketId из каталога', () => {
       const catalog = makeCatalog(new Map([[String(TOKEN_A), String(MARKET_1)]]));
-      const c = new TradeTapeCollector(makeDeps(catalog), { maxCount: 100 });
+      const c = makeCollector(makeDeps(catalog), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0);
       c.clearMarket(MARKET_1);
       expect(c.getTape(TOKEN_A)).toBeUndefined();
@@ -98,7 +109,7 @@ describe('TradeTapeCollector (passive)', () => {
 
     it('явный marketId в recordDirect перекрывает каталог (инструмент вне каталога)', () => {
       // Каталог НЕ знает TOKEN_A — без явного marketId лента не попала бы в индекс
-      const c = new TradeTapeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
+      const c = makeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0, MARKET_1);
       expect(c.getTape(TOKEN_A)).toBeDefined();
 
@@ -107,7 +118,7 @@ describe('TradeTapeCollector (passive)', () => {
     });
 
     it('no-op для другого рынка', () => {
-      const c = new TradeTapeCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0, MARKET_1);
       c.clearMarket(MARKET_2);
       expect(c.getTape(TOKEN_A)).toBeDefined();
@@ -115,7 +126,7 @@ describe('TradeTapeCollector (passive)', () => {
 
     it('#1 поздняя регистрация marketId: первый трейд без marketId, потом с marketId — чистится', () => {
       // Каталог пуст, первый трейд без marketId → лента создана вне reverse index
-      const c = new TradeTapeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
+      const c = makeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0);            // marketId неизвестен
       expect(c.getTape(TOKEN_A)).toBeDefined();
 
@@ -125,7 +136,7 @@ describe('TradeTapeCollector (passive)', () => {
     });
 
     it('#1 трейд без marketId остаётся до clear(), но не ломает cleanup известных рынков', () => {
-      const c = new TradeTapeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
+      const c = makeCollector(makeDeps(makeCatalog()), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0);            // marketId неизвестен — вне reverse index
       rec(c, TOKEN_B, 'BUY', T0, MARKET_1);  // известный рынок
 
@@ -140,7 +151,7 @@ describe('TradeTapeCollector (passive)', () => {
 
   describe('clear', () => {
     it('удаляет все ленты', () => {
-      const c = new TradeTapeCollector(makeDeps(), { maxCount: 100 });
+      const c = makeCollector(makeDeps(), { maxCount: 100 });
       rec(c, TOKEN_A, 'BUY', T0, MARKET_1);
       c.clear();
       expect(c.getTape(TOKEN_A)).toBeUndefined();

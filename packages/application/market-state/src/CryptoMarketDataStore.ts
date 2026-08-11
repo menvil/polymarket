@@ -9,6 +9,14 @@
 
 import type { ILogger } from '@polymarket/logger';
 
+/**
+ * Источник цены базового крипто-актива.
+ *
+ * @remarks
+ * `polymarket_*` — цены, которые сам Polymarket использует для резолюции рынка
+ * (Chainlink-оракул, Binance-фид); `cex_*` — сырые цены с внешних бирж,
+ * используемые для сигналов (lead-lag, дивергенция), не для резолюции.
+ */
 export type CryptoPriceSource =
   | 'polymarket_chainlink'
   | 'polymarket_binance'
@@ -18,10 +26,23 @@ export type CryptoPriceSource =
   | 'cex_cryptocom'
   | 'cex_kraken';
 
+/** Идентификатор CEX-биржи, с которой стор собирает сырые стаканы/трейды. */
 export type CexVenue = 'binance' | 'coinbase' | 'okx' | 'cryptocom' | 'kraken';
 
+/** Причина изменения, передаваемая в колбэк подписчика стора. */
 export type CryptoMarketDataReason = 'CRYPTO_PRICE' | 'CRYPTO_MARKET_DATA';
 
+/**
+ * Единичное наблюдение цены базового актива из одного источника.
+ *
+ * @remarks
+ * `price`/`exchangeTsMs`/`receivedTsMs` — сырые `number` намеренно, не VO:
+ * это per-tick горячий путь (реплей бэктеста и живой сбор CEX-данных
+ * вызывают апдейт на каждое WS-событие), а `price` — крипто-спот-цена
+ * произвольного масштаба (например, ~78000 для BTC), несовместимая с
+ * диапазоном `Price` VO (`[0.0001, 0.9999]`, вероятностная цена
+ * prediction-market). См. `docs/market-state.md` за полным обоснованием.
+ */
 export interface CryptoPricePoint {
   readonly asset: string;
   readonly source: CryptoPriceSource;
@@ -30,6 +51,13 @@ export interface CryptoPricePoint {
   readonly receivedTsMs: number;
 }
 
+/**
+ * Снапшот верхних уровней стакана одной CEX-биржи в один момент времени.
+ *
+ * @remarks
+ * Обрезан до `maxBookLevels` уровней (см. {@link CryptoMarketDataStoreConfig.maxBookLevels}).
+ * Числовые поля — тот же per-tick hot-path, что {@link CryptoPricePoint}.
+ */
 export interface CexBookTick {
   readonly asset: string;
   readonly venue: CexVenue;
@@ -42,6 +70,12 @@ export interface CexBookTick {
   readonly asks: readonly (readonly [number, number])[];
 }
 
+/**
+ * Единичная сделка на CEX-бирже.
+ *
+ * @remarks
+ * `side` опционален — не все венды/фиды несут сторону агрессора для каждой сделки.
+ */
 export interface CexTradeTick {
   readonly asset: string;
   readonly venue: CexVenue;
@@ -53,6 +87,14 @@ export interface CexTradeTick {
   readonly side?: 'buy' | 'sell';
 }
 
+/**
+ * Производное состояние одной CEX-биржи «на сейчас» — top-of-book +
+ * простые метрики (mid/microprice/spread/imbalance/trade pressure).
+ *
+ * @remarks
+ * Пересчитывается на каждом апдейте книги/трейда (`updateCexBook`/`updateCexTrade`)
+ * из последних `CexBookTick`/`CexTradeTick` — не хранит собственную историю.
+ */
 export interface CexVenueState {
   readonly asset: string;
   readonly venue: CexVenue;
@@ -68,6 +110,13 @@ export interface CexVenueState {
   readonly recentTradePressure: number;
 }
 
+/**
+ * Read-only представление истории цен одного актива по всем источникам.
+ *
+ * @remarks
+ * Возвращается `getPriceHistory()` — сам стор не выставляет мутирующие методы
+ * наружу, только этот view.
+ */
 export interface CryptoPriceHistoryView {
   readonly asset: string;
   /**
@@ -111,12 +160,24 @@ export interface CryptoPriceHistoryView {
   getNearestBeforeOrAt(source: CryptoPriceSource, tsMs: number, maxDistanceMs: number): CryptoPricePoint | undefined;
 }
 
+/**
+ * Read-only представление текущего состояния всех CEX-венью одного актива.
+ *
+ * @remarks
+ * Возвращается `getVenueState()`.
+ */
 export interface CryptoVenueStateView {
   readonly asset: string;
   get(venue: CexVenue): CexVenueState | undefined;
   getAll(): readonly CexVenueState[];
 }
 
+/**
+ * Read-only представление истории книг/трейдов одного актива по всем венью.
+ *
+ * @remarks
+ * Возвращается `getVenueHistory()`.
+ */
 export interface CryptoVenueHistoryView {
   readonly asset: string;
   /**
@@ -127,6 +188,10 @@ export interface CryptoVenueHistoryView {
   getRecentTrades(venue: CexVenue, lookbackMs: number, nowMs?: number): readonly CexTradeTick[];
 }
 
+/**
+ * Конфигурация `CryptoMarketDataStore` — все поля опциональны, с разумными
+ * по умолчанию (см. константы `DEFAULT_*` в этом файле).
+ */
 export interface CryptoMarketDataStoreConfig {
   readonly priceRetentionMs?: number;
   readonly bookRetentionMs?: number;
@@ -211,6 +276,16 @@ export interface CryptoMarketDataStoreConfig {
   readonly maxHistoryCount?: number;
 }
 
+/**
+ * Вход `updatePrice()` — одно наблюдение цены из источника резолюции
+ * (Chainlink/Binance через сам Polymarket).
+ *
+ * @remarks
+ * `asset` опционален — если не задан, выводится из `symbol` через
+ * `inferAssetFromSymbol()`. `source` принимает короткие алиасы (`'chainlink'`,
+ * `'binance'`) в дополнение к полным `CryptoPriceSource`-значениям — маппятся
+ * на `polymarket_chainlink`/`polymarket_binance` внутри.
+ */
 export interface UpdateCryptoPriceInput {
   readonly symbol: string;
   readonly price: number;
@@ -220,6 +295,13 @@ export interface UpdateCryptoPriceInput {
   readonly source?: CryptoPriceSource | 'chainlink' | 'binance';
 }
 
+/**
+ * Вход `updateCexBook()` — снапшот стакана одной CEX-биржи.
+ *
+ * @remarks
+ * `bids`/`asks` обрезаются до `maxBookLevels` внутри стора — вызывающий может
+ * передать полный стакан, лишние уровни просто отбрасываются.
+ */
 export interface UpdateCexBookInput {
   readonly venue: CexVenue;
   readonly symbol: string;
@@ -230,6 +312,7 @@ export interface UpdateCexBookInput {
   readonly asks: readonly (readonly [number, number])[];
 }
 
+/** Вход `updateCexTrade()` — одна сделка на CEX-бирже. */
 export interface UpdateCexTradeInput {
   readonly venue: CexVenue;
   readonly symbol: string;
@@ -271,6 +354,30 @@ const DEFAULT_MATERIAL_MOVE_MIN_INTERVAL_MS = 50;
  */
 const MIN_PLAUSIBLE_EPOCH_MS = 1_000_000_000_000;
 
+/**
+ * Long-lived хранилище цен базового крипто-актива и сырых CEX-стаканов/трейдов.
+ *
+ * @remarks
+ * Asset-scoped (BTC/ETH/...), не market-scoped — история актива переживает
+ * ротацию 5-минутных Polymarket-рынков (см. TSDoc модуля вверху файла).
+ *
+ * Числовые поля всех входов/представлений (`price`, `exchangeTsMs`,
+ * `receivedTsMs`, `bids`/`asks`) — намеренно `number`, не VO (`Price`/
+ * `Timestamp`): это per-tick hot-path (реплей бэктеста и живой сбор
+ * CEX-данных пишут на каждое WS-событие через `updatePrice`/`updateCexBook`/
+ * `updateCexTrade`), а крипто-спот-цена несовместима с диапазоном `Price` VO.
+ * Полное обоснование — `docs/market-state.md`.
+ *
+ * @example
+ * ```typescript
+ * const store = new CryptoMarketDataStore({ logger });
+ * store.updatePrice({ symbol: 'BTC/USD', price: 78_237, timestampMs: Date.now() });
+ * store.updateCexBook({ venue: 'binance', symbol: 'BTCUSDT', exchangeTsMs: Date.now(), bids, asks });
+ *
+ * const history = store.getPriceHistory('btc');
+ * const latest = history?.getLatest('polymarket_chainlink');
+ * ```
+ */
 export class CryptoMarketDataStore {
   private readonly _priceRetentionMs: number;
   private readonly _bookRetentionMs: number;

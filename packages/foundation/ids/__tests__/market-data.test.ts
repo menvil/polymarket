@@ -8,6 +8,7 @@ import {
   isLiveSource,
   isReplaySource,
   asInstrumentId,
+  asCryptoAssetId,
 } from '../src/index.js';
 
 describe('Market Data IDs', () => {
@@ -206,6 +207,55 @@ describe('Market Data IDs', () => {
       expect(asInstrumentId(undefined as any)).toBeUndefined();
       expect(asInstrumentId(0 as any)).toBeUndefined();
       expect(asInstrumentId({} as any)).toBeUndefined();
+    });
+  });
+
+  describe('CryptoAssetId', () => {
+    it('should parse valid crypto asset ids', () => {
+      expect(asCryptoAssetId('btc')).toBe('btc');
+      expect(asCryptoAssetId('eth')).toBe('eth');
+      expect(asCryptoAssetId('sol')).toBe('sol');
+      expect(asCryptoAssetId('xrp')).toBe('xrp');
+      expect(asCryptoAssetId('matic')).toBe('matic');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asCryptoAssetId('  btc  ')).toBe('btc');
+      expect(asCryptoAssetId('\teth\n')).toBe('eth');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asCryptoAssetId('')).toBeUndefined();
+      expect(asCryptoAssetId('  ')).toBeUndefined();
+      expect(asCryptoAssetId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(32);
+      const tooLong = 'x'.repeat(33);
+
+      expect(asCryptoAssetId(maxLength)).toBe(maxLength);
+      expect(asCryptoAssetId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asCryptoAssetId('bt\x00c')).toBeUndefined(); // null
+      expect(asCryptoAssetId('bt\x01c')).toBeUndefined(); // start of heading
+      expect(asCryptoAssetId('bt\x1Fc')).toBeUndefined(); // unit separator
+      expect(asCryptoAssetId('bt\x7Fc')).toBeUndefined(); // delete
+      expect(asCryptoAssetId('bt\x9Fc')).toBeUndefined(); // application program command
+    });
+
+    it('should not validate membership in any known asset list', () => {
+      // Пространство значений открытое — валидатор не проверяет "известность" актива
+      expect(asCryptoAssetId('unknown-new-listing')).toBe('unknown-new-listing');
+    });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      expect(asCryptoAssetId(null as any)).toBeUndefined();
+      expect(asCryptoAssetId(undefined as any)).toBeUndefined();
+      expect(asCryptoAssetId(0 as any)).toBeUndefined();
+      expect(asCryptoAssetId({} as any)).toBeUndefined();
     });
   });
 });

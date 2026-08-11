@@ -35,10 +35,12 @@
  *
  * @example
  * ```typescript
- * const collector = new TradeTapeCollector(
+ * const collectorResult = TradeTapeCollector.create(
  *   { catalog, logger, clock },
  *   { maxCount: 1000, maxAgeMs: 300_000 },
  * );
+ * if (!collectorResult.ok) throw collectorResult.error;
+ * const collector = collectorResult.value;
  * // MarketDataStore пишет: collector.recordDirect(tokenId, price, size, side, ts, marketId);
  *
  * // В стратегии — взять ленту за последнюю минуту и посчитать:
@@ -53,6 +55,9 @@
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import type { ValidationError } from '@polymarket/errors';
 import type { Side } from '@polymarket/value-objects';
 import type { IMarketCatalog } from '@polymarket/ports';
 import { TradeTape } from '@polymarket/trade-tape';
@@ -118,26 +123,41 @@ export class TradeTapeCollector {
    */
   private readonly _instrumentToMarket = new Map<InstrumentId, string>();
 
-  /**
-   * @param _deps - Зависимости (catalog, logger, clock)
-   * @param _config - Политика хранения (maxCount и/или maxAgeMs)
-   *
-   * @throws {RangeError} Если политика невалидна — пустая, `maxCount`/`maxAgeMs` вне
-   *   допустимого диапазона (полная проверка через `TradeTape.create()`, не только
-   *   "оба поля не заданы" — раньше невалидный конфиг тихо проходил конструктор и падал
-   *   только на первом живом трейде, внутри лениво вызываемого `TradeTape.create()`
-   *   в `_record()`)
-   */
-  constructor(
+  private constructor(
     private readonly _deps: TradeTapeCollectorDeps,
     private readonly _config: TradeTapeCollectorConfig,
-  ) {
-    const validation = TradeTape.create(_config, _deps.clock);
+  ) {}
+
+  /**
+   * Создаёт `TradeTapeCollector` с заданной политикой хранения трейдов.
+   *
+   * @param deps - Зависимости (catalog, logger, clock)
+   * @param config - Политика хранения (maxCount и/или maxAgeMs)
+   * @returns `Result` с новым `TradeTapeCollector` либо `ValidationError`, если
+   *   политика невалидна
+   *
+   * @remarks
+   * Полная проверка политики происходит здесь, на старте (через `TradeTape.create()`,
+   * тот же валидатор, что использует ленивое создание ленты в `_record()`) — не только
+   * "оба поля не заданы". Раньше (до конверсии throw→Result) невалидный конфиг тихо проходил
+   * конструктор и падал только на первом живом трейде.
+   *
+   * @example
+   * ```typescript
+   * const result = TradeTapeCollector.create({ catalog, logger, clock }, { maxCount: 1000 });
+   * if (!result.ok) throw result.error;
+   * const collector = result.value;
+   * ```
+   */
+  public static create(
+    deps: TradeTapeCollectorDeps,
+    config: TradeTapeCollectorConfig,
+  ): Result<TradeTapeCollector, ValidationError> {
+    const validation = TradeTape.create(config, deps.clock);
     if (!validation.ok) {
-      throw new RangeError(
-        `TradeTapeCollector: invalid retention policy — ${validation.error.message}`,
-      );
+      return Err(validation.error);
     }
+    return Ok(new TradeTapeCollector(deps, config));
   }
 
   /**
