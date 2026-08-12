@@ -13,6 +13,7 @@ import type { AssetId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids
 import { unsafeStrategyId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
 import Decimal from 'decimal.js';
 import { EdgeTable, type EdgeZone, type Regime } from './calibrated-crowd/EdgeTable.js';
 import { RegimeDetector } from './calibrated-crowd/RegimeDetector.js';

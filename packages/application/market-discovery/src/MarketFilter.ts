@@ -22,6 +22,7 @@
  * Например, `excludedKeywords: ['war']` не будет матчить `'reward'` или `'forward'`.
  * Спецсимволы regex в ключевых словах (например `'$50'`, `'c++'`) экранируются автоматически.
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T21:55:08.471Z",
+  "generatedAt": "2026-08-12T11:01:51.453Z",
   "packages": [
     {
       "name": "@polymarket/bot",
@@ -23,7 +23,7 @@
       "undocumentedExports": 0,
       "totalExports": 18,
       "fileCount": 6,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/pnl",
@@ -35,7 +35,7 @@
       "undocumentedExports": 0,
       "totalExports": 24,
       "fileCount": 9,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/event-bus",
@@ -155,7 +155,7 @@
       "undocumentedExports": 3,
       "totalExports": 10,
       "fileCount": 5,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/cross-market",
@@ -371,7 +371,7 @@
       "undocumentedExports": 1,
       "totalExports": 1,
       "fileCount": 2,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/backtesting",
@@ -383,7 +383,7 @@
       "undocumentedExports": 5,
       "totalExports": 27,
       "fileCount": 9,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/cex-market-data",
@@ -395,7 +395,7 @@
       "undocumentedExports": 6,
       "totalExports": 25,
       "fileCount": 8,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/in-memory",
@@ -407,7 +407,7 @@
       "undocumentedExports": 2,
       "totalExports": 9,
       "fileCount": 8,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/data-collection",
@@ -419,7 +419,7 @@
       "undocumentedExports": 6,
       "totalExports": 12,
       "fileCount": 8,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/snapshot-readers",
@@ -431,7 +431,7 @@
       "undocumentedExports": 6,
       "totalExports": 11,
       "fileCount": 7,
-      "hasDocs": false
+      "hasDocs": true
     },
     {
       "name": "@polymarket/exchange",
@@ -443,7 +443,7 @@
       "undocumentedExports": 22,
       "totalExports": 178,
       "fileCount": 75,
-      "hasDocs": false
+      "hasDocs": true
     }
   ]
 }

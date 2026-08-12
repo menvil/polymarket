@@ -5,7 +5,7 @@
     "project": "./tsconfig.lint.json"
   },
   "rules": {
-    "no-restricted-imports": "off"
+    "@typescript-eslint/no-restricted-imports": "off"
   },
   "ignorePatterns": ["dist/", "node_modules/", "coverage/", "*.js", "jest.config.ts"]
 }

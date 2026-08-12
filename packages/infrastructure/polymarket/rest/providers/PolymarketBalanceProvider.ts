@@ -26,6 +26,7 @@
  * ```
  */
 
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { Money, AssetQuantity, Quantity } from '@polymarket/value-objects';

@@ -63,6 +63,7 @@ import { TimestampService } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
 import { calculatePolymarketTakerFee } from '@polymarket/fill';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 
 // ── Типы ─────────────────────────────────────────────────────────────────────

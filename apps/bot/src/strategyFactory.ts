@@ -12,6 +12,7 @@
  * scheduler.register({ strategy, instrumentId, asset, accountId, market });
  * ```
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
 import Decimal from 'decimal.js';
 import type { IStrategy } from '@polymarket/strategy';
 import type { ILogger } from '@polymarket/logger';

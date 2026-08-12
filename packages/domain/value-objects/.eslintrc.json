@@ -5,6 +5,6 @@
     "tsconfigRootDir": "."
   },
   "rules": {
-    "no-restricted-imports": "off"
+    "@typescript-eslint/no-restricted-imports": "off"
   }
 }

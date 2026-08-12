@@ -31,7 +31,7 @@
  * ```bash
  * node scripts/scan-conventions.mjs
  * # → docs/migration/debt.md (таблица) + docs/migration/debt.json (сырые данные)
- * # + docs/migration/decimal-import-files.txt (allowlist для ESLint Этапа 0.4)
+ * # + docs/migration/decimal-import-files.txt (реестр точечных ESLint-исключений, Этап 11)
  * ```
  */
 
@@ -292,13 +292,13 @@ function main() {
     `| **ИТОГО** | **${totalRow.rawDecimal}** | **${totalRow.rawNumber}** | **${totalRow.rawString}** | **${totalRow.throwSites}** | **${totalRow.undocumentedExports}/${totalRow.totalExports}** | **${totalRow.noDocsCount} пакетов без docs/** |`,
   );
   lines.push('');
-  lines.push(`\`decimal.js\` импортируется вне \`value-objects\`/\`math\` в ${decimalImportFiles.length} файлах — полный список в \`docs/migration/decimal-import-files.txt\` (allowlist для ESLint-правила Этапа 0.4).`);
+  lines.push(`\`decimal.js\` импортируется вне \`value-objects\`/\`math\` в ${decimalImportFiles.length} файлах — полный список в \`docs/migration/decimal-import-files.txt\`. С Этапа 11 правило \`@typescript-eslint/no-restricted-imports\` — \`error\`; каждый файл в списке несёт точечный \`eslint-disable-next-line\` со ссылкой на конкретное Решение ADR (не TODO-список на конверсию, см. \`docs/migration/README.md\`).`);
   lines.push('');
 
   fs.writeFileSync(path.join(migrationDir, 'debt.md'), lines.join('\n'));
 
   // eslint-disable-next-line no-console
-  console.log(`Написано: docs/migration/debt.md, debt.json, decimal-import-files.txt (${rows.length} пакетов, ${decimalImportFiles.length} decimal.js-импортов вне allowlist)`);
+  console.log(`Написано: docs/migration/debt.md, debt.json, decimal-import-files.txt (${rows.length} пакетов, ${decimalImportFiles.length} decimal.js-импортов вне value-objects/math)`);
 }
 
 main();

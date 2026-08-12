@@ -46,14 +46,23 @@ interface IOrderStateStore {
 ### Шаг 4: IStrategy + BaseStrategy
 ```typescript
 interface IStrategy {
-  readonly id: string;
+  readonly id: StrategyId;
   readonly name: string;
   initialize(): Promise<Result<void, Error>>;
+  dispose(): Promise<Result<void, Error>>;   // cleanup НЕторговых ресурсов после stop()
   tick(snapshot, reasons): StrategyIntent[];  // sync!
-  stop(): StrategyIntent[];
+  stop(): StrategyStopIntent[];               // только CANCEL/CANCEL_ALL, без PLACE
   getMetrics(): Record<string, unknown>;
 }
 ```
+
+`id: StrategyId` — branded тип (`@polymarket/ids`), не голый `string` (подключён в Этапе
+10b плана миграции). `dispose()` — освобождает НЕторговые ресурсы, открытые в
+`initialize()`; вызывается scheduler'ом ровно один раз ПОСЛЕ фактического успеха (retryable
+при `Err`/timeout — tombstone хранится, следующий `unregister()`/`stopAll()` повторит).
+`stop()` возвращает `StrategyStopIntent[]` — компилятор ограничивает финальный batch только
+CANCEL/CANCEL_ALL (PLACE недопустим на уровне типов; `StrategyScheduler` дополнительно
+проверяет это в рантайме на случай unsafe casts).
 
 `BaseStrategy<TData, TAction>` — gather → decide → toIntents pipeline.
 
@@ -62,10 +71,15 @@ interface IStrategy {
 ```typescript
 interface InstrumentConstraints {
   readonly minOrderSize: Quantity;
-  readonly minOrderValue: Quantity;
+  readonly minOrderValue: Money;   // денежный notional (USDC), НЕ количество токенов
   readonly tickSize: Price;
 }
 ```
+
+`minOrderValue: Money`, не `Quantity` — это минимальная стоимость ордера в USDC
+(`price × size >= minOrderValue`, Polymarket требует `>= $1` для BUY), а не количество
+токенов. Соседнее поле `minOrderSize: Quantity` — наоборот, количество токенов, не деньги;
+два поля легко перепутать по смыслу, отсюда явная пометка здесь.
 
 #### Helpers в BaseStrategy
 Два protected-метода для адаптации размеров ордеров с учётом constraints:
@@ -208,3 +222,10 @@ Config: `{ intervalMs, fillLookbackMs }`.
 | `ACCOUNT_ID` | ID аккаунта | `venue:POLYMARKET:dev-account` |
 | `INITIAL_BALANCE` | Начальный баланс USDC | `1000` |
 | `EXPIRATION_MS` | Время экспирации (epoch ms) | +24 часа |
+
+## Ссылки
+
+- API-референс `@polymarket/strategy`: `packages/application/strategy/docs/strategy.md`
+- Lifecycle/concurrency/execution-safety (более новый, детальный гайд):
+  [strategy-lifecycle-execution-safety.md](./strategy-lifecycle-execution-safety.md)
+- ADR: `docs/architecture/boundary-contract.md`

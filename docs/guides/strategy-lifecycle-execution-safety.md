@@ -580,7 +580,7 @@ re-check небезопасен — entry остаётся, `disposed` оста�
 
 ```typescript
 interface PendingDisposal {
-  readonly strategyId: string;
+  readonly strategyId: StrategyId;
   readonly strategy: IStrategy;
   disposeExecution: TrackedAsyncOperation<Result<void, Error>> | undefined;
   disposed: boolean;

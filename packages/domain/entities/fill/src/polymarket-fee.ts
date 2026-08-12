@@ -20,6 +20,7 @@
  * и у неё 11+ реальных потребителей в `apps/bot/strategies/*`/`apps/pnl`/`domain/cross-market`,
  * ожидающих `number`.
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { AssetIdHelpers } from '@polymarket/ids';

@@ -8,6 +8,12 @@
  * Все тексты причин — реальные/правдоподобные ответы Polymarket CLOB API.
  */
 import { describe, it, expect, jest } from '@jest/globals';
+// Тестовая фикстура строит Price/Quantity через VO-конструктор
+// (Price.of(new Decimal(...))), см. docs/architecture/boundary-contract.md, Решение 1.
+// __tests__/ исключён из scan-conventions.mjs's decimal-import-files.txt по дизайну
+// скрипта, но само ESLint-правило такого исключения не имеет — этот сайт найден
+// repo-wide lint-прогоном Этапа 11, не сканером.
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import Decimal from 'decimal.js';
 import { PolymarketExchangeClientAdapter } from '../adapters/PolymarketExchangeClientAdapter.js';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';

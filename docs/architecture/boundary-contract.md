@@ -171,15 +171,16 @@ lint && typecheck`) не дожидаясь, пока смигрируют вс�
 ### 7. Что осознанно не реализуется в рамках этой миграции
 
 - **UnitOfWork / IKeyedMutex TTL / recoverIncomplete()** — 5 TODO по коду
-  (`IOrderStateStore.ts:240`, `IKeyedMutex.ts:48`, `IMarketDataRecorder.ts:131`,
+  (`IOrderStateStore.ts:241`, `IKeyedMutex.ts:48`, `IMarketDataRecorder.ts:131`,
   `ProcessFillUseCase.ts:821-822`, `PlaceOrderUseCase.ts:15,1015`) указывают на одну
   архитектурную проблему — нет транзакционной границы через
   Order+Portfolio+Ledger+ProcessedFill. Это concurrency/consistency-архитектура, другой
-  род работы и риска, чем типизация. `docs/architecture/unit-of-work.md` (пишется на
-  Этапе 5) — реальный design-документ с конкретным предлагаемым решением, не архив.
+  род работы и риска, чем типизация. `docs/architecture/unit-of-work.md` будет написан в
+  начале Этапа 12 как реальный design-документ с конкретным предлагаемым решением —
+  на момент Этапа 11 этот файл ещё не существует (см. Этап 12 ниже за деталями).
   Реализация — **Этап 12, следующий сразу за Этапом 11**, отдельная сессия планирования.
 - **`MARKET_OPENED`/`MARKET_CLOSED` без продюсеров** — события уже есть в
-  `ApplicationEvent` union (`event-bus/src/events/index.ts:65,66`), но никто их не
+  `ApplicationEvent` union (`event-bus/src/events/index.ts:69,70`), но никто их не
   публикует. Миграция не должна ломать эти контракты (сигнатуры трогать можно и нужно
   по правилам выше, публикацию не заводим).
   Реализация продюсеров — вне скоупа этой миграции.

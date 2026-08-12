@@ -57,6 +57,7 @@
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { StrategyId } from '@polymarket/ids';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { IStrategy } from './IStrategy.js';
 import type { StrategySnapshot } from './types/StrategySnapshot.js';

@@ -21,6 +21,7 @@
  * {@link hasHeldReservation}. Отдельный `reservationHeld: boolean` намеренно НЕ
  * вводится (легко рассинхронизируется с amount-ами).
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- точная decimal-строка персистентной записи, см. docs/architecture/boundary-contract.md, Решение 13
 import Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';

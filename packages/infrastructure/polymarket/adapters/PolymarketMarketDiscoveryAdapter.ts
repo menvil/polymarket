@@ -43,6 +43,7 @@
  * console.log(`Discovered ${candidates.length} tradeable markets`);
  * ```
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';

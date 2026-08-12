@@ -17,6 +17,7 @@
  * Рынки с ближайшим истечением торгуются активнее и имеют более чёткий исход.
  * При прочих равных предпочитаем более ликвидные рынки для лучшего исполнения ордеров.
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { IClock } from '@polymarket/time';
 import type { DiscoveredMarket } from '@polymarket/ports';

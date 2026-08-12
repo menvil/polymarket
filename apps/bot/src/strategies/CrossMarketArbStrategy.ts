@@ -39,6 +39,7 @@
  * ```
  */
 
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
 import Decimal from 'decimal.js';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';

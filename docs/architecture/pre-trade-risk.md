@@ -99,8 +99,8 @@ lock — время ожидания lock/network прошло). Правила:
 RiskConfigError>` валидирует:
 
 - `maxOpenOrders`, `minTimeToExpiryMs` — целые числа `>= 0`;
-- `maxPositionSize`, `maxTotalExposure`, `maxOrderNotional`, `minAvailableBalance`
-  — finite (не NaN/Infinity) Decimal `>= 0`.
+- `maxPositionSize` — `Quantity` (количество токенов);
+- `maxTotalExposure`, `maxOrderNotional`, `minAvailableBalance` — `Money` (USDC).
 
 `RiskPolicy.create` — **полноценный runtime-валидатор границы** (принимает
 `unknown`, никогда не бросает — всегда `Result`):
@@ -112,12 +112,21 @@ RiskConfigError>` валидирует:
 - каждое поле читается один раз (устойчиво к getter'ам с side-effects);
 - неизвестный own-ключ → `Err` независимо от значения (включая `undefined`);
   защита от опечаток и удалённых лимитов вроде `maxDrawdown`;
-- Decimal-поля проверяются через `Decimal.isDecimal()` до вызова методов
-  (число/строка → `Err`, не `throw`);
+- `maxPositionSize` — `instanceof Quantity` (сам тип уже enforces `>= 0` на
+  конструкторе — отдельная проверка неотрицательности не нужна);
+- `maxTotalExposure`/`maxOrderNotional`/`minAvailableBalance` — `instanceof Money`
+  И `>= 0` явной проверкой (`Money` core сознательно допускает отрицательные суммы
+  — неотрицательность здесь бизнес-правило риск-политики, не инвариант типа);
 - если runtime-introspection (`Object.keys`/`getPrototypeOf`/getter/Proxy-trap)
   бросает — `Err('<root>')`, а не исключение;
 - собирается замороженный объект только из whitelisted validated own-полей;
 - сообщения об ошибках не включают полное raw-значение конфига (только тип/поле).
+
+`instanceof`-проверка на `unknown` никогда не бросает — то же свойство «никогда не
+throw» у `RiskPolicy.create()`, что и раньше при ручной `Decimal.isDecimal()`-проверке,
+сохраняется без изменений после перехода полей на VO. Это общий паттерн для будущих
+`create()`-фабрик, валидирующих `unknown` с VO-полями — см.
+`docs/architecture/boundary-contract.md`, Решение 9.
 
 `RiskPolicy` — **номинальный тип** (private brand-поле): структурно совместимый
 plain object нельзя присвоить `RiskPolicy` на уровне TypeScript-компилятора. Это
@@ -196,3 +205,4 @@ submission journal) — **отдельная будущая задача**, зд
 
 - [Reservation journal safety](./reservation-journal-safety.md)
 - [Ordered event outbox](./ordered-event-outbox.md)
+- [@polymarket/risk — API-референс](../../packages/application/risk/docs/risk.md)

@@ -26,6 +26,7 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type {
   BotConfig,

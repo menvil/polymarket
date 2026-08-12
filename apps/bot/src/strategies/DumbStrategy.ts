@@ -54,6 +54,7 @@ import { Price, Quantity } from '@polymarket/value-objects';
 import type { OrderId, StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
 import Decimal from 'decimal.js';
 
 // ── Конфигурация ─────────────────────────────────────────────────────────────

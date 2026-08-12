@@ -91,6 +91,7 @@ import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { ValidationError } from '@polymarket/errors';
 import type { PositionId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { PositionLot } from './core/PositionLot.js';
 import {

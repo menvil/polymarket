@@ -55,6 +55,7 @@ import { Price, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
 import { AssetIdHelpers, accountIdToString, assetIdToString } from '@polymarket/ids';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import {
   TERMINAL_STATUSES,

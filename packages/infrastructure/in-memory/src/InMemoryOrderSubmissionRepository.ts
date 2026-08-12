@@ -47,6 +47,7 @@
  * }
  * ```
  */
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- точная decimal-строка персистентной записи, см. docs/architecture/boundary-contract.md, Решение 13
 import Decimal from 'decimal.js';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';

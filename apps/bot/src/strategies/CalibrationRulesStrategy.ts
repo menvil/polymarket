@@ -6,6 +6,7 @@
  * только maker BUY по UP-токену. После fill позиция держится до экспирации.
  */
 import { readFileSync } from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
 import Decimal from 'decimal.js';
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategyIntent, StrategySnapshot, TriggerReason } from '@polymarket/strategy';
