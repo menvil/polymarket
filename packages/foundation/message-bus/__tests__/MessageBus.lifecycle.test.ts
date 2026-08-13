@@ -208,6 +208,33 @@ describe('MessageBus lifecycle', () => {
       expect(bus.getStats().queueSize).toBe(0);
     });
 
+    it('close() на idle-bus с сохранённой после critical-сбоя очередью сам запускает drain и дообрабатывает её', async () => {
+      const bus = new MessageBus<TestMessage>();
+      const delivered: number[] = [];
+      bus.subscribe('HEARTBEAT', (message) => {
+        if (message.seq === 1) throw new Error('critical on 1');
+        delivered.push(message.seq);
+      }, { critical: true });
+
+      // Critical-сбой на 1: владелец получает Err, очередь [2] сохранена, ownership отпущен
+      const batch = await bus.publishAll([heartbeat(1), heartbeat(2)]);
+      expect(batch.ok).toBe(false);
+      expect(bus.getStats().queueSize).toBe(1);
+      expect(bus.getStats().dispatching).toBe(false);
+
+      // close() при отсутствии активного drain обязан САМ запустить drain остатка
+      const closeResult = await bus.close();
+      expect(closeResult.ok).toBe(true);
+      expect(delivered).toEqual([2]);
+      expect(bus.getStats().queueSize).toBe(0);
+      expect(bus.getStats().closed).toBe(true);
+
+      // Bus закрыт для новых публикаций
+      const rejected = await bus.publish(heartbeat(3));
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error).toBeInstanceOf(MessageBusClosedError);
+    });
+
     it('повторный close безопасен (идемпотентен)', async () => {
       const bus = new MessageBus<TestMessage>();
       const first = await bus.close();
