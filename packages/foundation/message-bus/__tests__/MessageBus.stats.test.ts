@@ -1,0 +1,168 @@
+/**
+ * Тесты диагностики MessageBus (getStats): флаги состояния и счётчики.
+ *
+ * @remarks
+ * Проверяется только публичный снимок getStats() — приватные поля не инспектируются.
+ */
+import { describe, it, expect } from '@jest/globals';
+import { MessageBus, createMessageBusPolicy } from '@polymarket/message-bus';
+
+type TestMessage =
+  | { readonly type: 'PRICE'; readonly seq: number }
+  | { readonly type: 'TRADE'; readonly tradeId: string };
+
+function price(seq: number): TestMessage {
+  return { type: 'PRICE', seq };
+}
+
+function makeGate(): { promise: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
+describe('MessageBus stats', () => {
+  it('idle-снимок: нули, dispatching=false, closed=false', () => {
+    const bus = new MessageBus<TestMessage>();
+    expect(bus.getStats()).toEqual({
+      queueSize: 0,
+      subscribedTypes: 0,
+      dispatching: false,
+      closed: false,
+      publishedTotal: 0,
+      dispatchedTotal: 0,
+      handlerErrorsTotal: 0,
+      rejectedPublicationsTotal: 0,
+    });
+  });
+
+  it('во время активного drain: dispatching=true, queueSize считает только ожидающие', async () => {
+    const bus = new MessageBus<TestMessage>();
+    const gate = makeGate();
+    bus.subscribe('PRICE', async (message) => {
+      if (message.seq === 1) await gate.promise;
+    });
+
+    const owner = bus.publish(price(1)); // in-flight — в queueSize не входит
+    await bus.publish(price(2));
+    await bus.publish(price(3));
+
+    const stats = bus.getStats();
+    expect(stats.dispatching).toBe(true);
+    expect(stats.queueSize).toBe(2);
+
+    gate.release();
+    await owner;
+    expect(bus.getStats().dispatching).toBe(false);
+    expect(bus.getStats().queueSize).toBe(0);
+  });
+
+  it('subscribedTypes отражает жизненный цикл подписок без утечек', () => {
+    const bus = new MessageBus<TestMessage>();
+    expect(bus.getStats().subscribedTypes).toBe(0);
+
+    const unsubPriceA = bus.subscribe('PRICE', () => {});
+    expect(bus.getStats().subscribedTypes).toBe(1);
+
+    // Второй обработчик того же типа не увеличивает количество типов
+    const unsubPriceB = bus.subscribe('PRICE', () => {});
+    expect(bus.getStats().subscribedTypes).toBe(1);
+
+    const unsubTrade = bus.subscribe('TRADE', () => {});
+    expect(bus.getStats().subscribedTypes).toBe(2);
+
+    // Отписка НЕ последнего обработчика типа — тип остаётся
+    unsubPriceA();
+    expect(bus.getStats().subscribedTypes).toBe(2);
+
+    // Отписка последнего обработчика типа — тип исчезает
+    unsubPriceB();
+    expect(bus.getStats().subscribedTypes).toBe(1);
+    unsubTrade();
+    expect(bus.getStats().subscribedTypes).toBe(0);
+  });
+
+  it('publishedTotal: одиночные публикации и принятый batch; отклонённый batch не считается', async () => {
+    const bus = new MessageBus<TestMessage>({
+      policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 5 } }),
+    });
+
+    await bus.publish(price(1));
+    expect(bus.getStats().publishedTotal).toBe(1);
+
+    await bus.publishAll([price(2), price(3), price(4)]);
+    expect(bus.getStats().publishedTotal).toBe(4);
+
+    // Batch, не влезающий в лимит, отклоняется целиком и не увеличивает счётчик
+    const gate = makeGate();
+    bus.subscribe('PRICE', async () => { await gate.promise; });
+    const owner = bus.publish(price(5)); // publishedTotal 5, in-flight
+    expect(bus.getStats().publishedTotal).toBe(5);
+    const rejected = await bus.publishAll([price(6), price(7), price(8), price(9), price(10), price(11)]);
+    expect(rejected.ok).toBe(false);
+    expect(bus.getStats().publishedTotal).toBe(5);
+
+    gate.release();
+    await owner;
+  });
+
+  it('dispatchedTotal: сообщение без подписчиков и critical-сбойное сообщение считаются dispatched', async () => {
+    const bus = new MessageBus<TestMessage>();
+
+    // Без подписчиков — всё равно dispatched после прохождения drain
+    await bus.publish(price(1));
+    expect(bus.getStats().dispatchedTotal).toBe(1);
+
+    // Critical-сбой: fan-out завершён → сообщение считается dispatched
+    bus.subscribe('PRICE', () => { throw new Error('critical'); }, { critical: true });
+    const failed = await bus.publish(price(2));
+    expect(failed.ok).toBe(false);
+    expect(bus.getStats().dispatchedTotal).toBe(2);
+  });
+
+  it('handlerErrorsTotal: считает и critical, и non-critical падения', async () => {
+    const bus = new MessageBus<TestMessage>();
+    bus.subscribe('PRICE', () => { throw new Error('non-critical'); });
+    bus.subscribe('PRICE', async () => { throw new Error('critical'); }, { critical: true });
+
+    const result = await bus.publish(price(1));
+
+    expect(result.ok).toBe(false);
+    expect(bus.getStats().handlerErrorsTotal).toBe(2);
+  });
+
+  it('rejectedPublicationsTotal: одна отклонённая операция = +1, независимо от размера batch', async () => {
+    const bus = new MessageBus<TestMessage>({
+      policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 1 } }),
+    });
+    const gate = makeGate();
+    bus.subscribe('PRICE', async () => { await gate.promise; });
+
+    const owner = bus.publish(price(1)); // in-flight
+    await bus.publish(price(2)); // очередь [2] — лимит исчерпан
+
+    const single = await bus.publish(price(3));
+    expect(single.ok).toBe(false);
+    expect(bus.getStats().rejectedPublicationsTotal).toBe(1);
+
+    // Отклонённый batch из 100 сообщений — по-прежнему одна операция
+    const bigBatch = Array.from({ length: 100 }, (_, i) => price(10 + i));
+    const batchResult = await bus.publishAll(bigBatch);
+    expect(batchResult.ok).toBe(false);
+    expect(bus.getStats().rejectedPublicationsTotal).toBe(2);
+
+    gate.release();
+    await owner;
+  });
+
+  it('closed-флаг после close, отклонения после close считаются', async () => {
+    const bus = new MessageBus<TestMessage>();
+    expect(bus.getStats().closed).toBe(false);
+
+    await bus.close();
+    expect(bus.getStats().closed).toBe(true);
+
+    await bus.publish(price(1));
+    expect(bus.getStats().rejectedPublicationsTotal).toBe(1);
+  });
+});
