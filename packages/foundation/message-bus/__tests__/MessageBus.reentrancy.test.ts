@@ -129,6 +129,40 @@ describe('MessageBus reentrancy', () => {
     expect(bus.getStats().dispatching).toBe(false);
   });
 
+  it('publish на границе завершения drain: Ok обязан означать доставку — lost wake-up исключён', async () => {
+    // Инвариант: если publish вернул Ok, сообщение доставляется без ручного drain(),
+    // в каком бы microtask-е относительно завершения текущего drain он ни случился.
+    // Sweep по k накрывает все фазы: во время drain, в окне завершения (enqueue при
+    // ещё зарегистрированном активном drain) и после release ownership.
+    for (let hops = 0; hops < 15; hops++) {
+      const bus = new MessageBus<TestMessage>();
+      const delivered: number[] = [];
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+
+      const owner = bus.publish(heartbeat(1));
+
+      let lateResult: Result<void, MessageBusPublishError> | undefined;
+      let chain: Promise<unknown> = Promise.resolve();
+      for (let i = 0; i < hops; i++) {
+        chain = chain.then(() => undefined);
+      }
+      const latePublish = chain.then(async () => {
+        lateResult = await bus.publish(heartbeat(2));
+      });
+
+      const ownerResult = await owner;
+      await latePublish;
+      expect(ownerResult.ok).toBe(true);
+      expect(lateResult?.ok).toBe(true);
+
+      await tick();
+      // hops в ассерте — чтобы упавшая итерация была видна в диффе
+      expect({ hops, delivered }).toEqual({ hops, delivered: [1, 2] });
+      expect({ hops, queueSize: bus.getStats().queueSize }).toEqual({ hops, queueSize: 0 });
+      expect(bus.getStats().dispatching).toBe(false);
+    }
+  });
+
   it('подписка во время dispatch: новый обработчик не получает текущее сообщение, получает следующее в том же drain', async () => {
     const bus = new MessageBus<TestMessage>();
     const lateCalls: number[] = [];

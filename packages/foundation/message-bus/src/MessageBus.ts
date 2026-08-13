@@ -265,18 +265,36 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
    *   `drain()`/`close()`)
    *
    * @remarks
-   * Deferred-паттерн: `_activeDrain` регистрируется ДО вызова `_runDrain()`.
-   * Это принципиально: `_runDrain()` синхронно доходит до запуска обработчиков
-   * первого сообщения, и обработчик в своём самом раннем синхронном участке уже
-   * может вызвать `publish()`/`drain()`/`close()` — все они обязаны видеть
-   * активный drain и присоединиться к нему. Регистрация после старта оставляла
-   * бы синхронное окно, в котором `drain()`/`close()` запускали второй
-   * (nested) drain — нарушение инварианта «один активный drain».
+   * Два инварианта ownership, оба обязательны:
    *
-   * `_activeDrain` очищается в callbacks ДО settle drainPromise — присоединившиеся
-   * caller'ы возобновляются уже с чистым состоянием. Rejection `_runDrain()`
-   * (нарушение внутреннего инварианта — баг) пропагируется как rejection, не
-   * маскируется под operational-Result.
+   * **1. Регистрация ДО старта** (deferred-паттерн): `_activeDrain` присваивается
+   * до вызова `_runDrain()`. `_runDrain()` синхронно доходит до запуска
+   * обработчиков первого сообщения, и обработчик в своём самом раннем синхронном
+   * участке уже может вызвать `publish()`/`drain()`/`close()` — все они обязаны
+   * видеть активный drain. Регистрация после старта оставляла бы синхронное окно
+   * для второго (nested) drain.
+   *
+   * **2. Release только после атомарной пере-проверки очереди** (защита от lost
+   * wake-up): `_runDrain()` завершается, увидев пустую очередь, но его Result
+   * доходит сюда отдельным microtask-ом — в этом окне конкурентный `publish()`
+   * мог enqueue-ить сообщение и получить Ok («доставит существующий drain»),
+   * хотя цикл уже вышел. Поэтому на Ok-исходе owner в ОДНОМ синхронном блоке
+   * (между проверкой и решением не может вклиниться другой microtask) заново
+   * проверяет очередь: непусто — тот же owner продолжает drain, не отпуская
+   * ownership; пусто — release и settle. Итого publish либо успел до release
+   * (его увидит текущий owner), либо после (увидит `_activeDrain === undefined`
+   * и сам запустит новый drain) — потерянного пробуждения не существует.
+   *
+   * На Err-исходе ownership отпускается сразу: продолжение нарушило бы
+   * `stop-drain-preserve-queue`/`clear-queue` семантики. Сообщения, успевшие в
+   * окно завершения такого drain, остаются в сохранённой очереди и будут
+   * обработаны следующим `publish()`/`drain()` — ровно как задокументировано
+   * для очереди после critical-сбоя.
+   *
+   * `_activeDrain` очищается ДО settle drainPromise — присоединившиеся caller'ы
+   * возобновляются уже с чистым состоянием. Rejection `_runDrain()` (нарушение
+   * внутреннего инварианта — баг) пропагируется как rejection, не маскируется
+   * под operational-Result.
    */
   private _startDrain(): Promise<Result<void, MessageBusDrainError>> {
     let settle!: (result: Result<void, MessageBusDrainError>) => void;
@@ -286,16 +304,23 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
       fail = reject;
     });
     this._activeDrain = drainPromise;
-    void this._runDrain().then(
-      (result) => {
-        this._activeDrain = undefined;
-        settle(result);
-      },
-      (error: unknown) => {
-        this._activeDrain = undefined;
-        fail(error);
-      },
-    );
+
+    const onDrainSettled = (result: Result<void, MessageBusDrainError>): void => {
+      if (result.ok && this._queue.size > 0) {
+        // Lost-wake-up guard: публикация успела в microtask-окно завершения —
+        // тот же owner продолжает drain, ownership не отпускается
+        void this._runDrain().then(onDrainSettled, onDrainFailed);
+        return;
+      }
+      this._activeDrain = undefined;
+      settle(result);
+    };
+    const onDrainFailed = (error: unknown): void => {
+      this._activeDrain = undefined;
+      fail(error);
+    };
+
+    void this._runDrain().then(onDrainSettled, onDrainFailed);
     return drainPromise;
   }
 

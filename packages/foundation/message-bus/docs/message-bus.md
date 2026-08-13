@@ -70,10 +70,25 @@ high-frequency потока. Вместо этого:
 намеренно — два поля могли бы рассинхронизироваться; `getStats().dispatching`
 выводится из `_activeDrain !== undefined`.
 
-По завершении `_runDrain()` поле очищается **до** settle promise — все
-присоединившиеся caller'ы возобновляются с уже чистым состоянием. Rejection
-`_runDrain()` (нарушение внутреннего инварианта — баг) пропагируется наружу
-rejection-ом, не маскируется под operational-Result.
+Второй инвариант ownership — **release только после атомарной пере-проверки
+очереди** (защита от lost wake-up). `_runDrain()` выходит из цикла, увидев
+пустую очередь, но его Result доходит до release-callback отдельным
+microtask-ом. В этом окне конкурентный `publish()` мог enqueue-ить сообщение и
+получить Ok («доставит существующий drain») — при немедленном release сообщение
+осталось бы в очереди без drain (race воспроизводился sweep-тестом в
+`MessageBus.reentrancy.test.ts` на hops=3). Поэтому release-callback на
+Ok-исходе в одном синхронном блоке заново проверяет очередь: непусто — тот же
+owner запускает следующий цикл `_runDrain()`, не отпуская ownership; пусто —
+release + settle. На Err-исходе ownership отпускается сразу (продолжение
+нарушило бы `stop-drain-preserve-queue`/`clear-queue`); сообщения, успевшие в
+окно завершения аварийного drain, ждут в сохранённой очереди следующего
+`publish()`/`drain()` — как и задокументировано для очереди после
+critical-сбоя.
+
+По завершении drain поле очищается **до** settle promise — все присоединившиеся
+caller'ы возобновляются с уже чистым состоянием. Rejection `_runDrain()`
+(нарушение внутреннего инварианта — баг) пропагируется наружу rejection-ом, не
+маскируется под operational-Result.
 
 Владелец drain — вызов, запустивший `_startDrain()` (publish/publishAll на idle,
 drain(), close()); он и присоединившиеся через `_activeDrain` получают
