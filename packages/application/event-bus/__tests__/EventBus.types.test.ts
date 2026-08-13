@@ -13,6 +13,8 @@
  */
 import { describe, it, expect, jest } from '@jest/globals';
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
+import { asStrategyId } from '@polymarket/ids';
 import { EventBus } from '../src/index.js';
 import type {
   IEventBus,
@@ -23,6 +25,8 @@ import type {
   FillReceivedEvent,
   OrderUpdateReceivedEvent,
   VenueOrderUpdate,
+  MarketOpenedEvent,
+  StrategySignalEvent,
 } from '../src/index.js';
 
 /** Минимальный mock logger. */
@@ -93,6 +97,48 @@ describe('EventBus type-level contract', () => {
 
     expect(typeof unsubSync).toBe('function');
     expect(typeof unsubAsync).toBe('function');
+  });
+
+  it('strategyId в событиях — canonical branded StrategyId, plain string не подставляется (compile-time)', () => {
+    const strategyId: StrategyId = asStrategyId('strategy-1')!;
+
+    const opened: MarketOpenedEvent = {
+      type: 'MARKET_OPENED',
+      marketId: 'market-abc' as MarketOpenedEvent['marketId'],
+      strategyId,
+      allocatedBalance: {} as unknown as MarketOpenedEvent['allocatedBalance'],
+      timestamp: { toISO: () => '' } as MarketOpenedEvent['timestamp'],
+    };
+    void opened;
+
+    const signal: StrategySignalEvent = {
+      type: 'STRATEGY_SIGNAL',
+      strategyId,
+      signal: 'BUY',
+      instrumentId: 'token-123' as StrategySignalEvent['instrumentId'],
+    };
+    void signal;
+
+    const invalidOpened: MarketOpenedEvent = {
+      type: 'MARKET_OPENED',
+      marketId: 'market-abc' as MarketOpenedEvent['marketId'],
+      // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
+      strategyId: 'raw-string',
+      allocatedBalance: {} as unknown as MarketOpenedEvent['allocatedBalance'],
+      timestamp: { toISO: () => '' } as MarketOpenedEvent['timestamp'],
+    };
+    void invalidOpened;
+
+    const invalidSignal: StrategySignalEvent = {
+      type: 'STRATEGY_SIGNAL',
+      // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
+      strategyId: 'raw-string',
+      signal: 'SELL',
+      instrumentId: 'token-123' as StrategySignalEvent['instrumentId'],
+    };
+    void invalidSignal;
+
+    expect(true).toBe(true);
   });
 
   it('publish/publishAll типизированы Promise<Result<void, QueueOverflowError | CriticalHandlerError>> (compile-time)', async () => {

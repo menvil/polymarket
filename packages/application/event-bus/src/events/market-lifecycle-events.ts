@@ -9,7 +9,7 @@
  * - `StrategyRunner` — запускает/останавливает стратегию при MARKET_OPENED/MARKET_CLOSED
  * - `MarketDiscoveryPublisher` / `MarketExpiryMonitor` — обновляют внутреннее состояние
  */
-import type { MarketId } from '@polymarket/ids';
+import type { MarketId, StrategyId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
 import type { Money } from '@polymarket/value-objects';
 
@@ -31,8 +31,8 @@ export interface MarketOpenedEvent {
   readonly type: 'MARKET_OPENED';
   /** ID открытого рынка */
   readonly marketId: MarketId;
-  /** ID стратегии, которую нужно запустить для этого рынка */
-  readonly strategyId: string;
+  /** ID стратегии, которую нужно запустить для этого рынка — canonical branded `StrategyId` */
+  readonly strategyId: StrategyId;
   /** Аллоцированный баланс для рынка в USDC */
   readonly allocatedBalance: Money;
   /** Метка времени открытия */

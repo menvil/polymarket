@@ -5,7 +5,7 @@
  * StrategySignalEvent публикуется стратегией через TradingAPI.signal().
  * TradingOrchestrator подписывается и инициирует размещение ордеров.
  */
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, StrategyId } from '@polymarket/ids';
 import type { Price, Quantity } from '@polymarket/value-objects';
 
 /**
@@ -24,8 +24,8 @@ export type SignalDirection = 'BUY' | 'SELL';
  */
 export interface StrategySignalEvent {
   readonly type: 'STRATEGY_SIGNAL';
-  /** ID стратегии (branded string нет — обычная строка) */
-  readonly strategyId: string;
+  /** ID стратегии — canonical branded `StrategyId` из `@polymarket/ids` */
+  readonly strategyId: StrategyId;
   /** Направление сигнала */
   readonly signal: SignalDirection;
   /** ID инструмента */
