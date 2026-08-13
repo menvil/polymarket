@@ -55,7 +55,7 @@ import {
   MessageBusClosedError,
 } from '@polymarket/message-bus';
 import type { MessageBusObserver, MessageBusPublishError, MessageBusStats } from '@polymarket/message-bus';
-import type { ApplicationEvent } from './events/index.js';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { IEventBus, EventHandler } from './IEventBus.js';
 
 /**

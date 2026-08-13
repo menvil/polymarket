@@ -55,7 +55,8 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
-import type { IEventBus, TopOfBook } from '@polymarket/event-bus';
+import type { TopOfBook } from '@polymarket/application-events';
+import type { IEventBus } from '@polymarket/event-bus';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
 import type { TradeTape } from '@polymarket/trade-tape';

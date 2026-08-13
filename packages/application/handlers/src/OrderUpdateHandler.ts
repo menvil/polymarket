@@ -22,10 +22,11 @@
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
-import type { IEventBus, VenueOrderUpdate } from '@polymarket/event-bus';
+import type { VenueOrderUpdate } from '@polymarket/application-events';
+import type { IEventBus } from '@polymarket/event-bus';
 import { TimestampService } from '@polymarket/value-objects';
 
-export { type VenueOrderUpdate } from '@polymarket/event-bus';
+export { type VenueOrderUpdate } from '@polymarket/application-events';
 
 /**
  * Тонкий адаптер: принимает `VenueOrderUpdate`, публикует `ORDER_UPDATE_RECEIVED`.

@@ -27,7 +27,8 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import type { IEventBus, VenueOrderUpdate } from '@polymarket/event-bus';
+import type { VenueOrderUpdate } from '@polymarket/application-events';
+import type { IEventBus } from '@polymarket/event-bus';
 import type { AccountId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import type { TradingError } from '@polymarket/errors';

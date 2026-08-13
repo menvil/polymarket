@@ -18,7 +18,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { Result } from '@polymarket/result';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import { EventBus } from '../src/EventBus.js';
-import type { BookUpdatedEvent, TradeReceivedEvent } from '../src/events/market-events.js';
+import type { BookUpdatedEvent, TradeReceivedEvent } from '@polymarket/application-events';
 
 /** Минимальный mock logger (child возвращает себя же — как в EventBus.test.ts). */
 function makeLogger(): ILogger {

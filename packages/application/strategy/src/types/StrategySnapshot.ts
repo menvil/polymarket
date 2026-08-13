@@ -31,7 +31,7 @@
  */
 import type { InstrumentId, AssetId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/value-objects';
-import type { TopOfBook } from '@polymarket/event-bus';
+import type { TopOfBook } from '@polymarket/application-events';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
 import type { TradeTape } from '@polymarket/trade-tape';

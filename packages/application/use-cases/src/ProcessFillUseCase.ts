@@ -95,7 +95,8 @@ import type {
   IOrderSubmissionRepository,
   OrderSubmissionRecord,
 } from '@polymarket/ports';
-import type { IEventBus, ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
+import type { IEventBus } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
 import type { FillData, Order } from '@polymarket/order';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1

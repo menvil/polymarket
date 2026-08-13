@@ -29,7 +29,7 @@ import { ProcessFillUseCase } from '@polymarket/use-cases';
 import { PortfolioService } from '@polymarket/use-cases';
 import { LedgerService } from '@polymarket/use-cases';
 import { EventBus } from '@polymarket/event-bus';
-import type { ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';

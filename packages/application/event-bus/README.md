@@ -8,22 +8,25 @@
 
 Внутреннее устройство (`docs/event-bus.md`) контрактом **не является**.
 
-## Implementation note (M-002)
+## Implementation note (M-002 / M-002.5)
 
 С M-002 `EventBus` — тонкий Application-фасад над generic-движком
-`MessageBus<ApplicationEvent>` (`@polymarket/message-bus`, композиция):
+`MessageBus<ApplicationEvent>` (`@polymarket/message-bus`, композиция); с M-002.5
+event contracts извлечены в отдельный пакет:
 
 ```text
-EventBus  =  Application-specific facade  +  MessageBus<ApplicationEvent> engine
+@polymarket/event-bus  =  Application-specific delivery façade for ApplicationEvent
 ```
 
 Разделение ответственности:
 
-- `@polymarket/message-bus` — очередь, FIFO, параллельный fan-out, reentrancy,
-  critical-семантика, drain-guards;
-- `@polymarket/event-bus` — типизация `ApplicationEvent`, Application
-  error-контракт (`QueueOverflowError`/`CriticalHandlerError`), интеграция
-  logger, общая operational-диагностика (`getStats(): MessageBusStats`).
+- `@polymarket/application-events` — event contracts (типы событий и union
+  `ApplicationEvent`); этот пакет их не определяет и не реэкспортирует;
+- `@polymarket/message-bus` — delivery mechanics: очередь, FIFO, параллельный
+  fan-out, reentrancy, critical-семантика, drain-guards;
+- `@polymarket/event-bus` — Application error-контракт
+  (`QueueOverflowError`/`CriticalHandlerError`), интеграция logger, общая
+  operational-диагностика (`getStats(): MessageBusStats`).
 
 Смена движка не меняет delivery-контракт этого README: M-000 contract-suite
 остаётся compatibility gate. Ошибки движка (`MessageBus*Error`) наружу не

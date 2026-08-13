@@ -5,10 +5,10 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { ILogger } from '@polymarket/logger';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import { EventBus } from '../src/EventBus.js';
-import type { ApplicationEvent } from '../src/events/index.js';
-import type { BookUpdatedEvent } from '../src/events/market-events.js';
-// Compile-time check: если FillFailedEvent не экспортируется из index.ts — typecheck падает.
-import type { FillFailedEvent } from '../src/index.js';
+import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application-events';
+// Compile-time check: если FillFailedEvent не экспортируется из @polymarket/application-events —
+// typecheck падает (canonical источник event contracts после M-002.5).
+import type { FillFailedEvent } from '@polymarket/application-events';
 
 // Минимальный mock logger
 function makeLogger(): ILogger {
@@ -350,9 +350,10 @@ describe('EventBus', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('FillFailedEvent экспортируется из корня пакета (compile-time)', () => {
+  it('FillFailedEvent экспортируется из @polymarket/application-events (compile-time)', () => {
     // Реальная проверка — compile-time: import type { FillFailedEvent } вверху файла.
-    // Если FillFailedEvent убрать из src/index.ts, typecheck упадёт на строке импорта.
+    // Если FillFailedEvent убрать из exports @polymarket/application-events,
+    // typecheck упадёт на строке импорта.
     // Здесь фиксируем контракт структуры типа: тип должен иметь поле type.
     const _check: FillFailedEvent['type'] = 'FILL_FAILED';
     expect(_check).toBe('FILL_FAILED');

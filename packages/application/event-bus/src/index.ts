@@ -1,16 +1,19 @@
 /**
- * @polymarket/event-bus — канонический источник application-level событий.
+ * @polymarket/event-bus — Application-specific delivery façade для ApplicationEvent.
  *
  * @remarks
- * ### Содержимое пакета:
- * - `ApplicationEvent` — полный union application-level событий
- * - Все event types (FillReceivedEvent, BookUpdatedEvent, etc.)
- * - `IEventBus` / `EventHandler` — интерфейс event bus
- * - `EventBus` — Application-фасад над `MessageBus<ApplicationEvent>`
+ * ### Разделение ответственности:
+ * - **Event contracts** — `@polymarket/application-events` (типы событий и
+ *   union `ApplicationEvent`; этот пакет их НЕ определяет и НЕ реэкспортирует);
+ * - **Delivery mechanics** — `@polymarket/message-bus` (generic-движок:
+ *   очередь, fan-out, reentrancy, guards);
+ * - **Этот пакет** — Application-фасад доставки: `IEventBus`/`EventBus`,
+ *   Application error-контракт, logger-интеграция, диагностика.
  *
  * @example
  * ```typescript
- * import { EventBus, type IEventBus, type ApplicationEvent } from '@polymarket/event-bus';
+ * import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application-events';
+ * import { EventBus, type IEventBus } from '@polymarket/event-bus';
  *
  * const bus: IEventBus = new EventBus(logger);
  *
@@ -20,31 +23,6 @@
  * });
  * ```
  */
-export type { ApplicationEvent } from './events/index.js';
-/** Реэкспорт доменных fill-событий (см. events/domain-events.ts). */
-export type {
-  FillReceivedEvent,
-  FillConfirmedEvent,
-  FillFailedEvent,
-  DirectFillAppliedEvent,
-} from './events/domain-events.js';
-/** Реэкспорт типов событий стакана/тейпа (см. events/market-events.ts). */
-export type {
-  TopOfBook,
-  BookUpdatedEvent,
-  BookDepthEvent,
-  TradeReceivedEvent,
-} from './events/market-events.js';
-/** Реэкспорт типов сигналов стратегии (см. events/strategy-events.ts). */
-export type { SignalDirection, StrategySignalEvent } from './events/strategy-events.js';
-/** Реэкспорт типов lifecycle-событий рынка (см. events/market-lifecycle-events.ts). */
-export type {
-  MarketOpenedEvent,
-  MarketClosedEvent,
-  MarketCloseReason,
-} from './events/market-lifecycle-events.js';
-/** Реэкспорт типов venue-обновлений ордера (см. events/order-update-events.ts). */
-export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './events/order-update-events.js';
 /** Реэкспорт порта event bus (см. IEventBus.ts). */
 export type { IEventBus, EventHandler } from './IEventBus.js';
 export { EventBus } from './EventBus.js';

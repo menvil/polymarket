@@ -14,7 +14,7 @@
  * unsub();
  * ```
  */
-import type { ApplicationEvent } from './events/index.js';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { Result } from '@polymarket/result';
 import type { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 

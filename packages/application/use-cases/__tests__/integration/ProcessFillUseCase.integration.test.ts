@@ -28,7 +28,7 @@ import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import type { ProcessFillDeps } from '../../src/ProcessFillUseCase.js';
 import { EventBus } from '@polymarket/event-bus';
-import type { ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';

@@ -48,7 +48,7 @@ import { InMemoryOrderedEventOutbox } from '@polymarket/in-memory';
 import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { RiskParams } from '@polymarket/risk';
 import type { IExchangeClient, IMarketCatalog, IOrderedEventOutbox } from '@polymarket/ports';
-import type { ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 

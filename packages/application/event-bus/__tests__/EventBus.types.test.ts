@@ -16,9 +16,10 @@ import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { asStrategyId } from '@polymarket/ids';
 import { EventBus } from '../src/index.js';
+import type { IEventBus, EventHandler } from '../src/index.js';
+// Event contracts — из canonical пакета @polymarket/application-events (M-002.5):
+// пакет доставки их больше не реэкспортирует
 import type {
-  IEventBus,
-  EventHandler,
   ApplicationEvent,
   BookUpdatedEvent,
   TopOfBook,
@@ -27,7 +28,7 @@ import type {
   VenueOrderUpdate,
   MarketOpenedEvent,
   StrategySignalEvent,
-} from '../src/index.js';
+} from '@polymarket/application-events';
 
 /** Минимальный mock logger. */
 function makeLogger(): ILogger {

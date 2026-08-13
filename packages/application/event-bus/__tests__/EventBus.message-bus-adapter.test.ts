@@ -22,7 +22,7 @@ import {
 import { EventBus } from '../src/EventBus.js';
 // MessageBusStats — из корня пакета: фиксирует публичный type re-export
 import type { MessageBusStats } from '../src/index.js';
-import type { BookUpdatedEvent } from '../src/events/market-events.js';
+import type { BookUpdatedEvent } from '@polymarket/application-events';
 
 function makeLogger(): ILogger {
   return {
