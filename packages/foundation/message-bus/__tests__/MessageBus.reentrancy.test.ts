@@ -3,7 +3,7 @@
  * публикации при активном drain. Один drain owner, никаких nested drains.
  */
 import { describe, it, expect } from '@jest/globals';
-import { MessageBus } from '@polymarket/message-bus';
+import { MessageBus, createMessageBusPolicy, MessageBusDrainLimitError } from '@polymarket/message-bus';
 import type { MessageBusPublishError } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
 
@@ -159,6 +159,55 @@ describe('MessageBus reentrancy', () => {
       // hops в ассерте — чтобы упавшая итерация была видна в диффе
       expect({ hops, delivered }).toEqual({ hops, delivered: [1, 2] });
       expect({ hops, queueSize: bus.getStats().queueSize }).toEqual({ hops, queueSize: 0 });
+      expect(bus.getStats().dispatching).toBe(false);
+    }
+  });
+
+  it('maxMessagesPerDrain ограничивает весь drain ownership cycle — бюджет не сбрасывается на completion boundary', async () => {
+    // Регрессия: реализация guard-а с перезапуском внутреннего цикла на границе
+    // завершения обнуляла processed-счётчик — публикация, принятая существующим
+    // ownership, получала свежий бюджет, и owner мог обработать больше
+    // maxMessagesPerDrain сообщений, вернув Ok. Инвариант: если сообщение принял
+    // существующий owner (на момент publish drain был активен), бюджет один на
+    // весь ownership cycle — при limit=1 второй message обязан дать DrainLimitError.
+    for (let hops = 0; hops < 15; hops++) {
+      const bus = new MessageBus<TestMessage>({
+        policy: createMessageBusPolicy({ queuePolicy: { maxMessagesPerDrain: 1 } }),
+      });
+      const delivered: number[] = [];
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+
+      const owner = bus.publish(heartbeat(1));
+
+      let lateSawActiveDrain: boolean | undefined;
+      let lateResult: Result<void, MessageBusPublishError> | undefined;
+      let chain: Promise<unknown> = Promise.resolve();
+      for (let i = 0; i < hops; i++) {
+        chain = chain.then(() => undefined);
+      }
+      const latePublish = chain.then(async () => {
+        // Маркер «принят существующим ownership»: dispatching (== активный drain)
+        // читается в том же синхронном блоке, что и publish — yield между ними нет
+        lateSawActiveDrain = bus.getStats().dispatching;
+        lateResult = await bus.publish(heartbeat(2));
+      });
+
+      const ownerResult = await owner;
+      await latePublish;
+
+      expect(lateResult?.ok).toBe(true);
+      if (lateSawActiveDrain === true) {
+        // Сообщение 2 принято ownership-ом владельца: бюджет (1) исчерпан —
+        // владелец обязан завершиться DrainLimitError, сообщение 2 очищено guard-ом
+        expect({ hops, ownerOk: ownerResult.ok }).toEqual({ hops, ownerOk: false });
+        if (!ownerResult.ok) expect(ownerResult.error).toBeInstanceOf(MessageBusDrainLimitError);
+        expect({ hops, delivered }).toEqual({ hops, delivered: [1] });
+      } else {
+        // Сообщение 2 пришло после release — это новый drain со своим бюджетом
+        expect({ hops, ownerOk: ownerResult.ok }).toEqual({ hops, ownerOk: true });
+        expect({ hops, delivered }).toEqual({ hops, delivered: [1, 2] });
+      }
+      expect(bus.getStats().queueSize).toBe(0);
       expect(bus.getStats().dispatching).toBe(false);
     }
   });

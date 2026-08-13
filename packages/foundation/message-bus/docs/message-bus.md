@@ -52,43 +52,49 @@ high-frequency потока. Вместо этого:
 ### Один активный drain: `_activeDrain`, зарегистрированный до старта
 
 Единственный источник истины об активном drain — поле
-`_activeDrain: Promise<Result<...>>`. `_startDrain()` использует deferred-паттерн:
+`_activeDrain: Promise<Result<...>>`. У ownership два инварианта; оба находились
+review-ем как реальные races и закреплены regression-тестами.
 
-1. создаётся promise итогового Result (с внешними `resolve`/`reject`);
-2. он **сначала** присваивается в `_activeDrain`;
-3. и только затем вызывается `_runDrain()`.
+**Инвариант №1 — регистрация ДО старта** (deferred-паттерн). `_startDrain()`:
 
-Порядок принципиален. `_runDrain()` выполняется синхронно до первого await — он
-успевает извлечь первое сообщение и синхронно запустить префиксы его
-обработчиков. Обработчик в этом самом раннем синхронном участке уже может
-вызвать `publish()` (должен получить enqueue-`Ok`, не второй drain) или
-`drain()`/`close()` (должны присоединиться к активному drain). Ранняя версия
-присваивала `_activeDrain` после запуска `_runDrain()` — в этом синхронном окне
-`drain()`/`close()` запускали **второй (nested) drain**, ломая FIFO и инвариант
-«один активный drain» (зафиксировано regression-тестами в
-`MessageBus.lifecycle.test.ts`). Отдельного boolean-флага (`_dispatching`) нет
-намеренно — два поля могли бы рассинхронизироваться; `getStats().dispatching`
-выводится из `_activeDrain !== undefined`.
+1. создаёт promise итогового Result (с внешними `resolve`/`reject`);
+2. **сначала** присваивает его в `_activeDrain`;
+3. и только затем вызывает `_runOwnedDrain(settle, fail)`.
 
-Второй инвариант ownership — **release только после атомарной пере-проверки
-очереди** (защита от lost wake-up). `_runDrain()` выходит из цикла, увидев
-пустую очередь, но его Result доходит до release-callback отдельным
-microtask-ом. В этом окне конкурентный `publish()` мог enqueue-ить сообщение и
-получить Ok («доставит существующий drain») — при немедленном release сообщение
-осталось бы в очереди без drain (race воспроизводился sweep-тестом в
-`MessageBus.reentrancy.test.ts` на hops=3). Поэтому release-callback на
-Ok-исходе в одном синхронном блоке заново проверяет очередь: непусто — тот же
-owner запускает следующий цикл `_runDrain()`, не отпуская ownership; пусто —
-release + settle. На Err-исходе ownership отпускается сразу (продолжение
-нарушило бы `stop-drain-preserve-queue`/`clear-queue`); сообщения, успевшие в
-окно завершения аварийного drain, ждут в сохранённой очереди следующего
-`publish()`/`drain()` — как и задокументировано для очереди после
-critical-сбоя.
+Порядок принципиален: цикл выполняется синхронно до первого await — успевает
+извлечь первое сообщение и синхронно запустить префиксы его обработчиков.
+Обработчик в этом самом раннем синхронном участке уже может вызвать `publish()`
+(должен получить enqueue-`Ok`, не второй drain) или `drain()`/`close()` (должны
+присоединиться к активному drain). Ранняя версия присваивала `_activeDrain`
+после запуска цикла — в этом синхронном окне `drain()`/`close()` запускали
+**второй (nested) drain** (regression-тесты в `MessageBus.lifecycle.test.ts`).
+Отдельного boolean-флага (`_dispatching`) нет намеренно — два поля могли бы
+рассинхронизироваться; `getStats().dispatching` выводится из
+`_activeDrain !== undefined`.
 
-По завершении drain поле очищается **до** settle promise — все присоединившиеся
-caller'ы возобновляются с уже чистым состоянием. Rejection `_runDrain()`
-(нарушение внутреннего инварианта — баг) пропагируется наружу rejection-ом, не
-маскируется под operational-Result.
+**Инвариант №2 — release синхронно с решением** (защита от lost wake-up).
+Состояние «`_activeDrain` существует, но цикл уже закончил читать очередь»
+недостижимо: `_runOwnedDrain()` сам владеет processing loop-ом и сам синхронно
+освобождает `_activeDrain` — проверка «очередь пуста» (условие `while`) и
+release находятся в одном continuation, без await/.then между ними. Публикация
+либо успевает до release (условие цикла её увидит — тот же owner продолжит),
+либо приходит после (увидит отсутствие owner-а и запустит новый drain).
+Промежуточная реализация с отдельным `.then`-callback-ом, перезапускавшим цикл,
+имела два дефекта, воспроизведённых sweep-тестами в
+`MessageBus.reentrancy.test.ts`: (а) microtask-окно между завершением цикла и
+release — publish в окне получал enqueue-`Ok` от уже мёртвого drain (lost
+wake-up, hops=3); (б) каждый перезапуск обнулял processed-счётчик — публикации
+на границах завершения обходили `maxMessagesPerDrain`. Теперь **бюджет один на
+весь ownership cycle**: один owner → один counter → один loop → stable empty →
+release.
+
+Исходы `_runOwnedDrain()` (release всегда синхронен с решением): очередь
+стабильно пуста → release + `Ok`; critical-ошибка → release сразу + `Err`,
+очередь сохранена (продолжение нарушило бы `stop-drain-preserve-queue`);
+бюджет исчерпан → clear очереди + release + `Err(MessageBusDrainLimitError)`;
+неожиданное исключение (invariant-баг) → release + rejection. Поле очищается
+**до** settle promise — присоединившиеся caller'ы возобновляются с чистым
+состоянием.
 
 Владелец drain — вызов, запустивший `_startDrain()` (publish/publishAll на idle,
 drain(), close()); он и присоединившиеся через `_activeDrain` получают

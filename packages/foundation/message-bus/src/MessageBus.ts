@@ -105,7 +105,7 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
    * Единственный источник истины об активном drain.
    *
    * @remarks
-   * Регистрируется в `_startDrain()` ДО синхронного старта `_runDrain()` —
+   * Регистрируется в `_startDrain()` ДО синхронного старта `_runOwnedDrain()` —
    * поэтому «drain активен» видят и reentrant-публикации, и `drain()`/`close()`
    * из самого раннего синхронного участка обработчика. Отдельного boolean-флага
    * нет намеренно: два поля могли бы рассинхронизироваться (и в ранней версии
@@ -259,105 +259,113 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
   }
 
   /**
-   * Запускает drain и регистрирует его как единственный активный.
+   * Регистрирует единственный drain ownership и запускает его processing loop.
    *
    * @returns Promise итогового drain-Result (его же получают присоединившиеся
    *   `drain()`/`close()`)
    *
    * @remarks
-   * Два инварианта ownership, оба обязательны:
-   *
-   * **1. Регистрация ДО старта** (deferred-паттерн): `_activeDrain` присваивается
-   * до вызова `_runDrain()`. `_runDrain()` синхронно доходит до запуска
+   * Инвариант №1 — **регистрация ДО старта** (deferred-паттерн): `_activeDrain`
+   * присваивается до вызова `_runOwnedDrain()`. Цикл синхронно доходит до запуска
    * обработчиков первого сообщения, и обработчик в своём самом раннем синхронном
    * участке уже может вызвать `publish()`/`drain()`/`close()` — все они обязаны
    * видеть активный drain. Регистрация после старта оставляла бы синхронное окно
    * для второго (nested) drain.
    *
-   * **2. Release только после атомарной пере-проверки очереди** (защита от lost
-   * wake-up): `_runDrain()` завершается, увидев пустую очередь, но его Result
-   * доходит сюда отдельным microtask-ом — в этом окне конкурентный `publish()`
-   * мог enqueue-ить сообщение и получить Ok («доставит существующий drain»),
-   * хотя цикл уже вышел. Поэтому на Ok-исходе owner в ОДНОМ синхронном блоке
-   * (между проверкой и решением не может вклиниться другой microtask) заново
-   * проверяет очередь: непусто — тот же owner продолжает drain, не отпуская
-   * ownership; пусто — release и settle. Итого publish либо успел до release
-   * (его увидит текущий owner), либо после (увидит `_activeDrain === undefined`
-   * и сам запустит новый drain) — потерянного пробуждения не существует.
-   *
-   * На Err-исходе ownership отпускается сразу: продолжение нарушило бы
-   * `stop-drain-preserve-queue`/`clear-queue` семантики. Сообщения, успевшие в
-   * окно завершения такого drain, остаются в сохранённой очереди и будут
-   * обработаны следующим `publish()`/`drain()` — ровно как задокументировано
-   * для очереди после critical-сбоя.
-   *
-   * `_activeDrain` очищается ДО settle drainPromise — присоединившиеся caller'ы
-   * возобновляются уже с чистым состоянием. Rejection `_runDrain()` (нарушение
-   * внутреннего инварианта — баг) пропагируется как rejection, не маскируется
-   * под operational-Result.
+   * Инвариант №2 — **release синхронно с решением** — обеспечивается самим
+   * `_runOwnedDrain()` (см. его remarks): состояния «`_activeDrain` существует,
+   * но цикл уже закончил читать очередь» не бывает. `_activeDrain` очищается ДО
+   * settle promise — присоединившиеся caller'ы возобновляются с чистым
+   * состоянием.
    */
   private _startDrain(): Promise<Result<void, MessageBusDrainError>> {
+    if (this._activeDrain) {
+      // Защита от двойного старта: у bus один owner — присоединяемся к нему
+      return this._activeDrain;
+    }
     let settle!: (result: Result<void, MessageBusDrainError>) => void;
     let fail!: (error: unknown) => void;
     const drainPromise = new Promise<Result<void, MessageBusDrainError>>((resolve, reject) => {
       settle = resolve;
       fail = reject;
     });
+    // Инвариант №1: ownership регистрируется ДО синхронного старта цикла
     this._activeDrain = drainPromise;
-
-    const onDrainSettled = (result: Result<void, MessageBusDrainError>): void => {
-      if (result.ok && this._queue.size > 0) {
-        // Lost-wake-up guard: публикация успела в microtask-окно завершения —
-        // тот же owner продолжает drain, ownership не отпускается
-        void this._runDrain().then(onDrainSettled, onDrainFailed);
-        return;
-      }
-      this._activeDrain = undefined;
-      settle(result);
-    };
-    const onDrainFailed = (error: unknown): void => {
-      this._activeDrain = undefined;
-      fail(error);
-    };
-
-    void this._runDrain().then(onDrainSettled, onDrainFailed);
+    void this._runOwnedDrain(settle, fail);
     return drainPromise;
   }
 
   /**
-   * Основной drain-цикл: FIFO-обработка очереди до опустошения или терминального исхода.
+   * Единственный владелец drain: один processing loop, один processed-бюджет,
+   * синхронный release ownership на каждом исходе.
    *
-   * @returns `Ok` при опустошении очереди; `Err(MessageBusDrainLimitError)` при
-   *   срабатывании защиты от петли (очередь очищается); `Err(MessageBusCriticalHandlerError)`
-   *   при падении critical-обработчика (очередь сохраняется, упавшее сообщение
-   *   считается обработанным и не replay-ится)
+   * @param settle - resolve deferred-promise владельца (`_activeDrain`)
+   * @param fail - reject deferred-promise владельца (только invariant-баг)
+   *
+   * @remarks
+   * Инвариант №2 (защита от lost wake-up): проверка «очередь пуста» (условие
+   * `while`) и `_activeDrain = undefined` находятся в ОДНОМ синхронном
+   * continuation — между ними нет await/.then/других yield point'ов. Поэтому
+   * состояние «`_activeDrain` существует, но цикл уже закончил читать очередь»
+   * недостижимо: публикация либо успевает до release (условие цикла её увидит —
+   * тот же owner продолжит с тем же бюджетом), либо приходит после (увидит
+   * отсутствие owner-а и сама запустит новый drain).
+   *
+   * Бюджет `maxMessagesPerDrain` — один на весь ownership cycle и не
+   * сбрасывается: сообщения, принятые ownership-ом на границах завершения
+   * fan-out'ов, тратят тот же лимит (иначе петля публикаций, попадающая в эти
+   * границы, обходила бы guard бесконечно).
+   *
+   * ### Исходы (release — всегда синхронно с решением)
+   * - **Очередь стабильно пуста** → release + `Ok`.
+   * - **Critical-ошибка обработчика** → release сразу + `Err`; оставшаяся
+   *   очередь сохраняется до следующего `publish()`/`drain()` — продолжение
+   *   нарушило бы `stop-drain-preserve-queue`.
+   * - **Превышен бюджет** → очередь очищается (артефакт петли публикаций,
+   *   не backlog) + release + `Err(MessageBusDrainLimitError)`.
+   * - **Неожиданное исключение** (invariant-баг) → release + rejection, не
+   *   маскируется под operational-Result.
    */
-  private async _runDrain(): Promise<Result<void, MessageBusDrainError>> {
-    let processed = 0;
-    while (this._queue.size > 0) {
-      if (processed >= this._policy.queuePolicy.maxMessagesPerDrain) {
-        // Оставшаяся очередь — артефакт бесконечной петли публикаций, не backlog
-        const clearedCount = this._queue.size;
-        this._queue.clear();
-        const context = {
-          maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
-          clearedCount,
-        };
-        this._notifyObserver(() => this._observer?.onDrainLimitExceeded?.(context));
-        return Err(new MessageBusDrainLimitError({
-          maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
-        }));
+  private async _runOwnedDrain(
+    settle: (result: Result<void, MessageBusDrainError>) => void,
+    fail: (error: unknown) => void,
+  ): Promise<void> {
+    try {
+      let processed = 0;
+      while (this._queue.size > 0) {
+        if (processed >= this._policy.queuePolicy.maxMessagesPerDrain) {
+          // Оставшаяся очередь — артефакт бесконечной петли публикаций, не backlog
+          const clearedCount = this._queue.size;
+          this._queue.clear();
+          const context = {
+            maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
+            clearedCount,
+          };
+          this._notifyObserver(() => this._observer?.onDrainLimitExceeded?.(context));
+          this._activeDrain = undefined;
+          settle(Err(new MessageBusDrainLimitError({
+            maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
+          })));
+          return;
+        }
+        const message = this._queue.dequeue() as TMessage;
+        const criticalError = await this._dispatchMessage(message);
+        processed++;
+        this._dispatchedTotal++;
+        if (criticalError !== undefined) {
+          // Critical-исход: release сразу, оставшаяся очередь сохраняется
+          this._activeDrain = undefined;
+          settle(Err(criticalError));
+          return;
+        }
       }
-      const message = this._queue.dequeue() as TMessage;
-      const criticalError = await this._dispatchMessage(message);
-      processed++;
-      this._dispatchedTotal++;
-      if (criticalError !== undefined) {
-        // Critical-исход: drain останавливается, оставшаяся очередь сохраняется
-        return Err(criticalError);
-      }
+      // «Очередь пуста» (условие while) и release — один синхронный блок
+      this._activeDrain = undefined;
+      settle(Ok(undefined));
+    } catch (error) {
+      this._activeDrain = undefined;
+      fail(error);
     }
-    return Ok(undefined);
   }
 
   /**
