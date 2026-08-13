@@ -7,6 +7,8 @@ import {
   MessageBusClosedError,
   MessageBusCriticalHandlerError,
 } from '@polymarket/message-bus';
+import type { MessageBusDrainError } from '@polymarket/message-bus';
+import type { Result } from '@polymarket/result';
 
 type TestMessage = { readonly type: 'PRICE'; readonly seq: number };
 
@@ -61,6 +63,38 @@ describe('MessageBus lifecycle', () => {
       expect(delivered).toEqual([1, 2]);
     });
 
+    it('drain() из самого синхронного начала обработчика присоединяется к активному drain — второй drain не запускается', async () => {
+      const bus = new MessageBus<TestMessage>();
+      const delivered: number[] = [];
+      const captured: {
+        drainPromise?: Promise<Result<void, MessageBusDrainError>>;
+        deliveredAtCall?: number[];
+      } = {};
+      // Sync-обработчик: вызов drain() происходит в самом раннем синхронном
+      // участке fan-out первого сообщения — до первого await движка.
+      bus.subscribe('PRICE', (message) => {
+        delivered.push(message.seq);
+        if (message.seq === 1) {
+          // НЕ await: await drain() из обработчика — документированный self-deadlock
+          captured.drainPromise = bus.drain();
+          captured.deliveredAtCall = [...delivered];
+        }
+      });
+
+      const owner = await bus.publishAll([price(1), price(2)]);
+
+      expect(owner.ok).toBe(true);
+      // Regression: nested drain доставил бы сообщение 2 синхронно ВНУТРИ
+      // обработчика сообщения 1 — deliveredAtCall был бы [1, 2].
+      expect(captured.deliveredAtCall).toEqual([1]);
+      expect(delivered).toEqual([1, 2]);
+      // Присоединившийся drain() получает тот же Result, что и владелец drain
+      const joined = await captured.drainPromise!;
+      expect(joined.ok).toBe(true);
+      expect(bus.getStats().dispatching).toBe(false);
+      expect(bus.getStats().queueSize).toBe(0);
+    });
+
     it('после critical-сбоя: возвращает critical-Result при retry и завершается Ok после устранения причины', async () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
@@ -95,6 +129,35 @@ describe('MessageBus lifecycle', () => {
   });
 
   describe('close()', () => {
+    it('close() из самого синхронного начала обработчика присоединяется к активному drain — второй drain не запускается', async () => {
+      const bus = new MessageBus<TestMessage>();
+      const delivered: number[] = [];
+      const captured: {
+        closePromise?: Promise<Result<void, MessageBusDrainError>>;
+        deliveredAtCall?: number[];
+      } = {};
+      bus.subscribe('PRICE', (message) => {
+        delivered.push(message.seq);
+        if (message.seq === 1) {
+          // НЕ await: await close() из обработчика — документированный self-deadlock
+          captured.closePromise = bus.close();
+          captured.deliveredAtCall = [...delivered];
+        }
+      });
+
+      const owner = await bus.publishAll([price(1), price(2)]);
+
+      expect(owner.ok).toBe(true);
+      // Regression: nested drain доставил бы сообщение 2 внутри обработчика сообщения 1
+      expect(captured.deliveredAtCall).toEqual([1]);
+      // Уже стоявшая очередь дообработана существующим drain, несмотря на close
+      expect(delivered).toEqual([1, 2]);
+      const closeResult = await captured.closePromise!;
+      expect(closeResult.ok).toBe(true);
+      expect(bus.getStats().closed).toBe(true);
+      expect(bus.getStats().dispatching).toBe(false);
+    });
+
     it('close на idle-bus с пустой очередью → Ok, stats.closed = true', async () => {
       const bus = new MessageBus<TestMessage>();
       const result = await bus.close();

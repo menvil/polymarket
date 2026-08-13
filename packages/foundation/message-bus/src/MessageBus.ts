@@ -100,8 +100,17 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
   private readonly _observer: MessageBusObserver | undefined;
   private readonly _queue = new FifoMessageQueue<TMessage>();
   private readonly _handlers = new Map<string, Set<HandlerEntry<TMessage>>>();
-  private _dispatching = false;
   private _closed = false;
+  /**
+   * Единственный источник истины об активном drain.
+   *
+   * @remarks
+   * Регистрируется в `_startDrain()` ДО синхронного старта `_runDrain()` —
+   * поэтому «drain активен» видят и reentrant-публикации, и `drain()`/`close()`
+   * из самого раннего синхронного участка обработчика. Отдельного boolean-флага
+   * нет намеренно: два поля могли бы рассинхронизироваться (и в ранней версии
+   * рассинхронизировались — nested drain из sync-префикса обработчика).
+   */
   private _activeDrain: Promise<Result<void, MessageBusDrainError>> | undefined;
   private _publishedTotal = 0;
   private _dispatchedTotal = 0;
@@ -134,7 +143,7 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
     }
     this._queue.enqueue(message);
     this._publishedTotal++;
-    if (this._dispatching) {
+    if (this._activeDrain) {
       // Drain уже активен: Ok подтверждает enqueue, сообщение доставит текущий drain
       return Ok(undefined);
     }
@@ -156,7 +165,7 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
     }
     this._queue.enqueueMany(messages);
     this._publishedTotal += messages.length;
-    if (this._dispatching) {
+    if (this._activeDrain) {
       return Ok(undefined);
     }
     return this._startDrain();
@@ -217,7 +226,7 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
     return {
       queueSize: this._queue.size,
       subscribedTypes: this._handlers.size,
-      dispatching: this._dispatching,
+      dispatching: this._activeDrain !== undefined,
       closed: this._closed,
       publishedTotal: this._publishedTotal,
       dispatchedTotal: this._dispatchedTotal,
@@ -252,21 +261,41 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
   /**
    * Запускает drain и регистрирует его как единственный активный.
    *
-   * @returns Promise итогового drain-Result (его же увидят `drain()`/`close()`)
+   * @returns Promise итогового drain-Result (его же получают присоединившиеся
+   *   `drain()`/`close()`)
    *
    * @remarks
-   * `_runDrain()` выставляет `_dispatching = true` синхронно первой строкой —
-   * до присваивания `_activeDrain`. Поэтому reentrant-публикации из синхронного
-   * префикса обработчиков проверяют именно `_dispatching` и не запускают второй
-   * drain; внешние вызовы `drain()`/`close()` физически не могут наблюдать окно
-   * между стартом `_runDrain()` и присваиванием (управление не возвращается в
-   * event loop до завершения обоих).
+   * Deferred-паттерн: `_activeDrain` регистрируется ДО вызова `_runDrain()`.
+   * Это принципиально: `_runDrain()` синхронно доходит до запуска обработчиков
+   * первого сообщения, и обработчик в своём самом раннем синхронном участке уже
+   * может вызвать `publish()`/`drain()`/`close()` — все они обязаны видеть
+   * активный drain и присоединиться к нему. Регистрация после старта оставляла
+   * бы синхронное окно, в котором `drain()`/`close()` запускали второй
+   * (nested) drain — нарушение инварианта «один активный drain».
+   *
+   * `_activeDrain` очищается в callbacks ДО settle drainPromise — присоединившиеся
+   * caller'ы возобновляются уже с чистым состоянием. Rejection `_runDrain()`
+   * (нарушение внутреннего инварианта — баг) пропагируется как rejection, не
+   * маскируется под operational-Result.
    */
   private _startDrain(): Promise<Result<void, MessageBusDrainError>> {
-    const drainPromise = this._runDrain().finally(() => {
-      this._activeDrain = undefined;
+    let settle!: (result: Result<void, MessageBusDrainError>) => void;
+    let fail!: (error: unknown) => void;
+    const drainPromise = new Promise<Result<void, MessageBusDrainError>>((resolve, reject) => {
+      settle = resolve;
+      fail = reject;
     });
     this._activeDrain = drainPromise;
+    void this._runDrain().then(
+      (result) => {
+        this._activeDrain = undefined;
+        settle(result);
+      },
+      (error: unknown) => {
+        this._activeDrain = undefined;
+        fail(error);
+      },
+    );
     return drainPromise;
   }
 
@@ -279,36 +308,31 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
    *   считается обработанным и не replay-ится)
    */
   private async _runDrain(): Promise<Result<void, MessageBusDrainError>> {
-    this._dispatching = true;
     let processed = 0;
-    try {
-      while (this._queue.size > 0) {
-        if (processed >= this._policy.queuePolicy.maxMessagesPerDrain) {
-          // Оставшаяся очередь — артефакт бесконечной петли публикаций, не backlog
-          const clearedCount = this._queue.size;
-          this._queue.clear();
-          const context = {
-            maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
-            clearedCount,
-          };
-          this._notifyObserver(() => this._observer?.onDrainLimitExceeded?.(context));
-          return Err(new MessageBusDrainLimitError({
-            maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
-          }));
-        }
-        const message = this._queue.dequeue() as TMessage;
-        const criticalError = await this._dispatchMessage(message);
-        processed++;
-        this._dispatchedTotal++;
-        if (criticalError !== undefined) {
-          // Critical-исход: drain останавливается, оставшаяся очередь сохраняется
-          return Err(criticalError);
-        }
+    while (this._queue.size > 0) {
+      if (processed >= this._policy.queuePolicy.maxMessagesPerDrain) {
+        // Оставшаяся очередь — артефакт бесконечной петли публикаций, не backlog
+        const clearedCount = this._queue.size;
+        this._queue.clear();
+        const context = {
+          maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
+          clearedCount,
+        };
+        this._notifyObserver(() => this._observer?.onDrainLimitExceeded?.(context));
+        return Err(new MessageBusDrainLimitError({
+          maxMessagesPerDrain: this._policy.queuePolicy.maxMessagesPerDrain,
+        }));
       }
-      return Ok(undefined);
-    } finally {
-      this._dispatching = false;
+      const message = this._queue.dequeue() as TMessage;
+      const criticalError = await this._dispatchMessage(message);
+      processed++;
+      this._dispatchedTotal++;
+      if (criticalError !== undefined) {
+        // Critical-исход: drain останавливается, оставшаяся очередь сохраняется
+        return Err(criticalError);
+      }
     }
+    return Ok(undefined);
   }
 
   /**
