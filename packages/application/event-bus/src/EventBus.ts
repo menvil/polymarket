@@ -18,9 +18,10 @@
  * Собственного механизма доставки у EventBus больше НЕТ: очередь, FIFO,
  * параллельный fan-out, reentrancy, critical/non-critical семантика, overflow и
  * drain-limit защиты — целиком ответственность `@polymarket/message-bus`
- * (композиция, не наследование: generic lifecycle `drain()`/`close()` и
- * расширенные stats движка сознательно НЕ становятся публичным API Application
- * EventBus).
+ * (композиция, не наследование: generic lifecycle `drain()`/`close()`
+ * сознательно НЕ становится публичным API Application EventBus; operational-
+ * диагностика, напротив, общая — `getStats()` отдаёт canonical
+ * `MessageBusStats` движка целиком).
  *
  * ### Публичный контракт не изменён
  * Поведенческий контракт зафиксирован M-000 (см. README пакета) и покрыт

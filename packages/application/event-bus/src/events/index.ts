@@ -47,7 +47,7 @@ import type { OrderEvent } from '@polymarket/order';
  * @remarks
  * Используется в:
  * - IEventBus<K extends ApplicationEvent['type']> для типобезопасных подписок
- * - HandlerMap для per-event-type хранения handlers
+ * - MessageBus<ApplicationEvent> как generic-параметр движка доставки
  * - EventBus.publish(event: ApplicationEvent)
  *
  * User-channel события:

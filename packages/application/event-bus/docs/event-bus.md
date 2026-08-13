@@ -6,10 +6,12 @@
 
 ## Обзор
 
-Единственный источник всех типов событий в системе (`ApplicationEvent` — полный union)
-и реализация application-level event bus (`EventBus implements IEventBus`). Handlers
-(`@polymarket/handlers`), orchestrators (`@polymarket/orchestrators`) и strategy зависят
-от `IEventBus`/`ApplicationEvent`, а не друг от друга.
+Канонический источник application-level событий (`ApplicationEvent` — полный union
+этого контура; Domain-события и будущие внешние сообщения — отдельные контуры) и
+Application-фасад event bus (`EventBus implements IEventBus`) над generic-движком
+`MessageBus<ApplicationEvent>`. Handlers (`@polymarket/handlers`), orchestrators
+(`@polymarket/orchestrators`) и strategy зависят от `IEventBus`/`ApplicationEvent`,
+а не друг от друга.
 
 ```typescript
 import { EventBus, type IEventBus, type ApplicationEvent } from '@polymarket/event-bus';

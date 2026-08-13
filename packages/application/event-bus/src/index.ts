@@ -6,7 +6,7 @@
  * - `ApplicationEvent` — полный union application-level событий
  * - Все event types (FillReceivedEvent, BookUpdatedEvent, etc.)
  * - `IEventBus` / `EventHandler` — интерфейс event bus
- * - `EventBus` — реализация с typed HandlerMap
+ * - `EventBus` — Application-фасад над `MessageBus<ApplicationEvent>`
  *
  * @example
  * ```typescript
@@ -24,6 +24,7 @@ export type { ApplicationEvent } from './events/index.js';
 /** Реэкспорт доменных fill-событий (см. events/domain-events.ts). */
 export type {
   FillReceivedEvent,
+  FillConfirmedEvent,
   FillFailedEvent,
   DirectFillAppliedEvent,
 } from './events/domain-events.js';
