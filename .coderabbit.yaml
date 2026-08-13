@@ -1,5 +1,16 @@
-# Only review files in the 'src' folder
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# Конфигурация CodeRabbit.
+#
+# auto_review.base_branches: по умолчанию auto-review запускается только для PR
+# с base = default-ветка (main). Рабочий процесс репозитория — интеграционные ветки
+# фаз (phase-3, ...), в которые открываются PR отдельных задач (например, M-000),
+# поэтому включаем auto-review и для них. Паттерны — регулярные выражения.
+#
+# path_filters: ревьюим только перечисленные пакеты, исключая dist/node_modules.
 reviews:
+  auto_review:
+    base_branches:
+      - "phase-.*"
   path_filters:
     - "!dist/**"
     - "!node_modules/**"
