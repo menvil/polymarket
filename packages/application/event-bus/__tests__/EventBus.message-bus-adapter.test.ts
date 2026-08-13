@@ -8,7 +8,8 @@
  * - публичные ошибки воспроизводят legacy-формат M-000 (message + context);
  * - legacy-параметры конструктора реально управляют policy движка;
  * - logging-адаптер воспроизводит исторические log-вызовы (и только их);
- * - getStats() отдаёт ровно legacy-shape без generic-счётчиков.
+ * - getStats() отдаёт canonical MessageBusStats движка целиком, включая
+ *   publishedTotal/dispatchedTotal/handlerErrorsTotal/rejectedPublicationsTotal.
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { ILogger } from '@polymarket/logger';

@@ -93,9 +93,11 @@ string-matching):
 Тексты сообщений воспроизводят M-000 дословно (`EventBus queue overflow (N):
 cannot enqueue ...`, `EventBus drain limit exceeded (N): ...`, `EventBus
 critical handler threw during dispatch of ...`). Происхождение ошибок
-гарантирует движок: подписчик, бросивший Application `QueueOverflowError`,
-приходит в фасад уже внутри `MessageBusCriticalHandlerError.originalError` и
-не может быть перепутан с операционным overflow.
+гарантирует движок: **critical**-подписчик, бросивший Application
+`QueueOverflowError`, приходит в фасад уже внутри
+`MessageBusCriticalHandlerError.originalError` и не может быть перепутан с
+операционным overflow. Ошибки non-critical подписчиков в Result не попадают
+вовсе — для них сохраняется log-only поведение (см. logger-адаптер ниже).
 
 ### Logger-адаптер (MessageBusObserver)
 

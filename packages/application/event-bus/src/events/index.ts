@@ -6,7 +6,6 @@
  * message/event-контуров системы: Domain-события живут в domain-пакетах
  * (реэкспортируются сюда лишь те, что участвуют в application-контуре),
  * внешние (infrastructure) сообщения — отдельный будущий контур.
- * EventHandlerMap используется EventBus для per-event-type типизации handlers.
  *
  * ### Принципы:
  * - Все application-level события определены здесь (или re-export из domain)
