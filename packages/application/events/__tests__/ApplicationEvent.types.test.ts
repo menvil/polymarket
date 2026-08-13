@@ -29,22 +29,22 @@ import type {
 
 describe('ApplicationEvent union contract', () => {
   it('каждый application-контракт — член union (compile-time)', () => {
-    // Присваивания компилируются только если тип входит в union
-    const asUnion = (event: ApplicationEvent): ApplicationEvent => event;
-    void asUnion;
-    const checks: ReadonlyArray<(e: never) => ApplicationEvent> = [
-      (e: FillReceivedEvent) => e,
-      (e: FillConfirmedEvent) => e,
-      (e: FillFailedEvent) => e,
-      (e: DirectFillAppliedEvent) => e,
-      (e: BookUpdatedEvent) => e,
-      (e: BookDepthEvent) => e,
-      (e: TradeReceivedEvent) => e,
-      (e: StrategySignalEvent) => e,
-      (e: MarketOpenedEvent) => e,
-      (e: MarketClosedEvent) => e,
-      (e: OrderUpdateReceivedEvent) => e,
-    ] as ReadonlyArray<(e: never) => ApplicationEvent>;
+    // Явная аннотация возврата у КАЖДОЙ лямбды — настоящая по-членная проверка:
+    // тело `=> e` компилируется только если тип входит в union. Никаких кастов —
+    // `as ReadonlyArray<...>` обходил проверку целиком (ловилось probe-ом с чужим типом).
+    const checks = [
+      (e: FillReceivedEvent): ApplicationEvent => e,
+      (e: FillConfirmedEvent): ApplicationEvent => e,
+      (e: FillFailedEvent): ApplicationEvent => e,
+      (e: DirectFillAppliedEvent): ApplicationEvent => e,
+      (e: BookUpdatedEvent): ApplicationEvent => e,
+      (e: BookDepthEvent): ApplicationEvent => e,
+      (e: TradeReceivedEvent): ApplicationEvent => e,
+      (e: StrategySignalEvent): ApplicationEvent => e,
+      (e: MarketOpenedEvent): ApplicationEvent => e,
+      (e: MarketClosedEvent): ApplicationEvent => e,
+      (e: OrderUpdateReceivedEvent): ApplicationEvent => e,
+    ];
     expect(checks.length).toBe(11);
   });
 
