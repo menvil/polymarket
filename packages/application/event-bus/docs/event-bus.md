@@ -1,5 +1,9 @@
 # @polymarket/event-bus
 
+> **Публичный behavioral contract** (гарантии, non-guarantees, migration constraint
+> для M-001) зафиксирован в `../README.md`. Этот файл описывает внутреннее устройство
+> текущей реализации и контрактом не является.
+
 ## Обзор
 
 Единственный источник всех типов событий в системе (`ApplicationEvent` — полный union)
@@ -56,15 +60,20 @@ CriticalHandlerError>>`:
   случаях сконструирован сразу как `QueueOverflowError` — единый класс для обеих причин
   переполнения (см. `packages/foundation/errors/src/event-bus/QueueOverflowError.ts`).
 - **`CriticalHandlerError`** — подписчик, зарегистрированный с `{ critical: true }`,
-  выбросил исключение. Оборачивает исходное брошенное значение в `context.originalError`
-  (raw `unknown` — handler может бросить что угодно, не обязательно `Error`).
+  выбросил исключение. Конструируется в `_dispatch()` (где известен тип события):
+  в `context` сохраняются `originalError` (raw `unknown` — handler может бросить что
+  угодно, не обязательно `Error`) и `eventType`. Даже если подписчик бросил
+  `QueueOverflowError`, наружу уходит `CriticalHandlerError` — ошибка чужого кода не
+  маскируется под операционное состояние bus-а.
 
 Внутри (`_drainQueue()`/`_dispatch()`, оба `private`) реализация остаётся throw-based —
 `_drainQueue()`'s `while`/`break`/`finally`-цикл сложнее выразить через `Result`-threading
 без риска для поведения, а метод не пересекает публичную границу. Граница `Result`
 строится ровно в `publish()`/`publishAll()` (через `_drainAndConvert()`): `try/catch`
-вокруг `_drainQueue()`, `QueueOverflowError` пробрасывается как есть (её уже сконструировал
-`_drainQueue()`), всё остальное оборачивается в `CriticalHandlerError`.
+вокруг `_drainQueue()`, обе typed-ошибки (`QueueOverflowError` из `_drainQueue()`,
+`CriticalHandlerError` из `_dispatch()`) пропускаются как есть, любое другое брошенное
+значение защитно оборачивается в `CriticalHandlerError` (при текущих внутренностях
+недостижимо — страховка на случай замены движка).
 
 ### Critical vs non-critical handlers
 
@@ -84,7 +93,9 @@ CriticalHandlerError>>`:
 
 Все handlers одного события выполняются параллельно (`Promise.allSettled`) — нет гарантий
 порядка, если два handler'а одного события публикуют дочерние события. Handlers не должны
-зависеть от side-effects друг друга. Таймауты — не ответственность `EventBus`: каждый
+зависеть от side-effects друг друга. Синхронный throw sync-handler-а нормализуется в
+rejection (async-обёртка в `_dispatch()`) — иначе он оборвал бы запуск остальных handlers
+и обошёл non-critical семантику. Таймауты — не ответственность `EventBus`: каждый
 handler обязан сам завершаться или обрабатывать собственный timeout.
 
 ## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост, снят в Этапе 10d

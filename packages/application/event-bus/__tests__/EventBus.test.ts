@@ -82,14 +82,31 @@ describe('EventBus', () => {
     expect(callCount).toBe(1);
   });
 
-  it('unsubscribe последнего handler удаляет Set из Map', () => {
-    const handlers = (bus as unknown as { _handlers: Map<string, Set<unknown>> })._handlers;
+  it('unsubscribe последнего handler типа отражается в getStats().subscribedTypes', () => {
+    // Observable-контракт вместо проверки приватного хранилища: subscribedTypes считает
+    // типы событий с хотя бы одним активным подписчиком.
+    expect(bus.getStats().subscribedTypes).toBe(0);
 
-    const unsub = bus.subscribe('BOOK_UPDATED', async () => {});
-    expect(handlers.has('BOOK_UPDATED')).toBe(true);
+    const unsubA = bus.subscribe('BOOK_UPDATED', async () => {});
+    expect(bus.getStats().subscribedTypes).toBe(1);
 
-    unsub();
-    expect(handlers.has('BOOK_UPDATED')).toBe(false);
+    // Второй handler того же типа не увеличивает количество типов
+    const unsubB = bus.subscribe('BOOK_UPDATED', async () => {});
+    expect(bus.getStats().subscribedTypes).toBe(1);
+
+    // Подписка на другой тип — увеличивает
+    const unsubC = bus.subscribe('TRADE_RECEIVED', async () => {});
+    expect(bus.getStats().subscribedTypes).toBe(2);
+
+    // Отписка НЕ последнего handler типа — тип остаётся подписанным
+    unsubA();
+    expect(bus.getStats().subscribedTypes).toBe(2);
+
+    // Отписка последнего handler типа — тип исчезает (нет утечки подписок)
+    unsubB();
+    expect(bus.getStats().subscribedTypes).toBe(1);
+    unsubC();
+    expect(bus.getStats().subscribedTypes).toBe(0);
   });
 
   it('publishAll доставляет события последовательно (порядок сохранён)', async () => {
