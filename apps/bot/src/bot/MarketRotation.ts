@@ -890,7 +890,10 @@ export class MarketRotation {
     this._rotationInProgress = true;
     try {
       const { logger, cryptoSubs } = this._deps;
-      const nowMs = Date.now();
+      // Инжектированные часы, не Date.now(): expiry-сравнения обязаны идти через
+      // IClock, чтобы вести себя одинаково в live/paper (LiveClock) и в
+      // replay-режимах (ReplayClock), если ротацию когда-либо прогонят там
+      const nowMs = this._deps.clock.now().getTime();
 
       const expiredTokens: string[] = [];
       for (const [tokenIdStr, slot] of this.activeMarkets) {

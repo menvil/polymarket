@@ -60,7 +60,6 @@ import type {
   MarketInvalidTransitionError,
 } from '@polymarket/errors/market';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
-import type { IClock } from '@polymarket/time';
 import {
   type MarketId,
   type MarketSlug,
@@ -178,7 +177,6 @@ export class Market {
   private constructor(
     props: MarketProps,
     pendingNotifications: MarketNotification[] = [],
-    private readonly _clock?: IClock,
   ) {
     this.id = props.id;
     this.slug = props.slug;
@@ -309,7 +307,7 @@ export class Market {
    * }
    * ```
    */
-  public static create(props: MarketProps, clock?: IClock): Result<Market, MarketValidationError> {
+  public static create(props: MarketProps): Result<Market, MarketValidationError> {
     // Валидация question — не может быть гарантирована типом string
     if (typeof props.question !== 'string' || props.question.trim().length === 0) {
       return Err(
@@ -421,7 +419,7 @@ export class Market {
       }
     }
 
-    return Ok(new Market(props, [], clock));
+    return Ok(new Market(props, []));
   }
 
   /**
@@ -447,8 +445,8 @@ export class Market {
    * const restored = Market.fromSnapshot(snapshot);
    * ```
    */
-  public static fromSnapshot(snapshot: MarketSnapshot, clock?: IClock): Result<Market, MarketValidationError> {
-    return Market.create(snapshot, clock);
+  public static fromSnapshot(snapshot: MarketSnapshot): Result<Market, MarketValidationError> {
+    return Market.create(snapshot);
   }
 
   // ==================== Time Methods ====================
@@ -460,38 +458,21 @@ export class Market {
    * @returns true если текущее время >= времени истечения
    *
    * @remarks
-   * Принимает nowMs вместо вызова Date.now() для тестируемости.
-   * Используйте isExpired() для удобства в продакшн-коде.
+   * Принимает nowMs явно — Market не обращается к часам сам. «Сейчас» вызывающий
+   * берёт из инжектированного IClock (LiveClock в live/paper, ReplayClock в
+   * backtest) — так expiry-сравнения детерминированы и ведут себя одинаково во
+   * всех режимах. Удобных no-arg обёрток (isExpired()/timeToExpiry()) нет
+   * намеренно: они тихо падали бы обратно на wall-clock.
    *
    * @example
    * ```typescript
    * const past = Date.parse('2020-01-01T00:00:00Z');
-   * market.isExpiredAt(past);     // → false (если market.expirationMs > past)
-   * market.isExpiredAt(Date.now()); // → зависит от expirationMs
+   * market.isExpiredAt(past);                        // → false (если market.expirationMs > past)
+   * market.isExpiredAt(clock.now().getTime());       // → зависит от expirationMs
    * ```
    */
   public isExpiredAt(nowMs: number): boolean {
     return nowMs >= this._expirationMs;
-  }
-
-  /**
-   * Проверяет, истёк ли рынок в текущий момент
-   *
-   * @returns true если рынок истёк
-   *
-   * @remarks
-   * Convenience wrapper над isExpiredAt(Date.now()).
-   * В тестах используйте isExpiredAt(nowMs) для детерминизма.
-   *
-   * @example
-   * ```typescript
-   * if (market.isExpired()) {
-   *   // Рынок истёк, торговля невозможна
-   * }
-   * ```
-   */
-  public isExpired(): boolean {
-    return this.isExpiredAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   /**
@@ -513,24 +494,6 @@ export class Market {
    */
   public timeToExpiryAt(nowMs: number): number {
     return this._expirationMs - nowMs;
-  }
-
-  /**
-   * Возвращает время до истечения рынка в текущий момент
-   *
-   * @returns Миллисекунды до истечения (отрицательное если уже истёк)
-   *
-   * @remarks
-   * Convenience wrapper над timeToExpiryAt(Date.now()).
-   *
-   * @example
-   * ```typescript
-   * const ms = market.timeToExpiry();
-   * console.log(`Expires in ${ms / 1000} seconds`);
-   * ```
-   */
-  public timeToExpiry(): number {
-    return this.timeToExpiryAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   // ==================== Predicates ====================
@@ -628,7 +591,6 @@ export class Market {
         state,
       },
       notifications,
-      this._clock,
     );
   }
 

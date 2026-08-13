@@ -306,32 +306,6 @@ describe('Market.isExpiredAt(nowMs)', () => {
   });
 });
 
-describe('Market.isExpired() / timeToExpiry() — convenience wrappers', () => {
-  it('isExpired() возвращает false до истечения', () => {
-    const result = makeMarket({ expirationMs: Date.now() + 86_400_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isExpired()).toBe(false);
-    }
-  });
-
-  it('isExpired() возвращает true после истечения', () => {
-    const result = makeMarket({ expirationMs: Date.now() - 1 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isExpired()).toBe(true);
-    }
-  });
-
-  it('timeToExpiry() возвращает положительное число до истечения', () => {
-    const result = makeMarket({ expirationMs: Date.now() + 86_400_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.timeToExpiry()).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe('Market.timeToExpiryAt(nowMs)', () => {
   it('возвращает положительное число до истечения', () => {
     const result = makeMarket({ expirationMs: 1_000_000 });
