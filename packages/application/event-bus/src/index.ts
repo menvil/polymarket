@@ -1,12 +1,12 @@
 /**
- * @polymarket/event-bus — Единственный источник всех типов событий в системе.
+ * @polymarket/event-bus — канонический источник application-level событий.
  *
  * @remarks
  * ### Содержимое пакета:
- * - `ApplicationEvent` — полный union всех событий
+ * - `ApplicationEvent` — полный union application-level событий
  * - Все event types (FillReceivedEvent, BookUpdatedEvent, etc.)
  * - `IEventBus` / `EventHandler` — интерфейс event bus
- * - `EventBus` — реализация с typed HandlerMap
+ * - `EventBus` — Application-фасад над `MessageBus<ApplicationEvent>`
  *
  * @example
  * ```typescript
@@ -24,6 +24,7 @@ export type { ApplicationEvent } from './events/index.js';
 /** Реэкспорт доменных fill-событий (см. events/domain-events.ts). */
 export type {
   FillReceivedEvent,
+  FillConfirmedEvent,
   FillFailedEvent,
   DirectFillAppliedEvent,
 } from './events/domain-events.js';
@@ -47,3 +48,14 @@ export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './events/order-
 /** Реэкспорт порта event bus (см. IEventBus.ts). */
 export type { IEventBus, EventHandler } from './IEventBus.js';
 export { EventBus } from './EventBus.js';
+/**
+ * Реэкспорт canonical operational-диагностики (см. @polymarket/message-bus).
+ *
+ * @remarks
+ * `EventBus.getStats()` публично возвращает `MessageBusStats` — общий
+ * diagnostics-контракт semantic-фасадов над `MessageBus<T>`; реэкспорт избавляет
+ * Application-потребителя от знания package-топологии ради одного типа.
+ * Только этот тип: сам движок (`MessageBus`, policies, generic-ошибки, lifecycle)
+ * из Application-пакета сознательно НЕ реэкспортируется.
+ */
+export type { MessageBusStats } from '@polymarket/message-bus';

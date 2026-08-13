@@ -24,6 +24,7 @@ export default {
     '^@polymarket/ids$': '<rootDir>/../../packages/foundation/ids/src/index.ts',
     '^@polymarket/ports$': '<rootDir>/../../packages/application/ports/src/index.ts',
     '^@polymarket/event-bus$': '<rootDir>/../../packages/application/event-bus/src/index.ts',
+    '^@polymarket/message-bus$': '<rootDir>/../../packages/foundation/message-bus/src/index.ts',
     '^@polymarket/result$': '<rootDir>/../../packages/foundation/result/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../packages/foundation/errors/src/index.ts',
     '^@polymarket/errors/(.*)$': '<rootDir>/../../packages/foundation/errors/src/$1/index.ts',

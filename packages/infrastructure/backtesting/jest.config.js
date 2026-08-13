@@ -19,6 +19,7 @@ export default {
     '^@polymarket/portfolio$':     '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/orderbook$':     '<rootDir>/../../domain/entities/orderbook/src/index.ts',
     '^@polymarket/event-bus$':     '<rootDir>/../../application/event-bus/src/index.ts',
+    '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
     '^@polymarket/time$':          '<rootDir>/../../foundation/time/src/index.ts',
     '^@polymarket/math$':          '<rootDir>/../../foundation/math/src/index.ts',
     '^@polymarket/fill$':          '<rootDir>/../../domain/entities/fill/src/index.ts',
