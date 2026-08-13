@@ -19,6 +19,7 @@ import {
   assetIdToString,
 } from '@polymarket/ids';
 import type { AssetId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Order } from '../../../src/Order';
 import { OrderViewModel } from '../../../src/view/OrderViewModel';
@@ -128,7 +129,7 @@ describe('OrderViewModel', () => {
     });
 
     it('должен сериализовать strategyId когда задан', () => {
-      const order = createOpenOrder({ strategyId: 'strat-1' });
+      const order = createOpenOrder({ strategyId: unsafeStrategyId('strat-1') });
       const json = OrderViewModel.toJSON(order);
       expect(json.strategyId).toBe('strat-1');
     });
@@ -445,7 +446,7 @@ describe('Round-trip: Order → toSnapshot → fromSnapshot', () => {
   });
 
   it('должен восстановить Order через OrderViewModel.toJSON()', () => {
-    const original = createOpenOrder({ strategyId: 'strategy-42' });
+    const original = createOpenOrder({ strategyId: unsafeStrategyId('strategy-42') });
     // OrderViewModel.toJSON включает дополнительные поля (notional, remainingSize, fillPercentage)
     // fromSnapshot игнорирует лишние поля — round-trip через viewJson должен работать
     const snap = OrderViewModel.toJSON(original) as unknown as OrderSnapshot;

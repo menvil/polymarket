@@ -9,7 +9,7 @@
  */
 
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
-import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
+import type { AccountId, AssetId, FillId, OrderId, StrategyId } from '@polymarket/ids';
 
 // ─── Status ──────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ export interface OrderState {
   readonly timestamp: Timestamp;
   readonly fill: FillState;
   readonly reason?: string;
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
   /**
    * ID аккаунта-владельца заявки (опционально).
    *
@@ -90,7 +90,7 @@ export interface CreateOrderParams {
   readonly price: Price;
   readonly size: Quantity;
   readonly timestamp: Timestamp;
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
   /** ID аккаунта-владельца заявки (для ownership-проверок execution-слоя) */
   readonly accountId?: AccountId;
 }

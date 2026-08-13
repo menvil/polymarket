@@ -11,7 +11,7 @@
  * - Событие — факт (применяется без валидации)
  */
 
-import type { AccountId, OrderId } from '@polymarket/ids';
+import type { AccountId, OrderId, StrategyId } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId } from '@polymarket/ids';
 import type { FillData } from './OrderState.js';
@@ -25,7 +25,7 @@ export interface OrderCreatedEvent {
   readonly price: Price;
   readonly size: Quantity;
   readonly timestamp: Timestamp;
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
   /** ID аккаунта-владельца заявки (для ownership-проверок execution-слоя) */
   readonly accountId?: AccountId;
 }
@@ -41,7 +41,7 @@ export interface OrderRejectedEvent {
   readonly type: 'ORDER_REJECTED';
   readonly orderId: OrderId;
   readonly reason: string;
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
 }
 
 /** Событие отмены заявки (терминальный статус CANCELLED). */

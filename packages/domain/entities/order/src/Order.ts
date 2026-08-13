@@ -53,7 +53,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
-import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
+import type { AccountId, AssetId, FillId, OrderId, StrategyId } from '@polymarket/ids';
 import { AssetIdHelpers, accountIdToString, assetIdToString } from '@polymarket/ids';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -125,7 +125,7 @@ export class Order {
   get reason(): string | undefined { return this._s.reason; }
 
   /** ID стратегии (для изоляции multi-strategy) */
-  get strategyId(): string | undefined { return this._s.strategyId; }
+  get strategyId(): StrategyId | undefined { return this._s.strategyId; }
 
   /** ID аккаунта-владельца (для ownership-проверок execution-слоя) */
   get accountId(): AccountId | undefined { return this._s.accountId; }

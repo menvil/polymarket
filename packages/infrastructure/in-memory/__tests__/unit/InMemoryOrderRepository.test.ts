@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { asOrderId, asFillId } from '@polymarket/ids';
+import { asOrderId, asFillId, unsafeStrategyId } from '@polymarket/ids';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
@@ -29,7 +29,7 @@ function createOrder(opts: {
     price: Price.of(new Decimal('0.55')),
     size: Quantity.of(new Decimal('100')),
     timestamp: timestamp.value,
-    strategyId: opts.strategyId,
+    strategyId: opts.strategyId !== undefined ? unsafeStrategyId(opts.strategyId) : undefined,
   });
   if (!result.ok) throw new Error(`Failed to create order: ${result.error.message}`);
   return result.value;

@@ -32,8 +32,8 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
-import { asOrderId, asFillId, parseAccountId, parseAssetId } from '@polymarket/ids';
-import type { FillId } from '@polymarket/ids';
+import { asOrderId, asFillId, asStrategyId, parseAccountId, parseAssetId } from '@polymarket/ids';
+import type { FillId, StrategyId } from '@polymarket/ids';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { OrderSnapshot, OrderState, OrderStatus } from '../OrderState.js';
@@ -133,6 +133,18 @@ export abstract class OrderDeserializer {
         ? undefined
         : Price.of(new Decimal(snap.averagePrice));
 
+      // Persistence-boundary: снапшот несёт raw string, домен — branded StrategyId.
+      // Невалидное значение — ошибка восстановления (паттерн asFillId выше).
+      let strategyId: StrategyId | undefined;
+      if (snap.strategyId !== undefined) {
+        strategyId = asStrategyId(snap.strategyId);
+        if (strategyId === undefined) {
+          return Err(new ValidationError(`Invalid strategyId in snapshot: ${snap.strategyId}`, {
+            context: { field: 'strategyId', orderId: snap.id },
+          }));
+        }
+      }
+
       const state: OrderState = {
         id,
         asset,
@@ -141,7 +153,7 @@ export abstract class OrderDeserializer {
         size: Quantity.of(new Decimal(snap.size)),
         status: snap.status as OrderStatus,
         timestamp: tsResult.value,
-        strategyId: snap.strategyId,
+        strategyId,
         accountId: snap.accountId !== undefined ? parseAccountId(snap.accountId) : undefined,
         reason: snap.reason,
         fill: { filledSize, averagePrice, fillIds },

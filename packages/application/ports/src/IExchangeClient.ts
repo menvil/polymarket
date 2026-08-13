@@ -17,7 +17,7 @@
  */
 import type Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
-import type { OrderId, AssetId, AccountId } from '@polymarket/ids';
+import type { OrderId, AssetId, AccountId, StrategyId } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import { TradingError } from '@polymarket/errors';
 import type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
@@ -107,7 +107,7 @@ export interface SubmitOrderParams {
   /** Клиентский ID ордера для идемпотентного retry (опционально) */
   readonly clientOrderId?: string;
   /** ID стратегии для трекинга (опционально) */
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
 }
 
 /**

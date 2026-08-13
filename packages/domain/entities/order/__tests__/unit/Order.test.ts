@@ -4,6 +4,7 @@
 
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { AssetId, OrderId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import {
   asOrderId,
   asFillId,
@@ -130,7 +131,7 @@ describe('Order', () => {
     });
 
     it('должен создать заявку с опциональным strategyId', () => {
-      const result = createValidOrder({ strategyId: 'strategy-1' });
+      const result = createValidOrder({ strategyId: unsafeStrategyId('strategy-1') });
 
       expect(result.ok).toBe(true);
       if (result.ok) {

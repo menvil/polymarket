@@ -98,7 +98,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import { TimestampService, Money, Quantity } from '@polymarket/value-objects';
 import type { Price, Side } from '@polymarket/value-objects';
-import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import type { AccountId, AssetId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
 import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type {
   IExchangeClient,
@@ -161,8 +161,8 @@ export interface PlaceOrderInput {
   readonly postOnly?: boolean;
   /** Venue order type. For Polymarket CLOB, FAK is the IOC analogue. */
   readonly orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
-  /** ID стратегии (опционально) */
-  readonly strategyId?: string;
+  /** ID стратегии (опционально) — canonical branded StrategyId */
+  readonly strategyId?: StrategyId;
   /** Текущий portfolio (для риск-проверки) */
   readonly portfolio: Portfolio;
   /** Количество открытых ордеров стратегии (для риск-проверки) */
