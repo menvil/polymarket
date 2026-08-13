@@ -26,7 +26,7 @@
  * читает существующий `IOrderSubmissionRepository` (submission/reservation
  * journal) и `IOrderStateStore` (unsettled fills), не дублируя их логику.
  */
-import type { AccountId, InstrumentId } from '@polymarket/ids';
+import type { AccountId, InstrumentId, StrategyId } from '@polymarket/ids';
 
 /**
  * Вид незавершённого commitment.
@@ -83,7 +83,7 @@ export interface IStrategyCommitmentReader {
    * а не «commitments отсутствуют».
    */
   getActiveCommitments(input: {
-    readonly strategyId: string;
+    readonly strategyId: StrategyId;
     readonly accountId: AccountId;
     readonly instrumentIds: readonly InstrumentId[];
   }): Promise<readonly StrategyCommitment[]>;

@@ -48,6 +48,7 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
+import type { StrategyId } from '@polymarket/ids';
 import { Ok, Err } from '@polymarket/result';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -317,7 +318,7 @@ export class OrderRiskChecker implements IOrderRiskChecker {
    */
   private _checkMaxOpenOrders(
     openOrdersCount: number,
-    strategyId?: string,
+    strategyId?: StrategyId,
   ): RiskViolationError | undefined {
     if (this._params.maxOpenOrders === undefined) return undefined;
     if (openOrdersCount < this._params.maxOpenOrders) return undefined;

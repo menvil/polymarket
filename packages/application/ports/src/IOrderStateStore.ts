@@ -35,7 +35,7 @@
  * ```
  */
 import type { Order } from '@polymarket/order';
-import type { AccountId, OrderId, InstrumentId, FillId } from '@polymarket/ids';
+import type { AccountId, OrderId, InstrumentId, FillId, StrategyId } from '@polymarket/ids';
 import { asFillId } from '@polymarket/ids';
 
 /**
@@ -205,7 +205,7 @@ export interface IOrderStateStore {
    * @param strategyId - ID стратегии
    * @returns Readonly массив ордеров стратегии
    */
-  getOpenOrders(strategyId: string): readonly Order[];
+  getOpenOrders(strategyId: StrategyId): readonly Order[];
 
   /**
    * Возвращает ордера стратегии на конкретном инструменте.
@@ -217,7 +217,7 @@ export interface IOrderStateStore {
    * @remarks
    * Используется StrategyScheduler при сборке snapshot.
    */
-  getOpenOrdersByInstrument(strategyId: string, instrumentId: InstrumentId): readonly Order[];
+  getOpenOrdersByInstrument(strategyId: StrategyId, instrumentId: InstrumentId): readonly Order[];
 
   /**
    * Возвращает ордер по ID или undefined.

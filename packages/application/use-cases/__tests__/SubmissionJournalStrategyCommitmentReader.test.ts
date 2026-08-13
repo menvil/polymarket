@@ -1,4 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { Ok } from '@polymarket/result';
 import { asOrderId, asInstrumentId } from '@polymarket/ids';
 import type { AccountId } from '@polymarket/ids';
@@ -9,8 +10,8 @@ import type {
 } from '@polymarket/ports';
 import { SubmissionJournalStrategyCommitmentReader } from '../src/SubmissionJournalStrategyCommitmentReader.js';
 
-const STRATEGY_ID = 'strategy-1';
-const OTHER_STRATEGY_ID = 'strategy-2';
+const STRATEGY_ID = unsafeStrategyId('strategy-1');
+const OTHER_STRATEGY_ID = unsafeStrategyId('strategy-2');
 const ACCOUNT_ID = 'venue:POLYMARKET:test' as unknown as AccountId;
 const OTHER_ACCOUNT_ID = 'venue:POLYMARKET:other' as unknown as AccountId;
 const INSTRUMENT_ID = asInstrumentId('111')!;
