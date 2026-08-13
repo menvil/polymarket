@@ -1,4 +1,5 @@
 # Master Implementation Plan v2
+
 ## Polymarket Trading System — Единый подробный план
 
 **Версия:** 2.0 (исправлено 10 архитектурных проблем v1)
@@ -195,6 +196,7 @@ Phase 9    Recovery & Reconciliation                                      │
 **Файлы для создания:**
 
 **`packages/infrastructure/polymarket/package.json`**
+
 ```json
 {
   "name": "@polymarket/exchange",
@@ -225,6 +227,7 @@ Phase 9    Recovery & Reconciliation                                      │
 ```
 
 **`packages/infrastructure/polymarket/tsconfig.json`**
+
 ```json
 {
   "extends": "../../../tsconfig.base.json",
@@ -247,6 +250,7 @@ Phase 9    Recovery & Reconciliation                                      │
 ```
 
 **`packages/infrastructure/polymarket/tsconfig.build.json`**
+
 ```json
 {
   "extends": "./tsconfig.json",
@@ -256,6 +260,7 @@ Phase 9    Recovery & Reconciliation                                      │
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/infrastructure/polymarket && npx tsc --listFiles --noEmit 2>&1 | head -3
 # Должны видеть файлы пакета
@@ -272,6 +277,7 @@ cd packages/infrastructure/polymarket && npx tsc --listFiles --noEmit 2>&1 | hea
 **Файлы для создания** в `packages/infrastructure/polymarket/ws/dto/`:
 
 **`ws/dto/WsMessageTypes.ts`** — enum типов сообщений
+
 ```typescript
 export type WsMessageType =
   | 'book'           // orderbook snapshot (market channel)
@@ -284,6 +290,7 @@ export type WsMessageType =
 ```
 
 **`ws/dto/WsOrderbookDto.ts`** — raw DTO для парсинга стакана
+
 ```typescript
 /**
  * Уровень стакана в wire-формате.
@@ -308,6 +315,7 @@ export interface WsOrderbookSnapshotDto {
 ```
 
 **`ws/dto/WsTradeDto.ts`** — raw DTO для публичных трейдов
+
 ```typescript
 export interface WsTradeDto {
   readonly type: 'trade';
@@ -320,6 +328,7 @@ export interface WsTradeDto {
 ```
 
 **`ws/dto/WsUserEventDto.ts`** — raw DTO для user-channel (fills, order updates)
+
 ```typescript
 /**
  * Статусы fill-события из Polymarket user-channel (event_type: "trade").
@@ -380,6 +389,7 @@ export interface WsOrderUpdateDto {
 **Важно:** Эти типы — ВНУТРЕННИЕ. Они не экспортируются из пакета в `package.json` exports. Используются только для парсинга и передаются в bridge-адаптеры.
 
 **Верификация:**
+
 ```bash
 grep -r "DomainEvent\|OrderBookSnapshotReceivedEvent\|TradeExecutedEvent" \
   packages/infrastructure/polymarket/ws/dto/
@@ -393,10 +403,13 @@ grep -r "DomainEvent\|OrderBookSnapshotReceivedEvent\|TradeExecutedEvent" \
 **Паттерн 1 (самый массовый): `../../../../domain/ports/ILogger.js` → `@polymarket/logger`**
 
 Все 22 файла с этим импортом:
+
 ```bash
 grep -rl "domain/ports/ILogger" packages/infrastructure/polymarket/ | sort
 ```
+
 Глобальная замена:
+
 ```typescript
 // До:
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
@@ -460,6 +473,7 @@ import type { ILogger } from '@polymarket/logger';
 | `sdk/PolymarketOfficialWsAdapter.ts` | `../../../domain/entities/Orderbook.js` | `@polymarket/order-book` |
 
 **Верификация:**
+
 ```bash
 cd packages/infrastructure/polymarket && npx tsc --noEmit 2>&1 | grep "Cannot find module" | wc -l
 # Цель: 0
@@ -482,6 +496,7 @@ this.logger.debug('Balance mapped', { asset, total, available });
 `ILogger` из `@polymarket/logger` не имеет метода `silly`. Ближайший эквивалент — `debug`.
 
 **Верификация:**
+
 ```bash
 grep -rn "\.silly(" packages/infrastructure/polymarket/
 # Должно быть пусто
@@ -541,16 +556,19 @@ export interface IPolymarketWsEmitter {
 **Рефакторинг `ws/PolymarketWsAdapter.ts`:**
 
 Удалить:
+
 - Импорты: `InMemoryEventBus`, `ProjectorCoordinator`, `createProductionEnvelope`, `EventEnvelope`
 - Поля: `eventBus`, `projector`
 - Метод `mapParsedToDomainEvent` (перенести в DTO-парсеры)
 
 Добавить реализацию `IPolymarketWsEmitter`:
+
 - Внутренние `Set<cb>` для каждого типа события
 - Dispatch из `handleMessage()` по типу DTO
 - `onReconnect()` — вызывать из `reconnect()` метода
 
 Переписать `ws/mapping/mapParsedToDomainEvent.ts` → `ws/mapping/WsMessageMapper.ts`:
+
 ```typescript
 // Не domain events — только маппинг raw JSON → типизированные DTO
 // WsOrderbookDeltaDto не существует: Polymarket шлёт только полные снапшоты.
@@ -564,6 +582,7 @@ export function parseWsMessage(
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/infrastructure/polymarket && npx tsc --noEmit
 # 0 errors
@@ -658,17 +677,20 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
 ```
 
 **Ключевые принципы:**
+
 - `RawMarketResponse` — приватный тип, представляет wire-format REST API. Не выходит за пределы класса.
 - `IMarketCatalog` / `InstrumentInfo` — определяются в `@polymarket/ports` (Phase 1), используют domain VOs.
 - Парсинг строк → VOs происходит ТОЛЬКО в `_parse()` — на границе инфраструктуры.
 - `PolymarketMarketCatalog` добавляет метод `load(): Promise<void>`, которого нет в порту (инфраструктурная деталь).
 
 **Где используется:**
+
 - `BookUpdateHandler` — `catalog.get(tokenId)` → `InstrumentInfo.instrumentId` (уже `InstrumentId`, не string)
 - `OrderRiskChecker` — `catalog.get(tokenId)?.tickSize` (уже `Price`, не string)
 - `PolymarketExchangeClientAdapter` — маппинг параметров ордера
 
 **Верификация:**
+
 ```bash
 cd packages/infrastructure/polymarket && npx tsc --noEmit
 # 0 errors — весь пакет компилируется
@@ -679,11 +701,13 @@ cd packages/infrastructure/polymarket && npx tsc --noEmit
 ### Фаза 0.7 — User Channel: аутентификация и подписка
 
 **Проблема:** В плане описан `UserEventFeedAdapter` (Phase 8.2) и `onUserFill/onOrderUpdate` в `IPolymarketWsEmitter` (Phase 0.5), но нигде не описано:
+
 1. Как подключиться к user WS channel (аутентификация)
 2. Чем отличается user channel от market channel на уровне WS
 3. Как парсер различает `event_type: "trade"` market vs user channel
 
 **Факты о Polymarket user channel:**
+
 - WS endpoint тот же: `wss://ws-subscriptions-clob.polymarket.com/ws/`
 - Параметры подписки отличаются: `{ type: 'user', markets: [...], auth: {...} }`
 - Аутентификация: API-key подпись или L2 подпись (зависит от уровня доступа)
@@ -694,6 +718,7 @@ cd packages/infrastructure/polymarket && npx tsc --noEmit
 
 `IPolymarketWsEmitter` — общий интерфейс, скрывающий детали подключения.
 Реализация (`PolymarketWsAdapter`) управляет двумя WS-соединениями:
+
 - **Market WS**: `type: 'market'`, без аутентификации
 - **User WS**: `type: 'user'`, с auth-токеном
 
@@ -781,6 +806,7 @@ private _handleUserMessage(raw: unknown): void {
 | `ws/IPolymarketWsEmitter.ts` | Добавить `subscribeUserChannel(config: UserChannelConfig): Promise<void>` |
 
 **Верификация:**
+
 ```bash
 # User channel events корректно маршрутизируются
 grep -r "orderEventType\|WsFillStatus\|taker_order_id" packages/infrastructure/polymarket/ws/
@@ -999,6 +1025,7 @@ export interface IMarketCatalog {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/ports && npm run build
 # 0 errors; dist/ создан
@@ -1293,7 +1320,7 @@ export class EventBus implements IEventBus {
 }
 ```
 
-### __tests__/EventBus.test.ts — ключевые сценарии
+### **tests**/EventBus.test.ts — ключевые сценарии
 
 ```typescript
 describe('EventBus', () => {
@@ -1307,6 +1334,7 @@ describe('EventBus', () => {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/event-bus && npm run build && npm test
 ```
@@ -1524,6 +1552,7 @@ export class OrderUpdateHandler {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/handlers && npm run build && npm test
 ```
@@ -1779,6 +1808,7 @@ export class DrawdownRiskMonitor {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/risk && npm run build && npm test
 ```
@@ -2070,6 +2100,7 @@ export class LedgerService {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/use-cases && npm run build && npm test
 ```
@@ -2156,6 +2187,7 @@ export class RiskOrchestrator {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/orchestrators && npm run build && npm test
 ```
@@ -2399,6 +2431,7 @@ export class StrategyRunner implements IStrategyRunner {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/strategy && npm run build && npm test
 ```
@@ -2619,6 +2652,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
 ### 8.4 — Обновить package.json @polymarket/exchange
 
 Добавить зависимости от application layer:
+
 ```json
 {
   "dependencies": {
@@ -2630,6 +2664,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/infrastructure/polymarket && npx tsc --noEmit
 ```
@@ -2645,6 +2680,7 @@ cd packages/infrastructure/polymarket && npx tsc --noEmit
 ### Проблема
 
 При рестарте:
+
 - `IOrderRepository` (in-memory) — пустой: потеряны все открытые ордера
 - `IPortfolioStore` (in-memory) — пустой: потерян баланс и позиции
 - `IProcessedFillRepository` (in-memory) — пустой: риск двойной обработки fills
@@ -2796,6 +2832,7 @@ async function startup() {
 ```
 
 **Верификация:**
+
 ```bash
 cd packages/application/recovery && npm run build && npm test
 ```
@@ -2828,6 +2865,7 @@ cd packages/application/recovery && npm run build && npm test
 ## Финальный чеклист верификации
 
 ### Компиляция
+
 ```bash
 # Инфраструктура
 cd packages/infrastructure/polymarket && npx tsc --noEmit
@@ -2843,11 +2881,13 @@ npm run build --workspaces 2>&1 | grep -E "error|warning" | head -20
 ```
 
 ### Тесты
+
 ```bash
 npm test --workspaces 2>&1 | grep -E "PASS|FAIL|Tests:"
 ```
 
 ### Архитектурные инварианты
+
 ```bash
 # Fix #2: domain events НЕ в infrastructure
 grep -r "DomainEvent\|OrderBookSnapshotReceivedEvent\|TradeExecutedEvent" \
@@ -2876,6 +2916,7 @@ grep -A5 "markIfNotExists" packages/application/use-cases/src/ProcessFillUseCase
 ```
 
 ### Семантические инварианты
+
 ```
 [ ] portfolio.version передаётся в каждый portfolioStore.save() вызов (CAS)
 [ ] markIfNotExists async — НЕТ sync реализации в production

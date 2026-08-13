@@ -45,20 +45,24 @@ const orderToSlot = new Map<string, string>();              // orderId → token
 ## Алгоритм работы
 
 ### Инициализация
+
 1. Первый рынок создаётся при старте (fixed или discovery)
 2. Для discovery + `maxConcurrentMarkets > 1`: после WS connect вызывается `fillMarketSlots()`
 
 ### Ротация рынков
+
 1. `checkExpiredMarkets()` каждые 5 сек проверяет все слоты
 2. Истёкшие слоты закрываются через `closeMarket(tokenIdStr, 'EXPIRED')`
 3. `fillMarketSlots()` заполняет свободные слоты новыми кандидатами
 4. Reentrancy guard `_rotationInProgress` предотвращает гонки
 
 ### Fill tracking (per-slot)
+
 - `ORDER_CREATED` → `orderToSlot.set(orderId, tokenIdStr)` (привязка ордера к слоту)
 - `ORDER_PARTIALLY_FILLED` / `ORDER_FILLED` / `ORDER_CANCELLED` → lookup слот через `orderToSlot`, запись в `slot.partialAccum` / `slot.fillHistory`
 
 ### Shutdown
+
 - Итерация всех слотов: `printMarketSummary(slot)` + `scheduler.unregister(slot.strategy.id)`
 - `activeMarkets.clear()`, `orderToSlot.clear()`
 

@@ -132,11 +132,13 @@ market summary.
 события НЕ публикуются → `MarketRotation.fillHistory` не пополняется.
 
 **Типичный сценарий**:
+
 1. Стратегия выставила BUY → отменила через REST (ордер → CANCELED локально)
 2. Биржа уже MATCHED ордер → fill приходит по WS на CANCELED ордер
 3. `ProcessFillUseCase` → `applyDirectFill` → портфель обновлён, но fill не виден в summary
 
 **Решение** (реализовано):
+
 - `ProcessFillUseCase` публикует `DIRECT_FILL_APPLIED` event после успешного `applyDirectFill`
 - `MarketRotation` подписывается и накапливает в `slot.directPartialAccum` (по orderId)
 - При закрытии рынка `_printMarketSummary` флашит `directPartialAccum` в `fillHistory`

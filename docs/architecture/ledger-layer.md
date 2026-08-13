@@ -3,6 +3,7 @@
 ## Проблема
 
 Без Ledger layer:
+
 - Portfolio и Position обновляются напрямую из Fill
 - Нет единого источника истины
 - Replay невозможен без перегонки всего state
@@ -86,16 +87,19 @@ const entries = FillLedgerAdapter.toLedgerEntries(fill);
 ## Архитектурные принципы
 
 **Fill — независимая запись:**
+
 - Не принадлежит Order aggregate
 - Не принадлежит Portfolio
 - Out-of-order events обрабатываются корректно
 
 **Ledger — единственный источник истины:**
+
 - Append-only (никаких обновлений, только добавление)
 - Replay возможен в любой момент
 - P&L = сумма всех CASH_DELTA + FEE_DEBIT по accountId
 
 **Portfolio = проекция:**
+
 - Строится из LedgerEntry[]
 - Не является агрегатом с мутациями
 - Пересчитывается при необходимости
@@ -113,6 +117,7 @@ const usdcPnl = ledger.getBalance(accountId, AssetIdHelpers.USDC);
 `packages/domain/accounting/ledger/` → `@polymarket/ledger`
 
 Зависит от:
+
 - `@polymarket/fill` (через paths в tsconfig + moduleNameMapper в jest)
 - `@polymarket/ids`
 - `@polymarket/value-objects`

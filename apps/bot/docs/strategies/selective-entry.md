@@ -52,8 +52,8 @@ flowchart TD
 | `orderSize` | `Decimal` | **обязателен** | Размер ордера в токенах |
 | `minZoneCents` | `number` | `55` | Нижняя граница зоны покупки (¢) |
 | `maxZoneCents` | `number` | `68` | Верхняя граница зоны покупки (¢) |
-| `minDeltaPct` | `number` | `0.03` | Минимальный |delta%| для входа |
-| `maxDeltaPct` | `number` | `0.12` | Максимальный |delta%| для входа |
+| `minDeltaPct` | `number` | `0.03` | Минимальный \|delta%\| для входа |
+| `maxDeltaPct` | `number` | `0.12` | Максимальный \|delta%\| для входа |
 | `minTauSec` | `number` | `120` | Минимальный tau (секунды) |
 | `maxTauSec` | `number` | `210` | Максимальный tau (секунды) |
 | `maxSpreadCents` | `number` | `4` | Максимальный spread (¢) |
@@ -66,12 +66,15 @@ flowchart TD
 ## Почему это работает
 
 ### Zone filter 55-68¢
+
 Когда токен стоит 55-68¢, рынок считает P(UP) ≈ 55-68%. При этом реальная P(UP) выше из-за momentum persistence. Breakeven для покупки за 60¢ = 60% WR. Мы покупаем при P(UP) > 60%.
 
 ### Delta% как сигнал
+
 `delta% = (cryptoPrice - strikePrice) / strikePrice × 100`. Диапазон 0.03-0.12% означает BTC значимо выше strike, но не слишком далеко (ещё есть upside).
 
 ### Hold до settlement
+
 Нет overfit на exit logic. Нет adverse selection. Одна сделка на рынок.
 
 ---

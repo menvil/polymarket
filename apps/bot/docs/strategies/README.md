@@ -36,6 +36,7 @@ Pair-aware развитие `calibrated-crowd-cex`: использует `UP/DOW
 Momentum-based стратегия. На отметке 50% времени рынка принимает одноразовое решение: купить UP или DOWN (auto-selection) или пропустить. Выбирает токен с большим EWMA rise. Hold до settlement.
 
 **Ключевые результаты (15-мин)**:
+
 - +18.73 USDC на 252 рынках, 79.8% WR
 - 3/4 дней прибыльные (btc1: -5.45, btc2: +13.71, btc4: +1.87, btc5: +8.60)
 - Auto-selection: один конфиг на рынок, стратегия сама выбирает UP или DOWN
@@ -50,6 +51,7 @@ Momentum-based стратегия. На отметке 50% времени рын
 Buy-and-hold на основе zone filter (55-68¢) и delta% (0.03-0.12%). Проверяет на каждом тике, входит при прохождении всех фильтров. Hold до settlement.
 
 **Ключевые результаты (15-мин)**:
+
 - +13.75 USDC на 252 рынках, 69.1% WR
 - 4/4 дней прибыльные — самая стабильная
 - Зависит от Chainlink delta% (требует crypto price данные)
@@ -89,6 +91,7 @@ Maker-first стратегия на основе 3D edge-таблицы `(delta,
 | SELL | +$30 | 210–240s | up | 141 | ✓ | 0.464 |
 
 **Экономическая логика**:
+
 - BUY в `up` + короткий tau (30–90s): crowd недооценивает краткосрочный momentum
 - SELL в `up` + длинный tau (180–270s): crowd чрезмерно оптимистичен при сильном росте
 - SELL в `down` + средний tau: crowd не верит в продолжение снижения
@@ -150,16 +153,19 @@ Observation-weighted калибровка считала каждый тик к�
 ## Не работающие стратегии (reference)
 
 ### Avellaneda-Stoikov MM
+
 **Файл**: `src/strategies/AvellanedaStoikovStrategy.ts`
 
 Market making с динамическими спредами. Сильная adverse selection на 5-мин рынках уничтожает PnL. Множество параметров (~40+), все overfit. Ablation study показал: zone filter 55-73¢ делает breakeven, но не больше.
 
 ### CryptoProbStrategy
+
 **Файл**: `src/strategies/CryptoProbStrategy.ts`
 
 Directional торговля на основе P(UP) из empirical probability table. Overfit на train (btc1: +10 USDC), OOS catastrophic (-90 USDC). 150 ячеек prob table = слишком много степеней свободы.
 
 ### ProbTableStrategy
+
 **Файл**: `src/strategies/ProbTableStrategy.ts`
 
 Ранняя версия CryptoProbStrategy с other entry/exit logic. Те же проблемы с overfit.

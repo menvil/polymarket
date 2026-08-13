@@ -16,6 +16,7 @@ Phase 9 гарантирует консистентность состояния
 **Ответственность:** Инициализация Portfolio в IPortfolioStore из текущего баланса venue.
 
 **Поток данных:**
+
 ```
 ICurrentBalanceProvider.getUsdcBalance(accountId)
   → Money (текущий USDC баланс — порт возвращает Money напрямую, Этап 10c плана
@@ -39,6 +40,7 @@ ICurrentBalanceProvider.getUsdcBalance(accountId)
 **Ответственность:** Сверка локальных ордеров с venue — отмена закрытых в offline-период.
 
 **Поток данных:**
+
 ```
 IOrderRepository.getAll()
   → localOrders[]

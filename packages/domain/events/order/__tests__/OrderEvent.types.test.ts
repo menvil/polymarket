@@ -19,15 +19,17 @@ import type {
 
 describe('OrderEvent union contract', () => {
   it('каждое domain-событие Order — член union (compile-time)', () => {
-    const checks: ReadonlyArray<(e: never) => OrderEvent> = [
-      (e: OrderCreatedEvent) => e,
-      (e: OrderAcceptedEvent) => e,
-      (e: OrderRejectedEvent) => e,
-      (e: OrderCancelledEvent) => e,
-      (e: OrderExpiredEvent) => e,
-      (e: OrderPartiallyFilledEvent) => e,
-      (e: OrderFilledEvent) => e,
-    ] as ReadonlyArray<(e: never) => OrderEvent>;
+    // Явная аннотация возврата у каждой лямбды — настоящая по-членная проверка
+    // (каст `as ReadonlyArray<...>` обходил её целиком)
+    const checks = [
+      (e: OrderCreatedEvent): OrderEvent => e,
+      (e: OrderAcceptedEvent): OrderEvent => e,
+      (e: OrderRejectedEvent): OrderEvent => e,
+      (e: OrderCancelledEvent): OrderEvent => e,
+      (e: OrderExpiredEvent): OrderEvent => e,
+      (e: OrderPartiallyFilledEvent): OrderEvent => e,
+      (e: OrderFilledEvent): OrderEvent => e,
+    ];
     expect(checks.length).toBe(7);
   });
 

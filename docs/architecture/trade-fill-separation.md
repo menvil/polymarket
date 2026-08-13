@@ -8,6 +8,7 @@
 2. **Исполнение нашего ордера** — факт того, что наш конкретный ордер был (частично) исполнен
 
 Это приводило к:
+
 - `orderId?: string` — поле стало опциональным, хотя для исполнения оно обязательно
 - Смешение полей: `fee`, `reasonCode`, `metadata` (наши поля) рядом с рыночными данными
 - `fromValue()` / `fromJSON()` — парсинг внешнего API прямо в entity
@@ -24,6 +25,7 @@ packages/domain/entities/trade/
 **Для:** аналитики рынка, VWAP, pressure, сигналы.
 
 **Ключевые поля:**
+
 - `id: VenueTradeId` — ID на venue
 - `venueId, marketId, tokenId` — идентификаторы рынка
 - `price, size, aggressorSide?` — параметры сделки
@@ -40,6 +42,7 @@ packages/domain/entities/fill/
 **Для:** позиций, PnL, комиссий, аллокации по стратегиям.
 
 **Ключевые поля:**
+
 - `id: FillId` — ID исполнения
 - `orderId: OrderId` — **ОБЯЗАТЕЛЕН**, нет orderId — нет Fill
 - `accountId, venueId, marketId, tokenId` — идентификаторы
@@ -51,6 +54,7 @@ packages/domain/entities/fill/
 ## Правило: Fill как источник истины
 
 **Fill является источником истины** для расчётов:
+
 - Позиции рассчитываются из Fill, не из Trade
 - PnL рассчитывается из Fill, не из Trade
 - Комиссии учитываются через Fill.fee
@@ -74,6 +78,7 @@ application/ ExecutionLinker.linkFillToTrade(fill, trades)
 ```
 
 Такая архитектура позволяет:
+
 - Обрабатывать Fill даже когда Trade ещё не получен (latency)
 - Не создавать жёстких зависимостей между доменными пакетами
 - Fill может существовать без соответствующего Trade
@@ -91,6 +96,7 @@ order.applyFill(fill);    // fill.orderId обязателен — явная п
 ```
 
 Это улучшает инварианты:
+
 - **Раньше:** `if (trade.orderId !== undefined && trade.orderId !== order.id)` — FIFO-like логика
 - **Теперь:** `if (fill.orderId !== order.id)` — всегда проверяем
 

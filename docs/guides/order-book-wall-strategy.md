@@ -5,6 +5,7 @@
 Стратегия использует анализ глубины стакана CEX-биржи (Binance/Coinbase/OKX) для прогнозирования направления движения цены на Polymarket.
 
 **Два ключевых сценария:**
+
 - **Пробой (Breakout)**: стенка в стакане (уровень с аномальным объёмом) активно поглощается трейдами → цена пробивает уровень → Polymarket отреагирует следом.
 - **Отбой (Rejection)**: цена подходит к стенке, трейды останавливаются → стенка держится → цена откатывает назад.
 
@@ -57,12 +58,14 @@ StrategyIntent[] → ExecutionEngine
 ### Шаг 2: ConsumptionTracker — отслеживание поглощения
 
 Для каждой стенки хранится:
+
 - `initialSize` — объём при первом обнаружении
 - `currentSize` — объём на последнем тике
 - `tradeVolumeInWindow` — объём трейдов в скользящем окне `consumptionWindowMs`
 - `recentTradeVolume` — объём трейдов в коротком окне `recentWindowMs` (для детекции замедления)
 
 **absorptionRatio** = `(initialSize - currentSize) / initialSize`
+
 - 0.0 = стенка нетронута
 - 1.0 = стенка полностью поглощена
 
@@ -73,6 +76,7 @@ StrategyIntent[] → ExecutionEngine
 Основная стратегия — **отбой (rejection)**. BREAKOUT используется только для выхода.
 
 **Условия сигнала REJECTION** (все три одновременно):
+
 1. **Wall intact**: `absorptionRatio < rejectionMaxAbsorption` (стенка цела на 80%+)
 2. **Price tested**: `tradeVolumeInWindow >= minWallTestVolume` (цена тестировала уровень)
 3. **Flow decelerated**: `recentRate < historicRate × flowDecelerationFactor` (поток упал)
@@ -91,6 +95,7 @@ recentRate   = recentTradeVolume / recentWindowMs  (BTC/ms за короткое
 | `NEUTRAL` | Нет чёткого сигнала | Ждём |
 
 **Сила сигнала** = `wallPower × intactScore × decelerationScore`
+
 - `wallPower = clamp(densityFactor / 10, 0, 1)`
 - `intactScore = 1 - absorptionRatio / rejectionMaxAbsorption`
 - `decelerationScore = clamp(1 - flowRatio / flowDecelerationFactor, 0, 1)`
@@ -98,6 +103,7 @@ recentRate   = recentTradeVolume / recentWindowMs  (BTC/ms за короткое
 ### Шаг 4: OrderBookWallStrategy — торговые решения
 
 **BUY** (вход):
+
 - Нет открытой позиции, нет in-flight fills, кулдаун после выхода прошёл (20 сек)
 - UP: сигнал = `REJECTION_DOWN`; DOWN: сигнал = `REJECTION_UP`
 - `strength >= minSignalStrength`
@@ -106,6 +112,7 @@ recentRate   = recentTradeVolume / recentWindowMs  (BTC/ms за короткое
 - Цена входа = GBM fair value (binaryUpProbability)
 
 **SELL** (выход по 3 причинам):
+
 1. **Стоп-лосс**: `ewmaMid < entryPrice - stopLossCents` и нет открытого SELL
 2. **Тайм-аут**: позиция держится > `holdMaxMs` и нет открытого SELL
 3. **Разворот**: противоположный сигнал (BREAKOUT_DOWN или REJECTION_UP для UP-стороны)
@@ -136,6 +143,7 @@ data/live-recordings-cll/cex/2026-05-04/coinbase/
 ```
 
 Формат события:
+
 ```json
 {"t":"ob","ts":1777914000072,"bids":[[price,size],...],"asks":[[price,size],...]}
 {"t":"trade","ts":1777914001234,"price":80015.5,"size":0.01,"side":"buy"}
@@ -190,6 +198,7 @@ data/live-recordings-cll/cex/2026-05-04/coinbase/
 | CEX trade events | 64,709 |
 
 **Проблемы v1:**
+
 1. Сигнал срабатывает слишком часто (до 12 BUY за 5 мин)
 2. Absorption-сигнал шумный с shallow order book (50 уровней в $25 диапазоне)
 3. Часть рынков не торгуется (нет Chainlink цены или нет CEX данных)

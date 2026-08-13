@@ -157,6 +157,7 @@ FillMapper.fromPolymarketTradeEvent(
 ```
 
 **Формат входного события** (Polymarket user-channel):
+
 ```json
 {
   "id": "28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e",
@@ -198,6 +199,7 @@ fee = size × POLYMARKET_CRYPTO_TAKER_FEE_RATE × price × (1 - price)
 ```
 
 **Маппинг в ExecutionMetadata:**
+
 - `trader_side` → `liquidity` ('MAKER' | 'TAKER')
 - `status` → `tradeStatus` ('MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED')
 - `transaction_hash` → `venueTradeId`

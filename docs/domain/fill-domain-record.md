@@ -29,6 +29,7 @@ FILL → FILL → ORDER_CANCELLED      // тоже бывает
 ```
 
 Если Fill живёт внутри Order aggregate:
+
 - Order должен существовать, чтобы принять Fill
 - Fill может прийти раньше Order snapshot
 - Fill lifecycle > Order lifecycle (fills хранятся месяцами, orders удаляются)
@@ -48,6 +49,7 @@ if (!params.size.isPositive()) → ошибка
 ```
 
 Всё остальное гарантируется typed params и VO:
+
 - `FillId`, `OrderId`, `AccountId`, `VenueId`, `AssetId` — branded types
 - `Price` — гарантирует > 0 при создании
 - `Fee` — гарантирует >= 0

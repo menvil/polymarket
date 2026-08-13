@@ -221,7 +221,7 @@ primary. Снимается только `FILL_CONFIRMED` (см. ниже).
 
 - `onFillReceivedForInstrument`: dirty + enqueue. Cooldown **не** снимается.
 - `onFillConfirmedForInstrument`: finality cleanup — `clearPostCancelCooldown`
-  + `clearExchangeRejectionCooldown`, затем dirty + enqueue.
+  - `clearExchangeRejectionCooldown`, затем dirty + enqueue.
 
 `OrderEventBridge` маршрутизирует события 1:1 на эти методы.
 
