@@ -29,7 +29,7 @@ src/
   TradeSnapshot.ts  # Плоское DTO для хранения/логов
   index.ts
   mappers/
-    TradeMapper.ts  # fromPolymarketLastTradeEvent, toSnapshot, fromSnapshot
+    TradeMapper.ts  # fromPolymarketLastTradeEvent, fromParsedTrade, toSnapshot, fromSnapshot
 ```
 
 ## Интерфейс TradeParams
@@ -108,8 +108,59 @@ toString(): string
 **Защита от невалидного raw**: если `raw` не является объектом (null, массив, примитив) — возвращает `Err`.
 
 VenueTradeId генерируется как:
+
 - `{txHash}_{timestamp}` если есть transaction_hash
-- `{market}_{assetId}_{timestamp}` если нет
+- `{market}_{assetId}_{timestamp}_{price}_{size}` если нет (composite key — price/size
+  добавлены для снижения вероятности коллизий одновременных трейдов)
+
+Генерация `VenueTradeId` и `venueId` вынесена в общие приватные хелперы
+(`_buildVenueTradeId`, `_buildPolymarketVenueId`) — переиспользуются `fromParsedTrade`
+(см. ниже), формула не дублируется между методами.
+
+### fromParsedTrade (Этап 2 плана миграции)
+
+Строит `Trade` из уже распакованных VO — точка врезки для `MarketDataStore`'s
+обработчика `TRADE_RECEIVED` (`@polymarket/market-state`), который получает
+`TradeReceivedEvent` из `@polymarket/event-bus` с уже готовыми
+`instrumentId`/`price`/`size`/`side`/`timestamp`. В отличие от
+`fromPolymarketLastTradeEvent` (парсит сырые JSON-строки, защищается от
+произвольного untyped-входа), этот метод принимает VO напрямую — сериализовать их
+обратно в строки ради повторного парсинга было бы архитектурно задом наперёд.
+
+```typescript
+import { TradeMapper } from '@polymarket/trade';
+
+const result = TradeMapper.fromParsedTrade({
+  instrumentId: event.instrumentId,   // InstrumentId (branded)
+  marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+  price: event.price,                 // Price VO
+  size: event.size,                   // Quantity VO
+  side: event.side,                   // Side ('BUY' | 'SELL')
+  timestamp: event.timestamp,         // Timestamp VO
+});
+
+if (result.ok) {
+  const trade = result.value;
+}
+```
+
+`instrumentId` парсится в `tokenId: AssetId` через `parseAssetId()` — для сырого
+numeric CTF token ID (формат Polymarket `asset_id`) даёт вариант
+`POLYMARKET_CTF_TOKEN`. `price`/`size` — уже валидные VO-инстансы (VO-конструктор
+не даёт создать невалидный экземпляр), повторная проверка положительности здесь не
+нужна.
+
+`transaction_hash` недоступен нигде в цепочке поставки данных для `TRADE_RECEIVED`
+(ни в live WS DTO, ни в backtest replay) — `VenueTradeId` в этом методе **всегда**
+строится по composite-формуле, ветка с txHash недостижима на практике.
+
+**Индексация построенных Trade**: `MarketDataStore` пишет каждый успешно
+построенный `Trade` в `TradeIndexCollector` (`@polymarket/market-state`) — индекс
+по `VenueTradeId`, backed by `RollingWindow<Trade>`. Единый источник рыночных
+Trade для будущего `ExecutionLinker` (Этап 7). Если `MarketDataStore` ещё не знает
+`marketId` для инструмента (нет предшествующего `BOOK_UPDATED`/`BOOK_DEPTH`) —
+`Trade` для этого события не строится вообще (лог + пропуск), мэппер не вызывается
+с пустым `marketId`.
 
 ### toSnapshot / fromSnapshot
 
@@ -165,6 +216,31 @@ if (result.ok) {
 Fill.venueTradeId?: VenueTradeId → Trade.id
 ```
 
-Связка устанавливается в application layer через `ExecutionLinker`. Это позволяет:
+Связка устанавливается в application layer через `ExecutionLinker` (Этап 7 плана
+миграции, ещё не построен). Это позволяет:
+
 - Обогащать Fill рыночным контекстом
 - Не создавать жёстких зависимостей между доменными сущностями
+
+### ⚠️ Известное ограничение: пространства значений Trade.id и Fill.venueTradeId не пересекаются
+
+`transaction_hash` недоступен нигде в реальной цепочке поставки данных Polymarket —
+ни для `Trade` (`fromParsedTrade`/`fromPolymarketLastTradeEvent`, см. выше), ни для
+`Fill` (`FillMapper.ts`: `venueTradeId` устанавливается как bare `transaction_hash`
+из `raw['transaction_hash']` либо `undefined` — **без composite-фолбэка**, в отличие
+от `Trade.id`).
+
+Следствие: для реального трафика `Trade.id` **всегда** составной ключ
+(`marketId_assetId_ts_price_size`), а `Fill.venueTradeId` — **всегда** либо bare
+хэш транзакции, либо `undefined`. Точный lookup `Trade` по `Fill.venueTradeId`
+(`Map<VenueTradeId, Trade>.get(fill.venueTradeId)`) **структурно никогда не
+совпадёт** для реальных данных — это не "иногда не находит, потому что рыночный
+Trade ещё не долетел до public tape" (это ожидаемо и не проблема сама по себе), а
+гарантированное несовпадение всегда, независимо от тайминга.
+
+Это не баг, внесённый Этапом 2 — существующее свойство уже смёрженного
+`TradeMapper`/`FillMapper` кода, которое Этап 2 впервые делает не-inert (до этого
+оба маппера были мёртвым кодом, друг с другом не взаимодействовавшим). Будущий
+`ExecutionLinker` (Этап 7) должен с самого начала проектировать fuzzy/windowed
+matching (`tokenId` + price + size + временное окно), а не точный lookup по ключу —
+иначе связка Fill↔Trade не сработает никогда для реального трафика.

@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/trade-tape":      ["../../domain/market-data/trade-tape/dist/index.d.ts"],
+      "@polymarket/trade":           ["../../domain/entities/trade/dist/index.d.ts"],
+      "@polymarket/rolling-window":  ["../../foundation/rolling-window/dist/index.d.ts"],
+      "@polymarket/ports":           ["../ports/dist/index.d.ts"],
+      "@polymarket/event-bus":       ["../event-bus/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

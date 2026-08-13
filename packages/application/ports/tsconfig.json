@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/fill":      ["../../domain/entities/fill/dist/index.d.ts"],
+      "@polymarket/order":     ["../../domain/entities/order/dist/index.d.ts"],
+      "@polymarket/portfolio": ["../../domain/entities/portfolio/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

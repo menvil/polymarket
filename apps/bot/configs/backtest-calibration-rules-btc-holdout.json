@@ -1,0 +1,69 @@
+{
+  "_meta": {
+    "desc": "CalibrationRules holdout backtest",
+    "status": "oos",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Calibration rules strategy на holdout данных. Journal: data/backtest-journals/calibration-rules-btc-holdout/. Данные Apr 23-25."
+    },
+    "todo": [
+      "посмотреть data/backtest-journals/calibration-rules-btc-holdout/ для результатов per-market"
+    ]
+  },
+  "strategy": "calibration-rules",
+  "strategyParams": {
+    "rulesTablePath": "tables/calibration-rules-btc-v1.json",
+    "orderShares": 5,
+    "maxSpreadCents": 4,
+    "warmupSec": 15,
+    "bidOffsetCents": 1,
+    "useBookAnchoredMakerPricing": true,
+    "makerRepriceAfterSec": 5,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "logEntries": true
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-24/polymarket/*Bitcoin*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-25/polymarket/*Bitcoin*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-26/polymarket/*Bitcoin*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-27/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/backtest-recordings/calibration-rules-btc-holdout",
+    "journalDir": "./data/backtest-journals/calibration-rules-btc-holdout",
+    "compression": "gzip"
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

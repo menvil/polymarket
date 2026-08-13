@@ -1,0 +1,58 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry discovery backtest 5min",
+    "status": "insample",
+    "backtest": {
+      "dataset": "5-min BTC snapshots",
+      "pnl": "не записан",
+      "notes": "Бэктест с discovery mode."
+    },
+    "todo": [
+      "результаты не зафиксированы — см. docs/guides/selective-entry-ablation.md"
+    ]
+  },
+  "strategy": "selective-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 60,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1,
+    "requireDeltaAccel": true
+  },
+  "market": {
+    "source": "discovery",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/packages/apps/collect-data/snapshots/2026-03-21/*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

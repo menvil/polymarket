@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "desc": "PairedCexCrowd experiment — paired-cex-crowd-backtest-2026-04-21-fixed-baseline",
+    "status": "archived",
+    "backtest": {
+      "dataset": "snapshots 2026-04-21",
+      "pnl": "не записан",
+      "notes": "Экспериментальная paired стратегия: UP+DOWN одновременно через lock mechanism. Verbose journal доступен в data/backtest-journals/paired-cex-crowd-2026-04-21-verbose/."
+    },
+    "todo": [
+      "проверить data/backtest-journals/paired-cex-crowd-2026-04-21-verbose для результатов",
+      "механизм lock был нестабилен — требует ревизии"
+    ]
+  },
+  "strategy": "paired-cex-crowd",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min.json",
+    "crowdGate": "relaxed",
+    "relaxedEntrySide": "both",
+    "relaxedMinN": 20,
+    "relaxedMinEdge": 0.01,
+    "relaxedMinCiEdge": -1,
+    "relaxedRequireOos": false,
+    "minComposite": 0.05,
+    "orderShares": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitMode": "signal-normalized",
+    "normalizeThresholdBps": 0.25,
+    "maxSignalHoldMs": 60000,
+    "exitOnSignalFlip": true,
+    "exitOnSignalStale": true,
+    "hedgeWhenUnavailable": true,
+    "tokenAvailabilityDelayMs": 5000,
+    "minLockedProfitCents": 0,
+    "allowPanicTaker": false,
+    "logEntries": false,
+    "cexFilterMode": "not-adverse",
+    "cexSignalId": "cex_chainlink_linear_lead_lag",
+    "cexVenues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "cexThresholdBps": 0.5,
+    "cexStaleMs": 2000,
+    "cexMinVenueCount": 3,
+    "cexMaxSpreadBps": 10,
+    "cexLinearInterceptUsd": 0.270605,
+    "cexWeights": {
+      "binance": 0.058363,
+      "coinbase": 0.083856,
+      "okx": 0.077538
+    },
+    "noFillDecisionMs": 3000,
+    "noFillDriftCents": 1.5,
+    "oppositeEntryMinEdge": 0.015,
+    "oppositeMaxImbalance": 0.15,
+    "fillAdversePenaltyCents": 0.5,
+    "sameSideReentryCooldownMs": 8000,
+    "pairedLockMinProfitCents": 0.25,
+    "pairedLockFeeBufferCents": 1.0
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": false,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

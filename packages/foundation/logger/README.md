@@ -76,12 +76,13 @@ logger.warn('High latency detected', { latency: 2500, threshold: 1000 });
 try {
   await connectDatabase();
 } catch (error) {
-  logger.error('Database connection failed', error as Error, {
+  logger.error('Database connection failed', {
+    err: error as Error,
     host: 'localhost',
     port: 5432,
   });
 }
-// {"timestamp":"2024-01-15T10:30:47.789Z","level":"ERROR","message":"Database connection failed","host":"localhost","port":5432,"error":{"message":"Connection refused","name":"Error","stack":"..."}}
+// {"timestamp":"2024-01-15T10:30:47.789Z","level":"ERROR","message":"Database connection failed","host":"localhost","port":5432,"err":{"message":"Connection refused","name":"Error","stack":"..."}}
 ```
 
 ### No Logging (для unit-тестов)
@@ -114,8 +115,8 @@ interface ILogger {
   debug(message: string, context?: Record<string, unknown>): void;
   info(message: string, context?: Record<string, unknown>): void;
   warn(message: string, context?: Record<string, unknown>): void;
-  error(message: string, error?: Error, context?: Record<string, unknown>): void;
-  fatal(message: string, error?: Error, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  fatal(message: string, context?: Record<string, unknown>): void;
   child(bindings: Record<string, unknown>): ILogger;
 }
 ```
@@ -162,8 +163,8 @@ class ConsoleLogger implements ILogger {
   debug(message: string, context?: Record<string, unknown>): void;
   info(message: string, context?: Record<string, unknown>): void;
   warn(message: string, context?: Record<string, unknown>): void;
-  error(message: string, error?: Error, context?: Record<string, unknown>): void;
-  fatal(message: string, error?: Error, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  fatal(message: string, context?: Record<string, unknown>): void;
   child(bindings: Record<string, unknown>): ILogger;
 }
 ```
@@ -311,14 +312,16 @@ logger.warn('Position limit approaching', {
 });
 
 // ERROR - ошибки
-logger.error('Failed to cancel order', new Error('Timeout'), {
-  orderId: 'order-456'
+logger.error('Failed to cancel order', {
+  err: new Error('Timeout'),
+  orderId: 'order-456',
 });
 
 // FATAL - критические ошибки (приводят к остановке)
-logger.fatal('Cannot connect to exchange', new Error('Connection refused'), {
+logger.fatal('Cannot connect to exchange', {
+  err: new Error('Connection refused'),
   exchange: 'Polymarket',
-  retryAttempts: 5
+  retryAttempts: 5,
 });
 process.exit(1); // После FATAL обычно завершаем процесс
 ```
@@ -338,7 +341,8 @@ class OrderService {
       // Place order logic
       this.logger.info('Order placed successfully', { orderId });
     } catch (error) {
-      this.logger.error('Failed to place order', error as Error, {
+      this.logger.error('Failed to place order', {
+        err: error as Error,
         orderId,
         price,
         quantity,
@@ -404,15 +408,16 @@ const logger = new ColorConsoleLogger(clock, LogLevel.ERROR);
 try {
   await fetchMarketData();
 } catch (error) {
-  logger.error('Failed to fetch market data', error as Error, {
+  logger.error('Failed to fetch market data', {
+    err: error as Error,
     marketId: 'market-123',
     retryAttempt: 3,
     maxRetries: 5,
   });
 }
 
-// Output включает error.message и stack trace:
-// [ERROR] Failed to fetch market data { error: "Network timeout", stack: "Error: Network timeout...", marketId: "market-123", ... }
+// Output включает err.message и stack trace:
+// [ERROR] Failed to fetch market data { err: "Network timeout", stack: "Error: Network timeout...", marketId: "market-123", ... }
 ```
 
 ## 🏗️ Production: PinoLoggerAdapter
@@ -448,22 +453,13 @@ export class PinoLoggerAdapter implements ILogger {
     this.pino.warn({ ...context, time: this.clock.now().getTime() }, message);
   }
 
-  error(message: string, error?: Error, context?: Record<string, unknown>): void {
-    const pinoContext = {
-      ...context,
-      ...(error && { err: error }), // Pino автоматически сериализует err
-      time: this.clock.now().getTime(),
-    };
-    this.pino.error(pinoContext, message);
+  error(message: string, context?: Record<string, unknown>): void {
+    this.pino.error({ ...context, time: this.clock.now().getTime() }, message);
+    // Error передаётся через context: { err: error } — Pino сериализует поле err нативно
   }
 
-  fatal(message: string, error?: Error, context?: Record<string, unknown>): void {
-    const pinoContext = {
-      ...context,
-      ...(error && { err: error }),
-      time: this.clock.now().getTime(),
-    };
-    this.pino.fatal(pinoContext, message);
+  fatal(message: string, context?: Record<string, unknown>): void {
+    this.pino.fatal({ ...context, time: this.clock.now().getTime() }, message);
   }
 
   child(bindings: Record<string, unknown>): ILogger {
@@ -527,8 +523,8 @@ class Service {
 // 2. Используйте structured context
 logger.info('Order placed', { orderId: '123', price: 0.65 });
 
-// 3. Логируйте ошибки с Error объектом
-logger.error('Operation failed', error, { context: 'value' });
+// 3. Логируйте ошибки с Error объектом через поле err
+logger.error('Operation failed', { err: error, context: 'value' });
 
 // 4. Используйте NoOpLogger в unit-тестах
 const logger = new NoOpLogger(); // Без засорения консоли
@@ -562,8 +558,10 @@ class Service {
 // 2. НЕ логируйте без контекста когда он доступен
 logger.info('Order placed'); // ❌ Нет orderId!
 
-// 3. НЕ теряйте Error объект
-logger.error('Operation failed', undefined, { message: err.message }); // ❌
+// 3. НЕ теряйте Error объект — передавайте его целиком через поле err
+logger.error('Operation failed', { message: err.message }); // ❌ теряем stack trace
+// Правильно:
+logger.error('Operation failed', { err }); // ✅ Pino сериализует message + stack + type
 
 // 4. НЕ используйте LiveClock в бэктестах
 const logger = new ConsoleLogger(new LiveClock()); // ❌ Недетерминировано

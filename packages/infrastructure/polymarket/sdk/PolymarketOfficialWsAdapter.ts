@@ -1,33 +1,33 @@
 /**
- * Polymarket Official SDK WebSocket Adapter (Placeholder)
+ * WebSocket-адаптер официального SDK Polymarket (Заглушка)
  *
  * @remarks
- * **🚧 PLACEHOLDER IMPLEMENTATION 🚧**
+ * **🚧 ЗАГЛУШКА 🚧**
  *
- * This adapter is a placeholder for integrating the official Polymarket SDK WebSocket client.
- * Currently throws "not implemented" errors for all operations.
+ * Этот адаптер является заглушкой для интеграции официального WebSocket-клиента SDK Polymarket.
+ * В настоящее время выбрасывает ошибки "not implemented" для всех операций.
  *
- * ## Purpose
+ * ## Назначение
  *
- * Provides a drop-in replacement for PolymarketWsAdapter that wraps
- * the official @polymarket/clob-client WebSocket functionality instead of custom WS client.
+ * Предоставляет замену для PolymarketWsAdapter, которая оборачивает
+ * официальный WebSocket-функционал @polymarket/clob-client вместо пользовательского WS-клиента.
  *
- * ## Integration Steps
+ * ## Шаги интеграции
  *
- * To integrate the official SDK WebSocket:
+ * Для интеграции официального SDK WebSocket:
  *
- * 1. **Install official SDK** (if not already):
+ * 1. **Установить официальный SDK** (если ещё не установлен):
  *    ```bash
  *    npm install @polymarket/clob-client
  *    ```
  *
- * 2. **Import official WebSocket client**:
+ * 2. **Импортировать официальный WebSocket-клиент**:
  *    ```typescript
  *    import { ClobClient } from '@polymarket/clob-client';
  *    // Check SDK docs for WebSocket-specific imports
  *    ```
  *
- * 3. **Initialize in constructor**:
+ * 3. **Инициализировать в конструкторе**:
  *    ```typescript
  *    constructor(config: OfficialSDKWsConfig, logger: ILogger) {
  *      this.clobClient = new ClobClient({
@@ -40,7 +40,7 @@
  *    }
  *    ```
  *
- * 4. **Implement connect()**:
+ * 4. **Реализовать connect()**:
  *    ```typescript
  *    async connect(): Promise<void> {
  *      // Official SDK may connect automatically
@@ -50,7 +50,7 @@
  *    }
  *    ```
  *
- * 5. **Implement subscription methods**:
+ * 5. **Реализовать методы подписки**:
  *    ```typescript
  *    subscribeToOrderbook(tokenId: string, callback: OrderbookCallback): void {
  *      this.subscribedTokens.add(tokenId);
@@ -65,7 +65,7 @@
  *    }
  *    ```
  *
- * 6. **Implement event mapping**:
+ * 6. **Реализовать маппинг событий**:
  *    ```typescript
  *    function mapSDKOrderbookToDomain(sdkData: any): Orderbook {
  *      const bids = sdkData.bids.map(b => ({
@@ -77,7 +77,7 @@
  *    }
  *    ```
  *
- * 7. **Update providers.ts**:
+ * 7. **Обновить providers.ts**:
  *    ```typescript
  *    // In wsManager registration
  *    if (env.WS_CLIENT_TYPE === 'official') {
@@ -91,14 +91,14 @@
  *    }
  *    ```
  *
- * 8. **Test integration**:
+ * 8. **Протестировать интеграцию**:
  *    ```bash
  *    WS_CLIENT_TYPE=official npm run test:smoke:ws
  *    ```
  *
- * ## Interface Compatibility
+ * ## Совместимость интерфейсов
  *
- * This adapter implements IMarketDataFeed interface (same as PolymarketWsAdapter):
+ * Этот адаптер реализует интерфейс IMarketDataFeed (такой же, как у PolymarketWsAdapter):
  * - connect(): Promise<void>
  * - subscribeToOrderbook(tokenId, callback): void
  * - subscribeToTrades(tokenId, callback): void
@@ -113,17 +113,17 @@
  * - destroy(): Promise<void>
  * - getOrderbook(tokenId): Promise<Orderbook>
  *
- * ## Mapping Strategy
+ * ## Стратегия маппинга
  *
- * When implementing, you'll need to map between:
- * - SDK orderbook events → our Orderbook domain entity
- * - SDK trade events → our Trade domain entity
- * - SDK connection events → our lifecycle events
- * - SDK error events → our error handling
+ * При реализации потребуется маппинг между:
+ * - Событиями стакана SDK → наша доменная сущность Orderbook
+ * - Событиями сделок SDK → наша доменная сущность Trade
+ * - Событиями соединения SDK → события нашего жизненного цикла
+ * - Событиями ошибок SDK → наша обработка ошибок
  *
- * ## Event Handling
+ * ## Обработка событий
  *
- * Official SDK may emit events differently:
+ * Официальный SDK может генерировать события иначе:
  * ```typescript
  * // Custom implementation uses:
  * wsManager.on('orderbook', handler);
@@ -136,24 +136,24 @@
  * // Need to translate event names and payloads
  * ```
  *
- * ## Reconnection Strategy
+ * ## Стратегия переподключения
  *
- * Official SDK may have built-in reconnection:
- * - Check if automatic reconnection is enabled
- * - May not need manual resubscription logic
- * - Test reconnection behavior thoroughly
+ * Официальный SDK может иметь встроенное переподключение:
+ * - Проверьте, включено ли автоматическое переподключение
+ * - Возможно, не потребуется ручная логика повторной подписки
+ * - Тщательно протестируйте поведение при переподключении
  *
- * ## Performance Considerations
+ * ## Особенности производительности
  *
- * Official SDK may have different:
- * - Event emission frequency
- * - Message batching behavior
- * - Memory usage patterns
- * - CPU usage for parsing
+ * Официальный SDK может иметь иное поведение:
+ * - Частота генерации событий
+ * - Пакетирование сообщений
+ * - Паттерны использования памяти
+ * - Загрузка CPU при парсинге
  *
- * Benchmark and compare with custom implementation.
+ * Выполните бенчмарк и сравните с пользовательской реализацией.
  *
- * ## References
+ * ## Ссылки
  *
  * - Official SDK docs: https://github.com/Polymarket/clob-client
  * - WebSocket API reference: https://docs.polymarket.com/websocket
@@ -181,33 +181,33 @@
  * ```
  */
 
-import type { IMarketDataFeed } from '../../../domain/ports/IMarketDataFeed.js';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import { Orderbook } from '../../../domain/entities/Orderbook.js';
+import type { IMarketDataFeed } from '../ports/IMarketDataFeed.js';
+import type { ILogger } from '@polymarket/logger';
+import type { Orderbook } from '@polymarket/orderbook';
 
 /**
- * Configuration for official SDK WebSocket client
+ * Конфигурация официального SDK WebSocket-клиента
  */
 export interface OfficialSDKWsConfig {
   /**
-   * WebSocket URL
+   * URL WebSocket
    * @example 'wss://ws-subscriptions-clob.polymarket.com/ws/market'
    */
   url: string;
 
   /**
-   * Private key for authentication (if required by SDK)
+   * Приватный ключ для аутентификации (если требуется SDK)
    * @example '0x...'
    */
   privateKey?: string;
 
   /**
-   * Chain ID (Polygon mainnet = 137)
+   * Идентификатор сети (Polygon mainnet = 137)
    */
   chainId: number;
 
   /**
-   * Reconnection configuration
+   * Конфигурация переподключения
    */
   reconnectDelay?: number;
   maxReconnectDelay?: number;
@@ -216,23 +216,23 @@ export interface OfficialSDKWsConfig {
 }
 
 /**
- * Callback type for orderbook updates
+ * Тип коллбека для обновлений стакана
  */
 export type OrderbookCallback = (orderbook: Orderbook) => void;
 
 /**
- * Callback type for trade updates
+ * Тип коллбека для обновлений сделок
  */
 export type TradeCallback = (trade: any) => void; // TODO: Use Trade entity when implementing
 
 /**
- * Polymarket Official SDK WebSocket Adapter (Placeholder)
+ * WebSocket-адаптер официального SDK Polymarket (Заглушка)
  *
  * @remarks
- * 🚧 NOT YET IMPLEMENTED - throws errors for all operations
+ * 🚧 НЕ РЕАЛИЗОВАН — выбрасывает ошибки для всех операций
  *
- * This is a placeholder for official SDK WebSocket integration.
- * See class documentation for integration steps.
+ * Это заглушка для интеграции официального SDK WebSocket.
+ * Шаги интеграции см. в документации класса.
  */
 export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
   private readonly logger: ILogger;
@@ -241,17 +241,17 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
   private _isDestroyed = false;
 
   /**
-   * Create PolymarketOfficialWsAdapter
+   * Создать PolymarketOfficialWsAdapter
    *
-   * @param config - Official SDK WebSocket configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация официального SDK WebSocket
+   * @param logger - Экземпляр логгера
    *
    * @remarks
-   * Currently just stores logger and initializes state. When implementing:
-   * 1. Import official SDK: `import { ClobClient } from '@polymarket/clob-client'`
-   * 2. Initialize client: `this.clobClient = new ClobClient(config)`
-   * 3. Store reference: `private readonly clobClient: ClobClient`
-   * 4. Setup event handlers
+   * В настоящее время только сохраняет логгер и инициализирует состояние. При реализации:
+   * 1. Импортировать официальный SDK: `import { ClobClient } from '@polymarket/clob-client'`
+   * 2. Инициализировать клиент: `this.clobClient = new ClobClient(config)`
+   * 3. Сохранить ссылку: `private readonly clobClient: ClobClient`
+   * 4. Настроить обработчики событий
    */
   constructor(_config: OfficialSDKWsConfig, logger: ILogger) {
     this.logger = logger;
@@ -270,192 +270,192 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
   }
 
   /**
-   * Check if WebSocket is connected
+   * Проверить подключение WebSocket
    */
   get isConnected(): boolean {
     return this._isConnected;
   }
 
   /**
-   * Connect to WebSocket
+   * Подключиться к WebSocket
    *
-   * @throws {Error} Not implemented
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's connect() method (if explicit)
-   * 2. Wait for connection established
-   * 3. Set _isConnected = true
-   * 4. Setup event handlers
+   * **Шаги реализации:**
+   * 1. Вызвать метод SDK connect() (если явный)
+   * 2. Дождаться установки соединения
+   * 3. Установить _isConnected = true
+   * 4. Настроить обработчики событий
    */
   async connect(): Promise<void> {
     throw new Error('PolymarketOfficialWsAdapter.connect() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Get orderbook snapshot
+   * Получить снимок стакана
    *
-   * @param tokenId - Token ID
-   * @returns Promise resolving to orderbook
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @returns Promise, разрешающийся в стакан
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call SDK's getOrderbook() or equivalent
-   * 2. Map result to our Orderbook entity
-   * 3. Return mapped orderbook
+   * **Шаги реализации:**
+   * 1. Вызвать SDK's getOrderbook() или эквивалент
+   * 2. Преобразовать результат в нашу сущность Orderbook
+   * 3. Вернуть преобразованный стакан
    */
   async getOrderbook(_tokenId: string): Promise<Orderbook> {
     throw new Error('PolymarketOfficialWsAdapter.getOrderbook() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Subscribe to orderbook updates
+   * Подписаться на обновления стакана
    *
-   * @param tokenId - Token ID
-   * @param callback - Callback for orderbook updates
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @param callback - Коллбек для обновлений стакана
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Add tokenId to subscribedTokens
-   * 2. Subscribe via SDK's subscribe() method
-   * 3. Setup event handler that calls callback
-   * 4. Map SDK orderbook data to our Orderbook entity
+   * **Шаги реализации:**
+   * 1. Добавить tokenId в subscribedTokens
+   * 2. Подписаться через метод SDK subscribe()
+   * 3. Настроить обработчик событий, вызывающий callback
+   * 4. Преобразовать данные стакана SDK в нашу сущность Orderbook
    */
   subscribeToOrderbook(_tokenId: string, _callback: OrderbookCallback): void {
     throw new Error('PolymarketOfficialWsAdapter.subscribeToOrderbook() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Subscribe to trade updates
+   * Подписаться на обновления сделок
    *
-   * @param tokenId - Token ID
-   * @param callback - Callback for trade updates
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @param callback - Коллбек для обновлений сделок
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Add tokenId to subscribedTokens
-   * 2. Subscribe via SDK's subscribe() method
-   * 3. Setup event handler that calls callback
-   * 4. Map SDK trade data to our Trade entity
+   * **Шаги реализации:**
+   * 1. Добавить tokenId в subscribedTokens
+   * 2. Подписаться через метод SDK subscribe()
+   * 3. Настроить обработчик событий, вызывающий callback
+   * 4. Преобразовать данные сделок SDK в нашу сущность Trade
    */
   subscribeToTrades(_tokenId: string, _callback: TradeCallback): void {
     throw new Error('PolymarketOfficialWsAdapter.subscribeToTrades() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Subscribe to market (both YES and NO tokens)
+   * Подписаться на рынок (оба токена: YES и NO)
    *
-   * @param upTokenId - YES token ID
-   * @param downTokenId - NO token ID
-   * @throws {Error} Not implemented
+   * @param upTokenId - Идентификатор токена YES
+   * @param downTokenId - Идентификатор токена NO
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Add both tokens to subscribedTokens
-   * 2. Subscribe to both tokens via SDK
+   * **Шаги реализации:**
+   * 1. Добавить оба токена в subscribedTokens
+   * 2. Подписаться на оба токена через SDK
    */
   async subscribeToMarket(_upTokenId: string, _downTokenId: string): Promise<void> {
     throw new Error('PolymarketOfficialWsAdapter.subscribeToMarket() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Unsubscribe from token (all callbacks)
+   * Отписаться от токена (все коллбеки)
    *
-   * @param tokenId - Token ID
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Remove tokenId from subscribedTokens
-   * 2. Unsubscribe via SDK's unsubscribe() method
-   * 3. Remove event handlers
+   * **Шаги реализации:**
+   * 1. Удалить tokenId из subscribedTokens
+   * 2. Отписаться через метод SDK unsubscribe()
+   * 3. Удалить обработчики событий
    */
   unsubscribe(_tokenId: string): void {
     throw new Error('PolymarketOfficialWsAdapter.unsubscribe() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Unsubscribe from market (both tokens)
+   * Отписаться от рынка (оба токена)
    *
-   * @param upTokenId - YES token ID
-   * @param downTokenId - NO token ID
-   * @throws {Error} Not implemented
+   * @param upTokenId - Идентификатор токена YES
+   * @param downTokenId - Идентификатор токена NO
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Call unsubscribe() for both tokens
+   * **Шаги реализации:**
+   * 1. Вызвать unsubscribe() для обоих токенов
    */
   async unsubscribeFromMarket(_upTokenId: string, _downTokenId: string): Promise<void> {
     throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromMarket() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Unsubscribe from orderbook only
+   * Отписаться только от стакана
    *
-   * @param tokenId - Token ID
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation note:**
-   * Official SDK may not support partial unsubscription (orderbook only).
-   * May need to track subscriptions internally and filter events.
+   * **Примечание по реализации:**
+   * Официальный SDK может не поддерживать частичную отписку (только стакан).
+   * Возможно, потребуется отслеживать подписки внутренне и фильтровать события.
    */
   unsubscribeFromOrderbook(_tokenId: string): void {
     throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromOrderbook() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Unsubscribe from trades only
+   * Отписаться только от сделок
    *
-   * @param tokenId - Token ID
-   * @throws {Error} Not implemented
+   * @param tokenId - Идентификатор токена
+   * @throws {Error} Не реализовано
    *
    * @remarks
-   * **Implementation note:**
-   * Official SDK may not support partial unsubscription (trades only).
-   * May need to track subscriptions internally and filter events.
+   * **Примечание по реализации:**
+   * Официальный SDK может не поддерживать частичную отписку (только сделки).
+   * Возможно, потребуется отслеживать подписки внутренне и фильтровать события.
    */
   unsubscribeFromTrades(_tokenId: string): void {
     throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromTrades() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
-   * Check if subscribed to token
+   * Проверить подписку на токен
    *
-   * @param tokenId - Token ID
-   * @returns true if subscribed
+   * @param tokenId - Идентификатор токена
+   * @returns true если подписан
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Check if tokenId is in subscribedTokens
-   * 2. Or query SDK's subscription state
+   * **Шаги реализации:**
+   * 1. Проверить, есть ли tokenId в subscribedTokens
+   * 2. Или запросить состояние подписки у SDK
    */
   isSubscribed(_tokenId: string): boolean {
     return this.subscribedTokens.has(_tokenId);
   }
 
   /**
-   * Check if adapter is destroyed
+   * Проверить, уничтожен ли адаптер
    *
-   * @returns true if destroyed
+   * @returns true если уничтожен
    */
   isDestroyed(): boolean {
     return this._isDestroyed;
   }
 
   /**
-   * Destroy adapter and cleanup resources
+   * Уничтожить адаптер и освободить ресурсы
    *
    * @remarks
-   * **Implementation steps:**
-   * 1. Set _isDestroyed = true
-   * 2. Call SDK's disconnect() or destroy()
-   * 3. Clear subscribedTokens
-   * 4. Remove all event handlers
-   * 5. Set _isConnected = false
+   * **Шаги реализации:**
+   * 1. Установить _isDestroyed = true
+   * 2. Вызвать SDK's disconnect() или destroy()
+   * 3. Очистить subscribedTokens
+   * 4. Удалить все обработчики событий
+   * 5. Установить _isConnected = false
    *
    * @example
    * ```typescript

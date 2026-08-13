@@ -23,7 +23,7 @@
  * ```typescript
  * // BUY YES 10 @ 0.62
  * const positionDelta: AssetDelta = fill.getSignedQuantity();
- * console.log(positionDelta.asset);              // YES token AssetId
+ * console.log(positionDelta.asset);              // UP token AssetId
  * console.log(positionDelta.amount.toNumber());  // +10
  * console.log(positionDelta.amount.isPositive()); // true
  *

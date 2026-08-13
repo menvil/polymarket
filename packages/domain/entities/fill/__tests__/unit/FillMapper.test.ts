@@ -123,9 +123,9 @@ describe('FillMapper', () => {
       }
     });
 
-    it('вычисляет fee из fee_rate_bps: price × size × bps / 10000', () => {
+    it('вычисляет fee по текущей формуле Polymarket: C × 0.072 × p × (1-p)', () => {
       const accountId = makeAccountId();
-      // 0.65 × 10 × 20 / 10000 = 0.013
+      // feeUSDC = 10 × 0.072 × 0.65 × 0.35 = 0.1638
       const result = FillMapper.fromPolymarketTradeEvent(
         makeValidTakerEvent({ fee_rate_bps: '20', price: '0.65', size: '10' }),
         accountId
@@ -133,7 +133,9 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.fill.fee.quantity.amount().value().toNumber()).toBeCloseTo(0.013, 5);
+        const feeUSDC = result.value.fill.fee.quantity.amount().value().toNumber();
+        const expected = 10 * 0.072 * 0.65 * 0.35;
+        expect(feeUSDC).toBeCloseTo(expected, 8);
         expect(result.value.fill.hasFee()).toBe(true);
       }
     });
@@ -235,6 +237,19 @@ describe('FillMapper', () => {
       }
     });
 
+    it('MAKER: fee = 0 (мейкеры не платят комиссию на Polymarket)', () => {
+      const accountId = makeAccountId();
+      const event = makeValidMakerEvent({ fee_rate_bps: '1000' });
+      const result = FillMapper.fromPolymarketTradeEvent(event, accountId);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const { fill } = result.value;
+        // Мейкерская комиссия = 0 независимо от fee_rate_bps в событии
+        expect(fill.fee.quantity.amount().value().toNumber()).toBe(0);
+      }
+    });
+
     it('MAKER: side инвертирован (тейкер SELL → мейкер BUY)', () => {
       const accountId = makeAccountId();
       const event = makeValidMakerEvent({
@@ -284,7 +299,7 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('maker_orders');
+        expect(result.error.message).toContain('cannot identify our maker_order');
       }
     });
 
@@ -462,6 +477,81 @@ describe('FillMapper', () => {
       }
     });
 
+    it('TAKER без top-level side, maker BUY → сторона тейкера SELL (мгновенное исполнение)', () => {
+      // Это случай когда наш лимитный ордер исполняется немедленно как taker:
+      // Polymarket не включает top-level side, но maker_orders[].side = BUY → мы SELL
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.61',
+            owner: 'some-other-uuid',
+            asset_id: TEST_TOKEN_ID,
+            side: 'BUY',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('SELL');
+      }
+    });
+
+    it('TAKER без top-level side, maker SELL → сторона тейкера BUY', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.39',
+            owner: 'some-other-uuid',
+            asset_id: TEST_TOKEN_ID,
+            side: 'SELL',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('BUY');
+      }
+    });
+
+    it('cross-outcome SELL: тейкер SELL Up, мейкер SELL Down (разные asset_id) → side SELL', () => {
+      // Реальный сценарий: наш SELL Up ордер исполняется через cross-outcome с SELL Down.
+      // Polymarket не включает top-level side. maker asset_id ≠ top-level asset_id.
+      // Ожидаем: side = SELL (совпадает с мейкером, НЕ инвертируется).
+      const DOWN_TOKEN_ID = `OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:NO`;
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({
+          side: undefined,
+          maker_orders: [{
+            order_id: '0x' + 'd'.repeat(64),
+            matched_amount: '5',
+            price: '0.35',
+            owner: 'some-other-uuid',
+            asset_id: DOWN_TOKEN_ID,  // разный asset_id → cross-outcome
+            side: 'SELL',
+          }],
+        }),
+        accountId
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.fill.side).toBe('SELL');
+      }
+    });
+
     it('возвращает Err если side невалидный', () => {
       const accountId = makeAccountId();
       const result = FillMapper.fromPolymarketTradeEvent(
@@ -550,11 +640,11 @@ describe('FillMapper', () => {
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
@@ -573,11 +663,11 @@ describe('FillMapper', () => {
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
@@ -600,18 +690,18 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       };
     }
 
     it('price=0 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 0 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: '0' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
@@ -619,7 +709,7 @@ describe('FillMapper', () => {
     });
 
     it('price=-1 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: -1 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: '-1' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
@@ -627,7 +717,7 @@ describe('FillMapper', () => {
     });
 
     it('size=0 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: 0 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: '0' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -635,7 +725,7 @@ describe('FillMapper', () => {
     });
 
     it('size=-0.001 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: -0.001 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: '-0.001' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -643,7 +733,7 @@ describe('FillMapper', () => {
     });
 
     it('feeAmount=-0.01 → Err (не throw)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: -0.01 }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: '-0.01' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('feeAmount');
@@ -663,11 +753,11 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       };
@@ -742,26 +832,26 @@ describe('FillMapper', () => {
         marketId: '0x' + 'b'.repeat(64),
         tokenId: TEST_TOKEN_ID,
         settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
-        price: 0.65,
-        size: 50,
+        price: '0.65',
+        size: '50',
         side: 'BUY',
         timestampMs: 1700000000000,
-        feeAmount: 0,
+        feeAmount: '0',
         feeAsset: assetIdToString(AssetIdHelpers.USDC),
         ...overrides,
       } as FillSnapshot;
     }
 
     it('price="abc" → Err (Decimal parsing fails)', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'abc' as unknown as number }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'abc' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
       }
     });
 
-    it('size=NaN → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: NaN }));
+    it('size="NaN" → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: 'NaN' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('size');
@@ -769,15 +859,15 @@ describe('FillMapper', () => {
     });
 
     it('feeAmount="abc" → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: 'abc' as unknown as number }));
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: 'abc' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('fee');
       }
     });
 
-    it('price=Infinity → Err', () => {
-      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: Infinity }));
+    it('price="Infinity" → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'Infinity' }));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('price');
@@ -844,7 +934,7 @@ describe('FillMapper', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('no maker_orders entry');
+        expect(result.error.message).toContain('cannot identify our maker_order');
       }
     });
 

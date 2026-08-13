@@ -1,832 +1,818 @@
 /**
- * PolymarketWsAdapter - Event-driven WebSocket адаптер
+ * PolymarketWsAdapter — raw event emitter для Polymarket WebSocket.
  *
  * @remarks
- * Интегрирует event-driven pipeline для market-data:
- * - PolymarketWsClient - Транспортный слой
- * - PolymarketMessageRouter - Роутинг сообщений
- * - mapParsedToDomainEvent - Чистый маппер (Polymarket → DomainEvent)
- * - InMemoryEventBus - Event bus для pub/sub
- * - ProjectorCoordinator - EventBus → Projectors → StateManager → Callbacks
+ * Реализует `IPolymarketWsEmitter` — передаёт типизированные DTO
+ * без доменной логики. Bridge-адаптеры (Phase 8) подписываются
+ * через этот интерфейс и делегируют в Handlers (Phase 3).
  *
- * Ответственность:
- * - Связывание event-driven слоёв
- * - Управление WebSocket подписками (tokens)
- * - Обработка WebSocket жизненного цикла (connect, disconnect, reconnect)
- * - Реализация интерфейса IMarketDataFeed
- *
- * Архитектура:
+ * ### Архитектура:
  * ```
- * WsAdapter (this)
- *   ├─ PolymarketWsClient (транспорт)
- *   │    └─ WebSocketManager
- *   ├─ PolymarketMessageRouter (роутинг)
- *   ├─ InMemoryEventBus (события)
- *   └─ ProjectorCoordinator (проекция)
- *        ├─ StateManager (Map<assetId, Aggregate>)
- *        ├─ OrderbookProjector (stateless)
- *        ├─ TradesProjector (stateless)
- *        └─ CallbackRegistries
+ * PolymarketWsClient (транспорт)
+ *   → WsMessageMapper.parseWsMessage() (raw bytes → DTO)
+ *   → PolymarketWsAdapter (dispatch DTO → callbacks)
+ *   → IPolymarketWsEmitter subscribers (bridge-адаптеры)
  * ```
  *
- * Поток данных:
- * ```
- * WebSocket raw данные
- *   → WsClient получает из WebSocket
- *   → WsClient.on('message', rawData)
- *   → Router.processRawData(rawData)
- *   → Router.emit('orderbook'/'trade', parsedMessage)
- *   → Adapter: mapParsedToDomainEvent(message)
- *   → EventBus.publish(event)
- *   → Projector обрабатывает событие
- *   → Aggregate.apply(event)
- *   → Projector.notify(assetId, entity)
- *   → Вызываются user callbacks
- * ```
+ * ### Принципы:
+ * - Raw event emitter: никакой доменной логики
+ * - Каждый тип события → отдельный `Set<callback>`
+ * - Unsubscribe через функцию-замыкание (Set.delete)
+ * - Callbacks await-ятся последовательно (ошибки изолированы через try/catch)
+ * - onReconnect() вызывается из события 'connected' клиента
+ *
+ * ### Протокол подписки Polymarket:
+ * Polymarket WS принимает ТОЛЬКО ОДНО subscription-сообщение на соединение.
+ * Любое последующее сообщение на том же соединении возвращает INVALID OPERATION.
+ * Поэтому изменение набора токенов требует полного переподключения:
+ * `reconnectForNewSubscription()` очищает кэш, переподключается, затем
+ * PolymarketWsAdapter посылает актуальный список токенов.
+ *
+ * ### Unsubscribe (истечение рынков):
+ * `unsubscribeFromToken()` только удаляет токен из внутреннего set — НЕ посылает
+ * subscription update на сервер. Сервер продолжает слать данные по удалённому токену,
+ * но Adapter фильтрует их по `_subscribedTokens`. Controlled reconnect через 10 секунд
+ * применяет актуальный полный список токенов на сервере.
  *
  * @example
  * ```typescript
  * const adapter = new PolymarketWsAdapter(wsManager, logger);
+ * await adapter.connect();
  *
- * // Подписка на orderbook
- * adapter.subscribeToOrderbook(tokenId, (orderbook) => {
- *   console.log('Spread:', orderbook.getSpread().value);
+ * const unsub = adapter.onOrderbookSnapshot(async (dto) => {
+ *   await bookHandler.handleFullState(dto.market, dto.asset_id, dto.bids, dto.asks);
  * });
  *
- * // Подписка на трейды
- * adapter.subscribeToTrades(tokenId, (trade) => {
- *   console.log('Trade:', trade.price.value, trade.quantity.value);
- * });
+ * // При cleanup:
+ * unsub();
+ * await adapter.disconnect();
  * ```
  */
 
-import type { IMarketDataFeed } from '../../../domain/ports/IMarketDataFeed.js';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import { Orderbook } from '../../../domain/entities/Orderbook.js';
-import { Trade } from '../../../domain/entities/Trade.js';
+import type { ILogger } from '@polymarket/logger';
+import type { IPolymarketWsEmitter, UserChannelConfig } from './IPolymarketWsEmitter.js';
+import type { WsOrderbookSnapshotDto } from './dto/WsOrderbookDto.js';
+import type { WsTradeDto } from './dto/WsTradeDto.js';
+import type { WsUserFillDto, WsOrderUpdateDto } from './dto/WsUserEventDto.js';
 import type { PolymarketWebSocketManager, SubscriptionParams } from './PolymarketWebSocketManager.js';
 import { PolymarketWsClient } from './PolymarketWsClient.js';
 import { PolymarketMessageRouter } from './PolymarketMessageRouter.js';
-import type {
-  PolymarketOrderbookMessage,
-  PolymarketTradeMessage,
-} from './PolymarketMessageRouter.js';
-import { InMemoryEventBus } from '../../../shared/events/InMemoryEventBus.js';
-import { ProjectorCoordinator } from '../../../application/projectors/ProjectorCoordinator.js';
-import { mapParsedToDomainEvent } from './mapping/mapParsedToDomainEvent.js';
-import { createProductionEnvelope } from '../../../shared/events/EventEnvelope.js';
+import { parseWsMessage } from './mapping/WsMessageMapper.js';
+
+const SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS = 500;
+const SUBSCRIPTION_REFRESH_RECONNECT_DEBOUNCE_MS = 10_000;
 
 /**
- * Тип callback для orderbook
- */
-export type OrderbookCallback = (orderbook: Orderbook) => void;
-
-/**
- * Тип callback для трейдов
- */
-export type TradeCallback = (trade: Trade) => void;
-
-/**
- * PolymarketWsAdapter
+ * PolymarketWsAdapter — реализация IPolymarketWsEmitter.
  *
  * @remarks
- * Event-driven адаптер, интегрирующий Client + Router + EventBus + Projector.
- * Реализует IMarketDataFeed для domain слоя.
- *
- * Принципы дизайна:
- * 1. **Event-driven архитектура**: Pub/sub паттерн для слабой связанности
- * 2. **Разделение ответственности**: Каждый слой имеет единственную ответственность
- * 3. **Чистая интеграция**: Слои общаются через события
- * 4. **Типобезопасность**: Строгая типизация через весь стек
- * 5. **Обратная совместимость**: Тот же публичный API что и у оригинального адаптера
- * 6. **Изоляция ошибок**: Ошибки не распространяются между слоями
+ * Связывает транспортный слой (WsClient + MessageRouter) с callback-подписчиками.
+ * Не содержит доменной логики — только парсинг и dispatch.
  */
-export class PolymarketWsAdapter implements IMarketDataFeed {
-  private readonly client: PolymarketWsClient;
-  private readonly router: PolymarketMessageRouter;
-  private readonly eventBus: InMemoryEventBus;
-  private readonly projector: ProjectorCoordinator;
-  private readonly logger: ILogger;
+export class PolymarketWsAdapter implements IPolymarketWsEmitter {
+  private readonly _client: PolymarketWsClient;
+  private readonly _router: PolymarketMessageRouter;
+  private readonly _logger: ILogger;
 
-  /**
-   * Отслеживает все подписанные tokens для переподписки после reconnect
-   */
-  private readonly subscribedTokens: Set<string> = new Set();
+  /** Подписчики на orderbook снапшоты */
+  private readonly _onSnapshot = new Set<(dto: WsOrderbookSnapshotDto) => Promise<void>>();
+  /** Подписчики на публичные трейды */
+  private readonly _onTrade = new Set<(dto: WsTradeDto) => Promise<void>>();
+  /** Подписчики на fill-события из user channel */
+  private readonly _onFill = new Set<(dto: WsUserFillDto) => Promise<void>>();
+  /** Подписчики на обновления статуса ордера */
+  private readonly _onOrderUpdate = new Set<(dto: WsOrderUpdateDto) => Promise<void>>();
+  /** Подписчики на reconnect */
+  private readonly _onReconnect = new Set<() => void>();
+  /** Подписчики на raw сообщения (оригинальный wire-format, до DTO-маппинга) */
+  private readonly _onRawMessage = new Set<(tokenId: string, rawMsg: unknown) => void>();
+
+  /** Отслеживает подписанные tokens для переподписки после reconnect */
+  private readonly _subscribedTokens = new Set<string>();
+
+  /** Конфигурация user channel (null = не подписаны на user channel) */
+  private _userChannelConfig: UserChannelConfig | null = null;
 
   private _isConnected = false;
   private _isDestroyed = false;
+  /** true после первого успешного подключения — используется для отличия reconnect от first connect */
+  private _hasEverConnected = false;
 
   /**
-   * Флаг для предотвращения цикла переподключений
-   * Устанавливается в true пока выполняется sendAllSubscriptions()
-   */
-  private _isSubscribing = false;
-
-  /**
-   * Создаёт PolymarketWsAdapter
+   * Флаг: запланирован reconnect для смены подписки.
    *
-   * @param wsManager - Экземпляр PolymarketWebSocketManager
+   * @remarks
+   * Дебаунс для `_reconnectForSubscription()`: несколько быстрых вызовов
+   * `subscribeToToken()` (например, при открытии рынка с 2 токенами) коллапсируются
+   * в один reconnect. Без этого флага каждый вызов инициировал бы отдельный reconnect.
+   */
+  private _reconnectForSubscriptionPending = false;
+
+  /** Таймер дебаунса для subscription-change reconnect */
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Время последнего connect (для подавления INVALID OPERATION сразу после reconnect) */
+  private _lastConnectMs = 0;
+
+  /**
+   * Создаёт PolymarketWsAdapter.
+   *
+   * @param wsManager - Менеджер WebSocket соединений
    * @param logger - Logger для операций адаптера
    *
    * @throws {Error} Если wsManager или logger равны null
    *
    * @example
    * ```typescript
-   * const wsManager = new PolymarketWebSocketManager({
-   *   url: 'wss://ws-subscriptions-clob.polymarket.com/ws/market',
-   *   logger
-   * });
    * const adapter = new PolymarketWsAdapter(wsManager, logger);
    * ```
    */
   constructor(wsManager: PolymarketWebSocketManager, logger: ILogger) {
-    if (!wsManager) {
-      throw new Error('wsManager is required');
-    }
-    if (!logger) {
-      throw new Error('logger is required');
-    }
+    if (!wsManager) throw new Error('wsManager is required');
+    if (!logger) throw new Error('logger is required');
 
-    this.logger = logger.child ? logger.child('PolymarketWsAdapter') : logger;
+    this._logger = logger.child ? logger.child({ component: 'PolymarketWsAdapter' }) : logger;
+    this._client = new PolymarketWsClient(wsManager, this._logger);
+    this._router = new PolymarketMessageRouter(this._logger);
 
-    // Инициализируем компоненты
-    this.client = new PolymarketWsClient(wsManager, this.logger);
-    this.router = new PolymarketMessageRouter(this.logger);
-    this.eventBus = new InMemoryEventBus(this.logger);
-    this.projector = new ProjectorCoordinator(this.eventBus, this.logger);
-
-    // Связываем слои
-    this.setupIntegration();
+    this._setupIntegration();
   }
 
+  // ─────────────────────────── IPolymarketWsEmitter ────────────────────────────
+
   /**
-   * Проверяет подключен ли WebSocket
+   * Подписывается на полный снапшот стакана.
+   *
+   * @param cb - Callback (async) вызываемый при каждом 'book' событии
+   * @returns Функция отписки
    */
-  public get isConnected(): boolean {
-    return this._isConnected;
+  onOrderbookSnapshot(cb: (dto: WsOrderbookSnapshotDto) => Promise<void>): () => void {
+    this._onSnapshot.add(cb);
+    return () => this._onSnapshot.delete(cb);
   }
 
   /**
-   * Подключается к WebSocket
+   * Подписывается на публичный трейд.
+   *
+   * @param cb - Callback (async) вызываемый при каждом 'trade' событии
+   * @returns Функция отписки
+   */
+  onTradeEvent(cb: (dto: WsTradeDto) => Promise<void>): () => void {
+    this._onTrade.add(cb);
+    return () => this._onTrade.delete(cb);
+  }
+
+  /**
+   * Подписывается на fill из user-channel.
+   *
+   * @param cb - Callback (async) вызываемый при каждом user-channel 'trade' событии (fill)
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Polymarket user channel использует event_type: "trade" для fills.
+   * Отличается от market-channel 'trade' наличием поля taker_order_id.
+   */
+  onUserFill(cb: (dto: WsUserFillDto) => Promise<void>): () => void {
+    this._onFill.add(cb);
+    return () => this._onFill.delete(cb);
+  }
+
+  /**
+   * Подписывается на lifecycle событие ордера из user-channel.
+   *
+   * @param cb - Callback (async) вызываемый при каждом 'order' событии (event_type: "order")
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Polymarket user channel использует event_type: "order" для lifecycle событий.
+   * WsOrderUpdateDto.orderEventType содержит тип события (например, "PLACEMENT").
+   */
+  onOrderUpdate(cb: (dto: WsOrderUpdateDto) => Promise<void>): () => void {
+    this._onOrderUpdate.add(cb);
+    return () => this._onOrderUpdate.delete(cb);
+  }
+
+  /**
+   * Подписывается на событие reconnect.
+   *
+   * @param cb - Callback без аргументов
+   * @returns Функция отписки
+   *
+   * @remarks
+   * BookUpdateHandler использует это для инвалидации кэша стаканов.
+   */
+  onReconnect(cb: () => void): () => void {
+    this._onReconnect.add(cb);
+    return () => this._onReconnect.delete(cb);
+  }
+
+  /**
+   * Подписывается на сырые рыночные сообщения в оригинальном wire-формате.
+   *
+   * @param cb - Callback: `tokenId` = `asset_id` из сообщения, `rawMsg` = JSON-объект
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Вызывается ДО DTO-маппинга — содержит все оригинальные поля.
+   * Используется DataRecorder в collect-data режиме.
+   */
+  onRawMessage(cb: (tokenId: string, rawMsg: unknown) => void): () => void {
+    this._onRawMessage.add(cb);
+    return () => this._onRawMessage.delete(cb);
+  }
+
+  // ─────────────────────────── Управление подключением ─────────────────────────
+
+  /**
+   * Подключается к Polymarket WebSocket.
    *
    * @throws {Error} Если адаптер уничтожен
-   *
-   * @remarks
-   * Делегирует базовому PolymarketWsClient.
-   * Настраивает обработчики событий и помечает адаптер как подключенный.
-   *
-   * @example
-   * ```typescript
-   * await adapter.connect();
-   * console.log(adapter.isConnected); // true
-   * ```
    */
-  public async connect(): Promise<void> {
-    this.checkDestroyed();
-    await this.client.connect();
+  async connect(): Promise<void> {
+    this._checkDestroyed();
+    await this._client.connect();
   }
 
   /**
-   * Настраивает интеграцию между слоями
-   *
-   * @remarks
-   * Связывает обработчики событий для соединения:
-   * - Client → Router (raw данные)
-   * - Router → Adapter (распарсенные сообщения)
-   * - Adapter → EventBus (domain события через маппер)
-   * - EventBus → Projector (автоматическая подписка)
-   * - Projector → Aggregate → Callbacks
-   *
-   * Также обрабатывает события жизненного цикла соединения.
+   * Отключается от WebSocket.
    */
-  private setupIntegration(): void {
-    // Client → Router: Пересылка raw данных сообщений
-    this.client.on('message', (rawData: Buffer) => {
-      this.router.processRawData(rawData);
-    });
-
-    // Router → Adapter: Обработка распарсенных orderbook сообщений
-    this.router.on('orderbook', (message: PolymarketOrderbookMessage) => {
-      this.handleOrderbookMessage(message);
-    });
-
-    // Router → Adapter: Обработка распарсенных trade сообщений
-    this.router.on('trade', (message: PolymarketTradeMessage) => {
-      this.handleTradeMessage(message);
-    });
-
-    // Router → Adapter: Обработка ошибок парсинга/роутинга
-    this.router.on('error', (error: Error) => {
-      this.logger.error('Router error', {
-        error: error.message,
-      });
-      // Не пробрасываем ошибку дальше - предотвращаем uncaught exception
-    });
-
-    // События жизненного цикла Client
-    this.client.on('connected', async () => {
-      this._isConnected = true;
-      this.logger.info('WebSocket connected');
-      try {
-        await this.resubscribeAll();
-      } catch (error) {
-        this.logger.error('Failed to resubscribe after connect', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    });
-
-    this.client.on('disconnected', () => {
-      this._isConnected = false;
-      this.logger.info('WebSocket disconnected');
-    });
-
-    this.client.on('error', (error: Error) => {
-      this.logger.error('WebSocket error', {
-        error: error.message,
-      });
-    });
+  async disconnect(): Promise<void> {
+    await this._client.destroy();
   }
 
   /**
-   * Получает текущий orderbook snapshot
-   *
-   * @param tokenId - Token ID для получения orderbook
-   * @returns Promise, разрешающийся в текущий orderbook
-   *
-   * @throws {Error} Если не подключен или fetch не удался
-   *
-   * @remarks
-   * Получает текущий orderbook из REST API, не из WebSocket.
-   * Это snapshot, не подписка.
-   *
-   * @example
-   * ```typescript
-   * const orderbook = await adapter.getOrderbook(upTokenId);
-   * console.log('Best bid:', orderbook.getBestBid()?.price.value);
-   * ```
-   */
-  public async getOrderbook(_tokenId: string): Promise<Orderbook> {
-    throw new Error('getOrderbook not implemented - use subscribeToOrderbook for real-time data');
-  }
-
-  /**
-   * Подписывается на обновления orderbook
+   * Регистрирует tokenId для получения рыночных данных.
    *
    * @param tokenId - Token ID для подписки
-   * @param callback - Callback, вызываемый при обновлениях orderbook
    *
    * @remarks
-   * Алгоритм:
-   * 1. Делегировать projector.subscribeToOrderbook()
-   * 2. Добавить token в набор subscribedTokens
-   * 3. Отправить WebSocket подписку если подключено
+   * Добавляет tokenId во внутренний set. Если адаптер уже был подключён ранее
+   * (`_hasEverConnected = true`) и сейчас подключён — планирует reconnect
+   * через `_scheduleReconnectForSubscription()`. При первом подключении токены
+   * будут отправлены в `_resubscribeAll()` по событию 'connected'.
    *
-   * Несколько callbacks могут подписаться на один token.
-   * Callback получает domain entity Orderbook.
+   * Несколько последовательных вызовов (например, при открытии рынка с 2 токенами)
+   * коллапсируются в один быстрый reconnect. Если уже запланирован delayed refresh
+   * после unsubscribe, новый токен попадёт в тот же полный reconnect.
    *
-   * @example
-   * ```typescript
-   * adapter.subscribeToOrderbook(upTokenId, (orderbook) => {
-   *   console.log('Bids:', orderbook.bids.length);
-   *   console.log('Asks:', orderbook.asks.length);
-   *   console.log('Spread:', orderbook.getSpread().value);
-   * });
-   * ```
+   * ### Почему reconnect, а не subscription update:
+   * Polymarket WS принимает только ОДНО subscription-сообщение на соединение.
+   * Любое последующее сообщение возвращает INVALID OPERATION.
+   * Единственный способ изменить подписку — переподключиться.
    */
-  public subscribeToOrderbook(tokenId: string, callback: OrderbookCallback): void {
-    this.checkDestroyed();
-
-    this.logger.debug('Subscribing to orderbook', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    // Делегируем projector
-    this.projector.subscribeToOrderbook(tokenId, callback);
-
-    // Добавляем в подписанные tokens и обновляем WebSocket подписку
-    const wasSubscribed = this.subscribedTokens.has(tokenId);
-    this.subscribedTokens.add(tokenId);
-
-    if (!wasSubscribed && this._isConnected) {
-      // Новый token - отправляем подписку (ошибки обрабатываются внутри)
-      void this.sendAllSubscriptions();
+  async subscribeToToken(tokenId: string): Promise<void> {
+    this._checkDestroyed();
+    const wasNew = !this._subscribedTokens.has(tokenId);
+    this._subscribedTokens.add(tokenId);
+    if (wasNew && this._hasEverConnected && this._isConnected) {
+      this._scheduleReconnectForSubscription();
     }
   }
 
   /**
-   * Подписывается на обновления трейдов
-   *
-   * @param tokenId - Token ID для подписки
-   * @param callback - Callback, вызываемый при обновлениях трейдов
-   *
-   * @remarks
-   * Аналогично subscribeToOrderbook, но для трейдов.
-   * Callback получает domain entity Trade.
-   *
-   * @example
-   * ```typescript
-   * adapter.subscribeToTrades(upTokenId, (trade) => {
-   *   console.log('Trade:', trade.side, trade.quantity.value, '@', trade.price.value);
-   * });
-   * ```
-   */
-  public subscribeToTrades(tokenId: string, callback: TradeCallback): void {
-    this.checkDestroyed();
-
-    this.logger.debug('Subscribing to trades', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    // Делегируем projector
-    this.projector.subscribeToTrades(tokenId, callback);
-
-    // Добавляем в подписанные tokens и обновляем WebSocket подписку
-    const wasSubscribed = this.subscribedTokens.has(tokenId);
-    this.subscribedTokens.add(tokenId);
-
-    if (!wasSubscribed && this._isConnected) {
-      // Новый token - отправляем подписку (ошибки обрабатываются внутри)
-      void this.sendAllSubscriptions();
-    }
-  }
-
-  /**
-   * Подписывается на маркет (оба токена YES и NO)
-   *
-   * @param upTokenId - YES token ID
-   * @param downTokenId - NO token ID
-   *
-   * @remarks
-   * Удобный метод для подписки на оба токена в маркете.
-   * НЕ регистрирует никакие callbacks - используйте subscribeToOrderbook/Trades для этого.
-   * Только гарантирует что оба токена подписаны в WebSocket.
-   *
-   * @example
-   * ```typescript
-   * await adapter.subscribeToMarket(market.upTokenId, market.downTokenId);
-   * // Теперь подписываемся на конкретные данные
-   * adapter.subscribeToOrderbook(market.upTokenId, callback);
-   * ```
-   */
-  public async subscribeToMarket(upTokenId: string, downTokenId: string): Promise<void> {
-    this.checkDestroyed();
-
-    this.logger.info('Subscribing to market', {
-      upToken: upTokenId.substring(0, 16) + '...',
-      downToken: downTokenId.substring(0, 16) + '...',
-    });
-
-    this.subscribedTokens.add(upTokenId);
-    this.subscribedTokens.add(downTokenId);
-
-    if (this._isConnected) {
-      await this.sendAllSubscriptions();
-    }
-  }
-
-  /**
-   * Отписывается от token (все callbacks)
+   * Убирает tokenId из набора отслеживаемых токенов.
    *
    * @param tokenId - Token ID для отписки
    *
    * @remarks
-   * Удаляет ВСЕ callbacks для этого token (orderbook и trades).
-   * Обновляет WebSocket подписку.
-   *
-   * @example
-   * ```typescript
-   * adapter.unsubscribe(upTokenId);
-   * ```
+   * Удаляет tokenId из внутреннего set, но НЕ инициирует reconnect.
+   * Сервер продолжит слать данные по удалённому токену до controlled reconnect;
+   * локально эти сообщения фильтруются по `_subscribedTokens`.
    */
-  public unsubscribe(tokenId: string): void {
-    this.checkDestroyed();
-
-    this.logger.debug('Unsubscribing from token', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    // Очищаем все callbacks через projector
-    this.projector.unsubscribeAllOrderbooks(tokenId);
-    this.projector.unsubscribeAllTrades(tokenId);
-
-    this.subscribedTokens.delete(tokenId);
-
-    if (this._isConnected) {
-      // Обновляем подписки (ошибки обрабатываются внутри)
-      void this.sendAllSubscriptions();
+  async unsubscribeFromToken(tokenId: string): Promise<void> {
+    this._checkDestroyed();
+    const wasDeleted = this._subscribedTokens.delete(tokenId);
+    if (wasDeleted && this._hasEverConnected && this._isConnected) {
+      this._scheduleReconnectForSubscription(
+        SUBSCRIPTION_REFRESH_RECONNECT_DEBOUNCE_MS,
+        'token_unsubscribed',
+      );
     }
   }
 
   /**
-   * Отписывается от маркета (оба токена, все callbacks)
+   * Подписывается на Polymarket user channel (fills + order lifecycle).
    *
-   * @param upTokenId - YES token ID
-   * @param downTokenId - NO token ID
-   *
-   * @example
-   * ```typescript
-   * await adapter.unsubscribeFromMarket(market.upTokenId, market.downTokenId);
-   * ```
-   */
-  public async unsubscribeFromMarket(upTokenId: string, downTokenId: string): Promise<void> {
-    this.checkDestroyed();
-
-    this.logger.info('Unsubscribing from market', {
-      upToken: upTokenId.substring(0, 16) + '...',
-      downToken: downTokenId.substring(0, 16) + '...',
-    });
-
-    this.unsubscribe(upTokenId);
-    this.unsubscribe(downTokenId);
-  }
-
-  /**
-   * Отписывается только от orderbook (сохраняет trade callbacks)
-   *
-   * @param tokenId - Token ID
+   * @param config - Credentials для аутентификации: apiKey, secret, passphrase
+   * @returns Promise, который разрешается после отправки subscription message
    *
    * @remarks
-   * Удаляет только orderbook callbacks для этого token.
-   * Trade callbacks остаются активными.
-   * Token остаётся в subscribedTokens если есть trade callbacks.
+   * Сохраняет конфигурацию для автоматической переподписки после reconnect.
+   * Если уже подключены — отправляет subscription message немедленно.
    *
-   * @example
-   * ```typescript
-   * adapter.unsubscribeFromOrderbook(upTokenId);
-   * // Trade callbacks всё ещё активны
+   * User channel subscription format:
+   * ```json
+   * { "type": "user", "auth": { "apiKey": "...", "secret": "...", "passphrase": "..." } }
    * ```
-   */
-  public unsubscribeFromOrderbook(tokenId: string): void {
-    this.checkDestroyed();
-
-    this.logger.debug('Unsubscribing from orderbook', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    // Очищаем все orderbook callbacks через projector
-    this.projector.unsubscribeAllOrderbooks(tokenId);
-
-    // Проверяем есть ли trade callbacks перед удалением из subscribedTokens
-    const hasTradeCallbacks = this.projector.getTradeSubscriberCount(tokenId) > 0;
-
-    if (!hasTradeCallbacks) {
-      this.subscribedTokens.delete(tokenId);
-
-      if (this._isConnected) {
-        // Обновляем подписки (ошибки обрабатываются внутри)
-        void this.sendAllSubscriptions();
-      }
-    }
-  }
-
-  /**
-   * Отписывается только от трейдов (сохраняет orderbook callbacks)
-   *
-   * @param tokenId - Token ID
-   *
-   * @remarks
-   * Удаляет только trade callbacks для этого token.
-   * Orderbook callbacks остаются активными.
-   *
-   * @example
-   * ```typescript
-   * adapter.unsubscribeFromTrades(upTokenId);
-   * // Orderbook callbacks всё ещё активны
-   * ```
-   */
-  public unsubscribeFromTrades(tokenId: string): void {
-    this.checkDestroyed();
-
-    this.logger.debug('Unsubscribing from trades', {
-      tokenId: tokenId.substring(0, 16) + '...',
-    });
-
-    // Очищаем все trade callbacks через projector
-    this.projector.unsubscribeAllTrades(tokenId);
-
-    // Проверяем есть ли orderbook callbacks перед удалением из subscribedTokens
-    const hasOrderbookCallbacks = this.projector.getOrderbookSubscriberCount(tokenId) > 0;
-
-    if (!hasOrderbookCallbacks) {
-      this.subscribedTokens.delete(tokenId);
-
-      if (this._isConnected) {
-        // Обновляем подписки (ошибки обрабатываются внутри)
-        void this.sendAllSubscriptions();
-      }
-    }
-  }
-
-  /**
-   * Проверяет подписан ли на token
-   *
-   * @param tokenId - Token ID для проверки
-   * @returns true если есть orderbook или trade callbacks
-   *
-   * @example
-   * ```typescript
-   * if (adapter.isSubscribed(upTokenId)) {
-   *   console.log('Already subscribed');
-   * }
-   * ```
-   */
-  public isSubscribed(tokenId: string): boolean {
-    this.checkDestroyed();
-
-    return (
-      this.projector.getOrderbookSubscriberCount(tokenId) > 0 ||
-      this.projector.getTradeSubscriberCount(tokenId) > 0
-    );
-  }
-
-  /**
-   * Обрабатывает orderbook сообщение от router
-   *
-   * @param message - Распарсенное orderbook сообщение от PolymarketMessageRouter
-   *
-   * @remarks
-   * Использует чистый маппер mapParsedToDomainEvent() для конвертации в domain event.
-   * Публикует событие в EventBus, что запускает Projector → Aggregate → Callbacks.
-   *
-   * Алгоритм:
-   * 1. Маппить сообщение в DomainEvent используя mapParsedToDomainEvent()
-   * 2. Если маппер вернул null (невалидные данные), пропустить молча
-   * 3. Опубликовать событие в EventBus
-   * 4. EventBus → Projector → Aggregate.apply() → Callbacks
-   *
-   * Ответственность маппера:
-   * - Валидирует обязательные поля (asset_id, bids, asks)
-   * - Возвращает OrderBookSnapshotReceivedEvent или null
-   * - Чистая функция (без side effects, без исключений)
-   *
-   * @throws Никогда не бросает - ошибки логируются в Projector
-   *
-   * @example
-   * Формат сообщения:
-   * ```typescript
-   * {
-   *   event_type: 'book',
-   *   asset_id: '67704255197...',
-   *   bids: [{price: '0.52', size: '100'}, ...],
-   *   asks: [{price: '0.53', size: '150'}, ...],
-   *   timestamp: 1766875759895
-   * }
-   * ```
-   */
-  private handleOrderbookMessage(message: PolymarketOrderbookMessage): void {
-    // Маппим в domain event
-    const event = mapParsedToDomainEvent(message);
-
-    // Если маппер вернул null (невалидные данные), пропускаем
-    if (event === null) {
-      return;
-    }
-
-    // Публикуем в EventBus (оборачиваем в envelope)
-    // Примечание: DomainEvent использует eventName, но createProductionEnvelope ожидает type
-    const envelope = createProductionEnvelope({ ...event, type: event.eventName } as any, {
-      environment: 'LIVE',
-      accountId: 'default',
-    });
-    this.eventBus.publish(envelope);
-  }
-
-  /**
-   * Обрабатывает trade сообщение от router
-   *
-   * @param message - Распарсенное trade сообщение от PolymarketMessageRouter
-   *
-   * @remarks
-   * Использует чистый маппер mapParsedToDomainEvent() для конвертации в domain event.
-   * Публикует событие в EventBus, что запускает Projector → Aggregate → Callbacks.
-   *
-   * Алгоритм:
-   * 1. Маппить сообщение в DomainEvent используя mapParsedToDomainEvent()
-   * 2. Если маппер вернул null (невалидные данные), пропустить молча
-   * 3. Опубликовать событие в EventBus
-   * 4. EventBus → Projector → Aggregate.apply() → Callbacks
-   *
-   * Ответственность маппера:
-   * - Валидирует обязательные поля (asset_id, price, size)
-   * - Возвращает TradeExecutedEvent или null
-   * - Чистая функция (без side effects, без исключений)
-   *
-   * @throws Никогда не бросает - ошибки логируются в Projector
-   *
-   * @example
-   * Формат сообщения:
-   * ```typescript
-   * {
-   *   event_type: 'trade',
-   *   asset_id: '67704255197...',
-   *   price: '0.52',
-   *   size: '50',
-   *   side: 'BUY',
-   *   timestamp: 1766875759895
-   * }
-   * ```
-   */
-  private handleTradeMessage(message: PolymarketTradeMessage): void {
-    // Маппим в domain event
-    const event = mapParsedToDomainEvent(message);
-
-    // Если маппер вернул null (невалидные данные), пропускаем
-    if (event === null) {
-      return;
-    }
-
-    // Публикуем в EventBus (оборачиваем в envelope)
-    // Примечание: DomainEvent использует eventName, но createProductionEnvelope ожидает type
-    const envelope = createProductionEnvelope({ ...event, type: event.eventName } as any, {
-      environment: 'LIVE',
-      accountId: 'default',
-    });
-    this.eventBus.publish(envelope);
-  }
-
-  /**
-   * Отправляет все подписки в WebSocket
-   *
-   * @remarks
-   * **ВАЖНО**: Polymarket WebSocket ЗАМЕНЯЕТ подписки при каждом вызове.
-   * Мы должны отправить ВСЕ токены в одном сообщении подписки.
-   *
-   * Алгоритм:
-   * 1. Собрать все подписанные токены
-   * 2. Переподключить WebSocket (Polymarket требует этого)
-   * 3. Отправить одно сообщение подписки со всеми токенами
-   */
-  private async sendAllSubscriptions(): Promise<void> {
-    // КРИТИЧНО: Не отправляем подписки если адаптер уничтожен
-    if (this._isDestroyed) {
-      this.logger.debug('Adapter destroyed, skipping subscription');
-      return;
-    }
-
-    if (this.subscribedTokens.size === 0) {
-      this.logger.debug('No tokens to subscribe to');
-      return;
-    }
-
-    // Предотвращаем цикл переподключений
-    if (this._isSubscribing) {
-      this.logger.debug('Subscription already in progress, skipping');
-      return;
-    }
-
-    this._isSubscribing = true;
-
-    try {
-      const tokens = Array.from(this.subscribedTokens);
-
-      this.logger.info('Sending WebSocket subscription', {
-        tokenCount: tokens.length,
-        marketCount: tokens.length / 2,
-        sampleTokens: tokens.slice(0, 2).map(t => t.substring(0, 16) + '...'),
-      });
-
-      // Polymarket требует переподключения для новых подписок
-      await this.client.reconnectWithTimeout(10000);
-
-      // Отправляем одно сообщение подписки со всеми токенами
-      const params: SubscriptionParams = {
-        assets_ids: tokens,
-        type: 'market',
-      };
-
-      await this.client.subscribe('market', params);
-
-      this.logger.info('Subscription sent successfully', {
-        tokenCount: tokens.length,
-      });
-    } catch (error) {
-      // КРИТИЧНО: Не логируем ошибку если адаптер уничтожен (это нормально)
-      if (this._isDestroyed) {
-        this.logger.debug('Subscription failed after destroy (expected)', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      } else {
-        // Логируем ошибку но НЕ пробрасываем - предотвращаем crash
-        this.logger.error('Failed to send subscriptions', {
-          error: error instanceof Error ? error.message : String(error),
-          tokenCount: this.subscribedTokens.size,
-          hint: 'Check if token IDs are valid or if Polymarket API changed',
-        });
-      }
-      // НЕ throw error - позволяем системе продолжить работу
-    } finally {
-      this._isSubscribing = false;
-    }
-  }
-
-  /**
-   * Переподписывается на все токены после reconnect
-   *
-   * @remarks
-   * Вызывается автоматически при событии 'connected'.
-   * Отправляет все текущие подписки в WebSocket.
-   */
-  private async resubscribeAll(): Promise<void> {
-    // КРИТИЧНО: Не переподписываемся если адаптер уничтожен
-    if (this._isDestroyed) {
-      this.logger.debug('Adapter destroyed, skipping resubscribe');
-      return;
-    }
-
-    if (this.subscribedTokens.size === 0) {
-      this.logger.debug('No tokens to resubscribe to');
-      return;
-    }
-
-    this.logger.info('Resubscribing after reconnect', {
-      tokenCount: this.subscribedTokens.size,
-    });
-
-    await this.sendAllSubscriptions();
-  }
-
-  /**
-   * Проверяет был ли адаптер уничтожен и бросает исключение если да
    *
    * @throws {Error} Если адаптер уничтожен
    *
-   * @remarks
-   * Внутренний помощник для enforcing состояния destroyed
+   * @example
+   * ```typescript
+   * await adapter.connect();
+   * await adapter.subscribeUserChannel({ apiKey, secret, passphrase });
+   * adapter.onUserFill(async (dto) => { ... });
+   * ```
    */
-  private checkDestroyed(): void {
-    if (this._isDestroyed) {
-      throw new Error('PolymarketWsAdapter has been destroyed and cannot be used');
+  async subscribeUserChannel(config: UserChannelConfig): Promise<void> {
+    this._checkDestroyed();
+    this._userChannelConfig = config;
+
+    if (this._isConnected) {
+      await this._sendUserChannelSubscription();
     }
   }
 
   /**
-   * Проверяет был ли адаптер уничтожен
-   *
-   * @returns true если адаптер уничтожен
-   *
-   * @example
-   * ```typescript
-   * if (adapter.isDestroyed()) {
-   *   console.log('Adapter is destroyed, cannot use');
-   * }
-   * ```
+   * Проверяет подключён ли адаптер.
    */
-  public isDestroyed(): boolean {
-    return this._isDestroyed;
+  get isConnected(): boolean {
+    return this._isConnected;
   }
 
   /**
-   * Уничтожает адаптер и очищает ресурсы
+   * Уничтожает адаптер и освобождает ресурсы.
    *
    * @remarks
-   * Graceful shutdown:
-   * 1. Уничтожить client (отключает WebSocket)
-   * 2. Уничтожить projector
-   * 3. Очистить набор подписанных токенов
-   * 4. Удалить все event listeners
-   * 5. Установить флаг destroyed
-   *
-   * После destroy(), адаптер не может быть переиспользован.
-   *
-   * @example
-   * ```typescript
-   * await adapter.destroy();
-   * ```
+   * После destroy() адаптер не может быть переиспользован.
+   * Идемпотентен — безопасно вызывать несколько раз.
    */
-  public async destroy(): Promise<void> {
-    // Идемпотентно - можно безопасно вызывать несколько раз
-    if (this._isDestroyed) {
-      this.logger.debug('Adapter already destroyed, skipping');
-      return;
-    }
-
-    this.logger.info('Destroying PolymarketWsAdapter');
-
-    // Устанавливаем флаг destroyed немедленно для предотвращения новых операций
+  async destroy(): Promise<void> {
+    if (this._isDestroyed) return;
     this._isDestroyed = true;
 
+    this._logger.info('[PolymarketWsAdapter] Destroying adapter');
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     try {
-      // Уничтожаем client (отключает WebSocket)
-      await this.client.destroy();
-    } catch (error) {
-      this.logger.warn('Error destroying client', {
-        error: error instanceof Error ? error.message : String(error),
+      await this._client.destroy();
+    } catch (err) {
+      this._logger.warn('[PolymarketWsAdapter] Error during client destroy', {
+        err: err instanceof Error ? err : new Error(String(err)),
       });
     }
 
-    // Уничтожаем projector
-    this.projector.destroy();
-
-    // Очищаем подписки
-    this.subscribedTokens.clear();
-
-    // Удаляем все event listeners из router
-    this.router.removeAllListeners();
-
-    // Сбрасываем состояние
+    this._subscribedTokens.clear();
+    this._userChannelConfig = null;
+    this._onSnapshot.clear();
+    this._onTrade.clear();
+    this._onFill.clear();
+    this._onOrderUpdate.clear();
+    this._onReconnect.clear();
+    this._client.removeAllListeners();
+    this._router.removeAllListeners();
     this._isConnected = false;
 
-    this.logger.info('PolymarketWsAdapter destroyed');
+    this._logger.info('[PolymarketWsAdapter] Destroyed');
+  }
+
+  // ─────────────────────────── Внутренняя логика ───────────────────────────────
+
+  /**
+   * Настраивает интеграцию между транспортным слоем и диспетчером.
+   *
+   * @remarks
+   * Client → Router (raw bytes → распарсенные сообщения)
+   * Router → Adapter (распарсенные сообщения → диспетчеризация DTO)
+   * События жизненного цикла Client → флаг isConnected + callbacks reconnect
+   */
+  private _setupIntegration(): void {
+    // Пересылаем raw данные из Client в Router
+    this._client.on('message', (rawData: Buffer) => {
+      this._router.processRawData(rawData);
+    });
+
+    // Router эмитирует 'raw' для всех data-сообщений ДО типизированного роутинга.
+    // Это оригинальный wire-format с event_type, asset_id, last_trade_price и т.д.
+    this._router.on('raw', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
+      const tokenId = (message as Record<string, unknown>)['asset_id'];
+      if (typeof tokenId === 'string' && tokenId.length > 0) {
+        // Игнорируем данные от unsubscribed токенов.
+        // После unsubscribeFromToken сервер продолжает слать данные
+        // до следующего reconnect — фильтруем их здесь.
+        if (!this._subscribedTokens.has(tokenId)) return;
+        for (const cb of this._onRawMessage) {
+          cb(tokenId, message);
+        }
+      }
+    });
+
+    // Router эмитирует сообщения с event_type (Polymarket wire format).
+    // parseWsMessage читает поле 'type', поэтому добавляем его явно при dispatch.
+    this._router.on('orderbook', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
+      // Фильтруем по _subscribedTokens
+      const tokenId = (message as Record<string, unknown>)['asset_id'];
+      if (typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
+      void this._dispatchParsed({ ...(message as object), type: 'book' });
+    });
+
+    this._router.on('trade', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
+      // Фильтруем market trades по _subscribedTokens, но пропускаем user fills.
+      // User fills (из user channel) имеют taker_order_id — не фильтруем их,
+      // т.к. user WS не имеет subscribedTokens.
+      const msg = message as Record<string, unknown>;
+      const tokenId = msg['asset_id'];
+      const isUserFill = 'taker_order_id' in msg;
+      if (!isUserFill && typeof tokenId === 'string' && !this._subscribedTokens.has(tokenId)) return;
+      void this._dispatchParsed({ ...(message as object), type: 'trade' });
+    });
+
+    // User channel: order lifecycle события (event_type: "order")
+    // Polymarket использует поле 'type' для обозначения вида события (PLACEMENT, CANCELLATION, ...).
+    // НО parseWsMessage использует 'type' как дискриминант для маршрутизации (type='order').
+    // Поэтому сохраняем оригинальный 'type' в 'orderEventType' ДО того, как перезаписываем его.
+    this._router.on('order', (message: unknown) => {
+      if (typeof message !== 'object' || message === null) return;
+      const msg = message as Record<string, unknown>;
+      void this._dispatchParsed({
+        ...msg,
+        orderEventType: msg['type'],  // PLACEMENT / CANCELLATION — из wire-формата Polymarket
+        type: 'order',                // дискриминант для parseWsMessage
+      });
+    });
+
+    this._router.on('error', (error: Error) => {
+      if (error.message === 'INVALID OPERATION') {
+        // Polymarket отвечает INVALID OPERATION если subscription message отправлен
+        // на уже существующем соединении (после первоначальной подписки).
+        // Игнорируем в первые 3с после connect: user channel subscription
+        // посылается ПОСЛЕ market subscription — это ожидаемый INVALID OPERATION.
+        const msSinceConnect = Date.now() - this._lastConnectMs;
+        if (msSinceConnect < 3000) {
+          this._logger.debug('[PolymarketWsAdapter] INVALID OPERATION ignored (within 3s of connect, likely user channel)', {
+            msSinceConnect,
+          });
+        } else if (this._isConnected && !this._reconnectForSubscriptionPending) {
+          this._logger.warn('[PolymarketWsAdapter] Received INVALID OPERATION, scheduling reconnect', {
+            tokenCount: this._subscribedTokens.size,
+            reconnectPending: this._reconnectForSubscriptionPending,
+          });
+          this._scheduleReconnectForSubscription(
+            SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS,
+            'invalid_operation',
+          );
+        }
+      } else {
+        this._logger.error('[PolymarketWsAdapter] Router error', {
+          err: error,
+        });
+      }
+    });
+
+    // Обязательно слушаем 'error' на клиенте — иначе Node.js упадёт при ошибке соединения
+    this._client.on('error', (error: Error) => {
+      this._logger.error('[PolymarketWsAdapter] Client error', {
+        err: error,
+      });
+    });
+
+    // События жизненного цикла
+    this._client.on('connected', async () => {
+      // Reconnect определяем по _hasEverConnected (не _isConnected, т.к. он сбрасывается при disconnect)
+      const isReconnect = this._hasEverConnected;
+      this._isConnected = true;
+      this._hasEverConnected = true;
+      this._lastConnectMs = Date.now();
+
+      if (isReconnect) {
+        // Reconnect — инвалидируем кэши стаканов у подписчиков
+        this._logger.info('[PolymarketWsAdapter] Reconnected — dispatching onReconnect');
+        this._dispatchReconnect();
+      } else {
+        this._logger.info('[PolymarketWsAdapter] Connected');
+      }
+
+      // Переподписываемся на все tokens
+      try {
+        await this._resubscribeAll(isReconnect);
+      } catch (err) {
+        this._logger.error('[PolymarketWsAdapter] Failed to resubscribe after connect', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    });
+
+    this._client.on('disconnected', () => {
+      if (!this._isConnected) {
+        // Отложенный onclose старого WS после явного disconnect() — уже обработано.
+        this._logger.debug('[PolymarketWsAdapter] Duplicate disconnected event (delayed WS onclose), ignoring');
+        return;
+      }
+      this._isConnected = false;
+      this._logger.info('[PolymarketWsAdapter] Disconnected');
+    });
+
+  }
+
+  /**
+   * Парсит raw сообщение через WsMessageMapper и dispatch в нужный callback-set.
+   *
+   * @param message - Raw сообщение от Router (уже JSON-объект)
+   */
+  private async _dispatchParsed(message: unknown): Promise<void> {
+    const dto = parseWsMessage(message);
+    if (!dto) return;
+
+    // WsUserFillDto не имеет поля 'type' — проверяем первым по наличию taker_order_id
+    if ('taker_order_id' in dto) {
+      await this._dispatchTo(this._onFill, dto as WsUserFillDto);
+    } else if ('type' in dto && dto.type === 'book') {
+      await this._dispatchTo(this._onSnapshot, dto as WsOrderbookSnapshotDto);
+    } else if ('type' in dto && dto.type === 'trade') {
+      await this._dispatchTo(this._onTrade, dto as WsTradeDto);
+    } else if ('type' in dto && dto.type === 'order') {
+      await this._dispatchTo(this._onOrderUpdate, dto as WsOrderUpdateDto);
+    }
+  }
+
+  /**
+   * Dispatch DTO в Set callback-ов с изоляцией ошибок.
+   *
+   * @param callbacks - Set подписчиков
+   * @param dto - Типизированный DTO для передачи
+   */
+  private async _dispatchTo<T>(
+    callbacks: Set<(dto: T) => Promise<void>>,
+    dto: T
+  ): Promise<void> {
+    for (const cb of callbacks) {
+      try {
+        await cb(dto);
+      } catch (err) {
+        this._logger.error('[PolymarketWsAdapter] Callback error', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+  }
+
+  /**
+   * Вызывает все onReconnect callbacks.
+   */
+  private _dispatchReconnect(): void {
+    for (const cb of this._onReconnect) {
+      try {
+        cb();
+      } catch (err) {
+        this._logger.error('[PolymarketWsAdapter] Reconnect callback error', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+  }
+
+  /**
+   * Переподписывается на все tokens и user channel после connect/reconnect.
+   *
+   * @param isReconnect - `true` при реконнекте, `false` при первом подключении
+   *
+   * @remarks
+   * ### Два сценария:
+   *
+   * **Первое подключение** (`isReconnect=false`):
+   * BaseWebSocket кэш пуст → market channel посылаем здесь.
+   *
+   * **Любой reconnect** (`isReconnect=true`):
+   * BaseWebSocket._resubscribeAll() уже послал подписку из кэша (вызывается в onopen
+   * до emit('connected')). При subscription-change reconnect кэш был обновлён перед
+   * переподключением → BaseWebSocket послал актуальный список токенов. Дублировать нельзя.
+   *
+   * User channel всегда посылаем здесь — BaseWebSocket его не кэширует корректно
+   * при subscription-change reconnect (разные каналы не взаимодействуют).
+   */
+  private async _resubscribeAll(isReconnect: boolean): Promise<void> {
+    if (this._isDestroyed) return;
+
+    const hasMarket = this._subscribedTokens.size > 0;
+    const hasUser = this._userChannelConfig !== null;
+
+    if (!hasMarket && !hasUser) return;
+
+    this._logger.info('[PolymarketWsAdapter] Resubscribing', {
+      tokenCount: this._subscribedTokens.size,
+      hasUserChannel: hasUser,
+      isReconnect,
+    });
+
+    // При reconnect BaseWebSocket уже послал market subscription из кэша
+    // (кэш обновлён в _reconnectForSubscription() прямо перед connect()).
+    // При первом подключении кэш пуст — посылаем здесь.
+    if (hasMarket && !isReconnect) await this._sendAllSubscriptions();
+    if (hasUser) await this._sendUserChannelSubscription();
+  }
+
+  /**
+   * Планирует reconnect для применения изменений подписки.
+   *
+   * @remarks
+   * Несколько быстрых вызовов (открытие рынка с 2 токенами = 2 subscribeToToken за ~0ms)
+   * коллапсируются в один reconnect. `_reconnectForSubscriptionPending` гарантирует
+   * единственный запланированный reconnect в каждый момент времени.
+   */
+  private _scheduleReconnectForSubscription(
+    delayMs = SUBSCRIPTION_ADD_RECONNECT_DEBOUNCE_MS,
+    reason = 'subscription_changed',
+  ): void {
+    if (this._reconnectForSubscriptionPending) return;
+    this._reconnectForSubscriptionPending = true;
+
+    this._logger.info('[PolymarketWsAdapter] Scheduling subscription refresh reconnect', {
+      delayMs,
+      reason,
+      tokenCount: this._subscribedTokens.size,
+    });
+
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (this._isDestroyed) {
+        this._reconnectForSubscriptionPending = false;
+        return;
+      }
+      this._reconnectForSubscription().catch((err) => {
+        this._logger.error('[PolymarketWsAdapter] Failed to reconnect for subscription change', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+        this._reconnectForSubscriptionPending = false;
+      });
+    }, delayMs);
+  }
+
+  /**
+   * Выполняет reconnect для применения изменений в наборе подписанных токенов.
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. `disconnect()` — корректно закрывает соединение, предотвращает auto-reconnect
+   * 2. `await sleep(300ms)` — ждём пока `onclose` старого WS сработает до `connect()`
+   *    (предотвращает race condition: `_handleClose()` после нового соединения)
+   * 3. `subscribe('market', updatedTokens)` — обновляем кэш BaseWebSocket пока disconnected
+   *    (BaseWebSocket не шлёт — status='disconnected')
+   * 4. `connect()` — BaseWebSocket открывает новое соединение →
+   *    `_resubscribeAll()` в onopen шлёт из обновлённого кэша (ОДИН send) → emit('connected')
+   *
+   * ### Почему не `reconnectForNewSubscription()`:
+   * `PolymarketWebSocketManager.reconnectForNewSubscription()` переопределяет метод и
+   * вызывает просто `disconnect() + connect()` БЕЗ очистки кэша. В результате
+   * BaseWebSocket на reconnect шлёт старую подписку из кэша, а затем наш
+   * `_resubscribeAll(isReconnect=true)` шлёт повторно → INVALID OPERATION.
+   */
+  private async _reconnectForSubscription(): Promise<void> {
+    if (this._isDestroyed) {
+      this._reconnectForSubscriptionPending = false;
+      return;
+    }
+
+    // Если за время debounce (500ms) все токены были unsubscribed — reconnect не нужен.
+    // Иначе BaseWebSocket отправил бы устаревший кэш рыночной подписки (удалённые токены),
+    // Polymarket ответил бы INVALID OPERATION → бесконечный reconnect-цикл.
+    if (this._subscribedTokens.size === 0) {
+      this._logger.debug('[PolymarketWsAdapter] No tokens after debounce — skipping subscription-change reconnect');
+      this._reconnectForSubscriptionPending = false;
+      return;
+    }
+
+    this._logger.info('[PolymarketWsAdapter] Reconnecting to apply subscription changes', {
+      tokenCount: this._subscribedTokens.size,
+    });
+
+    try {
+      // Шаг 1: Корректное отключение (устанавливает _isShuttingDown=true, предотвращает auto-reconnect)
+      await this._client.disconnect();
+
+      // Шаг 2: Пауза чтобы onclose старого WebSocket сработал до нового connect()
+      // Без паузы: _handleClose() может сработать ПОСЛЕ connect() и сбросить _status='disconnected'
+      await new Promise<void>((r) => setTimeout(r, 300));
+
+      if (this._isDestroyed) return;
+
+      // Шаг 3+4: Обновляем кэш и подключаемся АТОМАРНО.
+      // Захватываем _subscribedTokens прямо перед connect() чтобы включить
+      // токены добавленные openMarket() во время disconnect/sleep окна.
+      // Без этого: openMarket добавляет токен ПОСЛЕ cache update → BaseWebSocket
+      // шлёт stale кэш → стратегия не получает данных.
+      const currentTokens = Array.from(this._subscribedTokens);
+      if (currentTokens.length > 0) {
+        await this._client.subscribe('market', {
+          assets_ids: currentTokens,
+          type: 'market',
+        });
+      }
+
+      // connect() → BaseWebSocket шлёт из только что обновлённого кэша
+      await this._client.connect();
+
+    } catch (err) {
+      this._logger.error('[PolymarketWsAdapter] Reconnect for subscription change failed', {
+        err: err instanceof Error ? err : new Error(String(err)),
+        tokenCount: this._subscribedTokens.size,
+      });
+      // Гарантированный retry-connect через 3s — страховка на случай если BaseWebSocket
+      // не запланирует reconnect самостоятельно (onclose не сработал при ошибке handshake).
+      // Подписка уже обновлена в кэше BaseWebSocket — просто переподключаемся.
+      if (!this._isDestroyed) {
+        setTimeout(() => {
+          if (this._isDestroyed || this._isConnected) return;
+          this._logger.info('[PolymarketWsAdapter] Forcing reconnect after subscription-change failure', {
+            tokenCount: this._subscribedTokens.size,
+          });
+          this._client.connect().catch((retryErr) => {
+            this._logger.warn('[PolymarketWsAdapter] Forced reconnect also failed (BaseWebSocket will retry)', {
+              err: retryErr instanceof Error ? retryErr.message : String(retryErr),
+            });
+          });
+        }, 3_000);
+      }
+    } finally {
+      this._reconnectForSubscriptionPending = false;
+    }
+  }
+
+  /**
+   * Отправляет WS-подписку для всех tracked tokens (market channel).
+   *
+   * @remarks
+   * Polymarket WebSocket принимает subscription-сообщение только ОДИН РАЗ на соединение.
+   * Вызывается из `_resubscribeAll()` — только при первом подключении или после
+   * subscription-change reconnect (когда BaseWebSocket кэш был очищен).
+   */
+  private async _sendAllSubscriptions(): Promise<void> {
+    if (this._isDestroyed || this._subscribedTokens.size === 0) return;
+
+    const tokens = Array.from(this._subscribedTokens);
+
+    const params: SubscriptionParams = {
+      assets_ids: tokens,
+      type: 'market',
+    };
+
+    this._logger.info('[PolymarketWsAdapter] Sending market subscription', {
+      tokenCount: tokens.length,
+    });
+
+    try {
+      await this._client.subscribe('market', params);
+
+      this._logger.debug('[PolymarketWsAdapter] Market subscription sent successfully', {
+        tokenCount: tokens.length,
+      });
+    } catch (err) {
+      if (!this._isDestroyed) {
+        this._logger.error('[PolymarketWsAdapter] Failed to send market subscriptions', {
+          err: err instanceof Error ? err : new Error(String(err)),
+          tokenCount: tokens.length,
+        });
+      }
+    }
+  }
+
+  /**
+   * Отправляет WS-подписку на user channel с аутентификацией.
+   *
+   * @remarks
+   * User channel subscription format:
+   * ```json
+   * { "type": "user", "auth": { "apiKey": "...", "secret": "...", "passphrase": "..." } }
+   * ```
+   * Получает fills (event_type: "trade" с taker_order_id) и order lifecycle (event_type: "order").
+   */
+  private async _sendUserChannelSubscription(): Promise<void> {
+    if (this._isDestroyed || !this._userChannelConfig) return;
+
+    const { apiKey, secret, passphrase } = this._userChannelConfig;
+
+    const params: SubscriptionParams = {
+      type: 'user',
+      auth: { apiKey, secret, passphrase },
+    };
+
+    try {
+      await this._client.subscribe('user', params);
+
+      this._logger.debug('[PolymarketWsAdapter] User channel subscription sent');
+    } catch (err) {
+      if (!this._isDestroyed) {
+        this._logger.error('[PolymarketWsAdapter] Failed to send user channel subscription', {
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+  }
+
+  /**
+   * Проверяет, уничтожен ли адаптер.
+   *
+   * @throws {Error} Если адаптер уничтожен
+   */
+  private _checkDestroyed(): void {
+    if (this._isDestroyed) {
+      throw new Error('PolymarketWsAdapter has been destroyed and cannot be used');
+    }
   }
 }

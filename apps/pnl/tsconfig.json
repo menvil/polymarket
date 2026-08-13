@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/logger":        ["../../packages/foundation/logger/src/index.ts"],
+      "@polymarket/time":          ["../../packages/foundation/time/src/index.ts"],
+      "@polymarket/fill":          ["../../packages/domain/entities/fill/src/index.ts"],
+      "@polymarket/fill/polymarket-fee": ["../../packages/domain/entities/fill/src/polymarket-fee.ts"],
+      "@polymarket/exchange/rest": ["../../packages/infrastructure/polymarket/rest/index.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

@@ -3,19 +3,26 @@
   "compilerOptions": {
     "outDir": "./dist",
     "composite": true,
-    "types": ["jest", "@jest/globals", "node"],
+    "types": [
+      "jest",
+      "@jest/globals",
+      "node"
+    ],
     "paths": {
-      "@polymarket/fill": ["../../entities/fill/src/index.ts"],
-      "@polymarket/fill/*": ["../../entities/fill/src/*"]
+      "@polymarket/fill": [
+        "../../entities/fill/dist/index.d.ts"
+      ],
+      "@polymarket/fill/*": [
+        "../../entities/fill/dist/*"
+      ]
     }
   },
-  "references": [
-    { "path": "../../../foundation/result" },
-    { "path": "../../../foundation/errors" },
-    { "path": "../../../foundation/ids" },
-    { "path": "../../value-objects" },
-    { "path": "../../entities/fill" }
+  "include": [
+    "src/**/*",
+    "__tests__/**/*"
   ],
-  "include": ["src/**/*", "__tests__/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

@@ -9,10 +9,11 @@
  */
 
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
-import type { AssetId, FillId, OrderId } from '@polymarket/ids';
+import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
 
 // ─── Status ──────────────────────────────────────────────────────
 
+/** Статус заявки в жизненном цикле — от создания до терминального состояния. */
 export type OrderStatus =
   | 'PENDING'
   | 'OPEN'
@@ -65,6 +66,15 @@ export interface OrderState {
   readonly fill: FillState;
   readonly reason?: string;
   readonly strategyId?: string;
+  /**
+   * ID аккаунта-владельца заявки (опционально).
+   *
+   * @remarks
+   * Используется execution-слоем для ownership-проверки перед CANCEL:
+   * стратегия не должна отменять ордера чужого аккаунта. Optional для
+   * обратной совместимости со старыми снапшотами/recovery-путями.
+   */
+  readonly accountId?: AccountId;
 }
 
 // ─── External contracts ───────────────────────────────────────────
@@ -81,6 +91,8 @@ export interface CreateOrderParams {
   readonly size: Quantity;
   readonly timestamp: Timestamp;
   readonly strategyId?: string;
+  /** ID аккаунта-владельца заявки (для ownership-проверок execution-слоя) */
+  readonly accountId?: AccountId;
 }
 
 /**
@@ -104,4 +116,6 @@ export interface OrderSnapshot {
   readonly fillIds: readonly string[];
   readonly reason?: string;
   readonly strategyId?: string;
+  /** Сериализованный AccountId владельца (см. `accountIdToString`) */
+  readonly accountId?: string;
 }

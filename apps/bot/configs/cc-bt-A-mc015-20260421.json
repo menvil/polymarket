@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "desc": "CalibratedCrowd cc-bt-A-mc015-20260421 variant — Apr 21 OOS (265 markets)",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "snapshots 2026-04-21 OOS, 265 markets",
+      "pnl": "+14.50 USDC",
+      "wr": "58.2%",
+      "markets": 253,
+      "date": "2026-04-27",
+      "notes": "A + minComposite=0.15. Все 26 зон имеют composite≥0.5, B нейтральна."
+    },
+    "todo": [
+      "run on Apr 22-27 daily to confirm robustness (pending task)"
+    ]
+  },
+  "strategy": "calibrated-crowd",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
+    "minComposite": 0.15,
+    "maxPositionFraction": 0.05,
+    "maxSharesPerMarket": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitOnRegimeFlip": true,
+    "exitOnTauTimeout": true,
+    "exitTauSec": 15
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

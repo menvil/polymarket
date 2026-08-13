@@ -1,0 +1,26 @@
+{
+  "name": "@polymarket/cex-market-data",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@polymarket/logger": "0.1.0",
+    "ccxt": "^4.5.46"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0",
+    "@types/node": "^26.1.1",
+    "typescript": "^5.0.0"
+  }
+}

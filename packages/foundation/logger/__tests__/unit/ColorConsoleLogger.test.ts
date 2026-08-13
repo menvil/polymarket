@@ -136,7 +136,7 @@ describe('ColorConsoleLogger', () => {
     it('должен логировать ошибку без Error объекта', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      logger.error('Error message', undefined, { key: 'value' });
+      logger.error('Error message', { key: 'value' });
 
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const output = consoleSpy.mock.calls[0][0] as string;
@@ -146,11 +146,11 @@ describe('ColorConsoleLogger', () => {
       consoleSpy.mockRestore();
     });
 
-    it('должен логировать ошибку с Error объектом', () => {
+    it('должен логировать ошибку с Error объектом через поле err', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const error = new Error('Test error');
-      logger.error('Operation failed', error, { orderId: 'order-123' });
+      logger.error('Operation failed', { err: error, orderId: 'order-123' });
 
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const output = consoleSpy.mock.calls[0][0] as string;
@@ -162,14 +162,14 @@ describe('ColorConsoleLogger', () => {
       consoleSpy.mockRestore();
     });
 
-    it('должен включать stack trace из Error', () => {
+    it('должен включать stack trace из поля err', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const error = new Error('Test error');
-      logger.error('Failed', error);
+      logger.error('Failed', { err: error });
 
       const output = consoleSpy.mock.calls[0][0] as string;
-      expect(output).toContain('error:');
+      expect(output).toContain('err:');
       expect(output).toContain('stack:');
 
       consoleSpy.mockRestore();
@@ -180,7 +180,7 @@ describe('ColorConsoleLogger', () => {
     it('должен логировать критическую ошибку', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      logger.fatal('Fatal error', undefined, { retries: 5 });
+      logger.fatal('Fatal error', { retries: 5 });
 
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const output = consoleSpy.mock.calls[0][0] as string;
@@ -191,11 +191,11 @@ describe('ColorConsoleLogger', () => {
       consoleSpy.mockRestore();
     });
 
-    it('должен логировать fatal с Error объектом', () => {
+    it('должен логировать fatal с Error объектом через поле err', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const error = new Error('Connection refused');
-      logger.fatal('Cannot connect', error, { exchange: 'Polymarket' });
+      logger.fatal('Cannot connect', { err: error, exchange: 'Polymarket' });
 
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       const output = consoleSpy.mock.calls[0][0] as string;

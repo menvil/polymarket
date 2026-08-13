@@ -6,13 +6,16 @@
  * Часть bounded context: market microstructure (не accounting).
  *
  * ### Экспортируемые модули:
- * - `TradeTape` — append-only лента трейдов с фильтрацией по времени
+ * - `TapeRecord` — минимальная запись трейда из WS-ленты
+ * - `TapeRetentionPolicy` — политика хранения записей
+ * - `TradeTape` — append-only лента записей с retention policy
  * - `TradeFlowCalculator` — stateless вычислитель метрик (VWAP, OFI, volume)
  * - `TradeFlowMetrics` — интерфейс агрегированных метрик
  *
  * @packageDocumentation
  */
 
+export type { TapeRecord, TapeRetentionPolicy } from './TapeRecord.js';
 export { TradeTape } from './TradeTape.js';
 export { TradeFlowCalculator } from './TradeFlowCalculator.js';
 export type { TradeFlowMetrics } from './TradeFlowMetrics.js';

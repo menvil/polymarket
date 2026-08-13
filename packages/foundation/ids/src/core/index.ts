@@ -85,6 +85,7 @@ export {
   AssetId as AssetIdHelpers,
   AssetIdValidationError,
   assetIdToString,
+  assetIdToInstrumentId,
   parseAssetId,
   asPolymarketCtfToken,
   isCurrencyAsset,

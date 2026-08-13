@@ -1,14 +1,14 @@
 /**
- * Polymarket Request Signer
+ * Подписант запросов Polymarket
  *
  * @remarks
- * Signs HTTP requests for Polymarket CLOB API using private key.
- * Uses ethers.js Wallet for ECDSA signing.
+ * Подписывает HTTP-запросы для CLOB API Polymarket используя приватный ключ.
+ * Использует ethers.js Wallet для ECDSA-подписи.
  *
- * Signing flow:
- * 1. Encode request data (order params, cancel params, etc.)
- * 2. Sign message with private key (ECDSA)
- * 3. Return signature hex string
+ * Алгоритм подписи:
+ * 1. Кодируем данные запроса (параметры ордера, параметры отмены и т.д.)
+ * 2. Подписываем сообщение приватным ключом (ECDSA)
+ * 3. Возвращаем строку подписи в hex-формате
  *
  * @example
  * ```typescript
@@ -22,26 +22,26 @@
  *   nonce: Date.now(),
  * });
  *
- * // Use signature in API request headers or body
+ * // Использовать подпись в заголовках или теле API-запроса
  * ```
  */
 
 import { ethers } from 'ethers';
 
 /**
- * Polymarket request signer
+ * Подписант запросов Polymarket
  */
 export class PolymarketSigner {
   private readonly wallet: ethers.Wallet;
   private readonly chainId: number;
 
   /**
-   * Create Polymarket signer
+   * Создать подписант Polymarket
    *
-   * @param privateKey - Private key for signing (hex string with or without 0x prefix)
-   * @param chainId - Chain ID (137 for Polygon)
+   * @param privateKey - Приватный ключ для подписи (hex-строка с префиксом 0x или без)
+   * @param chainId - Идентификатор цепочки (137 для Polygon)
    *
-   * @throws {Error} If private key is invalid
+   * @throws {Error} Если приватный ключ недействителен
    *
    * @example
    * ```typescript
@@ -54,16 +54,16 @@ export class PolymarketSigner {
   }
 
   /**
-   * Sign order data
+   * Подписать данные ордера
    *
-   * @param orderData - Order data to sign
-   * @returns Signature hex string
+   * @param orderData - Данные ордера для подписи
+   * @returns Подпись в hex-формате
    *
-   * @throws {Error} If signing fails
+   * @throws {Error} При ошибке подписи
    *
    * @remarks
-   * In production, this should use EIP-712 typed data signing.
-   * Currently uses simple message signing for demonstration.
+   * В продакшене следует использовать подпись типизированных данных EIP-712.
+   * Сейчас использует простую подпись сообщения для демонстрации.
    *
    * @example
    * ```typescript
@@ -83,12 +83,12 @@ export class PolymarketSigner {
   }
 
   /**
-   * Sign cancel order data
+   * Подписать данные отмены ордера
    *
-   * @param cancelData - Cancel data to sign
-   * @returns Signature hex string
+   * @param cancelData - Данные отмены для подписи
+   * @returns Подпись в hex-формате
    *
-   * @throws {Error} If signing fails
+   * @throws {Error} При ошибке подписи
    *
    * @example
    * ```typescript
@@ -105,15 +105,15 @@ export class PolymarketSigner {
   }
 
   /**
-   * Sign generic request data
+   * Подписать произвольные данные запроса
    *
-   * @param data - Data to sign
-   * @returns Signature hex string
+   * @param data - Данные для подписи
+   * @returns Подпись в hex-формате
    *
-   * @throws {Error} If signing fails
+   * @throws {Error} При ошибке подписи
    *
    * @remarks
-   * Generic signing method for any request data.
+   * Универсальный метод подписи для любых данных запроса.
    *
    * @example
    * ```typescript
@@ -127,9 +127,9 @@ export class PolymarketSigner {
   }
 
   /**
-   * Get wallet address
+   * Получить адрес кошелька
    *
-   * @returns Wallet address (0x...)
+   * @returns Адрес кошелька (0x...)
    *
    * @example
    * ```typescript
@@ -142,18 +142,18 @@ export class PolymarketSigner {
   }
 
   /**
-   * Get chain ID
+   * Получить идентификатор цепочки
    *
-   * @returns Chain ID
+   * @returns Идентификатор цепочки
    */
   getChainId(): number {
     return this.chainId;
   }
 
   /**
-   * Get wallet instance
+   * Получить экземпляр кошелька
    *
-   * @returns Ethers Wallet instance for EIP-712 signing
+   * @returns Экземпляр ethers Wallet для EIP-712 подписи
    *
    * @example
    * ```typescript
@@ -166,14 +166,14 @@ export class PolymarketSigner {
   }
 
   /**
-   * Encode order data for signing
+   * Закодировать данные ордера для подписи
    *
-   * @param orderData - Order data
-   * @returns Encoded message string
+   * @param orderData - Данные ордера
+   * @returns Закодированная строка сообщения
    *
    * @remarks
-   * In production, this should use EIP-712 typed data encoding.
-   * Currently uses simple JSON encoding for demonstration.
+   * В продакшене следует использовать EIP-712 typed data encoding.
+   * Сейчас использует простое JSON-кодирование для демонстрации.
    */
   private encodeOrderData(orderData: Record<string, unknown>): string {
     // TODO: Реализовать EIP-712 typed data encoding в production
@@ -182,10 +182,10 @@ export class PolymarketSigner {
   }
 
   /**
-   * Encode cancel data for signing
+   * Закодировать данные отмены для подписи
    *
-   * @param cancelData - Cancel data
-   * @returns Encoded message string
+   * @param cancelData - Данные отмены
+   * @returns Закодированная строка сообщения
    */
   private encodeCancelData(cancelData: Record<string, unknown>): string {
     // TODO: Реализовать EIP-712 typed data encoding в production

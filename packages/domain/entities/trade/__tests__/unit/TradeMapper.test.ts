@@ -2,7 +2,11 @@
  * Тесты для TradeMapper
  */
 
+import Decimal from 'decimal.js';
 import { TradeMapper } from '../../src/mappers/TradeMapper';
+import { asInstrumentId } from '@polymarket/ids';
+import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Side } from '@polymarket/value-objects';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -275,6 +279,129 @@ describe('TradeMapper', () => {
       );
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('fromParsedTrade()', () => {
+    const VALID_INSTRUMENT_ID = asInstrumentId(
+      '62305814799875783974460176688386847666394972778903073967664089920408777315323'
+    )!;
+
+    function makeParsedTradeParams(overrides?: {
+      instrumentId?: ReturnType<typeof asInstrumentId>;
+      marketId?: string;
+      price?: number;
+      size?: number;
+      side?: Side;
+      timestampMs?: number;
+    }) {
+      return {
+        instrumentId: overrides?.instrumentId ?? VALID_INSTRUMENT_ID,
+        marketId: overrides?.marketId ?? '0xmarket123abc',
+        price: Price.of(new Decimal(overrides?.price ?? 0.65)),
+        size: Quantity.of(new Decimal(overrides?.size ?? 100)),
+        side: overrides?.side ?? ('BUY' as Side),
+        timestamp: Timestamp.of(new Decimal(overrides?.timestampMs ?? 1_700_000_000_000)),
+      };
+    }
+
+    it('строит Trade из уже распакованных VO', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const trade = result.value;
+        expect(trade.marketId).toBe('0xmarket123abc');
+        expect(trade.aggressorSide).toBe('BUY');
+        expect(trade.price.value().toNumber()).toBeCloseTo(0.65, 5);
+        expect(trade.size.value().toNumber()).toBeCloseTo(100, 5);
+        expect(trade.timestamp.toNumber()).toBe(1_700_000_000_000);
+        expect(trade.venueId).toBe('POLYMARKET');
+        expect(trade.txHash).toBeUndefined();
+      }
+    });
+
+    it('парсит instrumentId (сырой numeric CTF token) как AssetId типа POLYMARKET_CTF_TOKEN', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.tokenId.type).toBe('POLYMARKET_CTF_TOKEN');
+        if (result.value.tokenId.type === 'POLYMARKET_CTF_TOKEN') {
+          expect(result.value.tokenId.tokenId).toBe(
+            '62305814799875783974460176688386847666394972778903073967664089920408777315323'
+          );
+        }
+      }
+    });
+
+    it('парсит SELL сторону', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams({ side: 'SELL' }));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.aggressorSide).toBe('SELL');
+      }
+    });
+
+    it('генерирует VenueTradeId по composite-формуле (txHash недоступен на этом пути)', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.id).toContain('0xmarket123abc');
+        expect(result.value.id).toContain('1700000000000');
+        expect(result.value.txHash).toBeUndefined();
+      }
+    });
+
+    it('VenueTradeId детерминирован — одинаковые входные данные дают одинаковый id', () => {
+      const r1 = TradeMapper.fromParsedTrade(makeParsedTradeParams());
+      const r2 = TradeMapper.fromParsedTrade(makeParsedTradeParams());
+
+      expect(r1.ok && r2.ok).toBe(true);
+      if (r1.ok && r2.ok) {
+        expect(r1.value.id).toBe(r2.value.id);
+      }
+    });
+
+    it('VenueTradeId различается для разных price/size на том же рынке/токене/времени', () => {
+      const r1 = TradeMapper.fromParsedTrade(makeParsedTradeParams({ price: 0.65, size: 100 }));
+      const r2 = TradeMapper.fromParsedTrade(makeParsedTradeParams({ price: 0.7, size: 50 }));
+
+      expect(r1.ok && r2.ok).toBe(true);
+      if (r1.ok && r2.ok) {
+        expect(r1.value.id).not.toBe(r2.value.id);
+      }
+    });
+
+    it('возвращает Err если marketId пустой', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams({ marketId: '' }));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('marketId');
+      }
+    });
+
+    it('возвращает Err если marketId состоит из пробелов', () => {
+      const result = TradeMapper.fromParsedTrade(makeParsedTradeParams({ marketId: '   ' }));
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('round-trip через snapshot сохраняет все поля', () => {
+      const original = unwrap(TradeMapper.fromParsedTrade(makeParsedTradeParams()));
+
+      const snapshot = TradeMapper.toSnapshot(original);
+      const restored = unwrap(TradeMapper.fromSnapshot(snapshot));
+
+      expect(restored.id).toBe(original.id);
+      expect(restored.marketId).toBe(original.marketId);
+      expect(restored.aggressorSide).toBe(original.aggressorSide);
+      expect(restored.price.value().toString()).toBe(original.price.value().toString());
+      expect(restored.size.value().toString()).toBe(original.size.value().toString());
+      expect(restored.timestamp.toNumber()).toBe(original.timestamp.toNumber());
     });
   });
 

@@ -1,5 +1,5 @@
 /**
- * UserEventsFeedService - обрабатывает user-specific WS order events
+ * UserEventsFeedService — обрабатывает user-specific WS order events
  *
  * @remarks
  * Использует WsExecutionMapper + WsExecutionNormalizer для публикации ExecutionEvent
@@ -13,7 +13,7 @@
  *   → EventBus.publish()
  * ```
  *
- * Responsibilities:
+ * Обязанности:
  * - Подписка на user-specific WS channel (order updates)
  * - Парсинг WS messages через WsExecutionMapper
  * - Нормализация cumulative → delta через WsExecutionNormalizer
@@ -33,16 +33,16 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
-import type { IEventBus } from '../../../shared/events/IEventBus.js';
-import type { IOrderRepository } from '../../../domain/ports/IOrderRepository.js';
-import type { ExecutionContext } from '../../../domain/execution/ExecutionContext.js';
+import type { ILogger } from '@polymarket/logger';
+import type { IEventBus } from '../ports/IEventBus.js';
+import type { IInfraOrderRepository as IOrderRepository } from '../ports/IInfraOrderRepository.js';
+import type { ExecutionContext } from '../events/ExecutionContext.js';
 import type { PolymarketWebSocketManager } from './PolymarketWebSocketManager.js';
-import type { WsExecutionMapperMetrics } from '../../ws/WsExecutionMapper.js';
-import { WsExecutionNormalizer } from '../../ws/WsExecutionNormalizer.js';
+import type { WsExecutionMapperMetrics } from './WsExecutionMapper.js';
+import { WsExecutionNormalizer } from './WsExecutionNormalizer.js';
 
 /**
- * Metrics implementation for WsExecutionMapper
+ * Реализация метрик для WsExecutionMapper
  */
 class UserEventsFeedMetrics implements WsExecutionMapperMetrics {
   constructor(private readonly logger: ILogger) {}
@@ -52,7 +52,7 @@ class UserEventsFeedMetrics implements WsExecutionMapperMetrics {
   }
 
   sample(event: string, data: unknown): void {
-    this.logger.debug(`[UserEventsFeedMetrics] ${event}`, data);
+    this.logger.debug(`[UserEventsFeedMetrics] ${event}`, data as Record<string, unknown> | undefined);
   }
 }
 
@@ -62,8 +62,8 @@ class UserEventsFeedMetrics implements WsExecutionMapperMetrics {
  * @remarks
  * aggregate-aware normalization для idempotency across restarts
  *
- * NOTE: This is currently a placeholder/stub. Properties initialized in constructor
- * will be used when Polymarket adds user-specific WebSocket feed support.
+ * ПРИМЕЧАНИЕ: Это в настоящее время placeholder/stub. Свойства, инициализированные в конструкторе,
+ * будут использованы когда Polymarket добавит поддержку user-specific WebSocket feed.
  */
 export class UserEventsFeedService {
   private readonly _wsNormalizer: WsExecutionNormalizer;
@@ -99,7 +99,7 @@ export class UserEventsFeedService {
   }
 
   /**
-   * Start service (подписывается на user WS channel)
+   * Запускает сервис (подписывается на user WS channel)
    *
    * @remarks
    * TODO: Polymarket API не предоставляет user-specific WS feed (только REST polling).
@@ -119,7 +119,7 @@ export class UserEventsFeedService {
   }
 
   /**
-   * Stop service (отписывается от user WS channel)
+   * Останавливает сервис (отписывается от user WS channel)
    */
   public async stop(): Promise<void> {
     if (!this.isStarted) {
@@ -133,9 +133,9 @@ export class UserEventsFeedService {
   }
 
   /**
-   * Track order (start listening for fills/cancels for this order)
+   * Начинает отслеживание ордера (ожидание fills/cancels для него)
    *
-   * @param orderId - Order ID to track
+   * @param orderId - ID ордера для отслеживания
    *
    * @remarks
    * Добавляет orderId в tracked set.
@@ -147,20 +147,19 @@ export class UserEventsFeedService {
   }
 
   /**
-   * Untrack order (stop listening for this order)
+   * Прекращает отслеживание ордера
    *
-   * @param orderId - Order ID to untrack
+   * @param orderId - ID ордера для снятия с отслеживания
    */
   public untrackOrder(orderId: string): void {
     this.trackedOrderIds.delete(orderId);
     this.logger.debug(`[UserEventsFeedService] Untracked order ${orderId}`);
   }
 
-
   /**
-   * Get stats (for diagnostics)
+   * Возвращает статистику (для диагностики)
    *
-   * @returns Stats object
+   * @returns Объект со статистикой
    */
   public getStats(): {
     isStarted: boolean;

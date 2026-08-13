@@ -22,3 +22,6 @@ export { asFillId } from './FillId.js';
 
 export type { PositionId } from './PositionId.js';
 export { asPositionId } from './PositionId.js';
+
+export type { StrategyId } from './StrategyId.js';
+export { asStrategyId, unsafeStrategyId } from './StrategyId.js';

@@ -1,0 +1,90 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ],
+  "references": [
+    {
+      "path": "../../packages/foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/domain/value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/math/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/errors/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/ports/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/event-bus/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/handlers/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/strategy/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/use-cases/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/risk/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/market-state/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/market-discovery/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/backtesting/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/domain/cross-market/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/in-memory/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/cex-market-data/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"
+    }
+  ]
+}

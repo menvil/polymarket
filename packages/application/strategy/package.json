@@ -1,0 +1,36 @@
+{
+  "name": "@polymarket/strategy",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/result": "0.1.0",
+    "@polymarket/errors": "0.1.0",
+    "@polymarket/event-bus": "0.1.0",
+    "@polymarket/market": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/trade-tape": "0.1.0",
+    "@polymarket/orderbook": "0.1.0",
+    "@polymarket/rolling-window": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/use-cases": "0.1.0",
+    "@polymarket/orchestrators": "0.1.0",
+    "@polymarket/market-state": "0.1.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0"
+  }
+}

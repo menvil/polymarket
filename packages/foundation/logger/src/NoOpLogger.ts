@@ -121,14 +121,9 @@ export class NoOpLogger implements ILogger {
    * Ничего не делает
    *
    * @param _message - Игнорируется
-   * @param _error - Игнорируется
    * @param _context - Игнорируется
    */
-  error(
-    _message: string,
-    _error?: Error,
-    _context?: Record<string, unknown>
-  ): void {
+  error(_message: string, _context?: Record<string, unknown>): void {
     // No operation
   }
 
@@ -136,14 +131,9 @@ export class NoOpLogger implements ILogger {
    * Ничего не делает
    *
    * @param _message - Игнорируется
-   * @param _error - Игнорируется
    * @param _context - Игнорируется
    */
-  fatal(
-    _message: string,
-    _error?: Error,
-    _context?: Record<string, unknown>
-  ): void {
+  fatal(_message: string, _context?: Record<string, unknown>): void {
     // No operation
   }
 

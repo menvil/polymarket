@@ -32,8 +32,9 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
-import { asOrderId, asFillId, parseAssetId } from '@polymarket/ids';
+import { asOrderId, asFillId, parseAccountId, parseAssetId } from '@polymarket/ids';
 import type { FillId } from '@polymarket/ids';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { OrderSnapshot, OrderState, OrderStatus } from '../OrderState.js';
 import { Order } from '../Order.js';
@@ -141,6 +142,7 @@ export abstract class OrderDeserializer {
         status: snap.status as OrderStatus,
         timestamp: tsResult.value,
         strategyId: snap.strategyId,
+        accountId: snap.accountId !== undefined ? parseAccountId(snap.accountId) : undefined,
         reason: snap.reason,
         fill: { filledSize, averagePrice, fillIds },
       };

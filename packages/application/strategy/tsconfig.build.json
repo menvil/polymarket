@@ -1,0 +1,57 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ],
+  "references": [
+    {
+      "path": "../../foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/errors/tsconfig.build.json"
+    },
+    {
+      "path": "../event-bus/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/market/tsconfig.build.json"
+    },
+    {
+      "path": "../ports/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/market-data/trade-tape/tsconfig.build.json"
+    },
+    {
+      "path": "../use-cases/tsconfig.build.json"
+    },
+    {
+      "path": "../orchestrators/tsconfig.build.json"
+    }
+  ]
+}

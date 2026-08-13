@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/order":      ["../../domain/entities/order/dist/index.d.ts"],
+      "@polymarket/fill":       ["../../domain/entities/fill/dist/index.d.ts"],
+      "@polymarket/ports":      ["../ports/dist/index.d.ts"],
+      "@polymarket/event-bus":  ["../event-bus/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

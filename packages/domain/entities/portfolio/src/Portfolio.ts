@@ -5,6 +5,7 @@
  * Portfolio — aggregate root, объединяющий:
  * - **Balance** (баланс): available/reserved средства через `@polymarket/value-objects/balance`
  * - **Positions** (позиции): карта `InstrumentId → IPosition`
+ * - **TokenReservations** (резервации токенов): карта `InstrumentId → Quantity` для SELL ордеров
  *
  * ### Архитектурные решения
  *
@@ -39,12 +40,22 @@
  * Достаточно реализовать интерфейс `IPosition`. Позволяет тестировать
  * Portfolio независимо от Position package.
  *
+ * **8. tokenReservations — резервации outcome-токенов для SELL ордеров:**
+ * При размещении SELL ордера токены резервируются, чтобы предотвратить двойную продажу.
+ * Симметрично USDC-резервациям для BUY ордеров.
+ *
  * ### Жизненный цикл баланса
  * ```
  * reserveForOrder(amount)    →  available -= amount, reserved += amount
  * releaseReservation(amount) →  available += amount, reserved -= amount
  * applyDebit(amount)         →  reserved -= amount (списание из reserved)
  * applyCredit(amount)        →  available += amount (зачисление)
+ * ```
+ *
+ * ### Жизненный цикл токенных резерваций (SELL ордера)
+ * ```
+ * reserveTokensForOrder(id, qty)  →  tokenReservations[id] += qty
+ * releaseTokenReservation(id, qty) →  tokenReservations[id] -= qty
  * ```
  *
  * @example
@@ -78,8 +89,11 @@
  * ```
  */
 
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import type { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { Result, Ok, Err } from '@polymarket/result';
 import type { InstrumentId, AccountId } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
@@ -102,25 +116,34 @@ import { PortfolioValidationError } from '@polymarket/errors/portfolio';
  * Единый интерфейс устраняет необходимость в IValuablePosition —
  * getTotalValue / getTotalUnrealizedPnL принимают Iterable<IPosition>
  * без каких-либо cast на стороне caller.
+ *
+ * ### Почему `Pick<Quantity, 'value'>`, а не голый `{ value(): Decimal }`:
+ * По ADR (`docs/architecture/boundary-contract.md`, Решение 1) голый `Decimal`
+ * легитимен только внутри `value-objects`/`math`. `Pick<Quantity, 'value'>`/
+ * `Pick<Price, 'value'>`/`Pick<SignedQuantity, 'value'>` — явные структурные типы,
+ * привязанные к реальным VO-классам (а не анонимный inline-тип), но **не требуют
+ * прямой зависимости от конкретного класса** — `Pick` берёт только сигнатуру метода
+ * `value()`, поэтому любой объект со совместимым `.value(): Decimal` (включая
+ * `SimplePosition`, `Position` и тестовые заглушки) остаётся совместим без изменений.
  */
 export interface IPosition {
   /** Идентификатор торгового инструмента */
   readonly instrumentId: InstrumentId;
   /** Текущее количество в позиции */
-  readonly quantity: { value(): Decimal };
+  readonly quantity: Pick<Quantity, 'value'>;
   /** Сторона позиции */
   readonly side: 'LONG' | 'SHORT';
   /** Средневзвешенная цена входа */
-  readonly averageEntryPrice: { value(): Decimal };
+  readonly averageEntryPrice: Pick<Price, 'value'>;
   /** Проверяет, закрыта ли позиция (quantity = 0) */
   isClosed(): boolean;
   /**
    * Вычисляет unrealized P&L для заданной текущей цены
    *
    * @param currentPrice - Текущая цена инструмента (Price VO)
-   * @returns Объект с методом value(): Decimal (совместим с SignedQuantity)
+   * @returns Объект с методом value(): Decimal (структурно совместим с SignedQuantity)
    */
-  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
 }
 
 /**
@@ -135,6 +158,8 @@ export interface PortfolioParams {
   readonly balance: Balance;
   /** Начальные позиции (опционально) */
   readonly positions?: ReadonlyMap<InstrumentId, IPosition>;
+  /** Резервации outcome-токенов для открытых SELL ордеров (опционально) */
+  readonly tokenReservations?: ReadonlyMap<InstrumentId, Quantity>;
 }
 
 /**
@@ -157,6 +182,18 @@ export class Portfolio {
   public readonly positions: ReadonlyMap<InstrumentId, IPosition>;
 
   /**
+   * Карта зарезервированных outcome-токенов для открытых SELL ордеров.
+   *
+   * @remarks
+   * Ключ — InstrumentId (тот же, что в positions).
+   * Значение — суммарный зарезервированный объём (Quantity, >= 0).
+   *
+   * Инвариант: reservedQty <= position.quantity (нельзя зарезервировать больше, чем есть).
+   * Проверяется при вызове `reserveTokensForOrder`.
+   */
+  public readonly tokenReservations: ReadonlyMap<InstrumentId, Quantity>;
+
+  /**
    * Приватный конструктор — используйте Portfolio.create()
    */
   private constructor(params: PortfolioParams) {
@@ -166,6 +203,9 @@ export class Portfolio {
     this.positions = params.positions
       ? new Map(params.positions)
       : new Map<InstrumentId, IPosition>();
+    this.tokenReservations = params.tokenReservations
+      ? new Map(params.tokenReservations)
+      : new Map<InstrumentId, Quantity>();
   }
 
   /**
@@ -331,6 +371,40 @@ export class Portfolio {
     return Ok(this.withBalance(balanceResult.value));
   }
 
+  /**
+   * Списывает средства напрямую из available (без резервации).
+   *
+   * @param amount - Сумма для списания
+   * @returns Result с новым Portfolio или InvalidBalanceError
+   *
+   * @remarks
+   * Используется для fills по terminal/не найденным ордерам, когда резервация
+   * уже была снята (CancelOrderUseCase). Биржевое событие — источник истины.
+   *
+   * Если available < amount — списывает до нуля (best-effort).
+   * REST-синхронизация портфолио скорректирует баланс в течение ~15 секунд.
+   *
+   * ```
+   * applyDirectDebit(amount) → available = max(0, available - amount)
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // fill на отменённый ордер: резервация уже снята
+   * const result = portfolio.applyDirectDebit(Money.of(notional, 'USDC'));
+   * ```
+   */
+  public applyDirectDebit(amount: Money): Result<Portfolio, InvalidBalanceError> {
+    const currentAvailable = this.balance.available().value();
+    const newAvailableValue = Decimal.max(new Decimal(0), currentAvailable.minus(amount.value()));
+    const newAvailable = Money.of(newAvailableValue, 'USDC');
+    const balanceResult = BalanceService.updateAvailable(this.balance, newAvailable);
+    if (!balanceResult.ok) {
+      return Err(balanceResult.error);
+    }
+    return Ok(this.withBalance(balanceResult.value));
+  }
+
   // ────────────────────────────────────────────────────────────
   // Операции с позициями
   // ────────────────────────────────────────────────────────────
@@ -373,6 +447,7 @@ export class Portfolio {
       accountId: this.accountId,
       balance: this.balance,
       positions: newPositions,
+      tokenReservations: this.tokenReservations,
     });
   }
 
@@ -475,6 +550,148 @@ export class Portfolio {
   }
 
   // ────────────────────────────────────────────────────────────
+  // Операции с токенными резервациями (SELL ордера)
+  // ────────────────────────────────────────────────────────────
+
+  /**
+   * Возвращает доступное количество токенов для SELL (с учётом резерваций).
+   *
+   * @param instrumentId - Идентификатор инструмента
+   * @returns Decimal — позиция минус зарезервированное (>= 0)
+   *
+   * @remarks
+   * Если позиции нет — возвращает Decimal(0).
+   * Если reservedQty > positionQty (инвариант нарушен) — возвращает Decimal(0).
+   *
+   * @example
+   * ```typescript
+   * const available = portfolio.availableTokenQuantity(instrumentId);
+   * console.log(available.toNumber()); // 50 при позиции 100 и резервации 50
+   * ```
+   */
+  public availableTokenQuantity(instrumentId: InstrumentId): Decimal {
+    const position = this.positions.get(instrumentId);
+    if (!position) return new Decimal(0);
+
+    const posQty = position.quantity.value();
+    const reserved = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
+    const available = posQty.minus(reserved);
+    return available.isNegative() ? new Decimal(0) : available;
+  }
+
+  /**
+   * Резервирует outcome-токены для нового SELL ордера.
+   *
+   * @param instrumentId - Идентификатор инструмента
+   * @param qty - Количество токенов для резервирования (Decimal)
+   * @returns Result<Portfolio, InvalidBalanceError>
+   *
+   * @remarks
+   * Проверяет: `availableTokenQuantity(instrumentId) >= qty`.
+   * При недостатке — возвращает Err(INSUFFICIENT_FUNDS).
+   * Иначе добавляет qty к текущей резервации инструмента.
+   *
+   * @example
+   * ```typescript
+   * const result = portfolio.reserveTokensForOrder(instrumentId, new Decimal(50));
+   * if (result.ok) {
+   *   console.log(result.value.availableTokenQuantity(instrumentId).toNumber()); // position - 50
+   * }
+   * ```
+   */
+  public reserveTokensForOrder(
+    instrumentId: InstrumentId,
+    qty: Decimal,
+  ): Result<Portfolio, InvalidBalanceError> {
+    if (qty.lte(0)) {
+      return Err(
+        new InvalidBalanceError(
+          `reserveTokensForOrder: qty must be positive, got ${qty.toString()}`,
+          { context: { instrumentId: String(instrumentId), qty: qty.toString() } },
+        ),
+      );
+    }
+    const available = this.availableTokenQuantity(instrumentId);
+    if (available.lt(qty)) {
+      return Err(
+        new InvalidBalanceError(
+          `Insufficient token balance for SELL: available ${available.toFixed(4)}, required ${qty.toFixed(4)}`,
+          {
+            context: {
+              instrumentId: String(instrumentId),
+              available: available.toString(),
+              required: qty.toString(),
+            },
+          },
+        ),
+      );
+    }
+
+    const current = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
+    const newMap = new Map<InstrumentId, Quantity>(this.tokenReservations);
+    newMap.set(instrumentId, Quantity.of(current.plus(qty)));
+    return Ok(this.withTokenReservations(newMap));
+  }
+
+  /**
+   * Снимает токенную резервацию (при исполнении или отмене SELL ордера).
+   *
+   * @param instrumentId - Идентификатор инструмента
+   * @param qty - Количество токенов для освобождения (Decimal)
+   * @returns Result<Portfolio, InvalidBalanceError>
+   *
+   * @remarks
+   * Уменьшает существующую резервацию на qty.
+   * Возвращает Err если резервация < qty (INSUFFICIENT_RESERVED).
+   * Если после освобождения резервация = 0, удаляет запись из Map.
+   *
+   * @example
+   * ```typescript
+   * const result = portfolio.releaseTokenReservation(instrumentId, new Decimal(25));
+   * if (result.ok) {
+   *   console.log(result.value.tokenReservations.get(instrumentId)?.toNumber()); // было 50, стало 25
+   * }
+   * ```
+   */
+  public releaseTokenReservation(
+    instrumentId: InstrumentId,
+    qty: Decimal,
+  ): Result<Portfolio, InvalidBalanceError> {
+    if (qty.lte(0)) {
+      return Err(
+        new InvalidBalanceError(
+          `releaseTokenReservation: qty must be positive, got ${qty.toString()}`,
+          { context: { instrumentId: String(instrumentId), qty: qty.toString() } },
+        ),
+      );
+    }
+    const current = this.tokenReservations.get(instrumentId)?.value() ?? new Decimal(0);
+    if (current.lt(qty)) {
+      return Err(
+        new InvalidBalanceError(
+          `Cannot release token reservation: reserved ${current.toFixed(4)}, requested ${qty.toFixed(4)}`,
+          {
+            context: {
+              instrumentId: String(instrumentId),
+              reserved: current.toString(),
+              requested: qty.toString(),
+            },
+          },
+        ),
+      );
+    }
+
+    const newMap = new Map<InstrumentId, Quantity>(this.tokenReservations);
+    const newReserved = current.minus(qty);
+    if (newReserved.isZero()) {
+      newMap.delete(instrumentId);
+    } else {
+      newMap.set(instrumentId, Quantity.of(newReserved));
+    }
+    return Ok(this.withTokenReservations(newMap));
+  }
+
+  // ────────────────────────────────────────────────────────────
   // Приватные хелперы
   // ────────────────────────────────────────────────────────────
 
@@ -490,6 +707,23 @@ export class Portfolio {
       accountId: this.accountId,
       balance,
       positions: this.positions,
+      tokenReservations: this.tokenReservations,
+    });
+  }
+
+  /**
+   * Создаёт копию Portfolio с новой картой токенных резерваций
+   *
+   * @param tokenReservations - Новая карта резерваций
+   * @returns Новый Portfolio
+   */
+  private withTokenReservations(tokenReservations: ReadonlyMap<InstrumentId, Quantity>): Portfolio {
+    return new Portfolio({
+      id: this.id,
+      accountId: this.accountId,
+      balance: this.balance,
+      positions: this.positions,
+      tokenReservations,
     });
   }
 }

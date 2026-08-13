@@ -40,7 +40,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 
 /**
  * Типы сообщений Polymarket WebSocket
@@ -50,7 +50,8 @@ import type { ILogger } from '../../../domain/ports/ILogger.js';
  */
 export type PolymarketEventType =
   | 'book'              // Snapshot/update стакана
-  | 'trade'             // Исполненная сделка
+  | 'trade'             // Исполненная сделка (market channel) или fill (user channel)
+  | 'order'             // Lifecycle событие ордера (user channel)
   | 'last_trade_price'  // Обновление цены последней сделки
   | 'pong'              // Ответ на heartbeat
   | 'error'             // Сообщение об ошибке
@@ -153,6 +154,7 @@ export type PolymarketMessage =
 export type RouterEvent =
   | 'orderbook'     // Обновление orderbook (book)
   | 'trade'         // Обновление trade (trade или last_trade_price)
+  | 'order'         // Lifecycle событие ордера из user channel (event_type: "order")
   | 'message'       // Все сообщения (до роутинга)
   | 'raw'           // Data события с asset_id (до роутинга)
   | 'error'         // Ошибки парсинга или WebSocket
@@ -170,6 +172,8 @@ export interface RouterStats {
   orderbookMessages: number;
   /** Всего сообщений trade */
   tradeMessages: number;
+  /** Всего order lifecycle сообщений из user channel */
+  orderMessages: number;
   /** Всего ошибок парсинга */
   parsingErrors: number;
   /** Всего batch сообщений (массивов) */
@@ -214,11 +218,12 @@ export class PolymarketMessageRouter extends EventEmitter {
       throw new Error('logger is required');
     }
 
-    this.logger = logger.child ? logger.child('PolymarketMessageRouter') : logger;
+    this.logger = logger.child({ component: 'PolymarketMessageRouter' });
     this.stats = {
       totalMessages: 0,
       orderbookMessages: 0,
       tradeMessages: 0,
+      orderMessages: 0,
       parsingErrors: 0,
       batchMessages: 0,
       skippedMessages: 0,
@@ -261,6 +266,24 @@ export class PolymarketMessageRouter extends EventEmitter {
         return;
       }
 
+      // Текстовые ответы сервера (не JSON) — обрабатываем до попытки JSON.parse
+      const knownTextResponses = ['PONG', 'OK', 'TOO MANY REQUESTS'];
+      const knownErrorResponses = ['INVALID OPERATION', 'RATE_LIMIT', 'UNAUTHORIZED', 'ERROR'];
+
+      if (knownTextResponses.includes(rawData)) {
+        this.logger.debug('Text response from server', { message: rawData });
+        return;
+      }
+
+      if (knownErrorResponses.some(e => rawData.includes(e))) {
+        this.logger.warn('Polymarket WebSocket error response', {
+          message: rawData,
+          hint: 'Check subscription format or API changes',
+        });
+        this.emit('error', new Error(rawData));
+        return;
+      }
+
       // Парсим JSON
       const parsed = JSON.parse(rawData);
 
@@ -292,7 +315,7 @@ export class PolymarketMessageRouter extends EventEmitter {
         this.emit('error', new Error(rawData));
       } else {
         this.logger.error('Failed to parse WebSocket message', {
-          error: error instanceof Error ? error.message : String(error),
+          err: error instanceof Error ? error : new Error(String(error)),
           rawData: rawData.substring(0, 200),
         });
         this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -360,6 +383,15 @@ export class PolymarketMessageRouter extends EventEmitter {
 
       // Извлекаем тип события и asset ID
       const eventType = message.event_type || message.type;
+
+      // Raw-лог всех user-channel событий (кроме book/trade — слишком шумные)
+      if (eventType !== 'book' && eventType !== 'trade' && eventType !== 'last_trade_price' &&
+          eventType !== 'pong' && eventType !== 'price_change' && eventType !== 'tick_size_change') {
+        this.logger.info('[WS-RAW] user channel message', {
+          event_type: eventType,
+          raw: JSON.stringify(message),
+        });
+      }
       const assetId = message.asset_id || message.market;
 
       // Обрабатываем контрольные сообщения
@@ -413,6 +445,14 @@ export class PolymarketMessageRouter extends EventEmitter {
         return;
       }
 
+      // User channel: lifecycle событие ордера (event_type: "order") — не требует asset_id
+      if (eventType === 'order') {
+        this.stats.orderMessages++;
+        this.logger.trace('Routing order lifecycle message', { orderId: message.order_id });
+        this.emit('order', message);
+        return;
+      }
+
       // Data сообщения должны иметь asset_id
       if (!assetId) {
         this.logger.warn('Data message without asset_id', { eventType, message });
@@ -452,7 +492,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       }
     } catch (error) {
       this.logger.error('Failed to process message', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error instanceof Error ? error : new Error(String(error)),
         message
       });
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -489,6 +529,7 @@ export class PolymarketMessageRouter extends EventEmitter {
       totalMessages: 0,
       orderbookMessages: 0,
       tradeMessages: 0,
+      orderMessages: 0,
       parsingErrors: 0,
       batchMessages: 0,
       skippedMessages: 0,

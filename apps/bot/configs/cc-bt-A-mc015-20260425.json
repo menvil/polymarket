@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "desc": "CalibratedCrowd config A (minComposite=015%), 2026-04-25 OOS",
+    "status": "oos",
+    "backtest": {
+      "dataset": "snapshots 2026-04-25 OOS",
+      "pnl": "не записан",
+      "notes": "OOS day 5 — часть 7-дневного robustness sweep. Конфиг A: exitOnRegimeFlip=true, exitTauSec=15."
+    },
+    "todo": [
+      "перезапустить и зафиксировать PnL за этот день",
+      "для Apr-21 подтверждён результат +14.50 USDC (265 markets)"
+    ]
+  },
+  "strategy": "calibrated-crowd",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
+    "minComposite": 0.15,
+    "maxPositionFraction": 0.05,
+    "maxSharesPerMarket": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitOnRegimeFlip": true,
+    "exitOnTauTimeout": true,
+    "exitTauSec": 15
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-25/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

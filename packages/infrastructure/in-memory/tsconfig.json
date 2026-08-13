@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "paths": {
+      "@polymarket/ports":      ["../../application/ports/dist/index.d.ts"],
+      "@polymarket/order":      ["../../domain/entities/order/dist/index.d.ts"],
+      "@polymarket/portfolio":  ["../../domain/entities/portfolio/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

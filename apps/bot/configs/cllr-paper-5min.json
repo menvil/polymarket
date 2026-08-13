@@ -1,0 +1,150 @@
+{
+  "_meta": {
+    "desc": "CexLeadLag + CLLR residual overlay, 5min BTC — paper shadow",
+    "status": "paper",
+    "backtest": {
+      "dataset": "live-recordings 2026-04-21/2026-04-27, 7d OOS",
+      "pnl": "+81.16 USDC",
+      "markets": 245,
+      "date": "2026-05-02",
+      "notes": "base CLL +69.83 → +81.16 с CLLR residual overlay"
+    },
+    "paper": {
+      "period": "2026-05-02/...",
+      "pnl": "running",
+      "notes": "shadow paper для CLLR live"
+    }
+  },
+  "strategy": "cex-lead-lag",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account-cllr"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 1,
+    "mode": "skewed",
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "emergencyExitSlippageCents": 1,
+    "maxChaseAboveExitCents": 5,
+    "stopLossCents": 5,
+    "stopLossCooldownMs": 60000,
+    "breakEvenTriggerCents": 6,
+    "breakEvenOffsetCents": 0,
+    "trailingStartMultiplier": 0.7,
+    "minTrailingDistanceCents": 5,
+    "tauTighteningStartSec": 25,
+    "tauTighteningMinMultiplier": 0.8,
+    "trailingExitRatio": 0.5,
+    "signalExitEnabled": true,
+    "signalExitGraceMs": 500,
+    "signalExitMinProfitCents": 2,
+    "signalExitRatio": 0.5,
+    "adverseExitGraceMs": 300,
+    "adverseExitRatio": 1,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minSignalPersistenceMs": 150,
+    "edgeTablePath": "tables/sweep-residual/edge-5min-up-relaxed.json",
+    "edgeRequireZone": false,
+    "edgeMinComposite": 0,
+    "edgeRegimeThresholdPerMin": 10,
+    "edgeRegimeWindowMs": 60000,
+    "edgeRegimeMinPoints": 5
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0,
+    "bidirectional": true
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings-cllr",
+    "journalDir": "./data/paper-journals-cllr",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings-cllr/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}

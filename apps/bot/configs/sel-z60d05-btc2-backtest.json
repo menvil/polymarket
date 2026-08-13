@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry zone60+daccel combo, btc2",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc2 snapshots 5-min BTC",
+      "pnl": "+5.06 USDC",
+      "date": "2026-04-01",
+      "notes": "dz combo. Total: +21.01 USDC. Хуже чем daccel alone (+24.71). Combo не улучшает."
+    },
+    "todo": [
+      "не оптимально — используй daccel alone (sel-d05-btc*)"
+    ]
+  },
+  "strategy": "selective-entry",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 60,
+    "minDeltaPct": 0.05,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1,
+    "side": "up"
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day2/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

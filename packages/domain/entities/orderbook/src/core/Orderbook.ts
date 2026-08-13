@@ -39,8 +39,10 @@
 import type { Price, Spread } from '@polymarket/value-objects';
 import { PriceService, Quantity, QuantityService, SpreadService, Timestamp } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
+import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { OrderbookLevel } from './OrderbookLevel.js';
 import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
@@ -127,11 +129,20 @@ export class Orderbook {
      * Когда мы получили/создали этот orderbook.
      *
      * Используется для:
-     * - Stale detection (Date.now() - receivedAt.toNumber())
+     * - Stale detection (receivedAt.toNumber() vs nowMs)
      * - Age calculation
      * - TTL проверок
      */
-    public readonly receivedAt: Timestamp
+    public readonly receivedAt: Timestamp,
+
+    /**
+     * Опциональный источник времени для детерминированной работы getAgeMs() и isStale().
+     *
+     * @remarks
+     * Если задан — getAgeMs()/isStale() без явного nowMs используют clock.now().getTime()
+     * вместо Date.now(). Обратная совместимость сохраняется через явный nowMs.
+     */
+    private readonly _clock?: IClock
   ) {
     Object.freeze(this);
   }
@@ -155,7 +166,7 @@ export class Orderbook {
    * }
    * ```
    */
-  public static fromNormalized(normalized: NormalizedOrderbook): Orderbook {
+  public static fromNormalized(normalized: NormalizedOrderbook, clock?: IClock): Orderbook {
     // NormalizedOrderbook уже содержит Timestamp VO — конвертация не нужна
     return new Orderbook(
       normalized.marketId as InstrumentId,
@@ -163,7 +174,8 @@ export class Orderbook {
       normalized.bids,
       normalized.asks,
       normalized.venueTimestamp,
-      normalized.receivedAt
+      normalized.receivedAt,
+      clock
     );
   }
 
@@ -184,14 +196,78 @@ export class Orderbook {
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty(instrumentId: InstrumentId, asset: InstrumentId): Orderbook {
+  public static empty(instrumentId: InstrumentId, asset: InstrumentId, clock?: IClock): Orderbook {
     return new Orderbook(
       instrumentId,
       asset,
       [],
       [],
       undefined,
-      Timestamp.now()
+      Timestamp.now(),
+      clock
+    );
+  }
+
+  /**
+   * Создаёт Orderbook напрямую из уже распарсенных уровней, минуя `OrderbookNormalizer`.
+   *
+   * @param instrumentId - Идентификатор инструмента/рынка
+   * @param asset - Идентификатор asset/outcome token
+   * @param bids - Уровни покупки (`OrderbookLevel[]`, в любом порядке — сортируются внутри)
+   * @param asks - Уровни продажи (`OrderbookLevel[]`, в любом порядке — сортируются внутри)
+   * @param receivedAt - Timestamp получения данных (локально) — обязателен, используется
+   *   для `getAgeMs()`/`isStale()` и как ключ ретеншна при истории через `RollingWindow<Orderbook>`
+   * @param venueTimestamp - Timestamp от venue/exchange (опционально)
+   * @param clock - Источник времени для `getAgeMs()`/`isStale()` без явного `nowMs`
+   * @returns Новый `Orderbook`
+   *
+   * @remarks
+   * Для сценария "уже есть готовые `OrderbookLevel[]`" (например, смаппленные из другого
+   * представления стакана) — `OrderbookNormalizer` рассчитан на сырые непроверенные данные
+   * (парсинг цен/quantity из строк, детекция crossed book), другой сценарий.
+   *
+   * `fromLevels` — plain return, как `fromNormalized`/`empty` (симметрично: приватный
+   * конструктор класса вообще не валидирует, вся валидация либо предшествует вызову
+   * факторики (`OrderbookNormalizer`), либо доступна post-hoc через `getSpread()`).
+   * Единственная защита здесь — **сортировка** `bids`/`asks` внутри метода (bids по
+   * убыванию цены, asks по возрастанию — тем же компаратором, что и
+   * `OrderbookNormalizer.sortLevels()`): класс нигде не сортирует уровни сам
+   * (`getBestBid()`/`getBestAsk()` берут `bids[0]`/`asks[0]` на веру), поэтому без
+   * сортировки здесь вызывающий код с неупорядоченным входом получил бы молча неверные
+   * `getBestBid()`/`getMicroprice()`/`toObject()` без единого сигнала об ошибке — хуже,
+   * чем crossed book (тот хотя бы ловится `getSpread()`).
+   *
+   * @example
+   * ```typescript
+   * const orderbook = Orderbook.fromLevels(
+   *   instrumentId,
+   *   asset,
+   *   [OrderbookLevel.create(price1, qty1), OrderbookLevel.create(price2, qty2)],
+   *   [OrderbookLevel.create(price3, qty3)],
+   *   Timestamp.now(clock),
+   * );
+   * ```
+   */
+  public static fromLevels(
+    instrumentId: InstrumentId,
+    asset: InstrumentId,
+    bids: readonly OrderbookLevel[],
+    asks: readonly OrderbookLevel[],
+    receivedAt: Timestamp,
+    venueTimestamp?: Timestamp,
+    clock?: IClock,
+  ): Orderbook {
+    const sortedBids = [...bids].sort((a, b) => b.price.value().comparedTo(a.price.value()));
+    const sortedAsks = [...asks].sort((a, b) => a.price.value().comparedTo(b.price.value()));
+
+    return new Orderbook(
+      instrumentId,
+      asset,
+      sortedBids,
+      sortedAsks,
+      venueTimestamp,
+      receivedAt,
+      clock
     );
   }
 
@@ -501,7 +577,7 @@ export class Orderbook {
    * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    */
   public getAgeMs(nowMs?: number): number {
-    return (nowMs ?? Date.now()) - this.receivedAt.toNumber();
+    return (nowMs ?? this._clock?.now().getTime() ?? Date.now()) - this.receivedAt.toNumber();
   }
 
   /**

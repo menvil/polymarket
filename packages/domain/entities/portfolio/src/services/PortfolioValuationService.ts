@@ -32,6 +32,7 @@ import type { InstrumentId } from '@polymarket/ids';
 import { Money, type SupportedCurrency } from '@polymarket/value-objects/money';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { Price } from '@polymarket/value-objects';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { IPosition } from '../Portfolio.js';
 

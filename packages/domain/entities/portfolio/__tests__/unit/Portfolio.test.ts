@@ -5,7 +5,9 @@
  * Проверяет:
  * - create() с валидными/невалидными данными
  * - reserveForOrder / releaseReservation / applyDebit / applyCredit
+ * - reserveTokensForOrder / releaseTokenReservation / availableTokenQuantity
  * - upsertPosition (добавление, обновление, удаление закрытых позиций)
+ * - Immutability: upsertPosition и withBalance сохраняют tokenReservations
  * - getPosition / hasPosition / getPositions / getPositionCount / isEmpty
  * - toString()
  */
@@ -492,5 +494,293 @@ describe('Portfolio полный lifecycle операций с балансом'
     if (debitResult.ok) {
       expect(debitResult.value.balance.total().value().toNumber()).toBe(7000);
     }
+  });
+});
+
+// ==================== Токенные резервации (SELL ордера) ====================
+
+describe('Portfolio.availableTokenQuantity()', () => {
+  it('возвращает 0 если позиции нет', () => {
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const available = result.value.availableTokenQuantity(makeInstrumentId('unknown'));
+    expect(available.toNumber()).toBe(0);
+  });
+
+  it('возвращает полную позицию если резерваций нет', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // QTY = 100
+    const available = result.value.availableTokenQuantity(instrumentId);
+    expect(available.toNumber()).toBe(100);
+  });
+
+  it('возвращает позицию минус резервации', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
+    expect(reserveResult.ok).toBe(true);
+    if (!reserveResult.ok) return;
+
+    const available = reserveResult.value.availableTokenQuantity(instrumentId);
+    expect(available.toNumber()).toBe(70); // 100 - 30
+  });
+});
+
+describe('Portfolio.reserveTokensForOrder()', () => {
+  it('резервирует токены: available уменьшается, tokenReservations обновляется', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(40));
+    expect(reserveResult.ok).toBe(true);
+    if (!reserveResult.ok) return;
+
+    const portfolio = reserveResult.value;
+    expect(portfolio.tokenReservations.get(instrumentId)?.toNumber()).toBe(40);
+    expect(portfolio.availableTokenQuantity(instrumentId).toNumber()).toBe(60); // 100 - 40
+  });
+
+  it('накапливает резервации при нескольких SELL ордерах', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const first = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const second = first.value.reserveTokensForOrder(instrumentId, new Decimal(20));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(50); // 30 + 20
+    expect(second.value.availableTokenQuantity(instrumentId).toNumber()).toBe(50); // 100 - 50
+  });
+
+  it('возвращает Err если available < qty', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // QTY = 100, пытаемся зарезервировать 150
+    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(150));
+    expect(reserveResult.ok).toBe(false);
+    if (!reserveResult.ok) {
+      expect(reserveResult.error).toBeInstanceOf(InvalidBalanceError);
+    }
+  });
+
+  it('возвращает Err если позиции нет (нечего резервировать)', () => {
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserveResult = result.value.reserveTokensForOrder(
+      makeInstrumentId('nonexistent'),
+      new Decimal(10),
+    );
+    expect(reserveResult.ok).toBe(false);
+    if (!reserveResult.ok) {
+      expect(reserveResult.error).toBeInstanceOf(InvalidBalanceError);
+    }
+  });
+
+  it('не мутирует исходный Portfolio', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const original = result.value;
+    original.reserveTokensForOrder(instrumentId, new Decimal(50));
+
+    // Оригинал не изменился
+    expect(original.tokenReservations.get(instrumentId)).toBeUndefined();
+    expect(original.availableTokenQuantity(instrumentId).toNumber()).toBe(100);
+  });
+});
+
+describe('Portfolio.releaseTokenReservation()', () => {
+  it('уменьшает резервацию после освобождения', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(60));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(25));
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+
+    expect(released.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(35); // 60 - 25
+    expect(released.value.availableTokenQuantity(instrumentId).toNumber()).toBe(65); // 100 - 35
+  });
+
+  it('удаляет запись из Map если резервация стала 0', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(50));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(50));
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+
+    // Запись должна быть удалена из Map
+    expect(released.value.tokenReservations.get(instrumentId)).toBeUndefined();
+    expect(released.value.tokenReservations.size).toBe(0);
+  });
+
+  it('возвращает Err если резервация < qty', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    // Пытаемся освободить больше, чем зарезервировано
+    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(50));
+    expect(released.ok).toBe(false);
+    if (!released.ok) {
+      expect(released.error).toBeInstanceOf(InvalidBalanceError);
+    }
+  });
+
+  it('возвращает Err если резерваций нет вовсе', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Нет резерваций — пытаемся освободить
+    const released = result.value.releaseTokenReservation(instrumentId, new Decimal(10));
+    expect(released.ok).toBe(false);
+    if (!released.ok) {
+      expect(released.error).toBeInstanceOf(InvalidBalanceError);
+    }
+  });
+});
+
+describe('Portfolio immutability: tokenReservations сохраняются при других операциях', () => {
+  it('upsertPosition сохраняет tokenReservations', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Резервируем токены
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(40));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    // Обновляем позицию
+    const otherId = makeInstrumentId('token-2');
+    const updated = reserved.value.upsertPosition(makeOpenPosition(otherId));
+
+    // tokenReservations должны сохраниться
+    expect(updated.tokenReservations.get(instrumentId)?.toNumber()).toBe(40);
+    expect(updated.tokenReservations.size).toBe(1);
+  });
+
+  it('withBalance (через reserveForOrder) сохраняет tokenReservations', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Резервируем токены
+    const tokenReserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(50));
+    expect(tokenReserved.ok).toBe(true);
+    if (!tokenReserved.ok) return;
+
+    // Теперь резервируем USDC (вызывает withBalance внутри)
+    const usdcReserved = tokenReserved.value.reserveForOrder(mkMoney(1000));
+    expect(usdcReserved.ok).toBe(true);
+    if (!usdcReserved.ok) return;
+
+    // tokenReservations должны сохраниться после операции с балансом
+    expect(usdcReserved.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(50);
+    expect(usdcReserved.value.balance.available().value().toNumber()).toBe(9000); // 10000 - 1000
+  });
+});
+
+describe('Portfolio полный lifecycle токенных резерваций', () => {
+  it('reserve → releaseTokenReservation (cancel) восстанавливает доступный объём', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(80));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    expect(reserved.value.availableTokenQuantity(instrumentId).toNumber()).toBe(20);
+
+    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(80));
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+
+    // Должно вернуться к полному объёму
+    expect(released.value.availableTokenQuantity(instrumentId).toNumber()).toBe(100);
+    expect(released.value.tokenReservations.size).toBe(0);
+  });
+
+  it('reserve → releaseTokenReservation (fill partial) снижает резервацию пропорционально', () => {
+    const instrumentId = makeInstrumentId('token-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Разместили SELL на 60 токенов
+    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(60));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    // Пришёл partial fill на 40
+    const afterFill = reserved.value.releaseTokenReservation(instrumentId, new Decimal(40));
+    expect(afterFill.ok).toBe(true);
+    if (!afterFill.ok) return;
+
+    // Осталась резервация на 20 (неисполненный остаток)
+    expect(afterFill.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(20);
+    expect(afterFill.value.availableTokenQuantity(instrumentId).toNumber()).toBe(80); // 100 - 20
   });
 });

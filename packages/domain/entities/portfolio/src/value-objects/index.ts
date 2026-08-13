@@ -1,1 +1,2 @@
-export { PortfolioId, parsePortfolioId, asPortfolioId } from './PortfolioId.js';
+export type { PortfolioId } from './PortfolioId.js';
+export { parsePortfolioId, asPortfolioId } from './PortfolioId.js';

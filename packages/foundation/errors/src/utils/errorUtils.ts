@@ -1,4 +1,11 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
+// toDecimal() здесь централизует ~390 строк парсинга, общих для facade create()-методов
+// MoneyService/PriceService/QuantityService/etc. (см. докблок ниже). Не может жить в
+// packages/domain/value-objects — value-objects сам зависит от errors за классами ошибок,
+// обратная зависимость создала бы цикл. Точечное исключение для ОДНОГО файла пакета
+// (не пакетное off, как у value-objects/math — остальной foundation/errors к Decimal
+// отношения не имеет), см. docs/architecture/boundary-contract.md, Решение 1.
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import Decimal from 'decimal.js';
 import { TradingError } from '../base/TradingError.js';
 import { InvalidAssetQuantityError } from '../value-objects/InvalidAssetQuantityError.js';

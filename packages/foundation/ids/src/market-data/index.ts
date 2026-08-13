@@ -15,10 +15,13 @@ export {
 } from './MarketDataSourceId.js';
 
 export type { InstrumentId } from './InstrumentId.js';
-export { asInstrumentId } from './InstrumentId.js';
+export { asInstrumentId, unsafeInstrumentId } from './InstrumentId.js';
 
 export type { VenueTradeId } from './VenueTradeId.js';
 export { asVenueTradeId, unsafeVenueTradeId } from './VenueTradeId.js';
 
 export type { MarketId } from './MarketId.js';
 export { asMarketId, unsafeMarketId } from './MarketId.js';
+
+export type { CryptoAssetId } from './CryptoAssetId.js';
+export { asCryptoAssetId, unsafeCryptoAssetId } from './CryptoAssetId.js';

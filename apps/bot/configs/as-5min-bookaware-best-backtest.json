@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "desc": "Avellaneda-Stoikov 5min variant — as-5min-bookaware-best-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min BTC btc1/btc2/btc4/btc5",
+      "pnl": "не записан",
+      "notes": "AS 5-min experiment. Все AS 5-min конфиги архивированы — стратегия заменена SelectiveEntry/AdaptiveEntry. Детали: docs/guides/strategy-hypotheses.md"
+    },
+    "todo": [
+      "archived — не перезапускать. Используй sel/ae стратегии."
+    ]
+  },
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.05,
+    "qMax": 5,
+    "orderSize": 5,
+    "spreadMult": 1.0,
+    "ewmaAlpha": 0.3,
+    "unwindSec": 240,
+    "unwindMaxDiscountCents": 5,
+    "stopLossCents": 0,
+    "stopLossSpreadMult": 2.0,
+    "minTradesForMid": 15,
+    "regimeWindow": 15,
+    "regimeTrendThreshold": 2,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 15.0,
+    "regimeRangeSpreadMult": 0.6,
+    "warmupSec": 10,
+    "jumpThreshold": 2,
+    "jumpWidenFactor": 2.5,
+    "jumpCooldownTrades": 3,
+    "dynGammaSlope": 1.0,
+    "depthSpreadFactor": 10
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-snapshots-day1/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "desc": "Offset-3 UP variant, btc1",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc1 snapshots 5-min BTC",
+      "pnl": "не записан",
+      "notes": "Часть ablation/sweep серии для AdaptiveEntry directional variants."
+    },
+    "todo": [
+      "результаты не зафиксированы — перезапустить если нужны",
+      "сравнить с ae-auto (auto лучше directional в большинстве случаев)"
+    ]
+  },
+  "strategy": "adaptive-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "waitPct": 0.5,
+    "minEwmaCents": 50,
+    "minRiseCents": 5,
+    "warmupTrades": 10,
+    "bidOffsetCents": 3
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day1/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

@@ -1,20 +1,20 @@
 /**
- * Polymarket Market Constraints Policy
+ * Политика рыночных ограничений Polymarket
  *
  * @remarks
- * Handles:
- * - Size normalization (round to sizeTick)
- * - Min/max size validation
- * - Learning from API errors ("size too small")
- * - Caching constraints in-memory
+ * Обрабатывает:
+ * - Нормализацию размера (округление до sizeTick)
+ * - Валидацию минимального/максимального размера
+ * - Обучение на ошибках API ("size too small")
+ * - Кэширование ограничений в памяти
  *
- * This policy is used by PortfolioAdapter.canPlaceOrder() to validate
- * and normalize order parameters BEFORE sending to API.
+ * Эта политика используется в PortfolioAdapter.canPlaceOrder() для валидации
+ * и нормализации параметров ордера ДО отправки в API.
  *
- * Key features:
- * - Safe defaults if no data: { minOrderSize: 10, sizeTick: 0.01, maxOrderSize: 10000 }
- * - Learns from API errors and updates cache
- * - Fast in-memory cache (no DB queries)
+ * Ключевые особенности:
+ * - Безопасные значения по умолчанию при отсутствии данных: { minOrderSize: 1, sizeTick: 0.01, maxOrderSize: 10000 }
+ * - Обучается на ошибках API и обновляет кэш
+ * - Быстрый кэш в памяти (без запросов к БД)
  *
  * @example
  * ```typescript
@@ -31,34 +31,31 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient } from '../clients/PolymarketMarketDataRestClient.js';
 
 /**
- * Market constraints (cached)
+ * Рыночные ограничения (кэшированные)
  */
 interface MarketConstraints {
-  /** Minimum order VALUE in USD for BUY orders (0 = no minimum, only require min shares) */
+  /** Минимальная СТОИМОСТЬ ордера в USD для BUY-ордеров (0 = нет минимума, только минимальное количество акций) */
   minOrderValue: number;
 
-  /** Minimum order SIZE in shares (for both BUY and SELL) */
+  /** Минимальный РАЗМЕР ордера в акциях (для BUY и SELL) */
   minOrderSize: number;
 
-  /** Maximum order size */
+  /** Максимальный размер ордера */
   maxOrderSize: number;
 
-  /** Size tick (minimum size increment) */
+  /** Шаг размера (минимальный шаг изменения размера) */
   sizeTick: number;
 
-  /** Price tick (minimum price increment) */
+  /** Шаг цены (минимальный шаг изменения цены) */
   priceTick: number;
-
-  /** Fee rate in basis points (learned from API errors) */
-  feeRateBps?: number;
 }
 
 /**
- * Polymarket Market Constraints Policy
+ * Политика рыночных ограничений Polymarket
  */
 export class PolymarketMarketConstraintsPolicy {
   private readonly cache: Map<string, MarketConstraints> = new Map();
@@ -72,18 +69,18 @@ export class PolymarketMarketConstraintsPolicy {
 
   constructor(
     private readonly marketDataClient: PolymarketMarketDataRestClient,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
   ) {}
 
   /**
-   * Get market constraints (from cache or API)
+   * Получить рыночные ограничения (из кэша или API)
    *
-   * @param tokenId - Token ID
-   * @returns Market constraints
+   * @param tokenId - Идентификатор токена
+   * @returns Рыночные ограничения
    *
    * @remarks
-   * Safe defaults if no data: { minOrderSize: 10, sizeTick: 0.01, maxOrderSize: 10000 }
-   * Results are cached in memory.
+   * Безопасные значения по умолчанию при отсутствии данных: { minOrderSize: 1, sizeTick: 0.01, maxOrderSize: 10000 }
+   * Результаты кэшируются в памяти.
    *
    * @example
    * ```typescript
@@ -111,9 +108,9 @@ export class PolymarketMarketConstraintsPolicy {
       const priceTick = Math.max(0.01, apiPriceTick);
 
       // Логируем все ограничения из API
-      console.log('[PolymarketMarketConstraintsPolicy] API constraints:', {
+      this.logger.debug('API constraints fetched', {
         tokenId: tokenId.substring(0, 16) + '...',
-        apiPriceTick: apiPriceTick,
+        apiPriceTick,
         correctedPriceTick: priceTick,
         wasCorrected: apiPriceTick !== priceTick,
         minimum_tick_size: apiConstraints.minimum_tick_size,
@@ -155,11 +152,11 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Normalize size to sizeTick
+   * Нормализовать размер до sizeTick
    *
-   * @param tokenId - Market token ID
-   * @param size - Original size
-   * @returns Normalized size (rounded to sizeTick)
+   * @param tokenId - Идентификатор токена рынка
+   * @param size - Исходный размер
+   * @returns Нормализованный размер (округлённый до sizeTick)
    *
    * @example
    * ```typescript
@@ -187,11 +184,11 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Normalize price to priceTick
+   * Нормализовать цену до priceTick
    *
-   * @param tokenId - Market token ID
-   * @param price - Original price
-   * @returns Normalized price (rounded to priceTick)
+   * @param tokenId - Идентификатор токена рынка
+   * @param price - Исходная цена
+   * @returns Нормализованная цена (округлённая до priceTick)
    *
    * @example
    * ```typescript
@@ -218,24 +215,24 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Validate size against constraints
+   * Валидировать размер против ограничений
    *
-   * @param tokenId - Token ID
-   * @param size - Size to validate
-   * @param price - Order price
-   * @param side - Order side ('buy' or 'sell')
-   * @returns Validation result
+   * @param tokenId - Идентификатор токена
+   * @param size - Размер для валидации
+   * @param price - Цена ордера
+   * @param side - Сторона ордера ('buy' или 'sell')
+   * @returns Результат валидации
    *
    * @remarks
-   * BUY orders: minimum 1 share (if minOrderValue=0) OR minimum order VALUE (if minOrderValue>0)
-   * SELL orders: no minimum SIZE (just maxOrderSize check)
+   * BUY-ордера: минимум 1 акция (если minOrderValue=0) ИЛИ минимальная СТОИМОСТЬ ордера (если minOrderValue>0)
+   * SELL-ордера: нет минимального РАЗМЕРА (только проверка maxOrderSize)
    *
-   * Examples (BUY with minOrderValue=0):
-   * - Any price → minimum 1 share
+   * Примеры (BUY с minOrderValue=0):
+   * - Любая цена → минимум 1 акция
    *
-   * Examples (BUY with minOrderValue=$1):
-   * - Price $0.60 → minimum 2 shares (2 × $0.60 = $1.20)
-   * - Price $0.10 → minimum 10 shares (10 × $0.10 = $1.00)
+   * Примеры (BUY с minOrderValue=$1):
+   * - Цена $0.60 → минимум 2 акции (2 × $0.60 = $1.20)
+   * - Цена $0.10 → минимум 10 акций (10 × $0.10 = $1.00)
    *
    * @example
    * ```typescript
@@ -288,15 +285,9 @@ export class PolymarketMarketConstraintsPolicy {
       return { ok: true };
     }
 
-    // SELL: проверяем минимальный SIZE и максимум
-    if (size < constraints.minOrderSize) {
-      return {
-        ok: false,
-        reason: `Size ${size} below minimum ${constraints.minOrderSize} shares`,
-        minShares: constraints.minOrderSize,
-      };
-    }
-
+    // SELL: Polymarket позволяет продать остаток целиком даже если он меньше
+    // minOrderSize (после fee deduction позиция может быть чуть ниже порога).
+    // Проверяем только максимум.
     if (size > constraints.maxOrderSize) {
       return {
         ok: false,
@@ -308,18 +299,18 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Learn from API error and update constraints
+   * Обучиться на ошибке API и обновить ограничения
    *
-   * @param tokenId - Market token ID
-   * @param errorMsg - API error message
+   * @param tokenId - Идентификатор токена рынка
+   * @param errorMsg - Сообщение об ошибке API
    *
    * @remarks
-   * Parses error messages like "min size: $1" and updates cache.
-   * Supports patterns:
-   * - "min size: $X" → update minOrderValue
-   * - "minimum is $X" → update minOrderValue
-   * - "maximum is X" → update maxOrderSize
-   * - "minimum tick size is X" → update sizeTick
+   * Разбирает сообщения об ошибках вида "min size: $1" и обновляет кэш.
+   * Поддерживаемые шаблоны:
+   * - "min size: $X" → обновить minOrderValue
+   * - "minimum is $X" → обновить minOrderValue
+   * - "maximum is X" → обновить maxOrderSize
+   * - "minimum tick size is X" → обновить sizeTick
    *
    * @example
    * ```typescript
@@ -380,22 +371,6 @@ export class PolymarketMarketConstraintsPolicy {
       }
     }
 
-    // Парсим "invalid fee rate (X), current market's maker fee: Y"
-    const feeRateMatch = errorMsg.match(/invalid fee rate \((\d+)\), current market's maker fee:\s*(\d+)/i);
-    if (feeRateMatch) {
-      const correctFeeRate = parseInt(feeRateMatch[2], 10);
-      // Сохраняем feeRateBps в ограничениях (добавляем новое поле)
-      if ((constraints as any).feeRateBps !== correctFeeRate) {
-        (constraints as any).feeRateBps = correctFeeRate;
-        updated = true;
-        this.logger.warn('Learned feeRateBps from error', {
-          tokenId,
-          feeRateBps: correctFeeRate,
-          errorMsg,
-        });
-      }
-    }
-
     if (updated) {
       this.cache.set(tokenId, constraints);
       this.logger.info('Updated constraints from error', {
@@ -411,41 +386,12 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Get fee rate in basis points for token
+   * Очистить кэш для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Fee rate in basis points (default: 1000 if not learned)
-   *
-   * @remarks
-   * Returns cached fee rate if learned from error, otherwise default 1000 (10%).
-   * Most markets use 1000 bps, some use 0 bps.
-   *
-   * @example
-   * ```typescript
-   * const feeRate = policy.getFeeRateBps('0x123');
-   * // Returns 1000 (default) or learned value like 0
-   * ```
-   */
-  getFeeRateBps(tokenId: string): number {
-    const constraints = this.cache.get(tokenId);
-    const feeRate = constraints?.feeRateBps ?? 1000; // Дефолт: 10% maker fee
-
-    this.logger.debug('Getting feeRateBps', {
-      tokenId: tokenId.substring(0, 16) + '...',
-      feeRate,
-      learned: constraints?.feeRateBps !== undefined,
-    });
-
-    return feeRate;
-  }
-
-  /**
-   * Clear cache for specific token
-   *
-   * @param tokenId - Token ID
+   * @param tokenId - Идентификатор токена
    *
    * @remarks
-   * Forces re-fetch of constraints on next access.
+   * Принудительно повторно запрашивает ограничения при следующем обращении.
    */
   clearCache(tokenId: string): void {
     this.cache.delete(tokenId);
@@ -453,10 +399,10 @@ export class PolymarketMarketConstraintsPolicy {
   }
 
   /**
-   * Clear all cached constraints
+   * Очистить весь кэш ограничений
    *
    * @remarks
-   * Forces re-fetch of all constraints on next access.
+   * Принудительно повторно запрашивает все ограничения при следующем обращении.
    */
   clearAllCache(): void {
     this.cache.clear();

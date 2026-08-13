@@ -3,6 +3,7 @@ import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import type { IClock } from '@polymarket/time';
 import type { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { Timestamp } from '../../timestamp/core/Timestamp.js';
 
 /**
  * Проверяет свежесть котировки
@@ -19,7 +20,7 @@ import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
  *
  * Алгоритм:
  * 1. Получаем текущее время через IClock (dependency injection для тестирования)
- * 2. Вычисляем возраст котировки: currentTime - quote.timestampMs()
+ * 2. Вычисляем возраст котировки через `quote.age(now)`
  * 3. Сравниваем возраст с максимально допустимым значением
  * 4. Возвращаем ошибку если возраст превышает maxAgeMs
  *
@@ -87,9 +88,8 @@ export class ValidateAge {
     maxAgeMs: number,
     clock: IClock
   ): Result<void, InvalidQuoteError> {
-    const currentTimeMs = clock.now().getTime();
-    const quoteTimeMs = quote.timestampMs().toNumber();
-    const ageMs = currentTimeMs - quoteTimeMs;
+    const now = Timestamp.now(clock);
+    const ageMs = quote.age(now).toNumber();
 
     if (ageMs > maxAgeMs) {
       return Err(
@@ -101,8 +101,8 @@ export class ValidateAge {
               reason: QuoteErrorReason.QUOTE_TOO_OLD,
               ageMs,
               maxAgeMs,
-              quoteTimestamp: quoteTimeMs,
-              currentTimestamp: currentTimeMs
+              quoteTimestamp: quote.timestampMs().toNumber(),
+              currentTimestamp: now.toNumber()
             }
           }
         )

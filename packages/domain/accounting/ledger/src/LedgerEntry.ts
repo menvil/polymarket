@@ -38,7 +38,7 @@
  * const result = LedgerEntry.create({
  *   fillId: asFillId('fill-123')!,
  *   accountId: myAccountId,
- *   balanceDelta: { asset: yesTokenId, amount: new Decimal('+10') },
+ *   balanceDelta: { asset: upTokenId, amount: new Decimal('+10') },
  *   type: 'POSITION_DELTA',
  *   timestamp: fillTimestamp,
  * });
@@ -128,7 +128,7 @@ export class LedgerEntry {
    * const result = LedgerEntry.create({
    *   fillId: asFillId('fill-123')!,
    *   accountId: myAccountId,
-   *   balanceDelta: { asset: yesTokenId, amount: new Decimal('+10') },
+   *   balanceDelta: { asset: upTokenId, amount: new Decimal('+10') },
    *   type: 'POSITION_DELTA',
    *   timestamp: fillTimestamp,
    * });

@@ -1,14 +1,14 @@
 /**
- * Polymarket Balance Provider
+ * Провайдер баланса Polymarket
  *
  * @remarks
- * Implements IBalanceProvider interface.
- * Uses PolymarketBalanceRestClient + PolymarketBalanceMapper.
+ * Реализует интерфейс IBalanceProvider.
+ * Использует PolymarketBalanceRestClient + PolymarketBalanceMapper.
  *
- * Responsibilities:
- * - Fetch balance data from API
- * - Normalize data using mapper
- * - Return domain-formatted balances
+ * Обязанности:
+ * - Получение данных баланса из API
+ * - Нормализация данных с помощью маппера
+ * - Возврат балансов в доменном формате (Money / AssetQuantity)
  *
  * @example
  * ```typescript
@@ -18,24 +18,31 @@
  *   logger
  * );
  *
- * const availableUSDC = await provider.getAvailableBalance();
- * console.log(`Available: ${availableUSDC} USDC`);
+ * const available = await provider.getAvailableBalance();
+ * console.log(`Available: ${available.toNumber()} USDC`);
  *
- * const outcomeBalance = await provider.getOutcomeBalance('0x123');
- * console.log(`Outcome tokens: ${outcomeBalance}`);
+ * const outcomeBalance = await provider.getOutcomeBalance('62305...');
+ * console.log(`Outcome tokens: ${outcomeBalance.amount().value().toNumber()}`);
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { IBalanceProvider } from '../../../exchange/ports/IBalanceProvider.js';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
+import Decimal from 'decimal.js';
+import type { ILogger } from '@polymarket/logger';
+import { Money, AssetQuantity, Quantity } from '@polymarket/value-objects';
+import { asPolymarketCtfToken } from '@polymarket/ids';
+import type { IBalanceProvider } from '../../ports/IBalanceProvider.js';
 import type { PolymarketBalanceRestClient } from '../clients/PolymarketBalanceRestClient.js';
 import type { PolymarketBalanceMapper } from '../mappers/PolymarketBalanceMapper.js';
 
+/** Виртуальный баланс в режиме симуляции (1M USDC) */
+const SIMULATION_USDC_BALANCE = new Decimal(1_000_000);
+
 /**
- * Polymarket Balance Provider
+ * Провайдер баланса Polymarket
  *
  * @remarks
- * Implements IBalanceProvider for Polymarket.
+ * Реализует IBalanceProvider для Polymarket.
  */
 export class PolymarketBalanceProvider implements IBalanceProvider {
   constructor(
@@ -46,23 +53,22 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   ) {}
 
   /**
-   * Get available USDC balance
+   * Получить доступный баланс USDC.
    *
-   * @returns Available USDC balance (NOT locked in open orders)
-   * @throws {ApiError} If API call fails
+   * @returns Money в USDC (не заблокированный в открытых ордерах)
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
    * const balance = await provider.getAvailableBalance();
-   * console.log(`Available: ${balance} USDC`);
+   * console.log(`Available: ${balance.toNumber()} USDC`);
    * ```
    */
-  async getAvailableBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный баланс без вызова API
+  async getAvailableBalance(): Promise<Money> {
     if (this.simulationMode) {
-      const virtualBalance = 1000000; // 1M USDC виртуальный баланс
+      const virtualBalance = Money.of(SIMULATION_USDC_BALANCE, 'USDC');
       this.logger.debug('Getting available balance (SIMULATION MODE)', {
-        virtualBalance,
+        virtualBalance: virtualBalance.toNumber(),
       });
       return virtualBalance;
     }
@@ -70,116 +76,138 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
     this.logger.debug('Getting available balance');
 
     const rawBalances = await this.balanceClient.getBalances();
-    const normalized = this.mapper.toDomainBalances(rawBalances);
+    const normalized  = this.mapper.toDomainBalances(rawBalances);
 
     this.logger.debug('Available balance retrieved', {
-      availableUSDC: normalized.availableUSDC,
+      availableUSDC: normalized.available.toNumber(),
     });
 
-    return normalized.availableUSDC;
+    return normalized.available;
   }
 
   /**
-   * Get outcome token balance for specific token
+   * Получить баланс outcome-токена для конкретного токена.
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Числовой идентификатор токена из Polymarket API
+   * @returns AssetQuantity с типом POLYMARKET_CTF_TOKEN
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
-   * const balance = await provider.getOutcomeBalance('0x123');
-   * console.log(`Outcome tokens: ${balance}`);
+   * const balance = await provider.getOutcomeBalance('62305...');
+   * console.log(`Outcome tokens: ${balance.amount().value().toNumber()}`);
    * ```
    */
-  async getOutcomeBalance(tokenId: string): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный баланс outcome-токенов
+  async getOutcomeBalance(tokenId: string): Promise<AssetQuantity> {
     if (this.simulationMode) {
-      const virtualOutcomeBalance = 0; // Изначально нет outcome-токенов
-      this.logger.debug('Getting outcome balance (SIMULATION MODE)', {
-        tokenId,
-        virtualOutcomeBalance,
-      });
-      return virtualOutcomeBalance;
+      this.logger.debug('Getting outcome balance (SIMULATION MODE)', { tokenId });
+      return this._zeroTokenBalance(tokenId);
     }
 
     this.logger.debug('Getting outcome balance', { tokenId });
 
     const balance = await this.balanceClient.getOutcomeTokenBalance(tokenId);
+    const assetId = asPolymarketCtfToken(tokenId);
+
+    if (!assetId) {
+      this.logger.warn('Invalid tokenId format, returning zero balance', { tokenId });
+      return this._zeroTokenBalance(tokenId);
+    }
+
+    const qty = Quantity.of(new Decimal(balance));
 
     this.logger.debug('Outcome balance retrieved', {
       tokenId,
       balance,
     });
 
-    return balance;
+    return new AssetQuantity(assetId, qty);
   }
 
   /**
-   * Get locked balance (in open orders)
+   * Получить заблокированный баланс USDC (в открытых ордерах на бирже).
    *
-   * @returns Locked USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Money в USDC
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
    * const locked = await provider.getLockedBalance();
-   * console.log(`Locked in orders: ${locked} USDC`);
+   * console.log(`Locked in orders: ${locked.toNumber()} USDC`);
    * ```
    */
-  async getLockedBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный заблокированный баланс
+  async getLockedBalance(): Promise<Money> {
     if (this.simulationMode) {
-      const virtualLockedBalance = 0; // В симуляции нет заблокированного баланса
+      const virtualLocked = Money.ZERO['USDC'];
       this.logger.debug('Getting locked balance (SIMULATION MODE)', {
-        virtualLockedBalance,
+        virtualLocked: virtualLocked.toNumber(),
       });
-      return virtualLockedBalance;
+      return virtualLocked;
     }
 
     this.logger.debug('Getting locked balance');
 
     const rawBalances = await this.balanceClient.getBalances();
-    const normalized = this.mapper.toDomainBalances(rawBalances);
+    const normalized  = this.mapper.toDomainBalances(rawBalances);
 
     this.logger.debug('Locked balance retrieved', {
-      lockedUSDC: normalized.lockedUSDC,
+      lockedUSDC: normalized.locked.toNumber(),
     });
 
-    return normalized.lockedUSDC;
+    return normalized.locked;
   }
 
   /**
-   * Get total balance (available + locked)
+   * Получить общий баланс USDC (доступный + заблокированный).
    *
-   * @returns Total USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Money в USDC
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
    * const total = await provider.getTotalBalance();
-   * console.log(`Total: ${total} USDC`);
+   * console.log(`Total: ${total.toNumber()} USDC`);
    * ```
    */
-  async getTotalBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный общий баланс
+  async getTotalBalance(): Promise<Money> {
     if (this.simulationMode) {
-      const virtualTotalBalance = 1000000; // 1M USDC итого
+      const virtualTotal = Money.of(SIMULATION_USDC_BALANCE, 'USDC');
       this.logger.debug('Getting total balance (SIMULATION MODE)', {
-        virtualTotalBalance,
+        virtualTotal: virtualTotal.toNumber(),
       });
-      return virtualTotalBalance;
+      return virtualTotal;
     }
 
     this.logger.debug('Getting total balance');
 
     const rawBalances = await this.balanceClient.getBalances();
-    const normalized = this.mapper.toDomainBalances(rawBalances);
+    const normalized  = this.mapper.toDomainBalances(rawBalances);
 
     this.logger.debug('Total balance retrieved', {
-      totalUSDC: normalized.totalUSDC,
+      totalUSDC: normalized.total.toNumber(),
     });
 
-    return normalized.totalUSDC;
+    return normalized.total;
+  }
+
+  // ── Приватные методы ──────────────────────────────────────────────────────
+
+  /**
+   * Создаёт нулевой AssetQuantity для outcome-токена по tokenId.
+   *
+   * @param tokenId - Числовой идентификатор токена
+   * @returns AssetQuantity с нулевым количеством
+   *
+   * @remarks
+   * Fallback для симуляции или невалидного tokenId.
+   * Если tokenId не является валидным числовым строком — использует USDC как заглушку.
+   */
+  private _zeroTokenBalance(tokenId: string): AssetQuantity {
+    const assetId = asPolymarketCtfToken(tokenId);
+    if (assetId) {
+      return new AssetQuantity(assetId, Quantity.ZERO);
+    }
+    // Fallback: невалидный tokenId — возвращаем нулевой USDC как заглушку
+    return AssetQuantity.usdc(Quantity.ZERO);
   }
 }

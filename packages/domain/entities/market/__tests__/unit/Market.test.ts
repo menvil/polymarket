@@ -51,12 +51,12 @@ const TEST_CONDITION_REF: OnChainConditionRef = {
   conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
 };
 
-const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
 
 const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: YES_TOKEN, index: 0, name: 'Yes' },
-  { token: NO_TOKEN, index: 1, name: 'No' },
+  { token: UP_TOKEN, index: 0, name: 'Yes' },
+  { token: DOWN_TOKEN, index: 1, name: 'No' },
 ];
 
 function makeMarket(overrides: Partial<Parameters<typeof Market.create>[0]> = {}) {
@@ -69,6 +69,12 @@ function makeMarket(overrides: Partial<Parameters<typeof Market.create>[0]> = {}
     state: MarketState.active(),
     ...overrides,
   });
+}
+
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
 }
 
 // ==================== Тесты ====================
@@ -93,8 +99,8 @@ describe('Market.create()', () => {
   it('возвращает Err при одинаковых outcomeNames', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: 'Yes' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: 'Yes' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -107,8 +113,8 @@ describe('Market.create()', () => {
   it('возвращает Err при одинаковых outcomeTokens', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: YES_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: UP_TOKEN, index: 1, name: 'No' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -130,8 +136,8 @@ describe('Market.create()', () => {
   it('возвращает Err при пустом outcomes[0].name', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: '' },
-        { token: NO_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 0, name: '' },
+        { token: DOWN_TOKEN, index: 1, name: 'No' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -143,8 +149,8 @@ describe('Market.create()', () => {
   it('возвращает Err при пустом outcomes[1].name', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: '' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: '' },
       ],
     });
     expect(result.ok).toBe(false);
@@ -188,7 +194,7 @@ describe('Market.create()', () => {
 
   it('возвращает Err (не TypeError) для outcomes с одним элементом', () => {
     const result = makeMarket({
-      outcomes: [{ token: YES_TOKEN, index: 0, name: 'Yes' }] as never,
+      outcomes: [{ token: UP_TOKEN, index: 0, name: 'Yes' }] as never,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -207,9 +213,9 @@ describe('Market.create()', () => {
   it('возвращает Err для outcomes с 3 элементами (только 2 допустимо)', () => {
     const result = makeMarket({
       outcomes: [
-        { token: YES_TOKEN, index: 0, name: 'Yes' },
-        { token: NO_TOKEN, index: 1, name: 'No' },
-        { token: YES_TOKEN, index: 2, name: 'Maybe' },
+        { token: UP_TOKEN, index: 0, name: 'Yes' },
+        { token: DOWN_TOKEN, index: 1, name: 'No' },
+        { token: UP_TOKEN, index: 2, name: 'Maybe' },
       ] as never,
     });
     expect(result.ok).toBe(false);
@@ -389,7 +395,7 @@ describe('Market.close() lifecycle', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const closed = result.value.close(NOW);
+      const closed = unwrap(result.value.close(NOW));
       expect(closed.isClosed()).toBe(true);
       expect(closed.state.status).toBe('CLOSED');
     }
@@ -405,21 +411,29 @@ describe('Market.close() lifecycle', () => {
     }
   });
 
-  it('CLOSED → close(): бросает MarketAlreadyClosedError', () => {
+  it('CLOSED → close(): возвращает Err(MarketAlreadyClosedError)', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.close(NOW)).toThrow(MarketAlreadyClosedError);
-      expect(() => result.value.close(NOW)).toThrow(MarketLifecycleError); // подкласс
+      const closeResult = result.value.close(NOW);
+      expect(closeResult.ok).toBe(false);
+      if (!closeResult.ok) {
+        expect(closeResult.error).toBeInstanceOf(MarketAlreadyClosedError);
+        expect(closeResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
+      }
     }
   });
 
-  it('RESOLVED → close(): бросает MarketAlreadyResolvedError', () => {
+  it('RESOLVED → close(): возвращает Err(MarketAlreadyResolvedError)', () => {
     const result = makeMarket({ state: MarketState.resolved(0) });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.close(NOW)).toThrow(MarketAlreadyResolvedError);
-      expect(() => result.value.close(NOW)).toThrow(MarketLifecycleError); // подкласс
+      const closeResult = result.value.close(NOW);
+      expect(closeResult.ok).toBe(false);
+      if (!closeResult.ok) {
+        expect(closeResult.error).toBeInstanceOf(MarketAlreadyResolvedError);
+        expect(closeResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
+      }
     }
   });
 
@@ -427,14 +441,12 @@ describe('Market.close() lifecycle', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      try {
-        result.value.close(NOW);
-        expect(true).toBe(false);
-      } catch (e) {
-        expect(e).toBeInstanceOf(MarketAlreadyClosedError);
-        const err = e as MarketAlreadyClosedError;
-        expect(err.context?.marketId).toBe('market-abc');
-        expect(err.context?.currentStatus).toBe('CLOSED');
+      const closeResult = result.value.close(NOW);
+      expect(closeResult.ok).toBe(false);
+      if (!closeResult.ok) {
+        expect(closeResult.error).toBeInstanceOf(MarketAlreadyClosedError);
+        expect(closeResult.error.context?.marketId).toBe('market-abc');
+        expect(closeResult.error.context?.currentStatus).toBe('CLOSED');
       }
     }
   });
@@ -445,7 +457,7 @@ describe('Market.resolve() lifecycle', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const resolved = result.value.resolve(0, NOW);
+      const resolved = unwrap(result.value.resolve(0, NOW));
       expect(resolved.isResolved()).toBe(true);
       const state = resolved.state;
       if (state.status === 'RESOLVED') {
@@ -458,7 +470,7 @@ describe('Market.resolve() lifecycle', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const resolved = result.value.resolve(1, NOW);
+      const resolved = unwrap(result.value.resolve(1, NOW));
       expect(resolved.isResolved()).toBe(true);
       const state = resolved.state;
       if (state.status === 'RESOLVED') {
@@ -467,65 +479,89 @@ describe('Market.resolve() lifecycle', () => {
     }
   });
 
-  it('ACTIVE → resolve(): бросает MarketInvalidTransitionError', () => {
+  it('ACTIVE → resolve(): возвращает Err(MarketInvalidTransitionError)', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(0, NOW)).toThrow(MarketInvalidTransitionError);
-      expect(() => result.value.resolve(0, NOW)).toThrow(MarketLifecycleError); // подкласс
+      const resolveResult = result.value.resolve(0, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketInvalidTransitionError);
+        expect(resolveResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
+      }
     }
   });
 
-  it('RESOLVED → resolve(): бросает MarketAlreadyResolvedError', () => {
+  it('RESOLVED → resolve(): возвращает Err(MarketAlreadyResolvedError)', () => {
     const result = makeMarket({ state: MarketState.resolved(0) });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(1, NOW)).toThrow(MarketAlreadyResolvedError);
-      expect(() => result.value.resolve(1, NOW)).toThrow(MarketLifecycleError); // подкласс
+      const resolveResult = result.value.resolve(1, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketAlreadyResolvedError);
+        expect(resolveResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
+      }
     }
   });
 
-  it('resolve() бросает MarketValidationError при outcomeIndex >= outcomes.length', () => {
+  it('resolve() возвращает Err(MarketValidationError) при outcomeIndex >= outcomes.length', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(2 as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+      const resolveResult = result.value.resolve(2 as OutcomeIndex, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
+      }
     }
   });
 
-  it('resolve() бросает MarketValidationError при NaN outcomeIndex', () => {
+  it('resolve() возвращает Err(MarketValidationError) при NaN outcomeIndex', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(NaN as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+      const resolveResult = result.value.resolve(NaN as OutcomeIndex, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
+      }
     }
   });
 
-  it('resolve() бросает MarketValidationError при дробном outcomeIndex (0.5)', () => {
+  it('resolve() возвращает Err(MarketValidationError) при дробном outcomeIndex (0.5)', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(0.5 as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+      const resolveResult = result.value.resolve(0.5 as OutcomeIndex, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
+      }
     }
   });
 
-  it('resolve() бросает MarketValidationError при null outcomeIndex', () => {
+  it('resolve() возвращает Err(MarketValidationError) при null outcomeIndex', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(null as unknown as OutcomeIndex, NOW)).toThrow(
-        MarketValidationError
-      );
+      const resolveResult = result.value.resolve(null as unknown as OutcomeIndex, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
+      }
     }
   });
 
-  it('resolve() бросает MarketValidationError при строковом outcomeIndex', () => {
+  it('resolve() возвращает Err(MarketValidationError) при строковом outcomeIndex', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve('0' as unknown as OutcomeIndex, NOW)).toThrow(
-        MarketValidationError
-      );
+      const resolveResult = result.value.resolve('0' as unknown as OutcomeIndex, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
+      }
     }
   });
 
@@ -533,12 +569,11 @@ describe('Market.resolve() lifecycle', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      try {
-        result.value.resolve(0, NOW);
-        expect(true).toBe(false);
-      } catch (e) {
-        expect(e).toBeInstanceOf(MarketInvalidTransitionError);
-        expect((e as Error).message).toContain('Call close() first');
+      const resolveResult = result.value.resolve(0, NOW);
+      expect(resolveResult.ok).toBe(false);
+      if (!resolveResult.ok) {
+        expect(resolveResult.error).toBeInstanceOf(MarketInvalidTransitionError);
+        expect(resolveResult.error.message).toContain('Call close() first');
       }
     }
   });
@@ -553,10 +588,10 @@ describe('Market полный lifecycle ACTIVE → CLOSED → RESOLVED', () => {
     const active = result.value;
     expect(active.isActive()).toBe(true);
 
-    const closed = active.close(NOW);
+    const closed = unwrap(active.close(NOW));
     expect(closed.isClosed()).toBe(true);
 
-    const resolved = closed.resolve(0, NOW);
+    const resolved = unwrap(closed.resolve(0, NOW));
     expect(resolved.isResolved()).toBe(true);
     const state = resolved.state;
     if (state.status === 'RESOLVED') {
@@ -580,7 +615,7 @@ describe('Market.equals()', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       const market = result.value;
-      const closed = market.close(NOW);
+      const closed = unwrap(market.close(NOW));
       expect(market.equals(closed)).toBe(true);
     }
   });
@@ -610,7 +645,7 @@ describe('Market.pullNotifications()', () => {
     if (!result.ok) return;
 
     const CLOSE_NOW = 1_700_000_000_000;
-    const closed = result.value.close(CLOSE_NOW);
+    const closed = unwrap(result.value.close(CLOSE_NOW));
     const events = closed.pullNotifications();
 
     expect(events).toHaveLength(1);
@@ -627,7 +662,7 @@ describe('Market.pullNotifications()', () => {
     if (!result.ok) return;
 
     const RESOLVE_NOW = 1_700_000_001_000;
-    const resolved = result.value.resolve(1, RESOLVE_NOW);
+    const resolved = unwrap(result.value.resolve(1, RESOLVE_NOW));
     const events = resolved.pullNotifications();
 
     expect(events).toHaveLength(1);
@@ -644,7 +679,7 @@ describe('Market.pullNotifications()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const closed = result.value.close(NOW);
+    const closed = unwrap(result.value.close(NOW));
     expect(closed.pullNotifications()).toHaveLength(1);
     expect(closed.pullNotifications()).toHaveLength(0); // буфер очищен
   });
@@ -664,11 +699,11 @@ describe('Market.pullNotifications()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const closed = result.value.close(NOW);
+    const closed = unwrap(result.value.close(NOW));
     const closeEvents = closed.pullNotifications();
     expect(closeEvents[0].type).toBe('MARKET_CLOSED');
 
-    const resolved = closed.resolve(0, NOW);
+    const resolved = unwrap(closed.resolve(0, NOW));
     const resolveEvents = resolved.pullNotifications();
     expect(resolveEvents[0].type).toBe('MARKET_RESOLVED');
   });

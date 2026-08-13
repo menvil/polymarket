@@ -3,7 +3,7 @@
  *
  * @remarks
  * Используются в OrderBuilder, BalanceMapper и политиках.
- * Centralizes magic numbers for USDC precision and price ticks.
+ * Централизует магические числа для точности USDC и шагов цены.
  */
 
 /**

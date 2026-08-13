@@ -1,0 +1,50 @@
+{
+  "name": "@polymarket/bot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx --env-file=.env src/main.ts",
+    "dev": "npx tsx --env-file=.env src/main.ts",
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "configs": "npx tsx scripts/config-summary.ts",
+    "configs:live": "npx tsx scripts/config-summary.ts --status=live",
+    "configs:all": "npx tsx scripts/config-summary.ts --all"
+  },
+  "dependencies": {
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/time": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/math": "0.1.0",
+    "@polymarket/result": "0.1.0",
+    "@polymarket/errors": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/event-bus": "0.1.0",
+    "@polymarket/handlers": "0.1.0",
+    "@polymarket/strategy": "0.1.0",
+    "@polymarket/use-cases": "0.1.0",
+    "@polymarket/risk": "0.1.0",
+    "@polymarket/market-state": "0.1.0",
+    "@polymarket/market-discovery": "0.1.0",
+"@polymarket/backtesting": "0.1.0",
+    "@polymarket/cross-market": "0.1.0",
+    "@polymarket/in-memory": "0.1.0",
+    "@polymarket/exchange": "0.1.0",
+    "@polymarket/fill": "0.1.0",
+    "@polymarket/cex-market-data": "0.1.0",
+    "@polymarket/data-collection": "0.1.0",
+    "@polymarket/builder-relayer-client": "^0.0.8",
+    "@polymarket/builder-signing-sdk": "^1.0.0",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "@types/jest": "^29.5.12",
+    "tsx": "^4.20.3",
+    "typescript": "^5.4.0"
+  }
+}

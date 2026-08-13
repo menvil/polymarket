@@ -1,0 +1,29 @@
+{
+  "name": "@polymarket/collect-data",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node --max-old-space-size=4096 --env-file=.env dist/main.js",
+    "predev": "find ../.. -not -path '*/dist/*' -not -path '*/node_modules/*' -not -path '*/stubs/ethers*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) | grep -v '\\.config\\.' | xargs rm -f 2>/dev/null; true",
+    "dev": "npx tsx --env-file=.env src/main.ts",
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "check:snapshot": "node --disable-warning=ExperimentalWarning src/checkCexSnapshot.ts",
+    "backfill:polymarket": "node --import tsx --env-file=.env src/backfillPolymarketMeta.ts",
+    "analyze:chainlink": "node --disable-warning=ExperimentalWarning src/analyzeChainlinkLeadLag.ts",
+    "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts"
+  },
+  "dependencies": {
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/data-collection": "0.1.0",
+    "@polymarket/exchange": "0.1.0",
+    "@polymarket/cex-market-data": "0.1.0"
+  },
+  "devDependencies": {}
+}

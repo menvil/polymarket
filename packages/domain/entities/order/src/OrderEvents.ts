@@ -11,11 +11,12 @@
  * - Событие — факт (применяется без валидации)
  */
 
-import type { OrderId } from '@polymarket/ids';
+import type { AccountId, OrderId } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId } from '@polymarket/ids';
 import type { FillData } from './OrderState.js';
 
+/** Событие создания заявки (первое событие в истории любого Order). */
 export interface OrderCreatedEvent {
   readonly type: 'ORDER_CREATED';
   readonly orderId: OrderId;
@@ -25,25 +26,32 @@ export interface OrderCreatedEvent {
   readonly size: Quantity;
   readonly timestamp: Timestamp;
   readonly strategyId?: string;
+  /** ID аккаунта-владельца заявки (для ownership-проверок execution-слоя) */
+  readonly accountId?: AccountId;
 }
 
+/** Событие подтверждения заявки биржей (переход в статус OPEN). */
 export interface OrderAcceptedEvent {
   readonly type: 'ORDER_ACCEPTED';
   readonly orderId: OrderId;
 }
 
+/** Событие отклонения заявки биржей до исполнения (терминальный статус REJECTED). */
 export interface OrderRejectedEvent {
   readonly type: 'ORDER_REJECTED';
   readonly orderId: OrderId;
   readonly reason: string;
+  readonly strategyId?: string;
 }
 
+/** Событие отмены заявки (терминальный статус CANCELLED). */
 export interface OrderCancelledEvent {
   readonly type: 'ORDER_CANCELLED';
   readonly orderId: OrderId;
   readonly reason: string;
 }
 
+/** Событие истечения срока действия заявки (терминальный статус EXPIRED). */
 export interface OrderExpiredEvent {
   readonly type: 'ORDER_EXPIRED';
   readonly orderId: OrderId;
@@ -78,6 +86,7 @@ export interface OrderFilledEvent {
   readonly averagePrice: Price;   // итоговая VWAP
 }
 
+/** Объединение всех domain-событий Order — используется в `Order.fromEvents()` (replay) и event-логе. */
 export type OrderEvent =
   | OrderCreatedEvent
   | OrderAcceptedEvent

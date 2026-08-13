@@ -6,9 +6,10 @@ dist/
 dist-test/
 *.tsbuildinfo
 
-# Environment files
+# Environment files — никогда не коммитить (любые .env варианты)
 .env
-.env.local
+.env.*
+!.env.example
 
 # Logs
 logs/
@@ -33,12 +34,34 @@ Thumbs.db
 *.test.js
 *.spec.js
 
+# TypeScript compiled artifacts in src/ (stray output when tsc runs without outDir)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+packages/*/*/src/**/*.js
+packages/*/*/src/**/*.js.map
+packages/*/*/src/**/*.d.ts
+packages/*/*/src/**/*.d.ts.map
+packages/*/*/*/src/**/*.js
+packages/*/*/*/src/**/*.js.map
+packages/*/*/*/src/**/*.d.ts
+packages/*/*/*/src/**/*.d.ts.map
+
 # Temporary files
 tmp/
 temp/
 src_bundle.md
 
+# Bot data (recordings, journals, paper/live data)
+apps/bot/data/
+
 #Snapshots
 snapshots/
-.env.smoke
 *.zip
+
+# Bot strategy data cache (large jsonl files)
+apps/bot/.cache/
+
+# Bot tables (edge tables, CEX cache — large data files, not code)
+apps/bot/tables/

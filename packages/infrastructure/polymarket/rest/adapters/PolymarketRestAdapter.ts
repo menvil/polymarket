@@ -1,31 +1,31 @@
 /**
- * Polymarket REST Adapter (Facade)
+ * REST-адаптер Polymarket (Фасад)
  *
  * @remarks
- * Main entry point for Polymarket REST API operations.
- * Combines:
- * - ExecutionAdapter (API calls)
- * - PortfolioAdapter (balance, positions)
- * - MarketConstraintsPolicy (learning from errors)
+ * Главная точка входа для операций с REST API Polymarket.
+ * Объединяет:
+ * - ExecutionAdapter (API-вызовы)
+ * - PortfolioAdapter (баланс, позиции)
+ * - MarketConstraintsPolicy (обучение на ошибках)
  *
- * Provides single placeOrder() entry point for external code.
+ * Предоставляет единую точку входа placeOrder() для внешнего кода.
  *
- * **Key flow for placeOrder()**:
+ * **Ключевой алгоритм placeOrder()**:
  * ```
  * 1. PortfolioAdapter.canPlaceOrder()
- *    → uses BalancePolicy + MarketConstraintsPolicy
- *    → returns {ok, normalizedSize}
- * 2. If ok:
- *    ExecutionAdapter.postOrder(normalized params)
- *    → ONLY does HTTP POST, no validation
- * 3. Returns orderId, status
- * 4. If error: MarketConstraintsPolicy.learnFromError()
+ *    → использует BalancePolicy + MarketConstraintsPolicy
+ *    → возвращает {ok, normalizedSize}
+ * 2. Если ok:
+ *    ExecutionAdapter.postOrder(нормализованные параметры)
+ *    → ТОЛЬКО выполняет HTTP POST, без валидации
+ * 3. Возвращает orderId, status
+ * 4. При ошибке: MarketConstraintsPolicy.learnFromError()
  * ```
  *
- * **Principles**:
- * - placeOrder doesn't check balance inline (delegates to policies)
- * - ExecutionAdapter doesn't decide validity, just executes POST
- * - Retry logic in MarketConstraintsPolicy + ExecutionAdapter, NOT facade
+ * **Принципы**:
+ * - placeOrder не проверяет баланс напрямую (делегирует политикам)
+ * - ExecutionAdapter не определяет валидность, только выполняет POST
+ * - Логика повторов в MarketConstraintsPolicy + ExecutionAdapter, НЕ в фасаде
  *
  * @example
  * ```typescript
@@ -47,16 +47,16 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
-import type { PlaceOrderParams, OrderResponse } from '../../../exchange/ports/IExecutionAdapter.js';
-import type { PositionResponse } from '../../../exchange/ports/IPortfolioAdapter.js';
+import type { ILogger } from '@polymarket/logger';
+import type { PlaceOrderParams, OrderResponse, CancelOrderExecutionResponse } from '../../ports/IExecutionAdapter.js';
+import type { PositionResponse } from '../../ports/IPortfolioAdapter.js';
 import type { PolymarketExecutionAdapter } from './PolymarketExecutionAdapter.js';
 import type { PolymarketPortfolioAdapter } from './PolymarketPortfolioAdapter.js';
 import type { PolymarketMarketConstraintsPolicy } from '../policies/PolymarketMarketConstraintsPolicy.js';
 import { ApiError } from '../PolymarketRestClient.js';
 
 /**
- * Validation error (thrown when order cannot be placed)
+ * Ошибка валидации (выбрасывается когда ордер не может быть размещён)
  */
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -66,10 +66,10 @@ export class ValidationError extends Error {
 }
 
 /**
- * Polymarket REST Adapter (Facade)
+ * REST-адаптер Polymarket (Фасад)
  *
  * @remarks
- * Main entry point for REST API operations.
+ * Главная точка входа для операций с REST API.
  */
 export class PolymarketRestAdapter {
   constructor(
@@ -80,32 +80,32 @@ export class PolymarketRestAdapter {
   ) {}
 
   /**
-   * Get execution adapter (for passing to StrategyContext)
+   * Получить адаптер исполнения (для передачи в StrategyContext)
    *
-   * @returns Execution adapter instance
+   * @returns Экземпляр адаптера исполнения
    *
    * @remarks
-   * v7.6: StrategyContextImpl requires IExecutionAdapter, not the full RestAdapter.
-   * Use this getter to extract the execution adapter from the facade.
+   * v7.6: StrategyContextImpl требует IExecutionAdapter, а не полный RestAdapter.
+   * Используйте этот геттер для извлечения адаптера исполнения из фасада.
    */
   getExecutionAdapter(): PolymarketExecutionAdapter {
     return this.executionAdapter;
   }
 
   /**
-   * Place order (main entry point)
+   * Разместить ордер (главная точка входа)
    *
-   * @param params - Order parameters
-   * @returns Order response
-   * @throws {ValidationError} If order cannot be placed
-   * @throws {ApiError} If API call fails
+   * @param params - Параметры ордера
+   * @returns Ответ с данными ордера
+   * @throws {ValidationError} Если ордер не может быть размещён
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Flow:
-   * 1. PortfolioAdapter.canPlaceOrder() → uses policies → {ok, normalizedSize}
-   * 2. If ok: ExecutionAdapter.postOrder(normalized params)
-   * 3. Returns orderId, status
-   * 4. If error: MarketConstraintsPolicy.learnFromError()
+   * Алгоритм:
+   * 1. PortfolioAdapter.canPlaceOrder() → использует политики → {ok, normalizedSize}
+   * 2. Если ok: ExecutionAdapter.postOrder(нормализованные параметры)
+   * 3. Возвращает orderId, status
+   * 4. При ошибке: MarketConstraintsPolicy.learnFromError()
    *
    * @example
    * ```typescript
@@ -156,8 +156,7 @@ export class PolymarketRestAdapter {
         ...params,
         size: canPlace.normalizedSize!, // Используем нормализованный размер
         price: canPlace.normalizedPrice!, // Используем нормализованную цену
-        priceTick: canPlace.priceTick, // Передаём шаг цены в построитель API
-        feeRateBps: canPlace.feeRateBps, // Передаём изученную или дефолтную ставку комиссии
+        priceTick: canPlace.priceTick,
       });
 
       this.logger.info('Order placed successfully', {
@@ -182,31 +181,34 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Cancel order
+   * Отменить ордер
    *
-   * @param orderId - Order ID to cancel
-   * @throws {ApiError} If API call fails
+   * @param orderId - Идентификатор ордера для отмены
+   * @returns Структурированный ответ venue (`canceled` / `not_canceled`)
+   * @throws {ApiError} При реальной HTTP/API ошибке
    *
    * @example
    * ```typescript
-   * await adapter.cancelOrder('order-123');
-   * console.log('Order cancelled');
+   * const response = await adapter.cancelOrder('order-123');
+   * console.log('Order cancel requested', response);
    * ```
    */
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string): Promise<CancelOrderExecutionResponse> {
     this.logger.info('cancelOrder called', { orderId });
 
-    await this.executionAdapter.cancelOrder(orderId);
+    const response = await this.executionAdapter.cancelOrder(orderId);
 
-    this.logger.info('Order cancelled successfully', { orderId });
+    this.logger.info('Order cancel request completed', { orderId });
+
+    return response;
   }
 
   /**
-   * Get open orders
+   * Получить открытые ордера
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив открытых ордеров
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -227,14 +229,14 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Get order by ID
+   * Получить ордер по идентификатору
    *
-   * @param orderId - Order ID to fetch
-   * @returns Order with current status
-   * @throws {ApiError} If order not found
+   * @param orderId - Идентификатор ордера для получения
+   * @returns Ордер с текущим статусом
+   * @throws {ApiError} Если ордер не найден
    *
    * @remarks
-   * v7.7.6: Added for SCENARIO C to check order status (filled vs cancelled)
+   * v7.7.6: Добавлено для СЦЕНАРИЯ C для проверки статуса ордера (исполнен или отменён)
    *
    * @example
    * ```typescript
@@ -244,7 +246,7 @@ export class PolymarketRestAdapter {
    */
   async getOrderById(orderId: string): Promise<{
     orderID: string;
-    status: 'pending' | 'live' | 'filled' | 'cancelled';
+    status: 'pending' | 'live' | 'filled' | 'cancelled' | 'matched' | 'delayed' | 'unmatched';
     filledSize?: string;
     size?: string;
   }> {
@@ -261,10 +263,10 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Get balance
+   * Получить баланс
    *
-   * @returns Available USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Доступный баланс USDC
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -283,11 +285,11 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Get outcome balance
+   * Получить баланс токена исхода
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Баланс токена исхода
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -309,11 +311,11 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Get positions
+   * Получить позиции
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив позиций
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -328,10 +330,10 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Approve USDC for trading
+   * Подтвердить USDC для торговли
    *
-   * @param amount - Amount to approve
-   * @throws {BlockchainError} If blockchain call fails
+   * @param amount - Сумма для подтверждения
+   * @throws {BlockchainError} При ошибке вызова блокчейна
    *
    * @example
    * ```typescript
@@ -348,18 +350,18 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Get market constraints (implements IMarketConstraintsProvider)
+   * Получить ограничения маркета (реализует IMarketConstraintsProvider)
    *
-   * @param tokenId - Token ID or market slug
-   * @returns Market constraints (minOrderSize, sizeTick, priceTick, etc.)
+   * @param tokenId - Идентификатор токена или slug маркета
+   * @returns Ограничения маркета (minOrderSize, sizeTick, priceTick и т.д.)
    *
    * @remarks
    * КРИТИЧНО для StrategyFactory! Используется для получения minOrderSize из маркета.
    *
-   * Delegates to PolymarketMarketConstraintsPolicy which:
-   * 1. Checks cache
-   * 2. Fetches from API if needed
-   * 3. Returns safe defaults on error
+   * Делегирует в PolymarketMarketConstraintsPolicy, который:
+   * 1. Проверяет кэш
+   * 2. Запрашивает из API при необходимости
+   * 3. Возвращает безопасные значения по умолчанию при ошибке
    *
    * @example
    * ```typescript
@@ -387,18 +389,18 @@ export class PolymarketRestAdapter {
   }
 
   /**
-   * Clear constraints cache
+   * Очистить кэш ограничений
    *
-   * @param tokenId - Optional: clear specific token, or all if not specified
+   * @param tokenId - Необязательно: очистить для конкретного токена, или все если не указан
    *
    * @remarks
-   * Forces re-fetch of constraints on next access.
-   * Useful after market parameters change.
+   * Принудительно перезапрашивает ограничения при следующем обращении.
+   * Полезно после изменения параметров маркета.
    *
    * @example
    * ```typescript
    * adapter.clearConstraintsCache('0x123');
-   * adapter.clearConstraintsCache(); // Clear all
+   * adapter.clearConstraintsCache(); // Очистить все
    * ```
    */
   clearConstraintsCache(tokenId?: string): void {

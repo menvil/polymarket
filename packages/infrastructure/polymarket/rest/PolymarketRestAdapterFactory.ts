@@ -2,16 +2,16 @@
  * Polymarket REST Adapter Factory
  *
  * @remarks
- * Factory for creating fully configured PolymarketRestAdapter with all dependencies.
+ * Фабрика для создания полностью сконфигурированного PolymarketRestAdapter со всеми зависимостями.
  *
- * This factory wires up:
- * - PolymarketRestClient (base HTTP client)
- * - 6 REST clients (Order, Balance, Positions, Orderbook, Trades, MarketData)
- * - 3 Mappers (Balance, Order, Position)
- * - 2 Providers (Balance, Positions)
- * - 2 Policies (MarketConstraints, Balance)
- * - 2 Adapters (Execution, Portfolio)
- * - 1 Facade (RestAdapter)
+ * Фабрика собирает:
+ * - PolymarketRestClient (базовый HTTP-клиент)
+ * - 6 REST-клиентов (Order, Balance, Positions, Orderbook, Trades, MarketData)
+ * - 3 маппера (Balance, Order, Position)
+ * - 2 провайдера (Balance, Positions)
+ * - 2 политики (MarketConstraints, Balance)
+ * - 2 адаптера (Execution, Portfolio)
+ * - 1 фасад (RestAdapter)
  *
  * @example
  * ```typescript
@@ -31,21 +31,23 @@
  *   logger
  * );
  *
- * // Use adapter
+ * // Используем адаптер
  * const balance = await adapter.getBalance();
  * console.log(`Balance: ${balance} USDC`);
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestConfig } from './types.js';
 import type { MarketDataClientConfig } from './clients/PolymarketMarketDataRestClient.js';
-import type { IEventBus } from '../../../shared/events/IEventBus.js';
-import type { IPortfolioProjector } from '../../../domain/services/portfolio/PortfolioProjector.js';
+import type { IEventBus } from '../ports/IEventBus.js';
+import type { IPortfolioProjector } from '../ports/IPortfolioProjector.js';
+import type { DnsOverride } from '../dns/DnsOverride.js';
 
 import { PolymarketRestClient } from './PolymarketRestClient.js';
 import { PolymarketDataApiClient } from './PolymarketDataApiClient.js';
 import { PolymarketOrderRestClient } from './clients/PolymarketOrderRestClient.js';
+import { PolymarketOrderbookRestClient } from './clients/PolymarketOrderbookRestClient.js';
 import { PolymarketBalanceRestClient } from './clients/PolymarketBalanceRestClient.js';
 import { PolymarketPositionsRestClient } from './clients/PolymarketPositionsRestClient.js';
 import { PolymarketMarketDataRestClient } from './clients/PolymarketMarketDataRestClient.js';
@@ -70,15 +72,16 @@ import { PolymarketRestAdapter } from './adapters/PolymarketRestAdapter.js';
  */
 export class PolymarketRestAdapterFactory {
   /**
-   * Create fully configured PolymarketRestAdapter
+   * Создаёт полностью сконфигурированный PolymarketRestAdapter
    *
-   * @param config - REST client configuration
-   * @param marketDataConfig - Market data client configuration
-   * @param eventBus - EventBus for publishing ExecutionEvent
-   * @param logger - Logger instance
-   * @param simulationMode - Enable simulation mode (virtual balance/trades)
+   * @param config - Конфигурация REST-клиента
+   * @param marketDataConfig - Конфигурация клиента рыночных данных
+   * @param eventBus - EventBus для публикации ExecutionEvent
+   * @param logger - Экземпляр логгера
+   * @param simulationMode - Включить режим симуляции (виртуальный баланс/сделки)
    * @param portfolioProjector - Опциональный PortfolioProjector для мгновенных проверок баланса
-   * @returns Configured PolymarketRestAdapter
+   * @param dnsOverride - Опциональный DnsOverride для обхода DNS-блокировок
+   * @returns Сконфигурированный PolymarketRestAdapter
    *
    * @remarks
    * ExecutionAdapter требует EventBus для публикации ExecutionEvent
@@ -98,7 +101,7 @@ export class PolymarketRestAdapterFactory {
    *   baseUrl: 'https://gamma-api.polymarket.com',
    * };
    *
-   * // Without PortfolioProjector (global adapter)
+   * // Без PortfolioProjector (глобальный адаптер)
    * const adapter = PolymarketRestAdapterFactory.create(
    *   config,
    *   marketDataConfig,
@@ -106,7 +109,7 @@ export class PolymarketRestAdapterFactory {
    *   logger
    * );
    *
-   * // With PortfolioProjector (strategy-specific adapter)
+   * // С PortfolioProjector (адаптер для конкретной стратегии)
    * const portfolioProjector = new PortfolioProjector('strategy-1');
    * const adapterWithProjector = PolymarketRestAdapterFactory.create(
    *   config,
@@ -124,10 +127,11 @@ export class PolymarketRestAdapterFactory {
     eventBus: IEventBus,
     logger: ILogger,
     simulationMode: boolean = false,
-    portfolioProjector?: IPortfolioProjector
+    portfolioProjector?: IPortfolioProjector,
+    dnsOverride?: DnsOverride,
   ): PolymarketRestAdapter {
     // Базовый HTTP клиент
-    const restClient = new PolymarketRestClient(config, logger);
+    const restClient = new PolymarketRestClient(config, logger, dnsOverride);
 
     // Data API клиент (для endpoint позиций)
     const dataApiClient = new PolymarketDataApiClient(
@@ -143,11 +147,13 @@ export class PolymarketRestAdapterFactory {
       config.chainId,
       makerAddress,
       config.signatureType!,
-      logger
+      logger,
+      config.builderCode,
     );
 
     // REST клиенты
     const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
+    const orderbookClient = new PolymarketOrderbookRestClient(restClient, logger);
     const balanceClient = new PolymarketBalanceRestClient(restClient, logger);
     // КРИТИЧНО: Используем адрес MAKER (funder), НЕ адрес SIGNER (proxy)
     // При использовании proxy-кошелька позиции принадлежат MAKER, не SIGNER
@@ -180,7 +186,7 @@ export class PolymarketRestAdapterFactory {
     // Политики
     const constraintsPolicy = new PolymarketMarketConstraintsPolicy(
       marketDataClient,
-      logger
+      logger,
     );
 
     // Передаём PortfolioProjector в BalancePolicy для мгновенных проверок баланса
@@ -193,6 +199,7 @@ export class PolymarketRestAdapterFactory {
     // Адаптеры (ExecutionAdapter теперь требует EventBus)
     const executionAdapter = new PolymarketExecutionAdapter(
       orderClient,
+      orderbookClient,
       orderMapper,
       eventBus,
       logger,

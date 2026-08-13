@@ -12,7 +12,8 @@
  */
 
 // Core (публичный API)
-export { Money, SupportedCurrency, MoneyInvariantViolation } from './core/index.js';
+export { Money, MoneyInvariantViolation } from './core/index.js';
+export type { SupportedCurrency } from './core/index.js';
 
 // Facade (главный публичный API)
 export { MoneyService } from './facade/index.js';

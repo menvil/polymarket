@@ -1,12 +1,12 @@
 /**
- * Polymarket Balance REST Client
+ * REST-клиент балансов Polymarket
  *
  * @remarks
- * Handles /balance-allowance endpoint:
- * - GET /balance-allowance - Get user balance and allowance
+ * Обрабатывает endpoint /balance-allowance:
+ * - GET /balance-allowance - Получить баланс и разрешение пользователя
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
  * @example
  * ```typescript
@@ -18,52 +18,52 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 
 /**
- * Asset type for balance/allowance queries
+ * Тип актива для запросов баланса/разрешения
  */
 export type AssetType = 'COLLATERAL' | 'CONDITIONAL';
 
 /**
- * Balance and allowance response (raw API format)
+ * Ответ с балансом и разрешением (сырой формат API)
  */
 export interface BalanceAllowanceResponse {
-  /** Balance (string format) */
+  /** Баланс (строковый формат) */
   balance: string;
 
-  /** Allowance (string format) */
+  /** Разрешение (строковый формат) */
   allowance: string;
 }
 
 /**
- * Balance response (our internal format)
+ * Ответ с балансом (наш внутренний формат)
  */
 export interface BalanceResponse {
-  /** Asset/token symbol (e.g., "USDC") */
+  /** Символ актива/токена (например, "USDC") */
   asset: string;
 
-  /** Total balance (string format) */
+  /** Общий баланс (строковый формат) */
   total: string;
 
-  /** Available balance (string format) */
+  /** Доступный баланс (строковый формат) */
   available: string;
 
-  /** Locked balance in open orders (string format) */
+  /** Заблокированный баланс в открытых ордерах (строковый формат) */
   locked: string;
 }
 
 /**
- * Get balances response
+ * Ответ на запрос балансов
  */
 export interface GetBalancesResponse {
-  /** Array of balances */
+  /** Массив балансов */
   balances: BalanceResponse[];
 }
 
 /**
- * Polymarket Balance REST Client
+ * REST-клиент балансов Polymarket
  */
 export class PolymarketBalanceRestClient {
   constructor(
@@ -72,15 +72,15 @@ export class PolymarketBalanceRestClient {
   ) {}
 
   /**
-   * Get user balances
+   * Получить балансы пользователя
    *
-   * @returns Array of balances
-   * @throws {ApiError} If API call fails
+   * @returns Массив балансов
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Returns raw API response. Normalization should be done by mapper.
+   * Возвращает сырой ответ API. Нормализация должна выполняться маппером.
    *
-   * Uses /balance-allowance endpoint with asset_type=COLLATERAL for USDC balance.
+   * Использует endpoint /balance-allowance с asset_type=COLLATERAL для баланса USDC.
    *
    * @example
    * ```typescript
@@ -124,11 +124,11 @@ export class PolymarketBalanceRestClient {
   }
 
   /**
-   * Get balance for specific asset
+   * Получить баланс для конкретного актива
    *
-   * @param asset - Asset symbol (e.g., "USDC")
-   * @returns Balance response or undefined if not found
-   * @throws {ApiError} If API call fails
+   * @param asset - Символ актива (например, "USDC")
+   * @returns Ответ с балансом или undefined если не найден
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
@@ -159,14 +159,14 @@ export class PolymarketBalanceRestClient {
   }
 
   /**
-   * Get balance for specific outcome token
+   * Получить баланс для конкретного токена исхода
    *
-   * @param tokenId - Outcome token ID
-   * @returns Balance (as number)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена исхода
+   * @returns Баланс (как число)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Uses /balance-allowance endpoint with asset_type=CONDITIONAL.
+   * Использует endpoint /balance-allowance с asset_type=CONDITIONAL.
    *
    * @example
    * ```typescript
@@ -204,5 +204,47 @@ export class PolymarketBalanceRestClient {
     });
 
     return actualBalance;
+  }
+
+  /**
+   * Получить баланс И allowance для конкретного токена исхода.
+   *
+   * @param tokenId - Идентификатор токена исхода
+   * @returns Объект с balance и allowance (конвертированы из минимальных единиц)
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Расширенная версия `getOutcomeTokenBalance` — возвращает также allowance.
+   * Диагностика: при SELL rejection различает `balance=0` (settlement lag)
+   * от `allowance=0` (token approval не выставлен).
+   *
+   * @example
+   * ```typescript
+   * const { balance, allowance } = await client.getOutcomeTokenBalanceAllowance('0x123...');
+   * if (balance > 0 && allowance === 0) {
+   *   console.log('Token approval needed');
+   * }
+   * ```
+   */
+  async getOutcomeTokenBalanceAllowance(tokenId: string): Promise<{ balance: number; allowance: number }> {
+    const params: Record<string, string> = {
+      asset_type: 'CONDITIONAL',
+      token_id: tokenId,
+      signature_type: this.restClient.getSignatureType().toString(),
+    };
+
+    const response = await this.restClient.get<BalanceAllowanceResponse>(
+      '/balance-allowance',
+      params
+    );
+
+    const OUTCOME_TOKEN_DECIMALS = 6;
+    const divisor = Math.pow(10, OUTCOME_TOKEN_DECIMALS);
+    const rawBalance = parseFloat(response.balance);
+    const rawAllowance = parseFloat(response.allowance);
+    return {
+      balance: isNaN(rawBalance) ? 0 : rawBalance / divisor,
+      allowance: isNaN(rawAllowance) ? 0 : rawAllowance / divisor,
+    };
   }
 }

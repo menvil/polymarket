@@ -1,13 +1,13 @@
 /**
- * Polymarket Position Mapper
+ * Маппер позиций Polymarket
  *
  * @remarks
- * Maps raw Polymarket API position responses to domain types.
+ * Преобразует необработанные ответы API Polymarket по позициям в доменные типы.
  *
- * Transformations:
- * - String → number conversion
- * - Field name normalization
- * - Safe defaults for missing fields
+ * Преобразования:
+ * - Конвертация строки → число
+ * - Нормализация имён полей
+ * - Безопасные значения по умолчанию для отсутствующих полей
  *
  * @example
  * ```typescript
@@ -28,25 +28,25 @@
  */
 
 import type { PositionResponse as ApiPositionResponse } from '../clients/PolymarketPositionsRestClient.js';
-import type { PositionResponse } from '../../../exchange/ports/IPortfolioAdapter.js';
+import type { PositionResponse } from '../../ports/IPortfolioAdapter.js';
 
 /**
- * Polymarket Position Mapper
+ * Маппер позиций Polymarket
  */
 export class PolymarketPositionMapper {
 
   /**
-   * Map API position response to domain format
+   * Преобразовать ответ API по позиции в доменный формат
    *
-   * @param response - Raw API response from Data API
-   * @returns Normalized domain position
+   * @param response - Необработанный ответ API из Data API
+   * @returns Нормализованная доменная позиция
    *
    * @remarks
-   * Data API response format (numbers, not strings):
-   * - asset: Token ID
-   * - size: Position size (number of shares)
-   * - avgPrice: Average entry price
-   * - cashPnl: Realized PnL
+   * Формат ответа Data API (числа, не строки):
+   * - asset: идентификатор токена
+   * - size: размер позиции (количество акций)
+   * - avgPrice: средняя цена входа
+   * - cashPnl: реализованный PnL
    *
    * @example
    * ```typescript
@@ -86,10 +86,10 @@ export class PolymarketPositionMapper {
   }
 
   /**
-   * Map multiple API position responses to domain format
+   * Преобразовать несколько ответов API по позициям в доменный формат
    *
-   * @param responses - Array of raw API responses
-   * @returns Array of normalized domain positions
+   * @param responses - Массив необработанных ответов API
+   * @returns Массив нормализованных доменных позиций
    *
    * @example
    * ```typescript

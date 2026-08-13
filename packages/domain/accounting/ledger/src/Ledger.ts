@@ -49,6 +49,7 @@
 
 import type { AccountId, AssetId } from '@polymarket/ids';
 import { accountIdToString, assetIdToString } from '@polymarket/ids';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { LedgerEntry } from './LedgerEntry.js';
 
@@ -154,11 +155,11 @@ export class Ledger {
    *
    * @example
    * ```typescript
-   * // После BUY YES 10 @ 0.62, fee 0.02 USDC:
+   * // После BUY UP 10 @ 0.62, fee 0.02 USDC:
    * const usdcBalance = ledger.getBalance(accountId, AssetIdHelpers.USDC);
    * console.log(usdcBalance.toNumber()); // -6.22
-   * const yesBalance = ledger.getBalance(accountId, yesTokenId);
-   * console.log(yesBalance.toNumber()); // 10
+   * const upBalance = ledger.getBalance(accountId, upTokenId);
+   * console.log(upBalance.toNumber()); // 10
    * ```
    */
   public getBalance(accountId: AccountId, asset: AssetId): Decimal {

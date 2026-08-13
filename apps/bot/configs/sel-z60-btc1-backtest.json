@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry zone60 ablation (minZoneCents=60), btc1",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc1 snapshots 5-min BTC",
+      "pnl": "+14.18 USDC",
+      "date": "2026-04-01",
+      "notes": "zone60 variant. Total: +4.90 USDC — нейтрально vs baseline +13.75. Строже нижняя граница = теряем хорошие входы."
+    },
+    "todo": [
+      "не использовать в production — baseline лучше"
+    ]
+  },
+  "strategy": "selective-entry",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 60,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1,
+    "side": "up"
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day1/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

@@ -1,42 +1,43 @@
 /**
- * Polymarket Order REST Client
+ * REST-клиент ордеров Polymarket
  *
  * @remarks
- * Handles /order and /orders endpoints:
- * - POST /order - Place new order
- * - DELETE /order - Cancel order
- * - GET /orders - Get open orders
+ * Обрабатывает endpoints /order и /orders:
+ * - POST /order - Разместить новый ордер
+ * - DELETE /order - Отменить ордер
+ * - GET /orders - Получить открытые ордера
  *
- * Returns RAW API responses (NOT normalized).
- * Normalization is done by mappers in higher layers.
+ * Возвращает СЫРЫЕ ответы API (НЕ нормализованные).
+ * Нормализация выполняется маппером в вышестоящих слоях.
  *
  * @example
  * ```typescript
  * const client = new PolymarketOrderRestClient(restClient, logger);
  *
- * // Place order
+ * // Разместить ордер
  * const order = await client.createOrder({
  *   tokenId: '0x123',
  *   side: 'BUY',
- *   price: '0.52',
- *   size: '100',
- *   nonce: Date.now(),
+ *   price: 0.52,
+ *   size: 100,
  * });
  *
- * // Cancel order
+ * // Отменить ордер
  * await client.cancelOrder('order-123');
  *
- * // Get open orders
+ * // Получить открытые ордера
  * const orders = await client.getOpenOrders('0x123');
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
+import { OrderType, orderToJsonV2 } from '@polymarket/clob-client-v2';
+import { ApiError } from '../PolymarketRestClient.js';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 import type { PolymarketOrderBuilder } from '../auth/PolymarketOrderBuilder.js';
 
 /**
- * Create order request (simplified API format)
+ * Запрос на создание ордера (упрощённый формат API)
  */
 export interface CreateOrderRequest {
   /** Идентификатор токена */
@@ -51,18 +52,21 @@ export interface CreateOrderRequest {
   /** Размер (количество акций) */
   size: number;
 
-  /** Ставка комиссии в базисных пунктах (по умолчанию: 0) */
-  feeRateBps?: number;
+  /** true = post-only order; exchange rejects instead of matching immediately */
+  postOnly?: boolean;
 
-  /** Nonce для защиты от повторного воспроизведения */
-  nonce: number;
+  /** CLOB order type. FAK is Polymarket CLOB's IOC analogue. */
+  orderType?: 'GTC' | 'GTD' | 'FOK' | 'FAK';
 
   /** Шаг цены для округления (необязательно, по умолчанию: 0.01) */
   priceTick?: number;
+
+  /** true если рынок использует negRisk exchange contract */
+  negRisk?: boolean;
 }
 
 /**
- * Create order response (raw API format)
+ * Ответ на создание ордера (сырой формат API)
  */
 export interface CreateOrderResponse {
   /** Флаг успеха */
@@ -75,7 +79,7 @@ export interface CreateOrderResponse {
   orderID: string;
 
   /** Статус ордера */
-  status: 'pending' | 'live' | 'filled' | 'cancelled';
+  status: 'pending' | 'live' | 'filled' | 'cancelled' | 'matched' | 'delayed' | 'unmatched';
 
   /** Сумма к получению */
   takingAmount: string;
@@ -103,7 +107,7 @@ export interface CreateOrderResponse {
 }
 
 /**
- * Cancel order request
+ * Запрос на отмену ордера
  */
 export interface CancelOrderRequest {
   /** Идентификатор ордера для отмены */
@@ -114,21 +118,23 @@ export interface CancelOrderRequest {
 }
 
 /**
- * Cancel order response
+ * Ответ Polymarket API на отмену ордера.
+ *
+ * @remarks
+ * Реальный формат: `{"not_canceled": {}, "canceled": ["0xabc..."]}`.
+ * `canceled` — массив orderId которые были успешно отменены.
+ * `not_canceled` — объект `{ orderId: reason }` для ордеров, которые не удалось отменить.
  */
 export interface CancelOrderResponse {
-  /** Флаг успеха */
-  success: boolean;
+  /** Массив orderId, успешно отменённых */
+  canceled: string[];
 
-  /** Идентификатор ордера */
-  orderId: string;
-
-  /** Статус после отмены */
-  status: 'CANCELLED';
+  /** Объект orderId → причина для не-отменённых ордеров */
+  not_canceled: Record<string, string>;
 }
 
 /**
- * Get orders response
+ * Ответ на запрос ордеров
  */
 export interface GetOrdersResponse {
   /** Массив ордеров */
@@ -136,12 +142,12 @@ export interface GetOrdersResponse {
 }
 
 /**
- * Matched order response (from /data/orders?status=MATCHED)
+ * Ответ с исполненным ордером (из /data/orders?status=MATCHED)
  *
  * @remarks
- * Represents an aggregated filled order.
- * One row = one order (even if filled by multiple trades).
- * size_matched = total filled size; avg_price = average execution price.
+ * Представляет агрегированный исполненный ордер.
+ * Одна строка = один ордер (даже если исполнен несколькими сделками).
+ * size_matched = суммарный исполненный размер; avg_price = средняя цена исполнения.
  */
 export interface MatchedOrderResponse {
   /** Идентификатор ордера */
@@ -165,11 +171,11 @@ export interface MatchedOrderResponse {
 }
 
 /**
- * Trade response (from /data/trades, paginated)
+ * Ответ со сделкой (из /data/trades, постраничный)
  *
  * @remarks
- * Represents a single on-chain trade execution.
- * Returned in paginated format: { data: TradeResponse[], next_cursor: string }.
+ * Представляет одно on-chain исполнение сделки.
+ * Возвращается в постраничном формате: { data: TradeResponse[], next_cursor: string }.
  */
 export interface TradeResponse {
   /** Идентификатор сделки */
@@ -196,10 +202,12 @@ export interface TradeResponse {
   transaction_hash?: string;
   /** Временная метка матчинга */
   match_time?: string;
+  /** Сторона трейдера (MAKER или TAKER) */
+  trader_side?: 'MAKER' | 'TAKER';
 }
 
 /**
- * Paginated trades response envelope from /data/trades
+ * Обёртка постраничного ответа со сделками из /data/trades
  */
 export interface PaginatedTradesResponse {
   /** Массив сделок текущей страницы */
@@ -209,7 +217,7 @@ export interface PaginatedTradesResponse {
 }
 
 /**
- * Polymarket Order REST Client
+ * REST-клиент ордеров Polymarket
  */
 export class PolymarketOrderRestClient {
   constructor(
@@ -233,14 +241,14 @@ export class PolymarketOrderRestClient {
   }
 
   /**
-   * Place new order
+   * Разместить новый ордер
    *
-   * @param request - Order request
-   * @returns Raw order response
-   * @throws {ApiError} If API call fails
+   * @param request - Запрос на создание ордера
+   * @returns Сырой ответ API с данными ордера
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * Returns raw API response. Normalization should be done by mapper.
+   * Возвращает сырой ответ API. Нормализация должна выполняться маппером.
    *
    * @example
    * ```typescript
@@ -249,7 +257,6 @@ export class PolymarketOrderRestClient {
    *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
-   *   nonce: Date.now(),
    * });
    *
    * console.log(`Order created: ${order.orderId}`);
@@ -263,22 +270,15 @@ export class PolymarketOrderRestClient {
       size: request.size,
     });
 
-    // ВАЖНО: Передаём nonce=0 для автоматического назначения API
-    // API автоматически назначит корректный nonce для биржи
-    const exchangeNonce = 0;
-
-    this.logger.debug('Using nonce for order', { exchangeNonce });
-
-    // Строим EIP-712 подписанный ордер
+    // Строим EIP-712 подписанный ордер V2 (без nonce и feeRateBps)
     const signedOrder = await this.orderBuilder.buildOrder({
       tokenId: request.tokenId,
       side: request.side,
       price: request.price,
       size: request.size,
-      feeRateBps: request.feeRateBps ?? 0,
-      nonce: exchangeNonce,
       expiration: 0, // Без истечения
-      priceTick: request.priceTick, // Передаём шаг цены для округления
+      priceTick: request.priceTick,
+      negRisk: request.negRisk,
     });
 
     this.logger.debug('Order signed', {
@@ -289,18 +289,31 @@ export class PolymarketOrderRestClient {
       takerAmount: signedOrder.takerAmount,
     });
 
-    // Отправляем ордер в API (POST /order ожидает конкретный формат)
+    if (!this.isPositiveIntegerAmount(signedOrder.makerAmount) || !this.isPositiveIntegerAmount(signedOrder.takerAmount)) {
+      throw new ApiError(
+        `Refusing to submit invalid signed order amounts: makerAmount=${signedOrder.makerAmount}, takerAmount=${signedOrder.takerAmount}, side=${request.side}, price=${request.price}, size=${request.size}`,
+      );
+    }
+
+    // Отправляем ордер в API (POST /order ожидает формат V2)
     // КРИТИЧНО: owner ДОЛЖЕН быть строкой API KEY (UUID), НЕ адресом кошелька!
-    // Референс SDK: orderToJson(order, this.creds?.key, orderType, deferExec)
-    const response = await this.restClient.post<CreateOrderResponse>(
-      '/order',
-      {
-        order: signedOrder,
-        owner: this.restClient.getApiKey(), // Строка API ключа (UUID)
-        orderType: 'GTC', // Good Till Cancel
-      },
-      { requireSignature: false } // Ордер уже подписан через EIP-712
+    const payload = orderToJsonV2(
+      signedOrder as any,
+      this.restClient.getApiKey(),
+      request.orderType ? OrderType[request.orderType] : OrderType.GTC,
+      request.postOnly === true,
+      request.postOnly === true,
     );
+
+    const response = await this.restClient.post<CreateOrderResponse>('/order', payload, {
+      requireSignature: false,
+    });
+
+    if (response.success === false) {
+      throw new ApiError(
+        `Create order rejected by exchange: ${response.errorMsg || 'unknown error'}`,
+      );
+    }
 
     this.logger.info('Order created successfully', {
       orderID: response.orderID,
@@ -312,49 +325,170 @@ export class PolymarketOrderRestClient {
     return response;
   }
 
+  private isPositiveIntegerAmount(value: string): boolean {
+    try {
+      return BigInt(value) > 0n;
+    } catch {
+      return false;
+    }
+  }
+
   /**
-   * Cancel order
+   * Отменить ордер
    *
-   * @param orderId - Order ID to cancel
-   * @returns Cancel response
-   * @throws {ApiError} If API call fails
+   * @param orderId - Идентификатор ордера для отмены
+   * @returns Сырой ответ API (`canceled` / `not_canceled`) — НЕ бросает при
+   * `not_canceled[orderId]`, это нормальный venue outcome
+   * @throws {ApiError} Только при реальной HTTP/API ошибке (`restClient.delete` throw)
+   *
+   * @remarks
+   * Классификация `not_canceled[orderId]` (matched/already cancelled/not found/unknown)
+   * НЕ выполняется здесь — это ответственность вышестоящего адаптера
+   * (`PolymarketExchangeClientAdapter`), который маппит structured response
+   * в `CancelOrderResult`. Здесь только сырой passthrough + логирование.
    *
    * @example
    * ```typescript
-   * await client.cancelOrder('order-123');
-   * console.log('Order cancelled');
+   * const response = await client.cancelOrder('order-123');
+   * if (response.canceled.includes('order-123')) console.log('Order cancelled');
    * ```
    */
   async cancelOrder(orderId: string): Promise<CancelOrderResponse> {
     this.logger.debug('Cancelling order', { orderId });
 
     const response = await this.restClient.delete<CancelOrderResponse>('/order', {
-      orderId,
+      orderID: orderId,
       timestamp: Date.now(),
     });
 
-    this.logger.info('Order cancelled successfully', { orderId });
+    const isCanceled = response.canceled?.includes(orderId);
+    const notCanceledReason = response.not_canceled?.[orderId];
+
+    if (notCanceledReason) {
+      this.logger.warn('Order not canceled by exchange (venue outcome, not a transport error)', {
+        orderId,
+        reason: notCanceledReason,
+      });
+    } else if (!isCanceled) {
+      this.logger.warn('Order not present in canceled/not_canceled response', {
+        orderId,
+        canceled: response.canceled,
+        not_canceled: response.not_canceled,
+      });
+    } else {
+      this.logger.info('Order cancelled successfully', { orderId });
+    }
 
     return response;
   }
 
   /**
-   * Get open orders
+   * Отменить несколько ордеров за один запрос (batch cancel)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders
-   * @throws {ApiError} If API call fails
-   *
-   * @remarks
-   * Returns only PENDING and LIVE orders.
-   * FILLED and CANCELLED orders are excluded.
+   * @param orderIds - Массив идентификаторов ордеров для отмены
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @example
    * ```typescript
-   * // All open orders
+   * await client.cancelOrders(['order-1', 'order-2']);
+   * ```
+   */
+  async cancelOrders(orderIds: string[]): Promise<CancelOrderResponse> {
+    this.logger.debug('Cancelling orders (batch)', { count: orderIds.length });
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders', {
+      orderIDs: orderIds,
+    });
+
+    this.logger.info('Batch cancel result', {
+      canceledCount: response.canceled?.length ?? 0,
+      notCanceledCount: Object.keys(response.not_canceled ?? {}).length,
+    });
+
+    return response;
+  }
+
+  /**
+   * Отменить все открытые ордера аккаунта (emergency stop)
+   *
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Отменяет все ордера аккаунта независимо от рынка.
+   * Используется для аварийного стопа бота.
+   *
+   * @example
+   * ```typescript
+   * await client.cancelAll();
+   * ```
+   */
+  async cancelAll(): Promise<CancelOrderResponse> {
+    this.logger.info('Cancelling ALL open orders');
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders', {
+      cancelAll: true,
+    });
+
+    this.logger.info('Cancel all result', {
+      canceledCount: response.canceled?.length ?? 0,
+      notCanceledCount: Object.keys(response.not_canceled ?? {}).length,
+    });
+
+    return response;
+  }
+
+  /**
+   * Отменить все ордера по рынку (conditionId) с опциональным фильтром по токену
+   *
+   * @param market - Condition ID рынка
+   * @param assetId - Опционально: фильтр по конкретному tokenId (UP или DOWN)
+   * @returns Ответ с canceled / not_canceled
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @example
+   * ```typescript
+   * // Отменить все ордера по рынку
+   * await client.cancelMarketOrders('0xbd31dc8a...');
+   *
+   * // Отменить только по конкретному токену
+   * await client.cancelMarketOrders('0xbd31dc8a...', '52114319...');
+   * ```
+   */
+  async cancelMarketOrders(market: string, assetId?: string): Promise<CancelOrderResponse> {
+    this.logger.info('Cancelling market orders', { market: market.slice(0, 20), assetId: assetId?.slice(0, 16) });
+
+    const body: Record<string, string> = { market };
+    if (assetId) body['asset_id'] = assetId;
+
+    const response = await this.restClient.delete<CancelOrderResponse>('/orders/market', body);
+
+    this.logger.info('Cancel market orders result', {
+      market: market.slice(0, 20),
+      canceledCount: response.canceled?.length ?? 0,
+    });
+
+    return response;
+  }
+
+  /**
+   * Получить открытые ордера
+   *
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @returns Массив открытых ордеров
+   * @throws {ApiError} При ошибке API-вызова
+   *
+   * @remarks
+   * Возвращает только ордера в статусах PENDING и LIVE.
+   * Ордера FILLED и CANCELLED исключены.
+   *
+   * @example
+   * ```typescript
+   * // Все открытые ордера
    * const allOrders = await client.getOpenOrders();
    *
-   * // Orders for specific token
+   * // Ордера для конкретного токена
    * const tokenOrders = await client.getOpenOrders('0x123');
    * ```
    */
@@ -391,11 +525,11 @@ export class PolymarketOrderRestClient {
   }
 
   /**
-   * Get order by ID
+   * Получить ордер по идентификатору
    *
-   * @param orderId - Order ID
-   * @returns Order response
-   * @throws {ApiError} If API call fails or order not found
+   * @param orderId - Идентификатор ордера
+   * @returns Ответ с данными ордера
+   * @throws {ApiError} При ошибке API-вызова или если ордер не найден
    *
    * @example
    * ```typescript
@@ -417,28 +551,28 @@ export class PolymarketOrderRestClient {
   }
 
   /**
-   * Get matched orders (using /data/orders?status=MATCHED endpoint)
+   * Получить исполненные ордера (используя endpoint /data/orders?status=MATCHED)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @param limit - Maximum number of orders to return (default: 100)
-   * @returns Array of matched orders (AGGREGATED per order!)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @param limit - Максимальное количество ордеров для возврата (по умолчанию: 100)
+   * @returns Массив исполненных ордеров (АГРЕГИРОВАННЫХ по ордеру!)
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * v7.7.11: FALLBACK method when /data/trades returns empty.
-   * Uses /data/orders with status=MATCHED parameter (like old bot).
+   * v7.7.11: ЗАПАСНОЙ метод когда /data/trades возвращает пустой результат.
+   * Использует /data/orders с параметром status=MATCHED (как старый бот).
    *
-   * IMPORTANT: Returns ORDERS, not individual TRADES!
-   * - One order = one row (even if filled by multiple trades)
-   * - size_matched = total filled size (sum of all trades)
-   * - avg_price = average execution price (NOT limit price!)
+   * ВАЖНО: Возвращает ОРДЕРА, а не отдельные СДЕЛКИ!
+   * - Один ордер = одна строка (даже если исполнен несколькими сделками)
+   * - size_matched = суммарный исполненный размер (сумма всех сделок)
+   * - avg_price = средняя цена исполнения (НЕ лимитная цена!)
    *
    * @example
    * ```typescript
-   * // Get all matched orders
+   * // Получить все исполненные ордера
    * const orders = await client.getMatchedOrders('0x123...', 100);
-   * // orders[0].size_matched - total filled
-   * // orders[0].avg_price - average price
+   * // orders[0].size_matched - суммарное исполнение
+   * // orders[0].avg_price - средняя цена
    * ```
    */
   async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<MatchedOrderResponse[]> {
@@ -472,31 +606,31 @@ export class PolymarketOrderRestClient {
   }
 
   /**
-   * Get filled orders (using /data/trades endpoint with maker_address)
+   * Получить исполненные ордера (используя endpoint /data/trades с maker_address)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @param makerAddress - MAKER address (FUNDER, NOT SIGNER!)
-   * @param limit - Maximum number of trades to return (default: 100)
-   * @returns Array of filled orders
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Необязательно: фильтр по идентификатору токена
+   * @param makerAddress - MAKER-адрес (ФАНДЕР, НЕ ПОДПИСАНТ!)
+   * @param limit - Максимальное количество сделок для возврата (по умолчанию: 100)
+   * @returns Массив исполненных ордеров
+   * @throws {ApiError} При ошибке API-вызова
    *
    * @remarks
-   * v7.7.10: Uses /data/trades with maker_address parameter (like official @polymarket/clob-client)
-   * CRITICAL: Must use MAKER address (funder), NOT SIGNER address (proxy)!
+   * v7.7.10: Использует /data/trades с параметром maker_address (как официальный @polymarket/clob-client)
+   * КРИТИЧНО: Необходимо использовать MAKER-адрес (фандер), НЕ адрес ПОДПИСАНТА (proxy)!
    *
-   * v7.7.11: FALLBACK - if this returns empty, call getMatchedOrders() instead!
+   * v7.7.11: ЗАПАСНОЙ ВАРИАНТ — если возвращает пустой результат, вызвать getMatchedOrders()!
    *
-   * Official CLOB client approach:
+   * Подход официального CLOB-клиента:
    * ```typescript
    * getTrades({ maker_address: funderAddress, asset_id: tokenId })
    * ```
    *
    * @example
    * ```typescript
-   * // Get all fills for MAKER address
+   * // Получить все исполнения для MAKER-адреса
    * const fills = await client.getFilledOrders('0x123...', '0xMAKER...', 100);
    * if (fills.length === 0) {
-   *   // Fallback to matched orders
+   *   // Запасной вариант: исполненные ордера
    *   const orders = await client.getMatchedOrders('0x123...', 100);
    * }
    * console.log(`Total fills: ${fills.length}`);

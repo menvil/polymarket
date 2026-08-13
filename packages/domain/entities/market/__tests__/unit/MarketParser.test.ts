@@ -22,7 +22,7 @@ const EXPIRATION_MS = 1_700_000_000_000;
 const EXPIRATION_DATE = new Date(EXPIRATION_MS).toISOString();
 
 /** Корректный OutcomeTokenJSON для тестов */
-const YES_TOKEN_JSON = {
+const UP_TOKEN_JSON = {
   conditionRef: {
     kind: 'ONCHAIN' as const,
     protocolId: 'POLYMARKET_CTF',
@@ -32,8 +32,8 @@ const YES_TOKEN_JSON = {
   outcomeKey: 'UP',
 };
 
-const NO_TOKEN_JSON = {
-  ...YES_TOKEN_JSON,
+const DOWN_TOKEN_JSON = {
+  ...UP_TOKEN_JSON,
   outcomeKey: 'DOWN',
 };
 
@@ -44,8 +44,8 @@ function validActiveSnapshot() {
     slug: 'will-trump-win',
     question: 'Will Trump win?',
     outcomes: [
-      { token: YES_TOKEN_JSON, index: 0, name: 'Yes' },
-      { token: NO_TOKEN_JSON, index: 1, name: 'No' },
+      { token: UP_TOKEN_JSON, index: 0, name: 'Yes' },
+      { token: DOWN_TOKEN_JSON, index: 1, name: 'No' },
     ],
     expirationDate: EXPIRATION_DATE,
     state: { status: 'ACTIVE' },
@@ -228,7 +228,7 @@ describe('MarketParser.from() — невалидные данные', () => {
   it('возвращает Err для outcomes неправильной длины', () => {
     const result = MarketParser.from({
       ...validActiveSnapshot(),
-      outcomes: [{ token: YES_TOKEN_JSON, index: 0, name: 'Yes' }],
+      outcomes: [{ token: UP_TOKEN_JSON, index: 0, name: 'Yes' }],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -237,7 +237,7 @@ describe('MarketParser.from() — невалидные данные', () => {
   });
 
   it('возвращает Err если outcomes[0] не объект', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [null, { token: NO_TOKEN_JSON, index: 1, name: 'No' }] });
+    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [null, { token: DOWN_TOKEN_JSON, index: 1, name: 'No' }] });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message.toLowerCase()).toContain('outcomes[0]');
@@ -256,7 +256,7 @@ describe('MarketParser.from() — невалидные данные', () => {
 
   it('возвращает Err для пустого outcomes[0].name', () => {
     const snapshot = validActiveSnapshot();
-    snapshot.outcomes[0] = { token: YES_TOKEN_JSON, index: 0, name: '' };
+    snapshot.outcomes[0] = { token: UP_TOKEN_JSON, index: 0, name: '' };
     const result = MarketParser.from(snapshot);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -265,7 +265,7 @@ describe('MarketParser.from() — невалидные данные', () => {
   });
 
   it('возвращает Err если outcomes[1] не объект', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [{ token: YES_TOKEN_JSON, index: 0, name: 'Yes' }, null] });
+    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [{ token: UP_TOKEN_JSON, index: 0, name: 'Yes' }, null] });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message.toLowerCase()).toContain('outcomes[1]');
@@ -284,7 +284,7 @@ describe('MarketParser.from() — невалидные данные', () => {
 
   it('возвращает Err для пустого outcomes[1].name', () => {
     const snapshot = validActiveSnapshot();
-    snapshot.outcomes[1] = { token: NO_TOKEN_JSON, index: 1, name: '' };
+    snapshot.outcomes[1] = { token: DOWN_TOKEN_JSON, index: 1, name: '' };
     const result = MarketParser.from(snapshot);
     expect(result.ok).toBe(false);
     if (!result.ok) {

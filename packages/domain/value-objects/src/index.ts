@@ -13,12 +13,12 @@ export {
   MoneySerializer,
   MoneyFormatter,
   MoneyErrorReason,
-  SupportedCurrency,
   // Rules Layer (публичный API для внешней валидации)
   ValidateDeltaForIncreaseBy,
   ValidateDivisorForMoneyDivision,
   ValidateFactorForMoneyMultiplication
 } from './money/index.js';
+export type { SupportedCurrency } from './money/index.js';
 
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';

@@ -1,26 +1,26 @@
 /**
- * Polymarket WebSocket types
+ * Типы WebSocket для Polymarket
  *
  * @remarks
- * Contains Polymarket-specific WebSocket message formats and subscription parameters.
- * Based on actual Polymarket CLOB WebSocket API.
+ * Содержит Polymarket-специфичные форматы WebSocket-сообщений и параметры подписки.
+ * Основано на реальном Polymarket CLOB WebSocket API.
  *
- * API Documentation:
+ * Документация API:
  * - Endpoint: wss://ws-subscriptions-clob.polymarket.com/ws/market
- * - Format: JSON messages with event_type field
+ * - Формат: JSON-сообщения с полем event_type
  *
  * @module infrastructure/polymarket/ws/types
  */
 
 /**
- * Polymarket subscription parameters
+ * Параметры подписки Polymarket
  *
  * @remarks
- * Polymarket uses a simple subscription format:
- * - assets_ids: Array of token IDs (as numeric strings)
- * - type: Subscription type ('market' or 'user')
+ * Polymarket использует простой формат подписки:
+ * - assets_ids: Массив token ID (в виде числовых строк)
+ * - type: Тип подписки ('market' или 'user')
  *
- * Format sent to WebSocket:
+ * Формат, отправляемый в WebSocket:
  * ```json
  * {
  *   "assets_ids": ["67704255197116168826604911233626301865010283966205730455742704536521111535950", ...],
@@ -67,20 +67,20 @@ export interface PolymarketSubscriptionParams {
 }
 
 /**
- * Polymarket WebSocket message (incoming)
+ * Входящее сообщение Polymarket WebSocket
  *
  * @remarks
- * All messages from Polymarket WebSocket have an event_type field.
- * Additional fields depend on the event type.
+ * Все сообщения от Polymarket WebSocket имеют поле event_type.
+ * Дополнительные поля зависят от типа события.
  *
- * Event Types:
- * - **Data events** (have asset_id): book, trade, last_trade_price
- * - **Control events** (no asset_id): pong, error, subscribed, unsubscribed
- * - **Ignored events**: price_change, tick_size_change
+ * Типы событий:
+ * - **События с данными** (имеют asset_id): book, trade, last_trade_price
+ * - **Управляющие события** (без asset_id): pong, error, subscribed, unsubscribed
+ * - **Игнорируемые события**: price_change, tick_size_change
  *
  * @example
  * ```typescript
- * // Orderbook update
+ * // Обновление orderbook
  * const book: PolymarketWSMessage = {
  *   event_type: 'book',
  *   asset_id: '67704255197116168826604911233626301865010283966205730455742704536521111535950',
@@ -89,7 +89,7 @@ export interface PolymarketSubscriptionParams {
  *   timestamp: 1766875759895,
  * };
  *
- * // Trade update
+ * // Обновление trade
  * const trade: PolymarketWSMessage = {
  *   event_type: 'trade',
  *   asset_id: '67704255197116168826604911233626301865010283966205730455742704536521111535950',
@@ -99,12 +99,12 @@ export interface PolymarketSubscriptionParams {
  *   timestamp: 1766875759895,
  * };
  *
- * // Pong (control message)
+ * // Pong (управляющее сообщение)
  * const pong: PolymarketWSMessage = {
  *   event_type: 'pong',
  * };
  *
- * // Error (control message)
+ * // Error (управляющее сообщение)
  * const error: PolymarketWSMessage = {
  *   event_type: 'error',
  *   message: 'Invalid token ID',

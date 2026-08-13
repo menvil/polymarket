@@ -133,7 +133,7 @@ describe('PinoLoggerAdapter', () => {
   describe('error()', () => {
     it('должен логировать error с Error объектом', () => {
       const error = new Error('Test error');
-      logger.error('Error occurred', error, { orderId: '456' });
+      logger.error('Error occurred', { err: error, orderId: '456' });
 
       expect(output.length).toBe(1);
       const log = JSON.parse(output[0]);
@@ -145,7 +145,7 @@ describe('PinoLoggerAdapter', () => {
     });
 
     it('должен работать без Error объекта', () => {
-      logger.error('Error message', undefined, { code: '500' });
+      logger.error('Error message', { code: '500' });
 
       expect(output.length).toBe(1);
       const log = JSON.parse(output[0]);
@@ -155,7 +155,7 @@ describe('PinoLoggerAdapter', () => {
 
     it('должен корректно сериализовать Error (stack, type)', () => {
       const error = new Error('Network timeout');
-      logger.error('Failed', error);
+      logger.error('Failed', { err: error });
 
       const log = JSON.parse(output[0]);
       expect(log.err.type).toBe('Error');
@@ -167,7 +167,7 @@ describe('PinoLoggerAdapter', () => {
   describe('fatal()', () => {
     it('должен логировать fatal с Error объектом', () => {
       const error = new Error('Critical failure');
-      logger.fatal('System crash', error, { exitCode: 1 });
+      logger.fatal('System crash', { err: error, exitCode: 1 });
 
       expect(output.length).toBe(1);
       const log = JSON.parse(output[0]);
@@ -276,7 +276,9 @@ describe('PinoLoggerAdapter', () => {
       expect(log.level).toBe(30); // INFO
       expect(log.pid).not.toBe(12345);
       expect(log.hostname).not.toBe('fake');
-      expect(log.err).toBeUndefined(); // Нет параметра error
+      // err теперь НЕ зарезервирован — Pino сериализует его нативно из bindings
+      expect(log.err).toBeDefined();
+      expect(log.err.message).toBe('fake');
     });
 
     it('child logger должен наследовать защиту от коллизий в context', () => {
@@ -356,7 +358,8 @@ describe('PinoLoggerAdapter', () => {
 
     it('должен отфильтровывать системные поля из error context', () => {
       const error = new Error('Test error');
-      logger.error('Error occurred', error, {
+      logger.error('Error occurred', {
+        err: error,
         time: 999,
         msg: 'wrong',
         level: 10,
@@ -373,19 +376,20 @@ describe('PinoLoggerAdapter', () => {
       // orderId должен сохраниться
       expect(log.orderId).toBe('456');
 
-      // err должен быть из параметра error
+      // err передан в context — Pino сериализует его
       expect(log.err).toBeDefined();
       expect(log.err.message).toBe('Test error');
     });
 
-    it('должен отфильтровывать все зарезервированные поля (time, msg, level, pid, hostname, err)', () => {
+    it('должен отфильтровывать зарезервированные поля (time, msg, level, pid, hostname), но пропускать err', () => {
+      const error = new Error('fake');
       logger.info('Test', {
         time: 999,
         msg: 'wrong',
         level: 60,
         pid: 12345,
         hostname: 'fake',
-        err: new Error('fake'),
+        err: error,
         validField: 'should remain'
       });
 
@@ -400,7 +404,10 @@ describe('PinoLoggerAdapter', () => {
       expect(log.level).toBe(30); // INFO
       expect(log.pid).not.toBe(12345); // Реальный PID процесса
       expect(log.hostname).not.toBe('fake'); // Реальный hostname
-      expect(log.err).toBeUndefined(); // Не должно быть err без параметра error
+
+      // err теперь НЕ зарезервирован — Pino сериализует его нативно
+      expect(log.err).toBeDefined();
+      expect(log.err.message).toBe('fake');
     });
 
     it('должен работать без context (покрытие ветки)', () => {

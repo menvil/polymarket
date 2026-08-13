@@ -1,17 +1,17 @@
 /**
- * Polymarket Positions Provider (PLURAL!)
+ * Провайдер позиций Polymarket (множественное число!)
  *
  * @remarks
- * Implements IPositionsProvider interface.
- * Uses PolymarketPositionsRestClient + PolymarketPositionMapper.
+ * Реализует интерфейс IPositionsProvider.
+ * Использует PolymarketPositionsRestClient + PolymarketPositionMapper.
  *
- * **IMPORTANT**: This is plural "Positions" (not singular "Position")
- * because it manages multiple positions.
+ * **ВАЖНО**: Это множественное число "Positions" (не единственное "Position"),
+ * поскольку управляет несколькими позициями.
  *
- * Responsibilities:
- * - Fetch positions data from API
- * - Normalize data using mapper
- * - Return domain-formatted positions
+ * Обязанности:
+ * - Получение данных позиций из API
+ * - Нормализация данных с помощью маппера
+ * - Возврат позиций в доменном формате
  *
  * @example
  * ```typescript
@@ -29,20 +29,20 @@
  * ```
  */
 
-import type { ILogger } from '../../../../domain/ports/ILogger.js';
+import type { ILogger } from '@polymarket/logger';
 import type {
   IPositionsProvider,
   PositionResponse,
   PositionState,
-} from '../../../exchange/ports/IPositionsProvider.js';
+} from '../../ports/IPositionsProvider.js';
 import type { PolymarketPositionsRestClient } from '../clients/PolymarketPositionsRestClient.js';
 import type { PolymarketPositionMapper } from '../mappers/PolymarketPositionMapper.js';
 
 /**
- * Polymarket Positions Provider (PLURAL!)
+ * Провайдер позиций Polymarket (множественное число!)
  *
  * @remarks
- * Implements IPositionsProvider for Polymarket.
+ * Реализует IPositionsProvider для Polymarket.
  */
 export class PolymarketPositionsProvider implements IPositionsProvider {
   constructor(
@@ -52,14 +52,14 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
   ) {}
 
   /**
-   * Get current positions (filled trades)
+   * Получить текущие позиции (исполненные сделки)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по идентификатору токена
+   * @returns Массив позиций
+   * @throws {ApiError} При ошибке вызова API
    *
    * @remarks
-   * Returns filled trades, NOT open orders.
+   * Возвращает исполненные сделки, НЕ открытые ордера.
    *
    * @example
    * ```typescript
@@ -80,15 +80,15 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
   }
 
   /**
-   * Get position state for specific token
+   * Получить состояние позиции для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Position state with limits
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Идентификатор токена
+   * @returns Состояние позиции с лимитами
+   * @throws {ApiError} При ошибке вызова API
    *
    * @remarks
-   * Used for validation before placing orders.
-   * Checks current position size and limits.
+   * Используется для валидации перед размещением ордеров.
+   * Проверяет текущий размер позиции и лимиты.
    *
    * @example
    * ```typescript
@@ -131,10 +131,10 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
   }
 
   /**
-   * Get total unrealized PnL across all positions
+   * Получить суммарный нереализованный PnL по всем позициям
    *
-   * @returns Total unrealized PnL
-   * @throws {ApiError} If API call fails
+   * @returns Суммарный нереализованный PnL
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript
@@ -160,10 +160,10 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
   }
 
   /**
-   * Get total realized PnL across all positions
+   * Получить суммарный реализованный PnL по всем позициям
    *
-   * @returns Total realized PnL
-   * @throws {ApiError} If API call fails
+   * @returns Суммарный реализованный PnL
+   * @throws {ApiError} При ошибке вызова API
    *
    * @example
    * ```typescript

@@ -59,6 +59,21 @@ import { LogLevel, shouldLog } from './LogLevel.js';
 import { safeStringify } from './utils/safeStringify.js';
 import { sanitizeContext } from './utils/sanitizeContext.js';
 
+/**
+ * Сериализует Error из поля `err` в context в plain объект `{ message, name, stack }`.
+ *
+ * @remarks
+ * JSON.stringify возвращает `{}` для Error (свойства non-enumerable).
+ * Вызывается в `error()` и `fatal()` до передачи context в `log()`.
+ */
+function serializeErrorInContext(
+  context?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!context || !(context.err instanceof Error)) return context;
+  const { err, ...rest } = context;
+  return { ...rest, err: { message: err.message, name: err.name, stack: err.stack } };
+}
+
 export class ConsoleLogger implements ILogger {
   /**
    * Создает logger для вывода в консоль
@@ -189,41 +204,27 @@ export class ConsoleLogger implements ILogger {
    * Логирует ошибку
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Сообщение логируется если уровень логгера <= ERROR.
-   * Если передан Error, его message и stack будут включены в лог.
+   * Если в context передан `err: Error`, его message, name и stack будут сериализованы в лог.
    *
    * @example
    * ```typescript
    * try {
    *   await placeOrder(order);
    * } catch (err) {
-   *   logger.error('Failed to place order', err as Error, {
+   *   logger.error('Failed to place order', {
+   *     err: err as Error,
    *     orderId: order.id,
    *   });
    * }
    * ```
    */
-  error(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
+  error(message: string, context?: Record<string, unknown>): void {
     if (shouldLog(LogLevel.ERROR, this.level)) {
-      const errorContext = error
-        ? {
-            error: {
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-            },
-          }
-        : {};
-
-      this.log(LogLevel.ERROR, message, { ...context, ...errorContext });
+      this.log(LogLevel.ERROR, message, serializeErrorInContext(context));
     }
   }
 
@@ -231,8 +232,7 @@ export class ConsoleLogger implements ILogger {
    * Логирует критическую ошибку
    *
    * @param message - Текст сообщения
-   * @param error - Объект ошибки (опционально)
-   * @param context - Дополнительный контекст
+   * @param context - Дополнительный контекст. Передавайте Error через `{ err: error }`
    *
    * @remarks
    * Сообщение логируется если уровень логгера <= FATAL.
@@ -244,7 +244,8 @@ export class ConsoleLogger implements ILogger {
    * try {
    *   await connectToExchange();
    * } catch (err) {
-   *   logger.fatal('Cannot connect to exchange', err as Error, {
+   *   logger.fatal('Cannot connect to exchange', {
+   *     err: err as Error,
    *     exchange: 'Polymarket',
    *     retryAttempts: 5,
    *   });
@@ -252,23 +253,9 @@ export class ConsoleLogger implements ILogger {
    * }
    * ```
    */
-  fatal(
-    message: string,
-    error?: Error,
-    context?: Record<string, unknown>
-  ): void {
+  fatal(message: string, context?: Record<string, unknown>): void {
     if (shouldLog(LogLevel.FATAL, this.level)) {
-      const errorContext = error
-        ? {
-            error: {
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-            },
-          }
-        : {};
-
-      this.log(LogLevel.FATAL, message, { ...context, ...errorContext });
+      this.log(LogLevel.FATAL, message, serializeErrorInContext(context));
     }
   }
 

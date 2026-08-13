@@ -3,5 +3,8 @@
   "parserOptions": {
     "project": "./tsconfig.json",
     "tsconfigRootDir": "."
+  },
+  "rules": {
+    "@typescript-eslint/no-restricted-imports": "off"
   }
 }

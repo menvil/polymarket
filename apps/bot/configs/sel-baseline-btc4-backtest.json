@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry baseline, btc4 dataset",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc4 snapshots 5-min BTC, 167 markets",
+      "pnl": "-0.20 USDC",
+      "wr": "64.9%",
+      "markets": 167,
+      "date": "2026-03-28",
+      "notes": "36 fills. test — breakeven. Total: +13.75 USDC, 65.6% WR."
+    },
+    "todo": [
+      "re-run on Apr 21-27 (see verify-sel-baseline configs)"
+    ]
+  },
+  "strategy": "selective-entry",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day4/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

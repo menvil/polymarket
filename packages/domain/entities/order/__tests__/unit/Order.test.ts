@@ -620,15 +620,18 @@ describe('Order', () => {
 
     it('каждый Order инстанс имеет собственный буфер', () => {
       const order = unwrap(createValidOrder());
-      const open = unwrap(order.accept()); // open._pendingEvents = [ORDER_ACCEPTED]
+      const open = unwrap(order.accept()); // open._pendingEvents = [ORDER_CREATED, ORDER_ACCEPTED]
 
       // Оригинальный order содержит ORDER_CREATED
       const originalEvents = order.pullEvents();
+      expect(originalEvents).toHaveLength(1);
       expect(originalEvents[0]?.type).toBe('ORDER_CREATED');
 
-      // open содержит ORDER_ACCEPTED
+      // open содержит ORDER_CREATED (carry-forward) + ORDER_ACCEPTED
       const openEvents = open.pullEvents();
-      expect(openEvents[0]?.type).toBe('ORDER_ACCEPTED');
+      expect(openEvents).toHaveLength(2);
+      expect(openEvents[0]?.type).toBe('ORDER_CREATED');
+      expect(openEvents[1]?.type).toBe('ORDER_ACCEPTED');
     });
   });
 

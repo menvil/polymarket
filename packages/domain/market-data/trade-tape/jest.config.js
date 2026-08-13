@@ -5,13 +5,14 @@ export default {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@polymarket/time$': '<rootDir>/../../../foundation/time/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../../foundation/errors/src/index.ts',
     '^@polymarket/result$': '<rootDir>/../../../foundation/result/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../value-objects/src/$1/index.ts',
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
-    '^@polymarket/trade$': '<rootDir>/../../entities/trade/src/index.ts',
+    '^@polymarket/rolling-window$': '<rootDir>/../../../foundation/rolling-window/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

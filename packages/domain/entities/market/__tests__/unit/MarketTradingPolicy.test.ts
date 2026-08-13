@@ -36,12 +36,12 @@ const TEST_CONDITION_REF: OnChainConditionRef = {
   conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
 };
 
-const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
 
 const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: YES_TOKEN, index: 0, name: 'Yes' },
-  { token: NO_TOKEN, index: 1, name: 'No' },
+  { token: UP_TOKEN, index: 0, name: 'Yes' },
+  { token: DOWN_TOKEN, index: 1, name: 'No' },
 ];
 
 function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {
@@ -54,6 +54,12 @@ function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {
     state,
   });
   if (!result.ok) throw new Error('Failed to create test market');
+  return result.value;
+}
+
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
   return result.value;
 }
 
@@ -157,11 +163,11 @@ describe('Policy + Entity — полный lifecycle', () => {
     expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
 
     // close() переводит в CLOSED
-    const closed = market.close(AT_EXPIRY);
+    const closed = unwrap(market.close(AT_EXPIRY));
     expect(MarketTradingPolicy.getTradingState(closed, AT_EXPIRY)).toBe('CLOSED');
 
     // resolve() переводит в RESOLVED
-    const resolved = closed.resolve(0, AT_EXPIRY);
+    const resolved = unwrap(closed.resolve(0, AT_EXPIRY));
     expect(MarketTradingPolicy.getTradingState(resolved, AT_EXPIRY)).toBe('RESOLVED');
   });
 

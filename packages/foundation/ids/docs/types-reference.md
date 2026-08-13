@@ -587,6 +587,42 @@ const quote = {
 
 ---
 
+### CryptoAssetId
+
+Идентификатор базового криптоактива (BTC, ETH, SOL, ...), лежащего в основе
+crypto-прогнозных рынков.
+
+```typescript
+type CryptoAssetId = string & { readonly __brand: 'CryptoAssetId' };
+```
+
+**Использование**:
+
+```typescript
+import { asCryptoAssetId } from '@polymarket/ids/market-data';
+
+const assetId = asCryptoAssetId('btc');
+if (assetId) {
+  // assetId: CryptoAssetId
+}
+```
+
+**Почему branded ID, а не литеральный union** (как, например, `CexVenue` в
+`@polymarket/market-state`): пространство значений открытое — реальные символы
+приходят с бирж и нормализуются (`normalizeAsset`/`inferAssetFromSymbol` в
+`CryptoMarketDataStore`), список активов не маленький и не закрытый. Валидатор
+(`asCryptoAssetId`) проверяет только формат (непустая строка, ≤32 символа, без
+control characters) — не членство в каком-либо конкретном списке.
+
+**Статус подключения**: тип построен в Этапе 8 миграции типов
+(`docs/architecture/boundary-contract.md`), но **не подключён** к полям
+`asset`/`symbolOrAsset` в `CryptoMarketDataStore`/`CryptoResolutionStore`/
+`CryptoSignalRegistry` — их реальные потребители (стратегии в `apps/bot/src/
+strategies/*`, `packages/application/strategy`) находятся в области более
+позднего этапа миграции. До подключения эти поля остаются `string`.
+
+---
+
 ## Execution IDs
 
 ### ExecutionVenueId
@@ -681,6 +717,24 @@ const fillId = asFillId('fill-456');  // → FillId | undefined
 
 ---
 
+### StrategyId
+
+Идентификатор экземпляра торговой стратегии (`IStrategy.id`).
+
+```typescript
+type StrategyId = string & { readonly __brand: 'StrategyId' };
+```
+
+**Helper функции**:
+
+```typescript
+import { asStrategyId } from '@polymarket/ids';
+
+const strategyId = asStrategyId('crowd-deviation-1');  // → StrategyId | undefined
+```
+
+---
+
 ## Сравнительная таблица
 
 | Type                | Category      | Purpose                           | Example                                    |
@@ -699,6 +753,7 @@ const fillId = asFillId('fill-456');  // → FillId | undefined
 | ExecutionVenueId    | Execution     | Куда ОТПРАВЛЯЕМ ордера            | 'POLYMARKET'                               |
 | OrderId             | Execution     | ID ордера                         | 'order-123'                                |
 | FillId              | Execution     | ID fill                           | 'fill-456'                                 |
+| StrategyId          | Execution     | ID экземпляра стратегии           | 'crowd-deviation-1'                        |
 
 ---
 

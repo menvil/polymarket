@@ -493,7 +493,7 @@ describe('Logger Security Tests', () => {
       };
 
       expect(() => {
-        colorLogger.error('Test', new Error('err'), dangerousContext);
+        colorLogger.error('Test', dangerousContext as Record<string, unknown>);
       }).not.toThrow();
 
       expect(consoleSpy.error).toHaveBeenCalledTimes(1);
@@ -507,7 +507,7 @@ describe('Logger Security Tests', () => {
       };
 
       expect(() => {
-        colorLogger.fatal('Test', new Error('err'), dangerousContext);
+        colorLogger.fatal('Test', dangerousContext as Record<string, unknown>);
       }).not.toThrow();
 
       expect(consoleSpy.error).toHaveBeenCalledTimes(1);

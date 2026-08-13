@@ -309,10 +309,10 @@ describe('Fill', () => {
       expect(snapshot.venueId).toBe('POLYMARKET');
       expect(snapshot.marketId).toBe('market-abc');
       expect(snapshot.side).toBe('BUY');
-      expect(snapshot.price).toBe(0.65);
-      expect(snapshot.size).toBe(50);
+      expect(snapshot.price).toBe('0.65');
+      expect(snapshot.size).toBe('50');
       expect(snapshot.timestampMs).toBe(1700000000000);
-      expect(snapshot.feeAmount).toBe(0);
+      expect(snapshot.feeAmount).toBe('0');
       expect(snapshot.settlementAssetId).toContain('USDC');
     });
 
@@ -322,7 +322,7 @@ describe('Fill', () => {
 
       // feeAsset должен быть USDC, а не tokenId YES-токена
       expect(snapshot.feeAsset).toContain('USDC');
-      expect(snapshot.feeAmount).toBeCloseTo(0.02, 5);
+      expect(Number(snapshot.feeAmount)).toBeCloseTo(0.02, 5);
     });
 
     it('liquidity и venueTradeId попадают в снапшот через metadata', () => {

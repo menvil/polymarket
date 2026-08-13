@@ -19,7 +19,7 @@
  *
  * ### Бизнес-правила:
  * 1. Рынок должен иметь непустой id, slug и вопрос
- * 2. Должно быть ровно 2 исхода (YES/NO)
+ * 2. Должно быть ровно 2 исхода (UP/DOWN)
  * 3. close() допустим только из ACTIVE состояния
  * 4. resolve() допустим только из CLOSED состояния
  * 5. Дата истечения хранится как number для иммутабельности
@@ -45,14 +45,22 @@
  *
  * if (result.ok) {
  *   const market = result.value;
- *   const closed = market.close(Date.now());
- *   const resolved = closed.resolve(0, Date.now()); // YES победил
+ *   const closedResult = market.close(Date.now());
+ *   if (closedResult.ok) {
+ *     const resolvedResult = closedResult.value.resolve(0, Date.now()); // YES победил
+ *   }
  * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
+import type {
+  MarketAlreadyClosedError,
+  MarketAlreadyResolvedError,
+  MarketInvalidTransitionError,
+} from '@polymarket/errors/market';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import type { IClock } from '@polymarket/time';
 import {
   type MarketId,
   type MarketSlug,
@@ -131,8 +139,8 @@ export interface MarketProps {
  * - Внутреннее хранение через `_expirationMs: number`
  *
  * ### Lifecycle:
- * - close() — только из ACTIVE, иначе бросает MarketLifecycleError
- * - resolve() — только из CLOSED, иначе бросает MarketLifecycleError
+ * - close() — только из ACTIVE, иначе `Result` с `MarketLifecycleError`-подклассом
+ * - resolve() — только из CLOSED, иначе `Result` с `MarketLifecycleError`-подклассом
  *
  * ### Уведомления (Outbox pattern):
  * - close(nowMs) эмитирует MarketClosedNotification в буфер
@@ -167,7 +175,11 @@ export class Market {
   /**
    * Приватный конструктор — используйте Market.create()
    */
-  private constructor(props: MarketProps, pendingNotifications: MarketNotification[] = []) {
+  private constructor(
+    props: MarketProps,
+    pendingNotifications: MarketNotification[] = [],
+    private readonly _clock?: IClock,
+  ) {
     this.id = props.id;
     this.slug = props.slug;
     this.question = props.question;
@@ -297,7 +309,7 @@ export class Market {
    * }
    * ```
    */
-  public static create(props: MarketProps): Result<Market, MarketValidationError> {
+  public static create(props: MarketProps, clock?: IClock): Result<Market, MarketValidationError> {
     // Валидация question — не может быть гарантирована типом string
     if (typeof props.question !== 'string' || props.question.trim().length === 0) {
       return Err(
@@ -409,7 +421,7 @@ export class Market {
       }
     }
 
-    return Ok(new Market(props));
+    return Ok(new Market(props, [], clock));
   }
 
   /**
@@ -435,8 +447,8 @@ export class Market {
    * const restored = Market.fromSnapshot(snapshot);
    * ```
    */
-  public static fromSnapshot(snapshot: MarketSnapshot): Result<Market, MarketValidationError> {
-    return Market.create(snapshot);
+  public static fromSnapshot(snapshot: MarketSnapshot, clock?: IClock): Result<Market, MarketValidationError> {
+    return Market.create(snapshot, clock);
   }
 
   // ==================== Time Methods ====================
@@ -479,7 +491,7 @@ export class Market {
    * ```
    */
   public isExpired(): boolean {
-    return this.isExpiredAt(Date.now());
+    return this.isExpiredAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   /**
@@ -518,7 +530,7 @@ export class Market {
    * ```
    */
   public timeToExpiry(): number {
-    return this.timeToExpiryAt(Date.now());
+    return this.timeToExpiryAt(this._clock?.now().getTime() ?? Date.now());
   }
 
   // ==================== Predicates ====================
@@ -615,7 +627,8 @@ export class Market {
         expirationMs: this._expirationMs,
         state,
       },
-      notifications
+      notifications,
+      this._clock,
     );
   }
 
@@ -623,27 +636,32 @@ export class Market {
    * Закрывает рынок (ACTIVE → CLOSED)
    *
    * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
-   * @returns Новый Market в состоянии CLOSED
-   * @throws {MarketAlreadyClosedError} Если рынок уже в состоянии CLOSED
-   * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
+   * @returns `Result` с новым Market в состоянии CLOSED либо ошибкой нарушения FSM
    *
    * @remarks
    * Переход: ACTIVE → CLOSED.
-   * FSM-логика делегируется в MarketState.close() — entity не знает правил.
+   * FSM-логика делегируется в MarketState.close() — entity не знает правил, только
+   * пробрасывает Result наверх (по ADR `docs/architecture/boundary-contract.md`,
+   * Решение 2 — throw легитимен только внутри `value-objects`).
    * Параметр nowMs обеспечивает детерминизм в тестах.
    *
    * @example
    * ```typescript
-   * const closedMarket = activeMarket.close(Date.now());
-   * const [notification] = closedMarket.pullNotifications();
-   * // notification.occurredAt === nowMs
+   * const result = activeMarket.close(Date.now());
+   * if (result.ok) {
+   *   const [notification] = result.value.pullNotifications();
+   *   // notification.occurredAt === nowMs
+   * }
    * ```
    */
-  public close(nowMs: number): Market {
-    const nextState = MarketState.close(this.state, { marketId: this.id });
-    return this.copy(nextState, [
+  public close(nowMs: number): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
+    const nextStateResult = MarketState.close(this.state, { marketId: this.id });
+    if (!nextStateResult.ok) {
+      return Err(nextStateResult.error);
+    }
+    return Ok(this.copy(nextStateResult.value, [
       { type: 'MARKET_CLOSED' as const, marketId: this.id, slug: this.slug, occurredAt: nowMs },
-    ]);
+    ]));
   }
 
   /**
@@ -651,42 +669,48 @@ export class Market {
    *
    * @param outcomeIndex - Индекс победившего исхода (0 = YES, 1 = NO); должен быть целым числом
    * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
-   * @returns Новый Market в состоянии RESOLVED
-   * @throws {MarketValidationError} Если outcomeIndex не является целым числом в допустимом диапазоне
-   * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
-   * @throws {MarketInvalidTransitionError} Если рынок в состоянии ACTIVE (нужно сначала close())
+   * @returns `Result` с новым Market в состоянии RESOLVED либо ошибкой валидации/нарушения FSM
    *
    * @remarks
    * Переход: CLOSED → RESOLVED.
-   * FSM-логика делегируется в MarketState.resolve() — entity не знает правил.
-   * Параметр nowMs обеспечивает детерминизм в тестах.
+   * FSM-логика делегируется в MarketState.resolve() — entity не знает правил, только
+   * пробрасывает Result наверх (см. `close()`). Параметр nowMs обеспечивает
+   * детерминизм в тестах.
    *
    * @example
    * ```typescript
-   * const resolvedMarket = closedMarket.resolve(0, Date.now()); // YES победил
-   * const state = resolvedMarket.state;
-   * if (state.status === 'RESOLVED') {
-   *   console.log(state.resolvedOutcomeIndex); // 0
+   * const result = closedMarket.resolve(0, Date.now()); // YES победил
+   * if (result.ok) {
+   *   const state = result.value.state;
+   *   if (state.status === 'RESOLVED') {
+   *     console.log(state.resolvedOutcomeIndex); // 0
+   *   }
    * }
    * ```
    */
-  public resolve(outcomeIndex: OutcomeIndex, nowMs: number): Market {
+  public resolve(
+    outcomeIndex: OutcomeIndex,
+    nowMs: number,
+  ): Result<Market, MarketValidationError | MarketAlreadyResolvedError | MarketInvalidTransitionError> {
     if (
       typeof outcomeIndex !== 'number' ||
       !Number.isInteger(outcomeIndex) ||
       outcomeIndex < 0 ||
       outcomeIndex >= this.outcomes.length
     ) {
-      throw new MarketValidationError('resolvedOutcomeIndex must be a valid outcome index', {
+      return Err(new MarketValidationError('resolvedOutcomeIndex must be a valid outcome index', {
         context: {
           field: 'outcomeIndex',
           value: outcomeIndex,
           validRange: `0..${this.outcomes.length - 1}`,
         },
-      });
+      }));
     }
-    const nextState = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
-    return this.copy(nextState, [
+    const nextStateResult = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
+    if (!nextStateResult.ok) {
+      return Err(nextStateResult.error);
+    }
+    return Ok(this.copy(nextStateResult.value, [
       {
         type: 'MARKET_RESOLVED' as const,
         marketId: this.id,
@@ -694,7 +718,7 @@ export class Market {
         resolvedOutcomeIndex: outcomeIndex,
         occurredAt: nowMs,
       },
-    ]);
+    ]));
   }
 
   // ==================== String Representation ====================
