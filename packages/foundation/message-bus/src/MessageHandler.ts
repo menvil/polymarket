@@ -14,8 +14,8 @@
  *
  * @example
  * ```typescript
- * const onPrice: MessageHandler<PriceMessage> = async (message) => {
- *   await store.update(message.price);
+ * const onHeartbeat: MessageHandler<HeartbeatMessage> = async (message) => {
+ *   await monitor.beat(message.sequence);
  * };
  * ```
  */

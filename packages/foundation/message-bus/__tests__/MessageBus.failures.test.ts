@@ -18,11 +18,11 @@ import type {
 } from '@polymarket/message-bus';
 
 type TestMessage =
-  | { readonly type: 'PRICE'; readonly seq: number }
-  | { readonly type: 'TRADE'; readonly tradeId: string };
+  | { readonly type: 'HEARTBEAT'; readonly seq: number }
+  | { readonly type: 'ITEM_ADDED'; readonly itemId: string };
 
-function price(seq: number): TestMessage {
-  return { type: 'PRICE', seq };
+function heartbeat(seq: number): TestMessage {
+  return { type: 'HEARTBEAT', seq };
 }
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
@@ -59,16 +59,16 @@ describe('MessageBus failures', () => {
       const captured = makeCapturingObserver();
       const bus = new MessageBus<TestMessage>({ observer: captured.observer });
       let siblingCalled = false;
-      bus.subscribe('PRICE', () => { throw new Error('sync boom'); });
-      bus.subscribe('PRICE', () => { siblingCalled = true; });
+      bus.subscribe('HEARTBEAT', () => { throw new Error('sync boom'); });
+      bus.subscribe('HEARTBEAT', () => { siblingCalled = true; });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(true);
       expect(siblingCalled).toBe(true);
       expect(captured.handlerErrors).toHaveLength(1);
       expect(captured.handlerErrors[0]).toMatchObject({
-        messageType: 'PRICE',
+        messageType: 'HEARTBEAT',
         critical: false,
         primaryCritical: false,
       });
@@ -80,10 +80,10 @@ describe('MessageBus failures', () => {
       const captured = makeCapturingObserver();
       const bus = new MessageBus<TestMessage>({ observer: captured.observer });
       let siblingCalled = false;
-      bus.subscribe('PRICE', async () => { throw new Error('async boom'); });
-      bus.subscribe('PRICE', async () => { siblingCalled = true; });
+      bus.subscribe('HEARTBEAT', async () => { throw new Error('async boom'); });
+      bus.subscribe('HEARTBEAT', async () => { siblingCalled = true; });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(true);
       expect(siblingCalled).toBe(true);
@@ -94,12 +94,12 @@ describe('MessageBus failures', () => {
     it('ошибка на первом сообщении не останавливает drain — следующее доставляется', async () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', (message) => {
+      bus.subscribe('HEARTBEAT', (message) => {
         if (message.seq === 1) throw new Error('boom on first');
         delivered.push(message.seq);
       });
 
-      const result = await bus.publishAll([price(1), price(2)]);
+      const result = await bus.publishAll([heartbeat(1), heartbeat(2)]);
 
       expect(result.ok).toBe(true);
       expect(delivered).toEqual([2]);
@@ -109,24 +109,24 @@ describe('MessageBus failures', () => {
   describe('critical handler', () => {
     it('sync throw → Err(MessageBusCriticalHandlerError) с messageType и originalError', async () => {
       const bus = new MessageBus<TestMessage>();
-      bus.subscribe('PRICE', () => { throw new Error('sync critical'); }, { critical: true });
+      bus.subscribe('HEARTBEAT', () => { throw new Error('sync critical'); }, { critical: true });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(MessageBusCriticalHandlerError);
         const error = result.error as MessageBusCriticalHandlerError;
-        expect(error.messageType).toBe('PRICE');
+        expect(error.messageType).toBe('HEARTBEAT');
         expect((error.originalError as Error).message).toBe('sync critical');
       }
     });
 
     it('async rejection → Err(MessageBusCriticalHandlerError)', async () => {
       const bus = new MessageBus<TestMessage>();
-      bus.subscribe('PRICE', async () => { throw new Error('async critical'); }, { critical: true });
+      bus.subscribe('HEARTBEAT', async () => { throw new Error('async critical'); }, { critical: true });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -139,10 +139,10 @@ describe('MessageBus failures', () => {
     it('siblings текущего сообщения завершаются несмотря на critical-ошибку', async () => {
       const bus = new MessageBus<TestMessage>();
       let siblingCalled = false;
-      bus.subscribe('PRICE', () => { throw new Error('critical'); }, { critical: true });
-      bus.subscribe('PRICE', async () => { siblingCalled = true; });
+      bus.subscribe('HEARTBEAT', () => { throw new Error('critical'); }, { critical: true });
+      bus.subscribe('HEARTBEAT', async () => { siblingCalled = true; });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       expect(siblingCalled).toBe(true);
@@ -152,7 +152,7 @@ describe('MessageBus failures', () => {
       const bus = new MessageBus<TestMessage>();
       let firstDeliveries = 0;
       const delivered: number[] = [];
-      bus.subscribe('PRICE', (message) => {
+      bus.subscribe('HEARTBEAT', (message) => {
         if (message.seq === 1) {
           firstDeliveries++;
           throw new Error('critical');
@@ -160,11 +160,11 @@ describe('MessageBus failures', () => {
         delivered.push(message.seq);
       }, { critical: true });
 
-      const batch = await bus.publishAll([price(1), price(2)]);
+      const batch = await bus.publishAll([heartbeat(1), heartbeat(2)]);
       expect(batch.ok).toBe(false);
 
       // Очередь [2] сохранена; publish(3) возобновляет drain: сначала 2, потом 3
-      const next = await bus.publish(price(3));
+      const next = await bus.publish(heartbeat(3));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([2, 3]);
       expect(firstDeliveries).toBe(1);
@@ -174,13 +174,13 @@ describe('MessageBus failures', () => {
       const captured = makeCapturingObserver();
       const bus = new MessageBus<TestMessage>({ observer: captured.observer });
       let secondSettled = false;
-      bus.subscribe('PRICE', () => { throw new Error('first critical'); }, { critical: true });
-      bus.subscribe('PRICE', async () => {
+      bus.subscribe('HEARTBEAT', () => { throw new Error('first critical'); }, { critical: true });
+      bus.subscribe('HEARTBEAT', async () => {
         secondSettled = true;
         throw new Error('second critical');
       }, { critical: true });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -200,11 +200,11 @@ describe('MessageBus failures', () => {
 
     it('MessageBusOverflowError, брошенная critical-обработчиком, не маскируется под overflow bus', async () => {
       const bus = new MessageBus<TestMessage>();
-      bus.subscribe('PRICE', () => {
+      bus.subscribe('HEARTBEAT', () => {
         throw new MessageBusOverflowError({ maxQueueSize: 1, attemptedCount: 1 });
       }, { critical: true });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -216,11 +216,11 @@ describe('MessageBus failures', () => {
 
     it('MessageBusDrainLimitError, брошенная critical-обработчиком, не маскируется под drain-limit bus', async () => {
       const bus = new MessageBus<TestMessage>();
-      bus.subscribe('PRICE', () => {
+      bus.subscribe('HEARTBEAT', () => {
         throw new MessageBusDrainLimitError({ maxMessagesPerDrain: 1 });
       }, { critical: true });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -240,25 +240,25 @@ describe('MessageBus failures', () => {
       });
       const gate = makeGate();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', async (message) => {
+      bus.subscribe('HEARTBEAT', async (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) await gate.promise;
       });
 
-      const first = bus.publish(price(1)); // in-flight, обработчик заблокирован
-      const r2 = await bus.publish(price(2)); // очередь [2]
-      const r3 = await bus.publish(price(3)); // очередь [2,3] — лимит достигнут
+      const first = bus.publish(heartbeat(1)); // in-flight, обработчик заблокирован
+      const r2 = await bus.publish(heartbeat(2)); // очередь [2]
+      const r3 = await bus.publish(heartbeat(3)); // очередь [2,3] — лимит достигнут
       expect(r2.ok).toBe(true);
       expect(r3.ok).toBe(true);
 
-      const overflow = await bus.publish(price(4));
+      const overflow = await bus.publish(heartbeat(4));
       expect(overflow.ok).toBe(false);
       if (!overflow.ok) {
         expect(overflow.error).toBeInstanceOf(MessageBusOverflowError);
         const error = overflow.error as MessageBusOverflowError;
         expect(error.maxQueueSize).toBe(2);
         expect(error.attemptedCount).toBe(1);
-        expect(error.messageType).toBe('PRICE');
+        expect(error.messageType).toBe('HEARTBEAT');
       }
       expect(bus.getStats().queueSize).toBe(2);
       expect(captured.overflows).toHaveLength(1);
@@ -266,7 +266,7 @@ describe('MessageBus failures', () => {
         maxQueueSize: 2,
         attemptedCount: 1,
         queueSize: 2,
-        messageType: 'PRICE',
+        messageType: 'HEARTBEAT',
       });
 
       gate.release();
@@ -280,14 +280,14 @@ describe('MessageBus failures', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 1 } }),
       });
       const gate = makeGate();
-      bus.subscribe('PRICE', async (message) => {
+      bus.subscribe('HEARTBEAT', async (message) => {
         if (message.seq === 1) await gate.promise;
       });
 
-      const first = bus.publish(price(1)); // dequeued, in-flight; очередь пуста
-      const r2 = await bus.publish(price(2)); // очередь [2] — влезает при лимите 1
+      const first = bus.publish(heartbeat(1)); // dequeued, in-flight; очередь пуста
+      const r2 = await bus.publish(heartbeat(2)); // очередь [2] — влезает при лимите 1
       expect(r2.ok).toBe(true);
-      const r3 = await bus.publish(price(3)); // 1 ожидающее + 1 → отклонение
+      const r3 = await bus.publish(heartbeat(3)); // 1 ожидающее + 1 → отклонение
       expect(r3.ok).toBe(false);
 
       gate.release();
@@ -299,9 +299,9 @@ describe('MessageBus failures', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 2 } }),
       });
       const delivered: number[] = [];
-      bus.subscribe('PRICE', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
 
-      const result = await bus.publishAll([price(1), price(2), price(3)]);
+      const result = await bus.publishAll([heartbeat(1), heartbeat(2), heartbeat(3)]);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -314,7 +314,7 @@ describe('MessageBus failures', () => {
       expect(bus.getStats().rejectedPublicationsTotal).toBe(1);
 
       // Bus работоспособен: следующий publish доставляет ровно своё сообщение
-      const next = await bus.publish(price(9));
+      const next = await bus.publish(heartbeat(9));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([9]);
     });
@@ -325,15 +325,15 @@ describe('MessageBus failures', () => {
       });
       const gate = makeGate();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', async (message) => {
+      bus.subscribe('HEARTBEAT', async (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) await gate.promise;
       });
 
-      const first = bus.publish(price(1)); // in-flight
-      await bus.publish(price(2)); // очередь [2]
+      const first = bus.publish(heartbeat(1)); // in-flight
+      await bus.publish(heartbeat(2)); // очередь [2]
 
-      const batch = await bus.publishAll([price(3), price(4)]); // 1 + 2 > 2
+      const batch = await bus.publishAll([heartbeat(3), heartbeat(4)]); // 1 + 2 > 2
       expect(batch.ok).toBe(false);
       expect(bus.getStats().queueSize).toBe(1);
 
@@ -350,11 +350,11 @@ describe('MessageBus failures', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxMessagesPerDrain: 3 } }),
         observer: captured.observer,
       });
-      const unsubLoop = bus.subscribe('PRICE', async (message) => {
-        await bus.publish(price(message.seq + 1)); // каждое сообщение порождает следующее
+      const unsubLoop = bus.subscribe('HEARTBEAT', async (message) => {
+        await bus.publish(heartbeat(message.seq + 1)); // каждое сообщение порождает следующее
       });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -370,34 +370,34 @@ describe('MessageBus failures', () => {
       // Убираем петлю — bus снова работает
       unsubLoop();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', (message) => { delivered.push(message.seq); });
-      const next = await bus.publish(price(100));
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      const next = await bus.publish(heartbeat(100));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([100]);
     });
 
-    it('взаимная петля A↔B (PRICE↔TRADE) детектируется и bus остаётся usable', async () => {
+    it('взаимная петля A↔B (HEARTBEAT↔ITEM_ADDED) детектируется и bus остаётся usable', async () => {
       const bus = new MessageBus<TestMessage>({
         policy: createMessageBusPolicy({ queuePolicy: { maxMessagesPerDrain: 4 } }),
       });
-      const unsubPrice = bus.subscribe('PRICE', async () => {
-        await bus.publish({ type: 'TRADE', tradeId: 'loop' });
+      const unsubHeartbeat = bus.subscribe('HEARTBEAT', async () => {
+        await bus.publish({ type: 'ITEM_ADDED', itemId: 'loop' });
       });
-      const unsubTrade = bus.subscribe('TRADE', async () => {
-        await bus.publish(price(0));
+      const unsubItemAdded = bus.subscribe('ITEM_ADDED', async () => {
+        await bus.publish(heartbeat(0));
       });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBeInstanceOf(MessageBusDrainLimitError);
       expect(bus.getStats().queueSize).toBe(0);
 
-      unsubPrice();
-      unsubTrade();
+      unsubHeartbeat();
+      unsubItemAdded();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', (message) => { delivered.push(message.seq); });
-      const next = await bus.publish(price(5));
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      const next = await bus.publish(heartbeat(5));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([5]);
     });
@@ -411,18 +411,18 @@ describe('MessageBus failures', () => {
         },
       });
       let siblingCalled = false;
-      bus.subscribe('PRICE', () => { throw new Error('handler boom'); });
-      bus.subscribe('PRICE', () => { siblingCalled = true; });
+      bus.subscribe('HEARTBEAT', () => { throw new Error('handler boom'); });
+      bus.subscribe('HEARTBEAT', () => { siblingCalled = true; });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
 
       expect(result.ok).toBe(true);
       expect(siblingCalled).toBe(true);
 
       // Следующее сообщение обрабатывается как обычно
       const delivered: number[] = [];
-      bus.subscribe('TRADE', () => { delivered.push(0); });
-      const next = await bus.publish({ type: 'TRADE', tradeId: 't' });
+      bus.subscribe('ITEM_ADDED', () => { delivered.push(0); });
+      const next = await bus.publish({ type: 'ITEM_ADDED', itemId: 't' });
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([0]);
     });
@@ -435,11 +435,11 @@ describe('MessageBus failures', () => {
         },
       });
       const gate = makeGate();
-      bus.subscribe('PRICE', async () => { await gate.promise; });
+      bus.subscribe('HEARTBEAT', async () => { await gate.promise; });
 
-      const first = bus.publish(price(1));
-      await bus.publish(price(2)); // очередь [2]
-      const overflow = await bus.publish(price(3));
+      const first = bus.publish(heartbeat(1));
+      await bus.publish(heartbeat(2)); // очередь [2]
+      const overflow = await bus.publish(heartbeat(3));
 
       expect(overflow.ok).toBe(false);
       if (!overflow.ok) expect(overflow.error).toBeInstanceOf(MessageBusOverflowError);
@@ -456,16 +456,16 @@ describe('MessageBus failures', () => {
           onDrainLimitExceeded: () => { throw new Error('observer boom'); },
         },
       });
-      const unsubLoop = bus.subscribe('PRICE', async (message) => {
-        await bus.publish(price(message.seq + 1));
+      const unsubLoop = bus.subscribe('HEARTBEAT', async (message) => {
+        await bus.publish(heartbeat(message.seq + 1));
       });
 
-      const result = await bus.publish(price(1));
+      const result = await bus.publish(heartbeat(1));
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBeInstanceOf(MessageBusDrainLimitError);
 
       unsubLoop();
-      const next = await bus.publish(price(10));
+      const next = await bus.publish(heartbeat(10));
       expect(next.ok).toBe(true);
     });
   });

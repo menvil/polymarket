@@ -8,18 +8,18 @@
  * интерпретирует.
  *
  * Ограничение сознательно минимально: благодаря этому bus одинаково работает и с
- * flat-сообщениями (`{ type: 'PRICE', price }`), и со стандартизированным конвертом
- * {@link MessageEnvelope} (`{ type, payload, metadata? }`). Требовать `payload` на
- * уровне generic-границы нельзя — это заблокировало бы использование bus с
- * существующими flat discriminated unions.
+ * flat-сообщениями (`{ type: 'ITEM_ADDED', itemId }`), и со стандартизированным
+ * конвертом {@link MessageEnvelope} (`{ type, payload, metadata? }`). Требовать
+ * `payload` на уровне generic-границы нельзя — это заблокировало бы использование
+ * bus с существующими flat discriminated unions.
  *
  * @example
  * ```typescript
  * // Flat-сообщение — валидный TypedMessage:
- * type PriceMessage = { readonly type: 'PRICE'; readonly price: number };
+ * type ItemAddedMessage = { readonly type: 'ITEM_ADDED'; readonly itemId: string };
  *
  * // Envelope-сообщение — тоже валидный TypedMessage:
- * type TradeMessage = MessageEnvelope<'TRADE', { tradeId: string }>;
+ * type HeartbeatMessage = MessageEnvelope<'HEARTBEAT', { sequence: number }>;
  * ```
  */
 export interface TypedMessage {

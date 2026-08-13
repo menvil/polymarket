@@ -17,15 +17,15 @@
  * import { MessageBus, createMessageBusPolicy } from '@polymarket/message-bus';
  *
  * type Message =
- *   | { readonly type: 'PRICE'; readonly price: number }
- *   | { readonly type: 'TRADE'; readonly tradeId: string };
+ *   | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
+ *   | { readonly type: 'HEARTBEAT'; readonly sequence: number };
  *
  * const bus = new MessageBus<Message>({
  *   policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 10_000 } }),
  * });
  *
- * bus.subscribe('PRICE', (message) => { process(message.price); });
- * const result = await bus.publish({ type: 'PRICE', price: 0.42 });
+ * bus.subscribe('HEARTBEAT', (message) => { monitor.beat(message.sequence); });
+ * const result = await bus.publish({ type: 'HEARTBEAT', sequence: 42 });
  * ```
  */
 /** Минимальный routing-контракт сообщения (см. TypedMessage.ts). */

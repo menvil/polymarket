@@ -79,17 +79,17 @@ export interface MessageBusOptions {
  * @example
  * ```typescript
  * type Message =
- *   | { readonly type: 'PRICE'; readonly price: number }
- *   | { readonly type: 'TRADE'; readonly tradeId: string };
+ *   | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
+ *   | { readonly type: 'HEARTBEAT'; readonly sequence: number };
  *
  * const bus = new MessageBus<Message>();
  *
- * const unsubscribe = bus.subscribe('PRICE', (message) => {
- *   // message сужен до { type: 'PRICE'; price: number }
- *   process(message.price);
+ * const unsubscribe = bus.subscribe('HEARTBEAT', (message) => {
+ *   // message сужен до { type: 'HEARTBEAT'; sequence: number }
+ *   monitor.beat(message.sequence);
  * });
  *
- * const result = await bus.publish({ type: 'PRICE', price: 0.42 });
+ * const result = await bus.publish({ type: 'HEARTBEAT', sequence: 42 });
  * if (!result.ok) {
  *   report(result.error);
  * }

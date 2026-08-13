@@ -10,10 +10,10 @@ import {
 import type { MessageBusDrainError } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
 
-type TestMessage = { readonly type: 'PRICE'; readonly seq: number };
+type TestMessage = { readonly type: 'HEARTBEAT'; readonly seq: number };
 
-function price(seq: number): TestMessage {
-  return { type: 'PRICE', seq };
+function heartbeat(seq: number): TestMessage {
+  return { type: 'HEARTBEAT', seq };
 }
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
@@ -39,13 +39,13 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       const gate = makeGate();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', async (message) => {
+      bus.subscribe('HEARTBEAT', async (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) await gate.promise;
       });
 
-      const ownerPublish = bus.publish(price(1));
-      await bus.publish(price(2)); // очередь [2]
+      const ownerPublish = bus.publish(heartbeat(1));
+      await bus.publish(heartbeat(2)); // очередь [2]
 
       const drainPromise = bus.drain();
       let drainSettled = false;
@@ -72,7 +72,7 @@ describe('MessageBus lifecycle', () => {
       } = {};
       // Sync-обработчик: вызов drain() происходит в самом раннем синхронном
       // участке fan-out первого сообщения — до первого await движка.
-      bus.subscribe('PRICE', (message) => {
+      bus.subscribe('HEARTBEAT', (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) {
           // НЕ await: await drain() из обработчика — документированный self-deadlock
@@ -81,7 +81,7 @@ describe('MessageBus lifecycle', () => {
         }
       });
 
-      const owner = await bus.publishAll([price(1), price(2)]);
+      const owner = await bus.publishAll([heartbeat(1), heartbeat(2)]);
 
       expect(owner.ok).toBe(true);
       // Regression: nested drain доставил бы сообщение 2 синхронно ВНУТРИ
@@ -98,13 +98,13 @@ describe('MessageBus lifecycle', () => {
     it('после critical-сбоя: возвращает critical-Result при retry и завершается Ok после устранения причины', async () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
-      const unsubFailing = bus.subscribe('PRICE', (message) => {
+      const unsubFailing = bus.subscribe('HEARTBEAT', (message) => {
         if (message.seq < 3) throw new Error(`critical on ${message.seq}`);
         delivered.push(message.seq);
       }, { critical: true });
 
       // Сбой на 1 — очередь [2,3] сохранена
-      const batch = await bus.publishAll([price(1), price(2), price(3)]);
+      const batch = await bus.publishAll([heartbeat(1), heartbeat(2), heartbeat(3)]);
       expect(batch.ok).toBe(false);
       expect(bus.getStats().queueSize).toBe(2);
 
@@ -120,7 +120,7 @@ describe('MessageBus lifecycle', () => {
 
       // Устраняем причину — повторный drain() дообрабатывает очередь
       unsubFailing();
-      bus.subscribe('PRICE', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
       const final = await bus.drain();
       expect(final.ok).toBe(true);
       expect(delivered).toEqual([3]);
@@ -136,7 +136,7 @@ describe('MessageBus lifecycle', () => {
         closePromise?: Promise<Result<void, MessageBusDrainError>>;
         deliveredAtCall?: number[];
       } = {};
-      bus.subscribe('PRICE', (message) => {
+      bus.subscribe('HEARTBEAT', (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) {
           // НЕ await: await close() из обработчика — документированный self-deadlock
@@ -145,7 +145,7 @@ describe('MessageBus lifecycle', () => {
         }
       });
 
-      const owner = await bus.publishAll([price(1), price(2)]);
+      const owner = await bus.publishAll([heartbeat(1), heartbeat(2)]);
 
       expect(owner.ok).toBe(true);
       // Regression: nested drain доставил бы сообщение 2 внутри обработчика сообщения 1
@@ -169,11 +169,11 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       await bus.close();
 
-      const single = await bus.publish(price(1));
+      const single = await bus.publish(heartbeat(1));
       expect(single.ok).toBe(false);
       if (!single.ok) expect(single.error).toBeInstanceOf(MessageBusClosedError);
 
-      const batch = await bus.publishAll([price(2), price(3)]);
+      const batch = await bus.publishAll([heartbeat(2), heartbeat(3)]);
       expect(batch.ok).toBe(false);
       if (!batch.ok) expect(batch.error).toBeInstanceOf(MessageBusClosedError);
 
@@ -185,17 +185,17 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       const gate = makeGate();
       const delivered: number[] = [];
-      bus.subscribe('PRICE', async (message) => {
+      bus.subscribe('HEARTBEAT', async (message) => {
         delivered.push(message.seq);
         if (message.seq === 1) await gate.promise;
       });
 
-      const ownerPublish = bus.publish(price(1));
-      await bus.publish(price(2)); // очередь [2]
+      const ownerPublish = bus.publish(heartbeat(1));
+      await bus.publish(heartbeat(2)); // очередь [2]
 
       const closePromise = bus.close();
       // Bus уже закрыт для новых публикаций, но очередь будет дообработана
-      const rejected = await bus.publish(price(3));
+      const rejected = await bus.publish(heartbeat(3));
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) expect(rejected.error).toBeInstanceOf(MessageBusClosedError);
 
@@ -220,18 +220,18 @@ describe('MessageBus lifecycle', () => {
     it('critical-сбой во время close-drain: bus остаётся closed, очередь сохраняется, drain() доступен для recovery', async () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
-      const unsubFailing = bus.subscribe('PRICE', (message) => {
+      const unsubFailing = bus.subscribe('HEARTBEAT', (message) => {
         if (message.seq === 1) throw new Error('critical during close');
         delivered.push(message.seq);
       }, { critical: true });
 
       // Заполняем очередь ДО close: сбой на 1, очередь [2] сохранится
       const gate = makeGate();
-      const unsubBlocker = bus.subscribe('PRICE', async (message) => {
+      const unsubBlocker = bus.subscribe('HEARTBEAT', async (message) => {
         if (message.seq === 1) await gate.promise;
       });
-      const ownerPublish = bus.publish(price(1));
-      await bus.publish(price(2));
+      const ownerPublish = bus.publish(heartbeat(1));
+      await bus.publish(heartbeat(2));
 
       const closePromise = bus.close();
       gate.release();
@@ -248,13 +248,13 @@ describe('MessageBus lifecycle', () => {
       // Подписки можно менять после close — устраняем failing handler и повторяем drain
       unsubFailing();
       unsubBlocker();
-      bus.subscribe('PRICE', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
       const recovery = await bus.drain();
       expect(recovery.ok).toBe(true);
       expect(delivered).toEqual([2]);
       expect(bus.getStats().queueSize).toBe(0);
       // Bus по-прежнему закрыт для новых публикаций
-      const rejected = await bus.publish(price(9));
+      const rejected = await bus.publish(heartbeat(9));
       expect(rejected.ok).toBe(false);
     });
   });

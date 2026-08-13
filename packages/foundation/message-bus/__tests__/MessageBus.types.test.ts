@@ -10,7 +10,7 @@
  * relative-пути): это одновременно фиксирует публичный API пакета.
  *
  * Ключевое доказательство: MessageBus работает и с flat union
- * (`{ type, price }`), и с envelope union (`{ type, payload, metadata? }`) —
+ * (`{ type, itemId }`), и с envelope union (`{ type, payload, metadata? }`) —
  * generic граница требует только `{ readonly type: string }` и не зависит от
  * структуры payload.
  */
@@ -30,93 +30,93 @@ import type {
 
 // ─── Flat union: сообщения без payload-структуры ────────────────────────────────
 type FlatMessage =
-  | { readonly type: 'PRICE'; readonly price: number }
-  | { readonly type: 'TRADE'; readonly tradeId: string };
+  | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
+  | { readonly type: 'HEARTBEAT'; readonly sequence: number };
 
 // ─── Envelope union: сообщения в стандартизированном конверте ──────────────────
-type PriceEnvelope = MessageEnvelope<'PRICE', { price: number }, { source: string }>;
-type TradeEnvelope = MessageEnvelope<'TRADE', { tradeId: string }>;
-type EnvelopeMessage = PriceEnvelope | TradeEnvelope;
+type HeartbeatEnvelope = MessageEnvelope<'HEARTBEAT', { sequence: number }, { source: string }>;
+type ItemAddedEnvelope = MessageEnvelope<'ITEM_ADDED', { itemId: string }>;
+type EnvelopeMessage = HeartbeatEnvelope | ItemAddedEnvelope;
 
 describe('MessageBus type-level contract', () => {
   it('flat union: subscribe сужает сообщение до конкретного члена union', async () => {
     const bus = new MessageBus<FlatMessage>();
 
-    const unsubPrice = bus.subscribe('PRICE', (message) => {
+    const unsubHeartbeat = bus.subscribe('HEARTBEAT', (message) => {
       // Если бы message был общим FlatMessage — присваивание не скомпилировалось бы
-      const narrowed: { readonly type: 'PRICE'; readonly price: number } = message;
-      const value: number = message.price;
+      const narrowed: { readonly type: 'HEARTBEAT'; readonly sequence: number } = message;
+      const value: number = message.sequence;
       void narrowed; void value;
-      // @ts-expect-error — у PRICE-сообщения нет поля tradeId
-      void message.tradeId;
+      // @ts-expect-error — у HEARTBEAT-сообщения нет поля itemId
+      void message.itemId;
     });
 
-    const unsubTrade = bus.subscribe('TRADE', (message) => {
-      const id: string = message.tradeId;
+    const unsubItemAdded = bus.subscribe('ITEM_ADDED', (message) => {
+      const id: string = message.itemId;
       void id;
-      // @ts-expect-error — у TRADE-сообщения нет поля price
-      void message.price;
+      // @ts-expect-error — у ITEM_ADDED-сообщения нет поля sequence
+      void message.sequence;
     });
 
-    const result = await bus.publish({ type: 'PRICE', price: 0.42 });
+    const result = await bus.publish({ type: 'HEARTBEAT', sequence: 42 });
     expect(result.ok).toBe(true);
 
     // @ts-expect-error — сообщение с неизвестным type не входит в union
-    await bus.publish({ type: 'UNKNOWN', price: 1 });
+    await bus.publish({ type: 'UNKNOWN', sequence: 1 });
 
-    unsubPrice();
-    unsubTrade();
+    unsubHeartbeat();
+    unsubItemAdded();
   });
 
   it('envelope union: payload и metadata типизированы, bus их не интерпретирует', async () => {
     const bus = new MessageBus<EnvelopeMessage>();
     const seen: number[] = [];
 
-    bus.subscribe('PRICE', (message) => {
-      // payload сужен до { price: number }
-      const value: number = message.payload.price;
+    bus.subscribe('HEARTBEAT', (message) => {
+      // payload сужен до { sequence: number }
+      const value: number = message.payload.sequence;
       seen.push(value);
       // metadata сужена до { source: string } | undefined
       const source: string | undefined = message.metadata?.source;
       void source;
-      // @ts-expect-error — в payload PRICE-конверта нет поля tradeId
-      void message.payload.tradeId;
+      // @ts-expect-error — в payload HEARTBEAT-конверта нет поля itemId
+      void message.payload.itemId;
     });
 
-    bus.subscribe('TRADE', (message) => {
-      const id: string = message.payload.tradeId;
+    bus.subscribe('ITEM_ADDED', (message) => {
+      const id: string = message.payload.itemId;
       void id;
-      // @ts-expect-error — в payload TRADE-конверта нет поля price
-      void message.payload.price;
+      // @ts-expect-error — в payload ITEM_ADDED-конверта нет поля sequence
+      void message.payload.sequence;
     });
 
     const result = await bus.publish({
-      type: 'PRICE',
-      payload: { price: 0.42 },
+      type: 'HEARTBEAT',
+      payload: { sequence: 42 },
       metadata: { source: 'test' },
     });
     expect(result.ok).toBe(true);
-    expect(seen).toEqual([0.42]);
+    expect(seen).toEqual([42]);
 
     // @ts-expect-error — payload неверной структуры не компилируется
-    await bus.publish({ type: 'PRICE', payload: { price: 'not-a-number' } });
+    await bus.publish({ type: 'HEARTBEAT', payload: { sequence: 'not-a-number' } });
 
     // @ts-expect-error — metadata неверной структуры не компилируется
-    await bus.publish({ type: 'PRICE', payload: { price: 1 }, metadata: { source: 42 } });
+    await bus.publish({ type: 'HEARTBEAT', payload: { sequence: 1 }, metadata: { source: 42 } });
   });
 
   it('generic граница — только TypedMessage: flat и envelope формы ей соответствуют', () => {
     // Обе формы assignable к TypedMessage — компилируется без cast
-    const flat: TypedMessage = { type: 'PRICE', price: 1 } as FlatMessage;
+    const flat: TypedMessage = { type: 'HEARTBEAT', sequence: 1 } as FlatMessage;
     const envelope: TypedMessage = {
-      type: 'TRADE',
-      payload: { tradeId: 't' },
-    } as TradeEnvelope;
+      type: 'ITEM_ADDED',
+      payload: { itemId: 'item-1' },
+    } as ItemAddedEnvelope;
     void flat; void envelope;
 
     // Сообщение без type не является TypedMessage
     // @ts-expect-error — поле type обязательно
-    const invalid: TypedMessage = { price: 1 };
+    const invalid: TypedMessage = { sequence: 1 };
     void invalid;
 
     expect(true).toBe(true);
@@ -125,9 +125,9 @@ describe('MessageBus type-level contract', () => {
   it('handler чужого типа не подписывается на другой тип (compile-time)', () => {
     const bus = new MessageBus<FlatMessage>();
 
-    const tradeHandler: MessageHandler<Extract<FlatMessage, { type: 'TRADE' }>> = () => {};
-    // @ts-expect-error — TRADE-handler нельзя подписать на PRICE
-    const unsub = bus.subscribe('PRICE', tradeHandler);
+    const itemAddedHandler: MessageHandler<Extract<FlatMessage, { type: 'ITEM_ADDED' }>> = () => {};
+    // @ts-expect-error — ITEM_ADDED-handler нельзя подписать на HEARTBEAT
+    const unsub = bus.subscribe('HEARTBEAT', itemAddedHandler);
     unsub();
 
     expect(true).toBe(true);
@@ -136,10 +136,10 @@ describe('MessageBus type-level contract', () => {
   it('MessageHandler допускает и sync-, и async-обработчики (compile-time)', () => {
     const bus = new MessageBus<FlatMessage>();
 
-    const syncHandler: MessageHandler<Extract<FlatMessage, { type: 'PRICE' }>> = () => {};
-    const asyncHandler: MessageHandler<Extract<FlatMessage, { type: 'PRICE' }>> = async () => {};
-    const unsubSync = bus.subscribe('PRICE', syncHandler);
-    const unsubAsync = bus.subscribe('PRICE', asyncHandler);
+    const syncHandler: MessageHandler<Extract<FlatMessage, { type: 'HEARTBEAT' }>> = () => {};
+    const asyncHandler: MessageHandler<Extract<FlatMessage, { type: 'HEARTBEAT' }>> = async () => {};
+    const unsubSync = bus.subscribe('HEARTBEAT', syncHandler);
+    const unsubAsync = bus.subscribe('HEARTBEAT', asyncHandler);
     unsubSync();
     unsubAsync();
 
@@ -149,7 +149,7 @@ describe('MessageBus type-level contract', () => {
   it('MessageBus присваивается порту IMessageBus, Result типизирован union ошибок', async () => {
     const bus: IMessageBus<FlatMessage> = new MessageBus<FlatMessage>();
 
-    const result = await bus.publish({ type: 'PRICE', price: 1 });
+    const result = await bus.publish({ type: 'HEARTBEAT', sequence: 1 });
     if (result.ok) {
       const value: void = result.value;
       void value;

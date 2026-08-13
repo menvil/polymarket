@@ -18,11 +18,11 @@
  *
  * @example
  * ```typescript
- * type PriceMessage = MessageEnvelope<'PRICE', { price: number }, { source: string }>;
+ * type HeartbeatMessage = MessageEnvelope<'HEARTBEAT', { sequence: number }, { source: string }>;
  *
- * const message: PriceMessage = {
- *   type: 'PRICE',
- *   payload: { price: 0.42 },
+ * const message: HeartbeatMessage = {
+ *   type: 'HEARTBEAT',
+ *   payload: { sequence: 42 },
  *   metadata: { source: 'ws-feed' },
  * };
  * ```

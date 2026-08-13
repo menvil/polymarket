@@ -45,11 +45,11 @@ Bus не читает, не модифицирует, не клонирует и
 ```typescript
 // Flat discriminated union:
 type FlatMessage =
-  | { readonly type: 'PRICE'; readonly price: number }
-  | { readonly type: 'TRADE'; readonly tradeId: string };
+  | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
+  | { readonly type: 'HEARTBEAT'; readonly sequence: number };
 
 // Стандартизированный конверт (опциональный, для будущих контуров):
-type PriceMessage = MessageEnvelope<'PRICE', { price: number }, { source: string }>;
+type HeartbeatMessage = MessageEnvelope<'HEARTBEAT', { sequence: number }, { source: string }>;
 ```
 
 `MessageEnvelope<TType, TPayload, TMetadata = unknown>` (`{ type, payload, metadata? }`)
@@ -74,8 +74,8 @@ interface IMessageBus<TMessage extends TypedMessage> {
 }
 ```
 
-Подписка сохраняет compile-time narrowing: handler `'PRICE'` получает именно
-PRICE-член union, а не общий `TMessage` (покрыто `MessageBus.types.test.ts`).
+Подписка сохраняет compile-time narrowing: handler `'HEARTBEAT'` получает именно
+HEARTBEAT-член union, а не общий `TMessage` (покрыто `MessageBus.types.test.ts`).
 `MessageHandler` допускает sync- и async-обработчики; синхронный throw
 нормализуется в rejection и обрабатывается идентично async-ошибке.
 

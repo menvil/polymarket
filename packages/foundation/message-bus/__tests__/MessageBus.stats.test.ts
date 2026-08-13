@@ -8,11 +8,11 @@ import { describe, it, expect } from '@jest/globals';
 import { MessageBus, createMessageBusPolicy } from '@polymarket/message-bus';
 
 type TestMessage =
-  | { readonly type: 'PRICE'; readonly seq: number }
-  | { readonly type: 'TRADE'; readonly tradeId: string };
+  | { readonly type: 'HEARTBEAT'; readonly seq: number }
+  | { readonly type: 'ITEM_ADDED'; readonly itemId: string };
 
-function price(seq: number): TestMessage {
-  return { type: 'PRICE', seq };
+function heartbeat(seq: number): TestMessage {
+  return { type: 'HEARTBEAT', seq };
 }
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
@@ -39,13 +39,13 @@ describe('MessageBus stats', () => {
   it('во время активного drain: dispatching=true, queueSize считает только ожидающие', async () => {
     const bus = new MessageBus<TestMessage>();
     const gate = makeGate();
-    bus.subscribe('PRICE', async (message) => {
+    bus.subscribe('HEARTBEAT', async (message) => {
       if (message.seq === 1) await gate.promise;
     });
 
-    const owner = bus.publish(price(1)); // in-flight — в queueSize не входит
-    await bus.publish(price(2));
-    await bus.publish(price(3));
+    const owner = bus.publish(heartbeat(1)); // in-flight — в queueSize не входит
+    await bus.publish(heartbeat(2));
+    await bus.publish(heartbeat(3));
 
     const stats = bus.getStats();
     expect(stats.dispatching).toBe(true);
@@ -61,24 +61,24 @@ describe('MessageBus stats', () => {
     const bus = new MessageBus<TestMessage>();
     expect(bus.getStats().subscribedTypes).toBe(0);
 
-    const unsubPriceA = bus.subscribe('PRICE', () => {});
+    const unsubHeartbeatA = bus.subscribe('HEARTBEAT', () => {});
     expect(bus.getStats().subscribedTypes).toBe(1);
 
     // Второй обработчик того же типа не увеличивает количество типов
-    const unsubPriceB = bus.subscribe('PRICE', () => {});
+    const unsubHeartbeatB = bus.subscribe('HEARTBEAT', () => {});
     expect(bus.getStats().subscribedTypes).toBe(1);
 
-    const unsubTrade = bus.subscribe('TRADE', () => {});
+    const unsubItemAdded = bus.subscribe('ITEM_ADDED', () => {});
     expect(bus.getStats().subscribedTypes).toBe(2);
 
     // Отписка НЕ последнего обработчика типа — тип остаётся
-    unsubPriceA();
+    unsubHeartbeatA();
     expect(bus.getStats().subscribedTypes).toBe(2);
 
     // Отписка последнего обработчика типа — тип исчезает
-    unsubPriceB();
+    unsubHeartbeatB();
     expect(bus.getStats().subscribedTypes).toBe(1);
-    unsubTrade();
+    unsubItemAdded();
     expect(bus.getStats().subscribedTypes).toBe(0);
   });
 
@@ -87,18 +87,18 @@ describe('MessageBus stats', () => {
       policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 5 } }),
     });
 
-    await bus.publish(price(1));
+    await bus.publish(heartbeat(1));
     expect(bus.getStats().publishedTotal).toBe(1);
 
-    await bus.publishAll([price(2), price(3), price(4)]);
+    await bus.publishAll([heartbeat(2), heartbeat(3), heartbeat(4)]);
     expect(bus.getStats().publishedTotal).toBe(4);
 
     // Batch, не влезающий в лимит, отклоняется целиком и не увеличивает счётчик
     const gate = makeGate();
-    bus.subscribe('PRICE', async () => { await gate.promise; });
-    const owner = bus.publish(price(5)); // publishedTotal 5, in-flight
+    bus.subscribe('HEARTBEAT', async () => { await gate.promise; });
+    const owner = bus.publish(heartbeat(5)); // publishedTotal 5, in-flight
     expect(bus.getStats().publishedTotal).toBe(5);
-    const rejected = await bus.publishAll([price(6), price(7), price(8), price(9), price(10), price(11)]);
+    const rejected = await bus.publishAll([heartbeat(6), heartbeat(7), heartbeat(8), heartbeat(9), heartbeat(10), heartbeat(11)]);
     expect(rejected.ok).toBe(false);
     expect(bus.getStats().publishedTotal).toBe(5);
 
@@ -110,22 +110,22 @@ describe('MessageBus stats', () => {
     const bus = new MessageBus<TestMessage>();
 
     // Без подписчиков — всё равно dispatched после прохождения drain
-    await bus.publish(price(1));
+    await bus.publish(heartbeat(1));
     expect(bus.getStats().dispatchedTotal).toBe(1);
 
     // Critical-сбой: fan-out завершён → сообщение считается dispatched
-    bus.subscribe('PRICE', () => { throw new Error('critical'); }, { critical: true });
-    const failed = await bus.publish(price(2));
+    bus.subscribe('HEARTBEAT', () => { throw new Error('critical'); }, { critical: true });
+    const failed = await bus.publish(heartbeat(2));
     expect(failed.ok).toBe(false);
     expect(bus.getStats().dispatchedTotal).toBe(2);
   });
 
   it('handlerErrorsTotal: считает и critical, и non-critical падения', async () => {
     const bus = new MessageBus<TestMessage>();
-    bus.subscribe('PRICE', () => { throw new Error('non-critical'); });
-    bus.subscribe('PRICE', async () => { throw new Error('critical'); }, { critical: true });
+    bus.subscribe('HEARTBEAT', () => { throw new Error('non-critical'); });
+    bus.subscribe('HEARTBEAT', async () => { throw new Error('critical'); }, { critical: true });
 
-    const result = await bus.publish(price(1));
+    const result = await bus.publish(heartbeat(1));
 
     expect(result.ok).toBe(false);
     expect(bus.getStats().handlerErrorsTotal).toBe(2);
@@ -136,17 +136,17 @@ describe('MessageBus stats', () => {
       policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 1 } }),
     });
     const gate = makeGate();
-    bus.subscribe('PRICE', async () => { await gate.promise; });
+    bus.subscribe('HEARTBEAT', async () => { await gate.promise; });
 
-    const owner = bus.publish(price(1)); // in-flight
-    await bus.publish(price(2)); // очередь [2] — лимит исчерпан
+    const owner = bus.publish(heartbeat(1)); // in-flight
+    await bus.publish(heartbeat(2)); // очередь [2] — лимит исчерпан
 
-    const single = await bus.publish(price(3));
+    const single = await bus.publish(heartbeat(3));
     expect(single.ok).toBe(false);
     expect(bus.getStats().rejectedPublicationsTotal).toBe(1);
 
     // Отклонённый batch из 100 сообщений — по-прежнему одна операция
-    const bigBatch = Array.from({ length: 100 }, (_, i) => price(10 + i));
+    const bigBatch = Array.from({ length: 100 }, (_, i) => heartbeat(10 + i));
     const batchResult = await bus.publishAll(bigBatch);
     expect(batchResult.ok).toBe(false);
     expect(bus.getStats().rejectedPublicationsTotal).toBe(2);
@@ -162,7 +162,7 @@ describe('MessageBus stats', () => {
     await bus.close();
     expect(bus.getStats().closed).toBe(true);
 
-    await bus.publish(price(1));
+    await bus.publish(heartbeat(1));
     expect(bus.getStats().rejectedPublicationsTotal).toBe(1);
   });
 });
