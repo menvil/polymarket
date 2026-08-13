@@ -19,6 +19,8 @@ import {
   MessageBusDrainLimitError,
 } from '@polymarket/message-bus';
 import { EventBus } from '../src/EventBus.js';
+// MessageBusStats — из корня пакета: фиксирует публичный type re-export
+import type { MessageBusStats } from '../src/index.js';
 import type { BookUpdatedEvent } from '../src/events/market-events.js';
 
 function makeLogger(): ILogger {
@@ -309,18 +311,43 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
     });
   });
 
-  describe('getStats projection', () => {
-    it('отдаёт ровно legacy-shape без generic-счётчиков движка', async () => {
+  describe('getStats — canonical MessageBusStats passthrough', () => {
+    it('возвращает полный canonical-снимок движка, счётчики отражают активность', async () => {
       const bus = new EventBus(logger);
+
+      // Начальный снимок — полная canonical-форма MessageBusStats
+      const initial: MessageBusStats = bus.getStats();
+      expect(initial).toEqual({
+        queueSize: 0,
+        subscribedTypes: 0,
+        dispatching: false,
+        closed: false,
+        publishedTotal: 0,
+        dispatchedTotal: 0,
+        handlerErrorsTotal: 0,
+        rejectedPublicationsTotal: 0,
+      });
+
+      // Успешная публикация двигает счётчики движка (фасад их не пересчитывает)
       bus.subscribe('BOOK_UPDATED', () => {});
-
       await bus.publish(makeBookEvent());
-      const stats = bus.getStats();
+      expect(bus.getStats()).toMatchObject({
+        subscribedTypes: 1,
+        publishedTotal: 1,
+        dispatchedTotal: 1,
+        handlerErrorsTotal: 0,
+      });
 
-      // Ровно три исторических поля — publishedTotal/dispatchedTotal/closed и
-      // прочие generic-счётчики наружу не проецируются
-      expect(Object.keys(stats).sort()).toEqual(['dispatching', 'queueSize', 'subscribedTypes']);
-      expect(stats).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: false });
+      // Падение обработчика отражается в handlerErrorsTotal
+      bus.subscribe('BOOK_UPDATED', () => { throw new Error('boom'); });
+      await bus.publish(makeBookEvent());
+      expect(bus.getStats()).toMatchObject({
+        publishedTotal: 2,
+        dispatchedTotal: 2,
+        handlerErrorsTotal: 1,
+      });
+      // closed — состояние underlying-движка; фасад close() не предоставляет
+      expect(bus.getStats().closed).toBe(false);
     });
   });
 });

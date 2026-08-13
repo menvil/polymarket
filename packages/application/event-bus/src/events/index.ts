@@ -1,12 +1,15 @@
 /**
- * Единственный источник всех типов событий в системе.
+ * Канонический источник application-level событий — union ApplicationEvent.
  *
  * @remarks
- * ApplicationEvent — полный union всех событий.
+ * ApplicationEvent — полный union application-level событий. Это ровно один из
+ * message/event-контуров системы: Domain-события живут в domain-пакетах
+ * (реэкспортируются сюда лишь те, что участвуют в application-контуре),
+ * внешние (infrastructure) сообщения — отдельный будущий контур.
  * EventHandlerMap используется EventBus для per-event-type типизации handlers.
  *
  * ### Принципы:
- * - Все типы событий определены здесь (или re-export из domain)
+ * - Все application-level события определены здесь (или re-export из domain)
  * - Handlers зависят от @polymarket/event-bus для получения типов событий
  * - Никакой другой пакет не определяет application-level события
  */

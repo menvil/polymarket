@@ -9,7 +9,7 @@
  * ├── Application-specific публичный контракт (IEventBus)
  * ├── трансляция ошибок: MessageBus*Error → QueueOverflowError/CriticalHandlerError
  * ├── logger-адаптер через MessageBusObserver
- * └── legacy-проекция диагностики (getStats)
+ * └── общая operational-диагностика (canonical MessageBusStats)
  *       │
  *       ▼
  * MessageBus<ApplicationEvent>   ← вся механика доставки
@@ -53,7 +53,7 @@ import {
   MessageBusDrainLimitError,
   MessageBusClosedError,
 } from '@polymarket/message-bus';
-import type { MessageBusObserver, MessageBusPublishError } from '@polymarket/message-bus';
+import type { MessageBusObserver, MessageBusPublishError, MessageBusStats } from '@polymarket/message-bus';
 import type { ApplicationEvent } from './events/index.js';
 import type { IEventBus, EventHandler } from './IEventBus.js';
 
@@ -114,14 +114,21 @@ export class EventBus implements IEventBus {
   }
 
   /**
-   * Возвращает диагностические метрики bus'а (legacy-проекция).
+   * Возвращает canonical operational-диагностику движка доставки.
    *
-   * @returns Снимок текущего состояния: размер очереди, количество типов событий с подписчиками, флаг активного drain.
+   * @returns Полный снимок {@link MessageBusStats}: queueSize, subscribedTypes,
+   *   dispatching, closed, publishedTotal, dispatchedTotal, handlerErrorsTotal,
+   *   rejectedPublicationsTotal
    *
    * @remarks
-   * Проекция generic-статистики движка на исторический Application-shape M-000.
-   * Расширенные счётчики движка (publishedTotal, dispatchedTotal, closed, ...)
-   * наружу сознательно НЕ отдаются — это отдельное решение вне M-002.
+   * Прямой passthrough: operational delivery-metrics принадлежат generic-движку
+   * и используются напрямую — фасад не пересчитывает, не переопределяет и не
+   * проецирует их. `MessageBusStats` — общий diagnostics-контракт всех
+   * semantic-фасадов над `MessageBus<T>`; семантика каждого поля документирована
+   * в `@polymarket/message-bus`.
+   *
+   * `closed` для Application EventBus практически всегда `false`: фасад не
+   * предоставляет `close()` — поле отражает состояние underlying-движка.
    *
    * @example
    * ```typescript
@@ -131,13 +138,8 @@ export class EventBus implements IEventBus {
    * }, 5000);
    * ```
    */
-  public getStats(): { queueSize: number; subscribedTypes: number; dispatching: boolean } {
-    const stats = this._bus.getStats();
-    return {
-      queueSize: stats.queueSize,
-      subscribedTypes: stats.subscribedTypes,
-      dispatching: stats.dispatching,
-    };
+  public getStats(): MessageBusStats {
+    return this._bus.getStats();
   }
 
   /**

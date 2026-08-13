@@ -51,7 +51,7 @@ EventBus (фасад, composition — не наследование)
 ├── Application-specific публичный контракт (IEventBus)
 ├── трансляция ошибок движка → Application-ошибки
 ├── logger-адаптер через MessageBusObserver
-└── legacy-проекция диагностики (getStats)
+└── общая operational-диагностика (getStats → canonical MessageBusStats)
       │
       ▼
 MessageBus<ApplicationEvent>   ← вся механика доставки
@@ -60,9 +60,10 @@ MessageBus<ApplicationEvent>   ← вся механика доставки
 `ApplicationEvent` подключается к движку как есть: flat union структурно
 удовлетворяет `TypedMessage` (есть поле `type`), `MessageEnvelope` в M-002 не
 используется (это M-003). Событие передаётся движку по ссылке — без
-клонирования/сериализации. Generic lifecycle движка (`drain()`/`close()`) и его
-расширенные stats публичным API `EventBus` сознательно не становятся; фасад
-никогда не вызывает `_bus.close()`.
+клонирования/сериализации. Generic lifecycle движка (`drain()`/`close()`)
+публичным API `EventBus` сознательно не становится; фасад никогда не вызывает
+`_bus.close()`. Operational-диагностика, напротив, общая: `getStats()` — прямой
+passthrough canonical `MessageBusStats`.
 
 ### Конструктор → policy движка
 
@@ -157,9 +158,13 @@ throw-based по архитектурному замыслу (декаплинг
 
 ## Диагностика
 
-`EventBus.getStats(): { queueSize, subscribedTypes, dispatching }` — снимок текущего
-состояния для мониторинга/debugging (например, периодический `setInterval`, алерт при
-растущем `queueSize`).
+`EventBus.getStats(): MessageBusStats` — прямой passthrough canonical-снимка
+generic-движка (queueSize, subscribedTypes, dispatching, closed, publishedTotal,
+dispatchedTotal, handlerErrorsTotal, rejectedPublicationsTotal) для
+мониторинга/debugging (например, периодический `setInterval`, алерт при растущем
+`queueSize`). Семантика полей — ответственность `@polymarket/message-bus`;
+тип реэкспортируется из корня пакета. Отдельный `EventBusStats` сознательно не
+вводится: это общий diagnostics-контракт semantic-фасадов над `MessageBus<T>`.
 
 ## Ссылки
 

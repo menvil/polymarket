@@ -254,7 +254,7 @@ describe('EventBus', () => {
   });
 
   it('getStats возвращает корректное состояние', async () => {
-    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 0, dispatching: false });
+    expect(bus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 0, dispatching: false });
 
     let resolveBlock!: () => void;
     const block = new Promise<void>((resolve) => { resolveBlock = resolve; });
@@ -262,11 +262,11 @@ describe('EventBus', () => {
 
     const inflight = bus.publish(makeBookEvent());
     // drain запущен: dispatching=true, queue пуста (событие уже dequeued в dispatch)
-    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: true });
+    expect(bus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 1, dispatching: true });
 
     resolveBlock();
     await inflight;
-    expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: false });
+    expect(bus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 1, dispatching: false });
   });
 
   it('двойной unsubscribe не падает (idempotent)', async () => {

@@ -111,7 +111,7 @@ describe('EventBus contract', () => {
     it('publish без подписчиков → Ok, bus остаётся idle', async () => {
       const result = await bus.publish(makeBookEvent());
       expect(result).toEqual({ ok: true, value: undefined });
-      expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 0, dispatching: false });
+      expect(bus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 0, dispatching: false });
     });
   });
 
@@ -412,7 +412,7 @@ describe('EventBus contract', () => {
       const next = await limitedBus.publish(makeBookEvent(100));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([100]);
-      expect(limitedBus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: false });
+      expect(limitedBus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 1, dispatching: false });
     });
   });
 
@@ -460,12 +460,12 @@ describe('EventBus contract', () => {
       await bus.publish(makeBookEvent(2));
       await bus.publish(makeBookEvent(3));
 
-      expect(bus.getStats()).toEqual({ queueSize: 2, subscribedTypes: 1, dispatching: true });
+      expect(bus.getStats()).toMatchObject({ queueSize: 2, subscribedTypes: 1, dispatching: true });
 
       gate.release();
       const result = await first;
       expect(result.ok).toBe(true);
-      expect(bus.getStats()).toEqual({ queueSize: 0, subscribedTypes: 1, dispatching: false });
+      expect(bus.getStats()).toMatchObject({ queueSize: 0, subscribedTypes: 1, dispatching: false });
     });
   });
 });

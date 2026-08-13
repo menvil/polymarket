@@ -23,12 +23,13 @@ EventBus  =  Application-specific facade  +  MessageBus<ApplicationEvent> engine
   critical-семантика, drain-guards;
 - `@polymarket/event-bus` — типизация `ApplicationEvent`, Application
   error-контракт (`QueueOverflowError`/`CriticalHandlerError`), интеграция
-  logger, legacy diagnostics API (`getStats()`).
+  logger, общая operational-диагностика (`getStats(): MessageBusStats`).
 
-Смена движка не меняет контракт этого README: M-000 contract-suite остаётся
-compatibility gate и проходит без изменений. Ошибки движка (`MessageBus*Error`)
-наружу не протекают и из пакета не экспортируются; generic lifecycle
-(`drain()`/`close()`) и расширенные stats движка публичным API не являются.
+Смена движка не меняет delivery-контракт этого README: M-000 contract-suite
+остаётся compatibility gate. Ошибки движка (`MessageBus*Error`) наружу не
+протекают и из пакета не экспортируются; generic lifecycle (`drain()`/`close()`)
+публичным API не является. Operational-диагностика, напротив, общая:
+`getStats()` возвращает canonical `MessageBusStats` движка (см. Diagnostics).
 Детали трансляции — `docs/event-bus.md`.
 
 ## Purpose
@@ -173,16 +174,24 @@ Terminal-ошибки drain (critical failure, drain-limit) получает **�
 
 ## Diagnostics
 
-`EventBus.getStats(): { queueSize, subscribedTypes, dispatching }` — снимок состояния:
+`EventBus.getStats(): MessageBusStats` — canonical operational-диагностика,
+прямой passthrough снимка generic-движка (тип реэкспортируется из корня пакета):
 
 - `queueSize` — количество **ожидающих** событий; текущее in-flight событие не входит;
 - `subscribedTypes` — количество типов событий, имеющих ≥1 активного подписчика;
   уменьшается при отписке последнего handler-а типа;
-- `dispatching` — идёт ли drain прямо сейчас.
+- `dispatching` — идёт ли drain прямо сейчас;
+- `closed` — состояние underlying-движка; для Application EventBus практически
+  всегда `false` (фасад не предоставляет `close()`);
+- `publishedTotal`, `dispatchedTotal`, `handlerErrorsTotal`,
+  `rejectedPublicationsTotal` — счётчики движка; точная семантика каждого поля —
+  ответственность `@polymarket/message-bus` (фасад их не пересчитывает).
 
 Idle-состояние: `{ queueSize: 0, dispatching: false }`.
 `getStats()` — метод класса `EventBus` (диагностика), не часть порта `IEventBus`:
 добавление его в порт сломало бы существующие моки без диагностической надобности.
+`MessageBusStats` — общий diagnostics-контракт semantic-фасадов над
+`MessageBus<T>`; отдельный `EventBusStats` сознательно не вводится.
 
 ## Explicit non-guarantees
 
