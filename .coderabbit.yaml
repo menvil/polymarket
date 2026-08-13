@@ -6,7 +6,10 @@
 # фаз (phase-3, ...), в которые открываются PR отдельных задач (например, M-000),
 # поэтому включаем auto-review и для них. Паттерны — регулярные выражения.
 #
-# path_filters: ревьюим только перечисленные пакеты, исключая dist/node_modules.
+# path_filters: ревьюим весь репозиторий, исключая только build-артефакты.
+# Ранее здесь был allowlist отдельных пакетов — он молча скрывал от ревью новые
+# пакеты (например, packages/foundation/message-bus в PR #55) и содержал
+# опечатанные пути (legder, maket-discovery), не матчившие ничего.
 reviews:
   auto_review:
     base_branches:
@@ -14,12 +17,4 @@ reviews:
   path_filters:
     - "!dist/**"
     - "!node_modules/**"
-    - "packages/domain/entities/portfolio/**"
-    - "packages/domain/accounting/legder/**"
-    - "packages/domain/market-data/**"
-#    - "packages/application/**"
-    - "packages/application/balance-allocator/**"
-    - "packages/application/event-bus/**"
-    - "packages/application/handlers/**"
-    - "packages/application/market-state/**"
-    - "packages/application/maket-discovery/**"
+    - "!coverage/**"
