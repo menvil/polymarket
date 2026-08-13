@@ -1,67 +1,64 @@
 /**
- * EventBus — реализация IEventBus с queue-based dispatch.
+ * EventBus — Application-фасад над generic `MessageBus<ApplicationEvent>`.
  *
  * @remarks
- * ### Архитектурные свойства:
+ * ### Архитектура после M-002
  *
- * #### 1. Queue-based dispatch (reentrancy-safe)
- * publish() и publishAll() помещают события в очередь (_queue).
- * Если drain уже запущен (_dispatching=true) — просто enqueue и возврат.
- * _drainQueue обрабатывает события в FIFO-порядке до опустошения очереди.
- * Гарантия: publishAll([A,B]) → handler(A) вызывает publish(C) → порядок A→B→C.
+ * ```text
+ * EventBus (этот класс)
+ * ├── Application-specific публичный контракт (IEventBus)
+ * ├── трансляция ошибок: MessageBus*Error → QueueOverflowError/CriticalHandlerError
+ * ├── logger-адаптер через MessageBusObserver
+ * └── legacy-проекция диагностики (getStats)
+ *       │
+ *       ▼
+ * MessageBus<ApplicationEvent>   ← вся механика доставки
+ * ```
  *
- * #### 2. Critical handlers
- * subscribe(type, handler, { critical: true }) — ошибки возвращаются как
- * Err(CriticalHandlerError) из publish()/publishAll().
- * Non-critical (по умолчанию) — ошибки логируются, не останавливают других.
- * Critical ошибка: drain прерывается, ошибка возвращается caller'у как Err.
- * Очередь НЕ очищается — события легитимны, следующий publish() возобновит drain.
- * Bus остаётся работоспособным. Caller решает: перезапустить, остановить систему, alerting.
+ * Собственного механизма доставки у EventBus больше НЕТ: очередь, FIFO,
+ * параллельный fan-out, reentrancy, critical/non-critical семантика, overflow и
+ * drain-limit защиты — целиком ответственность `@polymarket/message-bus`
+ * (композиция, не наследование: generic lifecycle `drain()`/`close()` и
+ * расширенные stats движка сознательно НЕ становятся публичным API Application
+ * EventBus).
  *
- * #### 3. Map-based type safety
- * _handlers: Map<ApplicationEvent['type'], Set<HandlerEntry>>
- * Нет cast через Record<string, unknown> — типобезопасная инициализация.
+ * ### Публичный контракт не изменён
+ * Поведенческий контракт зафиксирован M-000 (см. README пакета) и покрыт
+ * contract-suite — он остаётся единственным источником истины. Наружу уходят
+ * только Application-ошибки:
  *
- * #### 4. Infinite loop guard
- * maxEventsPerDrain ограничивает количество событий за один drain цикл.
- * Защищает от handler(A)→publish(B)→handler(B)→publish(A) петель.
- * При превышении: Err(QueueOverflowError) + очистка очереди (события — артефакт бага,
- * не легитимные данные).
+ * | Ошибка движка                    | Публичный Result                         |
+ * |----------------------------------|------------------------------------------|
+ * | `MessageBusOverflowError`        | `Err(QueueOverflowError)`                |
+ * | `MessageBusDrainLimitError`      | `Err(QueueOverflowError)` — M-000: один  |
+ * |                                  | публичный класс для обеих причин         |
+ * | `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c eventType  |
+ * |                                  | и originalError в context                |
+ * | `MessageBusClosedError`          | invariant violation (недостижимо: у      |
+ * |                                  | IEventBus нет close(), фасад не          |
+ * |                                  | закрывает внутренний bus)                |
  *
- * #### 5. Queue overflow guard
- * maxQueueSize ограничивает размер очереди.
- * publish()/publishAll() возвращают Err(QueueOverflowError) если лимит превышен.
- * Защищает от OOM при медленном drain и высокочастотных событиях.
- *
- * #### Осознанные trade-offs:
- * - Параллельный fanout (Promise.allSettled): handlers одного события выполняются
- *   одновременно. Нет гарантий порядка если два handlers публикуют дочерние события.
- *   Handlers ОДНОГО события не должны зависеть от side-effects друг друга.
- * - Timeout handlers: не ответственность EventBus. Каждый handler обязан сам
- *   завершаться или обрабатывать собственный timeout.
+ * Тексты сообщений и context-поля публичных ошибок воспроизводят формат M-000
+ * дословно — Foundation-терминология наружу не протекает.
  */
 import type { ILogger } from '@polymarket/logger';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
+import {
+  MessageBus,
+  createMessageBusPolicy,
+  MessageBusOverflowError,
+  MessageBusCriticalHandlerError,
+  MessageBusDrainLimitError,
+  MessageBusClosedError,
+} from '@polymarket/message-bus';
+import type { MessageBusObserver, MessageBusPublishError } from '@polymarket/message-bus';
 import type { ApplicationEvent } from './events/index.js';
 import type { IEventBus, EventHandler } from './IEventBus.js';
 
 /**
- * Запись о подписчике: handler + флаг критичности.
- *
- * @remarks
- * critical=true — ошибки handler возвращаются как Err(CriticalHandlerError) из
- * publish()/publishAll(), drain прерывается.
- * critical=false (по умолчанию) — ошибки логируются, не останавливают других handlers.
- */
-type HandlerEntry = {
-  readonly handler: EventHandler<ApplicationEvent>;
-  readonly critical: boolean;
-};
-
-/**
- * Реализация IEventBus с queue-based dispatch, critical handlers и Map-based storage.
+ * Application event bus — тонкий фасад над `MessageBus<ApplicationEvent>`.
  *
  * @example
  * ```typescript
@@ -80,37 +77,51 @@ type HandlerEntry = {
  * ```
  */
 export class EventBus implements IEventBus {
-  private readonly _handlers = new Map<ApplicationEvent['type'], Set<HandlerEntry>>();
-  private readonly _queue: ApplicationEvent[] = [];
-  private _dispatching = false;
-  private readonly _maxEventsPerDrain: number;
-  private readonly _maxQueueSize: number;
   private readonly _logger: ILogger;
+  private readonly _bus: MessageBus<ApplicationEvent>;
 
   /**
    * Создаёт EventBus.
    *
-   * @param logger - Logger для диагностики
+   * @param logger - Logger для диагностики (child с component: 'EventBus')
    * @param maxEventsPerDrain - Лимит событий за один drain цикл (защита от infinite loops).
    *   По умолчанию 10 000. При превышении: Err(QueueOverflowError) + очистка очереди.
-   * @param maxQueueSize - Максимальный размер очереди (защита от OOM).
+   * @param maxQueueSize - Максимальный размер очереди ожидающих событий (защита от OOM).
    *   По умолчанию 100 000. publish()/publishAll() возвращают Err(QueueOverflowError)
    *   если лимит превышен.
+   * @throws {RangeError} Если лимиты не являются положительными safe integers —
+   *   configuration error (валидацию выполняет конструктор MessageBus)
+   *
+   * @remarks
+   * Legacy-параметры адаптируются в policy движка:
+   * `maxEventsPerDrain → queuePolicy.maxMessagesPerDrain`,
+   * `maxQueueSize → queuePolicy.maxQueueSize`. Остальные группы policy —
+   * default-значения M-001, в точности воспроизводящие семантику M-000
+   * (reject-new overflow, parallel fan-out,
+   * continue/stop-drain-preserve-queue/clear-queue).
    */
   constructor(logger: ILogger, maxEventsPerDrain = 10_000, maxQueueSize = 100_000) {
     this._logger = logger.child({ component: 'EventBus' });
-    this._maxEventsPerDrain = maxEventsPerDrain;
-    this._maxQueueSize = maxQueueSize;
+    this._bus = new MessageBus<ApplicationEvent>({
+      policy: createMessageBusPolicy({
+        queuePolicy: {
+          maxQueueSize,
+          maxMessagesPerDrain: maxEventsPerDrain,
+        },
+      }),
+      observer: this._createLoggerObserver(),
+    });
   }
 
   /**
-   * Возвращает диагностические метрики bus'а.
+   * Возвращает диагностические метрики bus'а (legacy-проекция).
    *
    * @returns Снимок текущего состояния: размер очереди, количество типов событий с подписчиками, флаг активного drain.
    *
    * @remarks
-   * Используется для мониторинга и debugging в production.
-   * Вызывать периодически или при подозрении на зависание drain.
+   * Проекция generic-статистики движка на исторический Application-shape M-000.
+   * Расширенные счётчики движка (publishedTotal, dispatchedTotal, closed, ...)
+   * наружу сознательно НЕ отдаются — это отдельное решение вне M-002.
    *
    * @example
    * ```typescript
@@ -121,10 +132,11 @@ export class EventBus implements IEventBus {
    * ```
    */
   public getStats(): { queueSize: number; subscribedTypes: number; dispatching: boolean } {
+    const stats = this._bus.getStats();
     return {
-      queueSize: this._queue.length,
-      subscribedTypes: this._handlers.size,
-      dispatching: this._dispatching,
+      queueSize: stats.queueSize,
+      subscribedTypes: stats.subscribedTypes,
+      dispatching: stats.dispatching,
     };
   }
 
@@ -132,12 +144,16 @@ export class EventBus implements IEventBus {
    * Подписывается на события конкретного типа.
    *
    * @param type - Тип события
-   * @param handler - Async handler. Должен завершаться самостоятельно — EventBus не
+   * @param handler - Sync/async handler. Должен завершаться самостоятельно — EventBus не
    *   управляет timeout. Зависший handler заблокирует весь drain цикл.
    * @param options - Опции подписки: { critical?: boolean }
-   * @returns Функция отписки. При отписке последнего handler'а — удаляет entry из Map.
+   * @returns Функция отписки (идемпотентна)
    *
    * @remarks
+   * Прямой passthrough в generic subscription mechanism движка: compile-time
+   * narrowing, snapshot-семантика мутаций во время dispatch и идемпотентность
+   * отписки — его гарантии. Второго subscription-хранилища в фасаде нет.
+   *
    * critical=true: ошибка handler возвращается как Err(CriticalHandlerError), drain
    * прерывается. Используется для RISK-событий, нарушение которых требует немедленной
    * реакции caller'а.
@@ -147,216 +163,154 @@ export class EventBus implements IEventBus {
     handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
     options?: { critical?: boolean },
   ): () => void {
-    if (!this._handlers.has(type)) {
-      this._handlers.set(type, new Set());
-    }
-    const entry: HandlerEntry = {
-      handler: handler as EventHandler<ApplicationEvent>,
-      critical: options?.critical ?? false,
-    };
-    this._handlers.get(type)!.add(entry);
-    return () => {
-      const set = this._handlers.get(type);
-      if (!set) return;
-      set.delete(entry);
-      if (set.size === 0) {
-        this._handlers.delete(type);
-      }
-    };
+    return this._bus.subscribe(type, handler, options);
   }
 
   /**
-   * Публикует событие: помещает в очередь и запускает drain если не запущен.
+   * Публикует событие всем подписчикам его типа.
    *
    * @param event - ApplicationEvent для публикации
    * @returns `Ok(void)`, либо `Err(QueueOverflowError)` при переполнении очереди/лимита
    *   drain-цикла, либо `Err(CriticalHandlerError)` если critical-подписчик бросил
    *
    * @remarks
-   * Reentrant-safe: если вызывается изнутри handler — событие ставится в очередь,
-   * обрабатывается после текущего события, до следующего в publishAll.
-   *
-   * `_drainQueue()`/`_dispatch()` остаются throw-based внутри (private, не пересекают
-   * публичную границу) — `try/catch` здесь конвертирует в `Result`: обе typed-ошибки
-   * (`QueueOverflowError` из `_drainQueue()` для drain-limit, `CriticalHandlerError`
-   * из `_dispatch()` для critical-подписчика) пропускаются как есть, любое другое
-   * брошенное значение защитно оборачивается в `CriticalHandlerError`.
+   * Reentrant-safe (гарантия движка): вызов изнутри handler ставит событие в
+   * очередь и подтверждает enqueue, обработка — текущим drain позже.
    */
   public async publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
-    if (this._queue.length + 1 > this._maxQueueSize) {
-      return Err(new QueueOverflowError(
-        `EventBus queue overflow (${this._maxQueueSize}): cannot enqueue ${event.type}`,
-        { context: { maxQueueSize: this._maxQueueSize, eventType: event.type } },
-      ));
-    }
-    this._queue.push(event);
-    if (this._dispatching) return Ok(undefined);
-    return this._drainAndConvert();
+    return this._translateResult(await this._bus.publish(event));
   }
 
   /**
-   * Публикует список событий: помещает все в очередь синхронно, запускает drain.
+   * Публикует список событий с сохранением порядка.
    *
    * @param events - Список событий для последовательной публикации
    * @returns См. {@link EventBus.publish}
    *
    * @remarks
-   * Гарантирует порядок: publishAll([A,B]) → handler(A) публикует C → порядок A→B→C.
-   * Все события проверяются на overflow и добавляются в очередь в одном синхронном цикле
-   * до запуска drain — interleave с другими событиями невозможен.
+   * Атомарность batch enqueue (all or nothing при overflow) и порядок
+   * `A → B → C` с reentrant-поведением — гарантии движка.
    */
   public async publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
-    if (this._queue.length + events.length > this._maxQueueSize) {
+    return this._translateResult(await this._bus.publishAll(events));
+  }
+
+  /**
+   * Транслирует Result движка в публичный Application-Result.
+   *
+   * @param result - Result generic-движка
+   * @returns `Ok`, либо Application-ошибка в формате M-000
+   * @throws {Error} При `MessageBusClosedError` или неизвестной ошибке движка —
+   *   нарушение внутреннего инварианта (см. remarks)
+   *
+   * @remarks
+   * Единственная точка error translation boundary — exhaustive по union
+   * `MessageBusPublishError` (замыкается `never`-веткой: новая ошибка движка
+   * не пройдёт через typecheck незамеченной).
+   *
+   * Классификация — только по `instanceof` typed-классов движка, никакого
+   * string-matching. Движок сам гарантирует происхождение ошибок: ошибка,
+   * брошенная handler-ом (даже экземпляр Application `QueueOverflowError`),
+   * приходит сюда уже внутри `MessageBusCriticalHandlerError.originalError`
+   * и не может быть перепутана с операционным overflow.
+   *
+   * `MessageBusClosedError` недостижим публичным API: `IEventBus` не имеет
+   * `close()`, фасад никогда не вызывает `_bus.close()`. Его появление —
+   * programmer invariant violation → throw (rejected promise), а не маскировка
+   * под Application-ошибку с ложной семантикой.
+   */
+  private _translateResult(
+    result: Result<void, MessageBusPublishError>,
+  ): Result<void, QueueOverflowError | CriticalHandlerError> {
+    if (result.ok) return Ok(undefined);
+    const error = result.error;
+
+    if (error instanceof MessageBusOverflowError) {
+      // Одиночный publish несёт messageType; batch — только attemptedCount.
+      // Воспроизводим legacy-формат M-000 message/context дословно.
+      if (error.messageType !== undefined) {
+        return Err(new QueueOverflowError(
+          `EventBus queue overflow (${error.maxQueueSize}): cannot enqueue ${error.messageType}`,
+          { context: { maxQueueSize: error.maxQueueSize, eventType: error.messageType } },
+        ));
+      }
       return Err(new QueueOverflowError(
-        `EventBus queue overflow (${this._maxQueueSize}): cannot enqueue ${events.length} events`,
-        { context: { maxQueueSize: this._maxQueueSize, eventCount: events.length } },
+        `EventBus queue overflow (${error.maxQueueSize}): cannot enqueue ${error.attemptedCount} events`,
+        { context: { maxQueueSize: error.maxQueueSize, eventCount: error.attemptedCount } },
       ));
     }
-    for (const event of events) {
-      this._queue.push(event);
-    }
-    if (this._dispatching) return Ok(undefined);
-    return this._drainAndConvert();
-  }
 
-  /**
-   * Запускает `_drainQueue()` и конвертирует её throw-based исход в `Result`.
-   *
-   * @returns `Ok(void)` при успешном опустошении очереди; `Err(QueueOverflowError)` если
-   *   `_drainQueue()` бросила именно её (drain-limit); `Err(CriticalHandlerError)` если
-   *   её сконструировал `_dispatch()` (ошибка critical-подписчика, с `eventType` и
-   *   `originalError` в context); любое другое брошенное значение защитно оборачивается
-   *   в `CriticalHandlerError` (недостижимо при текущих `_drainQueue()`/`_dispatch()`,
-   *   страховка на случай замены внутреннего движка)
-   */
-  private async _drainAndConvert(): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
-    try {
-      await this._drainQueue();
-      return Ok(undefined);
-    } catch (err) {
-      if (err instanceof QueueOverflowError) return Err(err);
-      if (err instanceof CriticalHandlerError) return Err(err);
+    if (error instanceof MessageBusDrainLimitError) {
+      // M-000 сознательно использует один публичный класс для overflow и drain-guard
+      return Err(new QueueOverflowError(
+        `EventBus drain limit exceeded (${error.maxMessagesPerDrain}): possible infinite event loop. ` +
+          `Remaining events dropped.`,
+        { context: { maxEventsPerDrain: error.maxMessagesPerDrain } },
+      ));
+    }
+
+    if (error instanceof MessageBusCriticalHandlerError) {
       return Err(new CriticalHandlerError(
-        'EventBus critical handler threw during dispatch',
-        { context: { originalError: err } },
+        `EventBus critical handler threw during dispatch of ${error.messageType}`,
+        { context: { originalError: error.originalError, eventType: error.messageType } },
       ));
     }
-  }
 
-  /**
-   * Последовательно обрабатывает события из очереди до опустошения или лимита.
-   *
-   * @throws {QueueOverflowError} При превышении maxEventsPerDrain (перехватывается и
-   *   конвертируется в `Err` на границе `publish()`/`publishAll()` — см.
-   *   `_drainAndConvert()`, этот метод остаётся throw-based как внутренняя деталь).
-   * @throws {CriticalHandlerError} При critical ошибке handler'а — пробрасывается из
-   *   `_dispatch()` (тоже перехватывается и возвращается как `Err` на границе).
-   *
-   * @remarks
-   * ### Политика очистки очереди при ошибке:
-   * - Critical handler failure: очередь НЕ очищается. События легитимны,
-   *   следующий publish() возобновит drain. Bus остаётся работоспособным.
-   * - Drain limit exceeded: очередь ОЧИЩАЕТСЯ. События — артефакт infinite loop,
-   *   не легитимные данные. Повторная обработка только усугубит проблему.
-   *
-   * finally гарантирует сброс _dispatching даже при ошибке.
-   */
-  private async _drainQueue(): Promise<void> {
-    this._dispatching = true;
-    let processed = 0;
-    let drainError: unknown;
-    let drainLimitExceeded = false;
-    try {
-      while (true) {
-        const event = this._queue.shift();
-        if (!event) break;
-
-        if (processed >= this._maxEventsPerDrain) {
-          drainLimitExceeded = true;
-          drainError = new QueueOverflowError(
-            `EventBus drain limit exceeded (${this._maxEventsPerDrain}): possible infinite event loop. ` +
-              `Remaining events dropped.`,
-            { context: { maxEventsPerDrain: this._maxEventsPerDrain } },
-          );
-          break;
-        }
-
-        await this._dispatch(event);
-        processed++;
-      }
-    } catch (err) {
-      // Critical handler failure: сохраняем ошибку, очередь НЕ очищаем.
-      drainError = err;
-    } finally {
-      // Drain limit: очистить артефакты infinite loop.
-      // Critical failure: оставить очередь нетронутой.
-      if (drainLimitExceeded) this._queue.length = 0;
-      this._dispatching = false;
-    }
-    if (drainError !== undefined) throw drainError;
-  }
-
-  /**
-   * Вызывает всех подписчиков события параллельно (Promise.allSettled fanout).
-   *
-   * @param event - Событие для диспетчеризации
-   * @throws {CriticalHandlerError} Если хотя бы один critical handler выбросил исключение —
-   *   первая (в порядке подписки) critical-ошибка оборачивается с `eventType` и
-   *   `originalError` в context
-   *
-   * @remarks
-   * Все handlers запускаются параллельно — нет гарантий порядка если handlers
-   * публикуют дочерние события (они попадут в конец очереди в нондетерминированном порядке).
-   * Non-critical ошибки логируются. Critical ошибки: первая возвращается после
-   * завершения всех handlers (Promise.allSettled дожидается всех).
-   *
-   * Snapshot подписчиков (`[...handlers]`) берётся до запуска handlers: отписка во время
-   * fanout не исключает handler из текущего события, подписка — не добавляет.
-   */
-  private async _dispatch(event: ApplicationEvent): Promise<void> {
-    const handlers = this._handlers.get(event.type);
-    if (!handlers || handlers.size === 0) return;
-
-    const entries = [...handlers];
-    // async-обёртка: синхронный throw sync-handler'а становится rejection и попадает в
-    // allSettled наравне с async-ошибками — иначе он оборвал бы map() до запуска
-    // остальных handlers и обошёл non-critical семантику (EventHandler разрешает
-    // sync-handlers: `void | Promise<void>`).
-    const results = await Promise.allSettled(
-      entries.map(async (entry) => { await entry.handler(event); }),
-    );
-
-    // Boolean flag + separate storage: обходит ограничения TypeScript narrowing через ??=.
-    let hasCriticalError = false;
-    let criticalError: unknown = undefined;
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status !== 'rejected') continue;
-      const entry = entries[i];
-      if (entry.critical) {
-        if (!hasCriticalError) {
-          hasCriticalError = true;
-          criticalError = result.reason;
-        } else {
-          // Последующие critical ошибки: логируем, не теряем
-          this._logger.error('EventBus critical handler threw an additional error', {
-            err: result.reason,
-            eventType: event.type,
-          });
-        }
-      } else {
-        this._logger.error('EventBus handler threw an error', {
-          err: result.reason,
-          eventType: event.type,
-        });
-      }
-    }
-
-    if (hasCriticalError) {
-      throw new CriticalHandlerError(
-        `EventBus critical handler threw during dispatch of ${event.type}`,
-        { context: { originalError: criticalError, eventType: event.type } },
+    if (error instanceof MessageBusClosedError) {
+      // Недостижимо: у публичного контракта нет close(), фасад bus не закрывает
+      throw new Error(
+        'EventBus invariant violation: internal message bus reported closed state',
       );
     }
+
+    return EventBus._unreachableEngineError(error);
+  }
+
+  /**
+   * Exhaustiveness-guard трансляции: компиляция падает, если union ошибок движка
+   * расширится и новая ошибка не получит явной ветки перевода.
+   *
+   * @param error - Значение, которое обязано иметь тип `never`
+   * @throws {Error} Всегда — достижимо только при нарушении инварианта в runtime
+   */
+  private static _unreachableEngineError(error: never): never {
+    throw new Error(
+      `EventBus invariant violation: unknown message bus error: ${String(error)}`,
+    );
+  }
+
+  /**
+   * Создаёт observer, воспроизводящий legacy-логирование M-000 через ILogger.
+   *
+   * @returns Observer для конструктора движка
+   *
+   * @remarks
+   * Ровно исторические log-вызовы, ничего нового:
+   * - non-critical падение → `EventBus handler threw an error` (err, eventType);
+   * - дополнительные critical-ошибки после первой →
+   *   `EventBus critical handler threw an additional error` (err, eventType);
+   * - primary critical НЕ логируется — возвращается caller'у как
+   *   `Err(CriticalHandlerError)` (M-000: без duplicate-логов);
+   * - overflow/drain-limit старый EventBus сам не логировал — не логируем и
+   *   здесь (callbacks не реализованы).
+   */
+  private _createLoggerObserver(): MessageBusObserver {
+    return {
+      onHandlerError: (context) => {
+        if (!context.critical) {
+          this._logger.error('EventBus handler threw an error', {
+            err: context.originalError,
+            eventType: context.messageType,
+          });
+          return;
+        }
+        if (!context.primaryCritical) {
+          this._logger.error('EventBus critical handler threw an additional error', {
+            err: context.originalError,
+            eventType: context.messageType,
+          });
+        }
+      },
+    };
   }
 }

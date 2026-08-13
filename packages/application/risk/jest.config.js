@@ -16,6 +16,7 @@ export default {
     '^@polymarket/portfolio$':     '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/ports$':         '<rootDir>/../ports/src/index.ts',
     '^@polymarket/event-bus$':     '<rootDir>/../event-bus/src/index.ts',
+    '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

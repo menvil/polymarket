@@ -37,6 +37,9 @@
     },
     {
       "path": "../../domain/entities/fill/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/message-bus/tsconfig.build.json"
     }
   ]
 }

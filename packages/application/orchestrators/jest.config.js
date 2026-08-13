@@ -20,6 +20,7 @@ export default {
     '^@polymarket/ledger$':             '<rootDir>/../../domain/accounting/ledger/src/index.ts',
     '^@polymarket/ports$':              '<rootDir>/../ports/src/index.ts',
     '^@polymarket/event-bus$':          '<rootDir>/../event-bus/src/index.ts',
+    '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
     '^@polymarket/risk$':               '<rootDir>/../risk/src/index.ts',
     '^@polymarket/use-cases$':          '<rootDir>/../use-cases/src/index.ts',
   },

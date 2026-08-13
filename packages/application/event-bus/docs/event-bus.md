@@ -37,66 +37,82 @@ if (!result.ok) logger.error('Publish failed', { error: result.error.message });
 | `order-update-events.ts` | `OrderUpdateReceivedEvent` (+ `VenueOrderUpdate`) |
 | `@polymarket/order` (реэкспорт) | `OrderEvent` — Order FSM transitions |
 
-## `EventBus` — queue-based dispatch
+## `EventBus` — фасад над `MessageBus<ApplicationEvent>` (M-002)
 
-### Почему очередь, а не прямой вызов handlers
+С M-002 у `EventBus` НЕТ собственного механизма доставки: очередь, FIFO,
+параллельный fan-out (включая нормализацию sync-throw в rejection), reentrancy,
+critical/non-critical семантика, overflow- и drain-limit-защиты — целиком
+ответственность generic-движка `@polymarket/message-bus`. Вопрос «как устроены
+queue/fan-out/drain?» имеет один ответ во всём проекте — см.
+`packages/foundation/message-bus/README.md` и его `docs/message-bus.md`.
 
-`publish()`/`publishAll()` кладут событие(я) в приватную `_queue` и запускают
-`_drainQueue()`, если drain ещё не идёт (`_dispatching`). Если `publish()` вызван ИЗНУТРИ
-handler'а (handler публикует новое событие в ответ на текущее) — событие просто
-добавляется в очередь, а не обрабатывается рекурсивно. Это даёт детерминированный порядок:
-`publishAll([A, B])`, где handler(A) публикует C, гарантированно даёт порядок `A → B → C`,
-а не `A → C → B` или стек рекурсивных вызовов.
+```text
+EventBus (фасад, composition — не наследование)
+├── Application-specific публичный контракт (IEventBus)
+├── трансляция ошибок движка → Application-ошибки
+├── logger-адаптер через MessageBusObserver
+└── legacy-проекция диагностики (getStats)
+      │
+      ▼
+MessageBus<ApplicationEvent>   ← вся механика доставки
+```
 
-### Result-контракт
+`ApplicationEvent` подключается к движку как есть: flat union структурно
+удовлетворяет `TypedMessage` (есть поле `type`), `MessageEnvelope` в M-002 не
+используется (это M-003). Событие передаётся движку по ссылке — без
+клонирования/сериализации. Generic lifecycle движка (`drain()`/`close()`) и его
+расширенные stats публичным API `EventBus` сознательно не становятся; фасад
+никогда не вызывает `_bus.close()`.
 
-`publish()`/`publishAll()` возвращают `Promise<Result<void, QueueOverflowError |
-CriticalHandlerError>>`:
+### Конструктор → policy движка
 
-- **`QueueOverflowError`** — либо `_queue.length` превысил `maxQueueSize` (защита от OOM
-  при медленном drain и высокочастотных событиях), либо `_drainQueue()` обработал
-  `maxEventsPerDrain` событий за один drain-цикл без опустошения очереди (защита от
-  infinite event loop: `handler(A) → publish(B) → handler(B) → publish(A)`). В обоих
-  случаях сконструирован сразу как `QueueOverflowError` — единый класс для обеих причин
-  переполнения (см. `packages/foundation/errors/src/event-bus/QueueOverflowError.ts`).
-- **`CriticalHandlerError`** — подписчик, зарегистрированный с `{ critical: true }`,
-  выбросил исключение. Конструируется в `_dispatch()` (где известен тип события):
-  в `context` сохраняются `originalError` (raw `unknown` — handler может бросить что
-  угодно, не обязательно `Error`) и `eventType`. Даже если подписчик бросил
-  `QueueOverflowError`, наружу уходит `CriticalHandlerError` — ошибка чужого кода не
-  маскируется под операционное состояние bus-а.
+Публичный конструктор сохранён: `new EventBus(logger, maxEventsPerDrain?,
+maxQueueSize?)`. Legacy-параметры адаптируются в
+`createMessageBusPolicy({ queuePolicy: { maxQueueSize,
+maxMessagesPerDrain: maxEventsPerDrain } })`; остальные группы policy —
+default-значения M-001, в точности воспроизводящие семантику M-000
+(`reject-new`, `parallel`, `continue`/`stop-drain-preserve-queue`/`clear-queue`).
 
-Внутри (`_drainQueue()`/`_dispatch()`, оба `private`) реализация остаётся throw-based —
-`_drainQueue()`'s `while`/`break`/`finally`-цикл сложнее выразить через `Result`-threading
-без риска для поведения, а метод не пересекает публичную границу. Граница `Result`
-строится ровно в `publish()`/`publishAll()` (через `_drainAndConvert()`): `try/catch`
-вокруг `_drainQueue()`, обе typed-ошибки (`QueueOverflowError` из `_drainQueue()`,
-`CriticalHandlerError` из `_dispatch()`) пропускаются как есть, любое другое брошенное
-значение защитно оборачивается в `CriticalHandlerError` (при текущих внутренностях
-недостижимо — страховка на случай замены движка).
+### Error translation boundary
 
-### Critical vs non-critical handlers
+`publish()`/`publishAll()` возвращают прежний
+`Promise<Result<void, QueueOverflowError | CriticalHandlerError>>` — ошибки
+движка наружу не протекают. Единственная точка перевода —
+`EventBus._translateResult()`, exhaustive по union `MessageBusPublishError`
+(замыкается `never`-веткой; классификация только по `instanceof`, без
+string-matching):
 
-`subscribe(type, handler, { critical: true })`:
+| Ошибка движка | Публичный Result |
+|---|---|
+| `MessageBusOverflowError` | `Err(QueueOverflowError)` — legacy message/context: `eventType` для одиночного publish, `eventCount` для batch |
+| `MessageBusDrainLimitError` | `Err(QueueOverflowError)` — M-000 сознательно использует один публичный класс для обеих причин переполнения |
+| `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c `context.eventType` и `context.originalError` |
+| `MessageBusClosedError` | invariant violation → throw (недостижимо: у `IEventBus` нет `close()`) |
 
-- **non-critical** (по умолчанию) — ошибка handler'а логируется, drain продолжается для
-  остальных handlers этого же события и для остальных событий в очереди.
-- **critical** — ошибка останавливает `_drainQueue()`, возвращается как
-  `Err(CriticalHandlerError)`.
-  Очередь **не очищается** — оставшиеся события легитимны, следующий `publish()`
-  возобновит drain с того места, где он остановился. Bus остаётся работоспособным;
-  caller решает, перезапустить обработку, остановить систему или алертить.
+Тексты сообщений воспроизводят M-000 дословно (`EventBus queue overflow (N):
+cannot enqueue ...`, `EventBus drain limit exceeded (N): ...`, `EventBus
+critical handler threw during dispatch of ...`). Происхождение ошибок
+гарантирует движок: подписчик, бросивший Application `QueueOverflowError`,
+приходит в фасад уже внутри `MessageBusCriticalHandlerError.originalError` и
+не может быть перепутан с операционным overflow.
 
-  Переполнение drain-лимита (`QueueOverflowError`), в отличие от critical-ошибки, **очищает**
-  очередь — оставшиеся события считаются артефактом бага (infinite loop), а не легитимными
-  данными, и повторная обработка только усугубит проблему.
+### Logger-адаптер (MessageBusObserver)
 
-Все handlers одного события выполняются параллельно (`Promise.allSettled`) — нет гарантий
-порядка, если два handler'а одного события публикуют дочерние события. Handlers не должны
-зависеть от side-effects друг друга. Синхронный throw sync-handler-а нормализуется в
-rejection (async-обёртка в `_dispatch()`) — иначе он оборвал бы запуск остальных handlers
-и обошёл non-critical семантику. Таймауты — не ответственность `EventBus`: каждый
-handler обязан сам завершаться или обрабатывать собственный timeout.
+Движок не зависит от logger — фасад передаёт ему observer, воспроизводящий
+ровно исторические log-вызовы M-000:
+
+- non-critical падение → `logger.error('EventBus handler threw an error',
+  { err, eventType })`;
+- дополнительные critical-ошибки после первой →
+  `logger.error('EventBus critical handler threw an additional error',
+  { err, eventType })`;
+- primary critical НЕ логируется — возвращается caller'у как `Err`;
+- overflow/drain-limit фасад не логирует (старый EventBus тоже не логировал).
+
+Поведенческая семантика critical/non-critical (siblings завершаются, очередь
+после critical-сбоя сохраняется, drain-limit очищает очередь петли, bus
+остаётся работоспособным) — без изменений; теперь её обеспечивает движок, а
+фиксирует всё тот же M-000 contract-suite.
 
 ## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост, снят в Этапе 10d
 
