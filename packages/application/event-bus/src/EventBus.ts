@@ -14,7 +14,7 @@
  * subscribe(type, handler, { critical: true }) — ошибки возвращаются как
  * Err(CriticalHandlerError) из publish()/publishAll().
  * Non-critical (по умолчанию) — ошибки логируются, не останавливают других.
- * Critical ошибка: drain прерывается, ошибка возвращается/пробрасывается caller'у.
+ * Critical ошибка: drain прерывается, ошибка возвращается caller'у как Err.
  * Очередь НЕ очищается — события легитимны, следующий publish() возобновит drain.
  * Bus остаётся работоспособным. Caller решает: перезапустить, остановить систему, alerting.
  *
@@ -51,7 +51,8 @@ import type { IEventBus, EventHandler } from './IEventBus.js';
  * Запись о подписчике: handler + флаг критичности.
  *
  * @remarks
- * critical=true — ошибки handler пробрасываются из publish(), drain прерывается.
+ * critical=true — ошибки handler возвращаются как Err(CriticalHandlerError) из
+ * publish()/publishAll(), drain прерывается.
  * critical=false (по умолчанию) — ошибки логируются, не останавливают других handlers.
  */
 type HandlerEntry = {
@@ -176,10 +177,10 @@ export class EventBus implements IEventBus {
    * обрабатывается после текущего события, до следующего в publishAll.
    *
    * `_drainQueue()`/`_dispatch()` остаются throw-based внутри (private, не пересекают
-   * публичную границу) — `try/catch` здесь конвертирует в `Result`: `QueueOverflowError`
-   * пробрасывается как есть (её уже сконструировал `_drainQueue()` для drain-limit),
-   * что угодно ещё (raw throw из critical-подписчика через `_dispatch()`) оборачивается
-   * в `CriticalHandlerError`.
+   * публичную границу) — `try/catch` здесь конвертирует в `Result`: обе typed-ошибки
+   * (`QueueOverflowError` из `_drainQueue()` для drain-limit, `CriticalHandlerError`
+   * из `_dispatch()` для critical-подписчика) пропускаются как есть, любое другое
+   * брошенное значение защитно оборачивается в `CriticalHandlerError`.
    */
   public async publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     if (this._queue.length + 1 > this._maxQueueSize) {
@@ -222,8 +223,11 @@ export class EventBus implements IEventBus {
    * Запускает `_drainQueue()` и конвертирует её throw-based исход в `Result`.
    *
    * @returns `Ok(void)` при успешном опустошении очереди; `Err(QueueOverflowError)` если
-   *   `_drainQueue()` бросила именно её (drain-limit); `Err(CriticalHandlerError)` для
-   *   любого другого брошенного значения (raw throw critical-подписчика)
+   *   `_drainQueue()` бросила именно её (drain-limit); `Err(CriticalHandlerError)` если
+   *   её сконструировал `_dispatch()` (ошибка critical-подписчика, с `eventType` и
+   *   `originalError` в context); любое другое брошенное значение защитно оборачивается
+   *   в `CriticalHandlerError` (недостижимо при текущих `_drainQueue()`/`_dispatch()`,
+   *   страховка на случай замены внутреннего движка)
    */
   private async _drainAndConvert(): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     try {
@@ -231,6 +235,7 @@ export class EventBus implements IEventBus {
       return Ok(undefined);
     } catch (err) {
       if (err instanceof QueueOverflowError) return Err(err);
+      if (err instanceof CriticalHandlerError) return Err(err);
       return Err(new CriticalHandlerError(
         'EventBus critical handler threw during dispatch',
         { context: { originalError: err } },
@@ -244,8 +249,8 @@ export class EventBus implements IEventBus {
    * @throws {QueueOverflowError} При превышении maxEventsPerDrain (перехватывается и
    *   конвертируется в `Err` на границе `publish()`/`publishAll()` — см.
    *   `_drainAndConvert()`, этот метод остаётся throw-based как внутренняя деталь).
-   * @throws При critical ошибке handler'а — пробрасывается сырое значение из `_dispatch()`
-   *   (тоже перехватывается и конвертируется в `Err(CriticalHandlerError)` на границе).
+   * @throws {CriticalHandlerError} При critical ошибке handler'а — пробрасывается из
+   *   `_dispatch()` (тоже перехватывается и возвращается как `Err` на границе).
    *
    * @remarks
    * ### Политика очистки очереди при ошибке:
@@ -295,21 +300,30 @@ export class EventBus implements IEventBus {
    * Вызывает всех подписчиков события параллельно (Promise.allSettled fanout).
    *
    * @param event - Событие для диспетчеризации
-   * @throws - Если хотя бы один critical handler выбросил исключение
+   * @throws {CriticalHandlerError} Если хотя бы один critical handler выбросил исключение —
+   *   первая (в порядке подписки) critical-ошибка оборачивается с `eventType` и
+   *   `originalError` в context
    *
    * @remarks
    * Все handlers запускаются параллельно — нет гарантий порядка если handlers
    * публикуют дочерние события (они попадут в конец очереди в нондетерминированном порядке).
-   * Non-critical ошибки логируются. Critical ошибки: первая пробрасывается после
+   * Non-critical ошибки логируются. Critical ошибки: первая возвращается после
    * завершения всех handlers (Promise.allSettled дожидается всех).
+   *
+   * Snapshot подписчиков (`[...handlers]`) берётся до запуска handlers: отписка во время
+   * fanout не исключает handler из текущего события, подписка — не добавляет.
    */
   private async _dispatch(event: ApplicationEvent): Promise<void> {
     const handlers = this._handlers.get(event.type);
     if (!handlers || handlers.size === 0) return;
 
     const entries = [...handlers];
+    // async-обёртка: синхронный throw sync-handler'а становится rejection и попадает в
+    // allSettled наравне с async-ошибками — иначе он оборвал бы map() до запуска
+    // остальных handlers и обошёл non-critical семантику (EventHandler разрешает
+    // sync-handlers: `void | Promise<void>`).
     const results = await Promise.allSettled(
-      entries.map((entry) => entry.handler(event)),
+      entries.map(async (entry) => { await entry.handler(event); }),
     );
 
     // Boolean flag + separate storage: обходит ограничения TypeScript narrowing через ??=.
@@ -338,6 +352,11 @@ export class EventBus implements IEventBus {
       }
     }
 
-    if (hasCriticalError) throw criticalError;
+    if (hasCriticalError) {
+      throw new CriticalHandlerError(
+        `EventBus critical handler threw during dispatch of ${event.type}`,
+        { context: { originalError: criticalError, eventType: event.type } },
+      );
+    }
   }
 }
