@@ -66,6 +66,7 @@ interface MarketRotationDeps {
 ### 3. Unified functions
 
 #### openMarket(candidate, deps) → boolean
+
 - Comp token calculation (identical)
 - Capital check (identical)
 - EventStart check: 30s for both
@@ -78,6 +79,7 @@ interface MarketRotationDeps {
 - Live-only: orderReconciler.reconcile
 
 #### closeMarket(tokenId, reason, deps) → void
+
 - Unregister strategy (identical)
 - WS unsubscribe (identical)
 - Catalog remove (identical)
@@ -91,6 +93,7 @@ interface MarketRotationDeps {
 - MARKET_CLOSED event (identical)
 
 #### fillMarketSlots(deps) → void
+
 - Get candidates from discovery (identical)
 - Filter closed/active/tooSoon (identical)
 - Diagnostic logging (add to both)
@@ -98,6 +101,7 @@ interface MarketRotationDeps {
 - Deferred RTDS cleanup (identical)
 
 #### checkExpiredMarkets(deps) → void
+
 - Reentrancy guard (identical)
 - Find expired markets (identical)
 - Close expired (identical)
@@ -105,13 +109,16 @@ interface MarketRotationDeps {
 - Arb pairs: keep as optional extension in paper (if needed)
 
 #### initialSetup(candidate, deps) → void
+
 - Just call openMarket() instead of inline code
 - Strike price resolution (identical, different store → injected)
 
 ### 4. DNS — already unified
+
 Один блок в начале main.ts, до разветвления.
 
 ### 5. WS Adapter
+
 Paper и live используют одинаковый `PolymarketWsAdapter`. Разница — URL и credentials.
 В DI передаётся один `wsAdapter` объект.
 
@@ -127,21 +134,25 @@ Paper и live используют одинаковый `PolymarketWsAdapter`. �
 ## Порядок реализации
 
 ### Phase 1: Extract shared functions — DONE
+
 1. ✅ Создать `apps/bot/src/bot/MarketRotation.ts`
 2. ✅ Определить `MarketSlot` и `MarketRotationDeps`
 3. ✅ Перенести `openMarket`, `closeMarket`, `fillMarketSlots`, `checkExpiredMarkets`
 4. ✅ Обе mode вызывают shared functions с разными deps
 
 ### Phase 2: Unify initial setup — PARTIAL
+
 1. Initial setup: слоты создаются в `initialSlots` Map, затем копируются в `rotation.activeMarkets`
 2. Начальный inline discovery код оставлен (создаёт первый слот до engine) — future: refactor в `rotation.openMarket()`
 
 ### Phase 3: Cleanup — DONE
+
 1. ✅ Убраны дублированные типы (PaperMarketSlot, ActiveMarketSlot, PaperFillRecord, PaperPartialAccum)
 2. ✅ Убраны дублированные helpers (registerMarketAndStrategy, printMarketSummary)
 3. ✅ Удалён мёртвый код (~1550 строк)
 
 ### Phase 4: Test — TODO
+
 1. Paper: запуск, ротация 3+ рынков, BUY/settlement
 2. Live: запуск, ротация 3+ рынков, BUY/fill/settlement
 3. compare-paper-live: 100% decision match

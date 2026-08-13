@@ -72,6 +72,7 @@ MODE=live CONFIG=configs/sel-paper-5min.json npx tsx src/main.ts
 ```
 
 В логах:
+
 ```
 [INFO] Auto-redeemer initialized (gasless via Builder Relayer)
 [INFO] Background auto-redeemer started (checks every 5 min)

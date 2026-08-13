@@ -166,6 +166,7 @@ retry-ить).
 `portfolioService.getPortfolio(accountId)` вернул `undefined` →
 `markSubmissionFailed('PORTFOLIO_NOT_INITIALIZED')` + `Err('Portfolio not
 initialized')`. Проверка выполняется ДО submit — reserve/cancel не нужны.
+
 ```
 
 ---

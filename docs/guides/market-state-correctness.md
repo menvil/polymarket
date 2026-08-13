@@ -14,6 +14,7 @@
 ## #6 Look-ahead в `recentTradePressure`
 
 ### Проблема
+
 `_computeRecentTradePressure(asset, venue, nowMs)` шёл с конца массива трейдов
 и ломался по нижней границе (`exchangeTsMs < minTs`), **но не проверял верхнюю
 границу**. При out-of-order replay в бэктесте в массиве могут оказаться трейды
@@ -22,6 +23,7 @@
 решения ещё не было.
 
 ### Решение
+
 Добавлен пропуск будущих трейдов:
 
 ```typescript
@@ -38,6 +40,7 @@ for (let index = trades.length - 1; index >= 0; index--) {
 ## #8 Окна `getRecent` привязаны к `nowMs`
 
 ### Проблема
+
 `CryptoPriceHistoryView.getRecent(source, lookbackMs)` и
 `CryptoVenueHistoryView.getRecentBooks/getRecentTrades` считали окно от timestamp
 **последнего тика источника**, а не от текущего времени контекста. Если источник
@@ -45,6 +48,7 @@ for (let index = trades.length - 1; index >= 0; index--) {
 относительно старого тика — стратегия думала, что данные свежие.
 
 ### Решение
+
 Добавлен опциональный параметр `nowMs` (как уже сделано в `TradeTape.getRecent`
 и `OrderBookHistory.getRecent` в домен-слое):
 
@@ -64,6 +68,7 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 ## #14 Timestamp-guard на входе
 
 ### Проблема
+
 `updatePrice` / `updateCexBook` / `updateCexTrade` доверяли `exchangeTsMs`
 без проверки. Так как `pruneByTimestamp` отсекает историю относительно
 `latestTs - retention`, **один тик с битым «будущим» timestamp задирал `latestTs`
@@ -71,7 +76,9 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 миллисекунд тоже принимался и вставлялся как «очень старый» тик.
 
 ### Решение
+
 Метод `_acceptTimestamp` отбраковывает тик, если timestamp:
+
 1. не конечное число;
 2. меньше `MIN_PLAUSIBLE_EPOCH_MS` (1e12, 2001-09) — отсекает секунды/мусор;
 3. опережает `receivedTsMs` больше чем на `maxFutureSkewMs` (default 5000 мс).
@@ -84,12 +91,14 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 ## #5 Трейды не дедуплицируются по timestamp
 
 ### Проблема
+
 `insertSortedUniqueByTimestamp` **замещал** элемент с тем же `exchangeTsMs`.
 Для книг это допустимо (последний снапшот побеждает), но у трейдов несколько
 сделок часто имеют одинаковый ms-timestamp — старая сделка терялась, искажая
 объём и trade pressure.
 
 ### Решение
+
 Для trade-истории используется новый помощник `insertSortedAllowDuplicates`,
 который сохраняет порядок по timestamp, но **не замещает** элементы с равным ts.
 Книги и цены по-прежнему используют unique-replace.
@@ -99,6 +108,7 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 ## #1 Утечка по закрытым рынкам (cleanup при MARKET_CLOSED)
 
 ### Проблема
+
 В реальной сборке (`buildMarketData.ts`) запускается только `marketDataStore.start()`,
 а `bookCollector.start()` / `tapeCollector.start()` **не вызываются**. Коллекторы
 работают как пассивные буферы (запись через `recordDirect`). Но их обработчик
@@ -110,6 +120,7 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 копящаяся днями.
 
 ### Решение
+
 `MarketDataStore` стал **единственным владельцем** подписок EventBus и теперь
 слушает `MARKET_CLOSED`:
 
@@ -123,6 +134,7 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 через собственную подписку.
 
 ### Footgun
+
 **Не вызывайте `collector.start()`**, если коллектор передан в `MarketDataStore`:
 иначе каждое событие запишется дважды (подписка коллектора + `recordDirect` стора).
 Контракт владения задокументирован в TSDoc `MarketDataStore`.
@@ -130,9 +142,11 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 ## #9 + #10 Фильтрация бирж в `weightedVenuePrice`
 
 ### Проблема
+
 `weightedVenuePrice` (используется сигналами `cex_vs_chainlink_basis` и
 `cex_weighted_microprice_momentum`) усреднял microprice по биржам **без
 фильтрации**:
+
 - **#9**: устаревшие и широкие (большой спред) биржи попадали в среднюю цену.
   Одна свежая биржа маскировала две старые — `stale` считался уже постфактум
   по `max(lastTsMs)`.
@@ -144,7 +158,9 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 > в собственном цикле — проблема касалась только basis/momentum.
 
 ### Решение
+
 `weightedVenuePrice` принимает `WeightedVenuePriceFilter` и:
+
 1. **#9** — пропускает биржи с `ageMs ∉ [0, staleMs]` или `spreadBps > maxSpreadBps`;
    требует минимум `minVenueCount` прошедших фильтр бирж.
 2. **#10** — отклоняет агрегат, если `maxVenueTs − minVenueTs > maxCrossVenueSkewMs`
@@ -164,11 +180,14 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 ## #3 Единый API свежести данных
 
 ### Проблема
+
 `MarketDataStore` отдавал только `getTopOfBookTimestampMs`, и каждая стратегия
 изобретала собственные stale-правила — путь к рассогласованным проверкам.
 
 ### Решение
+
 Добавлены два метода:
+
 - `getTopOfBookState(instrumentId, nowMs, staleMs): TopOfBookState | undefined`
   — `{ topOfBook, eventTsMs, ageMs, stale }`, возраст от `nowMs` (не от системных часов).
 - `areBooksSynchronized(a, b, maxSkewMs): boolean` — проверка синхронности двух ног
@@ -181,6 +200,7 @@ getRecent(source, lookbackMs, nowMs?) // окно [nowMs - lookbackMs, nowMs]
 
 Решение «только починить баги» (без рефакторинга — стор load-bearing для
 CrossMarketArb / MarketRotation / BacktestEngine):
+
 - **Валидация `updatePrice`**: игнор `price <= 0` / не конечной цены / не конечного timestamp.
 - **Out-of-order**: тик старше уже сохранённого для того же источника не перезаписывает свежий.
 - **Нормализация регистра** в `_parseSymbol` (lowercase+trim): `BTCUSDT` и `btc` → один asset.
@@ -228,15 +248,18 @@ tick (`Map<strategyId, Set<TriggerReason>>`), поэтому парный
 **удалён**, его ответственности разделены.
 
 ### Было
+
 `CryptoPriceStore` смешивал две вещи и **дублировал ценовой поток**: каждый тик
 писался и в него, и в `CryptoMarketDataStore` (`main.ts`, `BacktestEngine`).
 
 ### Стало — две ответственности, два владельца
+
 - **Цена** → `CryptoMarketDataStore` (единый источник истины; история + `getLatestPrice`).
 - **Strike / resolution (lifecycle)** → новый `CryptoResolutionStore`. Цен не
   хранит; `getResolution()` берёт fallback-цену Chainlink из `CryptoMarketDataStore`.
 
 ### `snapshot.cryptoPrice` — теперь проекция
+
 `StrategyScheduler` собирает `snapshot.cryptoPrice` из двух источников (цены из
 `CryptoMarketDataStore`, strike/resolution из `CryptoResolutionStore`). Форма
 поля не изменилась → ~12 стратегий-потребителей не тронуты. Лишняя подписка
@@ -244,12 +267,14 @@ tick (`Map<strategyId, Set<TriggerReason>>`), поэтому парный
 эмитит `CRYPTO_PRICE`).
 
 ### Мигрированные потребители
+
 `StrategyScheduler` (deps `cryptoResolutionStore`), `BacktestEngine`
 (`IBacktestCryptoResolutionStore`, ценовой реплей только в marketData),
 `MarketRotation`, `main.ts` (paper/live/backtest), `runMultiMarketBacktest`,
 `buildStrategyEngine`. Арбитраж (`CrossMarketArb`) strike'и держал сам — не затронут.
 
 ### Валидация (money-critical)
+
 - Unit + 2 интеграционных теста `CryptoResolutionStore` (settlement fallback на
   Chainlink из реального `CryptoMarketDataStore`, приоритет locked resolutionPrice).
 - **E2E backtest** (BTC 5-мин, May 1): 0 errors, 2256 crypto price events,

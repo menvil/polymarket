@@ -3,6 +3,7 @@
 ## Проблема
 
 Для бектестинга стратегий и отладки нужна возможность:
+
 1. Записывать сырые WS-события Polymarket в реальном времени
 2. Читать сохранённые снапшоты для воспроизведения в бектесте
 
@@ -38,6 +39,7 @@ interface IMarketDataRecorder {
 ```
 
 **Ключевые гарантии:**
+
 - `recordEvent` синхронный и никогда не бросает — не блокирует trading path
 - Событие записывается ДО доменной обработки (сохраняется raw wire-формат)
 
@@ -46,6 +48,7 @@ interface IMarketDataRecorder {
 Реализует `IMarketDataRecorder`. Хранит state в памяти, сбрасывает на диск периодически.
 
 **Структура файлов:**
+
 ```
 outputDir/
   2024-01-15/
@@ -54,12 +57,14 @@ outputDir/
 ```
 
 **Формат записи:** NDJSON (один JSON-объект на строку):
+
 ```json
 {"_t":1705312000000,"_type":"META","marketId":"0xabc","question":"..."}
 {"_t":1705312001000,"_type":"EVENT","event":{...raw WS DTO...}}
 ```
 
 **Конфигурация:**
+
 ```typescript
 interface DataRecorderConfig {
   outputDir: string;
@@ -78,6 +83,7 @@ const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger, record
 ```
 
 Внутри обработчика snapshot:
+
 ```typescript
 // Сначала пишем raw — до любой доменной обработки
 this._recorder?.recordEvent(dto.asset_id, dto);

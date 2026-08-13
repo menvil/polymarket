@@ -9,6 +9,7 @@
 ## Общие выводы исследования
 
 ### Что работает
+
 - **Маркетмейкинг (Avellaneda-Stoikov)** — основной источник прибыли ($55-507/день)
 - **Спред — главный источник PnL** (~145% от net), inventory loss — неизбежная цена бизнеса (~-45%)
 - **Dynamic Q** (inventory limit по времени) — +24%
@@ -22,6 +23,7 @@
 - **nLevels=3** (концентрированный imbalance signal) — +12%
 
 ### Что категорически НЕ работает
+
 - Pressure bias → катастрофические потери (-37% до -100%)
 - Unwind zones (выход за N минут до конца) → -$8 до -$29/день
 - Cost floor (не продавать ниже себестоимости) → катастрофа (-$60/день)
@@ -30,6 +32,7 @@
 - Kitchen sink (все 5+ сигналов вместе) → хуже чем selective combo из 3
 
 ### Критические предупреждения
+
 1. **Latency доминирует PnL**: lat=0 → $125/день, lat=1 (200ms) → $55, lat=2 (400ms) → $31
 2. **Edge нестабилен по месяцам**: октябрь -$4, ноябрь $17, декабрь $111, январь $164
 3. **Adverse selection floor**: спред < 0.15 → убыточно (фундаментальное свойство рынка)
@@ -177,7 +180,8 @@
 |---|---|---|---|---|---|
 | M1 | EXP-120: **ALL-TIME RECORD** | Q=50, R=50, sp=1.00, dG+tF+rG combo | **$506.73** | 31.0 | **0/8** |
 
-#### Scaling по Q (EXP-120, dG+tF+rG combo):
+#### Scaling по Q (EXP-120, dG+tF+rG combo)
+
 | Q | $/день | Marginal $/Q |
 |---|---|---|
 | 15 | $322.05 | — |
@@ -237,11 +241,13 @@ $507   → + Q=50 R=50 (EXP-120) ← ALL-TIME RECORD
 ### Приоритет: ВЫСОКИЙ — первая для реализации
 
 ### Гипотеза
+
 Маркетмейкинг на бинарных крипто-рынках Polymarket (BTC Up/Down, 5-мин окно)
 с калиброванными параметрами по модели Avellaneda-Stoikov даёт стабильную прибыль
 за счёт спреда, несмотря на потери от inventory при settlement.
 
 ### Ожидаемая доходность
+
 - **Идеальная (lat=0)**: $69/день (Q=3, sp=0.20, γ=0.05)
 - **Реалистичная (lat=1)**: $45-55/день
 - **Консервативная (lat=2)**: $23-31/день
@@ -250,9 +256,11 @@ $507   → + Q=50 R=50 (EXP-120) ← ALL-TIME RECORD
 ### Модель
 
 **Reservation price** (сколько мы думаем стоит актив):
+
 ```
 r = s - q * γ * σ² * τ
 ```
+
 - `s` — midprice (текущая mid)
 - `q` — текущий inventory (+ = long, - = short)
 - `γ` — risk aversion (0.03-0.05)
@@ -260,12 +268,15 @@ r = s - q * γ * σ² * τ
 - `τ` — time to expiry (нормализованное)
 
 **Optimal spread** (ширина котировок):
+
 ```
 δ = γ * σ² * τ + (2/κ) * ln(1 + γ/κ)
 ```
+
 - `κ` — market depth (из калибровки, logit-scale)
 
 **Quotes**:
+
 ```
 bid = r - δ/2 * spread_mult
 ask = r + δ/2 * spread_mult
@@ -311,6 +322,7 @@ ask = r + δ/2 * spread_mult
 8. При settlement → inventory losses (неизбежные, ~-45% от спредового дохода)
 
 ### Метрики для мониторинга
+
 - Spread earned vs inventory loss (должно быть ~3:1)
 - Fill rate (слишком мало → спред широк, слишком много → adverse selection)
 - Inventory distribution (не должен быть постоянно max)
@@ -322,16 +334,20 @@ ask = r + δ/2 * spread_mult
 ### Приоритет: ВЫСОКИЙ (после baseline)
 
 ### Гипотеза
+
 Добавление проверенных улучшений к baseline AS модели увеличивает доходность на 50-80%.
 
 ### Ожидаемая доходность
+
 - **Идеальная (lat=0)**: $120-125/день
 - **Реалистичная (lat=1)**: $55-70/день
 
 ### Улучшения (все подтверждены бэктестом)
 
 #### 2.1 Dynamic Q Schedule (+24%)
+
 Менять max inventory по времени до экспирации:
+
 ```
 mfe > 3 мин → Q = 10
 mfe 2-3 мин → Q = 5
@@ -339,10 +355,13 @@ mfe < 2 мин → Q = 3
 ```
 
 #### 2.2 Lower Gamma (+12%)
+
 `γ = 0.03` вместо `0.05` — менее агрессивный skew, больше fills.
 
 #### 2.3 Profit Hold (+2-13%)
+
 Если unrealized PnL > 5 центов → снизить inventory skew (не спешить закрывать прибыльную позицию).
+
 ```
 if (unrealizedPnl > 0.05) {
   skewMultiplier = 0.5; // снижаем skew вдвое
@@ -350,22 +369,29 @@ if (unrealizedPnl > 0.05) {
 ```
 
 #### 2.4 Price Range Vol (+8%)
+
 Масштабирование спреда на основе max-min range последних N трейдов:
+
 ```
 range = max(last_N_prices) - min(last_N_prices)
 if (range > threshold) spreadMult *= 1.3  // расширить спред при высокой vol
 ```
+
 Оптимальные параметры: N=10, threshold=0.3
 
 #### 2.5 Momentum Mid (+22%, НО чувствительна к latency)
+
 EWMA midprice вместо raw mid:
+
 ```
 ewma_mid = α * current_mid + (1-α) * prev_ewma
 ```
+
 Параметры: window=3 trades, α=0.2
 **Внимание**: при latency > 0 эффект снижается.
 
 #### 2.6 Jump Widen (+5%)
+
 При скачке цены > 5 центов → расширить спред в 2x на cooldown=5 trades.
 
 ### Параметры конфигурации
@@ -393,34 +419,44 @@ ewma_mid = α * current_mid + (1-α) * prev_ewma
 ### Приоритет: СРЕДНИЙ (требует orderbook history)
 
 ### Гипотеза
+
 Использование глубины стакана (orderbook snapshots) для адаптивного квотирования
 даёт x3-4 к baseline MM за счёт лучшей оценки risk и более точного spread.
 
 ### Ожидаемая доходность
+
 - **Бэктест**: $322-507/день (Q=15-50, lat=0)
 - **Реалистичная оценка**: x2-3 от baseline → $100-200/день
 
 ### Сигналы (подтверждены бэктестом)
 
 #### 3.1 Dynamic Gamma (dynGamma) — +1% standalone, super-additive в combo
+
 Адаптивный γ на основе текущего состояния стакана:
+
 ```
 gamma_effective = base_gamma * (1 + slope * |q| / qMax)
 ```
+
 - slope = 1.0, linear mode
 - Больше inventory → выше γ → шире спред → защита
 
 #### 3.2 Trade Flow Signal (tradeFlow) — +0.7% standalone
+
 Смещение mid на основе потока трейдов за последние N секунд:
+
 ```
 flow = Σ(signed_volume, last 15s)
 mid_adjusted = mid + α * flow
 ```
+
 - window = 15s, α = 1.0
 - Короткие окна лучше (15s > 30s > 60s)
 
 #### 3.3 Regime Detection (regime) — +1.6% standalone, лучший индивидуальный
+
 Переключение параметров на основе волатильности:
+
 ```
 recent_prices = last 20 trades
 trend = (last - first) / range
@@ -429,10 +465,12 @@ else → ranging regime: spread × 0.8
 ```
 
 #### 3.4 Triple Combo (dG+tF+rG) — +3.7% super-additive
+
 Три сигнала вместе дают больше чем сумма индивидуальных (+3.7% vs sum of ~3.3%).
 **Важно**: Kitchen sink (все 5+ сигналов) хуже чем selective trio: $370 vs $401.
 
 ### Использование существующей инфраструктуры
+
 - `snapshot.bookHistory` → `OrderBookHistory.getRecent(15_000)` для dynGamma
 - `snapshot.tradeTape` → `TradeTape.getRecent(15_000)` для tradeFlow
 - `ImbalanceCalculator.calculate(bids, asks, { type: 'WEIGHTED' })` для imbalance
@@ -462,42 +500,55 @@ else → ranging regime: spread × 0.8
 ### Приоритет: СРЕДНИЙ-ВЫСОКИЙ (наибольший потенциал)
 
 ### Гипотеза
+
 Учёт позиции в очереди стакана + асимметричное распределение taker budget
 по направлению imbalance даёт $200-500/день на 15-мин рынках.
 
 ### Ожидаемая доходность
+
 - Q=15: $225/день → Q=50: $507/день
 - Sharpe: 31-34, 0 убыточных дней в тесте
 
 ### Ключевые механизмы
 
 #### 4.1 Taker Signal
+
 Агрессивное исполнение (taker orders) когда сигнал сильный — вместо ожидания fill в очереди.
 
 #### 4.2 Ramp Schedule (+17%)
+
 Бюджет taker'ов растёт со временем рынка:
+
 ```
 maxTakes = base + elapsed_minutes × rate
 ```
+
 Оптимум: base=5, rate=10/min (linear ramp).
 
 #### 4.3 Adaptive Alpha (+15%)
+
 Вес imbalance сигнала масштабируется глубиной стакана:
+
 ```
 effective_alpha = base_alpha * min(book_depth / depthScale, 1)
 ```
+
 Глубже стакан → надёжнее сигнал.
 
 #### 4.4 Asymmetric Budget (+37% — крупнейшее улучшение)
+
 Taker budget распределяется по направлению imbalance:
+
 ```
 effectiveMaxBuyTakes  = maxTakes × (1 + imbalance × asymFactor)
 effectiveMaxSellTakes = maxTakes × (1 - imbalance × asymFactor)
 ```
+
 - asymFactor = 1.0-1.3 (оптимум)
 - Если стакан перекошен в пользу покупателей → больше buy takes, меньше sell takes
 
 #### 4.5 Signal Tuning
+
 - **imb threshold = 0.4** (vs 0.6): +14% — более агрессивный taker trigger
 - **nLevels = 3** для imbalance: +12% — top-3 уровня стакана информативнее чем top-5
 - **EWMA speed = 0.5**: +6% — быстрая реакция лучше
@@ -531,14 +582,17 @@ effectiveMaxSellTakes = maxTakes × (1 - imbalance × asymFactor)
 ### Приоритет: НИЗКИЙ (backup стратегия)
 
 ### Гипотеза
+
 Покупка Up-токенов по 75-94с в последние 3 минуты при умеренном momentum
 и контролируемом pressure даёт стабильную прибыль за счёт settlement.
 
 ### Ожидаемая доходность
+
 - $8.77/день, 84/92 winning days (91.3%)
 - Avg EV: +1.3c per trade
 
 ### Условия входа
+
 ```
 price ∈ [0.75, 0.94]
 minutes_from_end ≤ 3
@@ -547,11 +601,13 @@ pressure_ratio ∈ [-0.4, +0.6] за 5с (не exhaustion)
 ```
 
 ### Условия выхода
+
 - TP: +5 центов, timeout 60с
 - SL: -5 центов
 - Fallback: hold до settlement
 
 ### Ключевые наблюдения
+
 - **Buy pressure на высоких ценах = подтверждение** (в отличие от низких цен, где это adverse selection)
 - **Velocity > 8 = exhaustion** → не входить
 - **Последняя минута**: 90-94c → 73.7% win rate, +2.39c EV
@@ -580,12 +636,15 @@ pressure_ratio ∈ [-0.4, +0.6] за 5с (не exhaustion)
 ### Приоритет: НИЗКИЙ
 
 ### Гипотеза
+
 Две независимые направленные стратегии одновременно на Up и Down токенах.
 
 ### Ожидаемая доходность
+
 - $17.31/день, 6 losing days / 92
 
 ### Зоны
+
 - **Low zone** (5-15c): TP+3/SL-3, скальпирование паники
 - **High zone** (70-94c): Hold до settlement, momentum confirmation
 
@@ -594,6 +653,7 @@ pressure_ratio ∈ [-0.4, +0.6] за 5с (не exhaustion)
 ## План реализации
 
 ### Фаза 1: Baseline AS Market Maker
+
 1. Создать `AvellanedaStoikovStrategy` реализующий `IStrategy`
 2. Калибровочные таблицы σ/κ per minute bucket
 3. Inventory tracking (через `snapshot.portfolio`)
@@ -602,33 +662,37 @@ pressure_ratio ∈ [-0.4, +0.6] за 5с (не exhaustion)
 6. Paper test на live данных
 
 ### Фаза 2: Enhanced MM
-7. Dynamic Q schedule
-8. Profit hold
-9. Price range vol (через `snapshot.tradeTape`)
-10. Momentum mid
-11. Jump widen
-12. A/B тестирование каждого улучшения отдельно
+
+1. Dynamic Q schedule
+2. Profit hold
+3. Price range vol (через `snapshot.tradeTape`)
+4. Momentum mid
+5. Jump widen
+6. A/B тестирование каждого улучшения отдельно
 
 ### Фаза 3: Orderbook-Aware MM
-13. Dynamic gamma (через `snapshot.bookHistory` + `ImbalanceCalculator`)
-14. Trade flow signal (через `TradeFlowCalculator`)
-15. Regime detection
-16. Selective triple combo (dG+tF+rG)
-17. Paper testing с real-time данными
+
+ 1. Dynamic gamma (через `snapshot.bookHistory` + `ImbalanceCalculator`)
+ 2. Trade flow signal (через `TradeFlowCalculator`)
+ 3. Regime detection
+ 4. Selective triple combo (dG+tF+rG)
+ 5. Paper testing с real-time данными
 
 ### Фаза 4: Queue-Aware MM
-18. Taker signal logic
-19. Ramp schedule
-20. Adaptive alpha
-21. Asymmetric budget
-22. Signal tuning (imb=0.4, nLev=3, ewma=0.5)
-23. Q scaling tests
+
+ 1. Taker signal logic
+ 2. Ramp schedule
+ 3. Adaptive alpha
+ 4. Asymmetric budget
+ 5. Signal tuning (imb=0.4, nLev=3, ewma=0.5)
+ 6. Q scaling tests
 
 ### Фаза 5: Live
-24. Latency measurement (реальный lat=?)
-25. Fee calibration
-26. Kill switch + daily PnL monitoring
-27. Monthly edge stability check
+
+ 1. Latency measurement (реальный lat=?)
+ 2. Fee calibration
+ 3. Kill switch + daily PnL monitoring
+ 4. Monthly edge stability check
 
 ---
 
@@ -664,26 +728,33 @@ pressure_ratio ∈ [-0.4, +0.6] за 5с (не exhaustion)
 ### Ключевые находки
 
 #### 1. Unwind phase (от -1561 до -849, +46%)
+
 Агрессивная продажа инвентори за `unwindSec` до settlement:
+
 - **BUY запрещён** в unwind фазе
 - Ask прогрессивно снижается: `discount = progress × maxDiscountCents`
 - Оптимум: unwindSec=180, discountCents=5 (3 минуты разгрузки)
 - Потеря 1-5¢ на агрессивной продаже << потеря ~50¢ при settlement DOWN
 
 #### 2. Stop-loss (от -1046 до -849, +19%)
+
 Немедленный dump при unrealized loss > stopLossCents:
+
 - Когда `avgEntry - mid >= 3¢` → продаём всё по mid-discount
 - После dump: спред ×2 для осторожного re-entry
 - Флаг сбрасывается когда позиция = 0
 
 #### 3. Regime detection (от -849 до -84, **×10 улучшение**)
+
 Самое эффективное улучшение. Определяем trending/ranging по price range последних N трейдов:
+
 - **Trending** (range > 2¢): расширяем спред ×trendMult → не набираем инвентори против тренда
 - **Ranging** (range < 1¢): сужаем спред ×rangeMult → больше fills в спокойном рынке
 - Высокий trendMult (6-10) = по сути "не торгуй в trending" → максимальная защита
 - **Компромисс**: trendMult=3 (активная торговля, 1494 fills) vs trendMult=10 (защита, 490 fills)
 
 #### Структура лучшего конфига (m10)
+
 ```
 362 рынка → 39 wins / 90 losses / 233 neutral
 UP рынки: +0.18 avg PnL (первые в плюсе!)
@@ -695,22 +766,29 @@ Best win: +14.35 (Ethereum 200PM-215PM)
 Top losers — 100% DOWN рынки с паттерном "2-5B/0S": купили, не смогли продать до settlement.
 
 #### 4. orderSize=5 + stopLoss=2¢ (от -84 до -29, +65%)
+
 - Меньший orderSize → меньше exposure на один ордер: 5×0.50 = 2.50 USDC vs 5.00
 - Более агрессивный stop-loss → режем убытки раньше на 1¢
 
 #### 5. Warmup 15s (от -29 до -11, +62%)
+
 Не торгуем первые 15 секунд рынка:
+
 - EWMA и regime data накапливаются, но ордера не выставляются
 - Избегаем "слепую" торговлю без данных о режиме рынка
 
 #### 6. Jump Widen (от -11 до +14, BREAKEVEN!)
+
 При скачке цены ≥2¢ → спред ×2.5 на 3 трейда:
+
 - Защита от adverse selection после резких движений
 - Cooldown=3 трейда (не секунды) — короткий, но достаточный
 - Оптимальные параметры: threshold=2¢, factor=2.5, cooldown=3
 
 #### 7. Dynamic Gamma (от +14 до +19.37, +38%)
+
 `effectiveGamma = gamma × (1 + slope × |q| / qMax)`:
+
 - Больше позиция → выше risk aversion → шире спред и skew
 - slope=1.0: при полной позиции gamma удваивается (0.05→0.10)
 - DOWN рынки почти breakeven: -0.08 avg PnL
@@ -751,11 +829,13 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ## Раздельная оптимизация по таймфреймам (24 марта 2026)
 
 ### Проблема
+
 Исходная оптимизация (+19.37) делалась на **смешанных** данных: 250 5-мин + 95 15-мин + 19 других рынков.
 Прибыль шла из 15-мин (+22.88), а 5-мин были убыточны (-3.51).
 `unwindSec=180` на 5-мин рынке (300с) = только 120с активной торговли (40%).
 
 ### Методология
+
 - Отфильтровали рынки по длительности: `5PM-X{0,5}PM` (5-мин) и `PM-X{0,5}PM|AM-X{0,5}AM` (15-мин)
 - Оптимизация по одному параметру за раз на day 1 (22 марта), валидация на day 2 (23 марта)
 - Порядок sweep: unwindSec → warmupSec → stopLossCents → regimeTrendSpreadMult → ewmaAlpha → gamma → jumpThreshold → orderSize → spreadMult → dynGammaSlope
@@ -763,6 +843,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ### Результаты: unwindSec sweep
 
 **5-мин (300с рынок, 250 рынков day1):**
+
 | unwindSec | Active% | PnL | WR | Fills |
 |-----------|---------|------|----|-------|
 | 30 | 90% | -10.44 | 43.8% | 292 |
@@ -773,6 +854,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 | 250 | 17% | -2.34 | 33.3% | 37 |
 
 **15-мин (900с рынок, 95 рынков day1):**
+
 | unwindSec | Active% | PnL | WR | Fills |
 |-----------|---------|------|----|-------|
 | 90 | 90% | +16.57 | 45.1% | 277 |
@@ -783,6 +865,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ### Мульти-параметрическая оптимизация (на фиксированном unwindSec)
 
 **5-мин (uw=240): sweep остальных параметров**
+
 | Параметр | Значение | PnL | Примечание |
 |----------|----------|------|------------|
 | base (sl=2, ws=15, tm=10) | — | +3.58 | baseline |
@@ -792,6 +875,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 | **sl=0 + ws=10 + tm=15** | combo | **+12.82** | **ЛУЧШИЙ 5-мин** |
 
 **15-мин (uw=120): параметры уже оптимальны**
+
 - sl=0 → -10.33 (stop-loss критичен!)
 - ws=10 → +22.23 (чуть хуже ws=15)
 - tm=15 → +0.66 (tm=10 оптимален)
@@ -799,6 +883,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ### Лучшие конфиги по таймфреймам
 
 **5-мин best** (`configs/as-5min-best-backtest.json`):
+
 ```json
 {
   "gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0,
@@ -812,6 +897,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ```
 
 **15-мин best** (`configs/as-15min-best-backtest.json`):
+
 ```json
 {
   "gamma": 0.05, "qMax": 5, "orderSize": 5, "spreadMult": 1.0,
@@ -847,6 +933,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ## Market Quality Filter — мета-адаптация (24 марта 2026)
 
 ### Идея
+
 Не все рынки одинаково хороши для маркетмейкинга. После warmup оцениваем рынок по трём метрикам — если плохой, **пропускаем навсегда**:
 
 1. **maxSpreadCents** — bid-ask spread в стакане. Широкий = неликвидный или volatile
@@ -854,6 +941,7 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 3. **minWarmupTradesPerSec** — trade intensity. Низкий = мало участников, ненадёжный EWMA
 
 ### Реализация
+
 - Файл: `AvellanedaStoikovStrategy.ts`, метод `_checkMarketQuality()`
 - Проверка один раз при выходе из warmup, решение необратимо
 - Новые поля в `ASStrategyConfig`: `maxWarmupVolCents`, `minWarmupTradesPerSec`, `maxSpreadCents`
@@ -875,30 +963,37 @@ UP markets: +0.21 avg, DOWN markets: -0.08 avg.
 ### Лучшие конфиги
 
 **«Balanced» — первый двухдневный профит** (`configs/as-15min-filter-best-backtest.json`):
+
 ```json
 { "maxSpreadCents": 2, "maxWarmupVolCents": 4, "minWarmupTradesPerSec": 0.5 }
 ```
+
 Day 1: +8.75, Day 2: -7.34 → **Сумма: +1.42 USDC** на 49 рынках
 
 **«Tight» — минимальные потери** (`configs/as-15min-filter-tight-backtest.json`):
+
 ```json
 { "maxSpreadCents": 2, "maxWarmupVolCents": 3, "minWarmupTradesPerSec": 1.0 }
 ```
+
 Day 1: +3.56, Day 2: -3.61 → **Сумма: -0.05 USDC** на 16 рынках
 
 ### Что работает, что нет
 
 **Работает (три критерия хорошего рынка для MM):**
+
 - **Узкий спред (≤2¢)** — ликвидный рынок, стабильный mid-price
 - **Низкая warmup vol (≤3-4¢)** — ranging рынок, mean-reversion работает
 - **Высокий trade flow (≥0.5-1.0/сек)** — EWMA mid надёжный, fills приходят
 
 **Не работает:**
+
 - Одиночные фильтры недостаточны (sp≤2 alone: -58 за 2 дня)
 - Слишком строгий фильтр (sp≤1): убирает хорошие рынки тоже
 - Для 5-мин: фильтр не помогает (base +12.82 → filtered ≤+0.1)
 
 ### Трейдоff
+
 Фильтр конвертирует **большую прибыль + большой убыток** → **маленькая прибыль + маленький убыток**.
 На «плохих» днях экономит десятки USDC. На «хороших» — срезает потенциальную прибыль.
 Результат: стабильность вместо дисперсии.
@@ -912,16 +1007,19 @@ Day 1: +3.56, Day 2: -3.61 → **Сумма: -0.05 USDC** на 16 рынках
 ### Реализованные фичи
 
 **Imbalance Spread Factor (ISF)**
+
 - `imbalanceSpreadFactor`: множитель `spreadMult *= (1 + isf × |bookImbalance|)`
 - `bookImbalance` = (bidSum - askSum) / (bidSum + askSum) по top-3 уровням
 - Перекошенная книга → wider spread → защита от adverse selection
 
 **Depth Spread Factor (DSF)**
+
 - `depthSpreadFactor`: множитель `spreadMult *= (1 + dsf / topDepth)`
 - `topDepth` = суммарный размер top-3 bid + ask
 - Тонкая книга → wider spread → учёт ликвидности
 
 **Order Flow Imbalance (OFI)**
+
 - `ofiWindow`: кол-во трейдов для расчёта uptick fraction
 - `ofiWeight`: вес сдвига reservation price в logit-space
 - Формула: `r_x_adjusted = r_x + (ofi - 0.5) × ofiWeight × 0.02`
@@ -950,10 +1048,12 @@ Day 1: +3.56, Day 2: -3.61 → **Сумма: -0.05 USDC** на 16 рынках
 ### Лучший двухдневный конфиг
 
 **`configs/as-15min-combo-full-backtest.json`** — filter + isf0.5 + ofi10/0.5:
+
 ```json
 { "maxSpreadCents": 2, "maxWarmupVolCents": 4, "minWarmupTradesPerSec": 0.5,
   "imbalanceSpreadFactor": 0.5, "ofiWindow": 10, "ofiWeight": 0.5 }
 ```
+
 **Day 1: +8.15, Day 2: -1.65 → Сумма: +6.50 USDC**
 
 ### 5-мин рынки
@@ -1090,12 +1190,14 @@ cooldown60 выбран как лучший по **трёхдневной сум
 масштабирующий gamma и/или orderSize в реальном времени.
 
 **Comfort score** = среднее из 4 компонент:
+
 - Волатильность (price range → low = комфортно)
 - Глубина стакана (depth → deep = комфортно)
 - Баланс стакана (|imbalance| → balanced = комфортно)
 - Торговый поток (tps → высокий = комфортно)
 
 **Результаты (day 1 / day 2):**
+
 | Конфиг | Day 1 | Day 2 | Sum |
 |--------|-------|-------|-----|
 | Baseline (без adaptive) | +8.10 | -1.95 | +6.15 |
@@ -1104,6 +1206,7 @@ cooldown60 выбран как лучший по **трёхдневной сум
 | adaptive scale=0.5 (только gamma) | +6.31 | -10.66 | -4.35 |
 
 **Почему не работает:**
+
 1. После фильтра рынки уже «хорошие» — comfort score ~0.85-0.95, адаптация минимальна
 2. Когда условия ухудшаются, расширение спреда → ордера дальше от mid →
    adverse selection ещё хуже (заполняемся когда рынок уже ушёл)
@@ -1138,6 +1241,7 @@ cooldown60 выбран как лучший по **трёхдневной сум
 | **Combo (skip-0.2+AAS-3)** | **+3.51** | **+13.37** | **+0.52** | **+17.40** |
 
 **Лучший конфиг**: `as-15min-combo-ofiskip-aas-backtest.json`
+
 - 3-day PnL: **+17.40 USDC** (14× лучше baseline!)
 - WinRate: 53-60% (vs 39-50% baseline)
 - Day 2/3 из убыточных стали прибыльными
@@ -1168,6 +1272,7 @@ AAS и OFI-skip **избегают плохих сделок целиком**. �
 | без фильтра | -5.72 | -64.05 |
 
 **Почему 5-мин не работают:**
+
 1. **Слишком короткий горизонт**: warmup 10с + unwind 120с = 130с из 300с (43% рынка непригодно)
 2. **Фильтр пропускает ~1%** рынков при strict vs ~8% на 15-мин → мало сделок
 3. Ослабление фильтра = катастрофа (больше шумных рынков → больше потерь)
@@ -1196,19 +1301,23 @@ ofiSkipThreshold=0.2, aasConsecutiveThreshold=3
 ## 5-минутные рынки: Trailing Stop Hybrid (2026-03-25)
 
 ### Идея
+
 Вместо чистого MM на 5-мин рынках используем гибрид: MM вход (cheap entry через спред) + trailing stop выход (ride momentum). На 5-мин рынках вопрос "UP или DOWN" решается быстро — если мы попали в поток, зарабатываем на settlement. Если не попали — trailing stop режет потери.
 
 ### Unknown Resolution Bug (критический фикс)
+
 Рынки без finalPrice/Chainlink данных в снапшоте не получали settlement в бэктесте → чистый убыток (cash потрачен, settlement=0). На day2 53 таких рынка теряли ~37 USDC. **Fix**: при unknown resolution — refund remaining position по avg entry price (rollback, как будто не торговали).
 
 ### Trailing Stop механика
 
 **Зоны:**
+
 - `minBidZoneCents`..`maxBidZoneCents` — зона покупки (не bid вне этого диапазона)
 - `trailWideZoneCents` — порог "зоны уверенности" (шире trail, даём расти)
 - `trailHoldZoneCents` — порог settlement zone (hold до конца, не продаём)
 
 **Асимметрия trail:**
+
 - В прибыли: stop = peak - trailDistanceCents (от peak, lock-in gains)
 - В прибыли + confidence zone: stop = peak - trailWideDistanceCents (шире, пусть растёт)
 - В убытке (symmetric, tight=trailDist): stop = peak - trailDist (peak-based, lock spike profits)
@@ -1246,6 +1355,7 @@ Day 1 = 22 марта (248 рынков), Day 2 = 23 марта (924 рынка,
 5. **SL + trail = хуже**: stopLossCents>0 с trailing stop → двойное выбивание.
 
 ### Лучший конфиг: `as-5min-trail3-w70h85-bid12-73-backtest.json`
+
 ```
 gamma=0.05, qMax=5, orderSize=5, spreadMult=1.0, ewmaAlpha=0.3
 stopLossCents=0, warmupSec=10
@@ -1259,12 +1369,15 @@ trailHoldZoneCents=85, minBidZoneCents=12, maxBidZoneCents=73
 ```
 
 ### Robust backup: `as-5min-trail3-best-backtest.json`
+
 ```
 (те же параметры, но minBidZoneCents=15, maxBidZoneCents=70)
 ```
+
 3-day SUM: +1.10 USDC — breakeven, но стабильный. Для paper trading если bid12-73 покажет overfitting.
 
 ### Предупреждения
+
 - **bid12-73 чувствителен к 1¢**: bid13-72 → минус, bid11-74 → -54 на day2. Но 3-day валидация +84 снижает риск overfitting
 - **Unknown markets**: 53 из 924 на day2, 26 из 394 на day3. В реале все рынки резолвятся — adjusted PnL точнее
 - **stopLossCents=0**: trailing stop заменяет SL. SL + trail = двойное выбивание

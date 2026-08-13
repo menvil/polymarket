@@ -76,10 +76,11 @@ TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
    SELL: `reserveTokensForOrder(size)`
 3. **Отправка на биржу** — `exchangeClient.submitOrder()` → типизированный
    `SubmitOrderResult`:
-   - `Err(ExchangeError)` (транспорт) → откат резервации, `Err`
-   - `Ok({status: 'REJECTED'})` → откат резервации, `Err`; локальный `Order` НЕ
+
+- `Err(ExchangeError)` (транспорт) → откат резервации, `Err`
+- `Ok({status: 'REJECTED'})` → откат резервации, `Err`; локальный `Order` НЕ
      создаётся (venue вообще не создал live-ордер)
-   - `Ok({status: 'UNKNOWN'})` → откат резервации, best-effort `cancelOrder`
+- `Ok({status: 'UNKNOWN'})` → откат резервации, best-effort `cancelOrder`
      (если venue вернул `orderId`), `Err` с manual-reconciliation контекстом;
      use case НИКОГДА не превращает ambiguous-ответ в обычный OPEN order.
      Если в deps передан `reconciliationIssues` — дополнительно создаётся
@@ -89,14 +90,15 @@ TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
      Issue создаётся ДАЖЕ если best-effort cancel удался — исход submit был
      ambiguous, и venue-состояние требует ручной проверки. Сбой `add()`
      логируется и не меняет исходный `Err`
-   - `Ok({status: 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED'})` → продолжение до шага 7.
+- `Ok({status: 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED'})` → продолжение до шага 7.
      Если venue скорректировал size (`effectiveSize < size`) — излишек резервации
      освобождается до создания Order
-4. **Создание Order с venueOrderId** — `Order.create({ id: venueOrderId, ... })` → PENDING.
+
+1. **Создание Order с venueOrderId** — `Order.create({ id: venueOrderId, ... })` → PENDING.
    Order создаётся ПОСЛЕ submit: только venue знает orderId, под которым придут
    WS-события (fills, order updates)
-5. **Принятие ордера** — `order.accept()` → OPEN
-6. **Сохранение (CAS)** — `orderRepo.save(acceptedOrder, 0)` — новый ордер всегда
+2. **Принятие ордера** — `order.accept()` → OPEN
+3. **Сохранение (CAS)** — `orderRepo.save(acceptedOrder, 0)` — новый ордер всегда
    с `expectedVersion=0`. `Err(VersionConflictError)` означает, что под этим
    venueOrderId уже есть запись (гонка с reconcile/WS) — выполняется best-effort
    отмена venue-ордера + откат резервации, события НЕ публикуются.
@@ -109,7 +111,7 @@ TODO: replace long-held venue lock with PendingVenueOrderRegistry / UnitOfWork.
    (`ReconcileTradesUseCase`) и будет обработан в `ProcessFillUseCase`. Пометка
    нужна только чтобы `CancelOrderUseCase` не пытался отменить уже (частично)
    исполненный ордер.
-7. **Публикация событий — ВНЕ lock** — `eventBus.publishAll(order.pullEvents())`
+4. **Публикация событий — ВНЕ lock** — `eventBus.publishAll(order.pullEvents())`
    выполняется в `execute()` уже ПОСЛЕ освобождения keyed mutex. `_placeLocked`
    возвращает commit-payload (venueOrderId + вытянутые события), а публикацию
    делает вызывающий: `publishAll` реально await-ит drain подписчиков, и
@@ -393,7 +395,8 @@ trade со статусом `FAILED`, а локальный processed-fill ст�
 (WS `FILL_FAILED` не дошёл), значит Order/Portfolio/Ledger содержат применённый
 fill, которого on-chain больше нет. Автоматический reversal из reconciler —
 future work; текущее поведение: error-лог `VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED`
-+ issue `VENUE_LOCAL_ORDER_DESYNC`
+
+- issue `VENUE_LOCAL_ORDER_DESYNC`
 (`reconciliation:fill:${fillId}:venue-failed-after-applied`), обработка trade
 пропускается, счётчик `failedAfterApplied` в summary-логе. `FAILED` при
 локальном статусе НЕ `APPLIED` — обычный skip (reversal не требуется).

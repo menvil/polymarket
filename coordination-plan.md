@@ -1,4 +1,5 @@
 # Coordination Plan v1.0
+
 ## Polymarket — Market Coordination, Balance Management & Ongoing Reconciliation
 
 **Версия:** 1.0
@@ -11,6 +12,7 @@
 ## Контекст
 
 После завершения Master Plan (Phases 0–9) система умеет:
+
 - Принимать ордера, обрабатывать fills, отменять ордера
 - Восстанавливать состояние при рестарте (Phase 9 Recovery)
 - Запускать стратегии через `StrategyRunner`
@@ -190,6 +192,7 @@ export class ReconciliationScheduler {
 ```
 
 **Зависимости Phase A:**
+
 - Master Plan Phase 1 (ports) ✅
 - Master Plan Phase 2 (event-bus) ✅
 - Master Plan Phase 5 (use-cases) ✅
@@ -379,6 +382,7 @@ export type ApplicationEvent =
 ```
 
 **Зависимости Phase C:**
+
 - Master Plan Phase 1 (ports — IMarketCatalog) ✅
 - Master Plan Phase 2 (event-bus — ApplicationEvent) ✅
 - Master Plan Phase 5 (use-cases — CancelOrderUseCase) ✅
@@ -464,6 +468,7 @@ eventBus.subscribe('MARKET_CLOSED', (event) => {
 ```
 
 **Зависимости Phase D:**
+
 - Master Plan Phase 7 (strategy — StrategyRunner) ✅
 - Phase B (BalanceAllocator) ✅
 - Phase C (OpenMarketUseCase, CloseMarketUseCase, события) ✅
@@ -550,6 +555,7 @@ npm test
 ```
 
 **Checklist финальный:**
+
 - [ ] `IExchangeClient.getOpenOrders()` и `getTrades()` реализованы в infrastructure adapter
 - [ ] `ReconcileOrdersUseCase` идемпотентен (повторный запуск не дублирует события)
 - [ ] `BalanceAllocator.releaseWithPnL()` корректно компаундирует PnL

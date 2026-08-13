@@ -239,6 +239,7 @@ export interface StrategySnapshot {
 ```
 
 **Почему Portfolio целиком, а не отдельные поля:**
+
 - Portfolio уже содержит balance, positions, tokenReservations — всё что нужно
 - Стратегия может вызвать `portfolio.availableTokenQuantity(instrumentId)` напрямую
 - Не нужен отдельный TokenBalance VO
@@ -286,6 +287,7 @@ export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
 **Пакет:** `packages/application/market-state/src/MarketDataStore.ts`
 
 **Обязанности:**
+
 - Фасад над BookDepthCollector + TradeTapeCollector
 - Хранит последний TopOfBook per instrumentId
 - Подписывается на EventBus: BOOK_UPDATED, BOOK_DEPTH, TRADE_RECEIVED
@@ -329,6 +331,7 @@ export class MarketDataStore implements IMarketDataStore {
 ```
 
 **Изменения в существующих файлах:**
+
 - `BookDepthCollector.ts` — добавить `public recordDirect(instrumentId, snapshot, nowMs): void`
 - `TradeTapeCollector.ts` — добавить `public recordDirect(instrumentId, price, size, side, timestamp): void`
 - `market-state/src/index.ts` — добавить экспорт MarketDataStore
@@ -356,6 +359,7 @@ export interface IOrderStateStore {
 Добавить sync методы + `implements IOrderStateStore`.
 
 **Изменения:**
+
 - `ports/src/IOrderStateStore.ts` (новый)
 - `ports/src/index.ts` (экспорт)
 - `infrastructure/backtesting/src/InMemoryOrderRepository.ts` (implements IOrderStateStore)
@@ -383,6 +387,7 @@ export class DirtyTracker {
 ```
 
 **Тесты:** DirtyTracker.test.ts
+
 - markDirty → isDirty === true
 - несколько reasons накапливаются
 - clearDirty → isDirty === false, reasons пуст
@@ -464,6 +469,7 @@ export abstract class BaseStrategy<TSnapshot, TAction> implements IStrategy {
 - `IStrategyRunner.ts` — удалить (заменён IStrategyScheduler)
 
 **Тесты:**
+
 - BaseStrategy: gather→decide→toIntents pipeline
 - tick возвращает [] при undefined из gather
 - tick возвращает [] при [] из decide
@@ -517,6 +523,7 @@ export class ExecutionEngine {
 ```
 
 **Алгоритм execute():**
+
 1. **Normalize** — dedupe и очистка:
    - Если есть CANCEL_ALL → удалить все отдельные CANCEL (дублирование)
    - Dedupe CANCEL по orderId (Set)
@@ -704,7 +711,7 @@ entry.heartbeatTimer = setInterval(() => {
 }, config.maxIdleMs)
 ```
 
-### Преимущества над setInterval(5ms):
+### Преимущества над setInterval(5ms)
 
 | setInterval(5ms) | Event-driven queue |
 |---|---|
@@ -716,6 +723,7 @@ entry.heartbeatTimer = setInterval(() => {
 | executionPromise skip → потеря данных | Coalescing → rerun с fresh данными |
 
 **Тесты:** StrategyScheduler.test.ts
+
 - register / unregister lifecycle
 - Dirty routing: BOOK → markDirty → enqueue → tick вызывается
 - Event-driven: нет tick без dirty (zero CPU при idle)
@@ -779,11 +787,13 @@ export class OrderEventBridge {
 **GAP 2 fix:** ORDER_FILLED → orderRepo.delete(orderId). Чистим терминальные ордера сразу.
 
 **Как отличить external cancel от internal:**
+
 - CancelOrderUseCase уже делает unreserve + order.cancel()
 - Если OrderUpdateHandler получает CANCELLED для уже cancelled order → idempotent, no-op
 - Если order ещё OPEN и пришёл external cancel → OrderUpdateHandler делает order.cancel(), OrderEventBridge делает unreserve
 
 **Тесты:** OrderEventBridge.test.ts
+
 - External cancel BUY → unreserve USDC
 - External cancel SELL → unreserve tokens
 - ORDER_FILLED → delete from repo
@@ -853,6 +863,7 @@ export class StateReconciliationService {
 ### 7.4 Risk: системный + стратегический (разделение)
 
 **Текущее состояние:**
+
 - `OrderRiskChecker` — pre-trade, частично per-strategy (maxOpenOrders по strategyId)
 - `DrawdownRiskMonitor` — post-trade, system-wide (весь аккаунт)
 
@@ -866,20 +877,24 @@ export class StateReconciliationService {
 | **System** | + добавить `minAvailableBalance` | Минимальный свободный USDC баланс | Pre-trade | Reject intent |
 
 **Файлы:**
+
 - `risk/src/OrderRiskChecker.ts` — добавить `minTimeToExpiryMs` check
 - `risk/src/RiskParams.ts` — добавить `minTimeToExpiryMs?: number`
 
 ### 7.5 Supervisors
 
 **MarketDiscoveryPublisher:**
+
 - `StrategyRunner` → `StrategyScheduler`
 - `StrategyFactory` → `(event: MarketOpenedEvent) => StrategyRegistration | undefined`
 - MARKET_OPENED → `scheduler.register(registration)`
 
 **MarketExpiryMonitor:**
+
 - MARKET_CLOSED → `scheduler.unregister(strategyId)`
 
 **RiskOrchestrator:**
+
 - `runner.onRiskBreached()` → `scheduler.onRiskBreached()`
 
 ### 7.6 Удаление старого
@@ -958,50 +973,64 @@ apps/bot/src/strategyFactory.ts
 ## Решённые вопросы
 
 ### 1. Order.strategyId
+
 ✅ Есть. `Order.strategyId: string | undefined`.
 
 ### 2. Несколько стратегий на одном инструменте
+
 ✅ Поддерживается. `_instrumentToStrategies: Map<string, Set<string>>`.
 
 ### 3. TokenBalance в snapshot → НЕ НУЖЕН
+
 ✅ Решено. Portfolio уже содержит всё:
+
 - `balance` (USDC available/reserved)
 - `positions` (количество токенов, средняя цена)
 - `tokenReservations` (залоченные токены для SELL ордеров)
 - `availableTokenQuantity(instrumentId)` — сколько токенов можно продать
 
 ### 4. Market entity в snapshot
+
 ✅ Решено. Передаём `Market` целиком вместо `timeToExpiryMs`.
 
 ### 5. Risk: два уровня
+
 ✅ Решено. Strategy-level (pre-trade в PlaceOrderUseCase) + System-level (post-trade DrawdownRiskMonitor).
 
 ### 6. AMEND удалён из StrategyIntent
+
 ✅ Решено. AMEND НЕ входит в StrategyIntent:
+
 - Polymarket не поддерживает атомарный amend
 - Cancel + Place как два отдельных intenta безопаснее
 - Каждый проходит свой risk check независимо
 - Нет race condition: стратегия видит результат cancel в следующем tick и решает сама
 
 ### 7. execute() fire-and-forget + coalescing
+
 ✅ By design. Результат в следующем tick через ORDER_UPDATE dirty.
 Если новые данные пришли пока execute работал — coalescing pattern
 запускает rerun с актуальным snapshot (вместо пропуска тика).
 
 ### 8. Event-driven scheduler (не setInterval polling)
+
 ✅ Решено. `setInterval(5ms)` заменён на event-driven queue:
+
 - markDirty → enqueue → microtask worker
 - O(events) вместо O(strategies × time)
 - Zero CPU при idle
 - Latency < 1ms (microtask) вместо до 5ms (poll interval)
 
 ### 9. Coalescing вместо executionPromise skip
+
 ✅ Решено. Старый подход: `if executionPromise → skip` (потеря данных).
 Новый: `if running → rerunRequested = true`. После завершения execute —
 немедленный rerun с актуальным snapshot.
 
 ### 10. Intent normalization в ExecutionEngine
+
 ✅ Решено. Перед исполнением intents нормализуются:
+
 - CANCEL_ALL → удаляет все отдельные CANCEL (дублирование)
 - Dedupe CANCEL по orderId
 - Dedupe PLACE по `${side}:${price}`
@@ -1009,13 +1038,17 @@ apps/bot/src/strategyFactory.ts
 ## Исправляемые GAP'ы
 
 ### GAP 1: External cancel → unreserve balance
+
 ⚠️ → ✅ Исправляется в OrderEventBridge (шаг 7.1):
+
 - ORDER_CANCELLED/EXPIRED → определяем side ордера
 - BUY → `portfolioService.releaseReservation(notional)`
 - SELL → `portfolioService.releaseTokenReservation(instrumentId, remainingSize)`
 
 ### GAP 2: Filled ордера не удаляются из repo
+
 ⚠️ → ✅ Исправляется в OrderEventBridge (шаг 7.1):
+
 - ORDER_FILLED → `orderRepo.delete(orderId)` (немедленный cleanup)
 
 ---
@@ -1023,6 +1056,7 @@ apps/bot/src/strategyFactory.ts
 ## Acceptance criteria
 
 Каждый шаг считается завершённым когда:
+
 1. Код написан с TSDoc комментариями (русский)
 2. Тесты написаны и проходят
 3. `npm run build && npm test && npm run lint` — без ошибок

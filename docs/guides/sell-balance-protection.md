@@ -103,12 +103,14 @@ Retry не рекурсивен — inline в `_executePlace`. Это гаран
 ### Логи L1
 
 При adjustment:
+
 ```
 WARN  SELL size adjusted to on-chain balance (tiny deficit)
   tokenId, originalSize, adjustedSize, deltaTokens, deficitPercent
 ```
 
 При failure:
+
 ```
 WARN  SELL pre-flight balance check failed
   tokenId, reason, required, available
@@ -119,12 +121,14 @@ WARN  SELL pre-flight balance check failed
 ### Логи L2
 
 При retry:
+
 ```
 WARN  ExecutionEngine: SELL retry with on-chain adjusted size
   originalSize, adjustedSize, deficitPct, previousError
 ```
 
 При успехе после retry:
+
 ```
 INFO  ExecutionEngine: order placed
   retriedAfterDust: true, originalSize, size (=adjusted)

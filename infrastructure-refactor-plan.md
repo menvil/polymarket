@@ -23,6 +23,7 @@ domain ← application ← infrastructure
 ## 1. Новые файлы: scaffold пакета
 
 ### `packages/infrastructure/polymarket/package.json`
+
 ```json
 {
   "name": "@polymarket/exchange-polymarket",
@@ -42,6 +43,7 @@ domain ← application ← infrastructure
 ```
 
 ### `packages/infrastructure/polymarket/tsconfig.json`
+
 ```json
 {
   "extends": "../../../tsconfig.base.json",
@@ -66,6 +68,7 @@ domain ← application ← infrastructure
 Все контракты, которых не хватает — живут здесь. Это **seam-точки**: когда application layer появится, импорты в инфраструктуре заменятся на `@polymarket/ports`, `@polymarket/event-bus`.
 
 ### `ports/IEventBus.ts`
+
 ```typescript
 // Простой generic IEventBus — временный, до появления @polymarket/event-bus.
 // Совместим по форме: @polymarket/event-bus IEventBus является надмножеством.
@@ -76,9 +79,11 @@ export interface IEventBus<T = unknown> {
 ```
 
 ### `ports/IExchangeClientPort.ts`
+
 Определяет `PlaceOrderParams`, `OrderResponse`, `FillResponse`, `IExecutionAdapter`, `CanPlaceOrderParams`, `CanPlaceOrderResult`, `PositionResponse`, `IPortfolioAdapter`.
 
 ### `ports/IBalanceProvider.ts`
+
 ```typescript
 export interface IBalanceProvider {
   getAvailableBalance(): Promise<number>;
@@ -87,12 +92,15 @@ export interface IBalanceProvider {
 ```
 
 ### `ports/IPositionsProvider.ts`
+
 Определяет `PositionResponse`, `PositionState`, `IPositionsProvider`.
 
 ### `ports/IOrdersProvider.ts`
+
 Определяет `IOrdersProvider` (re-export `OrderResponse` из IExchangeClientPort).
 
 ### `ports/IPortfolioProjector.ts`
+
 ```typescript
 export interface IPortfolioProjector {
   getPosition(tokenId: string): { quantity: number } | undefined;
@@ -100,6 +108,7 @@ export interface IPortfolioProjector {
 ```
 
 ### `ports/IOrderRepository.ts`
+
 ```typescript
 // Минимальный контракт для UserEventsFeedService.
 // Будет заменён на @polymarket/ports IOrderRepository.
@@ -109,9 +118,11 @@ export interface IOrderRepository {
 ```
 
 ### `ports/ExecutionEvents.ts`
+
 Определяет `OrderAccepted`, `OrderRejected`, `OrderCancelled`, `ExecutionEvent`.
 
 ### `ports/EventEnvelope.ts`
+
 Определяет `ExecutionContext`, `EventEnvelope<T>`, функцию `createProductionEnvelope()`.
 
 ---
@@ -121,6 +132,7 @@ export interface IOrderRepository {
 `mapParsedToDomainEvent.ts` использует классы которых нет. Они определяются рядом:
 
 ### `ws/mapping/DomainEvent.ts`
+
 ```typescript
 export interface DomainEvent {
   readonly eventName: string;
@@ -128,6 +140,7 @@ export interface DomainEvent {
 ```
 
 ### `ws/mapping/OrderBookSnapshotReceivedEvent.ts`
+
 ```typescript
 import type { DomainEvent } from './DomainEvent.js';
 
@@ -143,6 +156,7 @@ export class OrderBookSnapshotReceivedEvent implements DomainEvent {
 ```
 
 ### `ws/mapping/TradeExecutedEvent.ts`
+
 ```typescript
 import type { DomainEvent } from './DomainEvent.js';
 
@@ -167,6 +181,7 @@ export class TradeExecutedEvent implements DomainEvent {
 `UserEventsFeedService` импортирует несуществующие `../../ws/WsExecutionMapper.js` и `../../ws/WsExecutionNormalizer.js`. Эти пути указывают на `packages/infrastructure/ws/` которого нет. Создать минимальные заглушки **внутри пакета**:
 
 ### `ws/WsExecutionMapper.ts`
+
 ```typescript
 // Заглушка — будет реализована при подключении user WS channel.
 export interface WsExecutionMapperMetrics {
@@ -176,6 +191,7 @@ export interface WsExecutionMapperMetrics {
 ```
 
 ### `ws/WsExecutionNormalizer.ts`
+
 ```typescript
 import type { IOrderRepository } from '../ports/IOrderRepository.js';
 
@@ -186,6 +202,7 @@ export class WsExecutionNormalizer {
 ```
 
 И исправить импорты в `UserEventsFeedService.ts`:
+
 ```typescript
 // было:  import ... from '../../ws/WsExecutionMapper.js'
 // стало: import ... from './WsExecutionMapper.js'
@@ -198,12 +215,14 @@ export class WsExecutionNormalizer {
 ## 5. Переписать: `ws/PolymarketWsAdapter.ts`
 
 ### Что удалить
+
 - Импорты: `InMemoryEventBus`, `ProjectorCoordinator`, `createProductionEnvelope`
 - Поля: `eventBus: InMemoryEventBus`, `projector: ProjectorCoordinator`
 - Методы: `subscribeToOrderbook(tokenId, callback)`, `subscribeToTrades(tokenId, callback)`, `unsubscribeFromOrderbook()`, `unsubscribeFromTrades()`
 - Типы: `OrderbookCallback`, `TradeCallback`
 
 ### Что добавить
+
 ```typescript
 import type { IEventBus } from '../ports/IEventBus.js';
 import type { DomainEvent } from './mapping/DomainEvent.js';
@@ -217,6 +236,7 @@ private readonly eventBus: IEventBus<DomainEvent>
 ### Что изменить
 
 **`handleOrderbookMessage(message)`**:
+
 ```typescript
 private handleOrderbookMessage(message: PolymarketOrderbookMessage): void {
   const event = mapParsedToDomainEvent(message);
@@ -227,6 +247,7 @@ private handleOrderbookMessage(message: PolymarketOrderbookMessage): void {
 ```
 
 **`handleTradeMessage(message)`**:
+
 ```typescript
 private handleTradeMessage(message: PolymarketTradeMessage): void {
   const event = mapParsedToDomainEvent(message);
@@ -237,6 +258,7 @@ private handleTradeMessage(message: PolymarketTradeMessage): void {
 ```
 
 **`isSubscribed(tokenId)`**:
+
 ```typescript
 public isSubscribed(tokenId: string): boolean {
   return this.subscribedTokens.has(tokenId);
@@ -248,6 +270,7 @@ public isSubscribed(tokenId: string): boolean {
 ### Изменить IMarketDataFeed
 
 `ws/IMarketDataFeed.ts` (создать рядом с WsAdapter):
+
 ```typescript
 // Упрощённый IMarketDataFeed — только lifecycle и WS-подписки.
 // Управление подписчиками перенесено на IEventBus (subscribe/unsubscribe).
@@ -273,6 +296,7 @@ export interface IMarketDataFeed {
 ### Паттерн `ILogger` (16 файлов)
 
 Во всех файлах заменить:
+
 ```typescript
 // было
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
@@ -281,6 +305,7 @@ import type { ILogger } from '@polymarket/logger';
 ```
 
 Файлы (глубина относительно package root):
+
 | Файл | Старый путь |
 |---|---|
 | `rest/adapters/PolymarketExecutionAdapter.ts` | `../../../../domain/ports/ILogger.js` |

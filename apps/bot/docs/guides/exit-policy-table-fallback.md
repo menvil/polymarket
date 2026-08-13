@@ -24,6 +24,7 @@ $150–200 от страйка), delta попадает в редко наблю
 ### Почему уровень 3 не блокирует риск-бюджет
 
 При `fairCents = currentBidCents`:
+
 - `holdEdgeCents = fairCents - currentBidCents = 0`
 - Нет HoldEdge-бонуса → `stateRisk` не снижается
 - `drawdownRisk = clamp(drawdownCents × 1.4, 0, 28)` работает в полную силу

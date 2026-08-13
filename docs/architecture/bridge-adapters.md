@@ -15,6 +15,7 @@ Phase 8 соединяет инфраструктурный слой (Polymarket
 **Ответственность:** Market channel — orderbook snapshots.
 
 **Поток данных:**
+
 ```
 IPolymarketWsEmitter.onOrderbookSnapshot(dto: WsOrderbookSnapshotDto)
   → WsRawLevel[] → PriceLevel[]    (конвертация VOs на границе инфраструктуры)
@@ -27,6 +28,7 @@ IPolymarketWsEmitter.onReconnect()
 **Gap recovery:** При reconnect стаканы инвалидируются. Следующий WS snapshot восстанавливает состояние автоматически.
 
 **Пример использования:**
+
 ```typescript
 const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger);
 adapter.start();
@@ -41,6 +43,7 @@ adapter.stop();
 **Ответственность:** User channel — fills + lifecycle ордеров.
 
 **Поток данных:**
+
 ```
 IPolymarketWsEmitter.onUserFill(dto: WsUserFillDto)
   → _mapFillDto(dto)                         (явный маппинг → Record<string, unknown>)
@@ -56,6 +59,7 @@ IPolymarketWsEmitter.onReconnect()
 ```
 
 **Маппинг orderEventType:**
+
 | orderEventType | VenueOrderUpdate       |
 |---------------|------------------------|
 | PLACEMENT     | `{ type: 'ACCEPTED' }` |
@@ -63,6 +67,7 @@ IPolymarketWsEmitter.onReconnect()
 | Остальные     | null (игнорируется)    |
 
 **Пример использования:**
+
 ```typescript
 // Перед start() активировать user channel:
 await wsEmitter.subscribeUserChannel({ apiKey, secret, passphrase });
@@ -80,16 +85,19 @@ adapter.start();
 **Ответственность:** Реализует `IExchangeClient` (из `@polymarket/ports`) через `PolymarketExecutionAdapter`.
 
 **Маппинг:**
+
 ```
 domain VOs → raw числа/строки → PolymarketExecutionAdapter.postOrder()
 throws → Err(ExchangeError)   (IExchangeClient не бросает)
 ```
 
 **AssetId → tokenId:**
+
 - `POLYMARKET_CTF_TOKEN`: используем `.tokenId` напрямую
 - Другие типы: fallback через `assetIdToString()` + предупреждение
 
 **Пример использования:**
+
 ```typescript
 const exchangeClient: IExchangeClient = new PolymarketExchangeClientAdapter(
   executionAdapter,
@@ -106,6 +114,7 @@ const result = await exchangeClient.submitOrder({ asset, side, price, size });
 **Ответственность:** Реализует `IMarketDiscoveryService` — обнаружение торговых рынков через Gamma API.
 
 **Поток данных:**
+
 ```
 PolymarketMarketDataRestClient.getActiveMarkets()   → GammaMarketDto[]
   → предфильтр: active && !closed && enableOrderBook
@@ -127,6 +136,7 @@ PolymarketMarketDataRestClient.getActiveMarkets()   → GammaMarketDto[]
   Используется `ExpirationRemovalPolicy` для своевременного закрытия рынков.
 
 **Пример использования:**
+
 ```typescript
 // StrategyCoordinator._discover() — candidate IS InstrumentInfo
 const candidates = await discoveryService.findCandidates();

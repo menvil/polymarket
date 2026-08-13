@@ -5,6 +5,7 @@
 ## Обзор
 
 Все стратегии реализуют `IStrategy` через `BaseStrategy<TSnapshot, TAction>` с pipeline:
+
 1. `gather(snapshot)` → типизированные данные
 2. `decide(data, reasons)` → domain-specific actions
 3. `toIntents(actions)` → `StrategyIntent[]`
@@ -16,6 +17,7 @@
 **Назначение:** Smoke-тестирование всей цепочки: tick → intent → execution → fill → portfolio → tick.
 
 **Алгоритм:**
+
 ```
 Нет позиции + нет ордеров      → ENTER: BUY @ (bestAsk - buyOffset)
 Нет позиции + есть BUY ордер:
@@ -26,6 +28,7 @@
 ```
 
 **Конфигурация:**
+
 | Параметр | Тип | По умолчанию | Описание |
 |----------|-----|-------------|----------|
 | `orderSize` | `Decimal` | `5` | Размер ордера в токенах |
@@ -38,6 +41,7 @@
 **Назначение:** Маркет-мейкинг по модели Avellaneda-Stoikov с калиброванными параметрами из исследования на 10M трейдов Polymarket.
 
 **Модель (logit-space):**
+
 ```
 reservation_price: r_x = logit(mid) - (q/qMax) × γ × σ² × τ
 optimal_spread:    δ = γ × σ² × τ + 2/κ + jump_premium
@@ -46,6 +50,7 @@ ask = sigmoid(r_x + δ/2) × 100
 ```
 
 **Алгоритм:**
+
 ```
 tradeCount < minTradesForMid → SKIP (EWMA ненадёжна)
 tauSec < stagedStopSec (10s) → STOP: CANCEL_ALL
@@ -56,11 +61,13 @@ inventory at ±qMax           → не котируем перегруженну
 ```
 
 **Калибровка:**
+
 - σ (волатильность), κ (order arrival), jump premium — per-minute-bucket
 - Две таблицы: 5-минутные (6 бакетов) и 15-минутные (16 бакетов)
 - Волатильность в последнюю минуту 3.8× выше чем за 5 минут до конца
 
 **Конфигурация:**
+
 | Параметр | Тип | По умолчанию | Описание |
 |----------|-----|-------------|----------|
 | `gamma` | `Decimal` | `0.05` | Risk aversion (выше → шире спреды) |
@@ -74,6 +81,7 @@ inventory at ±qMax           → не котируем перегруженну
 | `minTradesForMid` | `number` | `5` | Мин трейдов для расчёта EWMA |
 
 **Пример конфига (JSON):**
+
 ```json
 {
   "strategy": "avellaneda-stoikov",

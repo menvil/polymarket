@@ -15,16 +15,19 @@ Datadog закрывает все три — но платно. План в дв
 ## Что даёт каждый инструмент
 
 ### OTel (бесплатно, vendor-neutral)
+
 - Полная causal chain с latency: `BOOK_UPDATED → STRATEGY_SIGNAL → ORDER_PLACED → FILL_RECEIVED`
 - Экспортируется куда угодно: Jaeger (dev), Prometheus (metrics), Datadog (prod)
 - Пишешь один раз — меняешь только backend
 
 ### DogStatsD
+
 - UDP метрики в Datadog Agent (fire-and-forget, не блокирует event loop)
 - Нужен **платный Datadog** — без него данные некуда падать
 - Преимущество: нативная интеграция с Datadog dashboards, аномалии, алерты
 
 ### Datadog (платный)
+
 - APM: flame graphs, service map, error tracking
 - Custom metrics через DogStatsD
 - Logs с трейсами коррелируются автоматически
@@ -56,6 +59,7 @@ packages/infrastructure/telemetry/
 ```
 
 **Установить:**
+
 ```
 @opentelemetry/api
 @opentelemetry/sdk-node
@@ -67,6 +71,7 @@ packages/infrastructure/telemetry/
 ```
 
 `bootstrap.ts` инициализирует:
+
 - TraceProvider → OTLP → Jaeger (`http://localhost:4318/v1/traces`)
 - MeterProvider → Prometheus scrape endpoint (`http://localhost:9464/metrics`)
 
@@ -77,6 +82,7 @@ packages/infrastructure/telemetry/
 **Изменить:** `packages/apps/collect-data/src/main.ts`
 
 Первой строкой, до всех остальных импортов:
+
 ```typescript
 import '@polymarket/telemetry/bootstrap'; // side-effect import
 // ... остальные импорты
@@ -91,6 +97,7 @@ import '@polymarket/telemetry/bootstrap'; // side-effect import
 **Изменить:** `packages/application/event-bus/src/EventBus.ts`
 
 В `_dispatch()` обернуть в OTel span:
+
 ```typescript
 // Трейсы — causal chain:
 tracer.startActiveSpan(`event.${event.type}`, async (span) => {
@@ -104,6 +111,7 @@ dispatchDuration.record(elapsed, { event_type: event.type });
 ```
 
 В `publish()` обновлять gauge:
+
 ```
 event_bus_queue_size   ← gauge, обновлять при каждом push/shift
 ```
@@ -117,6 +125,7 @@ event_bus_queue_size   ← gauge, обновлять при каждом push/sh
 **Изменить** (по одной строке в каждом):
 
 `FillEventHandler.ts`:
+
 ```typescript
 trace.getActiveSpan()?.setAttributes({
   'fill.id': String(fill.id),
@@ -126,6 +135,7 @@ trace.getActiveSpan()?.setAttributes({
 ```
 
 `BookUpdateHandler.ts`:
+
 ```typescript
 trace.getActiveSpan()?.setAttributes({
   'market.id': String(marketId),
@@ -177,6 +187,7 @@ grafana:         # дашборды, UI: localhost:3000
 **Создать:** `grafana/dashboards/trading-bot.json`
 
 Panels:
+
 - Event throughput by type (events/sec)
 - EventBus queue size (gauge)
 - Dispatch latency P50/P95/P99 by event type
