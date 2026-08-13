@@ -234,7 +234,7 @@ export class MarketDataStore {
         } else {
           const tradeResult = TradeMapper.fromParsedTrade({
             instrumentId: event.instrumentId,
-            marketId: String(marketId),
+            marketId,
             price: event.price,
             size: event.size,
             side: event.side,

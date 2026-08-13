@@ -10,7 +10,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { TradeIndexCollector } from '../src/TradeIndexCollector.js';
-import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
+import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
 import type { AssetId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/value-objects';
@@ -29,7 +29,7 @@ const T0 = 1_700_000_000_000;
 const TOKEN_A = parseAssetId('62305814799875783974460176688386847666394972778903073967664089920408777315323')!;
 const TOKEN_B = parseAssetId('11111111111111111111111111111111111111111111111111111111111111111111111111')!;
 const VENUE_ID = asVenueId('POLYMARKET')!;
-const MARKET_ID = '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3';
+const MARKET_ID = unsafeMarketId('0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3');
 
 function makeTrade(overrides: {
   idSuffix: string;

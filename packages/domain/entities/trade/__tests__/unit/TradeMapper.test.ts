@@ -4,7 +4,7 @@
 
 import Decimal from 'decimal.js';
 import { TradeMapper } from '../../src/mappers/TradeMapper';
-import { asInstrumentId } from '@polymarket/ids';
+import { asInstrumentId, unsafeMarketId } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 
@@ -297,7 +297,7 @@ describe('TradeMapper', () => {
     }) {
       return {
         instrumentId: overrides?.instrumentId ?? VALID_INSTRUMENT_ID,
-        marketId: overrides?.marketId ?? '0xmarket123abc',
+        marketId: unsafeMarketId(overrides?.marketId ?? '0xmarket123abc'),
         price: Price.of(new Decimal(overrides?.price ?? 0.65)),
         size: Quantity.of(new Decimal(overrides?.size ?? 100)),
         side: overrides?.side ?? ('BUY' as Side),

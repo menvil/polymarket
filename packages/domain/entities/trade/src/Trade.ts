@@ -52,7 +52,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import type { VenueTradeId, VenueId, AssetId, TxHash } from '@polymarket/ids';
+import type { VenueTradeId, VenueId, AssetId, TxHash, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
@@ -70,8 +70,8 @@ export interface TradeParams {
   readonly id: VenueTradeId;
   /** ID торговой площадки */
   readonly venueId: VenueId;
-  /** ID рынка (string, пока без MarketId VO) */
-  readonly marketId: string;
+  /** ID рынка — canonical branded `MarketId` */
+  readonly marketId: MarketId;
   /** ID токена (актива) */
   readonly tokenId: AssetId;
   /** Цена трейда */
@@ -105,7 +105,7 @@ export interface TradeParams {
 export class Trade {
   public readonly id: VenueTradeId;
   public readonly venueId: VenueId;
-  public readonly marketId: string;
+  public readonly marketId: MarketId;
   public readonly tokenId: AssetId;
   public readonly price: Price;
   public readonly size: Quantity;
