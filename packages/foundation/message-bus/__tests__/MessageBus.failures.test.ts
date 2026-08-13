@@ -365,7 +365,9 @@ describe('MessageBus failures', () => {
       expect(bus.getStats().dispatching).toBe(false);
       expect(captured.drainLimits).toHaveLength(1);
       expect(captured.drainLimits[0].maxMessagesPerDrain).toBe(3);
-      expect(captured.drainLimits[0].clearedCount).toBeGreaterThan(0);
+      // Детерминированно ровно 1: каждый обработчик петли публикует одно сообщение,
+      // поэтому в момент срабатывания guard в очереди ждёт ровно одно
+      expect(captured.drainLimits[0].clearedCount).toBe(1);
 
       // Убираем петлю — bus снова работает
       unsubLoop();
@@ -425,6 +427,35 @@ describe('MessageBus failures', () => {
       const next = await bus.publish({ type: 'ITEM_ADDED', itemId: 't' });
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([0]);
+    });
+
+    it('async-rejection observer-а не покидает движок (нет unhandled rejection) и не влияет на доставку', async () => {
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        const bus = new MessageBus<TestMessage>({
+          observer: {
+            // Контракт observer'а — void, но async-функция assignable к нему:
+            // её rejection тоже обязан быть проглочен движком
+            onHandlerError: async () => { throw new Error('async observer boom'); },
+          },
+        });
+        let siblingCalled = false;
+        bus.subscribe('HEARTBEAT', () => { throw new Error('handler boom'); });
+        bus.subscribe('HEARTBEAT', () => { siblingCalled = true; });
+
+        const result = await bus.publish(heartbeat(1));
+        expect(result.ok).toBe(true);
+        expect(siblingCalled).toBe(true);
+
+        // unhandledRejection эмитится после опустошения microtask-очереди —
+        // дожидаемся macrotask-границы
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
     });
 
     it('падение observer.onQueueOverflow не меняет overflow-Result', async () => {

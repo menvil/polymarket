@@ -1,3 +1,5 @@
+import type { TypedMessage } from './TypedMessage.js';
+
 /**
  * Стандартизированный конверт сообщения — reusable-форма для будущих потребителей.
  *
@@ -27,8 +29,6 @@
  * };
  * ```
  */
-import type { TypedMessage } from './TypedMessage.js';
-
 export interface MessageEnvelope<
   TType extends string,
   TPayload,

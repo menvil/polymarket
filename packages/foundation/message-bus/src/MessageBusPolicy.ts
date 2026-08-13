@@ -25,7 +25,15 @@ export interface MessageBusPolicy {
   readonly queuePolicy: {
     /** Максимальный размер ожидающей очереди (in-flight сообщение не считается). */
     readonly maxQueueSize: number;
-    /** Максимум сообщений за один drain-цикл (защита от бесконечной петли публикаций). */
+    /**
+     * Максимум сообщений за один drain-цикл (защита от бесконечной петли публикаций).
+     *
+     * @remarks
+     * Guard не различает петлю и аномально большой легитимный backlog: если одному
+     * drain предстоит обработать больше этого лимита, он завершится
+     * `MessageBusDrainLimitError` с очисткой остатка. Подбирай лимит под burst-профиль
+     * своего контура.
+     */
     readonly maxMessagesPerDrain: number;
   };
 

@@ -83,19 +83,22 @@ describe('MessageBus reentrancy', () => {
   it('reentrant publishAll тоже подтверждает enqueue, а не обработку', async () => {
     const bus = new MessageBus<TestMessage>();
     const delivered: number[] = [];
+    let batchResult: Result<void, MessageBusPublishError> | undefined;
     let deliveredAtReturn: number[] | undefined;
 
     bus.subscribe('HEARTBEAT', async (message) => {
       delivered.push(message.seq);
       if (message.seq === 1) {
-        const batchResult = await bus.publishAll([heartbeat(2), heartbeat(3)]);
-        expect(batchResult.ok).toBe(true);
+        // Только захват — ассерты в основном потоке теста: упавший expect внутри
+        // обработчика проглотился бы non-critical семантикой bus
+        batchResult = await bus.publishAll([heartbeat(2), heartbeat(3)]);
         deliveredAtReturn = [...delivered];
       }
     });
 
     await bus.publish(heartbeat(1));
 
+    expect(batchResult?.ok).toBe(true);
     expect(deliveredAtReturn).toEqual([1]);
     expect(delivered).toEqual([1, 2, 3]);
   });

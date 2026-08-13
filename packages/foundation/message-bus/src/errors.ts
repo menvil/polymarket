@@ -29,6 +29,8 @@
  * текущее in-flight сообщение не входит.
  */
 export class MessageBusOverflowError extends Error {
+  /** Literal-дискриминант вида ошибки (доступен и без экземпляра). */
+  public static readonly code = 'MESSAGE_BUS_OVERFLOW';
   /** Literal-дискриминант вида ошибки. */
   public readonly code = 'MESSAGE_BUS_OVERFLOW' as const;
   /** Максимальный размер ожидающей очереди, действовавший при отклонении. */
@@ -72,6 +74,8 @@ export class MessageBusOverflowError extends Error {
  * самого MessageBus.
  */
 export class MessageBusCriticalHandlerError extends Error {
+  /** Literal-дискриминант вида ошибки (доступен и без экземпляра). */
+  public static readonly code = 'MESSAGE_BUS_CRITICAL_HANDLER';
   /** Literal-дискриминант вида ошибки. */
   public readonly code = 'MESSAGE_BUS_CRITICAL_HANDLER' as const;
   /** Тип сообщения, на котором упал critical-обработчик. */
@@ -102,6 +106,8 @@ export class MessageBusCriticalHandlerError extends Error {
  * caller получает эту ошибку. Bus остаётся работоспособным.
  */
 export class MessageBusDrainLimitError extends Error {
+  /** Literal-дискриминант вида ошибки (доступен и без экземпляра). */
+  public static readonly code = 'MESSAGE_BUS_DRAIN_LIMIT';
   /** Literal-дискриминант вида ошибки. */
   public readonly code = 'MESSAGE_BUS_DRAIN_LIMIT' as const;
   /** Действовавший лимит сообщений за один drain-цикл. */
@@ -131,6 +137,8 @@ export class MessageBusDrainLimitError extends Error {
  * подписок остаются доступными для восстановления после сбоя.
  */
 export class MessageBusClosedError extends Error {
+  /** Literal-дискриминант вида ошибки (доступен и без экземпляра). */
+  public static readonly code = 'MESSAGE_BUS_CLOSED';
   /** Literal-дискриминант вида ошибки. */
   public readonly code = 'MESSAGE_BUS_CLOSED' as const;
 

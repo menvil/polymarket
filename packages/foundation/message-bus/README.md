@@ -164,7 +164,10 @@ in-flight сообщение (уже извлечённое в fan-out) в ли�
 - Drain-limit (`clear-queue`): при обработке `maxMessagesPerDrain` сообщений за
   один drain при непустой очереди — `Err(MessageBusDrainLimitError)`, оставшаяся
   очередь **очищается** (артефакт бесконечной петли публикаций, не backlog),
-  bus остаётся работоспособным.
+  bus остаётся работоспособным. Guard не умеет отличить петлю от аномально
+  большого легитимного burst'а: единичный drain объёмом больше
+  `maxMessagesPerDrain` завершится так же — лимиты политики нужно подбирать под
+  burst-профиль контура (default: 10 000 за drain при очереди до 100 000).
 
 Внутренняя очередь — backing array + head-индекс c периодическим compaction:
 amortized O(1) enqueue/dequeue, без `Array.shift()` на hot path (см.

@@ -395,11 +395,19 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
    *
    * @remarks
    * Исключение observer'а перехватывается и игнорируется: telemetry-hook не имеет
-   * права влиять на доставку, Result операций или состояние очереди.
+   * права влиять на доставку, Result операций или состояние очереди. Контракт
+   * callback'ов — `void`, но async-функция assignable к нему — поэтому если
+   * observer вернул Promise, его rejection тоже проглатывается (иначе получился
+   * бы process-level unhandled rejection из недр движка).
    */
   private _notifyObserver(notify: () => void): void {
     try {
-      notify();
+      const result = notify() as unknown;
+      if (result instanceof Promise) {
+        void result.catch(() => {
+          // Async-observer изолирован так же, как sync: rejection не покидает движок
+        });
+      }
     } catch {
       // Observer изолирован: его падение не должно ломать движок доставки
     }
