@@ -34,8 +34,8 @@
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { Order, OrderStatus } from '@polymarket/order';
-import type { AccountId, OrderId, MarketId, InstrumentId, FillId } from '@polymarket/ids';
-import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
+import type { AccountId, OrderId, MarketId, InstrumentId, FillId, StrategyId } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString, unsafeStrategyId } from '@polymarket/ids';
 import type {
   IOrderRepository,
   IOrderStateStore,
@@ -345,7 +345,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * console.log('Open orders:', orders.length);
    * ```
    */
-  public async getByStrategyId(strategyId: string): Promise<readonly Order[]> {
+  public async getByStrategyId(strategyId: StrategyId): Promise<readonly Order[]> {
     const result: Order[] = [];
     for (const record of this._store.values()) {
       if (record.order.strategyId === strategyId && !record.order.isTerminal) {
@@ -371,7 +371,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * const total = await repo.countByStrategyId();
    * ```
    */
-  public async countByStrategyId(strategyId?: string): Promise<number> {
+  public async countByStrategyId(strategyId?: StrategyId): Promise<number> {
     let count = 0;
     for (const record of this._store.values()) {
       const order = record.order;
@@ -444,8 +444,11 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    */
   public async getByMarketId(marketId: MarketId): Promise<readonly Order[]> {
     if (!this._marketCatalog) {
+      // Легаси-fallback: marketId переиспользуется как ключ strategyId (сравнение
+      // по равенству). unsafeStrategyId сохраняет поведение дословно: невалидный
+      // формат просто не совпадёт ни с одним ордером.
       // getByStrategyId() уже фильтрует !isTerminal — семантика совпадает.
-      return this.getByStrategyId(String(marketId));
+      return this.getByStrategyId(unsafeStrategyId(String(marketId)));
     }
 
     const instruments = this._marketCatalog.getAllByMarketId(marketId);
@@ -479,7 +482,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * Фильтрует терминальные статусы — симметрично `getOpenOrdersByInstrument()`
    * и контракту порта `IOrderStateStore.getOpenOrders()` («все открытые ордера»).
    */
-  public getOpenOrders(strategyId: string): readonly Order[] {
+  public getOpenOrders(strategyId: StrategyId): readonly Order[] {
     const result: Order[] = [];
     for (const record of this._store.values()) {
       if (record.order.strategyId === strategyId && !record.order.isTerminal) {
@@ -499,7 +502,7 @@ export class InMemoryOrderRepository implements IOrderRepository, IOrderStateSto
    * @remarks
    * Фильтрует по strategyId и сравнивает order.asset с instrumentId (string match).
    */
-  public getOpenOrdersByInstrument(strategyId: string, instrumentId: InstrumentId): readonly Order[] {
+  public getOpenOrdersByInstrument(strategyId: StrategyId, instrumentId: InstrumentId): readonly Order[] {
     const instrumentStr = String(instrumentId);
     const result: Order[] = [];
     for (const record of this._store.values()) {

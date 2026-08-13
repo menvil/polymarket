@@ -37,7 +37,7 @@
  */
 import type { Result } from '@polymarket/result';
 import type { Order, OrderStatus } from '@polymarket/order';
-import type { OrderId, MarketId } from '@polymarket/ids';
+import type { OrderId, MarketId, StrategyId } from '@polymarket/ids';
 import type { VersionConflictError } from './VersionConflictError.js';
 
 /**
@@ -199,7 +199,7 @@ export interface IOrderRepository {
    * @remarks
    * Используется TradingAPI.getOpenOrders().
    */
-  getByStrategyId(strategyId: string): Promise<readonly Order[]>;
+  getByStrategyId(strategyId: StrategyId): Promise<readonly Order[]>;
 
   /**
    * Счётчик открытых ордеров.
@@ -213,7 +213,7 @@ export interface IOrderRepository {
    * (например, индекс в Redis/Postgres). In-memory реализация делает линейный
    * проход O(n), что приемлемо при её объёме данных.
    */
-  countByStrategyId(strategyId?: string): Promise<number>;
+  countByStrategyId(strategyId?: StrategyId): Promise<number>;
 
   /**
    * Возвращает все ОТКРЫТЫЕ (не терминальные) ордера указанного рынка.

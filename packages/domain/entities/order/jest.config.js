@@ -9,6 +9,8 @@ export default {
     '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
     '^@polymarket/value-objects/asset-quantity$': '<rootDir>/../../value-objects/src/asset-quantity/index.ts',
+    '^@polymarket/fill$': '<rootDir>/../fill/src/index.ts',
+    '^@polymarket/order-events$': '<rootDir>/../../events/order/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
   },
   transform: {

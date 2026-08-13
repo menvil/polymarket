@@ -27,19 +27,13 @@
       "path": "../../foundation/logger/tsconfig.build.json"
     },
     {
-      "path": "../../foundation/ids/tsconfig.build.json"
-    },
-    {
-      "path": "../../domain/value-objects/tsconfig.build.json"
-    },
-    {
-      "path": "../../domain/entities/order/tsconfig.build.json"
-    },
-    {
-      "path": "../../domain/entities/fill/tsconfig.build.json"
-    },
-    {
       "path": "../../foundation/message-bus/tsconfig.build.json"
+    },
+    {
+      "path": "../events/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/events/order/tsconfig.build.json"
     }
   ]
 }

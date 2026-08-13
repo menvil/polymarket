@@ -28,7 +28,8 @@ import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
-import type { FillData, OrderSnapshot } from '../../src/OrderState';
+import type { OrderSnapshot } from '../../src/OrderState';
+import type { FillData } from '@polymarket/fill';
 import { replay } from '../helpers';
 
 // ──────────────── Фикстуры ────────────────

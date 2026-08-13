@@ -1,19 +1,4 @@
 /**
- * Стратегические события — сигналы от стратегий.
- *
- * @remarks
- * StrategySignalEvent публикуется стратегией через TradingAPI.signal().
- * TradingOrchestrator подписывается и инициирует размещение ордеров.
- */
-import type { InstrumentId } from '@polymarket/ids';
-import type { Price, Quantity } from '@polymarket/value-objects';
-
-/**
- * Направление сигнала стратегии.
- */
-export type SignalDirection = 'BUY' | 'SELL';
-
-/**
  * Торговый сигнал от стратегии.
  *
  * @remarks
@@ -22,10 +7,14 @@ export type SignalDirection = 'BUY' | 'SELL';
  * suggestedPrice/suggestedSize — рекомендации, оркестратор может скорректировать
  * с учётом риск-лимитов и рыночных ограничений.
  */
+import type { InstrumentId, StrategyId } from '@polymarket/ids';
+import type { Price, Quantity } from '@polymarket/value-objects';
+import type { SignalDirection } from './SignalDirection.js';
+
 export interface StrategySignalEvent {
   readonly type: 'STRATEGY_SIGNAL';
-  /** ID стратегии (branded string нет — обычная строка) */
-  readonly strategyId: string;
+  /** ID стратегии — canonical branded `StrategyId` из `@polymarket/ids` */
+  readonly strategyId: StrategyId;
   /** Направление сигнала */
   readonly signal: SignalDirection;
   /** ID инструмента */

@@ -4,7 +4,7 @@
 
 import { Trade } from '../../src/Trade';
 import type { TradeParams } from '../../src/Trade';
-import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
+import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
@@ -35,7 +35,7 @@ function makeValidParams(overrides?: Partial<TradeParams>): TradeParams {
   return {
     id: asVenueTradeId('0xabc_1700000000000')!,
     venueId: asVenueId('POLYMARKET')!,
-    marketId: 'market-abc',
+    marketId: unsafeMarketId('market-abc'),
     tokenId,
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
@@ -111,7 +111,7 @@ describe('Trade', () => {
     });
 
     it('возвращает Err если marketId пустой', () => {
-      const params = makeValidParams({ marketId: '' });
+      const params = makeValidParams({ marketId: unsafeMarketId('') });
       const result = Trade.create(params);
 
       expect(result.ok).toBe(false);
@@ -121,7 +121,7 @@ describe('Trade', () => {
     });
 
     it('возвращает Err если marketId только пробелы', () => {
-      const params = makeValidParams({ marketId: '   ' });
+      const params = makeValidParams({ marketId: unsafeMarketId('   ') });
       const result = Trade.create(params);
 
       expect(result.ok).toBe(false);

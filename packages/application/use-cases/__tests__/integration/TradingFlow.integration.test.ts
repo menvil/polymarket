@@ -37,7 +37,7 @@ import type { PlaceOrderDeps, PlaceOrderInput } from '../../src/PlaceOrderUseCas
 import type { ProcessFillDeps } from '../../src/ProcessFillUseCase.js';
 import type { CancelOrderDeps } from '../../src/CancelOrderUseCase.js';
 import { EventBus } from '@polymarket/event-bus';
-import type { ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok, Err } from '@polymarket/result';
 import type { Result } from '@polymarket/result';

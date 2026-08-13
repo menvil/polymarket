@@ -71,7 +71,7 @@
  */
 import type Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
-import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
+import type { AccountId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
 import type {
   OrderSide,
   ReservationSnapshot,
@@ -152,7 +152,7 @@ export interface OrderSubmissionRecord {
    */
   readonly assetId?: string;
   /** ID стратегии заявки (для восстановления Order), опционально. */
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
   /** Цена ордера (exact decimal-строка) — для recovery-расчёта fill. */
   readonly orderPrice: string;
   /** Запрошенный размер (exact decimal-строка). */
@@ -236,7 +236,7 @@ export interface IOrderSubmissionRepository {
     /** Сериализованный AssetId (`assetIdToString`) — для recovery Order. */
     readonly assetId?: string;
     /** ID стратегии — для recovery Order. */
-    readonly strategyId?: string;
+    readonly strategyId?: StrategyId;
     readonly now: Date;
   }): Promise<BeginOrderSubmissionResult>;
 

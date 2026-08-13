@@ -51,7 +51,7 @@ import type { IStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot } from '@polymarket/strategy';
 import type { StrategyIntent, StrategyStopIntent } from '@polymarket/strategy';
 import type { TriggerReason } from '@polymarket/strategy';
-import type { TopOfBook } from '@polymarket/event-bus';
+import type { TopOfBook } from '@polymarket/application-events';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
 import {

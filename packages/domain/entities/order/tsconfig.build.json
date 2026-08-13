@@ -31,6 +31,12 @@
     },
     {
       "path": "../../value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../fill/tsconfig.build.json"
+    },
+    {
+      "path": "../../events/order/tsconfig.build.json"
     }
   ]
 }

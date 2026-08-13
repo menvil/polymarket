@@ -40,7 +40,7 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Price, Timestamp } from '@polymarket/value-objects';
 import { PriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
-import type { TopOfBook } from '@polymarket/event-bus';
+import type { TopOfBook } from '@polymarket/application-events';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { IBookRegistry } from './IBookRegistry.js';
 

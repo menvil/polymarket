@@ -6,15 +6,24 @@
 
 ## Обзор
 
-Канонический источник application-level событий (`ApplicationEvent` — полный union
-этого контура; Domain-события и будущие внешние сообщения — отдельные контуры) и
-Application-фасад event bus (`EventBus implements IEventBus`) над generic-движком
-`MessageBus<ApplicationEvent>`. Handlers (`@polymarket/handlers`), orchestrators
-(`@polymarket/orchestrators`) и strategy зависят от `IEventBus`/`ApplicationEvent`,
-а не друг от друга.
+**Application-specific delivery façade контура `EventBusEvent`** — и только она.
+С M-002.5 event contracts здесь не определяются и не реэкспортируются:
+
+- **Application event contracts** — `@polymarket/application-events` (union
+  `ApplicationEvent`); **domain-события Order** — `@polymarket/order-events`
+  (union `OrderEvent`); `EventBusEvent = ApplicationEvent | OrderEvent` — union
+  контура доставки (не ownership-слой), определён здесь;
+- **Delivery mechanics** — `@polymarket/message-bus` (generic-движок);
+- **Этот пакет** — Application-фасад доставки: `EventBus implements IEventBus`,
+  Application error-контракт, logger-интеграция, диагностика.
+
+Handlers (`@polymarket/handlers`), orchestrators (`@polymarket/orchestrators`) и
+strategy зависят от `IEventBus` + `@polymarket/application-events`, а не друг
+от друга.
 
 ```typescript
-import { EventBus, type IEventBus, type ApplicationEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
+import { EventBus, type IEventBus } from '@polymarket/event-bus';
 
 const bus: IEventBus = new EventBus(logger);
 
@@ -26,20 +35,7 @@ const result = await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
 if (!result.ok) logger.error('Publish failed', { error: result.error.message });
 ```
 
-## Типы событий (`src/events/`)
-
-`ApplicationEvent` — union всех событий, собранный в `events/index.ts`:
-
-| Источник | События |
-|---|---|
-| `domain-events.ts` | `FillReceivedEvent`, `FillConfirmedEvent`, `FillFailedEvent`, `DirectFillAppliedEvent` |
-| `market-events.ts` | `BookUpdatedEvent`, `BookDepthEvent`, `TradeReceivedEvent` (+ `TopOfBook`) |
-| `strategy-events.ts` | `StrategySignalEvent` (+ `SignalDirection`) |
-| `market-lifecycle-events.ts` | `MarketOpenedEvent`, `MarketClosedEvent` (+ `MarketCloseReason`) |
-| `order-update-events.ts` | `OrderUpdateReceivedEvent` (+ `VenueOrderUpdate`) |
-| `@polymarket/order` (реэкспорт) | `OrderEvent` — Order FSM transitions |
-
-## `EventBus` — фасад над `MessageBus<ApplicationEvent>` (M-002)
+## `EventBus` — фасад над `MessageBus<EventBusEvent>` (M-002)
 
 С M-002 у `EventBus` НЕТ собственного механизма доставки: очередь, FIFO,
 параллельный fan-out (включая нормализацию sync-throw в rejection), reentrancy,
@@ -56,7 +52,7 @@ EventBus (фасад, composition — не наследование)
 └── общая operational-диагностика (getStats → canonical MessageBusStats)
       │
       ▼
-MessageBus<ApplicationEvent>   ← вся механика доставки
+MessageBus<EventBusEvent>   ← вся механика доставки
 ```
 
 `ApplicationEvent` подключается к движку как есть: flat union структурно

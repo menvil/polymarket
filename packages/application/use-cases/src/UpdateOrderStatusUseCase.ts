@@ -68,7 +68,7 @@ import { pendingMatchFillId, canConsumeHeldReservation, hasHeldReservation } fro
 import type { OrderSubmissionRecord } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
-import type { ApplicationEvent, VenueOrderUpdate } from '@polymarket/event-bus';
+import type { ApplicationEvent, VenueOrderUpdate } from '@polymarket/application-events';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 

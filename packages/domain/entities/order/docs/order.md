@@ -14,7 +14,7 @@
 src/
 ├── Order.ts          — агрегат (все фабрики + команды + геттеры)
 ├── OrderState.ts     — типы (OrderStatus, FillState, FillData, OrderSnapshot, ...)
-├── OrderEvents.ts    — domain events для режима replay и outbox
+├── (domain events переехали в @polymarket/order-events — canonical owner)
 ├── _fill.ts          — арифметика fills (приватный модуль)
 ├── index.ts          — публичный API
 └── view/

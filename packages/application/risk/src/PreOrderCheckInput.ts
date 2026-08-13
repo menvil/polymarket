@@ -26,7 +26,7 @@
  * ```
  */
 import type { Portfolio } from '@polymarket/portfolio';
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, StrategyId } from '@polymarket/ids';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 
 /**
@@ -85,7 +85,7 @@ export interface PreOrderCheckInput {
    */
   readonly pendingBuyQuantityForInstrument: Quantity;
   /** ID стратегии (опционально — для per-strategy лимитов) */
-  readonly strategyId?: string;
+  readonly strategyId?: StrategyId;
   /**
    * Время до экспирации рынка (ms). `undefined` = данные недоступны.
    *

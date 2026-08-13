@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { asOrderId, asFillId } from '@polymarket/ids';
+import { asOrderId, asFillId, unsafeStrategyId } from '@polymarket/ids';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
@@ -28,7 +28,7 @@ function createOrder(opts: {
     price: Price.of(new Decimal('0.55')),
     size: Quantity.of(new Decimal('100')),
     timestamp: timestamp.value,
-    strategyId: opts.strategyId,
+    strategyId: opts.strategyId !== undefined ? unsafeStrategyId(opts.strategyId) : undefined,
   });
   if (!result.ok) throw new Error(`Failed to create order: ${result.error.message}`);
   return result.value;
@@ -75,7 +75,7 @@ describe('InMemoryOrderRepository', () => {
       await repo.save(order2, 0);
       await repo.save(order3, 0);
 
-      const strat1Orders = await repo.getByStrategyId('strat-1');
+      const strat1Orders = await repo.getByStrategyId(unsafeStrategyId('strat-1'));
       expect(strat1Orders).toHaveLength(2);
     });
 
@@ -85,8 +85,8 @@ describe('InMemoryOrderRepository', () => {
       await repo.save(order1, 0);
       await repo.save(order2, 0);
 
-      expect(await repo.countByStrategyId('strat-1')).toBe(2);
-      expect(await repo.countByStrategyId('strat-2')).toBe(0);
+      expect(await repo.countByStrategyId(unsafeStrategyId('strat-1'))).toBe(2);
+      expect(await repo.countByStrategyId(unsafeStrategyId('strat-2'))).toBe(0);
       expect(await repo.countByStrategyId()).toBe(2);
     });
 
@@ -111,14 +111,14 @@ describe('InMemoryOrderRepository', () => {
       await repo.save(order3, 0);
 
       // Sync call — no await
-      const orders = repo.getOpenOrders('strat-1');
+      const orders = repo.getOpenOrders(unsafeStrategyId('strat-1'));
       expect(orders).toHaveLength(2);
       expect(orders).toContain(order1);
       expect(orders).toContain(order2);
     });
 
     it('should return empty array for unknown strategy', () => {
-      const orders = repo.getOpenOrders('unknown');
+      const orders = repo.getOpenOrders(unsafeStrategyId('unknown'));
       expect(orders).toHaveLength(0);
     });
 
@@ -133,7 +133,7 @@ describe('InMemoryOrderRepository', () => {
 
       // getOpenOrdersByInstrument фильтрует по String(order.asset) === String(instrumentId)
       const instrumentId = String(ASSET_1) as unknown as InstrumentId;
-      const orders = repo.getOpenOrdersByInstrument('strat-1', instrumentId);
+      const orders = repo.getOpenOrdersByInstrument(unsafeStrategyId('strat-1'), instrumentId);
       expect(orders).toHaveLength(2);
     });
 
@@ -143,7 +143,7 @@ describe('InMemoryOrderRepository', () => {
       await repo.save(order1, 0);
 
       // InstrumentId не совпадает с asset order1
-      const orders = repo.getOpenOrdersByInstrument('strat-1', INSTRUMENT_2);
+      const orders = repo.getOpenOrdersByInstrument(unsafeStrategyId('strat-1'), INSTRUMENT_2);
       expect(orders).toHaveLength(0);
     });
 
@@ -304,7 +304,7 @@ describe('InMemoryOrderRepository', () => {
       await repo.save(createOrder({ id: 'order-2' }), 0);
       repo.clear();
       expect(repo.size).toBe(0);
-      expect(repo.getOpenOrders('strat-1')).toHaveLength(0);
+      expect(repo.getOpenOrders(unsafeStrategyId('strat-1'))).toHaveLength(0);
     });
 
     it('clear() сбрасывает также matched fills и in-flight fills индексы', () => {

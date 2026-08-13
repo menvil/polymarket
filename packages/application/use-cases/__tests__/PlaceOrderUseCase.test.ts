@@ -22,6 +22,7 @@ import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
@@ -244,7 +245,7 @@ function makeInput(overrides: Partial<PlaceOrderInput> = {}): PlaceOrderInput {
     size: makeQty('100'),
     portfolio: makePortfolio(),
     openOrdersCount: 0,
-    strategyId: 'test-strategy',
+    strategyId: unsafeStrategyId('test-strategy'),
     ...overrides,
   };
 }

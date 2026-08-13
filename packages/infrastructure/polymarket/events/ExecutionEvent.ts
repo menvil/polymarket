@@ -5,12 +5,13 @@
  * Внутренние события инфраструктурного слоя.
  * В Phase 2 будут заменены на ApplicationEvent из @polymarket/event-bus.
  */
+import type { StrategyId } from '@polymarket/ids';
 
 /** Ордер принят биржей */
 export interface OrderAccepted {
   type: 'OrderAccepted';
   orderId: string;
-  strategyId?: string;
+  strategyId?: StrategyId;
   side: 'BUY' | 'SELL';
   marketId: string;
   price: number;

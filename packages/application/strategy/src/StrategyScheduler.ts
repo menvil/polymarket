@@ -213,7 +213,7 @@ export interface IMarketDataStore {
   /** Подписка на изменения данных */
   setOnChange(cb: (instrumentId: InstrumentId, reason: TriggerReason) => void): void;
   /** Sync read: последний TopOfBook */
-  getTopOfBook(instrumentId: InstrumentId): import('@polymarket/event-bus').TopOfBook | undefined;
+  getTopOfBook(instrumentId: InstrumentId): import('@polymarket/application-events').TopOfBook | undefined;
   /** Sync read: история стакана */
   getBookHistory(instrumentId: InstrumentId): RollingWindow<Orderbook> | undefined;
   /** Sync read: лента трейдов */

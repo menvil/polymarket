@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { InMemoryOrderRepository } from '../src/InMemoryOrderRepository.js';
 import { Order } from '@polymarket/order';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
-import { asOrderId, asPolymarketCtfToken, asMarketId } from '@polymarket/ids';
+import { asOrderId, asPolymarketCtfToken, asMarketId , unsafeStrategyId } from '@polymarket/ids';
 import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
 import { VersionConflictError, OrderStateConflictError } from '@polymarket/ports';
 import Decimal from 'decimal.js';
@@ -40,7 +40,7 @@ function makeOrder(
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     timestamp: Timestamp.now(),
-    strategyId,
+    strategyId: strategyId !== undefined ? unsafeStrategyId(strategyId) : undefined,
   });
 
   if (!result.ok) throw new Error(`Failed to create order: ${String(result.error)}`);
@@ -272,7 +272,7 @@ describe('InMemoryOrderRepository', () => {
       await saveOrFail(repo, orderA2);
       await saveOrFail(repo, orderB1);
 
-      const strategyAOrders = await repo.getByStrategyId('strategy-a');
+      const strategyAOrders = await repo.getByStrategyId(unsafeStrategyId('strategy-a'));
       expect(strategyAOrders).toHaveLength(2);
       expect(strategyAOrders.map((o) => o.id)).toContain(orderA1.id);
       expect(strategyAOrders.map((o) => o.id)).toContain(orderA2.id);
@@ -282,12 +282,12 @@ describe('InMemoryOrderRepository', () => {
       const order = makeOrder('order-1', 'strategy-a');
       await saveOrFail(repo, order);
 
-      const result = await repo.getByStrategyId('strategy-z');
+      const result = await repo.getByStrategyId(unsafeStrategyId('strategy-z'));
       expect(result).toHaveLength(0);
     });
 
     it('возвращает пустой массив если хранилище пусто', async () => {
-      const result = await repo.getByStrategyId('any-strategy');
+      const result = await repo.getByStrategyId(unsafeStrategyId('any-strategy'));
       expect(result).toHaveLength(0);
     });
 
@@ -298,7 +298,7 @@ describe('InMemoryOrderRepository', () => {
       await saveOrFail(repo, orderNoStrategy);
       await saveOrFail(repo, orderWithStrategy);
 
-      const result = await repo.getByStrategyId('strategy-a');
+      const result = await repo.getByStrategyId(unsafeStrategyId('strategy-a'));
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(orderWithStrategy.id);
     });
@@ -312,15 +312,15 @@ describe('InMemoryOrderRepository', () => {
       await saveOrFail(repo, makeOrder('order-a2', 'strategy-a'));
       await saveOrFail(repo, makeOrder('order-b1', 'strategy-b'));
 
-      const countA = await repo.countByStrategyId('strategy-a');
-      const countB = await repo.countByStrategyId('strategy-b');
+      const countA = await repo.countByStrategyId(unsafeStrategyId('strategy-a'));
+      const countB = await repo.countByStrategyId(unsafeStrategyId('strategy-b'));
 
       expect(countA).toBe(2);
       expect(countB).toBe(1);
     });
 
     it('возвращает 0 для стратегии без ордеров', async () => {
-      const count = await repo.countByStrategyId('nonexistent-strategy');
+      const count = await repo.countByStrategyId(unsafeStrategyId('nonexistent-strategy'));
       expect(count).toBe(0);
     });
 
@@ -489,7 +489,7 @@ describe('InMemoryOrderRepository', () => {
       repo.saveSync(makeOrder('order-2', 'strategy-a'));
 
       expect(await repo.getAll()).toHaveLength(2);
-      expect(await repo.getByStrategyId('strategy-a')).toHaveLength(2);
+      expect(await repo.getByStrategyId(unsafeStrategyId('strategy-a'))).toHaveLength(2);
       expect(repo.getOrder(asOrderId('order-1')!)).toBeDefined();
     });
   });

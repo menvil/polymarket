@@ -36,7 +36,7 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import type { AccountId, InstrumentId } from '@polymarket/ids';
+import type { AccountId, InstrumentId, StrategyId } from '@polymarket/ids';
 import { accountIdEquals } from '@polymarket/ids';
 import type {
   IStrategyCommitmentReader,
@@ -103,7 +103,7 @@ export class SubmissionJournalStrategyCommitmentReader implements IStrategyCommi
   }
 
   public async getActiveCommitments(input: {
-    readonly strategyId: string;
+    readonly strategyId: StrategyId;
     readonly accountId: AccountId;
     readonly instrumentIds: readonly InstrumentId[];
   }): Promise<readonly StrategyCommitment[]> {

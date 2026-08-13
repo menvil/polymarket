@@ -5,6 +5,7 @@
  * Инфраструктурный интерфейс — реализуется PolymarketExecutionAdapter.
  * Не зависит от domain-пакетов.
  */
+import type { StrategyId } from '@polymarket/ids';
 
 /** Параметры для размещения ордера */
 export interface PlaceOrderParams {
@@ -17,7 +18,7 @@ export interface PlaceOrderParams {
   priceTick?: number;
   clientOrderId?: string;
   /** ID стратегии для изоляции multi-strategy */
-  strategyId?: string;
+  strategyId?: StrategyId;
 }
 
 /** Ответ биржи на размещение ордера */

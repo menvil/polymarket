@@ -53,8 +53,8 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { asVenueTradeId, asVenueId, parseAssetId, asTxHash } from '@polymarket/ids';
-import type { InstrumentId, VenueId, VenueTradeId, TxHash } from '@polymarket/ids';
+import { asVenueTradeId, asVenueId, parseAssetId, asTxHash, asMarketId } from '@polymarket/ids';
+import type { InstrumentId, VenueId, VenueTradeId, TxHash, MarketId } from '@polymarket/ids';
 import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import type { Side, Timestamp } from '@polymarket/value-objects';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
@@ -122,12 +122,20 @@ export class TradeMapper {
       );
     }
 
-    // Извлечь marketId
-    const marketId = raw['market'];
-    if (typeof marketId !== 'string' || marketId.trim().length === 0) {
+    // Извлечь marketId (wire-граница: raw string → branded MarketId; asMarketId сам делает trim)
+    const marketIdRaw = raw['market'];
+    if (typeof marketIdRaw !== 'string' || marketIdRaw.trim().length === 0) {
       return Err(
         new ValidationError('Invalid lastTradeEvent: missing or invalid market', {
-          context: { field: 'market', value: marketId },
+          context: { field: 'market', value: marketIdRaw },
+        })
+      );
+    }
+    const marketId = asMarketId(marketIdRaw);
+    if (marketId === undefined) {
+      return Err(
+        new ValidationError('Invalid lastTradeEvent: market failed MarketId validation', {
+          context: { field: 'market', value: marketIdRaw },
         })
       );
     }
@@ -285,7 +293,7 @@ export class TradeMapper {
     const idResult = TradeMapper._buildVenueTradeId({
       txHash,
       tsStr: String(timestampRaw).trim(),
-      marketId: marketId.trim(),
+      marketId,
       assetIdStr: assetIdRaw.trim(),
       priceStr: priceNorm,
       sizeStr: sizeNorm,
@@ -307,7 +315,7 @@ export class TradeMapper {
     return Trade.create({
       id: idResult.value,
       venueId: venueIdResult.value,
-      marketId: marketId.trim(),
+      marketId,
       tokenId,
       price,
       size,
@@ -373,7 +381,7 @@ export class TradeMapper {
    */
   public static fromParsedTrade(params: {
     readonly instrumentId: InstrumentId;
-    readonly marketId: string;
+    readonly marketId: MarketId;
     readonly price: Price;
     readonly size: Quantity;
     readonly side: Side;
@@ -401,7 +409,7 @@ export class TradeMapper {
     const idResult = TradeMapper._buildVenueTradeId({
       txHash: undefined,
       tsStr: String(timestamp.toNumber()),
-      marketId: marketId.trim(),
+      marketId,
       assetIdStr: String(instrumentId),
       priceStr: price.value().toFixed(),
       sizeStr: size.value().toFixed(),
@@ -418,7 +426,7 @@ export class TradeMapper {
     return Trade.create({
       id: idResult.value,
       venueId: venueIdResult.value,
-      marketId: marketId.trim(),
+      marketId,
       tokenId,
       price,
       size,
@@ -501,6 +509,15 @@ export class TradeMapper {
         })
       );
     }
+    // Persistence-граница: снапшот несёт raw string, домен — branded MarketId
+    const marketId = asMarketId(snapshot.marketId);
+    if (marketId === undefined) {
+      return Err(
+        new ValidationError('Invalid snapshot: marketId failed MarketId validation', {
+          context: { field: 'marketId', value: snapshot.marketId },
+        })
+      );
+    }
 
     const tokenId = parseAssetId(snapshot.tokenId);
     if (!tokenId) {
@@ -572,7 +589,7 @@ export class TradeMapper {
     return Trade.create({
       id: tradeId,
       venueId,
-      marketId: snapshot.marketId,
+      marketId,
       tokenId,
       price,
       size,

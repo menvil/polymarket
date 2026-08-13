@@ -17,6 +17,8 @@
 
 export { Fill } from './Fill.js';
 export type { FillParams } from './Fill.js';
+/** Lightweight-контракт одного исполнения — общий для order/order-events (см. FillData.ts). */
+export type { FillData } from './FillData.js';
 export type { FillSnapshot } from './FillSnapshot.js';
 export type { AssetDelta } from './AssetDelta.js';
 export type { ExecutionMetadata, TradeStatus } from './ExecutionMetadata.js';

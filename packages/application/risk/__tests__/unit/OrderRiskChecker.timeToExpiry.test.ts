@@ -12,6 +12,7 @@
  * - граничное значение: timeToExpiryMs === minTimeToExpiryMs → проверка пройдена
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
+import { unsafeStrategyId } from '@polymarket/ids';
 import { OrderRiskChecker } from '../../src/OrderRiskChecker.js';
 import { RiskPolicy } from '../../src/RiskPolicy.js';
 import type { RiskParams } from '../../src/RiskParams.js';
@@ -89,7 +90,7 @@ function makeInput(overrides: Partial<PreOrderCheckInput> = {}): PreOrderCheckIn
     size: makeQty('10'),
     instrumentId: INSTRUMENT_ID,
     pendingBuyQuantityForInstrument: makeQty('0'),
-    strategyId: 'test-strategy',
+    strategyId: unsafeStrategyId('test-strategy'),
     ...overrides,
   };
 }

@@ -66,7 +66,7 @@ function makeTrade(overrides: { idSuffix: string; price: string; size: string; m
   const result = Trade.create({
     id: asVenueTradeId(`trade-${overrides.idSuffix}`)!,
     venueId: VENUE_ID_TYPED,
-    marketId: MARKET_ID as unknown as string,
+    marketId: MARKET_ID,
     tokenId: TOKEN_ID,
     price: Price.of(new Decimal(overrides.price)),
     size: Quantity.of(new Decimal(overrides.size)),

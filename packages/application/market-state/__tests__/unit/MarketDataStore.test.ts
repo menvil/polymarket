@@ -5,7 +5,7 @@ import { asInstrumentId } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import { MarketDataStore } from '../../src/MarketDataStore.js';
 import type { MarketDataStoreDeps, MarketDataReason } from '../../src/MarketDataStore.js';
-import type { TopOfBook } from '@polymarket/event-bus';
+import type { TopOfBook } from '@polymarket/application-events';
 
 // ── Constants ──────────────────────────────────────────────
 

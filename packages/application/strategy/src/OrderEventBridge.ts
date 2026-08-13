@@ -21,16 +21,14 @@
  * OrderEvent содержит только orderId. Bridge ищет Order через IOrderStateStore
  * (sync read) для получения strategyId.
  *
- * ### Граница валидации StrategyId (Этап 10b, ADR Решение 12):
- * `Order`/`OrderEvent` (`@polymarket/order`) хранят `strategyId` как сырой
- * `string` — явный event-replay/journal формат (`Order.fromEvents()`
- * воспроизводит историю без валидации), вне мандата типизации этой миграции.
- * `StrategyScheduler`, наоборот, типизирует `strategyId` как branded
- * `StrategyId`. Этот файл — единственная точка, где сырое значение
- * пересекает границу: оба read-сайта (`ORDER_REJECTED`-handler,
- * `_notifyScheduler()`) валидируют через `asStrategyId()` перед вызовом
- * `scheduler.onOrderChanged()`. Домен `Order`/`OrderEvent` не типизируется —
- * валидация происходит здесь, а не распространяется внутрь сущности.
+ * ### StrategyId — сквозной branded-тип (рефакторинг после M-002.5):
+ * `Order`/`OrderEvent` (`@polymarket/order`) несут `strategyId` как branded
+ * `StrategyId` — валидация происходит один раз на реальных границах
+ * (config: `strategyFactory` через `asStrategyId()`; persistence:
+ * `OrderDeserializer.fromSnapshot()`). Поэтому оба read-сайта этого файла
+ * (`ORDER_REJECTED`-handler, `_notifyScheduler()`) передают
+ * `event.strategyId`/`order.strategyId` в `scheduler.onOrderChanged()`
+ * напрямую, без runtime-переконвертации.
  *
  * ### Unreserve баланса:
  * Для INTERNAL cancels (через CancelOrderUseCase) — unreserve выполняется в use case.
@@ -47,7 +45,7 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { OrderId } from '@polymarket/ids';
-import { assetIdToInstrumentId, asStrategyId } from '@polymarket/ids';
+import { assetIdToInstrumentId } from '@polymarket/ids';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderRepository, IOrderStateStore } from '@polymarket/ports';
 import { pendingMatchFillId } from '@polymarket/ports';
@@ -113,8 +111,8 @@ export class OrderEventBridge {
     // ORDER_REJECTED → notify scheduler
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_REJECTED', (event) => {
-        const rawStrategyId = 'strategyId' in event ? event.strategyId : undefined;
-        const strategyId = typeof rawStrategyId === 'string' ? asStrategyId(rawStrategyId) : undefined;
+        // Domain OrderEvent несёт branded StrategyId — runtime-конверсия не нужна
+        const strategyId = event.strategyId;
         if (strategyId !== undefined) {
           this._deps.scheduler.onOrderChanged(strategyId, 'ORDER_UPDATE');
           return;
@@ -233,18 +231,11 @@ export class OrderEventBridge {
       return;
     }
 
-    const rawStrategyId = order.strategyId;
-    if (!rawStrategyId) {
+    // Order.strategyId — branded StrategyId (валидация произошла на реальных
+    // границах: config/persistence); runtime-переконвертация не нужна
+    const strategyId = order.strategyId;
+    if (!strategyId) {
       return; // Ордер без стратегии — не маршрутизируем
-    }
-
-    const strategyId = asStrategyId(rawStrategyId);
-    if (strategyId === undefined) {
-      this._logger.warn('OrderEventBridge: order.strategyId failed StrategyId format validation, skipping', {
-        orderId: String(orderId),
-        rawStrategyId,
-      });
-      return;
     }
 
     this._deps.scheduler.onOrderChanged(strategyId, reason);

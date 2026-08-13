@@ -15,15 +15,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@polymarket/application-events": "0.1.0",
     "@polymarket/errors": "0.1.0",
-    "@polymarket/fill": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/message-bus": "0.1.0",
-    "@polymarket/order": "0.1.0",
-    "@polymarket/orderbook": "0.1.0",
-    "@polymarket/result": "0.1.0",
-    "@polymarket/value-objects": "0.1.0"
+    "@polymarket/order-events": "0.1.0",
+    "@polymarket/result": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

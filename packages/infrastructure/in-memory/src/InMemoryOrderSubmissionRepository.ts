@@ -49,7 +49,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- точная decimal-строка персистентной записи, см. docs/architecture/boundary-contract.md, Решение 13
 import Decimal from 'decimal.js';
-import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
+import type { AccountId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
@@ -140,7 +140,7 @@ export class InMemoryOrderSubmissionRepository implements IOrderSubmissionReposi
     readonly orderPrice: string;
     readonly requestedSize: string;
     readonly assetId?: string;
-    readonly strategyId?: string;
+    readonly strategyId?: StrategyId;
     readonly now: Date;
   }): Promise<BeginOrderSubmissionResult> {
     const key = String(input.clientOrderId);

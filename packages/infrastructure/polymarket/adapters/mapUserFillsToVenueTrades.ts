@@ -45,7 +45,7 @@
  */
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import type { AccountId, MarketId } from '@polymarket/ids';
+import type { AccountId } from '@polymarket/ids';
 import type { VenueTradeSnapshot } from '@polymarket/ports';
 import { FillMapper } from '@polymarket/fill';
 import type { UserFillResponse } from '../rest/clients/PolymarketUserTradesRestClient.js';
@@ -118,7 +118,7 @@ export function mapUserFillToVenueTradeSnapshots(
     fillId: fill.id,
     orderId: fill.orderId,
     accountId: fill.accountId,
-    marketId: fill.marketId as MarketId,
+    marketId: fill.marketId,
     asset: fill.tokenId,
     side: fill.side,
     price: fill.price,
