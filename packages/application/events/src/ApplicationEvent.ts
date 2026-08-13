@@ -1,21 +1,16 @@
 /**
- * Полный union application-level событий — canonical contract контура.
+ * Полный union application-owned событий — canonical contract Application-слоя.
  *
  * @remarks
- * Используется в:
- * - IEventBus<K extends ApplicationEvent['type']> для типобезопасных подписок
- * - MessageBus<ApplicationEvent> как generic-параметр движка доставки
- * - EventBus.publish(event: ApplicationEvent)
- *
- * `OrderEvent` из `@polymarket/order` участвует в union как REFERENCE на
- * Domain-тип: его определение остаётся в Domain, и этот пакет его сознательно
- * НЕ реэкспортирует — потребителю, которому нужен именно `OrderEvent`,
- * следует импортировать его из `@polymarket/order`.
+ * Содержит ТОЛЬКО события, которыми владеет Application. Domain-события Order
+ * (`OrderEvent` из `@polymarket/order-events`) сюда НЕ входят: это отдельный
+ * semantic-контур. Union контура доставки, объединяющий оба —
+ * `EventBusEvent = ApplicationEvent | OrderEvent` — определён в
+ * `@polymarket/event-bus` (это union доставки, а не принадлежности к слою).
  *
  * User-channel события:
  * - FILL_RECEIVED — fill со статусом MATCHED → запустить ProcessFillUseCase
  * - FILL_FAILED   — fill со статусом FAILED → alert + reconciliation
- * - OrderEvent (из @polymarket/order) — Order FSM transitions
  *
  * Lifecycle события:
  * - MARKET_OPENED — рынок открыт, аллоцирован баланс, запустить стратегию
@@ -26,7 +21,6 @@ import type { BookUpdatedEvent, BookDepthEvent, TradeReceivedEvent } from './mar
 import type { StrategySignalEvent } from './strategy/index.js';
 import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle/index.js';
 import type { OrderUpdateReceivedEvent } from './venue-order/index.js';
-import type { OrderEvent } from '@polymarket/order';
 
 export type ApplicationEvent =
   | FillReceivedEvent
@@ -39,5 +33,4 @@ export type ApplicationEvent =
   | StrategySignalEvent
   | MarketOpenedEvent
   | MarketClosedEvent
-  | OrderUpdateReceivedEvent
-  | OrderEvent;
+  | OrderUpdateReceivedEvent;

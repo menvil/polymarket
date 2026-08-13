@@ -1,19 +1,23 @@
 /**
- * @polymarket/event-bus — Application-specific delivery façade для ApplicationEvent.
+ * @polymarket/event-bus — Application-specific delivery façade контура EventBusEvent.
  *
  * @remarks
  * ### Разделение ответственности:
- * - **Event contracts** — `@polymarket/application-events` (типы событий и
- *   union `ApplicationEvent`; этот пакет их НЕ определяет и НЕ реэкспортирует);
+ * - **Application event contracts** — `@polymarket/application-events`
+ *   (union `ApplicationEvent`; этот пакет их НЕ определяет и НЕ реэкспортирует);
+ * - **Domain Order events** — `@polymarket/order-events` (union `OrderEvent`);
  * - **Delivery mechanics** — `@polymarket/message-bus` (generic-движок:
  *   очередь, fan-out, reentrancy, guards);
  * - **Этот пакет** — Application-фасад доставки: `IEventBus`/`EventBus`,
- *   Application error-контракт, logger-интеграция, диагностика.
+ *   `EventBusEvent = ApplicationEvent | OrderEvent` (union контура доставки,
+ *   не ownership-слой), Application error-контракт, logger-интеграция,
+ *   диагностика.
  *
  * @example
  * ```typescript
  * import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application-events';
- * import { EventBus, type IEventBus } from '@polymarket/event-bus';
+ * import type { OrderEvent } from '@polymarket/order-events';
+ * import { EventBus, type IEventBus, type EventBusEvent } from '@polymarket/event-bus';
  *
  * const bus: IEventBus = new EventBus(logger);
  *
@@ -25,6 +29,8 @@
  */
 /** Реэкспорт порта event bus (см. IEventBus.ts). */
 export type { IEventBus, EventHandler } from './IEventBus.js';
+/** Union контура доставки (см. EventBusEvent.ts) — не ownership-слой. */
+export type { EventBusEvent } from './EventBusEvent.js';
 export { EventBus } from './EventBus.js';
 /**
  * Реэкспорт canonical operational-диагностики (см. @polymarket/message-bus).

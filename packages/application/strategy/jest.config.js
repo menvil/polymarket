@@ -27,6 +27,7 @@ export default {
     '^@polymarket/event-bus$':           '<rootDir>/../event-bus/src/index.ts',
     '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
     '^@polymarket/application-events$': '<rootDir>/../events/src/index.ts',
+    '^@polymarket/order-events$': '<rootDir>/../../domain/events/order/src/index.ts',
     '^@polymarket/risk$':                '<rootDir>/../risk/src/index.ts',
     '^@polymarket/use-cases$':           '<rootDir>/../use-cases/src/index.ts',
     '^@polymarket/orchestrators$':       '<rootDir>/../orchestrators/src/index.ts',

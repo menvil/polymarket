@@ -62,10 +62,10 @@ import {
   FILLABLE_STATUSES,
   type OrderStatus,
   type OrderState,
-  type FillData,
   type CreateOrderParams,
   type OrderSnapshot,
 } from './OrderState.js';
+import type { FillData } from '@polymarket/fill';
 import type {
   OrderEvent,
   OrderCreatedEvent,
@@ -75,7 +75,7 @@ import type {
   OrderExpiredEvent,
   OrderPartiallyFilledEvent,
   OrderFilledEvent,
-} from './OrderEvents.js';
+} from '@polymarket/order-events';
 import { TradingError } from '@polymarket/errors';
 import { emptyFill, addFill, isFull } from './_fill.js';
 

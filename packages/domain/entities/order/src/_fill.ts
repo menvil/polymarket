@@ -14,7 +14,8 @@
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, Price } from '@polymarket/value-objects';
-import type { FillState, FillData } from './OrderState.js';
+import type { FillState } from './OrderState.js';
+import type { FillData } from '@polymarket/fill';
 import { TradingError } from '@polymarket/errors';
 
 /**

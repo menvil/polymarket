@@ -17,7 +17,6 @@
   "dependencies": {
     "@polymarket/ids": "0.1.0",
     "@polymarket/value-objects": "0.1.0",
-    "@polymarket/order": "0.1.0",
     "@polymarket/fill": "0.1.0",
     "@polymarket/orderbook": "0.1.0"
   },

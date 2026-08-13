@@ -31,6 +31,9 @@
     },
     {
       "path": "../events/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/events/order/tsconfig.build.json"
     }
   ]
 }

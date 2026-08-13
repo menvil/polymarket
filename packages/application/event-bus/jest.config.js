@@ -9,6 +9,7 @@ export default {
     '^@polymarket/result$': '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
     '^@polymarket/application-events$': '<rootDir>/../events/src/index.ts',
+    '^@polymarket/order-events$': '<rootDir>/../../domain/events/order/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../foundation/ids/src/index.ts',
     '^@polymarket/logger$': '<rootDir>/../../foundation/logger/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../../foundation/time/src/index.ts',

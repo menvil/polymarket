@@ -6,11 +6,13 @@
 
 ## Обзор
 
-**Application-specific delivery façade для `ApplicationEvent`** — и только она.
+**Application-specific delivery façade контура `EventBusEvent`** — и только она.
 С M-002.5 event contracts здесь не определяются и не реэкспортируются:
 
-- **Event contracts** — `@polymarket/application-events` (типы событий и union
-  `ApplicationEvent`);
+- **Application event contracts** — `@polymarket/application-events` (union
+  `ApplicationEvent`); **domain-события Order** — `@polymarket/order-events`
+  (union `OrderEvent`); `EventBusEvent = ApplicationEvent | OrderEvent` — union
+  контура доставки (не ownership-слой), определён здесь;
 - **Delivery mechanics** — `@polymarket/message-bus` (generic-движок);
 - **Этот пакет** — Application-фасад доставки: `EventBus implements IEventBus`,
   Application error-контракт, logger-интеграция, диагностика.
@@ -33,7 +35,7 @@ const result = await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
 if (!result.ok) logger.error('Publish failed', { error: result.error.message });
 ```
 
-## `EventBus` — фасад над `MessageBus<ApplicationEvent>` (M-002)
+## `EventBus` — фасад над `MessageBus<EventBusEvent>` (M-002)
 
 С M-002 у `EventBus` НЕТ собственного механизма доставки: очередь, FIFO,
 параллельный fan-out (включая нормализацию sync-throw в rejection), reentrancy,
@@ -50,7 +52,7 @@ EventBus (фасад, composition — не наследование)
 └── общая operational-диагностика (getStats → canonical MessageBusStats)
       │
       ▼
-MessageBus<ApplicationEvent>   ← вся механика доставки
+MessageBus<EventBusEvent>   ← вся механика доставки
 ```
 
 `ApplicationEvent` подключается к движку как есть: flat union структурно

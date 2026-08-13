@@ -16,7 +16,8 @@ import {
 import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
-import type { FillData, FillState, OrderState } from '../../src/OrderState';
+import type { FillState, OrderState } from '../../src/OrderState';
+import type { FillData } from '@polymarket/fill';
 import { replay } from '../helpers';
 
 // Вспомогательная функция для извлечения значения из Result в тестах

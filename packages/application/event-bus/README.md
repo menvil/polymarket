@@ -11,17 +11,19 @@
 ## Implementation note (M-002 / M-002.5)
 
 С M-002 `EventBus` — тонкий Application-фасад над generic-движком
-`MessageBus<ApplicationEvent>` (`@polymarket/message-bus`, композиция); с M-002.5
-event contracts извлечены в отдельный пакет:
+`MessageBus<EventBusEvent>` (`@polymarket/message-bus`, композиция); с M-002.5
+event contracts извлечены в отдельные owner-пакеты:
 
 ```text
-@polymarket/event-bus  =  Application-specific delivery façade for ApplicationEvent
+@polymarket/event-bus  =  Application-specific delivery façade for EventBusEvent
 ```
 
 Разделение ответственности:
 
-- `@polymarket/application-events` — event contracts (типы событий и union
+- `@polymarket/application-events` — application event contracts (union
   `ApplicationEvent`); этот пакет их не определяет и не реэкспортирует;
+- `@polymarket/order-events` — domain-события Order (union `OrderEvent`);
+  через bus доставляются, но Application-слою не принадлежат;
 - `@polymarket/message-bus` — delivery mechanics: очередь, FIFO, параллельный
   fan-out, reentrancy, critical-семантика, drain-guards;
 - `@polymarket/event-bus` — Application error-контракт
@@ -37,18 +39,22 @@ event contracts извлечены в отдельный пакет:
 
 ## Purpose
 
-In-process распределение `ApplicationEvent` внутри application-слоя: handlers,
-orchestrators, use-cases и strategy общаются через bus, а не напрямую друг с другом.
+In-process распределение событий контура Application EventBus
+(`EventBusEvent = ApplicationEvent | OrderEvent` — union доставки, не
+ownership-слой): handlers, orchestrators, use-cases и strategy общаются через
+bus, а не напрямую друг с другом. Application-контракты живут в
+`@polymarket/application-events`, domain-события Order — в
+`@polymarket/order-events`.
 
 ## Public API
 
 ```typescript
 interface IEventBus {
-  publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
-  publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
-  subscribe<K extends ApplicationEvent['type']>(
+  publish(event: EventBusEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  publishAll(events: readonly EventBusEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  subscribe<K extends EventBusEvent['type']>(
     type: K,
-    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
+    handler: EventHandler<Extract<EventBusEvent, { type: K }>>,
     options?: { critical?: boolean },
   ): () => void; // unsubscribe
 }

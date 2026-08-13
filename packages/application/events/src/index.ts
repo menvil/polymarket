@@ -9,8 +9,9 @@
  * ### Контуры событий системы:
  * - **Application events** (этот пакет) — semantic-уведомления application-слоя;
  * - **Domain events** — определяются в своих Domain-пакетах (например,
- *   `OrderEvent` в `@polymarket/order`; union {@link ApplicationEvent} лишь
- *   ссылается на него, не владея определением);
+ *   `OrderEvent` в `@polymarket/order-events`) и в {@link ApplicationEvent}
+ *   НЕ входят; union контура доставки (`EventBusEvent`) — в
+ *   `@polymarket/event-bus`;
  * - **External source messages** — НЕ являются ApplicationEvent; будущий
  *   infrastructure-контур внешних сообщений будет отдельным.
  *
@@ -48,5 +49,5 @@ export type {
 } from './market-lifecycle/index.js';
 /** Venue-обновления ордеров (см. venue-order/). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './venue-order/index.js';
-/** Canonical union контура (см. ApplicationEvent.ts). OrderEvent не реэкспортируется. */
+/** Canonical union application-owned событий (см. ApplicationEvent.ts). */
 export type { ApplicationEvent } from './ApplicationEvent.js';

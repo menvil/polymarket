@@ -16,9 +16,10 @@ import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { asStrategyId } from '@polymarket/ids';
 import { EventBus } from '../src/index.js';
-import type { IEventBus, EventHandler } from '../src/index.js';
-// Event contracts — из canonical пакета @polymarket/application-events (M-002.5):
-// пакет доставки их больше не реэкспортирует
+import type { IEventBus, EventHandler, EventBusEvent } from '../src/index.js';
+// Event contracts — из canonical owner-пакетов: application-события из
+// @polymarket/application-events, domain-события Order из @polymarket/order-events;
+// пакет доставки владеет только union контура EventBusEvent
 import type {
   ApplicationEvent,
   BookUpdatedEvent,
@@ -29,6 +30,7 @@ import type {
   MarketOpenedEvent,
   StrategySignalEvent,
 } from '@polymarket/application-events';
+import type { OrderEvent, OrderFilledEvent } from '@polymarket/order-events';
 
 /** Минимальный mock logger. */
 function makeLogger(): ILogger {
@@ -98,6 +100,37 @@ describe('EventBus type-level contract', () => {
 
     expect(typeof unsubSync).toBe('function');
     expect(typeof unsubAsync).toBe('function');
+  });
+
+  it('EventBusEvent — union двух контуров: Application и Domain Order (compile-time)', () => {
+    const bus = new EventBus(makeLogger());
+
+    // Оба union входят в контур доставки
+    const asDelivery = (e: ApplicationEvent | OrderEvent): EventBusEvent => e;
+    void asDelivery;
+
+    // Typed subscribe narrowing работает для ОБОИХ контуров
+    const unsubApp = bus.subscribe('FILL_RECEIVED', (event) => {
+      const narrowed: FillReceivedEvent = event;
+      void narrowed;
+    });
+    const unsubOrder = bus.subscribe('ORDER_FILLED', (event) => {
+      const narrowed: OrderFilledEvent = event;
+      const price = event.averagePrice;
+      void narrowed; void price;
+      // @ts-expect-error — у OrderFilledEvent нет поля topOfBook
+      void event.topOfBook;
+    });
+
+    // Negative: domain-событие НЕ присваивается application-union
+    const check = (orderEvent: OrderFilledEvent): ApplicationEvent =>
+      // @ts-expect-error — OrderFilledEvent не входит в ApplicationEvent
+      orderEvent;
+    void check;
+
+    unsubApp();
+    unsubOrder();
+    expect(true).toBe(true);
   });
 
   it('strategyId в событиях — canonical branded StrategyId, plain string не подставляется (compile-time)', () => {

@@ -3,7 +3,7 @@
  */
 
 import { Order } from '../src/Order.js';
-import type { OrderEvent } from '../src/OrderEvents.js';
+import type { OrderEvent } from '@polymarket/order-events';
 
 /**
  * Разворачивает результат Order.fromEvents() или бросает ошибку

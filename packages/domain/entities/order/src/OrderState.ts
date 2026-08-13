@@ -5,7 +5,7 @@
  * OrderState — внутреннее представление агрегата (value objects).
  * OrderSnapshot — внешний формат для персистентности и синхронизации с биржей.
  * CreateOrderParams — параметры для создания новой заявки (status всегда PENDING).
- * FillData — данные одного исполнения (входной параметр applyFill).
+ * FillData (входной параметр applyFill) — общий контракт из `@polymarket/fill`.
  */
 
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
@@ -32,18 +32,6 @@ export const TERMINAL_STATUSES = new Set<OrderStatus>([
 export const FILLABLE_STATUSES = new Set<OrderStatus>([
   'OPEN', 'PARTIALLY_FILLED',
 ]);
-
-// ─── Fill data ────────────────────────────────────────────────────
-
-/** Данные одного исполнения — параметр для Order.applyFill() и FillApplied event */
-export interface FillData {
-  readonly id: FillId;
-  readonly orderId: OrderId;
-  readonly asset: AssetId;
-  readonly side: Side;
-  readonly size: Quantity;
-  readonly price: Price;
-}
 
 /** Внутреннее состояние исполнений заявки */
 export interface FillState {

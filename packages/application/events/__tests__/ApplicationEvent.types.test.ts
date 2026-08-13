@@ -3,11 +3,11 @@
  *
  * @remarks
  * Пакет types-only, поэтому реальные проверки — compile-time (typecheck/ts-jest):
- * состав union, discriminated narrowing, участие Domain `OrderEvent` по reference
- * и публичные exports корня. Runtime-ассерты минимальны.
+ * состав union (только application-owned события), discriminated narrowing,
+ * невхождение Domain `OrderEvent` и публичные exports корня. Runtime-ассерты
+ * минимальны.
  */
 import { describe, it, expect } from '@jest/globals';
-import type { OrderEvent } from '@polymarket/order';
 import type {
   ApplicationEvent,
   FillReceivedEvent,
@@ -44,10 +44,18 @@ describe('ApplicationEvent union contract', () => {
       (e: MarketOpenedEvent) => e,
       (e: MarketClosedEvent) => e,
       (e: OrderUpdateReceivedEvent) => e,
-      // Domain OrderEvent участвует в union по reference (определён в @polymarket/order)
-      (e: OrderEvent) => e,
     ] as ReadonlyArray<(e: never) => ApplicationEvent>;
-    expect(checks.length).toBe(12);
+    expect(checks.length).toBe(11);
+  });
+
+  it('Domain-события Order НЕ входят в ApplicationEvent (compile-time)', () => {
+    // Литерал с type: 'ORDER_FILLED' не является членом application-union —
+    // domain-контур живёт в @polymarket/order-events, объединение только в
+    // EventBusEvent (@polymarket/event-bus)
+    // @ts-expect-error — ORDER_FILLED не входит в ApplicationEvent
+    const invalid: ApplicationEvent = { type: 'ORDER_FILLED' };
+    void invalid;
+    expect(true).toBe(true);
   });
 
   it('discriminated narrowing по type сохраняется (compile-time)', () => {

@@ -1,5 +1,5 @@
 /**
- * Порт event bus — публикация и подписка на ApplicationEvent.
+ * Порт event bus — публикация и подписка на EventBusEvent.
  *
  * @remarks
  * EventHandler — async, потому что handlers делают await на use-cases / репозиториях.
@@ -14,21 +14,21 @@
  * unsub();
  * ```
  */
-import type { ApplicationEvent } from '@polymarket/application-events';
+import type { EventBusEvent } from './EventBusEvent.js';
 import type { Result } from '@polymarket/result';
 import type { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 
 /**
  * Типизированный handler конкретного события.
  *
- * @typeParam T - Конкретный тип ApplicationEvent
+ * @typeParam T - Конкретный тип EventBusEvent
  *
  * @remarks
  * Разрешает как sync (`void`), так и async (`Promise<void>`) handlers.
  * Sync handlers не создают лишних Promise-объектов — EventBus обрабатывает оба варианта.
  * Async handlers используют `await` внутри (например, обращения к репозиторию).
  */
-export type EventHandler<T extends ApplicationEvent> = (event: T) => void | Promise<void>;
+export type EventHandler<T extends EventBusEvent> = (event: T) => void | Promise<void>;
 
 /**
  * Интерфейс application event bus.
@@ -41,7 +41,7 @@ export interface IEventBus {
   /**
    * Публикует одно событие всем подписчикам (fanout).
    *
-   * @param event - ApplicationEvent для публикации
+   * @param event - EventBusEvent для публикации
    * @returns `Ok(void)`, либо `Err(QueueOverflowError)` при переполнении очереди/лимита
    *   drain-цикла, либо `Err(CriticalHandlerError)` если critical-подписчик бросил
    * @remarks
@@ -49,7 +49,7 @@ export interface IEventBus {
    * все handlers дожидаются завершения перед переходом к следующему событию.
    * Handlers НЕ должны зависеть от side-effects друг друга.
    */
-  publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  publish(event: EventBusEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
 
   /**
    * Публикует список событий последовательно.
@@ -60,12 +60,12 @@ export interface IEventBus {
    * Domain events из Order.pullEvents() имеют FSM-порядок.
    * Если публиковать параллельно — handlers могут увидеть события в неверном порядке.
    */
-  publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  publishAll(events: readonly EventBusEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
 
   /**
    * Подписывается на события конкретного типа.
    *
-   * @param type - Тип события (ApplicationEvent['type'])
+   * @param type - Тип события (EventBusEvent['type'])
    * @param handler - Async handler для событий этого типа
    * @param options - Опции подписки
    * @param options.critical - Если true: ошибка handler возвращается как
@@ -85,9 +85,9 @@ export interface IEventBus {
    * bus.subscribe('RISK_LIMIT_BREACHED', riskHandler, { critical: true });
    * ```
    */
-  subscribe<K extends ApplicationEvent['type']>(
+  subscribe<K extends EventBusEvent['type']>(
     type: K,
-    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
+    handler: EventHandler<Extract<EventBusEvent, { type: K }>>,
     options?: { critical?: boolean },
   ): () => void;
 }

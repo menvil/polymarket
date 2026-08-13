@@ -10,10 +10,12 @@ Canonical contracts application-level событий: пакет отвечае�
   fill-контур (`FILL_RECEIVED`, …), рыночные данные (`BOOK_UPDATED`, …),
   сигналы стратегий (`STRATEGY_SIGNAL`), lifecycle рынков (`MARKET_OPENED`/
   `MARKET_CLOSED`), venue-обновления ордеров (`ORDER_UPDATE_RECEIVED`).
-- **Domain events** — определяются внутри соответствующих Domain-пакетов.
-  `OrderEvent` живёт в `@polymarket/order`; union `ApplicationEvent` лишь
-  ссылается на него и **не реэкспортирует**: нужен именно `OrderEvent` —
-  импортируй из `@polymarket/order`.
+- **Domain events** — определяются в своих Domain-пакетах. `OrderEvent` живёт
+  в `@polymarket/order-events` и в `ApplicationEvent` **НЕ входит** — это
+  отдельный semantic-контур. Union контура доставки, объединяющий оба
+  (`EventBusEvent = ApplicationEvent | OrderEvent`), определён в
+  `@polymarket/event-bus`; нужен именно `OrderEvent` — импортируй из
+  `@polymarket/order-events`.
 - **External source messages** — НЕ являются `ApplicationEvent`; будущий
   infrastructure-контур внешних сообщений будет отдельным.
 

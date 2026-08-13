@@ -95,10 +95,11 @@ import type {
   IOrderSubmissionRepository,
   OrderSubmissionRecord,
 } from '@polymarket/ports';
-import type { ApplicationEvent } from '@polymarket/application-events';
-import type { IEventBus } from '@polymarket/event-bus';
+import type { DirectFillAppliedEvent } from '@polymarket/application-events';
+import type { IEventBus, EventBusEvent } from '@polymarket/event-bus';
 import type { Fill } from '@polymarket/fill';
-import type { FillData, Order } from '@polymarket/order';
+import type { Order } from '@polymarket/order';
+import type { FillData } from '@polymarket/fill';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
@@ -740,7 +741,7 @@ export class ProcessFillUseCase {
       // direct-fill:${fill.id}) — сохраняет порядок относительно ORDER_CANCELLED/
       // ORDER_CREATED того же venue order. Публикация (flush) — ПОСЛЕ выхода из
       // lock (execute). MarketRotation учитывает fill в fillHistory.
-      await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } as ApplicationEvent]);
+      await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } satisfies DirectFillAppliedEvent]);
 
       return Ok(undefined);
     }
@@ -757,7 +758,7 @@ export class ProcessFillUseCase {
    * committed fill не делает fill retryable — логируется EVENT_PUBLISH_FAILED
    * и создаётся issue (stage `outbox-enqueue`). Никогда не бросает.
    */
-  private async _enqueueEvents(fill: Fill, events: readonly ApplicationEvent[]): Promise<void> {
+  private async _enqueueEvents(fill: Fill, events: readonly EventBusEvent[]): Promise<void> {
     const instrumentId = assetIdToInstrumentId(fill.tokenId);
     await enqueueCommittedEvents({
       outbox: this._deps.orderedEventOutbox,
@@ -1088,7 +1089,7 @@ export class ProcessFillUseCase {
     // (fill уже APPLIED); outbox логирует EVENT_PUBLISH_FAILED и создаёт issue.
     // К этому моменту: Order = terminal (если FILLED), Portfolio = обновлён, флаги сняты.
     const events = updatedOrder.pullEvents();
-    await this._enqueueEvents(fill, events as readonly ApplicationEvent[]);
+    await this._enqueueEvents(fill, events);
 
     // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
     // Polymarket on-chain settlement списывает fee из получаемых токенов (BUY).
@@ -1291,7 +1292,7 @@ export class ProcessFillUseCase {
     await this._deps.processedFillRepo.markApplied(fill.id);
 
     // Нет Order aggregate → DIRECT_FILL_APPLIED через outbox (aggregateId=orderId).
-    await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } as ApplicationEvent]);
+    await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } satisfies DirectFillAppliedEvent]);
 
     return Ok(undefined);
   }

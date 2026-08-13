@@ -25,7 +25,7 @@ import { Order } from '../../../src/Order';
 import { OrderViewModel } from '../../../src/view/OrderViewModel';
 import { OrderDeserializer } from '../../../src/view/OrderDeserializer';
 import type { OrderSnapshot } from '../../../src/OrderState';
-import type { FillData } from '../../../src/OrderState';
+import type { FillData } from '@polymarket/fill';
 
 // Вспомогательная функция
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {

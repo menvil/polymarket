@@ -28,7 +28,7 @@ import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
 import type { ProcessFillDeps } from '../../src/ProcessFillUseCase.js';
 import { EventBus } from '@polymarket/event-bus';
-import type { ApplicationEvent } from '@polymarket/application-events';
+import type { EventBusEvent } from '@polymarket/event-bus';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
@@ -225,7 +225,7 @@ describe('ProcessFillUseCase (integration)', () => {
     // Реальный ordered outbox: публикует в реальный EventBus после flush().
     const orderedEventOutbox = new InMemoryOrderedEventOutbox({
       publish: async (events) => {
-        const result = await eventBus.publishAll(events as ApplicationEvent[]);
+        const result = await eventBus.publishAll(events as EventBusEvent[]);
         if (!result.ok) throw result.error;
       },
       logger: LOGGER,
@@ -259,7 +259,7 @@ describe('ProcessFillUseCase (integration)', () => {
     await orderRepo.save(order, 0);
     portfolioStore.save(makePortfolio(), 0);
 
-    const published: ApplicationEvent[] = [];
+    const published: EventBusEvent[] = [];
     eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
 
     const fill = makeFill();

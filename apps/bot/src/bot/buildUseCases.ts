@@ -48,7 +48,7 @@ import { InMemoryOrderedEventOutbox } from '@polymarket/in-memory';
 import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { RiskParams } from '@polymarket/risk';
 import type { IExchangeClient, IMarketCatalog, IOrderedEventOutbox } from '@polymarket/ports';
-import type { ApplicationEvent } from '@polymarket/application-events';
+import type { EventBusEvent } from '@polymarket/event-bus';
 import type { CoreInfra } from './buildCoreInfra.js';
 import type { Repositories } from './buildRepositories.js';
 
@@ -132,7 +132,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
   // mutex (без deadlock) и сохраняет per-order FIFO порядок Place↔Fill.
   const orderedEventOutbox = new InMemoryOrderedEventOutbox({
     publish: async (events) => {
-      const result = await eventBus.publishAll(events as ApplicationEvent[]);
+      const result = await eventBus.publishAll(events as EventBusEvent[]);
       if (!result.ok) throw result.error;
     },
     logger,

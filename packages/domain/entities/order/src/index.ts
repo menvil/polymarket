@@ -12,14 +12,14 @@
  * ### Types
  * - **OrderState** — внутреннее состояние (value objects)
  * - **OrderSnapshot** — внешний формат (примитивы) для персистентности
- * - **FillData** — данные одного исполнения
+ * - `FillData` переехал в `@polymarket/fill` (общий контракт исполнения)
  * - **CreateOrderParams** — параметры для Order.create()
  * - **OrderStatus** — строковый union статусов
  * - **TERMINAL_STATUSES** — множество терминальных статусов
  * - **FILLABLE_STATUSES** — множество статусов принимающих fills
  *
  * ### Domain Events
- * - **OrderEvent** — union всех событий (для fromEvents/replay)
+ * - Domain-события Order переехали в `@polymarket/order-events` (canonical owner)
  *
  * ### View Layer
  * - **OrderViewModel** — сериализация в JSON/readable/summary
@@ -59,24 +59,10 @@ export type {
   OrderStatus,
   OrderState,
   FillState,
-  FillData,
   CreateOrderParams,
   OrderSnapshot,
 } from './OrderState.js';
 export { TERMINAL_STATUSES, FILLABLE_STATUSES } from './OrderState.js';
-
-// ─── Domain Events ─────────────────────────────────────────────────────────
-/** Реэкспорт domain-событий Order (см. `OrderEvents.ts` — для `fromEvents()`/replay). */
-export type {
-  OrderEvent,
-  OrderCreatedEvent,
-  OrderAcceptedEvent,
-  OrderRejectedEvent,
-  OrderCancelledEvent,
-  OrderExpiredEvent,
-  OrderPartiallyFilledEvent,
-  OrderFilledEvent,
-} from './OrderEvents.js';
 
 // ─── View Layer ────────────────────────────────────────────────────────────
 export { OrderViewModel, OrderDeserializer } from './view/index.js';

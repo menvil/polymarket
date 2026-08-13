@@ -29,7 +29,7 @@ import { ProcessFillUseCase } from '@polymarket/use-cases';
 import { PortfolioService } from '@polymarket/use-cases';
 import { LedgerService } from '@polymarket/use-cases';
 import { EventBus } from '@polymarket/event-bus';
-import type { ApplicationEvent } from '@polymarket/application-events';
+import type { EventBusEvent } from '@polymarket/event-bus';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
@@ -179,7 +179,7 @@ describe('FillOrchestrator (integration)', () => {
       eventBus,
       orderedEventOutbox: new InMemoryOrderedEventOutbox({
         publish: async (events) => {
-          const result = await eventBus.publishAll(events as ApplicationEvent[]);
+          const result = await eventBus.publishAll(events as EventBusEvent[]);
           if (!result.ok) throw result.error;
         },
         logger: LOGGER,
@@ -215,7 +215,7 @@ describe('FillOrchestrator (integration)', () => {
     portfolioStore.save(makePortfolio(), 0);
 
     const fill = makeFill(asFillId('fill-orch-001')!);
-    const published: ApplicationEvent[] = [];
+    const published: EventBusEvent[] = [];
     eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
 
     // Act: публикуем FILL_RECEIVED — EventBus вызывает FillOrchestrator → ProcessFillUseCase
@@ -243,7 +243,7 @@ describe('FillOrchestrator (integration)', () => {
     portfolioStore.save(makePortfolio(), 0);
 
     const fill = makeFill(asFillId('fill-orch-dup-001')!);
-    const published: ApplicationEvent[] = [];
+    const published: EventBusEvent[] = [];
     eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
 
     // Act: два идентичных FILL_RECEIVED с одним fill
@@ -280,7 +280,7 @@ describe('FillOrchestrator (integration)', () => {
     const fillUnknown = makeFill(asFillId('fill-unknown-001')!, unknownOrderId);
     const fillKnown = makeFill(asFillId('fill-known-001')!, knownOrderId);
 
-    const published: ApplicationEvent[] = [];
+    const published: EventBusEvent[] = [];
     eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
 
     // Act: сначала fill для неизвестного ордера (должен завершиться с ошибкой, но не крашнуть)
