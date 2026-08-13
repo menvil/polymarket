@@ -190,8 +190,25 @@ export class EventBus implements IEventBus {
    * @remarks
    * Атомарность batch enqueue (all or nothing при overflow) и порядок
    * `A → B → C` с reentrant-поведением — гарантии движка.
+   *
+   * ### Пустой batch — legacy «kick»-семантика
+   * До M-002 `publishAll([])` на idle-bus запускал drain и тем самым возобновлял
+   * обработку очереди, сохранённой после critical-сбоя. Поскольку `IEventBus`
+   * сознательно не предоставляет `drain()`, пустой batch — единственный публичный
+   * способ поднять сохранённую очередь без публикации новых событий. Движок же
+   * делает ранний `Ok` на пустом массиве, поэтому фасад воспроизводит legacy
+   * сам: при активном drain — `Ok` сразу (не присоединяясь: reentrant-вызов из
+   * handler-а иначе ждал бы сам себя), при idle — `_bus.drain()` c трансляцией
+   * его Result (проверка `dispatching` и вызов `drain()` — один синхронный блок,
+   * между ними нет yield point).
    */
   public async publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
+    if (events.length === 0) {
+      if (this._bus.getStats().dispatching) {
+        return Ok(undefined);
+      }
+      return this._translateResult(await this._bus.drain());
+    }
     return this._translateResult(await this._bus.publishAll(events));
   }
 

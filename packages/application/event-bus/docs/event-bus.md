@@ -114,6 +114,17 @@ critical handler threw during dispatch of ...`). Происхождение ош
 остаётся работоспособным) — без изменений; теперь её обеспечивает движок, а
 фиксирует всё тот же M-000 contract-suite.
 
+### `publishAll([])` — legacy «kick»
+
+До M-002 пустой `publishAll([])` на idle-bus запускал drain и мог возобновить
+обработку очереди, сохранённой после critical-сбоя; движок же делает ранний
+`Ok` на пустом массиве. Поскольку `IEventBus` сознательно не предоставляет
+`drain()`, пустой batch — единственный публичный способ поднять сохранённую
+очередь без новых событий, поэтому фасад воспроизводит legacy сам: при
+активном drain — `Ok` сразу (не присоединяясь — reentrant-вызов из handler-а
+иначе ждал бы сам себя), при idle — `_bus.drain()` с трансляцией его Result.
+Закреплено regression-тестами в `EventBus.message-bus-adapter.test.ts`.
+
 ## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост, снят в Этапе 10d
 
 До Этапа 6 `publish()`/`publishAll()` бросали `Error` напрямую. Реальные вызывающие на

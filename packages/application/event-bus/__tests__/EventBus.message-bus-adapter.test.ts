@@ -237,6 +237,78 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
     });
   });
 
+  describe('publishAll([]) — legacy «kick» semantics', () => {
+    it('пустой publishAll на idle-bus возобновляет обработку очереди, сохранённой после critical-сбоя', async () => {
+      const bus = new EventBus(logger);
+      const delivered: number[] = [];
+      bus.subscribe('BOOK_UPDATED', (event) => { delivered.push(event.sequenceNumber); });
+      const unsubFailing = bus.subscribe('BOOK_UPDATED', () => {
+        throw new Error('critical');
+      }, { critical: true });
+
+      // Critical-сбой на A: очередь [B] сохранена, drain остановлен
+      const batch = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
+      expect(batch.ok).toBe(false);
+      expect(delivered).toEqual([1]); // collector участвовал в fan-out события A
+      expect(bus.getStats().queueSize).toBe(1);
+
+      // Устраняем причину сбоя и «пинаем» очередь пустым batch-ем.
+      // До M-002 publishAll([]) запускал drain — единственный публичный способ
+      // поднять сохранённую очередь без новых событий (drain() у IEventBus нет).
+      unsubFailing();
+      const kick = await bus.publishAll([]);
+      expect(kick.ok).toBe(true);
+      expect(delivered).toEqual([1, 2]); // B доставлен
+      expect(bus.getStats().queueSize).toBe(0);
+    });
+
+    it('пустой publishAll транслирует повторный critical-исход возобновлённого drain-а', async () => {
+      const bus = new EventBus(logger);
+      bus.subscribe('BOOK_UPDATED', (event) => {
+        throw new Error(`critical on ${event.sequenceNumber}`);
+      }, { critical: true });
+
+      const batch = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
+      expect(batch.ok).toBe(false);
+      expect(bus.getStats().queueSize).toBe(1);
+
+      // Kick возобновляет drain; сбой на 2 приходит как Application-ошибка
+      const kick = await bus.publishAll([]);
+      expect(kick.ok).toBe(false);
+      if (!kick.ok) {
+        expect(kick.error).toBeInstanceOf(CriticalHandlerError);
+        expect(kick.error).not.toBeInstanceOf(MessageBusCriticalHandlerError);
+        expect((kick.error.context?.originalError as Error).message).toBe('critical on 2');
+      }
+      expect(bus.getStats().queueSize).toBe(0);
+    });
+
+    it('publishAll([]) при активном drain → Ok сразу, не дожидаясь завершения текущего drain', async () => {
+      const bus = new EventBus(logger);
+      const delivered: number[] = [];
+      let reentrantOk: boolean | undefined;
+      let deliveredAtReturn: number[] | undefined;
+      bus.subscribe('BOOK_UPDATED', async (event) => {
+        delivered.push(event.sequenceNumber);
+        if (event.sequenceNumber === 1) {
+          // Legacy: при активном drain пустой batch — Ok сразу, без присоединения
+          // к чужому drain (иначе reentrant-вызов ждал бы сам себя)
+          const result = await bus.publishAll([]);
+          reentrantOk = result.ok;
+          deliveredAtReturn = [...delivered];
+        }
+      });
+
+      const result = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
+
+      expect(result.ok).toBe(true);
+      expect(reentrantOk).toBe(true);
+      // Kick вернулся ДО завершения текущего drain — событие 2 ещё не обработано
+      expect(deliveredAtReturn).toEqual([1]);
+      expect(delivered).toEqual([1, 2]);
+    });
+  });
+
   describe('getStats projection', () => {
     it('отдаёт ровно legacy-shape без generic-счётчиков движка', async () => {
       const bus = new EventBus(logger);
