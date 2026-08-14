@@ -18,6 +18,7 @@
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { EventBus } from '@polymarket/event-bus';
+import { MessageMetadataGenerator, LiveHighResolutionClock } from '@polymarket/messages';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -38,6 +39,14 @@ export interface CoreInfra {
   readonly clock: IClock;
   readonly logger: ILogger;
   readonly eventBus: IEventBus;
+  /**
+   * Canonical-генератор metadata сообщений (M-003) — ОДИН на процесс.
+   *
+   * @remarks
+   * Все producers событий (handlers, use-cases, rotation, recorders) получают
+   * именно этот instance: runId один на runtime, sequence сквозной.
+   */
+  readonly metadataGenerator: MessageMetadataGenerator;
 }
 
 /**
@@ -56,6 +65,15 @@ export function buildCoreInfra(params: BuildCoreInfraParams = {}): CoreInfra {
   const clock = params.clock ?? new LiveClock();
   const logger = new ConsoleLogger(clock, params.logLevel ?? LogLevel.INFO);
   const eventBus = new EventBus(logger);
+  // Composition root message-metadata (M-003): live-режим (дефолтный LiveClock)
+  // получает когерентное epoch-время с sub-ms precision (wall-origin +
+  // monotonic elapsed); инъецированный clock (paper/replay/тесты) —
+  // millisecond precision с детерминированными нулями sub-ms (sequence
+  // сохраняет точный порядок).
+  const metadataGenerator = new MessageMetadataGenerator({
+    clock,
+    highResolutionClock: params.clock === undefined ? new LiveHighResolutionClock() : undefined,
+  });
 
-  return { clock, logger, eventBus };
+  return { clock, logger, eventBus, metadataGenerator };
 }

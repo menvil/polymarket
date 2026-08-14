@@ -19,7 +19,8 @@ import {
 import { Position } from '../../../src/Position.js';
 import type { PositionParams } from '../../../src/Position.js';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+import { Quantity, Price } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
 import Decimal from 'decimal.js';

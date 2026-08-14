@@ -39,7 +39,7 @@ import { Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { OrderId, AccountId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type {
   IExchangeClient,
   SubmitOrderParams,

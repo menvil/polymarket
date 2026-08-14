@@ -23,6 +23,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { FillOrchestrator } from '../../src/FillOrchestrator.js';
 import { ProcessFillUseCase } from '@polymarket/use-cases';
 // OrderService не нужен — ProcessFillDeps использует orderStateStore напрямую
@@ -43,7 +45,8 @@ import {
   asMarketId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value-objects';
+import { Price, Quantity, Fee, Money } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Order } from '@polymarket/order';
 import { Fill } from '@polymarket/fill';
@@ -114,7 +117,7 @@ function makeOpenOrder(id: OrderId = ORDER_ID, size: Quantity = ORDER_SIZE): Ord
     timestamp: unwrap(TimestampService.create(Date.now())),
   }));
   const accepted = unwrap(order.accept());
-  accepted.pullEvents();
+  accepted.pullEvents(() => METADATA_GENERATOR.nextRoot());
   return accepted;
 }
 
@@ -150,6 +153,13 @@ function makeFill(id: FillId, orderId: OrderId = ORDER_ID, size: Quantity = ORDE
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 describe('FillOrchestrator (integration)', () => {
   let orderRepo: InMemoryOrderRepository;
   let processedFillRepo: InMemoryProcessedFillRepository;
@@ -170,6 +180,7 @@ describe('FillOrchestrator (integration)', () => {
     const ledgerService = new LedgerService(LOGGER);
 
     processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: METADATA_GENERATOR,
       orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
@@ -221,8 +232,11 @@ describe('FillOrchestrator (integration)', () => {
     // Act: публикуем FILL_RECEIVED — EventBus вызывает FillOrchestrator → ProcessFillUseCase
     await eventBus.publish({
       type: 'FILL_RECEIVED',
-      fill,
-      receivedAt: unwrap(TimestampService.create(Date.now())),
+      payload: {
+        fill,
+        receivedAt: unwrap(TimestampService.create(Date.now())),
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     });
 
     // Assert: Order перешёл в FILLED
@@ -249,14 +263,20 @@ describe('FillOrchestrator (integration)', () => {
     // Act: два идентичных FILL_RECEIVED с одним fill
     await eventBus.publish({
       type: 'FILL_RECEIVED',
-      fill,
-      receivedAt: unwrap(TimestampService.create(Date.now())),
+      payload: {
+        fill,
+        receivedAt: unwrap(TimestampService.create(Date.now())),
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     });
 
     await eventBus.publish({
       type: 'FILL_RECEIVED',
-      fill,
-      receivedAt: unwrap(TimestampService.create(Date.now())),
+      payload: {
+        fill,
+        receivedAt: unwrap(TimestampService.create(Date.now())),
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     });
 
     // Assert: ORDER_FILLED только один раз (идемпотентность)
@@ -287,15 +307,21 @@ describe('FillOrchestrator (integration)', () => {
     // FillOrchestrator ловит ошибку и логирует её
     await eventBus.publish({
       type: 'FILL_RECEIVED',
-      fill: fillUnknown,
-      receivedAt: unwrap(TimestampService.create(Date.now())),
+      payload: {
+        fill: fillUnknown,
+        receivedAt: unwrap(TimestampService.create(Date.now())),
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     });
 
     // Act: затем fill для известного ордера (должен обработаться нормально)
     await eventBus.publish({
       type: 'FILL_RECEIVED',
-      fill: fillKnown,
-      receivedAt: unwrap(TimestampService.create(Date.now())),
+      payload: {
+        fill: fillKnown,
+        receivedAt: unwrap(TimestampService.create(Date.now())),
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     });
 
     // Assert: второй fill обработан — ORDER_FILLED для известного ордера

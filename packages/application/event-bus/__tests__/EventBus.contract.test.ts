@@ -14,6 +14,8 @@
  * Полное словесное описание контракта: `packages/application/event-bus/README.md`.
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { Result } from '@polymarket/result';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
@@ -34,20 +36,30 @@ function makeLogger(): ILogger {
 }
 
 /** Минимальная фикстура BookUpdatedEvent (handlers тестов не читают VO-поля). */
+
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
-    topOfBook: {
-      bestBid: undefined,
-      bestAsk: undefined,
-      spread: undefined,
-      bestBidSize: undefined,
-      bestAskSize: undefined,
+    payload: {
+      topOfBook: {
+        bestBid: undefined,
+        bestAsk: undefined,
+        spread: undefined,
+        bestBidSize: undefined,
+        bestAskSize: undefined,
+      },
+      instrumentId: 'token-123' as BookUpdatedEvent['payload']['instrumentId'],
+      marketId: 'market-abc' as BookUpdatedEvent['payload']['marketId'],
+      sequenceNumber,
+      timestamp: { toISO: () => '' } as BookUpdatedEvent['payload']['timestamp'],
     },
-    instrumentId: 'token-123' as BookUpdatedEvent['instrumentId'],
-    marketId: 'market-abc' as BookUpdatedEvent['marketId'],
-    sequenceNumber,
-    timestamp: { toISO: () => '' } as BookUpdatedEvent['timestamp'],
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -55,11 +67,14 @@ function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
 function makeTradeEvent(): TradeReceivedEvent {
   return {
     type: 'TRADE_RECEIVED',
-    instrumentId: 'token-123' as TradeReceivedEvent['instrumentId'],
-    price: {} as unknown as TradeReceivedEvent['price'],
-    size: {} as unknown as TradeReceivedEvent['size'],
-    side: 'BUY' as unknown as TradeReceivedEvent['side'],
-    timestamp: { toISO: () => '' } as TradeReceivedEvent['timestamp'],
+    payload: {
+      instrumentId: 'token-123' as TradeReceivedEvent['payload']['instrumentId'],
+      price: {} as unknown as TradeReceivedEvent['payload']['price'],
+      size: {} as unknown as TradeReceivedEvent['payload']['size'],
+      side: 'BUY' as unknown as TradeReceivedEvent['payload']['side'],
+      timestamp: { toISO: () => '' } as TradeReceivedEvent['payload']['timestamp'],
+    },
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -100,7 +115,7 @@ describe('EventBus contract', () => {
 
     it('sync handler получает событие, publish → Ok', async () => {
       let seenSeq = -1;
-      bus.subscribe('BOOK_UPDATED', (event) => { seenSeq = event.sequenceNumber; });
+      bus.subscribe('BOOK_UPDATED', (event) => { seenSeq = event.payload.sequenceNumber; });
 
       const result = await bus.publish(makeBookEvent(7));
 
@@ -147,8 +162,8 @@ describe('EventBus contract', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        delivered.push(event.sequenceNumber);
-        if (event.sequenceNumber === 1) await gate.promise;
+        delivered.push(event.payload.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const publishPromise = bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
@@ -171,8 +186,8 @@ describe('EventBus contract', () => {
       let deliveredAtReentrantReturn: number[] | undefined;
 
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        delivered.push(event.sequenceNumber);
-        if (event.sequenceNumber === 1) {
+        delivered.push(event.payload.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) {
           // await внутри активного drain НЕ дожидается обработки события 2 —
           // иначе был бы self-deadlock (drain ждал бы сам себя).
           reentrantResult = await bus.publish(makeBookEvent(2));
@@ -211,8 +226,8 @@ describe('EventBus contract', () => {
     it('non-critical ошибка не останавливает drain: следующее событие обрабатывается, результат Ok', async () => {
       const delivered: number[] = [];
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 1) throw new Error('boom on first');
-        delivered.push(event.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) throw new Error('boom on first');
+        delivered.push(event.payload.sequenceNumber);
       });
 
       const result = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
@@ -260,11 +275,11 @@ describe('EventBus contract', () => {
       let firstEventDeliveries = 0;
       const delivered: number[] = [];
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 1) {
+        if (event.payload.sequenceNumber === 1) {
           firstEventDeliveries++;
           throw new Error('critical');
         }
-        delivered.push(event.sequenceNumber);
+        delivered.push(event.payload.sequenceNumber);
       }, { critical: true });
 
       const first = await bus.publish(makeBookEvent(1));
@@ -302,8 +317,8 @@ describe('EventBus contract', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       tinyBus.subscribe('BOOK_UPDATED', async (event) => {
-        delivered.push(event.sequenceNumber);
-        if (event.sequenceNumber === 1) await gate.promise;
+        delivered.push(event.payload.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const first = tinyBus.publish(makeBookEvent(1)); // событие 1 in-flight, handler заблокирован
@@ -330,7 +345,7 @@ describe('EventBus contract', () => {
       const tinyBus = new EventBus(logger, 10_000, 1);
       const gate = makeGate();
       tinyBus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 1) await gate.promise;
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const first = tinyBus.publish(makeBookEvent(1)); // dequeued, in-flight; очередь пуста
@@ -348,7 +363,7 @@ describe('EventBus contract', () => {
     it('publishAll: batch, превышающий лимит, отклоняется атомарно — all or nothing', async () => {
       const tinyBus = new EventBus(logger, 10_000, 2);
       const delivered: number[] = [];
-      tinyBus.subscribe('BOOK_UPDATED', async (event) => { delivered.push(event.sequenceNumber); });
+      tinyBus.subscribe('BOOK_UPDATED', async (event) => { delivered.push(event.payload.sequenceNumber); });
 
       const result = await tinyBus.publishAll([makeBookEvent(1), makeBookEvent(2), makeBookEvent(3)]);
       expect(result.ok).toBe(false);
@@ -369,8 +384,8 @@ describe('EventBus contract', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       tinyBus.subscribe('BOOK_UPDATED', async (event) => {
-        delivered.push(event.sequenceNumber);
-        if (event.sequenceNumber === 1) await gate.promise;
+        delivered.push(event.payload.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const first = tinyBus.publish(makeBookEvent(1)); // in-flight
@@ -392,7 +407,7 @@ describe('EventBus contract', () => {
       const limitedBus = new EventBus(logger, 3);
       const unsubLoop = limitedBus.subscribe('BOOK_UPDATED', async (event) => {
         // Бесконечная петля: каждое событие порождает следующее
-        await limitedBus.publish(makeBookEvent(event.sequenceNumber + 1));
+        await limitedBus.publish(makeBookEvent(event.payload.sequenceNumber + 1));
       });
 
       const result = await limitedBus.publish(makeBookEvent(1));
@@ -408,7 +423,7 @@ describe('EventBus contract', () => {
       // Убираем зациклившийся handler — bus продолжает работать
       unsubLoop();
       const delivered: number[] = [];
-      limitedBus.subscribe('BOOK_UPDATED', async (event) => { delivered.push(event.sequenceNumber); });
+      limitedBus.subscribe('BOOK_UPDATED', async (event) => { delivered.push(event.payload.sequenceNumber); });
       const next = await limitedBus.publish(makeBookEvent(100));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([100]);
@@ -422,7 +437,7 @@ describe('EventBus contract', () => {
       let unsubB!: () => void;
       // A синхронно отписывает B в начале fan-out текущего события
       bus.subscribe('BOOK_UPDATED', () => { unsubB(); });
-      unsubB = bus.subscribe('BOOK_UPDATED', async (event) => { bCalls.push(event.sequenceNumber); });
+      unsubB = bus.subscribe('BOOK_UPDATED', async (event) => { bCalls.push(event.payload.sequenceNumber); });
 
       await bus.publish(makeBookEvent(1));
       // Snapshot подписчиков сформирован до запуска handlers — B участвует в текущем fan-out
@@ -436,8 +451,8 @@ describe('EventBus contract', () => {
     it('subscribe во время dispatch: новый handler не получает текущее событие, получает следующее (в том же drain)', async () => {
       const lateCalls: number[] = [];
       bus.subscribe('BOOK_UPDATED', (event) => {
-        if (event.sequenceNumber === 1) {
-          bus.subscribe('BOOK_UPDATED', async (nextEvent) => { lateCalls.push(nextEvent.sequenceNumber); });
+        if (event.payload.sequenceNumber === 1) {
+          bus.subscribe('BOOK_UPDATED', async (nextEvent) => { lateCalls.push(nextEvent.payload.sequenceNumber); });
         }
       });
 
@@ -453,7 +468,7 @@ describe('EventBus contract', () => {
     it('queueSize считает только ожидающие события; in-flight событие не входит', async () => {
       const gate = makeGate();
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 1) await gate.promise;
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const first = bus.publish(makeBookEvent(1)); // in-flight

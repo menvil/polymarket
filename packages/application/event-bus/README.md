@@ -67,8 +67,11 @@ interface IEventBus {
   и async-handlers; для обоих действует одна и та же семантика ошибок.
 - `EventBus.getStats()` — диагностика конкретного класса `EventBus` (см. Diagnostics);
   **не входит** в порт `IEventBus`.
-- События — flat discriminated union (`{ type, ...поля }`). Формат события в M-000
-  не меняется; переход на `{ type, payload }` — отдельная будущая фаза (M-003).
+- События — canonical MessageEnvelope `{ type, payload, metadata }` (M-003;
+  contract — `@polymarket/messages`). Оба контура доставки
+  (`ApplicationEvent | OrderEvent`) используют один и тот же конверт; delivery
+  читает только `type`, metadata создаётся producer-ами через canonical
+  `MessageMetadataGenerator` ДО публикации.
 
 ## Event routing
 

@@ -5,7 +5,9 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId } from '@polymarket/ids';
+import { unsafeRunId } from '@polymarket/ids';
 import { FillMapper } from '@polymarket/fill';
+import { MessageMetadataGenerator } from '@polymarket/messages';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +64,12 @@ describe('FillEventHandler', () => {
     eventBus = makeEventBus();
     clock = { now: jest.fn<() => Date>().mockReturnValue(new Date('2024-01-01T00:00:00.000Z')) };
     logger = makeLogger();
-    handler = new FillEventHandler(eventBus, clock, logger);
+    handler = new FillEventHandler(
+      eventBus,
+      new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') }),
+      clock,
+      logger,
+    );
   });
 
   // ── MATCHED → немедленная публикация ──────────────────────────────────────
@@ -78,7 +85,10 @@ describe('FillEventHandler', () => {
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'FILL_RECEIVED',
-        fill: expect.objectContaining({ id: 'fill-001' }),
+        payload: expect.objectContaining({
+          fill: expect.objectContaining({ id: 'fill-001' }),
+        }),
+        metadata: expect.objectContaining({ sequence: expect.any(Number) }),
       }),
     );
     expect(logger.info).toHaveBeenCalledWith(
@@ -230,8 +240,10 @@ describe('FillEventHandler', () => {
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'FILL_FAILED',
-        fillId: 'fill-001',
-        orderId: 'order-999',
+        payload: expect.objectContaining({
+          fillId: 'fill-001',
+          orderId: 'order-999',
+        }),
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
@@ -251,8 +263,8 @@ describe('FillEventHandler', () => {
     expect(eventBus.publish).toHaveBeenCalledTimes(2);
     const failedCall = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[1][0];
     expect(failedCall.type).toBe('FILL_FAILED');
-    expect(failedCall.fills).toBeDefined();
-    expect(failedCall.fills.length).toBeGreaterThan(0);
+    expect(failedCall.payload.fills).toBeDefined();
+    expect(failedCall.payload.fills.length).toBeGreaterThan(0);
   });
 
   // ── Граничные случаи для rawId и orderId ──────────────────────────────
@@ -332,7 +344,12 @@ describe('FillEventHandler', () => {
     const badClock: IClock = {
       now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
     };
-    const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
+    const handlerBadClock = new FillEventHandler(
+      eventBus,
+      new MessageMetadataGenerator({ clock: badClock, runId: unsafeRunId('testrun1') }),
+      badClock,
+      logger,
+    );
 
     await handlerBadClock.handle(makeValidRaw(), ACCOUNT_ID);
 
@@ -347,7 +364,12 @@ describe('FillEventHandler', () => {
     const badClock: IClock = {
       now: jest.fn<() => Date>().mockReturnValue(new Date('invalid')),
     };
-    const handlerBadClock = new FillEventHandler(eventBus, badClock, logger);
+    const handlerBadClock = new FillEventHandler(
+      eventBus,
+      new MessageMetadataGenerator({ clock: badClock, runId: unsafeRunId('testrun1') }),
+      badClock,
+      logger,
+    );
 
     await handlerBadClock.handle(
       { id: 'fill-001', status: 'FAILED', taker_order_id: 'order-999' },

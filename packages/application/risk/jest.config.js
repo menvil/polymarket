@@ -11,6 +11,7 @@ export default {
     '^@polymarket/logger$':        '<rootDir>/../../foundation/logger/src/index.ts',
     '^@polymarket/time$':          '<rootDir>/../../foundation/time/src/index.ts',
     '^@polymarket/math$':          '<rootDir>/../../foundation/math/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
     '^@polymarket/portfolio$':     '<rootDir>/../../domain/entities/portfolio/src/index.ts',

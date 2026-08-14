@@ -17,8 +17,8 @@ import type { BookDepthCollectorDeps, BookDepthCollectorConfig } from '../src/Bo
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { Orderbook } from '@polymarket/orderbook';
-import { TimestampService } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /** Разворачивает `Result` для тестов, где конфиг заведомо валиден. */
 function makeCollector(

@@ -9,6 +9,7 @@
  * через реальные in-memory репозитории, без доступа к private deps.
  */
 import Decimal from 'decimal.js';
+import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -18,6 +19,7 @@ import { Ok } from '@polymarket/result';
 import {
   parseAccountId,
   asOrderId,
+  unsafeRunId,
   asFillId,
   asMarketId,
   asInstrumentId,
@@ -26,8 +28,9 @@ import {
   KnownVenues,
 } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Fee, Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { Balance, Money, Fee, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Order } from '@polymarket/order';
 import { Fill } from '@polymarket/fill';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';
@@ -62,7 +65,12 @@ function makeInfra(): CoreInfra {
     publishAll: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publishAll'],
     subscribe: jest.fn().mockReturnValue(() => {}) as unknown as IEventBus['subscribe'],
   };
-  return { clock, logger: makeLogger(), eventBus };
+  return {
+    clock,
+    logger: makeLogger(),
+    eventBus,
+    metadataGenerator: new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') }),
+  };
 }
 
 function makeTimestamp(): Timestamp {
@@ -103,6 +111,14 @@ const RISK_PARAMS: RiskParams = {
 };
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────
+
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
 
 describe('buildRepositories', () => {
   it('возвращает reconciliationIssueRepo (smoke: add + listOpen)', async () => {
@@ -253,7 +269,7 @@ describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCa
     if (!orderResult.ok) throw new Error('Failed to create order');
     const acceptResult = orderResult.value.accept();
     if (!acceptResult.ok) throw new Error('Failed to accept order');
-    acceptResult.value.pullEvents();
+    acceptResult.value.pullEvents(() => makeMetadataGenerator().nextRoot());
     const saveResult = await repos.orderRepo.save(acceptResult.value, 0);
     if (!saveResult.ok) throw new Error('Failed to save order');
 
@@ -320,7 +336,7 @@ describe('buildProcessFillUseCase — wiring reconciliationIssues в ProcessFill
     if (!orderResult.ok) throw new Error('Failed to create order');
     const acceptResult = orderResult.value.accept();
     if (!acceptResult.ok) throw new Error('Failed to accept order');
-    acceptResult.value.pullEvents();
+    acceptResult.value.pullEvents(() => makeMetadataGenerator().nextRoot());
     const saveResult = await repos.orderRepo.save(acceptResult.value, 0);
     if (!saveResult.ok) throw new Error('Failed to save order');
 

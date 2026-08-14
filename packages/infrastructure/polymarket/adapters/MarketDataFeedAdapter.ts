@@ -48,7 +48,8 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { OrderbookLevel } from '@polymarket/orderbook';
 import type { IMarketDataRecorder } from '@polymarket/ports';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';

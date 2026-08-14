@@ -177,19 +177,21 @@ export class MarketDataStore {
     this._unsubBookUpdated = this._deps.eventBus.subscribe(
       'BOOK_UPDATED',
       (event) => {
-        this._topOfBooks.set(event.instrumentId, event.topOfBook);
-        this._topOfBookTimestampsMs.set(event.instrumentId, event.timestamp.toNumber());
-        this._registerInstrument(event.marketId, event.instrumentId);
-        this._onChange?.(event.instrumentId, 'BOOK');
+        const { instrumentId, topOfBook, timestamp, marketId } = event.payload;
+        this._topOfBooks.set(instrumentId, topOfBook);
+        this._topOfBookTimestampsMs.set(instrumentId, timestamp.toNumber());
+        this._registerInstrument(marketId, instrumentId);
+        this._onChange?.(instrumentId, 'BOOK');
       },
     );
 
     this._unsubBookDepth = this._deps.eventBus.subscribe(
       'BOOK_DEPTH',
       (event) => {
+        const { instrumentId, snapshot } = event.payload;
         this._deps.bookCollector.recordDirect(
-          event.instrumentId,
-          event.snapshot,
+          instrumentId,
+          snapshot,
         );
         // Регистрируем instrument→market и из BOOK_DEPTH (snapshot несёт marketId
         // в поле instrumentId — см. TSDoc BookUpdateHandler про этот неймингный
@@ -199,26 +201,27 @@ export class MarketDataStore {
         // event.snapshot.instrumentId уже валидный MarketId (провалидирован при
         // конструировании в BookUpdateHandler) — Этап-8's asMarketId()-воркэраунд
         // для сырой строки старого @polymarket/order-book больше не нужен.
-        this._registerInstrument(event.snapshot.instrumentId as unknown as MarketId, event.instrumentId);
+        this._registerInstrument(snapshot.instrumentId as unknown as MarketId, instrumentId);
         // #2: уведомляем об изменении глубины. Reason 'BOOK' покрывает и
         // TopOfBook, и BookDepth; scheduler коалесцирует dirty-флаги per tick,
         // поэтому парный BOOK_UPDATED+BOOK_DEPTH даёт одну переоценку, не флудит.
         // Depth-only апдейты (стенки/ликвидность) больше не теряются.
-        this._onChange?.(event.instrumentId, 'BOOK');
+        this._onChange?.(instrumentId, 'BOOK');
       },
     );
 
     this._unsubTradeReceived = this._deps.eventBus.subscribe(
       'TRADE_RECEIVED',
       (event) => {
-        const marketId = this._instrumentToMarket.get(event.instrumentId);
+        const { instrumentId, price, size, side, timestamp } = event.payload;
+        const marketId = this._instrumentToMarket.get(instrumentId);
 
         this._deps.tapeCollector.recordDirect(
-          event.instrumentId,
-          event.price,
-          event.size,
-          event.side,
-          event.timestamp,
+          instrumentId,
+          price,
+          size,
+          side,
+          timestamp,
           marketId,
         );
 
@@ -229,35 +232,35 @@ export class MarketDataStore {
         // для этого события (в отличие от TapeRecord, который catalog иногда спасает).
         if (marketId === undefined) {
           this._logger.debug('MarketDataStore: skipping Trade construction — instrument market unknown', {
-            tokenId: String(event.instrumentId),
+            tokenId: String(instrumentId),
           });
         } else {
           const tradeResult = TradeMapper.fromParsedTrade({
-            instrumentId: event.instrumentId,
+            instrumentId,
             marketId,
-            price: event.price,
-            size: event.size,
-            side: event.side,
-            timestamp: event.timestamp,
+            price,
+            size,
+            side,
+            timestamp,
           });
           if (tradeResult.ok) {
             this._deps.tradeIndex.record(tradeResult.value);
           } else {
             this._logger.warn('MarketDataStore: failed to build Trade from TRADE_RECEIVED event', {
-              tokenId: String(event.instrumentId),
+              tokenId: String(instrumentId),
               error: tradeResult.error.message,
             });
           }
         }
 
-        this._onChange?.(event.instrumentId, 'TRADE');
+        this._onChange?.(instrumentId, 'TRADE');
       },
     );
 
     this._unsubMarketClosed = this._deps.eventBus.subscribe(
       'MARKET_CLOSED',
       (event) => {
-        this._onMarketClosed(event.marketId);
+        this._onMarketClosed(event.payload.marketId);
       },
     );
 

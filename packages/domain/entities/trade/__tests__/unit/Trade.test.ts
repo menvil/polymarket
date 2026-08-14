@@ -5,7 +5,8 @@
 import { Trade } from '../../src/Trade';
 import type { TradeParams } from '../../src/Trade';
 import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
 // Вспомогательная функция для извлечения значения из Result в тестах

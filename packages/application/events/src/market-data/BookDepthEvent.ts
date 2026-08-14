@@ -6,17 +6,23 @@
  * безопасная для fanout-рассылки нескольким стратегиям без риска, что одна
  * увидит мутацию другой (в отличие от старого mutable `OrderBook`, ради
  * которого раньше строился отдельный `OrderBookSnapshot`-DTO).
+ *
+ * Canonical envelope `{ type, payload, metadata }` (M-003): root-событие —
+ * первичная реакция на внешнее WS-наблюдение.
  */
+import type { MessageEnvelope } from '@polymarket/messages';
 import type { Orderbook } from '@polymarket/orderbook';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
-export interface BookDepthEvent {
-  readonly type: 'BOOK_DEPTH';
-  /** ID токена (UP/DOWN outcome token) */
-  readonly instrumentId: InstrumentId;
-  /** Полный стакан — иммутабельная entity, не DTO */
-  readonly snapshot: Orderbook;
-  /** Timestamp снапшота */
-  readonly timestamp: Timestamp;
-}
+export type BookDepthEvent = MessageEnvelope<
+  'BOOK_DEPTH',
+  {
+    /** ID токена (UP/DOWN outcome token) */
+    readonly instrumentId: InstrumentId;
+    /** Полный стакан — иммутабельная entity, не DTO */
+    readonly snapshot: Orderbook;
+    /** Timestamp снапшота */
+    readonly timestamp: Timestamp;
+  }
+>;

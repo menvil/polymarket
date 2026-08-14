@@ -59,7 +59,7 @@ import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
 import { Fee, Price, Quantity } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
 import { calculatePolymarketTakerFee } from '@polymarket/fill';
@@ -143,9 +143,9 @@ export class PaperFillSimulator {
     if (config.fillOnBookCrossing) {
       const unsub = eventBus.subscribe('BOOK_UPDATED', (event) => {
         void this._onBookUpdated(
-          event.instrumentId,
-          event.topOfBook.bestBid?.value(),
-          event.topOfBook.bestAsk?.value(),
+          event.payload.instrumentId,
+          event.payload.topOfBook.bestBid?.value(),
+          event.payload.topOfBook.bestAsk?.value(),
         );
       });
       this._unsubscribers.push(unsub);
@@ -154,9 +154,9 @@ export class PaperFillSimulator {
     if (config.fillOnTape) {
       const unsub = eventBus.subscribe('TRADE_RECEIVED', (event) => {
         void this._onTradeReceived(
-          event.instrumentId,
-          event.price.value(),
-          event.size.value(),
+          event.payload.instrumentId,
+          event.payload.price.value(),
+          event.payload.size.value(),
         );
       });
       this._unsubscribers.push(unsub);

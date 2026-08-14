@@ -6,12 +6,14 @@
  * подписчиков одного сообщения, Result-based operational-ошибки, lifecycle
  * (`drain`/`close`) и диагностика (`getStats`). Реализация: {@link MessageBus}.
  *
- * Порт generic по `TMessage extends TypedMessage` — от сообщения требуется только
- * строковый discriminator `type`; структура остальных полей (flat или envelope)
- * прозрачна для bus.
+ * Порт generic по `TMessage extends TypedMessage`: на type-границе bus ТРЕБУЕТ
+ * canonical message envelope `{ type, payload, metadata }` (M-003) — flat-формы
+ * public-контрактом НЕ поддерживаются. В runtime движок доставки трактует
+ * `payload` и `metadata` как opaque (не читает, не модифицирует, не генерирует)
+ * и маршрутизирует только по строковому discriminator `message.type`.
  */
 import type { Result } from '@polymarket/result';
-import type { TypedMessage } from './TypedMessage.js';
+import type { TypedMessage } from '@polymarket/messages';
 import type { MessageHandler } from './MessageHandler.js';
 import type { MessageBusStats } from './MessageBusStats.js';
 import type { MessageBusDrainError, MessageBusPublishError } from './errors.js';

@@ -37,7 +37,7 @@
  */
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import type { TypedMessage } from './TypedMessage.js';
+import type { TypedMessage } from '@polymarket/messages';
 import type { MessageHandler } from './MessageHandler.js';
 import type { IMessageBus } from './IMessageBus.js';
 import type { MessageBusStats } from './MessageBusStats.js';
@@ -74,22 +74,30 @@ export interface MessageBusOptions {
 /**
  * Реализация {@link IMessageBus}.
  *
- * @typeParam TMessage - Discriminated union сообщений контура (требуется только `type`)
+ * @typeParam TMessage - Discriminated union canonical-сообщений контура
+ *   (`{ type, payload, metadata }` — M-003); runtime маршрутизирует только
+ *   по `type`, payload/metadata opaque
  *
  * @example
  * ```typescript
+ * import type { MessageEnvelope } from '@polymarket/messages';
+ *
  * type Message =
- *   | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
- *   | { readonly type: 'HEARTBEAT'; readonly sequence: number };
+ *   | MessageEnvelope<'ITEM_ADDED', { readonly itemId: string }>
+ *   | MessageEnvelope<'HEARTBEAT', { readonly sequence: number }>;
  *
  * const bus = new MessageBus<Message>();
  *
  * const unsubscribe = bus.subscribe('HEARTBEAT', (message) => {
- *   // message сужен до { type: 'HEARTBEAT'; sequence: number }
- *   monitor.beat(message.sequence);
+ *   // message сужен до envelope HEARTBEAT — payload типизирован
+ *   monitor.beat(message.payload.sequence);
  * });
  *
- * const result = await bus.publish({ type: 'HEARTBEAT', sequence: 42 });
+ * const result = await bus.publish({
+ *   type: 'HEARTBEAT',
+ *   payload: { sequence: 42 },
+ *   metadata: metadataGenerator.nextRoot(),
+ * });
  * if (!result.ok) {
  *   report(result.error);
  * }

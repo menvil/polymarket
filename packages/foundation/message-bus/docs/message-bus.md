@@ -18,7 +18,8 @@
 
 ### Решение
 
-Один generic Foundation-примитив `MessageBus<TMessage extends TypedMessage>`,
+Один generic Foundation-примитив `MessageBus<TMessage extends TypedMessage>`
+(canonical envelope `{ type, payload, metadata }` из `@polymarket/messages`, M-003),
 который знает о сообщении только `type`. Контуры настраивают его политикой и
 оборачивают своим API; сам движок не имеет причин меняться от эволюции
 прикладных контрактов.
@@ -143,8 +144,6 @@ critical-ошибки, но НЕ является публичной гаран�
 
 | Файл | Ответственность |
 |---|---|
-| `TypedMessage.ts` | generic-граница (`{ type: string }`) |
-| `MessageEnvelope.ts` | опциональный конверт `{ type, payload, metadata? }` |
 | `MessageHandler.ts` | тип обработчика (sync/async) |
 | `IMessageBus.ts` | публичный порт |
 | `MessageBus.ts` | движок: очередь, drain ownership, fan-out, lifecycle |
@@ -161,5 +160,6 @@ critical-ошибки, но НЕ является публичной гаран�
 fake-bus-error из обработчика, overflow, drain-limit, observer isolation),
 reentrancy (reentrant/конкурентные публикации, mutation during dispatch),
 lifecycle (`drain`/`close`/recovery), stats (счётчики), types (compile-time
-narrowing, flat+envelope), policy (defaults/валидация). Тесты проверяют только
+narrowing, canonical envelope + отклонение flat-форм — M-003), policy
+(defaults/валидация). Тесты проверяют только
 observable-поведение — внутренние структуры не фиксируются.

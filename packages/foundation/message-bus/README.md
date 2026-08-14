@@ -25,37 +25,39 @@ Generic in-process typed message delivery primitive: FIFO-очередь, typed-
 ## What it does NOT know
 
 `ApplicationEvent`, `ExternalMessage`, Polymarket, CEX, Domain-события, Recorder,
-Logger — ничего из этого пакет не импортирует и не упоминает. Единственная runtime
-зависимость — `@polymarket/result`. Пакет не имеет ни одной причины меняться при
+Logger — ничего из этого пакет не импортирует и не упоминает. Runtime-зависимость —
+`@polymarket/result`; contract-зависимость — `@polymarket/messages` (canonical
+message contract, type-only). Пакет не имеет ни одной причины меняться при
 изменении торговой логики, API бирж или прикладных event-контрактов.
 
 ## Message model
 
-Generic-граница — минимальный `TypedMessage`:
+После M-003 generic-граница — canonical envelope из `@polymarket/messages`
+(этот пакет contract НЕ реэкспортирует — импортируй у owner-а):
 
 ```typescript
-interface TypedMessage {
-  readonly type: string;
-}
+// @polymarket/messages
+type TypedMessage = MessageEnvelope<string, unknown, MessageMetadata>;
+// т.е. каждое системное сообщение: { type, payload, metadata } — все три обязательны
 ```
 
-Bus не читает, не модифицирует, не клонирует и не интерпретирует никакие другие
-поля. Поэтому одинаково валидны **обе** формы сообщений:
+Flat-формы (`{ type, ...поля }`) больше НЕ проходят compile-time границу.
+При этом **runtime bus по-прежнему читает ТОЛЬКО `message.type`**: `payload` и
+`metadata` полностью прозрачны для движка — он их не читает, не модифицирует,
+не клонирует, не интерпретирует и НЕ генерирует. Producer обязан передать
+ПОЛНОЕ сообщение (identity существует ДО delivery):
 
 ```typescript
-// Flat discriminated union:
-type FlatMessage =
-  | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
-  | { readonly type: 'HEARTBEAT'; readonly sequence: number };
+type Message =
+  | MessageEnvelope<'ITEM_ADDED', { readonly itemId: string }>
+  | MessageEnvelope<'HEARTBEAT', { readonly sequence: number }>;
 
-// Стандартизированный конверт (опциональный, для будущих контуров):
-type HeartbeatMessage = MessageEnvelope<'HEARTBEAT', { sequence: number }, { source: string }>;
+await bus.publish({
+  type: 'HEARTBEAT',
+  payload: { sequence: 42 },
+  metadata: metadataGenerator.nextRoot(), // canonical generator из @polymarket/messages
+});
 ```
-
-`MessageEnvelope<TType, TPayload, TMetadata = unknown>` (`{ type, payload, metadata? }`)
-определён в пакете как reusable-тип, но **не требуется** движком: требование
-`payload` на generic-границе заблокировало бы контуры с flat-сообщениями.
-`payload`/`metadata` полностью прозрачны для bus.
 
 ## Public API
 

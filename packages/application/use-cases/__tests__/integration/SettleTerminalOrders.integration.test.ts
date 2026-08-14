@@ -9,6 +9,8 @@
  * settlement → эскалация в manual block.
  */
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
@@ -129,7 +131,7 @@ function makeOpenOrder(): Order {
   if (!result.ok) throw new Error('Failed to create Order');
   const accepted = result.value.accept();
   if (!accepted.ok) throw new Error('Failed to accept Order');
-  accepted.value.pullEvents();
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
   return accepted.value;
 }
 
@@ -167,6 +169,15 @@ function makeTradeSnapshot(size = '50', status: VenueTradeSnapshot['status'] = '
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -198,6 +209,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
     jest.spyOn(ledgerService as unknown as { recordFill: (f: Fill) => void }, 'recordFill').mockReturnValue(undefined);
     realMutex = new InMemoryKeyedMutex();
     processFill = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,
@@ -224,6 +236,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
 
   function makeUpdate(): UpdateOrderStatusUseCase {
     return new UpdateOrderStatusUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo: store,
       orderStateStore: store,
       portfolioService,
@@ -587,6 +600,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase — stateful (
     jest.spyOn(ledgerService as unknown as { recordFill: (f: Fill) => void }, 'recordFill').mockReturnValue(undefined);
     realMutex = new InMemoryKeyedMutex();
     processFill = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,
@@ -628,6 +642,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase — stateful (
 
   function makeUpdate(): UpdateOrderStatusUseCase {
     return new UpdateOrderStatusUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo: store,
       orderStateStore: store,
       portfolioService,

@@ -15,7 +15,8 @@
  * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Метаданные торгового инструмента.

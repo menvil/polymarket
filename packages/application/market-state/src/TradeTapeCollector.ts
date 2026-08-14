@@ -210,7 +210,7 @@ export class TradeTapeCollector {
     price: import('@polymarket/value-objects').Price,
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
-    timestamp: import('@polymarket/value-objects').Timestamp,
+    timestamp: import('@polymarket/timestamp').Timestamp,
     marketId?: MarketId,
   ): void {
     this._record(instrumentId, price, size, side, timestamp, marketId);
@@ -258,7 +258,7 @@ export class TradeTapeCollector {
     price: import('@polymarket/value-objects').Price,
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
-    timestamp: import('@polymarket/value-objects').Timestamp,
+    timestamp: import('@polymarket/timestamp').Timestamp,
     marketId?: MarketId,
   ): void {
     // #1: регистрируем marketId на КАЖДОМ трейде, а не только при создании ленты —

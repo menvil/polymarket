@@ -20,7 +20,8 @@
  */
 import type Decimal from 'decimal.js';
 import type { InstrumentInfo } from './IMarketCatalog.js';
-import type { Money, Ratio, Timestamp } from '@polymarket/value-objects';
+import type { Money, Ratio } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Обнаруженный рынок — кандидат для торговли.

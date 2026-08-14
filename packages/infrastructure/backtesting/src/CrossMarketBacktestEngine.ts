@@ -45,7 +45,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ILogger } from '@polymarket/logger';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import {
   SnapshotReaderFactory,
 } from '@polymarket/snapshot-readers';

@@ -21,9 +21,11 @@
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/ports": "0.1.0",
-    "@polymarket/result": "0.1.0"
+    "@polymarket/result": "0.1.0",
+    "@polymarket/timestamp": "0.1.0"
   },
   "devDependencies": {
-    "@jest/globals": "^29.0.0"
+    "@jest/globals": "^29.0.0",
+    "@polymarket/messages": "0.1.0"
   }
 }

@@ -21,6 +21,10 @@
     "./execution": {
       "types": "./dist/execution/index.d.ts",
       "import": "./dist/execution/index.js"
+    },
+    "./messaging": {
+      "types": "./dist/messaging/index.d.ts",
+      "import": "./dist/messaging/index.js"
     }
   },
   "scripts": {

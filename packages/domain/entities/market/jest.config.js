@@ -11,6 +11,7 @@ export default {
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../../../foundation/time/src/index.ts',
     '^@polymarket/value-objects/outcome-token$': '<rootDir>/../../value-objects/src/outcome-token/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
   },
   transform: {

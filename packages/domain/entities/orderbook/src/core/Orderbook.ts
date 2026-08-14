@@ -37,7 +37,8 @@
  */
 
 import type { Price, Spread } from '@polymarket/value-objects';
-import { PriceService, Quantity, QuantityService, SpreadService, Timestamp } from '@polymarket/value-objects';
+import { PriceService, Quantity, QuantityService, SpreadService } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';

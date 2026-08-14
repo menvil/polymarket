@@ -97,6 +97,7 @@ import type {
 } from '@polymarket/ports';
 import type { DirectFillAppliedEvent } from '@polymarket/application-events';
 import type { IEventBus, EventBusEvent } from '@polymarket/event-bus';
+import type { MessageMetadata, MessageMetadataGenerator } from '@polymarket/messages';
 import type { Fill } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
 import type { FillData } from '@polymarket/fill';
@@ -169,6 +170,15 @@ export interface ProcessFillDeps {
    * к live Order aggregate (ордер terminal/не найден).
    */
   readonly orderedEventOutbox: IOrderedEventOutbox;
+  /**
+   * Canonical-генератор metadata публикуемых сообщений (M-003).
+   *
+   * @remarks
+   * События, порождённые обработкой fill (DIRECT_FILL_APPLIED, Order lifecycle
+   * события), получают metadata `nextChild(parent)` — где parent = metadata
+   * FILL_RECEIVED, переданная orchestrator-ом в `execute()`; без parent — root.
+   */
+  readonly metadataGenerator: MessageMetadataGenerator;
   readonly logger: ILogger;
   /**
    * Queryable хранилище reconciliation issues (опционально).
@@ -239,6 +249,10 @@ export class ProcessFillUseCase {
    * Выполняет обработку исполнения ордера.
    *
    * @param fill - Полученное исполнение ордера
+   * @param parentMetadata - Metadata сообщения-триггера (обычно FILL_RECEIVED):
+   *   порождаемые события становятся его child в causal chain
+   *   (correlationId наследуется, causationId = parent.messageId).
+   *   Без него (прямой вызов вне event-контекста) события — root.
    * @returns Ok(void) при успехе (в т.ч. duplicate/busy/reconciliation-required — no-op),
    *   Err(TradingError) при ошибке обработки
    *
@@ -250,7 +264,15 @@ export class ProcessFillUseCase {
    * Ok (no-op, fill не мутируется повторно), но логирует error при каждом
    * вызове, чтобы не молчать о нерешённой проблеме.
    */
-  public async execute(fill: Fill): Promise<Result<void, TradingError>> {
+  public async execute(fill: Fill, parentMetadata?: MessageMetadata): Promise<Result<void, TradingError>> {
+    // Canonical metadata порождаемых сообщений: child от триггера (causal chain)
+    // или root при прямом вызове вне event-контекста. Замыкание передаётся вниз
+    // по цепочке обработки (НЕ поле класса — конкурентные execute не должны
+    // затирать parent друг друга).
+    const nextEventMetadata = (): MessageMetadata =>
+      parentMetadata !== undefined
+        ? this._deps.metadataGenerator.nextChild(parentMetadata)
+        : this._deps.metadataGenerator.nextRoot();
     // Шаг 1: Keyed mutex — сериализует относительно CancelOrderUseCase и других
     // конкурентных fill-ов того же ордера/инструмента/аккаунта.
     // Namespaced keys (lockKey.*) — пересечение с Place ([account,instrument]),
@@ -321,7 +343,7 @@ export class ProcessFillUseCase {
               leaseToken: begin.leaseToken,
             });
           }
-          return await this._processLocked(fill, tracker);
+          return await this._processLocked(fill, tracker, nextEventMetadata);
         } catch (err) {
           return await this._handleUnexpectedException(fill, tracker.phase, err, acquired);
         }
@@ -476,7 +498,11 @@ export class ProcessFillUseCase {
    * Инвариант: каждый Fill использует ровно ОДИН источник (held reservation ЛИБО
    * available) — никогда одновременно списание available и оставленную held-резервацию.
    */
-  private async _processLocked(fill: Fill, tracker: FillCommitTracker): Promise<Result<void, TradingError>> {
+  private async _processLocked(
+    fill: Fill,
+    tracker: FillCommitTracker,
+    nextEventMetadata: () => MessageMetadata,
+  ): Promise<Result<void, TradingError>> {
     // Stage 6: application-level processing-блок (PROCESSING) на весь период
     // обработки. Снимается ТОЛЬКО на реально settled (markApplied); на
     // retryable/reconciliation остаётся (FAILED_RETRYABLE/RECONCILIATION_REQUIRED)
@@ -542,7 +568,7 @@ export class ProcessFillUseCase {
     }
 
     if (order && !order.isTerminal) {
-      return this._applyNormalFill(order, fill, execution, tracker);
+      return this._applyNormalFill(order, fill, execution, tracker, nextEventMetadata);
     }
     // Held-reservation проверяется и для отсутствующего, и для terminal Order:
     // ambiguous submit мог не сохранить Order, но капитал заморожен.
@@ -550,9 +576,9 @@ export class ProcessFillUseCase {
     // RECONCILIATION_REQUIRED отсеян guard'ом выше и НИКОГДА не потребляется
     // автоматически.
     if (execution && canConsumeHeldReservation(execution.reservation)) {
-      return this._applyHeldReservationFill(fill, execution, tracker);
+      return this._applyHeldReservationFill(fill, execution, tracker, nextEventMetadata);
     }
-    return this._applyDirectFill(fill, tracker);
+    return this._applyDirectFill(fill, tracker, nextEventMetadata);
   }
 
   /**
@@ -646,7 +672,11 @@ export class ProcessFillUseCase {
    * @param fill - Исполнение ордера
    * @returns Ok(void) при успехе, Err при ошибке
    */
-  private async _applyDirectFill(fill: Fill, tracker: FillCommitTracker): Promise<Result<void, TradingError>> {
+  private async _applyDirectFill(
+    fill: Fill,
+    tracker: FillCommitTracker,
+    nextEventMetadata: () => MessageMetadata,
+  ): Promise<Result<void, TradingError>> {
     const order = await this._deps.orderRepo.get(fill.orderId);
     {
       const reason = !order ? 'not found' : `terminal (${order.status})`;
@@ -741,7 +771,13 @@ export class ProcessFillUseCase {
       // direct-fill:${fill.id}) — сохраняет порядок относительно ORDER_CANCELLED/
       // ORDER_CREATED того же venue order. Публикация (flush) — ПОСЛЕ выхода из
       // lock (execute). MarketRotation учитывает fill в fillHistory.
-      await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } satisfies DirectFillAppliedEvent]);
+      await this._enqueueEvents(fill, [
+        {
+          type: 'DIRECT_FILL_APPLIED',
+          payload: { fill },
+          metadata: nextEventMetadata(),
+        } satisfies DirectFillAppliedEvent,
+      ]);
 
       return Ok(undefined);
     }
@@ -798,6 +834,7 @@ export class ProcessFillUseCase {
     fill: Fill,
     execution: OrderSubmissionRecord | undefined,
     tracker: FillCommitTracker,
+    nextEventMetadata: () => MessageMetadata,
   ): Promise<Result<void, TradingError>> {
     // Шаги ниже выполняются синхронно (без yield) — атомарное обновление состояния.
     // Первый await появляется только на публикации событий.
@@ -1088,7 +1125,9 @@ export class ProcessFillUseCase {
     // Ошибка публикации (в flush) — потеря уведомления, НЕ делает fill retryable
     // (fill уже APPLIED); outbox логирует EVENT_PUBLISH_FAILED и создаёт issue.
     // К этому моменту: Order = terminal (если FILLED), Portfolio = обновлён, флаги сняты.
-    const events = updatedOrder.pullEvents();
+    // Canonical materialization (M-003): metadata каждого Order-события — child
+    // триггера (FILL_RECEIVED), поставляется на границе pullEvents.
+    const events = updatedOrder.pullEvents(nextEventMetadata);
     await this._enqueueEvents(fill, events);
 
     // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
@@ -1139,6 +1178,7 @@ export class ProcessFillUseCase {
     fill: Fill,
     execution: OrderSubmissionRecord,
     tracker: FillCommitTracker,
+    nextEventMetadata: () => MessageMetadata,
   ): Promise<Result<void, TradingError>> {
     this._logger.warn('Fill arrived without live local Order but held reservation exists — recovery path (consume held reservation)', {
       fillId: String(fill.id),
@@ -1292,7 +1332,13 @@ export class ProcessFillUseCase {
     await this._deps.processedFillRepo.markApplied(fill.id);
 
     // Нет Order aggregate → DIRECT_FILL_APPLIED через outbox (aggregateId=orderId).
-    await this._enqueueEvents(fill, [{ type: 'DIRECT_FILL_APPLIED', fill } satisfies DirectFillAppliedEvent]);
+    await this._enqueueEvents(fill, [
+      {
+        type: 'DIRECT_FILL_APPLIED',
+        payload: { fill },
+        metadata: nextEventMetadata(),
+      } satisfies DirectFillAppliedEvent,
+    ]);
 
     return Ok(undefined);
   }

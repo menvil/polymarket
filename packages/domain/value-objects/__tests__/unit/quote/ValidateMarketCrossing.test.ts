@@ -5,7 +5,7 @@ import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketC
 import { Quote } from '../../../src/quote/core/Quote.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { TimestampService } from '../../../src/timestamp/index.js';
+import { TimestampService } from '@polymarket/timestamp';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;

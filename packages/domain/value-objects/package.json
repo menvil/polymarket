@@ -54,10 +54,6 @@
       "types": "./dist/token-balance/index.d.ts",
       "import": "./dist/token-balance/index.js"
     },
-    "./timestamp": {
-      "types": "./dist/timestamp/index.d.ts",
-      "import": "./dist/timestamp/index.js"
-    },
     "./side": {
       "types": "./dist/side/index.d.ts",
       "import": "./dist/side/index.js"
@@ -109,6 +105,7 @@
     "@polymarket/math": "^0.1.0",
     "@polymarket/result": "^0.1.0",
     "@polymarket/time": "^0.1.0",
+    "@polymarket/timestamp": "0.1.0",
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {

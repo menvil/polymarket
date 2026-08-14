@@ -69,6 +69,7 @@ import type { OrderSubmissionRecord } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
 import type { ApplicationEvent, VenueOrderUpdate } from '@polymarket/application-events';
+import type { MessageMetadata, MessageMetadataGenerator } from '@polymarket/messages';
 import type { PortfolioService } from './services/PortfolioService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
 
@@ -78,6 +79,12 @@ export interface UpdateOrderStatusInput {
   readonly update: VenueOrderUpdate;
   /** ID аккаунта — нужен для операций с Portfolio */
   readonly accountId: AccountId;
+  /**
+   * Metadata сообщения-триггера (обычно ORDER_UPDATE_RECEIVED) —
+   * порождаемые Order-события становятся его child в causal chain (M-003).
+   * Без него (прямой вызов вне event-контекста) события — root.
+   */
+  readonly parentMetadata?: MessageMetadata;
 }
 
 /** Зависимости UpdateOrderStatusUseCase */
@@ -109,6 +116,11 @@ export interface UpdateOrderStatusDeps {
    * (release → SETTLED), best-effort.
    */
   readonly submissions: IOrderSubmissionRepository;
+  /**
+   * Canonical-генератор metadata порождаемых Order-событий (M-003):
+   * child от `input.parentMetadata` или root при его отсутствии.
+   */
+  readonly metadataGenerator: MessageMetadataGenerator;
   readonly logger: ILogger;
   /**
    * Queryable хранилище reconciliation issues (опционально).
@@ -411,7 +423,7 @@ export class UpdateOrderStatusUseCase {
    * @returns Ok(void) при успехе/идемпотентном skip, Err при критических сбоях
    */
   private async _executeLocked(input: UpdateOrderStatusInput): Promise<Result<void, TradingError>> {
-    const { update, accountId } = input;
+    const { update, accountId, parentMetadata } = input;
     const orderId: OrderId = update.orderId;
 
     // Шаг 1: Получить Order + версию атомарно.
@@ -526,7 +538,13 @@ export class UpdateOrderStatusUseCase {
     // Конфликт версии = конкурирующая мутация (например, fill через saveSync)
     // успела между чтением версии и записью — резервацию НЕ трогаем и события
     // НЕ публикуем, вместо этого перечитываем актуальное состояние.
-    const events = updatedOrder.pullEvents();
+    // Canonical materialization (M-003): metadata Order-событий — child триггера
+    // (ORDER_UPDATE_RECEIVED) либо root при прямом вызове.
+    const events = updatedOrder.pullEvents(() =>
+      parentMetadata !== undefined
+        ? this._deps.metadataGenerator.nextChild(parentMetadata)
+        : this._deps.metadataGenerator.nextRoot(),
+    );
     const saveResult = await this._deps.orderRepo.save(updatedOrder, expectedVersion);
     if (!saveResult.ok) {
       const latest = await this._deps.orderRepo.get(orderId);

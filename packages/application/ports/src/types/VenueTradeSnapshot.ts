@@ -12,7 +12,8 @@
  * - `ReconcileTradesUseCase` — сверка исполнений с локальными записями
  */
 import type { FillId, OrderId, AssetId, AccountId, MarketId } from '@polymarket/ids';
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Снимок комиссии внутри VenueTradeSnapshot.

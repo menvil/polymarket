@@ -23,8 +23,16 @@ function makeEventBus() {
     publish: jest.fn(),
     publishAll: jest.fn(),
     _emit(type: string, event: any) {
+      // Fixtures пишутся flat ({ type, ...поля }) — оборачиваем в canonical
+      // envelope (M-003); уже-envelope fixtures (с payload) пропускаем как есть
+      const envelope = 'payload' in event
+        ? event
+        : (() => {
+            const { type: _ignoredType, ...payload } = event;
+            return { type, payload };
+          })();
       const handler = handlers.get(type);
-      if (handler) handler(event);
+      if (handler) handler(envelope);
     },
   };
 }
@@ -265,8 +273,10 @@ describe('OrderEventBridge', () => {
       const eventBus = deps.eventBus as any;
       eventBus._emit('FILL_RECEIVED', {
         type: 'FILL_RECEIVED',
-        fill: { tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } },
-        receivedAt: {},
+        payload: {
+          fill: { tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } },
+          receivedAt: {},
+        },
       });
 
       expect((deps.scheduler as any).onFillReceivedForInstrument).toHaveBeenCalled();
@@ -284,8 +294,10 @@ describe('OrderEventBridge', () => {
       const eventBus = deps.eventBus as any;
       eventBus._emit('FILL_CONFIRMED', {
         type: 'FILL_CONFIRMED',
-        fills: [{ id: 'fill-1', orderId: ORDER_1, tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
-        receivedAt: {},
+        payload: {
+          fills: [{ id: 'fill-1', orderId: ORDER_1, tokenId: { type: 'POLYMARKET_CTF_TOKEN', tokenId: '12345' } }],
+          receivedAt: {},
+        },
       });
 
       expect((deps.orderStateStore as any).clearOrderFillMatched).toHaveBeenCalledWith(ORDER_1, 'fill-1');

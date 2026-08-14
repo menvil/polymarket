@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { TimestampSerializer } from '@polymarket/value-objects';
+ * import { TimestampSerializer } from '@polymarket/timestamp';
  *
  * const ts = Timestamp.now();
  * const json = TimestampSerializer.toJSON(ts); // number (epoch ms)

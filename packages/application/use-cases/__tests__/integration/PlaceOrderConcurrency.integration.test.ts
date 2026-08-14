@@ -18,6 +18,8 @@
  * `execute()` запускаются реально параллельно, и корректность обеспечивается
  * сериализацией внутри mutex, а не порядком вызовов.
  */
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId as unsafeRunIdM003 } from '@polymarket/ids';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { NoOpLogger } from '@polymarket/logger';
 import { Ok } from '@polymarket/result';
@@ -94,6 +96,14 @@ function makeExchangeClient(): IExchangeClient {
   };
 }
 
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunIdM003('testrun1'),
+  });
+}
+
 describe('PlaceOrder concurrency (integration) — risk projection под keyed mutex', () => {
   let orderRepo: InMemoryOrderRepository;
   let portfolioStore: InMemoryPortfolioStore;
@@ -114,6 +124,7 @@ describe('PlaceOrder concurrency (integration) — risk projection под keyed 
   function buildDeps(riskParams: RiskParams): PlaceOrderDeps {
     const policy = unwrap(RiskPolicy.create(riskParams));
     return {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: new OrderRiskChecker(policy, LOGGER),
       orderRepo,
       portfolioService,

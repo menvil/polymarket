@@ -4,8 +4,8 @@ import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Quote, QuoteInvariantViolation } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { TimestampService } from '../../../src/timestamp/index.js';
-import type { Timestamp } from '../../../src/timestamp/index.js';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;

@@ -101,25 +101,29 @@ function makeOrder(overrides: Partial<PendingPaperOrder> = {}): PendingPaperOrde
   };
 }
 
-/** Создаёт BOOK_UPDATED событие */
+/** Создаёт BOOK_UPDATED событие (canonical envelope M-003; metadata тестом не читается) */
 function makeBookEvent(instrumentId: string, bestBid?: number, bestAsk?: number) {
   return {
     type: 'BOOK_UPDATED',
-    instrumentId,
-    topOfBook: {
-      bestBid: bestBid !== undefined ? Price.of(new Decimal(bestBid)) : undefined,
-      bestAsk: bestAsk !== undefined ? Price.of(new Decimal(bestAsk)) : undefined,
+    payload: {
+      instrumentId,
+      topOfBook: {
+        bestBid: bestBid !== undefined ? Price.of(new Decimal(bestBid)) : undefined,
+        bestAsk: bestAsk !== undefined ? Price.of(new Decimal(bestAsk)) : undefined,
+      },
     },
   };
 }
 
-/** Создаёт TRADE_RECEIVED событие */
+/** Создаёт TRADE_RECEIVED событие (canonical envelope M-003; metadata тестом не читается) */
 function makeTradeEvent(instrumentId: string, price: number, size: number) {
   return {
     type: 'TRADE_RECEIVED',
-    instrumentId,
-    price: Price.of(new Decimal(price)),
-    size: Quantity.of(new Decimal(size)),
+    payload: {
+      instrumentId,
+      price: Price.of(new Decimal(price)),
+      size: Quantity.of(new Decimal(size)),
+    },
   };
 }
 

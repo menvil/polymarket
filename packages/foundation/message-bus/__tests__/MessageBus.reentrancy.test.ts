@@ -4,14 +4,9 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { MessageBus, createMessageBusPolicy, MessageBusDrainLimitError } from '@polymarket/message-bus';
+import { heartbeat, type TestMessage } from './testMessages.js';
 import type { MessageBusPublishError } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
-
-type TestMessage = { readonly type: 'HEARTBEAT'; readonly seq: number };
-
-function heartbeat(seq: number): TestMessage {
-  return { type: 'HEARTBEAT', seq };
-}
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
   let release!: () => void;
@@ -28,8 +23,8 @@ describe('MessageBus reentrancy', () => {
     const bus = new MessageBus<TestMessage>();
     const order: number[] = [];
     bus.subscribe('HEARTBEAT', async (message) => {
-      order.push(message.seq);
-      if (message.seq === 1) {
+      order.push(message.payload.seq);
+      if (message.payload.seq === 1) {
         await bus.publish(heartbeat(3));
       }
     });
@@ -44,8 +39,8 @@ describe('MessageBus reentrancy', () => {
     const bus = new MessageBus<TestMessage>();
     const order: number[] = [];
     bus.subscribe('HEARTBEAT', async (message) => {
-      order.push(message.seq);
-      if (message.seq === 1) {
+      order.push(message.payload.seq);
+      if (message.payload.seq === 1) {
         await bus.publishAll([heartbeat(3), heartbeat(4)]);
       }
     });
@@ -63,8 +58,8 @@ describe('MessageBus reentrancy', () => {
     let deliveredAtReentrantReturn: number[] | undefined;
 
     bus.subscribe('HEARTBEAT', async (message) => {
-      delivered.push(message.seq);
-      if (message.seq === 1) {
+      delivered.push(message.payload.seq);
+      if (message.payload.seq === 1) {
         // await внутри активного drain не может ждать обработки сообщения 2 —
         // иначе self-deadlock. Ok означает успешный enqueue.
         reentrantResult = await bus.publish(heartbeat(2));
@@ -87,8 +82,8 @@ describe('MessageBus reentrancy', () => {
     let deliveredAtReturn: number[] | undefined;
 
     bus.subscribe('HEARTBEAT', async (message) => {
-      delivered.push(message.seq);
-      if (message.seq === 1) {
+      delivered.push(message.payload.seq);
+      if (message.payload.seq === 1) {
         // Только захват — ассерты в основном потоке теста: упавший expect внутри
         // обработчика проглотился бы non-critical семантикой bus
         batchResult = await bus.publishAll([heartbeat(2), heartbeat(3)]);
@@ -108,8 +103,8 @@ describe('MessageBus reentrancy', () => {
     const gate = makeGate();
     const delivered: number[] = [];
     bus.subscribe('HEARTBEAT', async (message) => {
-      delivered.push(message.seq);
-      if (message.seq === 1) await gate.promise;
+      delivered.push(message.payload.seq);
+      if (message.payload.seq === 1) await gate.promise;
     });
 
     const ownerPublish = bus.publish(heartbeat(1)); // владелец drain, обработчик заблокирован
@@ -137,7 +132,7 @@ describe('MessageBus reentrancy', () => {
     for (let hops = 0; hops < 15; hops++) {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
 
       const owner = bus.publish(heartbeat(1));
 
@@ -175,7 +170,7 @@ describe('MessageBus reentrancy', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxMessagesPerDrain: 1 } }),
       });
       const delivered: number[] = [];
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
 
       const owner = bus.publish(heartbeat(1));
 
@@ -216,8 +211,8 @@ describe('MessageBus reentrancy', () => {
     const bus = new MessageBus<TestMessage>();
     const lateCalls: number[] = [];
     bus.subscribe('HEARTBEAT', (message) => {
-      if (message.seq === 1) {
-        bus.subscribe('HEARTBEAT', (next) => { lateCalls.push(next.seq); });
+      if (message.payload.seq === 1) {
+        bus.subscribe('HEARTBEAT', (next) => { lateCalls.push(next.payload.seq); });
       }
     });
 
@@ -233,7 +228,7 @@ describe('MessageBus reentrancy', () => {
     // строгая проверка: отписка происходит до того, как B был бы вызван.
     const holder: { unsubB?: () => void } = {};
     bus.subscribe('HEARTBEAT', () => { holder.unsubB?.(); });
-    holder.unsubB = bus.subscribe('HEARTBEAT', (message) => { bCalls.push(message.seq); });
+    holder.unsubB = bus.subscribe('HEARTBEAT', (message) => { bCalls.push(message.payload.seq); });
 
     await bus.publish(heartbeat(1));
     // Snapshot подписчиков сформирован до запуска — B участвует в текущем fan-out

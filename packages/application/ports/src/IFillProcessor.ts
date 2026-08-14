@@ -20,6 +20,7 @@
 import type { Result } from '@polymarket/result';
 import type { TradingError } from '@polymarket/errors';
 import type { Fill } from '@polymarket/fill';
+import type { MessageMetadata } from '@polymarket/messages';
 
 /** Порт обработки fill-события — см. описание модуля выше. */
 export interface IFillProcessor {
@@ -27,7 +28,10 @@ export interface IFillProcessor {
    * Обрабатывает fill: применяет к ордеру, портфелю и леджеру.
    *
    * @param fill - Fill для обработки
+   * @param parentMetadata - Metadata сообщения-триггера (обычно FILL_RECEIVED) —
+   *   события, порождённые обработкой, становятся его child в causal chain
+   *   (M-003); без него порождённые события — root
    * @returns Ok если обработка успешна, Err с описанием ошибки
    */
-  execute(fill: Fill): Promise<Result<void, TradingError>>;
+  execute(fill: Fill, parentMetadata?: MessageMetadata): Promise<Result<void, TradingError>>;
 }

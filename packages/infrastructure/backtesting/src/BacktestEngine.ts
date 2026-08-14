@@ -45,13 +45,13 @@
  * // Явный список файлов (одиночный снапшот):
  * const engine = new BacktestEngine(
  *   { filePaths: ['./snapshots/Bitcoin_Up_or_Down.jsonl'], outcomeIndex: 1 },
- *   { bookUpdateHandler, eventBus, replayClock, logger },
+ *   { bookUpdateHandler, eventBus, metadataGenerator, replayClock, logger },
  * );
  *
  * // Сканирование директории:
  * const engine = new BacktestEngine(
  *   { snapshotDir: './data/snapshots', fromDate: '2026-01-01', outcomeIndex: 0 },
- *   { bookUpdateHandler, eventBus, replayClock, logger },
+ *   { bookUpdateHandler, eventBus, metadataGenerator, replayClock, logger },
  * );
  *
  * const result = await engine.run();
@@ -65,11 +65,13 @@ import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { OrderbookLevel } from '@polymarket/orderbook';
 import type { Side } from '@polymarket/value-objects';
 import type { BookUpdateHandler } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import { ReplayClock } from '@polymarket/time';
 import {
   SnapshotReaderFactory,
@@ -290,16 +292,51 @@ export interface IBacktestCryptoMarketDataStore {
 }
 
 /**
- * Зависимости бектест-движка.
+ * Публикация событий бектеста — атомарная пара зависимостей.
+ *
+ * @remarks
+ * Инвариант M-003: событие публикуется ТОЛЬКО как полный canonical envelope,
+ * поэтому `eventBus` без `metadataGenerator` — invalid state (событие
+ * нечем снабдить metadata) и запрещён на уровне типов:
+ *
+ * - публикация выключена → нет НИ eventBus, НИ metadataGenerator;
+ * - публикация включена → есть ОБА.
+ *
+ * Смешанная конфигурация не выражается типами, а обход типов (JS/casts)
+ * ловится fail-fast в конструкторе — молчаливого пропуска событий нет.
  */
-export interface BacktestDeps {
+export type BacktestEventPublishingDeps =
+  | {
+      /** Публикация выключена: bus отсутствует… */
+      readonly eventBus?: undefined;
+      /** …и генератор metadata тоже отсутствует. */
+      readonly metadataGenerator?: undefined;
+    }
+  | {
+      /**
+       * EventBus для публикации TRADE_RECEIVED.
+       * Нужен, если снапшоты содержат `event_type: 'last_trade_price'`.
+       */
+      readonly eventBus: IEventBus;
+      /**
+       * Canonical-генератор metadata публикуемых событий (M-003) —
+       * обязательная пара к eventBus. Для детерминированного replay
+       * инъецируй генератор с ReplayClock (и, при необходимости,
+       * PaperHighResolutionClock).
+       */
+      readonly metadataGenerator: MessageMetadataGenerator;
+    };
+
+/**
+ * Зависимости бектест-движка.
+ *
+ * @remarks
+ * Event-publishing часть — union {@link BacktestEventPublishingDeps}:
+ * `eventBus` и `metadataGenerator` присутствуют строго парой.
+ */
+export type BacktestDeps = BacktestEventPublishingDeps & {
   /** Application-layer хендлер обновлений стакана */
   readonly bookUpdateHandler: BookUpdateHandler;
-  /**
-   * EventBus для публикации TRADE_RECEIVED.
-   * Обязателен только если снапшоты содержат `event_type: 'last_trade_price'`.
-   */
-  readonly eventBus?: IEventBus;
   /** Логгер */
   readonly logger: ILogger;
   /**
@@ -322,7 +359,7 @@ export interface BacktestDeps {
    * Если не предоставлен — fallback на strike_price/market_resolved события.
    */
   readonly parseCryptoMeta?: (rawMarket: Record<string, unknown>) => { rtdsFilter: string; priceToBeat?: number; finalPrice?: number } | undefined;
-}
+};
 
 /**
  * Результат выполнения бектеста.
@@ -373,12 +410,20 @@ export class BacktestEngine {
    * Создаёт BacktestEngine.
    *
    * @param _config - Конфигурация бектеста
-   * @param _deps - Зависимости (BookUpdateHandler, EventBus, ILogger)
+   * @param _deps - Зависимости (BookUpdateHandler, ILogger; EventBus строго в
+   *   паре с MessageMetadataGenerator — см. {@link BacktestEventPublishingDeps})
    */
   constructor(
     private readonly _config: BacktestConfig,
     private readonly _deps: BacktestDeps,
   ) {
+    // Runtime-защита инварианта пары (типы обходимы из JS/через касты):
+    // eventBus без metadataGenerator означал бы молчаливый пропуск событий.
+    if ((_deps.eventBus === undefined) !== (_deps.metadataGenerator === undefined)) {
+      throw new RangeError(
+        'BacktestEngine requires eventBus and metadataGenerator as an atomic pair: provide both to enable event publishing or neither to disable it',
+      );
+    }
     this._logger = _deps.logger.child({ component: 'BacktestEngine' });
   }
 
@@ -1029,7 +1074,7 @@ export class BacktestEngine {
       return false;
     }
 
-    if (!this._deps.eventBus) {
+    if (this._deps.eventBus === undefined) {
       this._logger.warn('TRADE_RECEIVED skipped: eventBus not provided in deps');
       return false;
     }
@@ -1039,13 +1084,16 @@ export class BacktestEngine {
     // price и size точно инициализированы — try/catch выше вернул бы false при ошибке
     const result = await this._deps.eventBus.publish({
       type: 'TRADE_RECEIVED',
-      instrumentId,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      price: price!,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      size: size!,
-      side,
-      timestamp: tsResult.value,
+      payload: {
+        instrumentId,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        price: price!,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        size: size!,
+        side,
+        timestamp: tsResult.value,
+      },
+      metadata: this._deps.metadataGenerator.nextRoot(),
     });
     if (!result.ok) {
       this._logger.warn('TRADE_RECEIVED publish failed', { filePath, error: result.error.message });

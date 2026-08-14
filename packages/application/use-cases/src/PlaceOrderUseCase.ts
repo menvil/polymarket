@@ -96,7 +96,9 @@ import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import { TimestampService, Money, Quantity } from '@polymarket/value-objects';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
+import { Money, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { Price, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
 import { accountIdToString, assetIdToString } from '@polymarket/ids';
@@ -197,6 +199,11 @@ export interface PlaceOrderDeps {
    * per-order порядок (Fill не опубликует ORDER_FILLED раньше ORDER_CREATED).
    */
   readonly orderedEventOutbox: IOrderedEventOutbox;
+  /**
+   * Canonical-генератор metadata порождаемых Order-событий (M-003).
+   * Place — инициативная команда (стратегия/оператор), поэтому события — root.
+   */
+  readonly metadataGenerator: MessageMetadataGenerator;
   readonly clock: IClock;
   readonly logger: ILogger;
   /**
@@ -2128,7 +2135,7 @@ export class PlaceOrderUseCase {
     // раньше (keyed mutex сериализует Place перед Fill).
     // Сбой enqueue НЕ откатывает committed place (Ok сохраняется) — helper
     // логирует EVENT_PUBLISH_FAILED и создаёт issue.
-    const events = acceptedOrder.pullEvents();
+    const events = acceptedOrder.pullEvents(() => this._deps.metadataGenerator.nextRoot());
     await enqueueCommittedEvents({
       outbox: this._deps.orderedEventOutbox,
       logger: this._logger,

@@ -20,7 +20,7 @@ import { DataRecorder, NDJSONFormatter, GzipCompressor } from '../../src/index.j
 import type { DataRecorderConfig } from '../../src/index.js';
 import { NoOpLogger } from '@polymarket/logger';
 import { asMarketId, unsafeInstrumentId } from '@polymarket/ids';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';

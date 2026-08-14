@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { TimestampFormatter } from '@polymarket/value-objects';
+ * import { TimestampFormatter } from '@polymarket/timestamp';
  *
  * const ts = Timestamp.now();
  *

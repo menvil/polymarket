@@ -32,11 +32,13 @@
     "@polymarket/market-discovery": "0.1.0",
     "@polymarket/market-state": "0.1.0",
     "@polymarket/math": "0.1.0",
+    "@polymarket/messages": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/result": "0.1.0",
     "@polymarket/risk": "0.1.0",
     "@polymarket/strategy": "0.1.0",
     "@polymarket/time": "0.1.0",
+    "@polymarket/timestamp": "^0.1.0",
     "@polymarket/use-cases": "0.1.0",
     "@polymarket/value-objects": "0.1.0",
     "decimal.js": "^10.4.3"

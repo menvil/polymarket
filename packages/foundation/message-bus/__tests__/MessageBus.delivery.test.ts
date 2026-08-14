@@ -7,14 +7,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { MessageBus } from '@polymarket/message-bus';
-
-type TestMessage =
-  | { readonly type: 'HEARTBEAT'; readonly seq: number }
-  | { readonly type: 'ITEM_ADDED'; readonly itemId: string };
-
-function heartbeat(seq: number): TestMessage {
-  return { type: 'HEARTBEAT', seq };
-}
+import { heartbeat, itemAdded, type TestMessage } from './testMessages.js';
 
 /** Управляемый барьер: обработчик блокируется до release(). */
 function makeGate(): { promise: Promise<void>; release: () => void } {
@@ -32,7 +25,7 @@ describe('MessageBus delivery', () => {
   it('один подписчик получает сообщение, publish → Ok', async () => {
     const bus = new MessageBus<TestMessage>();
     const seen: number[] = [];
-    bus.subscribe('HEARTBEAT', (message) => { seen.push(message.seq); });
+    bus.subscribe('HEARTBEAT', (message) => { seen.push(message.payload.seq); });
 
     const result = await bus.publish(heartbeat(1));
 
@@ -64,11 +57,11 @@ describe('MessageBus delivery', () => {
     const bus = new MessageBus<TestMessage>();
     const heartbeats: number[] = [];
     const items: string[] = [];
-    bus.subscribe('HEARTBEAT', (message) => { heartbeats.push(message.seq); });
-    bus.subscribe('ITEM_ADDED', (message) => { items.push(message.itemId); });
+    bus.subscribe('HEARTBEAT', (message) => { heartbeats.push(message.payload.seq); });
+    bus.subscribe('ITEM_ADDED', (message) => { items.push(message.payload.itemId); });
 
     await bus.publish(heartbeat(1));
-    await bus.publish({ type: 'ITEM_ADDED', itemId: 't-1' });
+    await bus.publish(itemAdded('t-1'));
 
     expect(heartbeats).toEqual([1]);
     expect(items).toEqual(['t-1']);
@@ -77,7 +70,7 @@ describe('MessageBus delivery', () => {
   it('sync-обработчик получает сообщение', async () => {
     const bus = new MessageBus<TestMessage>();
     let seen = -1;
-    bus.subscribe('HEARTBEAT', (message) => { seen = message.seq; });
+    bus.subscribe('HEARTBEAT', (message) => { seen = message.payload.seq; });
 
     const result = await bus.publish(heartbeat(7));
 
@@ -102,7 +95,7 @@ describe('MessageBus delivery', () => {
   it('publishAll доставляет сообщения в порядке массива (FIFO)', async () => {
     const bus = new MessageBus<TestMessage>();
     const order: number[] = [];
-    bus.subscribe('HEARTBEAT', (message) => { order.push(message.seq); });
+    bus.subscribe('HEARTBEAT', (message) => { order.push(message.payload.seq); });
 
     const result = await bus.publishAll([heartbeat(1), heartbeat(2), heartbeat(3)]);
 
@@ -186,8 +179,8 @@ describe('MessageBus delivery', () => {
     const gate = makeGate();
     const delivered: number[] = [];
     bus.subscribe('HEARTBEAT', async (message) => {
-      delivered.push(message.seq);
-      if (message.seq === 1) await gate.promise;
+      delivered.push(message.payload.seq);
+      if (message.payload.seq === 1) await gate.promise;
     });
 
     const publishPromise = bus.publishAll([heartbeat(1), heartbeat(2)]);

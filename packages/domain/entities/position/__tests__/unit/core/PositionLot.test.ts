@@ -4,7 +4,8 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Quantity, Price, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
 describe('PositionLot', () => {

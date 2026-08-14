@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Timestamp } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { MarketPairMatcher } from '../src/MarketPairMatcher.js';
 import type { MarketInfo } from '../src/types.js';
 import { asInstrumentId } from '@polymarket/ids';

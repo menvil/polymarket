@@ -4,7 +4,7 @@ import { asOrderId, asFillId, unsafeStrategyId } from '@polymarket/ids';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { Order } from '@polymarket/order';
 import { InMemoryOrderRepository } from '../../src/InMemoryOrderRepository.js';
 

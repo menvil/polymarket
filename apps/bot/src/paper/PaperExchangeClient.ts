@@ -38,7 +38,7 @@ import type { IExchangeClient, OpenOrderSnapshot, VenueTradeSnapshot, SubmitOrde
 import type { MockExchangeClient } from '@polymarket/backtesting';
 import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import { Ok } from '@polymarket/result';

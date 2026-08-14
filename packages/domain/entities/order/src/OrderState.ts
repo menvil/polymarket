@@ -8,7 +8,8 @@
  * FillData (входной параметр applyFill) — общий контракт из `@polymarket/fill`.
  */
 
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, OrderId, StrategyId } from '@polymarket/ids';
 
 // ─── Status ──────────────────────────────────────────────────────

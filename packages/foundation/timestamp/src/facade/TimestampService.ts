@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * import { TimestampService } from '@polymarket/value-objects';
+ * import { TimestampService } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * // Из number

@@ -103,8 +103,8 @@ export function subscribeToOrderEvents(
     bookCount++;
 
     // Staleness: localTime - serverTimestamp (только для live/paper, не backtest)
-    if (event.timestamp) {
-      const serverTs = event.timestamp.toNumber();
+    if (event.payload.timestamp) {
+      const serverTs = event.payload.timestamp.toNumber();
       const localTs = Date.now();
       const staleness = localTs - serverTs;
       // Sanity: только разумные значения (0-60s, не отрицательные из-за clock drift в backtest)
@@ -134,7 +134,7 @@ export function subscribeToOrderEvents(
     }
 
     if (logBook && bookCount % bookLogEvery === 0) {
-      const { bestBid, bestAsk } = event.topOfBook;
+      const { bestBid, bestAsk } = event.payload.topOfBook;
       logger.info('Book tick', {
         n: bookCount,
         bid: bestBid ? bestBid.value().toFixed(4) : null,
@@ -146,22 +146,22 @@ export function subscribeToOrderEvents(
   const unsubTrade = logTrades
     ? eventBus.subscribe('TRADE_RECEIVED', (event) => {
         logger.info('Tape trade', {
-          side: event.side,
-          size: event.size.value().toFixed(2),
-          price: event.price.value().toFixed(4),
+          side: event.payload.side,
+          size: event.payload.size.value().toFixed(2),
+          price: event.payload.price.value().toFixed(4),
         });
       })
     : () => {};
 
   const unsubCreated = eventBus.subscribe('ORDER_CREATED', (event) => {
     const snap = options.getPortfolioSnapshot?.();
-    const tokenLabel = options.getTokenLabel?.(event.asset);
+    const tokenLabel = options.getTokenLabel?.(event.payload.asset);
     logger.info('>>> Order placed', {
-      side: event.side,
+      side: event.payload.side,
       ...(tokenLabel && { token: tokenLabel }),
-      size: event.size.value().toFixed(2),
-      price: event.price.value().toFixed(4),
-      notional: event.price.value().times(event.size.value()).toFixed(2),
+      size: event.payload.size.value().toFixed(2),
+      price: event.payload.price.value().toFixed(4),
+      notional: event.payload.price.value().times(event.payload.size.value()).toFixed(2),
       ...(snap && {
         usdcFree: snap.usdc,
         usdcReserved: snap.reserved,
@@ -173,10 +173,10 @@ export function subscribeToOrderEvents(
   const unsubPartial = eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
     const snap = options.getPortfolioSnapshot?.();
     logger.info('>>> Partial fill', {
-      side: event.fill.side,
-      filled: event.fill.size.value().toFixed(2),
-      price: event.fill.price.value().toFixed(4),
-      remaining: event.remainingSize.value().toFixed(2),
+      side: event.payload.fill.side,
+      filled: event.payload.fill.size.value().toFixed(2),
+      price: event.payload.fill.price.value().toFixed(4),
+      remaining: event.payload.remainingSize.value().toFixed(2),
       ...(snap && {
         tokenQty: snap.tokenQty,
         avgEntry: snap.avgEntry,
@@ -189,9 +189,9 @@ export function subscribeToOrderEvents(
   const unsubFilled = eventBus.subscribe('ORDER_FILLED', (event) => {
     const snap = options.getPortfolioSnapshot?.();
     logger.info('>>> Order filled', {
-      side: event.fill.side,
-      size: event.fill.size.value().toFixed(2),
-      price: event.fill.price.value().toFixed(4),
+      side: event.payload.fill.side,
+      size: event.payload.fill.size.value().toFixed(2),
+      price: event.payload.fill.price.value().toFixed(4),
       ...(snap && {
         tokenQty: snap.tokenQty,
         avgEntry: snap.avgEntry,

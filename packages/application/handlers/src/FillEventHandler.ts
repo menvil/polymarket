@@ -56,7 +56,7 @@
  *
  * @example
  * ```typescript
- * const handler = new FillEventHandler(eventBus, clock, logger);
+ * const handler = new FillEventHandler(eventBus, metadataGenerator, clock, logger);
  *
  * wsEmitter.onUserFill(async (dto) => {
  *   await handler.handle(dto as Record<string, unknown>, accountId);
@@ -69,8 +69,9 @@ import type { AccountId } from '@polymarket/ids';
 import { asFillId, asOrderId } from '@polymarket/ids';
 import type { Fill } from '@polymarket/fill';
 import { FillMapper } from '@polymarket/fill';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 
 /** Статусы, при которых парсим, кешируем и ПУБЛИКУЕМ Fill (Portfolio обновляется сразу) */
 const FILL_PUBLISH_ON_MATCH_STATUSES = new Set(['MATCHED']);
@@ -111,11 +112,14 @@ export class FillEventHandler {
    * Создаёт FillEventHandler.
    *
    * @param _eventBus - Event bus для публикации FILL_RECEIVED / FILL_FAILED
+   * @param _metadataGenerator - Canonical-генератор metadata публикуемых событий
+   *   (fill-события контура — root: первичная реакция на внешнее WS-наблюдение)
    * @param _clock - Источник времени (receivedAt)
    * @param _logger - Logger
    */
   constructor(
     private readonly _eventBus: IEventBus,
+    private readonly _metadataGenerator: MessageMetadataGenerator,
     private readonly _clock: IClock,
     private readonly _logger: ILogger,
   ) {}
@@ -215,8 +219,11 @@ export class FillEventHandler {
     for (const fill of fills) {
       const publishResult = await this._eventBus.publish({
         type: 'FILL_RECEIVED',
-        fill,
-        receivedAt: tsResult.value,
+        payload: {
+          fill,
+          receivedAt: tsResult.value,
+        },
+        metadata: this._metadataGenerator.nextRoot(),
       });
       if (!publishResult.ok) {
         this._logger.error('Failed to publish FILL_RECEIVED (MATCHED)', {
@@ -273,8 +280,11 @@ export class FillEventHandler {
         if (tsResult.ok) {
           const publishResult = await this._eventBus.publish({
             type: 'FILL_CONFIRMED',
-            fills: confirmedFills,
-            receivedAt: tsResult.value,
+            payload: {
+              fills: confirmedFills,
+              receivedAt: tsResult.value,
+            },
+            metadata: this._metadataGenerator.nextRoot(),
           });
           if (!publishResult.ok) {
             this._logger.error('Failed to publish FILL_CONFIRMED', {
@@ -321,8 +331,11 @@ export class FillEventHandler {
     for (const fill of fills) {
       const publishResult = await this._eventBus.publish({
         type: 'FILL_RECEIVED',
-        fill,
-        receivedAt: tsResult.value,
+        payload: {
+          fill,
+          receivedAt: tsResult.value,
+        },
+        metadata: this._metadataGenerator.nextRoot(),
       });
       if (!publishResult.ok) {
         this._logger.error('Failed to publish FILL_RECEIVED (CONFIRMED fallback)', {
@@ -422,10 +435,13 @@ export class FillEventHandler {
 
         const publishResult = await this._eventBus.publish({
           type: 'FILL_FAILED',
-          fillId: effectiveFillId,
-          orderId,
-          receivedAt: tsResult.value,
-          fills: cachedFills,
+          payload: {
+            fillId: effectiveFillId,
+            orderId,
+            receivedAt: tsResult.value,
+            fills: cachedFills,
+          },
+          metadata: this._metadataGenerator.nextRoot(),
         });
         if (!publishResult.ok) {
           this._logger.error('Failed to publish FILL_FAILED (maker)', {
@@ -467,10 +483,13 @@ export class FillEventHandler {
 
     const publishResult = await this._eventBus.publish({
       type: 'FILL_FAILED',
-      fillId,
-      orderId,
-      receivedAt: tsResult.value,
-      fills: cachedFills,
+      payload: {
+        fillId,
+        orderId,
+        receivedAt: tsResult.value,
+        fills: cachedFills,
+      },
+      metadata: this._metadataGenerator.nextRoot(),
     });
     if (!publishResult.ok) {
       this._logger.error('Failed to publish FILL_FAILED (taker)', {

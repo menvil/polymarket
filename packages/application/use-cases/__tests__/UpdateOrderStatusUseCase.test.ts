@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId as unsafeRunIdM003 } from '@polymarket/ids';
 import { UpdateOrderStatusUseCase } from '../src/UpdateOrderStatusUseCase.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { UpdateOrderStatusDeps } from '../src/UpdateOrderStatusUseCase.js';
@@ -86,7 +88,7 @@ function makeOpenOrder(id: OrderId = ORDER_ID, side: 'BUY' | 'SELL' = 'BUY'): Or
   if (!result.ok) throw result.error;
   const accepted = result.value.accept();
   if (!accepted.ok) throw accepted.error;
-  accepted.value.pullEvents();
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
   return accepted.value;
 }
 
@@ -164,6 +166,15 @@ function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunIdM003('testrun1'),
+  });
+}
+
 describe('UpdateOrderStatusUseCase', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -187,7 +198,7 @@ describe('UpdateOrderStatusUseCase', () => {
   it('возвращает Ok(void) если ордер не найден (не крашит)', async () => {
     orderRepo = makeOrderRepo(undefined);
     orderStateStore = makeOrderStateStore();
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
     expect(result.ok).toBe(true);
@@ -205,6 +216,7 @@ describe('UpdateOrderStatusUseCase', () => {
         orderStateStore = makeOrderStateStore();
         const reconciliationIssues = makeReconciliationIssueRepo();
         deps = {
+          metadataGenerator: makeMetadataGenerator(),
           orderRepo, orderStateStore, portfolioService,
           keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger, reconciliationIssues,
         };
@@ -240,7 +252,7 @@ describe('UpdateOrderStatusUseCase', () => {
       orderRepo = makeOrderRepo(makeOpenOrder());
       orderStateStore = makeOrderStateStore(makeOpenOrder());
       const keyedMutex = makeKeyedMutex();
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex, orderedEventOutbox, submissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex, orderedEventOutbox, submissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -266,11 +278,11 @@ describe('UpdateOrderStatusUseCase', () => {
     });
     if (!pendingResult.ok) throw pendingResult.error;
     const pendingOrder = pendingResult.value;
-    pendingOrder.pullEvents();
+    pendingOrder.pullEvents(() => makeMetadataGenerator().nextRoot());
 
     orderRepo = makeOrderRepo(pendingOrder);
     orderStateStore = makeOrderStateStore(pendingOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -283,7 +295,7 @@ describe('UpdateOrderStatusUseCase', () => {
     const order = makeOpenOrder();
     orderRepo = makeOrderRepo(order);
     orderStateStore = makeOrderStateStore(order);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -300,6 +312,7 @@ describe('UpdateOrderStatusUseCase', () => {
     (failingBus.publishAll as ReturnType<typeof jest.fn>).mockRejectedValue(new Error('bus down') as never);
     const reconciliationIssues = makeReconciliationIssueRepo();
     deps = {
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(),
       orderedEventOutbox: makeOutbox(failingBus, reconciliationIssues), submissions, logger,
     };
@@ -333,11 +346,11 @@ describe('UpdateOrderStatusUseCase', () => {
     });
     if (!pendingResult.ok) throw pendingResult.error;
     const pendingOrder = pendingResult.value;
-    pendingOrder.pullEvents();
+    pendingOrder.pullEvents(() => makeMetadataGenerator().nextRoot());
 
     orderRepo = makeOrderRepo(pendingOrder);
     orderStateStore = makeOrderStateStore(pendingOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
 
     const result = await useCase.execute({
@@ -365,7 +378,7 @@ describe('UpdateOrderStatusUseCase', () => {
     await submissions.markReservationHeld(CLIENT, '65', new Date());
     await submissions.markVenueAccepted(CLIENT, ORDER_ID, new Date());
 
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -397,6 +410,7 @@ describe('UpdateOrderStatusUseCase', () => {
     const failingPortfolioService = new PortfolioService(emptyPortfolioStore, logger);
     const reconciliationIssues = makeReconciliationIssueRepo();
     deps = {
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo,
       orderStateStore,
       portfolioService: failingPortfolioService,
@@ -440,11 +454,11 @@ describe('UpdateOrderStatusUseCase', () => {
     const cancelResult = order.cancel();
     if (!cancelResult.ok) throw cancelResult.error;
     const cancelledOrder = cancelResult.value;
-    cancelledOrder.pullEvents();
+    cancelledOrder.pullEvents(() => makeMetadataGenerator().nextRoot());
 
     orderRepo = makeOrderRepo(cancelledOrder);
     orderStateStore = makeOrderStateStore(cancelledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -461,11 +475,11 @@ describe('UpdateOrderStatusUseCase', () => {
     const cancelResult = order.cancel();
     if (!cancelResult.ok) throw cancelResult.error;
     const cancelledOrder = cancelResult.value;
-    cancelledOrder.pullEvents();
+    cancelledOrder.pullEvents(() => makeMetadataGenerator().nextRoot());
 
     orderRepo = makeOrderRepo(cancelledOrder);
     orderStateStore = makeOrderStateStore(cancelledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'ACCEPTED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -488,7 +502,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(order),
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(order);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -513,7 +527,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(filledOrder), // reread после конфликта
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(filledOrder);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -532,7 +546,7 @@ describe('UpdateOrderStatusUseCase', () => {
     const cancelResult = order.cancel();
     if (!cancelResult.ok) throw cancelResult.error;
     const cancelledLatest = cancelResult.value;
-    cancelledLatest.pullEvents();
+    cancelledLatest.pullEvents(() => makeMetadataGenerator().nextRoot());
 
     const openOrder = makeOpenOrder();
     orderRepo = {
@@ -543,7 +557,7 @@ describe('UpdateOrderStatusUseCase', () => {
       get: jest.fn<IOrderRepository['get']>().mockResolvedValue(cancelledLatest), // reread: уже CANCELED
     } as unknown as IOrderRepository;
     orderStateStore = makeOrderStateStore(cancelledLatest);
-    deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+    deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
     const useCase = new UpdateOrderStatusUseCase(deps);
     const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
 
@@ -580,7 +594,7 @@ describe('UpdateOrderStatusUseCase', () => {
       await seedHeldJournal();
       orderRepo = makeOrderRepo(undefined);
       orderStateStore = makeOrderStateStore();
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -605,7 +619,7 @@ describe('UpdateOrderStatusUseCase', () => {
       await seedHeldJournal();
       orderRepo = makeOrderRepo(undefined);
       orderStateStore = makeOrderStateStore();
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -625,7 +639,7 @@ describe('UpdateOrderStatusUseCase', () => {
       const order = makeOpenOrder();
       orderRepo = makeOrderRepo(order);
       orderStateStore = makeOrderStateStore(order);
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -643,7 +657,7 @@ describe('UpdateOrderStatusUseCase', () => {
       const order = makeOpenOrder();
       orderRepo = makeOrderRepo(order);
       orderStateStore = makeOrderStateStore(order);
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -682,7 +696,7 @@ describe('UpdateOrderStatusUseCase', () => {
         findByVenueOrderId: jest.fn().mockImplementation(async () => heldRecord),
         applyReservationTransition: jest.fn(),
       } as unknown as UpdateOrderStatusDeps['submissions'];
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions: trackingSubmissions, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions: trackingSubmissions, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -703,7 +717,7 @@ describe('UpdateOrderStatusUseCase', () => {
         flush: jest.fn().mockImplementation(async () => undefined),
       } as unknown as IOrderedEventOutbox;
       const reconciliationIssues = makeReconciliationIssueRepo();
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox: failingOutbox, submissions, reconciliationIssues, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox: failingOutbox, submissions, reconciliationIssues, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({ update: { type: 'CANCELLED', orderId: ORDER_ID }, accountId: ACCOUNT_ID });
@@ -722,7 +736,7 @@ describe('UpdateOrderStatusUseCase', () => {
       orderRepo = makeOrderRepo(undefined);
       orderStateStore = makeOrderStateStore();
       const reconciliationIssues = makeReconciliationIssueRepo();
-      deps = { orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, reconciliationIssues, logger };
+      deps = { metadataGenerator: makeMetadataGenerator(), orderRepo, orderStateStore, portfolioService, keyedMutex: makeKeyedMutex(), orderedEventOutbox, submissions, reconciliationIssues, logger };
       const useCase = new UpdateOrderStatusUseCase(deps);
 
       const result = await useCase.execute({

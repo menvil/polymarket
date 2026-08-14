@@ -29,7 +29,8 @@
  * @example
  * ```typescript
  * import { Order } from '@polymarket/order';
- * import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+ * import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
  * import { asOrderId } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
  *

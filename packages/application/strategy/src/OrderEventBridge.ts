@@ -104,7 +104,7 @@ export class OrderEventBridge {
     // ORDER_ACCEPTED → notify scheduler
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_ACCEPTED', (event) => {
-        this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
+        this._notifyScheduler(event.payload.orderId, 'ORDER_UPDATE');
       }),
     );
 
@@ -112,43 +112,43 @@ export class OrderEventBridge {
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_REJECTED', (event) => {
         // Domain OrderEvent несёт branded StrategyId — runtime-конверсия не нужна
-        const strategyId = event.strategyId;
+        const strategyId = event.payload.strategyId;
         if (strategyId !== undefined) {
           this._deps.scheduler.onOrderChanged(strategyId, 'ORDER_UPDATE');
           return;
         }
-        this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
+        this._notifyScheduler(event.payload.orderId, 'ORDER_UPDATE');
       }),
     );
 
     // ORDER_CANCELLED → notify scheduler + cleanup
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_CANCELLED', (event) => {
-        this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
-        void this._cleanupOrder(event.orderId);
+        this._notifyScheduler(event.payload.orderId, 'ORDER_UPDATE');
+        void this._cleanupOrder(event.payload.orderId);
       }),
     );
 
     // ORDER_EXPIRED → notify scheduler + cleanup
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_EXPIRED', (event) => {
-        this._notifyScheduler(event.orderId, 'ORDER_UPDATE');
-        void this._cleanupOrder(event.orderId);
+        this._notifyScheduler(event.payload.orderId, 'ORDER_UPDATE');
+        void this._cleanupOrder(event.payload.orderId);
       }),
     );
 
     // ORDER_PARTIALLY_FILLED → notify scheduler (FILL reason)
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-        this._notifyScheduler(event.orderId, 'FILL');
+        this._notifyScheduler(event.payload.orderId, 'FILL');
       }),
     );
 
     // ORDER_FILLED → notify scheduler (FILL reason) + cleanup
     this._unsubs.push(
       this._deps.eventBus.subscribe('ORDER_FILLED', (event) => {
-        this._notifyScheduler(event.orderId, 'FILL');
-        void this._cleanupOrder(event.orderId);
+        this._notifyScheduler(event.payload.orderId, 'FILL');
+        void this._cleanupOrder(event.payload.orderId);
       }),
     );
 
@@ -158,7 +158,7 @@ export class OrderEventBridge {
     // поверх него небезопасно — cleanup выполняет ТОЛЬКО FILL_CONFIRMED.
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_RECEIVED', (event) => {
-        const instrumentId = assetIdToInstrumentId(event.fill.tokenId);
+        const instrumentId = assetIdToInstrumentId(event.payload.fill.tokenId);
         if (instrumentId) {
           this._deps.scheduler.onFillReceivedForInstrument(instrumentId);
         }
@@ -174,7 +174,7 @@ export class OrderEventBridge {
     // снял флаг при MATCHED, CONFIRMED гарантированно снимет его.
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_CONFIRMED', (event) => {
-        for (const fill of event.fills) {
+        for (const fill of event.payload.fills) {
           // fillId-scoped: снимает ТОЛЬКО этот fill — другой ещё не подтверждённый
           // partial fill того же ордера/инструмента не затрагивается.
           // Placeholder pendingMatchFillId снимается ЯВНО (контракт store —

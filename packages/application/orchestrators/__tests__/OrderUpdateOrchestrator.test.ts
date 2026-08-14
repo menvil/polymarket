@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { OrderUpdateOrchestrator } from '../src/OrderUpdateOrchestrator.js';
 import type { OrderUpdateOrchestratorDeps, IOrderStatusUpdater } from '../src/OrderUpdateOrchestrator.js';
 import type { ILogger } from '@polymarket/logger';
 import type { OrderUpdateReceivedEvent } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
@@ -52,12 +54,21 @@ function makeUpdateOrderStatus(ok = true): IOrderStatusUpdater {
   } as unknown as IOrderStatusUpdater;
 }
 
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeEvent(): OrderUpdateReceivedEvent {
   return {
     type: 'ORDER_UPDATE_RECEIVED',
-    update: { type: 'ACCEPTED', orderId: 'order-1' as unknown as OrderId },
-    accountId: 'acc-1' as unknown as AccountId,
-    receivedAt: {} as Timestamp,
+    payload: {
+      update: { type: 'ACCEPTED', orderId: 'order-1' as unknown as OrderId },
+      accountId: 'acc-1' as unknown as AccountId,
+      receivedAt: {} as Timestamp,
+    },
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -85,10 +96,13 @@ describe('OrderUpdateOrchestrator', () => {
   it('вызывает updateOrderStatus.execute при получении ORDER_UPDATE_RECEIVED', async () => {
     const orch = new OrderUpdateOrchestrator(deps);
     orch.register();
-    await eventBus._trigger(makeEvent());
+    const event = makeEvent();
+    await eventBus._trigger(event);
     expect(updateOrderStatus.execute).toHaveBeenCalledWith({
-      update: makeEvent().update,
-      accountId: makeEvent().accountId,
+      update: event.payload.update,
+      accountId: event.payload.accountId,
+      // causal chain (M-003): metadata триггера передаётся как parent
+      parentMetadata: event.metadata,
     });
   });
 

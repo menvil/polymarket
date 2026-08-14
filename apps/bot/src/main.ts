@@ -58,7 +58,8 @@ import {
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity, Timestamp, TimestampService } from '@polymarket/value-objects';
+import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp, TimestampService } from '@polymarket/timestamp';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { BookUpdateHandler } from '@polymarket/handlers';
@@ -185,7 +186,7 @@ async function runPaper(): Promise<void> {
   }
 
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
-  const { clock, logger, eventBus } = infra;
+  const { clock, logger, eventBus, metadataGenerator } = infra;
 
   // ── Recording (опциональная запись рыночных данных и журнала решений) ──────
   const recording = buildRecording(config.recording, logger);
@@ -499,7 +500,7 @@ async function runPaper(): Promise<void> {
 
   // BookUpdateHandler — конвертирует WS snapshots в BOOK_UPDATED события
   const bookRegistry = new SimpleBookRegistry();
-  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, metadataGenerator, marketCatalog, logger);
 
   // Polymarket WebSocket — live рыночные данные
   const wsManager = new PolymarketWebSocketManager(
@@ -513,6 +514,7 @@ async function runPaper(): Promise<void> {
     logger,
     clock,
     eventBus,
+    metadataGenerator,
     portfolioStore,
     accountId: accountId!,
     wsAdapter,
@@ -569,11 +571,14 @@ async function runPaper(): Promise<void> {
     try {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
-        instrumentId: tradeInstrumentId,
-        price: Price.of(new Decimal(dto.price)),
-        size: Quantity.of(new Decimal(dto.size)),
-        side: dto.side,
-        timestamp: tsResult.value,
+        payload: {
+          instrumentId: tradeInstrumentId,
+          price: Price.of(new Decimal(dto.price)),
+          size: Quantity.of(new Decimal(dto.size)),
+          side: dto.side,
+          timestamp: tsResult.value,
+        },
+        metadata: metadataGenerator.nextRoot(),
       });
       if (!result.ok) {
         logger.debug('TRADE_RECEIVED publish failed', { error: result.error.message });
@@ -2769,7 +2774,7 @@ async function runBacktest(): Promise<void> {
 
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.INFO });
-  const { logger, eventBus } = infra;
+  const { logger, eventBus, metadataGenerator } = infra;
 
   logger.warn('Bot starting in backtest mode', {
     files: resolvedPaths.length,
@@ -2883,7 +2888,7 @@ async function runBacktest(): Promise<void> {
 
   // BookUpdateHandler + BacktestEngine
   const bookRegistry = new SimpleBookRegistry();
-  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, metadataGenerator, marketCatalog, logger);
 
   // Запуск
   marketDataStore.start();
@@ -2941,12 +2946,12 @@ async function runBacktest(): Promise<void> {
 
   // Трекинг ORDER_CREATED: сохраняем мета для отчёта
   eventBus.subscribe('ORDER_CREATED', (event) => {
-    orderMeta.set(String(event.orderId), {
+    orderMeta.set(String(event.payload.orderId), {
       placedAt: replayClock.now(),
       placedBook: bookSnapshotCount,
-      side: event.side,
-      price: event.price.value(),
-      size: event.size.value(),
+      side: event.payload.side,
+      price: event.payload.price.value(),
+      size: event.payload.size.value(),
       triggerReason: lastMarketEvent,
     });
   });
@@ -2955,10 +2960,10 @@ async function runBacktest(): Promise<void> {
   const partialFills: Array<{ orderId: string; side: string; price: string; size: string; at: string }> = [];
   eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
     partialFills.push({
-      orderId: String(event.orderId).slice(0, 12) + '…',
-      side: event.fill.side,
-      price: event.fill.price.value().toFixed(4),
-      size: event.fill.size.value().toFixed(2),
+      orderId: String(event.payload.orderId).slice(0, 12) + '…',
+      side: event.payload.fill.side,
+      price: event.payload.fill.price.value().toFixed(4),
+      size: event.payload.fill.size.value().toFixed(2),
       at: replayClock.now().toISOString().slice(11, 19),
     });
   });
@@ -2966,17 +2971,17 @@ async function runBacktest(): Promise<void> {
   // Трекинг ORDER_FILLED: сохраняем для отчёта, обновляем lastMarketEvent
   eventBus.subscribe('ORDER_FILLED', (event) => {
     const filledAt = replayClock.now();
-    const orderId = String(event.orderId);
+    const orderId = String(event.payload.orderId);
     const meta = orderMeta.get(orderId);
     const booksWaited = bookSnapshotCount - (meta?.placedBook ?? bookSnapshotCount);
     const fillSource = lastMarketEvent;
     lastMarketEvent = 'FILL';
     executedFills.push({
       orderId: orderId.slice(0, 12) + '…',
-      side: event.fill.side,
-      price: event.fill.price.value().toFixed(4),
-      size: event.fill.size.value().toFixed(2),
-      notional: event.fill.price.value().times(event.fill.size.value()).toFixed(4),
+      side: event.payload.fill.side,
+      price: event.payload.fill.price.value().toFixed(4),
+      size: event.payload.fill.size.value().toFixed(2),
+      notional: event.payload.fill.price.value().times(event.payload.fill.size.value()).toFixed(4),
       placedAt: meta?.placedAt ?? filledAt,
       filledAt,
       booksWaited,
@@ -3023,6 +3028,7 @@ async function runBacktest(): Promise<void> {
     {
       bookUpdateHandler,
       eventBus,
+      metadataGenerator,
       replayClock,
       logger,
       cryptoResolutionStore: backtestCryptoResolutionStore,
@@ -3314,7 +3320,7 @@ async function runLive(): Promise<void> {
   // ── Core infra ───────────────────────────────────────────────────────────
 
   const infra = buildCoreInfra({ logLevel: LogLevel.INFO });
-  const { clock, logger, eventBus } = infra;
+  const { clock, logger, eventBus, metadataGenerator } = infra;
 
   // ── Recording (опциональная запись рыночных данных и журнала решений) ──────
   const recording = buildRecording(config.recording, logger);
@@ -3688,6 +3694,7 @@ async function runLive(): Promise<void> {
     logger,
     clock,
     eventBus,
+    metadataGenerator,
     portfolioStore,
     accountId,
     wsAdapter: marketWsAdapter,
@@ -3860,7 +3867,7 @@ async function runLive(): Promise<void> {
             resolve();
           };
           const unsub = eventBus.subscribe('FILL_RECEIVED', (event) => {
-            remaining.delete(String(event.fill.orderId));
+            remaining.delete(String(event.payload.fill.orderId));
             if (remaining.size === 0) done();
           });
           const timer: ReturnType<typeof setTimeout> = setTimeout(done, timeoutMs);
@@ -4470,7 +4477,7 @@ async function runLive(): Promise<void> {
   }
 
   const bookRegistry = new SimpleBookRegistry();
-  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, metadataGenerator, marketCatalog, logger);
   const marketDataFeedAdapter = new MarketDataFeedAdapter(marketWsAdapter, bookUpdateHandler, logger);
 
   // Recording: подключаем запись всех сырых WS-сообщений
@@ -4491,11 +4498,14 @@ async function runLive(): Promise<void> {
     try {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
-        instrumentId: tradeInstrumentId,
-        price: Price.of(new Decimal(dto.price)),
-        size: Quantity.of(new Decimal(dto.size)),
-        side: dto.side,
-        timestamp: tsResult.value,
+        payload: {
+          instrumentId: tradeInstrumentId,
+          price: Price.of(new Decimal(dto.price)),
+          size: Quantity.of(new Decimal(dto.size)),
+          side: dto.side,
+          timestamp: tsResult.value,
+        },
+        metadata: metadataGenerator.nextRoot(),
       });
       if (!result.ok) {
         logger.debug('TRADE_RECEIVED publish failed', { error: result.error.message });

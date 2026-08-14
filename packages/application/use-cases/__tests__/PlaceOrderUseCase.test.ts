@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId as unsafeRunIdM003 } from '@polymarket/ids';
 import { PlaceOrderUseCase } from '../src/PlaceOrderUseCase.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { PlaceOrderInput, PlaceOrderDeps } from '../src/PlaceOrderUseCase.js';
@@ -252,6 +254,15 @@ function makeInput(overrides: Partial<PlaceOrderInput> = {}): PlaceOrderInput {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunIdM003('testrun1'),
+  });
+}
+
 describe('PlaceOrderUseCase', () => {
   let logger: ILogger;
   let clock: IClock;
@@ -280,6 +291,7 @@ describe('PlaceOrderUseCase', () => {
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
     deps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker,
       orderRepo,
       portfolioService,

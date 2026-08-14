@@ -6,10 +6,14 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { ILogger } from '@polymarket/logger';
 import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
-import { Price, Quantity, TimestampService, PriceService } from '@polymarket/value-objects';
-import type { Money, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity, PriceService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Money } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import { unsafeRunId } from '@polymarket/ids';
+import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { InstrumentInfo } from '@polymarket/ports';
 
 /** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
@@ -91,7 +95,16 @@ describe('BookUpdateHandler', () => {
       clear: jest.fn<IMarketCatalog['clear']>(),
     };
     logger = makeLogger();
-    handler = new BookUpdateHandler(books, eventBus, catalog, logger);
+    handler = new BookUpdateHandler(
+      books,
+      eventBus,
+      new MessageMetadataGenerator({
+        clock: { now: () => new Date(1_700_000_000_000) },
+        runId: unsafeRunId('testrun1'),
+      }),
+      catalog,
+      logger,
+    );
   });
 
   it('строит Orderbook из снапшота, кладёт в реестр и публикует BOOK_UPDATED и BOOK_DEPTH', async () => {
@@ -103,7 +116,10 @@ describe('BookUpdateHandler', () => {
       expect.objectContaining({ type: 'BOOK_UPDATED' }),
     );
     expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'BOOK_DEPTH', timestamp: ts }),
+      expect.objectContaining({
+        type: 'BOOK_DEPTH',
+        payload: expect.objectContaining({ timestamp: ts }),
+      }),
     );
   });
 
@@ -112,7 +128,7 @@ describe('BookUpdateHandler', () => {
 
     expect(books.set).toHaveBeenCalledWith(MARKET_ID, TOKEN_ID, expect.any(Orderbook));
     const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0];
-    expect(published).toMatchObject({ type: 'BOOK_UPDATED', marketId: MARKET_ID });
+    expect(published).toMatchObject({ type: 'BOOK_UPDATED', payload: { marketId: MARKET_ID } });
   });
 
   it('пропускает снапшот и логирует debug если инструмент не найден в каталоге', async () => {
@@ -177,10 +193,10 @@ describe('BookUpdateHandler', () => {
     await handler.handleSnapshot(TOKEN_ID, [bestBid], [bestAsk], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
-      topOfBook: { bestBid: Price | undefined; bestAsk: Price | undefined };
+      payload: { topOfBook: { bestBid: Price | undefined; bestAsk: Price | undefined } };
     };
-    expect(event.topOfBook.bestBid?.equals(bestBid.price)).toBe(true);
-    expect(event.topOfBook.bestAsk?.equals(bestAsk.price)).toBe(true);
+    expect(event.payload.topOfBook.bestBid?.equals(bestBid.price)).toBe(true);
+    expect(event.payload.topOfBook.bestAsk?.equals(bestAsk.price)).toBe(true);
   });
 
   it('onReconnect очищает timestamps — следующий снапшот не считается stale', async () => {
@@ -208,8 +224,8 @@ describe('BookUpdateHandler', () => {
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { topOfBook: { spread: Price | undefined } };
-    expect(event.topOfBook.spread).toBeDefined();
+      { payload: { topOfBook: { spread: Price | undefined } } };
+    expect(event.payload.topOfBook.spread).toBeDefined();
   });
 
   it('topOfBook.spread undefined если книга однобокая (getSpread() возвращает Err)', async () => {
@@ -218,8 +234,8 @@ describe('BookUpdateHandler', () => {
     await handler.handleSnapshot(TOKEN_ID, [bid], [], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { topOfBook: { spread: Price | undefined } };
-    expect(event.topOfBook.spread).toBeUndefined();
+      { payload: { topOfBook: { spread: Price | undefined } } };
+    expect(event.payload.topOfBook.spread).toBeUndefined();
   });
 
   it('topOfBook.spread undefined если PriceService.create() возвращает Err', async () => {
@@ -233,8 +249,8 @@ describe('BookUpdateHandler', () => {
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { topOfBook: { spread: Price | undefined } };
-    expect(event.topOfBook.spread).toBeUndefined();
+      { payload: { topOfBook: { spread: Price | undefined } } };
+    expect(event.payload.topOfBook.spread).toBeUndefined();
     spy.mockRestore();
   });
 

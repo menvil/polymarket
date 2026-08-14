@@ -13,8 +13,10 @@ import type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from '../src/Tr
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketCatalog } from '@polymarket/ports';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Timestamp, Side } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
 function makeLogger(): ILogger {

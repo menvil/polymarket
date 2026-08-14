@@ -122,7 +122,7 @@ export interface UseCases extends Omit<ProcessFillBundle, 'orderedEventOutbox'>,
  */
 export function buildProcessFillUseCase(params: BuildProcessFillParams): ProcessFillBundle {
   const { infra, repos } = params;
-  const { clock, logger, eventBus } = infra;
+  const { clock, logger, eventBus, metadataGenerator } = infra;
   const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
@@ -141,6 +141,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
   });
 
   const processFillUseCase = new ProcessFillUseCase({
+    metadataGenerator,
     orderStateStore: orderRepo,
     portfolioService,
     ledgerService,
@@ -176,7 +177,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
  */
 export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCases {
   const { infra, repos, exchangeClient, riskParams, orderedEventOutbox, marketCatalog } = params;
-  const { clock, logger } = infra;
+  const { clock, logger, metadataGenerator } = infra;
   const { orderRepo, portfolioStore, reconciliationIssueRepo, orderSubmissionRepo, keyedMutex } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
@@ -190,6 +191,7 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
   const riskChecker = new OrderRiskChecker(policyResult.value, logger);
 
   const placeOrderUseCase = new PlaceOrderUseCase({
+    metadataGenerator,
     riskChecker,
     orderRepo,
     portfolioService,
@@ -211,6 +213,7 @@ export function buildOrderUseCases(params: BuildOrderUseCasesParams): OrderUseCa
   });
 
   const cancelOrderUseCase = new CancelOrderUseCase({
+    metadataGenerator,
     portfolioService,
     orderRepo,
     orderStateStore: orderRepo,

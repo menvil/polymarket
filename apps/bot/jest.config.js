@@ -17,6 +17,7 @@ export default {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/strategy$': '<rootDir>/../../packages/application/strategy/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../packages/foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../packages/domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/balance$': '<rootDir>/../../packages/domain/value-objects/src/balance/index.ts',
     '^@polymarket/value-objects/money$': '<rootDir>/../../packages/domain/value-objects/src/money/index.ts',
@@ -24,6 +25,7 @@ export default {
     '^@polymarket/ids$': '<rootDir>/../../packages/foundation/ids/src/index.ts',
     '^@polymarket/ports$': '<rootDir>/../../packages/application/ports/src/index.ts',
     '^@polymarket/event-bus$': '<rootDir>/../../packages/application/event-bus/src/index.ts',
+    '^@polymarket/messages$': '<rootDir>/../../packages/foundation/messages/src/index.ts',
     '^@polymarket/message-bus$': '<rootDir>/../../packages/foundation/message-bus/src/index.ts',
     '^@polymarket/application-events$': '<rootDir>/../../packages/application/events/src/index.ts',
     '^@polymarket/order-events$': '<rootDir>/../../packages/domain/events/order/src/index.ts',

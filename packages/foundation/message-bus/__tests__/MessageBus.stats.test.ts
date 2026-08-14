@@ -6,14 +6,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { MessageBus, createMessageBusPolicy } from '@polymarket/message-bus';
-
-type TestMessage =
-  | { readonly type: 'HEARTBEAT'; readonly seq: number }
-  | { readonly type: 'ITEM_ADDED'; readonly itemId: string };
-
-function heartbeat(seq: number): TestMessage {
-  return { type: 'HEARTBEAT', seq };
-}
+import { heartbeat, type TestMessage } from './testMessages.js';
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
   let release!: () => void;
@@ -40,7 +33,7 @@ describe('MessageBus stats', () => {
     const bus = new MessageBus<TestMessage>();
     const gate = makeGate();
     bus.subscribe('HEARTBEAT', async (message) => {
-      if (message.seq === 1) await gate.promise;
+      if (message.payload.seq === 1) await gate.promise;
     });
 
     const owner = bus.publish(heartbeat(1)); // in-flight — в queueSize не входит

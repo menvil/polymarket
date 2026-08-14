@@ -7,6 +7,8 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId, OrderId } from '@polymarket/ids';
+import { unsafeRunId } from '@polymarket/ids';
+import { MessageMetadataGenerator } from '@polymarket/messages';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +51,13 @@ describe('OrderUpdateHandler (thin adapter)', () => {
     eventBus = makeEventBus();
     clock = makeClock();
     logger = makeLogger();
-    handler = new OrderUpdateHandler(eventBus, clock, ACCOUNT_ID, logger);
+    handler = new OrderUpdateHandler(
+      eventBus,
+      new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') }),
+      clock,
+      ACCOUNT_ID,
+      logger,
+    );
   });
 
   it('публикует ORDER_UPDATE_RECEIVED при handle(ACCEPTED)', async () => {
@@ -59,8 +67,11 @@ describe('OrderUpdateHandler (thin adapter)', () => {
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'ORDER_UPDATE_RECEIVED',
-        update,
-        accountId: ACCOUNT_ID,
+        payload: expect.objectContaining({
+          update,
+          accountId: ACCOUNT_ID,
+        }),
+        metadata: expect.objectContaining({ sequence: expect.any(Number) }),
       }),
     );
   });
@@ -70,7 +81,10 @@ describe('OrderUpdateHandler (thin adapter)', () => {
     await handler.handle(update);
 
     expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'ORDER_UPDATE_RECEIVED', update }),
+      expect.objectContaining({
+        type: 'ORDER_UPDATE_RECEIVED',
+        payload: expect.objectContaining({ update }),
+      }),
     );
   });
 
@@ -78,8 +92,10 @@ describe('OrderUpdateHandler (thin adapter)', () => {
     const update: VenueOrderUpdate = { type: 'EXPIRED', orderId: ORDER_ID };
     await handler.handle(update);
 
-    const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0][0] as Record<string, unknown>;
-    expect(published['receivedAt']).toBeDefined();
+    const published = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0][0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(published.payload['receivedAt']).toBeDefined();
   });
 
   it('eventBus.publish возвращает Err → error логируется, не выбрасывает', async () => {

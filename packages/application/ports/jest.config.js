@@ -7,6 +7,7 @@ export default {
     '^@polymarket/errors$':      '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/result$':      '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/ids$':         '<rootDir>/../../foundation/ids/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/order$':       '<rootDir>/../../domain/entities/order/src/index.ts',
     '^@polymarket/fill$':        '<rootDir>/../../domain/entities/fill/src/index.ts',

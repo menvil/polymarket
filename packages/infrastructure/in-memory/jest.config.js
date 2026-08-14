@@ -9,6 +9,7 @@ export default {
     '^@polymarket/ids$':           '<rootDir>/../../foundation/ids/src/index.ts',
     '^@polymarket/result$':        '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/errors$':        '<rootDir>/../../foundation/errors/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
     '^@polymarket/ports$':         '<rootDir>/../../application/ports/src/index.ts',

@@ -16,14 +16,15 @@
     "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts"
   },
   "dependencies": {
-    "@polymarket/logger": "0.1.0",
-    "@polymarket/ids": "0.1.0",
-    "@polymarket/value-objects": "0.1.0",
-    "@polymarket/ports": "0.1.0",
-    "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/cex-market-data": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/exchange": "0.1.0",
-    "@polymarket/cex-market-data": "0.1.0"
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/timestamp": "0.1.0",
+    "@polymarket/value-objects": "0.1.0"
   },
   "devDependencies": {}
 }

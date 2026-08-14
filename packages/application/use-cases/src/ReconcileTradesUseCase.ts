@@ -51,7 +51,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId } from '@polymarket/ids';
 import { accountIdToString, assetIdToInstrumentId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type {
   IExchangeClient,
   IProcessedFillRepository,

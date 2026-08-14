@@ -7,8 +7,9 @@
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { TimestampService, Money, Price, Quantity, Ratio } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { Money, Price, Quantity, Ratio } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { MarketFilter } from '../src/MarketFilter.js';

@@ -1,22 +1,22 @@
 /**
- * Fill подтверждён on-chain (WsFillStatus: CONFIRMED) после обработки при MATCHED.
+ * Fills подтверждены on-chain (WsFillStatus: CONFIRMED).
  *
  * @remarks
- * Публикуется FillEventHandler когда CONFIRMED приходит для уже опубликованного fill.
- * Сигнализирует что on-chain settlement завершён:
- * - Токены доступны для SELL (cross-outcome mint finality)
- * - Exchange rejection cooldown можно сбросить
- * - Стратегия должна тикнуть для retry SELL
+ * Публикуется FillEventHandler при получении CONFIRMED для fills, ранее
+ * опубликованных на MATCHED (early processing). Несёт финальность блокчейна.
  *
- * НЕ публикуется при fallback (CONFIRMED без MATCHED) — там идёт FILL_RECEIVED.
+ * Canonical envelope `{ type, payload, metadata }` (M-003).
  */
+import type { MessageEnvelope } from '@polymarket/messages';
 import type { Fill } from '@polymarket/fill';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
-export interface FillConfirmedEvent {
-  readonly type: 'FILL_CONFIRMED';
-  /** Fills, подтверждённые on-chain */
-  readonly fills: readonly Fill[];
-  /** Timestamp получения CONFIRMED в системе */
-  readonly receivedAt: Timestamp;
-}
+export type FillConfirmedEvent = MessageEnvelope<
+  'FILL_CONFIRMED',
+  {
+    /** Fills, подтверждённые on-chain */
+    readonly fills: readonly Fill[];
+    /** Timestamp получения CONFIRMED в системе */
+    readonly receivedAt: Timestamp;
+  }
+>;

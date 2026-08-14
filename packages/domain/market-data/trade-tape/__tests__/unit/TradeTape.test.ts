@@ -18,7 +18,8 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { TradeTape } from '../../src/TradeTape.js';
 import type { TapeRecord } from '../../src/TapeRecord.js';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
 // ==================== Вспомогательные функции ====================

@@ -41,7 +41,7 @@ import { RtdsWebSocketClient } from '@polymarket/exchange/ws';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import { asInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
-import { Timestamp } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { loadConfig } from './config.js';
 import { CexCollectorService } from '@polymarket/cex-market-data';
 import type { CexCollectorConfig } from '@polymarket/cex-market-data';

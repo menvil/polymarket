@@ -7,8 +7,7 @@ import {
   DEFAULT_MESSAGE_BUS_POLICY,
   createMessageBusPolicy,
 } from '@polymarket/message-bus';
-
-type TestMessage = { readonly type: 'HEARTBEAT'; readonly seq: number };
+import { heartbeat, type TestMessage } from './testMessages.js';
 
 describe('MessageBus policy', () => {
   it('default-политика содержит доказанные лимиты и поддерживаемые стратегии', () => {
@@ -66,9 +65,9 @@ describe('MessageBus policy', () => {
       policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 1, maxMessagesPerDrain: 1 } }),
     });
     const seen: number[] = [];
-    bus.subscribe('HEARTBEAT', (message) => { seen.push(message.seq); });
+    bus.subscribe('HEARTBEAT', (message) => { seen.push(message.payload.seq); });
 
-    const result = await bus.publish({ type: 'HEARTBEAT', seq: 1 });
+    const result = await bus.publish(heartbeat(1));
 
     expect(result.ok).toBe(true);
     expect(seen).toEqual([1]);
@@ -76,7 +75,7 @@ describe('MessageBus policy', () => {
 
   it('bus без явной политики использует default', async () => {
     const bus = new MessageBus<TestMessage>();
-    const result = await bus.publish({ type: 'HEARTBEAT', seq: 1 });
+    const result = await bus.publish(heartbeat(1));
     expect(result.ok).toBe(true);
   });
 });

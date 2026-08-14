@@ -97,7 +97,7 @@ import { assetIdToInstrumentId, assetIdToString, asOrderId, asCryptoAssetId } fr
 import type { IClock } from '@polymarket/time';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { IPortfolioStore, IOrderStateStore, IMarketCatalog, IStrategyCommitmentReader, StrategyCommitment } from '@polymarket/ports';

@@ -7,14 +7,9 @@ import {
   MessageBusClosedError,
   MessageBusCriticalHandlerError,
 } from '@polymarket/message-bus';
+import { heartbeat, type TestMessage } from './testMessages.js';
 import type { MessageBusDrainError } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
-
-type TestMessage = { readonly type: 'HEARTBEAT'; readonly seq: number };
-
-function heartbeat(seq: number): TestMessage {
-  return { type: 'HEARTBEAT', seq };
-}
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
   let release!: () => void;
@@ -40,8 +35,8 @@ describe('MessageBus lifecycle', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', async (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) await gate.promise;
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) await gate.promise;
       });
 
       const ownerPublish = bus.publish(heartbeat(1));
@@ -73,8 +68,8 @@ describe('MessageBus lifecycle', () => {
       // Sync-обработчик: вызов drain() происходит в самом раннем синхронном
       // участке fan-out первого сообщения — до первого await движка.
       bus.subscribe('HEARTBEAT', (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) {
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) {
           // НЕ await: await drain() из обработчика — документированный self-deadlock
           captured.drainPromise = bus.drain();
           captured.deliveredAtCall = [...delivered];
@@ -99,8 +94,8 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
       const unsubFailing = bus.subscribe('HEARTBEAT', (message) => {
-        if (message.seq < 3) throw new Error(`critical on ${message.seq}`);
-        delivered.push(message.seq);
+        if (message.payload.seq < 3) throw new Error(`critical on ${message.payload.seq}`);
+        delivered.push(message.payload.seq);
       }, { critical: true });
 
       // Сбой на 1 — очередь [2,3] сохранена
@@ -120,7 +115,7 @@ describe('MessageBus lifecycle', () => {
 
       // Устраняем причину — повторный drain() дообрабатывает очередь
       unsubFailing();
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
       const final = await bus.drain();
       expect(final.ok).toBe(true);
       expect(delivered).toEqual([3]);
@@ -137,8 +132,8 @@ describe('MessageBus lifecycle', () => {
         deliveredAtCall?: number[];
       } = {};
       bus.subscribe('HEARTBEAT', (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) {
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) {
           // НЕ await: await close() из обработчика — документированный self-deadlock
           captured.closePromise = bus.close();
           captured.deliveredAtCall = [...delivered];
@@ -186,8 +181,8 @@ describe('MessageBus lifecycle', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', async (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) await gate.promise;
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) await gate.promise;
       });
 
       const ownerPublish = bus.publish(heartbeat(1));
@@ -212,8 +207,8 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', (message) => {
-        if (message.seq === 1) throw new Error('critical on 1');
-        delivered.push(message.seq);
+        if (message.payload.seq === 1) throw new Error('critical on 1');
+        delivered.push(message.payload.seq);
       }, { critical: true });
 
       // Critical-сбой на 1: владелец получает Err, очередь [2] сохранена, ownership отпущен
@@ -248,14 +243,14 @@ describe('MessageBus lifecycle', () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
       const unsubFailing = bus.subscribe('HEARTBEAT', (message) => {
-        if (message.seq === 1) throw new Error('critical during close');
-        delivered.push(message.seq);
+        if (message.payload.seq === 1) throw new Error('critical during close');
+        delivered.push(message.payload.seq);
       }, { critical: true });
 
       // Заполняем очередь ДО close: сбой на 1, очередь [2] сохранится
       const gate = makeGate();
       const unsubBlocker = bus.subscribe('HEARTBEAT', async (message) => {
-        if (message.seq === 1) await gate.promise;
+        if (message.payload.seq === 1) await gate.promise;
       });
       const ownerPublish = bus.publish(heartbeat(1));
       await bus.publish(heartbeat(2));
@@ -275,7 +270,7 @@ describe('MessageBus lifecycle', () => {
       // Подписки можно менять после close — устраняем failing handler и повторяем drain
       unsubFailing();
       unsubBlocker();
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
       const recovery = await bus.drain();
       expect(recovery.ok).toBe(true);
       expect(delivered).toEqual([2]);

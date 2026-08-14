@@ -51,7 +51,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, AccountId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { AssetDelta } from '@polymarket/fill';
 import type { LedgerEntryType } from './LedgerEntryType.js';
 

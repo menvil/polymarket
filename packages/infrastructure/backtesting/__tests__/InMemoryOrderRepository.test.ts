@@ -13,7 +13,8 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { InMemoryOrderRepository } from '../src/InMemoryOrderRepository.js';
 import { Order } from '@polymarket/order';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { asOrderId, asPolymarketCtfToken, asMarketId , unsafeStrategyId } from '@polymarket/ids';
 import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
 import { VersionConflictError, OrderStateConflictError } from '@polymarket/ports';

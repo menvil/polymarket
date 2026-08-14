@@ -19,11 +19,11 @@
  * union контура доставки (`EventBusEvent = ApplicationEvent | OrderEvent`) —
  * в `@polymarket/event-bus`.
  */
-export type { OrderCreatedEvent } from './OrderCreatedEvent.js';
-export type { OrderAcceptedEvent } from './OrderAcceptedEvent.js';
-export type { OrderRejectedEvent } from './OrderRejectedEvent.js';
-export type { OrderCancelledEvent } from './OrderCancelledEvent.js';
-export type { OrderExpiredEvent } from './OrderExpiredEvent.js';
-export type { OrderPartiallyFilledEvent } from './OrderPartiallyFilledEvent.js';
-export type { OrderFilledEvent } from './OrderFilledEvent.js';
+export type { OrderCreatedEvent, OrderCreatedPayload } from './OrderCreatedEvent.js';
+export type { OrderAcceptedEvent, OrderAcceptedPayload } from './OrderAcceptedEvent.js';
+export type { OrderRejectedEvent, OrderRejectedPayload } from './OrderRejectedEvent.js';
+export type { OrderCancelledEvent, OrderCancelledPayload } from './OrderCancelledEvent.js';
+export type { OrderExpiredEvent, OrderExpiredPayload } from './OrderExpiredEvent.js';
+export type { OrderPartiallyFilledEvent, OrderPartiallyFilledPayload } from './OrderPartiallyFilledEvent.js';
+export type { OrderFilledEvent, OrderFilledPayload } from './OrderFilledEvent.js';
 export type { OrderEvent } from './OrderEvent.js';

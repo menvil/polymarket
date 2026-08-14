@@ -11,6 +11,25 @@ Order-агрегата: создаётся самим агрегатом (`@poly
 application-слоя (`FILL_RECEIVED`, `MARKET_OPENED`, …) живут в
 `@polymarket/application-events`.
 
+## Canonical envelope (M-003)
+
+Каждый member — тот же canonical `MessageEnvelope<TType, TPayload>` из
+`@polymarket/messages`, что и у ApplicationEvent: `{ type, payload, metadata }`,
+все три поля обязательны. Payload-типы именованы и экспортированы
+(`OrderCreatedPayload`, …) — их переиспользует Order-агрегат.
+
+Детерминизм Domain сохранён: агрегат внутри хранит drafts `{ type, payload }`
+и НЕ обращается к clock/random/generator. Canonical событие materialize-ится
+на границе `Order.pullEvents(metadataFor)` — metadata поставляет
+Application-слой (замыкание над canonical `MessageMetadataGenerator`:
+`nextChild(parent)` для событий, порождённых сообщением; `nextRoot()` для
+инициативных команд).
+
+**Metadata не участвует в replay-семантике**: `Order.fromEvents()` читает
+только `type` + `payload`; изменение metadata при одинаковых type+payload
+не меняет reconstructed state (доказано тестом
+`Order.metadata-independence.test.ts` в `@polymarket/order`).
+
 Через Application EventBus domain-события Order тоже доставляются — union
 контура доставки определён в `@polymarket/event-bus`:
 `EventBusEvent = ApplicationEvent | OrderEvent`. Это union доставки, а не
@@ -40,10 +59,10 @@ src/
 циклической зависимости друг от друга:
 
 ```text
-@polymarket/fill (FillData)   @polymarket/ids   @polymarket/value-objects
-      ↑                              ↑                   ↑
-      ├──────────── @polymarket/order-events ────────────┤
-      └──────────── @polymarket/order (entity) ──────────┘
+@polymarket/fill (FillData)   @polymarket/ids   @polymarket/value-objects   @polymarket/messages
+      ↑                              ↑                   ↑                        ↑
+      ├──────────── @polymarket/order-events ────────────┴────────────────────────┤
+      └──────────── @polymarket/order (entity) ───────────────────────────────────┘
 ```
 
 Пакет не зависит от `@polymarket/order`, application- и bus-слоёв.

@@ -6,32 +6,37 @@
  * discriminator `type`, параллельный fan-out, Result-based operational-ошибки,
  * policies, lifecycle (`drain`/`close`) и диагностика (stats/observer).
  *
- * Пакет ничего не знает о прикладных слоях: от сообщения требуется только
- * `{ readonly type: string }` — см. `TypedMessage`. Полный поведенческий контракт —
- * в README пакета.
+ * Пакет ничего не знает о прикладных слоях. Contract сообщения — canonical
+ * envelope `{ type, payload, metadata }` (M-003): generic-граница
+ * `TMessage extends TypedMessage` из `@polymarket/messages` (canonical owner —
+ * там же; этот пакет contract НЕ реэкспортирует). Runtime по-прежнему читает
+ * ТОЛЬКО `message.type` — payload/metadata прозрачны для движка доставки и не
+ * генерируются им: producer обязан передать ПОЛНОЕ сообщение. Полный
+ * поведенческий контракт — в README пакета.
  *
  * `FifoMessageQueue` — внутренняя деталь реализации, из корня не экспортируется.
  *
  * @example
  * ```typescript
  * import { MessageBus, createMessageBusPolicy } from '@polymarket/message-bus';
+ * import type { MessageEnvelope } from '@polymarket/messages';
  *
  * type Message =
- *   | { readonly type: 'ITEM_ADDED'; readonly itemId: string }
- *   | { readonly type: 'HEARTBEAT'; readonly sequence: number };
+ *   | MessageEnvelope<'ITEM_ADDED', { readonly itemId: string }>
+ *   | MessageEnvelope<'HEARTBEAT', { readonly sequence: number }>;
  *
  * const bus = new MessageBus<Message>({
  *   policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 10_000 } }),
  * });
  *
- * bus.subscribe('HEARTBEAT', (message) => { monitor.beat(message.sequence); });
- * const result = await bus.publish({ type: 'HEARTBEAT', sequence: 42 });
+ * bus.subscribe('HEARTBEAT', (message) => { monitor.beat(message.payload.sequence); });
+ * const result = await bus.publish({
+ *   type: 'HEARTBEAT',
+ *   payload: { sequence: 42 },
+ *   metadata: metadataGenerator.nextRoot(),
+ * });
  * ```
  */
-/** Минимальный routing-контракт сообщения (см. TypedMessage.ts). */
-export type { TypedMessage } from './TypedMessage.js';
-/** Опциональный стандартизированный конверт (см. MessageEnvelope.ts). */
-export type { MessageEnvelope } from './MessageEnvelope.js';
 /** Generic-обработчик сообщения (см. MessageHandler.ts). */
 export type { MessageHandler } from './MessageHandler.js';
 /** Generic-порт message bus (см. IMessageBus.ts). */

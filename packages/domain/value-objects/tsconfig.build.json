@@ -27,6 +27,9 @@
       "path": "../../foundation/errors/tsconfig.build.json"
     },
     {
+      "path": "../../foundation/timestamp/tsconfig.build.json"
+    },
+    {
       "path": "../../foundation/ids/tsconfig.build.json"
     },
     {

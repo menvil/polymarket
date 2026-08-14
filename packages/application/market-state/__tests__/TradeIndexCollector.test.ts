@@ -12,8 +12,9 @@ import { PaperClock } from '@polymarket/time';
 import { TradeIndexCollector } from '../src/TradeIndexCollector.js';
 import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
 import type { AssetId } from '@polymarket/ids';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Trade } from '@polymarket/trade';
 import Decimal from 'decimal.js';
 

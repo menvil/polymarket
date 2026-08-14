@@ -7,6 +7,7 @@ export default {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/logger$':        '<rootDir>/../../../foundation/logger/src/index.ts',
     '^@polymarket/ids$':           '<rootDir>/../../../foundation/ids/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../../domain/value-objects/src/index.ts',
     '^@polymarket/ports$':         '<rootDir>/../../../application/ports/src/index.ts',
     '^@polymarket/result$':        '<rootDir>/../../../foundation/result/src/index.ts',
