@@ -66,5 +66,28 @@ import type {
 import { EventBus, type IEventBus } from '@polymarket/event-bus';
 ```
 
-События — flat discriminated union (`{ type, ...поля }`); envelope-миграция
-(`{ type, payload }`) — отдельная будущая фаза (M-003) и здесь не начата.
+События — canonical MessageEnvelope (M-003): каждый member union-а имеет форму
+`{ type, payload, metadata }` (contract — `@polymarket/messages`). Semantic-данные
+живут в `payload`; `metadata` (identity, runId, sequence, createdAt + hi-res
+компоненты, correlation/causation) обязательна и создаётся producer-ом через
+canonical `MessageMetadataGenerator` ДО публикации:
+
+```typescript
+const event = {
+  type: 'FILL_RECEIVED',
+  payload: { fill, receivedAt },
+  metadata: metadataGenerator.nextRoot(), // root: первичная реакция на внешнее наблюдение
+} satisfies FillReceivedEvent;
+
+// Реакция на сообщение — child (наследует causal chain):
+const reaction = {
+  type: 'DIRECT_FILL_APPLIED',
+  payload: { fill },
+  metadata: metadataGenerator.nextChild(parent.metadata),
+} satisfies DirectFillAppliedEvent;
+
+// Потребители читают semantic-данные из payload:
+eventBus.subscribe('FILL_RECEIVED', (event) => {
+  processFill.execute(event.payload.fill, event.metadata);
+});
+```

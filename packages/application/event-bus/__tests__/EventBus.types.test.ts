@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, jest } from '@jest/globals';
 import { MessageMetadataGenerator } from '@polymarket/messages';
+import type { TypedMessage } from '@polymarket/messages';
 import { unsafeRunId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
@@ -108,6 +109,20 @@ describe('EventBus type-level contract', () => {
 
     expect(typeof unsubSync).toBe('function');
     expect(typeof unsubAsync).toBe('function');
+  });
+
+  it('EventBusEvent — canonical MessageEnvelope: каждый member несёт type+payload+metadata (compile-time, M-003)', () => {
+    // Оба контура (Application и Domain Order) satisfies canonical TypedMessage
+    const canonical = (e: EventBusEvent): TypedMessage => e;
+    const readMetadata = (e: EventBusEvent): number => e.metadata.sequence;
+    void canonical; void readMetadata;
+
+    // Flat-форма больше не входит в контур доставки
+    // @ts-expect-error — { type, ...поля } без payload/metadata не является EventBusEvent
+    const flat: EventBusEvent = { type: 'ORDER_ACCEPTED', orderId: 'order-1' };
+    void flat;
+
+    expect(true).toBe(true);
   });
 
   it('EventBusEvent — union двух контуров: Application и Domain Order (compile-time)', () => {
