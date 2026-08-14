@@ -55,6 +55,15 @@ assert(typeof marketDataModule.asMarketDataSourceId === 'function', 'asMarketDat
 assert(typeof marketDataModule.asInstrumentId === 'function', 'asInstrumentId should be exported');
 assert(typeof marketDataModule.sourceToVenue === 'function', 'sourceToVenue should be exported');
 
+// Test messaging exports
+console.log('  ✓ Importing messaging exports...');
+const messagingModule = await import(pathToFileURL(`${distPath}/messaging/index.js`).href);
+
+assert(typeof messagingModule.asMessageId === 'function', 'asMessageId should be exported');
+assert(typeof messagingModule.asRunId === 'function', 'asRunId should be exported');
+assert(messagingModule.asRunId('k8f3pz7q') === 'k8f3pz7q', 'asRunId should accept 8-char [a-z0-9]');
+assert(messagingModule.asRunId('BAD') === undefined, 'asRunId should reject invalid format');
+
 // Test main barrel export (flat exports, not namespaces)
 console.log('  ✓ Importing main barrel export...');
 const mainModule = await import(pathToFileURL(`${distPath}/index.js`).href);

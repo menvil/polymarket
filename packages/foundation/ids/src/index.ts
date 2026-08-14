@@ -8,6 +8,7 @@
  * - core: Domain IDs (ConditionRef, OutcomeKey, AccountId, VenueId, AssetId)
  * - market-data: Market Data IDs (MarketDataSourceId, InstrumentId)
  * - execution: Execution IDs (ExecutionVenueId, OrderId, FillId)
+ * - messaging: Messaging IDs (MessageId, RunId)
  *
  * @packageDocumentation
  */
@@ -20,3 +21,6 @@ export * from './market-data/index.js';
 
 // Execution IDs
 export * from './execution/index.js';
+
+// Messaging IDs
+export * from './messaging/index.js';
