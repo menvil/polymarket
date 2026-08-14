@@ -47,6 +47,7 @@
   "author": "Ivan Moroz",
   "license": "MIT",
   "dependencies": {
+    "@polymarket/messages": "0.1.0",
     "@polymarket/result": "^0.1.0"
   },
   "devDependencies": {

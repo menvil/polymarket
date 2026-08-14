@@ -25,6 +25,9 @@
   "references": [
     {
       "path": "../result/tsconfig.build.json"
+    },
+    {
+      "path": "../messages/tsconfig.build.json"
     }
   ]
 }

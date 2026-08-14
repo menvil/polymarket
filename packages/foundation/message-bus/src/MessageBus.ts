@@ -37,7 +37,7 @@
  */
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import type { TypedMessage } from './TypedMessage.js';
+import type { TypedMessage } from '@polymarket/messages';
 import type { MessageHandler } from './MessageHandler.js';
 import type { IMessageBus } from './IMessageBus.js';
 import type { MessageBusStats } from './MessageBusStats.js';

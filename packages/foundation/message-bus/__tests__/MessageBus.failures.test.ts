@@ -10,20 +10,13 @@ import {
   MessageBusCriticalHandlerError,
   MessageBusDrainLimitError,
 } from '@polymarket/message-bus';
+import { heartbeat, itemAdded, type TestMessage } from './testMessages.js';
 import type {
   MessageBusObserver,
   HandlerErrorContext,
   QueueOverflowContext,
   DrainLimitContext,
 } from '@polymarket/message-bus';
-
-type TestMessage =
-  | { readonly type: 'HEARTBEAT'; readonly seq: number }
-  | { readonly type: 'ITEM_ADDED'; readonly itemId: string };
-
-function heartbeat(seq: number): TestMessage {
-  return { type: 'HEARTBEAT', seq };
-}
 
 function makeGate(): { promise: Promise<void>; release: () => void } {
   let release!: () => void;
@@ -95,8 +88,8 @@ describe('MessageBus failures', () => {
       const bus = new MessageBus<TestMessage>();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', (message) => {
-        if (message.seq === 1) throw new Error('boom on first');
-        delivered.push(message.seq);
+        if (message.payload.seq === 1) throw new Error('boom on first');
+        delivered.push(message.payload.seq);
       });
 
       const result = await bus.publishAll([heartbeat(1), heartbeat(2)]);
@@ -153,11 +146,11 @@ describe('MessageBus failures', () => {
       let firstDeliveries = 0;
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', (message) => {
-        if (message.seq === 1) {
+        if (message.payload.seq === 1) {
           firstDeliveries++;
           throw new Error('critical');
         }
-        delivered.push(message.seq);
+        delivered.push(message.payload.seq);
       }, { critical: true });
 
       const batch = await bus.publishAll([heartbeat(1), heartbeat(2)]);
@@ -241,8 +234,8 @@ describe('MessageBus failures', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', async (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) await gate.promise;
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) await gate.promise;
       });
 
       const first = bus.publish(heartbeat(1)); // in-flight, обработчик заблокирован
@@ -281,7 +274,7 @@ describe('MessageBus failures', () => {
       });
       const gate = makeGate();
       bus.subscribe('HEARTBEAT', async (message) => {
-        if (message.seq === 1) await gate.promise;
+        if (message.payload.seq === 1) await gate.promise;
       });
 
       const first = bus.publish(heartbeat(1)); // dequeued, in-flight; очередь пуста
@@ -299,7 +292,7 @@ describe('MessageBus failures', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxQueueSize: 2 } }),
       });
       const delivered: number[] = [];
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
 
       const result = await bus.publishAll([heartbeat(1), heartbeat(2), heartbeat(3)]);
 
@@ -326,8 +319,8 @@ describe('MessageBus failures', () => {
       const gate = makeGate();
       const delivered: number[] = [];
       bus.subscribe('HEARTBEAT', async (message) => {
-        delivered.push(message.seq);
-        if (message.seq === 1) await gate.promise;
+        delivered.push(message.payload.seq);
+        if (message.payload.seq === 1) await gate.promise;
       });
 
       const first = bus.publish(heartbeat(1)); // in-flight
@@ -351,7 +344,7 @@ describe('MessageBus failures', () => {
         observer: captured.observer,
       });
       const unsubLoop = bus.subscribe('HEARTBEAT', async (message) => {
-        await bus.publish(heartbeat(message.seq + 1)); // каждое сообщение порождает следующее
+        await bus.publish(heartbeat(message.payload.seq + 1)); // каждое сообщение порождает следующее
       });
 
       const result = await bus.publish(heartbeat(1));
@@ -372,7 +365,7 @@ describe('MessageBus failures', () => {
       // Убираем петлю — bus снова работает
       unsubLoop();
       const delivered: number[] = [];
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
       const next = await bus.publish(heartbeat(100));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([100]);
@@ -383,7 +376,7 @@ describe('MessageBus failures', () => {
         policy: createMessageBusPolicy({ queuePolicy: { maxMessagesPerDrain: 4 } }),
       });
       const unsubHeartbeat = bus.subscribe('HEARTBEAT', async () => {
-        await bus.publish({ type: 'ITEM_ADDED', itemId: 'loop' });
+        await bus.publish(itemAdded('loop'));
       });
       const unsubItemAdded = bus.subscribe('ITEM_ADDED', async () => {
         await bus.publish(heartbeat(0));
@@ -398,7 +391,7 @@ describe('MessageBus failures', () => {
       unsubHeartbeat();
       unsubItemAdded();
       const delivered: number[] = [];
-      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.seq); });
+      bus.subscribe('HEARTBEAT', (message) => { delivered.push(message.payload.seq); });
       const next = await bus.publish(heartbeat(5));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([5]);
@@ -424,7 +417,7 @@ describe('MessageBus failures', () => {
       // Следующее сообщение обрабатывается как обычно
       const delivered: number[] = [];
       bus.subscribe('ITEM_ADDED', () => { delivered.push(0); });
-      const next = await bus.publish({ type: 'ITEM_ADDED', itemId: 't' });
+      const next = await bus.publish(itemAdded('t'));
       expect(next.ok).toBe(true);
       expect(delivered).toEqual([0]);
     });
@@ -488,7 +481,7 @@ describe('MessageBus failures', () => {
         },
       });
       const unsubLoop = bus.subscribe('HEARTBEAT', async (message) => {
-        await bus.publish(heartbeat(message.seq + 1));
+        await bus.publish(heartbeat(message.payload.seq + 1));
       });
 
       const result = await bus.publish(heartbeat(1));
