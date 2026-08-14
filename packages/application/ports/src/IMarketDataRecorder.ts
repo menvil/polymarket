@@ -43,7 +43,7 @@
  */
 
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Метаданные рынка для регистрации в рекордере.

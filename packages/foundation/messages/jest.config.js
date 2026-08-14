@@ -10,8 +10,7 @@ export default {
     '^@polymarket/ids$': '<rootDir>/../ids/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../time/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../math/src/index.ts',
-    '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
-    '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
+    '^@polymarket/timestamp$': '<rootDir>/../timestamp/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

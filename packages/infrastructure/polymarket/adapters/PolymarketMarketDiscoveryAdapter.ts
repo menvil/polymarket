@@ -47,8 +47,10 @@
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
-import { TimestampService, Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
-import type { Ratio, Timestamp } from '@polymarket/value-objects';
+import { Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Ratio } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { ILogger } from '@polymarket/logger';
 import type { PolymarketMarketDataRestClient, GammaMarketDto } from '../rest/clients/PolymarketMarketDataRestClient.js';
 import type { MarketFilter } from '@polymarket/market-discovery';

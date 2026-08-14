@@ -11,7 +11,8 @@
  * - `TradeFlowCalculator` — вычисление VWAP, OFI, объёмов
  */
 
-import type { Price, Quantity, Timestamp, Side } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Минимальная запись трейда из WS-ленты

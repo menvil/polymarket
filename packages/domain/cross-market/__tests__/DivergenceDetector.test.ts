@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Timestamp } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { DivergenceDetector } from '../src/DivergenceDetector.js';
 import { FEE_MODEL_CURRENT } from '../src/types.js';
 import type { SimpleBook, MarketPair, MarketInfo } from '../src/types.js';

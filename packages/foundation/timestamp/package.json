@@ -1,0 +1,53 @@
+{
+  "name": "@polymarket/timestamp",
+  "version": "0.1.0",
+  "description": "Canonical Timestamp value/time subsystem - immutable epoch-milliseconds VO, service facade, serialization and formatting",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "timestamp",
+    "time",
+    "value-object",
+    "foundation",
+    "polymarket"
+  ],
+  "author": "Ivan Moroz",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@polymarket/errors": "^0.1.0",
+    "@polymarket/math": "^0.1.0",
+    "@polymarket/result": "^0.1.0",
+    "@polymarket/time": "^0.1.0",
+    "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^26.1.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.3.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

@@ -24,7 +24,8 @@ import { InMemoryPortfolioStore } from '../../../infrastructure/in-memory/src/In
 import { Portfolio, SimplePosition } from '@polymarket/portfolio';
 import { Position } from '@polymarket/position';
 import { Balance } from '@polymarket/value-objects/balance';
-import { Money, Price, Quantity, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Money, Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { asPortfolioId } from '@polymarket/portfolio';

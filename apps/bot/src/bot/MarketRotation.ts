@@ -39,7 +39,8 @@ import {
   assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId, AccountId } from '@polymarket/ids';
-import { Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Money, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import { parseCryptoMeta, computeInterval } from '@polymarket/exchange/adapters';
 import type { CryptoMarketMeta } from '@polymarket/exchange/adapters';

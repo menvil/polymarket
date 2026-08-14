@@ -3,10 +3,10 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Timestamp, TimestampService, TimestampFormatter } from '../../../src/timestamp/index.js';
+import { Timestamp, TimestampService, TimestampFormatter } from '../src/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 import Decimal from 'decimal.js';
-import { TimestampInvariantViolation } from '../../../src/timestamp/core/TimestampInvariantViolation.js';
+import { TimestampInvariantViolation } from '../src/core/TimestampInvariantViolation.js';
 
 describe('Timestamp', () => {
   describe('of() - Core invariants', () => {

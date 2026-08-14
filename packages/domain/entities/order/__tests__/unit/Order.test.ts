@@ -2,7 +2,8 @@
  * Тесты для Order aggregate
  */
 
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import {

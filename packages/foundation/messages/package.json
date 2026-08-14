@@ -38,7 +38,7 @@
   "dependencies": {
     "@polymarket/ids": "0.1.0",
     "@polymarket/time": "0.1.0",
-    "@polymarket/value-objects": "0.1.0"
+    "@polymarket/timestamp": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

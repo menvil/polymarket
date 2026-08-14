@@ -13,7 +13,8 @@
  * - `ReconcileOrdersUseCase` — сверка локальных ордеров с биржевыми
  */
 import type { OrderId, AssetId } from '@polymarket/ids';
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountId } from '@polymarket/ids';
 
 /**

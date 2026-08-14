@@ -7,7 +7,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { FillReceivedEvent, FillFailedEvent } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IOrderStateStore, IFillReverter, IFillProcessor, IProcessedFillRepository } from '@polymarket/ports';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 

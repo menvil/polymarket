@@ -8,7 +8,7 @@ import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 import { QuoteErrorReason } from '../../../../src/quote/errors/QuoteErrorReason.js';
 import { InvalidQuoteError } from '@polymarket/errors';
 import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
-import { TimestampService } from '../../../../src/timestamp/index.js';
+import { TimestampService } from '@polymarket/timestamp';
 
 describe('QuoteService Ratio Operations', () => {
   // Helper: создать Quote из чисел

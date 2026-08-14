@@ -7,7 +7,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { OrderUpdateReceivedEvent } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { AccountId, OrderId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 

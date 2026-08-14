@@ -16,7 +16,8 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { MarketId } from '@polymarket/ids';
-import type { Money, Timestamp } from '@polymarket/value-objects';
+import type { Money } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { MarketCloseReason } from './MarketCloseReason.js';
 
 export type MarketClosedEvent = MessageEnvelope<

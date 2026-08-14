@@ -30,7 +30,8 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import { asOrderId, asFillId, asStrategyId, parseAccountId, parseAssetId } from '@polymarket/ids';
 import type { FillId, StrategyId } from '@polymarket/ids';

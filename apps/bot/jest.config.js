@@ -17,6 +17,7 @@ export default {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/strategy$': '<rootDir>/../../packages/application/strategy/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../packages/foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../packages/domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/balance$': '<rootDir>/../../packages/domain/value-objects/src/balance/index.ts',
     '^@polymarket/value-objects/money$': '<rootDir>/../../packages/domain/value-objects/src/money/index.ts',

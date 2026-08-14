@@ -19,7 +19,7 @@ import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 import { SpreadService } from '../../spread/facade/SpreadService.js';
-import { TimestampService } from '../../timestamp/facade/TimestampService.js';
+import { TimestampService } from '@polymarket/timestamp';
 
 /**
  * Фасад для работы с Quote - публичный API

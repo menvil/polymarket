@@ -18,7 +18,8 @@
 import type Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import type { OrderId, AssetId, AccountId, StrategyId } from '@polymarket/ids';
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { TradingError } from '@polymarket/errors';
 import type { OpenOrderSnapshot } from './types/OpenOrderSnapshot.js';
 import type { VenueTradeSnapshot } from './types/VenueTradeSnapshot.js';

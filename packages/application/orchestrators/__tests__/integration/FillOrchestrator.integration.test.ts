@@ -45,7 +45,8 @@ import {
   asMarketId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value-objects';
+import { Price, Quantity, Fee, Money } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Order } from '@polymarket/order';
 import { Fill } from '@polymarket/fill';

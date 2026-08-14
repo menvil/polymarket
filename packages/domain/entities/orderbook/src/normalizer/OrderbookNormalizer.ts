@@ -39,8 +39,9 @@
  * ```
  */
 
-import { PriceService, QuantityService, TimestampService } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';

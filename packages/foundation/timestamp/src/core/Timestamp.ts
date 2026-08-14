@@ -18,7 +18,7 @@
  *
  * @example
  * ```typescript
- * import { Timestamp } from '@polymarket/value-objects';
+ * import { Timestamp } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * // Текущее время

@@ -87,7 +87,8 @@ import {
   accountIdToString,
   assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';

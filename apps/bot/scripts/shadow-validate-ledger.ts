@@ -38,7 +38,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import Decimal from 'decimal.js';
 import { LedgerService } from '@polymarket/use-cases';
-import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { Fill } from '@polymarket/fill';
 import {
   AssetIdHelpers,

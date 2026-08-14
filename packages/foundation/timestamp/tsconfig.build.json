@@ -1,0 +1,27 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/__tests__/**"
+  ],
+  "references": [
+    { "path": "../errors/tsconfig.build.json" },
+    { "path": "../result/tsconfig.build.json" },
+    { "path": "../math/tsconfig.build.json" },
+    { "path": "../time/tsconfig.build.json" }
+  ]
+}

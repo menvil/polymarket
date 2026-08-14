@@ -5,7 +5,8 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId, FillId } from '@polymarket/ids';
 import { unsafeRunId } from '@polymarket/ids';
 import { MessageMetadataGenerator, FixedHighResolutionClock } from '@polymarket/messages';

@@ -13,7 +13,7 @@
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { Orderbook } from '@polymarket/orderbook';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 export type BookDepthEvent = MessageEnvelope<
   'BOOK_DEPTH',

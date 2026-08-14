@@ -55,8 +55,10 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { asVenueTradeId, asVenueId, parseAssetId, asTxHash, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, VenueId, VenueTradeId, TxHash, MarketId } from '@polymarket/ids';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Side, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { Trade } from '../Trade.js';

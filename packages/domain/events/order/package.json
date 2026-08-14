@@ -18,6 +18,7 @@
     "@polymarket/fill": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/messages": "0.1.0",
+    "@polymarket/timestamp": "0.1.0",
     "@polymarket/value-objects": "0.1.0"
   },
   "devDependencies": {

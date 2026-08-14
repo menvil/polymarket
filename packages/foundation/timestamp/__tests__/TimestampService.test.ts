@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { TimestampService } from '../../../src/timestamp/index.js';
+import { TimestampService } from '../src/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampService', () => {

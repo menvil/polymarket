@@ -19,7 +19,8 @@ import {
   assetIdToString,
   accountIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import Decimal from 'decimal.js';

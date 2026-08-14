@@ -1,7 +1,7 @@
 import type { IClock } from '@polymarket/time';
 import type { MessageId, RunId } from '@polymarket/ids';
 import { unsafeMessageId } from '@polymarket/ids';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { MessageMetadata } from './MessageMetadata.js';
 import type { IHighResolutionClock } from './IHighResolutionClock.js';
 import { generateRunId } from './generateRunId.js';

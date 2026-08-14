@@ -54,7 +54,8 @@ import {
   assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Fee, TimestampService, Money } from '@polymarket/value-objects';
+import { Price, Quantity, Fee, Money } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Fill } from '@polymarket/fill';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';

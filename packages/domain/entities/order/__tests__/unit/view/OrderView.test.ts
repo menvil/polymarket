@@ -8,7 +8,8 @@
  * - Round-trip: Order → toSnapshot → fromSnapshot → Order
  */
 
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import {
   asOrderId,
   asFillId,

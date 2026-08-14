@@ -59,7 +59,7 @@ import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
 import { Fee, Price, Quantity } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
 import { calculatePolymarketTakerFee } from '@polymarket/fill';

@@ -58,7 +58,8 @@ import {
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity, Timestamp, TimestampService } from '@polymarket/value-objects';
+import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp, TimestampService } from '@polymarket/timestamp';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { BookUpdateHandler } from '@polymarket/handlers';

@@ -107,15 +107,6 @@ export {
   SideErrorReason
 } from './side/index.js';
 
-// Timestamp модуль (временные метки)
-export {
-  Timestamp,
-  TimestampService,
-  TimestampSerializer,
-  TimestampFormatter,
-  TimestampErrorReason
-} from './timestamp/index.js';
-
 // Fee модуль (комиссии)
 export {
   Fee,

@@ -15,7 +15,7 @@
  *
  * @example
  * ```typescript
- * import { TimestampService } from '@polymarket/value-objects';
+ * import { TimestampService } from '@polymarket/timestamp';
  *
  * // Создание из number
  * const result = TimestampService.create(Date.now());

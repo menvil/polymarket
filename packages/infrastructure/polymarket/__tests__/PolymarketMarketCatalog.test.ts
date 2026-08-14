@@ -15,7 +15,8 @@ import type { ILogger } from '@polymarket/logger';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
-import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 function makeLogger(): ILogger {
   return {

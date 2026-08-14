@@ -28,7 +28,8 @@
  * ```typescript
  * import { Trade } from '@polymarket/trade';
  * import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
- * import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+ * import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * const result = Trade.create({
@@ -54,7 +55,8 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { VenueTradeId, VenueId, AssetId, TxHash, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { TradeSnapshot } from './TradeSnapshot.js';

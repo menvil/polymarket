@@ -18,7 +18,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { AccountId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { VenueOrderUpdate } from './VenueOrderUpdate.js';
 
 export type OrderUpdateReceivedEvent = MessageEnvelope<

@@ -4,7 +4,7 @@ import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
-import { Timestamp } from '../../timestamp/core/Timestamp.js';
+import { Timestamp } from '@polymarket/timestamp';
 import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
 
 /**

@@ -23,6 +23,7 @@
     "src/**/__tests__/**"
   ],
   "references": [
+    { "path": "../../../foundation/timestamp/tsconfig.build.json" },
     {
       "path": "../../../foundation/errors/tsconfig.build.json"
     },

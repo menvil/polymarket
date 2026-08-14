@@ -12,7 +12,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { Fill } from '@polymarket/fill';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 export type FillReceivedEvent = MessageEnvelope<
   'FILL_RECEIVED',

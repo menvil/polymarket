@@ -47,7 +47,8 @@
  * ```typescript
  * import { Fill } from '@polymarket/fill';
  * import { asFillId, asOrderId, parseAccountId, asVenueId, parseAssetId, AssetIdHelpers } from '@polymarket/ids';
- * import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
+ * import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * const result = Fill.create({
@@ -81,7 +82,8 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, OrderId, AccountId, VenueId, AssetId, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
-import type { Price, Side, Timestamp, Fee } from '@polymarket/value-objects';
+import type { Price, Side, Fee } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Quantity } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';

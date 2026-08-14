@@ -30,7 +30,7 @@
  * ```
  */
 import type { InstrumentId, AssetId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { TopOfBook } from '@polymarket/application-events';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';

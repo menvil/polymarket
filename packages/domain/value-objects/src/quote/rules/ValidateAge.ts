@@ -3,7 +3,7 @@ import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import type { IClock } from '@polymarket/time';
 import type { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
-import { Timestamp } from '../../timestamp/core/Timestamp.js';
+import { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Проверяет свежесть котировки

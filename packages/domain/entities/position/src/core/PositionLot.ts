@@ -19,7 +19,8 @@
  * @example
  * ```typescript
  * import { PositionLot } from '@polymarket/position';
- * import { Price, Quantity, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
+ * import { Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * const lot = PositionLot.create({
@@ -34,7 +35,8 @@
  * ```
  */
 
-import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 

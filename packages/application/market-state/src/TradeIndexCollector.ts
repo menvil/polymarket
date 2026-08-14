@@ -72,7 +72,8 @@ import type { IClock } from '@polymarket/time';
 import type { AssetId, VenueTradeId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import { RollingWindow, type RetentionPolicy } from '@polymarket/rolling-window';
-import type { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { Trade } from '@polymarket/trade';
 
 /**

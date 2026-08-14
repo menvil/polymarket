@@ -29,7 +29,8 @@ import { asInstrumentId, asMarketId, parseAccountId, KnownVenues, asPolymarketCt
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { JsonlSnapshotReader } from '@polymarket/snapshot-readers';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';

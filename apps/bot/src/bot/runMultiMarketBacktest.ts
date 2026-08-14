@@ -39,7 +39,8 @@ import {
 import { BookUpdateHandler } from '@polymarket/handlers';
 import { SimpleBookRegistry } from '../SimpleBookRegistry.js';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import {
   parseAccountId,
   KnownVenues,

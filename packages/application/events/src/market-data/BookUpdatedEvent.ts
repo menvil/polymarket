@@ -10,7 +10,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { TopOfBook } from './TopOfBook.js';
 
 export type BookUpdatedEvent = MessageEnvelope<

@@ -25,7 +25,8 @@ import type { IBookRegistry } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import { Orderbook } from '@polymarket/orderbook';
-import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 

@@ -16,6 +16,7 @@ const config: Config = {
     '^@polymarket/errors$': '<rootDir>/../errors/src/index.ts',
     '^@polymarket/errors/(.*)$': '<rootDir>/../errors/src/$1',
     '^@polymarket/math$': '<rootDir>/../math/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
   },

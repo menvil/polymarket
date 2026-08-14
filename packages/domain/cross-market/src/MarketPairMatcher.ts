@@ -35,7 +35,7 @@
 
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import { Timestamp } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { asInstrumentId } from '@polymarket/ids';
 import type { MarketInfo, MarketPair, Recurrence } from './types.js';
 import { RECURRENCE_RANK, OVERLAP_DURATION_MS } from './types.js';

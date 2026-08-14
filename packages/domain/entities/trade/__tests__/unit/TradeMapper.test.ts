@@ -5,7 +5,8 @@
 import Decimal from 'decimal.js';
 import { TradeMapper } from '../../src/mappers/TradeMapper';
 import { asInstrumentId, unsafeMarketId } from '@polymarket/ids';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 
 // Вспомогательная функция для извлечения значения из Result в тестах

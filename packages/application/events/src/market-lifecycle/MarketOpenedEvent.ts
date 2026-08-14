@@ -16,7 +16,8 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { MarketId, StrategyId } from '@polymarket/ids';
-import type { Money, Timestamp } from '@polymarket/value-objects';
+import type { Money } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 export type MarketOpenedEvent = MessageEnvelope<
   'MARKET_OPENED',

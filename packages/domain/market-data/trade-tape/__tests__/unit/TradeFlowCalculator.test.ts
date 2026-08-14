@@ -14,7 +14,8 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { TradeFlowCalculator } from '../../src/TradeFlowCalculator.js';
 import type { TapeRecord } from '../../src/TapeRecord.js';
-import { Price, Quantity, Ratio, Money, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity, Ratio, Money } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 
 // ==================== Вспомогательные функции ====================
 

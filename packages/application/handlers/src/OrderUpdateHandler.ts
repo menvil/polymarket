@@ -25,7 +25,7 @@ import type { IClock } from '@polymarket/time';
 import type { VenueOrderUpdate } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 
 export { type VenueOrderUpdate } from '@polymarket/application-events';
 

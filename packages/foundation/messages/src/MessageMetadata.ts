@@ -1,5 +1,5 @@
 import type { MessageId, RunId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
  * Canonical системная metadata сообщения — обязательная часть каждого

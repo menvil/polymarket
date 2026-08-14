@@ -30,7 +30,7 @@ import type {
 } from '@polymarket/ports';
 import type { Result } from '@polymarket/result';
 import type { OrderId, AccountId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 // ── Sliding window для latency readings ──────────────────────────────────────
 

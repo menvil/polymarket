@@ -28,8 +28,9 @@ import {
   KnownVenues,
 } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Fee, Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import { Balance, Money, Fee, Price, Quantity } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { Order } from '@polymarket/order';
 import { Fill } from '@polymarket/fill';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';

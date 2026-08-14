@@ -21,6 +21,6 @@
   "references": [
     { "path": "../ids/tsconfig.build.json" },
     { "path": "../time/tsconfig.build.json" },
-    { "path": "../../domain/value-objects/tsconfig.build.json" }
+    { "path": "../timestamp/tsconfig.build.json" }
   ]
 }

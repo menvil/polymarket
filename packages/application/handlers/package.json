@@ -26,6 +26,7 @@
     "@polymarket/orderbook": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/result": "0.1.0",
+    "@polymarket/timestamp": "0.1.0",
     "@polymarket/value-objects": "0.1.0"
   },
   "devDependencies": {

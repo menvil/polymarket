@@ -152,9 +152,9 @@ message-system concerns: identity, runtime identity, ordering, creation time, ca
 ## Зависимости и слои
 
 ```text
-@polymarket/ids            (MessageId, RunId)
-@polymarket/time           (IClock)
-@polymarket/value-objects  (Timestamp — канонический тип времени проекта)
+@polymarket/ids        (MessageId, RunId)
+@polymarket/time       (IClock)
+@polymarket/timestamp  (Timestamp — канонический тип времени проекта, Foundation)
         ↑
 @polymarket/messages
         ↑
@@ -164,10 +164,8 @@ message-system concerns: identity, runtime identity, ordering, creation time, ca
         └── будущий external-контур (M-004)
 ```
 
-Зависимость `messages → value-objects` — сознательное исключение из строгого
-«foundation не зависит от domain»: `Timestamp` — канонический тип времени всего проекта,
-и `createdAt` обязан использовать именно его. Циклов нет: `value-objects` никогда не
-импортирует `messages`.
+Весь граф — внутри Foundation: `messages → timestamp → time`. Foundation не
+зависит от Domain (инвариант закреплён dependency-direction тестом).
 
 `@polymarket/messages` НЕ зависит от `@polymarket/message-bus` — направление строго
 `message-bus → messages`.

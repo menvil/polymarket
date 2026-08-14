@@ -8,7 +8,8 @@ import { OrderbookLevel } from '../../../src/core/OrderbookLevel.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
-import { PriceService, QuantityService, Timestamp } from '@polymarket/value-objects';
+import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
 

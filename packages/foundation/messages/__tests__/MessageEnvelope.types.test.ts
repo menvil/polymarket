@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { unsafeMessageId, unsafeRunId } from '@polymarket/ids';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { MessageEnvelope, MessageMetadata, TypedMessage } from '../src/index.js';
 
 /** Детерминированная fixture-metadata для compile-time проверок. */

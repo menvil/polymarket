@@ -37,7 +37,8 @@
 import type { ILogger } from '@polymarket/logger';
 import { Orderbook, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price, Timestamp } from '@polymarket/value-objects';
+import type { Price } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 import { PriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/application-events';

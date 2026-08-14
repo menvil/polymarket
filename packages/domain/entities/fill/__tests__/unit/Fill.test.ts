@@ -16,7 +16,8 @@ import {
   AssetIdHelpers,
   assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 

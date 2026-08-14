@@ -53,7 +53,8 @@
  * @example
  * ```typescript
  * import { Position, PositionLot } from '@polymarket/position';
- * import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+ * import { Quantity, Price } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
  * import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
  *
@@ -87,7 +88,8 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { ValidationError } from '@polymarket/errors';
 import type { PositionId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';

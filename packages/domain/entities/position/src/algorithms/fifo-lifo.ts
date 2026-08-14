@@ -28,7 +28,8 @@
 
 import { Result } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+import { Quantity, Price } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { Position, type CloseResult } from '../Position.js';
 
 /** Реэкспорт вспомогательных типов вычисления close (см. `lot-closing.ts`). */

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { InMemoryMarketCatalog } from '../../src/InMemoryMarketCatalog.js';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
-import type { Money, Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 const MARKET_ID = asMarketId('market-1')!;
 const YES_TOKEN = asInstrumentId('yes-token')!;

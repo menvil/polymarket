@@ -22,7 +22,7 @@
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { Fill } from '@polymarket/fill';
 import type { FillId, OrderId } from '@polymarket/ids';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 export type FillFailedEvent = MessageEnvelope<
   'FILL_FAILED',

@@ -69,7 +69,7 @@ import type { AccountId } from '@polymarket/ids';
 import { asFillId, asOrderId } from '@polymarket/ids';
 import type { Fill } from '@polymarket/fill';
 import { FillMapper } from '@polymarket/fill';
-import { TimestampService } from '@polymarket/value-objects';
+import { TimestampService } from '@polymarket/timestamp';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
 

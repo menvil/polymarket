@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Timestamp, TimestampService, TimestampSerializer } from '../../../src/timestamp/index.js';
+import { Timestamp, TimestampService, TimestampSerializer } from '../src/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampSerializer', () => {

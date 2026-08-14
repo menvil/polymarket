@@ -43,7 +43,8 @@ import { PortfolioService } from '@polymarket/use-cases';
 import { InMemoryPortfolioStore } from '@polymarket/in-memory';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance } from '@polymarket/value-objects/balance';
-import { Money, Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Money, Price, Quantity, Fee } from '@polymarket/value-objects';
+import { Timestamp } from '@polymarket/timestamp';
 import { Fill } from '@polymarket/fill';
 import {
   AssetIdHelpers,

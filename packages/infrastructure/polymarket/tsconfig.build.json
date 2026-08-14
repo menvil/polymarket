@@ -32,6 +32,7 @@
     "**/*.spec.ts"
   ],
   "references": [
+    { "path": "../../foundation/timestamp/tsconfig.build.json" },
     {
       "path": "../../foundation/logger/tsconfig.build.json"
     },

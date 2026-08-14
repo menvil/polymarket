@@ -18,7 +18,7 @@
 import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
 import { Ratio } from '@polymarket/value-objects';
-import type { Timestamp } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 // ── Recurrence (длительность рынка) ─────────────────────────────────────────
 

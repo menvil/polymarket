@@ -22,6 +22,7 @@ const config: Config = {
     '^@polymarket/errors$': '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../../foundation/math/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../../foundation/time/src/index.ts',
+    '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../foundation/ids/src/index.ts',
   },
 };
