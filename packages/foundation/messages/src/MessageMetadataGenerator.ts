@@ -244,8 +244,10 @@ export class MessageMetadataGenerator {
         `MessageMetadataGenerator received an invalid time from the injected time source: ${createdAtResult.error.message}`,
       );
     }
-    const createdAtUnixSeconds = Math.floor(epochMs / 1000);
-    const millisecondOfSecond = epochMs - createdAtUnixSeconds * 1000;
+    // Чисто целочисленная декомпозиция без дробных промежуточных значений:
+    // остаток снимается ДО деления, поэтому делится точное кратное 1000.
+    const millisecondOfSecond = epochMs % 1000;
+    const createdAtUnixSeconds = (epochMs - millisecondOfSecond) / 1000;
 
     return {
       messageId: this._composeMessageId(
