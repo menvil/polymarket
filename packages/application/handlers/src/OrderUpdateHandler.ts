@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * const handler = new OrderUpdateHandler(eventBus, clock, accountId, logger);
+ * const handler = new OrderUpdateHandler(eventBus, metadataGenerator, clock, accountId, logger);
  *
  * wsEmitter.onOrderUpdate(async (dto) => {
  *   await handler.handle({ type: 'ACCEPTED', orderId: dto.orderId });
@@ -24,6 +24,7 @@ import type { AccountId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 import type { VenueOrderUpdate } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import { TimestampService } from '@polymarket/value-objects';
 
 export { type VenueOrderUpdate } from '@polymarket/application-events';
@@ -39,12 +40,15 @@ export class OrderUpdateHandler {
    * Создаёт тонкий OrderUpdateHandler.
    *
    * @param _eventBus - Event bus для публикации ORDER_UPDATE_RECEIVED
+   * @param _metadataGenerator - Canonical-генератор metadata публикуемого события
+   *   (root: первичная реакция на внешнее WS-наблюдение)
    * @param _clock - Источник времени для receivedAt timestamp
    * @param _accountId - ID аккаунта — нужен UpdateOrderStatusUseCase для portfolio ops
    * @param _logger - Logger
    */
   constructor(
     private readonly _eventBus: IEventBus,
+    private readonly _metadataGenerator: MessageMetadataGenerator,
     private readonly _clock: IClock,
     private readonly _accountId: AccountId,
     private readonly _logger: ILogger,
@@ -71,9 +75,12 @@ export class OrderUpdateHandler {
 
     const result = await this._eventBus.publish({
       type: 'ORDER_UPDATE_RECEIVED',
-      update,
-      accountId: this._accountId,
-      receivedAt: receivedAtResult.value,
+      payload: {
+        update,
+        accountId: this._accountId,
+        receivedAt: receivedAtResult.value,
+      },
+      metadata: this._metadataGenerator.nextRoot(),
     });
     if (!result.ok) {
       this._logger.error('Failed to publish ORDER_UPDATE_RECEIVED', {

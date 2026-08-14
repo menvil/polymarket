@@ -12,6 +12,8 @@
  *   publishedTotal/dispatchedTotal/handlerErrorsTotal/rejectedPublicationsTotal.
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import {
@@ -36,20 +38,30 @@ function makeLogger(): ILogger {
   } as unknown as ILogger;
 }
 
+
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
-    topOfBook: {
-      bestBid: undefined,
-      bestAsk: undefined,
-      spread: undefined,
-      bestBidSize: undefined,
-      bestAskSize: undefined,
+    payload: {
+      topOfBook: {
+        bestBid: undefined,
+        bestAsk: undefined,
+        spread: undefined,
+        bestBidSize: undefined,
+        bestAskSize: undefined,
+      },
+      instrumentId: 'token-123' as BookUpdatedEvent['payload']['instrumentId'],
+      marketId: 'market-abc' as BookUpdatedEvent['payload']['marketId'],
+      sequenceNumber,
+      timestamp: { toISO: () => '' } as BookUpdatedEvent['payload']['timestamp'],
     },
-    instrumentId: 'token-123' as BookUpdatedEvent['instrumentId'],
-    marketId: 'market-abc' as BookUpdatedEvent['marketId'],
-    sequenceNumber,
-    timestamp: { toISO: () => '' } as BookUpdatedEvent['timestamp'],
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -71,7 +83,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
       const bus = new EventBus(logger, 10_000, 1);
       const gate = makeGate();
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 1) await gate.promise;
+        if (event.payload.sequenceNumber === 1) await gate.promise;
       });
 
       const first = bus.publish(makeBookEvent(1)); // in-flight
@@ -108,7 +120,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
     it('drain-limit → QueueOverflowError c legacy message/context, не MessageBusDrainLimitError', async () => {
       const bus = new EventBus(logger, 3);
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        await bus.publish(makeBookEvent(event.sequenceNumber + 1)); // петля
+        await bus.publish(makeBookEvent(event.payload.sequenceNumber + 1)); // петля
       });
 
       const result = await bus.publish(makeBookEvent(1));
@@ -164,7 +176,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
       let processedInLoop = 0;
       const unsubLoop = bus.subscribe('BOOK_UPDATED', async (event) => {
         processedInLoop++;
-        await bus.publish(makeBookEvent(event.sequenceNumber + 1));
+        await bus.publish(makeBookEvent(event.payload.sequenceNumber + 1));
       });
       const drainLimited = await bus.publish(makeBookEvent(1));
       expect(drainLimited.ok).toBe(false);
@@ -177,7 +189,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
       // maxQueueSize = 3: при in-flight событии в очередь помещаются 3 ожидающих, 4-е отклоняется
       const gate = makeGate();
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        if (event.sequenceNumber === 100) await gate.promise;
+        if (event.payload.sequenceNumber === 100) await gate.promise;
       });
       const first = bus.publish(makeBookEvent(100)); // in-flight, не считается
       expect((await bus.publish(makeBookEvent(101))).ok).toBe(true);
@@ -244,7 +256,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
     it('пустой publishAll на idle-bus возобновляет обработку очереди, сохранённой после critical-сбоя', async () => {
       const bus = new EventBus(logger);
       const delivered: number[] = [];
-      bus.subscribe('BOOK_UPDATED', (event) => { delivered.push(event.sequenceNumber); });
+      bus.subscribe('BOOK_UPDATED', (event) => { delivered.push(event.payload.sequenceNumber); });
       const unsubFailing = bus.subscribe('BOOK_UPDATED', () => {
         throw new Error('critical');
       }, { critical: true });
@@ -268,7 +280,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
     it('пустой publishAll транслирует повторный critical-исход возобновлённого drain-а', async () => {
       const bus = new EventBus(logger);
       bus.subscribe('BOOK_UPDATED', (event) => {
-        throw new Error(`critical on ${event.sequenceNumber}`);
+        throw new Error(`critical on ${event.payload.sequenceNumber}`);
       }, { critical: true });
 
       const batch = await bus.publishAll([makeBookEvent(1), makeBookEvent(2)]);
@@ -292,8 +304,8 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
       let reentrantOk: boolean | undefined;
       let deliveredAtReturn: number[] | undefined;
       bus.subscribe('BOOK_UPDATED', async (event) => {
-        delivered.push(event.sequenceNumber);
-        if (event.sequenceNumber === 1) {
+        delivered.push(event.payload.sequenceNumber);
+        if (event.payload.sequenceNumber === 1) {
           // Legacy: при активном drain пустой batch — Ok сразу, без присоединения
           // к чужому drain (иначе reentrant-вызов ждал бы сам себя)
           const result = await bus.publishAll([]);

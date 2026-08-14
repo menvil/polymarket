@@ -27,6 +27,9 @@
       "path": "../../foundation/logger/tsconfig.build.json"
     },
     {
+      "path": "../../foundation/messages/tsconfig.build.json"
+    },
+    {
       "path": "../../foundation/ids/tsconfig.build.json"
     },
     {

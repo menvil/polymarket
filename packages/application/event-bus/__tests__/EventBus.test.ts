@@ -2,6 +2,8 @@
  * Тесты EventBus.
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import { EventBus } from '../src/EventBus.js';
@@ -24,20 +26,30 @@ function makeLogger(): ILogger {
 }
 
 // Minimal BookUpdatedEvent fixture
+
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
-    topOfBook: {
-      bestBid: undefined,
-      bestAsk: undefined,
-      spread: undefined,
-      bestBidSize: undefined,
-      bestAskSize: undefined,
+    payload: {
+      topOfBook: {
+        bestBid: undefined,
+        bestAsk: undefined,
+        spread: undefined,
+        bestBidSize: undefined,
+        bestAskSize: undefined,
+      },
+      instrumentId: 'token-123' as BookUpdatedEvent['payload']['instrumentId'],
+      marketId: 'market-abc' as BookUpdatedEvent['payload']['marketId'],
+      sequenceNumber,
+      timestamp: { toISO: () => '' } as BookUpdatedEvent['payload']['timestamp'],
     },
-    instrumentId: 'token-123' as BookUpdatedEvent['instrumentId'],
-    marketId: 'market-abc' as BookUpdatedEvent['marketId'],
-    sequenceNumber,
-    timestamp: { toISO: () => '' } as BookUpdatedEvent['timestamp'],
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -63,7 +75,7 @@ describe('EventBus', () => {
   it('доставляет корректные поля события handler-у (runtime delivery)', async () => {
     let receivedSeq = -1;
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      receivedSeq = event.sequenceNumber;
+      receivedSeq = event.payload.sequenceNumber;
     });
 
     await bus.publish(makeBookEvent(42));
@@ -112,7 +124,7 @@ describe('EventBus', () => {
   it('publishAll доставляет события последовательно (порядок сохранён)', async () => {
     const order: number[] = [];
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      order.push(event.sequenceNumber);
+      order.push(event.payload.sequenceNumber);
     });
 
     const events: ApplicationEvent[] = [
@@ -151,8 +163,8 @@ describe('EventBus', () => {
   it('reentrancy: publishAll([A,B]) → handler(A) публикует C → порядок A→B→C', async () => {
     const order: number[] = [];
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      order.push(event.sequenceNumber);
-      if (event.sequenceNumber === 1) {
+      order.push(event.payload.sequenceNumber);
+      if (event.payload.sequenceNumber === 1) {
         await bus.publish(makeBookEvent(3));
       }
     });
@@ -195,8 +207,8 @@ describe('EventBus', () => {
   it('critical handler: оставшиеся события в очереди сохраняются для следующего drain', async () => {
     const processed: number[] = [];
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      if (event.sequenceNumber === 1) throw new Error('critical');
-      processed.push(event.sequenceNumber);
+      if (event.payload.sequenceNumber === 1) throw new Error('critical');
+      processed.push(event.payload.sequenceNumber);
     }, { critical: true });
 
     // seq=2 остаётся в очереди после critical failure на seq=1
@@ -214,7 +226,7 @@ describe('EventBus', () => {
     let count = 0;
     limitedBus.subscribe('BOOK_UPDATED', async (event) => {
       count++;
-      await limitedBus.publish(makeBookEvent(event.sequenceNumber + 1));
+      await limitedBus.publish(makeBookEvent(event.payload.sequenceNumber + 1));
     });
 
     const result = await limitedBus.publish(makeBookEvent(1));
@@ -278,8 +290,8 @@ describe('EventBus', () => {
   it('reentrancy: publishAll из handler-а ставит события в очередь корректно', async () => {
     const order: number[] = [];
     bus.subscribe('BOOK_UPDATED', async (event) => {
-      order.push(event.sequenceNumber);
-      if (event.sequenceNumber === 1) {
+      order.push(event.payload.sequenceNumber);
+      if (event.payload.sequenceNumber === 1) {
         // publishAll из handler'а — должно встать в очередь ПОСЛЕ текущего drain
         await bus.publishAll([makeBookEvent(10), makeBookEvent(11)]);
       }

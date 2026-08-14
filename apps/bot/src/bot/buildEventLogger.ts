@@ -103,8 +103,8 @@ export function subscribeToOrderEvents(
     bookCount++;
 
     // Staleness: localTime - serverTimestamp (только для live/paper, не backtest)
-    if (event.timestamp) {
-      const serverTs = event.timestamp.toNumber();
+    if (event.payload.timestamp) {
+      const serverTs = event.payload.timestamp.toNumber();
       const localTs = Date.now();
       const staleness = localTs - serverTs;
       // Sanity: только разумные значения (0-60s, не отрицательные из-за clock drift в backtest)
@@ -134,7 +134,7 @@ export function subscribeToOrderEvents(
     }
 
     if (logBook && bookCount % bookLogEvery === 0) {
-      const { bestBid, bestAsk } = event.topOfBook;
+      const { bestBid, bestAsk } = event.payload.topOfBook;
       logger.info('Book tick', {
         n: bookCount,
         bid: bestBid ? bestBid.value().toFixed(4) : null,
@@ -146,9 +146,9 @@ export function subscribeToOrderEvents(
   const unsubTrade = logTrades
     ? eventBus.subscribe('TRADE_RECEIVED', (event) => {
         logger.info('Tape trade', {
-          side: event.side,
-          size: event.size.value().toFixed(2),
-          price: event.price.value().toFixed(4),
+          side: event.payload.side,
+          size: event.payload.size.value().toFixed(2),
+          price: event.payload.price.value().toFixed(4),
         });
       })
     : () => {};

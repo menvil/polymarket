@@ -19,6 +19,8 @@
 import path from 'node:path';
 import Decimal from 'decimal.js';
 import { ReplayClock } from '@polymarket/time';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { EventBus } from '@polymarket/event-bus';
 import { BookUpdateHandler } from '@polymarket/handlers';
@@ -97,7 +99,12 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     const replayClock = new ReplayClock(new Date(0));
     const logger = new ConsoleLogger(replayClock, LogLevel.WARN);
     const eventBus = new EventBus(logger);
-    const infra = { clock: replayClock, logger, eventBus };
+    const infra = {
+      clock: replayClock,
+      logger,
+      eventBus,
+      metadataGenerator: new MessageMetadataGenerator({ clock: replayClock, runId: unsafeRunId('testrun1') }),
+    };
 
     const repos = buildRepositories();
     const { portfolioStore, orderRepo } = repos;
@@ -181,7 +188,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     // ── BookUpdateHandler ───────────────────────────────────────────────
 
     const bookRegistry = new SimpleBookRegistry();
-    const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+    const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, infra.metadataGenerator, marketCatalog, logger);
 
     // ── Запуск ──────────────────────────────────────────────────────────
 
@@ -212,7 +219,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
 
     const backtestEngine = new BacktestEngine(
       { filePaths: [SNAPSHOT_PATH], outcomeIndex: OUTCOME_INDEX },
-      { bookUpdateHandler, eventBus, replayClock, logger },
+      { bookUpdateHandler, eventBus, metadataGenerator: infra.metadataGenerator, replayClock, logger },
     );
 
     const replayResult = await backtestEngine.run();

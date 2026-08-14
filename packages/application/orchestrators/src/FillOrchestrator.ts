@@ -129,16 +129,19 @@ export class FillOrchestrator {
 
     this._unsubFillReceived = this._eventBus.subscribe('FILL_RECEIVED', async (event) => {
       try {
-        const result = await this._processFill.execute(event.fill);
+        // event.metadata — parent причинной цепочки: события, порождённые
+        // обработкой fill (ORDER_FILLED, DIRECT_FILL_APPLIED), наследуют
+        // correlationId этого FILL_RECEIVED (M-003 causal chain)
+        const result = await this._processFill.execute(event.payload.fill, event.metadata);
         if (!result.ok) {
           this._logger.error('ProcessFillUseCase failed', {
-            fillId: String(event.fill.id),
+            fillId: String(event.payload.fill.id),
             error: result.error.message,
           });
         }
       } catch (err) {
         this._logger.error('Unexpected error processing fill', {
-          fillId: String(event.fill.id),
+          fillId: String(event.payload.fill.id),
           err: err instanceof Error ? err : new Error(String(err)),
         });
       }
@@ -152,28 +155,29 @@ export class FillOrchestrator {
     // реальностью. Весь обработчик обёрнут в try/catch, чтобы сбой в
     // orderStateStore не уронил subscription loop.
     this._unsubFillFailed = this._eventBus.subscribe('FILL_FAILED', async (event) => {
+      const { fillId, orderId, fills } = event.payload;
       try {
         this._logger.warn('Fill failed on-chain — attempting portfolio rollback', {
-          fillId: String(event.fillId),
-          orderId: String(event.orderId),
-          hasFillsForRollback: !!(event.fills && event.fills.length > 0),
+          fillId: String(fillId),
+          orderId: String(orderId),
+          hasFillsForRollback: !!(fills && fills.length > 0),
         });
 
-        if (!event.fills || event.fills.length === 0) {
+        if (!fills || fills.length === 0) {
           this._logger.error(
             'No cached fills for failed event — cannot reverse, flags left untouched (manual reconciliation required)',
-            { fillId: String(event.fillId), orderId: String(event.orderId) },
+            { fillId: String(fillId), orderId: String(orderId) },
           );
           return;
         }
 
         // FillEventHandler публикует один FILL_FAILED на каждый наш maker_order,
         // но передаёт один и тот же cachedFills во все события. Фильтруем по
-        // event.orderId и дедуплицируем по fill.id — иначе тот же fill может
+        // orderId и дедуплицируем по fill.id — иначе тот же fill может
         // откатиться несколько раз (несколько maker-ордеров в одном trade,
         // либо WS replay/reconnect задублировал закэшированные fills).
-        const matchingFills = event.fills.filter((fill) => fill.orderId === event.orderId);
-        const rollbackFillsById = new Map<string, (typeof event.fills)[number]>();
+        const matchingFills = fills.filter((fill) => fill.orderId === orderId);
+        const rollbackFillsById = new Map<string, (typeof fills)[number]>();
         for (const fill of matchingFills) {
           rollbackFillsById.set(String(fill.id), fill);
         }
@@ -181,7 +185,7 @@ export class FillOrchestrator {
 
         if (rollbackFills.length < matchingFills.length) {
           this._logger.warn('Duplicate rollback fills collapsed by fillId', {
-            orderId: String(event.orderId),
+            orderId: String(orderId),
             matchingCount: matchingFills.length,
             dedupedCount: rollbackFills.length,
           });
@@ -189,8 +193,8 @@ export class FillOrchestrator {
 
         if (rollbackFills.length === 0) {
           this._logger.error(
-            'Cached fills present but none match event.orderId — cannot reverse, flags left untouched (manual reconciliation required)',
-            { fillId: String(event.fillId), orderId: String(event.orderId) },
+            'Cached fills present but none match orderId — cannot reverse, flags left untouched (manual reconciliation required)',
+            { fillId: String(fillId), orderId: String(orderId) },
           );
           return;
         }
@@ -236,8 +240,8 @@ export class FillOrchestrator {
           this._logger.error(
             'Portfolio rollback incomplete for some fills — manual reconciliation required',
             {
-              fillId: String(event.fillId),
-              orderId: String(event.orderId),
+              fillId: String(fillId),
+              orderId: String(orderId),
               reversedCount,
               totalCount: rollbackFills.length,
             },
@@ -247,8 +251,8 @@ export class FillOrchestrator {
         this._logger.error(
           'Unexpected error handling failed fill — rollback/cleanup state unknown, manual reconciliation required',
           {
-            fillId: String(event.fillId),
-            orderId: String(event.orderId),
+            fillId: String(fillId),
+            orderId: String(orderId),
             err: err instanceof Error ? err : new Error(String(err)),
           },
         );

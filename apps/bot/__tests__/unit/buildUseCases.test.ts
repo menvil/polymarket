@@ -9,6 +9,7 @@
  * через реальные in-memory репозитории, без доступа к private deps.
  */
 import Decimal from 'decimal.js';
+import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -18,6 +19,7 @@ import { Ok } from '@polymarket/result';
 import {
   parseAccountId,
   asOrderId,
+  unsafeRunId,
   asFillId,
   asMarketId,
   asInstrumentId,
@@ -62,7 +64,12 @@ function makeInfra(): CoreInfra {
     publishAll: jest.fn().mockResolvedValue(Ok(undefined)) as unknown as IEventBus['publishAll'],
     subscribe: jest.fn().mockReturnValue(() => {}) as unknown as IEventBus['subscribe'],
   };
-  return { clock, logger: makeLogger(), eventBus };
+  return {
+    clock,
+    logger: makeLogger(),
+    eventBus,
+    metadataGenerator: new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') }),
+  };
 }
 
 function makeTimestamp(): Timestamp {

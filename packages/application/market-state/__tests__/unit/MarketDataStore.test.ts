@@ -1,4 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
 import { asInstrumentId } from '@polymarket/ids';
@@ -8,6 +10,12 @@ import type { MarketDataStoreDeps, MarketDataReason } from '../../src/MarketData
 import type { TopOfBook } from '@polymarket/application-events';
 
 // ── Constants ──────────────────────────────────────────────
+
+/** Детерминированный генератор metadata тестовых событий (M-003 envelope). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
 
 const INSTRUMENT_1 = 'token-1' as unknown as InstrumentId;
 const INSTRUMENT_2 = 'token-2' as unknown as InstrumentId;
@@ -30,7 +38,11 @@ function makeEventBus() {
     }),
     publish: jest.fn(),
     _emit(type: string, event: any) {
-      for (const h of handlers.get(type) ?? []) h(event);
+      // Fixtures пишутся flat ({ type, ...поля }) — здесь один раз оборачиваем
+      // в canonical envelope { type, payload, metadata } (M-003)
+      const { type: _ignoredType, ...payload } = event;
+      const envelope = { type, payload, metadata: METADATA_GENERATOR.nextRoot() };
+      for (const h of handlers.get(type) ?? []) h(envelope);
     },
     _handlers: handlers,
   };

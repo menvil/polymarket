@@ -32,6 +32,7 @@
     "@polymarket/market-discovery": "0.1.0",
     "@polymarket/market-state": "0.1.0",
     "@polymarket/math": "0.1.0",
+    "@polymarket/messages": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/result": "0.1.0",
     "@polymarket/risk": "0.1.0",

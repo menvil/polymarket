@@ -158,7 +158,7 @@ export class OrderEventBridge {
     // поверх него небезопасно — cleanup выполняет ТОЛЬКО FILL_CONFIRMED.
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_RECEIVED', (event) => {
-        const instrumentId = assetIdToInstrumentId(event.fill.tokenId);
+        const instrumentId = assetIdToInstrumentId(event.payload.fill.tokenId);
         if (instrumentId) {
           this._deps.scheduler.onFillReceivedForInstrument(instrumentId);
         }
@@ -174,7 +174,7 @@ export class OrderEventBridge {
     // снял флаг при MATCHED, CONFIRMED гарантированно снимет его.
     this._unsubs.push(
       this._deps.eventBus.subscribe('FILL_CONFIRMED', (event) => {
-        for (const fill of event.fills) {
+        for (const fill of event.payload.fills) {
           // fillId-scoped: снимает ТОЛЬКО этот fill — другой ещё не подтверждённый
           // partial fill того же ордера/инструмента не затрагивается.
           // Placeholder pendingMatchFillId снимается ЯВНО (контракт store —

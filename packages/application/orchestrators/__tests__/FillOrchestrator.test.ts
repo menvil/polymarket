@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { FillOrchestrator } from '../src/FillOrchestrator.js';
 import type { FillOrchestratorDeps } from '../src/FillOrchestrator.js';
 import type { ILogger } from '@polymarket/logger';
@@ -97,11 +99,20 @@ function makeProcessedFillRepo(): IProcessedFillRepository {
   };
 }
 
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeFillEvent(): FillReceivedEvent {
   return {
     type: 'FILL_RECEIVED',
-    fill: { id: 'fill-1' } as never,
-    receivedAt: {} as Timestamp,
+    payload: {
+      fill: { id: 'fill-1' } as never,
+      receivedAt: {} as Timestamp,
+    },
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -114,10 +125,13 @@ function makeCachedFill(id: string, orderId: string, tokenId: unknown = TEST_TOK
 function makeFillFailedEvent(fills?: readonly unknown[]): FillFailedEvent {
   return {
     type: 'FILL_FAILED',
-    fillId: 'fill-1' as never,
-    orderId: 'order-1' as never,
-    receivedAt: {} as Timestamp,
-    fills: fills as never,
+    payload: {
+      fillId: 'fill-1' as never,
+      orderId: 'order-1' as never,
+      receivedAt: {} as Timestamp,
+      fills: fills as never,
+    },
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -155,8 +169,9 @@ describe('FillOrchestrator', () => {
   it('вызывает ProcessFillUseCase.execute при получении FILL_RECEIVED', async () => {
     const orchestrator = new FillOrchestrator(deps);
     orchestrator.register();
-    await eventBus._triggerFillReceived(makeFillEvent());
-    expect(processFill.execute).toHaveBeenCalledWith(makeFillEvent().fill);
+    const event = makeFillEvent();
+    await eventBus._triggerFillReceived(event);
+    expect(processFill.execute).toHaveBeenCalledWith(event.payload.fill, event.metadata);
   });
 
   it('логирует error если ProcessFillUseCase вернул Err', async () => {
@@ -389,17 +404,23 @@ describe('FillOrchestrator', () => {
 
       await eventBus._triggerFillFailed({
         type: 'FILL_FAILED',
-        fillId: 'fe-1' as never,
-        orderId: 'order-1' as never,
-        receivedAt: {} as Timestamp,
-        fills: sharedFills as never,
+        payload: {
+          fillId: 'fe-1' as never,
+          orderId: 'order-1' as never,
+          receivedAt: {} as Timestamp,
+          fills: sharedFills as never,
+        },
+        metadata: METADATA_GENERATOR.nextRoot(),
       });
       await eventBus._triggerFillFailed({
         type: 'FILL_FAILED',
-        fillId: 'fe-2' as never,
-        orderId: 'order-2' as never,
-        receivedAt: {} as Timestamp,
-        fills: sharedFills as never,
+        payload: {
+          fillId: 'fe-2' as never,
+          orderId: 'order-2' as never,
+          receivedAt: {} as Timestamp,
+          fills: sharedFills as never,
+        },
+        metadata: METADATA_GENERATOR.nextRoot(),
       });
 
       // Каждый fill должен быть реверснут ровно один раз — не дважды.

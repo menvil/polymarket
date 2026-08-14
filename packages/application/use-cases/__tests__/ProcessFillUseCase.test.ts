@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { ProcessFillUseCase } from '../src/ProcessFillUseCase.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import { LedgerService } from '../src/services/LedgerService.js';
@@ -257,6 +259,15 @@ function makeReconciliationIssueRepo(): IReconciliationIssueRepository {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('ProcessFillUseCase', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -292,6 +303,7 @@ describe('ProcessFillUseCase', () => {
       // Пустой submission journal: findByVenueOrderId→undefined → normal/direct
       // path (held-recovery проверяется отдельными тестами с seeded journal).
       submissions: new InMemoryOrderSubmissionRepository(),
+      metadataGenerator: makeMetadataGenerator(),
       logger,
     };
   });

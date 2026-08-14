@@ -367,12 +367,12 @@ export class TradeMapper {
    * @example
    * ```typescript
    * const result = TradeMapper.fromParsedTrade({
-   *   instrumentId: event.instrumentId,
+   *   instrumentId: event.payload.instrumentId,
    *   marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
-   *   price: event.price,
-   *   size: event.size,
-   *   side: event.side,
-   *   timestamp: event.timestamp,
+   *   price: event.payload.price,
+   *   size: event.payload.size,
+   *   side: event.payload.side,
+   *   timestamp: event.payload.timestamp,
    * });
    * if (result.ok) {
    *   const trade = result.value;

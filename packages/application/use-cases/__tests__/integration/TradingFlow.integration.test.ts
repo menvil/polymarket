@@ -28,6 +28,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { PlaceOrderUseCase } from '../../src/PlaceOrderUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { CancelOrderUseCase } from '../../src/CancelOrderUseCase.js';
@@ -214,6 +216,15 @@ function makeFill(
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('TradingFlow (integration)', () => {
   let orderRepo: InMemoryOrderRepository;
   let processedFillRepo: InMemoryProcessedFillRepository;
@@ -280,6 +291,7 @@ describe('TradingFlow (integration)', () => {
       eventBus,
       orderedEventOutbox,
       submissions: orderSubmissionRepo,
+      metadataGenerator: makeMetadataGenerator(),
       logger: LOGGER,
     };
 
@@ -476,6 +488,7 @@ describe('TradingFlow (integration)', () => {
 
     // 4. Fill приходит на venueOrderId=ORDER_ID.
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
       keyedMutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
@@ -535,6 +548,7 @@ describe('TradingFlow (integration)', () => {
 
     // 4. Fill приходит → normal path (Order всё ещё OPEN) → consume резервации.
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
       keyedMutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
@@ -634,6 +648,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     expect(realPortfolioStore.get(ACCOUNT_ID)!.balance.reserved().value().toNumber()).toBeCloseTo(NOTIONAL.toNumber(), 6);
 
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
@@ -710,6 +725,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
 
     // Partial fill: 30 из 50.
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo,
       portfolioService,
       ledgerService,
@@ -814,6 +830,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     const exchangeClient: IExchangeClient = { ...makeExchangeClient(), cancelOrder };
 
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
       keyedMutex: mutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
@@ -890,6 +907,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
       exchangeClient: makeExchangeClient(), orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
     const processFillUseCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: orderRepo, portfolioService, ledgerService, orderRepo, processedFillRepo,
       keyedMutex: mutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });

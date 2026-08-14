@@ -32,6 +32,7 @@ import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import {
   asInstrumentId,
   asPolymarketCtfToken,
@@ -217,6 +218,8 @@ export interface MarketRotationDeps {
   readonly logger: ILogger;
   readonly clock: IClock;
   readonly eventBus: IEventBus;
+  /** Canonical-генератор metadata публикуемых событий (M-003) */
+  readonly metadataGenerator: MessageMetadataGenerator;
   readonly portfolioStore: InMemoryPortfolioStore;
   readonly accountId: AccountId;
   readonly wsAdapter: IWsTokenSubscriber;
@@ -653,7 +656,7 @@ export class MarketRotation {
 
     const {
       logger, engine, wsAdapter, marketCatalog, pendingChainlinkStrike,
-      cryptoResolutionStore, cryptoMarketDataStore, eventBus, recording, redeemer,
+      cryptoResolutionStore, cryptoMarketDataStore, eventBus, metadataGenerator, recording, redeemer,
     } = this._deps;
 
     logger.info('Closing market', { reason, marketId: String(slot.marketId), question: slot.candidate?.question });
@@ -740,10 +743,13 @@ export class MarketRotation {
     if (closeTimestamp.ok) {
       const result = await eventBus.publish({
         type: 'MARKET_CLOSED',
-        marketId: slot.marketId,
-        reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
-        realizedPnL: Money.of(new Decimal(0), 'USDC'),
-        timestamp: closeTimestamp.value,
+        payload: {
+          marketId: slot.marketId,
+          reason: reason === 'EXPIRED' ? 'EXPIRED' : 'MANUAL',
+          realizedPnL: Money.of(new Decimal(0), 'USDC'),
+          timestamp: closeTimestamp.value,
+        },
+        metadata: metadataGenerator.nextRoot(),
       });
       if (!result.ok) {
         logger.warn('MARKET_CLOSED publish failed', { error: result.error.message, marketId: String(slot.marketId) });
@@ -1117,19 +1123,19 @@ export class MarketRotation {
     // fill приходит по WS на CANCELLED ордер. Без этого обработчика такие fills
     // не попадают в fillHistory и не видны в market summary.
     eventBus.subscribe('DIRECT_FILL_APPLIED', (event) => {
-      const orderId = String(event.fill.orderId);
+      const orderId = String(event.payload.fill.orderId);
       const slot = this._findSlotByOrderId(orderId);
       if (!slot) return;
-      const fillSize = event.fill.size.value();
-      const fillNotional = fillSize.times(event.fill.price.value());
+      const fillSize = event.payload.fill.size.value();
+      const fillNotional = fillSize.times(event.payload.fill.price.value());
       const existing = slot.directPartialAccum.get(orderId);
       if (existing) {
         existing.totalSize = existing.totalSize.plus(fillSize);
         existing.totalNotional = existing.totalNotional.plus(fillNotional);
       } else {
-        const at = new Date(event.fill.timestamp.toNumber()).toISOString().slice(11, 19);
+        const at = new Date(event.payload.fill.timestamp.toNumber()).toISOString().slice(11, 19);
         slot.directPartialAccum.set(orderId, {
-          side: event.fill.side as 'BUY' | 'SELL',
+          side: event.payload.fill.side as 'BUY' | 'SELL',
           totalSize: fillSize,
           totalNotional: fillNotional,
           firstAt: at,

@@ -16,6 +16,8 @@
  * Во всех случаях manual block ОСТАЁТСЯ после прихода fill (fill его не снимает).
  */
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
@@ -223,6 +225,15 @@ async function seedHeldJournal(submissions: InMemoryOrderSubmissionRepository): 
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('Manual reconciliation block — cross-use-case (P0)', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -255,6 +266,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
 
   function makeProcessFill(): ProcessFillUseCase {
     return new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,
@@ -387,6 +399,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
 
     const statefulRepo = makeStatefulProcessedFillRepo();
     const useCase = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,
@@ -458,6 +471,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
     // Реальный Fill (нормальный path, живой Order) снимает placeholder ЯВНО
     // (контракт store — exact-ID): hasMatchedFills больше не залипает.
     const fillProcessor = new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,

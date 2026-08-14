@@ -70,6 +70,7 @@ import { OrderbookLevel } from '@polymarket/orderbook';
 import type { Side } from '@polymarket/value-objects';
 import type { BookUpdateHandler } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import { ReplayClock } from '@polymarket/time';
 import {
   SnapshotReaderFactory,
@@ -300,6 +301,13 @@ export interface BacktestDeps {
    * Обязателен только если снапшоты содержат `event_type: 'last_trade_price'`.
    */
   readonly eventBus?: IEventBus;
+  /**
+   * Canonical-генератор metadata публикуемых событий (M-003).
+   * Обязателен вместе с eventBus: TRADE_RECEIVED — canonical envelope.
+   * Для детерминированного replay инъецируй генератор с ReplayClock
+   * (и, при необходимости, FixedHighResolutionClock).
+   */
+  readonly metadataGenerator?: MessageMetadataGenerator;
   /** Логгер */
   readonly logger: ILogger;
   /**
@@ -1033,19 +1041,26 @@ export class BacktestEngine {
       this._logger.warn('TRADE_RECEIVED skipped: eventBus not provided in deps');
       return false;
     }
+    if (!this._deps.metadataGenerator) {
+      this._logger.warn('TRADE_RECEIVED skipped: metadataGenerator not provided in deps');
+      return false;
+    }
 
     this._advanceClock(new Date(Number(event.timestamp)));
 
     // price и size точно инициализированы — try/catch выше вернул бы false при ошибке
     const result = await this._deps.eventBus.publish({
       type: 'TRADE_RECEIVED',
-      instrumentId,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      price: price!,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      size: size!,
-      side,
-      timestamp: tsResult.value,
+      payload: {
+        instrumentId,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        price: price!,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        size: size!,
+        side,
+        timestamp: tsResult.value,
+      },
+      metadata: this._deps.metadataGenerator.nextRoot(),
     });
     if (!result.ok) {
       this._logger.warn('TRADE_RECEIVED publish failed', { filePath, error: result.error.message });

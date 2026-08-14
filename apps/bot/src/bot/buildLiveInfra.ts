@@ -167,7 +167,7 @@ export interface LiveInfra {
  */
 export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   const { credentials, infra, repos, processFillUseCase, orderedEventOutbox, userWsAdapter, accountId, dnsOverride, enableAutoTerminalSettlement = false } = params;
-  const { clock, logger, eventBus } = infra;
+  const { clock, logger, eventBus, metadataGenerator } = infra;
   const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
   // ── 1. REST stack ──────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
     clock,
   });
 
-  const orderUpdateHandler = new OrderUpdateHandler(eventBus, clock, accountId, logger);
+  const orderUpdateHandler = new OrderUpdateHandler(eventBus, metadataGenerator, clock, accountId, logger);
 
   // DISCOVERY-ONLY обнаружение venue-кандидатов для ambiguous submissions без
   // venueOrderId (fail-closed): работает НЕЗАВИСИМО от наличия локальных Order,
@@ -419,7 +419,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
 
   // ── 5. WS user channel ────────────────────────────────────────────────────
 
-  const fillEventHandler = new FillEventHandler(eventBus, clock, logger);
+  const fillEventHandler = new FillEventHandler(eventBus, metadataGenerator, clock, logger);
 
   const userEventFeedAdapter = new UserEventFeedAdapter(
     userWsAdapter,

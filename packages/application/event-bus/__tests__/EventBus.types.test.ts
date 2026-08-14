@@ -12,6 +12,8 @@
  * публичные exports (`EventBus`, `IEventBus`, `EventHandler`, типы событий).
  */
 import { describe, it, expect, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { asStrategyId } from '@polymarket/ids';
@@ -45,6 +47,12 @@ function makeLogger(): ILogger {
   } as unknown as ILogger;
 }
 
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 describe('EventBus type-level contract', () => {
   it('subscribe сужает событие до конкретного члена union (BOOK_UPDATED / FILL_RECEIVED / ORDER_UPDATE_RECEIVED)', () => {
     const bus: IEventBus = new EventBus(makeLogger());
@@ -52,27 +60,27 @@ describe('EventBus type-level contract', () => {
     const unsubBook = bus.subscribe('BOOK_UPDATED', (event) => {
       // Если бы event был общим ApplicationEvent — это присваивание не скомпилировалось бы
       const narrowed: BookUpdatedEvent = event;
-      const top: TopOfBook = event.topOfBook;
-      const seq: number = event.sequenceNumber;
+      const top: TopOfBook = event.payload.topOfBook;
+      const seq: number = event.payload.sequenceNumber;
       void narrowed; void top; void seq;
-      // @ts-expect-error — у BookUpdatedEvent нет поля fill (это поле FillReceivedEvent)
-      void event.fill;
+      // @ts-expect-error — у payload BookUpdatedEvent нет поля fill (это поле FillReceivedEvent)
+      void event.payload.fill;
     });
 
     const unsubFill = bus.subscribe('FILL_RECEIVED', (event) => {
       const narrowed: FillReceivedEvent = event;
-      const fill: FillReceivedEvent['fill'] = event.fill;
+      const fill: FillReceivedEvent['payload']['fill'] = event.payload.fill;
       void narrowed; void fill;
-      // @ts-expect-error — у FillReceivedEvent нет поля topOfBook
-      void event.topOfBook;
+      // @ts-expect-error — у payload FillReceivedEvent нет поля topOfBook
+      void event.payload.topOfBook;
     });
 
     const unsubOrderUpdate = bus.subscribe('ORDER_UPDATE_RECEIVED', (event) => {
       const narrowed: OrderUpdateReceivedEvent = event;
-      const update: VenueOrderUpdate = event.update;
+      const update: VenueOrderUpdate = event.payload.update;
       void narrowed; void update;
-      // @ts-expect-error — у OrderUpdateReceivedEvent нет поля sequenceNumber
-      void event.sequenceNumber;
+      // @ts-expect-error — у payload OrderUpdateReceivedEvent нет поля sequenceNumber
+      void event.payload.sequenceNumber;
     });
 
     expect(typeof unsubBook).toBe('function');
@@ -138,37 +146,49 @@ describe('EventBus type-level contract', () => {
 
     const opened: MarketOpenedEvent = {
       type: 'MARKET_OPENED',
-      marketId: 'market-abc' as MarketOpenedEvent['marketId'],
-      strategyId,
-      allocatedBalance: {} as unknown as MarketOpenedEvent['allocatedBalance'],
-      timestamp: { toISO: () => '' } as MarketOpenedEvent['timestamp'],
+      payload: {
+        marketId: 'market-abc' as MarketOpenedEvent['payload']['marketId'],
+        strategyId,
+        allocatedBalance: {} as unknown as MarketOpenedEvent['payload']['allocatedBalance'],
+        timestamp: { toISO: () => '' } as MarketOpenedEvent['payload']['timestamp'],
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     };
     void opened;
 
     const signal: StrategySignalEvent = {
       type: 'STRATEGY_SIGNAL',
-      strategyId,
-      signal: 'BUY',
-      instrumentId: 'token-123' as StrategySignalEvent['instrumentId'],
+      payload: {
+        strategyId,
+        signal: 'BUY',
+        instrumentId: 'token-123' as StrategySignalEvent['payload']['instrumentId'],
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     };
     void signal;
 
     const invalidOpened: MarketOpenedEvent = {
       type: 'MARKET_OPENED',
-      marketId: 'market-abc' as MarketOpenedEvent['marketId'],
-      // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
-      strategyId: 'raw-string',
-      allocatedBalance: {} as unknown as MarketOpenedEvent['allocatedBalance'],
-      timestamp: { toISO: () => '' } as MarketOpenedEvent['timestamp'],
+      payload: {
+        marketId: 'market-abc' as MarketOpenedEvent['payload']['marketId'],
+        // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
+        strategyId: 'raw-string',
+        allocatedBalance: {} as unknown as MarketOpenedEvent['payload']['allocatedBalance'],
+        timestamp: { toISO: () => '' } as MarketOpenedEvent['payload']['timestamp'],
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     };
     void invalidOpened;
 
     const invalidSignal: StrategySignalEvent = {
       type: 'STRATEGY_SIGNAL',
-      // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
-      strategyId: 'raw-string',
-      signal: 'SELL',
-      instrumentId: 'token-123' as StrategySignalEvent['instrumentId'],
+      payload: {
+        // @ts-expect-error — plain string нельзя подставить туда, где ожидается StrategyId
+        strategyId: 'raw-string',
+        signal: 'SELL',
+        instrumentId: 'token-123' as StrategySignalEvent['payload']['instrumentId'],
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
     };
     void invalidSignal;
 
@@ -180,17 +200,20 @@ describe('EventBus type-level contract', () => {
 
     const event: ApplicationEvent = {
       type: 'BOOK_UPDATED',
-      topOfBook: {
-        bestBid: undefined,
-        bestAsk: undefined,
-        spread: undefined,
-        bestBidSize: undefined,
-        bestAskSize: undefined,
+      payload: {
+        topOfBook: {
+          bestBid: undefined,
+          bestAsk: undefined,
+          spread: undefined,
+          bestBidSize: undefined,
+          bestAskSize: undefined,
+        },
+        instrumentId: 'token-123' as BookUpdatedEvent['payload']['instrumentId'],
+        marketId: 'market-abc' as BookUpdatedEvent['payload']['marketId'],
+        sequenceNumber: 1,
+        timestamp: { toISO: () => '' } as BookUpdatedEvent['payload']['timestamp'],
       },
-      instrumentId: 'token-123' as BookUpdatedEvent['instrumentId'],
-      marketId: 'market-abc' as BookUpdatedEvent['marketId'],
-      sequenceNumber: 1,
-      timestamp: { toISO: () => '' } as BookUpdatedEvent['timestamp'],
+      metadata: METADATA_GENERATOR.nextRoot(),
     };
 
     const result = await bus.publish(event);

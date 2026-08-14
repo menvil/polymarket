@@ -122,7 +122,7 @@ export interface UseCases extends Omit<ProcessFillBundle, 'orderedEventOutbox'>,
  */
 export function buildProcessFillUseCase(params: BuildProcessFillParams): ProcessFillBundle {
   const { infra, repos } = params;
-  const { clock, logger, eventBus } = infra;
+  const { clock, logger, eventBus, metadataGenerator } = infra;
   const { orderRepo, portfolioStore, processedFillRepo, reconciliationIssueRepo, keyedMutex, orderSubmissionRepo } = repos;
 
   const portfolioService = new PortfolioService(portfolioStore, logger);
@@ -141,6 +141,7 @@ export function buildProcessFillUseCase(params: BuildProcessFillParams): Process
   });
 
   const processFillUseCase = new ProcessFillUseCase({
+    metadataGenerator,
     orderStateStore: orderRepo,
     portfolioService,
     ledgerService,

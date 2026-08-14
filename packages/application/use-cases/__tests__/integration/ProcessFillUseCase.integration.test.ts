@@ -23,6 +23,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { PortfolioService } from '../../src/services/PortfolioService.js';
 import { LedgerService } from '../../src/services/LedgerService.js';
@@ -203,6 +205,15 @@ function makeFill(overrides: {
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('ProcessFillUseCase (integration)', () => {
   let orderRepo: InMemoryOrderRepository;
   let processedFillRepo: InMemoryProcessedFillRepository;
@@ -242,6 +253,7 @@ describe('ProcessFillUseCase (integration)', () => {
       orderedEventOutbox,
       submissions: new InMemoryOrderSubmissionRepository(),
       logger: LOGGER,
+      metadataGenerator: makeMetadataGenerator(),
     };
   });
 

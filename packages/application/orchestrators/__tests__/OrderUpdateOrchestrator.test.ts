@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { OrderUpdateOrchestrator } from '../src/OrderUpdateOrchestrator.js';
 import type { OrderUpdateOrchestratorDeps, IOrderStatusUpdater } from '../src/OrderUpdateOrchestrator.js';
 import type { ILogger } from '@polymarket/logger';
@@ -52,12 +54,21 @@ function makeUpdateOrderStatus(ok = true): IOrderStatusUpdater {
   } as unknown as IOrderStatusUpdater;
 }
 
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+const METADATA_GENERATOR = new MessageMetadataGenerator({
+  clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+  runId: unsafeRunId('testrun1'),
+});
+
 function makeEvent(): OrderUpdateReceivedEvent {
   return {
     type: 'ORDER_UPDATE_RECEIVED',
-    update: { type: 'ACCEPTED', orderId: 'order-1' as unknown as OrderId },
-    accountId: 'acc-1' as unknown as AccountId,
-    receivedAt: {} as Timestamp,
+    payload: {
+      update: { type: 'ACCEPTED', orderId: 'order-1' as unknown as OrderId },
+      accountId: 'acc-1' as unknown as AccountId,
+      receivedAt: {} as Timestamp,
+    },
+    metadata: METADATA_GENERATOR.nextRoot(),
   };
 }
 
@@ -87,8 +98,8 @@ describe('OrderUpdateOrchestrator', () => {
     orch.register();
     await eventBus._trigger(makeEvent());
     expect(updateOrderStatus.execute).toHaveBeenCalledWith({
-      update: makeEvent().update,
-      accountId: makeEvent().accountId,
+      update: makeEvent().payload.update,
+      accountId: makeEvent().payload.accountId,
     });
   });
 

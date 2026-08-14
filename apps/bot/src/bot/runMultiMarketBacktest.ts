@@ -268,7 +268,7 @@ async function runSingleMarketBacktest(
   // 2. Создаём изолированную инфраструктуру
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.WARN });
-  const { logger, eventBus } = infra;
+  const { logger, eventBus, metadataGenerator } = infra;
   let journal: IDecisionJournal | undefined;
   if (config.recording?.enabled) {
     journal = new DecisionJournalRecorder(
@@ -362,7 +362,7 @@ async function runSingleMarketBacktest(
 
   // 9. BookUpdateHandler
   const bookRegistry = new SimpleBookRegistry();
-  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, marketCatalog, logger);
+  const bookUpdateHandler = new BookUpdateHandler(bookRegistry, eventBus, metadataGenerator, marketCatalog, logger);
 
   // 10. Запуск сервисов
   marketDataStore.start();
@@ -536,7 +536,7 @@ async function runSingleMarketBacktest(
   // 13. BacktestEngine — один файл
   const backtestEngine = new BacktestEngine(
     { filePaths: [filePath], outcomeIndex, replayComplementaryTrades: needsComplementary, cexWarmupMs },
-    { bookUpdateHandler, eventBus, replayClock, logger, cryptoResolutionStore, cryptoMarketDataStore, parseCryptoMeta },
+    { bookUpdateHandler, eventBus, metadataGenerator, replayClock, logger, cryptoResolutionStore, cryptoMarketDataStore, parseCryptoMeta },
   );
   const replayResult = await backtestEngine.run();
 

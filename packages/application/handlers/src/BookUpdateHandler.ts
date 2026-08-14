@@ -41,6 +41,7 @@ import type { Price, Timestamp } from '@polymarket/value-objects';
 import { PriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/application-events';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { IBookRegistry } from './IBookRegistry.js';
 
@@ -62,12 +63,15 @@ export class BookUpdateHandler {
    *
    * @param _books - Реестр Orderbook экземпляров
    * @param _eventBus - Event bus для публикации BOOK_UPDATED и BOOK_DEPTH
+   * @param _metadataGenerator - Canonical-генератор metadata публикуемых событий
+   *   (book-события — root: первичная реакция на внешнее WS-наблюдение)
    * @param _catalog - Каталог инструментов (tokenId → marketId)
    * @param _logger - Logger
    */
   constructor(
     private readonly _books: IBookRegistry,
     private readonly _eventBus: IEventBus,
+    private readonly _metadataGenerator: MessageMetadataGenerator,
     private readonly _catalog: IMarketCatalog,
     private readonly _logger: ILogger,
   ) {}
@@ -167,11 +171,14 @@ export class BookUpdateHandler {
 
     const bookUpdatedResult = await this._eventBus.publish({
       type: 'BOOK_UPDATED',
-      topOfBook,
-      instrumentId: tokenId,
-      marketId: instrument.marketId,
-      sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
-      timestamp,
+      payload: {
+        topOfBook,
+        instrumentId: tokenId,
+        marketId: instrument.marketId,
+        sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
+        timestamp,
+      },
+      metadata: this._metadataGenerator.nextRoot(),
     });
     if (!bookUpdatedResult.ok) {
       this._logger.error('Failed to publish BOOK_UPDATED', {
@@ -182,9 +189,12 @@ export class BookUpdateHandler {
 
     const bookDepthResult = await this._eventBus.publish({
       type: 'BOOK_DEPTH',
-      instrumentId: tokenId,
-      snapshot: book,
-      timestamp,
+      payload: {
+        instrumentId: tokenId,
+        snapshot: book,
+        timestamp,
+      },
+      metadata: this._metadataGenerator.nextRoot(),
     });
     if (!bookDepthResult.ok) {
       this._logger.error('Failed to publish BOOK_DEPTH', {
@@ -221,7 +231,7 @@ export class BookUpdateHandler {
    * @example
    * ```typescript
    * eventBus.subscribe('MARKET_CLOSED', (event) => {
-   *   bookHandler.onMarketClosed(event.marketId);
+   *   bookHandler.onMarketClosed(event.payload.marketId);
    * });
    * ```
    */

@@ -90,21 +90,22 @@ export class OrderUpdateOrchestrator {
     }
 
     this._unsub = this._eventBus.subscribe('ORDER_UPDATE_RECEIVED', async (event) => {
+      const { update, accountId } = event.payload;
       try {
         const result = await this._updateOrderStatus.execute({
-          update: event.update,
-          accountId: event.accountId,
+          update,
+          accountId,
         });
         if (!result.ok) {
           this._logger.error('UpdateOrderStatusUseCase failed', {
-            orderId: String(event.update.orderId),
-            updateType: event.update.type,
+            orderId: String(update.orderId),
+            updateType: update.type,
             error: result.error.message,
           });
         }
       } catch (err) {
         this._logger.error('Unexpected error processing order update', {
-          orderId: String(event.update.orderId),
+          orderId: String(update.orderId),
           err: err instanceof Error ? err : new Error(String(err)),
         });
       }

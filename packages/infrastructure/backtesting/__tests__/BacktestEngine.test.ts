@@ -11,6 +11,8 @@
  * - Обработку граничных случаев (пустая директория, невалидный JSON, невалидный asset_id)
  */
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import { Ok } from '@polymarket/result';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -92,7 +94,16 @@ function makeDeps(logger: ILogger): {
     clear: jest.fn<IMarketCatalog['clear']>(),
   };
 
-  const bookUpdateHandler = new BookUpdateHandler(books, eventBusMock, catalog, logger);
+  const bookUpdateHandler = new BookUpdateHandler(
+    books,
+    eventBusMock,
+    new MessageMetadataGenerator({
+      clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+      runId: unsafeRunId('testrun1'),
+    }),
+    catalog,
+    logger,
+  );
 
   const deps: BacktestDeps = {
     bookUpdateHandler,

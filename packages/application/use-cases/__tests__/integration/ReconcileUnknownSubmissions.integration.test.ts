@@ -10,6 +10,8 @@
  * - explicit операторская резолюция — единственный путь bind/release.
  */
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
@@ -231,6 +233,15 @@ function makeExchange(
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('Unknown submissions: discovery-only + operator resolution (safety-first)', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -284,6 +295,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
 
   function makeProcessFill(): ProcessFillUseCase {
     return new ProcessFillUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderStateStore: store,
       portfolioService,
       ledgerService,

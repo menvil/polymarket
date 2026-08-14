@@ -30,6 +30,9 @@
       "path": "../../foundation/ids/tsconfig.build.json"
     },
     {
+      "path": "../../foundation/messages/tsconfig.build.json"
+    },
+    {
       "path": "../../domain/value-objects/tsconfig.build.json"
     },
     {
