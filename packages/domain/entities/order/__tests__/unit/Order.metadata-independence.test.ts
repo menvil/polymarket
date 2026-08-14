@@ -9,7 +9,7 @@ import { Price, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId, FillId } from '@polymarket/ids';
 import { unsafeRunId } from '@polymarket/ids';
-import { MessageMetadataGenerator, FixedHighResolutionClock } from '@polymarket/messages';
+import { MessageMetadataGenerator, PaperHighResolutionClock } from '@polymarket/messages';
 import type { OrderEvent } from '@polymarket/order-events';
 import type { FillData } from '@polymarket/fill';
 import { replay } from '../helpers';
@@ -59,7 +59,7 @@ describe('Order replay — независимость от metadata (M-003 Part 
     });
     const generatorB = new MessageMetadataGenerator({
       clock: { now: () => new Date('2026-08-14T12:34:56.789Z') },
-      highResolutionClock: new FixedHighResolutionClock(987_654n),
+      highResolutionClock: new PaperHighResolutionClock(987_654n),
       runId: unsafeRunId('runbbbb2'),
     });
 

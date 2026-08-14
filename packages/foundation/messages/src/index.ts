@@ -41,7 +41,7 @@ export type { MessageMetadataGeneratorOptions } from './MessageMetadataGenerator
 export { generateRunId } from './generateRunId.js';
 /** Порт high-resolution источника абсолютного времени (см. IHighResolutionClock.ts). */
 export type { IHighResolutionClock } from './IHighResolutionClock.js';
-/** Live-реализация: wall-origin + monotonic elapsed (см. SystemHighResolutionClock.ts). */
-export { SystemHighResolutionClock } from './SystemHighResolutionClock.js';
-/** Детерминированный high-resolution источник (см. FixedHighResolutionClock.ts). */
-export { FixedHighResolutionClock } from './FixedHighResolutionClock.js';
+/** Live-реализация: wall-origin + monotonic elapsed (см. LiveHighResolutionClock.ts). */
+export { LiveHighResolutionClock } from './LiveHighResolutionClock.js';
+/** Детерминированный high-resolution источник (см. PaperHighResolutionClock.ts). */
+export { PaperHighResolutionClock } from './PaperHighResolutionClock.js';

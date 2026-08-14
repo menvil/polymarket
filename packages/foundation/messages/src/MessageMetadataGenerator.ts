@@ -25,12 +25,12 @@ export interface MessageMetadataGeneratorOptions {
    * `microsecondOfMillisecond` и `nanosecondOfMicrosecond` выводятся из
    * одного значения `nowEpochNanoseconds()` — когерентность полей by
    * construction. Live composition root инъецирует
-   * `SystemHighResolutionClock` (wall-origin + monotonic elapsed).
+   * `LiveHighResolutionClock` (wall-origin + monotonic elapsed).
    *
    * Если не задан — режим «нет sub-ms precision»: время берётся из `clock`,
    * micro/nano честно равны 0 (наносекунды не выдумываются; порядок
    * гарантирует `sequence`). Детерминированные режимы (paper/replay/тесты)
-   * либо не передают источник, либо передают `FixedHighResolutionClock`
+   * либо не передают источник, либо передают `PaperHighResolutionClock`
    * с управляемым абсолютным значением.
    */
   readonly highResolutionClock?: IHighResolutionClock;
@@ -87,7 +87,7 @@ export interface MessageMetadataGeneratorOptions {
  * // Composition root (один раз на процесс):
  * const generator = new MessageMetadataGenerator({
  *   clock: new LiveClock(),
- *   highResolutionClock: new SystemHighResolutionClock(),
+ *   highResolutionClock: new LiveHighResolutionClock(),
  * });
  *
  * // Root-сообщение — начало новой causal chain:

@@ -62,18 +62,18 @@ const ANCHOR_ATTEMPTS = 3;
  *   стандартный trade-off гибридных часов: когерентность и монотонность
  *   внутри runtime важнее пост-фактум синхронизации со стеночными часами.
  *
- * Для paper/replay/тестов используй {@link FixedHighResolutionClock}.
+ * Для paper/replay/тестов используй {@link PaperHighResolutionClock}.
  *
  * @example
  * ```typescript
  * // Composition root live-режима:
  * const generator = new MessageMetadataGenerator({
  *   clock: new LiveClock(),
- *   highResolutionClock: new SystemHighResolutionClock(),
+ *   highResolutionClock: new LiveHighResolutionClock(),
  * });
  * ```
  */
-export class SystemHighResolutionClock implements IHighResolutionClock {
+export class LiveHighResolutionClock implements IHighResolutionClock {
   /** Абсолютный Unix-якорь (мс), снятый при создании часов. */
   private readonly _wallOriginMs: number;
   /** Monotonic-точка, соответствующая моменту чтения wall-якоря (середина bracket-а). */

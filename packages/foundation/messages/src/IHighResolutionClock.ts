@@ -13,13 +13,13 @@
  * Голый `process.hrtime.bigint()` этому контракту НЕ соответствует — его
  * origin не связан с wall-clock, и его остаток внутри миллисекунды не
  * является micro/nano-фракцией текущей Unix-миллисекунды. Live-реализация
- * ({@link SystemHighResolutionClock}) поэтому якорит monotonic-источник на
+ * ({@link LiveHighResolutionClock}) поэтому якорит monotonic-источник на
  * wall-clock baseline и использует hrtime только для измерения elapsed.
  *
  * Реализации:
- * - {@link SystemHighResolutionClock} — live Node runtime
+ * - {@link LiveHighResolutionClock} — live Node runtime
  *   (wall-origin + monotonic elapsed);
- * - {@link FixedHighResolutionClock} — детерминированный источник для
+ * - {@link PaperHighResolutionClock} — детерминированный источник для
  *   тестов/paper/replay (управляемое абсолютное значение).
  *
  * BigInt живёт ТОЛЬКО внутри high-resolution расчёта — в public
@@ -27,7 +27,7 @@
  *
  * @example
  * ```typescript
- * const hr: IHighResolutionClock = new SystemHighResolutionClock();
+ * const hr: IHighResolutionClock = new LiveHighResolutionClock();
  * const epochNs: bigint = hr.nowEpochNanoseconds();
  * // 1786668087_123_456_789n → 2026-08-14T00:41:27.123456789Z
  * ```

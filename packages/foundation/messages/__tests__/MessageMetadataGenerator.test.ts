@@ -3,7 +3,7 @@
  *
  * @remarks
  * Все тесты детерминированы: wall-clock — `PaperClock`, sub-ms —
- * `FixedHighResolutionClock`. Реальное время процесса не используется нигде.
+ * `PaperHighResolutionClock`. Реальное время процесса не используется нигде.
  */
 import { describe, it, expect } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
@@ -11,8 +11,8 @@ import { unsafeRunId, asRunId } from '@polymarket/ids';
 import type { MessageMetadata } from '../src/index.js';
 import {
   MessageMetadataGenerator,
-  FixedHighResolutionClock,
-  SystemHighResolutionClock,
+  PaperHighResolutionClock,
+  LiveHighResolutionClock,
   generateRunId,
 } from '../src/index.js';
 
@@ -27,9 +27,9 @@ function createGenerator(overrides?: {
   runId?: string;
   epochMs?: number;
   hrEpochNanoseconds?: bigint;
-}): { generator: MessageMetadataGenerator; clock: PaperClock; hr: FixedHighResolutionClock } {
+}): { generator: MessageMetadataGenerator; clock: PaperClock; hr: PaperHighResolutionClock } {
   const clock = new PaperClock(new Date(overrides?.epochMs ?? BASE_EPOCH_MS));
-  const hr = new FixedHighResolutionClock(overrides?.hrEpochNanoseconds ?? BASE_EPOCH_NS);
+  const hr = new PaperHighResolutionClock(overrides?.hrEpochNanoseconds ?? BASE_EPOCH_NS);
   const generator = new MessageMetadataGenerator({
     clock,
     highResolutionClock: hr,
@@ -402,9 +402,9 @@ describe('generateRunId / RunId auto-generation', () => {
   });
 });
 
-describe('FixedHighResolutionClock', () => {
+describe('PaperHighResolutionClock', () => {
   it('set/advance управляют значением детерминированно', () => {
-    const hr = new FixedHighResolutionClock();
+    const hr = new PaperHighResolutionClock();
     expect(hr.nowEpochNanoseconds()).toBe(0n);
     hr.set(1_500n);
     expect(hr.nowEpochNanoseconds()).toBe(1_500n);
@@ -413,17 +413,17 @@ describe('FixedHighResolutionClock', () => {
   });
 
   it('отклоняет отрицательные значения', () => {
-    expect(() => new FixedHighResolutionClock(-1n)).toThrow(RangeError);
-    const hr = new FixedHighResolutionClock();
+    expect(() => new PaperHighResolutionClock(-1n)).toThrow(RangeError);
+    const hr = new PaperHighResolutionClock();
     expect(() => hr.set(-5n)).toThrow(RangeError);
     expect(() => hr.advance(-5n)).toThrow(RangeError);
   });
 });
 
-describe('SystemHighResolutionClock', () => {
+describe('LiveHighResolutionClock', () => {
   it('возвращает monotonic неубывающие epoch-наносекунды около текущего wall-clock', () => {
     const beforeMs = Date.now();
-    const hr = new SystemHighResolutionClock();
+    const hr = new LiveHighResolutionClock();
     const first = hr.nowEpochNanoseconds();
     const second = hr.nowEpochNanoseconds();
     const afterMs = Date.now();

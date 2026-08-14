@@ -96,13 +96,13 @@ M4 application event      messageId=M4  correlationId=M1  causationId=M3
 в composition root конкретного runtime и передаётся producer-ам.
 
 ```typescript
-import { MessageMetadataGenerator, SystemHighResolutionClock } from '@polymarket/messages';
+import { MessageMetadataGenerator, LiveHighResolutionClock } from '@polymarket/messages';
 import { LiveClock } from '@polymarket/time';
 
 // Composition root (один раз на процесс):
 const metadataGenerator = new MessageMetadataGenerator({
   clock: new LiveClock(),
-  highResolutionClock: new SystemHighResolutionClock(), // live; в paper/replay — опустить (нули)
+  highResolutionClock: new LiveHighResolutionClock(), // live; в paper/replay — опустить (нули)
 });
 
 // Root-сообщение (начало новой causal chain):
@@ -122,13 +122,13 @@ const child = metadataGenerator.nextChild(parent.metadata);
 - **Sequence safe-integer** — при теоретическом overflow генератор fail-fast бросает ошибку.
 - **RunId** — генерируется один раз (Node crypto) или инъецируется детерминированно в тестах.
 - **Время детерминируемо и когерентно** — источники только инъецированные `IClock` и
-  `IHighResolutionClock` (абсолютные epoch-наносекунды). `SystemHighResolutionClock` —
+  `IHighResolutionClock` (абсолютные epoch-наносекунды). `LiveHighResolutionClock` —
   гибридные часы: wall-clock origin + monotonic elapsed (`process.hrtime.bigint()`
   измеряет ТОЛЬКО elapsed и никогда не трактуется как Unix-время напрямую); пара
   origins снимается bracket-ом (hrtime до/после `Date.now()`, wall-момент = середина
   bracket-а, широкий bracket = preemption → повторная попытка) — перекос спаривания
   двух OS-часов ограничен полушириной bracket-а.
-  `FixedHighResolutionClock` — детерминированный источник для тестов/replay.
+  `PaperHighResolutionClock` — детерминированный источник для тестов/replay.
 
 ## Producer style
 

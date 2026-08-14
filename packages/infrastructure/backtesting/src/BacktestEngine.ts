@@ -322,7 +322,7 @@ export type BacktestEventPublishingDeps =
        * Canonical-генератор metadata публикуемых событий (M-003) —
        * обязательная пара к eventBus. Для детерминированного replay
        * инъецируй генератор с ReplayClock (и, при необходимости,
-       * FixedHighResolutionClock).
+       * PaperHighResolutionClock).
        */
       readonly metadataGenerator: MessageMetadataGenerator;
     };

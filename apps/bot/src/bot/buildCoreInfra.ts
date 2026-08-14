@@ -18,7 +18,7 @@
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { EventBus } from '@polymarket/event-bus';
-import { MessageMetadataGenerator, SystemHighResolutionClock } from '@polymarket/messages';
+import { MessageMetadataGenerator, LiveHighResolutionClock } from '@polymarket/messages';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { IEventBus } from '@polymarket/event-bus';
@@ -72,7 +72,7 @@ export function buildCoreInfra(params: BuildCoreInfraParams = {}): CoreInfra {
   // сохраняет точный порядок).
   const metadataGenerator = new MessageMetadataGenerator({
     clock,
-    highResolutionClock: params.clock === undefined ? new SystemHighResolutionClock() : undefined,
+    highResolutionClock: params.clock === undefined ? new LiveHighResolutionClock() : undefined,
   });
 
   return { clock, logger, eventBus, metadataGenerator };

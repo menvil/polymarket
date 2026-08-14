@@ -19,7 +19,7 @@ import type { IHighResolutionClock } from './IHighResolutionClock.js';
  * @example
  * ```typescript
  * // 2026-08-14T00:41:27.123456789Z
- * const hr = new FixedHighResolutionClock(1_786_668_087_123_456_789n);
+ * const hr = new PaperHighResolutionClock(1_786_668_087_123_456_789n);
  * const generator = new MessageMetadataGenerator({
  *   clock: new PaperClock(new Date('2026-08-14T00:41:27.123Z')),
  *   highResolutionClock: hr,
@@ -29,7 +29,7 @@ import type { IHighResolutionClock } from './IHighResolutionClock.js';
  * hr.advance(1_000n); // +1 микросекунда
  * ```
  */
-export class FixedHighResolutionClock implements IHighResolutionClock {
+export class PaperHighResolutionClock implements IHighResolutionClock {
   private _epochNanoseconds: bigint;
 
   /**
@@ -40,7 +40,7 @@ export class FixedHighResolutionClock implements IHighResolutionClock {
    * @throws {RangeError} Если значение отрицательное
    */
   constructor(initialEpochNanoseconds: bigint = 0n) {
-    this._epochNanoseconds = FixedHighResolutionClock._requireNonNegative(initialEpochNanoseconds);
+    this._epochNanoseconds = PaperHighResolutionClock._requireNonNegative(initialEpochNanoseconds);
   }
 
   /**
@@ -64,7 +64,7 @@ export class FixedHighResolutionClock implements IHighResolutionClock {
    * ```
    */
   public set(epochNanoseconds: bigint): void {
-    this._epochNanoseconds = FixedHighResolutionClock._requireNonNegative(epochNanoseconds);
+    this._epochNanoseconds = PaperHighResolutionClock._requireNonNegative(epochNanoseconds);
   }
 
   /**
@@ -80,7 +80,7 @@ export class FixedHighResolutionClock implements IHighResolutionClock {
    */
   public advance(deltaNanoseconds: bigint): void {
     if (deltaNanoseconds < 0n) {
-      throw new RangeError('FixedHighResolutionClock.advance() requires a non-negative delta');
+      throw new RangeError('PaperHighResolutionClock.advance() requires a non-negative delta');
     }
     this._epochNanoseconds += deltaNanoseconds;
   }
@@ -94,7 +94,7 @@ export class FixedHighResolutionClock implements IHighResolutionClock {
    */
   private static _requireNonNegative(epochNanoseconds: bigint): bigint {
     if (epochNanoseconds < 0n) {
-      throw new RangeError('FixedHighResolutionClock requires a non-negative epoch nanoseconds value');
+      throw new RangeError('PaperHighResolutionClock requires a non-negative epoch nanoseconds value');
     }
     return epochNanoseconds;
   }
