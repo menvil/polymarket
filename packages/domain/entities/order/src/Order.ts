@@ -236,6 +236,14 @@ export class Order {
    * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
    * `rehydrate()` и `fromEvents()` не эмитируют событий.
    *
+   * Materialization атомарна: metadata создаётся для ВСЕХ drafts ДО очистки
+   * буфера. Если `metadataFor` бросает (генератор документирует RangeError
+   * при sequence overflow / отрицательном high-res времени и Error при
+   * невалидном времени) — исключение пробрасывается, а outbox остаётся
+   * нетронутым: повторный pullEvents() с исправным поставщиком metadata
+   * вернёт все исходные события в исходном порядке. Ошибка «декорации»
+   * события не уничтожает сами domain events.
+   *
    * @example
    * ```typescript
    * const result = Order.create(params);
@@ -246,7 +254,16 @@ export class Order {
    * ```
    */
   public pullEvents(metadataFor: () => MessageMetadata): readonly OrderEvent[] {
-    return this._pendingDrafts.splice(0).map((draft) => ({ ...draft, metadata: metadataFor() }));
+    // Сначала materialize ВСЕ события, и только при полном успехе очищаем
+    // буфер: throw из metadataFor не должен терять domain events (outbox
+    // остаётся пригодным для повторного pull).
+    const drafts = [...this._pendingDrafts];
+
+    const events = drafts.map((draft) => ({ ...draft, metadata: metadataFor() }));
+
+    this._pendingDrafts.splice(0, drafts.length);
+
+    return events;
   }
 
   // ─── Factory: create ───────────────────────────────────────────────────────
@@ -275,7 +292,7 @@ export class Order {
    *   timestamp: Timestamp.now(),
    * });
    * if (result.ok) {
-   *   const events = result.value.pullEvents(); // [OrderCreatedEvent]
+   *   const events = result.value.pullEvents(() => generator.nextRoot()); // [OrderCreatedEvent]
    * }
    * ```
    */
@@ -353,7 +370,7 @@ export class Order {
    * const result = Order.rehydrate(state);
    * if (result.ok) {
    *   console.log(result.value.status);
-   *   result.value.pullEvents(); // всегда []
+   *   result.value.pullEvents(() => generator.nextRoot()); // всегда []
    * }
    * ```
    */

@@ -763,6 +763,33 @@ describe('Order', () => {
       expect(order.pullEvents(nextTestMetadata)).toHaveLength(0); // буфер пуст
     });
 
+    it('materialization атомарна: throw из metadataFor НЕ теряет события (outbox цел)', () => {
+      // 1. Order с ДВУМЯ pending drafts: create (ORDER_CREATED) + accept (ORDER_ACCEPTED —
+      //    accept() переносит накопленный буфер в новый экземпляр)
+      const accepted = unwrap(unwrap(createValidOrder()).accept());
+
+      // 2-3. Первая metadata создаётся успешно, вторая бросает
+      let calls = 0;
+      const failingOnSecond = () => {
+        calls += 1;
+        if (calls === 2) throw new Error('metadata failure on second event');
+        return nextTestMetadata();
+      };
+
+      // 4. pullEvents пробрасывает исключение…
+      expect(() => accepted.pullEvents(failingOnSecond)).toThrow('metadata failure on second event');
+
+      // 5. …но outbox НЕ тронут: повторный pull с исправным поставщиком
+      //    возвращает ОБА исходных события в исходном порядке
+      const events = accepted.pullEvents(nextTestMetadata);
+      expect(events.map((e) => e.type)).toEqual(['ORDER_CREATED', 'ORDER_ACCEPTED']);
+      expect(events[0].metadata).toBeDefined();
+      expect(events[1].metadata).toBeDefined();
+
+      // 6. Следующий pull — буфер пуст
+      expect(accepted.pullEvents(nextTestMetadata)).toHaveLength(0);
+    });
+
     it('accept() должен эмитировать ORDER_ACCEPTED', () => {
       const order = unwrap(createValidOrder());
       order.pullEvents(nextTestMetadata); // очищаем ORDER_CREATED

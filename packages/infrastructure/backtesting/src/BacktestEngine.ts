@@ -45,13 +45,13 @@
  * // Явный список файлов (одиночный снапшот):
  * const engine = new BacktestEngine(
  *   { filePaths: ['./snapshots/Bitcoin_Up_or_Down.jsonl'], outcomeIndex: 1 },
- *   { bookUpdateHandler, eventBus, replayClock, logger },
+ *   { bookUpdateHandler, eventBus, metadataGenerator, replayClock, logger },
  * );
  *
  * // Сканирование директории:
  * const engine = new BacktestEngine(
  *   { snapshotDir: './data/snapshots', fromDate: '2026-01-01', outcomeIndex: 0 },
- *   { bookUpdateHandler, eventBus, replayClock, logger },
+ *   { bookUpdateHandler, eventBus, metadataGenerator, replayClock, logger },
  * );
  *
  * const result = await engine.run();
@@ -410,7 +410,8 @@ export class BacktestEngine {
    * Создаёт BacktestEngine.
    *
    * @param _config - Конфигурация бектеста
-   * @param _deps - Зависимости (BookUpdateHandler, EventBus, ILogger)
+   * @param _deps - Зависимости (BookUpdateHandler, ILogger; EventBus строго в
+   *   паре с MessageMetadataGenerator — см. {@link BacktestEventPublishingDeps})
    */
   constructor(
     private readonly _config: BacktestConfig,
