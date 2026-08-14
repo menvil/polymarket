@@ -1,21 +1,37 @@
 import type { IHighResolutionClock } from './IHighResolutionClock.js';
 
 /**
- * Live-реализация {@link IHighResolutionClock} поверх `process.hrtime.bigint()`.
+ * Live-реализация {@link IHighResolutionClock}: wall-clock baseline +
+ * monotonic elapsed (`process.hrtime.bigint()`).
  *
  * @remarks
- * Единственное canonical-место обращения к `process.hrtime.bigint()` в
- * message-системе: producers и Domain НИКОГДА не зовут его напрямую —
- * high-resolution источник инкапсулирован здесь и инъецируется в
- * `MessageMetadataGenerator` composition root-ом live runtime.
+ * Гибридные часы. При создании фиксируется пара origins, снятых вместе:
  *
- * `process.hrtime.bigint()` — monotonic счётчик наносекунд от произвольного
- * origin (не wall-clock). Генератор использует только остаток внутри
- * миллисекунды, поэтому произвольность origin не влияет на семантику полей
- * metadata.
+ * ```text
+ * wallOriginMs      = Date.now()               // абсолютный Unix-якорь
+ * monotonicOriginNs = process.hrtime.bigint()  // monotonic-точка отсчёта
+ * ```
  *
- * Для paper/replay/тестов используй {@link FixedHighResolutionClock} —
- * детерминированный источник без обращения к системному таймеру.
+ * Каждый вызов измеряет elapsed monotonic-время от origin и прибавляет его
+ * к wall-якорю:
+ *
+ * ```text
+ * elapsedNs       = process.hrtime.bigint() - monotonicOriginNs
+ * absoluteEpochNs = wallOriginMs * 1_000_000 + elapsedNs
+ * ```
+ *
+ * `process.hrtime.bigint()` здесь НИКОГДА не трактуется как Unix-время —
+ * его произвольный monotonic origin используется только для измерения
+ * elapsed. Это единственное canonical-место обращения к hrtime в системе.
+ *
+ * Свойства:
+ * - sub-millisecond precision реальна (наносекундная шкала hrtime);
+ * - значение монотонно не убывает (hrtime monotonic по контракту Node);
+ * - NTP-коррекции wall-clock ПОСЛЕ создания часов не влияют на показания —
+ *   стандартный trade-off гибридных часов: когерентность и монотонность
+ *   внутри runtime важнее пост-фактум синхронизации со стеночными часами.
+ *
+ * Для paper/replay/тестов используй {@link FixedHighResolutionClock}.
  *
  * @example
  * ```typescript
@@ -27,12 +43,23 @@ import type { IHighResolutionClock } from './IHighResolutionClock.js';
  * ```
  */
 export class SystemHighResolutionClock implements IHighResolutionClock {
+  /** Абсолютный Unix-якорь (мс), снятый при создании часов. */
+  private readonly _wallOriginMs: number;
+  /** Monotonic-точка отсчёта elapsed (`process.hrtime.bigint()` на создании). */
+  private readonly _monotonicOriginNs: bigint;
+
+  constructor() {
+    this._wallOriginMs = Date.now();
+    this._monotonicOriginNs = process.hrtime.bigint();
+  }
+
   /**
-   * Возвращает monotonic-наносекунды Node runtime.
+   * Возвращает абсолютные epoch-наносекунды: wall-якорь + monotonic elapsed.
    *
-   * @returns Значение `process.hrtime.bigint()`
+   * @returns Неотрицательные наносекунды от Unix epoch
    */
-  public nowNanoseconds(): bigint {
-    return process.hrtime.bigint();
+  public nowEpochNanoseconds(): bigint {
+    const elapsedNs = process.hrtime.bigint() - this._monotonicOriginNs;
+    return BigInt(this._wallOriginMs) * 1_000_000n + elapsedNs;
   }
 }

@@ -12,17 +12,26 @@ import { generateRunId } from './generateRunId.js';
 export interface MessageMetadataGeneratorOptions {
   /**
    * Канонический источник wall-clock времени (live/paper/replay).
-   * Определяет `createdAt`, `createdAtUnixSeconds`, `millisecondOfSecond`.
+   *
+   * Используется как источник ВСЕХ time-полей metadata, когда
+   * `highResolutionClock` не задан (millisecond precision, micro/nano = 0).
    */
   readonly clock: IClock;
   /**
-   * High-resolution источник sub-millisecond компонент
-   * (`microsecondOfMillisecond`, `nanosecondOfMicrosecond`).
+   * High-resolution источник АБСОЛЮТНОГО времени (epoch-наносекунды).
    *
-   * Если не задан — режим «нет sub-ms precision»: обе компоненты честно
-   * равны 0 (наносекунды не выдумываются; порядок гарантирует `sequence`).
-   * Live composition root инъецирует `SystemHighResolutionClock`,
-   * тесты/replay — `FixedHighResolutionClock`.
+   * Если задан — является ЕДИНСТВЕННЫМ источником time-полей metadata:
+   * `createdAt`, `createdAtUnixSeconds`, `millisecondOfSecond`,
+   * `microsecondOfMillisecond` и `nanosecondOfMicrosecond` выводятся из
+   * одного значения `nowEpochNanoseconds()` — когерентность полей by
+   * construction. Live composition root инъецирует
+   * `SystemHighResolutionClock` (wall-origin + monotonic elapsed).
+   *
+   * Если не задан — режим «нет sub-ms precision»: время берётся из `clock`,
+   * micro/nano честно равны 0 (наносекунды не выдумываются; порядок
+   * гарантирует `sequence`). Детерминированные режимы (paper/replay/тесты)
+   * либо не передают источник, либо передают `FixedHighResolutionClock`
+   * с управляемым абсолютным значением.
    */
   readonly highResolutionClock?: IHighResolutionClock;
   /**
@@ -60,11 +69,12 @@ export interface MessageMetadataGeneratorOptions {
  *
  * ### Время
  *
- * На каждый вызов — ровно ОДНО чтение `clock.now()`: `createdAt`,
- * `createdAtUnixSeconds` и `millisecondOfSecond` — разложение одного и того
- * же момента (поля не могут описывать разные моменты). Sub-ms компоненты —
- * остаток high-resolution источника внутри миллисекунды; без источника — 0.
- * Существующая deterministic-модель `IClock` (paper/replay) не нарушается.
+ * Все time-поля metadata — разложение ОДНОГО абсолютного момента:
+ * с `highResolutionClock` — одного значения `nowEpochNanoseconds()`
+ * (наносекунды от Unix epoch), без него — одного чтения `clock.now()`
+ * (millisecond precision, micro/nano = 0). Никакого смешивания источников:
+ * поля не могут описывать разные моменты. Существующая deterministic-модель
+ * `IClock` (paper/replay) не нарушается.
  *
  * ### MessageId
  *
@@ -179,17 +189,21 @@ export class MessageMetadataGenerator {
    * Синхронно формирует общую часть metadata: sequence, время, messageId.
    *
    * @returns Все поля metadata, кроме causal-полей
-   * @throws {RangeError} При переполнении sequence
-   * @throws {Error} Если clock вернул невалидное время
+   * @throws {RangeError} При переполнении sequence или отрицательном
+   *   значении high-resolution источника
+   * @throws {Error} Если источник времени вернул невалидное значение
    *
    * @remarks
    * Алгоритм:
    * 1. `sequence + 1` с fail-fast проверкой safe integer.
-   * 2. Ровно одно чтение `clock.now()` → createdAt + unixSeconds + ms
-   *    (consistency полей by construction).
-   * 3. Остаток high-resolution источника внутри миллисекунды → us/ns
-   *    (без источника — нули).
-   * 4. Сборка human-readable messageId (валиден by construction).
+   * 2. ОДИН момент времени:
+   *    - с high-resolution источником — одно чтение
+   *      `nowEpochNanoseconds()`; из него выводятся секунды, ms, us, ns и
+   *      createdAt (когерентность всех полей by construction);
+   *    - без источника — одно чтение `clock.now()` (ms precision,
+   *      us/ns = 0).
+   * 3. Сборка human-readable messageId из ТЕХ ЖЕ компонент (валиден by
+   *    construction).
    */
   private _nextCore(): Omit<MessageMetadata, 'correlationId' | 'causationId'> {
     const sequence = this._sequence + 1;
@@ -200,24 +214,38 @@ export class MessageMetadataGenerator {
     }
     this._sequence = sequence;
 
-    const now = this._clock.now();
-    const createdAtResult = TimestampService.fromDate(now);
-    if (!createdAtResult.ok) {
-      throw new Error(
-        `MessageMetadataGenerator received an invalid time from the injected clock: ${createdAtResult.error.message}`,
-      );
-    }
-    const epochMs = now.getTime();
-    const createdAtUnixSeconds = Math.floor(epochMs / 1000);
-    const millisecondOfSecond = epochMs - createdAtUnixSeconds * 1000;
+    let epochMs: number;
+    let microsecondOfMillisecond: number;
+    let nanosecondOfMicrosecond: number;
 
-    let microsecondOfMillisecond = 0;
-    let nanosecondOfMicrosecond = 0;
     if (this._highResolutionClock !== undefined) {
-      const subMillisecondNs = this._highResolutionClock.nowNanoseconds() % 1_000_000n;
+      // Единственный источник момента — абсолютные epoch-наносекунды
+      const epochNs = this._highResolutionClock.nowEpochNanoseconds();
+      if (epochNs < 0n) {
+        throw new RangeError(
+          `MessageMetadataGenerator received a negative epoch time from the high-resolution clock: ${epochNs}`,
+        );
+      }
+      const totalMs = epochNs / 1_000_000n;
+      const subMillisecondNs = epochNs % 1_000_000n;
+      epochMs = Number(totalMs);
       microsecondOfMillisecond = Number(subMillisecondNs / 1_000n);
       nanosecondOfMicrosecond = Number(subMillisecondNs % 1_000n);
+    } else {
+      // Millisecond precision из canonical IClock; sub-ms честно нули
+      epochMs = this._clock.now().getTime();
+      microsecondOfMillisecond = 0;
+      nanosecondOfMicrosecond = 0;
     }
+
+    const createdAtResult = TimestampService.create(epochMs);
+    if (!createdAtResult.ok) {
+      throw new Error(
+        `MessageMetadataGenerator received an invalid time from the injected time source: ${createdAtResult.error.message}`,
+      );
+    }
+    const createdAtUnixSeconds = Math.floor(epochMs / 1000);
+    const millisecondOfSecond = epochMs - createdAtUnixSeconds * 1000;
 
     return {
       messageId: this._composeMessageId(

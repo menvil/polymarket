@@ -19,14 +19,17 @@ import {
 /** Базовый детерминированный момент: 2026-08-14T00:41:27.123Z. */
 const BASE_EPOCH_MS = 1786668087123;
 
+/** Тот же момент с sub-ms precision: ...27.123456789 (epoch-наносекунды). */
+const BASE_EPOCH_NS = BigInt(BASE_EPOCH_MS) * 1_000_000n + 456_789n;
+
 /** Собирает детерминированный генератор с управляемыми clock-ами. */
 function createGenerator(overrides?: {
   runId?: string;
   epochMs?: number;
-  hrNanoseconds?: bigint;
+  hrEpochNanoseconds?: bigint;
 }): { generator: MessageMetadataGenerator; clock: PaperClock; hr: FixedHighResolutionClock } {
   const clock = new PaperClock(new Date(overrides?.epochMs ?? BASE_EPOCH_MS));
-  const hr = new FixedHighResolutionClock(overrides?.hrNanoseconds ?? 456_789n);
+  const hr = new FixedHighResolutionClock(overrides?.hrEpochNanoseconds ?? BASE_EPOCH_NS);
   const generator = new MessageMetadataGenerator({
     clock,
     highResolutionClock: hr,
@@ -204,9 +207,12 @@ describe('MessageMetadataGenerator — concurrency-style scheduling (Test 8)', (
 
 describe('MessageMetadataGenerator — time ranges (Test 9)', () => {
   it('ms/us/ns компоненты в диапазоне 0..999 на границах hr-значений', () => {
-    const probes: bigint[] = [0n, 1n, 999n, 1_000n, 999_999n, 1_000_000n, 123_456_789n];
+    const probes: bigint[] = [
+      0n, 1n, 999n, 1_000n, 999_999n, 1_000_000n, 123_456_789n,
+      BASE_EPOCH_NS, BASE_EPOCH_NS + 999_999n,
+    ];
     for (const ns of probes) {
-      const { generator } = createGenerator({ hrNanoseconds: ns });
+      const { generator } = createGenerator({ hrEpochNanoseconds: ns });
       const metadata = generator.nextRoot();
       expect(metadata.millisecondOfSecond).toBeGreaterThanOrEqual(0);
       expect(metadata.millisecondOfSecond).toBeLessThanOrEqual(999);
@@ -217,10 +223,11 @@ describe('MessageMetadataGenerator — time ranges (Test 9)', () => {
     }
   });
 
-  it('hr-остаток внутри миллисекунды раскладывается на us/ns корректно', () => {
-    // 456_789 ns внутри ms → 456 us + 789 ns
-    const { generator } = createGenerator({ hrNanoseconds: 456_789n });
+  it('sub-ms часть epoch-значения раскладывается на us/ns корректно', () => {
+    // ...123.456789 → ms=123, us=456, ns=789
+    const { generator } = createGenerator({ hrEpochNanoseconds: BASE_EPOCH_NS });
     const metadata = generator.nextRoot();
+    expect(metadata.millisecondOfSecond).toBe(123);
     expect(metadata.microsecondOfMillisecond).toBe(456);
     expect(metadata.nanosecondOfMicrosecond).toBe(789);
   });
@@ -238,27 +245,108 @@ describe('MessageMetadataGenerator — time ranges (Test 9)', () => {
 });
 
 describe('MessageMetadataGenerator — time consistency (Test 10)', () => {
-  it('createdAt согласован с createdAtUnixSeconds и millisecondOfSecond', () => {
-    const { generator } = createGenerator({ epochMs: BASE_EPOCH_MS });
+  it('с hr-источником ВСЕ поля выведены из одного epoch-значения (TEST A/B)', () => {
+    const { generator } = createGenerator(); // hr = ...27.123456789
     const metadata = generator.nextRoot();
 
     const epochMs = metadata.createdAt.toNumber();
     expect(epochMs).toBe(BASE_EPOCH_MS);
     expect(metadata.createdAtUnixSeconds).toBe(Math.floor(BASE_EPOCH_MS / 1000));
-    expect(metadata.millisecondOfSecond).toBe(BASE_EPOCH_MS % 1000);
+    expect(metadata.millisecondOfSecond).toBe(123);
+    expect(metadata.microsecondOfMillisecond).toBe(456);
+    expect(metadata.nanosecondOfMicrosecond).toBe(789);
 
-    // Обратная сборка: seconds*1000 + ms === createdAt
+    // Обратная сборка одного момента: seconds*1000 + ms === createdAt(ms)
     expect(metadata.createdAtUnixSeconds * 1000 + metadata.millisecondOfSecond).toBe(epochMs);
   });
 
-  it('после продвижения PaperClock поля описывают новый момент согласованно', () => {
-    const { generator, clock } = createGenerator({ epochMs: BASE_EPOCH_MS });
+  it('без hr-источника все поля выведены из одного чтения IClock', () => {
+    const clock = new PaperClock(new Date(BASE_EPOCH_MS));
+    const generator = new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') });
+    const metadata = generator.nextRoot();
+
+    expect(metadata.createdAt.toNumber()).toBe(BASE_EPOCH_MS);
+    expect(metadata.createdAtUnixSeconds).toBe(Math.floor(BASE_EPOCH_MS / 1000));
+    expect(metadata.millisecondOfSecond).toBe(BASE_EPOCH_MS % 1000);
+    expect(metadata.microsecondOfMillisecond).toBe(0);
+    expect(metadata.nanosecondOfMicrosecond).toBe(0);
+  });
+
+  it('после продвижения IClock (без hr) поля описывают новый момент согласованно', () => {
+    const clock = new PaperClock(new Date(BASE_EPOCH_MS));
+    const generator = new MessageMetadataGenerator({ clock, runId: unsafeRunId('testrun1') });
     clock.tick(877); // 123 + 877 = 1000 → перенос в следующую секунду
     const metadata = generator.nextRoot();
 
     expect(metadata.createdAtUnixSeconds).toBe(Math.floor((BASE_EPOCH_MS + 877) / 1000));
     expect(metadata.millisecondOfSecond).toBe((BASE_EPOCH_MS + 877) % 1000);
     expect(metadata.createdAt.toNumber()).toBe(BASE_EPOCH_MS + 877);
+  });
+
+  it('monotonic advance hr: +1ns/+1us/+1ms с корректными carry (TEST C)', () => {
+    const { generator, hr } = createGenerator(); // ...27.123.456.789
+    const first = generator.nextRoot();
+    expect([first.millisecondOfSecond, first.microsecondOfMillisecond, first.nanosecondOfMicrosecond])
+      .toEqual([123, 456, 789]);
+
+    hr.advance(1n); // → .123.456.790
+    const plusNs = generator.nextRoot();
+    expect(plusNs.nanosecondOfMicrosecond).toBe(790);
+    expect(plusNs.microsecondOfMillisecond).toBe(456);
+
+    hr.advance(1_000n); // → .123.457.790
+    const plusUs = generator.nextRoot();
+    expect(plusUs.microsecondOfMillisecond).toBe(457);
+    expect(plusUs.millisecondOfSecond).toBe(123);
+
+    hr.advance(1_000_000n); // → .124.457.790
+    const plusMs = generator.nextRoot();
+    expect(plusMs.millisecondOfSecond).toBe(124);
+    expect(plusMs.createdAtUnixSeconds).toBe(first.createdAtUnixSeconds);
+    expect(plusMs.createdAt.toNumber()).toBe(BASE_EPOCH_MS + 1);
+
+    // carry ns → us: .124.457.999 + 1ns = .124.458.000
+    hr.set(BigInt(BASE_EPOCH_MS + 1) * 1_000_000n + 457_999n);
+    hr.advance(1n);
+    const carryNs = generator.nextRoot();
+    expect(carryNs.nanosecondOfMicrosecond).toBe(0);
+    expect(carryNs.microsecondOfMillisecond).toBe(458);
+  });
+
+  it('rollover секунды: 999ms.999us.999ns + 1ns → следующая секунда, все нули (TEST D)', () => {
+    const second = Math.floor(BASE_EPOCH_MS / 1000); // 1786668087
+    const endOfSecondNs = BigInt(second) * 1_000_000_000n + 999_999_999n;
+    const { generator, hr } = createGenerator({ hrEpochNanoseconds: endOfSecondNs });
+
+    const before = generator.nextRoot();
+    expect(before.createdAtUnixSeconds).toBe(second);
+    expect(before.millisecondOfSecond).toBe(999);
+    expect(before.microsecondOfMillisecond).toBe(999);
+    expect(before.nanosecondOfMicrosecond).toBe(999);
+
+    hr.advance(1n);
+    const after = generator.nextRoot();
+    expect(after.createdAtUnixSeconds).toBe(second + 1);
+    expect(after.millisecondOfSecond).toBe(0);
+    expect(after.microsecondOfMillisecond).toBe(0);
+    expect(after.nanosecondOfMicrosecond).toBe(0);
+    expect(after.createdAt.toNumber()).toBe((second + 1) * 1000);
+  });
+
+  it('MessageId time-компоненты совпадают с полями metadata (TEST F)', () => {
+    const { generator } = createGenerator();
+    const metadata = generator.nextRoot();
+
+    // Формат: <runId>-<sec>-<ms>-<us>-<ns>-<seq> — парсим в тесте, без public-парсера
+    const match = /^([a-z0-9]{8})-(\d+)-(\d{3})-(\d{3})-(\d{3})-(\d{9,})$/.exec(String(metadata.messageId));
+    expect(match).not.toBeNull();
+    const [, runId, sec, ms, us, ns, seq] = match!;
+    expect(runId).toBe(String(metadata.runId));
+    expect(Number(sec)).toBe(metadata.createdAtUnixSeconds);
+    expect(Number(ms)).toBe(metadata.millisecondOfSecond);
+    expect(Number(us)).toBe(metadata.microsecondOfMillisecond);
+    expect(Number(ns)).toBe(metadata.nanosecondOfMicrosecond);
+    expect(Number(seq)).toBe(metadata.sequence);
   });
 });
 
@@ -286,7 +374,7 @@ describe('MessageMetadataGenerator — deterministic fake clock (Test 11)', () =
       clock: brokenClock,
       runId: unsafeRunId('testrun1'),
     });
-    expect(() => generator.nextRoot()).toThrow(/invalid time from the injected clock/);
+    expect(() => generator.nextRoot()).toThrow(/invalid time from the injected time source/);
   });
 });
 
@@ -317,11 +405,11 @@ describe('generateRunId / RunId auto-generation', () => {
 describe('FixedHighResolutionClock', () => {
   it('set/advance управляют значением детерминированно', () => {
     const hr = new FixedHighResolutionClock();
-    expect(hr.nowNanoseconds()).toBe(0n);
+    expect(hr.nowEpochNanoseconds()).toBe(0n);
     hr.set(1_500n);
-    expect(hr.nowNanoseconds()).toBe(1_500n);
+    expect(hr.nowEpochNanoseconds()).toBe(1_500n);
     hr.advance(2_000n);
-    expect(hr.nowNanoseconds()).toBe(3_500n);
+    expect(hr.nowEpochNanoseconds()).toBe(3_500n);
   });
 
   it('отклоняет отрицательные значения', () => {
@@ -333,12 +421,18 @@ describe('FixedHighResolutionClock', () => {
 });
 
 describe('SystemHighResolutionClock', () => {
-  it('возвращает monotonic bigint-наносекунды', () => {
+  it('возвращает monotonic неубывающие epoch-наносекунды около текущего wall-clock', () => {
+    const beforeMs = Date.now();
     const hr = new SystemHighResolutionClock();
-    const first = hr.nowNanoseconds();
-    const second = hr.nowNanoseconds();
+    const first = hr.nowEpochNanoseconds();
+    const second = hr.nowEpochNanoseconds();
+    const afterMs = Date.now();
+
     expect(typeof first).toBe('bigint');
     expect(second >= first).toBe(true);
-    expect(first >= 0n).toBe(true);
+    // Абсолютная шкала: значение соответствует текущему Unix-времени
+    // (±1s допуска на планировщик — здесь только sanity абсолютности, не точность)
+    expect(first >= BigInt(beforeMs - 1000) * 1_000_000n).toBe(true);
+    expect(first <= BigInt(afterMs + 1000) * 1_000_000n).toBe(true);
   });
 });

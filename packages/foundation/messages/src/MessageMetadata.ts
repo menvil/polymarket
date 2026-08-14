@@ -27,14 +27,15 @@ import type { Timestamp } from '@polymarket/timestamp';
  *
  * ### Time-модель
  *
- * `createdAt` — канонический `Timestamp` проекта (millisecond precision,
- * источник — инъецированный `IClock`). Поля `createdAtUnixSeconds` и
- * `millisecondOfSecond` — разложение ТОГО ЖЕ момента (consistency
- * гарантирована: одно чтение clock на сообщение).
- * `microsecondOfMillisecond`/`nanosecondOfMicrosecond` — дополнительная
- * precision внутри той же миллисекунды от high-resolution источника; в
- * режимах без sub-ms precision равны 0 (никаких выдуманных наносекунд).
- * Вместе: `seconds.ms.us.ns`, например `1786668087.123.456.789`.
+ * ВСЕ time-поля — разложение ОДНОГО абсолютного момента (один источник на
+ * сообщение): с high-resolution источником — одного значения epoch-наносекунд
+ * (`IHighResolutionClock.nowEpochNanoseconds()`), без него — одного чтения
+ * `IClock.now()` (millisecond precision). `createdAt` — канонический
+ * `Timestamp` той же позиции; `createdAtUnixSeconds`/`millisecondOfSecond` —
+ * её целые секунды и миллисекунда;
+ * `microsecondOfMillisecond`/`nanosecondOfMicrosecond` — sub-ms precision той
+ * же позиции; в режимах без sub-ms precision равны 0 (никаких выдуманных
+ * наносекунд). Вместе: `seconds.ms.us.ns`, например `1786668087.123.456.789`.
  *
  * ### Causality-правила
  *
@@ -71,7 +72,7 @@ export interface MessageMetadata {
   /** Строго возрастающий порядковый номер сообщения внутри одного runId (с 1). */
   readonly sequence: number;
 
-  /** Канонический Timestamp момента создания (millisecond precision, из IClock). */
+  /** Канонический Timestamp момента создания (millisecond precision той же позиции). */
   readonly createdAt: Timestamp;
 
   /** Целые Unix-секунды момента создания (совпадает с createdAt). */

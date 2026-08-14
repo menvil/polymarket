@@ -1,43 +1,47 @@
 /**
- * Минимальный порт high-resolution monotonic-источника времени.
+ * Порт high-resolution источника АБСОЛЮТНОГО времени (Unix epoch).
  *
  * @remarks
- * Используется `MessageMetadataGenerator` ТОЛЬКО для вычисления
- * sub-millisecond компонент metadata (`microsecondOfMillisecond`,
- * `nanosecondOfMicrosecond`). Wall-clock время (`createdAt`,
- * `createdAtUnixSeconds`, `millisecondOfSecond`) читается из канонического
- * `IClock` — этот порт его НЕ заменяет и НЕ ломает существующую
- * deterministic-модель времени (live/paper/replay).
+ * Используется `MessageMetadataGenerator` как ЕДИНЫЙ источник момента
+ * создания сообщения: из одного значения `nowEpochNanoseconds()` выводятся
+ * ВСЕ time-поля metadata (`createdAt`, `createdAtUnixSeconds`,
+ * `millisecondOfSecond`, `microsecondOfMillisecond`,
+ * `nanosecondOfMicrosecond`) — поля не могут описывать разные моменты.
  *
- * Контракт сознательно минимален (никакого time-framework):
- * один метод, значение — monotonic наносекунды от произвольного origin
- * (как `process.hrtime.bigint()`). Абсолютная привязка к wall-clock
- * НЕ требуется: генератор берёт только остаток внутри миллисекунды.
+ * Контракт СОЗНАТЕЛЬНО абсолютный: наносекунды от Unix epoch
+ * (1970-01-01T00:00:00Z), а НЕ monotonic-значение с произвольным origin.
+ * Голый `process.hrtime.bigint()` этому контракту НЕ соответствует — его
+ * origin не связан с wall-clock, и его остаток внутри миллисекунды не
+ * является micro/nano-фракцией текущей Unix-миллисекунды. Live-реализация
+ * ({@link SystemHighResolutionClock}) поэтому якорит monotonic-источник на
+ * wall-clock baseline и использует hrtime только для измерения elapsed.
  *
  * Реализации:
  * - {@link SystemHighResolutionClock} — live Node runtime
- *   (`process.hrtime.bigint()`);
- * - {@link FixedHighResolutionClock} — детерминированный fake для
- *   тестов/paper/replay (управляемое значение).
+ *   (wall-origin + monotonic elapsed);
+ * - {@link FixedHighResolutionClock} — детерминированный источник для
+ *   тестов/paper/replay (управляемое абсолютное значение).
  *
- * BigInt живёт ТОЛЬКО внутри реализации high-resolution расчёта —
- * в public `MessageMetadata` выходят обычные number-поля.
+ * BigInt живёт ТОЛЬКО внутри high-resolution расчёта — в public
+ * `MessageMetadata` выходят обычные number-поля.
  *
  * @example
  * ```typescript
  * const hr: IHighResolutionClock = new SystemHighResolutionClock();
- * const ns: bigint = hr.nowNanoseconds();
+ * const epochNs: bigint = hr.nowEpochNanoseconds();
+ * // 1786668087_123_456_789n → 2026-08-14T00:41:27.123456789Z
  * ```
  */
 export interface IHighResolutionClock {
   /**
-   * Возвращает текущее monotonic-время в наносекундах.
+   * Возвращает текущее абсолютное время в наносекундах от Unix epoch.
    *
-   * @returns Наносекунды от произвольного origin (неотрицательный bigint)
+   * @returns Неотрицательные epoch-наносекунды (bigint)
    *
    * @remarks
    * Гарантии контракта: значение неотрицательно и не убывает между
-   * последовательными вызовами внутри одного runtime.
+   * последовательными вызовами внутри одного runtime (monotonic
+   * non-decreasing).
    */
-  nowNanoseconds(): bigint;
+  nowEpochNanoseconds(): bigint;
 }

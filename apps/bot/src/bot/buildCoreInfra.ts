@@ -66,9 +66,10 @@ export function buildCoreInfra(params: BuildCoreInfraParams = {}): CoreInfra {
   const logger = new ConsoleLogger(clock, params.logLevel ?? LogLevel.INFO);
   const eventBus = new EventBus(logger);
   // Composition root message-metadata (M-003): live-режим (дефолтный LiveClock)
-  // получает реальную sub-ms precision через process.hrtime; инъецированный
-  // clock (paper/replay/тесты) — детерминированные нули (sequence сохраняет
-  // точный порядок).
+  // получает когерентное epoch-время с sub-ms precision (wall-origin +
+  // monotonic elapsed); инъецированный clock (paper/replay/тесты) —
+  // millisecond precision с детерминированными нулями sub-ms (sequence
+  // сохраняет точный порядок).
   const metadataGenerator = new MessageMetadataGenerator({
     clock,
     highResolutionClock: params.clock === undefined ? new SystemHighResolutionClock() : undefined,

@@ -69,12 +69,13 @@ export interface MessageMetadata {
 - **runId** — 8 символов `[a-z0-9]`, генерируется ОДИН раз на запуск процесса.
 - **sequence** — порядок сообщений внутри runtime. НЕ глобален между процессами:
   инвариант — `(runId, sequence)` однозначно задаёт порядок внутри конкретного runtime.
-- **createdAt + createdAtUnixSeconds + millisecondOfSecond** — разложение ОДНОГО чтения
-  инъецированного `IClock` (consistency между полями гарантирована конструкцией).
-- **microsecondOfMillisecond / nanosecondOfMicrosecond** — дополнительная precision внутри
-  той же миллисекунды от high-resolution источника. Режимы без sub-ms precision
-  (paper/replay/тесты без fake hr-clock) дают честные нули — наносекунды не выдумываются.
-  Точный runtime-порядок в любом случае гарантирует `sequence`.
+- **Все time-поля** (`createdAt`, `createdAtUnixSeconds`, `millisecondOfSecond`,
+  `microsecondOfMillisecond`, `nanosecondOfMicrosecond`) — разложение ОДНОГО
+  абсолютного момента: с high-resolution источником — одного значения
+  `nowEpochNanoseconds()`, без него — одного чтения `IClock.now()` (тогда
+  micro/nano — честные нули: режимы без sub-ms precision наносекунды не
+  выдумывают). Смешивания источников нет — поля не могут описывать разные
+  моменты. Точный runtime-порядок в любом случае гарантирует `sequence`.
 - **correlationId / causationId** — causal chain:
 
 ```text
@@ -120,9 +121,11 @@ const child = metadataGenerator.nextChild(parent.metadata);
   секции не interleave-ятся, поэтому `sequence++` безопасен при любом числе async producers.
 - **Sequence safe-integer** — при теоретическом overflow генератор fail-fast бросает ошибку.
 - **RunId** — генерируется один раз (Node crypto) или инъецируется детерминированно в тестах.
-- **Время детерминируемо** — источники только инъецированные `IClock` и
-  `IHighResolutionClock` (`SystemHighResolutionClock` = `process.hrtime.bigint()`;
-  `FixedHighResolutionClock` — детерминированный fake для тестов/replay).
+- **Время детерминируемо и когерентно** — источники только инъецированные `IClock` и
+  `IHighResolutionClock` (абсолютные epoch-наносекунды). `SystemHighResolutionClock` —
+  гибридные часы: wall-clock origin + monotonic elapsed (`process.hrtime.bigint()`
+  измеряет ТОЛЬКО elapsed и никогда не трактуется как Unix-время напрямую).
+  `FixedHighResolutionClock` — детерминированный источник для тестов/replay.
 
 ## Producer style
 

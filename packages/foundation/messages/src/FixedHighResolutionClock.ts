@@ -2,24 +2,26 @@ import type { IHighResolutionClock } from './IHighResolutionClock.js';
 
 /**
  * Детерминированная реализация {@link IHighResolutionClock} с управляемым
- * значением — для тестов, paper и replay режимов.
+ * абсолютным значением — для тестов, paper и replay режимов.
  *
  * @remarks
- * Возвращает ровно то значение, которое задано конструктором/`set()`/
- * `advance()` — никаких обращений к системным таймерам. Это canonical
- * «fake/test implementation» high-resolution источника: metadata остаётся
- * полностью детерминированной (те же вызовы → те же micro/nano компоненты).
+ * Возвращает ровно то epoch-значение (наносекунды от Unix epoch), которое
+ * задано конструктором/`set()`/`advance()` — никаких обращений к системным
+ * таймерам. Это canonical deterministic-реализация high-resolution
+ * источника: metadata полностью воспроизводима (те же вызовы → те же
+ * time-компоненты).
  *
- * Режим «нет sub-millisecond precision» — значение по умолчанию `0n`:
- * генератор честно выдаёт `microsecondOfMillisecond = 0` и
- * `nanosecondOfMicrosecond = 0`, не выдумывая физические наносекунды.
- * Точный runtime-порядок сообщений в любом случае гарантирует `sequence`.
+ * Если режиму не нужна sub-millisecond precision — high-resolution источник
+ * генератору просто НЕ передают: все time-поля берутся из `IClock`, а
+ * micro/nano — честные нули (наносекунды не выдумываются). Точный
+ * runtime-порядок сообщений в любом случае гарантирует `sequence`.
  *
  * @example
  * ```typescript
- * const hr = new FixedHighResolutionClock(456_789n); // 456 us, 789 ns внутри ms
+ * // 2026-08-14T00:41:27.123456789Z
+ * const hr = new FixedHighResolutionClock(1_786_668_087_123_456_789n);
  * const generator = new MessageMetadataGenerator({
- *   clock: new PaperClock(new Date('2026-08-14T00:00:00Z')),
+ *   clock: new PaperClock(new Date('2026-08-14T00:41:27.123Z')),
  *   highResolutionClock: hr,
  *   runId: unsafeRunId('testrun1'),
  * });
@@ -28,40 +30,41 @@ import type { IHighResolutionClock } from './IHighResolutionClock.js';
  * ```
  */
 export class FixedHighResolutionClock implements IHighResolutionClock {
-  private _nanoseconds: bigint;
+  private _epochNanoseconds: bigint;
 
   /**
    * Создаёт детерминированный high-resolution источник.
    *
-   * @param initialNanoseconds - Начальное значение в наносекундах (по умолчанию `0n`)
+   * @param initialEpochNanoseconds - Начальное абсолютное значение в
+   *   наносекундах от Unix epoch (по умолчанию `0n` — сам epoch)
    * @throws {RangeError} Если значение отрицательное
    */
-  constructor(initialNanoseconds: bigint = 0n) {
-    this._nanoseconds = FixedHighResolutionClock._requireNonNegative(initialNanoseconds);
+  constructor(initialEpochNanoseconds: bigint = 0n) {
+    this._epochNanoseconds = FixedHighResolutionClock._requireNonNegative(initialEpochNanoseconds);
   }
 
   /**
-   * Возвращает текущее управляемое значение.
+   * Возвращает текущее управляемое абсолютное значение.
    *
-   * @returns Заданные наносекунды (без чтения системных таймеров)
+   * @returns Заданные epoch-наносекунды (без чтения системных таймеров)
    */
-  public nowNanoseconds(): bigint {
-    return this._nanoseconds;
+  public nowEpochNanoseconds(): bigint {
+    return this._epochNanoseconds;
   }
 
   /**
    * Устанавливает абсолютное значение источника.
    *
-   * @param nanoseconds - Новое значение в наносекундах
+   * @param epochNanoseconds - Новое значение в наносекундах от Unix epoch
    * @throws {RangeError} Если значение отрицательное
    *
    * @example
    * ```typescript
-   * hr.set(123_456_789n);
+   * hr.set(1_786_668_087_123_456_789n);
    * ```
    */
-  public set(nanoseconds: bigint): void {
-    this._nanoseconds = FixedHighResolutionClock._requireNonNegative(nanoseconds);
+  public set(epochNanoseconds: bigint): void {
+    this._epochNanoseconds = FixedHighResolutionClock._requireNonNegative(epochNanoseconds);
   }
 
   /**
@@ -79,20 +82,20 @@ export class FixedHighResolutionClock implements IHighResolutionClock {
     if (deltaNanoseconds < 0n) {
       throw new RangeError('FixedHighResolutionClock.advance() requires a non-negative delta');
     }
-    this._nanoseconds += deltaNanoseconds;
+    this._epochNanoseconds += deltaNanoseconds;
   }
 
   /**
    * Валидация неотрицательности значения.
    *
-   * @param nanoseconds - Проверяемое значение
+   * @param epochNanoseconds - Проверяемое значение
    * @returns То же значение при успехе
    * @throws {RangeError} Если значение отрицательное
    */
-  private static _requireNonNegative(nanoseconds: bigint): bigint {
-    if (nanoseconds < 0n) {
-      throw new RangeError('FixedHighResolutionClock requires a non-negative nanoseconds value');
+  private static _requireNonNegative(epochNanoseconds: bigint): bigint {
+    if (epochNanoseconds < 0n) {
+      throw new RangeError('FixedHighResolutionClock requires a non-negative epoch nanoseconds value');
     }
-    return nanoseconds;
+    return epochNanoseconds;
   }
 }
