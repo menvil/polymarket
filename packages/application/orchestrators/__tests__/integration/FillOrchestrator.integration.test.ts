@@ -116,7 +116,7 @@ function makeOpenOrder(id: OrderId = ORDER_ID, size: Quantity = ORDER_SIZE): Ord
     timestamp: unwrap(TimestampService.create(Date.now())),
   }));
   const accepted = unwrap(order.accept());
-  accepted.pullEvents();
+  accepted.pullEvents(() => METADATA_GENERATOR.nextRoot());
   return accepted;
 }
 

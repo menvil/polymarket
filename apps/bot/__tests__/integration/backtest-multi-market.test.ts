@@ -241,7 +241,7 @@ describe('Backtest — два рынка одновременно', () => {
 
     const orderCountByAsset = new Map<string, number>();
     eventBus.subscribe('ORDER_CREATED', (event) => {
-      const key = assetIdToString(event.asset);
+      const key = assetIdToString(event.payload.asset);
       orderCountByAsset.set(key, (orderCountByAsset.get(key) ?? 0) + 1);
     });
 

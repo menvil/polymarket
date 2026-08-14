@@ -96,10 +96,13 @@ describe('OrderUpdateOrchestrator', () => {
   it('вызывает updateOrderStatus.execute при получении ORDER_UPDATE_RECEIVED', async () => {
     const orch = new OrderUpdateOrchestrator(deps);
     orch.register();
-    await eventBus._trigger(makeEvent());
+    const event = makeEvent();
+    await eventBus._trigger(event);
     expect(updateOrderStatus.execute).toHaveBeenCalledWith({
-      update: makeEvent().payload.update,
-      accountId: makeEvent().payload.accountId,
+      update: event.payload.update,
+      accountId: event.payload.accountId,
+      // causal chain (M-003): metadata триггера передаётся как parent
+      parentMetadata: event.metadata,
     });
   });
 

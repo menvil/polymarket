@@ -174,7 +174,7 @@ function makeOpenOrder(orderId: OrderId = ORDER_ID): Order {
   if (!result.ok) throw new Error('Failed to create Order');
   const accepted = result.value.accept();
   if (!accepted.ok) throw new Error('Failed to accept Order');
-  accepted.value.pullEvents();
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
   return accepted.value;
 }
 
@@ -313,6 +313,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
       getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
     const cancelUseCase = new CancelOrderUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService,
       orderRepo: store,
       orderStateStore: store,
@@ -340,6 +341,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
 
   it('update (deferred) → settle journal failure → escalated manual block → Fill блокируется без мутаций', async () => {
     const updateUseCase = new UpdateOrderStatusUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo: store,
       orderStateStore: store,
       portfolioService,
@@ -453,6 +455,7 @@ describe('Manual reconciliation block — cross-use-case (P0)', () => {
       getTrades: jest.fn<IExchangeClient['getTrades']>().mockResolvedValue(Ok([])),
     };
     const cancelUseCase = new CancelOrderUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService,
       orderRepo: store,
       orderStateStore: store,

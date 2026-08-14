@@ -255,6 +255,7 @@ export function buildLiveInfra(params: BuildLiveInfraParams): LiveInfra {
   const portfolioService = new PortfolioService(portfolioStore, logger);
 
   const updateOrderStatusUseCase = new UpdateOrderStatusUseCase({
+    metadataGenerator,
     orderRepo,
     orderStateStore: orderRepo,
     portfolioService,

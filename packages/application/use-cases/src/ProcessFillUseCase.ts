@@ -568,7 +568,7 @@ export class ProcessFillUseCase {
     }
 
     if (order && !order.isTerminal) {
-      return this._applyNormalFill(order, fill, execution, tracker);
+      return this._applyNormalFill(order, fill, execution, tracker, nextEventMetadata);
     }
     // Held-reservation проверяется и для отсутствующего, и для terminal Order:
     // ambiguous submit мог не сохранить Order, но капитал заморожен.
@@ -834,6 +834,7 @@ export class ProcessFillUseCase {
     fill: Fill,
     execution: OrderSubmissionRecord | undefined,
     tracker: FillCommitTracker,
+    nextEventMetadata: () => MessageMetadata,
   ): Promise<Result<void, TradingError>> {
     // Шаги ниже выполняются синхронно (без yield) — атомарное обновление состояния.
     // Первый await появляется только на публикации событий.
@@ -1124,7 +1125,9 @@ export class ProcessFillUseCase {
     // Ошибка публикации (в flush) — потеря уведомления, НЕ делает fill retryable
     // (fill уже APPLIED); outbox логирует EVENT_PUBLISH_FAILED и создаёт issue.
     // К этому моменту: Order = terminal (если FILLED), Portfolio = обновлён, флаги сняты.
-    const events = updatedOrder.pullEvents();
+    // Canonical materialization (M-003): metadata каждого Order-события — child
+    // триггера (FILL_RECEIVED), поставляется на границе pullEvents.
+    const events = updatedOrder.pullEvents(nextEventMetadata);
     await this._enqueueEvents(fill, events);
 
     // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.

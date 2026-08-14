@@ -2945,12 +2945,12 @@ async function runBacktest(): Promise<void> {
 
   // Трекинг ORDER_CREATED: сохраняем мета для отчёта
   eventBus.subscribe('ORDER_CREATED', (event) => {
-    orderMeta.set(String(event.orderId), {
+    orderMeta.set(String(event.payload.orderId), {
       placedAt: replayClock.now(),
       placedBook: bookSnapshotCount,
-      side: event.side,
-      price: event.price.value(),
-      size: event.size.value(),
+      side: event.payload.side,
+      price: event.payload.price.value(),
+      size: event.payload.size.value(),
       triggerReason: lastMarketEvent,
     });
   });
@@ -2959,10 +2959,10 @@ async function runBacktest(): Promise<void> {
   const partialFills: Array<{ orderId: string; side: string; price: string; size: string; at: string }> = [];
   eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
     partialFills.push({
-      orderId: String(event.orderId).slice(0, 12) + '…',
-      side: event.fill.side,
-      price: event.fill.price.value().toFixed(4),
-      size: event.fill.size.value().toFixed(2),
+      orderId: String(event.payload.orderId).slice(0, 12) + '…',
+      side: event.payload.fill.side,
+      price: event.payload.fill.price.value().toFixed(4),
+      size: event.payload.fill.size.value().toFixed(2),
       at: replayClock.now().toISOString().slice(11, 19),
     });
   });
@@ -2970,17 +2970,17 @@ async function runBacktest(): Promise<void> {
   // Трекинг ORDER_FILLED: сохраняем для отчёта, обновляем lastMarketEvent
   eventBus.subscribe('ORDER_FILLED', (event) => {
     const filledAt = replayClock.now();
-    const orderId = String(event.orderId);
+    const orderId = String(event.payload.orderId);
     const meta = orderMeta.get(orderId);
     const booksWaited = bookSnapshotCount - (meta?.placedBook ?? bookSnapshotCount);
     const fillSource = lastMarketEvent;
     lastMarketEvent = 'FILL';
     executedFills.push({
       orderId: orderId.slice(0, 12) + '…',
-      side: event.fill.side,
-      price: event.fill.price.value().toFixed(4),
-      size: event.fill.size.value().toFixed(2),
-      notional: event.fill.price.value().times(event.fill.size.value()).toFixed(4),
+      side: event.payload.fill.side,
+      price: event.payload.fill.price.value().toFixed(4),
+      size: event.payload.fill.size.value().toFixed(2),
+      notional: event.payload.fill.price.value().times(event.payload.fill.size.value()).toFixed(4),
       placedAt: meta?.placedAt ?? filledAt,
       filledAt,
       booksWaited,

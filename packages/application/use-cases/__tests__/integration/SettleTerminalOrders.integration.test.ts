@@ -131,7 +131,7 @@ function makeOpenOrder(): Order {
   if (!result.ok) throw new Error('Failed to create Order');
   const accepted = result.value.accept();
   if (!accepted.ok) throw new Error('Failed to accept Order');
-  accepted.value.pullEvents();
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
   return accepted.value;
 }
 
@@ -236,6 +236,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase (Шаг 5)', (
 
   function makeUpdate(): UpdateOrderStatusUseCase {
     return new UpdateOrderStatusUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo: store,
       orderStateStore: store,
       portfolioService,
@@ -641,6 +642,7 @@ describe('TerminalSettlementPending + SettleTerminalOrdersUseCase — stateful (
 
   function makeUpdate(): UpdateOrderStatusUseCase {
     return new UpdateOrderStatusUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       orderRepo: store,
       orderStateStore: store,
       portfolioService,

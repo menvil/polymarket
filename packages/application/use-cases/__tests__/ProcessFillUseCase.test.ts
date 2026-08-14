@@ -130,7 +130,7 @@ function makeOrderOpen(): Order {
   if (!result.ok) throw new Error('Failed to create Order');
   const accepted = result.value.accept();
   if (!accepted.ok) throw new Error('Failed to accept Order');
-  accepted.value.pullEvents(); // clear events
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot()); // clear events
   return accepted.value;
 }
 
@@ -564,7 +564,7 @@ describe('ProcessFillUseCase', () => {
         if (!r.ok) throw new Error('Cannot create Order');
         const accepted = r.value.accept();
         if (!accepted.ok) throw new Error('Cannot accept Order');
-        accepted.value.pullEvents();
+        accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
         return accepted.value;
       })();
 
@@ -659,7 +659,7 @@ describe('ProcessFillUseCase', () => {
       if (!r.ok) throw new Error('Cannot create Order');
       const accepted = r.value.accept();
       if (!accepted.ok) throw new Error('Cannot accept Order');
-      accepted.value.pullEvents();
+      accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
       return accepted.value;
     }
 
@@ -956,7 +956,7 @@ describe('ProcessFillUseCase', () => {
       if (!r.ok) throw new Error('Cannot create Order');
       const accepted = r.value.accept();
       if (!accepted.ok) throw new Error('Cannot accept Order');
-      accepted.value.pullEvents();
+      accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
       return accepted.value;
     })();
 

@@ -111,6 +111,14 @@ const RISK_PARAMS: RiskParams = {
 
 // ── Тесты ─────────────────────────────────────────────────────────────────────
 
+/** Детерминированный canonical-генератор metadata тестовых событий (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunId('testrun1'),
+  });
+}
+
 describe('buildRepositories', () => {
   it('возвращает reconciliationIssueRepo (smoke: add + listOpen)', async () => {
     const repos = buildRepositories();
@@ -260,7 +268,7 @@ describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCa
     if (!orderResult.ok) throw new Error('Failed to create order');
     const acceptResult = orderResult.value.accept();
     if (!acceptResult.ok) throw new Error('Failed to accept order');
-    acceptResult.value.pullEvents();
+    acceptResult.value.pullEvents(() => makeMetadataGenerator().nextRoot());
     const saveResult = await repos.orderRepo.save(acceptResult.value, 0);
     if (!saveResult.ok) throw new Error('Failed to save order');
 
@@ -327,7 +335,7 @@ describe('buildProcessFillUseCase — wiring reconciliationIssues в ProcessFill
     if (!orderResult.ok) throw new Error('Failed to create order');
     const acceptResult = orderResult.value.accept();
     if (!acceptResult.ok) throw new Error('Failed to accept order');
-    acceptResult.value.pullEvents();
+    acceptResult.value.pullEvents(() => makeMetadataGenerator().nextRoot());
     const saveResult = await repos.orderRepo.save(acceptResult.value, 0);
     if (!saveResult.ok) throw new Error('Failed to save order');
 

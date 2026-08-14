@@ -43,7 +43,8 @@
  *
  * if (result.ok) {
  *   const order = result.value;
- *   const events = order.pullEvents(); // [OrderCreatedEvent]
+ *   // canonical envelope: metadata поставляет Application-слой (M-003)
+ *   const events = order.pullEvents(() => generator.nextRoot()); // [OrderCreatedEvent]
  *   const accepted = order.accept();
  *   if (accepted.ok) console.log(accepted.value.status); // 'OPEN'
  * }
@@ -76,10 +77,30 @@ import type {
   OrderPartiallyFilledEvent,
   OrderFilledEvent,
 } from '@polymarket/order-events';
+import type { MessageMetadata } from '@polymarket/messages';
 import { TradingError } from '@polymarket/errors';
 import { emptyFill, addFill, isFull } from './_fill.js';
 
 const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
+
+/**
+ * Внутренний draft доменного события — `{ type, payload }` БЕЗ metadata.
+ *
+ * @remarks
+ * M-003: public `OrderEvent` — canonical envelope `{ type, payload, metadata }`,
+ * но Domain детерминирован и не имеет доступа к clock/random/generator.
+ * Поэтому команды пишут в outbox именно drafts; canonical событие
+ * materialize-ится на границе `pullEvents()` — metadata поставляет caller
+ * (Application-слой). Draft НЕ является public system message.
+ *
+ * Каждый canonical `OrderEvent` структурно совместим со своим draft-ом
+ * (лишняя metadata не мешает), поэтому `_applyEventToState` работает и в
+ * командах (drafts), и в replay (`fromEvents` с canonical событиями).
+ */
+type DraftOf<E extends OrderEvent> = E extends OrderEvent ? Pick<E, 'type' | 'payload'> : never;
+
+/** Union drafts всех доменных событий Order. */
+type OrderEventDraft = DraftOf<OrderEvent>;
 
 /**
  * Агрегат Order — неизменяемая доменная сущность
@@ -94,8 +115,8 @@ const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
 export class Order {
   private constructor(
     private readonly _s: OrderState,
-    /** Буфер доменных событий (Domain Event Outbox) */
-    private readonly _pendingEvents: OrderEvent[] = [],
+    /** Буфер drafts доменных событий (Domain Event Outbox; metadata — на границе pullEvents) */
+    private readonly _pendingDrafts: OrderEventDraft[] = [],
   ) {}
 
   // ─── Identity ──────────────────────────────────────────────────────────────
@@ -195,14 +216,22 @@ export class Order {
   // ─── Domain Event Outbox ───────────────────────────────────────────────────
 
   /**
-   * Извлекает накопленные доменные события и очищает буфер
+   * Извлекает накопленные доменные события (canonical envelopes) и очищает буфер
    *
-   * @returns Массив событий с момента последнего pullEvents()
+   * @param metadataFor - Фабрика metadata: вызывается ОДИН раз на каждое
+   *   событие в порядке их возникновения. Application-слой передаёт замыкание
+   *   над canonical `MessageMetadataGenerator` (`nextChild(parent)` для
+   *   событий, порождённых обработкой сообщения; `nextRoot()` для
+   *   инициативных команд вне event-контекста)
+   * @returns Массив canonical `OrderEvent` с момента последнего pullEvents()
    *
    * @remarks
-   * Pattern: Domain Event Outbox.
-   * Application-слой должен вызывать pullEvents() после каждой успешной команды
-   * для публикации событий во внешние подписчики (шина, лог, проекции).
+   * Pattern: Domain Event Outbox + M-003 materialization boundary.
+   * Внутри буфера — детерминированные drafts `{ type, payload }`;
+   * canonical envelope `{ type, payload, metadata }` собирается ЗДЕСЬ,
+   * metadata поставляет caller. Так Domain остаётся без clock/random/generator,
+   * а каждый public OrderEvent получает уникальную системную identity ДО
+   * передачи в шину.
    *
    * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
    * `rehydrate()` и `fromEvents()` не эмитируют событий.
@@ -211,13 +240,13 @@ export class Order {
    * ```typescript
    * const result = Order.create(params);
    * if (result.ok) {
-   *   const events = result.value.pullEvents(); // [OrderCreatedEvent]
-   *   await eventBus.publish(events);
+   *   const events = result.value.pullEvents(() => generator.nextRoot());
+   *   await eventBus.publishAll(events);
    * }
    * ```
    */
-  public pullEvents(): readonly OrderEvent[] {
-    return this._pendingEvents.splice(0);
+  public pullEvents(metadataFor: () => MessageMetadata): readonly OrderEvent[] {
+    return this._pendingDrafts.splice(0).map((draft) => ({ ...draft, metadata: metadataFor() }));
   }
 
   // ─── Factory: create ───────────────────────────────────────────────────────
@@ -281,19 +310,21 @@ export class Order {
       }));
     }
 
-    const event: OrderCreatedEvent = {
+    const draft: DraftOf<OrderCreatedEvent> = {
       type: 'ORDER_CREATED',
-      orderId: params.id,
-      asset: params.asset,
-      side: params.side,
-      price: params.price,
-      size: params.size,
-      timestamp: params.timestamp,
-      strategyId: params.strategyId,
-      accountId: params.accountId,
+      payload: {
+        orderId: params.id,
+        asset: params.asset,
+        side: params.side,
+        price: params.price,
+        size: params.size,
+        timestamp: params.timestamp,
+        strategyId: params.strategyId,
+        accountId: params.accountId,
+      },
     };
 
-    return Ok(new Order(Order._applyEventToState({} as OrderState, event), [event]));
+    return Ok(new Order(Order._applyEventToState({} as OrderState, draft), [draft]));
   }
 
   // ─── Factory: rehydrate ────────────────────────────────────────────────────
@@ -378,9 +409,9 @@ export class Order {
    * @example
    * ```typescript
    * const result = Order.fromEvents([
-   *   { type: 'ORDER_CREATED', orderId, asset, side: 'BUY', price, size, timestamp },
-   *   { type: 'ORDER_ACCEPTED', orderId },
-   *   { type: 'ORDER_FILLED', orderId, fill: fillData, averagePrice },
+   *   { type: 'ORDER_CREATED', payload: { orderId, asset, side: 'BUY', price, size, timestamp }, metadata },
+   *   { type: 'ORDER_ACCEPTED', payload: { orderId }, metadata },
+   *   { type: 'ORDER_FILLED', payload: { orderId, fill: fillData, averagePrice }, metadata },
    * ]);
    * if (result.ok) console.log(result.value.status); // 'FILLED'
    * ```
@@ -399,15 +430,15 @@ export class Order {
     }
 
     let state: OrderState = {
-      id: first.orderId,
-      asset: first.asset,
-      side: first.side,
-      price: first.price,
-      size: first.size,
+      id: first.payload.orderId,
+      asset: first.payload.asset,
+      side: first.payload.side,
+      price: first.payload.price,
+      size: first.payload.size,
       status: 'PENDING',
-      timestamp: first.timestamp,
-      strategyId: first.strategyId,
-      accountId: first.accountId,
+      timestamp: first.payload.timestamp,
+      strategyId: first.payload.strategyId,
+      accountId: first.payload.accountId,
       fill: emptyFill(),
     };
 
@@ -439,23 +470,28 @@ export class Order {
    *
    * Это гарантирует, что переход состояния всегда проходит через один код,
    * а не дублируется в каждой команде.
+   *
+   * Принимает draft `{ type, payload }` — canonical `OrderEvent` структурно
+   * совместим (metadata игнорируется), поэтому replay canonical-событий и
+   * применение внутренних drafts идут через один код. Metadata по построению
+   * НЕ влияет на переход состояния.
    */
-  private static _applyEventToState(state: OrderState, event: OrderEvent): OrderState {
+  private static _applyEventToState(state: OrderState, event: OrderEventDraft): OrderState {
     // Защита от чужих событий: игнорируем если orderId не совпадает (кроме ORDER_CREATED)
-    if (event.type !== 'ORDER_CREATED' && event.orderId !== state.id) return state;
+    if (event.type !== 'ORDER_CREATED' && event.payload.orderId !== state.id) return state;
 
     switch (event.type) {
       case 'ORDER_CREATED':
         return {
-          id: event.orderId,
-          asset: event.asset,
-          side: event.side,
-          price: event.price,
-          size: event.size,
+          id: event.payload.orderId,
+          asset: event.payload.asset,
+          side: event.payload.side,
+          price: event.payload.price,
+          size: event.payload.size,
           status: 'PENDING',
-          timestamp: event.timestamp,
-          strategyId: event.strategyId,
-          accountId: event.accountId,
+          timestamp: event.payload.timestamp,
+          strategyId: event.payload.strategyId,
+          accountId: event.payload.accountId,
           fill: emptyFill(),
         };
 
@@ -465,11 +501,11 @@ export class Order {
 
       case 'ORDER_REJECTED':
         if (state.status !== 'PENDING') return state;
-        return { ...state, status: 'REJECTED', reason: event.reason };
+        return { ...state, status: 'REJECTED', reason: event.payload.reason };
 
       case 'ORDER_CANCELLED':
         if (!FILLABLE_STATUSES.has(state.status)) return state;
-        return { ...state, status: 'CANCELED', reason: event.reason };
+        return { ...state, status: 'CANCELED', reason: event.payload.reason };
 
       case 'ORDER_EXPIRED':
         if (!FILLABLE_STATUSES.has(state.status)) return state;
@@ -478,7 +514,7 @@ export class Order {
       case 'ORDER_PARTIALLY_FILLED':
       case 'ORDER_FILLED': {
         if (!FILLABLE_STATUSES.has(state.status)) return state;
-        const result = addFill(state.fill, event.fill, state.size);
+        const result = addFill(state.fill, event.payload.fill, state.size);
         if (!result.ok) return state;
         const newFill = result.value;
         const newStatus: OrderStatus = event.type === 'ORDER_FILLED' ? 'FILLED' : 'PARTIALLY_FILLED';
@@ -515,8 +551,8 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const event: OrderAcceptedEvent = { type: 'ORDER_ACCEPTED', orderId: this._s.id };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [...this._pendingEvents, event]));
+    const draft: DraftOf<OrderAcceptedEvent> = { type: 'ORDER_ACCEPTED', payload: { orderId: this._s.id } };
+    return Ok(new Order(Order._applyEventToState(this._s, draft), [...this._pendingDrafts, draft]));
   }
 
   /**
@@ -546,8 +582,8 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const event: OrderRejectedEvent = { type: 'ORDER_REJECTED', orderId: this._s.id, reason };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    const draft: DraftOf<OrderRejectedEvent> = { type: 'ORDER_REJECTED', payload: { orderId: this._s.id, reason } };
+    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
   }
 
   /**
@@ -575,8 +611,11 @@ export class Order {
       ));
     }
     const cancelReason = reason ?? 'User cancelled';
-    const event: OrderCancelledEvent = { type: 'ORDER_CANCELLED', orderId: this._s.id, reason: cancelReason };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    const draft: DraftOf<OrderCancelledEvent> = {
+      type: 'ORDER_CANCELLED',
+      payload: { orderId: this._s.id, reason: cancelReason },
+    };
+    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
   }
 
   /**
@@ -602,8 +641,8 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const event: OrderExpiredEvent = { type: 'ORDER_EXPIRED', orderId: this._s.id };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    const draft: DraftOf<OrderExpiredEvent> = { type: 'ORDER_EXPIRED', payload: { orderId: this._s.id } };
+    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
   }
 
   /**
@@ -676,23 +715,27 @@ export class Order {
           context: { orderId: this._s.id, fillId: fill.id },
         }));
       }
-      const event: OrderFilledEvent = {
+      const draft: DraftOf<OrderFilledEvent> = {
         type: 'ORDER_FILLED',
-        orderId: this._s.id,
-        fill,
-        averagePrice: newFill.averagePrice,
+        payload: {
+          orderId: this._s.id,
+          fill,
+          averagePrice: newFill.averagePrice,
+        },
       };
-      return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+      return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
     }
 
-    const event: OrderPartiallyFilledEvent = {
+    const draft: DraftOf<OrderPartiallyFilledEvent> = {
       type: 'ORDER_PARTIALLY_FILLED',
-      orderId: this._s.id,
-      fill,
-      filledSize: newFill.filledSize,
-      remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
+      payload: {
+        orderId: this._s.id,
+        fill,
+        filledSize: newFill.filledSize,
+        remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
+      },
     };
-    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
   }
 
   /**

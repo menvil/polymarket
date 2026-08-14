@@ -1,10 +1,17 @@
 /**
- * Событие отмены заявки (терминальный статус CANCELLED).
+ * Событие отмены заявки (OPEN/PARTIALLY_FILLED → CANCELED).
+ *
+ * @remarks
+ * Canonical envelope `{ type, payload, metadata }` (M-003); metadata не
+ * участвует в replay-семантике.
  */
+import type { MessageEnvelope } from '@polymarket/messages';
 import type { OrderId } from '@polymarket/ids';
 
-export interface OrderCancelledEvent {
-  readonly type: 'ORDER_CANCELLED';
+/** Payload события отмены заявки. */
+export interface OrderCancelledPayload {
   readonly orderId: OrderId;
   readonly reason: string;
 }
+
+export type OrderCancelledEvent = MessageEnvelope<'ORDER_CANCELLED', OrderCancelledPayload>;

@@ -318,6 +318,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
       ),
     };
     const place = new PlaceOrderUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makeRiskChecker(),
       orderRepo: store,
       portfolioService,

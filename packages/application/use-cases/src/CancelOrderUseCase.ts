@@ -43,6 +43,7 @@ import Decimal from 'decimal.js';
 import { TradingError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
+import type { MessageMetadataGenerator } from '@polymarket/messages';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { assetIdToInstrumentId } from '@polymarket/ids';
 import { lockKey } from './lockKeys.js';
@@ -113,6 +114,11 @@ export interface CancelOrderDeps {
    * освобождает остаток резервации в журнале (release → SETTLED), best-effort.
    */
   readonly submissions: IOrderSubmissionRepository;
+  /**
+   * Canonical-генератор metadata порождаемых Order-событий (M-003).
+   * Cancel — инициативная команда (стратегия/оператор), поэтому события — root.
+   */
+  readonly metadataGenerator: MessageMetadataGenerator;
   readonly logger: ILogger;
   /**
    * Queryable хранилище reconciliation issues (опционально).
@@ -463,7 +469,7 @@ export class CancelOrderUseCase {
     // cancel состоялся независимо от исхода release ниже; flush — после lock в
     // execute()). Сбой enqueue НЕ откатывает cancel — helper логирует
     // EVENT_PUBLISH_FAILED и создаёт issue (Этап 5.2/8).
-    const events = cancelledOrder.pullEvents();
+    const events = cancelledOrder.pullEvents(() => this._deps.metadataGenerator.nextRoot());
     await enqueueCommittedEvents({
       outbox: this._deps.orderedEventOutbox,
       logger: this._logger,

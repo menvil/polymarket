@@ -147,7 +147,7 @@ function makeOpenOrder(
     timestamp: unwrap(TimestampService.create(Date.now())),
   }));
   const accepted = unwrap(order.accept());
-  accepted.pullEvents(); // очищаем события перед тестом
+  accepted.pullEvents(() => makeMetadataGenerator().nextRoot()); // очищаем события перед тестом
   return accepted;
 }
 
@@ -294,6 +294,62 @@ describe('ProcessFillUseCase (integration)', () => {
     // Assert: событие ORDER_FILLED опубликовано ровно один раз
     expect(published).toHaveLength(1);
     expect(published[0]).toMatchObject({ type: 'ORDER_FILLED' });
+  });
+
+  // ── M-003 Part 11: causal chain через Domain ───────────────────────────────
+
+  it('causal chain: FILL_RECEIVED (M10) → ORDER_FILLED (M11) наследует correlation, causation = M10', async () => {
+    // Arrange
+    const order = makeOpenOrder();
+    await orderRepo.save(order, 0);
+    portfolioStore.save(makePortfolio(), 0);
+
+    const published: EventBusEvent[] = [];
+    eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
+
+    const fill = makeFill();
+
+    // M10 — root-событие контура (как публикует FillEventHandler).
+    // ВАЖНО: тот же instance генератора, что и в deps — в production генератор
+    // ОДИН на runtime (composition root), sequence сквозной.
+    const fillReceivedMetadata = deps.metadataGenerator.nextRoot();
+    expect(fillReceivedMetadata.correlationId).toBe(fillReceivedMetadata.messageId);
+    expect(fillReceivedMetadata.causationId).toBeUndefined();
+
+    // Act: как FillOrchestrator — передаём metadata триггера в use case
+    const result = await new ProcessFillUseCase(deps).execute(fill, fillReceivedMetadata);
+    expect(result.ok).toBe(true);
+
+    // Assert: ORDER_FILLED — child M10
+    expect(published).toHaveLength(1);
+    const orderFilled = published[0];
+    if (orderFilled.type !== 'ORDER_FILLED') throw new Error('Expected ORDER_FILLED event');
+    expect(orderFilled.metadata.correlationId).toBe(fillReceivedMetadata.correlationId);
+    expect(orderFilled.metadata.causationId).toBe(fillReceivedMetadata.messageId);
+    expect(orderFilled.metadata.messageId).not.toBe(fillReceivedMetadata.messageId);
+
+    // Дальнейший child (M12 от M11) продолжает ту же correlation-цепочку
+    const m12 = deps.metadataGenerator.nextChild(orderFilled.metadata);
+    expect(m12.correlationId).toBe(fillReceivedMetadata.correlationId);
+    expect(m12.causationId).toBe(orderFilled.metadata.messageId);
+  });
+
+  it('без parentMetadata (прямой вызов) ORDER_FILLED — root', async () => {
+    const order = makeOpenOrder();
+    await orderRepo.save(order, 0);
+    portfolioStore.save(makePortfolio(), 0);
+
+    const published: EventBusEvent[] = [];
+    eventBus.subscribe('ORDER_FILLED', async (e) => { published.push(e); });
+
+    const result = await new ProcessFillUseCase(deps).execute(makeFill());
+    expect(result.ok).toBe(true);
+
+    expect(published).toHaveLength(1);
+    const orderFilled = published[0];
+    if (orderFilled.type !== 'ORDER_FILLED') throw new Error('Expected ORDER_FILLED event');
+    expect(orderFilled.metadata.correlationId).toBe(orderFilled.metadata.messageId);
+    expect(orderFilled.metadata.causationId).toBeUndefined();
   });
 
   // ── Сценарий 2: Idempotency — дублирующий fill ─────────────────────────────

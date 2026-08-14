@@ -23,8 +23,16 @@ function makeEventBus() {
     publish: jest.fn(),
     publishAll: jest.fn(),
     _emit(type: string, event: any) {
+      // Fixtures пишутся flat ({ type, ...поля }) — оборачиваем в canonical
+      // envelope (M-003); уже-envelope fixtures (с payload) пропускаем как есть
+      const envelope = 'payload' in event
+        ? event
+        : (() => {
+            const { type: _ignoredType, ...payload } = event;
+            return { type, payload };
+          })();
       const handler = handlers.get(type);
-      if (handler) handler(event);
+      if (handler) handler(envelope);
     },
   };
 }

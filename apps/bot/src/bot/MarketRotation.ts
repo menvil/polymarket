@@ -1033,22 +1033,22 @@ export class MarketRotation {
 
     // ORDER_CREATED → orderToSlot
     eventBus.subscribe('ORDER_CREATED', (event) => {
-      const iId = assetIdToInstrumentId(event.asset);
+      const iId = assetIdToInstrumentId(event.payload.asset);
       const tokenIdStr = iId ? String(iId) : undefined;
       if (tokenIdStr && this.activeMarkets.has(tokenIdStr)) {
-        this.orderToSlot.set(String(event.orderId), tokenIdStr);
+        this.orderToSlot.set(String(event.payload.orderId), tokenIdStr);
         return;
       }
       // Комплементарный или дополнительный токен → primary slot
       if (tokenIdStr && this.activeCompTokens.has(tokenIdStr)) {
         for (const [primaryTokenId, slot] of this.activeMarkets) {
           if (slot.complementaryInstrumentId && String(slot.complementaryInstrumentId) === tokenIdStr) {
-            this.orderToSlot.set(String(event.orderId), primaryTokenId);
+            this.orderToSlot.set(String(event.payload.orderId), primaryTokenId);
             return;
           }
           // Арб: все ноги пары в additionalInstrumentIds → маршрутизируем в primary slot
           if (slot.additionalInstrumentIds?.some(id => String(id) === tokenIdStr)) {
-            this.orderToSlot.set(String(event.orderId), primaryTokenId);
+            this.orderToSlot.set(String(event.payload.orderId), primaryTokenId);
             return;
           }
         }
@@ -1057,18 +1057,18 @@ export class MarketRotation {
 
     // ORDER_PARTIALLY_FILLED → accumulate
     eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-      const id = String(event.orderId);
+      const id = String(event.payload.orderId);
       const slot = this._findSlotByOrderId(id);
       if (!slot) return;
       const existing = slot.partialAccum.get(id);
-      const fillSize = event.fill.size.value();
-      const fillNotional = fillSize.times(event.fill.price.value());
+      const fillSize = event.payload.fill.size.value();
+      const fillNotional = fillSize.times(event.payload.fill.price.value());
       if (existing) {
         existing.totalSize = existing.totalSize.plus(fillSize);
         existing.totalNotional = existing.totalNotional.plus(fillNotional);
       } else {
         slot.partialAccum.set(id, {
-          side: event.fill.side as 'BUY' | 'SELL',
+          side: event.payload.fill.side as 'BUY' | 'SELL',
           totalSize: fillSize,
           totalNotional: fillNotional,
           firstAt: clock.now().toISOString().slice(11, 19),
@@ -1078,18 +1078,18 @@ export class MarketRotation {
 
     // ORDER_FILLED → finalize fill record
     eventBus.subscribe('ORDER_FILLED', (event) => {
-      const id = String(event.orderId);
+      const id = String(event.payload.orderId);
       const slot = this._findSlotByOrderId(id);
       if (!slot) return;
       const accum = slot.partialAccum.get(id);
       slot.partialAccum.delete(id);
-      const lastSize = event.fill.size.value();
+      const lastSize = event.payload.fill.size.value();
       const totalSize = (accum?.totalSize ?? new Decimal(0)).plus(lastSize);
       const totalNotional = (accum?.totalNotional ?? new Decimal(0))
-        .plus(lastSize.times(event.fill.price.value()));
+        .plus(lastSize.times(event.payload.fill.price.value()));
       const avgPrice = totalNotional.div(totalSize);
       slot.fillHistory.push({
-        side: event.fill.side as 'BUY' | 'SELL',
+        side: event.payload.fill.side as 'BUY' | 'SELL',
         size: totalSize.toFixed(2),
         price: avgPrice.toFixed(4),
         notional: totalNotional.toFixed(2),
@@ -1099,7 +1099,7 @@ export class MarketRotation {
 
     // ORDER_CANCELLED → partial fill record
     eventBus.subscribe('ORDER_CANCELLED', (event) => {
-      const id = String(event.orderId);
+      const id = String(event.payload.orderId);
       const slot = this._findSlotByOrderId(id);
       if (!slot) return;
       const accum = slot.partialAccum.get(id);

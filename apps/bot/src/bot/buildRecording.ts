@@ -231,9 +231,9 @@ export function buildRecording(
 
       eventBus.subscribe('ORDER_CREATED', (event) => {
         // AssetId → tokenId: используем конвертер если передан, иначе String
-        const tokenId = assetToTokenId?.(event.asset) ?? String(event.asset ?? '');
-        const orderId = event.orderId;
-        const priceCents = event.price.value().toNumber() * 100;
+        const tokenId = assetToTokenId?.(event.payload.asset) ?? String(event.payload.asset ?? '');
+        const orderId = event.payload.orderId;
+        const priceCents = event.payload.price.value().toNumber() * 100;
         if (tokenId) orderToToken.set(orderId, tokenId);
         // Сохраняем цену ордера для последующего расчёта slippage при fill
         orderToPriceCents.set(orderId, priceCents);
@@ -242,9 +242,9 @@ export function buildRecording(
           marketId: tokenId,
           ts: Date.now(),
           orderId,
-          side: event.side as 'BUY' | 'SELL',
-          price: event.price.value().toFixed(4),
-          size: event.size.value().toFixed(2),
+          side: event.payload.side as 'BUY' | 'SELL',
+          price: event.payload.price.value().toFixed(4),
+          size: event.payload.size.value().toFixed(2),
         });
       });
 
@@ -300,20 +300,20 @@ export function buildRecording(
       // ORDER_* остаются fallback для synthetic/test flows, но dedupe защищает
       // normal live path от дублей после FILL_RECEIVED.
       eventBus.subscribe('ORDER_FILLED', (event) => {
-        const fillId = String(event.fill.id);
+        const fillId = String(event.payload.fill.id);
         if (recordedFillIds.has(fillId)) return;
         recordedFillIds.add(fillId);
 
-        const price = event.fill.price.value();
-        const size = event.fill.size.value();
-        const orderId = event.orderId;
+        const price = event.payload.fill.price.value();
+        const size = event.payload.fill.size.value();
+        const orderId = event.payload.orderId;
         const tokenId = orderToToken.get(orderId) ?? '';
         const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
           marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
           ts: Date.now(),
           orderId,
-          side: event.fill.side as 'BUY' | 'SELL',
+          side: event.payload.fill.side as 'BUY' | 'SELL',
           price: price.toFixed(4),
           size: size.toFixed(2),
           notional: price.times(size).toFixed(4),
@@ -325,20 +325,20 @@ export function buildRecording(
       });
 
       eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-        const fillId = String(event.fill.id);
+        const fillId = String(event.payload.fill.id);
         if (recordedFillIds.has(fillId)) return;
         recordedFillIds.add(fillId);
 
-        const price = event.fill.price.value();
-        const size = event.fill.size.value();
-        const orderId = event.orderId;
+        const price = event.payload.fill.price.value();
+        const size = event.payload.fill.size.value();
+        const orderId = event.payload.orderId;
         const tokenId = orderToToken.get(orderId) ?? '';
         const slippage = computeSlippage(orderId, price.toNumber() * 100);
         journal.recordFill({
           marketId: tokenId, // journal резолвит tokenId → marketId через _instrumentIndex
           ts: Date.now(),
           orderId,
-          side: event.fill.side as 'BUY' | 'SELL',
+          side: event.payload.fill.side as 'BUY' | 'SELL',
           price: price.toFixed(4),
           size: size.toFixed(2),
           notional: price.times(size).toFixed(4),

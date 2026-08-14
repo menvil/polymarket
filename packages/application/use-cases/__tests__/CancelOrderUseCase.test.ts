@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { MessageMetadataGenerator } from '@polymarket/messages';
+import { unsafeRunId as unsafeRunIdM003 } from '@polymarket/ids';
 import { CancelOrderUseCase } from '../src/CancelOrderUseCase.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import type { CancelOrderDeps, CancelOrderInput } from '../src/CancelOrderUseCase.js';
@@ -88,7 +90,7 @@ function makeOpenOrder(): Order {
   if (!result.ok) throw new Error('Failed to create Order');
   const accepted = result.value.accept();
   if (!accepted.ok) throw new Error('Failed to accept Order');
-  accepted.value.pullEvents();
+  accepted.value.pullEvents(() => makeMetadataGenerator().nextRoot());
   return accepted.value;
 }
 
@@ -239,6 +241,15 @@ function addedIssues(repo: IReconciliationIssueRepository): Array<{ id: string; 
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+
+/** Детерминированный canonical-генератор metadata для тестовых deps (M-003). */
+function makeMetadataGenerator(): MessageMetadataGenerator {
+  return new MessageMetadataGenerator({
+    clock: { now: () => new Date('2024-01-01T00:00:00.000Z') },
+    runId: unsafeRunIdM003('testrun1'),
+  });
+}
+
 describe('CancelOrderUseCase (venue-first)', () => {
   let logger: ILogger;
   let eventBus: IEventBus;
@@ -266,6 +277,7 @@ describe('CancelOrderUseCase (venue-first)', () => {
     const portfolioService = new PortfolioService(portfolioStore, logger);
 
     deps = {
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService,
       orderRepo,
       orderStateStore,

@@ -27,6 +27,9 @@
       "path": "../../../foundation/errors/tsconfig.build.json"
     },
     {
+      "path": "../../../foundation/messages/tsconfig.build.json"
+    },
+    {
       "path": "../../../foundation/result/tsconfig.build.json"
     },
     {

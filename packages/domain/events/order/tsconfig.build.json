@@ -20,6 +20,7 @@
   ],
   "references": [
     { "path": "../../../foundation/ids/tsconfig.build.json" },
+    { "path": "../../../foundation/messages/tsconfig.build.json" },
     { "path": "../../value-objects/tsconfig.build.json" },
     { "path": "../../entities/fill/tsconfig.build.json" }
   ]

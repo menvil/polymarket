@@ -18,7 +18,7 @@ import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import type { FillState, OrderState } from '../../src/OrderState';
 import type { FillData } from '@polymarket/fill';
-import { replay } from '../helpers';
+import { replay, nextTestMetadata } from '../helpers';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -193,7 +193,7 @@ describe('Order', () => {
       const result = Order.rehydrate(makeState());
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.pullEvents()).toHaveLength(0);
+        expect(result.value.pullEvents(nextTestMetadata)).toHaveLength(0);
       }
     });
 
@@ -324,14 +324,23 @@ describe('Order', () => {
       const order = replay([
         {
           type: 'ORDER_CREATED',
-          orderId: ORDER_ID,
-          asset: TEST_ASSET,
-          side: 'BUY',
-          price: Price.of(new Decimal('0.65')),
-          size: Quantity.of(new Decimal('100')),
-          timestamp: ts,
+          payload: {
+            orderId: ORDER_ID,
+            asset: TEST_ASSET,
+            side: 'BUY',
+            price: Price.of(new Decimal('0.65')),
+            size: Quantity.of(new Decimal('100')),
+            timestamp: ts,
+          },
+          metadata: nextTestMetadata(),
         },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
 
       expect(order.status).toBe('OPEN');
@@ -345,7 +354,13 @@ describe('Order', () => {
 
     it('должен вернуть Err если первое событие не ORDER_CREATED', () => {
       const result = Order.fromEvents([
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -365,10 +380,28 @@ describe('Order', () => {
       };
 
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'ORDER_FILLED', orderId: ORDER_ID, fill, averagePrice: fill.price },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_FILLED',
+          payload: {
+            orderId: ORDER_ID, fill, averagePrice: fill.price
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
 
       expect(order.status).toBe('FILLED');
@@ -388,10 +421,28 @@ describe('Order', () => {
       const remainingSize = Quantity.of(new Decimal('70'));
 
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill, filledSize: fill.size, remainingSize },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_PARTIALLY_FILLED',
+          payload: {
+            orderId: ORDER_ID, fill, filledSize: fill.size, remainingSize
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
 
       expect(order.status).toBe('PARTIALLY_FILLED');
@@ -410,17 +461,47 @@ describe('Order', () => {
       };
 
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill: fillData,
-          filledSize: Quantity.of(new Decimal('30')),
-          remainingSize: Quantity.of(new Decimal('70')) },
-        { type: 'ORDER_CANCELLED', orderId: ORDER_ID, reason: 'Risk limit' },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_PARTIALLY_FILLED',
+          payload: {
+            orderId: ORDER_ID, fill: fillData,
+            filledSize: Quantity.of(new Decimal('30')),
+            remainingSize: Quantity.of(new Decimal('70'))
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_CANCELLED',
+          payload: {
+            orderId: ORDER_ID, reason: 'Risk limit'
+          },
+          metadata: nextTestMetadata(),
+        },
         // fill после cancel — должен быть проигнорирован
-        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill: fillData,
-          filledSize: Quantity.of(new Decimal('50')),
-          remainingSize: Quantity.of(new Decimal('50')) },
+        {
+          type: 'ORDER_PARTIALLY_FILLED',
+          payload: {
+            orderId: ORDER_ID, fill: fillData,
+            filledSize: Quantity.of(new Decimal('50')),
+            remainingSize: Quantity.of(new Decimal('50'))
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
 
       expect(order.status).toBe('CANCELED');
@@ -430,10 +511,28 @@ describe('Order', () => {
     it('должен игнорировать ORDER_ACCEPTED если статус уже не PENDING', () => {
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID }, // дубль — должен быть проигнорирован
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        }, // дубль — должен быть проигнорирован
       ]);
       expect(order.status).toBe('OPEN');
     });
@@ -441,10 +540,28 @@ describe('Order', () => {
     it('должен игнорировать ORDER_REJECTED если статус уже не PENDING', () => {
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID }, // уже OPEN
-        { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Too late' }, // должен быть проигнорирован
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        }, // уже OPEN
+        {
+          type: 'ORDER_REJECTED',
+          payload: {
+            orderId: ORDER_ID, reason: 'Too late'
+          },
+          metadata: nextTestMetadata(),
+        }, // должен быть проигнорирован
       ]);
       expect(order.status).toBe('OPEN');
     });
@@ -452,10 +569,22 @@ describe('Order', () => {
     it('должен игнорировать ORDER_CANCELLED если статус не OPEN/PARTIALLY_FILLED', () => {
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
         // PENDING — не является fillable, ORDER_CANCELLED должен быть проигнорирован
-        { type: 'ORDER_CANCELLED', orderId: ORDER_ID, reason: 'Too early' },
+        {
+          type: 'ORDER_CANCELLED',
+          payload: {
+            orderId: ORDER_ID, reason: 'Too early'
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
       expect(order.status).toBe('PENDING');
     });
@@ -463,10 +592,28 @@ describe('Order', () => {
     it('должен игнорировать ORDER_EXPIRED если статус терминальный', () => {
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Invalid' }, // REJECTED — терминальный
-        { type: 'ORDER_EXPIRED', orderId: ORDER_ID }, // должен быть проигнорирован
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_REJECTED',
+          payload: {
+            orderId: ORDER_ID, reason: 'Invalid'
+          },
+          metadata: nextTestMetadata(),
+        }, // REJECTED — терминальный
+        {
+          type: 'ORDER_EXPIRED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        }, // должен быть проигнорирован
       ]);
       expect(order.status).toBe('REJECTED');
     });
@@ -475,9 +622,21 @@ describe('Order', () => {
       const FOREIGN_ID = asOrderId('order-foreign')!;
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: FOREIGN_ID }, // чужой orderId — должен быть проигнорирован
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: FOREIGN_ID
+          },
+          metadata: nextTestMetadata(),
+        }, // чужой orderId — должен быть проигнорирован
       ]);
       expect(order.status).toBe('PENDING'); // ORDER_ACCEPTED не применился
     });
@@ -491,11 +650,29 @@ describe('Order', () => {
         price: Price.of(new Decimal('0.65')),
       };
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'ORDER_FILLED', orderId: ORDER_ID, fill: fillData,
-          averagePrice: Price.of(new Decimal('0.65')) },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_FILLED',
+          payload: {
+            orderId: ORDER_ID, fill: fillData,
+            averagePrice: Price.of(new Decimal('0.65'))
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
       expect(order.status).toBe('FILLED'); // тип события определяет статус при replay
       expect(order.filledSize.value().toNumber()).toBe(50);
@@ -513,15 +690,30 @@ describe('Order', () => {
       };
       const partialEvent = {
         type: 'ORDER_PARTIALLY_FILLED' as const,
-        orderId: ORDER_ID,
-        fill: fillData,
-        filledSize: Quantity.of(new Decimal('30')),
-        remainingSize: Quantity.of(new Decimal('70')),
+        payload: {
+          orderId: ORDER_ID,
+          fill: fillData,
+          filledSize: Quantity.of(new Decimal('30')),
+          remainingSize: Quantity.of(new Decimal('70')),
+        },
+        metadata: nextTestMetadata(),
       };
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
         partialEvent,
         partialEvent, // дубликат того же fill — должен быть проигнорирован
       ]);
@@ -532,12 +724,24 @@ describe('Order', () => {
     it('fromEvents() не должен эмитировать события', () => {
       const ts = Timestamp.now();
       const order = replay([
-        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
-        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+          },
+          metadata: nextTestMetadata(),
+        },
+        {
+          type: 'ORDER_ACCEPTED',
+          payload: {
+            orderId: ORDER_ID
+          },
+          metadata: nextTestMetadata(),
+        },
       ]);
 
-      expect(order.pullEvents()).toHaveLength(0);
+      expect(order.pullEvents(nextTestMetadata)).toHaveLength(0);
     });
   });
 
@@ -546,7 +750,7 @@ describe('Order', () => {
       const result = createValidOrder();
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const events = result.value.pullEvents();
+        const events = result.value.pullEvents(nextTestMetadata);
         expect(events).toHaveLength(1);
         expect(events[0].type).toBe('ORDER_CREATED');
       }
@@ -554,70 +758,70 @@ describe('Order', () => {
 
     it('pullEvents() должен очистить буфер после вызова', () => {
       const order = unwrap(createValidOrder());
-      expect(order.pullEvents()).toHaveLength(1); // ORDER_CREATED
-      expect(order.pullEvents()).toHaveLength(0); // буфер пуст
+      expect(order.pullEvents(nextTestMetadata)).toHaveLength(1); // ORDER_CREATED
+      expect(order.pullEvents(nextTestMetadata)).toHaveLength(0); // буфер пуст
     });
 
     it('accept() должен эмитировать ORDER_ACCEPTED', () => {
       const order = unwrap(createValidOrder());
-      order.pullEvents(); // очищаем ORDER_CREATED
+      order.pullEvents(nextTestMetadata); // очищаем ORDER_CREATED
       const accepted = unwrap(order.accept());
-      const events = accepted.pullEvents();
+      const events = accepted.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_ACCEPTED');
     });
 
     it('reject() должен эмитировать ORDER_REJECTED', () => {
       const order = unwrap(createValidOrder());
-      order.pullEvents();
+      order.pullEvents(nextTestMetadata);
       const rejected = unwrap(order.reject('Bad price'));
-      const events = rejected.pullEvents();
+      const events = rejected.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_REJECTED');
     });
 
     it('cancel() должен эмитировать ORDER_CANCELLED', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents();
+      open.pullEvents(nextTestMetadata);
       const canceled = unwrap(open.cancel('Risk limit'));
-      const events = canceled.pullEvents();
+      const events = canceled.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_CANCELLED');
     });
 
     it('expire() должен эмитировать ORDER_EXPIRED', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents();
+      open.pullEvents(nextTestMetadata);
       const expired = unwrap(open.expire());
-      const events = expired.pullEvents();
+      const events = expired.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_EXPIRED');
     });
 
     it('applyFill() частичный → ORDER_PARTIALLY_FILLED', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents();
+      open.pullEvents(nextTestMetadata);
       const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
-      const events = partial.pullEvents();
+      const events = partial.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_PARTIALLY_FILLED');
     });
 
     it('applyFill() полный → ORDER_FILLED', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents();
+      open.pullEvents(nextTestMetadata);
       const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('100')) })));
-      const events = filled.pullEvents();
+      const events = filled.pullEvents(nextTestMetadata);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_FILLED');
     });
 
     it('команды, вернувшие Err, не добавляют события в буфер источника', () => {
       const pending = unwrap(createValidOrder());
-      pending.pullEvents(); // очищаем буфер ORDER_CREATED
+      pending.pullEvents(nextTestMetadata); // очищаем буфер ORDER_CREATED
       pending.cancel();     // Err — PENDING нельзя отменить
       pending.expire();     // Err — PENDING нельзя истечь
-      expect(pending.pullEvents()).toHaveLength(0); // Err не заполняет буфер
+      expect(pending.pullEvents(nextTestMetadata)).toHaveLength(0); // Err не заполняет буфер
     });
 
     it('каждый Order инстанс имеет собственный буфер', () => {
@@ -625,12 +829,12 @@ describe('Order', () => {
       const open = unwrap(order.accept()); // open._pendingEvents = [ORDER_CREATED, ORDER_ACCEPTED]
 
       // Оригинальный order содержит ORDER_CREATED
-      const originalEvents = order.pullEvents();
+      const originalEvents = order.pullEvents(nextTestMetadata);
       expect(originalEvents).toHaveLength(1);
       expect(originalEvents[0]?.type).toBe('ORDER_CREATED');
 
       // open содержит ORDER_CREATED (carry-forward) + ORDER_ACCEPTED
-      const openEvents = open.pullEvents();
+      const openEvents = open.pullEvents(nextTestMetadata);
       expect(openEvents).toHaveLength(2);
       expect(openEvents[0]?.type).toBe('ORDER_CREATED');
       expect(openEvents[1]?.type).toBe('ORDER_ACCEPTED');

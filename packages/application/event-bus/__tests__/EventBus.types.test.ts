@@ -124,10 +124,10 @@ describe('EventBus type-level contract', () => {
     });
     const unsubOrder = bus.subscribe('ORDER_FILLED', (event) => {
       const narrowed: OrderFilledEvent = event;
-      const price = event.averagePrice;
+      const price = event.payload.averagePrice;
       void narrowed; void price;
-      // @ts-expect-error — у OrderFilledEvent нет поля topOfBook
-      void event.topOfBook;
+      // @ts-expect-error — у payload OrderFilledEvent нет поля topOfBook
+      void event.payload.topOfBook;
     });
 
     // Negative: domain-событие НЕ присваивается application-union

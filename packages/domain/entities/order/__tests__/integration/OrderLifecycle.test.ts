@@ -30,7 +30,7 @@ import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
 import type { OrderSnapshot } from '../../src/OrderState';
 import type { FillData } from '@polymarket/fill';
-import { replay } from '../helpers';
+import { replay, nextTestMetadata } from '../helpers';
 
 // ──────────────── Фикстуры ────────────────
 
@@ -403,15 +403,30 @@ describe('Сценарий: fromEvents replay', () => {
     const order = replay([
       {
         type: 'ORDER_CREATED',
-        orderId: ORDER_ID,
-        asset: ASSET,
-        side: 'BUY',
-        price: Price.of(new Decimal('0.60')),
-        size: Quantity.of(new Decimal('100')),
-        timestamp: ts,
+        payload: {
+          orderId: ORDER_ID,
+          asset: ASSET,
+          side: 'BUY',
+          price: Price.of(new Decimal('0.60')),
+          size: Quantity.of(new Decimal('100')),
+          timestamp: ts,
+        },
+        metadata: nextTestMetadata(),
       },
-      { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-      { type: 'ORDER_FILLED', orderId: ORDER_ID, fill: fillData, averagePrice: fillData.price },
+      {
+        type: 'ORDER_ACCEPTED',
+        payload: {
+          orderId: ORDER_ID
+        },
+        metadata: nextTestMetadata(),
+      },
+      {
+        type: 'ORDER_FILLED',
+        payload: {
+          orderId: ORDER_ID, fill: fillData, averagePrice: fillData.price
+        },
+        metadata: nextTestMetadata(),
+      },
     ]);
 
     expect(order.status).toBe('FILLED');
@@ -425,14 +440,23 @@ describe('Сценарий: fromEvents replay', () => {
     const order = replay([
       {
         type: 'ORDER_CREATED',
-        orderId: ORDER_ID,
-        asset: ASSET,
-        side: 'BUY',
-        price: Price.of(new Decimal('0.60')),
-        size: Quantity.of(new Decimal('100')),
-        timestamp: ts,
+        payload: {
+          orderId: ORDER_ID,
+          asset: ASSET,
+          side: 'BUY',
+          price: Price.of(new Decimal('0.60')),
+          size: Quantity.of(new Decimal('100')),
+          timestamp: ts,
+        },
+        metadata: nextTestMetadata(),
       },
-      { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Bad price' },
+      {
+        type: 'ORDER_REJECTED',
+        payload: {
+          orderId: ORDER_ID, reason: 'Bad price'
+        },
+        metadata: nextTestMetadata(),
+      },
     ]);
 
     expect(order.status).toBe('REJECTED');

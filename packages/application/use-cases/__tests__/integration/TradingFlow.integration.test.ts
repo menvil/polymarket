@@ -269,6 +269,7 @@ describe('TradingFlow (integration)', () => {
     portfolioStore.save(portfolio, 0);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo,
       portfolioService,
@@ -353,6 +354,7 @@ describe('TradingFlow (integration)', () => {
     });
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo,
       portfolioService,
@@ -400,6 +402,7 @@ describe('TradingFlow (integration)', () => {
     portfolioStore.save(portfolio, 0);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo,
       portfolioService,
@@ -413,6 +416,7 @@ describe('TradingFlow (integration)', () => {
     };
 
     const cancelDeps: CancelOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService,
       orderRepo,
       orderStateStore: orderRepo,
@@ -515,6 +519,7 @@ describe('TradingFlow (integration)', () => {
 
     // 1. Place order нормально (Order saved, reserved).
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo, portfolioService, keyedMutex,
       exchangeClient: makeExchangeClient(),
@@ -535,6 +540,7 @@ describe('TradingFlow (integration)', () => {
       cancelOrder: () => Promise.resolve(Ok({ status: 'ALREADY_FILLED', reason: 'matched' })),
     };
     const cancelDeps: CancelOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex,
       exchangeClient: alreadyFilledExchange, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     };
@@ -617,6 +623,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     expect(version).toBe(1);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo,
       portfolioService,
@@ -693,6 +700,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo,
       portfolioService,
@@ -744,6 +752,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
 
     // Cancel остатка (20 из 50 непокрыты) — под тем же реальным CAS Portfolio.
     const cancelDeps: CancelOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService,
       orderRepo,
       orderStateStore: orderRepo,
@@ -811,6 +820,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo, portfolioService, keyedMutex,
       exchangeClient: makeExchangeClient(),
@@ -835,6 +845,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
       keyedMutex: mutex, eventBus, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
     const cancelOrderUseCase = new CancelOrderUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex: mutex,
       exchangeClient, orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });
@@ -885,6 +896,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     expect(realPortfolioStore.save(portfolio, 0).ok).toBe(true);
 
     const placeDeps: PlaceOrderDeps = {
+      metadataGenerator: makeMetadataGenerator(),
       riskChecker: makePassRiskChecker(),
       orderRepo, portfolioService, keyedMutex,
       exchangeClient: makeExchangeClient(),
@@ -903,6 +915,7 @@ describe('TradingFlow (integration) — CAS Portfolio (реальный InMemory
     const applyFillSpy = jest.spyOn(portfolioService, 'applyFill');
 
     const cancelOrderUseCase = new CancelOrderUseCase({
+      metadataGenerator: makeMetadataGenerator(),
       portfolioService, orderRepo, orderStateStore: orderRepo, keyedMutex: mutex,
       exchangeClient: makeExchangeClient(), orderedEventOutbox, submissions: orderSubmissionRepo, logger: LOGGER,
     });

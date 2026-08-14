@@ -1,18 +1,23 @@
 /**
- * Событие частичного исполнения заявки
+ * Событие частичного исполнения заявки.
  *
  * @remarks
- * Несёт данные fill + накопленное состояние для удобства подписчиков.
- * Подписчику не нужно самостоятельно считать filledSize и remainingSize.
+ * Canonical envelope `{ type, payload, metadata }` (M-003); metadata не
+ * участвует в replay-семантике.
  */
+import type { MessageEnvelope } from '@polymarket/messages';
 import type { OrderId } from '@polymarket/ids';
 import type { Quantity } from '@polymarket/value-objects';
 import type { FillData } from '@polymarket/fill';
 
-export interface OrderPartiallyFilledEvent {
-  readonly type: 'ORDER_PARTIALLY_FILLED';
+/** Payload события частичного исполнения. */
+export interface OrderPartiallyFilledPayload {
   readonly orderId: OrderId;
   readonly fill: FillData;
-  readonly filledSize: Quantity;    // накопленный объём после этого fill
-  readonly remainingSize: Quantity; // остаток после этого fill
+  /** Накопленный объём после этого fill */
+  readonly filledSize: Quantity;
+  /** Остаток после этого fill */
+  readonly remainingSize: Quantity;
 }
+
+export type OrderPartiallyFilledEvent = MessageEnvelope<'ORDER_PARTIALLY_FILLED', OrderPartiallyFilledPayload>;

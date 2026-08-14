@@ -381,18 +381,18 @@ async function runSingleMarketBacktest(
   const recordedFillIds = new Set<string>();
 
   eventBus.subscribe('ORDER_CREATED', (event) => {
-    const tokenId = String(event.asset ?? '');
-    const orderId = event.orderId;
-    const priceCents = event.price.value().toNumber() * 100;
+    const tokenId = String(event.payload.asset ?? '');
+    const orderId = event.payload.orderId;
+    const priceCents = event.payload.price.value().toNumber() * 100;
     if (tokenId) orderToToken.set(orderId, tokenId);
     orderToPriceCents.set(orderId, priceCents);
     journal?.recordOrder({
       marketId: tokenId,
       ts: Date.now(),
       orderId,
-      side: event.side as 'BUY' | 'SELL',
-      price: event.price.value().toFixed(4),
-      size: event.size.value().toFixed(2),
+      side: event.payload.side as 'BUY' | 'SELL',
+      price: event.payload.price.value().toFixed(4),
+      size: event.payload.size.value().toFixed(2),
     });
   });
 
@@ -406,23 +406,23 @@ async function runSingleMarketBacktest(
   };
 
   eventBus.subscribe('ORDER_FILLED', (event) => {
-    const fillId = String(event.fill.id);
+    const fillId = String(event.payload.fill.id);
     if (recordedFillIds.has(fillId)) return;
     recordedFillIds.add(fillId);
 
-    if (event.fill.side === 'BUY') buyCount++;
+    if (event.payload.fill.side === 'BUY') buyCount++;
     else sellCount++;
 
-    const price = event.fill.price.value();
-    const size = event.fill.size.value();
-    const orderId = event.orderId;
+    const price = event.payload.fill.price.value();
+    const size = event.payload.fill.size.value();
+    const orderId = event.payload.orderId;
     const tokenId = orderToToken.get(orderId) ?? '';
     const slippage = computeSlippage(orderId, price.toNumber() * 100);
     journal?.recordFill({
       marketId: tokenId,
       ts: Date.now(),
       orderId,
-      side: event.fill.side as 'BUY' | 'SELL',
+      side: event.payload.fill.side as 'BUY' | 'SELL',
       price: price.toFixed(4),
       size: size.toFixed(2),
       notional: price.times(size).toFixed(4),
@@ -433,23 +433,23 @@ async function runSingleMarketBacktest(
   });
 
   eventBus.subscribe('ORDER_PARTIALLY_FILLED', (event) => {
-    const fillId = String(event.fill.id);
+    const fillId = String(event.payload.fill.id);
     if (recordedFillIds.has(fillId)) return;
     recordedFillIds.add(fillId);
 
-    if (event.fill.side === 'BUY') buyCount++;
+    if (event.payload.fill.side === 'BUY') buyCount++;
     else sellCount++;
 
-    const price = event.fill.price.value();
-    const size = event.fill.size.value();
-    const orderId = event.orderId;
+    const price = event.payload.fill.price.value();
+    const size = event.payload.fill.size.value();
+    const orderId = event.payload.orderId;
     const tokenId = orderToToken.get(orderId) ?? '';
     const slippage = computeSlippage(orderId, price.toNumber() * 100);
     journal?.recordFill({
       marketId: tokenId,
       ts: Date.now(),
       orderId,
-      side: event.fill.side as 'BUY' | 'SELL',
+      side: event.payload.fill.side as 'BUY' | 'SELL',
       price: price.toFixed(4),
       size: size.toFixed(2),
       notional: price.times(size).toFixed(4),

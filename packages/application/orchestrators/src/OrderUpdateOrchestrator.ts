@@ -29,6 +29,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { VenueOrderUpdate } from '@polymarket/application-events';
 import type { IEventBus } from '@polymarket/event-bus';
+import type { MessageMetadata } from '@polymarket/messages';
 import type { AccountId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import type { TradingError } from '@polymarket/errors';
@@ -44,6 +45,8 @@ export interface IOrderStatusUpdater {
   execute(input: {
     update: VenueOrderUpdate;
     accountId: AccountId;
+    /** Metadata сообщения-триггера — causal chain порождаемых Order-событий (M-003) */
+    parentMetadata?: MessageMetadata;
   }): Promise<Result<void, TradingError>>;
 }
 
@@ -92,9 +95,13 @@ export class OrderUpdateOrchestrator {
     this._unsub = this._eventBus.subscribe('ORDER_UPDATE_RECEIVED', async (event) => {
       const { update, accountId } = event.payload;
       try {
+        // event.metadata — parent причинной цепочки: Order-события, порождённые
+        // этим update (ORDER_ACCEPTED/CANCELLED/...), наследуют correlationId
+        // ORDER_UPDATE_RECEIVED (M-003 causal chain)
         const result = await this._updateOrderStatus.execute({
           update,
           accountId,
+          parentMetadata: event.metadata,
         });
         if (!result.ok) {
           this._logger.error('UpdateOrderStatusUseCase failed', {
