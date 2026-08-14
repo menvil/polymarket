@@ -292,23 +292,51 @@ export interface IBacktestCryptoMarketDataStore {
 }
 
 /**
- * Зависимости бектест-движка.
+ * Публикация событий бектеста — атомарная пара зависимостей.
+ *
+ * @remarks
+ * Инвариант M-003: событие публикуется ТОЛЬКО как полный canonical envelope,
+ * поэтому `eventBus` без `metadataGenerator` — invalid state (событие
+ * нечем снабдить metadata) и запрещён на уровне типов:
+ *
+ * - публикация выключена → нет НИ eventBus, НИ metadataGenerator;
+ * - публикация включена → есть ОБА.
+ *
+ * Смешанная конфигурация не выражается типами, а обход типов (JS/casts)
+ * ловится fail-fast в конструкторе — молчаливого пропуска событий нет.
  */
-export interface BacktestDeps {
+export type BacktestEventPublishingDeps =
+  | {
+      /** Публикация выключена: bus отсутствует… */
+      readonly eventBus?: undefined;
+      /** …и генератор metadata тоже отсутствует. */
+      readonly metadataGenerator?: undefined;
+    }
+  | {
+      /**
+       * EventBus для публикации TRADE_RECEIVED.
+       * Нужен, если снапшоты содержат `event_type: 'last_trade_price'`.
+       */
+      readonly eventBus: IEventBus;
+      /**
+       * Canonical-генератор metadata публикуемых событий (M-003) —
+       * обязательная пара к eventBus. Для детерминированного replay
+       * инъецируй генератор с ReplayClock (и, при необходимости,
+       * FixedHighResolutionClock).
+       */
+      readonly metadataGenerator: MessageMetadataGenerator;
+    };
+
+/**
+ * Зависимости бектест-движка.
+ *
+ * @remarks
+ * Event-publishing часть — union {@link BacktestEventPublishingDeps}:
+ * `eventBus` и `metadataGenerator` присутствуют строго парой.
+ */
+export type BacktestDeps = BacktestEventPublishingDeps & {
   /** Application-layer хендлер обновлений стакана */
   readonly bookUpdateHandler: BookUpdateHandler;
-  /**
-   * EventBus для публикации TRADE_RECEIVED.
-   * Обязателен только если снапшоты содержат `event_type: 'last_trade_price'`.
-   */
-  readonly eventBus?: IEventBus;
-  /**
-   * Canonical-генератор metadata публикуемых событий (M-003).
-   * Обязателен вместе с eventBus: TRADE_RECEIVED — canonical envelope.
-   * Для детерминированного replay инъецируй генератор с ReplayClock
-   * (и, при необходимости, FixedHighResolutionClock).
-   */
-  readonly metadataGenerator?: MessageMetadataGenerator;
   /** Логгер */
   readonly logger: ILogger;
   /**
@@ -331,7 +359,7 @@ export interface BacktestDeps {
    * Если не предоставлен — fallback на strike_price/market_resolved события.
    */
   readonly parseCryptoMeta?: (rawMarket: Record<string, unknown>) => { rtdsFilter: string; priceToBeat?: number; finalPrice?: number } | undefined;
-}
+};
 
 /**
  * Результат выполнения бектеста.
@@ -388,6 +416,13 @@ export class BacktestEngine {
     private readonly _config: BacktestConfig,
     private readonly _deps: BacktestDeps,
   ) {
+    // Runtime-защита инварианта пары (типы обходимы из JS/через касты):
+    // eventBus без metadataGenerator означал бы молчаливый пропуск событий.
+    if ((_deps.eventBus === undefined) !== (_deps.metadataGenerator === undefined)) {
+      throw new RangeError(
+        'BacktestEngine requires eventBus and metadataGenerator as an atomic pair: provide both to enable event publishing or neither to disable it',
+      );
+    }
     this._logger = _deps.logger.child({ component: 'BacktestEngine' });
   }
 
@@ -1038,12 +1073,8 @@ export class BacktestEngine {
       return false;
     }
 
-    if (!this._deps.eventBus) {
+    if (this._deps.eventBus === undefined) {
       this._logger.warn('TRADE_RECEIVED skipped: eventBus not provided in deps');
-      return false;
-    }
-    if (!this._deps.metadataGenerator) {
-      this._logger.warn('TRADE_RECEIVED skipped: metadataGenerator not provided in deps');
       return false;
     }
 
