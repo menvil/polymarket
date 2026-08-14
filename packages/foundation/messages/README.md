@@ -124,7 +124,10 @@ const child = metadataGenerator.nextChild(parent.metadata);
 - **Время детерминируемо и когерентно** — источники только инъецированные `IClock` и
   `IHighResolutionClock` (абсолютные epoch-наносекунды). `SystemHighResolutionClock` —
   гибридные часы: wall-clock origin + monotonic elapsed (`process.hrtime.bigint()`
-  измеряет ТОЛЬКО elapsed и никогда не трактуется как Unix-время напрямую).
+  измеряет ТОЛЬКО elapsed и никогда не трактуется как Unix-время напрямую); пара
+  origins снимается bracket-ом (hrtime до/после `Date.now()`, wall-момент = середина
+  bracket-а, широкий bracket = preemption → повторная попытка) — перекос спаривания
+  двух OS-часов ограничен полушириной bracket-а.
   `FixedHighResolutionClock` — детерминированный источник для тестов/replay.
 
 ## Producer style
