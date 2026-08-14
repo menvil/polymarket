@@ -93,34 +93,117 @@ function collectSources(dir: string): string[] {
 }
 
 /**
- * Извлекает имена РЕАЛЬНО импортируемых `@polymarket/*` пакетов из исходника.
+ * Все формы module specifier, которыми пакет реально может быть подключён.
  *
  * @remarks
- * Комментарии вырезаются до разбора: TSDoc-примеры (`@example`) содержат
- * import-строки, которые не являются зависимостями пакета.
+ * Узкий шаблон (только `from '...'` с одинарными кавычками) давал бы
+ * false negative: нарушение границы, записанное как side-effect import или в
+ * двойных кавычках, прошло бы проверку незамеченным. Покрываются:
+ * `from '...'`/`"..."`, `export ... from`, side-effect `import '...'`,
+ * динамический `import('...')` и `require('...')`.
  */
-function importedPackages(file: string): string[] {
-  const source = readFileSync(file, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-  const matches = source.matchAll(/from\s+'(@polymarket\/[^']+)'/g);
-  return [...matches].map((match) => match[1] as string);
+const MODULE_SPECIFIER_PATTERN =
+  /(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)['"](@polymarket\/[^'"]+)['"]/g;
+
+/**
+ * Извлекает имена РЕАЛЬНО импортируемых `@polymarket/*` пакетов из текста модуля.
+ *
+ * @remarks
+ * Чистая функция (отделена от чтения файла — покрыта self-тестом ниже).
+ * Комментарии вырезаются до разбора: TSDoc-примеры (`@example`) содержат
+ * import-строки, которые не являются зависимостями пакета. Построчные
+ * комментарии удаляются только если строка с них начинается — иначе пострадали
+ * бы URL внутри кода.
+ */
+function extractPackageImports(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  return [...code.matchAll(MODULE_SPECIFIER_PATTERN)].map((match) => match[1] as string);
 }
+
+/** Извлекает имена импортируемых `@polymarket/*` пакетов из файла. */
+function importedPackages(file: string): string[] {
+  return extractPackageImports(readFileSync(file, 'utf8'));
+}
+
+/**
+ * Карта имени пакета → директория, построенная ОДИН раз на весь файл.
+ *
+ * @remarks
+ * `buildPackageMap()` рекурсивно обходит `packages/` + `apps/` с синхронным
+ * FS и `JSON.parse` — повторять этот обход в каждом `describe` незачем,
+ * содержимое репозитория во время прогона неизменно.
+ */
+const PACKAGE_MAP = buildPackageMap();
+
+/** Кэш импортов по пакету — тот же обход в разных проверках не повторяется. */
+const importsCache = new Map<string, Set<string>>();
 
 /** Собирает все `@polymarket/*` импорты пакета (src, без тестов). */
 function packageImports(...segments: string[]): Set<string> {
+  const key = segments.join(sep);
+  const cached = importsCache.get(key);
+  if (cached !== undefined) return cached;
+
   const imports = new Set<string>();
   for (const file of collectSources(join(REPO_ROOT, ...segments, 'src'))) {
     for (const name of importedPackages(file)) imports.add(name);
   }
+  importsCache.set(key, imports);
   return imports;
 }
 
 const EXTERNAL_MESSAGES = ['packages', 'infrastructure', 'external-messages'];
 const EXTERNAL_MESSAGE_BUS = ['packages', 'infrastructure', 'external-message-bus'];
 
+describe('import extraction (self-test инструмента проверки)', () => {
+  it('распознаёт все формы подключения пакета', () => {
+    const fixture = [
+      "import { A } from '@polymarket/single-quoted';",
+      'import { B } from "@polymarket/double-quoted";',
+      "import type { C } from '@polymarket/type-only';",
+      "import '@polymarket/side-effect';",
+      'import "@polymarket/side-effect-double";',
+      "export * from '@polymarket/re-exported';",
+      "const d = await import('@polymarket/dynamic');",
+      "const e = require('@polymarket/required');",
+    ].join('\n');
+
+    expect(extractPackageImports(fixture).sort()).toEqual([
+      '@polymarket/double-quoted',
+      '@polymarket/dynamic',
+      '@polymarket/re-exported',
+      '@polymarket/required',
+      '@polymarket/side-effect',
+      '@polymarket/side-effect-double',
+      '@polymarket/single-quoted',
+      '@polymarket/type-only',
+    ]);
+  });
+
+  it('игнорирует import-строки внутри комментариев', () => {
+    const fixture = [
+      '/**',
+      " * @example import { X } from '@polymarket/from-tsdoc';",
+      ' */',
+      "// import { Y } from '@polymarket/from-line-comment';",
+      "import { Z } from '@polymarket/real';",
+    ].join('\n');
+
+    expect(extractPackageImports(fixture)).toEqual(['@polymarket/real']);
+  });
+
+  it('не считает импортом посторонние вхождения имени пакета', () => {
+    const fixture = [
+      "const label = '@polymarket/not-an-import';",
+      "logger.info('@polymarket/also-not-an-import');",
+    ].join('\n');
+
+    expect(extractPackageImports(fixture)).toEqual([]);
+  });
+});
+
 describe('M-004 target dependency graph', () => {
-  const packageMap = buildPackageMap();
+  const packageMap = PACKAGE_MAP;
 
   it('карта пакетов содержит оба пакета контура (sanity)', () => {
     expect(packageMap.get('@polymarket/external-messages')).toBe(EXTERNAL_MESSAGES.join(sep));
@@ -169,7 +252,7 @@ describe('M-004 target dependency graph', () => {
 });
 
 describe('Foundation не зависит от Infrastructure', () => {
-  const packageMap = buildPackageMap();
+  const packageMap = PACKAGE_MAP;
 
   it('ни message-bus, ни messages не знают о внешнем контуре', () => {
     for (const foundation of [
@@ -205,7 +288,7 @@ describe('Foundation не зависит от Infrastructure', () => {
 });
 
 describe('layer boundary внешнего контракта', () => {
-  const packageMap = buildPackageMap();
+  const packageMap = PACKAGE_MAP;
   /** Пакеты, тянуть которые в generic external contract запрещено. */
   const FORBIDDEN = [
     '@polymarket/application-events',

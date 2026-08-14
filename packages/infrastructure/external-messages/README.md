@@ -153,7 +153,7 @@ Foundation-стандарт (`MessageMetadataGenerator` из `@polymarket/messag
 | Смысл | source-native наблюдение | внутреннее semantic-событие |
 | Словарь полей | чужой (транспорта/биржи) | наш (Domain/Application) |
 | Кто создаёт | transport | Domain/Application/adapter |
-| Causality | как правило root | как правило child |
+| Causality | как правило, root | как правило, child |
 | Контур доставки | `ExternalMessageBus` | Application `EventBus` |
 | Конверт | один и тот же `MessageEnvelope` | один и тот же `MessageEnvelope` |
 

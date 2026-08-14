@@ -49,6 +49,10 @@
     "@polymarket/result": "^0.1.0"
   },
   "devDependencies": {
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/messages": "0.1.0",
+    "@polymarket/time": "0.1.0",
+    "@polymarket/timestamp": "0.1.0",
     "@jest/globals": "^29.7.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^26.1.1",
