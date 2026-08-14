@@ -88,24 +88,24 @@ Verify each finding against the current code and only fix it if needed.
 In @packages/application/handlers/src/OrderUpdateHandler.ts around lines 104 - 127, The code currently calls updatedOrder.pullEvents() after await this._orders.save(updatedOrder), risking lost events if publishAll fails; change to pull events into a local const before saving (const events = updatedOrder.pullEvents()), then save the order, then attempt this._eventBus.publishAll(events); on publish failure re-attach or persist the events for retry (e.g., push them back onto updatedOrder or write to an outbox and call this._orders.save/persist) so events are not lost; reference methods: pullEvents,_orders.save, _eventBus.publishAll, and the updatedOrder instance.
 
 ============================================================================
-File: packages/domain/market-data/trade-tape/**tests**/unit/TradeTape.test.ts
+File: `packages/domain/market-data/trade-tape/__tests__/unit/TradeTape.test.ts`
 Line: 148 to 153
 Type: potential_issue
 
 Prompt for AI Agent:
 Verify each finding against the current code and only fix it if needed.
 
-In @packages/domain/market-data/trade-tape/**tests**/unit/TradeTape.test.ts around lines 148 - 153, The test "возвращает readonly массив" currently only asserts Array.isArray(all) but doesn't verify immutability; update the test for TradeTape.create(...) and its getAll() to either (A) assert runtime immutability by checking Object.isFrozen(all) or attempting a mutation (e.g., push/splice/assign) and expecting it to throw or not change the original, or (B) if immutability is only a TS compile-time guarantee, rename the spec to "возвращает массив" to remove the readonly claim; locate and change the test that uses TradeTape.create and tape.getAll() to implement one of these two fixes.
+In `@packages/domain/market-data/trade-tape/__tests__/unit/TradeTape.test.ts` around lines 148 - 153, The test "возвращает readonly массив" currently only asserts Array.isArray(all) but doesn't verify immutability; update the test for TradeTape.create(...) and its getAll() to either (A) assert runtime immutability by checking Object.isFrozen(all) or attempting a mutation (e.g., push/splice/assign) and expecting it to throw or not change the original, or (B) if immutability is only a TS compile-time guarantee, rename the spec to "возвращает массив" to remove the readonly claim; locate and change the test that uses TradeTape.create and tape.getAll() to implement one of these two fixes.
 
 ============================================================================
-File: packages/domain/market-data/order-book/**tests**/unit/OrderBookHistory.test.ts
+File: `packages/domain/market-data/order-book/__tests__/unit/OrderBookHistory.test.ts`
 Line: 286 to 296
 Type: potential_issue
 
 Prompt for AI Agent:
 Verify each finding against the current code and only fix it if needed.
 
-In @packages/domain/market-data/order-book/**tests**/unit/OrderBookHistory.test.ts around lines 286 - 296, Add an assertion that verifies the number of remaining snapshots so the age-boundary behavior is explicit: after creating the history via OrderBookHistory.create(...) and recording snapshots with h.record(...) at T0, T0+10_000 and T0+40_000, assert h.size() equals 2 to confirm that the snapshot 'b' (age exactly maxAgeMs) is retained under the current strict-inequality semantics while 'a' is evicted; place this check alongside the existing expect(h.getLatest()?.tokenId).
+In `@packages/domain/market-data/order-book/__tests__/unit/OrderBookHistory.test.ts` around lines 286 - 296, Add an assertion that verifies the number of remaining snapshots so the age-boundary behavior is explicit: after creating the history via OrderBookHistory.create(...) and recording snapshots with h.record(...) at T0, T0+10_000 and T0+40_000, assert h.size() equals 2 to confirm that the snapshot 'b' (age exactly maxAgeMs) is retained under the current strict-inequality semantics while 'a' is evicted; place this check alongside the existing expect(h.getLatest()?.tokenId).
 
 ============================================================================
 File: packages/application/event-bus/src/EventBus.ts

@@ -1320,7 +1320,7 @@ export class EventBus implements IEventBus {
 }
 ```
 
-### **tests**/EventBus.test.ts — ключевые сценарии
+### `__tests__/EventBus.test.ts` — ключевые сценарии
 
 ```typescript
 describe('EventBus', () => {
