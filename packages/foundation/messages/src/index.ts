@@ -34,3 +34,14 @@ export type { MessageEnvelope } from './MessageEnvelope.js';
 export type { MessageMetadata } from './MessageMetadata.js';
 /** Generic-граница canonical-сообщения (см. TypedMessage.ts). */
 export type { TypedMessage } from './TypedMessage.js';
+/** Единый механизм создания metadata (см. MessageMetadataGenerator.ts). */
+export { MessageMetadataGenerator } from './MessageMetadataGenerator.js';
+export type { MessageMetadataGeneratorOptions } from './MessageMetadataGenerator.js';
+/** Canonical-генерация RunId — один вызов на startup (см. generateRunId.ts). */
+export { generateRunId } from './generateRunId.js';
+/** Порт high-resolution источника sub-ms компонент (см. IHighResolutionClock.ts). */
+export type { IHighResolutionClock } from './IHighResolutionClock.js';
+/** Live-реализация high-resolution источника (см. SystemHighResolutionClock.ts). */
+export { SystemHighResolutionClock } from './SystemHighResolutionClock.js';
+/** Детерминированный high-resolution источник (см. FixedHighResolutionClock.ts). */
+export { FixedHighResolutionClock } from './FixedHighResolutionClock.js';
