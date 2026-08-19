@@ -24,6 +24,11 @@ const config: Config = {
     '^@polymarket/time$': '<rootDir>/../../foundation/time/src/index.ts',
     '^@polymarket/result$': '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/timestamp$': '<rootDir>/../../foundation/timestamp/src/index.ts',
+    // Discovery V2: селекция reuse-ит существующие filter/scorer и VO-модель
+    // кандидата; legacy adapter (behavior oracle parity-тестов) тянет те же пакеты.
+    '^@polymarket/market-discovery$': '<rootDir>/../../application/market-discovery/src/index.ts',
+    '^@polymarket/ports$': '<rootDir>/../../application/ports/src/index.ts',
+    '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
   },
 };
 

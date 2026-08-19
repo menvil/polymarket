@@ -40,6 +40,24 @@
     },
     {
       "path": "../../foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/timestamp/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../../application/ports/tsconfig.build.json"
+    },
+    {
+      "path": "../../application/market-discovery/tsconfig.build.json"
     }
   ]
 }

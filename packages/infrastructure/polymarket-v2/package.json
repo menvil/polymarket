@@ -48,15 +48,19 @@
     "@polymarket/client": "^0.6.0",
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/external-messages": "0.1.0",
+    "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
+    "@polymarket/market-discovery": "0.1.0",
     "@polymarket/message-bus": "0.1.0",
     "@polymarket/messages": "0.1.0",
-    "@polymarket/result": "^0.1.0"
-  },
-  "devDependencies": {
-    "@polymarket/ids": "0.1.0",
+    "@polymarket/ports": "0.1.0",
+    "@polymarket/result": "^0.1.0",
     "@polymarket/time": "0.1.0",
     "@polymarket/timestamp": "0.1.0",
+    "@polymarket/value-objects": "0.1.0",
+    "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^26.1.1",

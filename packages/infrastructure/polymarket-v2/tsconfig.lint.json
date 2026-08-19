@@ -1,7 +1,6 @@
 {
   "extends": "../../../tsconfig.lint.base.json",
   "compilerOptions": {
-    "rootDir": ".",
     "paths": {
       "@polymarket/polymarket-v2": ["./src/index.ts"]
     }
