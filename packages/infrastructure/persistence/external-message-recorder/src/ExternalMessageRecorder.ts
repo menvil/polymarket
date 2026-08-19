@@ -1,0 +1,586 @@
+/**
+ * ExternalMessageRecorder — recording-подписчик общего ExternalMessageBus.
+ *
+ * @remarks
+ * ### Место в архитектуре (N-002)
+ *
+ * ```text
+ * @polymarket/client
+ *        ↓
+ * PolymarketSource                ← НЕ знает о Recorder
+ *        ↓
+ * ExternalMessage {type, payload, metadata}
+ *        ↓
+ * общий ExternalMessageBus
+ *        ↓ subscribe('POLYMARKET_*')
+ * ExternalMessageRecorder (этот класс)   ← независимый consumer
+ *        ↓ message.payload  (ТОЛЬКО payload, без outer envelope)
+ * DataRecorder / storage
+ *        ↓
+ * market JSONL file (.jsonl → .jsonl.gz)
+ * ```
+ *
+ * ### Разделение ответственности (ingestion vs storage)
+ *
+ * Этот класс — ТОЛЬКО ingestion/routing:
+ * - подписывается на typed Polymarket-сообщения общего bus;
+ * - маршрутизирует market-события по source market id (`payload.market` ==
+ *   conditionId == `String(marketMeta.marketId)` — доказано аудитом
+ *   PolymarketMarketDiscoveryAdapter);
+ * - маршрутизирует RTDS-события по точному ключу `(topic, symbol)` —
+ *   БЕЗ эвристик формата символа;
+ * - передаёт в storage НЕИЗМЕНЁННЫЙ `message.payload`.
+ *
+ * Buffering/flush/gzip/header/cleanup — ответственность storage
+ * (`DataRecorder`), сюда не дублируются.
+ *
+ * ### Payload-only инвариант
+ *
+ * На диск попадает ТОЛЬКО `message.payload` (source-native SDK event):
+ * canonical runtime metadata (`messageId`/`sequence`/`correlationId`/...) и
+ * внешний routing discriminator (`POLYMARKET_MARKET`) принадлежат live
+ * execution и НЕ записываются. Будущий Reader создаст НОВЫЙ ExternalMessage
+ * вокруг того же payload — semantic adapter в live и replay получает
+ * идентичное source-native представление.
+ *
+ * ### Policy отказов
+ *
+ * Recorder — optional/non-trading consumer: ошибка записи наблюдаема
+ * (лог + счётчики {@link ExternalMessageRecorderStats}), но НЕ уничтожает
+ * PolymarketSource, не останавливает bus и не мешает будущему SemanticAdapter.
+ * Handlers синхронные и никогда не бросают.
+ */
+import type { ILogger } from '@polymarket/logger';
+import type { MarketId } from '@polymarket/ids';
+import type { MarketMeta } from '@polymarket/ports';
+import type { IExternalMessageBus } from '@polymarket/external-message-bus';
+import type { DataRecorder } from '@polymarket/data-collection';
+import type {
+  CryptoPricesTopic,
+  PolymarketCryptoBinanceExternalMessage,
+  PolymarketCryptoChainlinkExternalMessage,
+  PolymarketExternalMessage,
+  PolymarketMarketExternalMessage,
+} from '@polymarket/polymarket-v2';
+
+/**
+ * Точный ключ маршрутизации одного RTDS-фида в файл рынка.
+ *
+ * @remarks
+ * Источник определяется по vendor `topic`-дискриминатору SDK
+ * (`prices.crypto.binance` / `prices.crypto.chainlink`), а НЕ по формату
+ * символа: эвристика `symbol.includes('/')` из legacy-коллектора сюда
+ * сознательно не переносится. `symbol` сравнивается точно (Binance —
+ * `btcusdt`, Chainlink — `btc/usd`, как в подписке Source).
+ */
+export interface PolymarketRtdsFeedKey {
+  /** Vendor topic RTDS-фида (дискриминатор источника). */
+  readonly topic: CryptoPricesTopic;
+  /** Точный символ фида в нативном формате источника. */
+  readonly symbol: string;
+}
+
+/**
+ * Регистрация recording-сессии одного Polymarket-рынка.
+ *
+ * @remarks
+ * Recorder НЕ решает, какие символы нужны рынку — готовую routing-регистрацию
+ * ему передаёт вызывающий (будущий Market Discovery/Coordinator N-003).
+ * `marketMeta` — существующий storage-контракт (`registerMarket`): recorder
+ * не добавляет собственного дубликата source market id, потому что
+ * `String(marketMeta.marketId)` УЖЕ равен conditionId — routing identity
+ * SDK-событий (`payload.market`).
+ */
+export interface PolymarketRecordingRegistration {
+  /** Метаданные рынка для storage (header/файл/активация по startsAt). */
+  readonly marketMeta: MarketMeta;
+  /** RTDS-фиды, наблюдения которых записываются в файл этого рынка. */
+  readonly rtdsFeeds?: readonly PolymarketRtdsFeedKey[];
+}
+
+/**
+ * Порт подписки recorder-а на общий ExternalMessageBus.
+ *
+ * @remarks
+ * Структурное подмножество `IExternalMessageBus` (только `subscribe`):
+ * recorder НЕ владеет bus и не имеет права на `publish`/`drain`/`close` —
+ * lifecycle bus принадлежит composition root. Узкий тип также позволяет
+ * передать сюда bus, параметризованный БОЛЕЕ ШИРОКИМ union-ом sources
+ * (`PolymarketExternalMessage | CexExternalMessage | ...`): typed
+ * `subscribe` контравариантен по union и сужает payload по конкретному
+ * discriminator-у подписки.
+ */
+export type PolymarketRecordingBusSubscription = Pick<
+  IExternalMessageBus<PolymarketExternalMessage>,
+  'subscribe'
+>;
+
+/**
+ * Порт storage-движка market-файлов, который использует recorder.
+ *
+ * @remarks
+ * Структурное подмножество `DataRecorder` (`@polymarket/data-collection`) —
+ * единственный источник истины по buffering/flush/gzip/header/cleanup.
+ * Второй storage-движок не реализуется (N-002 PART 1: reuse, do not rewrite).
+ */
+export type PolymarketRecordingStorage = Pick<
+  DataRecorder,
+  | 'registerMarket'
+  | 'recordMarketEvent'
+  | 'updateMarketMeta'
+  | 'finalizeMarket'
+  | 'flush'
+  | 'cleanup'
+  | 'close'
+>;
+
+/**
+ * Зависимости {@link ExternalMessageRecorder}.
+ *
+ * @remarks
+ * Ownership: bus принадлежит composition root (recorder только подписывается
+ * и отписывается); storage-движок принадлежит recorder-у — он его
+ * единственный писатель и закрывает его в {@link ExternalMessageRecorder.close}.
+ */
+export interface ExternalMessageRecorderDependencies {
+  /** Общий bus внешнего контура (используется только `subscribe`). */
+  readonly bus: PolymarketRecordingBusSubscription;
+  /** Storage-движок market-файлов (обычно `DataRecorder` с `formatVersion: 2`). */
+  readonly storage: PolymarketRecordingStorage;
+  /** Логгер (будет обёрнут в child с component-контекстом). */
+  readonly logger: ILogger;
+}
+
+/**
+ * Диагностические счётчики recorder-а (loss visibility, PART 17).
+ */
+export interface ExternalMessageRecorderStats {
+  /** Market-сообщений сматчено с recording-сессией. */
+  readonly marketMessagesRouted: number;
+  /** RTDS-сообщений сматчено хотя бы с одной сессией (1 на сообщение). */
+  readonly rtdsMessagesRouted: number;
+  /** Строк принято storage в буфер записи (RTDS fan-out считается по файлам). */
+  readonly recordsWritten: number;
+  /** Строк сознательно пропущено activation policy (до startsAt). */
+  readonly recordsSkippedInactive: number;
+  /** Ошибок сериализации payload (наблюдаемых, залогированных storage). */
+  readonly serializationFailures: number;
+  /** Market-сообщений без зарегистрированной сессии (например, после finalize). */
+  readonly unroutedMarketMessages: number;
+  /** RTDS-сообщений без единого зарегистрированного (topic, symbol). */
+  readonly unroutedRtdsMessages: number;
+  /** Неожиданных исключений в bus-handler-ах (защитный контур). */
+  readonly handlerErrors: number;
+}
+
+/**
+ * Активная recording-сессия рынка (внутреннее состояние маршрутизации).
+ */
+interface RecordingSession {
+  /** ID рынка — ключ writer-а в storage. */
+  readonly marketId: MarketId;
+  /** RTDS-фиды сессии (для снятия routing при finalize). */
+  readonly rtdsFeeds: readonly PolymarketRtdsFeedKey[];
+}
+
+/**
+ * Собирает точный routing-ключ RTDS-фида.
+ *
+ * @param topic - Vendor topic
+ * @param symbol - Точный символ фида
+ * @returns Составной ключ `(topic, symbol)` для Map
+ */
+function rtdsRoutingKey(topic: string, symbol: string): string {
+  return `${topic}\n${symbol}`;
+}
+
+/**
+ * Recording-подписчик общего ExternalMessageBus: персистит source-native
+ * `message.payload` Polymarket-сообщений в market-файлы через storage-движок.
+ *
+ * @remarks
+ * ### Lifecycle
+ *
+ * ```text
+ * start()            → подписка на POLYMARKET_MARKET / _CRYPTO_BINANCE / _CRYPTO_CHAINLINK
+ * registerMarket()   → storage.registerMarket + routing (market + RTDS)
+ * ... запись ...
+ * finalizeMarket()   → снятие routing + storage.finalizeMarket (flush → gzip)
+ * close()            → отписка от bus + storage.close() (идемпотентен)
+ * ```
+ *
+ * Порядок shutdown контура (composition root):
+ * 1. `source.close()` — остановить продьюсера;
+ * 2. `bus.drain()` — доставить оставшиеся наблюдения (в т.ч. recorder-у);
+ * 3. `recorder.close()` — отписаться и закрыть storage;
+ * 4. `bus.close()` — закрыть общий bus (владелец — composition root).
+ *
+ * ### Hot path дёшев (PART 16)
+ *
+ * Bus-handler синхронный: route lookup → `JSON.stringify` + push в память —
+ * и возврат. Disk flush остаётся асинхронным (threshold/периодический таймер
+ * внутри storage); per-message fsync нет.
+ *
+ * @example
+ * ```typescript
+ * const storage = new DataRecorder(
+ *   { ...DEFAULT_RECORDER_CONFIG, sourceSubDir: 'polymarket', formatVersion: 2 },
+ *   new NDJSONFormatter(),
+ *   new GzipCompressor(),
+ *   logger,
+ * );
+ * const recorder = new ExternalMessageRecorder({ bus, storage, logger });
+ * recorder.start();
+ * recorder.registerMarket({
+ *   marketMeta: { marketId, question, tokenIds, startsAt, expiresAt, rawMarket },
+ *   rtdsFeeds: [
+ *     { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
+ *     { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
+ *   ],
+ * });
+ * // ... рынок истёк:
+ * await recorder.finalizeMarket(marketId, 'EXPIRED');
+ * // shutdown:
+ * await recorder.close();
+ * ```
+ */
+export class ExternalMessageRecorder {
+  private readonly _bus: PolymarketRecordingBusSubscription;
+  private readonly _storage: PolymarketRecordingStorage;
+  private readonly _logger: ILogger;
+
+  /** Активные сессии: sourceMarketId (== String(marketId) == conditionId) → сессия. */
+  private readonly _sessions = new Map<string, RecordingSession>();
+  /** RTDS routing: `(topic, symbol)` → сессии, пишущие этот фид. */
+  private readonly _rtdsRouting = new Map<string, Set<RecordingSession>>();
+  /** Disposer-ы bus-подписок (recorder владеет только СВОИМИ подписками). */
+  private _disposers: Array<() => void> = [];
+
+  private _started = false;
+  private _closed = false;
+  /** Promise первого close() — повторные вызовы ждут его же. */
+  private _closePromise: Promise<void> | null = null;
+
+  // Счётчики ExternalMessageRecorderStats (mutable-состояние диагностики)
+  private _marketMessagesRouted = 0;
+  private _rtdsMessagesRouted = 0;
+  private _recordsWritten = 0;
+  private _recordsSkippedInactive = 0;
+  private _serializationFailures = 0;
+  private _unroutedMarketMessages = 0;
+  private _unroutedRtdsMessages = 0;
+  private _handlerErrors = 0;
+
+  /**
+   * Создаёт recorder поверх инъецированных bus/storage.
+   *
+   * @param deps - Зависимости (см. {@link ExternalMessageRecorderDependencies})
+   */
+  constructor(deps: ExternalMessageRecorderDependencies) {
+    this._bus = deps.bus;
+    this._storage = deps.storage;
+    this._logger = deps.logger.child({ component: 'ExternalMessageRecorder' });
+  }
+
+  /** true после {@link ExternalMessageRecorder.close}. */
+  public get isClosed(): boolean {
+    return this._closed;
+  }
+
+  /**
+   * Подписывается на Polymarket-типы общего bus.
+   *
+   * @throws {Error} Если recorder уже закрыт
+   *
+   * @remarks
+   * Идемпотентен (повторный вызов — no-op). Подписки строго typed —
+   * catch-all `AnyExternalMessage` не используется, narrowing payload
+   * сохраняется компилятором.
+   */
+  public start(): void {
+    if (this._closed) {
+      throw new Error('ExternalMessageRecorder is closed and cannot start');
+    }
+    if (this._started) {
+      return;
+    }
+    this._disposers.push(
+      this._bus.subscribe('POLYMARKET_MARKET', (message) => this._onMarketMessage(message)),
+      this._bus.subscribe('POLYMARKET_CRYPTO_BINANCE', (message) => this._onRtdsMessage(message)),
+      this._bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK', (message) => this._onRtdsMessage(message)),
+    );
+    this._started = true;
+    this._logger.info('ExternalMessageRecorder subscribed to external message bus');
+  }
+
+  /**
+   * Регистрирует recording-сессию рынка: storage writer + routing.
+   *
+   * @param registration - Готовая routing-регистрация (см.
+   *   {@link PolymarketRecordingRegistration})
+   *
+   * @remarks
+   * Идемпотентен по `String(marketMeta.marketId)` (зеркалит storage).
+   * Активация по `startsAt` — существующая policy storage: события до
+   * активации не записываются; recorder новой scheduling-policy не вводит.
+   * После `close()` регистрация игнорируется (warn) — новые файлы после
+   * shutdown не создаются.
+   */
+  public registerMarket(registration: PolymarketRecordingRegistration): void {
+    const key = String(registration.marketMeta.marketId);
+    if (this._closed) {
+      this._logger.warn('Market registration ignored: recorder is closed', { marketId: key });
+      return;
+    }
+    if (this._sessions.has(key)) {
+      this._logger.debug('Recording session already registered, skipping', { marketId: key });
+      return;
+    }
+
+    this._storage.registerMarket(registration.marketMeta);
+
+    const session: RecordingSession = {
+      marketId: registration.marketMeta.marketId,
+      rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
+    };
+    this._sessions.set(key, session);
+    for (const feed of session.rtdsFeeds) {
+      const routingKey = rtdsRoutingKey(feed.topic, feed.symbol);
+      let sessions = this._rtdsRouting.get(routingKey);
+      if (!sessions) {
+        sessions = new Set();
+        this._rtdsRouting.set(routingKey, sessions);
+      }
+      sessions.add(session);
+    }
+
+    this._logger.info('Recording session registered', {
+      marketId: key,
+      question: registration.marketMeta.question,
+      rtdsFeeds: session.rtdsFeeds.map((feed) => `${feed.topic}:${feed.symbol}`),
+    });
+  }
+
+  /**
+   * Обновляет first-line header рынка (opaque market metadata).
+   *
+   * @param marketId - ID рынка
+   * @param updatedRawMarket - Обновлённые сырые данные рынка
+   * @returns Promise завершения перезаписи header
+   * @throws При ошибке I/O storage
+   *
+   * @remarks
+   * Passthrough в storage: recorder НЕ ходит в Gamma сам (PART 11) — данные
+   * приносит вызывающий (будущий Market Finalizer/Coordinator).
+   */
+  public async updateMarketMeta(
+    marketId: MarketId,
+    updatedRawMarket: Record<string, unknown>,
+  ): Promise<void> {
+    if (this._closed) {
+      this._logger.warn('Market meta update ignored: recorder is closed', {
+        marketId: String(marketId),
+      });
+      return;
+    }
+    await this._storage.updateMarketMeta(marketId, updatedRawMarket);
+  }
+
+  /**
+   * Завершает recording-сессию: снимает routing и финализирует файл.
+   *
+   * @param marketId - ID рынка
+   * @param reason - `'EXPIRED'` — завершённый dataset (flush → gzip-архив);
+   *   `'SHUTDOWN'` — обрабатывается cleanup-policy storage
+   * @returns Promise завершения финализации
+   * @throws При ошибке I/O storage
+   *
+   * @remarks
+   * Routing снимается ДО финализации: события, пришедшие после вызова,
+   * считаются unrouted и не пишутся. Буфер не теряется — storage
+   * флашит его перед gzip.
+   */
+  public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+    const key = String(marketId);
+    const session = this._sessions.get(key);
+    if (session) {
+      this._sessions.delete(key);
+      this._removeRtdsRouting(session);
+    }
+    await this._storage.finalizeMarket(marketId, reason);
+  }
+
+  /**
+   * Возвращает снимок диагностических счётчиков.
+   *
+   * @returns Текущие значения {@link ExternalMessageRecorderStats}
+   */
+  public getStats(): ExternalMessageRecorderStats {
+    return {
+      marketMessagesRouted: this._marketMessagesRouted,
+      rtdsMessagesRouted: this._rtdsMessagesRouted,
+      recordsWritten: this._recordsWritten,
+      recordsSkippedInactive: this._recordsSkippedInactive,
+      serializationFailures: this._serializationFailures,
+      unroutedMarketMessages: this._unroutedMarketMessages,
+      unroutedRtdsMessages: this._unroutedRtdsMessages,
+      handlerErrors: this._handlerErrors,
+    };
+  }
+
+  /**
+   * Закрывает recorder: отписка от bus + закрытие storage.
+   *
+   * @returns Promise завершения shutdown
+   *
+   * @remarks
+   * Идемпотентен (повторные вызовы ждут первый). Общий bus НЕ закрывается —
+   * им владеет composition root. Storage закрывается здесь: recorder — его
+   * единственный писатель; незавершённые файлы удаляются существующей
+   * cleanup-policy storage, завершённые `.jsonl.gz` не трогаются.
+   * Сообщения после close игнорируются (подписки сняты + guard в handler-ах)
+   * — новые файлы/буферы не создаются.
+   */
+  public async close(): Promise<void> {
+    if (this._closePromise) {
+      return this._closePromise;
+    }
+    this._closed = true;
+    for (const dispose of this._disposers) {
+      dispose();
+    }
+    this._disposers = [];
+    this._sessions.clear();
+    this._rtdsRouting.clear();
+
+    this._closePromise = this._storage.close().then(() => {
+      this._logger.info('ExternalMessageRecorder closed');
+    });
+    return this._closePromise;
+  }
+
+  /**
+   * Handler market-сообщений: маршрутизация по source market id.
+   *
+   * @param message - Typed сообщение `POLYMARKET_MARKET`
+   *
+   * @remarks
+   * Каждый вариант `StandardMarketEvent` (`book`/`price_change`/
+   * `last_trade_price`/`tick_size_change`) несёт `payload.market`
+   * (conditionId) — payload записывается ОДИН РАЗ в файл этого рынка;
+   * `price_change` с изменениями нескольких tokenIds не разбивается.
+   * Никогда не бросает.
+   */
+  private _onMarketMessage(message: PolymarketMarketExternalMessage): void {
+    if (this._closed) {
+      return;
+    }
+    try {
+      const sourceMarketId = message.payload.payload.market;
+      const session = this._sessions.get(sourceMarketId);
+      if (!session) {
+        this._unroutedMarketMessages++;
+        return;
+      }
+      this._marketMessagesRouted++;
+      this._recordPayload(session, message.payload);
+    } catch (error) {
+      this._handlerErrors++;
+      this._logger.error('Market message recording handler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Handler RTDS-сообщений: маршрутизация по точному `(topic, symbol)`.
+   *
+   * @param message - Typed сообщение `POLYMARKET_CRYPTO_BINANCE` или
+   *   `POLYMARKET_CRYPTO_CHAINLINK`
+   *
+   * @remarks
+   * Один RTDS-фид может использоваться несколькими активными рынками —
+   * payload записывается в файл КАЖДОЙ подписанной сессии (ровно одна
+   * строка на файл на входное сообщение). Источник различается vendor
+   * `topic`-дискриминатором, эвристика формата символа не используется.
+   * Никогда не бросает.
+   */
+  private _onRtdsMessage(
+    message: PolymarketCryptoBinanceExternalMessage | PolymarketCryptoChainlinkExternalMessage,
+  ): void {
+    if (this._closed) {
+      return;
+    }
+    try {
+      const routingKey = rtdsRoutingKey(message.payload.topic, message.payload.payload.symbol);
+      const sessions = this._rtdsRouting.get(routingKey);
+      if (!sessions || sessions.size === 0) {
+        this._unroutedRtdsMessages++;
+        return;
+      }
+      this._rtdsMessagesRouted++;
+      for (const session of sessions) {
+        this._recordPayload(session, message.payload);
+      }
+    } catch (error) {
+      this._handlerErrors++;
+      this._logger.error('RTDS message recording handler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Передаёт payload storage-движку и учитывает исход в счётчиках.
+   *
+   * @param session - Recording-сессия рынка-адресата
+   * @param payload - НЕИЗМЕНЁННЫЙ source-native payload сообщения
+   *
+   * @remarks
+   * Payload уходит той же ссылкой — без clone/rename/flatten/normalize
+   * (PART 13). `'unregistered'` при живой сессии — рассинхрон
+   * session↔storage (finalize в обход recorder-а): логируется warn-ом.
+   */
+  private _recordPayload(
+    session: RecordingSession,
+    payload: PolymarketExternalMessage['payload'],
+  ): void {
+    const outcome = this._storage.recordMarketEvent(session.marketId, payload);
+    switch (outcome) {
+      case 'recorded':
+        this._recordsWritten++;
+        break;
+      case 'inactive':
+        this._recordsSkippedInactive++;
+        break;
+      case 'failed':
+        // Ошибка сериализации уже залогирована storage
+        this._serializationFailures++;
+        break;
+      case 'unregistered':
+        this._logger.warn('Recording session exists but storage writer is missing', {
+          marketId: String(session.marketId),
+        });
+        break;
+    }
+  }
+
+  /**
+   * Снимает RTDS-routing сессии (при finalize).
+   *
+   * @param session - Завершаемая сессия
+   */
+  private _removeRtdsRouting(session: RecordingSession): void {
+    for (const feed of session.rtdsFeeds) {
+      const routingKey = rtdsRoutingKey(feed.topic, feed.symbol);
+      const sessions = this._rtdsRouting.get(routingKey);
+      if (!sessions) {
+        continue;
+      }
+      sessions.delete(session);
+      if (sessions.size === 0) {
+        this._rtdsRouting.delete(routingKey);
+      }
+    }
+  }
+}

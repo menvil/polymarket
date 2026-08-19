@@ -1,0 +1,11 @@
+{
+  "extends": "../../../../tsconfig.lint.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "paths": {
+      "@polymarket/external-message-recorder": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
