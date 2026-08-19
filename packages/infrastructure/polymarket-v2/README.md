@@ -83,6 +83,7 @@ live-режим. Именно поэтому payload обязан остават
 ```typescript
 import { createPublicClient } from '@polymarket/client';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
+import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
 import { PolymarketSource } from '@polymarket/polymarket-v2';
@@ -95,6 +96,7 @@ const metadataGenerator = new MessageMetadataGenerator({
   clock: new LiveClock(),
   highResolutionClock: new LiveHighResolutionClock(),
 });
+const logger = new ConsoleLogger(new LiveClock(), LogLevel.INFO);
 const source = new PolymarketSource({ client, bus, metadataGenerator, logger });
 
 // Подписки (каналы, реально используемые системой)
@@ -122,6 +124,13 @@ await bus.close();
 - Ошибки `subscribe*` (SDK `SubscribeError`) пробрасываются вызывающему
   как есть — SDK-ошибки и есть Infrastructure-ошибки, второй набор
   идентичных обёрток не заводится.
+- SDK-handle, разрешившийся после `close()`/отказа (медленный `subscribe`),
+  немедленно закрывается и не регистрируется; вызов отклоняется той же
+  ошибкой состояния.
+- `close()` (и `close()` отдельной подписки) безопасно await-ить из
+  обработчика этого же bus: pump выходит из ожидания `publish` по сигналу
+  закрытия, цикл handler → close → pump → publish → handler не образуется;
+  прерванное сообщение уже в очереди движка и доставляется текущим drain-ом.
 
 ## Характеризация SDK
 

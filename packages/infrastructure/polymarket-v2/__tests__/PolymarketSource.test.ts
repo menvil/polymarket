@@ -11,7 +11,7 @@ import { LiveClock } from '@polymarket/time';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { PolymarketSource } from '../src/index.js';
-import type { PolymarketExternalMessage } from '../src/index.js';
+import type { PolymarketExternalMessage, PolymarketOpenSubscription } from '../src/index.js';
 import {
   CapturingLogger,
   FakePolymarketClient,
@@ -355,5 +355,73 @@ describe('publication failure policy (TEST 9)', () => {
     await expect(source.subscribeMarket([TOKEN_ID_UP])).rejects.toThrow(
       'SDK transport error: connection refused',
     );
+  });
+});
+
+describe('late subscribe race', () => {
+  it('subscribe, разрешившийся после close(), закрывает поздний handle и отклоняется', async () => {
+    const { client, source, received } = createHarness();
+    let releaseSubscribe!: () => void;
+    client.subscribeHold = new Promise<void>((resolve) => {
+      releaseSubscribe = resolve;
+    });
+
+    const pending = source.subscribeMarket([TOKEN_ID_UP]);
+    await flushAsync();
+
+    // close() завершается, пока SDK subscribe ещё pending (handles нет)
+    await source.close();
+    releaseSubscribe();
+
+    await expect(pending).rejects.toThrow(
+      'PolymarketSource is closed and cannot open new subscriptions',
+    );
+    // Поздний handle закрыт и НЕ зарегистрирован
+    expect(client.marketHandles).toHaveLength(1);
+    expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+
+    // События в поздний handle не публикуются терминальным source
+    client.marketHandles[0]?.emit(createBookEvent());
+    await flushAsync();
+    expect(received).toHaveLength(0);
+  });
+});
+
+describe('handler-initiated shutdown (no deadlock)', () => {
+  it('await source.close() из обработчика bus завершается без deadlock', async () => {
+    const { client, bus, source } = createHarness();
+    let handlerCompleted = false;
+    bus.subscribe('POLYMARKET_MARKET', async () => {
+      // Обработчик — часть drain, которым владеет publish этого же pump-а
+      await source.close();
+      handlerCompleted = true;
+    });
+
+    await source.subscribeMarket([TOKEN_ID_UP]);
+    client.marketHandles[0]?.emit(createBookEvent());
+    await flushAsync(10);
+
+    expect(handlerCompleted).toBe(true);
+    expect(source.isClosed).toBe(true);
+    expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('await subscription.close() из обработчика bus завершается без deadlock', async () => {
+    const { client, bus, source } = createHarness();
+    let handlerCompleted = false;
+    const subscriptionRef: { current?: PolymarketOpenSubscription } = {};
+    bus.subscribe('POLYMARKET_MARKET', async () => {
+      await subscriptionRef.current?.close();
+      handlerCompleted = true;
+    });
+
+    subscriptionRef.current = await source.subscribeMarket([TOKEN_ID_UP]);
+    client.marketHandles[0]?.emit(createBookEvent());
+    await flushAsync(10);
+
+    expect(handlerCompleted).toBe(true);
+    expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+
+    await source.close();
   });
 });

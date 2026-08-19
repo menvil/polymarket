@@ -159,19 +159,21 @@ async function main(): Promise<void> {
   if (yesTokenId === null || noTokenId === null) {
     throw new Error('Target market has no token ids');
   }
-  await source.subscribeMarket([yesTokenId, noTokenId]);
-  await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt', 'ethusdt']);
-  await source.subscribeCryptoPrices('prices.crypto.chainlink', ['btc/usd', 'eth/usd']);
-  logger.info('C+D. subscriptions opened, listening', { listenMs: LISTEN_MS });
+  try {
+    await source.subscribeMarket([yesTokenId, noTokenId]);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt', 'ethusdt']);
+    await source.subscribeCryptoPrices('prices.crypto.chainlink', ['btc/usd', 'eth/usd']);
+    logger.info('C+D. subscriptions opened, listening', { listenMs: LISTEN_MS });
 
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, LISTEN_MS);
-  });
-
-  // ── E. Clean close ─────────────────────────────────────────────────────────
-  await source.close();
-  const busClose = await bus.close();
-  logger.info('E. source and bus closed', { busCloseOk: busClose.ok });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, LISTEN_MS);
+    });
+  } finally {
+    // ── E. Clean close — выполняется и при сбое subscribe/listen ────────────
+    await source.close();
+    const busClose = await bus.close();
+    logger.info('E. source and bus closed', { busCloseOk: busClose.ok });
+  }
 
   logger.info('RESULT: message counts by type/payload-kind', {
     counts: Object.fromEntries(counts),

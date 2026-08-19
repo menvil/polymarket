@@ -131,11 +131,16 @@ export class FakePolymarketClient implements PolymarketSubscribeClient {
   public readonly subscribeCalls: Array<readonly RecordedSubscriptionSpec[]> = [];
   /** Если задано — subscribe бросает эту ошибку (имитация SDK SubscribeError). */
   public subscribeError: unknown;
+  /** Если задан — subscribe разрешается только после этого promise (имитация медленного SDK). */
+  public subscribeHold: Promise<void> | undefined;
 
   public subscribe = (async (
     subscriptions: readonly RecordedSubscriptionSpec[],
   ): Promise<unknown> => {
     this.subscribeCalls.push(subscriptions);
+    if (this.subscribeHold !== undefined) {
+      await this.subscribeHold;
+    }
     if (this.subscribeError !== undefined) {
       throw this.subscribeError;
     }

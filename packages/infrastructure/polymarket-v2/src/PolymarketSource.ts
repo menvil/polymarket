@@ -136,6 +136,11 @@ export interface PolymarketSourceDependencies {
 }
 
 /**
+ * Sentinel гонки pump-цикла: подписка закрыта, пока `publish` ждал drain.
+ */
+const PUMP_CLOSED: unique symbol = Symbol('polymarket-source-pump-closed');
+
+/**
  * Открытая подписка Source: позволяет завершить её независимо от остальных.
  */
 export interface PolymarketOpenSubscription {
@@ -179,6 +184,13 @@ export interface PolymarketOpenSubscription {
  * - **Ошибки `subscribe*`** — пробрасываются вызывающему как есть
  *   (SDK `SubscribeError` — легитимная Infrastructure-ошибка; второй набор
  *   идентичных наших ошибок не заводится).
+ * - **Поздний `subscribe`** — SDK-handle, разрешившийся после `close()`/
+ *   отказа, немедленно закрывается и НЕ регистрируется; вызов отклоняется
+ *   той же ошибкой состояния, что и fail-fast guard.
+ * - **Shutdown из обработчика bus** — `close()` (и `close()` отдельной
+ *   подписки) БЕЗОПАСНО await-ить из обработчика этого же bus: pump гоняет
+ *   `publish` с сигналом закрытия и не образует цикл
+ *   handler → close → pump → publish → handler.
  *
  * @example
  * ```typescript
@@ -204,6 +216,8 @@ export class PolymarketSource {
   private readonly _handles = new Set<PolymarketSubscriptionHandle<unknown>>();
   /** Активные pump-циклы; `close()` дожидается их всех (никаких висящих итераторов). */
   private readonly _pumps = new Set<Promise<void>>();
+  /** Resolver-ы сигналов «handle закрыт»: будят pump, ждущий publish (drain-owner). */
+  private readonly _handleCloseSignals = new Map<PolymarketSubscriptionHandle<unknown>, () => void>();
   /** true после `close()` — новые подписки запрещены. */
   private _closed = false;
   /** true после терминального отказа (bus rejection / падение итератора). */
@@ -258,6 +272,9 @@ export class PolymarketSource {
   public async subscribeMarket(tokenIds: readonly string[]): Promise<PolymarketOpenSubscription> {
     this._assertAcceptsSubscriptions();
     const handle = await this._client.subscribe([{ topic: 'market', tokenIds }]);
+    if (this._closed || this._failed) {
+      return this._discardLateSubscription('market', handle);
+    }
     this._logger.info('Polymarket market subscription opened', { tokenIdCount: tokenIds.length });
     return this._track('market', handle, (event) => this._toMarketMessage(event));
   }
@@ -292,6 +309,9 @@ export class PolymarketSource {
   ): Promise<PolymarketOpenSubscription> {
     this._assertAcceptsSubscriptions();
     const handle = await this._client.subscribe([{ topic, symbols }]);
+    if (this._closed || this._failed) {
+      return this._discardLateSubscription(topic, handle);
+    }
     this._logger.info('Polymarket crypto prices subscription opened', {
       topic,
       symbolCount: symbols.length,
@@ -309,6 +329,12 @@ export class PolymarketSource {
    * Идемпотентен. Общий bus НЕ закрывается — им владеет composition root
    * (bus разделён с другими sources). Ошибки закрытия SDK-handles
    * логируются warn-ом и не пробрасываются.
+   *
+   * Безопасен для вызова ИЗ обработчика этого же bus: pump-циклы выходят из
+   * ожидания `publish` по сигналу закрытия (см. {@link PolymarketSource._pump}),
+   * поэтому цикл handler → close → pump → publish → handler не образуется.
+   * Сообщение, чей `publish` был прерван сигналом, уже находится в очереди
+   * движка и доставляется текущим drain-ом.
    */
   public async close(): Promise<void> {
     const firstClose = !this._closed;
@@ -335,6 +361,37 @@ export class PolymarketSource {
   }
 
   /**
+   * Отклоняет подписку, SDK-handle которой разрешился ПОСЛЕ перехода source
+   * в терминальное состояние.
+   *
+   * @param subscription - Имя подписки для логов
+   * @param handle - Поздно разрешившийся SDK handle
+   * @returns Никогда не возвращает управление нормально
+   * @throws {Error} Та же ошибка состояния, что у fail-fast guard
+   *
+   * @remarks
+   * Закрывает race: `close()`/`_fail()` закрывают только handles,
+   * зарегистрированные на момент вызова, а pending `client.subscribe()`
+   * мог разрешиться позже. Без этого guard-а поздний handle стал бы живой
+   * подпиской на терминальном source (висящий итератор + публикации после
+   * close). Поздний handle немедленно закрывается и НЕ регистрируется.
+   */
+  private async _discardLateSubscription(
+    subscription: string,
+    handle: PolymarketSubscriptionHandle<unknown>,
+  ): Promise<never> {
+    this._logger.warn('Subscription resolved after source shutdown, closing late handle', {
+      subscription,
+    });
+    await this._closeHandle(subscription, handle);
+    throw new Error(
+      this._closed
+        ? 'PolymarketSource is closed and cannot open new subscriptions'
+        : 'PolymarketSource has failed and cannot open new subscriptions',
+    );
+  }
+
+  /**
    * Регистрирует handle, запускает pump и собирает объект открытой подписки.
    *
    * @param subscription - Имя подписки для логов
@@ -353,8 +410,14 @@ export class PolymarketSource {
     toMessage: (event: TEvent) => PolymarketExternalMessage,
   ): PolymarketOpenSubscription {
     this._handles.add(handle);
-    const pump = this._pump(subscription, handle, toMessage).finally(() => {
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    this._handleCloseSignals.set(handle, resolveClosed);
+    const pump = this._pump(subscription, handle, toMessage, closed).finally(() => {
       this._handles.delete(handle);
+      this._handleCloseSignals.delete(handle);
       this._pumps.delete(pump);
     });
     this._pumps.add(pump);
@@ -374,6 +437,9 @@ export class PolymarketSource {
    * @param handle - SDK handle
    * @param toMessage - Конструктор canonical сообщения
    *
+   * @param closed - Сигнал «handle этой подписки закрыт» — будит pump,
+   *   ждущий publish
+   *
    * @remarks
    * Инварианты:
    * - публикация в порядке получения событий из итератора (без буферизации
@@ -383,22 +449,46 @@ export class PolymarketSource {
    *   останавливается;
    * - исключение итератора после `close()` считается штатным завершением
    *   транспорта и логируется debug-ом; до `close()` — терминальный отказ;
-   * - promise никогда не reject-ится — unhandled rejections исключены.
+   * - promise никогда не reject-ится — unhandled rejections исключены;
+   * - `await publish` гоняется с сигналом закрытия: `publish` движка может
+   *   стать drain-owner-ом и ждать обработчиков, а обработчик имеет право
+   *   await-ить `close()` этого source. Без гонки возник бы цикл
+   *   handler → close → pump → publish → handler (deadlock). При закрытии
+   *   pump выходит немедленно; сообщение уже enqueue-нуто движком и будет
+   *   доставлено текущим drain-ом, его Result дологируется асинхронно.
    */
   private async _pump<TEvent>(
     subscription: string,
     handle: PolymarketSubscriptionHandle<TEvent>,
     toMessage: (event: TEvent) => PolymarketExternalMessage,
+    closed: Promise<void>,
   ): Promise<void> {
+    const closedMarker = closed.then((): typeof PUMP_CLOSED => PUMP_CLOSED);
     try {
       for await (const event of handle) {
         const message = toMessage(event);
-        const result = await this._bus.publish(message);
-        if (!result.ok) {
+        const publishPromise = this._bus.publish(message);
+        const outcome = await Promise.race([publishPromise, closedMarker]);
+        if (outcome === PUMP_CLOSED) {
+          void publishPromise.then(
+            (result) => {
+              if (!result.ok) {
+                this._logger.debug('Publication settled with rejection after subscription close', {
+                  subscription,
+                  messageType: message.type,
+                  error: result.error.message,
+                });
+              }
+            },
+            () => undefined,
+          );
+          return;
+        }
+        if (!outcome.ok) {
           this._logger.error('External message bus rejected publication, failing source', {
             subscription,
             messageType: message.type,
-            error: result.error.message,
+            error: outcome.error.message,
           });
           await this._fail();
           return;
@@ -452,6 +542,9 @@ export class PolymarketSource {
    * @param handle - SDK handle
    */
   private async _closeHandle(subscription: string, handle: PolymarketSubscriptionHandle<unknown>): Promise<void> {
+    // Сигнал pump-циклу ДО close транспорта: если pump ждёт publish
+    // (drain-owner), он обязан выйти из гонки, не дожидаясь сети/drain.
+    this._handleCloseSignals.get(handle)?.();
     try {
       await handle.close();
     } catch (error) {

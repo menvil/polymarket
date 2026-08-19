@@ -51,18 +51,41 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
   '@polymarket/result',
 ]);
 
-/** Собирает все import-specifiers файла (import/export ... from '...'). */
+/** Рекурсивно собирает все .ts-файлы каталога (включая вложенные). */
+function listSourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listSourceFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+/**
+ * Собирает все import-specifiers файла: `import/export ... from '...'`,
+ * side-effect `import '...'` и dynamic `import('...')`.
+ */
 function collectImports(filePath: string): string[] {
   const content = readFileSync(filePath, 'utf8');
   const specifiers: string[] = [];
-  const importRegex = /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g;
-  let match: RegExpExecArray | null = importRegex.exec(content);
-  while (match !== null) {
-    const specifier = match[1];
-    if (specifier !== undefined) {
-      specifiers.push(specifier);
+  const patterns = [
+    /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g,
+    /import\s+['"]([^'"]+)['"]/g,
+    /import\(\s*['"]([^'"]+)['"]\s*\)/g,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null = pattern.exec(content);
+    while (match !== null) {
+      const specifier = match[1];
+      if (specifier !== undefined) {
+        specifiers.push(specifier);
+      }
+      match = pattern.exec(content);
     }
-    match = importRegex.exec(content);
   }
   return specifiers;
 }
@@ -84,12 +107,11 @@ describe('dependency graph boundary', () => {
   });
 
   it('исходники импортируют только Foundation, внешний контур и официальный SDK', () => {
-    const srcDir = join(PACKAGE_ROOT, 'src');
-    const sourceFiles = readdirSync(srcDir).filter((name) => name.endsWith('.ts'));
+    const sourceFiles = listSourceFiles(join(PACKAGE_ROOT, 'src'));
     expect(sourceFiles.length).toBeGreaterThan(0);
 
-    for (const fileName of sourceFiles) {
-      for (const specifier of collectImports(join(srcDir, fileName))) {
+    for (const filePath of sourceFiles) {
+      for (const specifier of collectImports(filePath)) {
         if (specifier.startsWith('.')) {
           continue; // внутренние relative-импорты пакета
         }
@@ -99,9 +121,8 @@ describe('dependency graph boundary', () => {
   });
 
   it('исходники не импортируют internal paths SDK (chunk-модули)', () => {
-    const srcDir = join(PACKAGE_ROOT, 'src');
-    for (const fileName of readdirSync(srcDir).filter((name) => name.endsWith('.ts'))) {
-      for (const specifier of collectImports(join(srcDir, fileName))) {
+    for (const filePath of listSourceFiles(join(PACKAGE_ROOT, 'src'))) {
+      for (const specifier of collectImports(filePath)) {
         expect(specifier.includes('/dist/')).toBe(false);
         expect(specifier.includes('types-')).toBe(false);
       }
