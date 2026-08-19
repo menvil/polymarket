@@ -43,6 +43,26 @@ function makeMeta(marketId = 'mkt-001', tokenIds = ['tok-yes', 'tok-no']): Marke
   };
 }
 
+/**
+ * Poll-ожидание наблюдаемого условия с дедлайном (вместо фиксированных sleep):
+ * медленные CI-раннеры получают время на таймеры/I/O, быстрые не ждут зря.
+ */
+async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+/** Проверяет, что mock-логгер получил error с данным сообщением. */
+function loggedError(logger: ILogger, message: string): boolean {
+  const calls = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls.some((call) => call[0] === message);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('DataRecorder', () => {
@@ -204,5 +224,347 @@ describe('DataRecorder', () => {
 
     // meta + 3 события
     expect(lines.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ── V2 storage (N-002): recordMarketEvent / formatVersion / arrival order ────
+
+describe('DataRecorder V2 storage (N-002)', () => {
+  let tmpDir: string;
+  let logger: ILogger;
+  let recorder: DataRecorder;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recorder-v2-test-'));
+    logger = makeLogger();
+  });
+
+  afterEach(async () => {
+    try {
+      await recorder?.close();
+    } catch {
+      // already closed
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function marketFilePath(): string {
+    const today = new Date().toISOString().slice(0, 10);
+    const dir = path.join(tmpDir, today);
+    return path.join(dir, fs.readdirSync(dir)[0]);
+  }
+
+  it('recordMarketEvent маршрутизирует по marketId и возвращает recorded', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    const outcome = recorder.recordMarketEvent(meta.marketId, {
+      topic: 'market',
+      type: 'book',
+      payload: { market: 'mkt-001', tokenId: 'tok-yes', bids: [], asks: [] },
+    });
+    expect(outcome).toBe('recorded');
+    await recorder.flush();
+
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    expect(lines.length).toBe(2);
+    const event = JSON.parse(lines[1]);
+    expect(event.topic).toBe('market');
+    expect(event.type).toBe('book');
+  });
+
+  it('recordMarketEvent для незарегистрированного рынка возвращает unregistered и не создаёт файл', () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+
+    const outcome = recorder.recordMarketEvent('unknown-mkt' as unknown as MarketId, { type: 'book' });
+
+    expect(outcome).toBe('unregistered');
+    expect(fs.readdirSync(tmpDir)).toEqual([]);
+  });
+
+  it('recordMarketEvent до startsAt возвращает inactive и не пишет', () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => Date.now() + 60_000 } as never,
+    };
+    recorder.registerMarket(meta);
+
+    const outcome = recorder.recordMarketEvent(meta.marketId, { type: 'book' });
+
+    expect(outcome).toBe('inactive');
+    // Файл создаётся только при активации — до startsAt его нет
+    expect(fs.readdirSync(tmpDir)).toEqual([]);
+  });
+
+  it('recordMarketEvent при ошибке сериализации возвращает failed и логирует', () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    // BigInt не сериализуется JSON.stringify — TypeError внутри formatter
+    const outcome = recorder.recordMarketEvent(meta.marketId, { value: BigInt(1) });
+
+    expect(outcome).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to serialize market event for recording',
+      expect.any(Object),
+    );
+  });
+
+  it('recordMarketEvent после finalizeMarket возвращает unregistered', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    await recorder.finalizeMarket(meta.marketId, 'EXPIRED');
+
+    expect(recorder.recordMarketEvent(meta.marketId, { type: 'book' })).toBe('unregistered');
+  });
+
+  it('formatVersion из config попадает в первую строку', async () => {
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { formatVersion: 2 }),
+      new NDJSONFormatter(),
+      null,
+      logger,
+    );
+    recorder.registerMarket(makeMeta());
+    await recorder.flush();
+
+    const firstLine = JSON.parse(fs.readFileSync(marketFilePath(), 'utf-8').split('\n')[0]);
+    expect(firstLine.t).toBe('meta');
+    expect(firstLine.formatVersion).toBe(2);
+  });
+
+  it('без formatVersion в config первая строка не содержит поля (legacy-совместимость)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    recorder.registerMarket(makeMeta());
+    await recorder.flush();
+
+    const firstLine = JSON.parse(fs.readFileSync(marketFilePath(), 'utf-8').split('\n')[0]);
+    expect(firstLine.t).toBe('meta');
+    expect('formatVersion' in firstLine).toBe(false);
+  });
+
+  it('updateMarketMeta сохраняет formatVersion в перезаписанной первой строке', async () => {
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { formatVersion: 2 }),
+      new NDJSONFormatter(),
+      null,
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    await recorder.flush();
+
+    await recorder.updateMarketMeta(meta.marketId, { finalPrice: 123 });
+
+    const firstLine = JSON.parse(fs.readFileSync(marketFilePath(), 'utf-8').split('\n')[0]);
+    expect(firstLine.formatVersion).toBe(2);
+    expect(firstLine.m).toEqual({ finalPrice: 123 });
+  });
+
+  it('строки пишутся в порядке прихода, а не по timestamp события', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    // Порядок прихода намеренно противоречит source-timestamp
+    recorder.recordMarketEvent(meta.marketId, { seq: 'first',  timestamp: 3000 });
+    recorder.recordMarketEvent(meta.marketId, { seq: 'second', timestamp: 1000 });
+    recorder.recordMarketEvent(meta.marketId, { seq: 'third',  timestamp: 2000 });
+    await recorder.flush();
+
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    const order = lines.slice(1).map((line) => (JSON.parse(line) as { seq: string }).seq);
+    expect(order).toEqual(['first', 'second', 'third']);
+  });
+
+  it('ошибка disk-записи при таймерном flush наблюдаема и не даёт unhandled rejection', async () => {
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { flushIntervalMs: 30 }),
+      new NDJSONFormatter(),
+      null,
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    // Событие уходит в буфер при живом stream
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('recorded');
+
+    // Ломаем stream с непустым буфером: таймерный flush упрётся в разрушенный поток
+    const writers = (recorder as unknown as {
+      _writers: Map<string, { stream: fs.WriteStream | null }>;
+    })._writers;
+    writers.get('mkt-001')!.stream!.destroy();
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      // Ждём таймерный flush по наблюдаемому условию (лог ошибки записи)
+      await waitFor(() => loggedError(logger, 'Stream write error'));
+
+      expect(unhandled).toEqual([]);
+      expect(logger.error).toHaveBeenCalledWith('Stream write error', expect.any(Object));
+      // Запись на разрушенный stream наблюдаемо отказывает, а не копится в буфере
+      expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('failed');
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('registerMarket возвращает false при упавшей немедленной активации и остаётся retryable', () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+
+    // Блокируем создание date-директории: файл на её месте → mkdir падает
+    const today = new Date().toISOString().slice(0, 10);
+    const blockingFile = path.join(tmpDir, today);
+    fs.writeFileSync(blockingFile, 'block');
+
+    expect(recorder.registerMarket(meta)).toBe(false);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to activate market recording',
+      expect.any(Object),
+    );
+    // Routing-состояние НЕ создано — записи адресуют незарегистрированный рынок
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('unregistered');
+
+    // Причина устранена → повторная регистрация успешна (retryable)
+    fs.unlinkSync(blockingFile);
+    expect(recorder.registerMarket(meta)).toBe(true);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('recorded');
+  });
+
+  it('registerMarket идемпотентен и возвращает true для уже зарегистрированного рынка', () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+
+    expect(recorder.registerMarket(meta)).toBe(true);
+    expect(recorder.registerMarket(meta)).toBe(true);
+  });
+
+  it('упавшая отложенная активация освобождает регистрацию; retry активирует и пишет (TEST 1/2/5)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    // startsAt фиксирован: к моменту retry он уже в прошлом → немедленная активация
+    const startsAtMs = Date.now() + 40;
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => startsAtMs } as never,
+    };
+
+    // Блокируем date-директорию ДО срабатывания таймера активации
+    const today = new Date().toISOString().slice(0, 10);
+    const blockingFile = path.join(tmpDir, today);
+    fs.writeFileSync(blockingFile, 'block');
+
+    const failures: string[] = [];
+    expect(
+      recorder.registerMarket(meta, (marketId) => failures.push(String(marketId))),
+    ).toBe(true);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('inactive');
+
+    // TEST 1: отказ таймерной активации ОСВОБОЖДАЕТ регистрацию (не failed-зомби)
+    await waitFor(() =>
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    );
+    expect(failures).toEqual(['mkt-001']);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
+    // TEST 5: legacy token-index не находит старый failed writer (тихий no-op)
+    expect(() => {
+      recorder.recordEvent(unsafeInstrumentId('tok-yes'), { seq: 3 });
+    }).not.toThrow();
+
+    // TEST 2: причина устранена → retry = НАСТОЯЩАЯ регистрация с активацией
+    fs.unlinkSync(blockingFile);
+    expect(recorder.registerMarket(meta)).toBe(true); // startsAt уже в прошлом → immediate
+    expect(logger.info).toHaveBeenCalledWith('Market recording activated', expect.any(Object));
+
+    expect(
+      recorder.recordMarketEvent(meta.marketId, { topic: 'market', type: 'book' }),
+    ).toBe('recorded');
+    // Legacy token-index указывает на НОВЫЙ writer
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { legacy: true });
+    await recorder.flush();
+
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(3);
+    expect((JSON.parse(lines[1]!) as { type: string }).type).toBe('book');
+    expect((JSON.parse(lines[2]!) as { legacy: boolean }).legacy).toBe(true);
+  });
+
+  it('finalizeMarket до startsAt отменяет таймер — release не срабатывает (TEST 6)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const startsAtMs = Date.now() + 40;
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => startsAtMs } as never,
+    };
+
+    const failures: string[] = [];
+    expect(recorder.registerMarket(meta, () => failures.push('release'))).toBe(true);
+    await recorder.finalizeMarket(meta.marketId, 'SHUTDOWN');
+
+    // Ждём мимо startsAt: отменённый таймер не должен ни активировать, ни release-ить
+    await waitFor(() => Date.now() > startsAtMs + 60);
+    expect(failures).toEqual([]);
+    expect(
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    ).toBe(false);
+
+    // close идемпотентен и не спотыкается о финализированный рынок
+    await recorder.close();
+    await recorder.close();
+  });
+
+  it('finalizeMarket после отказа отложенной активации — no-op без исключений (TEST 6)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => Date.now() + 40 } as never,
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const blockingFile = path.join(tmpDir, today);
+    fs.writeFileSync(blockingFile, 'block');
+
+    expect(recorder.registerMarket(meta)).toBe(true);
+    await waitFor(() =>
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    );
+
+    // Регистрация уже освобождена — финализация не находит рынок и не бросает
+    await expect(recorder.finalizeMarket(meta.marketId, 'EXPIRED')).resolves.toBeUndefined();
+    expect(logger.debug).toHaveBeenCalledWith('finalizeMarket: market not found', expect.any(Object));
+    fs.unlinkSync(blockingFile);
+  });
+
+  it('finalizeMarket(SHUTDOWN) удаляет незавершённый файл и не создаёт архив', async () => {
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { compression: 'gzip' }),
+      new NDJSONFormatter(),
+      new (await import('../src/compression/GzipCompressor.js')).GzipCompressor(),
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { seq: 1 });
+
+    await recorder.finalizeMarket(meta.marketId, 'SHUTDOWN');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dir = path.join(tmpDir, today);
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    expect(files).toEqual([]);
+    expect(logger.info).toHaveBeenCalledWith(
+      'Market finalized (shutdown), incomplete file removed',
+      expect.any(Object),
+    );
+    // Рынок снят с регистрации
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
   });
 });

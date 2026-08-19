@@ -40,6 +40,20 @@ export interface DataRecorderConfig {
    * @defaultValue 'gzip'
    */
   readonly compression: 'none' | 'gzip';
+
+  /**
+   * Версия формата payload-строк, записываемая в first-line meta.
+   *
+   * Формат — свойство всего recording-пайплайна (экземпляра рекордера), а не
+   * отдельного рынка: один экземпляр пишет строки только одного формата.
+   * - не задана — meta без поля `formatVersion` (legacy wire-формат старого
+   *   коллектора; байтовая совместимость первой строки сохраняется);
+   * - `2` — строки 2+ содержат source-native события официального SDK
+   *   (decoded `StandardMarketEvent`/RTDS-события), записанные V2-рекордером.
+   *
+   * Reader/бектест по первой строке определяет, каким парсером читать строки 2+.
+   */
+  readonly formatVersion?: number;
 }
 
 /** Конфигурация по умолчанию */

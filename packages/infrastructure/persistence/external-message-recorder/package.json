@@ -1,0 +1,73 @@
+{
+  "name": "@polymarket/external-message-recorder",
+  "version": "0.1.0",
+  "description": "Recording subscriber of the shared ExternalMessageBus - persists source-native message payloads via @polymarket/data-collection",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "test": "npm run typecheck:tests && jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "lint:tests": "eslint __tests__ --ext .ts",
+    "lint:all": "eslint src __tests__ --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "ci": "npm run typecheck:all && npm test",
+    "lint:md": "markdownlint-cli2 --config ../../../../.markdownlint-cli2.jsonc \"README.md\" \"docs/*.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../../.markdownlint-cli2.jsonc --fix \"README.md\" \"docs/*.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "polymarket",
+    "recording",
+    "external-message",
+    "data-collection",
+    "infrastructure"
+  ],
+  "author": "Ivan Moroz",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@polymarket/data-collection": "0.1.0",
+    "@polymarket/external-message-bus": "0.1.0",
+    "@polymarket/ids": "0.1.0",
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/polymarket-v2": "0.1.0",
+    "@polymarket/ports": "0.1.0"
+  },
+  "devDependencies": {
+    "@polymarket/client": "^0.6.0",
+    "@polymarket/external-messages": "0.1.0",
+    "@polymarket/messages": "0.1.0",
+    "@polymarket/time": "0.1.0",
+    "@polymarket/timestamp": "0.1.0",
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^26.1.1",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}
