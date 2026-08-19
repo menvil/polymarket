@@ -9,12 +9,13 @@
 
 | Экспорт | Назначение |
 |---|---|
-| `DataRecorder` | `IMarketDataRecorder`: `registerMarket`/`recordEvent`/`finalizeMarket`/`close` |
+| `DataRecorder` | `IMarketDataRecorder`: `registerMarket`/`recordEvent`/`finalizeMarket`/`close` + V2 `recordMarketEvent` |
+| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'failed'` |
 | `DecisionJournalRecorder` | `IDecisionJournal`: `startSession`/`recordDecision`/`recordFill`/`recordResolution`/`endSession`/`close` |
 | `ArchivedMarketMetaRewriter` | Переписывает первую (meta) NDJSON-строку уже архивного файла |
 | `NDJSONFormatter` | `formatRecord(obj)` → `'{"..."}\n'` |
 | `GzipCompressor` | `compressFile(path)` → `.jsonl.gz`, максимальное сжатие, оригинал удаляется |
-| `DataRecorderConfig`/`DEFAULT_RECORDER_CONFIG` | `outputDir`/`bufferSize`/`flushIntervalMs`/`compression` |
+| `DataRecorderConfig`/`DEFAULT_RECORDER_CONFIG` | `outputDir`/`bufferSize`/`flushIntervalMs`/`compression`/`formatVersion?` |
 
 ```typescript
 import { DataRecorder, NDJSONFormatter, GzipCompressor, DEFAULT_RECORDER_CONFIG } from '@polymarket/data-collection';
@@ -39,9 +40,40 @@ outputDir/
 
 Первая строка каждого файла — `meta`-событие (`{"t":"meta","ts":...,"marketId":...,
 "question":...,"tokenIds":[...]}`), читаемое обратно `@polymarket/snapshot-readers` при
-реплее. `DecisionJournalRecorder` пишет в отдельную директорию (`journalDir`), отдельный
-файл на рынок (`*.journal.jsonl`), с собственным набором типов записи (`session_start`/
-`decision`/`fill`/`resolution`/`session_end`).
+реплее. Она записана в зарезервированный fixed-width блок 16 KiB (padding пробелами,
+`\n` на последнем байте) и может быть переписана in-place через `updateMarketMeta()`
+без переписывания payload-строк. `DecisionJournalRecorder` пишет в отдельную директорию
+(`journalDir`), отдельный файл на рынок (`*.journal.jsonl`), с собственным набором типов
+записи (`session_start`/`decision`/`fill`/`resolution`/`session_end`).
+
+### `formatVersion` — дискриминатор формата payload-строк (N-002)
+
+`DataRecorderConfig.formatVersion` — свойство экземпляра рекордера, а не рынка:
+один экземпляр пишет строки только одного формата.
+
+- Не задан → meta-строка без поля `formatVersion`; строки 2+ — legacy wire-формат
+  старого коллектора (`{event_type, asset_id, ...}` + synthetic `{t:'crypto_price'}`).
+- `formatVersion: 2` → строки 2+ — source-native события официального SDK как их
+  отдаёт `@polymarket/client` (`{topic:'market', type:'book', payload:{...}}`,
+  RTDS `{topic:'prices.crypto.*', type:'update', ...}`).
+
+Reader/бектест обязан по первой строке выбрать парсер строк 2+.
+
+### Маршрутизация записи: два пути
+
+- `recordEvent(tokenId, raw)` — legacy-путь: обратный индекс `tokenId → writer`
+  (wire-формат несёт `asset_id`, source market id недоступен вызывающему).
+- `recordMarketEvent(marketId, raw): RecordOutcome` — V2-путь: прямой ключ
+  `String(marketId)` (== conditionId == `payload.market` SDK-события). SDK
+  `price_change` несёт изменения по нескольким tokenIds — записывается ОДНОЙ
+  строкой в файл рынка, без разбиения. Исход наблюдаем (`RecordOutcome`), ошибка
+  сериализации логируется и возвращается как `'failed'`, метод не бросает.
+
+### Порядок строк — arrival order
+
+Payload-строки пишутся строго в порядке поступления рекордеру, БЕЗ сортировки по
+source-timestamp: replay в бектесте обязан получить ту же последовательность событий,
+что видели live-консюмеры (идентичные EWMA/дельты/решения стратегий).
 
 ## Буферизация и fire-and-forget запись
 
