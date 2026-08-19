@@ -139,6 +139,7 @@ async function main(): Promise<void> {
   });
 
   // ── 3. Подписки Source + прослушивание ────────────────────────────────────
+  let pipelineError: unknown;
   try {
     await source.subscribeMarket([yesTokenId, noTokenId]);
     await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt', 'ethusdt']);
@@ -147,22 +148,46 @@ async function main(): Promise<void> {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, LISTEN_MS);
     });
-  } finally {
-    // ── 4. Shutdown в порядке контура (PART 20) ─────────────────────────────
-    await source.close();
-    const drained = await bus.drain();
-    logger.info('4. source closed, bus drained', { drainOk: drained.ok });
+  } catch (error) {
+    pipelineError = error;
   }
 
-  // Финализируем ДО recorder.close(): EXPIRED-архив остаётся, incomplete удаляются
-  await recorder.finalizeMarket(marketId, 'EXPIRED');
+  // ── 4. Shutdown в порядке контура (PART 20) ───────────────────────────────
+  // Каждый шаг best-effort и независим: отказ одного (включая упавшую EXPIRED-
+  // финализацию) не мешает остальным — recorder.close()/bus.close() выполняются
+  // на ЛЮБОМ пути (ошибки подписки/прослушивания/drain тоже ведут сюда).
+  const cleanupStep = async (step: string, run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+    } catch (error) {
+      logger.error(`Cleanup step failed: ${step}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  await cleanupStep('source.close', async () => source.close());
+  await cleanupStep('bus.drain', async () => {
+    const drained = await bus.drain();
+    logger.info('4. source closed, bus drained', { drainOk: drained.ok });
+  });
+  // Финализируем ДО recorder.close(): EXPIRED-архив остаётся; при отказе
+  // финализации incomplete-файл уберёт cleanup-policy recorder.close()
+  await cleanupStep('recorder.finalizeMarket', async () =>
+    recorder.finalizeMarket(marketId, 'EXPIRED'),
+  );
 
   const busStats = bus.getStats();
   const recorderStats = recorder.getStats();
 
-  await recorder.close();
-  const busClosed = await bus.close();
-  logger.info('4. recorder and bus closed', { busCloseOk: busClosed.ok });
+  await cleanupStep('recorder.close', async () => recorder.close());
+  await cleanupStep('bus.close', async () => {
+    const busClosed = await bus.close();
+    logger.info('4. recorder and bus closed', { busCloseOk: busClosed.ok });
+  });
+
+  if (pipelineError !== undefined) {
+    throw pipelineError;
+  }
 
   // ── 5. Проверка файла (PART 30) ───────────────────────────────────────────
   const date = new Date().toISOString().slice(0, 10);
@@ -188,7 +213,11 @@ async function main(): Promise<void> {
     throw new Error(`Header assertion failed: ${lines[0]!.slice(0, 300)}`);
   }
 
-  // LINE 2+: valid JSON, source-native discriminators, без outer envelope
+  // LINE 2+: valid JSON, source-native discriminators, без outer envelope.
+  // Пустой архив (только header) = pipeline не записал ни одного наблюдения — отказ
+  if (lines.length < 2) {
+    throw new Error('No payload lines recorded — the pipeline produced an empty archive');
+  }
   const kindCounts = new Map<string, number>();
   for (const line of lines.slice(1)) {
     const parsed = JSON.parse(line) as { topic?: string; type?: string };

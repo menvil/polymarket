@@ -102,8 +102,8 @@ Recorder — optional/non-trading consumer. Ошибка записи:
 - изолируется на каждое направление RTDS fan-out независимо: отказ storage
   для одного рынка не лишает события остальные подписанные рынки;
 - отказ регистрации в storage (writer не установлен) НЕ создаёт
-  routing-состояния — отказ залогирован, `registrationFailures++`, повторная
-  регистрация возможна (retryable);
+  routing-состояния — `registerMarket` возвращает `false`, отказ залогирован,
+  `registrationFailures++`, повторная регистрация возможна (retryable);
 - retry-очереди нет сознательно.
 
 ## 7. Lifecycle

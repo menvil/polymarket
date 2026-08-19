@@ -326,12 +326,15 @@ export class ExternalMessageRecorder {
    *
    * @param registration - Готовая routing-регистрация (см.
    *   {@link PolymarketRecordingRegistration})
+   * @returns `true` — сессия установлена (или уже была зарегистрирована);
+   *   `false` — регистрация отклонена (recorder закрыт либо storage не
+   *   установил writer) — состояние НЕ создано, вызов можно повторить
    *
    * @remarks
    * Идемпотентен по `String(marketMeta.marketId)` (зеркалит storage).
    * Активация по `startsAt` — существующая policy storage: события до
    * активации не записываются; recorder новой scheduling-policy не вводит.
-   * После `close()` регистрация игнорируется (warn) — новые файлы после
+   * После `close()` регистрация отклоняется (warn) — новые файлы после
    * shutdown не создаются.
    *
    * Если storage ОТКЛОНИЛ регистрацию (writer не установлен — I/O-отказ),
@@ -339,15 +342,15 @@ export class ExternalMessageRecorder {
    * события в никуда. Отказ наблюдаем (error-лог + `registrationFailures`)
    * и retryable — повторный вызов попробует зарегистрировать заново.
    */
-  public registerMarket(registration: PolymarketRecordingRegistration): void {
+  public registerMarket(registration: PolymarketRecordingRegistration): boolean {
     const key = String(registration.marketMeta.marketId);
     if (this._closed) {
       this._logger.warn('Market registration ignored: recorder is closed', { marketId: key });
-      return;
+      return false;
     }
     if (this._sessions.has(key)) {
       this._logger.debug('Recording session already registered, skipping', { marketId: key });
-      return;
+      return true;
     }
 
     if (!this._storage.registerMarket(registration.marketMeta)) {
@@ -356,7 +359,7 @@ export class ExternalMessageRecorder {
         marketId: key,
         question: registration.marketMeta.question,
       });
-      return;
+      return false;
     }
 
     const session: RecordingSession = {
@@ -379,6 +382,7 @@ export class ExternalMessageRecorder {
       question: registration.marketMeta.question,
       rtdsFeeds: session.rtdsFeeds.map((feed) => `${feed.topic}:${feed.symbol}`),
     });
+    return true;
   }
 
   /**

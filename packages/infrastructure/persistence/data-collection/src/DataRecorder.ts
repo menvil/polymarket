@@ -285,6 +285,15 @@ export class DataRecorder implements IMarketDataRecorder {
     } catch (err) {
       writer.failed = true;
       writer.active = false;
+      // Убираем частично созданный файл (meta без stream) — retry регистрации
+      // начнёт с чистого листа; успешно активированные файлы сюда не попадают
+      try {
+        if (fs.existsSync(writer.filePath)) {
+          fs.unlinkSync(writer.filePath);
+        }
+      } catch {
+        // Файл заберёт disk-scan cleanup() при следующем старте
+      }
       this._logger.error('Failed to activate market recording', {
         marketId: key,
         filePath: writer.filePath,

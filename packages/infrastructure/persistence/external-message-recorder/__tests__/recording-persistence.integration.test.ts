@@ -53,6 +53,10 @@ let recorder: ExternalMessageRecorder;
 let generator: MessageMetadataGenerator;
 
 beforeEach(() => {
+  // Сбрасываем привязки прошлого теста: afterEach не должен закрывать/
+  // переиспользовать экземпляры предыдущего кейса, если текущий упал до создания
+  recorder = undefined as unknown as ExternalMessageRecorder;
+  storage = undefined as unknown as DataRecorder;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'n002-recording-'));
   logger = new CapturingLogger();
   bus = new ExternalMessageBus<PolymarketExternalMessage>();

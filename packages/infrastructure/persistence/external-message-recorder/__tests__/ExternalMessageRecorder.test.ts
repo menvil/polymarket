@@ -249,25 +249,29 @@ describe('RTDS routing', () => {
 // ── Registration / stats ────────────────────────────────────────────────────
 
 describe('registration and stats', () => {
-  it('registerMarket регистрирует storage writer и идемпотентен', () => {
+  it('registerMarket регистрирует storage writer и идемпотентен по market identity', () => {
     recorder.start();
-    const registration = { marketMeta: makeMeta(MARKET_CONDITION_ID) };
-    recorder.registerMarket(registration);
-    recorder.registerMarket(registration);
+    // Два РАЗНЫХ объекта meta с одним marketId: дедупликация по identity, не по ссылке
+    const metaFirst = makeMeta(MARKET_CONDITION_ID);
+    const metaSecond = makeMeta(MARKET_CONDITION_ID, 'Same market, refreshed question');
+
+    expect(recorder.registerMarket({ marketMeta: metaFirst })).toBe(true);
+    expect(recorder.registerMarket({ marketMeta: metaSecond })).toBe(true);
 
     expect(storage.registered).toHaveLength(1);
-    expect(storage.registered[0]).toBe(registration.marketMeta);
+    expect(storage.registered[0]).toBe(metaFirst);
   });
 
   it('отказ storage при регистрации: routing не создаётся, отказ наблюдаем и retryable', async () => {
     recorder.start();
     storage.registerOutcome = false;
 
-    recorder.registerMarket({
+    const registered = recorder.registerMarket({
       marketMeta: makeMeta(MARKET_CONDITION_ID),
       rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
     });
 
+    expect(registered).toBe(false);
     expect(recorder.getStats().registrationFailures).toBe(1);
     expect(
       logger
@@ -284,12 +288,33 @@ describe('registration and stats', () => {
 
     // Причина устранена → повторная регистрация успешна (retryable)
     storage.registerOutcome = true;
-    recorder.registerMarket({
-      marketMeta: makeMeta(MARKET_CONDITION_ID),
-      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
-    });
+    expect(
+      recorder.registerMarket({
+        marketMeta: makeMeta(MARKET_CONDITION_ID),
+        rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+      }),
+    ).toBe(true);
     await publishMarket(createBookEvent());
     expect(storage.writes).toHaveLength(1);
+  });
+
+  it("исход 'unregistered' при живой сессии — warn о рассинхроне session↔storage", async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    storage.outcomeOverride = 'unregistered';
+
+    await publishMarket(createBookEvent());
+
+    expect(
+      logger
+        .byLevel('warn')
+        .some((e) => e.message === 'Recording session exists but storage writer is missing'),
+    ).toBe(true);
+    const stats = recorder.getStats();
+    // Сообщение сматчено с сессией, но НЕ записано и не является serialization failure
+    expect(stats.marketMessagesRouted).toBe(1);
+    expect(stats.recordsWritten).toBe(0);
+    expect(stats.serializationFailures).toBe(0);
   });
 
   it('updateMarketMeta — passthrough в storage', async () => {
@@ -446,11 +471,11 @@ describe('lifecycle', () => {
     );
   });
 
-  it('registerMarket после close игнорируется — новые файлы не создаются', async () => {
+  it('registerMarket после close отклоняется (false) — новые файлы не создаются', async () => {
     recorder.start();
     await recorder.close();
 
-    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    expect(recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) })).toBe(false);
 
     expect(storage.registered).toHaveLength(0);
     expect(logger.byLevel('warn').some((e) => e.message.includes('recorder is closed'))).toBe(true);

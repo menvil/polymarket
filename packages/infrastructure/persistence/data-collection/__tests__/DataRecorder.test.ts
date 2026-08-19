@@ -43,6 +43,26 @@ function makeMeta(marketId = 'mkt-001', tokenIds = ['tok-yes', 'tok-no']): Marke
   };
 }
 
+/**
+ * Poll-ожидание наблюдаемого условия с дедлайном (вместо фиксированных sleep):
+ * медленные CI-раннеры получают время на таймеры/I/O, быстрые не ждут зря.
+ */
+async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+/** Проверяет, что mock-логгер получил error с данным сообщением. */
+function loggedError(logger: ILogger, message: string): boolean {
+  const calls = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls.some((call) => call[0] === message);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('DataRecorder', () => {
@@ -386,7 +406,8 @@ describe('DataRecorder V2 storage (N-002)', () => {
     };
     process.on('unhandledRejection', onUnhandled);
     try {
-      await new Promise((r) => setTimeout(r, 120)); // ждём таймерный flush
+      // Ждём таймерный flush по наблюдаемому условию (лог ошибки записи)
+      await waitFor(() => loggedError(logger, 'Stream write error'));
 
       expect(unhandled).toEqual([]);
       expect(logger.error).toHaveBeenCalledWith('Stream write error', expect.any(Object));
@@ -443,7 +464,8 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(recorder.registerMarket(meta)).toBe(true);
     expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('inactive');
 
-    await new Promise((r) => setTimeout(r, 120)); // таймер активации упал
+    // Ждём падения таймерной активации по наблюдаемому условию (лог ошибки)
+    await waitFor(() => loggedError(logger, 'Failed to activate market recording'));
 
     expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('failed');
     fs.unlinkSync(blockingFile);

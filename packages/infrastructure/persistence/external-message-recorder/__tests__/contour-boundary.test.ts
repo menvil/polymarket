@@ -120,24 +120,39 @@ describe('dependency graph boundary (PART 38)', () => {
     const sourceFiles = listSourceFiles(join(PACKAGE_ROOT, 'src'));
     expect(sourceFiles.length).toBeGreaterThan(0);
 
+    // Собираем нарушения с путём файла — Jest при падении называет виновника
+    const violations: string[] = [];
     for (const filePath of sourceFiles) {
       for (const specifier of collectImports(filePath)) {
         if (specifier.startsWith('.')) {
           continue; // внутренние relative-импорты пакета
         }
-        expect(ALLOWED_SOURCE_IMPORTS.has(specifier)).toBe(true);
+        if (!ALLOWED_SOURCE_IMPORTS.has(specifier)) {
+          violations.push(`${filePath}: ${specifier}`);
+        }
       }
     }
+    expect(violations).toEqual([]);
   });
 
   it('второго bus нет: external-message-bus импортируется только как типы', () => {
     for (const filePath of listSourceFiles(join(PACKAGE_ROOT, 'src'))) {
       const content = readFileSync(filePath, 'utf8');
-      const busImports = content
-        .split('\n')
-        .filter((line) => line.includes("from '@polymarket/external-message-bus'"));
-      for (const line of busImports) {
-        expect(line.trimStart().startsWith('import type')).toBe(true);
+      // Полные import-стейтменты (включая многострочные), а не только строка с from
+      const busImports =
+        content.match(/import[\s\S]*?from\s+['"]@polymarket\/external-message-bus['"]/g) ?? [];
+      for (const statement of busImports) {
+        const isTypeOnlyStatement = /^import\s+type\b/.test(statement);
+        // Inline-форма: import { type Foo, type Bar } from '...'
+        const braced = statement.match(/\{([\s\S]*?)\}/);
+        const allSpecifiersInlineType =
+          braced !== null &&
+          braced[1]!
+            .split(',')
+            .map((specifier) => specifier.trim())
+            .filter((specifier) => specifier.length > 0)
+            .every((specifier) => specifier.startsWith('type '));
+        expect(isTypeOnlyStatement || allSpecifiersInlineType).toBe(true);
       }
       expect(content).not.toContain('new ExternalMessageBus');
     }
@@ -170,6 +185,9 @@ describe('dependency graph boundary (PART 38)', () => {
   });
 
   it('Foundation не зависит от recorder-а', () => {
+    // Guard от вакуумного прохода: если путь к foundation сломается,
+    // тест обязан упасть, а не «пройти», ничего не проверив
+    let manifestsChecked = 0;
     for (const entry of readdirSync(FOUNDATION_ROOT, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       let declared: string[];
@@ -178,7 +196,9 @@ describe('dependency graph boundary (PART 38)', () => {
       } catch {
         continue; // директория без package.json
       }
+      manifestsChecked += 1;
       expect(declared).not.toContain('@polymarket/external-message-recorder');
     }
+    expect(manifestsChecked).toBeGreaterThan(0);
   });
 });
