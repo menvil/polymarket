@@ -163,8 +163,10 @@ export interface ExternalMessageRecorderStats {
   readonly recordsWritten: number;
   /** Строк сознательно пропущено activation policy (до startsAt). */
   readonly recordsSkippedInactive: number;
-  /** Ошибок сериализации payload (наблюдаемых, залогированных storage). */
+  /** Отказов записи storage: сериализация/активация/stream (залогированы storage). */
   readonly serializationFailures: number;
+  /** Регистраций, отклонённых storage (writer не установлен; retryable). */
+  readonly registrationFailures: number;
   /** Market-сообщений без зарегистрированной сессии (например, после finalize). */
   readonly unroutedMarketMessages: number;
   /** RTDS-сообщений без единого зарегистрированного (topic, symbol). */
@@ -260,6 +262,11 @@ export class ExternalMessageRecorder {
   private _closed = false;
   /** Promise первого close() — повторные вызовы ждут его же. */
   private _closePromise: Promise<void> | null = null;
+  /**
+   * In-flight финализации: `close()` обязан дождаться их ДО `storage.close()`,
+   * иначе shutdown-cleanup может удалить файл прямо во время его финализации.
+   */
+  private readonly _pendingFinalizations = new Set<Promise<void>>();
 
   // Счётчики ExternalMessageRecorderStats (mutable-состояние диагностики)
   private _marketMessagesRouted = 0;
@@ -267,6 +274,7 @@ export class ExternalMessageRecorder {
   private _recordsWritten = 0;
   private _recordsSkippedInactive = 0;
   private _serializationFailures = 0;
+  private _registrationFailures = 0;
   private _unroutedMarketMessages = 0;
   private _unroutedRtdsMessages = 0;
   private _handlerErrors = 0;
@@ -325,6 +333,11 @@ export class ExternalMessageRecorder {
    * активации не записываются; recorder новой scheduling-policy не вводит.
    * После `close()` регистрация игнорируется (warn) — новые файлы после
    * shutdown не создаются.
+   *
+   * Если storage ОТКЛОНИЛ регистрацию (writer не установлен — I/O-отказ),
+   * routing-состояние НЕ создаётся: сессия без writer-а маршрутизировала бы
+   * события в никуда. Отказ наблюдаем (error-лог + `registrationFailures`)
+   * и retryable — повторный вызов попробует зарегистрировать заново.
    */
   public registerMarket(registration: PolymarketRecordingRegistration): void {
     const key = String(registration.marketMeta.marketId);
@@ -337,7 +350,14 @@ export class ExternalMessageRecorder {
       return;
     }
 
-    this._storage.registerMarket(registration.marketMeta);
+    if (!this._storage.registerMarket(registration.marketMeta)) {
+      this._registrationFailures++;
+      this._logger.error('Recording session rejected: storage failed to install market writer', {
+        marketId: key,
+        question: registration.marketMeta.question,
+      });
+      return;
+    }
 
     const session: RecordingSession = {
       marketId: registration.marketMeta.marketId,
@@ -391,23 +411,43 @@ export class ExternalMessageRecorder {
    *
    * @param marketId - ID рынка
    * @param reason - `'EXPIRED'` — завершённый dataset (flush → gzip-архив);
-   *   `'SHUTDOWN'` — обрабатывается cleanup-policy storage
+   *   `'SHUTDOWN'` — незавершённый dataset (файл удаляется storage, архива нет)
    * @returns Promise завершения финализации
    * @throws При ошибке I/O storage
    *
    * @remarks
    * Routing снимается ДО финализации: события, пришедшие после вызова,
-   * считаются unrouted и не пишутся. Буфер не теряется — storage
+   * считаются unrouted и не пишутся. Буфер EXPIRED не теряется — storage
    * флашит его перед gzip.
+   *
+   * Финализация отслеживается как in-flight: {@link ExternalMessageRecorder.close}
+   * дождётся её ДО закрытия storage (иначе shutdown-cleanup мог бы удалить
+   * файл во время финализации). После `close()` новые финализации
+   * отклоняются (warn) — storage уже закрывается/закрыт.
    */
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
     const key = String(marketId);
+    if (this._closed) {
+      this._logger.warn('Market finalization ignored: recorder is closed', {
+        marketId: key,
+        reason,
+      });
+      return;
+    }
+
     const session = this._sessions.get(key);
     if (session) {
       this._sessions.delete(key);
       this._removeRtdsRouting(session);
     }
-    await this._storage.finalizeMarket(marketId, reason);
+
+    // Синхронно (до первого await) регистрируем in-flight операцию:
+    // close(), вызванный позже в этом же тике, гарантированно её увидит
+    const tracked: Promise<void> = this._storage.finalizeMarket(marketId, reason).finally(() => {
+      this._pendingFinalizations.delete(tracked);
+    });
+    this._pendingFinalizations.add(tracked);
+    return tracked;
   }
 
   /**
@@ -422,6 +462,7 @@ export class ExternalMessageRecorder {
       recordsWritten: this._recordsWritten,
       recordsSkippedInactive: this._recordsSkippedInactive,
       serializationFailures: this._serializationFailures,
+      registrationFailures: this._registrationFailures,
       unroutedMarketMessages: this._unroutedMarketMessages,
       unroutedRtdsMessages: this._unroutedRtdsMessages,
       handlerErrors: this._handlerErrors,
@@ -435,11 +476,14 @@ export class ExternalMessageRecorder {
    *
    * @remarks
    * Идемпотентен (повторные вызовы ждут первый). Общий bus НЕ закрывается —
-   * им владеет composition root. Storage закрывается здесь: recorder — его
+   * им владеет composition root. Перед закрытием storage дожидается ВСЕХ
+   * in-flight финализаций (`allSettled` — чужая упавшая финализация не
+   * роняет shutdown): иначе cleanup мог бы удалить файл, который прямо
+   * сейчас финализируется. Storage закрывается здесь: recorder — его
    * единственный писатель; незавершённые файлы удаляются существующей
    * cleanup-policy storage, завершённые `.jsonl.gz` не трогаются.
-   * Сообщения после close игнорируются (подписки сняты + guard в handler-ах)
-   * — новые файлы/буферы не создаются.
+   * Сообщения и финализации после close игнорируются (подписки сняты +
+   * guards) — новые файлы/буферы не создаются.
    */
   public async close(): Promise<void> {
     if (this._closePromise) {
@@ -453,9 +497,12 @@ export class ExternalMessageRecorder {
     this._sessions.clear();
     this._rtdsRouting.clear();
 
-    this._closePromise = this._storage.close().then(() => {
+    this._closePromise = (async () => {
+      // Дожидаемся in-flight финализаций ДО закрытия storage (cleanup)
+      await Promise.allSettled([...this._pendingFinalizations]);
+      await this._storage.close();
       this._logger.info('ExternalMessageRecorder closed');
-    });
+    })();
     return this._closePromise;
   }
 
@@ -504,6 +551,10 @@ export class ExternalMessageRecorder {
    * строка на файл на входное сообщение). Источник различается vendor
    * `topic`-дискриминатором, эвристика формата символа не используется.
    * Никогда не бросает.
+   *
+   * Ошибки storage изолируются НА КАЖДОЕ направление fan-out независимо:
+   * отказ записи для одного рынка не лишает события остальные подписанные
+   * рынки (storage failure — non-fatal, но наблюдаем: лог + `handlerErrors`).
    */
   private _onRtdsMessage(
     message: PolymarketCryptoBinanceExternalMessage | PolymarketCryptoChainlinkExternalMessage,
@@ -520,7 +571,15 @@ export class ExternalMessageRecorder {
       }
       this._rtdsMessagesRouted++;
       for (const session of sessions) {
-        this._recordPayload(session, message.payload);
+        try {
+          this._recordPayload(session, message.payload);
+        } catch (error) {
+          this._handlerErrors++;
+          this._logger.error('RTDS recording failed for market, continuing fan-out', {
+            marketId: String(session.marketId),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     } catch (error) {
       this._handlerErrors++;

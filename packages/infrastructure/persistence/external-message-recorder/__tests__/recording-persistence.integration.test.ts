@@ -343,6 +343,32 @@ describe('finalize and shutdown (PART 19/20)', () => {
     expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
   });
 
+  it('finalizeMarket(SHUTDOWN) не создаёт архив: файл удалён, EXPIRED-архив соседа остаётся', async () => {
+    recorder = new ExternalMessageRecorder({
+      bus,
+      storage: makeStorage({ compression: 'gzip' }),
+      logger,
+    });
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID, 'Will BTC go up 10AM?') });
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID_B, 'Will BTC go up 11AM?') });
+
+    await publish(marketMessage(createBookEvent({ market: MARKET_CONDITION_ID })));
+    await publish(marketMessage(createBookEvent({ market: MARKET_CONDITION_ID_B })));
+
+    // Рынок A — завершённый dataset, рынок B — incomplete (shutdown)
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID_B), 'SHUTDOWN');
+
+    const files = listFiles();
+    // EXPIRED → ровно один архив (рынок A)
+    const archives = files.filter((f) => f.endsWith('.jsonl.gz'));
+    expect(archives).toHaveLength(1);
+    expect(archives[0]).toContain(MARKET_CONDITION_ID.slice(0, 40));
+    // SHUTDOWN → ни архива, ни .jsonl для рынка B
+    expect(files.some((f) => f.includes(MARKET_CONDITION_ID_B.slice(0, 40)))).toBe(false);
+  });
+
   it('close: EXPIRED-архив остаётся, незавершённый .jsonl удаляется, новые события не создают файлов', async () => {
     recorder = new ExternalMessageRecorder({
       bus,

@@ -63,7 +63,9 @@ const META_RESERVED_BYTES = 16 * 1024;
  * - `'inactive'` — рынок зарегистрирован, но `startsAt` ещё не наступил —
  *   событие сознательно проигнорировано (activation policy);
  * - `'unregistered'` — рынок не зарегистрирован (или уже финализирован);
- * - `'failed'` — ошибка сериализации payload (залогирована).
+ * - `'failed'` — запись невозможна и это ошибка (залогирована): не удалась
+ *   сериализация payload, упала активация writer-а либо его stream
+ *   недоступен/разрушен.
  */
 export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'failed';
 
@@ -73,6 +75,12 @@ export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'failed';
  * @remarks
  * `buffer` хранит готовые NDJSON-строки (с trailing `\n`) строго в порядке
  * поступления — flush пишет их без пересортировки.
+ *
+ * Инвариант флагов: `active` становится `true` ТОЛЬКО после полного успеха
+ * активации (файл создан, meta записана, stream открыт); `failed` помечает
+ * терминальный отказ writer-а (ошибка активации или ошибка stream) —
+ * последующие записи возвращают `'failed'`, а не молча копятся в буфере,
+ * который никогда не будет сброшен.
  */
 interface MarketWriter {
   readonly meta: MarketMeta;
@@ -81,8 +89,10 @@ interface MarketWriter {
   stream: fs.WriteStream | null;
   lastFlushTime: number;
   eventsRecorded: number;
-  /** true когда достигли startsAt — начали запись */
+  /** true ТОЛЬКО после полного успеха активации (startsAt достигнут, stream открыт) */
   active: boolean;
+  /** true после терминального отказа writer-а (активация/stream) */
+  failed: boolean;
   /** Таймер активации (ожидание startsAt) */
   activationTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -131,15 +141,22 @@ export class DataRecorder implements IMarketDataRecorder {
    * Регистрирует рынок: создаёт файл, записывает meta-событие.
    *
    * @param meta - Метаданные рынка
+   * @returns `true` — writer установлен (или уже был зарегистрирован);
+   *   `false` — регистрация не удалась (залогировано), состояние НЕ создано —
+   *   вызов можно безопасно повторить
    *
    * @remarks
-   * Идемпотентный — повторный вызов для того же marketId — no-op.
+   * Идемпотентный — повторный вызов для того же marketId — no-op (`true`).
+   * При отказе немедленной активации (I/O) writer НЕ попадает в индексы:
+   * маршрутизация не должна ссылаться на storage-состояние, которого нет.
+   * Порт `IMarketDataRecorder.registerMarket(): void` совместим — legacy
+   * вызывающие возвращаемое значение игнорируют.
    */
-  public registerMarket(meta: MarketMeta): void {
+  public registerMarket(meta: MarketMeta): boolean {
     const key = String(meta.marketId);
     if (this._writers.has(key)) {
       this._logger.debug('Market already registered, skipping', { marketId: key });
-      return;
+      return true;
     }
 
     const filePath = this._buildFilePath(meta);
@@ -158,13 +175,17 @@ export class DataRecorder implements IMarketDataRecorder {
         stream: null, // НЕ создаём stream до активации
         lastFlushTime: now,
         eventsRecorded: 0,
-        active: alreadyStarted,
+        active: false, // active ставит ТОЛЬКО успешная _activateMarket
+        failed: false,
         activationTimer: null,
       };
 
-      // Если рынок уже начался — создаём файл и stream сразу
+      // Если рынок уже начался — создаём файл и stream сразу.
+      // Отказ активации = отказ регистрации: индексы не заполняются, retry возможен.
       if (alreadyStarted) {
-        this._activateMarket(writer);
+        if (!this._activateMarket(writer)) {
+          return false;
+        }
       } else if (hasStartsAt) {
         // Рынок ещё не начался — планируем активацию на startsAt
         const delayMs = startsAtMs - now;
@@ -188,12 +209,14 @@ export class DataRecorder implements IMarketDataRecorder {
       for (const tokenId of meta.tokenIds) {
         this._tokenIndex.set(tokenId, writer);
       }
+      return true;
     } catch (err) {
       this._logger.error('Failed to register market', {
         marketId: key,
         filePath,
         err: err instanceof Error ? err : new Error(String(err)),
       });
+      return false;
     }
   }
 
@@ -201,12 +224,16 @@ export class DataRecorder implements IMarketDataRecorder {
    * Активирует запись рынка: создаёт файл, пишет meta, открывает stream.
    *
    * @param writer - Writer рынка
+   * @returns `true` — активация полностью успешна (`active` установлен);
+   *   `false` — активация упала (`failed` установлен, запись невозможна)
    *
    * @remarks
    * Вызывается либо сразу при `registerMarket()` (если рынок уже начался),
-   * либо по таймеру когда достигаем `startsAt`.
+   * либо по таймеру когда достигаем `startsAt`. `active` выставляется ТОЛЬКО
+   * после успеха всех шагов; ошибка активации и ошибка stream помечают writer
+   * как `failed` — последующие `recordMarketEvent` возвращают `'failed'`.
    */
-  private _activateMarket(writer: MarketWriter): void {
+  private _activateMarket(writer: MarketWriter): boolean {
     const key = String(writer.meta.marketId);
 
     try {
@@ -241,6 +268,9 @@ export class DataRecorder implements IMarketDataRecorder {
       // Открываем поток в режиме append
       writer.stream = fs.createWriteStream(writer.filePath, { flags: 'a' });
       writer.stream.on('error', (err) => {
+        // Ошибка stream терминальна (autoDestroy закроет поток) — писать больше
+        // некуда; помечаем writer, чтобы записи возвращали 'failed', а не копились
+        writer.failed = true;
         this._logger.error('Write stream error', { marketId: key, filePath: writer.filePath, err });
       });
 
@@ -251,12 +281,16 @@ export class DataRecorder implements IMarketDataRecorder {
         question: writer.meta.question,
         filePath: writer.filePath,
       });
+      return true;
     } catch (err) {
+      writer.failed = true;
+      writer.active = false;
       this._logger.error('Failed to activate market recording', {
         marketId: key,
         filePath: writer.filePath,
         err: err instanceof Error ? err : new Error(String(err)),
       });
+      return false;
     }
   }
 
@@ -344,7 +378,8 @@ export class DataRecorder implements IMarketDataRecorder {
     if (!writer) return;
 
     // Игнорируем события до startsAt (аналог CEX window alignment)
-    if (!writer.active) return;
+    // и отказавшие writer-ы (буфер без stream никогда не будет сброшен)
+    if (!writer.active || writer.failed) return;
 
     try {
       const line = this._formatter.formatRecord(rawEvent as object);
@@ -368,8 +403,10 @@ export class DataRecorder implements IMarketDataRecorder {
    * `price_change` с изменениями по нескольким tokenIds записывается ОДНОЙ
    * строкой в файл рынка.
    *
-   * Никогда не бросает: ошибка сериализации логируется и возвращается как
-   * `'failed'` — recording failure наблюдаем, но не убивает вызывающего.
+   * Никогда не бросает: ошибка сериализации, упавшая активация writer-а и
+   * недоступный/разрушенный stream логируются и возвращаются как `'failed'` —
+   * recording failure наблюдаем, но не убивает вызывающего. Событие НЕ
+   * ставится в буфер, который никогда не будет сброшен на диск.
    *
    * @example
    * ```typescript
@@ -381,8 +418,17 @@ export class DataRecorder implements IMarketDataRecorder {
     const writer = this._writers.get(String(marketId));
     if (!writer) return 'unregistered';
 
+    // Терминальный отказ writer-а (активация/stream) — до проверки active:
+    // упавшая отложенная активация оставляет active=false, но это ошибка,
+    // а не «ещё не начался»
+    if (writer.failed) return 'failed';
+
     // Игнорируем события до startsAt (activation policy, см. registerMarket)
     if (!writer.active) return 'inactive';
+
+    // active=true гарантирует созданный stream; защита от рассинхрона
+    // (например, stream разрушен во время shutdown) — запись невозможна
+    if (writer.stream === null || writer.stream.destroyed) return 'failed';
 
     let line: string;
     try {
@@ -422,21 +468,22 @@ export class DataRecorder implements IMarketDataRecorder {
   }
 
   /**
-   * Завершает запись рынка: сбрасывает буфер, закрывает поток, сжимает файл.
+   * Завершает запись рынка согласно причине завершения.
    *
    * @param marketId - ID рынка
-   * @param reason - Причина завершения (только 'EXPIRED', SHUTDOWN обрабатывается в close())
+   * @param reason - `'EXPIRED'` — завершённый dataset: flush → close → gzip-архив;
+   *   `'SHUTDOWN'` — незавершённый dataset: буфер отбрасывается, stream
+   *   разрушается, файл УДАЛЯЕТСЯ (архив не создаётся)
    *
    * @remarks
-   * При EXPIRED:
-   * - Флашит буфер
-   * - Корректно закрывает stream через .end()
-   * - Сжимает файл в .jsonl.gz
-   * - Удаляет оригинальный .jsonl
+   * Семантика различия (та же, что у cleanup-policy `close()`):
+   * `.jsonl.gz` = завершённый архив, `.jsonl` = incomplete. SHUTDOWN-датасет
+   * неполон по определению — превращать его в архив нельзя, иначе бектест
+   * примет обрубок за полную сессию рынка.
    *
-   * @throws При ошибке I/O
+   * @throws При ошибке I/O (только EXPIRED-путь: flush/close/rename)
    */
-  public async finalizeMarket(marketId: MarketId, _reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
+  public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
     const key = String(marketId);
     const writer = this._writers.get(key);
     if (!writer) {
@@ -454,6 +501,28 @@ export class DataRecorder implements IMarketDataRecorder {
     if (writer.activationTimer) {
       clearTimeout(writer.activationTimer);
       writer.activationTimer = null;
+    }
+
+    // SHUTDOWN: incomplete dataset — данные отбрасываются, файл удаляется
+    if (reason === 'SHUTDOWN') {
+      writer.buffer = [];
+      await this._destroyWriterStream(writer);
+      try {
+        if (fs.existsSync(writer.filePath)) {
+          await fs.promises.unlink(writer.filePath);
+        }
+      } catch (err) {
+        this._logger.warn('Failed to delete incomplete market file', {
+          marketId: key,
+          filePath: writer.filePath,
+          err: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+      this._logger.info('Market finalized (shutdown), incomplete file removed', {
+        marketId: key,
+        filePath: writer.filePath,
+      });
+      return;
     }
 
     // EXPIRED: данные нужны — флашим буфер и корректно закрываем стрим перед сжатием.
@@ -484,6 +553,31 @@ export class DataRecorder implements IMarketDataRecorder {
       marketId: key,
       eventsRecorded: writer.eventsRecorded,
       filePath: writer.filePath,
+    });
+  }
+
+  /**
+   * Разрушает stream writer-а и дожидается освобождения FD ('close' event).
+   *
+   * @param writer - Writer рынка
+   *
+   * @remarks
+   * Общий помощник SHUTDOWN-финализации и `close()`: unlink файла безопасен
+   * только после освобождения дескриптора ОС. Уже закрытый stream
+   * (`closed === true`) не ждём — 'close' повторно не эмитится. Fallback
+   * 5 секунд очищается по 'close', висящих таймеров не остаётся.
+   */
+  private async _destroyWriterStream(writer: MarketWriter): Promise<void> {
+    if (!writer.stream || writer.stream.closed) return;
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, 5_000);
+      if (timeout.unref) timeout.unref();
+      writer.stream!.once('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      writer.stream!.destroy();
     });
   }
 
@@ -596,23 +690,8 @@ export class DataRecorder implements IMarketDataRecorder {
           clearTimeout(writer.activationTimer);
           writer.activationTimer = null;
         }
-
-        // closed=true после 'close' event (например, stream упал с ошибкой и
-        // autoDestroy уже закрыл его) — повторного 'close' не будет, ждать нечего
-        if (!writer.stream || writer.stream.closed) return Promise.resolve();
-
-        return new Promise<void>((resolve) => {
-          // Таймаут 5 секунд — если stream не закрылся, продолжаем shutdown;
-          // очищается по 'close', чтобы не оставлять висящий таймер
-          const timeout = setTimeout(resolve, 5_000);
-          if (timeout.unref) timeout.unref();
-          // destroy() закрывает stream немедленно, 'close' event гарантирует освобождение FD
-          writer.stream!.once('close', () => {
-            clearTimeout(timeout);
-            resolve();
-          });
-          writer.stream!.destroy();
-        });
+        // destroy + ожидание 'close' гарантируют освобождение FD до disk-scan cleanup()
+        return this._destroyWriterStream(writer);
       }),
     );
 

@@ -95,9 +95,15 @@ route lookup → `JSON.stringify` → enqueue в память; per-message fsync
 Recorder — optional/non-trading consumer. Ошибка записи:
 
 - наблюдаема — лог + счётчики `getStats()` (routed/written/skipped
-  inactive/serialization failures/unrouted/handler errors);
+  inactive/serialization failures/registration failures/unrouted/handler
+  errors);
 - НЕ убивает `PolymarketSource`, не останавливает bus, не мешает будущему
   SemanticAdapter (handlers синхронные и никогда не бросают);
+- изолируется на каждое направление RTDS fan-out независимо: отказ storage
+  для одного рынка не лишает события остальные подписанные рынки;
+- отказ регистрации в storage (writer не установлен) НЕ создаёт
+  routing-состояния — отказ залогирован, `registrationFailures++`, повторная
+  регистрация возможна (retryable);
 - retry-очереди нет сознательно.
 
 ## 7. Lifecycle
@@ -117,10 +123,13 @@ await recorder.close();                             // отписка + storage.
 Порядок shutdown контура (composition root):
 `source.close()` → `bus.drain()` → `recorder.close()` → `bus.close()`.
 
-`close()` идемпотентен, снимает bus-подписки, закрывает storage (recorder —
-его единственный писатель) и НЕ закрывает общий bus. `EXPIRED` = завершённый
-dataset (архив `.jsonl.gz` остаётся); незавершённые `.jsonl` удаляются
-существующей cleanup-policy storage. Сообщения после close игнорируются.
+`close()` идемпотентен, снимает bus-подписки, дожидается всех in-flight
+`finalizeMarket` (cleanup не может удалить файл во время его финализации) и
+только затем закрывает storage (recorder — его единственный писатель); общий
+bus НЕ закрывается. `EXPIRED` = завершённый dataset (архив `.jsonl.gz`
+остаётся); `SHUTDOWN` = незавершённый dataset (файл удаляется storage,
+архив НЕ создаётся). Сообщения, регистрации и финализации после close
+игнорируются (warn).
 
 ## 8. Независимые consumers одного bus
 

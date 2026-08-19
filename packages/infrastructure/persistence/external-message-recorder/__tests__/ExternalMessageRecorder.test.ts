@@ -214,6 +214,36 @@ describe('RTDS routing', () => {
     expect(storage.writes).toHaveLength(0);
     expect(recorder.getStats().unroutedRtdsMessages).toBe(1);
   });
+
+  it('отказ storage для одного рынка не лишает события остальные направления fan-out', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID_B, 'Will BTC go up (later window)?'),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+    // Storage бросает ТОЛЬКО для рынка A (первое направление fan-out)
+    storage.throwOnRecordForMarketId = MARKET_CONDITION_ID;
+
+    await publishRtds(createBinanceEvent());
+
+    // Рынок B получил свою строку несмотря на отказ по рынку A
+    expect(storage.writes.map((w) => String(w.marketId))).toEqual([MARKET_CONDITION_ID_B]);
+    expect(recorder.getStats().handlerErrors).toBe(1);
+    expect(
+      logger
+        .byLevel('error')
+        .some((e) => e.message === 'RTDS recording failed for market, continuing fan-out'),
+    ).toBe(true);
+
+    // Отказ не терминален: после устранения оба рынка снова пишутся
+    storage.throwOnRecordForMarketId = undefined;
+    await publishRtds(createBinanceEvent());
+    expect(storage.writes).toHaveLength(3);
+  });
 });
 
 // ── Registration / stats ────────────────────────────────────────────────────
@@ -227,6 +257,39 @@ describe('registration and stats', () => {
 
     expect(storage.registered).toHaveLength(1);
     expect(storage.registered[0]).toBe(registration.marketMeta);
+  });
+
+  it('отказ storage при регистрации: routing не создаётся, отказ наблюдаем и retryable', async () => {
+    recorder.start();
+    storage.registerOutcome = false;
+
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+
+    expect(recorder.getStats().registrationFailures).toBe(1);
+    expect(
+      logger
+        .byLevel('error')
+        .some((e) => e.message === 'Recording session rejected: storage failed to install market writer'),
+    ).toBe(true);
+
+    // Routing-состояния нет: market и RTDS события — unrouted, storage не вызывается
+    await publishMarket(createBookEvent());
+    await publishRtds(createBinanceEvent());
+    expect(storage.writes).toHaveLength(0);
+    expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+    expect(recorder.getStats().unroutedRtdsMessages).toBe(1);
+
+    // Причина устранена → повторная регистрация успешна (retryable)
+    storage.registerOutcome = true;
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+    await publishMarket(createBookEvent());
+    expect(storage.writes).toHaveLength(1);
   });
 
   it('updateMarketMeta — passthrough в storage', async () => {
@@ -317,6 +380,47 @@ describe('lifecycle', () => {
 
     expect(storage.closeCalls).toBe(1);
     expect(recorder.isClosed).toBe(true);
+  });
+
+  it('close дожидается in-flight finalizeMarket ДО закрытия storage (нет гонки cleanup↔finalize)', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    // Затягиваем финализацию управляемым gate
+    let releaseFinalize!: () => void;
+    storage.finalizeGate = new Promise<void>((resolve) => {
+      releaseFinalize = resolve;
+    });
+
+    const finalization = recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+    const closing = recorder.close(); // close стартует, пока финализация в полёте
+
+    // Даём close шанс поторопиться — storage.close не должен случиться до finalize
+    await new Promise((r) => setTimeout(r, 20));
+    expect(storage.callOrder).not.toContain('storage:close');
+
+    releaseFinalize();
+    await finalization;
+    await closing;
+
+    expect(storage.callOrder).toEqual([
+      `finalize:start:${MARKET_CONDITION_ID}`,
+      `finalize:end:${MARKET_CONDITION_ID}`,
+      'storage:close',
+    ]);
+  });
+
+  it('finalizeMarket после close отклоняется (warn), storage не вызывается', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    await recorder.close();
+
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+
+    expect(storage.finalized).toHaveLength(0);
+    expect(
+      logger.byLevel('warn').some((e) => e.message === 'Market finalization ignored: recorder is closed'),
+    ).toBe(true);
   });
 
   it('close НЕ закрывает общий bus (им владеет composition root)', async () => {

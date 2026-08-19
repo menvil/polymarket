@@ -10,7 +10,7 @@
 | Экспорт | Назначение |
 |---|---|
 | `DataRecorder` | `IMarketDataRecorder`: `registerMarket`/`recordEvent`/`finalizeMarket`/`close` + V2 `recordMarketEvent` |
-| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'failed'` |
+| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'failed'` (failed = сериализация ИЛИ отказ активации/stream) |
 | `DecisionJournalRecorder` | `IDecisionJournal`: `startSession`/`recordDecision`/`recordFill`/`recordResolution`/`endSession`/`close` |
 | `ArchivedMarketMetaRewriter` | Переписывает первую (meta) NDJSON-строку уже архивного файла |
 | `NDJSONFormatter` | `formatRecord(obj)` → `'{"..."}\n'` |
@@ -66,8 +66,32 @@ Reader/бектест обязан по первой строке выбрать
 - `recordMarketEvent(marketId, raw): RecordOutcome` — V2-путь: прямой ключ
   `String(marketId)` (== conditionId == `payload.market` SDK-события). SDK
   `price_change` несёт изменения по нескольким tokenIds — записывается ОДНОЙ
-  строкой в файл рынка, без разбиения. Исход наблюдаем (`RecordOutcome`), ошибка
-  сериализации логируется и возвращается как `'failed'`, метод не бросает.
+  строкой в файл рынка, без разбиения. Исход наблюдаем (`RecordOutcome`),
+  `'failed'` возвращается при ошибке сериализации, упавшей активации writer-а
+  и недоступном/разрушенном stream — событие НЕ ставится в буфер, который
+  никогда не будет сброшен; метод не бросает.
+
+### Регистрация и активация: инварианты отказов
+
+- `registerMarket(meta): boolean` — `false`, если writer не установлен
+  (ошибка вычислений или упавшая немедленная активация): состояние НЕ
+  создаётся, вызов можно повторить (retryable). Порт
+  `IMarketDataRecorder.registerMarket(): void` совместим — legacy игнорирует
+  возвращаемое значение.
+- `writer.active` ставится ТОЛЬКО после полного успеха активации (файл
+  создан, meta записана, stream открыт); `writer.failed` помечает
+  терминальный отказ (активация по таймеру упала / stream выдал 'error') —
+  последующие записи возвращают `'failed'`, а не `'inactive'`.
+
+### `finalizeMarket(marketId, reason)`: две ветки
+
+- `'EXPIRED'` — завершённый dataset: flush буфера → корректное закрытие
+  stream → gzip-архив `.jsonl.gz`.
+- `'SHUTDOWN'` — незавершённый dataset: буфер отбрасывается, stream
+  разрушается (с ожиданием освобождения FD), файл УДАЛЯЕТСЯ — архив не
+  создаётся. Семантика та же, что у cleanup при `close()`: `.jsonl.gz` =
+  полная сессия рынка, `.jsonl` = incomplete; превращать обрубок в архив
+  нельзя — бектест принял бы его за полную сессию.
 
 ### Порядок строк — arrival order
 
