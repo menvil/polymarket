@@ -449,11 +449,13 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(recorder.registerMarket(meta)).toBe(true);
   });
 
-  it('упавшая отложенная активация: recordMarketEvent возвращает failed, а не inactive', async () => {
+  it('упавшая отложенная активация освобождает регистрацию; retry активирует и пишет (TEST 1/2/5)', async () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    // startsAt фиксирован: к моменту retry он уже в прошлом → немедленная активация
+    const startsAtMs = Date.now() + 40;
     const meta: MarketMeta = {
       ...makeMeta(),
-      startsAt: { toNumber: () => Date.now() + 40 } as never,
+      startsAt: { toNumber: () => startsAtMs } as never,
     };
 
     // Блокируем date-директорию ДО срабатывания таймера активации
@@ -461,13 +463,83 @@ describe('DataRecorder V2 storage (N-002)', () => {
     const blockingFile = path.join(tmpDir, today);
     fs.writeFileSync(blockingFile, 'block');
 
-    expect(recorder.registerMarket(meta)).toBe(true);
+    const failures: string[] = [];
+    expect(
+      recorder.registerMarket(meta, (marketId) => failures.push(String(marketId))),
+    ).toBe(true);
     expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('inactive');
 
-    // Ждём падения таймерной активации по наблюдаемому условию (лог ошибки)
-    await waitFor(() => loggedError(logger, 'Failed to activate market recording'));
+    // TEST 1: отказ таймерной активации ОСВОБОЖДАЕТ регистрацию (не failed-зомби)
+    await waitFor(() =>
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    );
+    expect(failures).toEqual(['mkt-001']);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
+    // TEST 5: legacy token-index не находит старый failed writer (тихий no-op)
+    expect(() => {
+      recorder.recordEvent(unsafeInstrumentId('tok-yes'), { seq: 3 });
+    }).not.toThrow();
 
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('failed');
+    // TEST 2: причина устранена → retry = НАСТОЯЩАЯ регистрация с активацией
+    fs.unlinkSync(blockingFile);
+    expect(recorder.registerMarket(meta)).toBe(true); // startsAt уже в прошлом → immediate
+    expect(logger.info).toHaveBeenCalledWith('Market recording activated', expect.any(Object));
+
+    expect(
+      recorder.recordMarketEvent(meta.marketId, { topic: 'market', type: 'book' }),
+    ).toBe('recorded');
+    // Legacy token-index указывает на НОВЫЙ writer
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { legacy: true });
+    await recorder.flush();
+
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(3);
+    expect((JSON.parse(lines[1]!) as { type: string }).type).toBe('book');
+    expect((JSON.parse(lines[2]!) as { legacy: boolean }).legacy).toBe(true);
+  });
+
+  it('finalizeMarket до startsAt отменяет таймер — release не срабатывает (TEST 6)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const startsAtMs = Date.now() + 40;
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => startsAtMs } as never,
+    };
+
+    const failures: string[] = [];
+    expect(recorder.registerMarket(meta, () => failures.push('release'))).toBe(true);
+    await recorder.finalizeMarket(meta.marketId, 'SHUTDOWN');
+
+    // Ждём мимо startsAt: отменённый таймер не должен ни активировать, ни release-ить
+    await waitFor(() => Date.now() > startsAtMs + 60);
+    expect(failures).toEqual([]);
+    expect(
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    ).toBe(false);
+
+    // close идемпотентен и не спотыкается о финализированный рынок
+    await recorder.close();
+    await recorder.close();
+  });
+
+  it('finalizeMarket после отказа отложенной активации — no-op без исключений (TEST 6)', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta: MarketMeta = {
+      ...makeMeta(),
+      startsAt: { toNumber: () => Date.now() + 40 } as never,
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const blockingFile = path.join(tmpDir, today);
+    fs.writeFileSync(blockingFile, 'block');
+
+    expect(recorder.registerMarket(meta)).toBe(true);
+    await waitFor(() =>
+      loggedError(logger, 'Market registration released after failed delayed activation'),
+    );
+
+    // Регистрация уже освобождена — финализация не находит рынок и не бросает
+    await expect(recorder.finalizeMarket(meta.marketId, 'EXPIRED')).resolves.toBeUndefined();
+    expect(logger.debug).toHaveBeenCalledWith('finalizeMarket: market not found', expect.any(Object));
     fs.unlinkSync(blockingFile);
   });
 

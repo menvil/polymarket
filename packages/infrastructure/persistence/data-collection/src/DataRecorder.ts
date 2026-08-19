@@ -70,6 +70,17 @@ const META_RESERVED_BYTES = 16 * 1024;
 export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'failed';
 
 /**
+ * Callback асинхронного отказа отложенной активации рынка.
+ *
+ * @remarks
+ * Вызывается ОДИН раз, когда активация по таймеру `startsAt` упала и storage
+ * уже освободил регистрацию (writer удалён из индексов, partial-файл убран).
+ * Позволяет верхнему recording-слою инвалидировать свою routing-сессию —
+ * оба слоя состояния остаются согласованными без polling/EventEmitter.
+ */
+export type DelayedActivationFailureCallback = (marketId: MarketId) => void;
+
+/**
  * Внутреннее состояние записи для одного рынка.
  *
  * @remarks
@@ -77,14 +88,20 @@ export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'failed';
  * поступления — flush пишет их без пересортировки.
  *
  * Инвариант флагов: `active` становится `true` ТОЛЬКО после полного успеха
- * активации (файл создан, meta записана, stream открыт); `failed` помечает
- * терминальный отказ writer-а (ошибка активации или ошибка stream) —
- * последующие записи возвращают `'failed'`, а не молча копятся в буфере,
- * который никогда не будет сброшен.
+ * активации (файл создан, meta записана, stream открыт).
+ *
+ * Инвариант отказов активации (immediate И delayed одинаково):
+ * FAILED ACTIVATION = RETRYABLE REGISTRATION — writer НЕ остаётся в индексах.
+ * Immediate-отказ не устанавливает writer вовсе; delayed-отказ освобождает
+ * регистрацию (`_releaseFailedDelayedActivation`). `failed` остаётся помечать
+ * только post-activation отказ stream (writer жив, но записи возвращают
+ * `'failed'`, а не копятся в буфере, который никогда не будет сброшен).
  */
 interface MarketWriter {
   readonly meta: MarketMeta;
   readonly filePath: string;
+  /** Hook верхнего слоя: отложенная активация упала, регистрация освобождена. */
+  readonly onDelayedActivationFailure: DelayedActivationFailureCallback | undefined;
   buffer: string[];
   stream: fs.WriteStream | null;
   lastFlushTime: number;
@@ -141,18 +158,32 @@ export class DataRecorder implements IMarketDataRecorder {
    * Регистрирует рынок: создаёт файл, записывает meta-событие.
    *
    * @param meta - Метаданные рынка
+   * @param onDelayedActivationFailure - Опциональный hook: отложенная (по
+   *   таймеру `startsAt`) активация упала и регистрация уже освобождена —
+   *   верхний слой обязан инвалидировать свою routing-сессию
    * @returns `true` — writer установлен (или уже был зарегистрирован);
    *   `false` — регистрация не удалась (залогировано), состояние НЕ создано —
    *   вызов можно безопасно повторить
    *
    * @remarks
    * Идемпотентный — повторный вызов для того же marketId — no-op (`true`).
-   * При отказе немедленной активации (I/O) writer НЕ попадает в индексы:
-   * маршрутизация не должна ссылаться на storage-состояние, которого нет.
+   *
+   * Единый invariant отказов активации: FAILED ACTIVATION IS RETRYABLE.
+   * - immediate-отказ (рынок уже начался): writer НЕ попадает в индексы,
+   *   метод возвращает `false`;
+   * - delayed-отказ (таймер `startsAt`): регистрация асинхронно
+   *   ОСВОБОЖДАЕТСЯ (writer удаляется из индексов, partial-файл убран),
+   *   вызывается `onDelayedActivationFailure` — повторный
+   *   `registerMarket(sameMeta)` выполнит НАСТОЯЩУЮ новую регистрацию,
+   *   а не no-op «already registered».
+   *
    * Порт `IMarketDataRecorder.registerMarket(): void` совместим — legacy
-   * вызывающие возвращаемое значение игнорируют.
+   * вызывающие возвращаемое значение и hook игнорируют.
    */
-  public registerMarket(meta: MarketMeta): boolean {
+  public registerMarket(
+    meta: MarketMeta,
+    onDelayedActivationFailure?: DelayedActivationFailureCallback,
+  ): boolean {
     const key = String(meta.marketId);
     if (this._writers.has(key)) {
       this._logger.debug('Market already registered, skipping', { marketId: key });
@@ -171,6 +202,7 @@ export class DataRecorder implements IMarketDataRecorder {
       const writer: MarketWriter = {
         meta,
         filePath,
+        onDelayedActivationFailure,
         buffer: [],
         stream: null, // НЕ создаём stream до активации
         lastFlushTime: now,
@@ -187,11 +219,15 @@ export class DataRecorder implements IMarketDataRecorder {
           return false;
         }
       } else if (hasStartsAt) {
-        // Рынок ещё не начался — планируем активацию на startsAt
+        // Рынок ещё не начался — планируем активацию на startsAt.
+        // Отказ отложенной активации освобождает регистрацию (тот же
+        // retryable-invariant, что и у immediate-отказа).
         const delayMs = startsAtMs - now;
         writer.activationTimer = setTimeout(() => {
-          this._activateMarket(writer);
           writer.activationTimer = null;
+          if (!this._activateMarket(writer)) {
+            this._releaseFailedDelayedActivation(writer);
+          }
         }, delayMs);
 
         // unref чтобы таймер не удерживал процесс при shutdown
@@ -300,6 +336,48 @@ export class DataRecorder implements IMarketDataRecorder {
         err: err instanceof Error ? err : new Error(String(err)),
       });
       return false;
+    }
+  }
+
+  /**
+   * Освобождает регистрацию после упавшей ОТЛОЖЕННОЙ активации (таймер startsAt).
+   *
+   * @param writer - Writer, чья таймерная активация упала
+   *
+   * @remarks
+   * Восстанавливает retryable-invariant для delayed-пути: writer удаляется из
+   * `_writers`/`_tokenIndex` — повторный `registerMarket(sameMeta)` выполнит
+   * настоящую новую регистрацию. Удаление identity-guarded: если ключ уже
+   * указывает на ДРУГОЙ writer (finalize + re-register успели произойти),
+   * чужой mapping не трогается. Partial-файл уже убран catch-веткой
+   * `_activateMarket`, таймер уже обнулён вызывающим. В конце уведомляется
+   * hook верхнего слоя (`onDelayedActivationFailure`) — его исключение
+   * гасится и логируется, чтобы не превратиться в uncaught из таймера.
+   */
+  private _releaseFailedDelayedActivation(writer: MarketWriter): void {
+    const key = String(writer.meta.marketId);
+
+    if (this._writers.get(key) === writer) {
+      this._writers.delete(key);
+    }
+    for (const tokenId of writer.meta.tokenIds) {
+      if (this._tokenIndex.get(tokenId) === writer) {
+        this._tokenIndex.delete(tokenId);
+      }
+    }
+
+    this._logger.error('Market registration released after failed delayed activation', {
+      marketId: key,
+      filePath: writer.filePath,
+    });
+
+    try {
+      writer.onDelayedActivationFailure?.(writer.meta.marketId);
+    } catch (err) {
+      this._logger.error('Delayed activation failure callback threw', {
+        marketId: key,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
     }
   }
 

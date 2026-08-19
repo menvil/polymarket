@@ -318,6 +318,61 @@ describe('RTDS duplication (PART 24)', () => {
   });
 });
 
+// ── Delayed activation failure: согласованность двух слоёв состояния ────────
+
+describe('delayed activation failure (two-layer consistency)', () => {
+  /** Poll-ожидание условия с дедлайном. */
+  async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!condition()) {
+      if (Date.now() > deadline) {
+        throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it('отказ таймерной активации инвалидирует сессию; retry через recorder пишет реальную строку', async () => {
+    recorder = new ExternalMessageRecorder({ bus, storage: makeStorage(), logger });
+    recorder.start();
+
+    // Блокируем date-директорию: активация по startsAt упадёт
+    const today = new Date().toISOString().slice(0, 10);
+    const blockingFile = path.join(tmpDir, today);
+    fs.writeFileSync(blockingFile, 'block');
+
+    const startsAtMs = Date.now() + 40;
+    const futureMeta: MarketMeta = {
+      ...makeMeta(MARKET_CONDITION_ID, 'Will BTC go up?'),
+      startsAt: { toNumber: () => startsAtMs } as never,
+    };
+    expect(recorder.registerMarket({ marketMeta: futureMeta })).toBe(true);
+
+    // Storage освободил регистрацию и уведомил recorder — сессия инвалидирована
+    await waitFor(() =>
+      logger
+        .byLevel('error')
+        .some((e) => e.message === 'Recording session invalidated: delayed storage activation failed'),
+    );
+    expect(recorder.getStats().registrationFailures).toBe(1);
+    await publish(marketMessage(createBookEvent()));
+    expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+
+    // Причина устранена → retry той же регистрации (startsAt уже в прошлом)
+    fs.unlinkSync(blockingFile);
+    expect(recorder.registerMarket({ marketMeta: futureMeta })).toBe(true);
+
+    const message = marketMessage(createBookEvent());
+    await publish(message);
+    await storage.flush();
+
+    const lines = readLines(MARKET_CONDITION_ID);
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(message.payload)));
+    expect((JSON.parse(lines[0]!) as { formatVersion: number }).formatVersion).toBe(2);
+  });
+});
+
 // ── Finalize / gzip / shutdown (PART 19/20, TEST E) ─────────────────────────
 
 describe('finalize and shutdown (PART 19/20)', () => {

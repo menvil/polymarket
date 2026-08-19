@@ -104,6 +104,12 @@ Recorder — optional/non-trading consumer. Ошибка записи:
 - отказ регистрации в storage (writer не установлен) НЕ создаёт
   routing-состояния — `registerMarket` возвращает `false`, отказ залогирован,
   `registrationFailures++`, повторная регистрация возможна (retryable);
+- отказ ОТЛОЖЕННОЙ активации storage (таймер `startsAt`) асинхронно
+  инвалидирует сессию через hook `onDelayedActivationFailure`: routing
+  (включая RTDS-фиды сессии) снимается, чужие рынки на общих фидах не
+  затрагиваются, `registrationFailures++`, и повторный `registerMarket`
+  выполняет настоящую новую регистрацию — оба слоя состояния (storage
+  writer + recorder session) остаются согласованными;
 - retry-очереди нет сознательно.
 
 ## 7. Lifecycle

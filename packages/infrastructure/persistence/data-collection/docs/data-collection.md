@@ -71,17 +71,28 @@ Reader/бектест обязан по первой строке выбрать
   и недоступном/разрушенном stream — событие НЕ ставится в буфер, который
   никогда не будет сброшен; метод не бросает.
 
-### Регистрация и активация: инварианты отказов
+### Регистрация и активация: единый invariant отказов
 
-- `registerMarket(meta): boolean` — `false`, если writer не установлен
-  (ошибка вычислений или упавшая немедленная активация): состояние НЕ
-  создаётся, вызов можно повторить (retryable). Порт
+**FAILED ACTIVATION IS RETRYABLE** — одинаково для немедленной И отложенной
+активации; failed writer никогда не остаётся «зарегистрированным».
+
+- `registerMarket(meta, onDelayedActivationFailure?): boolean` — `false`, если
+  writer не установлен (ошибка вычислений или упавшая немедленная активация):
+  состояние НЕ создаётся, вызов можно повторить (retryable). Порт
   `IMarketDataRecorder.registerMarket(): void` совместим — legacy игнорирует
-  возвращаемое значение.
+  возвращаемое значение и hook.
+- Отложенная активация (таймер `startsAt`) при отказе асинхронно
+  ОСВОБОЖДАЕТ регистрацию: writer удаляется из `_writers`/`_tokenIndex`
+  (identity-guarded — mapping нового writer-а не затирается), partial-файл
+  убран, вызывается hook `onDelayedActivationFailure` (верхний слой обязан
+  инвалидировать свою routing-сессию). Повторный `registerMarket(sameMeta)`
+  выполняет НАСТОЯЩУЮ новую регистрацию, а не no-op «already registered».
+  Автоматического retry нет — решение register again/abandon принадлежит
+  вызывающему (будущий Market Coordinator).
 - `writer.active` ставится ТОЛЬКО после полного успеха активации (файл
-  создан, meta записана, stream открыт); `writer.failed` помечает
-  терминальный отказ (активация по таймеру упала / stream выдал 'error') —
-  последующие записи возвращают `'failed'`, а не `'inactive'`.
+  создан, meta записана, stream открыт); `writer.failed` остаётся помечать
+  post-activation отказ stream ('error' после успешной активации) —
+  последующие записи возвращают `'failed'`, а не копятся в буфере.
 
 ### `finalizeMarket(marketId, reason)`: две ветки
 

@@ -353,7 +353,18 @@ export class ExternalMessageRecorder {
       return true;
     }
 
-    if (!this._storage.registerMarket(registration.marketMeta)) {
+    // Hook отложенной активации замыкает КОНКРЕТНУЮ session этой регистрации:
+    // storage вызовет его, если активация по таймеру startsAt упала и
+    // регистрация уже освобождена. Инвалидация identity-guarded — если сессию
+    // под ключом успели заменить/убрать, чужое состояние не трогается.
+    const session: RecordingSession = {
+      marketId: registration.marketMeta.marketId,
+      rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
+    };
+    const installed = this._storage.registerMarket(registration.marketMeta, () => {
+      this._invalidateSessionAfterDelayedActivationFailure(key, session);
+    });
+    if (!installed) {
       this._registrationFailures++;
       this._logger.error('Recording session rejected: storage failed to install market writer', {
         marketId: key,
@@ -362,10 +373,6 @@ export class ExternalMessageRecorder {
       return false;
     }
 
-    const session: RecordingSession = {
-      marketId: registration.marketMeta.marketId,
-      rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
-    };
     this._sessions.set(key, session);
     for (const feed of session.rtdsFeeds) {
       const routingKey = rtdsRoutingKey(feed.topic, feed.symbol);
@@ -383,6 +390,41 @@ export class ExternalMessageRecorder {
       rtdsFeeds: session.rtdsFeeds.map((feed) => `${feed.topic}:${feed.symbol}`),
     });
     return true;
+  }
+
+  /**
+   * Инвалидирует сессию после асинхронного отказа отложенной активации storage.
+   *
+   * @param key - Ключ сессии (`String(marketId)`)
+   * @param session - Именно та сессия, что была установлена при регистрации
+   *
+   * @remarks
+   * Storage уже освободил свою регистрацию (writer удалён) — recorder обязан
+   * убрать stale routing, иначе слои разъедутся: сессия без writer-а
+   * маршрутизировала бы события в `'unregistered'` вечно. Инвалидация
+   * identity-guarded (`_sessions.get(key) === session`): более новая сессия
+   * перерегистрированного рынка не затрагивается. RTDS routing снимается
+   * той же per-feed логикой, что и при finalize — чужие рынки на общем фиде
+   * продолжают записываться. Идемпотентна; после `close()` — no-op (maps уже
+   * очищены). Отказ учитывается в `registrationFailures` — повторный
+   * `registerMarket` выполнит настоящую новую регистрацию.
+   */
+  private _invalidateSessionAfterDelayedActivationFailure(
+    key: string,
+    session: RecordingSession,
+  ): void {
+    if (this._closed) {
+      return;
+    }
+    if (this._sessions.get(key) !== session) {
+      return; // finalize/close/перерегистрация уже убрали или заменили сессию
+    }
+    this._sessions.delete(key);
+    this._removeRtdsRouting(session);
+    this._registrationFailures++;
+    this._logger.error('Recording session invalidated: delayed storage activation failed', {
+      marketId: key,
+    });
   }
 
   /**

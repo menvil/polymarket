@@ -298,6 +298,68 @@ describe('registration and stats', () => {
     expect(storage.writes).toHaveLength(1);
   });
 
+  it('отказ отложенной активации storage инвалидирует сессию; retry регистрирует заново (TEST 3)', async () => {
+    recorder.start();
+    const registration = {
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance' as const, symbol: 'btcusdt' }],
+    };
+    expect(recorder.registerMarket(registration)).toBe(true);
+    expect(storage.registered).toHaveLength(1);
+
+    // Storage сообщает: таймерная активация упала, регистрация освобождена
+    storage.failDelayedActivation(unsafeMarketId(MARKET_CONDITION_ID));
+
+    expect(recorder.getStats().registrationFailures).toBe(1);
+    expect(
+      logger
+        .byLevel('error')
+        .some((e) => e.message === 'Recording session invalidated: delayed storage activation failed'),
+    ).toBe(true);
+    // Stale-сессии нет: market и RTDS события — unrouted, storage не вызывается
+    await publishMarket(createBookEvent());
+    await publishRtds(createBinanceEvent());
+    expect(storage.writes).toHaveLength(0);
+    expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+    expect(recorder.getStats().unroutedRtdsMessages).toBe(1);
+
+    // Retry той же регистрации РЕАЛЬНО вызывает storage.registerMarket снова
+    expect(recorder.registerMarket(registration)).toBe(true);
+    expect(storage.registered).toHaveLength(2);
+    await publishMarket(createBookEvent());
+    await publishRtds(createBinanceEvent());
+    expect(storage.writes).toHaveLength(2);
+  });
+
+  it('отказ активации A убирает из shared RTDS routing только A — B продолжает писаться (TEST 4)', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID_B, 'Will BTC go up (later window)?'),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+
+    storage.failDelayedActivation(unsafeMarketId(MARKET_CONDITION_ID));
+    await publishRtds(createBinanceEvent());
+
+    // Пишется только B; A из общего фида удалён
+    expect(storage.writes.map((w) => String(w.marketId))).toEqual([MARKET_CONDITION_ID_B]);
+  });
+
+  it('hook отказа активации после close — no-op без исключений (TEST 6)', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    await recorder.close();
+
+    expect(() => {
+      storage.failDelayedActivation(unsafeMarketId(MARKET_CONDITION_ID));
+    }).not.toThrow();
+    expect(recorder.getStats().registrationFailures).toBe(0);
+  });
+
   it("исход 'unregistered' при живой сессии — warn о рассинхроне session↔storage", async () => {
     recorder.start();
     recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });

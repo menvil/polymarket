@@ -11,7 +11,7 @@
  */
 
 export { DataRecorder } from './DataRecorder.js';
-export type { RecordOutcome } from './DataRecorder.js';
+export type { RecordOutcome, DelayedActivationFailureCallback } from './DataRecorder.js';
 export { ArchivedMarketMetaRewriter } from './ArchivedMarketMetaRewriter.js';
 export { DecisionJournalRecorder } from './DecisionJournalRecorder.js';
 export type { DecisionJournalConfig } from './DecisionJournalRecorder.js';

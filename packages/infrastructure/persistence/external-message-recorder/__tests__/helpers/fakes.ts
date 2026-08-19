@@ -10,7 +10,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
-import type { RecordOutcome } from '@polymarket/data-collection';
+import type { DelayedActivationFailureCallback, RecordOutcome } from '@polymarket/data-collection';
 import type { PolymarketRecordingStorage } from '../../src/index.js';
 
 /** Захваченный вызов recordMarketEvent. */
@@ -46,13 +46,32 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
   public throwOnRecordForMarketId: string | undefined;
   /** Если задан — finalizeMarket ждёт этот promise перед завершением. */
   public finalizeGate: Promise<void> | undefined;
+  /** Hooks отложенной активации по String(marketId) — см. failDelayedActivation. */
+  public readonly activationFailureHooks = new Map<string, DelayedActivationFailureCallback>();
 
-  public registerMarket(meta: MarketMeta): boolean {
+  public registerMarket(
+    meta: MarketMeta,
+    onDelayedActivationFailure?: DelayedActivationFailureCallback,
+  ): boolean {
     if (!this.registerOutcome) {
       return false;
     }
     this.registered.push(meta);
+    if (onDelayedActivationFailure !== undefined) {
+      this.activationFailureHooks.set(String(meta.marketId), onDelayedActivationFailure);
+    }
     return true;
+  }
+
+  /**
+   * Симулирует асинхронный отказ отложенной активации: storage освободил
+   * регистрацию и уведомляет hook (как таймерная ветка реального DataRecorder).
+   */
+  public failDelayedActivation(marketId: MarketId): void {
+    const key = String(marketId);
+    const hook = this.activationFailureHooks.get(key);
+    this.activationFailureHooks.delete(key);
+    hook?.(marketId);
   }
 
   public recordMarketEvent(marketId: MarketId, rawEvent: unknown): RecordOutcome {
