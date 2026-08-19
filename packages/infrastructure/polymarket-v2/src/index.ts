@@ -22,6 +22,14 @@ export type {
   PolymarketCryptoBinanceExternalMessage,
   PolymarketCryptoChainlinkExternalMessage,
 } from './PolymarketExternalMessage.js';
+export { PolymarketSource } from './PolymarketSource.js';
+export type {
+  PolymarketExternalMessagePublisher,
+  PolymarketOpenSubscription,
+  PolymarketSourceDependencies,
+  PolymarketSubscribeClient,
+  PolymarketSubscriptionHandle,
+} from './PolymarketSource.js';
 export type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
