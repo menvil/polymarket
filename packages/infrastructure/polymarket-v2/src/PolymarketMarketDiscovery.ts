@@ -194,6 +194,14 @@ export interface PolymarketMarketDiscoveryConfig {
    * @defaultValue 60_000 (parity с legacy adapter)
    */
   readonly cacheTtlMs?: number;
+  /**
+   * Минимальная пауза авто-refresh после НЕУДАЧНОГО обновления: пока она не
+   * истекла, `findCandidates()` возвращает прежний кэш, не запуская новую
+   * пагинацию (защита от молотьбы по недоступному Gamma). Явный `refresh()`
+   * backoff не учитывает — cadence явных обновлений принадлежит вызывающему.
+   * @defaultValue 15_000
+   */
+  readonly refreshFailureBackoffMs?: number;
 }
 
 /** Дефолты конфигурации (см. поля {@link PolymarketMarketDiscoveryConfig}). */
@@ -202,6 +210,7 @@ const DEFAULT_MAX_PAGES = 100;
 const DEFAULT_END_DATE_WINDOW_MS = 2 * 24 * 60 * 60_000;
 const DEFAULT_ZOMBIE_GRACE_MS = 2 * 60_000;
 const DEFAULT_CACHE_TTL_MS = 60_000;
+const DEFAULT_REFRESH_FAILURE_BACKOFF_MS = 15_000;
 
 /**
  * Кэш кандидатов держит 3× запас относительно maxMarketsToReturn:
@@ -276,6 +285,10 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
   private _cachedCandidates: readonly PolymarketDiscoveredMarket[] = [];
   /** Момент последнего успешного refresh (ms). */
   private _lastFetchMs = 0;
+  /** In-flight refresh: конкурентные вызовы разделяют одну пагинацию. */
+  private _refreshInFlight: Promise<void> | null = null;
+  /** Момент последнего НЕУДАЧНОГО refresh (ms) — backoff авто-обновления. */
+  private _lastFailedRefreshMs: number | null = null;
 
   /**
    * Создаёт Discovery поверх инъецированного официального SDK-клиента.
@@ -296,6 +309,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       endDateWindowMs: config.endDateWindowMs ?? DEFAULT_END_DATE_WINDOW_MS,
       zombieGraceMs: config.zombieGraceMs ?? DEFAULT_ZOMBIE_GRACE_MS,
       cacheTtlMs: config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
+      refreshFailureBackoffMs: config.refreshFailureBackoffMs ?? DEFAULT_REFRESH_FAILURE_BACKOFF_MS,
     };
   }
 
@@ -303,6 +317,11 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * Возвращает кандидатов из кэша, при устаревшем TTL — авто-refresh.
    *
    * @returns Readonly-массив кандидатов, отсортированных по приоритету
+   *
+   * @remarks
+   * После НЕУДАЧНОГО обновления авто-refresh выдерживает паузу
+   * `refreshFailureBackoffMs` (прежний кэш возвращается без новой пагинации) —
+   * недоступный Gamma не молотится на каждом чтении.
    *
    * @example
    * ```typescript
@@ -312,6 +331,16 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
   public async findCandidates(): Promise<readonly PolymarketDiscoveredMarket[]> {
     const nowMs = this._clock.now().getTime();
     if (nowMs - this._lastFetchMs > this._config.cacheTtlMs) {
+      if (
+        this._lastFailedRefreshMs !== null &&
+        nowMs - this._lastFailedRefreshMs < this._config.refreshFailureBackoffMs
+      ) {
+        this._logger.debug('Auto-refresh suppressed by failure backoff, serving previous cache', {
+          lastFailedRefreshMs: this._lastFailedRefreshMs,
+          refreshFailureBackoffMs: this._config.refreshFailureBackoffMs,
+        });
+        return this._cachedCandidates;
+      }
       this._logger.debug('Candidate cache is stale, refreshing', {
         lastFetchMs: this._lastFetchMs,
         cacheTtlMs: this._config.cacheTtlMs,
@@ -329,8 +358,26 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * pre-filter торгуемости → mapping в кандидатов → `MarketFilter` →
    * `MarketScorer` → кэш (3× запас). Ошибка Gamma без частичных данных
    * оставляет прежний кэш нетронутым.
+   *
+   * Конкурентные вызовы дедуплицируются: пока обновление in-flight,
+   * повторный `refresh()`/авто-refresh ждёт ту же пагинацию, а не открывает
+   * вторую. Backoff после неудачи на явный `refresh()` НЕ распространяется —
+   * cadence явных обновлений принадлежит вызывающему.
    */
   public async refresh(): Promise<void> {
+    if (this._refreshInFlight !== null) {
+      return this._refreshInFlight;
+    }
+    this._refreshInFlight = this._doRefresh().finally(() => {
+      this._refreshInFlight = null;
+    });
+    return this._refreshInFlight;
+  }
+
+  /**
+   * Тело одного обновления кэша (см. {@link PolymarketMarketDiscovery.refresh}).
+   */
+  private async _doRefresh(): Promise<void> {
     this._logger.info('Refreshing market discovery candidates via official SDK');
     const nowMs = this._clock.now().getTime();
 
@@ -338,6 +385,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     try {
       rawMarkets = await this._listMarketsWindow(nowMs);
     } catch (error) {
+      this._lastFailedRefreshMs = this._clock.now().getTime();
       this._logger.error('Gamma listMarkets failed, keeping stale candidate cache', {
         error: error instanceof Error ? error.message : String(error),
         staleCacheSize: this._cachedCandidates.length,
@@ -380,6 +428,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     const cacheSize = this._config.filter.maxMarketsToReturn * CACHE_MULTIPLIER;
     this._cachedCandidates = scored.slice(0, cacheSize);
     this._lastFetchMs = this._clock.now().getTime();
+    this._lastFailedRefreshMs = null;
 
     this._logger.info('Market discovery refresh complete', {
       raw: rawMarkets.length,

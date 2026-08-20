@@ -75,27 +75,38 @@ export interface PolymarketCryptoMeta {
  * Скопирован 1:1 из legacy `CryptoMarketMeta` (behavior oracle): Chainlink
  * использует `btc/usd`, Binance — `BTCUSDT`. Пары без маппинга дают только
  * односторонние подписки (как в legacy).
+ *
+ * Null-prototype + freeze: lookup по внешнему символу не должен находить
+ * унаследованные ключи (`constructor`/`toString`), а таблица — мутироваться.
  */
-const CHAINLINK_TO_BINANCE: Record<string, string> = {
-  'btc/usd': 'BTCUSDT',
-  'eth/usd': 'ETHUSDT',
-  'sol/usd': 'SOLUSDT',
-  'doge/usd': 'DOGEUSDT',
-  'xrp/usd': 'XRPUSDT',
-  'bnb/usd': 'BNBUSDT',
-  'ada/usd': 'ADAUSDT',
-  'avax/usd': 'AVAXUSDT',
-  'link/usd': 'LINKUSDT',
-  'matic/usd': 'MATICUSDT',
-  'dot/usd': 'DOTUSDT',
-  'ltc/usd': 'LTCUSDT',
-};
+const CHAINLINK_TO_BINANCE: Readonly<Record<string, string>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<string, string>, {
+    'btc/usd': 'BTCUSDT',
+    'eth/usd': 'ETHUSDT',
+    'sol/usd': 'SOLUSDT',
+    'doge/usd': 'DOGEUSDT',
+    'xrp/usd': 'XRPUSDT',
+    'bnb/usd': 'BNBUSDT',
+    'ada/usd': 'ADAUSDT',
+    'avax/usd': 'AVAXUSDT',
+    'link/usd': 'LINKUSDT',
+    'matic/usd': 'MATICUSDT',
+    'dot/usd': 'DOTUSDT',
+    'ltc/usd': 'LTCUSDT',
+  }),
+);
 
 /**
- * Обратный маппинг Binance-символов → Chainlink-символы.
+ * Обратный маппинг Binance-символов → Chainlink-символы (тот же контракт
+ * иммутабельности, что у {@link CHAINLINK_TO_BINANCE}).
  */
-const BINANCE_TO_CHAINLINK: Record<string, string> = Object.fromEntries(
-  Object.entries(CHAINLINK_TO_BINANCE).map(([chainlink, binance]) => [binance, chainlink]),
+const BINANCE_TO_CHAINLINK: Readonly<Record<string, string>> = Object.freeze(
+  Object.assign(
+    Object.create(null) as Record<string, string>,
+    Object.fromEntries(
+      Object.entries(CHAINLINK_TO_BINANCE).map(([chainlink, binance]) => [binance, chainlink]),
+    ),
+  ),
 );
 
 /**

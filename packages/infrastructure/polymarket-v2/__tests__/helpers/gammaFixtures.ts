@@ -288,6 +288,8 @@ export type RecordedListMarketsRequest = Record<string, unknown> | undefined;
 export class FakeDiscoveryClient implements PolymarketDiscoveryClient {
   /** Страницы, которые вернёт следующий listMarkets (массив batch-ей). */
   public pages: Market[][] = [];
+  /** Если задан — чтение первой страницы ждёт этот promise (медленный Gamma). */
+  public listHold: Promise<void> | undefined;
   /** Индекс страницы (0-based), чтение которой бросит ошибку; -1 — без ошибок. */
   public failAtPage = -1;
   /** Ошибка, бросаемая на failAtPage. */
@@ -306,12 +308,16 @@ export class FakeDiscoveryClient implements PolymarketDiscoveryClient {
     const pages = this.pages;
     const failAtPage = this.failAtPage;
     const pageError = this.pageError;
+    const listHold = this.listHold;
 
     const iterate = async function* (): AsyncGenerator<{
       items: Market[];
       hasMore: boolean;
       nextCursor?: unknown;
     }> {
+      if (listHold !== undefined) {
+        await listHold;
+      }
       for (let i = 0; i < pages.length; i++) {
         if (i === failAtPage) {
           throw pageError;

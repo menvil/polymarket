@@ -24,9 +24,15 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 const PACKAGE_ROOT = join(__dirname, '..');
+const SRC_ROOT = join(PACKAGE_ROOT, 'src');
+
+/** Путь файла относительно src в POSIX-нотации (устойчиво к подкаталогам). */
+function srcRelative(filePath: string): string {
+  return relative(SRC_ROOT, filePath).split(sep).join('/');
+}
 
 /** Зависимости, запрещённые пакету целиком (semantic/trading/legacy). */
 const FORBIDDEN_DEPENDENCIES = [
@@ -78,7 +84,7 @@ const ALLOWED_DISCOVERY_IMPORTS = new Set([
   'decimal.js',
 ]);
 
-/** Файлы CONTROL PLANE (discovery boundary) — по basename. */
+/** Файлы CONTROL PLANE (discovery boundary) — пути относительно `src`. */
 const DISCOVERY_FILES = new Set([
   'PolymarketMarketDiscovery.ts',
   'PolymarketRtdsFeeds.ts',
@@ -101,11 +107,20 @@ function listSourceFiles(dir: string): string[] {
 }
 
 /**
+ * Убирает блочные и строчные комментарии перед поиском импортов:
+ * import-подобный текст в TSDoc/примерах не должен считаться зависимостью.
+ * `//` внутри строк-URL (`https://...`) защищён предшествующим двоеточием.
+ */
+function stripComments(content: string): string {
+  return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/**
  * Собирает все import-specifiers файла: `import/export ... from '...'`,
- * side-effect `import '...'` и dynamic `import('...')`.
+ * side-effect `import '...'` и dynamic `import('...')` (без комментариев).
  */
 function collectImports(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf8');
+  const content = stripComments(readFileSync(filePath, 'utf8'));
   const specifiers: string[] = [];
   const patterns = [
     /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g,
@@ -142,8 +157,8 @@ describe('dependency graph boundary', () => {
   });
 
   it('DATA PLANE импортирует только Foundation, внешний контур и официальный SDK', () => {
-    const sourceFiles = listSourceFiles(join(PACKAGE_ROOT, 'src')).filter(
-      (filePath) => !DISCOVERY_FILES.has(basename(filePath)),
+    const sourceFiles = listSourceFiles(SRC_ROOT).filter(
+      (filePath) => !DISCOVERY_FILES.has(srcRelative(filePath)),
     );
     expect(sourceFiles.length).toBeGreaterThan(0);
 
@@ -153,15 +168,17 @@ describe('dependency graph boundary', () => {
           continue; // внутренние relative-импорты пакета
         }
         if (!ALLOWED_SOURCE_IMPORTS.has(specifier)) {
-          throw new Error(`Forbidden data-plane import '${specifier}' in ${basename(filePath)}`);
+          throw new Error(
+            `Forbidden data-plane import '${specifier}' in ${srcRelative(filePath)}`,
+          );
         }
       }
     }
   });
 
   it('CONTROL PLANE (discovery) добавляет только selection-контракты и VO', () => {
-    const discoveryFiles = listSourceFiles(join(PACKAGE_ROOT, 'src')).filter((filePath) =>
-      DISCOVERY_FILES.has(basename(filePath)),
+    const discoveryFiles = listSourceFiles(SRC_ROOT).filter((filePath) =>
+      DISCOVERY_FILES.has(srcRelative(filePath)),
     );
     expect(discoveryFiles.length).toBeGreaterThan(0);
 
@@ -172,7 +189,7 @@ describe('dependency graph boundary', () => {
         }
         if (!ALLOWED_DISCOVERY_IMPORTS.has(specifier)) {
           throw new Error(
-            `Forbidden control-plane import '${specifier}' in ${basename(filePath)}`,
+            `Forbidden control-plane import '${specifier}' in ${srcRelative(filePath)}`,
           );
         }
       }

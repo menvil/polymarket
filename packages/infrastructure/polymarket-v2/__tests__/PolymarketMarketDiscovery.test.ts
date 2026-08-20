@@ -287,6 +287,52 @@ describe('TTL-кэш findCandidates (TEST 4)', () => {
     await discovery.findCandidates(); // TTL истёк — refresh
     expect(client.listCalls).toHaveLength(2);
   });
+
+  it('конкурентные refresh дедуплицируются: одна пагинация на всех', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket()]];
+    let releaseHold!: () => void;
+    client.listHold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+
+    const first = discovery.refresh();
+    const second = discovery.refresh(); // in-flight → ждёт ту же пагинацию
+    const read = discovery.findCandidates(); // авто-refresh тоже разделяет её
+    releaseHold();
+    await Promise.all([first, second, read]);
+
+    expect(client.listCalls).toHaveLength(1);
+    expect(await discovery.findCandidates()).toHaveLength(1);
+  });
+
+  it('после неудачного refresh авто-обновление выдерживает backoff, явный refresh — нет', async () => {
+    const { client, clock, discovery } = createHarness({
+      cacheTtlMs: 60_000,
+      refreshFailureBackoffMs: 15_000,
+    });
+    client.pages = [[createSdkMarket()]];
+    client.failAtPage = 0;
+
+    await discovery.findCandidates(); // попытка refresh — Gamma недоступен
+    expect(client.listCalls).toHaveLength(1);
+
+    // Немедленное повторное чтение НЕ молотит Gamma (backoff)
+    await discovery.findCandidates();
+    expect(client.listCalls).toHaveLength(1);
+
+    // Явный refresh() backoff не учитывает — cadence принадлежит вызывающему
+    await discovery.refresh();
+    expect(client.listCalls).toHaveLength(2);
+
+    // После истечения backoff авто-refresh пробует снова и восстанавливается
+    client.failAtPage = -1;
+    clock.advance(15_001);
+    await discovery.findCandidates();
+    expect(client.listCalls).toHaveLength(3);
+    expect(await discovery.findCandidates()).toHaveLength(1);
+    expect(client.listCalls).toHaveLength(3); // кэш снова свежий
+  });
 });
 
 describe('selection policy: reuse MarketFilter/MarketScorer (TEST 5)', () => {
