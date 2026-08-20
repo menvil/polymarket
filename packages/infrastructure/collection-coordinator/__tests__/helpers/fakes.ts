@@ -20,6 +20,7 @@ import type { Timestamp } from '@polymarket/timestamp';
 import { Money, Price, Quantity } from '@polymarket/value-objects';
 import type {
   PolymarketDiscoveredMarket,
+  PolymarketGammaEvent,
   PolymarketGammaMarket,
   PolymarketOpenSubscription,
   PolymarketRtdsFeed,
@@ -131,6 +132,10 @@ export interface SelectedFixtureOptions {
   /** ms точного начала события; `null` — события/startTime нет. */
   readonly eventStartsAtMs?: number | null;
   readonly rtdsFeeds?: readonly PolymarketRtdsFeed[];
+  /** Байты паддинга gammaMarket (тесты бюджета header). */
+  readonly gammaMarketPadding?: number;
+  /** Включить gammaEvent; число — байты его паддинга (тесты бюджета header). */
+  readonly gammaEventPadding?: number;
 }
 
 /**
@@ -147,6 +152,8 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     expiresAtMs = NOW_MS + 70 * 60_000,
     eventStartsAtMs = NOW_MS + 10 * 60_000,
     rtdsFeeds = BTC_FEEDS,
+    gammaMarketPadding,
+    gammaEventPadding,
   } = options;
 
   const gammaMarket = {
@@ -154,7 +161,19 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     conditionId,
     question,
     state: { active: true, closed: false },
+    ...(gammaMarketPadding !== undefined ? { padding: 'x'.repeat(gammaMarketPadding) } : {}),
   } as unknown as PolymarketGammaMarket;
+
+  const gammaEvent =
+    gammaEventPadding !== undefined
+      ? ({
+          id: '99001',
+          slug: 'fixture-event',
+          title: 'Fixture Event',
+          markets: [gammaMarket], // header обязан их выбросить
+          padding: 'y'.repeat(gammaEventPadding),
+        } as unknown as PolymarketGammaEvent)
+      : undefined;
 
   return {
     marketId: mid(conditionId),
@@ -175,6 +194,7 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
       : {}),
     rtdsFeeds,
     gammaMarket,
+    ...(gammaEvent !== undefined ? { gammaEvent } : {}),
   };
 }
 
@@ -224,6 +244,8 @@ export class FakeDiscovery implements CollectionDiscovery {
   public readonly selectedByMarket = new Map<string, SelectedPolymarketMarket>();
   /** Если задано — prepareSelected бросает эту ошибку. */
   public prepareError: unknown;
+  /** Hook, вызываемый в начале prepareSelected (например, сдвиг часов). */
+  public onPrepareSelected: (() => void) | undefined;
   /** Счётчики вызовов. */
   public refreshCalls = 0;
   public findCalls = 0;
@@ -246,6 +268,7 @@ export class FakeDiscovery implements CollectionDiscovery {
     const key = String(candidate.marketId);
     this.prepareCalls.push(key);
     this._log?.push(`discovery.prepareSelected:${key}`);
+    this.onPrepareSelected?.();
     if (this.prepareError !== undefined) {
       throw this.prepareError;
     }
@@ -316,6 +339,8 @@ export class FakeCollectionSource implements CollectionSource {
   public subscribeCryptoHold: Promise<void> | undefined;
   /** Hook, вызываемый ВНУТРИ subscribeMarket до разрешения (PART 36). */
   public onSubscribeMarket: ((tokenIds: readonly string[]) => void | Promise<void>) | undefined;
+  /** Сигнал терминального отказа source (контракт `PolymarketSource.hasFailed`). */
+  public hasFailed = false;
 
   constructor(private readonly _log?: CallLog) {}
 
@@ -342,6 +367,10 @@ export class FakeCollectionSource implements CollectionSource {
     topic: 'prices.crypto.binance' | 'prices.crypto.chainlink',
     symbols: readonly string[],
   ): Promise<PolymarketOpenSubscription> => {
+    // Координатор подписывает фиды по одному символу — допущение ключа явное
+    if (symbols.length !== 1) {
+      throw new Error(`FakeCollectionSource expects exactly one symbol, got: ${symbols.join(',')}`);
+    }
     const key = `${topic}:${symbols.join(',')}`;
     this.subscribeCryptoCalls.push(key);
     this._log?.push(`source.subscribeCryptoPrices:${key}`);
@@ -403,6 +432,25 @@ export function deferred(): { promise: Promise<void>; resolve: () => void } {
 /** Дожидается осушения microtask/immediate очередей. */
 export async function flushAsync(rounds = 4): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
+}
+
+/**
+ * Дожидается выполнения условия (граница async-транзакции вместо счёта тиков).
+ *
+ * @param predicate - Проверяемое условие
+ * @param timeoutMs - Предел ожидания
+ * @throws {Error} Если условие не наступило за timeoutMs
+ */
+export async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+    }
     await new Promise<void>((resolve) => {
       setImmediate(resolve);
     });

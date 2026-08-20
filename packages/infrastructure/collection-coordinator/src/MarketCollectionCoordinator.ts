@@ -87,10 +87,18 @@ export type CollectionDiscovery = Pick<
  * Порт realtime-source, используемый координатором.
  *
  * @remarks
- * Только открытие подписок: `close()` всего Source принадлежит composition
- * root (PART 27) — координатор закрывает ТОЛЬКО handles своих сессий.
+ * Открытие подписок + сигнал терминального отказа. `hasFailed` — health
+ * signal: терминальный отказ Source (отклонение bus / падение SDK-итератора)
+ * закрывает ВСЕ его handles, и сессии координатора перестают получать
+ * данные — координатор обязан это заметить и снести своё состояние
+ * (см. {@link MarketCollectionCoordinator.fillSlots}). `close()` всего
+ * Source принадлежит composition root (PART 27) — координатор закрывает
+ * ТОЛЬКО handles своих сессий.
  */
-export type CollectionSource = Pick<PolymarketSource, 'subscribeMarket' | 'subscribeCryptoPrices'>;
+export type CollectionSource = Pick<
+  PolymarketSource,
+  'subscribeMarket' | 'subscribeCryptoPrices' | 'hasFailed'
+>;
 
 /**
  * Порт recorder-а, используемый координатором.
@@ -308,9 +316,19 @@ export class MarketCollectionCoordinator {
    * @remarks
    * Слот = ACTIVE + OPENING (PART 21). Отказ открытия одного рынка не
    * прерывает проход — следующий кандидат пробуется дальше (PART 29).
+   *
+   * Также выполняет health-reconciliation source: терминальный отказ
+   * Source уже закрыл все его handles, поэтому «ACTIVE»-сессии мертвы —
+   * они сносятся (recording снимается SHUTDOWN-ом, RTDS-refs и capacity
+   * освобождаются), новые открытия на отказавшем source невозможны.
+   * Composition root после этого заменяет source и координатор
+   * (зависимости иммутабельны) — состояние уже чистое.
    */
   public async fillSlots(): Promise<number> {
     if (this._closed) {
+      return 0;
+    }
+    if (await this._reconcileSourceFailure()) {
       return 0;
     }
 
@@ -348,6 +366,40 @@ export class MarketCollectionCoordinator {
   }
 
   /**
+   * Health-reconciliation source: терминальный отказ → teardown всех сессий.
+   *
+   * @returns `true`, если source в терминальном отказе (открытия невозможны)
+   *
+   * @remarks
+   * Терминальный отказ Source (`hasFailed`) означает, что ВСЕ его handles
+   * уже закрыты самим Source — «ACTIVE»-сессии координатора мертвы: данные
+   * не поступают, recorder-routing и capacity заняты впустую. Reconciliation
+   * сносит их штатным `closeSession(..., 'SHUTDOWN')`: повторный `close()`
+   * уже закрытых handles идемпотентен (контракт Source), recording
+   * снимается, incomplete-файлы удаляет storage, RTDS-refs и слоты
+   * освобождаются. После этого composition root может заменить отказавший
+   * shared source (и координатор поверх него) — runtime-состояние чистое.
+   */
+  private async _reconcileSourceFailure(): Promise<boolean> {
+    if (!this._source.hasFailed) {
+      return false;
+    }
+    if (this._sessions.size === 0) {
+      return true;
+    }
+    this._logger.error('Source entered terminal failure, tearing down all collection sessions', {
+      sessions: this._sessions.size,
+    });
+    // In-flight OPENING-транзакции докатываются сами (их подписки на
+    // отказавшем source упадут → собственный rollback), затем teardown
+    await Promise.allSettled([...this._sessions.values()].map((session) => session.settled));
+    for (const session of [...this._sessions.values()]) {
+      await this.closeSession(session.marketId, 'SHUTDOWN');
+    }
+    return true;
+  }
+
+  /**
    * Открывает collection session для кандидата (транзакция с rollback).
    *
    * @param candidate - Кандидат Discovery V2
@@ -365,6 +417,10 @@ export class MarketCollectionCoordinator {
     // ── Синхронная секция: никаких await до резервации ──────────────────────
     if (this._closed) {
       return 'skipped';
+    }
+    if (this._source.hasFailed) {
+      this._logger.debug('Skipping open: source is in terminal failure', { marketId: key });
+      return 'skipped'; // reconciliation выполняет fillSlots
     }
     if (this._sessions.has(key)) {
       return 'skipped'; // уже ACTIVE или OPENING
@@ -399,6 +455,20 @@ export class MarketCollectionCoordinator {
 
     try {
       return await this._runOpenTransaction(session, candidate);
+    } catch (error) {
+      // Неожиданное исключение транзакции (за пределами её собственных
+      // catch-веток) НЕ должно оставить вечную OPENING-резервацию:
+      // best-effort снятие recording (finalize незарегистрированного рынка —
+      // безопасный no-op) + освобождение ключа, рынок можно ретраить.
+      await this._rollbackRecording(candidate.marketId, key);
+      if (this._sessions.get(key) === session) {
+        this._sessions.delete(key);
+      }
+      this._logger.error('Open transaction failed unexpectedly, reservation released', {
+        marketId: key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 'failed';
     } finally {
       session.settle();
     }
@@ -480,6 +550,17 @@ export class MarketCollectionCoordinator {
       return 'failed';
     }
     const startsAt = startsAtResult.value;
+    // Header обязан влезть в фиксированный meta-блок storage; отказ сборки —
+    // явный отказ открытия ДО каких-либо подписок (retry возможен).
+    const header = buildCollectionHeader(selected, startsAt);
+    if (header === undefined) {
+      this._sessions.delete(key);
+      this._logger.error('Cannot build market header within storage meta budget, open aborted', {
+        marketId: key,
+        question: selected.question,
+      });
+      return 'failed';
+    }
     const installed = this._recorder.registerMarket({
       marketMeta: {
         marketId: selected.marketId,
@@ -487,7 +568,7 @@ export class MarketCollectionCoordinator {
         tokenIds: selected.tokenIds,
         startsAt,
         expiresAt: selected.expiresAt,
-        rawMarket: buildCollectionHeader(selected, startsAt),
+        rawMarket: header,
       },
       rtdsFeeds: selected.rtdsFeeds,
     });
@@ -586,9 +667,13 @@ export class MarketCollectionCoordinator {
     // OPENING: дождаться исхода транзакции (она видит _closed/её могли откатить)
     await reserved.settled;
 
+    // Identity-guard: за время ожидания settled транзакция могла откатиться,
+    // а retry — установить НОВУЮ сессию под тем же ключом. Сравниваем ОБЪЕКТ,
+    // а не только ключ (тот же паттерн, что у recorder-а при отказе
+    // отложенной активации) — чужая сессия не сносится.
     const session = this._sessions.get(key);
-    if (session === undefined || session.state !== 'ACTIVE') {
-      return; // транзакция сама откатилась и освободила резервацию
+    if (session !== reserved || session.state !== 'ACTIVE') {
+      return; // транзакция откатилась либо под ключом уже другая сессия
     }
     this._sessions.delete(key); // синхронно: второй closeSession станет no-op
 

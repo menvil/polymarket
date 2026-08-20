@@ -217,10 +217,18 @@ async function main(): Promise<void> {
   }
 
   // ── 6. Graceful shutdown в порядке контура ─────────────────────────────────
+  // Каждый шаг best-effort (отказ одного не мешает остальным), но ПЕРВАЯ
+  // ошибка cleanup фиксируется и роняет smoke после завершения всех шагов —
+  // молчаливо «зелёный» прогон с падавшим shutdown недопустим. Приоритет
+  // у pipelineError (первопричина), cleanup-ошибка — вторична.
+  let cleanupError: unknown;
   const cleanupStep = async (step: string, run: () => Promise<void>): Promise<void> => {
     try {
       await run();
     } catch (error) {
+      cleanupError ??= new Error(
+        `Cleanup step '${step}' failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       logger.error(`Cleanup step failed: ${step}`, {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -240,6 +248,9 @@ async function main(): Promise<void> {
 
   if (pipelineError !== undefined) {
     throw pipelineError;
+  }
+  if (cleanupError !== undefined) {
+    throw cleanupError;
   }
 
   // ── 7. SHUTDOWN-семантика артефактов (контракт Recorder) ───────────────────

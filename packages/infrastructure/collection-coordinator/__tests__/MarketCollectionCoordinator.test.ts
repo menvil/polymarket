@@ -27,6 +27,7 @@ import {
   createCandidate,
   deferred,
   mid,
+  waitFor,
 } from './helpers/fakes.js';
 
 /** Собирает полный harness координатора вокруг journaled fakes. */
@@ -171,13 +172,19 @@ describe('eligibility и lead time (PART 22/23)', () => {
     expect(await coordinator.openMarket(fine)).toBe('opened');
   });
 
-  it('выбранный рынок, истёкший между кандидатом и prepareSelected, пропускается', async () => {
+  it('выбранный рынок, истёкший МЕЖДУ резервацией и prepareSelected, пропускается re-check-ом', async () => {
     const { discovery, clock, recorder, coordinator } = createHarness();
     const candidate = discovery.addMarket({ expiresAtMs: NOW_MS + 60_000 });
-    clock.advance(2 * 60_000); // рынок истёк «во время» подготовки... точнее до неё
+    // Часы сдвигаются ВНУТРИ prepareSelected: первый sync-guard рынок
+    // пропускает, отбрасывает именно post-prepare eligibility re-check
+    discovery.onPrepareSelected = () => {
+      clock.advance(2 * 60_000);
+    };
 
     expect(await coordinator.openMarket(candidate)).toBe('skipped');
+    expect(discovery.prepareCalls).toHaveLength(1);
     expect(recorder.registrations).toHaveLength(0);
+    expect(coordinator.getStats()).toMatchObject({ activeSessions: 0, openingSessions: 0 });
   });
 });
 
@@ -330,7 +337,10 @@ describe('shared RTDS-фиды (PART 18/39)', () => {
     source.subscribeCryptoHold = hold.promise;
 
     const attempts = [coordinator.openMarket(candidateA), coordinator.openMarket(candidateB)];
-    await Promise.resolve(); // обе транзакции доходят до RTDS-стадии
+    // Обе транзакции прошли market-подписку и заблокированы на RTDS-hold
+    await waitFor(
+      () => source.subscribeMarketCalls.length === 2 && source.subscribeCryptoCalls.length >= 1,
+    );
     hold.resolve();
     const outcomes = await Promise.all(attempts);
 
@@ -431,7 +441,8 @@ describe('graceful shutdown (PART 26/40)', () => {
     source.subscribeMarketHold = hold.promise;
 
     const openAttempt = coordinator.openMarket(candidate);
-    await Promise.resolve(); // транзакция дошла до subscribeMarket и ждёт hold
+    // Транзакция реально дошла до subscribeMarket и заблокирована hold-ом
+    await waitFor(() => source.subscribeMarketCalls.length === 1);
     const closePromise = coordinator.close();
     hold.resolve();
 
@@ -507,6 +518,36 @@ describe('refreshCandidates / fillSlots (PART 20/21/29)', () => {
     expect(recorder.registrations).toHaveLength(1);
   });
 
+  it('терминальный отказ source: fillSlots сносит сессии, capacity/routing освобождены', async () => {
+    const { discovery, source, recorder, coordinator, logger } = createHarness({ maxMarkets: 2 });
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+    expect(coordinator.getStats().activeSessions).toBe(2);
+
+    // Source отказал терминально (его handles уже закрыты им самим)
+    source.hasFailed = true;
+
+    expect(await coordinator.fillSlots()).toBe(0);
+
+    // Все сессии снесены: recording снят SHUTDOWN-ом, состояние пусто
+    expect(recorder.finalizations.sort()).toEqual([`${CID_A}:SHUTDOWN`, `${CID_B}:SHUTDOWN`]);
+    expect(coordinator.getStats()).toEqual({
+      activeSessions: 0,
+      openingSessions: 0,
+      rtdsFeedRefCounts: {},
+    });
+    expect(logger.byLevel('error').some((e) => e.message.includes('terminal failure'))).toBe(true);
+
+    // Новые открытия на отказавшем source невозможны
+    const another = createCandidate({ conditionId: `0x${'c'.repeat(64)}` });
+    expect(await coordinator.openMarket(another)).toBe('skipped');
+    expect(recorder.registrations).toHaveLength(2); // новых регистраций нет
+
+    // Reconciliation идемпотентен
+    expect(await coordinator.fillSlots()).toBe(0);
+    expect(recorder.finalizations).toHaveLength(2);
+  });
+
   it('память lead-time чистится, когда рынок покидает candidate cache', async () => {
     const { discovery, coordinator } = createHarness({ minTimeToStartMs: 2 * 60_000 });
     const rejected = discovery.addMarket({ eventStartsAtMs: NOW_MS + 60_000 });
@@ -522,5 +563,77 @@ describe('refreshCandidates / fillSlots (PART 20/21/29)', () => {
     discovery.candidates = [rejected];
     expect(await coordinator.openMarket(rejected)).toBe('skipped');
     expect(discovery.prepareCalls).toHaveLength(2);
+  });
+});
+
+describe('identity-guard closeSession и устойчивость teardown', () => {
+  it('closeSession не сносит НОВУЮ сессию, установленную retry-ем после отката исходной', async () => {
+    const { discovery, source, recorder, coordinator } = createHarness();
+    const candidate = discovery.addMarket();
+    const hold = deferred();
+    source.subscribeMarketHold = hold.promise;
+    source.subscribeMarketError = new Error('transient ws failure');
+
+    // Транзакция 1 повисла на subscribeMarket (OPENING)
+    const firstAttempt = coordinator.openMarket(candidate);
+    await waitFor(() => source.subscribeMarketCalls.length === 1);
+    // closeSession адресует ИСХОДНУЮ (OPENING) сессию и ждёт её settled
+    const closing = coordinator.closeSession(mid(CID_A), 'SHUTDOWN');
+    hold.resolve();
+    expect(await firstAttempt).toBe('failed'); // транзакция 1 откатилась
+
+    // Retry устанавливает НОВУЮ сессию под тем же ключом
+    source.subscribeMarketHold = undefined;
+    source.subscribeMarketError = undefined;
+    expect(await coordinator.openMarket(candidate)).toBe('opened');
+
+    await closing; // обязан быть no-op для чужой сессии (identity-guard)
+
+    expect(coordinator.getStats().activeSessions).toBe(1);
+    // Единственная финализация — rollback транзакции 1, а не teardown retry-сессии
+    expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
+    expect(source.marketSubscriptions.filter((s) => s.closeCalls > 0)).toHaveLength(0);
+  });
+
+  it('отказ finalizeMarket при закрытии сессии логируется warn-ом, состояние очищается', async () => {
+    const { discovery, source, recorder, coordinator, logger } = createHarness();
+    await coordinator.openMarket(discovery.addMarket());
+    recorder.finalizeError = new Error('storage io failure');
+
+    await coordinator.closeSession(mid(CID_A), 'SHUTDOWN');
+
+    expect(
+      logger.byLevel('warn').some((e) => e.message.includes('Recorder finalization failed')),
+    ).toBe(true);
+    expect(coordinator.getStats()).toMatchObject({ activeSessions: 0, openingSessions: 0 });
+    expect(source.marketSubscriptions[0]!.closeCalls).toBe(1);
+  });
+});
+
+describe('бюджет header meta-блока (PART 8)', () => {
+  it('невместимый даже в усечённом виде header → явный отказ ДО регистрации и подписок', async () => {
+    const { discovery, source, recorder, coordinator, logger } = createHarness();
+    // Question дублируется внешней meta-строкой storage — ядро не помещается
+    const candidate = discovery.addMarket({ question: `Bitcoin ${'q'.repeat(17_000)}` });
+
+    expect(await coordinator.openMarket(candidate)).toBe('failed');
+
+    expect(recorder.registrations).toHaveLength(0);
+    expect(source.subscribeMarketCalls).toHaveLength(0);
+    expect(source.subscribeCryptoCalls).toHaveLength(0);
+    expect(coordinator.getStats()).toMatchObject({ activeSessions: 0, openingSessions: 0 });
+    expect(logger.byLevel('error').some((e) => e.message.includes('meta budget'))).toBe(true);
+  });
+
+  it('крупный gammaEvent усечён, рынок открывается с header-ом без него', async () => {
+    const { discovery, recorder, coordinator } = createHarness();
+    const candidate = discovery.addMarket({ gammaEventPadding: 16 * 1024 });
+
+    expect(await coordinator.openMarket(candidate)).toBe('opened');
+
+    const header = recorder.registrations[0]!.marketMeta.rawMarket as Record<string, unknown>;
+    expect(header['truncated']).toEqual(['gammaEvent']);
+    expect(header['gammaMarket']).toBeDefined();
+    expect(header['gammaEvent']).toBeUndefined();
   });
 });

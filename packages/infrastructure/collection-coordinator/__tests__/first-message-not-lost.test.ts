@@ -109,37 +109,44 @@ describe('первое сообщение не потеряно (PART 36)', () =
     const discovery = new FakeDiscovery();
     const source = new FakeCollectionSource();
     const bookEvent = createBookEvent(CID_A);
-    // Первое событие рынка прилетает ДО разрешения subscribeMarket
+    // Первое событие рынка прилетает ДО разрешения subscribeMarket.
+    // Исход публикации фиксируется во внешней переменной: matcher-исключение
+    // внутри hook-а попало бы в error-handling subscribeMarket координатора.
+    let firstPublishOk: boolean | undefined;
     source.onSubscribeMarket = async () => {
       const publishResult = await bus.publish({
         type: 'POLYMARKET_MARKET',
         payload: bookEvent,
         metadata: generator.nextRoot(),
       });
-      expect(publishResult.ok).toBe(true);
+      firstPublishOk = publishResult.ok;
     };
 
     const coordinator = new MarketCollectionCoordinator(
       { discovery, source, recorder, clock: new FixedClock(), logger },
       { maxMarkets: 1 },
     );
-    const candidate = discovery.addMarket({ conditionId: CID_A });
+    try {
+      const candidate = discovery.addMarket({ conditionId: CID_A });
 
-    const outcome = await coordinator.openMarket(candidate);
-    expect(outcome).toBe('opened');
-    await flushAsync();
+      const outcome = await coordinator.openMarket(candidate);
+      expect(outcome).toBe('opened');
+      await flushAsync();
 
-    // Recorder-регистрация уже существовала: событие маршрутизировано, не потеряно
-    const stats = recorder.getStats();
-    expect(stats.unroutedMarketMessages).toBe(0);
-    expect(stats.marketMessagesRouted).toBe(1);
-    expect(storage.writes).toEqual([{ marketId: CID_A, payload: bookEvent }]);
-    // На диск ушёл САМ payload (без outer envelope) — та же ссылка
-    expect(storage.writes[0]!.payload).toBe(bookEvent);
-
-    await coordinator.close();
-    await recorder.close();
-    await bus.close();
+      expect(firstPublishOk).toBe(true);
+      // Recorder-регистрация уже существовала: событие маршрутизировано, не потеряно
+      const stats = recorder.getStats();
+      expect(stats.unroutedMarketMessages).toBe(0);
+      expect(stats.marketMessagesRouted).toBe(1);
+      expect(storage.writes).toEqual([{ marketId: CID_A, payload: bookEvent }]);
+      // На диск ушёл САМ payload (без outer envelope) — та же ссылка
+      expect(storage.writes[0]!.payload).toBe(bookEvent);
+    } finally {
+      // Teardown гарантирован и при упавших ассертах — jest не зависает
+      await coordinator.close();
+      await recorder.close();
+      await bus.close();
+    }
   });
 
   it('recorder независимо fan-out-ит один RTDS-фид в файлы обоих рынков (PART 19/39)', async () => {
@@ -156,39 +163,42 @@ describe('первое сообщение не потеряно (PART 36)', () =
       { discovery, source, recorder, clock: new FixedClock(), logger },
       { maxMarkets: 2 },
     );
-    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
-    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+    try {
+      await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
+      await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
 
-    // Один нижележащий фид (координатор ref-count-ит source-подписки)
-    expect(source.subscribeCryptoCalls.filter((c) => c.includes('btcusdt'))).toHaveLength(1);
+      // Один нижележащий фид (координатор ref-count-ит source-подписки)
+      expect(source.subscribeCryptoCalls.filter((c) => c.includes('btcusdt'))).toHaveLength(1);
 
-    // Одно RTDS-наблюдение → строка в файле КАЖДОГО подписанного рынка
-    const rtdsEvent = createBinanceEvent('btcusdt');
-    const publishResult = await bus.publish({
-      type: 'POLYMARKET_CRYPTO_BINANCE',
-      payload: rtdsEvent,
-      metadata: generator.nextRoot(),
-    });
-    expect(publishResult.ok).toBe(true);
-    await flushAsync();
+      // Одно RTDS-наблюдение → строка в файле КАЖДОГО подписанного рынка
+      const rtdsEvent = createBinanceEvent('btcusdt');
+      const publishResult = await bus.publish({
+        type: 'POLYMARKET_CRYPTO_BINANCE',
+        payload: rtdsEvent,
+        metadata: generator.nextRoot(),
+      });
+      expect(publishResult.ok).toBe(true);
+      await flushAsync();
 
-    const rtdsWrites = storage.writes.filter((write) => write.payload === rtdsEvent);
-    expect(rtdsWrites.map((write) => write.marketId).sort()).toEqual([CID_A, CID_B].sort());
+      const rtdsWrites = storage.writes.filter((write) => write.payload === rtdsEvent);
+      expect(rtdsWrites.map((write) => write.marketId).sort()).toEqual([CID_A, CID_B].sort());
 
-    // Закрытие одного рынка не лишает фида второй (recorder-routing)
-    await coordinator.closeSession(discovery.candidates[0]!.marketId, 'SHUTDOWN');
-    const secondEvent = createBinanceEvent('btcusdt');
-    await bus.publish({
-      type: 'POLYMARKET_CRYPTO_BINANCE',
-      payload: secondEvent,
-      metadata: generator.nextRoot(),
-    });
-    await flushAsync();
-    const secondWrites = storage.writes.filter((write) => write.payload === secondEvent);
-    expect(secondWrites.map((write) => write.marketId)).toEqual([CID_B]);
-
-    await coordinator.close();
-    await recorder.close();
-    await bus.close();
+      // Закрытие одного рынка не лишает фида второй (recorder-routing)
+      await coordinator.closeSession(discovery.candidates[0]!.marketId, 'SHUTDOWN');
+      const secondEvent = createBinanceEvent('btcusdt');
+      await bus.publish({
+        type: 'POLYMARKET_CRYPTO_BINANCE',
+        payload: secondEvent,
+        metadata: generator.nextRoot(),
+      });
+      await flushAsync();
+      const secondWrites = storage.writes.filter((write) => write.payload === secondEvent);
+      expect(secondWrites.map((write) => write.marketId)).toEqual([CID_B]);
+    } finally {
+      // Teardown гарантирован и при упавших ассертах — jest не зависает
+      await coordinator.close();
+      await recorder.close();
+      await bus.close();
+    }
   });
 });

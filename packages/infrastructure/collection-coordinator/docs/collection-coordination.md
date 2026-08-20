@@ -71,10 +71,12 @@ source публикует первое событие СИНХРОННО вну�
 | Отказ на шаге | Действия отката |
 | --- | --- |
 | `prepareSelected` | освободить резервацию |
+| header не помещается в meta-блок | освободить резервацию, явный отказ ДО регистрации и подписок |
 | `registerMarket → false` | освободить резервацию (retryable) |
 | `subscribeMarket` | `finalizeMarket(SHUTDOWN)` → освободить резервацию |
 | RTDS acquire | close market subscription → release acquired refs → `finalizeMarket(SHUTDOWN)` → освободить резервацию |
 | `close()` во время OPENING | транзакция замечает флаг на каждом checkpoint и выполняет полный rollback |
+| неожиданное исключение транзакции | best-effort снятие recording + освобождение резервации (вечная OPENING невозможна) |
 
 ## Timing-семантика записи (PART 9)
 
@@ -117,11 +119,15 @@ Legacy открывал рынок минимум за 2 минуты до ра�
 }
 ```
 
-Бюджет: storage резервирует под LINE 1 блок 16 KiB — header собирается с
-деградацией (`truncated: ['gammaEvent']`, затем `['gammaEvent',
-'gammaMarket']`); identity/timing/RTDS-ядро сохраняется всегда.
-`gammaEvent.markets` выбрасываются безусловно (дублируют `gammaMarket`).
-Это V2-формат: legacy raw Gamma JSON байт-в-байт не воспроизводится.
+Бюджет: storage резервирует под LINE 1 блок 16 KiB и проверяет размер
+ВСЕЙ meta-строки (`{t, formatVersion, ts, marketId, question, tokenIds,
+m}`), поэтому билдер считает бюджет по probe полного конверта, а не только
+payload `m`. Деградация: `truncated: ['gammaEvent']`, затем `['gammaEvent',
+'gammaMarket']`; если даже усечённое ядро (identity/timing/RTDS) не
+помещается — header не собирается (`undefined`), и открытие сессии явно
+отказывает ДО регистрации и подписок. `gammaEvent.markets` выбрасываются
+безусловно (дублируют `gammaMarket`). Это V2-формат: legacy raw Gamma JSON
+байт-в-байт не воспроизводится.
 
 ## Shared RTDS: две разные ответственности
 
@@ -136,6 +142,26 @@ RECORDER routing (recorder, существующий):
 Конкурентная инициализация одного нового фида двумя рынками не создаёт
 дублирующую SDK-подписку: entry с общим promise регистрируется синхронно.
 Закрытие одного рынка не трогает фид, пока на нём есть чужие refs.
+
+## Терминальный отказ source
+
+Отказ доставки (bus отклонил публикацию) или падение SDK-итератора переводит
+`PolymarketSource` в терминальное `hasFailed`: source сам закрывает все свои
+handles. Сессии координатора при этом мертвы — данные не поступают, а
+recorder-routing и слоты заняты впустую. `fillSlots()` выполняет
+health-reconciliation:
+
+1. `hasFailed` замечен → error-лог;
+2. in-flight OPENING-транзакции докатываются (их подписки на отказавшем
+   source падают → собственный rollback);
+3. каждая сессия сносится штатным `closeSession(..., 'SHUTDOWN')` —
+   recording снят, RTDS-refs и capacity освобождены (повторное закрытие
+   уже закрытых handles идемпотентно по контракту Source);
+4. `openMarket` на отказавшем source отвечает `skipped`.
+
+Замена отказавшего shared source — ответственность composition root
+(зависимости координатора иммутабельны): он создаёт новый source и новый
+координатор поверх него; runtime-состояние старого уже очищено.
 
 ## Graceful shutdown
 

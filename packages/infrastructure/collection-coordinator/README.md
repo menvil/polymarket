@@ -60,6 +60,18 @@ RTDS-refs освобождаются, recording снимается `finalizeMark
   `expiresAt - fallbackMarketDurationMs` (15 мин). Отклонение постоянно
   (время до старта монотонно убывает), память чистится по candidate cache.
 
+## 3a. Терминальный отказ source
+
+`PolymarketSource.hasFailed` — терминальное состояние (отклонение bus /
+падение SDK-итератора): source сам закрывает все свои handles, и
+«ACTIVE»-сессии координатора мертвы. `fillSlots()` выполняет
+health-reconciliation: замечает `hasFailed`, сносит все сессии штатным
+`closeSession(..., 'SHUTDOWN')` (recording снят, RTDS-refs и capacity
+освобождены; повторный `close()` уже закрытых handles идемпотентен по
+контракту Source) и блокирует новые открытия. Composition root после
+этого заменяет отказавший shared source (и координатор поверх него) —
+runtime-состояние уже чистое.
+
 ## 4. Shared RTDS
 
 Source-подписки ≠ recorder-routing:

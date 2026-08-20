@@ -75,9 +75,18 @@ function listSourceFiles(dir: string): string[] {
   return files;
 }
 
-/** Собирает все import-specifiers файла. */
+/**
+ * Убирает блочные и строчные комментарии перед поиском импортов:
+ * import-подобный текст в TSDoc/примерах не должен считаться зависимостью.
+ * `//` внутри строк-URL (`https://...`) защищён предшествующим двоеточием.
+ */
+function stripComments(content: string): string {
+  return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Собирает все import-specifiers файла (без учёта комментариев). */
 function collectImports(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf8');
+  const content = stripComments(readFileSync(filePath, 'utf8'));
   const specifiers: string[] = [];
   const patterns = [
     /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g,
@@ -99,11 +108,18 @@ function collectImports(filePath: string): string[] {
 
 describe('dependency graph boundary (PART 44)', () => {
   it('runtime dependencies не содержат bus/storage/SDK/semantic пакетов', () => {
-    const packageJson = JSON.parse(
-      readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8'),
-    ) as { dependencies?: Record<string, string> };
+    const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
 
-    const runtime = Object.keys(packageJson.dependencies ?? {});
+    // Runtime-граница покрывает все виды устанавливаемых зависимостей
+    const runtime = [
+      ...Object.keys(packageJson.dependencies ?? {}),
+      ...Object.keys(packageJson.peerDependencies ?? {}),
+      ...Object.keys(packageJson.optionalDependencies ?? {}),
+    ];
     for (const forbidden of FORBIDDEN_RUNTIME_DEPENDENCIES) {
       expect(runtime).not.toContain(forbidden);
     }

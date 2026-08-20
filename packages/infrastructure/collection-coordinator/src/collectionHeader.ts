@@ -21,27 +21,39 @@
  * НЕ воспроизводится (PART 8), но полезные source-метаданные сохраняются
  * целиком через typed SDK-модели.
  *
- * ### Бюджет размера
+ * ### Бюджет размера — ПОЛНЫЙ meta-конверт storage
  *
  * Storage резервирует под первую строку фиксированный блок 16 KiB
- * (`META_RESERVED_BYTES` DataRecorder) — превышение роняет регистрацию.
- * Заголовок собирается с деградацией по бюджету: сначала выбрасывается
- * `gammaEvent`, затем `gammaMarket` (identity/timing/RTDS-ядро остаётся
- * всегда). Вложенные `gammaEvent.markets` выбрасываются безусловно — они
- * дублируют `gammaMarket`.
+ * (`META_RESERVED_BYTES` DataRecorder) и проверяет размер ВСЕЙ meta-строки
+ * (`{t, formatVersion, ts, marketId, question, tokenIds, m}`), а не только
+ * payload `m` — превышение роняет активацию регистрации. Поэтому бюджет
+ * здесь считается по probe-конверту той же формы, что собирает storage.
+ * Деградация по бюджету: сначала выбрасывается `gammaEvent`, затем
+ * `gammaMarket`; если даже ядро (identity/timing/RTDS) не помещается —
+ * header собрать НЕЛЬЗЯ, возвращается `undefined`, и открытие сессии
+ * обязано явно отказать ДО каких-либо подписок. Вложенные
+ * `gammaEvent.markets` выбрасываются безусловно — они дублируют
+ * `gammaMarket`.
  */
 import type { Timestamp } from '@polymarket/timestamp';
 import type { SelectedPolymarketMarket } from '@polymarket/polymarket-v2';
 
 /**
- * Бюджет payload-части header (ключ `m`) в байтах.
+ * Зеркало `META_RESERVED_BYTES` DataRecorder — фиксированный блок LINE 1.
  *
  * @remarks
- * Меньше 16 KiB блока storage: внешняя meta-строка добавляет собственные
- * поля (`t`/`formatVersion`/`ts`/`marketId`/`question`/`tokenIds`) — на них
- * оставлен запас 2 KiB.
+ * Константа не экспортируется storage-пакетом, а прямая зависимость
+ * координатора от `@polymarket/data-collection` запрещена границей PART 44
+ * (файлы пишет recorder). Значение — часть recording-контракта формата V2
+ * (см. `docs/data-collection.md`); дублируется здесь осознанно.
  */
-const HEADER_BUDGET_BYTES = 14 * 1024;
+const STORAGE_META_RESERVED_BYTES = 16 * 1024;
+
+/**
+ * Защитный запас поверх точного probe-замера: формат строки storage может
+ * незначительно отличаться (перестановка/добавление служебного поля).
+ */
+const META_ENVELOPE_SAFETY_MARGIN_BYTES = 256;
 
 /**
  * Собирает V2 market header для `registerMarket()`.
@@ -49,25 +61,27 @@ const HEADER_BUDGET_BYTES = 14 * 1024;
  * @param selected - Подготовленный выбранный рынок (Discovery V2)
  * @param recordingStartsAt - Момент начала записи (= открытие сессии)
  * @returns Header-объект для `MarketMeta.rawMarket` (ключ `m` первой строки)
+ *   либо `undefined`, если даже усечённое ядро не помещается в meta-блок
+ *   storage — вызывающий обязан отказать в открытии сессии
  *
  * @remarks
- * Деградация по бюджету размера наблюдаема по полю `truncated`:
- * `undefined` — полный header; `['gammaEvent']` или
- * `['gammaEvent', 'gammaMarket']` — что было выброшено.
+ * Деградация по бюджету наблюдаема по полю `truncated`: `undefined` —
+ * полный header; `['gammaEvent']` или `['gammaEvent', 'gammaMarket']` —
+ * что было выброшено. Бюджет проверяется по probe полного meta-конверта
+ * storage (включая `question`/`tokenIds` внешней строки), а не только `m`.
  *
  * @example
  * ```typescript
  * const header = buildCollectionHeader(selected, startsAt);
- * recorder.registerMarket({
- *   marketMeta: { marketId, question, tokenIds, startsAt, expiresAt, rawMarket: header },
- *   rtdsFeeds: selected.rtdsFeeds,
- * });
+ * if (header === undefined) {
+ *   // рынок нельзя зарегистрировать — отказ ДО подписок
+ * }
  * ```
  */
 export function buildCollectionHeader(
   selected: SelectedPolymarketMarket,
   recordingStartsAt: Timestamp,
-): Record<string, unknown> {
+): Record<string, unknown> | undefined {
   // gammaEvent.markets дублируют gammaMarket — не пишем их в header никогда
   const gammaEventWithoutMarkets =
     selected.gammaEvent !== undefined ? { ...selected.gammaEvent, markets: [] } : undefined;
@@ -99,7 +113,7 @@ export function buildCollectionHeader(
     gammaMarket: selected.gammaMarket,
     ...(gammaEventWithoutMarkets !== undefined ? { gammaEvent: gammaEventWithoutMarkets } : {}),
   };
-  if (fitsBudget(full)) {
+  if (fitsMetaBlock(full, selected, recordingStartsAt)) {
     return full;
   }
 
@@ -108,19 +122,50 @@ export function buildCollectionHeader(
     gammaMarket: selected.gammaMarket,
     truncated: ['gammaEvent'],
   };
-  if (fitsBudget(withoutEvent)) {
+  if (fitsMetaBlock(withoutEvent, selected, recordingStartsAt)) {
     return withoutEvent;
   }
 
-  return { ...core, truncated: ['gammaEvent', 'gammaMarket'] };
+  const coreOnly: Record<string, unknown> = { ...core, truncated: ['gammaEvent', 'gammaMarket'] };
+  if (fitsMetaBlock(coreOnly, selected, recordingStartsAt)) {
+    return coreOnly;
+  }
+
+  // Даже ядро не помещается (например, аномально длинный question,
+  // дублируемый внешней meta-строкой) — безопасного header не существует
+  return undefined;
 }
 
 /**
- * Проверяет, помещается ли header в бюджет первой строки storage.
+ * Проверяет, поместится ли ПОЛНАЯ meta-строка storage с данным header-ом
+ * в зарезервированный блок первой строки.
  *
- * @param header - Кандидат header-объекта
- * @returns `true`, если сериализованный размер в пределах бюджета
+ * @param header - Кандидат header-объекта (значение ключа `m`)
+ * @param selected - Выбранный рынок (внешние поля meta-строки)
+ * @param recordingStartsAt - Репрезентативный `ts` probe-конверта (та же
+ *   разрядность epoch-ms, что у `Date.now()` при активации storage)
+ * @returns `true`, если probe-конверт в пределах бюджета
+ *
+ * @remarks
+ * Probe повторяет форму metaRecord DataRecorder:
+ * `{t, formatVersion, ts, marketId, question, tokenIds, m}`. Лимит storage —
+ * `META_RESERVED_BYTES - 1` байт на JSON без завершающего перевода строки;
+ * сверх точного замера удерживается небольшой защитный запас.
  */
-function fitsBudget(header: Record<string, unknown>): boolean {
-  return Buffer.byteLength(JSON.stringify(header), 'utf8') <= HEADER_BUDGET_BYTES;
+function fitsMetaBlock(
+  header: Record<string, unknown>,
+  selected: SelectedPolymarketMarket,
+  recordingStartsAt: Timestamp,
+): boolean {
+  const envelopeProbe = {
+    t: 'meta',
+    formatVersion: 2,
+    ts: recordingStartsAt.toNumber(),
+    marketId: selected.sourceMarketId,
+    question: selected.question,
+    tokenIds: [...selected.tokenIds],
+    m: header,
+  };
+  const envelopeBytes = Buffer.byteLength(JSON.stringify(envelopeProbe), 'utf8');
+  return envelopeBytes <= STORAGE_META_RESERVED_BYTES - 1 - META_ENVELOPE_SAFETY_MARGIN_BYTES;
 }
