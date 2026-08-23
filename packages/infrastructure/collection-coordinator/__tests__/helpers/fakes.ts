@@ -14,7 +14,7 @@ import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { Money, Price, Quantity } from '@polymarket/value-objects';
@@ -123,6 +123,15 @@ export function mid(conditionId: string): MarketId {
   return marketId;
 }
 
+/** Обязательный typed InstrumentId (fixtures). */
+export function iid(raw: string): InstrumentId {
+  const instrumentId = asInstrumentId(raw);
+  if (instrumentId === undefined) {
+    throw new Error(`invalid InstrumentId fixture: ${raw}`);
+  }
+  return instrumentId;
+}
+
 /** Параметры фикстуры выбранного рынка. */
 export interface SelectedFixtureOptions {
   readonly conditionId?: string;
@@ -177,14 +186,12 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
 
   return {
     marketId: mid(conditionId),
-    sourceMarketId: conditionId,
     gammaMarketId: '516789',
     slug: 'fixture-slug',
     question,
-    tokenIds,
     outcomes: tokenIds.map((tokenId, index) => ({
       label: index === 0 ? 'Up' : 'Down',
-      tokenId,
+      instrumentId: iid(tokenId),
     })),
     expiresAt: ts(expiresAtMs),
     ...(eventStartsAtMs !== null ? { eventStartsAt: ts(eventStartsAtMs) } : {}),

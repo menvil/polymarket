@@ -466,13 +466,14 @@ describe('prepareSelected: fetchEvent только для выбранного (
 
     expect(client.fetchEventCalls).toEqual(['99001']);
     expect(selected.marketId).toBe(candidates[0]!.marketId);
-    expect(selected.sourceMarketId).toBe(CONDITION_ID_BTC);
+    // Canonical MarketId ЕСТЬ conditionId — отдельного primitive-дубликата нет
+    expect(String(selected.marketId)).toBe(CONDITION_ID_BTC);
     expect(selected.gammaMarketId).toBe('516789');
     expect(selected.question).toBe(candidates[0]!.question);
-    expect(selected.tokenIds).toEqual([TOKEN_ID_BTC_UP, TOKEN_ID_BTC_DOWN]);
+    // Нейтральные outcomes[] — единственный source of truth инструментов
     expect(selected.outcomes).toEqual([
-      { label: 'Up', tokenId: TOKEN_ID_BTC_UP },
-      { label: 'Down', tokenId: TOKEN_ID_BTC_DOWN },
+      { label: 'Up', instrumentId: TOKEN_ID_BTC_UP },
+      { label: 'Down', instrumentId: TOKEN_ID_BTC_DOWN },
     ]);
     expect(selected.expiresAt.toNumber()).toBe(FIXED_NOW_MS + 70 * 60_000);
     expect(selected.eventStartsAt?.toNumber()).toBe(FIXED_NOW_MS + 10 * 60_000);
@@ -485,6 +486,35 @@ describe('prepareSelected: fetchEvent только для выбранного (
     ]);
     expect(selected.gammaMarket).toBe(market);
     expect(selected.gammaEvent).toBe(event);
+  });
+
+  it('нейтральное представление исходов: vendor yes/no несёт labels Yes/No как есть', async () => {
+    const { client, discovery } = createHarness();
+    // SDK именует свойства первого/второго исхода yes/no; для этого рынка
+    // labels действительно Yes/No — сохраняются без семантических выводов
+    client.pages = [[createSdkMarket({ yesLabel: 'Yes', noLabel: 'No' })]];
+    client.events.set('99001', createSdkEvent({ id: '99001' }));
+
+    await discovery.refresh();
+    const candidates = await discovery.findCandidates();
+    const selected = await discovery.prepareSelected(candidates[0]!);
+
+    expect(selected.outcomes).toEqual([
+      { label: 'Yes', instrumentId: TOKEN_ID_BTC_UP },
+      { label: 'No', instrumentId: TOKEN_ID_BTC_DOWN },
+    ]);
+  });
+
+  it('исход без CLOB-токена пропускается: outcomes несёт только подписываемые инструменты', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ noTokenId: null })]];
+    client.events.set('99001', createSdkEvent({ id: '99001' }));
+
+    await discovery.refresh();
+    const candidates = await discovery.findCandidates();
+    const selected = await discovery.prepareSelected(candidates[0]!);
+
+    expect(selected.outcomes).toEqual([{ label: 'Up', instrumentId: TOKEN_ID_BTC_UP }]);
   });
 
   it('отказ fetchEvent деградирует до выбора без event-данных (warn, не исключение)', async () => {

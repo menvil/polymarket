@@ -165,7 +165,8 @@ export type CollectionOpenOutcome = 'opened' | 'skipped' | 'failed';
  * Публичный снимок одной сессии (диагностика/смоук).
  */
 export interface CollectionSessionSnapshot {
-  readonly marketId: string;
+  /** Canonical id рынка сессии (== Polymarket conditionId). */
+  readonly marketId: MarketId;
   readonly state: 'OPENING' | 'ACTIVE';
   readonly question?: string;
   readonly expiresAtMs?: number;
@@ -187,8 +188,8 @@ export interface CollectionCoordinatorStats {
  */
 interface CollectionSession {
   state: 'OPENING' | 'ACTIVE';
+  /** Canonical id рынка (== conditionId); ключ maps — `String(marketId)`. */
   readonly marketId: MarketId;
-  readonly sourceMarketId: string;
   /** Заполняется на commit ACTIVE. */
   selected?: SelectedPolymarketMarket;
   marketSubscription?: PolymarketOpenSubscription;
@@ -245,7 +246,7 @@ export class MarketCollectionCoordinator {
   private readonly _minTimeToStartMs: number;
   private readonly _fallbackMarketDurationMs: number;
 
-  /** Сессии по sourceMarketId; OPENING и ACTIVE занимают slot (PART 21). */
+  /** Сессии по `String(marketId)`; OPENING и ACTIVE занимают slot (PART 21). */
   private readonly _sessions = new Map<string, CollectionSession>();
   /** Shared RTDS-фиды по `topic:symbol`. */
   private readonly _rtdsFeeds = new Map<string, RtdsFeedEntry>();
@@ -446,7 +447,6 @@ export class MarketCollectionCoordinator {
     const session: CollectionSession = {
       state: 'OPENING',
       marketId: candidate.marketId,
-      sourceMarketId: key,
       rtdsFeedKeys: [],
       settled,
       settle,
@@ -485,7 +485,7 @@ export class MarketCollectionCoordinator {
     session: CollectionSession,
     candidate: PolymarketDiscoveredMarket,
   ): Promise<CollectionOpenOutcome> {
-    const key = session.sourceMarketId;
+    const key = String(session.marketId);
 
     // ── 2. Точные данные выбранного рынка ────────────────────────────────────
     let selected: SelectedPolymarketMarket;
@@ -529,9 +529,11 @@ export class MarketCollectionCoordinator {
       });
       return 'skipped';
     }
-    if (selected.tokenIds.length === 0) {
+    // Инструменты рынка — единственный source of truth: outcomes[]
+    const instrumentIds = selected.outcomes.map((outcome) => outcome.instrumentId);
+    if (instrumentIds.length === 0) {
       this._sessions.delete(key);
-      this._logger.warn('Selected market has no tokenIds, skipping as unsupported', {
+      this._logger.warn('Selected market has no outcome instruments, skipping as unsupported', {
         marketId: key,
       });
       return 'skipped';
@@ -565,7 +567,9 @@ export class MarketCollectionCoordinator {
       marketMeta: {
         marketId: selected.marketId,
         question: selected.question,
-        tokenIds: selected.tokenIds,
+        // Legacy boundary (единственное место конверсии): MarketMeta storage
+        // принимает plain strings; branded InstrumentId — их подтип в runtime
+        tokenIds: instrumentIds,
         startsAt,
         expiresAt: selected.expiresAt,
         rawMarket: header,
@@ -584,7 +588,8 @@ export class MarketCollectionCoordinator {
     // ── 5. Market subscription: ТОЛЬКО после recorder ────────────────────────
     let marketSubscription: PolymarketOpenSubscription;
     try {
-      marketSubscription = await this._source.subscribeMarket(selected.tokenIds);
+      // Vendor boundary — Source: branded InstrumentId проходит в SDK как есть
+      marketSubscription = await this._source.subscribeMarket(instrumentIds);
     } catch (error) {
       await this._rollbackRecording(selected.marketId, key);
       this._sessions.delete(key);
@@ -633,7 +638,7 @@ export class MarketCollectionCoordinator {
     this._logger.info('Collection session opened', {
       marketId: key,
       question: selected.question,
-      tokenIds: selected.tokenIds.length,
+      instruments: instrumentIds.length,
       rtdsFeeds: selected.rtdsFeeds.map(rtdsFeedKey),
       expiresAt: new Date(selected.expiresAt.toNumber()).toISOString(),
       isCrypto: selected.crypto !== undefined,
@@ -772,7 +777,7 @@ export class MarketCollectionCoordinator {
    */
   public listSessions(): CollectionSessionSnapshot[] {
     return [...this._sessions.values()].map((session) => ({
-      marketId: session.sourceMarketId,
+      marketId: session.marketId,
       state: session.state,
       ...(session.selected !== undefined
         ? {

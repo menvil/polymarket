@@ -98,6 +98,23 @@ cadence явных обновлений принадлежит вызывающ�
 Pre-filter торгуемости (parity):
 `state.active === true && state.closed !== true && state.enableOrderBook === true`.
 
+### Canonical IDs выбранного рынка
+
+Vendor primitives заканчиваются на mapping boundary. SDK именует свойства
+первого/второго исхода binary-рынка `yes`/`no` даже когда реальные labels —
+`Up`/`Down`; эти имена свойств не покидают маппинг. Наш контракт:
+
+- `SelectedPolymarketOutcome` = `{ label, instrumentId: InstrumentId }` —
+  нейтральные исходы в vendor-порядке, identity инструмента — canonical
+  `InstrumentId` (`@polymarket/ids`; для Polymarket это CLOB token id);
+- список инструментов ВЫВОДИТСЯ:
+  `selected.outcomes.map((outcome) => outcome.instrumentId)` — отдельной
+  коллекции ids нет (single source of truth);
+- `marketId: MarketId` ЕСТЬ Polymarket conditionId (routing-контракт
+  `String(marketId) === payload.market`, N-002) — primitive-дубликата
+  `sourceMarketId` нет; vendor Gamma numeric id хранится отдельным
+  `gammaMarketId: string` (vendor identity для re-fetch N-004).
+
 ## Gamma gaps N-001 и `prepareSelected`
 
 Normalized `Market` НЕ несёт `eventStartTime`/`eventMetadata` сырого
@@ -174,5 +191,6 @@ const discovery = new PolymarketMarketDiscovery(
 await discovery.refresh();
 const candidates = await discovery.findCandidates();
 const selected = await discovery.prepareSelected(candidates[0]!);
-// selected: { marketId, tokenIds, expiresAt, eventStartsAt?, rtdsFeeds, gammaMarket, gammaEvent? }
+// selected: { marketId, outcomes: [{label, instrumentId}], expiresAt,
+//             eventStartsAt?, rtdsFeeds, gammaMarket, gammaEvent? }
 ```

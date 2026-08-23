@@ -21,9 +21,9 @@ function envelopeBytes(header: Record<string, unknown>, question: string): numbe
       t: 'meta',
       formatVersion: 2,
       ts: NOW_MS,
-      marketId: selected.sourceMarketId,
+      marketId: String(selected.marketId),
       question: selected.question,
-      tokenIds: [...selected.tokenIds],
+      tokenIds: selected.outcomes.map((outcome) => outcome.instrumentId),
       m: header,
     }),
     'utf8',
@@ -66,7 +66,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
     expect(header).toBeDefined();
     expect(header!['truncated']).toEqual(['gammaEvent', 'gammaMarket']);
     expect(header!['gammaMarket']).toBeUndefined();
-    expect(header!['conditionId']).toBe(selected.sourceMarketId);
+    expect(header!['conditionId']).toBe(String(selected.marketId));
     expect(header!['timing']).toBeDefined();
     expect(header!['rtdsFeeds']).toEqual(selected.rtdsFeeds);
   });

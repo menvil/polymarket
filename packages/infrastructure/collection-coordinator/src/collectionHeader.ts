@@ -89,7 +89,9 @@ export function buildCollectionHeader(
   const core: Record<string, unknown> = {
     headerVersion: 1,
     source: 'polymarket-v2',
-    conditionId: selected.sourceMarketId,
+    // Canonical MarketId ЕСТЬ conditionId (routing identity) — в артефакте
+    // поле сохраняет vendor-контекстное имя
+    conditionId: String(selected.marketId),
     gammaMarketId: selected.gammaMarketId,
     ...(selected.slug !== undefined ? { slug: selected.slug } : {}),
     question: selected.question,
@@ -161,9 +163,10 @@ function fitsMetaBlock(
     t: 'meta',
     formatVersion: 2,
     ts: recordingStartsAt.toNumber(),
-    marketId: selected.sourceMarketId,
+    marketId: String(selected.marketId),
     question: selected.question,
-    tokenIds: [...selected.tokenIds],
+    // Имя поля probe повторяет legacy storage-формат meta-строки
+    tokenIds: selected.outcomes.map((outcome) => outcome.instrumentId),
     m: header,
   };
   const envelopeBytes = Buffer.byteLength(JSON.stringify(envelopeProbe), 'utf8');

@@ -133,10 +133,10 @@ async function main(): Promise<void> {
     );
     logger.info('2. selected market', {
       question: selected.question,
-      conditionId: selected.sourceMarketId,
+      conditionId: String(selected.marketId),
       gammaMarketId: selected.gammaMarketId,
       slug: selected.slug,
-      tokenIds: selected.tokenIds,
+      instrumentIds: selected.outcomes.map((outcome) => outcome.instrumentId),
       outcomes: selected.outcomes.map((outcome) => outcome.label),
       event: selected.event,
       eventStartsAt:
@@ -176,8 +176,8 @@ async function main(): Promise<void> {
     if (header['t'] !== 'meta' || header['formatVersion'] !== 2) {
       throw new Error(`Unexpected header shape: ${lines[0]!.slice(0, 200)}`);
     }
-    if (header['marketId'] !== selected.sourceMarketId) {
-      throw new Error('Header marketId does not match selected conditionId');
+    if (header['marketId'] !== String(selected.marketId)) {
+      throw new Error('Header marketId does not match selected market conditionId');
     }
     const kindCounts = new Map<string, number>();
     for (const line of lines.slice(1)) {

@@ -109,7 +109,7 @@ Legacy открывал рынок минимум за 2 минуты до ра�
   "gammaMarketId": "3709899",
   "slug": "btc-updown-5m-...",
   "question": "Bitcoin Up or Down - ...",
-  "outcomes": [{ "label": "Up", "tokenId": "..." }, { "label": "Down", "tokenId": "..." }],
+  "outcomes": [{ "label": "Up", "instrumentId": "..." }, { "label": "Down", "instrumentId": "..." }],
   "event": { "id": "872598", "slug": "...", "title": "..." },
   "timing": { "eventStartsAt": 0, "expiresAt": 0, "recordingStartsAt": 0 },
   "crypto": { "source": "chainlink", "binanceSymbol": "BTCUSDT" },

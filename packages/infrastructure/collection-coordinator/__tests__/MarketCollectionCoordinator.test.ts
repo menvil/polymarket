@@ -118,8 +118,8 @@ describe('точный порядок открытия: recorder FIRST (PART 35)
     expect(header['gammaMarketId']).toBe('516789');
     expect(header['question']).toBe('Bitcoin Up or Down - fixture');
     expect(header['outcomes']).toEqual([
-      { label: 'Up', tokenId: TOKEN_UP },
-      { label: 'Down', tokenId: TOKEN_DOWN },
+      { label: 'Up', instrumentId: TOKEN_UP },
+      { label: 'Down', instrumentId: TOKEN_DOWN },
     ]);
     expect(header['event']).toEqual({ id: '99001', slug: 'fixture-event', title: 'Fixture Event' });
     expect(header['crypto']).toEqual({ source: 'chainlink', binanceSymbol: 'BTCUSDT' });

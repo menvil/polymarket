@@ -55,7 +55,7 @@ import type { createPublicClient } from '@polymarket/client';
 import type { Event, Market } from '@polymarket/bindings/gamma';
 import type { DiscoveredMarket, IMarketFilterConfig, IMarketDiscoveryService } from '@polymarket/ports';
 import type { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
-import type { MarketId } from '@polymarket/ids';
+import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
 import { Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
 import type { Ratio } from '@polymarket/value-objects';
@@ -102,13 +102,19 @@ export interface PolymarketDiscoveredMarket extends DiscoveredMarket {
 }
 
 /**
- * Один исход рынка в терминах выбранного market (для header/диагностики).
+ * Один исход рынка в терминах выбранного market (для подписок/header).
+ *
+ * @remarks
+ * Canonical-представление ПОСЛЕ vendor boundary: identity инструмента —
+ * `InstrumentId` (для Polymarket это CLOB token id — см. `@polymarket/ids`),
+ * а не plain string; `label` — реальная vendor-метка исхода (`Up`/`Down`,
+ * `Yes`/`No`, ...) без семантических предположений о её значении.
  */
 export interface SelectedPolymarketOutcome {
-  /** Человекочитаемая метка исхода (например, `Up` / `Down`). */
+  /** Человекочитаемая метка исхода как её отдал SDK (`Up`/`Down`/`Yes`/...). */
   readonly label: string;
-  /** CLOB token id исхода. */
-  readonly tokenId: string;
+  /** Canonical identity инструмента исхода (Polymarket CLOB token id). */
+  readonly instrumentId: InstrumentId;
 }
 
 /**
@@ -116,25 +122,30 @@ export interface SelectedPolymarketOutcome {
  *
  * @remarks
  * Единственный маленький результат discovery, от которого зависит
- * Coordinator (PART 5): identity + tokenIds + timing + RTDS-фиды + typed
+ * Coordinator (PART 5): identity + outcomes + timing + RTDS-фиды + typed
  * Gamma-состояние для header. Никаких «десятков случайных SDK-полей» —
  * полный SDK Market/Event доступен через `gammaMarket`/`gammaEvent`
  * только как opaque-источник header-метаданных.
+ *
+ * Инструменты рынка живут ТОЛЬКО в `outcomes[]` (single source of truth):
+ * список ids при необходимости выводится
+ * `outcomes.map((outcome) => outcome.instrumentId)` — отдельной коллекции
+ * ids нет, противоречивое состояние непредставимо.
  */
 export interface SelectedPolymarketMarket {
-  /** Наш typed id рынка (== conditionId). */
+  /**
+   * Canonical id рынка. Для Polymarket это ЕСТЬ conditionId — routing
+   * identity SDK-событий (контракт `String(marketId) === payload.market`,
+   * зафиксирован recorder-ом N-002); отдельного primitive-дубликата нет.
+   */
   readonly marketId: MarketId;
-  /** Source market id (conditionId) — routing identity SDK-событий. */
-  readonly sourceMarketId: string;
-  /** Gamma numeric id рынка (для re-fetch в N-004). */
+  /** Vendor Gamma numeric id рынка (для re-fetch в N-004). */
   readonly gammaMarketId: string;
   /** Slug рынка (если есть). */
   readonly slug?: string;
   /** Вопрос рынка. */
   readonly question: string;
-  /** ВСЕ token ids рынка (yes/no), порядок соответствует `outcomes`. */
-  readonly tokenIds: readonly string[];
-  /** Исходы рынка с метками (parity: yes-токен первый, как legacy UP). */
+  /** Исходы рынка в vendor-порядке (binary: первый/второй исход SDK). */
   readonly outcomes: readonly SelectedPolymarketOutcome[];
   /** Время истечения рынка. */
   readonly expiresAt: Timestamp;
@@ -444,8 +455,8 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * Готовит ВЫБРАННЫЙ рынок к открытию collection session.
    *
    * @param candidate - Кандидат из {@link PolymarketMarketDiscovery.findCandidates}
-   * @returns Полный результат выбора: identity, tokenIds, timing, RTDS,
-   *   typed Gamma-состояние для header
+   * @returns Полный результат выбора: identity, outcomes (instruments),
+   *   timing, RTDS, typed Gamma-состояние для header
    *
    * @remarks
    * Единственное место, где выполняется `fetchEvent` — ТОЛЬКО для рынка,
@@ -486,14 +497,25 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
 
     const crypto = derivePolymarketCryptoMeta(market);
+    // Vendor mapping boundary (binary-модель N-003): официальный SDK именует
+    // первый/второй исход binary-рынка `yes`/`no` даже когда реальные labels —
+    // `Up`/`Down`; эти vendor-имена свойств НЕ покидают данный маппинг —
+    // дальше живут только нейтральные outcomes[] с canonical InstrumentId.
+    const sdkOutcomes = [market.outcomes.yes, market.outcomes.no];
     const outcomes: SelectedPolymarketOutcome[] = [];
-    const yesTokenId = market.outcomes.yes.tokenId;
-    const noTokenId = market.outcomes.no.tokenId;
-    if (yesTokenId !== null) {
-      outcomes.push({ label: market.outcomes.yes.label, tokenId: yesTokenId });
-    }
-    if (noTokenId !== null) {
-      outcomes.push({ label: market.outcomes.no.label, tokenId: noTokenId });
+    for (const sdkOutcome of sdkOutcomes) {
+      if (sdkOutcome.tokenId === null) {
+        continue; // исход без CLOB-токена не подписываем (как legacy)
+      }
+      const instrumentId = asInstrumentId(String(sdkOutcome.tokenId));
+      if (instrumentId === undefined) {
+        this._logger.warn('Outcome token is not a valid InstrumentId, outcome skipped', {
+          marketId: String(candidate.marketId),
+          label: sdkOutcome.label,
+        });
+        continue;
+      }
+      outcomes.push({ label: sdkOutcome.label, instrumentId });
     }
 
     const eventIdentity =
@@ -517,11 +539,9 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
 
     return {
       marketId: candidate.marketId,
-      sourceMarketId: String(candidate.marketId),
       gammaMarketId: String(market.id),
       ...(market.slug !== null && market.slug !== undefined ? { slug: market.slug } : {}),
       question: candidate.question,
-      tokenIds: outcomes.map((outcome) => outcome.tokenId),
       outcomes,
       expiresAt: candidate.expiresAt,
       ...(eventStartsAt !== undefined ? { eventStartsAt } : {}),
@@ -628,16 +648,17 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    *
    * @remarks
    * Два режима отказа (parity с legacy `_mapToDiscoveredMarket`):
-   * - **обязательные поля** (`conditionId`, yes-token, `question`,
+   * - **обязательные поля** (`conditionId`, токен первого исхода, `question`,
    *   `state.endDate`) — рынок отбрасывается (`null`, warn);
    * - **второстепенные** (`liquidity`, `spread`, `tickSize`, `minOrderSize`)
    *   — деградация до дефолта/`undefined`, рынок сохраняется.
    *
-   * Соответствие полей: `conditionId` → `marketId`;
-   * `outcomes.yes.tokenId` → `instrumentId` (первый токен — parity с legacy
-   * `clobTokenIds[0]`); `outcomes.{yes,no}.tokenId` → `allTokenIds`;
-   * `state.endDate` → `expiresAt`; `trading.minimumTickSize` → `tickSize`
-   * (дефолт 0.01); `trading.minimumOrderSize` → `minOrderSize` (дефолт 1);
+   * Соответствие полей: `conditionId` → `marketId`; токен ПЕРВОГО исхода →
+   * `instrumentId` (parity с legacy `clobTokenIds[0]`); токены обоих
+   * исходов → `allTokenIds` (существующий port-контракт `DiscoveredMarket`,
+   * plain strings — legacy boundary); `state.endDate` → `expiresAt`;
+   * `trading.minimumTickSize` → `tickSize` (дефолт 0.01);
+   * `trading.minimumOrderSize` → `minOrderSize` (дефолт 1);
    * `metrics.liquidity ?? liquidityNum` → `liquidity` (деградация 0);
    * `prices.spread` → `spread` (деградация `undefined`).
    */
@@ -658,24 +679,30 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       return null;
     }
 
-    const yesTokenId = market.outcomes.yes.tokenId;
-    if (yesTokenId === null) {
-      this._logger.warn('Market has no yes-outcome tokenId, skipping', {
+    // Vendor mapping boundary: SDK именует первый/второй исход binary-рынка
+    // `yes`/`no` (реальные labels могут быть `Up`/`Down`) — эти имена
+    // свойств не покидают данный маппинг.
+    const [firstSdkOutcome, secondSdkOutcome] = [market.outcomes.yes, market.outcomes.no];
+    const firstOutcomeTokenId = firstSdkOutcome.tokenId;
+    if (firstOutcomeTokenId === null) {
+      this._logger.warn('Market has no first-outcome token, skipping', {
         conditionId: String(conditionId),
       });
       return null;
     }
-    const instrumentId = asInstrumentId(String(yesTokenId));
+    const instrumentId = asInstrumentId(String(firstOutcomeTokenId));
     if (instrumentId === undefined) {
-      this._logger.warn('Cannot parse yes tokenId as InstrumentId, skipping market', {
+      this._logger.warn('Cannot parse first-outcome token as InstrumentId, skipping market', {
         conditionId: String(conditionId),
-        tokenId: String(yesTokenId),
+        tokenId: String(firstOutcomeTokenId),
       });
       return null;
     }
-    const noTokenId = market.outcomes.no.tokenId;
+    const secondOutcomeTokenId = secondSdkOutcome.tokenId;
     const allTokenIds =
-      noTokenId !== null ? [String(yesTokenId), String(noTokenId)] : [String(yesTokenId)];
+      secondOutcomeTokenId !== null
+        ? [String(firstOutcomeTokenId), String(secondOutcomeTokenId)]
+        : [String(firstOutcomeTokenId)];
 
     const question = market.question;
     if (question === null || question === undefined || question === '') {
