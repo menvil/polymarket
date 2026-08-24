@@ -2,9 +2,9 @@
   "extends": "../../../tsconfig.lint.base.json",
   "compilerOptions": {
     "paths": {
-      "@polymarket/polymarket-v2": ["./src/index.ts"]
+      "@polymarket/collection-coordinator": ["./src/index.ts"]
     }
   },
-  "include": ["src/**/*", "__tests__/**/*"],
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]
 }

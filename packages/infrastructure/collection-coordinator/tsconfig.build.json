@@ -18,28 +18,20 @@
     "node_modules",
     "dist",
     "__tests__",
+    "scripts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
     "src/**/__tests__/**"
   ],
   "references": [
     {
-      "path": "../external-messages/tsconfig.build.json"
+      "path": "../polymarket-v2/tsconfig.build.json"
     },
     {
-      "path": "../external-message-bus/tsconfig.build.json"
-    },
-    {
-      "path": "../../foundation/message-bus/tsconfig.build.json"
-    },
-    {
-      "path": "../../foundation/messages/tsconfig.build.json"
+      "path": "../persistence/external-message-recorder/tsconfig.build.json"
     },
     {
       "path": "../../foundation/logger/tsconfig.build.json"
-    },
-    {
-      "path": "../../foundation/result/tsconfig.build.json"
     },
     {
       "path": "../../foundation/ids/tsconfig.build.json"
@@ -51,13 +43,7 @@
       "path": "../../foundation/timestamp/tsconfig.build.json"
     },
     {
-      "path": "../../domain/value-objects/tsconfig.build.json"
-    },
-    {
       "path": "../../application/ports/tsconfig.build.json"
-    },
-    {
-      "path": "../../application/market-discovery/tsconfig.build.json"
     }
   ]
 }

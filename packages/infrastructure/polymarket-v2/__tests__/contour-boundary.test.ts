@@ -1,22 +1,41 @@
 /**
- * Границы контура polymarket-v2 (PART 25 TEST 10 / PART 30).
+ * Границы контура polymarket-v2 (N-001 PART 25 TEST 10 / PART 30,
+ * пересмотрено в N-003 PART 44).
  *
  * @remarks
- * Пакет — Infrastructure ingress boundary. Ему запрещены зависимости от
- * Domain/Application/Strategy и от semantic-пакетов (OrderBook/Trade/VO):
- * конверсия в наши concepts — работа будущего SemanticAdapter ПОСЛЕ bus.
+ * Пакет состоит из двух плоскостей с РАЗНЫМИ границами зависимостей:
+ *
+ * - **DATA PLANE** (`PolymarketSource`, `PolymarketExternalMessage`) —
+ *   ingress boundary. Ему запрещены зависимости от Domain/Application/
+ *   semantic-пакетов: конверсия в наши concepts — работа будущего
+ *   SemanticAdapter ПОСЛЕ bus. Правило N-001 сохраняется без изменений.
+ *
+ * - **CONTROL PLANE** (`PolymarketMarketDiscovery`, `PolymarketRtdsFeeds`)
+ *   — discovery boundary N-003. Ему ДОПОЛНИТЕЛЬНО разрешены существующие
+ *   selection-контракты (`@polymarket/ports`, `@polymarket/market-discovery`)
+ *   и VO кандидата (`@polymarket/value-objects`, ids/timestamp/time,
+ *   decimal.js) — reuse selection policy вместо второго discovery-фреймворка
+ *   (N-003 PART 3/4). Это тот же слой зависимостей, что у legacy
+ *   `PolymarketMarketDiscoveryAdapter` в `@polymarket/exchange`.
+ *
+ * Trading/semantic/exchange-зависимости запрещены ОБЕИМ плоскостям.
  * Тест фиксирует границу по РЕАЛЬНЫМ артефактам: package.json и import-ы
- * исходников.
+ * исходников (по-файлово).
  */
 import { describe, it, expect } from '@jest/globals';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 const PACKAGE_ROOT = join(__dirname, '..');
+const SRC_ROOT = join(PACKAGE_ROOT, 'src');
 
-/** Зависимости, запрещённые контуру ingress (Domain/Application/semantic). */
+/** Путь файла относительно src в POSIX-нотации (устойчиво к подкаталогам). */
+function srcRelative(filePath: string): string {
+  return relative(SRC_ROOT, filePath).split(sep).join('/');
+}
+
+/** Зависимости, запрещённые пакету целиком (semantic/trading/legacy). */
 const FORBIDDEN_DEPENDENCIES = [
-  '@polymarket/value-objects',
   '@polymarket/orderbook',
   '@polymarket/trade',
   '@polymarket/entities',
@@ -28,18 +47,16 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/application-events',
   '@polymarket/event-bus',
   '@polymarket/handlers',
-  '@polymarket/ports',
   '@polymarket/use-cases',
   '@polymarket/strategy',
   '@polymarket/market-state',
-  '@polymarket/market-discovery',
   '@polymarket/orchestrators',
   '@polymarket/risk',
   '@polymarket/exchange',
   '@polymarket/data-collection',
 ];
 
-/** Разрешённые package-импорты исходников (Foundation + внешний контур + SDK). */
+/** Разрешённые импорты DATA PLANE (Foundation + внешний контур + SDK). */
 const ALLOWED_SOURCE_IMPORTS = new Set([
   '@polymarket/bindings/subscriptions',
   '@polymarket/client',
@@ -49,6 +66,30 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
   '@polymarket/message-bus',
   '@polymarket/messages',
   '@polymarket/result',
+]);
+
+/**
+ * Дополнительно разрешённые импорты CONTROL PLANE (discovery, N-003):
+ * существующая selection policy + VO-модель кандидата + typed Gamma-модели.
+ */
+const ALLOWED_DISCOVERY_IMPORTS = new Set([
+  ...ALLOWED_SOURCE_IMPORTS,
+  '@polymarket/bindings/gamma',
+  '@polymarket/ports',
+  '@polymarket/market-discovery',
+  '@polymarket/value-objects',
+  '@polymarket/ids',
+  '@polymarket/time',
+  '@polymarket/timestamp',
+  'decimal.js',
+]);
+
+/** Файлы CONTROL PLANE (discovery boundary) — пути относительно `src`. */
+const DISCOVERY_FILES = new Set([
+  'PolymarketMarketDiscovery.ts',
+  'PolymarketRtdsFeeds.ts',
+  // index.ts re-экспортирует обе плоскости (контракт пакета)
+  'index.ts',
 ]);
 
 /** Рекурсивно собирает все .ts-файлы каталога (включая вложенные). */
@@ -66,11 +107,20 @@ function listSourceFiles(dir: string): string[] {
 }
 
 /**
+ * Убирает блочные и строчные комментарии перед поиском импортов:
+ * import-подобный текст в TSDoc/примерах не должен считаться зависимостью.
+ * `//` внутри строк-URL (`https://...`) защищён предшествующим двоеточием.
+ */
+function stripComments(content: string): string {
+  return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/**
  * Собирает все import-specifiers файла: `import/export ... from '...'`,
- * side-effect `import '...'` и dynamic `import('...')`.
+ * side-effect `import '...'` и dynamic `import('...')` (без комментариев).
  */
 function collectImports(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf8');
+  const content = stripComments(readFileSync(filePath, 'utf8'));
   const specifiers: string[] = [];
   const patterns = [
     /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g,
@@ -91,7 +141,7 @@ function collectImports(filePath: string): string[] {
 }
 
 describe('dependency graph boundary', () => {
-  it('package.json не содержит Domain/Application/semantic зависимостей', () => {
+  it('package.json не содержит semantic/trading/legacy зависимостей', () => {
     const packageJson = JSON.parse(
       readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -106,8 +156,10 @@ describe('dependency graph boundary', () => {
     }
   });
 
-  it('исходники импортируют только Foundation, внешний контур и официальный SDK', () => {
-    const sourceFiles = listSourceFiles(join(PACKAGE_ROOT, 'src'));
+  it('DATA PLANE импортирует только Foundation, внешний контур и официальный SDK', () => {
+    const sourceFiles = listSourceFiles(SRC_ROOT).filter(
+      (filePath) => !DISCOVERY_FILES.has(srcRelative(filePath)),
+    );
     expect(sourceFiles.length).toBeGreaterThan(0);
 
     for (const filePath of sourceFiles) {
@@ -115,7 +167,31 @@ describe('dependency graph boundary', () => {
         if (specifier.startsWith('.')) {
           continue; // внутренние relative-импорты пакета
         }
-        expect(ALLOWED_SOURCE_IMPORTS.has(specifier)).toBe(true);
+        if (!ALLOWED_SOURCE_IMPORTS.has(specifier)) {
+          throw new Error(
+            `Forbidden data-plane import '${specifier}' in ${srcRelative(filePath)}`,
+          );
+        }
+      }
+    }
+  });
+
+  it('CONTROL PLANE (discovery) добавляет только selection-контракты и VO', () => {
+    const discoveryFiles = listSourceFiles(SRC_ROOT).filter((filePath) =>
+      DISCOVERY_FILES.has(srcRelative(filePath)),
+    );
+    expect(discoveryFiles.length).toBeGreaterThan(0);
+
+    for (const filePath of discoveryFiles) {
+      for (const specifier of collectImports(filePath)) {
+        if (specifier.startsWith('.')) {
+          continue;
+        }
+        if (!ALLOWED_DISCOVERY_IMPORTS.has(specifier)) {
+          throw new Error(
+            `Forbidden control-plane import '${specifier}' in ${srcRelative(filePath)}`,
+          );
+        }
       }
     }
   });

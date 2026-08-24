@@ -188,11 +188,12 @@ interface RecordingSession {
 /**
  * Собирает точный routing-ключ RTDS-фида.
  *
- * @param topic - Vendor topic
+ * @param topic - Vendor topic (typed union SDK — narrowing вызывающих
+ *   не расширяется до plain string)
  * @param symbol - Точный символ фида
  * @returns Составной ключ `(topic, symbol)` для Map
  */
-function rtdsRoutingKey(topic: string, symbol: string): string {
+function rtdsRoutingKey(topic: CryptoPricesTopic, symbol: string): string {
   return `${topic}\n${symbol}`;
 }
 

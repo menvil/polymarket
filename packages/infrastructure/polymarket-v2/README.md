@@ -139,10 +139,23 @@ await bus.close();
 в `docs/sdk-parity.md`. Development-only smoke: `scripts/smoke.ts`
 (`npx tsx packages/infrastructure/polymarket-v2/scripts/smoke.ts`).
 
+## Market Discovery V2 (control plane, N-003)
+
+Помимо data-plane `PolymarketSource`, пакет содержит control-plane
+`PolymarketMarketDiscovery`: обнаружение рынков через официальные
+`listMarkets`/`fetchEvent` с reuse существующей selection policy
+(`MarketFilter`/`MarketScorer`) и выводом RTDS-фидов из `resolution.source`
+(`derivePolymarketCryptoMeta`). Discovery ничего НЕ публикует в
+`ExternalMessageBus` — Gamma остаётся query path.
+
+Подробности (пагинация, маппинг полей, gaps N-001, parity с legacy) —
+в `docs/market-discovery-v2.md`. Потребитель — координатор сессий
+`@polymarket/collection-coordinator`.
+
 ## Тесты
 
 ```bash
-npm test          # typecheck тестов + jest (22 теста)
+npm test          # typecheck тестов + jest
 npm run build     # tsc -b (с project references)
 npm run lint      # eslint src
 ```

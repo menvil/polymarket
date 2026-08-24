@@ -30,9 +30,23 @@ export type {
   PolymarketSubscribeClient,
   PolymarketSubscriptionHandle,
 } from './PolymarketSource.js';
+export { PolymarketMarketDiscovery } from './PolymarketMarketDiscovery.js';
+export type {
+  PolymarketDiscoveryClient,
+  PolymarketDiscoveredMarket,
+  PolymarketMarketDiscoveryConfig,
+  PolymarketMarketDiscoveryDependencies,
+  SelectedPolymarketMarket,
+  SelectedPolymarketOutcome,
+} from './PolymarketMarketDiscovery.js';
+export { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
+export type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
 export type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
   CryptoPricesTopic,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';
+// Typed normalized Gamma-модели официального SDK — contract surface discovery
+// boundary для координатора/header (лезть в bindings напрямую запрещено).
+export type { Event as PolymarketGammaEvent, Market as PolymarketGammaMarket } from '@polymarket/bindings/gamma';
