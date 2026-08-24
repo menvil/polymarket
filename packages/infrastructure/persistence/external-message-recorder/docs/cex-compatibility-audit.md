@@ -1,55 +1,74 @@
-# CEX compatibility audit (N-002, PART 25/26/27)
+# CEX compatibility audit (N-002 PART 25/26/27 → реализовано в N-005)
 
-Аудит будущей совместимости recording-архитектуры N-002 с CEX-данными.
-**В N-002 CEX-путь НЕ мигрирован**: production
-`CexCollectorService` / `CcxtExchangeWatcher` / `CexFileRotator`
-(`packages/infrastructure/cex-market-data`) не изменены — они продолжают
-работать как раньше, пока не появится `CexSource`, публикующий CEX
-ExternalMessages в общий `ExternalMessageBus`.
+Аудит совместимости recording-архитектуры с CEX-данными. Написан в N-002 как
+матрица «что потребуется, когда появится CexSource»; **в N-005 CEX-путь
+реализован** — документ зафиксирован как исполненный контракт.
 
-## Почему сейчас нельзя мигрировать
-
-`CexSource` в контуре ExternalMessageBus ещё не существует. Миграция recording
-без source означала бы прямой путь CCXT → disk в обход bus — ровно та
-архитектура, от которой N-002 уходит. Когда `CexSource` появится:
+## Итоговая архитектура (N-005)
 
 ```text
-CCXT → CexSource → ExternalMessage → ТОТ ЖЕ ExternalMessageBus → ТОТ ЖЕ Recorder service
+CCXT / CCXT Pro
+      ↓
+CexSource                       (@polymarket/cex-v2)
+      ↓ CEX_ORDERBOOK / CEX_TRADE
+ТОТ ЖЕ ExternalMessageBus       (union PolymarketExternalMessage | CexExternalMessage)
+      ↓ subscribe('CEX_*')
+ТОТ ЖЕ ExternalMessageRecorder  (один сервис, опциональная cex-конфигурация)
+      ↓ message.payload (payload-only)
+CexWindowRecorder               (@polymarket/data-collection, оконная policy)
+      ↓
+{outputDir}/{utcDate}/{exchange}/{exchange}_{symbol}_{marketType}_{stream}_{окно ET}.jsonl → .jsonl.gz
 ```
 
-## Матрица совместимости
+Один Recorder-СЕРВИС — две storage/writer-policy:
 
-Каждая текущая возможность `CexFileRotator` → что потребуется от будущего
-Recorder → поддерживает ли архитектура N-002 → что отложено до CexSource-фазы.
+- **Polymarket market-session policy** (`DataRecorder`): OPEN → recording →
+  SEAL → enrichment → FINALIZE (EXPIRED/SHUTDOWN) — не изменена;
+- **CEX time-window policy** (`CexWindowRecorder`): непрерывный поток →
+  выровненное окно → ротация → gzip → следующее окно.
 
-| Текущая возможность CexFileRotator | Будущее требование к Recorder | N-002 поддерживает архитектурно? | Отложено до CexSource-фазы |
-|---|---|---|---|
-| Буферизация строк в памяти (200 строк / flush 5s) | Тот же дешёвый hot path: enqueue в память, flush по threshold/таймеру | Да — bus-handler recorder-а уже только route+serialize+enqueue; buffering — свойство storage-движка | Выбор storage-движка для CEX-строк (переиспользование/extraction) |
-| Time-window ротация (выровненные 5-мин окна, выравнивание старта) | Партиционирование файлов по времени, а не по market-session | Да — routing-слой recorder-а отделён от writer-policy: сессии Polymarket не зашиты в bus-handler, CEX добавит свою registration с оконным writer-ом | Реализация window-writer policy (сейчас есть только market-session policy) |
-| Gzip при ротации окна | Сжатие завершённого партишена | Да — момент «партишен завершён» инкапсулирован в policy (у Polymarket это finalizeMarket, у CEX будет граница окна) | Перенос gzip-вызова в window-policy |
-| Naming `{outputDir}/{utcDate}/{exchange}/{exchange}_{symbol}_{type}_{окно ET}.jsonl[.gz]` | Схема имён на партишен CEX | Да — naming принадлежит writer-policy, а не bus-слою | Реализация naming в CEX-policy |
-| Cleanup незавершённых `.jsonl` при старте и close | Та же семантика incomplete-файлов | Да — уже общая семантика обоих движков (`.jsonl` = incomplete, `.jsonl.gz` = завершённый архив) | Ничего |
-| Множественные writer-ы (exchange, symbol, marketType) | Routing одного потока сообщений во множество writer-ов | Да — recorder уже делает fan-out routing (RTDS: один фид → N файлов); ключ CEX будет `(exchange, symbol, marketType)` вместо `(topic, symbol)` | Typed CEX ExternalMessage contract (`CEX_ORDERBOOK`/`CEX_TRADE`) и его routing-ключ |
-| Watcher/restart механика (`CcxtExchangeWatcher`, `RestartingTask`) | НЕ требование Recorder — это transport | Да — transport уйдёт в `CexSource` (симметрично `PolymarketSource`), recorder его не касается | Реализация CexSource |
+Общая единственно механическая часть — `GzipCompressor` (переиспользован).
+Generic buffered-writer НЕ извлечён: extraction потребовала бы
+абстрагировать lifecycle-политики (см. решение в PR N-005).
 
-## Что сознательно НЕ извлечено сейчас (PART 27)
+## Матрица совместимости (исполнение)
 
-`DataRecorder` и `CexFileRotator` дублируют механику (buffering, flush,
-stream lifecycle, gzip, cleanup), но generic-абстракции
-(`GenericBufferedWriter`, `AbstractRotator`, `StoragePolicyFactory`, ...)
-в N-002 НЕ создаются: второй concrete use case ещё не реализован, extraction
-без него была бы спекулятивной. При CexSource-фазе появится evidence для
-осознанного выделения общего writer-ядра.
+| Возможность legacy `CexFileRotator` | Реализация N-005 |
+|---|---|
+| Буферизация строк (200 строк / flush 5s) | `CexWindowRecorder`: те же дефолты; hot path recorder-а — route + serialize + enqueue |
+| Time-window ротация (выровненные 5-мин окна) | Сохранена; окно назначается В МОМЕНТ записи — закрыта гонка legacy, терявшая строки во время асинхронного gzip |
+| Gzip при ротации окна | `GzipCompressor` (atomic tmp → rename), `.jsonl` = incomplete, `.jsonl.gz` = завершённый |
+| Naming `{utcDate}/{exchange}/{exchange}_{symbol}_{type}_{окно ET}` | Сохранён + сегмент `stream` (`orderbook`/`trades`): payload-only строки V2 не несут дискриминатора `t`, поток обязан жить в имени; символы санитизируются по `[/:]`; окна, не кратные минуте (только тесты), получают секунды в метке |
+| Cleanup незавершённых `.jsonl` при старте и close | Та же семантика (`cleanup()` при старте процесса, удаление незавершённых окон при `close()`) |
+| Множественные writer-ы `(exchange, symbol, marketType)` | Ключ расширен потоком: `(exchange, symbol, marketType, stream)`; routing-идентичность приходит В КАЖДОМ typed payload — регистраций нет |
+| Watcher/restart механика | Ушла в `CexSource` (transport): multiplex/per-symbol/fetch, supervised restart, stale, плановый перезапуск; recorder транспорта не касается |
 
-## Что уже гарантирует N-002
+## Гарантии, заявленные N-002 — статус
 
-- **ONE bus**: порт подписки recorder-а (`PolymarketRecordingBusSubscription`)
-  принимает bus, параметризованный расширенным union
-  (`PolymarketExternalMessage | CexExternalMessage`), без кастов —
-  закреплено compile-time тестом `ExternalMessageRecorder.types.test.ts`.
-- **ONE Recorder service**: добавление CEX — это новые typed subscribe +
-  CEX writer-policy внутри того же сервиса, не второй сервис и не прямой
-  Source→disk путь.
-- **ONE file policy — НЕ требование**: Polymarket market-session writer и
-  будущий CEX time-window writer сосуществуют как разные policy одного
-  сервиса.
+- **ONE bus** — выполнено: `ExternalMessageBus<PolymarketExternalMessage |
+  CexExternalMessage>` присваивается обоим портам подписки без кастов;
+  compile-time тест `ExternalMessageRecorder.types.test.ts` переведён с
+  эскиза `FutureCexExternalMessage` на реальный `CexExternalMessage`.
+- **ONE Recorder service** — выполнено: CEX — это опциональная
+  `cex`-конфигурация ТОГО ЖЕ `ExternalMessageRecorder` (typed subscribe +
+  оконный storage), не второй сервис и не прямой Source→disk путь.
+- **ONE file policy — НЕ требование** — подтверждено: политики
+  сосуществуют, интеграционный тест
+  `one-bus-one-recorder.integration.test.ts` доказывает раздельную
+  маршрутизацию без cross-routing и один shutdown обеих политик.
+
+## Payload-only инвариант CEX-строк
+
+В data lines записывается РОВНО `message.payload`
+(`{ exchangeId, marketType, symbol, orderBook | trade }` с нетронутым
+JSON-снапшотом unified-объекта CCXT). `messageId`/`runId`/`sequence`/
+`correlationId`/`causationId`/routing discriminator в файлы не попадают —
+закреплено интеграционным тестом и live smoke readback-ом.
+
+## Legacy path
+
+`packages/infrastructure/cex-market-data`
+(`CexCollectorService`/`CcxtExchangeWatcher`/`CexFileRotator`) в N-005
+**не удалён и не переписан**: он остаётся работающим для старых consumers
+(Application sinks) до будущего consumer cutover после CEX Semantic Adapter.
+Новый V2-контур не импортирует legacy-пакет (контурный тест cex-v2).
