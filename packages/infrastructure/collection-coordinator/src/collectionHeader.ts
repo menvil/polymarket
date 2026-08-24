@@ -159,7 +159,10 @@ export function buildCollectionHeader(
 
   const core: Record<string, unknown> = {
     headerVersion: 1,
-    source: 'polymarket-v2',
+    // Идентичность ИСТОЧНИКА (venue), а не имя пакета: версию формата несут
+    // formatVersion (внешняя meta) + headerVersion — временное «-v2» пакета
+    // в persistent-артефакты не записывается
+    source: 'polymarket',
     // Canonical MarketId ЕСТЬ conditionId (routing identity) — в артефакте
     // поле сохраняет vendor-контекстное имя
     conditionId: String(selected.marketId),

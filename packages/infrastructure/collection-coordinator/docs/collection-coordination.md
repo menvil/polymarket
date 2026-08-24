@@ -104,7 +104,7 @@ Legacy открывал рынок минимум за 2 минуты до ра�
 ```json
 {
   "headerVersion": 1,
-  "source": "polymarket-v2",
+  "source": "polymarket",
   "conditionId": "0x...",
   "gammaMarketId": "3709899",
   "slug": "btc-updown-5m-...",

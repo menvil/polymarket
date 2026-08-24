@@ -113,7 +113,8 @@ describe('точный порядок открытия: recorder FIRST (PART 35)
 
     const header = recorder.registrations[0]!.marketMeta.rawMarket as Record<string, unknown>;
     expect(header['headerVersion']).toBe(1);
-    expect(header['source']).toBe('polymarket-v2');
+    // Идентичность источника, не имя пакета (версию несут formatVersion/headerVersion)
+    expect(header['source']).toBe('polymarket');
     expect(header['conditionId']).toBe(CID_A);
     expect(header['gammaMarketId']).toBe('516789');
     expect(header['question']).toBe('Bitcoin Up or Down - fixture');
