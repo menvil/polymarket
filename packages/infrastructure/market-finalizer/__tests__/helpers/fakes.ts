@@ -52,6 +52,16 @@ export const GAMMA_EVENT_ID = '99001';
 export class FakeFinalizationRecorder extends FakeCollectionRecorder {
   /** Записанные header-обновления в порядке вызовов. */
   public readonly metaUpdates: Array<{ marketId: string; header: Record<string, unknown> }> = [];
+  /** Если задано — sealMarket бросает для этого `String(marketId)`. */
+  public sealErrorForMarketId: string | undefined;
+
+  public override readonly sealMarket = async (marketId: MarketId): Promise<boolean> => {
+    if (this.sealErrorForMarketId === String(marketId)) {
+      throw new Error(`storage seal failed for ${String(marketId)}`);
+    }
+    this.seals.push(String(marketId));
+    return true;
+  };
   /** Исход следующих updateMarketMeta (default true = header записан). */
   public metaUpdateResult = true;
   /** Если задано — updateMarketMeta бросает (I/O-ошибка storage). */

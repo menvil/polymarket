@@ -602,6 +602,16 @@ describe('sealMarket', () => {
     expect(storage.sealed).toEqual([]);
   });
 
+  it('пробрасывает наблюдаемый исход sealMarket из storage (writer не найден → false)', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    storage.sealOutcome = false;
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(false);
+    storage.sealOutcome = true;
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(true);
+  });
+
   it('пробрасывает наблюдаемый исход updateMarketMeta из storage (PART 26)', async () => {
     recorder.start();
     recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });

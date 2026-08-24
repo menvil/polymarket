@@ -115,7 +115,7 @@ Backtest получает ответ о результате рынка из О�
 | Сбой | Поведение |
 | --- | --- |
 | Gamma fetch (crypto, до таймаута) | FINALIZING/best-known/файл сохранены; retry следующим runOnce |
-| Gamma fetch (non-crypto) | немедленный архив с initial-данными (без 15-минутного ожидания) |
+| Gamma fetch (non-crypto) | немедленный архив с initial-данными (без crypto-ожидания enrichment-а — 30 мин по умолчанию) |
 | header `false` при complete | архив отложен, error-лог, retry по cadence; success не объявляется |
 | header `false` при timeout/shutdown | архив best-known ПРЕДЫДУЩЕГО header-а, error-лог (явная policy) |
 | `finalizeMarket(EXPIRED)` throw | терминально: без success-лога, без повторного gzip; сессия остаётся FINALIZING |

@@ -375,6 +375,32 @@ describe('усечение header-а не теряет критические д
   });
 });
 
+describe('изоляция отказов внутри прохода (review round 1)', () => {
+  it('throw beginFinalization одного рынка не роняет runOnce: сосед начинает и архивируется', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer, logger } =
+      createFinalizerHarness();
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 1, finalPrice: 2 }),
+    );
+    // Оба рынка истекут одновременно; seal рынка A падает (storage-throw)
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+    recorder.sealErrorForMarketId = CID_A;
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    await expect(finalizer.runOnce()).resolves.toBeUndefined(); // проход не reject-ится
+
+    // Отказ A наблюдаем; B прошёл полный путь до архива в том же проходе
+    expect(
+      logger.byLevel('error').some((e) => e.message.includes('beginFinalization failed')),
+    ).toBe(true);
+    expect(recorder.finalizations).toEqual([`${CID_B}:EXPIRED`]);
+    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 1 });
+  });
+});
+
 describe('идентичность рынков (двойная защита)', () => {
   it('begin только для due-рынка: не истёкший сосед не затрагивается', async () => {
     const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness();

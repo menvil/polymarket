@@ -10,7 +10,7 @@
 | Экспорт | Назначение |
 |---|---|
 | `DataRecorder` | `IMarketDataRecorder`: `registerMarket`/`recordEvent`/`finalizeMarket`/`close` + V2 `recordMarketEvent` |
-| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'failed'` (failed = сериализация ИЛИ отказ активации/stream) |
+| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'sealed' \| 'failed'` (sealed = датасет заморожен `sealMarket`-ом; failed = сериализация ИЛИ отказ активации/stream) |
 | `DecisionJournalRecorder` | `IDecisionJournal`: `startSession`/`recordDecision`/`recordFill`/`recordResolution`/`endSession`/`close` |
 | `ArchivedMarketMetaRewriter` | Переписывает первую (meta) NDJSON-строку уже архивного файла |
 | `NDJSONFormatter` | `formatRecord(obj)` → `'{"..."}\n'` |

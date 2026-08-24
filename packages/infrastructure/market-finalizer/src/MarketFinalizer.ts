@@ -325,7 +325,18 @@ export class MarketFinalizer {
       if (this._pending.has(key)) {
         continue;
       }
-      const session = await this._coordinator.beginFinalization(snapshot.marketId);
+      // Per-session изоляция: отказ перехода одного рынка (например, throw
+      // seal-пути) не роняет runOnce и не лишает остальные сессии enrichment-а
+      let session: FinalizingMarketSession | undefined;
+      try {
+        session = await this._coordinator.beginFinalization(snapshot.marketId);
+      } catch (error) {
+        this._logger.error('beginFinalization failed for expired market, continuing pass', {
+          marketId: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
       if (session === undefined) {
         continue; // сессию успели закрыть/перевести — переход at most once
       }
@@ -355,7 +366,16 @@ export class MarketFinalizer {
       if (!due) {
         continue;
       }
-      await this._attemptEnrichment(entry, nowMs, timedOut);
+      try {
+        await this._attemptEnrichment(entry, nowMs, timedOut);
+      } catch (error) {
+        // Ожидаемые отказы обработаны внутри; сюда попадает только
+        // неожиданное исключение — рынок остаётся pending, проход продолжается
+        this._logger.error('Enrichment attempt failed unexpectedly, continuing pass', {
+          marketId: String(entry.session.marketId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
