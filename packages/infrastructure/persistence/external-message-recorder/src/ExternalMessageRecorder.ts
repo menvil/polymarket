@@ -54,7 +54,7 @@ import type { ILogger } from '@polymarket/logger';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
 import type { IExternalMessageBus } from '@polymarket/external-message-bus';
-import type { DataRecorder } from '@polymarket/data-collection';
+import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
 import type {
   CryptoPricesTopic,
   PolymarketCryptoBinanceExternalMessage,
@@ -62,6 +62,11 @@ import type {
   PolymarketExternalMessage,
   PolymarketMarketExternalMessage,
 } from '@polymarket/polymarket-v2';
+import type {
+  CexExternalMessage,
+  CexOrderbookExternalMessage,
+  CexTradeExternalMessage,
+} from '@polymarket/cex-v2';
 
 /**
  * Точный ключ маршрутизации одного RTDS-фида в файл рынка.
@@ -136,6 +141,49 @@ export type PolymarketRecordingStorage = Pick<
 >;
 
 /**
+ * Порт подписки recorder-а на CEX-типы общего bus.
+ *
+ * @remarks
+ * То же правило, что у {@link PolymarketRecordingBusSubscription}:
+ * структурное подмножество (`subscribe`), контравариантное по union — сюда
+ * передаётся ТОТ ЖЕ общий bus контура, параметризованный
+ * `PolymarketExternalMessage | CexExternalMessage`. Второго bus нет:
+ * оба порта CEX-конфигурации указывают на один объект.
+ */
+export type CexRecordingBusSubscription = Pick<
+  IExternalMessageBus<CexExternalMessage>,
+  'subscribe'
+>;
+
+/**
+ * Порт оконного storage-движка CEX-партиций.
+ *
+ * @remarks
+ * Структурное подмножество `CexWindowRecorder`
+ * (`@polymarket/data-collection`) — единственный источник истины по
+ * window/buffer/gzip/cleanup CEX-политики. Регистраций у CEX-потока нет:
+ * routing-идентичность (`exchangeId`/`symbol`/`marketType` + тип потока)
+ * приходит в каждом typed payload.
+ */
+export type CexRecordingStorage = Pick<CexWindowRecorder, 'start' | 'write' | 'flush' | 'close'>;
+
+/**
+ * CEX-конфигурация recorder-а: подписка на общем bus + оконный storage.
+ *
+ * @remarks
+ * Опциональная политика ТОГО ЖЕ сервиса (не второй Recorder): при
+ * отсутствии конфигурации CEX-подписки не создаются, Polymarket-путь
+ * не меняется. Ownership: bus принадлежит composition root; оконный
+ * storage — recorder-у (закрывается в {@link ExternalMessageRecorder.close}).
+ */
+export interface ExternalMessageRecorderCexDependencies {
+  /** Общий bus контура (порт CEX-подписок того же объекта bus). */
+  readonly bus: CexRecordingBusSubscription;
+  /** Оконный storage-движок CEX-партиций. */
+  readonly storage: CexRecordingStorage;
+}
+
+/**
  * Зависимости {@link ExternalMessageRecorder}.
  *
  * @remarks
@@ -150,6 +198,12 @@ export interface ExternalMessageRecorderDependencies {
   readonly storage: PolymarketRecordingStorage;
   /** Логгер (будет обёрнут в child с component-контекстом). */
   readonly logger: ILogger;
+  /**
+   * Опциональная CEX-политика ТОГО ЖЕ сервиса: typed-подписки
+   * `CEX_ORDERBOOK`/`CEX_TRADE` на том же общем bus + оконный storage.
+   * Без неё recorder ведёт себя ровно как в N-002..N-004.
+   */
+  readonly cex?: ExternalMessageRecorderCexDependencies;
 }
 
 /**
@@ -174,6 +228,27 @@ export interface ExternalMessageRecorderStats {
   readonly unroutedRtdsMessages: number;
   /** Неожиданных исключений в bus-handler-ах (защитный контур). */
   readonly handlerErrors: number;
+}
+
+/**
+ * Диагностические счётчики CEX-политики (loss visibility).
+ *
+ * @remarks
+ * Отдельная структура (а не расширение
+ * {@link ExternalMessageRecorderStats}): Polymarket-контракт N-002
+ * не меняется. Все счётчики равны 0, если CEX-политика не сконфигурирована.
+ */
+export interface ExternalMessageRecorderCexStats {
+  /** CEX-сообщений принято handler-ами (orderbook + trade). */
+  readonly cexMessagesRouted: number;
+  /** Строк принято оконным storage в буфер записи. */
+  readonly cexRecordsWritten: number;
+  /** Строк сознательно отброшено оконной политикой (до выравнивания/после close). */
+  readonly cexRecordsDroppedInactive: number;
+  /** Отказов записи storage (сериализация/stream; залогированы storage). */
+  readonly cexWriteFailures: number;
+  /** Неожиданных исключений в CEX bus-handler-ах (защитный контур). */
+  readonly cexHandlerErrors: number;
 }
 
 /**
@@ -251,6 +326,7 @@ function rtdsRoutingKey(topic: CryptoPricesTopic, symbol: string): string {
 export class ExternalMessageRecorder {
   private readonly _bus: PolymarketRecordingBusSubscription;
   private readonly _storage: PolymarketRecordingStorage;
+  private readonly _cex: ExternalMessageRecorderCexDependencies | undefined;
   private readonly _logger: ILogger;
 
   /** Активные сессии: sourceMarketId (== String(marketId) == conditionId) → сессия. */
@@ -281,6 +357,13 @@ export class ExternalMessageRecorder {
   private _unroutedRtdsMessages = 0;
   private _handlerErrors = 0;
 
+  // Счётчики ExternalMessageRecorderCexStats (0, если политика отсутствует)
+  private _cexMessagesRouted = 0;
+  private _cexRecordsWritten = 0;
+  private _cexRecordsDroppedInactive = 0;
+  private _cexWriteFailures = 0;
+  private _cexHandlerErrors = 0;
+
   /**
    * Создаёт recorder поверх инъецированных bus/storage.
    *
@@ -289,6 +372,7 @@ export class ExternalMessageRecorder {
   constructor(deps: ExternalMessageRecorderDependencies) {
     this._bus = deps.bus;
     this._storage = deps.storage;
+    this._cex = deps.cex;
     this._logger = deps.logger.child({ component: 'ExternalMessageRecorder' });
   }
 
@@ -319,8 +403,19 @@ export class ExternalMessageRecorder {
       this._bus.subscribe('POLYMARKET_CRYPTO_BINANCE', (message) => this._onRtdsMessage(message)),
       this._bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK', (message) => this._onRtdsMessage(message)),
     );
+    if (this._cex) {
+      // CEX-политика: оконный storage стартует (выравнивание по границе),
+      // подписки — на ТОМ ЖЕ общем bus
+      this._cex.storage.start();
+      this._disposers.push(
+        this._cex.bus.subscribe('CEX_ORDERBOOK', (message) => this._onCexOrderbook(message)),
+        this._cex.bus.subscribe('CEX_TRADE', (message) => this._onCexTrade(message)),
+      );
+    }
     this._started = true;
-    this._logger.info('ExternalMessageRecorder subscribed to external message bus');
+    this._logger.info('ExternalMessageRecorder subscribed to external message bus', {
+      cexPolicy: this._cex !== undefined,
+    });
   }
 
   /**
@@ -553,6 +648,22 @@ export class ExternalMessageRecorder {
   }
 
   /**
+   * Возвращает снимок счётчиков CEX-политики.
+   *
+   * @returns Текущие значения {@link ExternalMessageRecorderCexStats}
+   *   (все нули, если политика не сконфигурирована)
+   */
+  public getCexStats(): ExternalMessageRecorderCexStats {
+    return {
+      cexMessagesRouted: this._cexMessagesRouted,
+      cexRecordsWritten: this._cexRecordsWritten,
+      cexRecordsDroppedInactive: this._cexRecordsDroppedInactive,
+      cexWriteFailures: this._cexWriteFailures,
+      cexHandlerErrors: this._cexHandlerErrors,
+    };
+  }
+
+  /**
    * Закрывает recorder: отписка от bus + закрытие storage.
    *
    * @returns Promise завершения shutdown
@@ -584,6 +695,9 @@ export class ExternalMessageRecorder {
       // Дожидаемся in-flight финализаций ДО закрытия storage (cleanup)
       await Promise.allSettled([...this._pendingFinalizations]);
       await this._storage.close();
+      // Оконный CEX-storage принадлежит recorder-у: закрывается тем же
+      // shutdown-ом (незавершённые окна удаляет его собственная policy)
+      await this._cex?.storage.close();
       this._logger.info('ExternalMessageRecorder closed');
     })();
     return this._closePromise;
@@ -709,6 +823,86 @@ export class ExternalMessageRecorder {
         this._logger.warn('Recording session exists but storage writer is sealed', {
           marketId: String(session.marketId),
         });
+        break;
+    }
+  }
+
+  /**
+   * Handler CEX-стаканов: typed payload → оконный storage.
+   *
+   * @param message - Typed сообщение `CEX_ORDERBOOK`
+   *
+   * @remarks
+   * Регистраций нет: routing-идентичность (`exchangeId`/`symbol`/
+   * `marketType`) несёт сам typed payload; тип потока задаёт партицию
+   * (`orderbook`). В storage уходит НЕИЗМЕНЁННЫЙ `message.payload`
+   * (payload-only инвариант N-002/PART 17). Никогда не бросает.
+   */
+  private _onCexOrderbook(message: CexOrderbookExternalMessage): void {
+    if (this._closed || !this._cex) {
+      return;
+    }
+    try {
+      this._cexMessagesRouted++;
+      const payload = message.payload;
+      this._countCexOutcome(
+        this._cex.storage.write(
+          payload.exchangeId,
+          payload.symbol,
+          payload.marketType,
+          'orderbook',
+          payload,
+        ),
+      );
+    } catch (error) {
+      this._cexHandlerErrors++;
+      this._logger.error('CEX orderbook recording handler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Handler CEX-сделок: typed payload → оконный storage (партиция `trades`).
+   *
+   * @param message - Typed сообщение `CEX_TRADE`
+   */
+  private _onCexTrade(message: CexTradeExternalMessage): void {
+    if (this._closed || !this._cex) {
+      return;
+    }
+    try {
+      this._cexMessagesRouted++;
+      const payload = message.payload;
+      this._countCexOutcome(
+        this._cex.storage.write(
+          payload.exchangeId,
+          payload.symbol,
+          payload.marketType,
+          'trades',
+          payload,
+        ),
+      );
+    } catch (error) {
+      this._cexHandlerErrors++;
+      this._logger.error('CEX trade recording handler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Учитывает исход оконной записи в счётчиках CEX-политики. */
+  private _countCexOutcome(outcome: 'recorded' | 'inactive' | 'failed'): void {
+    switch (outcome) {
+      case 'recorded':
+        this._cexRecordsWritten++;
+        break;
+      case 'inactive':
+        this._cexRecordsDroppedInactive++;
+        break;
+      case 'failed':
+        // Ошибка уже залогирована storage
+        this._cexWriteFailures++;
         break;
     }
   }

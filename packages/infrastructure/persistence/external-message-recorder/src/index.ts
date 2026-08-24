@@ -19,8 +19,12 @@ export { ExternalMessageRecorder } from './ExternalMessageRecorder.js';
 export type {
   ExternalMessageRecorderDependencies,
   ExternalMessageRecorderStats,
+  ExternalMessageRecorderCexDependencies,
+  ExternalMessageRecorderCexStats,
   PolymarketRecordingBusSubscription,
   PolymarketRecordingRegistration,
   PolymarketRecordingStorage,
   PolymarketRtdsFeedKey,
+  CexRecordingBusSubscription,
+  CexRecordingStorage,
 } from './ExternalMessageRecorder.js';

@@ -12,6 +12,12 @@
 
 export { DataRecorder } from './DataRecorder.js';
 export type { RecordOutcome, DelayedActivationFailureCallback } from './DataRecorder.js';
+export { CexWindowRecorder } from './CexWindowRecorder.js';
+export type {
+  CexStreamKind,
+  CexWindowRecordOutcome,
+  CexWindowRecorderConfig,
+} from './CexWindowRecorder.js';
 export { ArchivedMarketMetaRewriter } from './ArchivedMarketMetaRewriter.js';
 export { DecisionJournalRecorder } from './DecisionJournalRecorder.js';
 export type { DecisionJournalConfig } from './DecisionJournalRecorder.js';

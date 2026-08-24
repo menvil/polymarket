@@ -43,6 +43,7 @@
   "author": "Ivan Moroz",
   "license": "UNLICENSED",
   "dependencies": {
+    "@polymarket/cex-v2": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/ids": "0.1.0",

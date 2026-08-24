@@ -12,6 +12,7 @@ const config: Config = {
     '^@polymarket/external-message-recorder$': '<rootDir>/src/index.ts',
     '^@polymarket/data-collection$': '<rootDir>/../data-collection/src/index.ts',
     '^@polymarket/polymarket-v2$': '<rootDir>/../../polymarket-v2/src/index.ts',
+    '^@polymarket/cex-v2$': '<rootDir>/../../cex-v2/src/index.ts',
     '^@polymarket/external-message-bus$': '<rootDir>/../../external-message-bus/src/index.ts',
     '^@polymarket/external-messages$': '<rootDir>/../../external-messages/src/index.ts',
     // Foundation/Domain/Application транзитивные зависимости. Пакет живёт в
