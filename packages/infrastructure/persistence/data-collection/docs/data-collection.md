@@ -10,7 +10,7 @@
 | Экспорт | Назначение |
 |---|---|
 | `DataRecorder` | `IMarketDataRecorder`: `registerMarket`/`recordEvent`/`finalizeMarket`/`close` + V2 `recordMarketEvent` |
-| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'failed'` (failed = сериализация ИЛИ отказ активации/stream) |
+| `RecordOutcome` | Исход `recordMarketEvent`: `'recorded' \| 'inactive' \| 'unregistered' \| 'sealed' \| 'failed'` (sealed = датасет заморожен `sealMarket`-ом; failed = сериализация ИЛИ отказ активации/stream) |
 | `DecisionJournalRecorder` | `IDecisionJournal`: `startSession`/`recordDecision`/`recordFill`/`recordResolution`/`endSession`/`close` |
 | `ArchivedMarketMetaRewriter` | Переписывает первую (meta) NDJSON-строку уже архивного файла |
 | `NDJSONFormatter` | `formatRecord(obj)` → `'{"..."}\n'` |
@@ -97,12 +97,41 @@ Reader/бектест обязан по первой строке выбрать
 ### `finalizeMarket(marketId, reason)`: две ветки
 
 - `'EXPIRED'` — завершённый dataset: flush буфера → корректное закрытие
-  stream → gzip-архив `.jsonl.gz`.
+  stream → gzip-архив `.jsonl.gz`. Контракт честный: resolve означает, что
+  ПОЛНЫЙ завершённый архив реально создан; отказ сжатия логируется как
+  error и ПРОБРАСЫВАЕТСЯ (false success запрещён — вызывающий finalizer не
+  снимает FINALIZING-сессию и не считает архив). Датасет с потерянными
+  строками (терминальный write-отказ writer-а, unflushed строки после seal)
+  тоже НЕ архивируется — reject: обрубок не притворяется полной сессией.
+  Retry сжатия не выполняется; оставшийся `.jsonl` заберёт стандартный
+  cleanup незавершённых файлов.
 - `'SHUTDOWN'` — незавершённый dataset: буфер отбрасывается, stream
   разрушается (с ожиданием освобождения FD), файл УДАЛЯЕТСЯ — архив не
   создаётся. Семантика та же, что у cleanup при `close()`: `.jsonl.gz` =
   полная сессия рынка, `.jsonl` = incomplete; превращать обрубок в архив
   нельзя — бектест принял бы его за полную сессию.
+
+### SEALED writer — заморозка перед архивом (N-004)
+
+`sealMarket(marketId)` переводит ACTIVE writer в SEALED:
+
+1. новые записи запрещаются синхронно (`recordMarketEvent` → `'sealed'`,
+   legacy `recordEvent` игнорирует; token-index writer-а снят);
+2. буфер сброшен на диск, append-stream закрыт — payload-строки заморожены;
+3. `.jsonl` и регистрация writer-а СОХРАНЯЮТСЯ: `updateMarketMeta()`
+   переписывает первую строку (возвращает наблюдаемый `boolean`),
+   `finalizeMarket(EXPIRED)` архивирует замороженный датасет в `.jsonl.gz`
+   без потерь; `finalizeMarket(SHUTDOWN)` — прежняя семантика (файл
+   удаляется).
+
+Идемпотентен; gzip на seal НЕ выполняется. «Writable header» ≠ «приём
+payload-записей» — это разные разрешения.
+
+Отказ flush при seal НЕ теряет данные молча: неподтверждённые строки
+возвращаются в начало буфера, writer помечается `failed`, а
+`finalizeMarket(EXPIRED)` затем отклоняет архив (reject) — неполный датасет
+никогда не публикуется как завершённый `.jsonl.gz`. Freeze при этом всё
+равно наступает (cutoff обязателен), файл заберёт cleanup незавершённых.
 
 ### Порядок строк — arrival order
 

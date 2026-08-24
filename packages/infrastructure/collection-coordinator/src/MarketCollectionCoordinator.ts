@@ -109,7 +109,10 @@ export type CollectionSource = Pick<
  * Регистрация recording-сессии + её снятие. `close()` recorder-а принадлежит
  * composition root (порядок shutdown контура — N-002).
  */
-export type CollectionRecorder = Pick<ExternalMessageRecorder, 'registerMarket' | 'finalizeMarket'>;
+export type CollectionRecorder = Pick<
+  ExternalMessageRecorder,
+  'registerMarket' | 'sealMarket' | 'finalizeMarket'
+>;
 
 /**
  * Зависимости {@link MarketCollectionCoordinator}.
@@ -169,7 +172,7 @@ export type CollectionOpenOutcome = 'opened' | 'skipped' | 'failed';
 export interface CollectionSessionSnapshot {
   /** Canonical id рынка сессии (== Polymarket conditionId). */
   readonly marketId: MarketId;
-  readonly state: 'OPENING' | 'ACTIVE';
+  readonly state: 'OPENING' | 'ACTIVE' | 'FINALIZING';
   readonly question?: string;
   /** Истечение рынка (canonical Timestamp, из выбранного рынка). */
   readonly expiresAt?: Timestamp;
@@ -195,15 +198,36 @@ export interface CollectionRtdsFeedStat {
 export interface CollectionCoordinatorStats {
   readonly activeSessions: number;
   readonly openingSessions: number;
+  /** Сессии post-expiry enrichment-а (слот capacity не занимают). */
+  readonly finalizingSessions: number;
   /** Shared RTDS-фиды с ref-count (typed, без строковых `topic:symbol` ключей). */
   readonly rtdsFeeds: readonly CollectionRtdsFeedStat[];
+}
+
+/**
+ * Immutable-снимок сессии, перешедшей в FINALIZING (N-004 PART 10).
+ *
+ * @remarks
+ * Единственный контракт между Coordinator-ом и Finalizer-ом: finalizer НЕ
+ * зависит от mutable private-состояния координатора. `selected` — уже
+ * immutable результат Discovery V2 (identity, outcomes, event, crypto,
+ * initial Gamma state) — его достаточно для fetchMarket/fetchEvent,
+ * пересборки header-а и логирования; 30 отдельных копий полей не создаётся.
+ */
+export interface FinalizingMarketSession {
+  /** Canonical id рынка (== Polymarket conditionId). */
+  readonly marketId: MarketId;
+  /** Момент начала записи (== открытие сессии, PART 9). */
+  readonly recordingStartedAt: Timestamp;
+  /** Полный immutable выбор рынка (identity/outcomes/timing/crypto/Gamma). */
+  readonly selected: SelectedPolymarketMarket;
 }
 
 /**
  * Runtime-состояние одной сессии (минимальное, PART 15).
  */
 interface CollectionSession {
-  state: 'OPENING' | 'ACTIVE';
+  state: 'OPENING' | 'ACTIVE' | 'FINALIZING';
   /** Canonical id рынка (== conditionId); ключ maps — `String(marketId)`. */
   readonly marketId: MarketId;
   /** Заполняется на commit ACTIVE. */
@@ -364,7 +388,7 @@ export class MarketCollectionCoordinator {
 
     let opened = 0;
     for (const candidate of candidates) {
-      if (this._closed || this._sessions.size >= this._maxMarkets) {
+      if (this._closed || this._occupiedSlots() >= this._maxMarkets) {
         break;
       }
       const outcome = await this.openMarket(candidate);
@@ -453,8 +477,8 @@ export class MarketCollectionCoordinator {
       });
       return 'skipped';
     }
-    if (this._sessions.size >= this._maxMarkets) {
-      return 'skipped'; // capacity: ACTIVE + OPENING
+    if (this._occupiedSlots() >= this._maxMarkets) {
+      return 'skipped'; // capacity: ACTIVE + OPENING (FINALIZING слот не занимает)
     }
 
     let settle!: () => void;
@@ -571,7 +595,7 @@ export class MarketCollectionCoordinator {
     const startsAt = startsAtResult.value;
     // Header обязан влезть в фиксированный meta-блок storage; отказ сборки —
     // явный отказ открытия ДО каких-либо подписок (retry возможен).
-    const header = buildCollectionHeader(selected, startsAt);
+    const header = buildCollectionHeader({ selected, recordingStartsAt: startsAt });
     if (header === undefined) {
       this._sessions.delete(key);
       this._logger.error('Cannot build market header within storage meta budget, open aborted', {
@@ -664,6 +688,109 @@ export class MarketCollectionCoordinator {
   }
 
   /**
+   * Слоты, занятые под capacity: OPENING + ACTIVE (N-004 PART 3).
+   *
+   * @returns Количество сессий, занимающих active-слот
+   *
+   * @remarks
+   * FINALIZING слот НЕ занимает (post-expiry enrichment не мешает открытию
+   * новых рынков — parity с legacy, освобождавшим слот сразу при expiry),
+   * но остаётся в `_sessions` — повторное открытие того же рынка блокирует
+   * существующий guard `sessions.has(key)`.
+   */
+  private _occupiedSlots(): number {
+    let occupied = 0;
+    for (const session of this._sessions.values()) {
+      if (session.state !== 'FINALIZING') {
+        occupied++;
+      }
+    }
+    return occupied;
+  }
+
+  /**
+   * Expiry-переход: ACTIVE сессия → FINALIZING (N-004 PART 8/9).
+   *
+   * @param marketId - ID рынка ACTIVE-сессии
+   * @returns Immutable-снимок для finalizer-а либо `undefined`, если сессии
+   *   нет или она не ACTIVE (уже FINALIZING/OPENING/удалена) — переход
+   *   выполняется максимум один раз на сессию
+   *
+   * @remarks
+   * Порядок создаёт чёткий cutoff realtime-данных:
+   *
+   * 1. identity-safe пометка FINALIZING ДО первого await (двойной переход
+   *    и конкурентный duplicate невозможны); слот capacity освобождён;
+   * 2. `recorder.sealMarket` — routing снят, payload-датасет заморожен
+   *    (буфер flushed, append-stream закрыт), header остаётся writable;
+   * 3. закрытие market-подписки Source;
+   * 4. освобождение RTDS-refs (общие фиды других рынков живут).
+   *
+   * `finalizeMarket(EXPIRED)` здесь НЕ вызывается — архивом владеет
+   * finalizer после enrichment/timeout. Ошибки teardown-шагов логируются и
+   * не отменяют переход: cutoff должен состояться в любом случае.
+   */
+  public async beginFinalization(marketId: MarketId): Promise<FinalizingMarketSession | undefined> {
+    const key = String(marketId);
+    const session = this._sessions.get(key);
+    if (session === undefined || session.state !== 'ACTIVE') {
+      this._logger.debug('beginFinalization: no ACTIVE session for market', {
+        marketId: key,
+        state: session?.state,
+      });
+      return undefined;
+    }
+    // Синхронный переход: с этого тика сессия не занимает слот и не может
+    // быть закрыта как SHUTDOWN существующим closeSession (guard state)
+    session.state = 'FINALIZING';
+    const selected = session.selected!;
+    const recordingStartedAt = session.openedAt!;
+
+    const sealed = await this._recorder.sealMarket(session.marketId);
+    if (!sealed) {
+      this._logger.warn('Recorder seal reported no writer during expiry transition', {
+        marketId: key,
+      });
+    }
+    if (session.marketSubscription !== undefined) {
+      await this._closeMarketSubscription(session.marketSubscription, key);
+      session.marketSubscription = undefined;
+    }
+    await this._releaseRtdsFeeds(key, session.rtdsFeedKeys);
+    session.rtdsFeedKeys = [];
+
+    this._logger.info('Collection session entered finalization', {
+      marketId: key,
+      question: selected.question,
+      expiresAt: new Date(selected.expiresAt.toNumber()).toISOString(),
+    });
+    return { marketId: session.marketId, recordingStartedAt, selected };
+  }
+
+  /**
+   * Завершает FINALIZING-сессию после успешного EXPIRED-архива (PART 34/36).
+   *
+   * @param marketId - ID рынка
+   * @returns `true` — сессия была FINALIZING и удалена; `false` — no-op
+   *   (identity-guard: ACTIVE/OPENING replacement или отсутствие сессии
+   *   не затрагиваются)
+   */
+  public completeFinalization(marketId: MarketId): boolean {
+    const key = String(marketId);
+    const session = this._sessions.get(key);
+    if (session === undefined || session.state !== 'FINALIZING') {
+      this._logger.debug('completeFinalization: no FINALIZING session for market', {
+        marketId: key,
+        state: session?.state,
+      });
+      return false;
+    }
+    this._sessions.delete(key);
+    this._logger.info('Collection session finalization completed', { marketId: key });
+    return true;
+  }
+
+  /**
    * Явное закрытие одной сессии (control-plane request: rollback внешнего
    * уровня, app shutdown, будущий N-004 finalizer).
    *
@@ -749,6 +876,20 @@ export class MarketCollectionCoordinator {
         await this.closeSession(session.marketId, 'SHUTDOWN');
       }
 
+      // FINALIZING-сессии архивирует MarketFinalizer.close() ДО закрытия
+      // координатора (порядок shutdown N-004). Оставшиеся здесь — признак
+      // нарушенного порядка: realtime у них уже снят, файл заберёт
+      // cleanup-policy storage при recorder.close(); ждать нечего.
+      for (const session of [...this._sessions.values()]) {
+        if (session.state === 'FINALIZING') {
+          this._sessions.delete(String(session.marketId));
+          this._logger.warn(
+            'Finalizing session dropped at coordinator close (finalizer should archive first)',
+            { marketId: String(session.marketId) },
+          );
+        }
+      }
+
       // Инвариант: после teardown всех сессий shared-фиды освобождены
       if (this._rtdsFeeds.size > 0) {
         this._logger.warn('RTDS feeds leaked past session teardown, force-closing', {
@@ -778,14 +919,22 @@ export class MarketCollectionCoordinator {
     }));
     let active = 0;
     let opening = 0;
+    let finalizing = 0;
     for (const session of this._sessions.values()) {
       if (session.state === 'ACTIVE') {
         active++;
-      } else {
+      } else if (session.state === 'OPENING') {
         opening++;
+      } else {
+        finalizing++;
       }
     }
-    return { activeSessions: active, openingSessions: opening, rtdsFeeds };
+    return {
+      activeSessions: active,
+      openingSessions: opening,
+      finalizingSessions: finalizing,
+      rtdsFeeds,
+    };
   }
 
   /**

@@ -543,3 +543,86 @@ describe('lifecycle', () => {
     expect(logger.byLevel('warn').some((e) => e.message.includes('recorder is closed'))).toBe(true);
   });
 });
+
+// ── Seal (N-004 PART 7/50/52) ────────────────────────────────────────────────
+
+describe('sealMarket', () => {
+  it('снимает market/RTDS routing немедленно, storage замораживается, header/finalize доступны', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+    await publishMarket(createBookEvent());
+    expect(storage.writes).toHaveLength(1);
+
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(true);
+    expect(storage.sealed).toEqual([MARKET_CONDITION_ID]);
+
+    // Новые market/RTDS наблюдения в payload НЕ попадают
+    await publishMarket(createBookEvent());
+    await publishRtds(createBinanceEvent());
+    expect(storage.writes).toHaveLength(1);
+    expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+    expect(recorder.getStats().unroutedRtdsMessages).toBe(1);
+
+    // Header остаётся writable, финализация EXPIRED доступна
+    expect(
+      await recorder.updateMarketMeta(unsafeMarketId(MARKET_CONDITION_ID), { enriched: true }),
+    ).toBe(true);
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+    expect(storage.finalized).toEqual([
+      { marketId: unsafeMarketId(MARKET_CONDITION_ID), reason: 'EXPIRED' },
+    ]);
+  });
+
+  it('не трогает общий RTDS-фид другого активного рынка (PART 52)', async () => {
+    recorder.start();
+    const shared = [{ topic: 'prices.crypto.binance' as const, symbol: 'btcusdt' }];
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID), rtdsFeeds: shared });
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID_B), rtdsFeeds: shared });
+
+    await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID));
+    await publishRtds(createBinanceEvent());
+
+    // Наблюдение записано ТОЛЬКО в файл второго (активного) рынка
+    expect(storage.writes).toHaveLength(1);
+    expect(String(storage.writes[0]!.marketId)).toBe(MARKET_CONDITION_ID_B);
+  });
+
+  it('после close: seal и updateMarketMeta отклоняются с false', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    await recorder.close();
+
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(false);
+    expect(
+      await recorder.updateMarketMeta(unsafeMarketId(MARKET_CONDITION_ID), { late: true }),
+    ).toBe(false);
+    expect(storage.sealed).toEqual([]);
+  });
+
+  it('пробрасывает наблюдаемый исход sealMarket из storage (writer не найден → false)', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    storage.sealOutcome = false;
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(false);
+    storage.sealOutcome = true;
+    expect(await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID))).toBe(true);
+  });
+
+  it('пробрасывает наблюдаемый исход updateMarketMeta из storage (PART 26)', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    storage.metaUpdateOutcome = false;
+    expect(
+      await recorder.updateMarketMeta(unsafeMarketId(MARKET_CONDITION_ID), { tooBig: true }),
+    ).toBe(false);
+    storage.metaUpdateOutcome = true;
+    expect(
+      await recorder.updateMarketMeta(unsafeMarketId(MARKET_CONDITION_ID), { ok: true }),
+    ).toBe(true);
+  });
+});

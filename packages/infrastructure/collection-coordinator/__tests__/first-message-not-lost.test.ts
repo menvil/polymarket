@@ -39,6 +39,7 @@ class MemoryStorage {
   public readonly registered: MarketMeta[] = [];
   public readonly writes: Array<{ marketId: string; payload: unknown }> = [];
   public readonly finalized: string[] = [];
+  public readonly sealed: string[] = [];
 
   public registerMarket(meta: MarketMeta): boolean {
     this.registered.push(meta);
@@ -50,8 +51,13 @@ class MemoryStorage {
     return 'recorded';
   }
 
-  public async updateMarketMeta(): Promise<void> {
-    // no-op
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    this.sealed.push(String(marketId));
+    return true;
+  }
+
+  public async updateMarketMeta(): Promise<boolean> {
+    return true;
   }
 
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
@@ -196,6 +202,68 @@ describe('первое сообщение не потеряно (PART 36)', () =
       expect(secondWrites.map((write) => write.marketId)).toEqual([CID_B]);
     } finally {
       // Teardown гарантирован и при упавших ассертах — jest не зависает
+      await coordinator.close();
+      await recorder.close();
+      await bus.close();
+    }
+  });
+});
+
+describe('записи после expiry-seal (N-004 PART 50)', () => {
+  it('после beginFinalization payload рынка заморожен, сосед на общем фиде продолжает запись', async () => {
+    const logger = new CapturingLogger();
+    const bus = new ExternalMessageBus<PolymarketExternalMessage>();
+    const generator = new MessageMetadataGenerator({ clock: new LiveClock() });
+    const storage = new MemoryStorage();
+    const recorder = new ExternalMessageRecorder({ bus, storage, logger });
+    recorder.start();
+
+    const discovery = new FakeDiscovery();
+    const source = new FakeCollectionSource();
+    const coordinator = new MarketCollectionCoordinator(
+      { discovery, source, recorder, clock: new FixedClock(), logger },
+      { maxMarkets: 2 },
+    );
+    try {
+      const candidateA = discovery.addMarket({ conditionId: CID_A });
+      await coordinator.openMarket(candidateA);
+      await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+
+      // До expiry: рыночное событие A записывается
+      const before = createBookEvent(CID_A);
+      await bus.publish({
+        type: 'POLYMARKET_MARKET',
+        payload: before,
+        metadata: generator.nextRoot(),
+      });
+      await flushAsync();
+      expect(storage.writes.filter((w) => w.payload === before)).toHaveLength(1);
+
+      const snapshot = await coordinator.beginFinalization(candidateA.marketId);
+      expect(snapshot).toBeDefined();
+      expect(storage.sealed).toEqual([CID_A]);
+
+      // После seal: событие того же рынка в payload НЕ попадает
+      const after = createBookEvent(CID_A);
+      await bus.publish({
+        type: 'POLYMARKET_MARKET',
+        payload: after,
+        metadata: generator.nextRoot(),
+      });
+      // RTDS-наблюдение общего фида → ТОЛЬКО файл активного B
+      const rtds = createBinanceEvent('btcusdt');
+      await bus.publish({
+        type: 'POLYMARKET_CRYPTO_BINANCE',
+        payload: rtds,
+        metadata: generator.nextRoot(),
+      });
+      await flushAsync();
+
+      expect(storage.writes.filter((w) => w.payload === after)).toHaveLength(0);
+      const rtdsWrites = storage.writes.filter((w) => w.payload === rtds);
+      expect(rtdsWrites.map((w) => w.marketId)).toEqual([CID_B]);
+      expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+    } finally {
       await coordinator.close();
       await recorder.close();
       await bus.close();

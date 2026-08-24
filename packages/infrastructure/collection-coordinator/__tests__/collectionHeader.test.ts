@@ -34,7 +34,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
   it('компактный рынок: полный header с gammaMarket и gammaEvent, без truncated', () => {
     const selected = createSelected({ gammaEventPadding: 64 });
 
-    const header = buildCollectionHeader(selected, START);
+    const header = buildCollectionHeader({ selected: selected, recordingStartsAt: START });
 
     expect(header).toBeDefined();
     expect(header!['truncated']).toBeUndefined();
@@ -47,7 +47,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
   it('крупный gammaEvent → truncated [gammaEvent], gammaMarket сохранён', () => {
     const selected = createSelected({ gammaEventPadding: 16 * 1024 });
 
-    const header = buildCollectionHeader(selected, START);
+    const header = buildCollectionHeader({ selected: selected, recordingStartsAt: START });
 
     expect(header).toBeDefined();
     expect(header!['truncated']).toEqual(['gammaEvent']);
@@ -61,7 +61,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
       gammaMarketPadding: 16 * 1024,
     });
 
-    const header = buildCollectionHeader(selected, START);
+    const header = buildCollectionHeader({ selected: selected, recordingStartsAt: START });
 
     expect(header).toBeDefined();
     expect(header!['truncated']).toEqual(['gammaEvent', 'gammaMarket']);
@@ -79,12 +79,12 @@ describe('buildCollectionHeader: лестница усечения по бюдж
     // но полный конверт (внешние ts/marketId/question/tokenIds) — ВЫШЕ
     // бюджета. Проверка только по `m` этот случай пропустила бы.
     const unpadded = createSelected({});
-    const unpaddedHeader = buildCollectionHeader(unpadded, START)!;
+    const unpaddedHeader = buildCollectionHeader({ selected: unpadded, recordingStartsAt: START })!;
     const unpaddedBytes = Buffer.byteLength(JSON.stringify(unpaddedHeader), 'utf8');
     const padding = BLOCK_LIMIT - 64 - unpaddedBytes;
     const selected = createSelected({ gammaMarketPadding: padding });
 
-    const header = buildCollectionHeader(selected, START);
+    const header = buildCollectionHeader({ selected: selected, recordingStartsAt: START });
 
     expect(header).toBeDefined();
     expect(header!['truncated']).toEqual(['gammaEvent', 'gammaMarket']);
@@ -101,7 +101,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
   it('даже усечённое ядро не помещается (аномальный question) → undefined', () => {
     const selected = createSelected({ question: `Bitcoin ${'q'.repeat(17_000)}` });
 
-    expect(buildCollectionHeader(selected, START)).toBeUndefined();
+    expect(buildCollectionHeader({ selected: selected, recordingStartsAt: START })).toBeUndefined();
   });
 
   it('итоговый header всегда проходит проверку размера конверта', () => {
@@ -112,7 +112,7 @@ describe('buildCollectionHeader: лестница усечения по бюдж
       { gammaMarketPadding: 15 * 1024 },
     ]) {
       const selected = createSelected(options);
-      const header = buildCollectionHeader(selected, START);
+      const header = buildCollectionHeader({ selected: selected, recordingStartsAt: START });
       expect(header).toBeDefined();
       expect(envelopeBytes(header!, selected.question)).toBeLessThanOrEqual(16 * 1024 - 1 - 256);
     }

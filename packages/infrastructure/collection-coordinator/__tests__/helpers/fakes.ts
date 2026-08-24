@@ -165,11 +165,25 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     gammaEventPadding,
   } = options;
 
+  // Форма покрывает поля, которые читают header-билдер И finalizer
+  // (outcomes/resolution/state) — initial Gamma state фикстурного рынка
   const gammaMarket = {
     id: '516789',
     conditionId,
     question,
-    state: { active: true, closed: false },
+    state: { active: true, closed: false, closedTime: null },
+    outcomes: {
+      yes: { label: 'Up', tokenId: tokenIds[0] ?? null, positionId: null, price: '0.5' },
+      no: { label: 'Down', tokenId: tokenIds[1] ?? null, positionId: null, price: '0.5' },
+    },
+    resolution: {
+      questionId: null,
+      negRiskRequestId: null,
+      umaResolutionStatus: null,
+      source: null,
+      resolvedBy: null,
+    },
+    events: [{ id: '99001', slug: 'fixture-event', title: 'Fixture Event' }],
     ...(gammaMarketPadding !== undefined ? { padding: 'x'.repeat(gammaMarketPadding) } : {}),
   } as unknown as PolymarketGammaMarket;
 
@@ -409,8 +423,12 @@ export class FakeCollectionRecorder implements CollectionRecorder {
   public readonly registrations: PolymarketRecordingRegistration[] = [];
   /** Финализации `key:reason`. */
   public readonly finalizations: string[] = [];
+  /** Заморозки датасетов в порядке вызовов. */
+  public readonly seals: string[] = [];
   /** Возвращаемое значение registerMarket. */
   public registerResult = true;
+  /** Возвращаемое значение sealMarket. */
+  public sealResult = true;
   /** Если задано — finalizeMarket бросает. */
   public finalizeError: unknown;
 
@@ -420,6 +438,12 @@ export class FakeCollectionRecorder implements CollectionRecorder {
     this.registrations.push(registration);
     this._log?.push(`recorder.registerMarket:${String(registration.marketMeta.marketId)}`);
     return this.registerResult;
+  };
+
+  public readonly sealMarket = async (marketId: MarketId): Promise<boolean> => {
+    this.seals.push(String(marketId));
+    this._log?.push(`recorder.sealMarket:${String(marketId)}`);
+    return this.sealResult;
   };
 
   public readonly finalizeMarket = async (
