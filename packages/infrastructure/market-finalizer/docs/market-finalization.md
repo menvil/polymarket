@@ -36,7 +36,7 @@ MarketFinalizer.runOnce()          ← cadence у composition root
  │     ├── close market subscription
  │     └── release RTDS refs   (общие фиды соседей живут)
  │
- ├── pending: одна Gamma-попытка на проход (retry 30с, max 15 мин)
+ ├── pending: одна Gamma-попытка на проход (retry 30с, max 30 мин)
  │     ├── fetchMarket(gammaMarketId) → state/resolution/outcome prices
  │     ├── fetchEvent(event.id) → metadata (priceToBeat/finalPrice)
  │     ├── merge best-known (полученное однажды не теряется)

@@ -26,8 +26,9 @@
  *   присутствуют в `Event.metadata`;
  * - non-crypto: best-effort свежий Gamma-снапшот и НЕМЕДЛЕННЫЙ EXPIRED
  *   (без многочасовых resolution-watcher-ов);
- * - таймаут `enrichmentMaxWaitMs` (15 мин parity) архивирует best-known
- *   данные с явным `finalization.status = 'timeout'`.
+ * - таймаут `enrichmentMaxWaitMs` (30 мин по умолчанию; legacy ждал 15,
+ *   но live-замер показал публикацию finalPrice и после 15-й минуты)
+ *   архивирует best-known данные с явным `finalization.status = 'timeout'`.
  *
  * ### Retry-семантика (PART 28/29)
  *
@@ -117,14 +118,23 @@ export interface MarketFinalizerConfig {
   /**
    * Максимальное ожидание полного enrichment-а; по истечении — архив
    * best-known данных со статусом `'timeout'`.
-   * @defaultValue 900_000 (15 минут, parity с legacy ENRICHMENT_MAX_WAIT_MS)
+   *
+   * @defaultValue 1_800_000 (30 минут)
+   *
+   * @remarks
+   * Legacy ждал 15 минут; live-замер 2026-08-24 показал, что публикация
+   * `finalPrice` иногда выходит за 15 мин после endDate (рынок возрастом
+   * 14.8 мин — resolved, но без finalPrice; в 19.8 мин — присутствует),
+   * поэтому дефолт поднят до 30 мин. Ожидание дёшево: FINALIZING не
+   * занимает слот, датасет заморожен — стоимость равна одному
+   * Gamma-poll-у раз в `enrichmentRetryMs`.
    */
   readonly enrichmentMaxWaitMs?: number;
 }
 
 /** Дефолты конфигурации (см. {@link MarketFinalizerConfig}). */
 const DEFAULT_ENRICHMENT_RETRY_MS = 30_000;
-const DEFAULT_ENRICHMENT_MAX_WAIT_MS = 15 * 60_000;
+const DEFAULT_ENRICHMENT_MAX_WAIT_MS = 30 * 60_000;
 
 /**
  * Снимок runtime-состояния finalizer-а (диагностика/тесты/смоук).

@@ -16,7 +16,7 @@ FINALIZING (beginFinalization: seal + teardown realtime; слот освобож
  │
  ├── Gamma retry (fetchMarket / fetchEvent, cadence 30с)
  ├── update LINE 1 (partial-данные тоже пишутся, status='pending')
- └── complete | timeout (15 мин)
+ └── complete | timeout (30 мин по умолчанию)
         ↓
 финальный header (status='complete' | 'timeout')
         ↓
@@ -29,8 +29,12 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
   `finalPrice` присутствуют в `Event.metadata` (parity с legacy);
 - **non-crypto**: best-effort свежий Gamma-снапшот и НЕМЕДЛЕННЫЙ EXPIRED —
   без длительных resolution-watcher-ов; отказ Gamma его не задерживает;
-- **timeout** (`enrichmentMaxWaitMs`, 15 мин parity): архив best-known
+- **timeout** (`enrichmentMaxWaitMs`, 30 мин по умолчанию): архив best-known
   данных с явным `finalization.status = 'timeout'` — вечных `.jsonl` нет.
+  Legacy ждал 15 мин; live-замер 2026-08-24 показал публикацию `finalPrice`
+  и после 15-й минуты (рынок 14.8 мин — resolved без finalPrice, 19.8 мин —
+  полный), поэтому дефолт поднят: ожидание дёшево (слот свободен, датасет
+  заморожен — один Gamma-poll в 30 с).
 
 ## 3. runOnce, а не таймеры (PART 13)
 
