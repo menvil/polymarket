@@ -59,7 +59,9 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { MarketId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import type {
+  CryptoPricesTopic,
   PolymarketDiscoveredMarket,
   PolymarketMarketDiscovery,
   PolymarketOpenSubscription,
@@ -169,8 +171,22 @@ export interface CollectionSessionSnapshot {
   readonly marketId: MarketId;
   readonly state: 'OPENING' | 'ACTIVE';
   readonly question?: string;
-  readonly expiresAtMs?: number;
-  readonly openedAtMs?: number;
+  /** Истечение рынка (canonical Timestamp, из выбранного рынка). */
+  readonly expiresAt?: Timestamp;
+  /** Момент открытия сессии (== recording startsAt, PART 9). */
+  readonly openedAt?: Timestamp;
+}
+
+/**
+ * Снимок одного shared RTDS-фида (диагностика/тесты/смоук).
+ */
+export interface CollectionRtdsFeedStat {
+  /** Vendor topic фида (typed union SDK). */
+  readonly topic: CryptoPricesTopic;
+  /** Точный символ фида в нативном формате источника. */
+  readonly symbol: string;
+  /** Количество рынков, держащих ref на фид. */
+  readonly refCount: number;
 }
 
 /**
@@ -179,8 +195,8 @@ export interface CollectionSessionSnapshot {
 export interface CollectionCoordinatorStats {
   readonly activeSessions: number;
   readonly openingSessions: number;
-  /** `topic:symbol` → количество рынков, держащих ref на фид. */
-  readonly rtdsFeedRefCounts: Readonly<Record<string, number>>;
+  /** Shared RTDS-фиды с ref-count (typed, без строковых `topic:symbol` ключей). */
+  readonly rtdsFeeds: readonly CollectionRtdsFeedStat[];
 }
 
 /**
@@ -195,7 +211,8 @@ interface CollectionSession {
   marketSubscription?: PolymarketOpenSubscription;
   /** Ключи приобретённых RTDS-фидов (для release). */
   rtdsFeedKeys: readonly string[];
-  openedAtMs?: number;
+  /** Момент открытия сессии (== recording startsAt). */
+  openedAt?: Timestamp;
   /** Завершение open-транзакции (для close()/closeSession()). */
   readonly settled: Promise<void>;
   /** Резолвер settled (вызывается транзакцией на любом исходе). */
@@ -633,7 +650,7 @@ export class MarketCollectionCoordinator {
     session.selected = selected;
     session.marketSubscription = marketSubscription;
     session.rtdsFeedKeys = rtdsFeedKeys;
-    session.openedAtMs = nowMs;
+    session.openedAt = startsAt; // тот же момент, что recording startsAt (PART 9)
 
     this._logger.info('Collection session opened', {
       marketId: key,
@@ -754,10 +771,11 @@ export class MarketCollectionCoordinator {
    * @returns Текущие значения {@link CollectionCoordinatorStats}
    */
   public getStats(): CollectionCoordinatorStats {
-    const rtdsFeedRefCounts: Record<string, number> = {};
-    for (const [key, entry] of this._rtdsFeeds) {
-      rtdsFeedRefCounts[key] = entry.refs.size;
-    }
+    const rtdsFeeds: CollectionRtdsFeedStat[] = [...this._rtdsFeeds.values()].map((entry) => ({
+      topic: entry.feed.topic,
+      symbol: entry.feed.symbol,
+      refCount: entry.refs.size,
+    }));
     let active = 0;
     let opening = 0;
     for (const session of this._sessions.values()) {
@@ -767,7 +785,7 @@ export class MarketCollectionCoordinator {
         opening++;
       }
     }
-    return { activeSessions: active, openingSessions: opening, rtdsFeedRefCounts };
+    return { activeSessions: active, openingSessions: opening, rtdsFeeds };
   }
 
   /**
@@ -782,10 +800,10 @@ export class MarketCollectionCoordinator {
       ...(session.selected !== undefined
         ? {
             question: session.selected.question,
-            expiresAtMs: session.selected.expiresAt.toNumber(),
+            expiresAt: session.selected.expiresAt,
           }
         : {}),
-      ...(session.openedAtMs !== undefined ? { openedAtMs: session.openedAtMs } : {}),
+      ...(session.openedAt !== undefined ? { openedAt: session.openedAt } : {}),
     }));
   }
 

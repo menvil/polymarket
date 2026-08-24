@@ -136,7 +136,10 @@ Event.metadata            → eventMetadata (priceToBeat/finalPrice — N-004)
 ## RTDS-маппинг (`derivePolymarketCryptoMeta`)
 
 Крипто-рынок распознаётся ТОЛЬКО по `resolution.source` normalized Market;
-эвристики формата символа нет — источник различает vendor topic:
+эвристики формата символа нет — источник различает vendor topic. Помимо
+vendor-символов, на той же границе выводится canonical базовый актив
+`asset: CryptoAssetId` (`btc`, `eth`, ...) — рабочая identity
+`cross-market`/`market-state` и прямой вход для enrichment N-004:
 
 | `resolution.source` | source | Фиды (vendor topic SDK + символ) |
 | --- | --- | --- |

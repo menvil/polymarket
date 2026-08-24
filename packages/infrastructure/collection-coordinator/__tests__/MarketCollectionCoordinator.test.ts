@@ -82,10 +82,10 @@ describe('точный порядок открытия: recorder FIRST (PART 35)
     const stats = coordinator.getStats();
     expect(stats.activeSessions).toBe(1);
     expect(stats.openingSessions).toBe(0);
-    expect(stats.rtdsFeedRefCounts).toEqual({
-      'prices.crypto.chainlink:btc/usd': 1,
-      'prices.crypto.binance:btcusdt': 1,
-    });
+    expect(stats.rtdsFeeds).toEqual([
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd', refCount: 1 },
+      { topic: 'prices.crypto.binance', symbol: 'btcusdt', refCount: 1 },
+    ]);
   });
 
   it('timing-семантика PART 9: recording startsAt = момент открытия сессии, НЕ vendor event start', async () => {
@@ -122,7 +122,7 @@ describe('точный порядок открытия: recorder FIRST (PART 35)
       { label: 'Down', instrumentId: TOKEN_DOWN },
     ]);
     expect(header['event']).toEqual({ id: '99001', slug: 'fixture-event', title: 'Fixture Event' });
-    expect(header['crypto']).toEqual({ source: 'chainlink', binanceSymbol: 'BTCUSDT' });
+    expect(header['crypto']).toEqual({ source: 'chainlink', asset: 'btc', binanceSymbol: 'BTCUSDT' });
     expect(header['rtdsFeeds']).toEqual(BTC_FEEDS);
     expect(header['gammaMarket']).toMatchObject({ conditionId: CID_A });
   });
@@ -235,7 +235,7 @@ describe('rollback открытия (PART 37)', () => {
     // Recording снят
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
     // Никаких повисших refs
-    expect(coordinator.getStats().rtdsFeedRefCounts).toEqual({});
+    expect(coordinator.getStats().rtdsFeeds).toEqual([]);
     expect(log.indexOf('recorder.finalizeMarket')).toBeGreaterThan(log.indexOf('close:market'));
 
     // TEST D: retry успешен
@@ -305,10 +305,10 @@ describe('shared RTDS-фиды (PART 18/39)', () => {
       'prices.crypto.chainlink:btc/usd',
       'prices.crypto.binance:btcusdt',
     ]);
-    expect(coordinator.getStats().rtdsFeedRefCounts).toEqual({
-      'prices.crypto.chainlink:btc/usd': 2,
-      'prices.crypto.binance:btcusdt': 2,
-    });
+    expect(coordinator.getStats().rtdsFeeds).toEqual([
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd', refCount: 2 },
+      { topic: 'prices.crypto.binance', symbol: 'btcusdt', refCount: 2 },
+    ]);
 
     // Обе регистрации несут оба фида — независимый fan-out recorder-а
     // проверяется в first-message-not-lost.test.ts с реальным recorder-ом
@@ -317,16 +317,16 @@ describe('shared RTDS-фиды (PART 18/39)', () => {
     await coordinator.closeSession(mid(CID_A), 'SHUTDOWN');
     expect(source.rtdsSubscriptions.get('prices.crypto.chainlink:btc/usd')!.closeCalls).toBe(0);
     expect(source.rtdsSubscriptions.get('prices.crypto.binance:btcusdt')!.closeCalls).toBe(0);
-    expect(coordinator.getStats().rtdsFeedRefCounts).toEqual({
-      'prices.crypto.chainlink:btc/usd': 1,
-      'prices.crypto.binance:btcusdt': 1,
-    });
+    expect(coordinator.getStats().rtdsFeeds).toEqual([
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd', refCount: 1 },
+      { topic: 'prices.crypto.binance', symbol: 'btcusdt', refCount: 1 },
+    ]);
 
     // Закрытие B: последний ref — нижележащие подписки закрываются
     await coordinator.closeSession(mid(CID_B), 'SHUTDOWN');
     expect(source.rtdsSubscriptions.get('prices.crypto.chainlink:btc/usd')!.closeCalls).toBe(1);
     expect(source.rtdsSubscriptions.get('prices.crypto.binance:btcusdt')!.closeCalls).toBe(1);
-    expect(coordinator.getStats().rtdsFeedRefCounts).toEqual({});
+    expect(coordinator.getStats().rtdsFeeds).toEqual([]);
   });
 
   it('конкурентная инициализация одного НОВОГО фида не создаёт дублирующую подписку', async () => {
@@ -348,10 +348,10 @@ describe('shared RTDS-фиды (PART 18/39)', () => {
     // По одной подписке на фид, несмотря на конкурентное приобретение
     expect(source.subscribeCryptoCalls.filter((c) => c.includes('btc/usd'))).toHaveLength(1);
     expect(source.subscribeCryptoCalls.filter((c) => c.includes('btcusdt'))).toHaveLength(1);
-    expect(coordinator.getStats().rtdsFeedRefCounts).toEqual({
-      'prices.crypto.chainlink:btc/usd': 2,
-      'prices.crypto.binance:btcusdt': 2,
-    });
+    expect(coordinator.getStats().rtdsFeeds).toEqual([
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd', refCount: 2 },
+      { topic: 'prices.crypto.binance', symbol: 'btcusdt', refCount: 2 },
+    ]);
   });
 });
 
@@ -415,7 +415,7 @@ describe('graceful shutdown (PART 26/40)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
-      rtdsFeedRefCounts: {},
+      rtdsFeeds: [],
     });
     expect(coordinator.listSessions()).toEqual([]);
     expect(coordinator.isClosed).toBe(true);
@@ -456,7 +456,7 @@ describe('graceful shutdown (PART 26/40)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
-      rtdsFeedRefCounts: {},
+      rtdsFeeds: [],
     });
   });
 });
@@ -534,7 +534,7 @@ describe('refreshCandidates / fillSlots (PART 20/21/29)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
-      rtdsFeedRefCounts: {},
+      rtdsFeeds: [],
     });
     expect(logger.byLevel('error').some((e) => e.message.includes('terminal failure'))).toBe(true);
 

@@ -112,7 +112,7 @@ Legacy открывал рынок минимум за 2 минуты до ра�
   "outcomes": [{ "label": "Up", "instrumentId": "..." }, { "label": "Down", "instrumentId": "..." }],
   "event": { "id": "872598", "slug": "...", "title": "..." },
   "timing": { "eventStartsAt": 0, "expiresAt": 0, "recordingStartsAt": 0 },
-  "crypto": { "source": "chainlink", "binanceSymbol": "BTCUSDT" },
+  "crypto": { "source": "chainlink", "asset": "btc", "binanceSymbol": "BTCUSDT" },
   "rtdsFeeds": [{ "topic": "prices.crypto.chainlink", "symbol": "btc/usd" }],
   "gammaMarket": { "полный normalized SDK Market": "..." },
   "gammaEvent": { "normalized SDK Event без markets[]": "..." }

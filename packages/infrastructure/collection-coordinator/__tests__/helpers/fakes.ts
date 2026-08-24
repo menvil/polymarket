@@ -13,7 +13,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import { asInstrumentId, asMarketId } from '@polymarket/ids';
+import { asCryptoAssetId, asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -197,7 +197,14 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     ...(eventStartsAtMs !== null ? { eventStartsAt: ts(eventStartsAtMs) } : {}),
     event: { id: '99001', slug: 'fixture-event', title: 'Fixture Event' },
     ...(rtdsFeeds.length > 0
-      ? { crypto: { source: 'chainlink' as const, binanceSymbol: 'BTCUSDT', feeds: rtdsFeeds } }
+      ? {
+          crypto: {
+            source: 'chainlink' as const,
+            asset: asCryptoAssetId('btc')!,
+            binanceSymbol: 'BTCUSDT',
+            feeds: rtdsFeeds,
+          },
+        }
       : {}),
     rtdsFeeds,
     gammaMarket,

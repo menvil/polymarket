@@ -479,6 +479,7 @@ describe('prepareSelected: fetchEvent только для выбранного (
     expect(selected.eventStartsAt?.toNumber()).toBe(FIXED_NOW_MS + 10 * 60_000);
     expect(selected.event).toEqual({ id: '99001', slug: 'evt-slug', title: 'Evt title' });
     expect(selected.crypto?.source).toBe('chainlink');
+    expect(selected.crypto?.asset).toBe('btc');
     expect(selected.crypto?.binanceSymbol).toBe('BTCUSDT');
     expect(selected.rtdsFeeds).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
@@ -564,6 +565,7 @@ describe('prepareSelected: fetchEvent только для выбранного (
     const selected = await discovery.prepareSelected(candidates[0]!);
 
     expect(selected.crypto?.source).toBe('chainlink');
+    expect(selected.crypto?.asset).toBe('eth');
     expect(selected.crypto?.binanceSymbol).toBe('ETHUSDT');
     expect(selected.rtdsFeeds).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'eth/usd' },

@@ -22,6 +22,7 @@ export type {
   CollectionDiscovery,
   CollectionOpenOutcome,
   CollectionRecorder,
+  CollectionRtdsFeedStat,
   CollectionSessionSnapshot,
   CollectionSource,
   MarketCollectionCoordinatorConfig,

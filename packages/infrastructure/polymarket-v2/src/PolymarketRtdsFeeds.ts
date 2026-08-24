@@ -39,6 +39,8 @@
  */
 import type { CryptoPricesTopic } from '@polymarket/bindings/subscriptions';
 import type { Market } from '@polymarket/bindings/gamma';
+import { asCryptoAssetId } from '@polymarket/ids';
+import type { CryptoAssetId } from '@polymarket/ids';
 
 /**
  * Точный ключ одного RTDS-фида: vendor topic + символ в нативном формате.
@@ -62,6 +64,13 @@ export interface PolymarketRtdsFeed {
 export interface PolymarketCryptoMeta {
   /** Источник резолюции рынка из `resolution.source`. */
   readonly source: 'binance' | 'chainlink';
+  /**
+   * Canonical базовый криптоактив рынка (`btc`, `eth`, ...) —
+   * рабочая identity `cross-market`/`market-state`
+   * (`priceToBeat`/`finalPrice`); прямой вход для enrichment N-004,
+   * потребителю не нужно повторно парсить vendor-символы.
+   */
+  readonly asset: CryptoAssetId;
   /** Символ Binance klines-формата (`BTCUSDT`) — для диагностики/enrichment N-004. */
   readonly binanceSymbol: string;
   /** RTDS-фиды рынка (оба topic, если известен маппинг символов). */
@@ -149,11 +158,16 @@ export function derivePolymarketCryptoMeta(
     }
     const base = match[1]!.toUpperCase();
     const quote = match[2]!.toUpperCase();
+    const asset = asCryptoAssetId(base.toLowerCase());
+    if (asset === undefined) {
+      return undefined; // патологический base (>32 символов) — рынок не поддержан
+    }
     const binanceSymbol = `${base}${quote}`;
     const binanceFilter = binanceSymbol.toLowerCase();
     const chainlinkFilter = BINANCE_TO_CHAINLINK[binanceSymbol];
     return {
       source: 'binance',
+      asset,
       binanceSymbol,
       feeds: [
         { topic: 'prices.crypto.binance', symbol: binanceFilter },
@@ -176,8 +190,13 @@ export function derivePolymarketCryptoMeta(
     if (binanceSymbol === undefined) {
       return undefined;
     }
+    const asset = asCryptoAssetId(chainlinkSymbol.split('/')[0]!);
+    if (asset === undefined) {
+      return undefined; // недостижимо для пар из таблицы; защитный guard
+    }
     return {
       source: 'chainlink',
+      asset,
       binanceSymbol,
       feeds: [
         { topic: 'prices.crypto.chainlink', symbol: chainlinkSymbol },

@@ -413,6 +413,8 @@ describe('LEGACY vs V2: RTDS-маппинг крипто-рынков (PART 33/P
     const v2Meta = derivePolymarketCryptoMeta(twin.sdk);
     expect(v2Meta).toBeDefined();
     expect(v2Meta!.source).toBe('chainlink');
+    // Canonical базовый актив выводится на той же границе (вход N-004)
+    expect(v2Meta!.asset).toBe('btc');
     expect(v2Meta!.binanceSymbol).toBe('BTCUSDT');
     expect([...v2Meta!.feeds]).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },

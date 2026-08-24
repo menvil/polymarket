@@ -105,7 +105,13 @@ export function buildCollectionHeader(
       recordingStartsAt: recordingStartsAt.toNumber(),
     },
     ...(selected.crypto !== undefined
-      ? { crypto: { source: selected.crypto.source, binanceSymbol: selected.crypto.binanceSymbol } }
+      ? {
+          crypto: {
+            source: selected.crypto.source,
+            asset: selected.crypto.asset,
+            binanceSymbol: selected.crypto.binanceSymbol,
+          },
+        }
       : {}),
     rtdsFeeds: selected.rtdsFeeds,
   };
