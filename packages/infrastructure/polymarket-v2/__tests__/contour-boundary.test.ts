@@ -88,6 +88,7 @@ const ALLOWED_DISCOVERY_IMPORTS = new Set([
 const DISCOVERY_FILES = new Set([
   'PolymarketMarketDiscovery.ts',
   'PolymarketRtdsFeeds.ts',
+  'PolymarketFinalization.ts',
   // index.ts re-экспортирует обе плоскости (контракт пакета)
   'index.ts',
 ]);

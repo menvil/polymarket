@@ -41,6 +41,15 @@ export type {
 } from './PolymarketMarketDiscovery.js';
 export { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
 export type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
+export {
+  deriveWinningOutcome,
+  extractCryptoFinalization,
+  mapFinalOutcomes,
+} from './PolymarketFinalization.js';
+export type {
+  PolymarketCryptoFinalization,
+  PolymarketFinalOutcome,
+} from './PolymarketFinalization.js';
 export type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,

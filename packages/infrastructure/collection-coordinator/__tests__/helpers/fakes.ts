@@ -165,11 +165,25 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     gammaEventPadding,
   } = options;
 
+  // Форма покрывает поля, которые читают header-билдер И finalizer
+  // (outcomes/resolution/state) — initial Gamma state фикстурного рынка
   const gammaMarket = {
     id: '516789',
     conditionId,
     question,
-    state: { active: true, closed: false },
+    state: { active: true, closed: false, closedTime: null },
+    outcomes: {
+      yes: { label: 'Up', tokenId: tokenIds[0] ?? null, positionId: null, price: '0.5' },
+      no: { label: 'Down', tokenId: tokenIds[1] ?? null, positionId: null, price: '0.5' },
+    },
+    resolution: {
+      questionId: null,
+      negRiskRequestId: null,
+      umaResolutionStatus: null,
+      source: null,
+      resolvedBy: null,
+    },
+    events: [{ id: '99001', slug: 'fixture-event', title: 'Fixture Event' }],
     ...(gammaMarketPadding !== undefined ? { padding: 'x'.repeat(gammaMarketPadding) } : {}),
   } as unknown as PolymarketGammaMarket;
 
