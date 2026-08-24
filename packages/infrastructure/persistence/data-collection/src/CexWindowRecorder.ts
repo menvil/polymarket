@@ -647,14 +647,25 @@ export class CexWindowRecorder {
     return `${year}-${month}-${day}`;
   }
 
-  /** Время в Eastern Time: `0955AM`. */
+  /**
+   * Время в Eastern Time: `0955AM`.
+   *
+   * @remarks
+   * Для окон, НЕ кратных минуте (только тестовые/smoke-конфигурации),
+   * метка дополняется секундами — иначе два разных окна внутри одной
+   * минуты получили бы одинаковое имя и вторая партиция перезаписала бы
+   * первую. Production-окна (кратные минуте) сохраняют legacy-формат
+   * байт-в-байт.
+   */
   private _formatTimeET(ms: number): string {
+    const subMinuteWindow = this._windowMs % 60_000 !== 0;
     const raw = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       hour: 'numeric',
       minute: '2-digit',
+      ...(subMinuteWindow ? { second: '2-digit' as const } : {}),
       hour12: true,
     }).format(new Date(ms));
-    return raw.replace(':', '').replace(' ', '');
+    return raw.replace(/[: ]/g, '');
   }
 }

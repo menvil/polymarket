@@ -217,6 +217,29 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     );
   });
 
+  it('суб-минутные окна получают секунды в метке: разные окна → разные имена', async () => {
+    // Тестовое окно 15s: два соседних окна внутри одной минуты обязаны
+    // получить РАЗНЫЕ имена (production-окна кратны минуте и не задеты)
+    recorder = makeRecorder({ windowMinutes: 0.25 });
+    recorder.start();
+    const windowMs = 15_000;
+    const firstWindow = Math.floor(now / windowMs) * windowMs + windowMs;
+
+    now = firstWindow + 1_000;
+    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 1 });
+    now = firstWindow + windowMs + 1_000;
+    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 2 });
+    await waitFor(() => listFiles(dir).filter((f) => f.endsWith('.jsonl.gz')).length === 1);
+    await recorder.flush();
+
+    const files = listFiles(dir);
+    expect(files).toHaveLength(2);
+    const names = files.map((file) => path.basename(file).replace(/\.gz$/, ''));
+    expect(new Set(names).size).toBe(2);
+    // Секунды присутствуют в метках: HHMMSS{AM|PM}-HHMMSS{AM|PM}
+    expect(names[0]).toMatch(/_\d{5,6}[AP]M-\d{5,6}[AP]M_ET\.jsonl$/);
+  });
+
   it('threshold flush: буфер сбрасывается без явного flush()', async () => {
     recorder = makeRecorder({ bufferSize: 2 });
     recorder.start();
