@@ -36,7 +36,7 @@ MarketFinalizer.runOnce()          ← cadence у composition root
  │     ├── close market subscription
  │     └── release RTDS refs   (общие фиды соседей живут)
  │
- ├── pending: одна Gamma-попытка на проход (retry 30с, max 30 мин)
+ ├── pending: одна Gamma-попытка на проход (retry 30с, max 60 мин)
  │     ├── fetchMarket(gammaMarketId) → state/resolution/outcome prices
  │     ├── fetchEvent(event.id) → metadata (priceToBeat/finalPrice)
  │     ├── merge best-known (полученное однажды не теряется)
@@ -115,7 +115,7 @@ Backtest получает ответ о результате рынка из О�
 | Сбой | Поведение |
 | --- | --- |
 | Gamma fetch (crypto, до таймаута) | FINALIZING/best-known/файл сохранены; retry следующим runOnce |
-| Gamma fetch (non-crypto) | немедленный архив с initial-данными (без crypto-ожидания enrichment-а — 30 мин по умолчанию) |
+| Gamma fetch (non-crypto) | немедленный архив с initial-данными (без crypto-ожидания enrichment-а — 60 мин по умолчанию) |
 | header `false` при complete | архив отложен, error-лог, retry по cadence; success не объявляется |
 | header `false` при timeout/shutdown | архив best-known ПРЕДЫДУЩЕГО header-а, error-лог (явная policy) |
 | `finalizeMarket(EXPIRED)` throw | терминально: без success-лога, без повторного gzip; сессия остаётся FINALIZING |
