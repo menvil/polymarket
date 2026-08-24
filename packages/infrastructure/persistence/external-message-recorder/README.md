@@ -137,6 +137,17 @@ bus НЕ закрывается. `EXPIRED` = завершённый dataset (а�
 архив НЕ создаётся). Сообщения, регистрации и финализации после close
 игнорируются (warn).
 
+## 7a. Seal — expiry-cutoff без архива (N-004)
+
+`sealMarket(marketId)` — переход между записью и архивом: market/RTDS
+routing сессии снимается НЕМЕДЛЕННО (новые ExternalMessages в payload не
+попадают; общие RTDS-фиды других рынков не затронуты), storage
+замораживает файл (`DataRecorder.sealMarket`: буфер flushed, append-stream
+закрыт), но writer сохраняется — `updateMarketMeta()` (enrichment header-а)
+и `finalizeMarket(EXPIRED)` продолжают работать. `updateMarketMeta`
+возвращает наблюдаемый `boolean` — finalizer не объявляет успех, если
+header фактически не записан.
+
 ## 8. Независимые consumers одного bus
 
 ```text

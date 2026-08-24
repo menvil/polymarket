@@ -83,21 +83,34 @@ Source-подписки ≠ recorder-routing:
   ответственность Recorder-а (передаётся `rtdsFeeds` в регистрации);
   второй routing-механизм не строится.
 
+## 4a. FINALIZING (N-004)
+
+Expiry-переход отделён от архива: `beginFinalization(marketId)` — identity-safe
+`ACTIVE → FINALIZING` ДО первого await → `recorder.sealMarket` (routing снят,
+payload заморожен, header writable) → закрытие market-подписки → release
+RTDS-refs → immutable `FinalizingMarketSession {marketId, recordingStartedAt,
+selected}`. FINALIZING **не занимает** capacity (слот освобождается сразу при
+expiry — parity legacy), но **блокирует** повторное открытие того же рынка.
+Архив (`finalizeMarket(EXPIRED)`) выполняет `@polymarket/market-finalizer`
+после enrichment/timeout и снимает сессию `completeFinalization(marketId)`
+(удаляется ТОЛЬКО FINALIZING). `closeSession(SHUTDOWN)` FINALIZING-сессии не
+трогает.
+
 ## 5. Порядок shutdown контура
 
 ```typescript
-await coordinator.close();  // teardown сессий: subs → RTDS → finalize(SHUTDOWN)
+await finalizer.close();    // FINALIZING → EXPIRED best-known архивы (N-004)
+await coordinator.close();  // ACTIVE/OPENING → SHUTDOWN (FINALIZING здесь уже нет)
 await source.close();       // остановить продьюсера
 await bus.drain();          // доставить оставшиеся наблюдения
 await recorder.close();     // отписка + закрытие storage
 await bus.close();          // владелец bus — composition root
 ```
 
-## 6. Scope N-003 (что пакет сознательно НЕ делает)
+## 6. Scope (что пакет сознательно НЕ делает)
 
-- EXPIRED lifecycle: таймеры истечения, `priceToBeat`/`finalPrice`
-  enrichment, EXPIRED-финализация — N-004 (session state несёт
-  identity/expiresAt, redesign не потребуется);
+- Gamma polling/enrichment после expiry — `@polymarket/market-finalizer`
+  (координатор владеет только session/realtime lifecycle);
 - Semantic Adapter / OrderBook / Trade / Application-интеграция;
 - CEX-миграция, Reader/replay, legacy cutover (старый `apps/collect-data`
   остаётся нетронутым behavior oracle).

@@ -196,14 +196,36 @@ package.json + import-ы исходников). Отдельный `apps/collect
 нет, а составимость композиции доказывает live smoke (`scripts/smoke.ts`) —
 полный composition root в ~100 строк.
 
-## Отложено в N-004 (сознательно)
+## Expiry-lifecycle (N-004)
 
-- polling после `expiresAt`, re-fetch Gamma, `priceToBeat`/`finalPrice`
-  enrichment, `updateMarketMeta` после истечения, EXPIRED-финализация
-  (gzip-архив);
-- closed-markets память/TTL (в N-003 нужна только SHUTDOWN-ветка);
+```text
+OPENING ──► ACTIVE ──expiresAt──► FINALIZING ──архив──► removed
+                                     │
+                    beginFinalization(marketId):
+                      1. state → FINALIZING ДО первого await (at most once)
+                      2. recorder.sealMarket   ← routing снят, payload заморожен
+                      3. close market subscription
+                      4. release RTDS refs     ← общие фиды соседей живут
+                      5. → FinalizingMarketSession (immutable snapshot)
+```
+
+- capacity (`maxMarkets`) считает ТОЛЬКО OPENING+ACTIVE — FINALIZING слот
+  не занимает, но удерживает identity (duplicate reopen блокирован);
+- `closeSession(SHUTDOWN)` FINALIZING не трогает; архив и снятие сессии —
+  `@polymarket/market-finalizer`: `finalizeMarket(EXPIRED)` →
+  `completeFinalization(marketId)` (удаляется только FINALIZING,
+  identity-guard);
+- `coordinator.close()` закрывает ACTIVE/OPENING как SHUTDOWN; оставшиеся
+  FINALIZING (нарушенный порядок shutdown) дропаются с warn — их файлы
+  заберёт cleanup-policy storage. Правильный порядок: `finalizer.close()`
+  ДО `coordinator.close()` (см. docs market-finalizer).
+
+Отдельный closed-markets blacklist с TTL из legacy не перенесён:
+удержание identity FINALIZING-сессией + отклонение `expiresAt <= now`
+покрывают reopen-защиту (доказано тестами).
+
+## Не входит в контур координатора
+
+- Gamma polling/enrichment после expiry — `@polymarket/market-finalizer`;
 - Semantic Adapter, Application-интеграция, CEX-миграция, Reader/replay,
   удаление legacy.
-
-Session state уже несёт `marketId`/identity события/`expiresAt` — N-004
-добавит finalizer поверх `closeSession(marketId, 'EXPIRED')` без redesign.

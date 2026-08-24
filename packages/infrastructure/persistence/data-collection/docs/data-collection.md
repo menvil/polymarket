@@ -104,6 +104,22 @@ Reader/бектест обязан по первой строке выбрать
   полная сессия рынка, `.jsonl` = incomplete; превращать обрубок в архив
   нельзя — бектест принял бы его за полную сессию.
 
+### SEALED writer — заморозка перед архивом (N-004)
+
+`sealMarket(marketId)` переводит ACTIVE writer в SEALED:
+
+1. новые записи запрещаются синхронно (`recordMarketEvent` → `'sealed'`,
+   legacy `recordEvent` игнорирует; token-index writer-а снят);
+2. буфер сброшен на диск, append-stream закрыт — payload-строки заморожены;
+3. `.jsonl` и регистрация writer-а СОХРАНЯЮТСЯ: `updateMarketMeta()`
+   переписывает первую строку (возвращает наблюдаемый `boolean`),
+   `finalizeMarket(EXPIRED)` архивирует замороженный датасет в `.jsonl.gz`
+   без потерь; `finalizeMarket(SHUTDOWN)` — прежняя семантика (файл
+   удаляется).
+
+Идемпотентен; gzip на seal НЕ выполняется. «Writable header» ≠ «приём
+payload-записей» — это разные разрешения.
+
 ### Порядок строк — arrival order
 
 Payload-строки пишутся строго в порядке поступления рекордеру, БЕЗ сортировки по
