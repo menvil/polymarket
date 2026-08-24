@@ -415,6 +415,7 @@ describe('graceful shutdown (PART 26/40)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
+      finalizingSessions: 0,
       rtdsFeeds: [],
     });
     expect(coordinator.listSessions()).toEqual([]);
@@ -456,6 +457,7 @@ describe('graceful shutdown (PART 26/40)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
+      finalizingSessions: 0,
       rtdsFeeds: [],
     });
   });
@@ -534,6 +536,7 @@ describe('refreshCandidates / fillSlots (PART 20/21/29)', () => {
     expect(coordinator.getStats()).toEqual({
       activeSessions: 0,
       openingSessions: 0,
+      finalizingSessions: 0,
       rtdsFeeds: [],
     });
     expect(logger.byLevel('error').some((e) => e.message.includes('terminal failure'))).toBe(true);
@@ -635,5 +638,126 @@ describe('бюджет header meta-блока (PART 8)', () => {
     expect(header['truncated']).toEqual(['gammaEvent']);
     expect(header['gammaMarket']).toBeDefined();
     expect(header['gammaEvent']).toBeUndefined();
+  });
+});
+
+describe('FINALIZING lifecycle (N-004 PART 2/3/8/36/49/52)', () => {
+  it('beginFinalization: seal ПЕРВЫМ, затем закрытие подписки и release RTDS; снимок immutable', async () => {
+    const { log, discovery, source, recorder, coordinator } = createHarness();
+    await coordinator.openMarket(discovery.addMarket());
+    log.entries.length = 0;
+
+    const snapshot = await coordinator.beginFinalization(mid(CID_A));
+
+    expect(snapshot).toBeDefined();
+    expect(String(snapshot!.marketId)).toBe(CID_A);
+    expect(snapshot!.recordingStartedAt.toNumber()).toBe(NOW_MS);
+    expect(snapshot!.selected.question).toBe('Bitcoin Up or Down - fixture');
+    expect(snapshot!.selected.outcomes).toHaveLength(2);
+
+    // Порядок cutoff (PART 9): seal → close market subscription → release RTDS
+    expect(log.indexOf('recorder.sealMarket')).toBeLessThan(log.indexOf('close:market'));
+    expect(log.indexOf('close:market')).toBeLessThan(log.indexOf('close:rtds'));
+    expect(recorder.seals).toEqual([CID_A]);
+    // Архив на этом шаге НЕ выполняется
+    expect(recorder.finalizations).toEqual([]);
+
+    // Подписка закрыта, RTDS-refs освобождены, сессия удержана как FINALIZING
+    expect(source.marketSubscriptions[0]!.closeCalls).toBe(1);
+    expect(coordinator.getStats()).toEqual({
+      activeSessions: 0,
+      openingSessions: 0,
+      finalizingSessions: 1,
+      rtdsFeeds: [],
+    });
+    expect(coordinator.listSessions()).toEqual([
+      expect.objectContaining({ marketId: mid(CID_A), state: 'FINALIZING' }),
+    ]);
+  });
+
+  it('beginFinalization не-ACTIVE сессии → undefined; повторный вызов → undefined (at most once)', async () => {
+    const { discovery, recorder, coordinator } = createHarness();
+    expect(await coordinator.beginFinalization(mid(CID_A))).toBeUndefined();
+
+    await coordinator.openMarket(discovery.addMarket());
+    expect(await coordinator.beginFinalization(mid(CID_A))).toBeDefined();
+    expect(await coordinator.beginFinalization(mid(CID_A))).toBeUndefined();
+    expect(recorder.seals).toEqual([CID_A]); // seal ровно один раз
+  });
+
+  it('FINALIZING не занимает capacity, но блокирует повторное открытие (PART 3)', async () => {
+    const { discovery, coordinator } = createHarness({ maxMarkets: 1 });
+    const candidateA = discovery.addMarket({ conditionId: CID_A });
+    const candidateB = discovery.addMarket({ conditionId: CID_B });
+
+    expect(await coordinator.openMarket(candidateA)).toBe('opened');
+    // Слот занят — B не открывается
+    expect(await coordinator.openMarket(candidateB)).toBe('skipped');
+
+    await coordinator.beginFinalization(mid(CID_A));
+
+    // Слот освобождён expiry-переходом — B открывается при maxMarkets=1
+    expect(await coordinator.openMarket(candidateB)).toBe('opened');
+    // Повторное открытие A заблокировано удержанной FINALIZING-сессией
+    expect(await coordinator.openMarket(candidateA)).toBe('skipped');
+    expect(coordinator.getStats()).toMatchObject({ activeSessions: 1, finalizingSessions: 1 });
+  });
+
+  it('closeSession(SHUTDOWN) не трогает FINALIZING-сессию (архивом владеет finalizer)', async () => {
+    const { discovery, recorder, coordinator } = createHarness();
+    await coordinator.openMarket(discovery.addMarket());
+    await coordinator.beginFinalization(mid(CID_A));
+
+    await coordinator.closeSession(mid(CID_A), 'SHUTDOWN');
+
+    expect(recorder.finalizations).toEqual([]);
+    expect(coordinator.getStats().finalizingSessions).toBe(1);
+  });
+
+  it('completeFinalization удаляет ТОЛЬКО FINALIZING-сессию (identity-guard)', async () => {
+    const { discovery, coordinator } = createHarness();
+    const candidate = discovery.addMarket();
+    expect(coordinator.completeFinalization(mid(CID_A))).toBe(false); // нет сессии
+
+    await coordinator.openMarket(candidate);
+    expect(coordinator.completeFinalization(mid(CID_A))).toBe(false); // ACTIVE не удаляется
+    expect(coordinator.getStats().activeSessions).toBe(1);
+
+    await coordinator.beginFinalization(mid(CID_A));
+    expect(coordinator.completeFinalization(mid(CID_A))).toBe(true);
+    expect(coordinator.listSessions()).toEqual([]);
+    expect(coordinator.completeFinalization(mid(CID_A))).toBe(false); // идемпотентно
+  });
+
+  it('shared RTDS: expiry рынка A освобождает только его ref — фид рынка B живёт (PART 52)', async () => {
+    const { discovery, source, coordinator } = createHarness();
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+
+    await coordinator.beginFinalization(mid(CID_A));
+
+    // Нижележащие подписки НЕ закрыты (B держит refs)
+    expect(source.rtdsSubscriptions.get('prices.crypto.chainlink:btc/usd')!.closeCalls).toBe(0);
+    expect(source.rtdsSubscriptions.get('prices.crypto.binance:btcusdt')!.closeCalls).toBe(0);
+    expect(coordinator.getStats().rtdsFeeds).toEqual([
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd', refCount: 1 },
+      { topic: 'prices.crypto.binance', symbol: 'btcusdt', refCount: 1 },
+    ]);
+  });
+
+  it('coordinator.close(): ACTIVE → SHUTDOWN, оставшаяся FINALIZING дропается с warn без архива', async () => {
+    const { discovery, recorder, coordinator, logger } = createHarness();
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_A }));
+    await coordinator.openMarket(discovery.addMarket({ conditionId: CID_B }));
+    await coordinator.beginFinalization(mid(CID_B));
+
+    await coordinator.close();
+
+    // A закрыт как SHUTDOWN; B (FINALIZING) НЕ архивирован координатором
+    expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
+    expect(coordinator.listSessions()).toEqual([]);
+    expect(
+      logger.byLevel('warn').some((e) => e.message.includes('Finalizing session dropped')),
+    ).toBe(true);
   });
 });

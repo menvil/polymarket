@@ -36,7 +36,12 @@
  * `gammaMarket`.
  */
 import type { Timestamp } from '@polymarket/timestamp';
-import type { SelectedPolymarketMarket } from '@polymarket/polymarket-v2';
+import type { InstrumentId } from '@polymarket/ids';
+import type {
+  PolymarketGammaEvent,
+  PolymarketGammaMarket,
+  SelectedPolymarketMarket,
+} from '@polymarket/polymarket-v2';
 
 /**
  * Зеркало `META_RESERVED_BYTES` DataRecorder — фиксированный блок LINE 1.
@@ -56,35 +61,101 @@ const STORAGE_META_RESERVED_BYTES = 16 * 1024;
 const META_ENVELOPE_SAFETY_MARGIN_BYTES = 256;
 
 /**
- * Собирает V2 market header для `registerMarket()`.
+ * Финальный исход одного инструмента рынка (нейтральная форма, без vendor
+ * yes/no): метка, canonical identity и точная цена vendor-представлением.
+ */
+export interface CollectionFinalOutcome {
+  /** Метка исхода как её отдал SDK (`Up`/`Down`/`Yes`/...). */
+  readonly label: string;
+  /** Canonical identity инструмента исхода. */
+  readonly instrumentId: InstrumentId;
+  /** Итоговая цена исхода (DecimalString vendor-а as-is; отсутствует, если Gamma не дал). */
+  readonly price?: string;
+}
+
+/**
+ * Finalization-раздел header-а (N-004 PART 24) — КРИТИЧЕСКИЕ данные
+ * финализации живут в CORE header-а и переживают усечение optional
+ * vendor-снапшотов (`gammaMarket`/`gammaEvent`).
+ */
+export interface CollectionHeaderFinalization {
+  /**
+   * `'pending'` — enrichment ещё идёт (промежуточный header);
+   * `'complete'` — условие завершения выполнено; `'timeout'` — архив
+   * best-known данных по истечении бюджета ожидания (или при shutdown).
+   */
+  readonly status: 'pending' | 'complete' | 'timeout';
+  /** Момент перехода в FINALIZING (epoch ms — конвенция timing-раздела). */
+  readonly startedAtMs: number;
+  /** Момент финального решения (present для complete/timeout). */
+  readonly finalizedAtMs?: number;
+  /** Количество enrichment-попыток. */
+  readonly attempts: number;
+  /** Сводка свежего resolution-состояния Gamma (строки vendor as-is). */
+  readonly resolution?: {
+    readonly closed?: boolean;
+    readonly closedTime?: string;
+    readonly umaResolutionStatus?: string;
+  };
+  /** Итоговые исходы с ценами (нейтральная форма). */
+  readonly outcomes?: readonly CollectionFinalOutcome[];
+  /** Победивший исход — ТОЛЬКО при однозначных settlement-ценах. */
+  readonly winning?: { readonly label: string; readonly instrumentId: InstrumentId };
+  /** Официальные крипто-значения Gamma (точное строковое представление). */
+  readonly crypto?: { readonly priceToBeat?: string; readonly finalPrice?: string };
+}
+
+/**
+ * Вход единого билдера header-а: initial-регистрация и enrichment/final
+ * обновления строятся ОДНОЙ логикой (один формат, один бюджет, одна
+ * политика усечения — N-004 PART 23).
+ */
+export interface CollectionHeaderInput {
+  /** Подготовленный выбранный рынок (Discovery V2). */
+  readonly selected: SelectedPolymarketMarket;
+  /** Момент начала записи (= открытие сессии). */
+  readonly recordingStartsAt: Timestamp;
+  /** Свежий Gamma Market (fallback — initial из `selected`). */
+  readonly gammaMarket?: PolymarketGammaMarket;
+  /** Свежий Gamma Event (fallback — initial из `selected`). */
+  readonly gammaEvent?: PolymarketGammaEvent;
+  /** Finalization-сводка (отсутствует у initial header-а). */
+  readonly finalization?: CollectionHeaderFinalization;
+}
+
+/**
+ * Собирает V2 market header для `registerMarket()`/`updateMarketMeta()`.
  *
- * @param selected - Подготовленный выбранный рынок (Discovery V2)
- * @param recordingStartsAt - Момент начала записи (= открытие сессии)
+ * @param input - Вход билдера (см. {@link CollectionHeaderInput})
  * @returns Header-объект для `MarketMeta.rawMarket` (ключ `m` первой строки)
  *   либо `undefined`, если даже усечённое ядро не помещается в meta-блок
- *   storage — вызывающий обязан отказать в открытии сессии
+ *   storage — вызывающий обязан отказать (initial) либо явно обработать
+ *   ошибку финализации (final)
  *
  * @remarks
  * Деградация по бюджету наблюдаема по полю `truncated`: `undefined` —
  * полный header; `['gammaEvent']` или `['gammaEvent', 'gammaMarket']` —
- * что было выброшено. Бюджет проверяется по probe полного meta-конверта
+ * что было выброшено. `finalization` — часть CORE и никогда не усечётся
+ * раньше vendor-снапшотов. Бюджет проверяется по probe полного meta-конверта
  * storage (включая `question`/`tokenIds` внешней строки), а не только `m`.
  *
  * @example
  * ```typescript
- * const header = buildCollectionHeader(selected, startsAt);
+ * const header = buildCollectionHeader({ selected, recordingStartsAt: startsAt });
  * if (header === undefined) {
  *   // рынок нельзя зарегистрировать — отказ ДО подписок
  * }
  * ```
  */
 export function buildCollectionHeader(
-  selected: SelectedPolymarketMarket,
-  recordingStartsAt: Timestamp,
+  input: CollectionHeaderInput,
 ): Record<string, unknown> | undefined {
+  const { selected, recordingStartsAt, finalization } = input;
+  const gammaMarket = input.gammaMarket ?? selected.gammaMarket;
+  const sourceEvent = input.gammaEvent ?? selected.gammaEvent;
   // gammaEvent.markets дублируют gammaMarket — не пишем их в header никогда
   const gammaEventWithoutMarkets =
-    selected.gammaEvent !== undefined ? { ...selected.gammaEvent, markets: [] } : undefined;
+    sourceEvent !== undefined ? { ...sourceEvent, markets: [] } : undefined;
 
   const core: Record<string, unknown> = {
     headerVersion: 1,
@@ -114,11 +185,14 @@ export function buildCollectionHeader(
         }
       : {}),
     rtdsFeeds: selected.rtdsFeeds,
+    // Критические данные финализации — в CORE (переживают усечение
+    // vendor-снапшотов, PART 24)
+    ...(finalization !== undefined ? { finalization } : {}),
   };
 
   const full: Record<string, unknown> = {
     ...core,
-    gammaMarket: selected.gammaMarket,
+    gammaMarket,
     ...(gammaEventWithoutMarkets !== undefined ? { gammaEvent: gammaEventWithoutMarkets } : {}),
   };
   if (fitsMetaBlock(full, selected, recordingStartsAt)) {
@@ -127,7 +201,7 @@ export function buildCollectionHeader(
 
   const withoutEvent: Record<string, unknown> = {
     ...core,
-    gammaMarket: selected.gammaMarket,
+    gammaMarket,
     truncated: ['gammaEvent'],
   };
   if (fitsMetaBlock(withoutEvent, selected, recordingStartsAt)) {

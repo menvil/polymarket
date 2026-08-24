@@ -409,8 +409,12 @@ export class FakeCollectionRecorder implements CollectionRecorder {
   public readonly registrations: PolymarketRecordingRegistration[] = [];
   /** Финализации `key:reason`. */
   public readonly finalizations: string[] = [];
+  /** Заморозки датасетов в порядке вызовов. */
+  public readonly seals: string[] = [];
   /** Возвращаемое значение registerMarket. */
   public registerResult = true;
+  /** Возвращаемое значение sealMarket. */
+  public sealResult = true;
   /** Если задано — finalizeMarket бросает. */
   public finalizeError: unknown;
 
@@ -420,6 +424,12 @@ export class FakeCollectionRecorder implements CollectionRecorder {
     this.registrations.push(registration);
     this._log?.push(`recorder.registerMarket:${String(registration.marketMeta.marketId)}`);
     return this.registerResult;
+  };
+
+  public readonly sealMarket = async (marketId: MarketId): Promise<boolean> => {
+    this.seals.push(String(marketId));
+    this._log?.push(`recorder.sealMarket:${String(marketId)}`);
+    return this.sealResult;
   };
 
   public readonly finalizeMarket = async (

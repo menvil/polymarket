@@ -25,7 +25,13 @@ export type {
   CollectionRtdsFeedStat,
   CollectionSessionSnapshot,
   CollectionSource,
+  FinalizingMarketSession,
   MarketCollectionCoordinatorConfig,
   MarketCollectionCoordinatorDependencies,
 } from './MarketCollectionCoordinator.js';
 export { buildCollectionHeader } from './collectionHeader.js';
+export type {
+  CollectionFinalOutcome,
+  CollectionHeaderFinalization,
+  CollectionHeaderInput,
+} from './collectionHeader.js';
