@@ -104,7 +104,11 @@ describe('crypto enrichment (PART 27/30/53)', () => {
 
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
     expect(coordinator.listSessions()).toEqual([]);
-    expect(finalizer.getStats()).toMatchObject({ pendingFinalizations: 0, archivedTotal: 1 });
+    expect(finalizer.getStats()).toMatchObject({
+      pendingFinalizations: 0,
+      archivedTotal: 1,
+      archiveFailures: 0,
+    });
   });
 
   it('cadence: повторный runOnce внутри enrichmentRetryMs НЕ делает второй Gamma-запрос', async () => {
@@ -195,7 +199,12 @@ describe('наблюдаемые отказы архива/header-а (PART 26/35
     await finalizer.runOnce();
 
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]); // одна попытка
-    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 0, archiveFailures: 1 });
+    // Pending entry НЕ исчез как successful completion
+    expect(finalizer.getStats()).toMatchObject({
+      pendingFinalizations: 1,
+      archivedTotal: 0,
+      archiveFailures: 1,
+    });
     // Сессия НЕ снята — identity рынка защищена
     expect(coordinator.getStats().finalizingSessions).toBe(1);
     expect(logger.byLevel('error').some((e) => e.message.includes('EXPIRED archive failed'))).toBe(

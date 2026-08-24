@@ -675,7 +675,15 @@ export class DataRecorder implements IMarketDataRecorder {
    * неполон по определению — превращать его в архив нельзя, иначе бектест
    * примет обрубок за полную сессию рынка.
    *
-   * @throws При ошибке I/O (только EXPIRED-путь: flush/close/rename)
+   * Контракт EXPIRED-пути: resolve означает, что завершённый архив реально
+   * создан (при включённом gzip — `.jsonl.gz` существует). Отказ сжатия
+   * логируется как error и ПРОБРАСЫВАЕТСЯ — false success запрещён:
+   * вызывающий не должен объявлять архив состоявшимся. Retry сжатия здесь
+   * не выполняется; оставшийся `.jsonl` заберёт стандартный cleanup
+   * незавершённых файлов (shutdown/startup disk-scan).
+   *
+   * @throws При ошибке I/O EXPIRED-пути (flush/close потока, gzip-сжатие) —
+   *   архив НЕ создан
    */
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
     const key = String(marketId);
@@ -735,11 +743,14 @@ export class DataRecorder implements IMarketDataRecorder {
         const gzPath = await this._compressor.compressFile(writer.filePath);
         this._logger.debug('Market file compressed', { marketId: key, gzPath });
       } catch (err) {
-        this._logger.warn('Failed to compress market file', {
+        // Завершённый .jsonl.gz НЕ создан — success объявлять нельзя:
+        // ошибка пробрасывается вызывающему (finalizer не снимет сессию)
+        this._logger.error('Failed to finalize expired market archive', {
           marketId: key,
           filePath: writer.filePath,
           err: err instanceof Error ? err : new Error(String(err)),
         });
+        throw err;
       }
     }
 

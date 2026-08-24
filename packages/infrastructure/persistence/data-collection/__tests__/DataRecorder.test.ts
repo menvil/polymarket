@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { DataRecorder } from '../src/DataRecorder.js';
 import { NDJSONFormatter } from '../src/formatters/NDJSONFormatter.js';
 import type { DataRecorderConfig } from '../src/config/DataRecorderConfig.js';
+import type { GzipCompressor } from '../src/compression/GzipCompressor.js';
 import type { ILogger } from '@polymarket/logger';
 import { unsafeInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
@@ -60,6 +61,12 @@ async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<voi
 /** Проверяет, что mock-логгер получил error с данным сообщением. */
 function loggedError(logger: ILogger, message: string): boolean {
   const calls = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls.some((call) => call[0] === message);
+}
+
+/** Проверяет, что mock-логгер получил info с данным сообщением. */
+function loggedInfo(logger: ILogger, message: string): boolean {
+  const calls = (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls;
   return calls.some((call) => call[0] === message);
 }
 
@@ -678,6 +685,34 @@ describe('DataRecorder sealed markets (N-004)', () => {
     expect(lines).toHaveLength(3);
     expect(JSON.parse(lines[1]).seq).toBe('A');
     expect(JSON.parse(lines[2]).seq).toBe('B');
+  });
+
+  it('finalize EXPIRED: отказ gzip логируется error и пробрасывается — false success запрещён', async () => {
+    const failingCompressor = {
+      compressFile: async (): Promise<string> => {
+        throw new Error('gzip pipeline failed');
+      },
+    } as unknown as GzipCompressor;
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { compression: 'gzip' }),
+      new NDJSONFormatter(),
+      failingCompressor,
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    await recorder.sealMarket(meta.marketId);
+    const sealedPath = marketFilePath();
+
+    await expect(recorder.finalizeMarket(meta.marketId, 'EXPIRED')).rejects.toThrow(
+      'gzip pipeline failed',
+    );
+
+    // Завершённый архив НЕ создан; отказ — error, success-лог отсутствует
+    expect(fs.existsSync(`${sealedPath}.gz`)).toBe(false);
+    expect(loggedError(logger, 'Failed to finalize expired market archive')).toBe(true);
+    expect(loggedInfo(logger, 'Market finalized (expired)')).toBe(false);
   });
 
   it('SHUTDOWN-семантика для SEALED не меняется: incomplete-файл удаляется', async () => {
