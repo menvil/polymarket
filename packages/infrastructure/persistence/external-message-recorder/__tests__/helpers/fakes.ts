@@ -85,11 +85,25 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
     return this.outcomeOverride ?? 'recorded';
   }
 
+  /** Заморозки датасетов (`String(marketId)`) в порядке вызовов. */
+  public readonly sealed: string[] = [];
+  /** Исход следующих sealMarket (default true = writer найден). */
+  public sealOutcome = true;
+  /** Исход следующих updateMarketMeta (default true = header записан). */
+  public metaUpdateOutcome = true;
+
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    this.sealed.push(String(marketId));
+    this.callOrder.push(`seal:${String(marketId)}`);
+    return this.sealOutcome;
+  }
+
   public async updateMarketMeta(
     marketId: MarketId,
     updatedRawMarket: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.metaUpdates.push({ marketId, raw: updatedRawMarket });
+    return this.metaUpdateOutcome;
   }
 
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {

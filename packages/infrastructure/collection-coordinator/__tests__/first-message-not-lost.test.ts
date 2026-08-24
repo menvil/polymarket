@@ -39,6 +39,7 @@ class MemoryStorage {
   public readonly registered: MarketMeta[] = [];
   public readonly writes: Array<{ marketId: string; payload: unknown }> = [];
   public readonly finalized: string[] = [];
+  public readonly sealed: string[] = [];
 
   public registerMarket(meta: MarketMeta): boolean {
     this.registered.push(meta);
@@ -50,8 +51,13 @@ class MemoryStorage {
     return 'recorded';
   }
 
-  public async updateMarketMeta(): Promise<void> {
-    // no-op
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    this.sealed.push(String(marketId));
+    return true;
+  }
+
+  public async updateMarketMeta(): Promise<boolean> {
+    return true;
   }
 
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {

@@ -63,11 +63,13 @@ const META_RESERVED_BYTES = 16 * 1024;
  * - `'inactive'` — рынок зарегистрирован, но `startsAt` ещё не наступил —
  *   событие сознательно проигнорировано (activation policy);
  * - `'unregistered'` — рынок не зарегистрирован (или уже финализирован);
+ * - `'sealed'` — payload-датасет рынка заморожен ({@link DataRecorder.sealMarket})
+ *   — новые записи сознательно отвергаются (это не ошибка I/O);
  * - `'failed'` — запись невозможна и это ошибка (залогирована): не удалась
  *   сериализация payload, упала активация writer-а либо его stream
  *   недоступен/разрушен.
  */
-export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'failed';
+export type RecordOutcome = 'recorded' | 'inactive' | 'unregistered' | 'sealed' | 'failed';
 
 /**
  * Callback асинхронного отказа отложенной активации рынка.
@@ -110,6 +112,13 @@ interface MarketWriter {
   active: boolean;
   /** true после терминального отказа writer-а (активация/stream) */
   failed: boolean;
+  /**
+   * true после {@link DataRecorder.sealMarket}: payload-строки заморожены
+   * (буфер сброшен, append-stream закрыт), но writer остаётся
+   * зарегистрированным — first-line header обновляем, финализация EXPIRED
+   * доступна. `active` при этом НЕ сбрасывается (файл был активирован).
+   */
+  sealed: boolean;
   /** Таймер активации (ожидание startsAt) */
   activationTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -209,6 +218,7 @@ export class DataRecorder implements IMarketDataRecorder {
         eventsRecorded: 0,
         active: false, // active ставит ТОЛЬКО успешная _activateMarket
         failed: false,
+        sealed: false,
         activationTimer: null,
       };
 
@@ -382,22 +392,114 @@ export class DataRecorder implements IMarketDataRecorder {
   }
 
   /**
+   * Замораживает payload-датасет рынка, сохраняя файл для финализации.
+   *
+   * @param marketId - ID рынка
+   * @returns `true` — датасет заморожен (или уже был); `false` — writer
+   *   не зарегистрирован (нечего замораживать)
+   *
+   * @remarks
+   * Переход `ACTIVE writer → SEALED writer` (N-004 PART 5/6):
+   *
+   * 1. новые записи запрещаются СИНХРОННО (`sealed = true` до первого await);
+   * 2. legacy token-index routing writer-а снимается;
+   * 3. существующий буфер сбрасывается на диск;
+   * 4. append-stream закрывается — payload-строки заморожены;
+   * 5. регистрация writer-а СОХРАНЯЕТСЯ: `updateMarketMeta()` и
+   *    `finalizeMarket(EXPIRED)` продолжают работать.
+   *
+   * Gzip здесь НЕ выполняется. Идемпотентен. Таймер отложенной активации
+   * (рынок ещё не начался) отменяется — файл в этом случае так и не будет
+   * создан, финализация такого writer-а ограничится удалением регистрации.
+   * Ошибки flush/close логируются и не пробрасываются: замороженное
+   * состояние наступает в любом случае.
+   */
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    const key = String(marketId);
+    const writer = this._writers.get(key);
+    if (!writer) {
+      this._logger.debug('sealMarket: market not found', { marketId: key });
+      return false;
+    }
+    if (writer.sealed) {
+      return true; // идемпотентен
+    }
+    writer.sealed = true; // синхронный запрет новых записей
+
+    if (writer.activationTimer) {
+      clearTimeout(writer.activationTimer);
+      writer.activationTimer = null;
+    }
+    // Legacy-роутинг по токенам снимается (identity-guarded)
+    for (const tokenId of writer.meta.tokenIds) {
+      if (this._tokenIndex.get(tokenId) === writer) {
+        this._tokenIndex.delete(tokenId);
+      }
+    }
+
+    try {
+      await this._flushWriter(writer);
+    } catch (err) {
+      this._logger.error('Failed to flush buffer while sealing market', {
+        marketId: key,
+        err: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+    await new Promise<void>((resolve) => {
+      if (!writer.stream) {
+        resolve();
+        return;
+      }
+      writer.stream.end((err?: Error | null) => {
+        if (err) {
+          this._logger.warn('Failed to close append stream while sealing market', {
+            marketId: key,
+            err: err.message,
+          });
+        }
+        resolve();
+      });
+    });
+    writer.stream = null;
+
+    this._logger.info('Market recording sealed (payload frozen, header still writable)', {
+      marketId: key,
+      eventsRecorded: writer.eventsRecorded,
+      filePath: writer.filePath,
+    });
+    return true;
+  }
+
+  /**
    * Обновляет первую строку (meta) файла с новыми rawMarket данными.
    *
    * @param marketId - ID рынка
    * @param updatedRawMarket - Обновлённый rawMarket из Gamma API
+   * @returns `true` — header фактически перезаписан; `false` — обновление
+   *   пропущено (нет writer-а, файл не активирован, meta не помещается в
+   *   зарезервированный блок либо файл без reserved-блока)
+   * @throws При ошибке I/O перезаписи (открытие/запись/sync)
    *
    * @remarks
    * Перезаписывает фиксированный first-line meta block без чтения всего файла.
    * Используется для записи `eventMetadata.priceToBeat` и `eventMetadata.finalPrice`,
    * которые появляются в API после старта/завершения рынка.
+   *
+   * Разрешён и для ACTIVE, и для SEALED writer-а (N-004 PART 43): writable
+   * header не связан с приёмом payload-записей. Исход наблюдаем (PART 26) —
+   * finalizer не должен объявлять успех, если header фактически не записан.
    */
-  public async updateMarketMeta(marketId: MarketId, updatedRawMarket: Record<string, unknown>): Promise<void> {
+  public async updateMarketMeta(
+    marketId: MarketId,
+    updatedRawMarket: Record<string, unknown>,
+  ): Promise<boolean> {
     const key = String(marketId);
     const writer = this._writers.get(key);
-    if (!writer) return;
+    if (!writer) return false;
 
-    if (!writer.active) return;
+    // Файл существует только после активации; sealed-файл остаётся writable
+    // по header-у (active не сбрасывается seal-ом — guard симметричен)
+    if (!writer.active && !writer.sealed) return false;
 
     await this._flushWriter(writer);
 
@@ -423,7 +525,7 @@ export class DataRecorder implements IMarketDataRecorder {
         reservedBytes: META_RESERVED_BYTES,
         err: err instanceof Error ? err.message : String(err),
       });
-      return;
+      return false;
     }
 
     if (!this._hasReservedMetaBlock(writer.filePath)) {
@@ -432,7 +534,7 @@ export class DataRecorder implements IMarketDataRecorder {
         filePath: writer.filePath,
         reservedBytes: META_RESERVED_BYTES,
       });
-      return;
+      return false;
     }
 
     const fd = await fs.promises.open(writer.filePath, 'r+');
@@ -445,8 +547,8 @@ export class DataRecorder implements IMarketDataRecorder {
 
     this._logger.info('Market meta updated with API data', {
       marketId: key,
-      hasPriceToBeat: updatedRawMarket['events'] !== undefined,
     });
+    return true;
   }
 
   /**
@@ -464,9 +566,11 @@ export class DataRecorder implements IMarketDataRecorder {
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
 
-    // Игнорируем события до startsAt (аналог CEX window alignment)
-    // и отказавшие writer-ы (буфер без stream никогда не будет сброшен)
-    if (!writer.active || writer.failed) return;
+    // Игнорируем события до startsAt (аналог CEX window alignment),
+    // отказавшие writer-ы (буфер без stream никогда не будет сброшен)
+    // и sealed-датасеты (payload заморожен; token-index при seal уже снят —
+    // guard защищает от рассинхрона)
+    if (!writer.active || writer.failed || writer.sealed) return;
 
     try {
       const line = this._formatter.formatRecord(rawEvent as object);
@@ -509,6 +613,9 @@ export class DataRecorder implements IMarketDataRecorder {
     // упавшая отложенная активация оставляет active=false, но это ошибка,
     // а не «ещё не начался»
     if (writer.failed) return 'failed';
+
+    // Payload-датасет заморожен (sealMarket) — новые строки отвергаются
+    if (writer.sealed) return 'sealed';
 
     // Игнорируем события до startsAt (activation policy, см. registerMarket)
     if (!writer.active) return 'inactive';

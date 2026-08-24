@@ -127,6 +127,7 @@ export type PolymarketRecordingStorage = Pick<
   DataRecorder,
   | 'registerMarket'
   | 'recordMarketEvent'
+  | 'sealMarket'
   | 'updateMarketMeta'
   | 'finalizeMarket'
   | 'flush'
@@ -429,28 +430,63 @@ export class ExternalMessageRecorder {
   }
 
   /**
+   * Замораживает payload-датасет рынка, снимая его realtime-маршрутизацию.
+   *
+   * @param marketId - ID рынка
+   * @returns `true` — датасет заморожен (или был); `false` — recorder закрыт
+   *   либо storage не знает такой writer
+   *
+   * @remarks
+   * Expiry-переход N-004 (PART 7): market/RTDS routing recording-сессии
+   * снимается НЕМЕДЛЕННО (новые ExternalMessages не попадают в payload),
+   * storage замораживает файл ({@link DataRecorder.sealMarket}), но writer
+   * СОХРАНЯЕТСЯ — доступны {@link ExternalMessageRecorder.updateMarketMeta}
+   * (enrichment header-а) и {@link ExternalMessageRecorder.finalizeMarket}
+   * с reason `'EXPIRED'` (архив). Общие RTDS-фиды других рынков не
+   * затрагиваются (per-feed removal). Идемпотентен на уровне storage.
+   */
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    const key = String(marketId);
+    if (this._closed) {
+      this._logger.warn('Market seal ignored: recorder is closed', { marketId: key });
+      return false;
+    }
+    const session = this._sessions.get(key);
+    if (session) {
+      this._sessions.delete(key);
+      this._removeRtdsRouting(session);
+    }
+    const sealed = await this._storage.sealMarket(marketId);
+    this._logger.info('Recording session sealed', { marketId: key, storageSealed: sealed });
+    return sealed;
+  }
+
+  /**
    * Обновляет first-line header рынка (opaque market metadata).
    *
    * @param marketId - ID рынка
    * @param updatedRawMarket - Обновлённые сырые данные рынка
-   * @returns Promise завершения перезаписи header
+   * @returns `true` — header фактически перезаписан storage-ом; `false` —
+   *   recorder закрыт либо storage пропустил обновление (наблюдаемый
+   *   контракт N-004 PART 26 — finalizer не объявляет успех без записи)
    * @throws При ошибке I/O storage
    *
    * @remarks
    * Passthrough в storage: recorder НЕ ходит в Gamma сам (PART 11) — данные
-   * приносит вызывающий (будущий Market Finalizer/Coordinator).
+   * приносит вызывающий (Market Finalizer/Coordinator). Работает и для
+   * SEALED-датасета (writable header ≠ приём payload-записей).
    */
   public async updateMarketMeta(
     marketId: MarketId,
     updatedRawMarket: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this._closed) {
       this._logger.warn('Market meta update ignored: recorder is closed', {
         marketId: String(marketId),
       });
-      return;
+      return false;
     }
-    await this._storage.updateMarketMeta(marketId, updatedRawMarket);
+    return this._storage.updateMarketMeta(marketId, updatedRawMarket);
   }
 
   /**
@@ -665,6 +701,12 @@ export class ExternalMessageRecorder {
         break;
       case 'unregistered':
         this._logger.warn('Recording session exists but storage writer is missing', {
+          marketId: String(session.marketId),
+        });
+        break;
+      case 'sealed':
+        // Рассинхрон session↔storage: seal обязан снимать routing ДО заморозки
+        this._logger.warn('Recording session exists but storage writer is sealed', {
           marketId: String(session.marketId),
         });
         break;

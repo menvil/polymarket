@@ -568,3 +568,128 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
   });
 });
+
+describe('DataRecorder sealed markets (N-004)', () => {
+  let tmpDir: string;
+  let logger: ILogger;
+  let recorder: DataRecorder;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recorder-seal-test-'));
+    logger = makeLogger();
+  });
+
+  afterEach(async () => {
+    try {
+      await recorder?.close();
+    } catch {
+      // already closed
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function marketFilePath(): string {
+    const today = new Date().toISOString().slice(0, 10);
+    const dir = path.join(tmpDir, today);
+    return path.join(dir, fs.readdirSync(dir)[0]);
+  }
+
+  it('seal замораживает payload: A,B записаны, D после seal отвергнут со sealed', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'B' })).toBe('recorded');
+
+    expect(await recorder.sealMarket(meta.marketId)).toBe(true);
+
+    // Новые записи отвергаются обоими путями маршрутизации
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'D' })).toBe('sealed');
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { seq: 'D-legacy' });
+
+    // Буфер сброшен seal-ом: датасет уже на диске и заморожен
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(3); // header + A + B
+    expect(JSON.parse(lines[1]).seq).toBe('A');
+    expect(JSON.parse(lines[2]).seq).toBe('B');
+    expect(lines.some((line) => line.includes('D'))).toBe(false);
+  });
+
+  it('seal идемпотентен; для незарегистрированного рынка возвращает false', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    expect(await recorder.sealMarket(meta.marketId)).toBe(true);
+    expect(await recorder.sealMarket(meta.marketId)).toBe(true);
+    expect(await recorder.sealMarket('unknown-mkt' as unknown as MarketId)).toBe(false);
+  });
+
+  it('header остаётся writable после seal: updateMarketMeta возвращает true и переписывает LINE 1', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    await recorder.sealMarket(meta.marketId);
+
+    const updated = await recorder.updateMarketMeta(meta.marketId, { finalization: 'done' });
+
+    expect(updated).toBe(true);
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    const header = JSON.parse(lines[0]);
+    expect(header.m).toEqual({ finalization: 'done' });
+    // Payload не пострадал от перезаписи header-а
+    expect(JSON.parse(lines[1]).seq).toBe('A');
+  });
+
+  it('updateMarketMeta наблюдаем: false для неизвестного рынка и oversized meta', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    expect(await recorder.updateMarketMeta('unknown' as unknown as MarketId, { a: 1 })).toBe(false);
+    expect(
+      await recorder.updateMarketMeta(meta.marketId, { blob: 'x'.repeat(17 * 1024) }),
+    ).toBe(false);
+    expect(await recorder.updateMarketMeta(meta.marketId, { ok: true })).toBe(true);
+  });
+
+  it('finalize EXPIRED из SEALED: gzip-архив содержит замороженный датасет без потерь', async () => {
+    const { GzipCompressor } = await import('../src/compression/GzipCompressor.js');
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { compression: 'gzip' }),
+      new NDJSONFormatter(),
+      new GzipCompressor(),
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    recorder.recordMarketEvent(meta.marketId, { seq: 'B' });
+    await recorder.sealMarket(meta.marketId);
+    const sealedPath = marketFilePath();
+
+    await recorder.finalizeMarket(meta.marketId, 'EXPIRED');
+
+    const zlib = await import('node:zlib');
+    const gzPath = `${sealedPath}.gz`;
+    expect(fs.existsSync(gzPath)).toBe(true);
+    const lines = zlib.gunzipSync(fs.readFileSync(gzPath)).toString('utf-8').trim().split('\n');
+    expect(lines).toHaveLength(3);
+    expect(JSON.parse(lines[1]).seq).toBe('A');
+    expect(JSON.parse(lines[2]).seq).toBe('B');
+  });
+
+  it('SHUTDOWN-семантика для SEALED не меняется: incomplete-файл удаляется', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    await recorder.sealMarket(meta.marketId);
+    const sealedPath = marketFilePath();
+
+    await recorder.finalizeMarket(meta.marketId, 'SHUTDOWN');
+
+    expect(fs.existsSync(sealedPath)).toBe(false);
+  });
+});
