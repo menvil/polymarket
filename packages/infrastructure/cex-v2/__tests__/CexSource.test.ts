@@ -328,6 +328,48 @@ describe('CexSource: payload contract', () => {
     await source.close();
   });
 
+  it('несериализуемое наблюдение пропускается и УЧИТЫВАЕТСЯ в getStats()', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ watchTrades: true }),
+      { watchOrderBookForSymbols: true, watchTradesForSymbols: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 2 &&
+        factory.instances.some((i) => i.obMultiplexFeed.hasWaiter) &&
+        factory.instances.some((i) => i.tradesMultiplexFeed.hasWaiter),
+    );
+
+    // Циклическая ссылка → JSON.stringify снапшота бросает
+    const circularOb = makeRawOb() as Record<string, unknown>;
+    circularOb['self'] = circularOb;
+    obInstance(factory).obMultiplexFeed.push(circularOb as unknown as CcxtRawOrderBook);
+
+    const circularTrade = makeRawTrade() as Record<string, unknown>;
+    circularTrade['info'] = { parent: circularTrade };
+    tradesInstance(factory).tradesMultiplexFeed.push([
+      circularTrade as unknown as CcxtRawTrade,
+      makeRawTrade({ id: 't-ok' }),
+    ]);
+
+    // Потери измеримы, потоки живы: следующее валидное наблюдение публикуется
+    await waitUntil(() => source.getStats().orderbookSnapshotFailures === 1);
+    await waitUntil(() => source.getStats().tradeSnapshotFailures === 1);
+    await waitUntil(() => publisher.ofType('CEX_TRADE').length === 1);
+    expect(publisher.ofType('CEX_TRADE')[0]!.payload.trade.id).toBe('t-ok');
+
+    obInstance(factory).obMultiplexFeed.push(makeRawOb());
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+    expect(source.getStats()).toEqual({
+      orderbookSnapshotFailures: 1,
+      tradeSnapshotFailures: 1,
+    });
+    expect(logger.byLevel('error').filter((e) => e.message.includes('snapshot'))).toHaveLength(2);
+
+    await source.close();
+  });
+
   it('trade без символа в multiplex пропускается, per-symbol получает fallback', async () => {
     const { source, factory, publisher } = makeHarness(
       baseConfig({ watchOrderbook: false, watchTrades: true }),

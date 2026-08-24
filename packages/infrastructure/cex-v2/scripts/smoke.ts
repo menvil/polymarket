@@ -165,6 +165,8 @@ async function main(): Promise<void> {
   const statsBeforeClose = recorder.getCexStats();
   await recorder.close();
   await bus.close();
+  const sourceStats = source.getStats();
+  const storageStats = cexStorage.getStats();
 
   // ── Verification ──
   console.log('\n── Results ──');
@@ -172,10 +174,26 @@ async function main(): Promise<void> {
   console.log(`CEX_TRADE messages: ${tradeMessages}`);
   console.log(`symbols observed: ${[...seenSymbols].join(', ')}`);
   console.log(`recorder cex stats: ${JSON.stringify(statsBeforeClose)}`);
+  console.log(`source stats: ${JSON.stringify(sourceStats)}`);
+  console.log(`window storage stats: ${JSON.stringify(storageStats)}`);
 
   if (orderbookMessages === 0) fail('no CEX_ORDERBOOK messages were published');
   if (tradeMessages === 0) fail('no CEX_TRADE messages were published');
-  if (statsBeforeClose.cexRecordsWritten === 0) fail('recorder wrote no CEX records');
+  if (statsBeforeClose.cexRecordsAccepted === 0) fail('recorder accepted no CEX records');
+  if (statsBeforeClose.cexWriteFailures > 0 || statsBeforeClose.cexHandlerErrors > 0) {
+    fail(`recorder observed failures: ${JSON.stringify(statsBeforeClose)}`);
+  }
+  if (sourceStats.orderbookSnapshotFailures > 0 || sourceStats.tradeSnapshotFailures > 0) {
+    fail(`snapshot failures detected: ${JSON.stringify(sourceStats)}`);
+  }
+  if (
+    storageStats.rotationFailures > 0 ||
+    storageStats.streamCloseFailures > 0 ||
+    storageStats.compressionFailures > 0
+  ) {
+    fail(`window storage failures detected: ${JSON.stringify(storageStats)}`);
+  }
+  if (storageStats.partitionsCompleted === 0) fail('no partitions were completed');
 
   const allFiles = listTree(cexDir);
   const archives = allFiles.filter((file) => file.endsWith('.jsonl.gz'));
@@ -185,6 +203,12 @@ async function main(): Promise<void> {
     console.log(`  ${path.relative(cexDir, file)}`);
   }
   if (archives.length === 0) fail('no completed gzip partitions were produced');
+  if (archives.length !== storageStats.partitionsCompleted) {
+    fail(
+      `completed-partition invariant broken: ${archives.length} archives vs ` +
+        `${storageStats.partitionsCompleted} partitionsCompleted`,
+    );
+  }
   if (incomplete.length > 0) {
     fail(`incomplete .jsonl left after close: ${incomplete.join(', ')}`);
   }

@@ -162,7 +162,7 @@ describe('CEX lifecycle', () => {
     expect(cexStorage.writes).toHaveLength(0);
     expect(plain.getCexStats()).toEqual({
       cexMessagesRouted: 0,
-      cexRecordsWritten: 0,
+      cexRecordsAccepted: 0,
       cexRecordsDroppedInactive: 0,
       cexWriteFailures: 0,
       cexHandlerErrors: 0,
@@ -182,7 +182,7 @@ describe('CEX stats / защитный контур', () => {
 
     expect(recorder.getCexStats()).toEqual({
       cexMessagesRouted: 3,
-      cexRecordsWritten: 1,
+      cexRecordsAccepted: 1,
       cexRecordsDroppedInactive: 1,
       cexWriteFailures: 1,
       cexHandlerErrors: 0,

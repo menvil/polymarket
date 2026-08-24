@@ -17,6 +17,7 @@ export type {
   CexStreamKind,
   CexWindowRecordOutcome,
   CexWindowRecorderConfig,
+  CexWindowRecorderStats,
 } from './CexWindowRecorder.js';
 export { ArchivedMarketMetaRewriter } from './ArchivedMarketMetaRewriter.js';
 export { DecisionJournalRecorder } from './DecisionJournalRecorder.js';

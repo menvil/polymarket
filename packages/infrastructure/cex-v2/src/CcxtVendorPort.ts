@@ -184,6 +184,48 @@ function loadCcxt(): Promise<typeof import('ccxt')> {
   return ccxtModulePromise;
 }
 
+/** Аргументы конструктора CCXT-инстанса, собранные фабрикой. */
+export interface CcxtInstanceConstructorArgs {
+  /** Встроенный rate-limiter CCXT включён. */
+  readonly enableRateLimit: boolean;
+  /** `options` инстанса (defaultType/timeout/newUpdates/watchOrderBook/ws). */
+  readonly options: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Собирает аргументы конструктора CCXT-инстанса для заданных параметров.
+ *
+ * @param params - Идентификатор биржи, тип рынка и эффективная глубина
+ * @returns Аргументы `new ccxt.pro[exchangeId](...)`
+ *
+ * @remarks
+ * Чистая функция, выделенная из {@link createCcxtProExchange} ради
+ * детерминированной проверки контракта БЕЗ сети и без загрузки vendor-модуля:
+ * `marketType` уходит в `options.defaultType` КАК ЕСТЬ — V2 говорит на
+ * нативной unified-терминологии CCXT (`spot`/`future`/`swap`), никакой
+ * скрытой конверсии `future → futures` нет.
+ */
+export function buildCcxtInstanceOptions(
+  params: CcxtProExchangeFactoryParams,
+): CcxtInstanceConstructorArgs {
+  const keepAlive = KEEP_ALIVE_OVERRIDES[params.exchangeId];
+  const wsOptions: Record<string, unknown> = {};
+  if (keepAlive?.keepAlive !== undefined) wsOptions['keepAlive'] = keepAlive.keepAlive;
+  if (keepAlive?.maxPingPongMisses !== undefined) {
+    wsOptions['maxPingPongMisses'] = keepAlive.maxPingPongMisses;
+  }
+
+  const options: Record<string, unknown> = {
+    defaultType: params.marketType,
+    timeout: INSTANCE_TIMEOUT_MS,
+    newUpdates: true,
+    watchOrderBook: { checksum: false, limit: params.depth },
+  };
+  if (Object.keys(wsOptions).length > 0) options['ws'] = wsOptions;
+
+  return { enableRateLimit: true, options };
+}
+
 /**
  * Production-фабрика: создаёт реальный CCXT Pro инстанс биржи.
  *
@@ -224,23 +266,9 @@ export async function createCcxtProExchange(
     throw new Error(`Exchange '${params.exchangeId}' not found in ccxt.pro`);
   }
 
-  const keepAlive = KEEP_ALIVE_OVERRIDES[params.exchangeId];
-  const wsOptions: Record<string, unknown> = {};
-  if (keepAlive?.keepAlive !== undefined) wsOptions['keepAlive'] = keepAlive.keepAlive;
-  if (keepAlive?.maxPingPongMisses !== undefined) {
-    wsOptions['maxPingPongMisses'] = keepAlive.maxPingPongMisses;
-  }
-
-  const options: Record<string, unknown> = {
-    defaultType: params.marketType,
-    timeout: INSTANCE_TIMEOUT_MS,
-    newUpdates: true,
-    watchOrderBook: { checksum: false, limit: params.depth },
-  };
-  if (Object.keys(wsOptions).length > 0) options['ws'] = wsOptions;
-
+  const constructorArgs = buildCcxtInstanceOptions(params);
   return new ExchangeClass({
-    enableRateLimit: true,
-    options,
+    enableRateLimit: constructorArgs.enableRateLimit,
+    options: { ...constructorArgs.options },
   });
 }

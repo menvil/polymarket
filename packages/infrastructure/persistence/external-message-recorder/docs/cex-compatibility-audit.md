@@ -37,7 +37,7 @@ Generic buffered-writer НЕ извлечён: extraction потребовала
 |---|---|
 | Буферизация строк (200 строк / flush 5s) | `CexWindowRecorder`: те же дефолты; hot path recorder-а — route + serialize + enqueue |
 | Time-window ротация (выровненные 5-мин окна) | Сохранена; окно назначается В МОМЕНТ записи — закрыта гонка legacy, терявшая строки во время асинхронного gzip |
-| Gzip при ротации окна | `GzipCompressor` (atomic tmp → rename), `.jsonl` = incomplete, `.jsonl.gz` = завершённый |
+| Gzip при ротации окна | `GzipCompressor` (atomic tmp → rename); строгая цепочка завершения: flush подтверждён → stream закрыт finish-ем → gzip успешен → completed. Любой отказ (включая ТАЙМАУТ закрытия stream и отказ gzip) оставляет `.jsonl` incomplete-артефактом — false-completed `.jsonl.gz` невозможен; отказы видны в `CexWindowRecorder.getStats()` |
 | Naming `{utcDate}/{exchange}/{exchange}_{symbol}_{type}_{окно ET}` | Сохранён + сегмент `stream` (`orderbook`/`trades`): payload-only строки V2 не несут дискриминатора `t`, поток обязан жить в имени; символы санитизируются по `[/:]`; окна, не кратные минуте (только тесты), получают секунды в метке |
 | Cleanup незавершённых `.jsonl` при старте и close | Та же семантика (`cleanup()` при старте процесса, удаление незавершённых окон при `close()`) |
 | Множественные writer-ы `(exchange, symbol, marketType)` | Ключ расширен потоком: `(exchange, symbol, marketType, stream)`; routing-идентичность приходит В КАЖДОМ typed payload — регистраций нет |

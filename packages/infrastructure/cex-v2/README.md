@@ -88,6 +88,28 @@ depth подписки.
 - `CexExternalMessage` — union для параметризации общего bus на
   composition root: `ExternalMessageBus<PolymarketExternalMessage | CexExternalMessage>`.
 
+## Storage completion invariant (оконная policy)
+
+Для партиций `CexWindowRecorder` действует строгий контракт завершения:
+
+```text
+.jsonl.gz = successfully finalized completed window
+            (flush подтверждён → stream закрыт finish-ем → gzip успешен)
+.jsonl    = incomplete / failed артефакт
+            (или завершённое окно при явной policy compression: 'none')
+```
+
+При production `compression: 'gzip'` НИ ОДИН из отказов — failed flush,
+failed close, close timeout, failed gzip — не может породить `.jsonl.gz`:
+таймаут/ошибка = отказ writer-а, партиция остаётся incomplete и удаляется
+startup-cleanup-ом. Отказы измеримы: `CexWindowRecorder.getStats()`
+(`partitionsCompleted`/`rotationFailures`/`streamCloseFailures`/
+`compressionFailures`), потери снапшотов source —
+`CexSource.getStats()` (`orderbookSnapshotFailures`/`tradeSnapshotFailures`),
+приём строк recorder-ом — `getCexStats().cexRecordsAccepted` (семантика:
+принято в memory-буфер storage, НЕ durability-факт; hot path остаётся
+buffered/асинхронным).
+
 ## Recorder integration
 
 Пакет НЕ пишет на диск и не знает о recorder-е. Композиция (см.

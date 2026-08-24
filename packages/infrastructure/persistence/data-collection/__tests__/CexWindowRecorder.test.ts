@@ -14,6 +14,7 @@ import * as zlib from 'node:zlib';
 import type { ILogger } from '@polymarket/logger';
 import { CexWindowRecorder } from '../src/CexWindowRecorder.js';
 import type { CexWindowRecorderConfig } from '../src/CexWindowRecorder.js';
+import { GzipCompressor } from '../src/compression/GzipCompressor.js';
 
 function makeLogger(): ILogger {
   return {
@@ -315,6 +316,309 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     expect(fs.existsSync(path.join(strayDir, 'stray_incomplete.jsonl'))).toBe(false);
     expect(fs.existsSync(path.join(strayDir, 'completed.jsonl.gz'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'unrelated.jsonl'))).toBe(true);
+  });
+});
+
+/**
+ * Управляемый fake writable stream: детерминированно воспроизводит
+ * hang/error пути write/end без реального FS и без ожидания production
+ * таймаутов (test hook `createStream` + `streamCloseTimeoutMs`).
+ */
+class FakeWriteStream {
+  public destroyCalls = 0;
+  public written = '';
+  /** Отложенные write-подтверждения режима `write-manual`. */
+  public readonly pendingWrites: Array<() => void> = [];
+  private readonly _errorListeners: Array<(error: Error) => void> = [];
+  private readonly _closeListeners: Array<() => void> = [];
+
+  constructor(
+    private readonly _mode:
+      | 'ok'
+      | 'write-error'
+      | 'write-hang'
+      | 'write-manual'
+      | 'end-hang'
+      | 'end-error',
+  ) {}
+
+  public write(data: string, callback?: (error?: Error | null) => void): boolean {
+    if (this._mode === 'write-error') {
+      callback?.(new Error('injected write failure'));
+      return true;
+    }
+    if (this._mode === 'write-hang') {
+      return true; // подтверждение никогда не приходит
+    }
+    if (this._mode === 'write-manual') {
+      // Подтверждение придёт только когда тест освободит его явно
+      this.pendingWrites.push(() => {
+        this.written += data;
+        callback?.(null);
+      });
+      return true;
+    }
+    this.written += data;
+    callback?.(null);
+    return true;
+  }
+
+  public end(callback?: (error?: Error | null) => void): void {
+    if (this._mode === 'end-hang') {
+      return; // finish никогда не приходит
+    }
+    if (this._mode === 'end-error') {
+      callback?.(new Error('injected close failure'));
+      return;
+    }
+    callback?.(null);
+  }
+
+  public on(event: string, listener: (...args: never[]) => void): this {
+    if (event === 'error') this._errorListeners.push(listener as (error: Error) => void);
+    return this;
+  }
+
+  public once(event: string, listener: (...args: never[]) => void): this {
+    if (event === 'error') this._errorListeners.push(listener as (error: Error) => void);
+    if (event === 'close') this._closeListeners.push(listener as () => void);
+    return this;
+  }
+
+  public destroy(): void {
+    this.destroyCalls++;
+    for (const listener of this._closeListeners.splice(0)) {
+      listener();
+    }
+  }
+}
+
+describe('CexWindowRecorder: строгая completion-семантика (failure paths)', () => {
+  let dir: string;
+  let now: number;
+  let logger: ILogger;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cex-window-fail-'));
+    now = ALIGNED_T0 + 90_000;
+    logger = makeLogger();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Recorder с fake-stream фабрикой и коротким подтверждающим таймаутом. */
+  function makeFailingRecorder(mode: ConstructorParameters<typeof FakeWriteStream>[0]): {
+    recorder: CexWindowRecorder;
+    streams: FakeWriteStream[];
+  } {
+    const streams: FakeWriteStream[] = [];
+    const recorder = new CexWindowRecorder(
+      {
+        outputDir: dir,
+        compression: 'gzip',
+        windowMinutes: 5,
+        flushIntervalMs: 60_000,
+        streamCloseTimeoutMs: 30,
+      },
+      logger,
+      () => now,
+      (filePath) => {
+        void filePath;
+        const stream = new FakeWriteStream(mode);
+        streams.push(stream);
+        return stream as unknown as fs.WriteStream;
+      },
+    );
+    return { recorder, streams };
+  }
+
+  /** Записывает строку в первое окно и пересекает границу (триггер ротации). */
+  async function writeAndRotate(recorder: CexWindowRecorder): Promise<void> {
+    recorder.start();
+    const window1 = ALIGNED_T0 + WINDOW_MS;
+    now = window1 + 1_000;
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 1 })).toBe('recorded');
+    now = window1 + WINDOW_MS + 1_000;
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 2 });
+    // Ротация первого writer-а начата write-ом выше; дожидаемся её исхода
+    await waitFor(() => recorder.getStats().rotationFailures + recorder.getStats().partitionsCompleted > 0);
+  }
+
+  /** Совокупные ассерты «партиция НЕ объявлена completed». */
+  function expectNotCompleted(recorder: CexWindowRecorder): void {
+    const stats = recorder.getStats();
+    expect(stats.partitionsCompleted).toBe(0);
+    expect(stats.rotationFailures).toBe(1);
+    // Ни одного .jsonl.gz не появилось
+    expect(listFiles(dir).some((file) => file.endsWith('.jsonl.gz'))).toBe(false);
+    // «Partition completed» не логировался
+    const infoCalls = jest.mocked(logger.info).mock.calls.map((call) => String(call[0]));
+    expect(infoCalls.some((message) => message.includes('partition completed'))).toBe(false);
+  }
+
+  it('write/flush error → writer failed, без gzip, партиция не completed (4.4)', async () => {
+    const { recorder } = makeFailingRecorder('write-error');
+    await writeAndRotate(recorder);
+
+    expectNotCompleted(recorder);
+    expect(recorder.getStats().streamCloseFailures).toBeGreaterThanOrEqual(1);
+    await recorder.close();
+  });
+
+  it('flush confirmation timeout → отказ, без gzip (4.4/13)', async () => {
+    const { recorder } = makeFailingRecorder('write-hang');
+    await writeAndRotate(recorder);
+
+    expectNotCompleted(recorder);
+    expect(recorder.getStats().streamCloseFailures).toBeGreaterThanOrEqual(1);
+    await recorder.close();
+  });
+
+  it('stream close error → без gzip, партиция не completed (4.3)', async () => {
+    const { recorder } = makeFailingRecorder('end-error');
+    await writeAndRotate(recorder);
+
+    expectNotCompleted(recorder);
+    expect(recorder.getStats().streamCloseFailures).toBe(1);
+    await recorder.close();
+  });
+
+  it('stream close timeout → отказ (НЕ успех), stream разрушен, без gzip (4.2)', async () => {
+    const { recorder, streams } = makeFailingRecorder('end-hang');
+    await writeAndRotate(recorder);
+
+    expectNotCompleted(recorder);
+    expect(recorder.getStats().streamCloseFailures).toBe(1);
+    // Dangling writable stream не остаётся — разрушен best-effort
+    expect(streams[0]!.destroyCalls).toBeGreaterThanOrEqual(1);
+
+    // Failed rotation не подвешивает shutdown
+    const closeStart = Date.now();
+    await recorder.close();
+    expect(Date.now() - closeStart).toBeLessThan(1_000);
+  });
+
+  it('gzip failure → .jsonl остаётся, НЕ completed, без false-success (4.5)', async () => {
+    jest
+      .spyOn(GzipCompressor.prototype, 'compressFile')
+      .mockRejectedValue(new Error('injected gzip failure'));
+
+    // Реальные streams: до gzip-этапа цепочка успешна
+    const recorder = new CexWindowRecorder(
+      {
+        outputDir: dir,
+        compression: 'gzip',
+        windowMinutes: 5,
+        flushIntervalMs: 60_000,
+      },
+      logger,
+      () => now,
+    );
+    await writeAndRotate(recorder);
+
+    const stats = recorder.getStats();
+    expect(stats.compressionFailures).toBe(1);
+    expect(stats.rotationFailures).toBe(1);
+    expect(stats.partitionsCompleted).toBe(0);
+    // Исходный .jsonl НЕ уничтожен и данные читаемы
+    const leftover = listFiles(dir).filter(
+      (file) => file.endsWith('.jsonl') && file.includes('_orderbook_') && !file.includes('.gz'),
+    );
+    const failedPartition = leftover.find((file) =>
+      fs.readFileSync(path.join(dir, file), 'utf8').includes('"w":1'),
+    );
+    expect(failedPartition).toBeDefined();
+    expect(listFiles(dir).some((file) => file.endsWith('.jsonl.gz'))).toBe(false);
+    const infoCalls = jest.mocked(logger.info).mock.calls.map((call) => String(call[0]));
+    expect(infoCalls.some((message) => message.includes('partition completed'))).toBe(false);
+
+    await recorder.close();
+  });
+
+  it('конкурентные flush сериализуются: второй не резолвится до чужого подтверждения', async () => {
+    // Большой подтверждающий таймаут: гонка проверяется до его истечения
+    const streams: FakeWriteStream[] = [];
+    const recorder = new CexWindowRecorder(
+      {
+        outputDir: dir,
+        compression: 'gzip',
+        windowMinutes: 5,
+        flushIntervalMs: 60_000,
+        streamCloseTimeoutMs: 5_000,
+      },
+      logger,
+      () => now,
+      (filePath) => {
+        void filePath;
+        const stream = new FakeWriteStream('write-manual');
+        streams.push(stream);
+        return stream as unknown as fs.WriteStream;
+      },
+    );
+    recorder.start();
+    now = ALIGNED_T0 + WINDOW_MS + 1_000;
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { race: 1 })).toBe(
+      'recorded',
+    );
+
+    // Первый flush дренирует буфер, его write-подтверждение задержано
+    const first = recorder.flush();
+    await waitFor(() => streams[0]!.pendingWrites.length === 1);
+
+    // Второй flush видит ПУСТОЙ буфер, но обязан ждать чужое подтверждение
+    let secondSettled = false;
+    const second = recorder.flush().then(() => {
+      secondSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(secondSettled).toBe(false);
+
+    // Освобождаем подтверждение — обе цепочки завершаются, данные «на диске»
+    streams[0]!.pendingWrites.shift()!();
+    await Promise.all([first, second]);
+    expect(secondSettled).toBe(true);
+    expect(streams[0]!.written).toBe(`${JSON.stringify({ race: 1 })}\n`);
+
+    await recorder.close();
+  });
+
+  it('успешная цепочка flush → close → gzip учитывается в partitionsCompleted (4.1)', async () => {
+    const recorder = new CexWindowRecorder(
+      { outputDir: dir, compression: 'gzip', windowMinutes: 5, flushIntervalMs: 60_000 },
+      logger,
+      () => now,
+    );
+    await writeAndRotate(recorder);
+
+    const stats = recorder.getStats();
+    expect(stats).toEqual({
+      partitionsCompleted: 1,
+      rotationFailures: 0,
+      streamCloseFailures: 0,
+      compressionFailures: 0,
+    });
+    const gz = listFiles(dir).find((file) => file.endsWith('.jsonl.gz'));
+    expect(gz).toBeDefined();
+    expect(gunzipLines(path.join(dir, gz!))).toEqual([JSON.stringify({ w: 1 })]);
+    await recorder.close();
+  });
+
+  it('compression=none: подтверждённые flush+close достаточны для completed (2.4)', async () => {
+    const recorder = new CexWindowRecorder(
+      { outputDir: dir, compression: 'none', windowMinutes: 5, flushIntervalMs: 60_000 },
+      logger,
+      () => now,
+    );
+    await writeAndRotate(recorder);
+
+    expect(recorder.getStats().partitionsCompleted).toBe(1);
+    expect(recorder.getStats().rotationFailures).toBe(0);
+    // Политика без архива: .jsonl завершённого окна остаётся как есть
+    expect(listFiles(dir).some((file) => file.endsWith('.jsonl.gz'))).toBe(false);
+    await recorder.close();
   });
 });
 

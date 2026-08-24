@@ -96,6 +96,32 @@ export interface CexWindowRecorderConfig {
   readonly bufferSize?: number;
   /** Интервал периодического flush (ms). Default: 5000. */
   readonly flushIntervalMs?: number;
+  /**
+   * Таймаут подтверждения stream-операций при flush/завершении окна (ms).
+   * Default: 5000. Истечение таймаута — это ОТКАЗ writer-а (партиция
+   * остаётся incomplete), а не успех.
+   */
+  readonly streamCloseTimeoutMs?: number;
+}
+
+/**
+ * Диагностические счётчики оконной политики (completion visibility).
+ *
+ * @remarks
+ * Инвариант завершения: `partitionsCompleted` растёт ТОЛЬКО когда вся
+ * обязательная цепочка `flush → close stream → gzip (если настроен)`
+ * подтверждённо успешна. Любой отказ цепочки виден в `rotationFailures`
+ * (+ уточняющие `streamCloseFailures`/`compressionFailures`).
+ */
+export interface CexWindowRecorderStats {
+  /** Успешно завершённых партиций (вся цепочка finalization подтверждена). */
+  readonly partitionsCompleted: number;
+  /** Ротаций, НЕ завершившихся успехом (партиция осталась incomplete). */
+  readonly rotationFailures: number;
+  /** Отказов/таймаутов подтверждения записи или закрытия stream. */
+  readonly streamCloseFailures: number;
+  /** Отказов gzip-сжатия завершённого окна (`.jsonl` сохранён). */
+  readonly compressionFailures: number;
 }
 
 /** Состояние одного оконного writer-а. */
@@ -111,12 +137,19 @@ interface WindowWriter {
   linesAccepted: number;
   /** true после ошибки stream — строки далее не принимаются. */
   failed: boolean;
+  /**
+   * Хвост цепочки flush-ей writer-а: конкурентные flush (threshold,
+   * интервальный таймер, публичный `flush()`, ротация) сериализуются —
+   * каждый resolve гарантирует, что ВСЕ ранее принятые строки подтверждены
+   * stream-ом, а не только собственный drain вызова.
+   */
+  pendingFlush: Promise<boolean> | null;
 }
 
 const DEFAULT_WINDOW_MINUTES = 5;
 const DEFAULT_BUFFER_SIZE = 200;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
-const CLOSE_STREAM_TIMEOUT_MS = 5_000;
+const DEFAULT_STREAM_CLOSE_TIMEOUT_MS = 5_000;
 
 /**
  * Оконный storage-движок CEX-партиций: буферизация, ротация по границе
@@ -133,6 +166,25 @@ const CLOSE_STREAM_TIMEOUT_MS = 5_000;
  * close()   → таймеры сняты, in-flight ротации дождались, незавершённые
  *             .jsonl текущих окон удалены
  * ```
+ *
+ * ### Строгая семантика завершения партиции
+ *
+ * ```text
+ * flush подтверждён
+ *      ↓ иначе → FAILED (partition incomplete)
+ * stream закрыт подтверждённо (finish)
+ *      ↓ error/timeout → FAILED (без gzip)
+ * gzip успешен (если compression=gzip)
+ *      ↓ отказ → FAILED (.jsonl сохранён)
+ * COMPLETED
+ * ```
+ *
+ * Инвариант storage: `.jsonl.gz` существует ⇒ flush успешен ⇒ stream
+ * полностью закрыт ⇒ gzip успешен. Таймаут закрытия stream — это ОТКАЗ,
+ * а не успех: writer помечается failed, gzip не выполняется, партиция
+ * остаётся incomplete (`.jsonl`) и будет удалена startup-cleanup-ом.
+ * При `compression: 'none'` завершением считается подтверждённые
+ * flush + close (политика явно настроена без архива).
  *
  * Потокобезопасность — single-threaded Node.js.
  *
@@ -170,24 +222,54 @@ export class CexWindowRecorder {
   private _started = false;
   private _closed = false;
   private _closePromise: Promise<void> | null = null;
+  private readonly _streamCloseTimeoutMs: number;
+  /** Фабрика writable stream партиции (test hook). */
+  private readonly _createStream: (filePath: string) => fs.WriteStream;
+
+  // Счётчики CexWindowRecorderStats (mutable-состояние диагностики)
+  private _partitionsCompleted = 0;
+  private _rotationFailures = 0;
+  private _streamCloseFailures = 0;
+  private _compressionFailures = 0;
 
   /**
    * @param config - Конфигурация оконной политики
    * @param logger - Логгер (будет обёрнут в child с component-контекстом)
    * @param now - @internal Test hook: источник времени. Default: `Date.now`
+   * @param createStream - @internal Test hook: фабрика writable stream
+   *   партиции (детерминированные failure-тесты hang/error путей).
+   *   Default: `fs.createWriteStream(filePath, { flags: 'a' })`
    */
   constructor(
     config: CexWindowRecorderConfig,
     logger: ILogger,
     now: () => number = Date.now,
+    createStream: (filePath: string) => fs.WriteStream = (filePath) =>
+      fs.createWriteStream(filePath, { flags: 'a' }),
   ) {
+    this._createStream = createStream;
     this._logger = logger.child({ component: 'CexWindowRecorder' });
     this._windowMs = Math.max(1, Math.round((config.windowMinutes ?? DEFAULT_WINDOW_MINUTES) * 60_000));
     this._bufferSize = config.bufferSize ?? DEFAULT_BUFFER_SIZE;
     this._flushIntervalMs = config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
     this._compressor = config.compression === 'gzip' ? new GzipCompressor() : null;
+    this._streamCloseTimeoutMs = config.streamCloseTimeoutMs ?? DEFAULT_STREAM_CLOSE_TIMEOUT_MS;
     this._now = now;
     this._outputDir = config.outputDir;
+  }
+
+  /**
+   * Возвращает снимок диагностических счётчиков оконной политики.
+   *
+   * @returns Текущие значения {@link CexWindowRecorderStats}
+   */
+  public getStats(): CexWindowRecorderStats {
+    return {
+      partitionsCompleted: this._partitionsCompleted,
+      rotationFailures: this._rotationFailures,
+      streamCloseFailures: this._streamCloseFailures,
+      compressionFailures: this._compressionFailures,
+    };
   }
 
   /** true после {@link CexWindowRecorder.close}. */
@@ -459,28 +541,56 @@ export class CexWindowRecorder {
   }
 
   /**
-   * Завершает окно writer-а: flush → close stream → gzip.
+   * Завершает окно writer-а строгой цепочкой: flush → close stream → gzip.
    *
    * @param writer - Writer завершённого окна (уже удалён из map)
+   *
+   * @remarks
+   * Партиция объявляется completed ТОЛЬКО при подтверждённом успехе всех
+   * обязательных этапов. Любой отказ (flush error/timeout, stream
+   * error/timeout, gzip error) оставляет `.jsonl` incomplete-артефактом:
+   * gzip НЕ выполняется поверх неподтверждённых данных, «completed» не
+   * логируется, отказ учитывается в счётчиках. Незавершённый артефакт
+   * удалит startup-cleanup следующего запуска (та же судьба, что у любых
+   * incomplete `.jsonl`).
    */
   private async _rotateWriter(writer: WindowWriter): Promise<void> {
-    await this._flushWriter(writer);
-    await this._endStream(writer);
+    const flushed = await this._flushWriter(writer);
+    const closed = await this._endStream(writer);
 
-    if (this._compressor && !writer.failed) {
+    if (!flushed || !closed || writer.failed) {
+      this._rotationFailures++;
+      this._logger.error('CEX window rotation failed, partition left incomplete', {
+        filePath: writer.filePath,
+        flushConfirmed: flushed,
+        streamClosed: closed,
+        windowUTC: new Date(writer.windowStart).toISOString(),
+      });
+      return;
+    }
+
+    if (this._compressor) {
       try {
         await this._compressor.compressFile(writer.filePath);
         this._logger.debug('CEX window partition compressed', { filePath: writer.filePath });
       } catch (error) {
-        this._logger.warn('Failed to gzip CEX window partition', {
+        // Компрессор не удаляет исходник при отказе — .jsonl остаётся
+        // incomplete-артефактом, completed-статус НЕ объявляется
+        this._compressionFailures++;
+        this._rotationFailures++;
+        this._logger.error('CEX window compression failed, partition left incomplete', {
           filePath: writer.filePath,
           error: error instanceof Error ? error.message : String(error),
         });
+        return;
       }
     }
+
+    this._partitionsCompleted++;
     this._logger.info('CEX window partition completed', {
       filePath: writer.filePath,
       lines: writer.linesAccepted,
+      compressed: this._compressor !== null,
       windowUTC: new Date(writer.windowStart).toISOString(),
     });
   }
@@ -508,9 +618,10 @@ export class CexWindowRecorder {
       windowStart,
       filePath,
       buffer: [],
-      stream: fs.createWriteStream(filePath, { flags: 'a' }),
+      stream: this._createStream(filePath),
       linesAccepted: 0,
       failed: false,
+      pendingFlush: null,
     };
     writer.stream!.on('error', (error) => {
       writer.failed = true;
@@ -522,30 +633,87 @@ export class CexWindowRecorder {
   }
 
   /**
-   * Пишет буфер writer-а в stream.
+   * Пишет буфер writer-а в stream и дожидается ПОДТВЕРЖДЕНИЯ, сериализуя
+   * конкурентные flush-и.
+   *
+   * @param writer - Writer для сброса буфера
+   * @returns `true` — все принятые к этому моменту строки подтверждённо
+   *   переданы stream-у; `false` — write error либо таймаут подтверждения
+   *   (writer помечен failed, партиция не может стать completed)
    *
    * @remarks
-   * Дожидается write-callback-а (данные переданы ОС): после `flush()`
-   * содержимое наблюдаемо на диске — контракт нужен ротации (gzip читает
-   * файл сразу после flush) и детерминизму shutdown.
+   * Flush-и одного writer-а выстраиваются в цепочку (`pendingFlush`):
+   * без этого конкурентный вызов (например, публичный `flush()` во время
+   * in-flight интервального) увидел бы уже опустошённый буфер и resolve-ился
+   * бы ДО того, как чужие данные подтверждены stream-ом — наблюдаемое
+   * состояние файла врало бы вызывающему (ротация начала бы gzip раньше
+   * подтверждения записи).
    */
-  private async _flushWriter(writer: WindowWriter): Promise<void> {
-    if (writer.buffer.length === 0 || !writer.stream || writer.failed) return;
+  private _flushWriter(writer: WindowWriter): Promise<boolean> {
+    const previous = writer.pendingFlush;
+    const current = (async (): Promise<boolean> => {
+      const previousOk = previous === null ? true : await previous;
+      const drained = await this._drainWriterBuffer(writer);
+      return previousOk && drained && !writer.failed;
+    })();
+    writer.pendingFlush = current;
+    return current;
+  }
+
+  /**
+   * Один drain буфера в stream с подтверждением write-callback-ом.
+   *
+   * @param writer - Writer для сброса буфера
+   * @returns `true` — буфер подтверждённо передан (или был пуст);
+   *   `false` — write error либо таймаут подтверждения
+   *
+   * @remarks
+   * Подтверждение нужно ротации: gzip читает файл сразу после flush.
+   * Ожидание ограничено `streamCloseTimeoutMs` — зависший FS не
+   * подвешивает ротацию/shutdown; таймаут = отказ writer-а, НЕ успех
+   * (поздний callback гонки не создаёт: failed-writer больше не участвует
+   * в завершении).
+   */
+  private async _drainWriterBuffer(writer: WindowWriter): Promise<boolean> {
+    if (writer.failed) return false;
+    if (writer.buffer.length === 0) return true;
+    const stream = writer.stream;
+    if (!stream) return false;
 
     const data = writer.buffer.join('');
     writer.buffer = [];
 
-    const stream = writer.stream;
-    await new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (ok: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      const timer = setTimeout(() => {
+        writer.failed = true;
+        this._streamCloseFailures++;
+        this._logger.error('CEX window flush confirmation timed out', {
+          filePath: writer.filePath,
+          timeoutMs: this._streamCloseTimeoutMs,
+        });
+        settle(false);
+      }, this._streamCloseTimeoutMs);
+      timer.unref?.();
+
       stream.write(data, (error) => {
+        clearTimeout(timer);
         if (error) {
           writer.failed = true;
+          this._streamCloseFailures++;
           this._logger.error('CEX window stream write error', {
             filePath: writer.filePath,
             error: error.message,
           });
+          settle(false);
+          return;
         }
-        resolve();
+        settle(!writer.failed);
       });
     });
   }
@@ -554,28 +722,91 @@ export class CexWindowRecorder {
     await Promise.all([...this._writers.values()].map((writer) => this._flushWriter(writer)));
   }
 
-  /** Корректно завершает stream writer-а (`end`, дожидаясь finish). */
-  private async _endStream(writer: WindowWriter): Promise<void> {
+  /**
+   * Завершает writable stream writer-а с ЯВНОЙ семантикой исхода.
+   *
+   * @param writer - Writer завершаемого окна
+   * @returns `true` — stream подтверждённо завершён (finish) и writer не
+   *   failed; `false` — stream error либо таймаут завершения
+   *
+   * @remarks
+   * Исходы:
+   * - **finish** — единственный успех;
+   * - **stream error** — writer.failed, stream разрушается, `false`;
+   * - **timeout** — это ОТКАЗ, а не успех: writer.failed, stream
+   *   разрушается best-effort (dangling writable не остаётся), `false`.
+   *
+   * После `false` вызывающая ротация обязана НЕ выполнять gzip и НЕ
+   * объявлять партицию completed.
+   */
+  private async _endStream(writer: WindowWriter): Promise<boolean> {
     const stream = writer.stream;
-    if (!stream) return;
+    if (!stream) return !writer.failed;
     writer.stream = null;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, CLOSE_STREAM_TIMEOUT_MS);
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (ok: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+
+      const timer = setTimeout(() => {
+        writer.failed = true;
+        this._streamCloseFailures++;
+        this._logger.error('CEX window stream close timed out, partition left incomplete', {
+          filePath: writer.filePath,
+          timeoutMs: this._streamCloseTimeoutMs,
+        });
+        stream.destroy();
+        settle(false);
+      }, this._streamCloseTimeoutMs);
       timer.unref?.();
-      stream.end(() => {
+
+      stream.once('error', (error) => {
+        writer.failed = true;
+        this._streamCloseFailures++;
+        this._logger.error('CEX window stream close error', {
+          filePath: writer.filePath,
+          error: error.message,
+        });
         clearTimeout(timer);
-        resolve();
+        stream.destroy();
+        settle(false);
+      });
+
+      stream.end((error?: Error | null) => {
+        clearTimeout(timer);
+        if (error) {
+          writer.failed = true;
+          this._streamCloseFailures++;
+          this._logger.error('CEX window stream close error', {
+            filePath: writer.filePath,
+            error: error.message,
+          });
+          settle(false);
+          return;
+        }
+        settle(!writer.failed);
       });
     });
   }
 
-  /** Разрушает stream writer-а без дозаписи (файл будет удалён). */
+  /**
+   * Разрушает stream writer-а без дозаписи (файл будет удалён).
+   *
+   * @remarks
+   * Best-effort cleanup для shutdown-пути: успех здесь не требуется
+   * (артефакт всё равно удаляется как incomplete), поэтому таймаут только
+   * ограничивает ожидание, ничего не «засчитывая» успехом.
+   */
   private async _destroyStream(writer: WindowWriter): Promise<void> {
     const stream = writer.stream;
     if (!stream) return;
     writer.stream = null;
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, CLOSE_STREAM_TIMEOUT_MS);
+      const timer = setTimeout(resolve, this._streamCloseTimeoutMs);
       timer.unref?.();
       stream.once('close', () => {
         clearTimeout(timer);

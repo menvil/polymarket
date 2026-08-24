@@ -237,15 +237,22 @@ export interface ExternalMessageRecorderStats {
  * Отдельная структура (а не расширение
  * {@link ExternalMessageRecorderStats}): Polymarket-контракт N-002
  * не меняется. Все счётчики равны 0, если CEX-политика не сконфигурирована.
+ *
+ * ВАЖНО про durability: `cexRecordsAccepted` — это «строка принята в
+ * memory-буфер оконного storage» (hot path остаётся buffered/async), а НЕ
+ * «строка durable в завершённой партиции». Судьба партиций видна в
+ * счётчиках самого storage (`CexWindowRecorder.getStats()`:
+ * partitionsCompleted / rotationFailures / streamCloseFailures /
+ * compressionFailures) — их читает composition root, владеющий storage.
  */
 export interface ExternalMessageRecorderCexStats {
   /** CEX-сообщений принято handler-ами (orderbook + trade). */
   readonly cexMessagesRouted: number;
-  /** Строк принято оконным storage в буфер записи. */
-  readonly cexRecordsWritten: number;
+  /** Строк ПРИНЯТО в memory-буфер оконного storage (не durability-факт). */
+  readonly cexRecordsAccepted: number;
   /** Строк сознательно отброшено оконной политикой (до выравнивания/после close). */
   readonly cexRecordsDroppedInactive: number;
-  /** Отказов записи storage (сериализация/stream; залогированы storage). */
+  /** Отказов приёма storage (сериализация/failed writer; залогированы storage). */
   readonly cexWriteFailures: number;
   /** Неожиданных исключений в CEX bus-handler-ах (защитный контур). */
   readonly cexHandlerErrors: number;
@@ -359,7 +366,7 @@ export class ExternalMessageRecorder {
 
   // Счётчики ExternalMessageRecorderCexStats (0, если политика отсутствует)
   private _cexMessagesRouted = 0;
-  private _cexRecordsWritten = 0;
+  private _cexRecordsAccepted = 0;
   private _cexRecordsDroppedInactive = 0;
   private _cexWriteFailures = 0;
   private _cexHandlerErrors = 0;
@@ -656,7 +663,7 @@ export class ExternalMessageRecorder {
   public getCexStats(): ExternalMessageRecorderCexStats {
     return {
       cexMessagesRouted: this._cexMessagesRouted,
-      cexRecordsWritten: this._cexRecordsWritten,
+      cexRecordsAccepted: this._cexRecordsAccepted,
       cexRecordsDroppedInactive: this._cexRecordsDroppedInactive,
       cexWriteFailures: this._cexWriteFailures,
       cexHandlerErrors: this._cexHandlerErrors,
@@ -895,7 +902,7 @@ export class ExternalMessageRecorder {
   private _countCexOutcome(outcome: 'recorded' | 'inactive' | 'failed'): void {
     switch (outcome) {
       case 'recorded':
-        this._cexRecordsWritten++;
+        this._cexRecordsAccepted++;
         break;
       case 'inactive':
         this._cexRecordsDroppedInactive++;

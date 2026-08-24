@@ -25,7 +25,12 @@ export type {
   CcxtProExchangeFactory,
   CcxtProExchangeFactoryParams,
 } from './CcxtVendorPort.js';
-export { createCcxtProExchange, normalizeOrderbookDepth } from './CcxtVendorPort.js';
+export type { CcxtInstanceConstructorArgs } from './CcxtVendorPort.js';
+export {
+  buildCcxtInstanceOptions,
+  createCcxtProExchange,
+  normalizeOrderbookDepth,
+} from './CcxtVendorPort.js';
 export type { CexSourceConfig } from './CexSourceConfig.js';
 export {
   DEFAULT_ORDERBOOK_DEPTH,
@@ -45,5 +50,6 @@ export type { RestartingTaskOptions } from './RestartingTask.js';
 export { CexSource } from './CexSource.js';
 export type {
   CexSourceDependencies,
+  CexSourceStats,
   CexExternalMessagePublisher,
 } from './CexSource.js';

@@ -42,8 +42,14 @@ import { MARKET_CONDITION_ID, createBookEvent } from './helpers/sdkFixtures.js';
 
 type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
 
-/** Короткое ТЕСТОВОЕ окно CEX-политики (production default 5 минут не меняется). */
-const WINDOW_MS = 600;
+/**
+ * Короткое ТЕСТОВОЕ окно CEX-политики (production default 5 минут не
+ * меняется). Запас в 2s существенен: publish/flush/ассерты первой фазы
+ * обязаны уложиться ВНУТРИ одного окна даже под нагрузкой параллельных
+ * suite-ов — иначе boundary-sweep начнёт ротацию прямо во время чтения
+ * незавершённого `.jsonl` (источник flake при 600ms).
+ */
+const WINDOW_MS = 2_000;
 
 let polymarketDir: string;
 let cexDir: string;
@@ -225,7 +231,10 @@ describe('one bus / one recorder (PART 25)', () => {
     expect(marketArchives).toHaveLength(1);
 
     // CEX: партиция завершается ГРАНИЦЕЙ ОКНА (никакого finalize)
-    await waitFor(() => listTree(cexDir).filter((f) => f.endsWith('.jsonl.gz')).length === 2);
+    await waitFor(
+      () => listTree(cexDir).filter((f) => f.endsWith('.jsonl.gz')).length === 2,
+      3 * WINDOW_MS,
+    );
     const cexArchives = listTree(cexDir).filter((f) => f.endsWith('.jsonl.gz'));
     const obGz = cexArchives.find((f) => f.includes('_orderbook_'))!;
     const gzLines = zlib
@@ -239,7 +248,7 @@ describe('one bus / one recorder (PART 25)', () => {
     expect(recorder.getStats().marketMessagesRouted).toBe(1);
     expect(recorder.getStats().recordsWritten).toBe(1);
     expect(recorder.getCexStats().cexMessagesRouted).toBe(2);
-    expect(recorder.getCexStats().cexRecordsWritten).toBe(2);
+    expect(recorder.getCexStats().cexRecordsAccepted).toBe(2);
 
     // ── Один shutdown закрывает обе политики ──
     await recorder.close();

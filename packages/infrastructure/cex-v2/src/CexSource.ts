@@ -132,6 +132,22 @@ export interface CexSourceDependencies {
   readonly random?: () => number;
 }
 
+/**
+ * Диагностические счётчики source (loss visibility).
+ *
+ * @remarks
+ * Несериализуемое vendor-наблюдение пропускается (поток жив), но потеря
+ * обязана быть ИЗМЕРИМОЙ, а не существовать только в логах: после
+ * smoke/runtime ожидается `*SnapshotFailures = 0`, любое ненулевое
+ * значение — сигнал деградации vendor-данных.
+ */
+export interface CexSourceStats {
+  /** Отказов снапшота стакана (наблюдение пропущено, error-лог записан). */
+  readonly orderbookSnapshotFailures: number;
+  /** Отказов снапшота сделки (наблюдение пропущено, error-лог записан). */
+  readonly tradeSnapshotFailures: number;
+}
+
 /** Sentinel гонки publish ↔ abort сессии. */
 const PUBLISH_ABORTED: unique symbol = Symbol('cex-source-publish-aborted');
 
@@ -207,6 +223,9 @@ export class CexSource {
   private _started = false;
   private _closed = false;
   private _failed = false;
+  // Счётчики CexSourceStats (mutable-состояние диагностики)
+  private _orderbookSnapshotFailures = 0;
+  private _tradeSnapshotFailures = 0;
   /** Promise остановки потоков, начатой терминальным отказом pipeline. */
   private _failureStopPromise: Promise<void> | null = null;
   /** Promise первого close() — повторные вызовы ждут его же. */
@@ -292,6 +311,18 @@ export class CexSource {
   /** true, пока жив хотя бы один supervised transport-поток. */
   public get isRunning(): boolean {
     return (this._obTask?.isRunning() ?? false) || (this._tradesTask?.isRunning() ?? false);
+  }
+
+  /**
+   * Возвращает снимок диагностических счётчиков source.
+   *
+   * @returns Текущие значения {@link CexSourceStats}
+   */
+  public getStats(): CexSourceStats {
+    return {
+      orderbookSnapshotFailures: this._orderbookSnapshotFailures,
+      tradeSnapshotFailures: this._tradeSnapshotFailures,
+    };
   }
 
   /**
@@ -557,6 +588,7 @@ export class CexSource {
         metadata: this._metadataGenerator.nextRoot(),
       };
     } catch (error) {
+      this._orderbookSnapshotFailures++;
       this._logger.error('Failed to snapshot orderbook observation, skipping', {
         symbol,
         error: error instanceof Error ? error.message : String(error),
@@ -710,6 +742,7 @@ export class CexSource {
           metadata: this._metadataGenerator.nextRoot(),
         };
       } catch (error) {
+        this._tradeSnapshotFailures++;
         this._logger.error('Failed to snapshot trade observation, skipping', {
           symbol,
           error: error instanceof Error ? error.message : String(error),

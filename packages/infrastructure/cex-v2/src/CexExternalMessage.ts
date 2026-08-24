@@ -48,10 +48,16 @@ import type { ExternalMessage } from '@polymarket/external-messages';
  * Тип рынка CEX-биржи в терминах CCXT (`options.defaultType`).
  *
  * - `spot` — спотовый рынок;
- * - `futures` — фьючерсы с датой экспирации;
+ * - `future` — фьючерсы с датой экспирации;
  * - `swap` — бессрочный своп (perpetual).
+ *
+ * @remarks
+ * Значения — НАТИВНАЯ unified-терминология CCXT: expiring futures у CCXT
+ * называются `future` (legacy-коллектор использовал собственное `futures`
+ * — V2 это значение сознательно не наследует и alias не вводит: внешних
+ * consumers V2-конфига ещё нет).
  */
-export type CexMarketType = 'spot' | 'futures' | 'swap';
+export type CexMarketType = 'spot' | 'future' | 'swap';
 
 /**
  * JSON-снапшот unified стакана CCXT в момент наблюдения.
