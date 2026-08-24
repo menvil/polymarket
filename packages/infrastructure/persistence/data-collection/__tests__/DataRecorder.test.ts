@@ -70,6 +70,25 @@ function loggedInfo(logger: ILogger, message: string): boolean {
   return calls.some((call) => call[0] === message);
 }
 
+/**
+ * Внутренний writer рынка — ТОЛЬКО для fault-injection: реальному fs нельзя
+ * приказать упасть, поэтому I/O-отказ эмулируется прямым воздействием на
+ * stream writer-а (destroy/end «из-под» рекордера).
+ */
+function writerInternals(
+  rec: DataRecorder,
+  marketId: string,
+): { stream: fs.WriteStream | null; buffer: string[]; failed: boolean } {
+  const writers = (
+    rec as unknown as {
+      _writers: Map<string, { stream: fs.WriteStream | null; buffer: string[]; failed: boolean }>;
+    }
+  )._writers;
+  const writer = writers.get(marketId);
+  if (!writer) throw new Error(`writerInternals: no writer for ${marketId}`);
+  return writer;
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('DataRecorder', () => {
@@ -685,6 +704,47 @@ describe('DataRecorder sealed markets (N-004)', () => {
     expect(lines).toHaveLength(3);
     expect(JSON.parse(lines[1]).seq).toBe('A');
     expect(JSON.parse(lines[2]).seq).toBe('B');
+  });
+
+  it('seal с упавшим flush: строки сохранены в буфере, EXPIRED-архив отклонён', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
+
+    // Fault injection: стрим закрывается «из-под» writer-а — flush внутри
+    // seal получает write-after-end от реального fs.WriteStream
+    const writer = writerInternals(recorder, 'mkt-001');
+    await new Promise<void>((resolve) => writer.stream!.end(() => resolve()));
+
+    // Freeze наступает в любом случае (cutoff), но отказ flush наблюдаем
+    expect(await recorder.sealMarket(meta.marketId)).toBe(true);
+    expect(loggedError(logger, 'Failed to flush buffer while sealing market')).toBe(true);
+    // Непопавшие на диск строки НЕ потеряны молча — возвращены в буфер
+    expect(writer.buffer.length).toBeGreaterThan(0);
+
+    // Неполный датасет не может стать завершённым архивом
+    await expect(recorder.finalizeMarket(meta.marketId, 'EXPIRED')).rejects.toThrow('incomplete');
+    expect(loggedError(logger, 'Failed to finalize expired market archive')).toBe(true);
+    expect(loggedInfo(logger, 'Market finalized (expired)')).toBe(false);
+  });
+
+  it('finalize EXPIRED отклоняется для writer-а с терминальным отказом stream', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
+    await recorder.flush();
+
+    // Fault injection: терминальная I/O-ошибка стрима посреди записи
+    const writer = writerInternals(recorder, 'mkt-001');
+    writer.stream!.destroy(new Error('disk failure'));
+    await waitFor(() => writer.failed);
+
+    await recorder.sealMarket(meta.marketId);
+
+    await expect(recorder.finalizeMarket(meta.marketId, 'EXPIRED')).rejects.toThrow('incomplete');
+    expect(loggedInfo(logger, 'Market finalized (expired)')).toBe(false);
   });
 
   it('finalize EXPIRED: отказ gzip логируется error и пробрасывается — false success запрещён', async () => {

@@ -412,7 +412,10 @@ export class DataRecorder implements IMarketDataRecorder {
    * (рынок ещё не начался) отменяется — файл в этом случае так и не будет
    * создан, финализация такого writer-а ограничится удалением регистрации.
    * Ошибки flush/close логируются и не пробрасываются: замороженное
-   * состояние наступает в любом случае.
+   * состояние наступает в любом случае. Отказ flush при этом помечает
+   * writer как `failed` (строки возвращены в буфер, не потеряны молча) —
+   * последующий {@link DataRecorder.finalizeMarket} с `'EXPIRED'` откажется
+   * архивировать неполный датасет.
    */
   public async sealMarket(marketId: MarketId): Promise<boolean> {
     const key = String(marketId);
@@ -440,6 +443,9 @@ export class DataRecorder implements IMarketDataRecorder {
     try {
       await this._flushWriter(writer);
     } catch (err) {
+      // Строки буфера НЕ на диске (возвращены в буфер) — датасет неполон.
+      // Терминальная пометка: finalize EXPIRED обязан отказаться архивировать
+      writer.failed = true;
       this._logger.error('Failed to flush buffer while sealing market', {
         marketId: key,
         err: err instanceof Error ? err : new Error(String(err)),
@@ -682,8 +688,9 @@ export class DataRecorder implements IMarketDataRecorder {
    * не выполняется; оставшийся `.jsonl` заберёт стандартный cleanup
    * незавершённых файлов (shutdown/startup disk-scan).
    *
-   * @throws При ошибке I/O EXPIRED-пути (flush/close потока, gzip-сжатие) —
-   *   архив НЕ создан
+   * @throws При ошибке I/O EXPIRED-пути (flush/close потока, gzip-сжатие)
+   *   либо когда датасет неполон (терминальный write-отказ writer-а,
+   *   unflushed строки после seal) — архив НЕ создан
    */
   public async finalizeMarket(marketId: MarketId, reason: 'EXPIRED' | 'SHUTDOWN'): Promise<void> {
     const key = String(marketId);
@@ -727,7 +734,21 @@ export class DataRecorder implements IMarketDataRecorder {
       return;
     }
 
-    // EXPIRED: данные нужны — флашим буфер и корректно закрываем стрим перед сжатием.
+    // EXPIRED: данные нужны — датасет обязан быть полным. Терминальный отказ
+    // записи (stream error / seal-flush) означает потерю строк: архивировать
+    // такой файл как завершённый нельзя — честный reject вместо false
+    // completeness (контракт: resolve == ПОЛНЫЙ .jsonl.gz создан)
+    if (writer.failed) {
+      const err = new Error(`Dataset incomplete after write failure for market ${key}`);
+      this._logger.error('Failed to finalize expired market archive', {
+        marketId: key,
+        filePath: writer.filePath,
+        err,
+      });
+      throw err;
+    }
+
+    // Флашим буфер и корректно закрываем стрим перед сжатием
     await this._flushWriter(writer);
 
     await new Promise<void>((resolve, reject) => {
@@ -737,6 +758,18 @@ export class DataRecorder implements IMarketDataRecorder {
         else resolve();
       });
     });
+
+    // _flushWriter молча no-op-ится без stream (после seal) — оставшиеся в
+    // буфере строки не попали на диск: датасет неполон, архив запрещён
+    if (writer.buffer.length > 0) {
+      const err = new Error(`Unflushed buffered lines remain for market ${key}; dataset incomplete`);
+      this._logger.error('Failed to finalize expired market archive', {
+        marketId: key,
+        filePath: writer.filePath,
+        err,
+      });
+      throw err;
+    }
 
     if (this._config.compression === 'gzip' && this._compressor) {
       try {
@@ -1079,6 +1112,11 @@ export class DataRecorder implements IMarketDataRecorder {
    * и будут видны при последующем `fs.readFileSync()`. Без ожидания callback данные
    * могут остаться в Node.js internal stream buffer.
    *
+   * При отказе записи неподтверждённые строки возвращаются в НАЧАЛО буфера
+   * (arrival order сохраняется относительно строк, добавленных во время
+   * in-flight записи) — данные не теряются молча, leftover наблюдаем при
+   * финализации EXPIRED.
+   *
    * @throws При ошибке записи в поток
    */
   private async _flushWriter(writer: MarketWriter): Promise<void> {
@@ -1094,6 +1132,9 @@ export class DataRecorder implements IMarketDataRecorder {
     await new Promise<void>((resolve, reject) => {
       writer.stream!.write(data, (err) => {
         if (err) {
+          // Строки не подтверждены на диске — возвращаем их в буфер:
+          // потеря данных не может остаться молчаливой
+          writer.buffer.unshift(data);
           this._logger.error('Stream write error', { error: err.message });
           reject(err);
         } else {
