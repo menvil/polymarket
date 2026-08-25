@@ -482,24 +482,37 @@ export class DataRecorder implements IMarketDataRecorder {
    *
    * @param marketId - ID рынка
    * @param filter - Предикат отбора строк (дёшево, до JSON.parse)
-   * @param maxMatches - Потолок совпадений (защита памяти). Default: 100 000
+   * @param maxMatches - Потолок совпадений (защита памяти), положительное
+   *   целое. Default: 100 000
    * @returns Отобранные payload-строки (meta-header line 1 исключён) либо
    *   `undefined` — writer неизвестен, не sealed, помечен failed или файл
    *   не читается (ошибка залогирована)
+   * @throws {Error} Если `maxMatches` не положительное целое (программная
+   *   ошибка вызывающего — fail-fast, а не тихая смена семантики)
    *
    * @remarks
    * Узкий read-путь для write-time деривации (winner-ladder ступень
    * `recorded-rtds`, решение user 2026-08-25): после {@link DataRecorder.sealMarket}
-   * буфер сброшен и stream закрыт — файл на диске полон и неизменен
+   * буфер сброшен и стрим закрыт — файл на диске полон и неизменен
    * (payload-инвариант), потоковое чтение с фильтром безопасно и не грузит
    * память полным датасетом. Failed-writer (неполный датасет) не читается —
    * деривация из заведомо неполного ряда была бы молчаливо искажённой.
+   *
+   * Семантика потолка совпадает с `matches.slice(0, maxMatches)` — ровно то,
+   * что делают тестовые fake-хранилища. Нецелые/неположительные/нефинитные
+   * значения расходились бы между реализациями (например, `0` здесь дал бы
+   * одну строку, а `slice(0, 0)` — ноль), поэтому отвергаются на входе.
    */
   public async readSealedPayloadLines(
     marketId: MarketId,
     filter: (line: string) => boolean,
     maxMatches = 100_000,
   ): Promise<readonly string[] | undefined> {
+    if (!Number.isInteger(maxMatches) || maxMatches <= 0) {
+      throw new Error(
+        `readSealedPayloadLines: maxMatches must be a positive integer, got ${String(maxMatches)}`,
+      );
+    }
     const key = String(marketId);
     const writer = this._writers.get(key);
     if (!writer || !writer.sealed || writer.failed || !writer.active) {

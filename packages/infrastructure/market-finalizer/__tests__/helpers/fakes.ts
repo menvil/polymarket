@@ -96,6 +96,12 @@ export class FakeFinalizationRecorder extends FakeCollectionRecorder {
     filter: (line: string) => boolean,
     maxMatches = 100_000,
   ): Promise<readonly string[] | undefined> => {
+    // Паритет с DataRecorder: невалидный потолок — программная ошибка
+    if (!Number.isInteger(maxMatches) || maxMatches <= 0) {
+      throw new Error(
+        `readSealedPayloadLines: maxMatches must be a positive integer, got ${String(maxMatches)}`,
+      );
+    }
     this.sealedReads.push(String(marketId));
     if (this.sealedPayloadLines === undefined) {
       return undefined;

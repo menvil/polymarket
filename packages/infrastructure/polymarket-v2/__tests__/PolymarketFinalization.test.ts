@@ -177,6 +177,17 @@ describe('deriveWinnerFromCryptoPrices: формула рынка на офиц�
       deriveWinnerFromCryptoPrices(outcomes, { priceToBeat: 'n/a', finalPrice: '101' }),
     ).toBeUndefined();
   });
+
+  it('нефинитные vendor-строки → undefined (Infinity.gte дал бы ложный Up)', () => {
+    for (const nonFinite of ['NaN', 'Infinity', '-Infinity']) {
+      expect(
+        deriveWinnerFromCryptoPrices(outcomes, { priceToBeat: '100', finalPrice: nonFinite }),
+      ).toBeUndefined();
+      expect(
+        deriveWinnerFromCryptoPrices(outcomes, { priceToBeat: nonFinite, finalPrice: '100' }),
+      ).toBeUndefined();
+    }
+  });
 });
 
 describe('Decimal-хелперы vendor-boundary', () => {
@@ -193,5 +204,15 @@ describe('Decimal-хелперы vendor-boundary', () => {
     expect(meanOfDecimalStrings(['79020.1', '79030.3', '79040.5'])).toBe('79030.3');
     expect(meanOfDecimalStrings([])).toBeUndefined();
     expect(meanOfDecimalStrings(['1', 'oops'])).toBeUndefined();
+  });
+
+  it('нефинитные значения отвергаются обоими хелперами', () => {
+    for (const nonFinite of ['NaN', 'Infinity', '-Infinity']) {
+      expect(compareDecimalStrings(nonFinite, '1')).toBeUndefined();
+      expect(compareDecimalStrings('1', nonFinite)).toBeUndefined();
+      // Одно отравленное наблюдение ряда не даёт «средним» строку 'NaN'
+      expect(meanOfDecimalStrings([nonFinite])).toBeUndefined();
+      expect(meanOfDecimalStrings(['79020.1', nonFinite, '79040.5'])).toBeUndefined();
+    }
   });
 });

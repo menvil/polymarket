@@ -49,8 +49,13 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
 | `recorded-twap` | зарезервировано под TWAP-канал (DERIVED COMPLETE) | `true` |
 | `recorded-rtds` | приблизительно из записанного chainlink-ряда (только когда официальных данных нет) | `false` |
 
-Complete-архив всегда несёт точного победителя (ступень 1 или 2).
-Подробности правила, guards и аппроксимации — `docs/market-finalization.md`.
+Complete-архив **crypto Up/Down-рынка** всегда несёт точного победителя
+(ступень 1 или 2 — обе официальные цены к этому моменту есть по самому
+completion-условию). Для остальных рынков победитель появляется только со
+ступени 1: non-crypto архивируется НЕМЕДЛЕННО после expiry, и если UMA
+ещё не резолвил, `winning` в архиве отсутствует — это штатный исход, а не
+потеря данных. Подробности правила, guards и аппроксимации —
+`docs/market-finalization.md`.
 
 ## 3. runOnce, а не таймеры (PART 13)
 

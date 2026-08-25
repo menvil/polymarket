@@ -809,7 +809,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     expect(all!.some((line) => line.includes('"t":"meta"'))).toBe(false);
   });
 
-  it('readSealedPayloadLines: maxMatches ограничивает выдачу', async () => {
+  it('readSealedPayloadLines: maxMatches = slice(0, n); невалидный потолок — fail-fast', async () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
@@ -819,8 +819,16 @@ describe('DataRecorder sealed markets (N-004)', () => {
     await recorder.sealMarket(meta.marketId);
 
     const lines = await recorder.readSealedPayloadLines(meta.marketId, () => true, 2);
-
     expect(lines).toHaveLength(2);
+    // Ровно первые n совпадений — как slice(0, n) в тестовых fake-хранилищах
+    expect(lines!.map((line) => (JSON.parse(line) as { v: number }).v)).toEqual([0, 1]);
+
+    // Значения, на которых break-семантика разошлась бы со slice, отвергаются
+    for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        recorder.readSealedPayloadLines(meta.marketId, () => true, invalid),
+      ).rejects.toThrow('positive integer');
+    }
   });
 
   it('readSealedPayloadLines: undefined для НЕ sealed, неизвестного и failed writer-а', async () => {

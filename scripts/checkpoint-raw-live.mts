@@ -65,10 +65,15 @@
  * CHECKPOINT_MODE=short npx tsx scripts/checkpoint-raw-live.mts
  * ```
  *
- * Выход: код 0 — все live-инварианты checkpoint выполнены; код 2 —
- * verdict FAIL/INCOMPLETE (подробности в `report.json` и консоли); код 3 —
- * процесс не завершился сам после shutdown (orphan handles). Forced
- * `process.exit(0)` сознательно НЕ используется.
+ * Числовые env-переменные валидируются до старта (нефинитное/невалидное
+ * значение — ошибка конфигурации, а не молча сломанный прогон).
+ *
+ * Выход: код 0 — все live-инварианты checkpoint выполнены; код 1 — ошибка
+ * конфигурации (сообщение при загрузке модуля); код 2 — verdict
+ * FAIL/INCOMPLETE (подробности в `report.json` и консоли) ЛИБО падение
+ * самого runner-а до вердикта; код 3 — процесс не завершился сам после
+ * shutdown (orphan handles). Forced `process.exit(0)` сознательно НЕ
+ * используется.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -180,11 +185,50 @@ const ENVELOPE_KEYS = [
 const MODE = process.env['CHECKPOINT_MODE'] === 'short' ? 'short' : 'full';
 /** Дренировать pending-финализации перед shutdown (full-режим). Off: `CHECKPOINT_DRAIN=0`. */
 const DRAIN_FINALIZATIONS = process.env['CHECKPOINT_DRAIN'] !== '0';
-const MAX_MINUTES = Number(process.env['CHECKPOINT_MAX_MINUTES'] ?? 45);
-const MIN_MINUTES = Number(process.env['CHECKPOINT_MIN_MINUTES'] ?? 17);
-const SHORT_MINUTES = Number(process.env['CHECKPOINT_SHORT_MINUTES'] ?? 2.5);
+/**
+ * Читает числовой env-override с валидацией.
+ *
+ * @param name - Имя переменной окружения
+ * @param fallback - Значение по умолчанию (используется, если переменная
+ *   не задана или пуста)
+ * @param options - Ограничения: минимум и требование целого
+ * @returns Валидное число
+ * @throws {Error} Если значение не парсится, нефинитно или вне ограничений
+ *
+ * @remarks
+ * `Number('abc')` даёт `NaN`, который дальше НЕ бросает, а молча ломает
+ * прогон: `Date.now() - startedMs < NaN` всегда false (цикл сбора не
+ * выполняется ни разу), `maxMarkets: NaN` не даёт координатору открыть ни
+ * одной сессии — checkpoint «падает» без внятной причины. Поэтому
+ * конфигурация проверяется до старта.
+ */
+function numericEnv(
+  name: string,
+  fallback: number,
+  options: { readonly min: number; readonly integer?: boolean },
+): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  const invalid =
+    !Number.isFinite(parsed) ||
+    parsed < options.min ||
+    (options.integer === true && !Number.isInteger(parsed));
+  if (invalid) {
+    throw new Error(
+      `Invalid ${name}='${raw}': expected a finite ${options.integer === true ? 'integer' : 'number'} >= ${String(options.min)}`,
+    );
+  }
+  return parsed;
+}
+
+const MAX_MINUTES = numericEnv('CHECKPOINT_MAX_MINUTES', 45, { min: 1 });
+const MIN_MINUTES = numericEnv('CHECKPOINT_MIN_MINUTES', 17, { min: 0 });
+const SHORT_MINUTES = numericEnv('CHECKPOINT_SHORT_MINUTES', 2.5, { min: 0.5 });
 const OUTPUT_ROOT = process.env['CHECKPOINT_OUTPUT_ROOT'] ?? path.join('data', 'checkpoint-raw-live');
-const MAX_MARKETS = Number(process.env['CHECKPOINT_MAX_MARKETS'] ?? 3);
+const MAX_MARKETS = numericEnv('CHECKPOINT_MAX_MARKETS', 3, { min: 1, integer: true });
 /** Глубина ring-буфера последних payload-строк (перекрывает freeze-лаг опроса сессий). */
 const RING_CAP = 64;
 
@@ -627,17 +671,35 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
       return false;
     });
 
+  /**
+   * Статус финализации архива с кэшем разбора.
+   *
+   * Архив неизменен после создания, поэтому успешный разбор кэшируется по
+   * пути файла: `evidenceComplete` вызывается каждые 10 секунд, а разбор
+   * header-а разжимает файл ЦЕЛИКОМ (архивы бывают по 8+ MB). Отказ разбора
+   * НЕ кэшируется — `.jsonl.gz`, пойманный в момент сжатия, обязан быть
+   * перечитан на следующем опросе.
+   */
+  const archiveHeaderCache = new Map<string, PmArchiveHeader>();
+  const archiveFinalizationStatus = (file: string): string | undefined => {
+    const cached = archiveHeaderCache.get(file);
+    if (cached !== undefined) return cached.finalizationStatus;
+    try {
+      const parsed = parsePmArchiveHeader(file);
+      archiveHeaderCache.set(file, parsed);
+      return parsed.finalizationStatus;
+    } catch {
+      return undefined; // файл ещё дописывается — попробуем на следующем опросе
+    }
+  };
+
   /** Полный ли комплект live-свидетельств для остановки full-прогона. */
   const evidenceComplete = (): boolean => {
     if (!options.requireFullLifecycle) return false; // short-режим живёт до дедлайна
     if (Date.now() - startedMs < options.minMs) return false;
-    const archiveComplete = listPmArchives().some((file) => {
-      try {
-        return parsePmArchiveHeader(file).finalizationStatus === 'complete';
-      } catch {
-        return false;
-      }
-    });
+    const archiveComplete = listPmArchives().some(
+      (file) => archiveFinalizationStatus(file) === 'complete',
+    );
     if (!archiveComplete) return false;
     for (const spec of CEX_PLAN) {
       const counts = cexPerExchange.get(spec.exchangeId);
@@ -717,10 +779,22 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
       coordinator: coordinator.getStats(),
     });
     let drainSettled = false;
-    await Promise.race([
-      finalizer.drain().finally(() => {
+    // Отказ drain-а поглощается ЗДЕСЬ и попадает в evidence: если гонку
+    // выигрывает polling-ветка (пришёл сигнал), непойманное отклонение
+    // ушло бы в process-level unhandledRejection вместо отчёта
+    const drainPromise = finalizer.drain().then(
+      () => {
         drainSettled = true;
-      }),
+      },
+      (error: unknown) => {
+        drainSettled = true;
+        const message = error instanceof Error ? error.message : String(error);
+        evidence.shutdownStepFailures.push(`finalizer.drain: ${message}`);
+        logger.error('CHECKPOINT finalization drain failed', { error: message });
+      },
+    );
+    await Promise.race([
+      drainPromise,
       (async () => {
         while (!stopRequested && !drainSettled) {
           await new Promise<void>((resolve) => {
@@ -1438,14 +1512,34 @@ async function main(): Promise<number> {
   return report.verdict === 'PASS' ? 0 : 2;
 }
 
-void main().then((code) => {
-  process.exitCode = code;
-  // Watchdog НЕ держит event loop (unref): если процесс жив спустя 60s после
-  // завершения main — это orphan handles, падаем громко (не маскируем exit-ом).
+/**
+ * Вооружает watchdog orphan-handles после завершения `main()`.
+ *
+ * @remarks
+ * НЕ держит event loop (`unref`): если процесс жив спустя 60s после
+ * завершения main — это orphan handles, падаем громко (не маскируем exit-ом).
+ */
+function armExitWatchdog(): void {
   const watchdog = setTimeout(() => {
     console.error('CHECKPOINT: process did not exit naturally within 60s after main()');
     console.error('Active resources:', process.getActiveResourcesInfo());
     process.exit(3);
   }, 60_000);
   watchdog.unref();
-});
+}
+
+void main().then(
+  (code) => {
+    process.exitCode = code;
+    armExitWatchdog();
+  },
+  (error: unknown) => {
+    // Отказ САМОГО runner-а (не сбор evidence) — тоже FAIL по контракту
+    // выхода. Без этой ветки зарегистрированный unhandledRejection-обработчик
+    // подавил бы дефолтный аварийный выход Node, и прогон завершился бы с
+    // кодом 0 без вердикта.
+    console.error('CHECKPOINT RUNNER CRASHED before producing a verdict:', error);
+    process.exitCode = 2;
+    armExitWatchdog();
+  },
+);
