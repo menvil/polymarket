@@ -68,6 +68,15 @@ depth подписки.
 создаются с явным `newUpdates: true` (официальный механизм CCXT Pro;
 характеризация: redelivered=0), эвристического dedup нет.
 
+**Capability-контракт CCXT**: источником истины является `has`-map биржи,
+а не наличие функции (base-класс CCXT определяет unified-методы всегда —
+неподдерживаемые бросают `NotSupported`). Метод считается доступным при
+`typeof fn === 'function' && Boolean(has[method])`; значение `'emulated'`
+трактуется как поддержка. Capability-несоответствие (в т.ч. явный
+`orderbookMethod: 'fetch'` при `has.fetchOrderBook=false`) — **перманентный
+отказ потока** (`PermanentTaskError`): задача останавливается с error-логом
+без retry-loop, второй поток продолжает работу.
+
 ## Failure ownership / reconnect semantics
 
 - **transport/vendor отказ** (сеть, WS, rejection, stale 60s/180s, crossed

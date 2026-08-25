@@ -2,7 +2,7 @@
  * Тесты supervised-петли RestartingTask (перенос V2, транспортный контур).
  */
 import { describe, it, expect } from '@jest/globals';
-import { RestartingTask } from '../src/index.js';
+import { PermanentTaskError, RestartingTask } from '../src/index.js';
 import { CapturingLogger, sleep, waitUntil } from './helpers/fakes.js';
 
 describe('RestartingTask', () => {
@@ -167,6 +167,37 @@ describe('RestartingTask', () => {
     await task.stop();
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(runs).toBe(1);
+  });
+
+  it('PermanentTaskError останавливает петлю без рестартов', async () => {
+    const logger = new CapturingLogger();
+    let runs = 0;
+    const task = new RestartingTask({
+      name: 'test',
+      logger,
+      initialBackoffMs: 1,
+      run: async () => {
+        runs++;
+        throw new PermanentTaskError('capability is not supported');
+      },
+    });
+
+    task.start();
+    await waitUntil(() => !task.isRunning());
+    await sleep(20);
+
+    // Ровно одна сессия: перманентный отказ не ретраится
+    expect(runs).toBe(1);
+    expect(
+      logger
+        .byLevel('error')
+        .some(
+          (entry) =>
+            entry.message.includes('failed permanently') &&
+            String(entry.context?.['error'] ?? '').includes('capability is not supported'),
+        ),
+    ).toBe(true);
+    await task.stop();
   });
 
   it('серия быстрых отказов уходит в cooldown', async () => {

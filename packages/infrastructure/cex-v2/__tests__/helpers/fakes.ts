@@ -83,13 +83,42 @@ export class FakeFeed<T> {
   }
 }
 
+/**
+ * Состояние одной unified-capability fake-инстанса.
+ *
+ * Зеркалит реальный контракт CCXT:
+ * - `true` — метод есть, `has=true`;
+ * - `'emulated'` — метод есть, `has='emulated'` (реконструированная
+ *   библиотекой capability — трактуется как поддержка);
+ * - `'unsupported'` — метод СУЩЕСТВУЕТ (base-класс CCXT определяет unified
+ *   методы всегда), но `has=false`; вызов бросает NotSupported;
+ * - `false`/отсутствие — метода нет, `has=false`.
+ */
+export type FakeCapabilityState = boolean | 'emulated' | 'unsupported';
+
 /** Возможности fake-инстанса (наполняют `has`-map). */
 export interface FakeExchangeCapabilities {
-  readonly watchOrderBookForSymbols?: boolean;
-  readonly watchOrderBook?: boolean;
-  readonly fetchOrderBook?: boolean;
-  readonly watchTradesForSymbols?: boolean;
-  readonly watchTrades?: boolean;
+  readonly watchOrderBookForSymbols?: FakeCapabilityState;
+  readonly watchOrderBook?: FakeCapabilityState;
+  readonly fetchOrderBook?: FakeCapabilityState;
+  readonly watchTradesForSymbols?: FakeCapabilityState;
+  readonly watchTrades?: FakeCapabilityState;
+}
+
+/** has-значение для состояния capability. */
+function hasValueOf(state: FakeCapabilityState | undefined): boolean | string {
+  if (state === 'emulated') return 'emulated';
+  return state === true;
+}
+
+/** Метод создаётся (как в base-классе CCXT) для всех состояний, кроме отсутствия. */
+function methodExists(state: FakeCapabilityState | undefined): boolean {
+  return state === true || state === 'emulated' || state === 'unsupported';
+}
+
+/** Метод «существует, но не поддерживается» — как base-класс CCXT. */
+function isDeclaredUnsupported(state: FakeCapabilityState | undefined): boolean {
+  return state === 'unsupported';
 }
 
 /** Зафиксированный вызов vendor-метода. */
@@ -109,7 +138,7 @@ export interface RecordedVendorCall {
  * закрытии соединений) и считает вызовы.
  */
 export class FakeExchangeInstance implements CcxtProExchangeInstance {
-  public readonly has: Record<string, boolean>;
+  public readonly has: Record<string, boolean | string>;
   public readonly obMultiplexFeed = new FakeFeed<CcxtRawOrderBook>();
   public readonly obFetchFeed = new FakeFeed<CcxtRawOrderBook>();
   public readonly tradesMultiplexFeed = new FakeFeed<readonly CcxtRawTrade[]>();
@@ -153,41 +182,62 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
 
   constructor(capabilities: FakeExchangeCapabilities) {
     this.has = {
-      watchOrderBookForSymbols: capabilities.watchOrderBookForSymbols ?? false,
-      watchOrderBook: capabilities.watchOrderBook ?? false,
-      fetchOrderBook: capabilities.fetchOrderBook ?? false,
-      watchTradesForSymbols: capabilities.watchTradesForSymbols ?? false,
-      watchTrades: capabilities.watchTrades ?? false,
+      watchOrderBookForSymbols: hasValueOf(capabilities.watchOrderBookForSymbols),
+      watchOrderBook: hasValueOf(capabilities.watchOrderBook),
+      fetchOrderBook: hasValueOf(capabilities.fetchOrderBook),
+      watchTradesForSymbols: hasValueOf(capabilities.watchTradesForSymbols),
+      watchTrades: hasValueOf(capabilities.watchTrades),
     };
-    if (capabilities.watchOrderBookForSymbols) {
-      this.watchOrderBookForSymbols = (symbols, limit) => {
-        this.vendorCalls.push({ method: 'watchOrderBookForSymbols', symbols: [...symbols], limit });
-        return this.obMultiplexFeed.next();
+    const unsupportedMethod = <T>(method: string): ((...args: unknown[]) => Promise<T>) => {
+      return (..._args: unknown[]) => {
+        this.vendorCalls.push({ method, symbols: [] });
+        return Promise.reject(new Error(`NotSupported: fake ${method}() is not supported`));
       };
+    };
+
+    if (methodExists(capabilities.watchOrderBookForSymbols)) {
+      this.watchOrderBookForSymbols = isDeclaredUnsupported(capabilities.watchOrderBookForSymbols)
+        ? unsupportedMethod('watchOrderBookForSymbols')
+        : (symbols, limit) => {
+            this.vendorCalls.push({
+              method: 'watchOrderBookForSymbols',
+              symbols: [...symbols],
+              limit,
+            });
+            return this.obMultiplexFeed.next();
+          };
     }
-    if (capabilities.watchOrderBook) {
-      this.watchOrderBook = (symbol, limit) => {
-        this.vendorCalls.push({ method: 'watchOrderBook', symbols: [symbol], limit });
-        return this.obFeed(symbol).next();
-      };
+    if (methodExists(capabilities.watchOrderBook)) {
+      this.watchOrderBook = isDeclaredUnsupported(capabilities.watchOrderBook)
+        ? unsupportedMethod('watchOrderBook')
+        : (symbol, limit) => {
+            this.vendorCalls.push({ method: 'watchOrderBook', symbols: [symbol], limit });
+            return this.obFeed(symbol).next();
+          };
     }
-    if (capabilities.fetchOrderBook) {
-      this.fetchOrderBook = (symbol, limit) => {
-        this.vendorCalls.push({ method: 'fetchOrderBook', symbols: [symbol], limit });
-        return this.obFetchFeed.next();
-      };
+    if (methodExists(capabilities.fetchOrderBook)) {
+      this.fetchOrderBook = isDeclaredUnsupported(capabilities.fetchOrderBook)
+        ? unsupportedMethod('fetchOrderBook')
+        : (symbol, limit) => {
+            this.vendorCalls.push({ method: 'fetchOrderBook', symbols: [symbol], limit });
+            return this.obFetchFeed.next();
+          };
     }
-    if (capabilities.watchTradesForSymbols) {
-      this.watchTradesForSymbols = (symbols) => {
-        this.vendorCalls.push({ method: 'watchTradesForSymbols', symbols: [...symbols] });
-        return this.tradesMultiplexFeed.next();
-      };
+    if (methodExists(capabilities.watchTradesForSymbols)) {
+      this.watchTradesForSymbols = isDeclaredUnsupported(capabilities.watchTradesForSymbols)
+        ? unsupportedMethod('watchTradesForSymbols')
+        : (symbols) => {
+            this.vendorCalls.push({ method: 'watchTradesForSymbols', symbols: [...symbols] });
+            return this.tradesMultiplexFeed.next();
+          };
     }
-    if (capabilities.watchTrades) {
-      this.watchTrades = (symbol) => {
-        this.vendorCalls.push({ method: 'watchTrades', symbols: [symbol] });
-        return this.tradesFeed(symbol).next();
-      };
+    if (methodExists(capabilities.watchTrades)) {
+      this.watchTrades = isDeclaredUnsupported(capabilities.watchTrades)
+        ? unsupportedMethod('watchTrades')
+        : (symbol) => {
+            this.vendorCalls.push({ method: 'watchTrades', symbols: [symbol] });
+            return this.tradesFeed(symbol).next();
+          };
     }
   }
 

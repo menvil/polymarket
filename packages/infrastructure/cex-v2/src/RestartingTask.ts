@@ -10,12 +10,31 @@
  * - нормальный return сессии = controlled restart (без backoff, но с
  *   минимальной паузой `controlledRestartDelayMs`);
  * - исключение сессии = restart с exponential backoff + jitter;
+ * - {@link PermanentTaskError} = немедленная остановка петли без рестартов
+ *   (причина не устраняется пересозданием сессии);
  * - серия быстрых отказов = cooldown-пауза;
  * - стабильная сессия (`stableResetMs`) сбрасывает счётчик отказов;
  * - `stop()` абортит текущую сессию и дожидается завершения петли;
  * - после `stop()` петля не может «воскреснуть».
  */
 import type { ILogger } from '@polymarket/logger';
+
+/**
+ * Перманентный отказ supervised-задачи: рестарты бессмысленны.
+ *
+ * @remarks
+ * Сессия бросает эту ошибку, когда причина отказа НЕ устраняется
+ * пересозданием сессии (например, exchange-класс не поддерживает
+ * запрошенную unified-capability — `has[...]` не изменится ни в одной
+ * следующей сессии). Супервизор реагирует остановкой петли с error-логом
+ * вместо бесконечного backoff/cooldown-цикла.
+ */
+export class PermanentTaskError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermanentTaskError';
+  }
+}
 
 const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 60_000;
@@ -180,6 +199,16 @@ export class RestartingTask {
         await this._sleep(this._controlledRestartDelayMs, controller.signal);
       } catch (err) {
         if (this._stopped || controller.signal.aborted) break;
+
+        if (err instanceof PermanentTaskError) {
+          // Причина не устраняется рестартом — останавливаемся сразу,
+          // наблюдаемо (error-лог + isRunning=false), без retry-loop
+          this._logger.error('Restarting task failed permanently, stopping', {
+            task: this._name,
+            error: err.message,
+          });
+          break;
+        }
 
         const uptimeMs = Date.now() - sessionStartedAt;
         if (uptimeMs >= this._stableResetMs) {

@@ -86,7 +86,7 @@ import {
   PLANNED_RESTART_JITTER_RATIO,
   assertValidCexSourceConfig,
 } from './CexSourceConfig.js';
-import { RestartingTask } from './RestartingTask.js';
+import { PermanentTaskError, RestartingTask } from './RestartingTask.js';
 import { snapshotOrderBook, snapshotTrade } from './snapshots.js';
 
 /**
@@ -409,40 +409,52 @@ export class CexSource {
     };
     signal.addEventListener('abort', closeOnAbort, { once: true });
 
-    const fetchConfigured = this._config.orderbookMethod === 'fetch';
-    const canMultiplex =
-      !fetchConfigured &&
-      typeof instance.watchOrderBookForSymbols === 'function' &&
-      !!instance.has?.['watchOrderBookForSymbols'];
-    const canWatchPerSymbol =
-      !fetchConfigured &&
-      typeof instance.watchOrderBook === 'function' &&
-      !!instance.has?.['watchOrderBook'];
-    const canFetch = typeof instance.fetchOrderBook === 'function';
-
-    // Fetch выбирается ТОЛЬКО при явной конфигурации либо как последний
-    // fallback при реально доступном fetchOrderBook; молчаливого даунгрейда
-    // нет — implicit-переход логируется, полное отсутствие capability даёт
-    // понятную ошибку вместо бесконечных retry «неизвестно чего»
-    let mode: 'multiplex' | 'watch-per-symbol' | 'fetch';
-    if (canMultiplex) {
-      mode = 'multiplex';
-    } else if (canWatchPerSymbol) {
-      mode = 'watch-per-symbol';
-    } else if (fetchConfigured) {
-      mode = 'fetch';
-    } else if (canFetch) {
-      mode = 'fetch';
-      this._logger.warn('Orderbook watch capabilities unavailable, downgrading to REST fetch polling', {
-        pollIntervalMs: this._fetchPollIntervalMs,
-      });
-    } else {
-      throw new Error(
-        'Exchange instance supports none of watchOrderBookForSymbols/watchOrderBook/fetchOrderBook',
-      );
-    }
-
+    // Selection ВНУТРИ try: capability-ошибка обязана закрыть инстанс
+    // через тот же finally (иначе утечка инстанса + висящий abort-listener)
     try {
+      const fetchConfigured = this._config.orderbookMethod === 'fetch';
+      const canMultiplex =
+        !fetchConfigured && this._isCapabilitySupported(instance, 'watchOrderBookForSymbols');
+      const canWatchPerSymbol =
+        !fetchConfigured && this._isCapabilitySupported(instance, 'watchOrderBook');
+      const canFetch = this._isCapabilitySupported(instance, 'fetchOrderBook');
+
+      // Fetch выбирается ТОЛЬКО при явной конфигурации либо как последний
+      // fallback — в обоих случаях при ПОДТВЕРЖДЁННОЙ capability
+      // (has-map, не наличие функции: base-класс CCXT определяет unified
+      // методы всегда, неподдерживаемые бросают NotSupported).
+      // Capability-несоответствие — перманентный отказ потока: рестарты
+      // не изменят has-map exchange-класса
+      let mode: 'multiplex' | 'watch-per-symbol' | 'fetch';
+      if (canMultiplex) {
+        mode = 'multiplex';
+      } else if (canWatchPerSymbol) {
+        mode = 'watch-per-symbol';
+      } else if (fetchConfigured) {
+        if (!canFetch) {
+          throw new PermanentTaskError(
+            `orderbookMethod 'fetch' is configured but fetchOrderBook is not supported ` +
+              `by exchange '${this._config.exchangeId}' (has.fetchOrderBook=${String(
+                instance.has?.['fetchOrderBook'],
+              )})`,
+          );
+        }
+        mode = 'fetch';
+      } else if (canFetch) {
+        mode = 'fetch';
+        this._logger.warn(
+          'Orderbook watch capabilities unavailable, downgrading to REST fetch polling',
+          {
+            pollIntervalMs: this._fetchPollIntervalMs,
+          },
+        );
+      } else {
+        throw new PermanentTaskError(
+          `Exchange '${this._config.exchangeId}' supports none of ` +
+            'watchOrderBookForSymbols/watchOrderBook/fetchOrderBook',
+        );
+      }
+
       this._logger.info('OB session starting', {
         method: mode,
         symbols: this._symbols.length,
@@ -714,12 +726,20 @@ export class CexSource {
     };
     signal.addEventListener('abort', closeOnAbort, { once: true });
 
-    const canMultiplex =
-      typeof instance.watchTradesForSymbols === 'function' &&
-      !!instance.has?.['watchTradesForSymbols'];
-    const mode: 'multiplex' | 'watch-per-symbol' = canMultiplex ? 'multiplex' : 'watch-per-symbol';
-
+    // Selection внутри try — см. пояснение в OB-сессии (закрытие инстанса)
     try {
+      const canMultiplex = this._isCapabilitySupported(instance, 'watchTradesForSymbols');
+      const canWatchPerSymbol = this._isCapabilitySupported(instance, 'watchTrades');
+      if (!canMultiplex && !canWatchPerSymbol) {
+        throw new PermanentTaskError(
+          `Exchange '${this._config.exchangeId}' supports neither ` +
+            'watchTradesForSymbols nor watchTrades',
+        );
+      }
+      const mode: 'multiplex' | 'watch-per-symbol' = canMultiplex
+        ? 'multiplex'
+        : 'watch-per-symbol';
+
       this._logger.info('Trades session starting', {
         method: mode,
         symbols: this._symbols.length,
@@ -931,6 +951,34 @@ export class CexSource {
   }
 
   // ───────────────────────── Транспортные утилиты ─────────────────────────
+
+  /**
+   * Проверяет unified-capability CCXT: метод существует И объявлен в
+   * `has`-map биржи.
+   *
+   * @param instance - CCXT-инстанс
+   * @param method - Имя unified-метода
+   * @returns true, если capability подтверждена биржей
+   *
+   * @remarks
+   * Одного `typeof === 'function'` НЕДОСТАТОЧНО: base-класс CCXT определяет
+   * unified-методы всегда, неподдерживаемые бросают `NotSupported` при
+   * вызове — источником истины является `has`-map. Значение `'emulated'`
+   * (реконструированная библиотекой capability) считается поддержкой:
+   * `Boolean('emulated') === true`, это согласуется с трактовкой
+   * has-значений самим CCXT.
+   */
+  private _isCapabilitySupported(
+    instance: CcxtProExchangeInstance,
+    method:
+      | 'watchOrderBookForSymbols'
+      | 'watchOrderBook'
+      | 'fetchOrderBook'
+      | 'watchTradesForSymbols'
+      | 'watchTrades',
+  ): boolean {
+    return typeof instance[method] === 'function' && Boolean(instance.has?.[method]);
+  }
 
   private async _makeInstance(): Promise<CcxtProExchangeInstance> {
     const instance = await this._exchangeFactory({

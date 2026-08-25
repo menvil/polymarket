@@ -560,15 +560,97 @@ describe('CexSource: transport modes', () => {
     await source.close();
   });
 
-  it('без единой OB-capability сессия падает с понятной ошибкой', async () => {
+  it('без единой OB-capability поток останавливается PERMANENTLY с понятной ошибкой', async () => {
     const { source, factory, logger } = makeHarness(baseConfig(), {});
     source.start();
     await waitUntil(() =>
       logger
-        .byLevel('warn')
-        .some((entry) => String(entry.context?.['error'] ?? '').includes('supports none of')),
+        .byLevel('error')
+        .some(
+          (entry) =>
+            entry.message.includes('failed permanently') &&
+            String(entry.context?.['error'] ?? '').includes('supports none of'),
+        ),
     );
-    expect(factory.instances.length).toBeGreaterThanOrEqual(1);
+    await waitUntil(() => !source.isRunning);
+    // Никакого retry-loop: одна сессия, один инстанс, закрыт
+    expect(factory.instances).toHaveLength(1);
+    expect(factory.instances[0]!.closeCalls).toBeGreaterThanOrEqual(1);
+    await source.close();
+  });
+
+  it('метод существует, но has=false: fetch-fallback НЕ выбирается (permanent stop)', async () => {
+    // Реальный контракт CCXT: base-класс определяет fetchOrderBook всегда,
+    // has.fetchOrderBook=false означает NotSupported при вызове
+    const { source, factory, logger } = makeHarness(baseConfig(), {
+      fetchOrderBook: 'unsupported',
+    });
+    source.start();
+    await waitUntil(() =>
+      logger.byLevel('error').some((entry) => entry.message.includes('failed permanently')),
+    );
+    await waitUntil(() => !source.isRunning);
+    // Неподдерживаемый метод НЕ вызывался, рестартов нет
+    expect(factory.instances).toHaveLength(1);
+    expect(factory.latest.vendorCalls).toHaveLength(0);
+    await source.close();
+  });
+
+  it("явный orderbookMethod='fetch' при has.fetchOrderBook=false → capability error без retry-loop", async () => {
+    const { source, factory, logger } = makeHarness(
+      baseConfig({ orderbookMethod: 'fetch' }),
+      { watchOrderBookForSymbols: true, fetchOrderBook: 'unsupported' },
+    );
+    source.start();
+    await waitUntil(() =>
+      logger
+        .byLevel('error')
+        .some((entry) =>
+          String(entry.context?.['error'] ?? '').includes(
+            "orderbookMethod 'fetch' is configured but fetchOrderBook is not supported",
+          ),
+        ),
+    );
+    await waitUntil(() => !source.isRunning);
+    expect(factory.instances).toHaveLength(1);
+    // Ни fetch (unsupported), ни multiplex (явный fetch-конфиг) не вызывались
+    expect(factory.latest.vendorCalls).toHaveLength(0);
+    await source.close();
+  });
+
+  it('watchTrades существует, но has=false → trades-поток останавливается permanently', async () => {
+    const { source, factory, logger } = makeHarness(
+      baseConfig({ watchOrderbook: false, watchTrades: true }),
+      { watchTrades: 'unsupported' },
+    );
+    source.start();
+    await waitUntil(() =>
+      logger
+        .byLevel('error')
+        .some((entry) =>
+          String(entry.context?.['error'] ?? '').includes('supports neither'),
+        ),
+    );
+    await waitUntil(() => !source.isRunning);
+    expect(factory.instances).toHaveLength(1);
+    expect(factory.latest.vendorCalls).toHaveLength(0);
+    await source.close();
+  });
+
+  it("has='emulated' считается поддержкой: REST-fallback используется", async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ fetchPollIntervalMs: 5 }),
+      { fetchOrderBook: 'emulated' },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obFetchFeed.hasWaiter);
+
+    expect(
+      logger.byLevel('warn').some((entry) => entry.message.includes('downgrading to REST fetch')),
+    ).toBe(true);
+    factory.latest.obFetchFeed.push(makeRawOb());
+    await waitUntil(() => publisher.messages.length === 1);
+
     await source.close();
   });
 

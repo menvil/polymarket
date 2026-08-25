@@ -45,7 +45,7 @@ export {
   assertValidCexSourceConfig,
 } from './CexSourceConfig.js';
 export { snapshotOrderBook, snapshotTrade } from './snapshots.js';
-export { RestartingTask } from './RestartingTask.js';
+export { PermanentTaskError, RestartingTask } from './RestartingTask.js';
 export type { RestartingTaskOptions } from './RestartingTask.js';
 export { CexSource } from './CexSource.js';
 export type {
