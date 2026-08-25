@@ -58,6 +58,14 @@ payload). Расширение `.mts` обязательно: корневой `
 глобально/статически). Output изолирован: `data/checkpoint-raw-live/<run-id>/`
 (в `.gitignore`).
 
+Shutdown full-режима — graceful wind-down (решение user 2026-08-25,
+после находки premature-timeout архива): перед закрытием контура runner
+вызывает `finalizer.drain()` — уже начатые финализации дожидаются
+официальной резолюции Gamma (или полного 60-минутного бюджета), опрос
+идёт штатным 30-секундным cadence; `CHECKPOINT_DRAIN=0` отключает,
+SIGINT прерывает. Подробности семантики —
+`packages/infrastructure/market-finalizer/docs/market-finalization.md`.
+
 ### Наблюдаемость checkpoint-а
 
 Существующая observability пакетов (stats-снимки) + два минимальных

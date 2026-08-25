@@ -435,3 +435,119 @@ describe('идентичность рынков (двойная защита)', 
     expect(coordinator.completeFinalization(mid(CID_B))).toBe(false);
   });
 });
+
+describe('drain — graceful wind-down (решение user 2026-08-25)', () => {
+  /**
+   * Оборачивает fetchMarket fake-Gamma: каждый вызов продвигает часы на
+   * enrichmentRetryMs (следующий drain-проход снова due), опционально
+   * «доносит» полные данные на заданной попытке.
+   */
+  function advanceClockPerFetch(
+    gamma: { fetchMarket: unknown; markets: Map<string, unknown>; events: Map<string, unknown> },
+    clock: { advance(ms: number): void },
+    options: { completeOnCall?: number } = {},
+  ): void {
+    const base = gamma.fetchMarket as (request: { id?: string }) => Promise<unknown>;
+    let calls = 0;
+    gamma.fetchMarket = (async (request: { id?: string }) => {
+      calls++;
+      clock.advance(30_000);
+      if (options.completeOnCall !== undefined && calls === options.completeOnCall) {
+        armGamma(
+          gamma as never,
+          createFreshGammaMarket(),
+          createFreshGammaEvent({ priceToBeat: 78027.33, finalPrice: 78325.45 }),
+        );
+      }
+      return base(request);
+    }) as never;
+  }
+
+  it('drain дожидается официальной резолюции и архивирует complete', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 1,
+    });
+    // До попытки №3 Gamma отдаёт незавершённые данные (нет finalPrice)
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent({ priceToBeat: 78027.33 }),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    advanceClockPerFetch(gamma, clock, { completeOnCall: 3 });
+
+    // Конкурентные drain разделяют одно ожидание (двойных попыток нет)
+    await Promise.all([finalizer.drain(), finalizer.drain()]);
+
+    expect(gamma.fetchMarketCalls).toHaveLength(3);
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('complete');
+    expect(finalization.attempts).toBe(3);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(finalizer.getStats()).toMatchObject({
+      pendingFinalizations: 0,
+      archivedTotal: 1,
+      archiveFailures: 0,
+    });
+    expect(finalizer.isClosed).toBe(false); // drain НЕ закрывает finalizer
+  });
+
+  it('drain доводит рынок до timeout-архива по ПОЛНОМУ бюджету, а не бросает раньше', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 1,
+      enrichmentMaxWaitMs: 90_000,
+    });
+    // Официальная резолюция так и не приходит
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent(),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    advanceClockPerFetch(gamma, clock);
+
+    await finalizer.drain();
+
+    // Попытки шли cadence-ом 30s до исчерпания 90s-бюджета, затем timeout
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout');
+    expect(finalization.attempts).toBe(4);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(finalizer.getStats()).toMatchObject({ pendingFinalizations: 0, archivedTotal: 1 });
+  });
+
+  it('close() прерывает спящий drain немедленно (аварийный best-known путь)', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 60_000, // без прерывания тест бы завис на реальном таймере
+    });
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent({ priceToBeat: 78027.33 }),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce(); // попытка 1 → pending, часы заморожены
+
+    const drainPromise = finalizer.drain(); // проход без due-попытки → сон 60s
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await finalizer.close();
+    await drainPromise; // разрешается пробуждением, НЕ по таймеру
+
+    expect(finalizer.isClosed).toBe(true);
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout'); // best-known аварийного close()
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+  });
+
+  it('drain без pending возвращается сразу; после close() — no-op', async () => {
+    const { finalizer } = createFinalizerHarness({ drainPollMs: 60_000 });
+    await finalizer.drain(); // нет ни ACTIVE, ни pending — мгновенно
+
+    await finalizer.close();
+    await finalizer.drain(); // closed-guard — мгновенно
+    expect(finalizer.isClosed).toBe(true);
+  });
+});

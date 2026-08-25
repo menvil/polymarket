@@ -56,21 +56,30 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
   без повторных gzip-попыток (retry-framework сознательно нет), сессия
   остаётся FINALIZING (identity защищена).
 
-## 5. Shutdown (PART 40/41)
+## 5. Shutdown (PART 40/41 + drain 2026-08-25)
 
 ```text
 stop discovery/expiry runner
       ↓
-MarketFinalizer.close()      ← FINALIZING → EXPIRED best-known (БЕЗ новых Gamma-запросов)
-      ↓
+MarketFinalizer.drain()      ← ШТАТНЫЙ wind-down: дождаться официальной
+      ↓                        резолюции уже начатых финализаций (poll тем же
+      ↓                        cadence до полного enrichmentMaxWaitMs-бюджета)
+MarketFinalizer.close()      ← аварийный путь: FINALIZING → EXPIRED best-known
+      ↓                        (БЕЗ новых Gamma-запросов); прерывает спящий drain
 CollectionCoordinator.close() ← ACTIVE/OPENING → SHUTDOWN (incomplete удаляются)
       ↓
 PolymarketSource.close() → ExternalMessageBus.drain()
       → ExternalMessageRecorder.close() → ExternalMessageBus.close()
 ```
 
-ACTIVE рынки НЕ архивируются как EXPIRED из-за выключения приложения.
-Общий bus finalizer не закрывает.
+`drain()` добавлен по находке CHECKPOINT #1: остановка процесса срезала
+60-минутное окно ожидания (рынок архивировался `timeout` за 20 секунд до
+реальной резолюции Gamma). Штатный wind-down теперь дожидается: каждый
+pending-рынок архивируется `complete` либо `timeout` по СВОЕМУ полному
+бюджету; рынок, истёкший во время drain, тоже дожидается. ACTIVE рынки
+по-прежнему НЕ архивируются как EXPIRED из-за выключения приложения.
+Общий bus finalizer не закрывает. Ветка timeout — зарезервированная точка
+будущего TWAP-fallback (`DERIVED COMPLETE`).
 
 ## 6. Скрипты
 

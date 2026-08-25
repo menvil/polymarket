@@ -40,8 +40,15 @@
  * - `short` — restart-верификация: ДВЕ последовательные композиции в одном
  *   процессе (teardown → повторный startup), короткий сбор, лёгкая валидация.
  *
+ * Shutdown full-режима — graceful wind-down: перед закрытием контура
+ * выполняется `finalizer.drain()` — уже начатые финализации дожидаются
+ * официальной резолюции (или полного 60-мин бюджета), опрос Gamma идёт
+ * штатным 30-секундным cadence; SIGINT прерывает ожидание (аварийный
+ * best-known путь close() сохранён).
+ *
  * Env-переменные:
  * - `CHECKPOINT_MODE` — `full` | `short` (default `full`);
+ * - `CHECKPOINT_DRAIN` — `0` отключает drain перед shutdown (default on);
  * - `CHECKPOINT_MAX_MINUTES` — дедлайн full-прогона (default 45);
  * - `CHECKPOINT_MIN_MINUTES` — минимальная длительность full-прогона,
  *   гарантирует наблюдение планового CEX-рестарта (default 17);
@@ -171,6 +178,8 @@ const ENVELOPE_KEYS = [
 ] as const;
 
 const MODE = process.env['CHECKPOINT_MODE'] === 'short' ? 'short' : 'full';
+/** Дренировать pending-финализации перед shutdown (full-режим). Off: `CHECKPOINT_DRAIN=0`. */
+const DRAIN_FINALIZATIONS = process.env['CHECKPOINT_DRAIN'] !== '0';
 const MAX_MINUTES = Number(process.env['CHECKPOINT_MAX_MINUTES'] ?? 45);
 const MIN_MINUTES = Number(process.env['CHECKPOINT_MIN_MINUTES'] ?? 17);
 const SHORT_MINUTES = Number(process.env['CHECKPOINT_SHORT_MINUTES'] ?? 2.5);
@@ -693,9 +702,38 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     pipelineError = error;
   }
 
-  // Freeze всех оставшихся активных рынков ДО shutdown (их файлы будут
-  // удалены SHUTDOWN-политикой, но рынки, успевшие в FINALIZING, архивируются)
+  // Freeze всех оставшихся активных рынков ДО drain/shutdown (сэмплы колец —
+  // подмножество уже записанных строк, exact-match работает и для рынков,
+  // которые заархивируются во время drain)
   for (const key of knownActive) freezeMarket(key);
+
+  // ── Drain: дождаться официальных резолюций уже начатых финализаций ────
+  // (решение user 2026-08-25: остановка не срезает 60-мин окно ожидания;
+  // опрос продолжается штатным 30s-cadence). SIGINT прерывает ожидание —
+  // finalizer.close() в shutdown-лестнице разбудит спящий drain.
+  if (options.requireFullLifecycle && DRAIN_FINALIZATIONS && !stopRequested) {
+    logger.info('CHECKPOINT draining pending finalizations before shutdown', {
+      finalizer: finalizer.getStats(),
+      coordinator: coordinator.getStats(),
+    });
+    let drainSettled = false;
+    await Promise.race([
+      finalizer.drain().finally(() => {
+        drainSettled = true;
+      }),
+      (async () => {
+        while (!stopRequested && !drainSettled) {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 1_000);
+          });
+        }
+      })(),
+    ]);
+    logger.info('CHECKPOINT finalization drain finished', {
+      finalizer: finalizer.getStats(),
+      interruptedBySignal: stopRequested,
+    });
+  }
 
   // ── Финальный снимок stats ДО shutdown ────────────────────────────────
   evidence.finalStats = {
@@ -785,6 +823,8 @@ interface PmArchiveHeader {
   readonly priceToBeat: unknown;
   readonly finalPrice: unknown;
   readonly winningLabel: string | undefined;
+  /** UMA-резолюция дошла до архива (только тогда winning обязателен). */
+  readonly umaResolved: boolean;
   readonly expiresAtMs: number | null;
   readonly finalizedAtMs: number | null;
 }
@@ -808,6 +848,7 @@ function parsePmArchiveHeader(file: string): PmArchiveHeader {
   const finalization = (m['finalization'] ?? {}) as Record<string, unknown>;
   const crypto = (finalization['crypto'] ?? {}) as Record<string, unknown>;
   const winning = finalization['winning'] as Record<string, unknown> | undefined;
+  const resolution = (finalization['resolution'] ?? {}) as Record<string, unknown>;
   return {
     marketId: String(header['marketId'] ?? ''),
     conditionId: String(m['conditionId'] ?? ''),
@@ -818,6 +859,7 @@ function parsePmArchiveHeader(file: string): PmArchiveHeader {
     priceToBeat: crypto['priceToBeat'],
     finalPrice: crypto['finalPrice'],
     winningLabel: winning !== undefined ? String(winning['label']) : undefined,
+    umaResolved: resolution['umaResolutionStatus'] === 'resolved',
     expiresAtMs: typeof timing['expiresAt'] === 'number' ? timing['expiresAt'] : null,
     finalizedAtMs:
       typeof finalization['finalizedAtMs'] === 'number' ? finalization['finalizedAtMs'] : null,
@@ -838,6 +880,7 @@ interface ValidationReport {
     priceToBeat: unknown;
     finalPrice: unknown;
     winningLabel: string | undefined;
+    umaResolved: boolean;
     enrichLatencyMin: number | null;
     exactMarketSampleMatched: boolean;
     exactRtdsSampleMatched: boolean;
@@ -1007,6 +1050,7 @@ function validateArtifacts(
       priceToBeat: header.priceToBeat,
       finalPrice: header.finalPrice,
       winningLabel: header.winningLabel,
+      umaResolved: header.umaResolved,
       enrichLatencyMin:
         header.expiresAtMs !== null && header.finalizedAtMs !== null
           ? Math.round(((header.finalizedAtMs - header.expiresAtMs) / 60_000) * 10) / 10
@@ -1037,8 +1081,11 @@ function validateArtifacts(
       if (archive.priceToBeat === undefined || archive.finalPrice === undefined) {
         report.violations.push(`complete PM archive missing crypto finalization: ${archive.file}`);
       }
-      if (archive.winningLabel === undefined) {
-        report.violations.push(`complete PM archive missing winning outcome: ${archive.file}`);
+      // winning обязателен ТОЛЬКО при дошедшей UMA-резолюции: действующий
+      // completion-контракт (parity с legacy, backlog №2) ждёт две crypto-цены,
+      // а не resolved-исходы — complete-архив до UMA-резолюции легален
+      if (archive.umaResolved && archive.winningLabel === undefined) {
+        report.violations.push(`resolved PM archive missing winning outcome: ${archive.file}`);
       }
       if (!archive.exactMarketSampleMatched) {
         report.violations.push(

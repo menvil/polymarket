@@ -120,11 +120,37 @@ Backtest получает ответ о результате рынка из О�
 | header `false` при timeout/shutdown | архив best-known ПРЕДЫДУЩЕГО header-а, error-лог (явная policy) |
 | `finalizeMarket(EXPIRED)` throw | терминально: без success-лога, без повторного gzip; сессия остаётся FINALIZING |
 
-## Shutdown (PART 40/41/60)
+## Shutdown (PART 40/41/60 + drain 2026-08-25)
 
-`finalizer.close()`: запрет новых проходов → ожидание in-flight →
-все FINALIZING архивируются EXPIRED best-known БЕЗ новых Gamma-запросов
-(сеть не задерживает shutdown; статус `'complete'`, если условие уже
-выполнено, иначе `'timeout'`). ACTIVE/OPENING рынки не трогаются — их
-закроет `coordinator.close()` как SHUTDOWN. Итоговый порядок контура —
-см. README.
+### Почему появился drain
+
+CHECKPOINT #1 показал: остановка процесса срезала 60-минутное окно
+ожидания официальной резолюции — рынок BTC 6:45–6:50 ET был заархивирован
+`timeout` (attempts=2) через 58 секунд после expiry, а Gamma зарезолвил
+его через 20 секунд ПОСЛЕ выхода процесса. Решение user: остановка не
+должна обрывать уже начатое ожидание.
+
+### Штатный wind-down: `drain()` → `close()`
+
+`finalizer.drain()`: крутит `runOnce()` с паузой `drainPollMs` (default —
+cadence `enrichmentRetryMs`, 30 с), пока pending-финализации не опустеют:
+каждый рынок архивируется `'complete'` при официальной резолюции либо
+`'timeout'` по СВОЕМУ полному `enrichmentMaxWaitMs`-бюджету (60 мин).
+Expiry-переходы продолжаются: ACTIVE-рынок, истёкший во время drain,
+тоже дожидается. `archiveFailed`-остатки не ждутся (их архив терминально
+отказал). Конкурентные drain разделяют одно ожидание. Верхняя граница:
+последний вход в FINALIZING + `enrichmentMaxWaitMs`.
+
+### Аварийный путь: `close()` без drain
+
+`finalizer.close()`: запрет новых проходов → пробуждение спящего drain →
+ожидание in-flight → все FINALIZING архивируются EXPIRED best-known БЕЗ
+новых Gamma-запросов (сеть не задерживает shutdown; статус `'complete'`,
+если условие уже выполнено, иначе `'timeout'`). ACTIVE/OPENING рынки не
+трогаются — их закроет `coordinator.close()` как SHUTDOWN. Итоговый
+порядок контура — см. README.
+
+Ветка `'timeout'` (оба пути) — зарезервированная точка расширения
+TWAP-fallback: по исчерпании бюджета официальной резолюции итог будет
+деривироваться из записанного TWAP-канала (`DERIVED COMPLETE`); до его
+появления семантика не меняется.
