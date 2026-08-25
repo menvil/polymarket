@@ -44,6 +44,33 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
+/**
+ * Identity-ключ сделки для подсчёта redelivery.
+ *
+ * @remarks
+ * Биржи без trade id иначе схлопнулись бы в единый литеральный ключ
+ * `"undefined"` и испортили бы метрики new/redelivered. При наличии id —
+ * дедупликация по нему; без id — композит из стабильных unified-полей.
+ */
+function tradeIdentityKey(trade: Record<string, unknown>): string {
+  const id = trade['id'];
+  if (id !== undefined && id !== null) {
+    return `id:${String(id)}`;
+  }
+  return [
+    'ts',
+    String(trade['timestamp']),
+    'p',
+    String(trade['price']),
+    'a',
+    String(trade['amount']),
+    's',
+    String(trade['side']),
+    'sym',
+    String(trade['symbol']),
+  ].join('|');
+}
+
 function describeShape(obj: Record<string, unknown>, label: string): void {
   console.log(`${label} keys:`);
   for (const key of Object.keys(obj)) {
@@ -122,18 +149,18 @@ async function main(): Promise<void> {
         JSON.stringify(snapshotTrade(batch1[0] as CcxtRawTrade)).length > 0
       }`);
     }
-    const seenIds = new Set(batch1.map((trade) => String((trade as { id?: unknown }).id)));
+    const seenIds = new Set(batch1.map((trade) => tradeIdentityKey(trade)));
     let redelivered = 0;
     let newCount = 0;
     const batches = 3;
     for (let i = 0; i < batches; i++) {
       const nextBatch = await instance.watchTrades(SYMBOL);
       for (const trade of nextBatch) {
-        const id = String((trade as { id?: unknown }).id);
-        if (seenIds.has(id)) {
+        const key = tradeIdentityKey(trade);
+        if (seenIds.has(key)) {
           redelivered++;
         } else {
-          seenIds.add(id);
+          seenIds.add(key);
           newCount++;
         }
       }

@@ -701,10 +701,26 @@ export class ExternalMessageRecorder {
     this._closePromise = (async () => {
       // Дожидаемся in-flight финализаций ДО закрытия storage (cleanup)
       await Promise.allSettled([...this._pendingFinalizations]);
-      await this._storage.close();
-      // Оконный CEX-storage принадлежит recorder-у: закрывается тем же
-      // shutdown-ом (незавершённые окна удаляет его собственная policy)
-      await this._cex?.storage.close();
+      // Оба storage закрываются ПАРАЛЛЕЛЬНО и оба дожидаются: отказ
+      // закрытия Polymarket-storage не должен лишать CEX-storage его
+      // shutdown-а (и наоборот). Первый отказ пробрасывается ПОСЛЕ того,
+      // как оба закрытия завершились.
+      const closures = await Promise.allSettled([
+        this._storage.close(),
+        this._cex?.storage.close() ?? Promise.resolve(),
+      ]);
+      const rejection = closures.find(
+        (entry): entry is PromiseRejectedResult => entry.status === 'rejected',
+      );
+      if (rejection) {
+        this._logger.error('Recorder storage close failed', {
+          error:
+            rejection.reason instanceof Error
+              ? rejection.reason.message
+              : String(rejection.reason),
+        });
+        throw rejection.reason;
+      }
       this._logger.info('ExternalMessageRecorder closed');
     })();
     return this._closePromise;

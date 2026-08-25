@@ -7,7 +7,8 @@
  * legacy-пакет (dependency boundary N-005), а сам механизм — ровно тот
  * transport-supervision, который нужно сохранить:
  *
- * - нормальный return сессии = controlled restart (без backoff);
+ * - нормальный return сессии = controlled restart (без backoff, но с
+ *   минимальной паузой `controlledRestartDelayMs`);
  * - исключение сессии = restart с exponential backoff + jitter;
  * - серия быстрых отказов = cooldown-пауза;
  * - стабильная сессия (`stableResetMs`) сбрасывает счётчик отказов;
@@ -22,6 +23,7 @@ const DEFAULT_JITTER_RATIO = 0.2;
 const DEFAULT_COOLDOWN_AFTER_FAILURES = 10;
 const DEFAULT_COOLDOWN_MS = 5 * 60_000;
 const DEFAULT_STABLE_RESET_MS = 60_000;
+const DEFAULT_CONTROLLED_RESTART_DELAY_MS = 250;
 
 /**
  * Параметры {@link RestartingTask}.
@@ -44,6 +46,13 @@ export interface RestartingTaskOptions {
   readonly cooldownMs?: number;
   /** Uptime сессии, после которого счётчик отказов сбрасывается (ms). Default: 60000. */
   readonly stableResetMs?: number;
+  /**
+   * Минимальная пауза между нормальным завершением сессии и её рестартом
+   * (ms). Default: 250. Защита от tight-loop мгновенно завершающихся
+   * сессий (controlled restart без backoff не должен монополизировать
+   * event loop / плодить инстансы).
+   */
+  readonly controlledRestartDelayMs?: number;
   /** @internal Test hook для детерминированного jitter. */
   readonly random?: () => number;
 }
@@ -79,6 +88,7 @@ export class RestartingTask {
   private readonly _cooldownAfterFailures: number;
   private readonly _cooldownMs: number;
   private readonly _stableResetMs: number;
+  private readonly _controlledRestartDelayMs: number;
   private readonly _random: () => number;
 
   private _stopped = true;
@@ -98,6 +108,8 @@ export class RestartingTask {
     this._cooldownAfterFailures = options.cooldownAfterFailures ?? DEFAULT_COOLDOWN_AFTER_FAILURES;
     this._cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     this._stableResetMs = options.stableResetMs ?? DEFAULT_STABLE_RESET_MS;
+    this._controlledRestartDelayMs =
+      options.controlledRestartDelayMs ?? DEFAULT_CONTROLLED_RESTART_DELAY_MS;
     this._random = options.random ?? Math.random;
   }
 
@@ -160,7 +172,12 @@ export class RestartingTask {
         this._logger.info('Restarting task session completed, restarting', {
           task: this._name,
           uptimeMs: Date.now() - sessionStartedAt,
+          restartDelayMs: this._controlledRestartDelayMs,
         });
+        // Минимальная пауза перед новой сессией: controlled restart без неё
+        // превращал бы мгновенно завершающиеся сессии в tight-loop
+        // (stop/abort прерывают паузу немедленно)
+        await this._sleep(this._controlledRestartDelayMs, controller.signal);
       } catch (err) {
         if (this._stopped || controller.signal.aborted) break;
 

@@ -409,19 +409,38 @@ export class CexSource {
     };
     signal.addEventListener('abort', closeOnAbort, { once: true });
 
-    const useFetch = this._config.orderbookMethod === 'fetch';
+    const fetchConfigured = this._config.orderbookMethod === 'fetch';
     const canMultiplex =
-      !useFetch &&
+      !fetchConfigured &&
       typeof instance.watchOrderBookForSymbols === 'function' &&
       !!instance.has?.['watchOrderBookForSymbols'];
     const canWatchPerSymbol =
-      !useFetch && typeof instance.watchOrderBook === 'function' && !!instance.has?.['watchOrderBook'];
+      !fetchConfigured &&
+      typeof instance.watchOrderBook === 'function' &&
+      !!instance.has?.['watchOrderBook'];
+    const canFetch = typeof instance.fetchOrderBook === 'function';
 
-    const mode: 'multiplex' | 'watch-per-symbol' | 'fetch' = canMultiplex
-      ? 'multiplex'
-      : canWatchPerSymbol
-        ? 'watch-per-symbol'
-        : 'fetch';
+    // Fetch выбирается ТОЛЬКО при явной конфигурации либо как последний
+    // fallback при реально доступном fetchOrderBook; молчаливого даунгрейда
+    // нет — implicit-переход логируется, полное отсутствие capability даёт
+    // понятную ошибку вместо бесконечных retry «неизвестно чего»
+    let mode: 'multiplex' | 'watch-per-symbol' | 'fetch';
+    if (canMultiplex) {
+      mode = 'multiplex';
+    } else if (canWatchPerSymbol) {
+      mode = 'watch-per-symbol';
+    } else if (fetchConfigured) {
+      mode = 'fetch';
+    } else if (canFetch) {
+      mode = 'fetch';
+      this._logger.warn('Orderbook watch capabilities unavailable, downgrading to REST fetch polling', {
+        pollIntervalMs: this._fetchPollIntervalMs,
+      });
+    } else {
+      throw new Error(
+        'Exchange instance supports none of watchOrderBookForSymbols/watchOrderBook/fetchOrderBook',
+      );
+    }
 
     try {
       this._logger.info('OB session starting', {
@@ -471,6 +490,16 @@ export class CexSource {
     }
   }
 
+  /**
+   * Fallback-режим стакана: НЕЗАВИСИМЫЕ параллельные петли по символам.
+   *
+   * @remarks
+   * Петли не выстраиваются в очередь: «тихий» символ (ждущий свой
+   * stale-таймаут) не блокирует эмиссию остальных. Отказ любой петли
+   * завершает сессию целиком (supervised restart пересоздаёт инстанс для
+   * всех символов — как в multiplex-режиме); у каждого watch-вызова свой
+   * stale-дедлайн.
+   */
   private async _runObWatchPerSymbol(
     instance: CcxtProExchangeInstance,
     signal: AbortSignal,
@@ -479,27 +508,87 @@ export class CexSource {
     if (typeof watch !== 'function') {
       throw new Error('watchOrderBook is not available on the exchange instance');
     }
-    const restartDeadline = this._plannedRestartDeadline();
-    while (!signal.aborted) {
-      if (Date.now() >= restartDeadline) {
-        this._logger.info('Planned restart (OB watch-per-symbol)');
-        return;
-      }
-
-      for (const symbol of this._symbols) {
-        if (signal.aborted) break;
+    await this._runPerSymbolLoops(
+      signal,
+      'Planned restart (OB watch-per-symbol)',
+      async (symbol, sessionSignal) => {
         const rawOb = await this._withWatchTimeout(
           () => watch.call(instance, symbol, this._effectiveDepth),
           this._obStaleTimeoutMs,
           `OB watch stale for ${symbol}`,
-          signal,
+          sessionSignal,
         );
-        if (signal.aborted) break;
-        if (!rawOb) continue;
-        const outcome = await this._emitOrderbook(rawOb, symbol, signal);
-        if (outcome === 'restart') return;
-        if (outcome === 'stop') return;
+        if (sessionSignal.aborted) return 'exit';
+        if (!rawOb) return 'continue';
+        const outcome = await this._emitOrderbook(rawOb, symbol, sessionSignal);
+        return outcome === 'continue' ? 'continue' : 'exit';
+      },
+    );
+  }
+
+  /**
+   * Запускает независимые петли по всем символам и координирует их выход.
+   *
+   * @param parentSignal - Сигнал остановки сессии (RestartingTask)
+   * @param plannedRestartMessage - Лог планового перезапуска
+   * @param step - Одна итерация петли символа: watch → emit
+   *
+   * @remarks
+   * Координация через session-local AbortController:
+   * - плановый дедлайн/`exit`-исход любой петли завершают сессию штатно
+   *   (controlled restart) — остальные петли будятся abort-ом;
+   * - исключение петли (stale/транспорт) фиксируется как отказ сессии и
+   *   пробрасывается ПОСЛЕ завершения всех петель (supervised backoff);
+   *   поздние rejections остальных петель поглощаются как следствие
+   *   останова, unhandled rejections исключены.
+   */
+  private async _runPerSymbolLoops(
+    parentSignal: AbortSignal,
+    plannedRestartMessage: string,
+    step: (symbol: string, sessionSignal: AbortSignal) => Promise<'continue' | 'exit'>,
+  ): Promise<void> {
+    const restartDeadline = this._plannedRestartDeadline();
+    const session = new AbortController();
+    const onParentAbort = (): void => session.abort();
+    if (parentSignal.aborted) {
+      session.abort();
+    } else {
+      parentSignal.addEventListener('abort', onParentAbort, { once: true });
+    }
+
+    let failure: unknown = null;
+    const loops = this._symbols.map(async (symbol) => {
+      while (!session.signal.aborted) {
+        if (Date.now() >= restartDeadline) {
+          this._logger.info(plannedRestartMessage);
+          session.abort();
+          return;
+        }
+        let outcome: 'continue' | 'exit';
+        try {
+          outcome = await step(symbol, session.signal);
+        } catch (error) {
+          if (session.signal.aborted) {
+            return; // сессию уже завершает другой участник — это следствие
+          }
+          failure ??= error;
+          session.abort();
+          return;
+        }
+        if (outcome === 'exit') {
+          session.abort();
+          return;
+        }
       }
+    });
+
+    try {
+      await Promise.all(loops);
+    } finally {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+    if (failure !== null && !parentSignal.aborted) {
+      throw failure;
     }
   }
 
@@ -677,6 +766,10 @@ export class CexSource {
     }
   }
 
+  /**
+   * Fallback-режим сделок: независимые параллельные петли по символам
+   * (та же координация, что у стакана — см. `_runPerSymbolLoops`).
+   */
   private async _runTradesWatchPerSymbol(
     instance: CcxtProExchangeInstance,
     signal: AbortSignal,
@@ -685,27 +778,22 @@ export class CexSource {
     if (typeof watch !== 'function') {
       throw new Error('watchTrades is not available on the exchange instance');
     }
-    const restartDeadline = this._plannedRestartDeadline();
-    while (!signal.aborted) {
-      if (Date.now() >= restartDeadline) {
-        this._logger.info('Planned restart (trades watch-per-symbol)');
-        return;
-      }
-
-      for (const symbol of this._symbols) {
-        if (signal.aborted) break;
+    await this._runPerSymbolLoops(
+      signal,
+      'Planned restart (trades watch-per-symbol)',
+      async (symbol, sessionSignal) => {
         const trades = await this._withWatchTimeout(
           () => watch.call(instance, symbol),
           this._tradesStaleTimeoutMs,
           `Trades watch stale for ${symbol}`,
-          signal,
+          sessionSignal,
         );
-        if (signal.aborted) break;
-        if (!trades?.length) continue;
-        const outcome = await this._emitTrades(trades, symbol, signal);
-        if (outcome === 'stop') return;
-      }
-    }
+        if (sessionSignal.aborted) return 'exit';
+        if (!trades?.length) return 'continue';
+        const outcome = await this._emitTrades(trades, symbol, sessionSignal);
+        return outcome === 'stop' ? 'exit' : 'continue';
+      },
+    );
   }
 
   /**

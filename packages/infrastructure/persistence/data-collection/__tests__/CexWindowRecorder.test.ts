@@ -237,8 +237,26 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     expect(files).toHaveLength(2);
     const names = files.map((file) => path.basename(file).replace(/\.gz$/, ''));
     expect(new Set(names).size).toBe(2);
-    // Секунды присутствуют в метках: HHMMSS{AM|PM}-HHMMSS{AM|PM}
-    expect(names[0]).toMatch(/_\d{5,6}[AP]M-\d{5,6}[AP]M_ET\.jsonl$/);
+    // Секунды присутствуют в метках: HHMMSS{AM|PM}-HHMMSS{AM|PM} (час двузначный)
+    expect(names[0]).toMatch(/_\d{6}[AP]M-\d{6}[AP]M_ET\.jsonl$/);
+  });
+
+  it('однозначный час ET дополняется нулём: формат HHMM (0835AM)', async () => {
+    // 12:30 UTC = 08:30 AM ET (EDT); первая граница = 12:35 UTC.
+    // Отдельный recorder: точка выравнивания фиксируется в start()
+    const morning = Date.UTC(2026, 7, 25, 12, 30, 0, 0);
+    now = morning + 1_000;
+    const morningRecorder = makeRecorder();
+    morningRecorder.start();
+    now = morning + 5 * 60_000 + 1_000; // внутри окна 12:35–12:40 UTC
+    expect(
+      morningRecorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { h: 1 }),
+    ).toBe('recorded');
+    await morningRecorder.flush();
+
+    const files = listFiles(dir).filter((file) => file.includes('_orderbook_'));
+    expect(files.some((file) => file.includes('_0835AM-0840AM_ET.jsonl'))).toBe(true);
+    await morningRecorder.close();
   });
 
   it('threshold flush: буфер сбрасывается без явного flush()', async () => {
@@ -390,6 +408,30 @@ class FakeWriteStream {
     for (const listener of this._closeListeners.splice(0)) {
       listener();
     }
+  }
+}
+
+/** Stream, чей write бросает СИНХРОННО (не через callback). */
+class ThrowingWriteStream {
+  public write(): boolean {
+    throw new Error('injected synchronous write throw');
+  }
+
+  public end(callback?: (error?: Error | null) => void): void {
+    callback?.(null);
+  }
+
+  public on(): this {
+    return this;
+  }
+
+  public once(event: string, listener: () => void): this {
+    if (event === 'close') listener();
+    return this;
+  }
+
+  public destroy(): void {
+    // no-op
   }
 }
 
@@ -583,6 +625,50 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
     expect(streams[0]!.written).toBe(`${JSON.stringify({ race: 1 })}\n`);
 
     await recorder.close();
+  });
+
+  it('синхронный throw stream.write не даёт unhandled rejection (hot path + ротация)', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const recorder = new CexWindowRecorder(
+        {
+          outputDir: dir,
+          compression: 'gzip',
+          windowMinutes: 5,
+          bufferSize: 1, // threshold-flush через void прямо из write()
+          flushIntervalMs: 60_000,
+          streamCloseTimeoutMs: 30,
+        },
+        logger,
+        () => now,
+        () => new ThrowingWriteStream() as unknown as fs.WriteStream,
+      );
+      recorder.start();
+      const window1 = ALIGNED_T0 + WINDOW_MS;
+      now = window1 + 1_000;
+
+      // Hot path: threshold-flush падает синхронным throw → поглощён
+      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 1 })).toBe('recorded');
+      await waitFor(() => recorder.getStats().streamCloseFailures >= 1);
+      // Writer помечен failed — последующие записи отклоняются наблюдаемо
+      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 2 })).toBe('failed');
+
+      // Ротация failed-writer-а тоже не оставляет невыловленных отказов
+      now = window1 + WINDOW_MS + 1_000;
+      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 3 });
+      await waitFor(() => recorder.getStats().rotationFailures >= 1);
+      await recorder.close();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+      expect(recorder.getStats().partitionsCompleted).toBe(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('успешная цепочка flush → close → gzip учитывается в partitionsCompleted (4.1)', async () => {

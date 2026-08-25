@@ -188,7 +188,12 @@ function loadCcxt(): Promise<typeof import('ccxt')> {
 export interface CcxtInstanceConstructorArgs {
   /** Встроенный rate-limiter CCXT включён. */
   readonly enableRateLimit: boolean;
-  /** `options` инстанса (defaultType/timeout/newUpdates/watchOrderBook/ws). */
+  /**
+   * REST/WS timeout инстанса (ms) — TOP-LEVEL свойство конструктора CCXT
+   * (`this.timeout`); внутри `options` этот ключ инертен и не применяется.
+   */
+  readonly timeout: number;
+  /** `options` инстанса (defaultType/newUpdates/watchOrderBook/ws). */
   readonly options: Readonly<Record<string, unknown>>;
 }
 
@@ -217,13 +222,12 @@ export function buildCcxtInstanceOptions(
 
   const options: Record<string, unknown> = {
     defaultType: params.marketType,
-    timeout: INSTANCE_TIMEOUT_MS,
     newUpdates: true,
     watchOrderBook: { checksum: false, limit: params.depth },
   };
   if (Object.keys(wsOptions).length > 0) options['ws'] = wsOptions;
 
-  return { enableRateLimit: true, options };
+  return { enableRateLimit: true, timeout: INSTANCE_TIMEOUT_MS, options };
 }
 
 /**
@@ -234,9 +238,9 @@ export function buildCcxtInstanceOptions(
  * @throws {Error} Если биржа не найдена в ccxt.pro
  *
  * @remarks
- * Опции инстанса:
- * - `defaultType` — тип рынка;
- * - `timeout: 30s`;
+ * Аргументы инстанса:
+ * - `timeout: 30s` — top-level свойство конструктора (в `options` он инертен);
+ * - `options.defaultType` — тип рынка;
  * - `watchOrderBook: { checksum: false, limit }` — как в legacy;
  * - `newUpdates: true` — ЯВНОЕ закрепление контракта «watchTrades возвращает
  *   только новые сделки с прошлого вызова» (дефолт ccxt 4.x, пиним от
@@ -269,6 +273,7 @@ export async function createCcxtProExchange(
   const constructorArgs = buildCcxtInstanceOptions(params);
   return new ExchangeClass({
     enableRateLimit: constructorArgs.enableRateLimit,
+    timeout: constructorArgs.timeout,
     options: { ...constructorArgs.options },
   });
 }

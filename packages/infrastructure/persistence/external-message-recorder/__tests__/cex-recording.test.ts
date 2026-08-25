@@ -142,6 +142,27 @@ describe('CEX lifecycle', () => {
     expect(cexStorage.writes).toHaveLength(1);
   });
 
+  it('отказ close() Polymarket-storage не лишает CEX-storage его закрытия', async () => {
+    const failingStorage = new FakeRecordingStorage();
+    failingStorage.closeRejection = new Error('polymarket storage close failed');
+    const cexFake = new FakeCexWindowStorage();
+    const local = new ExternalMessageRecorder({
+      bus,
+      storage: failingStorage,
+      logger,
+      cex: { bus, storage: cexFake },
+    });
+    local.start();
+
+    // Отказ пробрасывается ПОСЛЕ завершения обоих закрытий
+    await expect(local.close()).rejects.toThrow('polymarket storage close failed');
+    expect(failingStorage.closeCalls).toBe(1);
+    expect(cexFake.closeCalls).toBe(1);
+    expect(
+      logger.byLevel('error').some((e) => e.message.includes('storage close failed')),
+    ).toBe(true);
+  });
+
   it('сообщения после close() игнорируются', async () => {
     recorder.start();
     await recorder.close();

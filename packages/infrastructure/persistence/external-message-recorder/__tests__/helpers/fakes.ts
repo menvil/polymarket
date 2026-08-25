@@ -123,9 +123,15 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
     // no-op: fake не трогает диск
   }
 
+  /** Если задана — close() отклоняется этой ошибкой (после учёта вызова). */
+  public closeRejection: Error | undefined;
+
   public async close(): Promise<void> {
     this.closeCalls += 1;
     this.callOrder.push('storage:close');
+    if (this.closeRejection !== undefined) {
+      throw this.closeRejection;
+    }
   }
 }
 

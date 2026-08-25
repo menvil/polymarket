@@ -38,7 +38,10 @@ describe('buildCcxtInstanceOptions: CCXT unified market types', () => {
     // Официальный механизм «только новые trades» пиним явно
     expect(args.options['newUpdates']).toBe(true);
     expect(args.options['watchOrderBook']).toEqual({ checksum: false, limit: 25 });
-    expect(typeof args.options['timeout']).toBe('number');
+    // timeout — TOP-LEVEL свойство конструктора CCXT; в options он инертен
+    expect(typeof args.timeout).toBe('number');
+    expect(args.timeout).toBeGreaterThan(0);
+    expect(args.options['timeout']).toBeUndefined();
     // Без keep-alive override-а ws-опции не добавляются
     expect(args.options['ws']).toBeUndefined();
   });

@@ -124,6 +124,51 @@ describe('RestartingTask', () => {
     expect(maxConcurrent).toBe(1);
   });
 
+  it('controlled restart выдерживает минимальную паузу между сессиями', async () => {
+    const logger = new CapturingLogger();
+    let runs = 0;
+    const startedAt = Date.now();
+    const task = new RestartingTask({
+      name: 'test',
+      logger,
+      controlledRestartDelayMs: 40,
+      // Мгновенно завершающаяся сессия: без паузы это был бы tight-loop
+      run: async () => {
+        runs++;
+      },
+    });
+
+    task.start();
+    await waitUntil(() => runs >= 3);
+    await task.stop();
+
+    // Между тремя сессиями минимум две паузы по 40ms
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(80);
+    expect(logger.byLevel('warn')).toHaveLength(0);
+  });
+
+  it('stop во время controlled-паузы завершается немедленно', async () => {
+    const logger = new CapturingLogger();
+    let runs = 0;
+    const task = new RestartingTask({
+      name: 'test',
+      logger,
+      controlledRestartDelayMs: 60_000,
+      run: async () => {
+        runs++;
+      },
+    });
+
+    task.start();
+    await waitUntil(() => runs === 1);
+    await sleep(10); // петля вошла в controlled-паузу
+
+    const started = Date.now();
+    await task.stop();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(runs).toBe(1);
+  });
+
   it('серия быстрых отказов уходит в cooldown', async () => {
     const logger = new CapturingLogger();
     let runs = 0;

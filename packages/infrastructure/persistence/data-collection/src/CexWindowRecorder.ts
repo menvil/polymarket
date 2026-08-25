@@ -532,11 +532,25 @@ export class CexWindowRecorder {
     }
   }
 
-  /** Регистрирует in-flight ротацию (close() дожидается). */
+  /**
+   * Регистрирует in-flight ротацию (close() дожидается).
+   *
+   * @remarks
+   * Rejection ротации (синхронный throw stream-метода и т.п.) поглощается
+   * ЗДЕСЬ с маршрутизацией в счётчики — фоновая ротация никем больше не
+   * await-ится, невыловленный отказ стал бы unhandled rejection.
+   */
   private _trackRotation(rotation: Promise<void>): void {
-    const tracked = rotation.finally(() => {
-      this._pendingRotations.delete(tracked);
-    });
+    const tracked = rotation
+      .catch((error) => {
+        this._rotationFailures++;
+        this._logger.error('CEX window rotation crashed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        this._pendingRotations.delete(tracked);
+      });
     this._pendingRotations.add(tracked);
   }
 
@@ -652,8 +666,27 @@ export class CexWindowRecorder {
   private _flushWriter(writer: WindowWriter): Promise<boolean> {
     const previous = writer.pendingFlush;
     const current = (async (): Promise<boolean> => {
-      const previousOk = previous === null ? true : await previous;
-      const drained = await this._drainWriterBuffer(writer);
+      let previousOk = true;
+      if (previous !== null) {
+        try {
+          previousOk = await previous;
+        } catch {
+          previousOk = false; // отказ предыдущего звена уже учтён им самим
+        }
+      }
+      let drained = false;
+      try {
+        drained = await this._drainWriterBuffer(writer);
+      } catch (error) {
+        // Синхронный throw stream.write и т.п.: flush никогда не reject-ится
+        // (hot path вызывает его через void) — отказ фиксируется состоянием
+        writer.failed = true;
+        this._streamCloseFailures++;
+        this._logger.error('CEX window flush crashed', {
+          filePath: writer.filePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return previousOk && drained && !writer.failed;
     })();
     writer.pendingFlush = current;
@@ -892,7 +925,9 @@ export class CexWindowRecorder {
     const subMinuteWindow = this._windowMs % 60_000 !== 0;
     const raw = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
-      hour: 'numeric',
+      // Двузначный час: документированный формат метки HHMM («0955AM»);
+      // 'numeric' давал бы «955AM» для часов 1-9
+      hour: '2-digit',
       minute: '2-digit',
       ...(subMinuteWindow ? { second: '2-digit' as const } : {}),
       hour12: true,

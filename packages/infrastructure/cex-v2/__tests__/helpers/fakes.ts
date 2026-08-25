@@ -111,13 +111,35 @@ export interface RecordedVendorCall {
 export class FakeExchangeInstance implements CcxtProExchangeInstance {
   public readonly has: Record<string, boolean>;
   public readonly obMultiplexFeed = new FakeFeed<CcxtRawOrderBook>();
-  public readonly obPerSymbolFeed = new FakeFeed<CcxtRawOrderBook>();
   public readonly obFetchFeed = new FakeFeed<CcxtRawOrderBook>();
   public readonly tradesMultiplexFeed = new FakeFeed<readonly CcxtRawTrade[]>();
-  public readonly tradesPerSymbolFeed = new FakeFeed<readonly CcxtRawTrade[]>();
+  /** Per-symbol feeds `watchOrderBook` (петли символов конкурентны). */
+  private readonly _obSymbolFeeds = new Map<string, FakeFeed<CcxtRawOrderBook>>();
+  /** Per-symbol feeds `watchTrades`. */
+  private readonly _tradesSymbolFeeds = new Map<string, FakeFeed<readonly CcxtRawTrade[]>>();
   /** Хронология vendor-вызовов для ассертов mode-selection/routing. */
   public readonly vendorCalls: RecordedVendorCall[] = [];
   public closeCalls = 0;
+
+  /** Feed per-symbol стакана (создаётся по требованию). */
+  public obFeed(symbol: string): FakeFeed<CcxtRawOrderBook> {
+    let feed = this._obSymbolFeeds.get(symbol);
+    if (!feed) {
+      feed = new FakeFeed<CcxtRawOrderBook>();
+      this._obSymbolFeeds.set(symbol, feed);
+    }
+    return feed;
+  }
+
+  /** Feed per-symbol сделок (создаётся по требованию). */
+  public tradesFeed(symbol: string): FakeFeed<readonly CcxtRawTrade[]> {
+    let feed = this._tradesSymbolFeeds.get(symbol);
+    if (!feed) {
+      feed = new FakeFeed<readonly CcxtRawTrade[]>();
+      this._tradesSymbolFeeds.set(symbol, feed);
+    }
+    return feed;
+  }
 
   public readonly watchOrderBookForSymbols?: (
     symbols: string[],
@@ -146,7 +168,7 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
     if (capabilities.watchOrderBook) {
       this.watchOrderBook = (symbol, limit) => {
         this.vendorCalls.push({ method: 'watchOrderBook', symbols: [symbol], limit });
-        return this.obPerSymbolFeed.next();
+        return this.obFeed(symbol).next();
       };
     }
     if (capabilities.fetchOrderBook) {
@@ -164,7 +186,7 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
     if (capabilities.watchTrades) {
       this.watchTrades = (symbol) => {
         this.vendorCalls.push({ method: 'watchTrades', symbols: [symbol] });
-        return this.tradesPerSymbolFeed.next();
+        return this.tradesFeed(symbol).next();
       };
     }
   }
@@ -174,10 +196,14 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
     this.closeCalls++;
     const closedError = new Error('Exchange instance closed');
     this.obMultiplexFeed.rejectPending(closedError);
-    this.obPerSymbolFeed.rejectPending(closedError);
     this.obFetchFeed.rejectPending(closedError);
     this.tradesMultiplexFeed.rejectPending(closedError);
-    this.tradesPerSymbolFeed.rejectPending(closedError);
+    for (const feed of this._obSymbolFeeds.values()) {
+      feed.rejectPending(closedError);
+    }
+    for (const feed of this._tradesSymbolFeeds.values()) {
+      feed.rejectPending(closedError);
+    }
     return Promise.resolve();
   };
 }

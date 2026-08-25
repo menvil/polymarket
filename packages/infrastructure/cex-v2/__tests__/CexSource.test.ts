@@ -96,13 +96,13 @@ function makeRawTrade(overrides: Record<string, unknown> = {}): CcxtRawTrade {
   } as CcxtRawTrade;
 }
 
+const OB_METHODS = new Set(['watchOrderBookForSymbols', 'watchOrderBook', 'fetchOrderBook']);
+const TRADES_METHODS = new Set(['watchTradesForSymbols', 'watchTrades']);
+
 /** Инстанс, обслуживающий поток стакана (по факту vendor-вызовов). */
 function obInstance(factory: FakeExchangeFactory): FakeExchangeInstance {
-  const instance = factory.instances.find(
-    (candidate) =>
-      candidate.obMultiplexFeed.calls > 0 ||
-      candidate.obPerSymbolFeed.calls > 0 ||
-      candidate.obFetchFeed.calls > 0,
+  const instance = factory.instances.find((candidate) =>
+    candidate.vendorCalls.some((call) => OB_METHODS.has(call.method)),
   );
   if (!instance) throw new Error('No orderbook instance active');
   return instance;
@@ -110,9 +110,8 @@ function obInstance(factory: FakeExchangeFactory): FakeExchangeInstance {
 
 /** Инстанс, обслуживающий поток сделок. */
 function tradesInstance(factory: FakeExchangeFactory): FakeExchangeInstance {
-  const instance = factory.instances.find(
-    (candidate) =>
-      candidate.tradesMultiplexFeed.calls > 0 || candidate.tradesPerSymbolFeed.calls > 0,
+  const instance = factory.instances.find((candidate) =>
+    candidate.vendorCalls.some((call) => TRADES_METHODS.has(call.method)),
   );
   if (!instance) throw new Error('No trades instance active');
   return instance;
@@ -205,10 +204,10 @@ describe('CexSource: payload contract', () => {
       watchOrderBook: true,
     });
     source.start();
-    await waitUntil(() => factory.instances.length === 1 && factory.latest.obPerSymbolFeed.hasWaiter);
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obFeed(SYMBOL).hasWaiter);
 
     const raw = makeRawOb({ symbol: undefined });
-    factory.latest.obPerSymbolFeed.push(raw);
+    factory.latest.obFeed(SYMBOL).push(raw);
     await waitUntil(() => publisher.messages.length === 1);
 
     const message = publisher.ofType('CEX_ORDERBOOK')[0]!;
@@ -377,11 +376,11 @@ describe('CexSource: payload contract', () => {
     );
     source.start();
     await waitUntil(
-      () => factory.instances.length === 1 && factory.latest.tradesPerSymbolFeed.hasWaiter,
+      () => factory.instances.length === 1 && factory.latest.tradesFeed(SYMBOL).hasWaiter,
     );
 
     const raw = makeRawTrade({ symbol: undefined });
-    factory.latest.tradesPerSymbolFeed.push([raw]);
+    factory.latest.tradesFeed(SYMBOL).push([raw]);
     await waitUntil(() => publisher.messages.length === 1);
 
     const message = publisher.ofType('CEX_TRADE')[0]!;
@@ -408,28 +407,81 @@ describe('CexSource: transport modes', () => {
     await source.close();
   });
 
-  it('без multiplex-capability используется watchOrderBook per-symbol', async () => {
+  it('без multiplex-capability используется watchOrderBook per-symbol (конкурентно)', async () => {
     const { source, factory, publisher } = makeHarness(
       baseConfig({ symbols: [SYMBOL, SYMBOL_B] }),
       { watchOrderBook: true },
     );
     source.start();
-    await waitUntil(() => factory.instances.length === 1 && factory.latest.obPerSymbolFeed.hasWaiter);
+    // Петли символов независимы: ОБЕ подписки открыты сразу
+    await waitUntil(
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.obFeed(SYMBOL).hasWaiter &&
+        factory.latest.obFeed(SYMBOL_B).hasWaiter,
+    );
 
-    factory.latest.obPerSymbolFeed.push(makeRawOb({ symbol: SYMBOL }));
-    await waitUntil(() => factory.latest.vendorCalls.length >= 2);
-    factory.latest.obPerSymbolFeed.push(makeRawOb({ symbol: SYMBOL_B }));
+    factory.latest.obFeed(SYMBOL).push(makeRawOb({ symbol: SYMBOL }));
+    factory.latest.obFeed(SYMBOL_B).push(makeRawOb({ symbol: SYMBOL_B }));
     await waitUntil(() => publisher.messages.length === 2);
 
     const methods = factory.latest.vendorCalls.map((call) => call.method);
     expect(new Set(methods)).toEqual(new Set(['watchOrderBook']));
-    expect(factory.latest.vendorCalls[0]?.symbols).toEqual([SYMBOL]);
-    expect(factory.latest.vendorCalls[1]?.symbols).toEqual([SYMBOL_B]);
+    const calledSymbols = factory.latest.vendorCalls.map((call) => call.symbols[0]);
+    expect(new Set(calledSymbols)).toEqual(new Set([SYMBOL, SYMBOL_B]));
     // Символы не перепутаны между наблюдениями
-    expect(publisher.ofType('CEX_ORDERBOOK').map((m) => m.payload.symbol)).toEqual([
-      SYMBOL,
-      SYMBOL_B,
-    ]);
+    expect(new Set(publisher.ofType('CEX_ORDERBOOK').map((m) => m.payload.symbol))).toEqual(
+      new Set([SYMBOL, SYMBOL_B]),
+    );
+
+    await source.close();
+  });
+
+  it('per-symbol: «тихий» символ не блокирует эмиссию остальных (OB)', async () => {
+    const { source, factory, publisher } = makeHarness(
+      baseConfig({ symbols: [SYMBOL, SYMBOL_B], orderbookStaleTimeoutMs: 2_000 }),
+      { watchOrderBook: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.obFeed(SYMBOL).hasWaiter &&
+        factory.latest.obFeed(SYMBOL_B).hasWaiter,
+    );
+
+    // SYMBOL_B молчит; SYMBOL эмитирует дважды подряд без ожидания B
+    factory.latest.obFeed(SYMBOL).push(makeRawOb({ symbol: SYMBOL, nonce: 1 }));
+    await waitUntil(() => publisher.messages.length === 1);
+    factory.latest.obFeed(SYMBOL).push(makeRawOb({ symbol: SYMBOL, nonce: 2 }));
+    await waitUntil(() => publisher.messages.length === 2);
+
+    expect(publisher.ofType('CEX_ORDERBOOK').map((m) => m.payload.orderBook.nonce)).toEqual([1, 2]);
+    // Сессия жива, рестартов не было
+    expect(factory.instances).toHaveLength(1);
+
+    await source.close();
+  });
+
+  it('per-symbol: stale одного символа рестартует сессию целиком', async () => {
+    const { source, factory, logger } = makeHarness(
+      baseConfig({ symbols: [SYMBOL, SYMBOL_B], orderbookStaleTimeoutMs: 40 }),
+      { watchOrderBook: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.obFeed(SYMBOL).hasWaiter &&
+        factory.latest.obFeed(SYMBOL_B).hasWaiter,
+    );
+
+    // Оба символа молчат → stale любого завершает сессию, supervised restart
+    await waitUntil(() => factory.instances.length === 2);
+    expect(factory.instances[0]!.closeCalls).toBeGreaterThanOrEqual(1);
+    expect(
+      logger.byLevel('warn').some((entry) => entry.message.includes('session failed')),
+    ).toBe(true);
 
     await source.close();
   });
@@ -454,23 +506,85 @@ describe('CexSource: transport modes', () => {
     await source.close();
   });
 
-  it('trades: без multiplex-capability используется watchTrades per-symbol', async () => {
+  it('trades: без multiplex-capability используется watchTrades per-symbol (конкурентно)', async () => {
     const { source, factory, publisher } = makeHarness(
       baseConfig({ watchOrderbook: false, watchTrades: true, symbols: [SYMBOL, SYMBOL_B] }),
       { watchTrades: true },
     );
     source.start();
     await waitUntil(
-      () => factory.instances.length === 1 && factory.latest.tradesPerSymbolFeed.hasWaiter,
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.tradesFeed(SYMBOL).hasWaiter &&
+        factory.latest.tradesFeed(SYMBOL_B).hasWaiter,
     );
 
-    factory.latest.tradesPerSymbolFeed.push([makeRawTrade({ symbol: SYMBOL })]);
-    await waitUntil(() => factory.latest.vendorCalls.length >= 2);
-    factory.latest.tradesPerSymbolFeed.push([makeRawTrade({ symbol: SYMBOL_B, id: 't-9' })]);
+    factory.latest.tradesFeed(SYMBOL).push([makeRawTrade({ symbol: SYMBOL })]);
+    factory.latest.tradesFeed(SYMBOL_B).push([makeRawTrade({ symbol: SYMBOL_B, id: 't-9' })]);
     await waitUntil(() => publisher.messages.length === 2);
 
     expect(factory.latest.vendorCalls[0]?.method).toBe('watchTrades');
-    expect(publisher.ofType('CEX_TRADE').map((m) => m.payload.symbol)).toEqual([SYMBOL, SYMBOL_B]);
+    expect(new Set(publisher.ofType('CEX_TRADE').map((m) => m.payload.symbol))).toEqual(
+      new Set([SYMBOL, SYMBOL_B]),
+    );
+
+    await source.close();
+  });
+
+  it('trades per-symbol: «тихий» символ не блокирует эмиссию остальных', async () => {
+    const { source, factory, publisher } = makeHarness(
+      baseConfig({
+        watchOrderbook: false,
+        watchTrades: true,
+        symbols: [SYMBOL, SYMBOL_B],
+        tradesStaleTimeoutMs: 2_000,
+      }),
+      { watchTrades: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.tradesFeed(SYMBOL).hasWaiter &&
+        factory.latest.tradesFeed(SYMBOL_B).hasWaiter,
+    );
+
+    factory.latest.tradesFeed(SYMBOL).push([makeRawTrade({ id: 't-1' })]);
+    await waitUntil(() => publisher.messages.length === 1);
+    factory.latest.tradesFeed(SYMBOL).push([makeRawTrade({ id: 't-2' })]);
+    await waitUntil(() => publisher.messages.length === 2);
+
+    expect(publisher.ofType('CEX_TRADE').map((m) => m.payload.trade.id)).toEqual(['t-1', 't-2']);
+    expect(factory.instances).toHaveLength(1);
+
+    await source.close();
+  });
+
+  it('без единой OB-capability сессия падает с понятной ошибкой', async () => {
+    const { source, factory, logger } = makeHarness(baseConfig(), {});
+    source.start();
+    await waitUntil(() =>
+      logger
+        .byLevel('warn')
+        .some((entry) => String(entry.context?.['error'] ?? '').includes('supports none of')),
+    );
+    expect(factory.instances.length).toBeGreaterThanOrEqual(1);
+    await source.close();
+  });
+
+  it('implicit-даунгрейд до REST fetch логируется warn-ом', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ fetchPollIntervalMs: 5 }),
+      { fetchOrderBook: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obFetchFeed.hasWaiter);
+
+    expect(
+      logger.byLevel('warn').some((entry) => entry.message.includes('downgrading to REST fetch')),
+    ).toBe(true);
+    factory.latest.obFetchFeed.push(makeRawOb());
+    await waitUntil(() => publisher.messages.length === 1);
 
     await source.close();
   });
