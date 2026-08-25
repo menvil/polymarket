@@ -47,10 +47,12 @@ import type {
   PolymarketGammaMarket,
 } from '@polymarket/polymarket-v2';
 import {
+  deriveWinnerFromCryptoPrices,
   deriveWinningOutcome,
   extractCryptoFinalization,
   mapFinalOutcomes,
 } from '@polymarket/polymarket-v2';
+import type { PolymarketFinalOutcome } from '@polymarket/polymarket-v2';
 import type {
   CollectionHeaderFinalization,
   FinalizingMarketSession,
@@ -58,6 +60,7 @@ import type {
 } from '@polymarket/collection-coordinator';
 import { buildCollectionHeader } from '@polymarket/collection-coordinator';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
+import { deriveWinnerFromRecordedChainlink } from './recordedChainlinkWinner.js';
 
 /**
  * Query-возможности официального SDK, используемые finalizer-ом (PART 15).
@@ -85,10 +88,15 @@ export type FinalizationCoordinator = Pick<
 
 /**
  * Порт recorder-а, используемый finalizer-ом.
+ *
+ * @remarks
+ * `readSealedPayloadLines` — read-путь ступени `recorded-rtds`
+ * winner-ladder: приблизительная деривация из записанного chainlink-ряда,
+ * когда официальных данных нет вообще.
  */
 export type FinalizationRecorder = Pick<
   ExternalMessageRecorder,
-  'updateMarketMeta' | 'finalizeMarket'
+  'updateMarketMeta' | 'finalizeMarket' | 'readSealedPayloadLines'
 >;
 
 /**
@@ -599,7 +607,16 @@ export class MarketFinalizer {
     nowMs: number,
   ): Promise<void> {
     const key = String(entry.session.marketId);
-    const headerOk = await this._writeHeader(entry, status, nowMs);
+    // Winner-ladder (решение user 2026-08-25): официальные источники —
+    // синхронно; при их полном отсутствии на timeout-архиве — приблизительная
+    // деривация из записанного chainlink-ряда (файл заморожен seal-ом)
+    const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
+    let archiveWinning = this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus);
+    if (archiveWinning === undefined && status === 'timeout') {
+      archiveWinning = await this._deriveRecordedWinning(entry, outcomes);
+    }
+
+    const headerOk = await this._writeHeader(entry, status, nowMs, archiveWinning);
     if (!headerOk && status === 'complete' && !this._closed) {
       this._logger.error('Final header update failed, archive deferred to next run', {
         marketId: key,
@@ -635,7 +652,127 @@ export class MarketFinalizer {
       attempts: entry.attempts,
       priceToBeat: entry.crypto.priceToBeat,
       finalPrice: entry.crypto.finalPrice,
+      winner: archiveWinning?.label,
+      winnerSource: archiveWinning?.source,
     });
+  }
+
+  /**
+   * Готовит gamma-контекст header-а: best-known Market → исходы + UMA-статус.
+   *
+   * @param entry - Pending-финализация
+   * @returns Исходы в нейтральной форме и `umaResolutionStatus`
+   */
+  private _gammaContext(entry: PendingFinalization): {
+    readonly outcomes: readonly PolymarketFinalOutcome[];
+    readonly umaResolutionStatus: string | undefined;
+  } {
+    const gammaMarket = entry.freshMarket ?? entry.session.selected.gammaMarket;
+    return {
+      outcomes: mapFinalOutcomes(gammaMarket),
+      umaResolutionStatus: gammaMarket.resolution.umaResolutionStatus ?? undefined,
+    };
+  }
+
+  /**
+   * Официальные ступени winner-ladder (синхронные).
+   *
+   * @param entry - Pending-финализация
+   * @param outcomes - Исходы best-known Market
+   * @param umaResolutionStatus - UMA-статус best-known Market
+   * @returns `winning` со source `'resolution'` либо `'official-prices'`;
+   *   `undefined` — официальных данных для победителя нет
+   *
+   * @remarks
+   * 1. `'resolution'` — resolved settlement-цены (1/0), «как раньше»;
+   * 2. `'official-prices'` — формула рынка на официальных
+   *    `priceToBeat`/`finalPrice` (Up/Down-серии; `>= → Up`).
+   * Оба источника точные (`exact: true`).
+   */
+  private _deriveOfficialWinning(
+    entry: PendingFinalization,
+    outcomes: readonly PolymarketFinalOutcome[],
+    umaResolutionStatus: string | undefined,
+  ): NonNullable<CollectionHeaderFinalization['winning']> | undefined {
+    const resolved = deriveWinningOutcome(outcomes, umaResolutionStatus);
+    if (resolved !== undefined) {
+      return {
+        label: resolved.label,
+        instrumentId: resolved.instrumentId,
+        source: 'resolution',
+        exact: true,
+      };
+    }
+    const priced = deriveWinnerFromCryptoPrices(outcomes, entry.crypto);
+    if (priced !== undefined) {
+      return {
+        label: priced.label,
+        instrumentId: priced.instrumentId,
+        source: 'official-prices',
+        exact: true,
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * Ступень `'recorded-rtds'`: приблизительный победитель из записанного ряда.
+   *
+   * @param entry - Pending-финализация (timeout-архив без официальных данных)
+   * @param outcomes - Исходы best-known Market (для instrumentId победителя)
+   * @returns `winning` с `exact: false` и основаниями либо `undefined`
+   *
+   * @remarks
+   * Best-effort: любые недостающие входы (не crypto-рынок, нет chainlink-фида,
+   * нет тайминга окна, датасет не читается, ряд пуст, метки не Up/Down)
+   * приводят к отсутствию победителя, а не к ошибке архива.
+   */
+  private async _deriveRecordedWinning(
+    entry: PendingFinalization,
+    outcomes: readonly PolymarketFinalOutcome[],
+  ): Promise<NonNullable<CollectionHeaderFinalization['winning']> | undefined> {
+    const selected = entry.session.selected;
+    if (selected.crypto === undefined) {
+      return undefined;
+    }
+    const chainlinkFeed = selected.rtdsFeeds.find(
+      (feed) => feed.topic === 'prices.crypto.chainlink',
+    );
+    const startMs = selected.eventStartsAt?.toNumber();
+    if (chainlinkFeed === undefined || startMs === undefined) {
+      return undefined;
+    }
+    const expiryMs = selected.expiresAt.toNumber();
+    const symbolNeedle = `"symbol":"${chainlinkFeed.symbol}"`;
+    const lines = await this._recorder.readSealedPayloadLines(
+      entry.session.marketId,
+      (line) => line.includes('"prices.crypto.chainlink"') && line.includes(symbolNeedle),
+    );
+    if (lines === undefined || lines.length === 0) {
+      return undefined;
+    }
+    const derived = deriveWinnerFromRecordedChainlink(lines, startMs, expiryMs);
+    if (derived === undefined) {
+      return undefined;
+    }
+    const outcome = outcomes.find((candidate) => candidate.label === derived.label);
+    if (outcome === undefined) {
+      return undefined;
+    }
+    this._logger.info('Winner derived from recorded RTDS series (approximate)', {
+      marketId: String(entry.session.marketId),
+      label: derived.label,
+      startValue: derived.startValue,
+      endValue: derived.endValue,
+      observations: derived.observations,
+    });
+    return {
+      label: outcome.label,
+      instrumentId: outcome.instrumentId,
+      source: 'recorded-rtds',
+      exact: false,
+      basis: { startValue: derived.startValue, endValue: derived.endValue },
+    };
   }
 
   /**
@@ -650,13 +787,16 @@ export class MarketFinalizer {
     entry: PendingFinalization,
     status: CollectionHeaderFinalization['status'],
     nowMs: number,
+    archiveWinning?: NonNullable<CollectionHeaderFinalization['winning']>,
   ): Promise<boolean> {
     const key = String(entry.session.marketId);
     const selected = entry.session.selected;
     const gammaMarket = entry.freshMarket ?? selected.gammaMarket;
-    const outcomes = mapFinalOutcomes(gammaMarket);
-    const umaResolutionStatus = gammaMarket.resolution.umaResolutionStatus ?? undefined;
-    const winning = deriveWinningOutcome(outcomes, umaResolutionStatus);
+    const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
+    // Архивные вызовы приносят победителя полного ladder-а (включая
+    // recorded-rtds); промежуточные pending-обновления — официальные ступени
+    const winning =
+      archiveWinning ?? this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus);
     const isCrypto = selected.crypto !== undefined;
 
     const finalization: CollectionHeaderFinalization = {
@@ -674,9 +814,7 @@ export class MarketFinalizer {
         ...(umaResolutionStatus !== undefined ? { umaResolutionStatus } : {}),
       },
       outcomes,
-      ...(winning !== undefined
-        ? { winning: { label: winning.label, instrumentId: winning.instrumentId } }
-        : {}),
+      ...(winning !== undefined ? { winning } : {}),
       ...(isCrypto
         ? {
             crypto: {

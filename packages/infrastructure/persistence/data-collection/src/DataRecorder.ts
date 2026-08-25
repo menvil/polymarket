@@ -47,6 +47,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketDataRecorder, MarketMeta } from '@polymarket/ports';
@@ -474,6 +475,65 @@ export class DataRecorder implements IMarketDataRecorder {
       filePath: writer.filePath,
     });
     return true;
+  }
+
+  /**
+   * Читает payload-строки SEALED-датасета рынка, отфильтрованные предикатом.
+   *
+   * @param marketId - ID рынка
+   * @param filter - Предикат отбора строк (дёшево, до JSON.parse)
+   * @param maxMatches - Потолок совпадений (защита памяти). Default: 100 000
+   * @returns Отобранные payload-строки (meta-header line 1 исключён) либо
+   *   `undefined` — writer неизвестен, не sealed, помечен failed или файл
+   *   не читается (ошибка залогирована)
+   *
+   * @remarks
+   * Узкий read-путь для write-time деривации (winner-ladder ступень
+   * `recorded-rtds`, решение user 2026-08-25): после {@link DataRecorder.sealMarket}
+   * буфер сброшен и stream закрыт — файл на диске полон и неизменен
+   * (payload-инвариант), потоковое чтение с фильтром безопасно и не грузит
+   * память полным датасетом. Failed-writer (неполный датасет) не читается —
+   * деривация из заведомо неполного ряда была бы молчаливо искажённой.
+   */
+  public async readSealedPayloadLines(
+    marketId: MarketId,
+    filter: (line: string) => boolean,
+    maxMatches = 100_000,
+  ): Promise<readonly string[] | undefined> {
+    const key = String(marketId);
+    const writer = this._writers.get(key);
+    if (!writer || !writer.sealed || writer.failed || !writer.active) {
+      return undefined;
+    }
+    try {
+      const matches: string[] = [];
+      const stream = fs.createReadStream(writer.filePath, { encoding: 'utf8' });
+      const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      let first = true;
+      for await (const line of lines) {
+        if (first) {
+          first = false; // meta-header — не payload
+          continue;
+        }
+        if (line.length === 0 || !filter(line)) {
+          continue;
+        }
+        matches.push(line);
+        if (matches.length >= maxMatches) {
+          break;
+        }
+      }
+      lines.close();
+      stream.close();
+      return matches;
+    } catch (err) {
+      this._logger.error('Failed to read sealed payload lines', {
+        marketId: key,
+        filePath: writer.filePath,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
   }
 
   /**

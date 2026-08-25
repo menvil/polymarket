@@ -66,6 +66,14 @@ Shutdown full-режима — graceful wind-down (решение user 2026-08-2
 SIGINT прерывает. Подробности семантики —
 `packages/infrastructure/market-finalizer/docs/market-finalization.md`.
 
+Вторая находка того же ревью артефактов: архив существовал, а победителя
+в нём не было (UMA-резолюция догоняла позже completion-условия). Теперь
+финализация заполняет `finalization.winning` по winner-ladder с
+происхождением (`source`/`exact`), и валидатор checkpoint-а требует у
+КАЖДОГО complete-архива точного победителя из официального источника
+(`resolution` либо `official-prices`), а у любого архива с победителем —
+согласованности `source` и `exact`.
+
 ### Наблюдаемость checkpoint-а
 
 Существующая observability пакетов (stats-снимки) + два минимальных

@@ -823,7 +823,11 @@ interface PmArchiveHeader {
   readonly priceToBeat: unknown;
   readonly finalPrice: unknown;
   readonly winningLabel: string | undefined;
-  /** UMA-резолюция дошла до архива (только тогда winning обязателен). */
+  /** Происхождение победителя (winner-ladder). */
+  readonly winningSource: string | undefined;
+  /** Точный результат (официальные источники) или приблизительный. */
+  readonly winningExact: boolean | undefined;
+  /** UMA-резолюция дошла до архива. */
   readonly umaResolved: boolean;
   readonly expiresAtMs: number | null;
   readonly finalizedAtMs: number | null;
@@ -859,6 +863,11 @@ function parsePmArchiveHeader(file: string): PmArchiveHeader {
     priceToBeat: crypto['priceToBeat'],
     finalPrice: crypto['finalPrice'],
     winningLabel: winning !== undefined ? String(winning['label']) : undefined,
+    winningSource:
+      winning !== undefined && winning['source'] !== undefined
+        ? String(winning['source'])
+        : undefined,
+    winningExact: winning !== undefined ? winning['exact'] === true : undefined,
     umaResolved: resolution['umaResolutionStatus'] === 'resolved',
     expiresAtMs: typeof timing['expiresAt'] === 'number' ? timing['expiresAt'] : null,
     finalizedAtMs:
@@ -880,6 +889,8 @@ interface ValidationReport {
     priceToBeat: unknown;
     finalPrice: unknown;
     winningLabel: string | undefined;
+    winningSource: string | undefined;
+    winningExact: boolean | undefined;
     umaResolved: boolean;
     enrichLatencyMin: number | null;
     exactMarketSampleMatched: boolean;
@@ -1050,6 +1061,8 @@ function validateArtifacts(
       priceToBeat: header.priceToBeat,
       finalPrice: header.finalPrice,
       winningLabel: header.winningLabel,
+      winningSource: header.winningSource,
+      winningExact: header.winningExact,
       umaResolved: header.umaResolved,
       enrichLatencyMin:
         header.expiresAtMs !== null && header.finalizedAtMs !== null
@@ -1081,11 +1094,28 @@ function validateArtifacts(
       if (archive.priceToBeat === undefined || archive.finalPrice === undefined) {
         report.violations.push(`complete PM archive missing crypto finalization: ${archive.file}`);
       }
-      // winning обязателен ТОЛЬКО при дошедшей UMA-резолюции: действующий
-      // completion-контракт (parity с legacy, backlog №2) ждёт две crypto-цены,
-      // а не resolved-исходы — complete-архив до UMA-резолюции легален
-      if (archive.umaResolved && archive.winningLabel === undefined) {
-        report.violations.push(`resolved PM archive missing winning outcome: ${archive.file}`);
+      // Winner-ladder (решение user 2026-08-25): у complete-архива победитель
+      // ОБЯЗАН присутствовать и быть точным — либо из UMA-резолюции
+      // (`resolution`), либо по формуле рынка на официальных ценах
+      // (`official-prices`); приблизительные источники здесь недопустимы
+      if (archive.winningLabel === undefined) {
+        report.violations.push(`complete PM archive missing winning outcome: ${archive.file}`);
+      } else if (
+        archive.winningSource !== 'resolution' &&
+        archive.winningSource !== 'official-prices'
+      ) {
+        report.violations.push(
+          `complete PM archive has non-official winner source ` +
+            `'${String(archive.winningSource)}': ${archive.file}`,
+        );
+      } else if (archive.winningExact !== true) {
+        report.violations.push(`complete PM archive winner is not exact: ${archive.file}`);
+      }
+      if (archive.umaResolved && archive.winningSource !== 'resolution') {
+        report.violations.push(
+          `resolved PM archive should use resolution source, got ` +
+            `'${String(archive.winningSource)}': ${archive.file}`,
+        );
       }
       if (!archive.exactMarketSampleMatched) {
         report.violations.push(
@@ -1095,6 +1125,26 @@ function validateArtifacts(
       if (archive.rtdsLines > 0 && !archive.exactRtdsSampleMatched) {
         report.violations.push(`no exact RTDS payload sample matched in ${archive.file}`);
       }
+    }
+  }
+
+  // Провенанс победителя корректен в ЛЮБОМ архиве, где он есть (в т.ч.
+  // timeout): известный источник + согласованный флаг точности
+  const EXACT_SOURCES = ['resolution', 'official-prices', 'recorded-twap'];
+  const APPROXIMATE_SOURCES = ['recorded-rtds'];
+  for (const archive of report.pmArchives) {
+    if (archive.winningLabel === undefined) {
+      continue;
+    }
+    const source = String(archive.winningSource);
+    if (!EXACT_SOURCES.includes(source) && !APPROXIMATE_SOURCES.includes(source)) {
+      report.violations.push(`unknown winner source '${source}': ${archive.file}`);
+      continue;
+    }
+    if (EXACT_SOURCES.includes(source) !== (archive.winningExact === true)) {
+      report.violations.push(
+        `winner exactness contradicts source '${source}': ${archive.file}`,
+      );
     }
   }
 

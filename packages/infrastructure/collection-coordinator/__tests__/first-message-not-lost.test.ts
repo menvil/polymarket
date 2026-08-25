@@ -68,6 +68,10 @@ class MemoryStorage {
     // no-op
   }
 
+  public async readSealedPayloadLines(): Promise<readonly string[] | undefined> {
+    return undefined; // in-memory storage не хранит строки датасета
+  }
+
   public async cleanup(): Promise<void> {
     // no-op
   }

@@ -37,6 +37,21 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
   Ожидание дёшево: слот свободен, датасет заморожен — один Gamma-poll
   в 30 с.
 
+## 2.1. Winner-ladder (решение user 2026-08-25)
+
+Победитель пишется в `finalization.winning` вместе с происхождением —
+`{label, instrumentId, source, exact, basis?}`:
+
+| source | Когда | exact |
+| --- | --- | --- |
+| `resolution` | UMA resolved + settlement-цены 1/0 | `true` |
+| `official-prices` | формула рынка на официальных `finalPrice`/`priceToBeat` (`>= → Up`) | `true` |
+| `recorded-twap` | зарезервировано под TWAP-канал (DERIVED COMPLETE) | `true` |
+| `recorded-rtds` | приблизительно из записанного chainlink-ряда (только когда официальных данных нет) | `false` |
+
+Complete-архив всегда несёт точного победителя (ступень 1 или 2).
+Подробности правила, guards и аппроксимации — `docs/market-finalization.md`.
+
 ## 3. runOnce, а не таймеры (PART 13)
 
 `runOnce()` — один проход: expiry-переходы due ACTIVE-сессий + максимум

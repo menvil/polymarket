@@ -99,8 +99,31 @@ export interface CollectionHeaderFinalization {
   };
   /** Итоговые исходы с ценами (нейтральная форма). */
   readonly outcomes?: readonly CollectionFinalOutcome[];
-  /** Победивший исход — ТОЛЬКО при однозначных settlement-ценах. */
-  readonly winning?: { readonly label: string; readonly instrumentId: InstrumentId };
+  /**
+   * Победивший исход с происхождением (winner-ladder, решение user 2026-08-25).
+   *
+   * @remarks
+   * `source` — как получен победитель (по убыванию приоритета):
+   * - `'resolution'` — официальные resolved settlement-цены UMA (1/0);
+   * - `'official-prices'` — формула рынка на официальных
+   *   `priceToBeat`/`finalPrice` (`finalPrice >= priceToBeat → Up`);
+   * - `'recorded-twap'` — зарезервировано под будущий TWAP-канал
+   *   (DERIVED COMPLETE);
+   * - `'recorded-rtds'` — приблизительная деривация из ЗАПИСАННОГО
+   *   chainlink-ряда (только когда официальных данных нет вообще).
+   *
+   * `exact` — точный результат (официальная резолюция/формула) или
+   * приблизительный (`'recorded-rtds'`). `basis` — значения-основания
+   * derived-источников. В архивах ДО введения ladder поле `winning`
+   * несёт только label/instrumentId — семантически это `'resolution'`.
+   */
+  readonly winning?: {
+    readonly label: string;
+    readonly instrumentId: InstrumentId;
+    readonly source: 'resolution' | 'official-prices' | 'recorded-twap' | 'recorded-rtds';
+    readonly exact: boolean;
+    readonly basis?: { readonly startValue: string; readonly endValue: string };
+  };
   /** Официальные крипто-значения Gamma (точное строковое представление). */
   readonly crypto?: { readonly priceToBeat?: string; readonly finalPrice?: string };
 }
