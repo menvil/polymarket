@@ -37,10 +37,10 @@ describe('DataCollector.start() — порядок запуска', () => {
 
     await collector.start();
 
-    const recorderStart = contour.log.indexOf('recorder.start');
+    const recorderStart = contour.log.orderOf('recorder.start');
     expect(recorderStart).toBeGreaterThanOrEqual(0);
     for (const source of contour.cexSources) {
-      expect(recorderStart).toBeLessThan(contour.log.indexOf(`cexSource.start(${source.exchangeId})`));
+      expect(recorderStart).toBeLessThan(contour.log.orderOf(`cexSource.start(${source.exchangeId})`));
     }
 
     await collector.close();
@@ -51,11 +51,11 @@ describe('DataCollector.start() — порядок запуска', () => {
 
     await collector.start();
 
-    expect(contour.log.indexOf('polymarketStorage.cleanup')).toBeLessThan(
-      contour.log.indexOf('recorder.start'),
+    expect(contour.log.orderOf('polymarketStorage.cleanup')).toBeLessThan(
+      contour.log.orderOf('recorder.start'),
     );
-    expect(contour.log.indexOf('cexStorage.cleanup')).toBeLessThan(
-      contour.log.indexOf('recorder.start'),
+    expect(contour.log.orderOf('cexStorage.cleanup')).toBeLessThan(
+      contour.log.orderOf('recorder.start'),
     );
 
     await collector.close();
@@ -123,10 +123,10 @@ describe('DataCollector.start() — откат частичного запуск
 
     await expect(collector.start()).rejects.toThrow('okx down');
 
-    expect(contour.log.indexOf('cexSource.close(binance)')).toBeLessThan(
-      contour.log.indexOf('recorder.close'),
+    expect(contour.log.orderOf('cexSource.close(binance)')).toBeLessThan(
+      contour.log.orderOf('recorder.close'),
     );
-    expect(contour.log.indexOf('recorder.close')).toBeLessThan(contour.log.indexOf('bus.close'));
+    expect(contour.log.orderOf('recorder.close')).toBeLessThan(contour.log.orderOf('bus.close'));
   });
 
   it('отказ startup cleanup не оставляет подписанного recorder', async () => {

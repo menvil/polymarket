@@ -10,8 +10,10 @@
  */
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import type { MarketId } from '@polymarket/ids';
 import { asMarketId } from '@polymarket/ids';
+import type { CollectionSessionSnapshot } from '@polymarket/collection-coordinator';
+import type { PolymarketDiscoveredMarket } from '@polymarket/polymarket-v2';
+import type { Timestamp } from '@polymarket/timestamp';
 import type { MessageBusDrainError, MessageBusStats } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
 import { Err, Ok } from '@polymarket/result';
@@ -23,6 +25,7 @@ import type {
   CollectorCoordinator,
   CollectorDiscovery,
   CollectorFinalizer,
+  CollectorPolymarketClient,
   CollectorPolymarketSource,
   CollectorPolymarketStorage,
   CollectorRecorder,
@@ -37,7 +40,23 @@ export class CallLog {
     this.calls.push(name);
   }
 
-  /** Индекс первого вызова (или -1). */
+  /**
+   * Индекс первого вызова; отсутствие вызова — ошибка теста.
+   *
+   * @remarks
+   * Обычный `indexOf` вернул бы -1, и сравнение порядка (`a < b`) прошло бы
+   * ВАКУУМНО для шага, которого вообще не было. Порядковые проверки обязаны
+   * падать именно в этом случае.
+   */
+  public orderOf(name: string): number {
+    const index = this.calls.indexOf(name);
+    if (index === -1) {
+      throw new Error(`Expected call '${name}' was never made. Calls: ${this.calls.join(' → ')}`);
+    }
+    return index;
+  }
+
+  /** Индекс первого вызова (или -1) — для проверок «вызова не было». */
   public indexOf(name: string): number {
     return this.calls.indexOf(name);
   }
@@ -182,11 +201,16 @@ export class FakeRecorder implements CollectorRecorder {
 /** Fake storage-политики Polymarket. */
 export class FakePolymarketStorage implements CollectorPolymarketStorage {
   public cleanupRejection: Error | undefined;
+  /** Пока задан — `cleanup()` не завершается (запуск наблюдаемо «в полёте»). */
+  public cleanupGate: Promise<void> | undefined;
 
   constructor(private readonly _log: CallLog) {}
 
   public async cleanup(): Promise<void> {
     this._log.record('polymarketStorage.cleanup');
+    if (this.cleanupGate !== undefined) {
+      await this.cleanupGate;
+    }
     if (this.cleanupRejection !== undefined) throw this.cleanupRejection;
   }
 }
@@ -227,6 +251,18 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
   }
 }
 
+/** Fake SDK-клиента: считает client-level cleanup, умеет его провалить. */
+export class FakePolymarketClient implements CollectorPolymarketClient {
+  public closeRejection: Error | undefined;
+
+  constructor(private readonly _log: CallLog) {}
+
+  public async closeSubscriptions(): Promise<void> {
+    this._log.record('polymarketClient.closeSubscriptions');
+    if (this.closeRejection !== undefined) throw this.closeRejection;
+  }
+}
+
 /** Fake одного CEX-source. */
 export class FakeCexSource implements CollectorCexSource {
   public hasFailed = false;
@@ -256,17 +292,30 @@ export class FakeCexSource implements CollectorCexSource {
   }
 }
 
-/** Минимальный «Timestamp-подобный» объект для снимков. */
-export function timestampOf(ms: number): { toNumber(): number } {
-  return { toNumber: () => ms };
+/**
+ * Минимальный Timestamp для снимков.
+ *
+ * @remarks
+ * Рантайм вызывает у него только `toNumber()`; конструировать настоящий VO
+ * ради этого не нужно, но тип обязан быть настоящим — иначе расширение
+ * контракта снимка прошло бы мимо тестов.
+ */
+export function timestampOf(ms: number): Timestamp {
+  return { toNumber: () => ms } as Timestamp;
 }
 
-/** Кандидат discovery для проекции lifecycle. */
-export interface FakeCandidate {
-  readonly marketId: MarketId;
-  readonly question: string;
-  readonly expiresAt: { toNumber(): number };
-}
+/**
+ * Кандидат discovery в объёме, который читает рантайм.
+ *
+ * @remarks
+ * Проекция реального `PolymarketDiscoveredMarket` по РЕАЛЬНЫМ полям: если
+ * рантайм начнёт читать что-то ещё или контракт изменится, тест перестанет
+ * компилироваться — в отличие от `never[]`, который скрывал бы расхождение.
+ */
+export type FakeCandidate = Pick<
+  PolymarketDiscoveredMarket,
+  'marketId' | 'question' | 'expiresAt'
+>;
 
 /** Создаёт кандидата с заданным id. */
 export function candidate(id: string, expiresAtMs = 2_000_000): FakeCandidate {
@@ -282,21 +331,25 @@ export class FakeDiscovery implements CollectorDiscovery {
   public candidates: FakeCandidate[] = [];
   public findRejection: Error | undefined;
 
-  public async findCandidates(): Promise<never[]> {
+  public async findCandidates(): Promise<readonly FakeCandidate[]> {
     if (this.findRejection !== undefined) throw this.findRejection;
-    // Порт координатора типизирован полным PolymarketDiscoveredMarket; для
-    // проекции lifecycle достаточно identity/вопроса/истечения.
-    return this.candidates as unknown as never[];
+    return this.candidates;
   }
 }
 
-/** Снимок сессии, которым управляет тест. */
-export interface FakeSession {
-  readonly marketId: MarketId;
-  state: 'OPENING' | 'ACTIVE' | 'FINALIZING';
-  readonly question?: string;
-  readonly expiresAt?: { toNumber(): number };
-}
+/**
+ * Снимок сессии в объёме, который читает рантайм.
+ *
+ * @remarks
+ * Проекция реального `CollectionSessionSnapshot`; `state` сделан изменяемым,
+ * чтобы тест мог двигать сессию по lifecycle.
+ */
+export type FakeSession = Pick<
+  CollectionSessionSnapshot,
+  'marketId' | 'question' | 'expiresAt'
+> & {
+  state: CollectionSessionSnapshot['state'];
+};
 
 /** Fake координатора: сессии и счётчики задаёт тест. */
 export class FakeCoordinator implements CollectorCoordinator {
@@ -304,8 +357,31 @@ export class FakeCoordinator implements CollectorCoordinator {
   public refreshCalls = 0;
   public fillCalls = 0;
   public closeRejection: Error | undefined;
+  /** Пока задан — `fillSlots()` не завершается (тик наблюдаемо «в полёте»). */
+  private _gate: Promise<void> | undefined;
+  private _openGate: (() => void) | undefined;
 
   constructor(private readonly _log: CallLog) {}
+
+  /**
+   * Подвешивает следующий `fillSlots()` до вызова {@link FakeCoordinator.release}.
+   *
+   * @remarks
+   * Позволяет проверить, что остановка ДОЖИДАЕТСЯ тика, а не просто
+   * оказывается позже него по случайному стечению планировщика.
+   */
+  public block(): void {
+    this._gate = new Promise<void>((resolve) => {
+      this._openGate = resolve;
+    });
+  }
+
+  /** Отпускает подвешенный `fillSlots()`. */
+  public release(): void {
+    this._openGate?.();
+    this._gate = undefined;
+    this._openGate = undefined;
+  }
 
   public async refreshCandidates(): Promise<void> {
     this.refreshCalls++;
@@ -314,12 +390,16 @@ export class FakeCoordinator implements CollectorCoordinator {
 
   public async fillSlots(): Promise<number> {
     this.fillCalls++;
+    this._log.record('coordinator.fillSlots.start');
+    if (this._gate !== undefined) {
+      await this._gate;
+    }
     this._log.record('coordinator.fillSlots');
     return 0;
   }
 
-  public listSessions(): never[] {
-    return this.sessions as unknown as never[];
+  public listSessions(): FakeSession[] {
+    return this.sessions;
   }
 
   public getStats(): ReturnType<CollectorCoordinator['getStats']> {
@@ -383,6 +463,7 @@ export interface FakeContour {
   readonly polymarketStorage: FakePolymarketStorage;
   readonly cexStorage: FakeCexStorage;
   readonly polymarketSource: FakePolymarketSource;
+  readonly polymarketClient: FakePolymarketClient;
   readonly cexSources: FakeCexSource[];
   readonly discovery: FakeDiscovery;
   readonly coordinator: FakeCoordinator;
@@ -405,6 +486,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
   const polymarketStorage = new FakePolymarketStorage(log);
   const cexStorage = new FakeCexStorage(log);
   const polymarketSource = new FakePolymarketSource(log);
+  const polymarketClient = new FakePolymarketClient(log);
   const cexSources = exchangeIds.map((exchangeId) => new FakeCexSource(log, exchangeId));
   const discovery = new FakeDiscovery();
   const coordinator = new FakeCoordinator(log);
@@ -424,6 +506,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
     polymarketStorage,
     cexStorage,
     polymarketSource,
+    polymarketClient,
     cexSources,
     discovery,
     coordinator,
@@ -434,6 +517,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
       polymarketStorage,
       cexStorage,
       polymarketSource,
+      polymarketClient,
       cexSources: entries,
       discovery,
       coordinator,

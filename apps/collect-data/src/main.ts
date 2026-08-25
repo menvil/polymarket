@@ -49,7 +49,18 @@ const logger = new ColorConsoleLogger(
   LOG_LEVELS[process.env['LOG_LEVEL'] ?? 'INFO'] ?? LogLevel.INFO,
 );
 
-const runtimeConfig = toDataCollectorConfig(config);
+// Конверсия валидирует внешнюю конфигурацию (в т.ч. `cex-config.json`) и
+// падает на невалидной. Без этого перехвата отказ ушёл бы в stderr голым
+// stack trace-ом мимо логгера — в production-логах его было бы не найти.
+let runtimeConfig;
+try {
+  runtimeConfig = toDataCollectorConfig(config);
+} catch (error) {
+  logger.fatal('Invalid collector configuration', {
+    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+  });
+  process.exit(1);
+}
 
 logger.info('Starting Polymarket data collector', {
   outputDir: runtimeConfig.outputDir,

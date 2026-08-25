@@ -100,6 +100,22 @@ describe('parseCexSourceConfigs — legacy JSON → CexSourceConfig', () => {
     expect(sources[0]).not.toHaveProperty('orderbookMethod');
   });
 
+  it('требует явные булевы флаги потоков', () => {
+    expect(() =>
+      parseCexSourceConfigs(JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'] } })),
+    ).toThrow('orderbook and trades must be booleans');
+  });
+
+  it('отвергает биржу без единого включённого потока', () => {
+    expect(() =>
+      parseCexSourceConfigs(
+        JSON.stringify({
+          binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: false, trades: false },
+        }),
+      ),
+    ).toThrow('at least one of orderbook/trades must be true');
+  });
+
   it('отвергает невалидную конфигурацию вместо тихой потери биржи', () => {
     expect(() => parseCexSourceConfigs('{ not json')).toThrow('Invalid CEX config JSON');
     expect(() => parseCexSourceConfigs('[]')).toThrow('keyed by exchange id');
@@ -111,12 +127,22 @@ describe('parseCexSourceConfigs — legacy JSON → CexSourceConfig', () => {
     );
     expect(() =>
       parseCexSourceConfigs(
-        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], obDepth: -1 } }),
+        JSON.stringify({
+          binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true, obDepth: -1 },
+        }),
       ),
     ).toThrow('obDepth must be a finite number > 0');
     expect(() =>
       parseCexSourceConfigs(
-        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], obMethod: 'poll' } }),
+        JSON.stringify({
+          binance: {
+            type: 'spot',
+            symbols: ['BTC/USDT'],
+            orderbook: true,
+            trades: true,
+            obMethod: 'poll',
+          },
+        }),
       ),
     ).toThrow("obMethod must be 'watch' | 'fetch'");
   });

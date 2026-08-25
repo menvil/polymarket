@@ -52,6 +52,9 @@ export type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
 /** Общий bus внешнего контура коллектора. */
 export type ContourBus = ExternalMessageBus<ContourMessage>;
 
+/** Официальный SDK-клиент, разделяемый компонентами Polymarket-контура. */
+export type ContourPolymarketClient = ReturnType<typeof createPublicClient>;
+
 /** Зависимости {@link createDataCollector}. */
 export interface CreateDataCollectorOptions {
   /** Конфигурация рантайма (см. `DataCollectorConfig`). */
@@ -70,6 +73,17 @@ export interface CreateDataCollectorOptions {
    * возникает: consumer знает про bus, а не про `DataCollector`.
    */
   readonly bus?: ContourBus;
+  /**
+   * Общий SDK-клиент. Если не передан — создаётся фабрикой по
+   * `config.polymarket.environment`.
+   *
+   * @remarks
+   * Клиент — разделяемый ресурс source/discovery/finalizer, и его realtime
+   * закрывает рантайм (`closeSubscriptions` в лестнице остановки). Инъекция
+   * нужна диагностике и тестам, которым важно держать ссылку на тот же
+   * экземпляр.
+   */
+  readonly client?: ContourPolymarketClient;
 }
 
 /** Результат сборки контура. */
@@ -84,6 +98,14 @@ export interface CreatedDataCollector {
    * recorder уже подписан, ingress ещё не начат.
    */
   readonly bus: ContourBus;
+  /**
+   * Общий SDK-клиент контура.
+   *
+   * @remarks
+   * Возвращается для диагностики; закрывать его самостоятельно не нужно —
+   * это делает `collector.close()`.
+   */
+  readonly client: ContourPolymarketClient;
 }
 
 /**
@@ -112,7 +134,13 @@ export interface CreatedDataCollector {
 export function createDataCollector(options: CreateDataCollectorOptions): CreatedDataCollector {
   const { config, logger, clock } = options;
   const bus: ContourBus = options.bus ?? new ExternalMessageBus<ContourMessage>();
-  const client = createPublicClient();
+  const client: ContourPolymarketClient =
+    options.client ??
+    createPublicClient(
+      config.polymarket.environment !== undefined
+        ? { environment: config.polymarket.environment }
+        : {},
+    );
   const metadataGenerator = new MessageMetadataGenerator({
     clock,
     highResolutionClock: new LiveHighResolutionClock(),
@@ -188,6 +216,7 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       polymarketStorage,
       cexStorage,
       polymarketSource,
+      polymarketClient: client,
       cexSources,
       discovery,
       coordinator,
@@ -198,5 +227,5 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
     logger,
   });
 
-  return { collector, bus };
+  return { collector, bus, client };
 }

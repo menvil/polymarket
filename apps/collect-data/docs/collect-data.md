@@ -74,14 +74,23 @@ bus, не попав на диск. Отказ любого шага откат�
 ### Остановка
 
 ```text
-runtime loop → finalizer → coordinator → PM source → CEX sources
-             → bus.drain() → recorder.close() → bus.close()
+runtime loop → finalizer → coordinator → PM source → SDK client realtime
+             → CEX sources → bus.drain() → recorder.close() → bus.close()
 ```
 
 Сначала глохнет ingress, затем очередь bus дренируется В recorder, и только потом
 закрывается сам recorder. `close()` идемпотентен и best-effort: отказ одного шага
 логируется и не отменяет остальные. `process.exit()` не используется — процесс
 обязан завершиться сам, иначе живой хэндл остался бы незамеченным.
+
+Отдельный шаг — `closeSubscriptions()` официального SDK-клиента. Клиент общий для
+source, discovery и финализатора, и shared websocket-соединения принадлежат ему, а не
+подпискам: снятие подписок источником их не закрывает. Шаг идёт сразу ПОСЛЕ закрытия
+source — раньше это рвало бы соединение под работающим итератором.
+
+Запуск и остановка сериализованы: сигнал, пришедший во время `start()`, дожидается
+завершения подъёма и только потом гасит контур — иначе остановка «закрыла» бы
+источники, которые запуск продолжает поднимать.
 
 `SIGINT`, `SIGTERM` и фатальная ошибка сходятся в ОДИН охраняемый путь остановки:
 повторный сигнал не запускает вторую параллельную остановку.
@@ -115,7 +124,7 @@ source поимённо. Все значения — существующие `g
 ```text
 {DATA_COLLECTION_OUTPUT_DIR}/
   {YYYY-MM-DD}/
-    polymarket/{question}___{marketId}.jsonl[.gz]
+    polymarket/polymarket_{question}___{marketId}.jsonl[.gz]
     {exchangeId}/{exchange}_{symbol}_{marketType}_{stream}_{dateET}_{startET}-{endET}_ET.jsonl[.gz]
 ```
 

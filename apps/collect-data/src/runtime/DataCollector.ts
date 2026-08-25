@@ -51,10 +51,11 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { Result } from '@polymarket/result';
 import type { MessageBusDrainError, MessageBusStats } from '@polymarket/message-bus';
+import type { createPublicClient } from '@polymarket/client';
 import type { CexSource, CexSourceStats } from '@polymarket/cex-v2';
 import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
 import type { CexWindowRecorderStats } from '@polymarket/data-collection';
-import type { PolymarketMarketDiscovery, PolymarketSource } from '@polymarket/polymarket-v2';
+import type { PolymarketDiscoveredMarket, PolymarketSource } from '@polymarket/polymarket-v2';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import type {
   ExternalMessageRecorderCexStats,
@@ -108,6 +109,21 @@ export type CollectorCexStorage = Pick<CexWindowRecorder, 'cleanup' | 'getStats'
 /** Порт Polymarket-source (закрытие + health-сигнал). */
 export type CollectorPolymarketSource = Pick<PolymarketSource, 'close' | 'hasFailed' | 'isClosed'>;
 
+/**
+ * Порт официального SDK-клиента в части ЕГО собственных ресурсов.
+ *
+ * @remarks
+ * Клиент разделяется между source, discovery и finalizer, но принадлежит не им,
+ * а контуру: shared realtime-соединения открывает и держит сам клиент, и
+ * закрыть их может только он. Без этого порта закрытие source снимало бы
+ * только его подписки, а транспорт под ними оставался бы жив — процесс не
+ * завершался бы сам после остановки.
+ */
+export type CollectorPolymarketClient = Pick<
+  ReturnType<typeof createPublicClient>,
+  'closeSubscriptions'
+>;
+
 /** Порт одного CEX-source. */
 export type CollectorCexSource = Pick<
   CexSource,
@@ -129,8 +145,33 @@ export interface CollectorCexSourceEntry {
   readonly source: CollectorCexSource;
 }
 
-/** Порт Discovery (чтение кэша кандидатов для проекции lifecycle). */
-export type CollectorDiscovery = Pick<PolymarketMarketDiscovery, 'findCandidates'>;
+/**
+ * Кандидат Discovery в объёме, который читает рантайм.
+ *
+ * @remarks
+ * Рантайм не участвует в отборе рынков (это работа координатора) и берёт из
+ * кандидата только identity/вопрос/истечение — ровно то, что уходит в событие
+ * `DISCOVERED`. Порт объявляет именно этот минимум: требовать полный
+ * `PolymarketDiscoveredMarket` значило бы заставлять любую альтернативную
+ * реализацию (и тесты) выдумывать восемь полей, которые никто не читает.
+ */
+export type CollectorCandidate = Pick<
+  PolymarketDiscoveredMarket,
+  'marketId' | 'question' | 'expiresAt'
+>;
+
+/**
+ * Порт Discovery (чтение кэша кандидатов для проекции lifecycle).
+ *
+ * @remarks
+ * Реальный `PolymarketMarketDiscovery` удовлетворяет порту без адаптеров:
+ * его `findCandidates()` возвращает более широкий тип, что для возвращаемого
+ * значения допустимо.
+ */
+export interface CollectorDiscovery {
+  /** Текущее содержимое кэша кандидатов. */
+  findCandidates(): Promise<readonly CollectorCandidate[]>;
+}
 
 /** Порт координатора collection-сессий. */
 export type CollectorCoordinator = Pick<
@@ -155,6 +196,8 @@ export interface DataCollectorComponents {
   readonly polymarketStorage: CollectorPolymarketStorage;
   readonly cexStorage: CollectorCexStorage;
   readonly polymarketSource: CollectorPolymarketSource;
+  /** SDK-клиент, разделяемый source/discovery/finalizer (его realtime — за контуром). */
+  readonly polymarketClient: CollectorPolymarketClient;
   readonly cexSources: readonly CollectorCexSourceEntry[];
   readonly discovery: CollectorDiscovery;
   readonly coordinator: CollectorCoordinator;
@@ -254,6 +297,8 @@ export class DataCollector {
   private _tickInFlight: Promise<void> | null = null;
   private _lastRefreshMs = 0;
   private _closePromise: Promise<void> | null = null;
+  /** Незавершённый запуск (остановка ждёт его, чтобы не гасить контур на подъёме). */
+  private _startPromise: Promise<void> | null = null;
 
   /**
    * Создаёт рантайм поверх уже собранных компонентов контура.
@@ -314,7 +359,15 @@ export class DataCollector {
       throw new Error(`DataCollector.start() rejected: already ${this._state}`);
     }
     this._state = 'starting';
+    // Запуск асинхронен, а остановка может прийти в любой момент — например,
+    // сигнал во время startup cleanup. Чтобы обе операции не работали с одними
+    // компонентами одновременно, close() дожидается ЭТОГО promise (см. close()).
+    this._startPromise = this._start();
+    return this._startPromise;
+  }
 
+  /** Тело запуска (сериализовано с остановкой через `_startPromise`). */
+  private async _start(): Promise<void> {
     /** Обратные шаги уже поднятых ресурсов (LIFO при откате). */
     const rollback: ShutdownStep[] = [];
     try {
@@ -342,6 +395,8 @@ export class DataCollector {
 
       this._startedAtMs = this._nowMs();
       this._state = 'running';
+      // Цикл запускается ПОСЛЕДНИМ и только после перехода в running: тик,
+      // стартовавший раньше, работал бы с ещё не поднятым контуром.
       this._scheduleTick(0);
       this._logger.info('Data collector started', {
         cexSources: this._components.cexSources.length,
@@ -418,9 +473,30 @@ export class DataCollector {
       this._state = 'stopped';
       return;
     }
-    this._state = 'stopping';
-    this._closePromise = this._close();
+    this._closePromise = this._closeAfterStart();
     return this._closePromise;
+  }
+
+  /**
+   * Дожидается незавершённого запуска и только затем гасит контур.
+   *
+   * @remarks
+   * Без этого ожидания сигнал, пришедший во время `start()`, запустил бы
+   * лестницу остановки ПАРАЛЛЕЛЬНО подъёму: запуск продолжил бы поднимать
+   * source-ы уже после того, как остановка их «закрыла», и процесс остался бы
+   * с работающим ingress без recorder-а.
+   */
+  private async _closeAfterStart(): Promise<void> {
+    if (this._startPromise !== null) {
+      // Отказ запуска уже обработан внутри start(): он откатил поднятое и
+      // перевёл рантайм в stopped — здесь важен только факт завершения.
+      await this._startPromise.catch(() => undefined);
+    }
+    if (this._state === 'stopped') {
+      return; // запуск не удался и полностью откатился
+    }
+    this._state = 'stopping';
+    return this._close();
   }
 
   /**
@@ -473,6 +549,21 @@ export class DataCollector {
    * владеют Discovery, Coordinator и Finalizer.
    */
   public async tick(): Promise<void> {
+    // Тик регистрирует себя САМ, а не планировщик: остановка обязана дожидаться
+    // любого идущего тика — и запущенного циклом, и вызванного напрямую.
+    const running = this._tick();
+    this._tickInFlight = running;
+    try {
+      await running;
+    } finally {
+      if (this._tickInFlight === running) {
+        this._tickInFlight = null;
+      }
+    }
+  }
+
+  /** Тело одного тика. */
+  private async _tick(): Promise<void> {
     const nowMs = this._nowMs();
     if (nowMs - this._lastRefreshMs >= this._collection.discoveryRefreshMs) {
       this._lastRefreshMs = nowMs;
@@ -511,6 +602,13 @@ export class DataCollector {
       { name: 'finalizer.close', run: async () => this._components.finalizer.close() },
       { name: 'coordinator.close', run: async () => this._components.coordinator.close() },
       { name: 'polymarketSource.close', run: async () => this._components.polymarketSource.close() },
+      // Подписки source сняты — теперь можно закрыть shared realtime-транспорт,
+      // которым владеет сам клиент. Раньше нельзя: он общий для source,
+      // discovery и finalizer, а координатор к этому моменту уже закрыт.
+      {
+        name: 'polymarketClient.closeSubscriptions',
+        run: async () => this._components.polymarketClient.closeSubscriptions(),
+      },
       {
         name: 'cexSources.close',
         run: async () => {
@@ -577,18 +675,17 @@ export class DataCollector {
       if (this._state !== 'running') {
         return;
       }
-      const running = this.tick().catch((error: unknown) => {
-        this._logger.error('Runtime tick failed', {
-          error: error instanceof Error ? error.message : String(error),
+      // Регистрацию in-flight делает сам tick(); здесь остаётся только
+      // проглотить отказ и запланировать следующий проход.
+      void this.tick()
+        .catch((error: unknown) => {
+          this._logger.error('Runtime tick failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => {
+          this._scheduleTick(this._collection.runtimeTickMs);
         });
-      });
-      this._tickInFlight = running;
-      void running.finally(() => {
-        if (this._tickInFlight === running) {
-          this._tickInFlight = null;
-        }
-        this._scheduleTick(this._collection.runtimeTickMs);
-      });
     }, delayMs);
     this._tickTimer.unref?.();
   }

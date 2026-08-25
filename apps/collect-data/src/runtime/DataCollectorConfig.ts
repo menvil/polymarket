@@ -14,6 +14,8 @@
  * рантайма НЕ протаскиваются: JSON-файл разбирается здесь и превращается в
  * `CexSourceConfig[]` пакета `@polymarket/cex-v2`.
  */
+import { forkEnvironmentConfig } from '@polymarket/client';
+import type { EnvironmentConfig } from '@polymarket/client';
 import type { IMarketFilterConfig } from '@polymarket/ports';
 import type { CexMarketType, CexSourceConfig } from '@polymarket/cex-v2';
 import type { CollectorConfig } from '../config.js';
@@ -34,6 +36,15 @@ export interface PolymarketRecordingConfig {
   readonly flushIntervalMs: number;
   /** Сжатие датасета при финализации. */
   readonly compression: 'none' | 'gzip';
+  /**
+   * Окружение официального SDK. Не задано — production по умолчанию.
+   *
+   * @remarks
+   * Собирается из `GAMMA_API_BASE_URL`/`POLYMARKET_WS_URL`, если они заданы:
+   * иначе конфигурация приложения объявляла бы эндпоинты, которые контур
+   * молча игнорирует.
+   */
+  readonly environment?: EnvironmentConfig;
 }
 
 /**
@@ -216,6 +227,10 @@ export function parseCexSourceConfigs(json: string): readonly CexSourceConfig[] 
       throw new Error(`Invalid CEX config for '${exchangeKey}': expected an object`);
     }
     const entry = rawEntry as CexConfigFileEntry;
+    // Порядок проверок = порядок «фундаментальности» поля: сначала тип рынка,
+    // затем набор символов, затем потоки, затем необязательные параметры —
+    // так сообщение указывает на первую по-настоящему сломанную вещь.
+    const marketType = toCexMarketType(entry.type, exchangeKey);
     const symbols = entry.symbols;
     if (
       !Array.isArray(symbols) ||
@@ -243,18 +258,68 @@ export function parseCexSourceConfigs(json: string): readonly CexSourceConfig[] 
       exchangeKey,
     );
 
+    if (typeof entry.orderbook !== 'boolean' || typeof entry.trades !== 'boolean') {
+      throw new Error(
+        `Invalid CEX config for '${exchangeKey}': orderbook and trades must be booleans`,
+      );
+    }
+    // Биржа без единого потока — почти наверняка опечатка в конфигурации:
+    // source поднимется, соединится и не запишет ни строки.
+    if (!entry.orderbook && !entry.trades) {
+      throw new Error(
+        `Invalid CEX config for '${exchangeKey}': at least one of orderbook/trades must be true`,
+      );
+    }
+
     sources.push({
       exchangeId,
-      marketType: toCexMarketType(entry.type, exchangeKey),
+      marketType,
       symbols: symbols as readonly string[],
-      watchOrderbook: entry.orderbook === true,
-      watchTrades: entry.trades === true,
+      watchOrderbook: entry.orderbook,
+      watchTrades: entry.trades,
       ...(orderbookDepth !== undefined ? { orderbookDepth } : {}),
       ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
       ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
     });
   }
   return sources;
+}
+
+/** Production-значения эндпоинтов, при которых форк окружения не нужен. */
+const DEFAULT_GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
+const DEFAULT_MARKET_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+
+/**
+ * Собирает окружение SDK из заданных приложением эндпоинтов.
+ *
+ * @param config - Внешняя конфигурация приложения
+ * @returns Форк production-окружения либо `undefined`, если переопределений нет
+ *
+ * @remarks
+ * Пока эндпоинты совпадают с production, форк не создаётся — клиент работает
+ * на штатной конфигурации SDK. Как только `GAMMA_API_BASE_URL` или
+ * `POLYMARKET_WS_URL` отличаются, они ДОЛЖНЫ дойти до клиента: иначе
+ * конфигурация приложения обещает переключение окружения, которого на самом
+ * деле не происходит.
+ *
+ * `POLYMARKET_WS_URL` указывает на market-канал CLOB, поэтому переопределяется
+ * именно `clob.market`.
+ *
+ * `forkEnvironmentConfig` помечен в SDK как `@experimental` («signature may
+ * change without notice»), поэтому вызов локализован в одной функции: при
+ * смене контракта чинить придётся только её.
+ */
+function toEnvironmentConfig(config: CollectorConfig): EnvironmentConfig | undefined {
+  const gammaOverridden = config.gammaApiBaseUrl !== DEFAULT_GAMMA_BASE_URL;
+  const wsOverridden = config.wsUrl !== DEFAULT_MARKET_WS_URL;
+  if (!gammaOverridden && !wsOverridden) {
+    return undefined;
+  }
+  return forkEnvironmentConfig({
+    name: 'collect-data',
+    ...(gammaOverridden ? { gamma: { rest: config.gammaApiBaseUrl } } : {}),
+    ...(wsOverridden ? { clob: { market: { ws: config.wsUrl } } } : {}),
+  });
 }
 
 /**
@@ -278,6 +343,7 @@ export function parseCexSourceConfigs(json: string): readonly CexSourceConfig[] 
  * ```
  */
 export function toDataCollectorConfig(config: CollectorConfig): DataCollectorConfig {
+  const environment = toEnvironmentConfig(config);
   return {
     outputDir: config.outputDir,
     polymarket: {
@@ -285,6 +351,7 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
       bufferSize: config.bufferSize,
       flushIntervalMs: config.flushIntervalMs,
       compression: config.compression,
+      ...(environment !== undefined ? { environment } : {}),
     },
     discovery: {
       filter: {

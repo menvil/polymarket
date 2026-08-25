@@ -14,7 +14,7 @@
     "backfill:polymarket": "node --import tsx --env-file=.env src/backfillPolymarketMeta.ts",
     "analyze:chainlink": "node --disable-warning=ExperimentalWarning src/analyzeChainlinkLeadLag.ts",
     "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts",
-    "test": "jest"
+    "test": "node --experimental-vm-modules ../../node_modules/.bin/jest"
   },
   "dependencies": {
     "@polymarket/cex-v2": "0.1.0",
@@ -44,10 +44,6 @@
     "typescript": "^5.3.0"
   },
   "exports": {
-    ".": {
-      "types": "./dist/main.d.ts",
-      "import": "./dist/main.js"
-    },
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",
       "import": "./dist/runtime/index.js"

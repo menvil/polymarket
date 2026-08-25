@@ -1554,9 +1554,44 @@ function armExitWatchdog(): void {
   const watchdog = setTimeout(() => {
     console.error('CHECKPOINT: process did not exit naturally within 60s after main()');
     console.error('Active resources:', process.getActiveResourcesInfo());
+    console.error('Active handles:', describeActiveHandles());
     process.exit(3);
   }, 60_000);
   watchdog.unref();
+}
+
+/**
+ * Описывает удерживающие процесс handle-ы с деталями сокетов.
+ *
+ * @returns Человекочитаемые строки по каждому активному handle
+ *
+ * @remarks
+ * `getActiveResourcesInfo()` отдаёт только типы (`'TCPSocketWrap'`), по которым
+ * невозможно понять ВЛАДЕЛЬЦА утечки. Для сокетов решает `servername`: он прямо
+ * называет хост (`ws-subscriptions-clob`, `gamma-api`, `stream.binance.com`), а
+ * значит и подсистему, чей ресурс не закрыт. Используются недокументированные
+ * `process._getActiveHandles/_getActiveRequests` — это диагностика runner-а, не
+ * production-код, и их отсутствие не ломает вердикт.
+ */
+function describeActiveHandles(): readonly string[] {
+  const handles =
+    (process as unknown as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ?? [];
+  const described = handles.map((handle) => {
+    const entry = handle as Record<string, unknown>;
+    const kind = (entry['constructor'] as { name?: string } | undefined)?.name ?? 'unknown';
+    if (kind !== 'Socket' && kind !== 'TLSSocket') {
+      return kind;
+    }
+    const servername = entry['servername'];
+    return (
+      `${kind} servername=${String(servername)} ` +
+      `remote=${String(entry['remoteAddress'])}:${String(entry['remotePort'])} ` +
+      `destroyed=${String(entry['destroyed'])}`
+    );
+  });
+  const requests =
+    (process as unknown as { _getActiveRequests?: () => unknown[] })._getActiveRequests?.() ?? [];
+  return [...described, `activeRequests=${String(requests.length)}`];
 }
 
 void main().then(

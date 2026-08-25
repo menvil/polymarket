@@ -17,7 +17,7 @@
  * Именно эта развилка позволит будущему Semantic Adapter подключиться, не
  * трогая ни source-пакеты, ни recorder, ни API коллектора.
  */
-import { describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it } from '@jest/globals';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { LiveClock } from '@polymarket/time';
@@ -27,6 +27,21 @@ import type { ContourMessage } from '../src/runtime/createDataCollector.js';
 import { CapturingLogger } from './helpers/fakes.js';
 import { FakeCexWindowStorage, FakePolymarketRecordingStorage } from './helpers/recordingFakes.js';
 
+/** Все bus, созданные тестом: закрываются в teardown (без утечек между тестами). */
+const openBuses: ExternalMessageBus<ContourMessage>[] = [];
+
+afterEach(async () => {
+  // Bus держит очередь доставки и подписки; незакрытый экземпляр пережил бы
+  // тест и мог бы получить сообщения соседнего.
+  await Promise.all(openBuses.splice(0).map(async (bus) => bus.close()));
+});
+
+/** Регистрирует bus для гарантированного закрытия. */
+function trackBus(bus: ExternalMessageBus<ContourMessage>): ExternalMessageBus<ContourMessage> {
+  openBuses.push(bus);
+  return bus;
+}
+
 /** Собранный «мини-контур»: реальные bus и recorder, fake-хранилища. */
 function makeContour(): {
   bus: ExternalMessageBus<ContourMessage>;
@@ -35,7 +50,7 @@ function makeContour(): {
   polymarketStorage: FakePolymarketRecordingStorage;
   generator: MessageMetadataGenerator;
 } {
-  const bus = new ExternalMessageBus<ContourMessage>();
+  const bus = trackBus(new ExternalMessageBus<ContourMessage>());
   const polymarketStorage = new FakePolymarketRecordingStorage();
   const cexStorage = new FakeCexWindowStorage();
   const recorder = new ExternalMessageRecorder({
@@ -167,7 +182,7 @@ describe('recorder — consumer bus, а не прямая цель source (PART 
   it('не получает сообщений, опубликованных мимо ЕГО bus', async () => {
     const { recorder, cexStorage, generator } = makeContour();
     recorder.start();
-    const foreignBus = new ExternalMessageBus<ContourMessage>();
+    const foreignBus = trackBus(new ExternalMessageBus<ContourMessage>());
 
     await foreignBus.publish({
       type: 'CEX_ORDERBOOK',
@@ -178,7 +193,6 @@ describe('recorder — consumer bus, а не прямая цель source (PART 
     expect(cexStorage.writes).toHaveLength(0);
 
     await recorder.close();
-    await foreignBus.close();
   });
 
   it('после закрытия recorder поток bus остаётся доступен другим consumer-ам', async () => {

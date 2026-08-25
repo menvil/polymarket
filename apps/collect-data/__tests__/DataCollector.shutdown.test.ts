@@ -37,6 +37,7 @@ function shutdownOrder(calls: readonly string[]): string[] {
     'finalizer.close',
     'coordinator.close',
     'polymarketSource.close',
+    'polymarketClient.closeSubscriptions',
     'cexSource.close(binance)',
     'bus.drain',
     'recorder.close',
@@ -56,6 +57,7 @@ describe('DataCollector.close() — штатная остановка', () => {
       'finalizer.close',
       'coordinator.close',
       'polymarketSource.close',
+      'polymarketClient.closeSubscriptions',
       'cexSource.close(binance)',
       'bus.drain',
       'recorder.close',
@@ -70,8 +72,8 @@ describe('DataCollector.close() — штатная остановка', () => {
 
     await collector.close();
 
-    expect(contour.log.indexOf('bus.drain')).toBeLessThan(contour.log.indexOf('recorder.close'));
-    expect(contour.log.indexOf('recorder.close')).toBeLessThan(contour.log.indexOf('bus.close'));
+    expect(contour.log.orderOf('bus.drain')).toBeLessThan(contour.log.orderOf('recorder.close'));
+    expect(contour.log.orderOf('recorder.close')).toBeLessThan(contour.log.orderOf('bus.close'));
   });
 
   it('глушит ingress до дренажа очереди', async () => {
@@ -80,11 +82,11 @@ describe('DataCollector.close() — штатная остановка', () => {
 
     await collector.close();
 
-    expect(contour.log.indexOf('polymarketSource.close')).toBeLessThan(
-      contour.log.indexOf('bus.drain'),
+    expect(contour.log.orderOf('polymarketSource.close')).toBeLessThan(
+      contour.log.orderOf('bus.drain'),
     );
-    expect(contour.log.indexOf('cexSource.close(binance)')).toBeLessThan(
-      contour.log.indexOf('bus.drain'),
+    expect(contour.log.orderOf('cexSource.close(binance)')).toBeLessThan(
+      contour.log.orderOf('bus.drain'),
     );
   });
 });
@@ -131,6 +133,81 @@ describe('DataCollector.close() — идемпотентность', () => {
     await collector.close();
 
     expect(contour.log.calls.length).toBe(callsAfterRollback);
+  });
+});
+
+describe('DataCollector.close() — ресурсы SDK-клиента', () => {
+  it('закрывает shared realtime клиента после снятия подписок source', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await collector.close();
+
+    // Порядок принципиален: сначала source снимает СВОИ подписки, и только
+    // потом закрывается общий транспорт, которым владеет клиент.
+    expect(contour.log.orderOf('polymarketSource.close')).toBeLessThan(
+      contour.log.orderOf('polymarketClient.closeSubscriptions'),
+    );
+    expect(contour.log.countOf('polymarketClient.closeSubscriptions')).toBe(1);
+  });
+
+  it('отказ client-level cleanup не срывает остальную лестницу', async () => {
+    const { collector, contour } = makeCollector();
+    contour.polymarketClient.closeRejection = new Error('closeSubscriptions failed');
+    await collector.start();
+
+    await collector.close();
+
+    expect(contour.log.countOf('bus.drain')).toBe(1);
+    expect(contour.log.countOf('recorder.close')).toBe(1);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+});
+
+describe('DataCollector — гонка запуска и остановки', () => {
+  it('остановка во время запуска не гасит контур на подъёме', async () => {
+    const contour = makeFakeContour(['binance']);
+    let releaseCleanup: (() => void) | undefined;
+    contour.polymarketStorage.cleanupGate = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+    const { collector } = makeCollector(contour);
+
+    const starting = collector.start();
+    await Promise.resolve();
+    // Сигнал пришёл, пока startup cleanup ещё не завершился.
+    const closing = collector.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Лестница остановки НЕ начата: запуск ещё идёт.
+    expect(contour.log.indexOf('bus.close')).toBe(-1);
+
+    releaseCleanup?.();
+    await Promise.all([starting, closing]);
+
+    // Контур поднялся целиком и погашен целиком — без «повисшего» ingress.
+    expect(contour.log.orderOf('cexSource.start(binance)')).toBeLessThan(
+      contour.log.orderOf('cexSource.close(binance)'),
+    );
+    expect(contour.log.countOf('bus.close')).toBe(1);
+    expect(collector.state).toBe('stopped');
+  });
+
+  it('остановка после провалившегося запуска не закрывает ресурсы повторно', async () => {
+    const contour = makeFakeContour(['binance']);
+    contour.recorder.startError = new Error('recorder subscribe failed');
+    const { collector } = makeCollector(contour);
+
+    const starting = collector.start();
+    const closing = collector.close();
+    await expect(starting).rejects.toThrow('recorder subscribe failed');
+    await closing;
+
+    // Recorder не поднялся — закрывать его нечего; bus закрыт РОВНО один раз,
+    // хотя остановку запросили параллельно откату запуска.
+    expect(contour.log.countOf('recorder.close')).toBe(0);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+    expect(collector.state).toBe('stopped');
   });
 });
 
@@ -202,17 +279,30 @@ describe('DataCollector.close() — таймеры и тики', () => {
     expect(contour.coordinator.fillCalls).toBe(fillCallsAfterClose);
   });
 
-  it('дожидается тика в полёте перед закрытием компонентов', async () => {
+  it('не закрывает контур, пока тик в полёте не завершился', async () => {
     const { collector, contour } = makeCollector();
     await collector.start();
-    let tickFinished = false;
-    const slowTick = collector.tick().then(() => {
-      tickFinished = true;
-    });
+    contour.coordinator.block();
+    const slowTick = collector.tick();
+    // Ждём, пока тик реально войдёт в fillSlots и подвиснет там.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(contour.log.indexOf('coordinator.fillSlots.start')).toBeGreaterThanOrEqual(0);
 
-    await Promise.all([collector.close(), slowTick]);
+    const closing = collector.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(tickFinished).toBe(true);
+    // Тик держит остановку: контур ещё цел.
+    expect(contour.log.indexOf('coordinator.fillSlots')).toBe(-1);
+    expect(contour.log.indexOf('bus.close')).toBe(-1);
+
+    contour.coordinator.release();
+    await Promise.all([closing, slowTick]);
+
+    // Завершившийся тик предшествует закрытию контура.
+    expect(contour.log.orderOf('coordinator.fillSlots')).toBeLessThan(
+      contour.log.orderOf('bus.close'),
+    );
     expect(contour.log.countOf('bus.close')).toBe(1);
   });
 });
