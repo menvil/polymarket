@@ -123,9 +123,15 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
     // no-op: fake не трогает диск
   }
 
+  /** Если задана — close() отклоняется этой ошибкой (после учёта вызова). */
+  public closeRejection: Error | undefined;
+
   public async close(): Promise<void> {
     this.closeCalls += 1;
     this.callOrder.push('storage:close');
+    if (this.closeRejection !== undefined) {
+      throw this.closeRejection;
+    }
   }
 }
 
@@ -173,5 +179,62 @@ export class CapturingLogger implements ILogger {
   /** Записи заданного уровня. */
   public byLevel(level: CapturedLogEntry['level']): CapturedLogEntry[] {
     return this.entries.filter((entry) => entry.level === level);
+  }
+}
+
+/** Захваченный вызов оконной CEX-записи. */
+export interface CexRecordedWrite {
+  readonly exchangeId: string;
+  readonly symbol: string;
+  readonly marketType: string;
+  readonly stream: 'orderbook' | 'trades';
+  readonly payload: unknown;
+}
+
+/**
+ * Fake оконного CEX-storage: фиксирует вызовы, исходы программируются.
+ *
+ * @remarks
+ * Узкая структурная реализация порта `CexRecordingStorage`
+ * (subset `CexWindowRecorder`) — настоящая оконная persistence проверяется
+ * интеграционным one-bus-one-recorder тестом с реальным движком.
+ */
+export class FakeCexWindowStorage {
+  /** Все вызовы write (payload — та же ссылка, что передана). */
+  public readonly writes: CexRecordedWrite[] = [];
+  public startCalls = 0;
+  public flushCalls = 0;
+  public closeCalls = 0;
+  /** Постоянное переопределение исхода записи (default 'recorded'). */
+  public outcomeOverride: 'recorded' | 'inactive' | 'failed' | undefined;
+  /** Если задана — write бросает (проверка защитного контура handler-ов). */
+  public throwOnWrite: Error | undefined;
+
+  public start(): void {
+    this.startCalls++;
+  }
+
+  public write(
+    exchangeId: string,
+    symbol: string,
+    marketType: string,
+    stream: 'orderbook' | 'trades',
+    payload: unknown,
+  ): 'recorded' | 'inactive' | 'failed' {
+    if (this.throwOnWrite !== undefined) {
+      throw this.throwOnWrite;
+    }
+    this.writes.push({ exchangeId, symbol, marketType, stream, payload });
+    return this.outcomeOverride ?? 'recorded';
+  }
+
+  public flush(): Promise<void> {
+    this.flushCalls++;
+    return Promise.resolve();
+  }
+
+  public close(): Promise<void> {
+    this.closeCalls++;
+    return Promise.resolve();
   }
 }

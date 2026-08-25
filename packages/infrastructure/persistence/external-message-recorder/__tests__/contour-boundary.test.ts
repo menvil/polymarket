@@ -54,6 +54,9 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
   '@polymarket/ids',
   '@polymarket/logger',
   '@polymarket/polymarket-v2',
+  // N-005: typed CEX-контракты для CEX-политики того же сервиса (симметрично
+  // polymarket-v2; type-only — transport recorder-у по-прежнему недоступен)
+  '@polymarket/cex-v2',
   '@polymarket/ports',
 ]);
 
