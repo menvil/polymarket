@@ -114,7 +114,7 @@ Checkpoint был прототипом production composition, обёрнуты�
 бэктест:
 
 ```text
-{outputDir}/{YYYY-MM-DD}/polymarket/{question}___{marketId}.jsonl[.gz]
+{outputDir}/{YYYY-MM-DD}/polymarket/polymarket_{question}___{marketId}.jsonl[.gz]
 {outputDir}/{YYYY-MM-DD}/{exchangeId}/{exchange}_{symbol}_{marketType}_{stream}_{dateET}_{startET}-{endET}_ET.jsonl[.gz]
 ```
 
@@ -122,7 +122,7 @@ Checkpoint был прототипом production composition, обёрнуты�
 | ---------------------- | ----------------------------------- | ---------------------------------------- | ---------------- |
 | date-директории        | `{out}/{YYYY-MM-DD}/`               | то же                                    | parity           |
 | директория источника   | `polymarket/` и `{exchange}/`       | то же                                    | parity           |
-| имя PM-файла           | `{question}___{marketId}`           | то же                                    | parity           |
+| имя PM-файла           | строит `DataRecorder`               | тот же `DataRecorder`                    | parity побайтово |
 | имя CEX-файла          | без сегмента потока                 | **добавлен `{stream}`**                  | V2 лучше         |
 | буферизация            | 100 / 10 c (PM), 200 / 5 c (CEX)    | то же (настраивается)                    | parity           |
 | ротация CEX            | окно 5 минут по ET-границам         | то же + sweep «тихих» writer-ов          | V2 лучше         |
@@ -137,6 +137,10 @@ Checkpoint был прототипом production composition, обёрнуты�
 - **Разделение потоков в имени CEX-файла.** V2 пишет `orderbook` и `trades` в разные
   партиции; V1 складывал их в один файл. Ридеры V2-архивов обязаны учитывать сегмент
   `{stream}`.
+- **Имя PM-файла не менялось этим MR.** Его целиком строит `DataRecorder`, который
+  V1 и V2 используют один и тот же, — включая префикс `polymarket_` и вставку года
+  (`_-_` → `_-2026_`). Архивы марта 2026 в `apps/collect-data/snapshots/` выглядят
+  иначе просто потому, что предшествуют этому изменению именования.
 - **Общий корень и startup cleanup.** Обе политики пишут в один `outputDir`, а
   `CexWindowRecorder.cleanup()` обходит ВСЕ поддиректории date-папки, включая
   `polymarket/`. Это безопасно ровно потому, что cleanup выполняется один раз при
@@ -197,6 +201,30 @@ await collector.start();
 
 Порядок подписки гарантирован конструкцией: recorder подписывается внутри
 `collector.start()`, наблюдатели — до него, ingress стартует последним.
+
+## Аудит collector-legacy после удаления V1
+
+После cutover проверено, остались ли у collector-специфичных классов потребители.
+Результат: **ни один из них не оказался zero-consumer** — все они продолжают
+использоваться торговым приложением `apps/bot`, которое MR-A не трогает.
+
+| Компонент                         | Решение  | Оставшиеся потребители                               |
+| --------------------------------- | -------- | ---------------------------------------------------- |
+| `PolymarketWebSocketManager`       | оставлен | `apps/bot/src/main.ts`                               |
+| `PolymarketWsAdapter`              | оставлен | `apps/bot`: `main.ts`, `MarketRotation`, `buildLiveInfra` |
+| `MarketDataFeedAdapter`            | оставлен | `apps/bot/src/main.ts`                               |
+| `PolymarketMarketDiscoveryAdapter` | оставлен | `apps/bot`: `main.ts`, `MarketRotation`, 3 скрипта    |
+| `CexCollectorService`              | оставлен | `apps/bot`: `main.ts`, `buildRecording`              |
+| `CcxtExchangeWatcher`              | оставлен | внутренний для `CexCollectorService`                 |
+| `CcxtSymbolWatcher`                | оставлен | внутренний для `CexCollectorService`                 |
+| `CexFileRotator`                   | оставлен | внутренний для `CexCollectorService`                 |
+| `DnsOverride`                      | оставлен | коллектор (`processBootstrap`), `apps/bot`, CLI-скрипты |
+
+Единственное, что удалось убрать безопасно, — зависимость приложения коллектора от
+`@polymarket/cex-market-data`: после cutover ни один его файл этот пакет не
+импортирует, поэтому он исключён из `package.json` и `tsconfig`. Сам пакет остаётся
+в репозитории: он смешивает collector-legacy с живой функциональностью бота, и
+удалять его целиком было бы поломкой торгового приложения.
 
 ## Что НЕ входило в MR-A
 
