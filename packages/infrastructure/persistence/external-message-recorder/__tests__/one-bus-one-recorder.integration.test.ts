@@ -38,7 +38,12 @@ import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { CexExternalMessage, CexOrderbookPayload, CexTradePayload } from '@polymarket/cex-v2';
 import { ExternalMessageRecorder } from '../src/index.js';
 import { CapturingLogger } from './helpers/fakes.js';
-import { MARKET_CONDITION_ID, createBookEvent } from './helpers/sdkFixtures.js';
+import {
+  MARKET_CONDITION_ID,
+  createBinanceEvent,
+  createBookEvent,
+  createChainlinkEvent,
+} from './helpers/sdkFixtures.js';
 
 type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
 
@@ -256,6 +261,133 @@ describe('one bus / one recorder (PART 25)', () => {
     // Незавершённых .jsonl не осталось ни в одном storage
     expect(listTree(polymarketDir).filter((f) => f.endsWith('.jsonl'))).toHaveLength(0);
     expect(listTree(cexDir).filter((f) => f.endsWith('.jsonl'))).toHaveLength(0);
+  });
+
+  it('RTDS коэкзистирует с CEX-политикой: fan-out в market-файлы, без утечки в партиции', async () => {
+    // CHECKPOINT #1 gap-тест (§24): существующая coexistence-интеграция
+    // покрывала PM market + CEX, но НЕ RTDS-фиды на той же композиции.
+    const SECOND_MARKET_ID = '0x00000000000000000000000000000000000000000000000000000000000000b2';
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [
+        { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
+        { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
+      ],
+    });
+    recorder.registerMarket({
+      marketMeta: makeMeta(SECOND_MARKET_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+
+    const firstBoundary = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS + WINDOW_MS;
+    await waitFor(() => Date.now() >= firstBoundary + 30);
+
+    const marketEvent = createBookEvent();
+    const binanceEvent = createBinanceEvent(); // btcusdt → оба рынка (fan-out)
+    const chainlinkEvent = createChainlinkEvent(); // btc/usd → только первый рынок
+    const unroutedEvent = createBinanceEvent({ symbol: 'ethusdt' }); // фид не зарегистрирован
+    expect(
+      (
+        await bus.publish({
+          type: 'POLYMARKET_MARKET',
+          payload: marketEvent,
+          metadata: generator.nextRoot(),
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await bus.publish({
+          type: 'POLYMARKET_CRYPTO_BINANCE',
+          payload: binanceEvent,
+          metadata: generator.nextRoot(),
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await bus.publish({
+          type: 'POLYMARKET_CRYPTO_CHAINLINK',
+          payload: chainlinkEvent,
+          metadata: generator.nextRoot(),
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await bus.publish({
+          type: 'POLYMARKET_CRYPTO_BINANCE',
+          payload: unroutedEvent,
+          metadata: generator.nextRoot(),
+        })
+      ).ok,
+    ).toBe(true);
+    await bus.publish({ type: 'CEX_ORDERBOOK', payload: OB_PAYLOAD, metadata: generator.nextRoot() });
+    await marketStorage.flush();
+    await cexStorage.flush();
+
+    // ── Market-файлы: у каждого рынка свой набор RTDS-строк, payload-only ──
+    const marketFiles = listTree(polymarketDir).filter((f) => f.endsWith('.jsonl'));
+    expect(marketFiles).toHaveLength(2);
+    const byMarket = new Map<string, string[]>();
+    for (const file of marketFiles) {
+      const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n');
+      const header = JSON.parse(lines[0]!) as { marketId?: string };
+      byMarket.set(header.marketId ?? '', lines.slice(1));
+    }
+    const firstLines = byMarket.get(MARKET_CONDITION_ID)!;
+    const secondLines = byMarket.get(SECOND_MARKET_ID)!;
+    // Первый рынок: market event + оба RTDS-фида (точные payload-строки)
+    expect(firstLines).toEqual([
+      JSON.stringify(marketEvent),
+      JSON.stringify(binanceEvent),
+      JSON.stringify(chainlinkEvent),
+    ]);
+    // Второй рынок: ТОЛЬКО общий binance-фид (fan-out одной строкой)
+    expect(secondLines).toEqual([JSON.stringify(binanceEvent)]);
+    for (const line of [...firstLines, ...secondLines]) {
+      expect(line).not.toContain('exchangeId');
+      expect(line).not.toContain('messageId');
+    }
+
+    // ── RTDS не утёк в CEX-партиции; CEX-политика жива в той же композиции ──
+    const cexFiles = listTree(cexDir).filter((f) => f.endsWith('.jsonl'));
+    expect(cexFiles).toHaveLength(1);
+    const cexContent = fs.readFileSync(cexFiles[0]!, 'utf8');
+    expect(cexContent).not.toContain('prices.crypto');
+    expect(cexContent).toContain('"exchangeId":"binance"');
+
+    // ── Счётчики: 2 routed RTDS-сообщения, 1 unrouted, fan-out по файлам ──
+    const stats = recorder.getStats();
+    expect(stats.marketMessagesRouted).toBe(1);
+    expect(stats.rtdsMessagesRouted).toBe(2);
+    expect(stats.unroutedRtdsMessages).toBe(1);
+    // recordsWritten: market(1) + binance fan-out(2 файла) + chainlink(1)
+    expect(stats.recordsWritten).toBe(4);
+    expect(recorder.getCexStats().cexMessagesRouted).toBe(1);
+
+    // ── Finalize первого рынка не трогает второй (общий фид сохраняется) ──
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+    const lateBinanceEvent = createBinanceEvent({ value: '64999.99' });
+    await bus.publish({
+      type: 'POLYMARKET_CRYPTO_BINANCE',
+      payload: lateBinanceEvent,
+      metadata: generator.nextRoot(),
+    });
+    await marketStorage.flush();
+    // Первый рынок заархивирован; второй остаётся активным .jsonl и получил
+    // позднее RTDS-событие общего фида (routing первого снят per-feed)
+    expect(listTree(polymarketDir).filter((f) => f.endsWith('.jsonl.gz'))).toHaveLength(1);
+    const activeFiles = listTree(polymarketDir).filter((f) => f.endsWith('.jsonl'));
+    expect(activeFiles).toHaveLength(1);
+    const activeLines = fs.readFileSync(activeFiles[0]!, 'utf8').trimEnd().split('\n');
+    expect((JSON.parse(activeLines[0]!) as { marketId?: string }).marketId).toBe(SECOND_MARKET_ID);
+    expect(activeLines.slice(1)).toEqual([
+      JSON.stringify(binanceEvent),
+      JSON.stringify(lateBinanceEvent),
+    ]);
+    expect(recorder.getStats().rtdsMessagesRouted).toBe(3);
   });
 
   it('мульти-биржа: routing identity payload разводит партиции бирж', async () => {

@@ -135,6 +135,7 @@ export type PolymarketRecordingStorage = Pick<
   | 'sealMarket'
   | 'updateMarketMeta'
   | 'finalizeMarket'
+  | 'readSealedPayloadLines'
   | 'flush'
   | 'cleanup'
   | 'close'
@@ -589,6 +590,31 @@ export class ExternalMessageRecorder {
       return false;
     }
     return this._storage.updateMarketMeta(marketId, updatedRawMarket);
+  }
+
+  /**
+   * Читает payload-строки SEALED-датасета рынка (passthrough в storage).
+   *
+   * @param marketId - ID рынка
+   * @param filter - Предикат отбора строк
+   * @param maxMatches - Потолок совпадений (см. storage default)
+   * @returns Отобранные строки либо `undefined` — recorder закрыт, датасет
+   *   не sealed/не активирован либо чтение отказало (залогировано storage)
+   *
+   * @remarks
+   * Read-путь для write-time деривации finalizer-а (winner-ladder ступень
+   * `recorded-rtds`): payload заморожен seal-ом — чтение не гонится с
+   * записью. Recorder ничего не парсит и не преобразует.
+   */
+  public async readSealedPayloadLines(
+    marketId: MarketId,
+    filter: (line: string) => boolean,
+    maxMatches?: number,
+  ): Promise<readonly string[] | undefined> {
+    if (this._closed) {
+      return undefined;
+    }
+    return this._storage.readSealedPayloadLines(marketId, filter, maxMatches);
   }
 
   /**

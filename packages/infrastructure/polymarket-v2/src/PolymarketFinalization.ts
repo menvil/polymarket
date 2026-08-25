@@ -189,3 +189,136 @@ export function deriveWinningOutcome(
   }
   return winner;
 }
+
+/**
+ * Парсит десятичную строку в КОНЕЧНЫЙ Decimal.
+ *
+ * @param value - Десятичная строка vendor-происхождения
+ * @returns Decimal либо `undefined` — строка не парсится ЛИБО значение
+ *   нефинитно (`NaN`/`Infinity`/`-Infinity`)
+ *
+ * @remarks
+ * Нефинитные значения отсекаются ЗДЕСЬ, а не в арифметике: decimal.js их
+ * принимает и молча искажает результат — `new Decimal('Infinity').gte(x)`
+ * даёт `true` (ложный победитель), `new Decimal('NaN').comparedTo(x)`
+ * даёт `NaN` (ложный порядок), сумма с `NaN` даёт `NaN`.
+ * {@link extractCryptoFinalization} фильтрует нефинитные vendor *numbers*,
+ * но строки пропускает as-is — эта проверка закрывает строковый путь.
+ */
+function toFiniteDecimal(value: string): Decimal | undefined {
+  let parsed: Decimal;
+  try {
+    parsed = new Decimal(value);
+  } catch {
+    return undefined;
+  }
+  return parsed.isFinite() ? parsed : undefined;
+}
+
+/**
+ * Выводит победителя Up/Down-рынка по официальным крипто-ценам Gamma.
+ *
+ * @param outcomes - Финальные исходы ({@link mapFinalOutcomes})
+ * @param crypto - Официальные значения `priceToBeat`/`finalPrice`
+ * @returns Победивший исход либо `undefined`, если деривация неприменима
+ *
+ * @remarks
+ * Ступень 2 winner-ladder (после {@link deriveWinningOutcome}): применяет
+ * ПРАВИЛО САМОГО РЫНКА к официальным числам оракула — из них же следует
+ * UMA-резолюция. Правило (текст description «Up or Down»-серий,
+ * подтверждено live 2026-08-25): *«resolve to "Up" if … greater than
+ * **or equal to** [price to beat], otherwise "Down"»* — то есть
+ * `finalPrice >= priceToBeat → Up` (tie = Up).
+ *
+ * Guards (лучше отсутствие победителя, чем неверный):
+ * - ровно два исхода с метками строго `Up`/`Down` (правило других серий
+ *   может отличаться — на них деривация не распространяется);
+ * - обе цены присутствуют и парсятся в КОНЕЧНЫЙ Decimal (без `Number()` —
+ *   политика точности модуля; `NaN`/`±Infinity` отвергаются, иначе
+ *   `Infinity.gte(x)` вернул бы ложного победителя `Up`).
+ *
+ * @example
+ * ```typescript
+ * const winner = deriveWinnerFromCryptoPrices(outcomes, {
+ *   priceToBeat: '79233.50451521577',
+ *   finalPrice: '79237.63456493833',
+ * }); // → исход с label 'Up'
+ * ```
+ */
+export function deriveWinnerFromCryptoPrices(
+  outcomes: readonly PolymarketFinalOutcome[],
+  crypto: PolymarketCryptoFinalization,
+): PolymarketFinalOutcome | undefined {
+  if (crypto.priceToBeat === undefined || crypto.finalPrice === undefined) {
+    return undefined;
+  }
+  if (outcomes.length !== 2) {
+    return undefined;
+  }
+  const up = outcomes.find((outcome) => outcome.label === 'Up');
+  const down = outcomes.find((outcome) => outcome.label === 'Down');
+  if (up === undefined || down === undefined) {
+    return undefined;
+  }
+  const priceToBeat = toFiniteDecimal(crypto.priceToBeat);
+  const finalPrice = toFiniteDecimal(crypto.finalPrice);
+  if (priceToBeat === undefined || finalPrice === undefined) {
+    return undefined;
+  }
+  return finalPrice.gte(priceToBeat) ? up : down;
+}
+
+/**
+ * Сравнивает два точных десятичных строковых значения.
+ *
+ * @param left - Левое значение (десятичная строка)
+ * @param right - Правое значение (десятичная строка)
+ * @returns `-1` | `0` | `1` либо `undefined`, если строки не парсятся ЛИБО
+ *   любое значение нефинитно (`NaN`/`±Infinity`)
+ *
+ * @remarks
+ * Экспортируемый Decimal-helper vendor-boundary: потребители (например,
+ * приблизительная деривация победителя из записанного RTDS в finalizer-е)
+ * не тянут собственную зависимость decimal.js и не используют `Number()`.
+ * `NaN` отвергается явно: `comparedTo` вернул бы `NaN`, который в
+ * сравнении `> 0` дал бы молчаливый `-1`.
+ */
+export function compareDecimalStrings(left: string, right: string): -1 | 0 | 1 | undefined {
+  const leftValue = toFiniteDecimal(left);
+  const rightValue = toFiniteDecimal(right);
+  if (leftValue === undefined || rightValue === undefined) {
+    return undefined;
+  }
+  const result = leftValue.comparedTo(rightValue);
+  return result === 0 ? 0 : result > 0 ? 1 : -1;
+}
+
+/**
+ * Среднее арифметическое точных десятичных строковых значений.
+ *
+ * @param values - Непустой список десятичных строк
+ * @returns Точная строка среднего либо `undefined` — пустой список, любое
+ *   значение не парсится ЛИБО нефинитно (`NaN`/`±Infinity`)
+ *
+ * @remarks
+ * Для аппроксимации TWAP по равномерному (1 Гц) ряду наблюдений
+ * записанного RTDS: равномерный каденс делает арифметическое среднее
+ * эквивалентом time-weighted среднего. Нефинитное значение отравило бы всю
+ * сумму (`NaN`), поэтому отвергается на входе; результат проверяется
+ * повторно (переполнение экспоненты decimal.js даёт `Infinity`).
+ */
+export function meanOfDecimalStrings(values: readonly string[]): string | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+  let sum = new Decimal(0);
+  for (const value of values) {
+    const parsed = toFiniteDecimal(value);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    sum = sum.plus(parsed);
+  }
+  const mean = sum.div(values.length);
+  return mean.isFinite() ? mean.toString() : undefined;
+}

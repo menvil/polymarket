@@ -787,4 +787,69 @@ describe('DataRecorder sealed markets (N-004)', () => {
 
     expect(fs.existsSync(sealedPath)).toBe(false);
   });
+
+  it('readSealedPayloadLines: отфильтрованные payload-строки без header-а', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { topic: 'prices.crypto.chainlink', v: 1 });
+    recorder.recordMarketEvent(meta.marketId, { topic: 'market', v: 2 });
+    recorder.recordMarketEvent(meta.marketId, { topic: 'prices.crypto.chainlink', v: 3 });
+    await recorder.sealMarket(meta.marketId);
+
+    const lines = await recorder.readSealedPayloadLines(meta.marketId, (line) =>
+      line.includes('prices.crypto.chainlink'),
+    );
+
+    expect(lines).toHaveLength(2);
+    expect(lines!.map((line) => (JSON.parse(line) as { v: number }).v)).toEqual([1, 3]);
+    // Meta-header (LINE 1) не попадает в выдачу даже при пропускающем фильтре
+    const all = await recorder.readSealedPayloadLines(meta.marketId, () => true);
+    expect(all).toHaveLength(3);
+    expect(all!.some((line) => line.includes('"t":"meta"'))).toBe(false);
+  });
+
+  it('readSealedPayloadLines: maxMatches = slice(0, n); невалидный потолок — fail-fast', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    for (let index = 0; index < 5; index++) {
+      recorder.recordMarketEvent(meta.marketId, { v: index });
+    }
+    await recorder.sealMarket(meta.marketId);
+
+    const lines = await recorder.readSealedPayloadLines(meta.marketId, () => true, 2);
+    expect(lines).toHaveLength(2);
+    // Ровно первые n совпадений — как slice(0, n) в тестовых fake-хранилищах
+    expect(lines!.map((line) => (JSON.parse(line) as { v: number }).v)).toEqual([0, 1]);
+
+    // Значения, на которых break-семантика разошлась бы со slice, отвергаются
+    for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        recorder.readSealedPayloadLines(meta.marketId, () => true, invalid),
+      ).rejects.toThrow('positive integer');
+    }
+  });
+
+  it('readSealedPayloadLines: undefined для НЕ sealed, неизвестного и failed writer-а', async () => {
+    recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+    recorder.recordMarketEvent(meta.marketId, { v: 1 });
+
+    // ACTIVE writer: payload ещё не заморожен — чтение запрещено
+    expect(await recorder.readSealedPayloadLines(meta.marketId, () => true)).toBeUndefined();
+    expect(
+      await recorder.readSealedPayloadLines('unknown' as unknown as MarketId, () => true),
+    ).toBeUndefined();
+
+    // FAILED writer: датасет заведомо неполон — деривация из него запрещена
+    await recorder.flush();
+    const writer = writerInternals(recorder, 'mkt-001');
+    writer.stream!.destroy(new Error('disk failure'));
+    await waitFor(() => writer.failed);
+    await recorder.sealMarket(meta.marketId);
+
+    expect(await recorder.readSealedPayloadLines(meta.marketId, () => true)).toBeUndefined();
+  });
 });

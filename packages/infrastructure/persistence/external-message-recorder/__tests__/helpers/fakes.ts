@@ -119,6 +119,27 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
     // no-op: fake не буферизует
   }
 
+  /** Строки sealed-датасета для read-passthrough (`undefined` = не читается). */
+  public sealedPayloadLines: readonly string[] | undefined;
+
+  public async readSealedPayloadLines(
+    marketId: MarketId,
+    filter: (line: string) => boolean,
+    maxMatches = 100_000,
+  ): Promise<readonly string[] | undefined> {
+    // Паритет с DataRecorder: невалидный потолок — программная ошибка
+    if (!Number.isInteger(maxMatches) || maxMatches <= 0) {
+      throw new Error(
+        `readSealedPayloadLines: maxMatches must be a positive integer, got ${String(maxMatches)}`,
+      );
+    }
+    this.callOrder.push(`read:${String(marketId)}`);
+    if (this.sealedPayloadLines === undefined) {
+      return undefined;
+    }
+    return this.sealedPayloadLines.filter(filter).slice(0, maxMatches);
+  }
+
   public async cleanup(): Promise<void> {
     // no-op: fake не трогает диск
   }

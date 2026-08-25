@@ -37,6 +37,26 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
   Ожидание дёшево: слот свободен, датасет заморожен — один Gamma-poll
   в 30 с.
 
+## 2.1. Winner-ladder (решение user 2026-08-25)
+
+Победитель пишется в `finalization.winning` вместе с происхождением —
+`{label, instrumentId, source, exact, basis?}`:
+
+| source | Когда | exact |
+| --- | --- | --- |
+| `resolution` | UMA resolved + settlement-цены 1/0 | `true` |
+| `official-prices` | формула рынка на официальных `finalPrice`/`priceToBeat` (`>= → Up`) | `true` |
+| `recorded-twap` | зарезервировано под TWAP-канал (DERIVED COMPLETE) | `true` |
+| `recorded-rtds` | приблизительно из записанного chainlink-ряда (только когда официальных данных нет) | `false` |
+
+Complete-архив **crypto Up/Down-рынка** всегда несёт точного победителя
+(ступень 1 или 2 — обе официальные цены к этому моменту есть по самому
+completion-условию). Для остальных рынков победитель появляется только со
+ступени 1: non-crypto архивируется НЕМЕДЛЕННО после expiry, и если UMA
+ещё не резолвил, `winning` в архиве отсутствует — это штатный исход, а не
+потеря данных. Подробности правила, guards и аппроксимации —
+`docs/market-finalization.md`.
+
 ## 3. runOnce, а не таймеры (PART 13)
 
 `runOnce()` — один проход: expiry-переходы due ACTIVE-сессий + максимум
@@ -56,21 +76,30 @@ finalizeMarket(EXPIRED) → .jsonl.gz → completeFinalization
   без повторных gzip-попыток (retry-framework сознательно нет), сессия
   остаётся FINALIZING (identity защищена).
 
-## 5. Shutdown (PART 40/41)
+## 5. Shutdown (PART 40/41 + drain 2026-08-25)
 
 ```text
 stop discovery/expiry runner
       ↓
-MarketFinalizer.close()      ← FINALIZING → EXPIRED best-known (БЕЗ новых Gamma-запросов)
-      ↓
+MarketFinalizer.drain()      ← ШТАТНЫЙ wind-down: дождаться официальной
+      ↓                        резолюции уже начатых финализаций (poll тем же
+      ↓                        cadence до полного enrichmentMaxWaitMs-бюджета)
+MarketFinalizer.close()      ← аварийный путь: FINALIZING → EXPIRED best-known
+      ↓                        (БЕЗ новых Gamma-запросов); прерывает спящий drain
 CollectionCoordinator.close() ← ACTIVE/OPENING → SHUTDOWN (incomplete удаляются)
       ↓
 PolymarketSource.close() → ExternalMessageBus.drain()
       → ExternalMessageRecorder.close() → ExternalMessageBus.close()
 ```
 
-ACTIVE рынки НЕ архивируются как EXPIRED из-за выключения приложения.
-Общий bus finalizer не закрывает.
+`drain()` добавлен по находке CHECKPOINT #1: остановка процесса срезала
+60-минутное окно ожидания (рынок архивировался `timeout` за 20 секунд до
+реальной резолюции Gamma). Штатный wind-down теперь дожидается: каждый
+pending-рынок архивируется `complete` либо `timeout` по СВОЕМУ полному
+бюджету; рынок, истёкший во время drain, тоже дожидается. ACTIVE рынки
+по-прежнему НЕ архивируются как EXPIRED из-за выключения приложения.
+Общий bus finalizer не закрывает. Ветка timeout — зарезервированная точка
+будущего TWAP-fallback (`DERIVED COMPLETE`).
 
 ## 6. Скрипты
 

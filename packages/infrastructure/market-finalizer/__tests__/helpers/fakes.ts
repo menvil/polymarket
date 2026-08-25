@@ -82,6 +82,32 @@ export class FakeFinalizationRecorder extends FakeCollectionRecorder {
   public lastHeader(): Record<string, unknown> | undefined {
     return this.metaUpdates[this.metaUpdates.length - 1]?.header;
   }
+
+  /**
+   * Записанные payload-строки sealed-датасета (ступень `recorded-rtds`).
+   * `undefined` = датасет не читается (writer неизвестен/не sealed).
+   */
+  public sealedPayloadLines: readonly string[] | undefined;
+  /** Зафиксированные вызовы read-пути (marketId). */
+  public readonly sealedReads: string[] = [];
+
+  public readonly readSealedPayloadLines = async (
+    marketId: MarketId,
+    filter: (line: string) => boolean,
+    maxMatches = 100_000,
+  ): Promise<readonly string[] | undefined> => {
+    // Паритет с DataRecorder: невалидный потолок — программная ошибка
+    if (!Number.isInteger(maxMatches) || maxMatches <= 0) {
+      throw new Error(
+        `readSealedPayloadLines: maxMatches must be a positive integer, got ${String(maxMatches)}`,
+      );
+    }
+    this.sealedReads.push(String(marketId));
+    if (this.sealedPayloadLines === undefined) {
+      return undefined;
+    }
+    return this.sealedPayloadLines.filter(filter).slice(0, maxMatches);
+  };
 }
 
 /**

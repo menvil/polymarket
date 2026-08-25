@@ -22,7 +22,7 @@
     "clean:src": "find packages -not -path '*/dist/*' -not -path '*/node_modules/*' -not -path '*/stubs/ethers*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) | grep -v '\\.config\\.' | xargs rm -f 2>/dev/null; true",
     "prebuild": "npm run clean:dist && npm run clean:build",
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces",
     "lint:md": "npm run lint:md --workspaces --if-present",
     "lint:md:fix": "npm run lint:md:fix --workspaces --if-present",

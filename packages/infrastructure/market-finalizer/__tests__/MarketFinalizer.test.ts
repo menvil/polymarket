@@ -12,6 +12,7 @@ import type { CollectionHeaderFinalization } from '@polymarket/collection-coordi
 import {
   CID_A,
   CID_B,
+  NOW_MS,
   armGamma,
   createFinalizerHarness,
   createFreshGammaEvent,
@@ -97,7 +98,7 @@ describe('crypto enrichment (PART 27/30/53)', () => {
       { label: 'Up', instrumentId: '111', price: '1' },
       { label: 'Down', instrumentId: '222', price: '0' },
     ]);
-    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111' });
+    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111', source: 'resolution', exact: true });
     // Vendor yes/no не протекает в finalization-сводку
     expect(JSON.stringify(finalization)).not.toContain('"yes"');
     expect(JSON.stringify(finalization)).not.toContain('"no"');
@@ -378,7 +379,7 @@ describe('усечение header-а не теряет критические д
     expect(finalization.status).toBe('complete');
     expect(finalization.crypto).toEqual({ priceToBeat: '78027.1', finalPrice: '78325.2' });
     expect(finalization.outcomes).toHaveLength(2);
-    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111' });
+    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111', source: 'resolution', exact: true });
     expect(header['conditionId']).toBe(CID_A);
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
   });
@@ -433,5 +434,243 @@ describe('идентичность рынков (двойная защита)', 
     expect(coordinator.getStats()).toMatchObject({ activeSessions: 1, finalizingSessions: 0 });
     // ACTIVE-сосед не может быть снят как «финализированный» (identity-guard)
     expect(coordinator.completeFinalization(mid(CID_B))).toBe(false);
+  });
+});
+
+describe('winner-ladder: происхождение победителя (решение user 2026-08-25)', () => {
+  it("complete без UMA-резолюции: победитель по официальным ценам, source='official-prices'", async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness();
+    // Обе официальные цены есть, UMA ещё НЕ resolved (live-кейс 10:30-рынков)
+    armGamma(
+      gamma,
+      createFreshGammaMarket({
+        closed: false,
+        umaResolutionStatus: null,
+        yesPrice: '0.995',
+        noPrice: '0.005',
+      }),
+      createFreshGammaEvent({ priceToBeat: 79233.50451521577, finalPrice: 79237.63456493833 }),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    await finalizer.runOnce();
+
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('complete');
+    expect(finalization.winning).toEqual({
+      label: 'Up',
+      instrumentId: '111',
+      source: 'official-prices',
+      exact: true,
+    });
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    // Файл датасета НЕ читался: официальных цен достаточно
+    expect(recorder.sealedReads).toEqual([]);
+  });
+
+  it('official-prices: finalPrice < priceToBeat → Down; равенство (tie) → Up', async () => {
+    for (const [finalPrice, expected] of [
+      [78026.99, 'Down'],
+      [78027.33965248794, 'Up'], // правило description: greater than OR EQUAL → Up
+    ] as const) {
+      const { discovery, recorder, gamma, clock, coordinator, finalizer } =
+        createFinalizerHarness();
+      armGamma(
+        gamma,
+        createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+        createFreshGammaEvent({ priceToBeat: 78027.33965248794, finalPrice }),
+      );
+      await coordinator.openMarket(discovery.addMarket());
+      clock.advance(EXPIRE_ADVANCE_MS);
+
+      await finalizer.runOnce();
+
+      const finalization = lastFinalization(recorder);
+      expect(finalization.winning).toMatchObject({ label: expected, source: 'official-prices' });
+    }
+  });
+
+  it("timeout без официальных данных: приблизительный победитель из записанного ряда, exact=false", async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness();
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.6', noPrice: '0.4' }),
+      createFreshGammaEvent(), // ни priceToBeat, ни finalPrice
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    // Тайминг окна фикстуры: eventStartsAt = NOW+10м, expiresAt = NOW+70м
+    const startMs = NOW_MS + 10 * 60_000;
+    const expiryMs = NOW_MS + 70 * 60_000;
+    const chainlinkLine = (tsMs: number, value: string): string =>
+      JSON.stringify({
+        topic: 'prices.crypto.chainlink',
+        type: 'update',
+        timestamp: tsMs + 700,
+        payload: { symbol: 'btc/usd', timestamp: tsMs, value },
+      });
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce(); // attempt 1 → pending (данных нет)
+
+    // Записанный ряд: старт 79000.5 → последние 60s среднее выше старта → Up
+    recorder.sealedPayloadLines = [
+      chainlinkLine(startMs + 500, '79000.5'),
+      chainlinkLine(expiryMs - 45_000, '79020.1'),
+      chainlinkLine(expiryMs - 30_000, '79030.3'),
+      chainlinkLine(expiryMs - 15_000, '79040.5'),
+      JSON.stringify({ topic: 'market', type: 'book', payload: { market: CID_A } }), // чужая строка — отфильтруется
+    ];
+
+    clock.advance(15 * 60_000 + 1_000); // бюджет исчерпан → timeout-архив
+    await finalizer.runOnce();
+
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout');
+    expect(finalization.winning).toMatchObject({
+      label: 'Up',
+      instrumentId: '111',
+      source: 'recorded-rtds',
+      exact: false,
+    });
+    expect(finalization.winning?.basis?.startValue).toBe('79000.5');
+    expect(finalization.winning?.basis?.endValue).toBe('79030.3'); // среднее трёх последних
+    expect(recorder.sealedReads).toEqual([CID_A]);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+  });
+
+  it('timeout: датасет не читается → архив без победителя (best-effort, не ошибка)', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness();
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.6', noPrice: '0.4' }),
+      createFreshGammaEvent(),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    recorder.sealedPayloadLines = undefined; // read-путь отказал
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce();
+    clock.advance(15 * 60_000 + 1_000);
+    await finalizer.runOnce();
+
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout');
+    expect(finalization.winning).toBeUndefined();
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+  });
+});
+
+describe('drain — graceful wind-down (решение user 2026-08-25)', () => {
+  /**
+   * Оборачивает fetchMarket fake-Gamma: каждый вызов продвигает часы на
+   * enrichmentRetryMs (следующий drain-проход снова due), опционально
+   * «доносит» полные данные на заданной попытке.
+   */
+  function advanceClockPerFetch(
+    gamma: { fetchMarket: unknown; markets: Map<string, unknown>; events: Map<string, unknown> },
+    clock: { advance(ms: number): void },
+    options: { completeOnCall?: number } = {},
+  ): void {
+    const base = gamma.fetchMarket as (request: { id?: string }) => Promise<unknown>;
+    let calls = 0;
+    gamma.fetchMarket = (async (request: { id?: string }) => {
+      calls++;
+      clock.advance(30_000);
+      if (options.completeOnCall !== undefined && calls === options.completeOnCall) {
+        armGamma(
+          gamma as never,
+          createFreshGammaMarket(),
+          createFreshGammaEvent({ priceToBeat: 78027.33, finalPrice: 78325.45 }),
+        );
+      }
+      return base(request);
+    }) as never;
+  }
+
+  it('drain дожидается официальной резолюции и архивирует complete', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 1,
+    });
+    // До попытки №3 Gamma отдаёт незавершённые данные (нет finalPrice)
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent({ priceToBeat: 78027.33 }),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    advanceClockPerFetch(gamma, clock, { completeOnCall: 3 });
+
+    // Конкурентные drain разделяют одно ожидание (двойных попыток нет)
+    await Promise.all([finalizer.drain(), finalizer.drain()]);
+
+    expect(gamma.fetchMarketCalls).toHaveLength(3);
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('complete');
+    expect(finalization.attempts).toBe(3);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(finalizer.getStats()).toMatchObject({
+      pendingFinalizations: 0,
+      archivedTotal: 1,
+      archiveFailures: 0,
+    });
+    expect(finalizer.isClosed).toBe(false); // drain НЕ закрывает finalizer
+  });
+
+  it('drain доводит рынок до timeout-архива по ПОЛНОМУ бюджету, а не бросает раньше', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 1,
+      enrichmentMaxWaitMs: 90_000,
+    });
+    // Официальная резолюция так и не приходит
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent(),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    advanceClockPerFetch(gamma, clock);
+
+    await finalizer.drain();
+
+    // Попытки шли cadence-ом 30s до исчерпания 90s-бюджета, затем timeout
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout');
+    expect(finalization.attempts).toBe(4);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(finalizer.getStats()).toMatchObject({ pendingFinalizations: 0, archivedTotal: 1 });
+  });
+
+  it('close() прерывает спящий drain немедленно (аварийный best-known путь)', async () => {
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = createFinalizerHarness({
+      drainPollMs: 60_000, // без прерывания тест бы завис на реальном таймере
+    });
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null }),
+      createFreshGammaEvent({ priceToBeat: 78027.33 }),
+    );
+    await coordinator.openMarket(discovery.addMarket());
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce(); // попытка 1 → pending, часы заморожены
+
+    const drainPromise = finalizer.drain(); // проход без due-попытки → сон 60s
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await finalizer.close();
+    await drainPromise; // разрешается пробуждением, НЕ по таймеру
+
+    expect(finalizer.isClosed).toBe(true);
+    const finalization = lastFinalization(recorder);
+    expect(finalization.status).toBe('timeout'); // best-known аварийного close()
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+  });
+
+  it('drain без pending возвращается сразу; после close() — no-op', async () => {
+    const { finalizer } = createFinalizerHarness({ drainPollMs: 60_000 });
+    await finalizer.drain(); // нет ни ACTIVE, ни pending — мгновенно
+
+    await finalizer.close();
+    await finalizer.drain(); // closed-guard — мгновенно
+    expect(finalizer.isClosed).toBe(true);
   });
 });

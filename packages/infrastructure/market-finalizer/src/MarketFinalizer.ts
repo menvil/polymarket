@@ -47,10 +47,12 @@ import type {
   PolymarketGammaMarket,
 } from '@polymarket/polymarket-v2';
 import {
+  deriveWinnerFromCryptoPrices,
   deriveWinningOutcome,
   extractCryptoFinalization,
   mapFinalOutcomes,
 } from '@polymarket/polymarket-v2';
+import type { PolymarketFinalOutcome } from '@polymarket/polymarket-v2';
 import type {
   CollectionHeaderFinalization,
   FinalizingMarketSession,
@@ -58,6 +60,7 @@ import type {
 } from '@polymarket/collection-coordinator';
 import { buildCollectionHeader } from '@polymarket/collection-coordinator';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
+import { deriveWinnerFromRecordedChainlink } from './recordedChainlinkWinner.js';
 
 /**
  * Query-возможности официального SDK, используемые finalizer-ом (PART 15).
@@ -85,10 +88,15 @@ export type FinalizationCoordinator = Pick<
 
 /**
  * Порт recorder-а, используемый finalizer-ом.
+ *
+ * @remarks
+ * `readSealedPayloadLines` — read-путь ступени `recorded-rtds`
+ * winner-ladder: приблизительная деривация из записанного chainlink-ряда,
+ * когда официальных данных нет вообще.
  */
 export type FinalizationRecorder = Pick<
   ExternalMessageRecorder,
-  'updateMarketMeta' | 'finalizeMarket'
+  'updateMarketMeta' | 'finalizeMarket' | 'readSealedPayloadLines'
 >;
 
 /**
@@ -129,8 +137,25 @@ export interface MarketFinalizerConfig {
    * 15 минут и терял хвост (3/13 рынков замера были медленнее 15 мин).
    * Ожидание дёшево: FINALIZING не занимает слот, датасет заморожен —
    * стоимость равна одному Gamma-poll-у раз в `enrichmentRetryMs`.
+   *
+   * Ветка timeout — зарезервированная точка расширения TWAP-fallback
+   * (будущий канал: по исчерпании бюджета официальной резолюции итог
+   * деривируется из записанного TWAP → `DERIVED COMPLETE`); до его
+   * появления статус остаётся `'timeout'`.
    */
   readonly enrichmentMaxWaitMs?: number;
+
+  /**
+   * Пауза между проходами {@link MarketFinalizer.drain} (ms).
+   *
+   * @defaultValue значение `enrichmentRetryMs`
+   *
+   * @remarks
+   * Отдельная ручка нужна тестам (детерминизм с инъецированными часами);
+   * в production совпадает с cadence enrichment-попыток — чаще опрашивать
+   * нет смысла, попытки всё равно due раз в `enrichmentRetryMs`.
+   */
+  readonly drainPollMs?: number;
 }
 
 /** Дефолты конфигурации (см. {@link MarketFinalizerConfig}). */
@@ -179,7 +204,9 @@ interface PendingFinalization {
  * );
  * // composition root cadence:
  * setInterval(() => void finalizer.runOnce(), 5_000);
- * // shutdown (ДО coordinator.close()):
+ * // штатный shutdown (ДО coordinator.close()): дождаться официальных
+ * // резолюций уже начатых финализаций, затем закрыть
+ * await finalizer.drain();
  * await finalizer.close();
  * ```
  */
@@ -191,11 +218,16 @@ export class MarketFinalizer {
   private readonly _logger: ILogger;
   private readonly _retryMs: number;
   private readonly _maxWaitMs: number;
+  private readonly _drainPollMs: number;
 
   /** Pending-финализации по `String(marketId)`. */
   private readonly _pending = new Map<string, PendingFinalization>();
   /** In-flight runOnce: конкурентные вызовы разделяют один проход (PART 38). */
   private _runInFlight: Promise<void> | null = null;
+  /** In-flight drain: конкурентные вызовы разделяют одно ожидание. */
+  private _drainInFlight: Promise<void> | null = null;
+  /** Пробуждения спящих drain-пауз (close() прерывает ожидание немедленно). */
+  private readonly _drainWakeups = new Set<() => void>();
   private _closed = false;
   private _closePromise: Promise<void> | null = null;
   private _archivedTotal = 0;
@@ -215,6 +247,7 @@ export class MarketFinalizer {
     this._logger = deps.logger.child({ component: 'MarketFinalizer' });
     this._retryMs = config.enrichmentRetryMs ?? DEFAULT_ENRICHMENT_RETRY_MS;
     this._maxWaitMs = config.enrichmentMaxWaitMs ?? DEFAULT_ENRICHMENT_MAX_WAIT_MS;
+    this._drainPollMs = config.drainPollMs ?? this._retryMs;
   }
 
   /** true после {@link MarketFinalizer.close}. */
@@ -265,12 +298,103 @@ export class MarketFinalizer {
   }
 
   /**
+   * Graceful wind-down: дожидается завершения УЖЕ НАЧАТЫХ финализаций.
+   *
+   * @returns Promise, разрешающийся когда pending-финализаций не осталось
+   *   (каждая заархивирована `complete` либо `timeout` по СВОЕМУ полному
+   *   бюджету `enrichmentMaxWaitMs`) или после {@link MarketFinalizer.close}
+   *
+   * @remarks
+   * Решение user 2026-08-25 (находка CHECKPOINT #1): остановка процесса не
+   * должна срезать 60-минутное окно ожидания официальной резолюции —
+   * `finalizer.close()` архивировал best-known через секунды после expiry,
+   * тогда как Gamma резолвил рынок через ~20 секунд после выхода.
+   *
+   * Семантика:
+   * 1. крутит {@link MarketFinalizer.runOnce} с паузой `drainPollMs`
+   *    (по умолчанию — cadence enrichment-попыток): опрос официальной
+   *    резолюции продолжается тем же 30-секундным ритмом;
+   * 2. НЕ мешает expiry-переходам: ACTIVE-рынок, истёкший во время drain,
+   *    входит в FINALIZING и тоже дожидается (данные не теряются);
+   *    рынки, НЕ истёкшие к концу drain, остаются ACTIVE — их закроет
+   *    `coordinator.close()` политикой SHUTDOWN;
+   * 3. возвращается, когда drainable pending нет (archiveFailed-остатки
+   *    не ждутся — их архив терминально отказал, PART 35);
+   * 4. {@link MarketFinalizer.close} прерывает ожидание немедленно —
+   *    аварийный best-known путь сохранён.
+   *
+   * Верхняя граница длительности: последний вход в FINALIZING +
+   * `enrichmentMaxWaitMs`. Конкурентные вызовы разделяют одно ожидание.
+   *
+   * @example
+   * ```typescript
+   * // штатный shutdown composition root:
+   * await finalizer.drain();  // дождаться официальных резолюций
+   * await finalizer.close();
+   * await coordinator.close();
+   * ```
+   */
+  public async drain(): Promise<void> {
+    if (this._closed) {
+      return;
+    }
+    if (this._drainInFlight !== null) {
+      return this._drainInFlight;
+    }
+    this._drainInFlight = (async () => {
+      this._logger.info('Draining pending finalizations', {
+        pending: this._pending.size,
+      });
+      for (;;) {
+        if (this._closed) {
+          break;
+        }
+        await this.runOnce();
+        const drainable = [...this._pending.values()].some((entry) => !entry.archiveFailed);
+        if (!drainable || this._closed) {
+          break;
+        }
+        await this._interruptibleDelay(this._drainPollMs);
+      }
+      this._logger.info('Finalization drain finished', {
+        pending: this._pending.size,
+        interrupted: this._closed,
+      });
+    })().finally(() => {
+      this._drainInFlight = null;
+    });
+    return this._drainInFlight;
+  }
+
+  /**
+   * Пауза drain-цикла, прерываемая {@link MarketFinalizer.close}.
+   *
+   * @param ms - Длительность паузы
+   * @returns Promise, разрешающийся по таймеру ЛИБО по пробуждению close()
+   */
+  private _interruptibleDelay(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const wake = (): void => {
+        clearTimeout(timer);
+        this._drainWakeups.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this._drainWakeups.delete(wake);
+        resolve();
+      }, ms);
+      this._drainWakeups.add(wake);
+    });
+  }
+
+  /**
    * Deterministic shutdown (PART 40).
    *
    * @returns Promise завершения shutdown
    *
    * @remarks
-   * 1. новые runOnce запрещаются; in-flight проход дожидается;
+   * 1. новые runOnce запрещаются; спящий drain пробуждается и завершается,
+   *    in-flight проход дожидается;
    * 2. все УЖЕ FINALIZING рынки (реально expired, датасет sealed)
    *    архивируются как EXPIRED с best-known metadata БЕЗ новых
    *    Gamma-запросов (сеть не задерживает shutdown): статус —
@@ -279,14 +403,23 @@ export class MarketFinalizer {
    * 3. ACTIVE/OPENING рынки НЕ трогаются — их закроет
    *    `coordinator.close()` как SHUTDOWN (incomplete-файлы удалятся).
    *
-   * Общий bus finalizer-ом не закрывается. Идемпотентен.
+   * Это АВАРИЙНЫЙ путь: штатный wind-down сначала вызывает
+   * {@link MarketFinalizer.drain} — тогда до close() pending уже пуст и
+   * best-known ветка не срабатывает. Общий bus finalizer-ом не
+   * закрывается. Идемпотентен.
    */
   public async close(): Promise<void> {
     if (this._closePromise !== null) {
       return this._closePromise;
     }
     this._closed = true;
+    for (const wake of [...this._drainWakeups]) {
+      wake();
+    }
     this._closePromise = (async () => {
+      if (this._drainInFlight !== null) {
+        await this._drainInFlight.catch(() => undefined);
+      }
       if (this._runInFlight !== null) {
         await this._runInFlight.catch(() => undefined);
       }
@@ -474,7 +607,16 @@ export class MarketFinalizer {
     nowMs: number,
   ): Promise<void> {
     const key = String(entry.session.marketId);
-    const headerOk = await this._writeHeader(entry, status, nowMs);
+    // Winner-ladder (решение user 2026-08-25): официальные источники —
+    // синхронно; при их полном отсутствии на timeout-архиве — приблизительная
+    // деривация из записанного chainlink-ряда (файл заморожен seal-ом)
+    const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
+    let archiveWinning = this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus);
+    if (archiveWinning === undefined && status === 'timeout') {
+      archiveWinning = await this._deriveRecordedWinning(entry, outcomes);
+    }
+
+    const headerOk = await this._writeHeader(entry, status, nowMs, archiveWinning);
     if (!headerOk && status === 'complete' && !this._closed) {
       this._logger.error('Final header update failed, archive deferred to next run', {
         marketId: key,
@@ -510,7 +652,127 @@ export class MarketFinalizer {
       attempts: entry.attempts,
       priceToBeat: entry.crypto.priceToBeat,
       finalPrice: entry.crypto.finalPrice,
+      winner: archiveWinning?.label,
+      winnerSource: archiveWinning?.source,
     });
+  }
+
+  /**
+   * Готовит gamma-контекст header-а: best-known Market → исходы + UMA-статус.
+   *
+   * @param entry - Pending-финализация
+   * @returns Исходы в нейтральной форме и `umaResolutionStatus`
+   */
+  private _gammaContext(entry: PendingFinalization): {
+    readonly outcomes: readonly PolymarketFinalOutcome[];
+    readonly umaResolutionStatus: string | undefined;
+  } {
+    const gammaMarket = entry.freshMarket ?? entry.session.selected.gammaMarket;
+    return {
+      outcomes: mapFinalOutcomes(gammaMarket),
+      umaResolutionStatus: gammaMarket.resolution.umaResolutionStatus ?? undefined,
+    };
+  }
+
+  /**
+   * Официальные ступени winner-ladder (синхронные).
+   *
+   * @param entry - Pending-финализация
+   * @param outcomes - Исходы best-known Market
+   * @param umaResolutionStatus - UMA-статус best-known Market
+   * @returns `winning` со source `'resolution'` либо `'official-prices'`;
+   *   `undefined` — официальных данных для победителя нет
+   *
+   * @remarks
+   * 1. `'resolution'` — resolved settlement-цены (1/0), «как раньше»;
+   * 2. `'official-prices'` — формула рынка на официальных
+   *    `priceToBeat`/`finalPrice` (Up/Down-серии; `>= → Up`).
+   * Оба источника точные (`exact: true`).
+   */
+  private _deriveOfficialWinning(
+    entry: PendingFinalization,
+    outcomes: readonly PolymarketFinalOutcome[],
+    umaResolutionStatus: string | undefined,
+  ): NonNullable<CollectionHeaderFinalization['winning']> | undefined {
+    const resolved = deriveWinningOutcome(outcomes, umaResolutionStatus);
+    if (resolved !== undefined) {
+      return {
+        label: resolved.label,
+        instrumentId: resolved.instrumentId,
+        source: 'resolution',
+        exact: true,
+      };
+    }
+    const priced = deriveWinnerFromCryptoPrices(outcomes, entry.crypto);
+    if (priced !== undefined) {
+      return {
+        label: priced.label,
+        instrumentId: priced.instrumentId,
+        source: 'official-prices',
+        exact: true,
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * Ступень `'recorded-rtds'`: приблизительный победитель из записанного ряда.
+   *
+   * @param entry - Pending-финализация (timeout-архив без официальных данных)
+   * @param outcomes - Исходы best-known Market (для instrumentId победителя)
+   * @returns `winning` с `exact: false` и основаниями либо `undefined`
+   *
+   * @remarks
+   * Best-effort: любые недостающие входы (не crypto-рынок, нет chainlink-фида,
+   * нет тайминга окна, датасет не читается, ряд пуст, метки не Up/Down)
+   * приводят к отсутствию победителя, а не к ошибке архива.
+   */
+  private async _deriveRecordedWinning(
+    entry: PendingFinalization,
+    outcomes: readonly PolymarketFinalOutcome[],
+  ): Promise<NonNullable<CollectionHeaderFinalization['winning']> | undefined> {
+    const selected = entry.session.selected;
+    if (selected.crypto === undefined) {
+      return undefined;
+    }
+    const chainlinkFeed = selected.rtdsFeeds.find(
+      (feed) => feed.topic === 'prices.crypto.chainlink',
+    );
+    const startMs = selected.eventStartsAt?.toNumber();
+    if (chainlinkFeed === undefined || startMs === undefined) {
+      return undefined;
+    }
+    const expiryMs = selected.expiresAt.toNumber();
+    const symbolNeedle = `"symbol":"${chainlinkFeed.symbol}"`;
+    const lines = await this._recorder.readSealedPayloadLines(
+      entry.session.marketId,
+      (line) => line.includes('"prices.crypto.chainlink"') && line.includes(symbolNeedle),
+    );
+    if (lines === undefined || lines.length === 0) {
+      return undefined;
+    }
+    const derived = deriveWinnerFromRecordedChainlink(lines, startMs, expiryMs);
+    if (derived === undefined) {
+      return undefined;
+    }
+    const outcome = outcomes.find((candidate) => candidate.label === derived.label);
+    if (outcome === undefined) {
+      return undefined;
+    }
+    this._logger.info('Winner derived from recorded RTDS series (approximate)', {
+      marketId: String(entry.session.marketId),
+      label: derived.label,
+      startValue: derived.startValue,
+      endValue: derived.endValue,
+      observations: derived.observations,
+    });
+    return {
+      label: outcome.label,
+      instrumentId: outcome.instrumentId,
+      source: 'recorded-rtds',
+      exact: false,
+      basis: { startValue: derived.startValue, endValue: derived.endValue },
+    };
   }
 
   /**
@@ -525,13 +787,16 @@ export class MarketFinalizer {
     entry: PendingFinalization,
     status: CollectionHeaderFinalization['status'],
     nowMs: number,
+    archiveWinning?: NonNullable<CollectionHeaderFinalization['winning']>,
   ): Promise<boolean> {
     const key = String(entry.session.marketId);
     const selected = entry.session.selected;
     const gammaMarket = entry.freshMarket ?? selected.gammaMarket;
-    const outcomes = mapFinalOutcomes(gammaMarket);
-    const umaResolutionStatus = gammaMarket.resolution.umaResolutionStatus ?? undefined;
-    const winning = deriveWinningOutcome(outcomes, umaResolutionStatus);
+    const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
+    // Архивные вызовы приносят победителя полного ladder-а (включая
+    // recorded-rtds); промежуточные pending-обновления — официальные ступени
+    const winning =
+      archiveWinning ?? this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus);
     const isCrypto = selected.crypto !== undefined;
 
     const finalization: CollectionHeaderFinalization = {
@@ -549,9 +814,7 @@ export class MarketFinalizer {
         ...(umaResolutionStatus !== undefined ? { umaResolutionStatus } : {}),
       },
       outcomes,
-      ...(winning !== undefined
-        ? { winning: { label: winning.label, instrumentId: winning.instrumentId } }
-        : {}),
+      ...(winning !== undefined ? { winning } : {}),
       ...(isCrypto
         ? {
             crypto: {

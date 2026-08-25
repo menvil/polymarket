@@ -42,9 +42,12 @@ export type {
 export { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
 export type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
 export {
+  compareDecimalStrings,
+  deriveWinnerFromCryptoPrices,
   deriveWinningOutcome,
   extractCryptoFinalization,
   mapFinalOutcomes,
+  meanOfDecimalStrings,
 } from './PolymarketFinalization.js';
 export type {
   PolymarketCryptoFinalization,
