@@ -1,0 +1,218 @@
+/**
+ * Лестница остановки рантайма (MR-A PART 35/47).
+ *
+ * @remarks
+ * Порядок закрытия — доказанный контур CHECKPOINT #1: ingress глохнет
+ * раньше, чем дренируется bus, а recorder закрывается ПОСЛЕ дренажа —
+ * иначе последние сообщения были бы потеряны.
+ */
+import { describe, expect, it } from '@jest/globals';
+import { DataCollector } from '../src/runtime/DataCollector.js';
+import type { CollectionRuntimeConfig } from '../src/runtime/DataCollectorConfig.js';
+import { makeFakeContour } from './helpers/fakes.js';
+
+const COLLECTION: CollectionRuntimeConfig = {
+  maxMarkets: 3,
+  discoveryRefreshMs: 30_000,
+  runtimeTickMs: 5_000,
+};
+
+/** Рантайм поверх fake-контура. */
+function makeCollector(contour = makeFakeContour(['binance'])): {
+  collector: DataCollector;
+  contour: ReturnType<typeof makeFakeContour>;
+} {
+  const collector = new DataCollector({
+    components: contour.components,
+    collection: COLLECTION,
+    clock: contour.clock,
+    logger: contour.logger,
+  });
+  return { collector, contour };
+}
+
+/** Шаги остановки в порядке их появления в журнале. */
+function shutdownOrder(calls: readonly string[]): string[] {
+  const shutdownSteps = new Set([
+    'finalizer.close',
+    'coordinator.close',
+    'polymarketSource.close',
+    'cexSource.close(binance)',
+    'bus.drain',
+    'recorder.close',
+    'bus.close',
+  ]);
+  return calls.filter((call) => shutdownSteps.has(call));
+}
+
+describe('DataCollector.close() — штатная остановка', () => {
+  it('закрывает контур в доказанном порядке', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await collector.close();
+
+    expect(shutdownOrder(contour.log.calls)).toEqual([
+      'finalizer.close',
+      'coordinator.close',
+      'polymarketSource.close',
+      'cexSource.close(binance)',
+      'bus.drain',
+      'recorder.close',
+      'bus.close',
+    ]);
+    expect(collector.state).toBe('stopped');
+  });
+
+  it('дренирует bus СТРОГО до закрытия recorder', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await collector.close();
+
+    expect(contour.log.indexOf('bus.drain')).toBeLessThan(contour.log.indexOf('recorder.close'));
+    expect(contour.log.indexOf('recorder.close')).toBeLessThan(contour.log.indexOf('bus.close'));
+  });
+
+  it('глушит ingress до дренажа очереди', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await collector.close();
+
+    expect(contour.log.indexOf('polymarketSource.close')).toBeLessThan(
+      contour.log.indexOf('bus.drain'),
+    );
+    expect(contour.log.indexOf('cexSource.close(binance)')).toBeLessThan(
+      contour.log.indexOf('bus.drain'),
+    );
+  });
+});
+
+describe('DataCollector.close() — идемпотентность', () => {
+  it('повторный close() не запускает вторую лестницу', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await collector.close();
+    await collector.close();
+    await collector.close();
+
+    expect(contour.log.countOf('recorder.close')).toBe(1);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+    expect(contour.log.countOf('finalizer.close')).toBe(1);
+  });
+
+  it('параллельные close() дожидаются одной и той же остановки', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    await Promise.all([collector.close(), collector.close()]);
+
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+
+  it('close() до старта — no-op, ресурсы не трогаются', async () => {
+    const { collector, contour } = makeCollector();
+
+    await collector.close();
+
+    expect(contour.log.calls).toEqual([]);
+    expect(collector.state).toBe('stopped');
+  });
+
+  it('close() после неудавшегося старта не закрывает ресурсы повторно', async () => {
+    const contour = makeFakeContour(['binance']);
+    contour.cexSources[0]!.startError = new Error('binance down');
+    const { collector } = makeCollector(contour);
+    await expect(collector.start()).rejects.toThrow('binance down');
+    const callsAfterRollback = contour.log.calls.length;
+
+    await collector.close();
+
+    expect(contour.log.calls.length).toBe(callsAfterRollback);
+  });
+});
+
+describe('DataCollector.close() — best-effort', () => {
+  it('отказ одного шага не отменяет остальные', async () => {
+    const { collector, contour } = makeCollector();
+    contour.finalizer.closeRejection = new Error('finalizer close failed');
+    contour.polymarketSource.closeRejection = new Error('pm source close failed');
+    await collector.start();
+
+    await expect(collector.close()).resolves.toBeUndefined();
+
+    // Все последующие шаги всё равно выполнены.
+    expect(contour.log.countOf('coordinator.close')).toBe(1);
+    expect(contour.log.countOf('cexSource.close(binance)')).toBe(1);
+    expect(contour.log.countOf('bus.drain')).toBe(1);
+    expect(contour.log.countOf('recorder.close')).toBe(1);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+
+  it('отказы шагов наблюдаемы в логе', async () => {
+    const { collector, contour } = makeCollector();
+    contour.recorder.closeRejection = new Error('recorder close failed');
+    await collector.start();
+
+    await collector.close();
+
+    const failures = contour.logger
+      .byLevel('error')
+      .filter((line) => line.message.includes('Shutdown step failed'));
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.context?.['step']).toBe('recorder.close');
+  });
+
+  it('отклонённый bus.drain не срывает закрытие recorder и bus', async () => {
+    const { collector, contour } = makeCollector();
+    contour.bus.drainRejection = { message: 'drain timed out' } as never;
+    await collector.start();
+
+    await collector.close();
+
+    expect(contour.log.countOf('recorder.close')).toBe(1);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+
+  it('отказ закрытия одной биржи не мешает закрыть остальные', async () => {
+    const contour = makeFakeContour(['binance', 'okx']);
+    contour.cexSources[0]!.closeRejection = new Error('binance close hung');
+    const { collector } = makeCollector(contour);
+    await collector.start();
+
+    await collector.close();
+
+    expect(contour.log.countOf('cexSource.close(binance)')).toBe(1);
+    expect(contour.log.countOf('cexSource.close(okx)')).toBe(1);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+});
+
+describe('DataCollector.close() — таймеры и тики', () => {
+  it('останавливает runtime-цикл: после close() новых тиков нет', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+    await collector.close();
+    const fillCallsAfterClose = contour.coordinator.fillCalls;
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(contour.coordinator.fillCalls).toBe(fillCallsAfterClose);
+  });
+
+  it('дожидается тика в полёте перед закрытием компонентов', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+    let tickFinished = false;
+    const slowTick = collector.tick().then(() => {
+      tickFinished = true;
+    });
+
+    await Promise.all([collector.close(), slowTick]);
+
+    expect(tickFinished).toBe(true);
+    expect(contour.log.countOf('bus.close')).toBe(1);
+  });
+});
