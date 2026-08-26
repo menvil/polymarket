@@ -11,6 +11,7 @@ import type { ILogger } from '@polymarket/logger';
 import type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
+  CryptoPricesChainlinkTwapEvent,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';
 import type {
@@ -106,6 +107,8 @@ export interface RecordedSubscriptionSpec {
   readonly topic: string;
   readonly tokenIds?: readonly string[];
   readonly symbols?: readonly string[];
+  /** Окно усреднения settlement-потока (только spec TWAP-подписки). */
+  readonly windowSeconds?: 30 | 60;
 }
 
 /**
@@ -123,10 +126,12 @@ export interface RecordedSubscriptionSpec {
 export class FakePolymarketClient implements PolymarketSubscribeClient {
   /** Открытые market-handles в порядке подписок. */
   public readonly marketHandles: Array<FakeSubscriptionHandle<StandardMarketEvent>> = [];
-  /** Открытые RTDS-handles в порядке подписок. */
+  /** Открытые spot-RTDS handles в порядке подписок. */
   public readonly cryptoHandles: Array<
     FakeSubscriptionHandle<CryptoPricesBinanceEvent | CryptoPricesChainlinkEvent>
   > = [];
+  /** Открытые settlement-handles Chainlink TWAP в порядке подписок. */
+  public readonly twapHandles: Array<FakeSubscriptionHandle<CryptoPricesChainlinkTwapEvent>> = [];
   /** Все subscribe-вызовы (spec-массивы) для ассертов. */
   public readonly subscribeCalls: Array<readonly RecordedSubscriptionSpec[]> = [];
   /** Если задано — subscribe бросает эту ошибку (имитация SDK SubscribeError). */
@@ -151,6 +156,11 @@ export class FakePolymarketClient implements PolymarketSubscribeClient {
     if (spec.topic === 'market') {
       const handle = new FakeSubscriptionHandle<StandardMarketEvent>();
       this.marketHandles.push(handle);
+      return handle;
+    }
+    if (spec.topic === 'prices.crypto.chainlink.twap') {
+      const handle = new FakeSubscriptionHandle<CryptoPricesChainlinkTwapEvent>();
+      this.twapHandles.push(handle);
       return handle;
     }
     const handle = new FakeSubscriptionHandle<

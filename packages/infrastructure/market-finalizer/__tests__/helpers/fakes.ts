@@ -31,6 +31,9 @@ import {
 } from '../../../collection-coordinator/__tests__/helpers/fakes.js';
 
 export {
+  BTC_FEEDS,
+  BTC_TWAP_FEEDS,
+  BTC_TWAP_SETTLEMENT,
   CID_A,
   CID_B,
   NOW_MS,
@@ -205,6 +208,15 @@ export interface FreshGammaEventOptions {
   readonly priceToBeat?: number;
   /** `eventMetadata.finalPrice` (JSON number — как в live). */
   readonly finalPrice?: number;
+  /**
+   * СЫРОЕ значение `eventMetadata.priceToBeat` (строка/мусор).
+   *
+   * @remarks
+   * Gamma-metadata — нетипизированный vendor-объект: там встречаются не
+   * только числа. Нужно, чтобы проверить, что непригодное значение не
+   * выдаётся за официальное.
+   */
+  readonly priceToBeatRaw?: unknown;
   /** Байты паддинга (тесты бюджета header). */
   readonly padding?: number;
 }
@@ -213,11 +225,12 @@ export interface FreshGammaEventOptions {
  * Строит СВЕЖИЙ normalized Event с metadata характеризованной формы.
  */
 export function createFreshGammaEvent(options: FreshGammaEventOptions = {}): PolymarketGammaEvent {
-  const { priceToBeat, finalPrice, padding } = options;
+  const { priceToBeat, finalPrice, priceToBeatRaw, padding } = options;
   const metadata: Record<string, unknown> | null =
-    priceToBeat !== undefined || finalPrice !== undefined
+    priceToBeat !== undefined || finalPrice !== undefined || priceToBeatRaw !== undefined
       ? {
           ...(priceToBeat !== undefined ? { priceToBeat } : {}),
+          ...(priceToBeatRaw !== undefined ? { priceToBeat: priceToBeatRaw } : {}),
           ...(finalPrice !== undefined ? { finalPrice } : {}),
         }
       : null;
@@ -261,7 +274,10 @@ export function createFinalizerHarness(config: MarketFinalizerConfig = {}): Fina
   const logger = new CapturingLogger();
   const coordinator = new MarketCollectionCoordinator(
     { discovery, source, recorder, clock, logger },
-    { maxMarkets: 5 },
+    // Boundary grace выключен: его собственное поведение проверяется
+    // тестами координатора, а здесь он лишь добавил бы секунды ожидания
+    // в каждый тест резолюции (сам seal при этом происходит синхронно).
+    { maxMarkets: 5, settlementGraceMs: 0 },
   );
   const finalizer = new MarketFinalizer(
     { coordinator, recorder, gamma, clock, logger },

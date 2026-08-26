@@ -98,7 +98,13 @@ describe('crypto enrichment (PART 27/30/53)', () => {
       { label: 'Up', instrumentId: '111', price: '1' },
       { label: 'Down', instrumentId: '222', price: '0' },
     ]);
-    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111', source: 'resolution', exact: true });
+    expect(finalization.winning).toEqual({
+      label: 'Up',
+      instrumentId: '111',
+      outcomeIndex: 0,
+      source: 'resolution',
+      exact: true,
+    });
     // Vendor yes/no не протекает в finalization-сводку
     expect(JSON.stringify(finalization)).not.toContain('"yes"');
     expect(JSON.stringify(finalization)).not.toContain('"no"');
@@ -247,7 +253,10 @@ describe('наблюдаемые отказы архива/header-а (PART 26/35
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
   });
 
-  it('на timeout при неудачном header-е архивируется best-known предыдущий header (явная policy)', async () => {
+  it('на терминальном пути неудачный header НЕ даёт архива (MR-B PART 51)', async () => {
+    // Прежняя policy архивировала best-known предыдущий header. Это создавало
+    // ровно тот артефакт, который MR-B запрещает: `.gz`, содержимое которого
+    // не соответствует принятому решению о резолюции.
     const { discovery, recorder, gamma, clock, coordinator, finalizer, logger } =
       createFinalizerHarness();
     armGamma(gamma, createFreshGammaMarket({ umaResolutionStatus: null }), createFreshGammaEvent());
@@ -259,12 +268,13 @@ describe('наблюдаемые отказы архива/header-а (PART 26/35
     clock.advance(15 * 60_000 + 1_000); // бюджет ожидания исчерпан
     await finalizer.runOnce();
 
-    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(recorder.finalizations).toEqual([]); // завершённого архива НЕТ
     expect(
       logger
         .byLevel('error')
-        .some((e) => e.message.includes('archiving with best-known previous header')),
+        .some((e) => e.message.includes('no archive created')),
     ).toBe(true);
+    expect(finalizer.getStats()).toMatchObject({ archiveFailures: 1 });
   });
 });
 
@@ -379,14 +389,24 @@ describe('усечение header-а не теряет критические д
     expect(finalization.status).toBe('complete');
     expect(finalization.crypto).toEqual({ priceToBeat: '78027.1', finalPrice: '78325.2' });
     expect(finalization.outcomes).toHaveLength(2);
-    expect(finalization.winning).toEqual({ label: 'Up', instrumentId: '111', source: 'resolution', exact: true });
+    expect(finalization.winning).toEqual({
+      label: 'Up',
+      instrumentId: '111',
+      outcomeIndex: 0,
+      source: 'resolution',
+      exact: true,
+    });
     expect(header['conditionId']).toBe(CID_A);
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
   });
 });
 
 describe('изоляция отказов внутри прохода (review round 1)', () => {
-  it('throw beginFinalization одного рынка не роняет runOnce: сосед начинает и архивируется', async () => {
+  it('отказ seal одного рынка наблюдаем и НЕ оставляет его в вечном FINALIZING', async () => {
+    // Раньше отказ seal пробрасывался из beginFinalization: рынок оставался
+    // помеченным FINALIZING, но НЕ попадал в pending — и не архивировался
+    // уже никогда. Заморозка датасета живёт в собственной cutoff-задаче,
+    // поэтому отказ storage теперь виден в логе и не отменяет финализацию.
     const { discovery, recorder, gamma, clock, coordinator, finalizer, logger } =
       createFinalizerHarness();
     armGamma(
@@ -402,12 +422,15 @@ describe('изоляция отказов внутри прохода (review ro
 
     await expect(finalizer.runOnce()).resolves.toBeUndefined(); // проход не reject-ится
 
-    // Отказ A наблюдаем; B прошёл полный путь до архива в том же проходе
     expect(
-      logger.byLevel('error').some((e) => e.message.includes('beginFinalization failed')),
+      logger.byLevel('error').some((e) => e.message.includes('Settlement cutoff failed')),
     ).toBe(true);
-    expect(recorder.finalizations).toEqual([`${CID_B}:EXPIRED`]);
-    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 1 });
+    // ОБА рынка дошли до архива: сосед не пострадал, а отказавший не завис
+    expect(recorder.finalizations.sort()).toEqual(
+      [`${CID_A}:EXPIRED`, `${CID_B}:EXPIRED`].sort(),
+    );
+    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 2 });
+    expect(coordinator.listSessions()).toEqual([]);
   });
 });
 
@@ -461,6 +484,7 @@ describe('winner-ladder: происхождение победителя (реш
     expect(finalization.winning).toEqual({
       label: 'Up',
       instrumentId: '111',
+      outcomeIndex: 0,
       source: 'official-prices',
       exact: true,
     });

@@ -549,7 +549,7 @@ describe('prepareSelected: fetchEvent только для выбранного (
     expect(selected.rtdsFeeds).toEqual([]);
   });
 
-  it('TWAP-форма Chainlink URL (текущие 5m/15m-серии) даёт те же RTDS-фиды', async () => {
+  it('TWAP-форма Chainlink URL: spot-фиды сохраняются, settlement-поток добавляется', async () => {
     const { client, discovery } = createHarness();
     client.pages = [
       [
@@ -570,7 +570,14 @@ describe('prepareSelected: fetchEvent только для выбранного (
     expect(selected.rtdsFeeds).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'eth/usd' },
       { topic: 'prices.crypto.binance', symbol: 'ethusdt' },
+      { topic: 'prices.crypto.chainlink.twap', symbol: 'eth/usd', windowSeconds: 60 },
     ]);
+    expect(selected.crypto?.settlement).toEqual({
+      kind: 'chainlink-twap',
+      symbol: 'eth/usd',
+      windowSeconds: 60,
+      resolutionSource: 'https://data.chain.link/streams/eth-usd-twap-60s-streams',
+    });
   });
 
   it('неподдержанная пара TWAP-URL (нет Binance-маппинга) не даёт фидов', async () => {

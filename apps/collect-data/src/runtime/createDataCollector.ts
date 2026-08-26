@@ -23,7 +23,11 @@ import type { IClock } from '@polymarket/time';
 import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
-import { PolymarketMarketDiscovery, PolymarketSource } from '@polymarket/polymarket-v2';
+import {
+  PolymarketMarketDiscovery,
+  PolymarketSource,
+  PolymarketTwapObservations,
+} from '@polymarket/polymarket-v2';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import {
   CexWindowRecorder,
@@ -187,12 +191,27 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
     { client, filter: new MarketFilter(), scorer: new MarketScorer(clock), clock, logger },
     { filter: config.discovery.filter },
   );
+  // Наблюдатель settlement-потока — ещё один независимый consumer ТОГО ЖЕ
+  // bus (не встроен в recorder и не связан с ним): по нему координатор
+  // понимает, что граничное наблюдение TWAP получено и датасет истёкшего
+  // рынка можно замораживать.
+  const twapObservations = new PolymarketTwapObservations({ bus, logger });
   const coordinator = new MarketCollectionCoordinator(
-    { discovery, source: polymarketSource, recorder, clock, logger },
+    {
+      discovery,
+      source: polymarketSource,
+      recorder,
+      settlementObserver: twapObservations,
+      clock,
+      logger,
+    },
     {
       maxMarkets: config.collection.maxMarkets,
       ...(config.collection.minTimeToStartMs !== undefined
         ? { minTimeToStartMs: config.collection.minTimeToStartMs }
+        : {}),
+      ...(config.collection.settlementGraceMs !== undefined
+        ? { settlementGraceMs: config.collection.settlementGraceMs }
         : {}),
     },
   );
@@ -221,6 +240,7 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       discovery,
       coordinator,
       finalizer,
+      twapObservations,
     },
     collection: config.collection,
     clock,

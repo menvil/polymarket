@@ -21,6 +21,7 @@ export type {
   PolymarketMarketExternalMessage,
   PolymarketCryptoBinanceExternalMessage,
   PolymarketCryptoChainlinkExternalMessage,
+  PolymarketCryptoChainlinkTwapExternalMessage,
 } from './PolymarketExternalMessage.js';
 export { PolymarketSource } from './PolymarketSource.js';
 export type {
@@ -39,13 +40,35 @@ export type {
   SelectedPolymarketMarket,
   SelectedPolymarketOutcome,
 } from './PolymarketMarketDiscovery.js';
-export { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
-export type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
+export {
+  CHAINLINK_TWAP_TOPIC,
+  derivePolymarketCryptoMeta,
+  isChainlinkTwapResolutionSource,
+  isTwapRtdsFeed,
+  parseChainlinkTwapSettlement,
+  rtdsFeedKey,
+} from './PolymarketRtdsFeeds.js';
+export type {
+  PolymarketChainlinkTwapSettlement,
+  PolymarketCryptoMeta,
+  PolymarketRtdsFeed,
+  PolymarketSpotRtdsFeed,
+  PolymarketTwapRtdsFeed,
+} from './PolymarketRtdsFeeds.js';
+export { PolymarketTwapObservations } from './PolymarketTwapObservations.js';
+export type {
+  PolymarketTwapBusSubscription,
+  PolymarketTwapObservation,
+  PolymarketTwapObservationsConfig,
+  PolymarketTwapObservationsDependencies,
+  PolymarketTwapObservationsStats,
+} from './PolymarketTwapObservations.js';
 export {
   compareDecimalStrings,
   deriveWinnerFromCryptoPrices,
   deriveWinningOutcome,
   extractCryptoFinalization,
+  isFiniteDecimalString,
   mapFinalOutcomes,
   meanOfDecimalStrings,
 } from './PolymarketFinalization.js';
@@ -56,6 +79,9 @@ export type {
 export type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
+  CryptoPricesChainlinkTwapEvent,
+  CryptoPricesChainlinkTwapTopic,
+  CryptoPricesChainlinkTwapWindowSeconds,
   CryptoPricesTopic,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';

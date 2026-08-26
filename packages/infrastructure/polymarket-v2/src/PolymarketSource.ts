@@ -36,15 +36,19 @@ import type { createPublicClient } from '@polymarket/client';
 import type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
+  CryptoPricesChainlinkTwapEvent,
+  CryptoPricesChainlinkTwapWindowSeconds,
   CryptoPricesTopic,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';
 import type {
   PolymarketCryptoBinanceExternalMessage,
   PolymarketCryptoChainlinkExternalMessage,
+  PolymarketCryptoChainlinkTwapExternalMessage,
   PolymarketExternalMessage,
   PolymarketMarketExternalMessage,
 } from './PolymarketExternalMessage.js';
+import { CHAINLINK_TWAP_TOPIC } from './PolymarketRtdsFeeds.js';
 
 /**
  * Subscription handle официального SDK — структурное зеркало его контракта.
@@ -293,9 +297,10 @@ export class PolymarketSource {
    * Событие каждого topic публикуется под своим routing discriminator
    * (`POLYMARKET_CRYPTO_BINANCE` / `POLYMARKET_CRYPTO_CHAINLINK`);
    * выбор ведётся по `payload.topic` самого события — vendor discriminator
-   * сохраняется в payload как есть. Подключены только эти два topic — ровно
-   * те, что использует текущий collector; TWAP и прочие каналы SDK
-   * сознательно не подключаются.
+   * сохраняется в payload как есть. Метод обслуживает ТОЛЬКО spot-потоки:
+   * у settlement-потока Chainlink TWAP другой spec подписки (обязательное
+   * окно усреднения), поэтому у него отдельный метод
+   * {@link PolymarketSource.subscribeChainlinkTwap}.
    *
    * @example
    * ```typescript
@@ -317,6 +322,54 @@ export class PolymarketSource {
       symbolCount: symbols.length,
     });
     return this._track(topic, handle, (event) => this._toCryptoMessage(event));
+  }
+
+  /**
+   * Открывает подписку на ОФИЦИАЛЬНЫЙ settlement-поток Chainlink TWAP.
+   *
+   * @param windowSeconds - Окно усреднения TWAP (vendor-домен: 30 | 60);
+   *   берётся из settlement-дескриптора рынка, а НЕ из его длительности
+   * @param symbols - Символы Chainlink slash-формата (`btc/usd`)
+   * @returns Открытая подписка с индивидуальным `close()`
+   * @throws {Error} Если source уже закрыт или в терминальном `failed`
+   * @throws `SubscribeError` SDK (`TransportError | UserInputError`) — как есть
+   *
+   * @remarks
+   * Отдельный метод, а не перегрузка {@link PolymarketSource.subscribeCryptoPrices},
+   * потому что таков контракт САМОГО SDK: spot-потоки описываются spec-ом
+   * `{ topic, symbols }`, а settlement-поток —
+   * `{ topic: 'prices.crypto.chainlink.twap', windowSeconds, symbols }`, где
+   * окно ОБЯЗАТЕЛЬНО. Склеивать их в один метод с optional-окном значило бы
+   * сделать представимым невалидный вызов (TWAP без окна).
+   *
+   * События публикуются под собственным discriminator-ом
+   * `POLYMARKET_CRYPTO_CHAINLINK_TWAP` с нетронутым SDK-payload — окно
+   * приходит обратно в `payload.windowSeconds`.
+   *
+   * @example
+   * ```typescript
+   * // рынок с resolution.source = '.../btc-usd-twap-60s-streams':
+   * await source.subscribeChainlinkTwap(60, ['btc/usd']);
+   * ```
+   */
+  public async subscribeChainlinkTwap(
+    windowSeconds: CryptoPricesChainlinkTwapWindowSeconds,
+    symbols: readonly string[],
+  ): Promise<PolymarketOpenSubscription> {
+    this._assertAcceptsSubscriptions();
+    const handle = await this._client.subscribe([
+      { topic: CHAINLINK_TWAP_TOPIC, windowSeconds, symbols },
+    ]);
+    const subscription = `${CHAINLINK_TWAP_TOPIC}:${String(windowSeconds)}`;
+    if (this._closed || this._failed) {
+      return this._discardLateSubscription(subscription, handle);
+    }
+    this._logger.info('Polymarket Chainlink TWAP subscription opened', {
+      topic: CHAINLINK_TWAP_TOPIC,
+      windowSeconds,
+      symbolCount: symbols.length,
+    });
+    return this._track(subscription, handle, (event) => this._toTwapMessage(event));
   }
 
   /**
@@ -591,6 +644,27 @@ export class PolymarketSource {
     }
     return {
       type: 'POLYMARKET_CRYPTO_CHAINLINK',
+      payload: event,
+      metadata: this._metadataGenerator.nextRoot(),
+    };
+  }
+
+  /**
+   * Оборачивает settlement-событие TWAP в canonical сообщение.
+   *
+   * @param event - Событие SDK как есть (включая `payload.windowSeconds`)
+   * @returns Canonical сообщение с payload === event
+   *
+   * @remarks
+   * Никакого remapping: окно, символ, vendor-timestamp и точная десятичная
+   * строка значения уходят в bus ровно теми, какими их отдал SDK — replay
+   * получит идентичный source-native объект.
+   */
+  private _toTwapMessage(
+    event: CryptoPricesChainlinkTwapEvent,
+  ): PolymarketCryptoChainlinkTwapExternalMessage {
+    return {
+      type: 'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
       payload: event,
       metadata: this._metadataGenerator.nextRoot(),
     };

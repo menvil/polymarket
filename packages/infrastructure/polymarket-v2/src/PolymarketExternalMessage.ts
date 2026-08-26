@@ -22,9 +22,10 @@
  * Один ExternalMessage-тип на source/channel/topic; SDK-specific event
  * discriminator (`book`/`price_change`/... или `update`) остаётся ВНУТРИ
  * payload. Подключены только каналы, которые реально использует текущая
- * система сбора данных: CLOB market channel и два RTDS crypto-price topics
- * (Binance + Chainlink). TWAP/equity/comments/sports/perps каналы SDK
- * сознательно НЕ подключены — приложение их не использует.
+ * система сбора данных: CLOB market channel, два RTDS spot crypto-price
+ * topics (Binance + Chainlink) и settlement-поток Chainlink TWAP.
+ * Equity/comments/sports/perps каналы SDK сознательно НЕ подключены —
+ * приложение их не использует.
  *
  * ### Почему `@polymarket/bindings/subscriptions`
  *
@@ -37,6 +38,7 @@
 import type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
+  CryptoPricesChainlinkTwapEvent,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';
 import type { ExternalMessage } from '@polymarket/external-messages';
@@ -112,6 +114,43 @@ export type PolymarketCryptoChainlinkExternalMessage = ExternalMessage<
 >;
 
 /**
+ * Наблюдение RTDS topic `prices.crypto.chainlink.twap` — ОФИЦИАЛЬНЫЙ
+ * settlement-поток Up/Down-серий.
+ *
+ * @remarks
+ * Отдельный routing discriminator, а не вариант
+ * {@link PolymarketCryptoChainlinkExternalMessage} (MR-B PART 17): TWAP —
+ * не «ещё одна spot-цена», а источник РАСЧЁТА рынка, и подмешивать его в
+ * spot-поток означало бы потерю различия там, где оно определяет итог.
+ *
+ * Payload — {@link CryptoPricesChainlinkTwapEvent} официального SDK
+ * (характеризовано live 2026-08-26):
+ *
+ * ```json
+ * {"topic":"prices.crypto.chainlink.twap","type":"update","timestamp":1787751722763,
+ *  "payload":{"symbol":"btc/usd","timestamp":1787751721000,
+ *             "value":"78376.356031481042173952","windowSeconds":60}}
+ * ```
+ *
+ * Ключевое отличие от spot-события: `payload.windowSeconds` (30 | 60) —
+ * окно усреднения приходит В САМОМ событии, поэтому и routing записи, и
+ * последующий replay различают окна БЕЗ внешнего контекста. Vendor-топики
+ * провода (`crypto_prices_twap_thirty`/`_sixty`) SDK нормализует в один
+ * `topic` ещё до нас — мы видим уже нормализованную форму.
+ *
+ * @example
+ * ```typescript
+ * bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK_TWAP', (message) => {
+ *   const { symbol, value, windowSeconds, timestamp } = message.payload.payload;
+ * });
+ * ```
+ */
+export type PolymarketCryptoChainlinkTwapExternalMessage = ExternalMessage<
+  'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
+  CryptoPricesChainlinkTwapEvent
+>;
+
+/**
  * Полный discriminated union внешних сообщений Polymarket V2 source.
  *
  * @remarks
@@ -134,4 +173,5 @@ export type PolymarketCryptoChainlinkExternalMessage = ExternalMessage<
 export type PolymarketExternalMessage =
   | PolymarketMarketExternalMessage
   | PolymarketCryptoBinanceExternalMessage
-  | PolymarketCryptoChainlinkExternalMessage;
+  | PolymarketCryptoChainlinkExternalMessage
+  | PolymarketCryptoChainlinkTwapExternalMessage;

@@ -55,7 +55,12 @@ import type { createPublicClient } from '@polymarket/client';
 import type { CexSource, CexSourceStats } from '@polymarket/cex-v2';
 import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
 import type { CexWindowRecorderStats } from '@polymarket/data-collection';
-import type { PolymarketDiscoveredMarket, PolymarketSource } from '@polymarket/polymarket-v2';
+import type {
+  PolymarketDiscoveredMarket,
+  PolymarketSource,
+  PolymarketTwapObservations,
+  PolymarketTwapObservationsStats,
+} from '@polymarket/polymarket-v2';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import type {
   ExternalMessageRecorderCexStats,
@@ -183,6 +188,19 @@ export type CollectorCoordinator = Pick<
 export type CollectorFinalizer = Pick<MarketFinalizer, 'runOnce' | 'drain' | 'getStats' | 'close'>;
 
 /**
+ * Порт наблюдателя settlement-потока TWAP.
+ *
+ * @remarks
+ * Рантайм не спрашивает у него наблюдений — он владеет только его
+ * lifecycle: наблюдатель обязан быть подписан ДО начала ingress (как и
+ * recorder) и отписан после дренажа bus.
+ */
+export type CollectorTwapObservations = Pick<
+  PolymarketTwapObservations,
+  'start' | 'close' | 'getStats'
+>;
+
+/**
  * Уже собранные компоненты контура, чьим lifecycle владеет рантайм.
  *
  * @remarks
@@ -202,6 +220,7 @@ export interface DataCollectorComponents {
   readonly discovery: CollectorDiscovery;
   readonly coordinator: CollectorCoordinator;
   readonly finalizer: CollectorFinalizer;
+  readonly twapObservations: CollectorTwapObservations;
 }
 
 /** Зависимости {@link DataCollector}. */
@@ -252,6 +271,8 @@ export interface DataCollectorStatus {
   readonly recorderCex: ExternalMessageRecorderCexStats;
   /** Завершённые/сбойные партиции CEX-окон. */
   readonly cexWindows: CexWindowRecorderStats;
+  /** Принятые наблюдения официального settlement-потока TWAP. */
+  readonly twap: PolymarketTwapObservationsStats;
   /** Очередь и ошибки обработчиков общего bus. */
   readonly bus: MessageBusStats;
   /** Здоровье ingress-source-ов. */
@@ -392,6 +413,17 @@ export class DataCollector {
         run: async () => this._components.recorder.close(),
       });
 
+      // 2a. Наблюдатель settlement-потока — тоже ДО ingress: без него первые
+      //     наблюдения TWAP прошли бы мимо, и boundary grace рынка,
+      //     истёкшего сразу после старта, выродился бы в полное ожидание.
+      this._components.twapObservations.start();
+      rollback.push({
+        name: 'twapObservations.close',
+        run: async () => {
+          this._components.twapObservations.close();
+        },
+      });
+
       // 3. Ingress: CEX-потоки (Polymarket-подписки открывает координатор
       //    по мере выбора рынков).
       for (const entry of this._components.cexSources) {
@@ -530,6 +562,7 @@ export class DataCollector {
       recorder: this._components.recorder.getStats(),
       recorderCex: this._components.recorder.getCexStats(),
       cexWindows: this._components.cexStorage.getStats(),
+      twap: this._components.twapObservations.getStats(),
       bus: this._components.bus.getStats(),
       sources: {
         polymarket: {
@@ -639,6 +672,12 @@ export class DataCollector {
         },
       },
       { name: 'recorder.close', run: async () => this._components.recorder.close() },
+      {
+        name: 'twapObservations.close',
+        run: async () => {
+          this._components.twapObservations.close();
+        },
+      },
       {
         name: 'bus.close',
         run: async () => {

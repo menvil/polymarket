@@ -71,6 +71,15 @@ export interface CollectionRuntimeConfig {
   readonly maxMarkets: number;
   /** Минимальный запас до старта события, раньше которого рынок открывается (мс). */
   readonly minTimeToStartMs?: number;
+  /**
+   * Сколько ждать граничное наблюдение settlement-потока после истечения
+   * рынка, прежде чем заморозить датасет (мс).
+   *
+   * @remarks
+   * Дефолт принадлежит координатору (5 с — измеренная задержка доставки
+   * RTDS ×2). Ручка нужна тестам и диагностике; в production не задаётся.
+   */
+  readonly settlementGraceMs?: number;
   /** Пауза между обновлениями candidate cache (мс). */
   readonly discoveryRefreshMs: number;
   /** Пауза между тиками runtime-цикла (fillSlots + finalizer) (мс). */

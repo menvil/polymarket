@@ -173,6 +173,7 @@ timestamp, покрытие символа сделками.
 
 - Cutover-обоснование: `docs/guides/data-collector-v2-cutover.md`
 - CHECKPOINT #1: `docs/guides/checkpoint-1-raw-live.md`
+- TWAP settlement и резолюция архивов: `docs/guides/twap-settlement-and-resolution.md`
 - `@polymarket/data-collection`: `docs/architecture/data-collection.md`
 - `@polymarket/market-discovery`: `docs/guides/multi-market.md`
 - ADR: `docs/architecture/boundary-contract.md`

@@ -89,6 +89,11 @@ describe('DataCollector.status()', () => {
       pendingFinalizations: 2,
       archivedTotal: 5,
       archiveFailures: 1,
+      officialFinalizations: 0,
+      fallbackFinalizations: 0,
+      fallbackByTimeout: 0,
+      fallbackByShutdown: 0,
+      discardedUnresolvable: 0,
     });
 
     await collector.close();
