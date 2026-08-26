@@ -183,6 +183,7 @@ export class FakeRecorder implements CollectorRecorder {
       serializationFailures: 0,
       registrationFailures: 0,
       unroutedMarketMessages: 0,
+      marketMessagesDroppedAfterExpiry: 0,
       unroutedRtdsMessages: 0,
       handlerErrors: 0,
     };

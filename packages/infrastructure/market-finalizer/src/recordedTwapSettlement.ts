@@ -60,6 +60,17 @@ export interface RecordedTwapDerivation {
   readonly label: 'Up' | 'Down';
   /** Наблюдение на ОТКРЫТИИ окна рынка (эталон `priceToBeat`). */
   readonly priceToBeat: TwapSettlementObservation;
+  /**
+   * Что ФАКТИЧЕСКИ послужило эталоном открытия.
+   *
+   * @remarks
+   * Не «был ли передан официальный `priceToBeat`», а «был ли он
+   * использован»: непригодное официальное значение (`"NaN"`, `"pending"`)
+   * молча отбрасывается в пользу записанного наблюдения, и выдавать такой
+   * результат за официальный нельзя — provenance существует ровно затем,
+   * чтобы этого не происходило.
+   */
+  readonly priceToBeatSource: 'official' | 'recorded';
   /** Наблюдение на ЗАКРЫТИИ окна рынка (эталон `finalPrice`). */
   readonly finalPrice: TwapSettlementObservation;
   /** Сколько наблюдений фида нашлось в датасете. */
@@ -189,11 +200,14 @@ export function deriveWinnerFromRecordedTwap(
     return undefined; // граница не покрыта рядом — деривация недоступна
   }
 
-  // Официальный эталон открытия приоритетнее записанного (PART 31)
-  const priceToBeat: TwapSettlementObservation =
-    officialPriceToBeat !== undefined && isFiniteDecimalString(officialPriceToBeat)
-      ? { timestampMs: openObservation.timestampMs, value: officialPriceToBeat }
-      : openObservation;
+  // Официальный эталон открытия приоритетнее записанного (PART 31) — но
+  // только если он ПРИГОДЕН: непригодное значение отбрасывается, и результат
+  // обязан честно назваться выведенным
+  const useOfficial =
+    officialPriceToBeat !== undefined && isFiniteDecimalString(officialPriceToBeat);
+  const priceToBeat: TwapSettlementObservation = useOfficial
+    ? { timestampMs: openObservation.timestampMs, value: officialPriceToBeat }
+    : openObservation;
 
   const comparison = compareDecimalStrings(closeObservation.value, priceToBeat.value);
   if (comparison === undefined) {
@@ -202,6 +216,7 @@ export function deriveWinnerFromRecordedTwap(
   return {
     label: comparison >= 0 ? 'Up' : 'Down',
     priceToBeat,
+    priceToBeatSource: useOfficial ? 'official' : 'recorded',
     finalPrice: closeObservation,
     observations: observations.length,
   };

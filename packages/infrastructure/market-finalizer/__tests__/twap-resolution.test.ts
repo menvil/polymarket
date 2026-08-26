@@ -257,6 +257,32 @@ describe('FALLBACK по исчерпанию бюджета (PART 46/65)', () =>
     expect(finalization.provenance?.evidence?.priceToBeatValue).toBe('78449.05813530706');
   });
 
+  it('НЕПРИГОДНЫЙ официальный priceToBeat не выдаётся за официальный (PART 41)', async () => {
+    // Gamma отдаёт metadata как есть; строковое значение вроде "NaN" проходит
+    // извлечение, но резолвер его отбрасывает. Если бы provenance считался по
+    // НАЛИЧИЮ значения, архив утверждал бы «цена официальная», держа при этом
+    // выведенное число — ровно та ложь, ради запрета которой поле и введено.
+    const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
+    const { recorder, gamma, clock, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent({ priceToBeatRaw: 'NaN' }),
+    );
+    recorder.sealedPayloadLines = upSeries();
+
+    await openExpiredTwapMarket(harness);
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
+
+    const finalization = lastFinalization(recorder);
+    expect(finalization.provenance?.priceToBeat).toBe('derived');
+    expect(finalization.crypto?.priceToBeat).toBe('78449.05813530705395712'); // записанное
+    expect(finalization.provenance?.evidence?.priceToBeatValue).toBe(
+      '78449.05813530705395712',
+    );
+  });
+
   it('fallback не использует spot-цены: одних spot-строк недостаточно (PART 8/17)', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
     const { recorder, gamma, clock, finalizer } = harness;

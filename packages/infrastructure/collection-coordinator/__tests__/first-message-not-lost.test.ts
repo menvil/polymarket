@@ -245,6 +245,8 @@ describe('записи после expiry-seal (N-004 PART 50)', () => {
 
       const snapshot = await coordinator.beginFinalization(candidateA.marketId);
       expect(snapshot).toBeDefined();
+      // Заморозка датасета идёт отдельной cutoff-задачей — дожидаемся её
+      await coordinator.awaitSettlementCapture(candidateA.marketId);
       expect(storage.sealed).toEqual([CID_A]);
 
       // После seal: событие того же рынка в payload НЕ попадает

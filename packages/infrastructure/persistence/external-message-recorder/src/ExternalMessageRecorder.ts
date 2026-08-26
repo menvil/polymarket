@@ -229,6 +229,18 @@ export interface ExternalMessageRecorderStats {
   readonly registrationFailures: number;
   /** Market-сообщений без зарегистрированной сессии (например, после finalize). */
   readonly unroutedMarketMessages: number;
+  /**
+   * Market-сообщений, отброшенных СОЗНАТЕЛЬНО после истечения рынка.
+   *
+   * @remarks
+   * Отдельно от `unroutedMarketMessages`: там — потеря (сессии нет), здесь —
+   * работающая по плану граница. Сессия истёкшего рынка живёт ещё несколько
+   * секунд ради граничного наблюдения settlement-потока
+   * ({@link ExternalMessageRecorder.narrowRtdsFeeds}), и CLOB-события,
+   * долетевшие в это окно, в датасет уже не идут. Смешивать их с настоящей
+   * потерей значило бы ослабить loss-visibility ровно там, где она нужна.
+   */
+  readonly marketMessagesDroppedAfterExpiry: number;
   /** RTDS-сообщений без единого зарегистрированного (topic, symbol). */
   readonly unroutedRtdsMessages: number;
   /** Неожиданных исключений в bus-handler-ах (защитный контур). */
@@ -386,6 +398,7 @@ export class ExternalMessageRecorder {
   private _serializationFailures = 0;
   private _registrationFailures = 0;
   private _unroutedMarketMessages = 0;
+  private _marketMessagesDroppedAfterExpiry = 0;
   private _unroutedRtdsMessages = 0;
   private _handlerErrors = 0;
 
@@ -775,6 +788,7 @@ export class ExternalMessageRecorder {
       serializationFailures: this._serializationFailures,
       registrationFailures: this._registrationFailures,
       unroutedMarketMessages: this._unroutedMarketMessages,
+      marketMessagesDroppedAfterExpiry: this._marketMessagesDroppedAfterExpiry,
       unroutedRtdsMessages: this._unroutedRtdsMessages,
       handlerErrors: this._handlerErrors,
     };
@@ -871,10 +885,14 @@ export class ExternalMessageRecorder {
     try {
       const sourceMarketId = message.payload.payload.market;
       const session = this._sessions.get(sourceMarketId);
+      if (!session) {
+        this._unroutedMarketMessages++;
+        return;
+      }
       // Сессия, сужённая до settlement-фида (рынок истёк), market-события
       // больше не принимает: торговый lifecycle закончен на expiresAt
-      if (!session || !session.marketEventsRouted) {
-        this._unroutedMarketMessages++;
+      if (!session.marketEventsRouted) {
+        this._marketMessagesDroppedAfterExpiry++;
         return;
       }
       this._marketMessagesRouted++;

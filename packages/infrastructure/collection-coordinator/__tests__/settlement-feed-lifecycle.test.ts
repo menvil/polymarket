@@ -28,6 +28,7 @@ import {
   NOW_MS,
   CallLog,
   mid,
+  waitFor,
 } from './helpers/fakes.js';
 
 const TWAP_60: PolymarketTwapRtdsFeed = {
@@ -212,15 +213,20 @@ describe('boundary grace: граничное наблюдение не теря�
     // Метод вернулся немедленно, НЕ дожидаясь grace: проход finalizer-а
     // не блокируется на секунды ради одного рынка
     expect(recorder.seals).toEqual([]);
-    // Торговый lifecycle уже закончен, spot-фиды освобождены
-    expect(source.marketSubscriptions[0]!.closeCalls).toBe(1);
-    expect(source.rtdsSubscriptions.get('prices.crypto.chainlink:btc/usd')!.closeCalls).toBe(1);
-    expect(source.rtdsSubscriptions.get('prices.crypto.binance:btcusdt')!.closeCalls).toBe(1);
-    // Routing сужен до settlement-потока — «хвост» spot в датасет не идёт
+    // Routing сужен СИНХРОННО с переходом — ДО любых await teardown-а, иначе
+    // «хвост» чужих spot-фидов успел бы попасть в датасет
     expect(recorder.narrowings).toEqual([
       `${CID_A}:prices.crypto.chainlink.twap\nbtc/usd\n60`,
     ]);
-    // Settlement-поток ЖИВ и продолжает писаться
+
+    // Teardown realtime идёт своей задачей: торговый lifecycle и spot-фиды
+    // закрываются, settlement-поток остаётся жив до граничного наблюдения
+    await waitFor(
+      () => source.rtdsSubscriptions.get('prices.crypto.binance:btcusdt')!.closeCalls === 1,
+    );
+    expect(source.marketSubscriptions[0]!.closeCalls).toBe(1);
+    expect(source.rtdsSubscriptions.get('prices.crypto.chainlink:btc/usd')!.closeCalls).toBe(1);
+    expect(recorder.seals).toEqual([]); // датасет ЕЩЁ не заморожен
     expect(
       source.rtdsSubscriptions.get('prices.crypto.chainlink.twap:btc/usd@60')!.closeCalls,
     ).toBe(0);
@@ -277,9 +283,11 @@ describe('boundary grace: граничное наблюдение не теря�
     log.entries.length = 0;
 
     await coordinator.beginFinalization(mid(CID_A));
+    await coordinator.awaitSettlementCapture(mid(CID_A));
 
     expect(recorder.seals).toEqual([CID_A]);
-    expect(recorder.narrowings).toEqual([]);
+    // Сужение всё равно применяется — оно и режет market-routing на истечении
+    expect(recorder.narrowings).toEqual([`${CID_A}:`]);
     expect(observer.queries).toEqual([]);
   });
 

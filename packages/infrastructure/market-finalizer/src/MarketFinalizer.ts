@@ -140,10 +140,11 @@ export type FinalizationRecorder = Pick<
  * - `'official'` — победитель получен из официальных данных Gamma/UMA;
  * - `'fallback'` — победитель выведен из записанного settlement-потока;
  * - `'discarded'` — итог вывести нельзя, датасет удалён (архива нет);
- * - `'legacy-timeout'` — рынок вне поддержанного TWAP-scope заархивирован
- *   best-known данными (прежнее поведение сохранено).
+ * - `'best-effort'` — рынок ВНЕ поддержанного TWAP-scope (не-крипто либо
+ *   Binance-источник) заархивирован best-known данными; победитель при этом
+ *   может отсутствовать, и «официальной финализацией» это не считается.
  */
-export type FinalizationOutcome = 'official' | 'fallback' | 'discarded' | 'legacy-timeout';
+export type FinalizationOutcome = 'official' | 'fallback' | 'discarded' | 'best-effort';
 
 /**
  * Зависимости {@link MarketFinalizer}.
@@ -523,7 +524,17 @@ export class MarketFinalizer {
         if (entry.archiveFailed) {
           continue;
         }
-        await this._archiveEntry(entry, nowMs, 'shutdown');
+        // Per-market изоляция (как в _runPass): отказ одного рынка не имеет
+        // права лишить архива ВСЕ остальные pending-рынки — их файлы иначе
+        // ушли бы в cleanup вместе с записью
+        try {
+          await this._archiveEntry(entry, nowMs, 'shutdown');
+        } catch (error) {
+          this._logger.error('Shutdown archive failed for market, continuing with the rest', {
+            marketId: String(entry.session.marketId),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       if (this._pending.size > 0) {
         this._logger.warn('Finalizer closed with unarchived markets (archive failures)', {
@@ -780,12 +791,17 @@ export class MarketFinalizer {
     this._coordinator.completeFinalization(entry.session.marketId);
     this._pending.delete(key);
     this._archivedTotal++;
+    // Классификация идёт по PROVENANCE, а не по статусу: архив без
+    // происхождения (не-крипто best-effort, legacy timeout) не является
+    // «официальной финализацией» и не должен раздувать её счётчик — именно
+    // им измеряется инвариант «архив ⇒ известен итог»
+    const provenance = resolution.provenance?.resolution;
     const outcome: FinalizationOutcome =
-      resolution.status === 'timeout'
-        ? 'legacy-timeout'
-        : resolution.provenance?.resolution === 'fallback-chainlink-twap'
-          ? 'fallback'
-          : 'official';
+      provenance === 'fallback-chainlink-twap'
+        ? 'fallback'
+        : provenance === 'official'
+          ? 'official'
+          : 'best-effort';
     if (outcome === 'official') {
       this._officialFinalizations++;
     } else if (outcome === 'fallback') {
@@ -994,14 +1010,16 @@ export class MarketFinalizer {
     trigger: CollectionFallbackTrigger,
   ): ArchiveDecision {
     const settlement = entry.session.selected.crypto!.settlement!;
-    const officialPriceToBeat = entry.crypto.priceToBeat !== undefined;
     return {
       status: 'complete',
       winning,
       provenance: {
         resolution: 'fallback-chainlink-twap',
         fallbackTrigger: trigger,
-        priceToBeat: officialPriceToBeat ? 'official' : 'derived',
+        // Происхождение берётся из ФАКТА использования, а не из наличия
+        // официального значения: непригодное Gamma-значение резолвер молча
+        // отбрасывает, и назвать результат официальным было бы ложью
+        priceToBeat: derivation.priceToBeatSource === 'official' ? 'official' : 'derived',
         // finalPrice выведен всегда: официального у нас на этом пути нет
         // (иначе сработала бы ступень official-prices)
         finalPrice: 'derived',

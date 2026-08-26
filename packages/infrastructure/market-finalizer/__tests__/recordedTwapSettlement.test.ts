@@ -63,6 +63,7 @@ describe('deriveWinnerFromRecordedTwap: правило рынка на точн�
     expect(derived).toEqual({
       label: 'Down',
       priceToBeat: { timestampMs: START_MS, value: '78449.05813530705395712' },
+      priceToBeatSource: 'recorded',
       finalPrice: { timestampMs: END_MS, value: '78400.701754893592952832' },
       observations: 8,
     });
@@ -189,6 +190,7 @@ describe('официальный priceToBeat имеет приоритет на�
     );
 
     expect(derived?.priceToBeat.value).toBe('78449.05813530706');
+    expect(derived?.priceToBeatSource).toBe('official');
     expect(derived?.finalPrice.value).toBe('78400.701754893592952832');
     expect(derived?.label).toBe('Down');
   });
@@ -204,6 +206,9 @@ describe('официальный priceToBeat имеет приоритет на�
     const derived = deriveWinnerFromRecordedTwap(lines, FEED, START_MS, END_MS, 'NaN');
 
     expect(derived?.priceToBeat.value).toBe('100.0');
+    // Непригодное официальное значение НЕ делает результат официальным:
+    // иначе архив утверждал бы, что цена пришла из Gamma, хотя она выведена
+    expect(derived?.priceToBeatSource).toBe('recorded');
     expect(derived?.label).toBe('Up');
   });
 

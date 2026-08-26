@@ -376,8 +376,18 @@ export class MarketCollectionCoordinator {
 
   /** Сессии по `String(marketId)`; OPENING и ACTIVE занимают slot (PART 21). */
   private readonly _sessions = new Map<string, CollectionSession>();
-  /** Shared RTDS-фиды по `topic:symbol`. */
+  /** Shared RTDS-фиды по точному ключу фида (`rtdsFeedKey`). */
   private readonly _rtdsFeeds = new Map<string, RtdsFeedEntry>();
+  /**
+   * Идущие cutoff-задачи истёкших рынков по `String(marketId)`.
+   *
+   * @remarks
+   * ОТДЕЛЬНО от `_sessions`: сессию удаляют `completeFinalization` и
+   * `close()`, а заморозка датасета обязана быть дождана даже после этого —
+   * иначе `close()` прошёл бы мимо незамороженного файла, и его удалил бы
+   * cleanup storage вместе со всей записью рынка.
+   */
+  private readonly _settlementCaptures = new Map<string, Promise<void>>();
   /**
    * Рынки, НАВСЕГДА отклонённые lead-time правилом: время до старта монотонно
    * убывает, поэтому повторная проверка (и повторный fetchEvent) не нужна.
@@ -848,39 +858,36 @@ export class MarketCollectionCoordinator {
       });
       return undefined;
     }
-    // Синхронный переход: с этого тика сессия не занимает слот и не может
-    // быть закрыта как SHUTDOWN существующим closeSession (guard state)
+    // ── Синхронная секция: НИ ОДНОГО await до конца ─────────────────────
+    // С этого тика сессия не занимает слот и не может быть закрыта как
+    // SHUTDOWN существующим closeSession (guard state).
     session.state = 'FINALIZING';
     const selected = session.selected!;
     const recordingStartedAt = session.openedAt!;
-
-    // Trading lifecycle кончается на истечении — CLOB-подписка закрывается
-    // ПЕРВОЙ и не продлевается никаким grace
-    if (session.marketSubscription !== undefined) {
-      await this._closeMarketSubscription(session.marketSubscription, key);
-      session.marketSubscription = undefined;
-    }
-
     const settlementFeed = selected.rtdsFeeds.find(isTwapRtdsFeed);
-    const settlementKey = settlementFeed !== undefined ? rtdsFeedKey(settlementFeed) : undefined;
-    const spotKeys = session.rtdsFeedKeys.filter((feedKey) => feedKey !== settlementKey);
-    await this._releaseRtdsFeeds(key, spotKeys);
-    session.rtdsFeedKeys = settlementKey !== undefined ? [settlementKey] : [];
 
-    if (settlementFeed === undefined || this._settlementGraceMs <= 0) {
-      await this._sealAndReleaseSettlement(session, key);
-    } else {
-      // Routing сужается СИНХРОННО с переходом: «хвост» spot-фидов, живых
-      // ради других рынков, в датасет этого рынка больше не попадает
-      const narrowed = await this._narrowToSettlementFeed(session.marketId, settlementFeed, key);
-      session.settlementCapture = this._captureSettlementBoundary(
-        session,
-        key,
-        settlementFeed,
-        selected.expiresAt.toNumber(),
-        narrowed,
-      );
-    }
+    // Routing записи сужается РОВНО на истечении, до любых await: иначе
+    // события, уже стоящие в очереди pump-а, и наблюдения общих spot-фидов
+    // (живых ради ДРУГИХ рынков) продолжали бы попадать в этот датасет всё
+    // время, пока закрываются подписки. Граница датасета не должна зависеть
+    // от того, кто ещё подписан.
+    const narrowed = this._narrowToSettlementFeed(
+      session.marketId,
+      settlementFeed !== undefined ? [settlementFeed] : [],
+      key,
+    );
+
+    // Задача cutoff регистрируется ТОЖЕ синхронно: `close()`, пришедший
+    // следующим тиком, обязан её увидеть и дождаться, иначе датасет остался
+    // бы незамороженным и был бы удалён cleanup-ом storage.
+    const capture = this._runSettlementCutoff(session, key, settlementFeed, narrowed).finally(
+      () => {
+        if (this._settlementCaptures.get(key) === capture) {
+          this._settlementCaptures.delete(key);
+        }
+      },
+    );
+    this._settlementCaptures.set(key, capture);
 
     this._logger.info('Collection session entered finalization', {
       marketId: key,
@@ -892,16 +899,71 @@ export class MarketCollectionCoordinator {
   }
 
   /**
+   * Полный cutoff истёкшего рынка: teardown realtime → grace → seal.
+   *
+   * @param session - Сессия, только что переведённая в FINALIZING
+   * @param marketKey - Ключ рынка
+   * @param settlementFeed - Settlement-фид рынка (если правило распознано)
+   * @param narrowed - Удалось ли сузить routing записи
+   *
+   * @remarks
+   * Никогда не reject-ится: promise может простоять неотслеженным до часа
+   * (пока finalizer ждёт официальную резолюцию), и превращать отказ seal в
+   * unhandled rejection процесса недопустимо. Заморозка датасета обязана
+   * состояться при любом исходе — отказы наблюдаемы в логе.
+   */
+  private async _runSettlementCutoff(
+    session: CollectionSession,
+    marketKey: string,
+    settlementFeed: PolymarketTwapRtdsFeed | undefined,
+    narrowed: boolean,
+  ): Promise<void> {
+    try {
+      // Trading lifecycle кончается на истечении и не продлевается grace
+      if (session.marketSubscription !== undefined) {
+        await this._closeMarketSubscription(session.marketSubscription, marketKey);
+        session.marketSubscription = undefined;
+      }
+
+      const settlementKey =
+        settlementFeed !== undefined ? rtdsFeedKey(settlementFeed) : undefined;
+      const spotKeys = session.rtdsFeedKeys.filter((feedKey) => feedKey !== settlementKey);
+      await this._releaseRtdsFeeds(marketKey, spotKeys);
+      session.rtdsFeedKeys = settlementKey !== undefined ? [settlementKey] : [];
+
+      if (settlementFeed !== undefined && this._settlementGraceMs > 0) {
+        await this._awaitSettlementBoundary(
+          marketKey,
+          settlementFeed,
+          session.selected!.expiresAt.toNumber(),
+          narrowed,
+        );
+      }
+      await this._sealAndReleaseSettlement(session, marketKey);
+    } catch (error) {
+      this._logger.error('Settlement cutoff failed; dataset may remain unsealed', {
+        marketId: marketKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
    * Дожидается заморозки датасета рынка после boundary grace.
    *
    * @param marketId - ID рынка в состоянии FINALIZING
    * @returns Promise, разрешающийся когда датасет гарантированно заморожен
    *
    * @remarks
-   * No-op для рынков без settlement-фида и для уже завершённого grace —
-   * вызывать можно сколько угодно раз. Это ОБЯЗАТЕЛЬНАЯ преамбула любого
-   * чтения записанных строк и любого архивирования: без неё архив мог бы
-   * поймать датасет в момент дописывания граничного наблюдения.
+   * No-op для рынков без идущего cutoff-а — вызывать можно сколько угодно
+   * раз. Это ОБЯЗАТЕЛЬНАЯ преамбула любого чтения записанных строк и любого
+   * архивирования: без неё архив мог бы поймать датасет в момент
+   * дописывания граничного наблюдения.
+   *
+   * Задачи cutoff-а живут в СОБСТВЕННОЙ карте, а не в состоянии сессии:
+   * сессию удаляют `completeFinalization`/`close()`, и привязка к ней
+   * превратила бы «cutoff ещё идёт» в молчаливое «ждать нечего» — ровно в
+   * тот момент, когда ожидание и требуется.
    *
    * @example
    * ```typescript
@@ -910,27 +972,27 @@ export class MarketCollectionCoordinator {
    * ```
    */
   public async awaitSettlementCapture(marketId: MarketId): Promise<void> {
-    const capture = this._sessions.get(String(marketId))?.settlementCapture;
+    const capture = this._settlementCaptures.get(String(marketId));
     if (capture !== undefined) {
       await capture;
     }
   }
 
   /**
-   * Сужает routing записи рынка до одного settlement-фида.
+   * Сужает routing записи рынка до указанных фидов (СИНХРОННО).
    *
    * @param marketId - ID рынка
-   * @param feed - Settlement-фид, который продолжает писаться
+   * @param feeds - Фиды, которые продолжают писаться (пусто — только seal)
    * @param marketKey - Ключ рынка (для логов)
    * @returns `true`, если сужение фактически применено recorder-ом
    */
-  private async _narrowToSettlementFeed(
+  private _narrowToSettlementFeed(
     marketId: MarketId,
-    feed: PolymarketTwapRtdsFeed,
+    feeds: readonly PolymarketTwapRtdsFeed[],
     marketKey: string,
-  ): Promise<boolean> {
+  ): boolean {
     try {
-      return this._recorder.narrowRtdsFeeds(marketId, [feed]);
+      return this._recorder.narrowRtdsFeeds(marketId, feeds);
     } catch (error) {
       this._logger.warn('Failed to narrow recording feeds to settlement stream', {
         marketId: marketKey,
@@ -941,10 +1003,8 @@ export class MarketCollectionCoordinator {
   }
 
   /**
-   * Boundary grace: ждёт граничное наблюдение settlement-фида, затем
-   * замораживает датасет и освобождает ref фида.
+   * Boundary grace: ждёт граничное наблюдение settlement-фида.
    *
-   * @param session - Сессия в состоянии FINALIZING
    * @param marketKey - Ключ рынка
    * @param feed - Settlement-фид рынка
    * @param expiresAtMs - Граница рынка (epoch ms)
@@ -964,8 +1024,7 @@ export class MarketCollectionCoordinator {
    * стало бы истинным, и grace превратился бы в бесконечный опрос.
    * Отсчёт по интервалам ограничен сверху при ЛЮБОМ поведении часов.
    */
-  private async _captureSettlementBoundary(
-    session: CollectionSession,
+  private async _awaitSettlementBoundary(
     marketKey: string,
     feed: PolymarketTwapRtdsFeed,
     expiresAtMs: number,
@@ -997,7 +1056,6 @@ export class MarketCollectionCoordinator {
       waitedMs,
       boundaryObserved: observer?.hasObservationAtOrAfter(feed, expiresAtMs),
     });
-    await this._sealAndReleaseSettlement(session, marketKey);
   }
 
   /**
@@ -1129,16 +1187,19 @@ export class MarketCollectionCoordinator {
         await this.closeSession(session.marketId, 'SHUTDOWN');
       }
 
+      // Идущие cutoff-задачи дожидаются ВСЕГДА и первыми: они владеют
+      // заморозкой датасета, и закрыть координатор поверх незамороженного
+      // файла означало бы отдать его cleanup-у storage вместе со всей
+      // записью рынка. Флаг `_closed` уже прервал их ожидание границы,
+      // поэтому ожидание конечно.
+      await Promise.allSettled([...this._settlementCaptures.values()]);
+
       // FINALIZING-сессии архивирует MarketFinalizer.close() ДО закрытия
       // координатора (порядок shutdown N-004). Оставшиеся здесь — признак
       // нарушенного порядка: realtime у них уже снят, файл заберёт
       // cleanup-policy storage при recorder.close(); ждать нечего.
-      // Идущий boundary grace всё же дожидается: он владеет seal-ом, и
-      // бросить его означало бы закрыть координатор поверх незамороженного
-      // датасета (флаг _closed уже прервал его ожидание).
       for (const session of [...this._sessions.values()]) {
         if (session.state === 'FINALIZING') {
-          await session.settlementCapture?.catch(() => undefined);
           this._sessions.delete(String(session.marketId));
           this._logger.warn(
             'Finalizing session dropped at coordinator close (finalizer should archive first)',

@@ -207,6 +207,15 @@ export interface FreshGammaEventOptions {
   readonly priceToBeat?: number;
   /** `eventMetadata.finalPrice` (JSON number — как в live). */
   readonly finalPrice?: number;
+  /**
+   * СЫРОЕ значение `eventMetadata.priceToBeat` (строка/мусор).
+   *
+   * @remarks
+   * Gamma-metadata — нетипизированный vendor-объект: там встречаются не
+   * только числа. Нужно, чтобы проверить, что непригодное значение не
+   * выдаётся за официальное.
+   */
+  readonly priceToBeatRaw?: unknown;
   /** Байты паддинга (тесты бюджета header). */
   readonly padding?: number;
 }
@@ -215,11 +224,12 @@ export interface FreshGammaEventOptions {
  * Строит СВЕЖИЙ normalized Event с metadata характеризованной формы.
  */
 export function createFreshGammaEvent(options: FreshGammaEventOptions = {}): PolymarketGammaEvent {
-  const { priceToBeat, finalPrice, padding } = options;
+  const { priceToBeat, finalPrice, priceToBeatRaw, padding } = options;
   const metadata: Record<string, unknown> | null =
-    priceToBeat !== undefined || finalPrice !== undefined
+    priceToBeat !== undefined || finalPrice !== undefined || priceToBeatRaw !== undefined
       ? {
           ...(priceToBeat !== undefined ? { priceToBeat } : {}),
+          ...(priceToBeatRaw !== undefined ? { priceToBeat: priceToBeatRaw } : {}),
           ...(finalPrice !== undefined ? { finalPrice } : {}),
         }
       : null;

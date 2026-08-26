@@ -402,7 +402,11 @@ describe('усечение header-а не теряет критические д
 });
 
 describe('изоляция отказов внутри прохода (review round 1)', () => {
-  it('throw beginFinalization одного рынка не роняет runOnce: сосед начинает и архивируется', async () => {
+  it('отказ seal одного рынка наблюдаем и НЕ оставляет его в вечном FINALIZING', async () => {
+    // Раньше отказ seal пробрасывался из beginFinalization: рынок оставался
+    // помеченным FINALIZING, но НЕ попадал в pending — и не архивировался
+    // уже никогда. Заморозка датасета живёт в собственной cutoff-задаче,
+    // поэтому отказ storage теперь виден в логе и не отменяет финализацию.
     const { discovery, recorder, gamma, clock, coordinator, finalizer, logger } =
       createFinalizerHarness();
     armGamma(
@@ -418,12 +422,15 @@ describe('изоляция отказов внутри прохода (review ro
 
     await expect(finalizer.runOnce()).resolves.toBeUndefined(); // проход не reject-ится
 
-    // Отказ A наблюдаем; B прошёл полный путь до архива в том же проходе
     expect(
-      logger.byLevel('error').some((e) => e.message.includes('beginFinalization failed')),
+      logger.byLevel('error').some((e) => e.message.includes('Settlement cutoff failed')),
     ).toBe(true);
-    expect(recorder.finalizations).toEqual([`${CID_B}:EXPIRED`]);
-    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 1 });
+    // ОБА рынка дошли до архива: сосед не пострадал, а отказавший не завис
+    expect(recorder.finalizations.sort()).toEqual(
+      [`${CID_A}:EXPIRED`, `${CID_B}:EXPIRED`].sort(),
+    );
+    expect(finalizer.getStats()).toMatchObject({ archivedTotal: 2 });
+    expect(coordinator.listSessions()).toEqual([]);
   });
 });
 
