@@ -56,6 +56,9 @@ src_bundle.md
 # Bot data (recordings, journals, paper/live data)
 apps/bot/data/
 
+# Collector datasets (live-прогоны и smoke пишут сюда собранные архивы)
+apps/collect-data/data/
+
 # Checkpoint verification runs (raw live collection artifacts)
 /data/
 

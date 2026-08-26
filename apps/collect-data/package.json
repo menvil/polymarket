@@ -13,18 +13,40 @@
     "check:snapshot": "node --disable-warning=ExperimentalWarning src/checkCexSnapshot.ts",
     "backfill:polymarket": "node --import tsx --env-file=.env src/backfillPolymarketMeta.ts",
     "analyze:chainlink": "node --disable-warning=ExperimentalWarning src/analyzeChainlinkLeadLag.ts",
-    "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts"
+    "fit:chainlink": "node --disable-warning=ExperimentalWarning src/fitChainlinkLinearModels.ts",
+    "test": "node --experimental-vm-modules ../../node_modules/.bin/jest"
   },
   "dependencies": {
-    "@polymarket/cex-market-data": "0.1.0",
+    "@polymarket/cex-v2": "0.1.0",
+    "@polymarket/client": "^0.6.0",
+    "@polymarket/collection-coordinator": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/exchange": "0.1.0",
+    "@polymarket/external-message-bus": "0.1.0",
+    "@polymarket/external-message-recorder": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/market-finalizer": "0.1.0",
+    "@polymarket/message-bus": "0.1.0",
+    "@polymarket/messages": "0.1.0",
+    "@polymarket/polymarket-v2": "0.1.0",
     "@polymarket/ports": "0.1.0",
-    "@polymarket/timestamp": "0.1.0",
-    "@polymarket/value-objects": "0.1.0"
+    "@polymarket/result": "^0.1.0",
+    "@polymarket/time": "0.1.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^26.1.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.3.0"
+  },
+  "exports": {
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    }
+  }
 }

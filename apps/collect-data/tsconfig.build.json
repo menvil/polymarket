@@ -23,12 +23,26 @@
     "src/**/__tests__/**"
   ],
   "references": [
-    { "path": "../../packages/foundation/timestamp/tsconfig.build.json" },
+    {
+      "path": "../../packages/foundation/timestamp/tsconfig.build.json"
+    },
     {
       "path": "../../packages/foundation/logger/tsconfig.build.json"
     },
     {
       "path": "../../packages/foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/messages/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/message-bus/tsconfig.build.json"
     },
     {
       "path": "../../packages/domain/value-objects/tsconfig.build.json"
@@ -43,7 +57,25 @@
       "path": "../../packages/infrastructure/persistence/data-collection/tsconfig.build.json"
     },
     {
-      "path": "../../packages/infrastructure/cex-market-data/tsconfig.build.json"
+      "path": "../../packages/infrastructure/persistence/external-message-recorder/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/external-messages/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/external-message-bus/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/polymarket-v2/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/collection-coordinator/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/market-finalizer/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/cex-v2/tsconfig.build.json"
     },
     {
       "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"

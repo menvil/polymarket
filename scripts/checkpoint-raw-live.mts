@@ -22,16 +22,32 @@
  *   FINALIZED .jsonl.gz                  завершённые .jsonl.gz партиции
  * ```
  *
- * Биржи и пары — подмножество production-конфига legacy-коллектора
+ * Контур поднимается production-фабрикой `createDataCollector`
+ * (`apps/collect-data/src/runtime`) — ТОЙ ЖЕ, что и production `main.ts`.
+ * Собственной composition у runner-а больше нет: расхождение между
+ * «проверенным» и «работающим» контуром — именно тот класс дефектов,
+ * который verification обязан ловить, а не создавать.
+ *
+ * ```text
+ *                 createDataCollector(...)
+ *                     ↑              ↑
+ *               production      checkpoint
+ *                  main         verification
+ * ```
+ *
+ * Биржи и пары — подмножество production-конфига коллектора
  * (`apps/collect-data/cex-config.json`): binance, coinbase, kraken,
- * cryptocom, okx, bybit; restartIntervalMs 15 минут — как в legacy
+ * cryptocom, okx, bybit; restartIntervalMs 15 минут — как в production
  * (плановый рестарт транспорта попадает в окно прогона и даёт живое
  * свидетельство restart+recovery). Окно CEX-партиций — production default
  * (5 минут), НЕ уменьшено.
  *
- * Runner ТОЛЬКО композирует и наблюдает: собственных adapters нет,
+ * Runner ТОЛЬКО конфигурирует и наблюдает: собственных adapters нет,
  * payload не преобразуется, новая observability не строится (счётчики
- * checkpoint-а — локальные подписки на том же bus + счётный logger-wrapper).
+ * checkpoint-а — независимые подписки на том же bus + счётный
+ * logger-wrapper + read-only lifecycle-наблюдатель рантайма). Именно
+ * независимая подписка на общий bus доказывает, что раздача сообщений не
+ * замурована в recorder: тем же способом позже подключится Semantic Adapter.
  *
  * Режимы (`CHECKPOINT_MODE`):
  * - `full` (default) — полный прогон до полного lifecycle Polymarket
@@ -41,7 +57,7 @@
  *   процессе (teardown → повторный startup), короткий сбор, лёгкая валидация.
  *
  * Shutdown full-режима — graceful wind-down: перед закрытием контура
- * выполняется `finalizer.drain()` — уже начатые финализации дожидаются
+ * выполняется `collector.drain()` — уже начатые финализации дожидаются
  * официальной резолюции (или полного 60-мин бюджета), опрос Gamma идёт
  * штатным 30-секундным cadence; SIGINT прерывает ожидание (аварийный
  * best-known путь close() сохранён).
@@ -78,31 +94,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { createPublicClient } from '@polymarket/client';
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import type { ILogger } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
-import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
-import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
-import { PolymarketMarketDiscovery, PolymarketSource } from '@polymarket/polymarket-v2';
-import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
-import {
-  CexWindowRecorder,
-  DataRecorder,
-  GzipCompressor,
-  NDJSONFormatter,
-} from '@polymarket/data-collection';
-import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
-import { MarketCollectionCoordinator } from '@polymarket/collection-coordinator';
-import { MarketFinalizer } from '@polymarket/market-finalizer';
-import { CexSource } from '@polymarket/cex-v2';
-import type { CexExternalMessage, CexSourceConfig } from '@polymarket/cex-v2';
+import type { CexSourceConfig } from '@polymarket/cex-v2';
+import { createDataCollector } from '@polymarket/collect-data/runtime';
+import type {
+  ContourMessage,
+  DataCollectorConfig,
+  DataCollectorStatus,
+} from '@polymarket/collect-data/runtime';
 
 // ───────────────────────────── Конфигурация ─────────────────────────────
-
-/** Union сообщений всех raw sources контура на ОДНОМ bus. */
-type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
 
 /**
  * CEX-план checkpoint: подмножество production-конфига legacy-коллектора
@@ -412,21 +416,66 @@ interface CompositionOptions {
 }
 
 /**
- * Поднимает ПОЛНУЮ композицию контура (один bus, один recorder, все
- * sources), собирает live-свидетельства и выполняет controlled shutdown.
+ * Конфигурация рантайма для checkpoint-прогона.
+ *
+ * @param runDir - Изолированный корень датасетов этого прогона
+ * @returns Конфигурация production-фабрики контура
+ *
+ * @remarks
+ * Это КОНФИГУРАЦИЯ verification-прогона, а НЕ production defaults: широкий
+ * discovery-фильтр, нулевые пороги, малый lead time и изолированный
+ * output нужны, чтобы полный lifecycle рынка уложился в окно прогона.
+ * Production-значения живут в `.env`/`cex-config.json` приложения.
+ */
+function checkpointConfig(runDir: string): DataCollectorConfig {
+  return {
+    outputDir: runDir,
+    polymarket: {
+      sourceSubDir: 'polymarket',
+      bufferSize: 200,
+      flushIntervalMs: 5_000,
+      compression: 'gzip',
+    },
+    discovery: {
+      filter: {
+        minTimeToExpiryHours: 0,
+        minSpread: 0,
+        minLiquidity: 0,
+        maxMarketsToReturn: MAX_MARKETS * 3,
+        requiredKeywords: ['up or down'],
+        anyOfKeywords: ['bitcoin', 'ethereum', 'solana', 'xrp'],
+        excludedKeywords: [],
+      },
+    },
+    collection: {
+      maxMarkets: MAX_MARKETS,
+      minTimeToStartMs: 30_000,
+      discoveryRefreshMs: 30_000,
+      runtimeTickMs: 5_000,
+    },
+    finalization: { enrichmentRetryMs: 30_000, enrichmentMaxWaitMs: 60 * 60_000 },
+    cex: {
+      sources: CEX_PLAN,
+      bufferSize: 200,
+      flushIntervalMs: 2_000,
+      compression: 'gzip',
+    },
+  };
+}
+
+/**
+ * Поднимает ПОЛНЫЙ контур production-фабрикой, собирает live-свидетельства
+ * независимыми подписками на общий bus и выполняет controlled shutdown.
  *
  * @param options - Параметры запуска (директории, длительности, режим)
  * @returns Свидетельства прогона для валидации и отчёта
- * @throws {Error} При невозможности поднять композицию (fail-fast конфигурация)
+ * @throws {Error} При невозможности поднять контур (fail-fast конфигурация)
  */
 async function runComposition(options: CompositionOptions): Promise<CompositionEvidence> {
   const logCounters = emptyLogCounters();
   const clock = new LiveClock();
   const logger: ILogger = new CountingLogger(new ConsoleLogger(clock, LogLevel.INFO), logCounters);
-  const pmDir = path.join(options.runDir, 'polymarket');
-  const cexDir = path.join(options.runDir, 'cex');
-  fs.mkdirSync(pmDir, { recursive: true });
-  fs.mkdirSync(cexDir, { recursive: true });
+  fs.mkdirSync(options.runDir, { recursive: true });
 
   const evidence: CompositionEvidence = {
     runDir: options.runDir,
@@ -455,72 +504,16 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     exchanges: CEX_PLAN.map((spec) => spec.exchangeId),
   });
 
-  // ── ONE bus / ONE recorder ────────────────────────────────────────────
-  const client = createPublicClient();
+  // ── Production-контур: ТА ЖЕ фабрика, что и у production main ─────────
+  // Bus создаётся ЗДЕСЬ и передаётся фабрике: именно так consumer получает
+  // возможность подписаться до старта ingress, не завися от коллектора.
   const bus = new ExternalMessageBus<ContourMessage>();
-  const metadataGenerator = new MessageMetadataGenerator({
+  const { collector } = createDataCollector({
+    config: checkpointConfig(options.runDir),
+    logger,
     clock,
-    highResolutionClock: new LiveHighResolutionClock(),
-  });
-  const pmStorage = new DataRecorder(
-    {
-      outputDir: pmDir,
-      sourceSubDir: 'polymarket',
-      bufferSize: 200,
-      flushIntervalMs: 5_000,
-      compression: 'gzip',
-      formatVersion: 2,
-    },
-    new NDJSONFormatter(),
-    new GzipCompressor(),
-    logger,
-  );
-  const cexStorage = new CexWindowRecorder(
-    {
-      outputDir: cexDir,
-      compression: 'gzip',
-      bufferSize: 200,
-      flushIntervalMs: 2_000,
-    },
-    logger,
-  );
-  await cexStorage.cleanup();
-  const recorder = new ExternalMessageRecorder({
     bus,
-    storage: pmStorage,
-    logger,
-    cex: { bus, storage: cexStorage },
   });
-  recorder.start();
-
-  // ── Polymarket contour (source + discovery + coordinator + finalizer) ─
-  const pmSource = new PolymarketSource({ client, bus, metadataGenerator, logger });
-  const discovery = new PolymarketMarketDiscovery(
-    { client, filter: new MarketFilter(), scorer: new MarketScorer(clock), clock, logger },
-    {
-      filter: {
-        minTimeToExpiryHours: 0,
-        minSpread: 0,
-        minLiquidity: 0,
-        maxMarketsToReturn: MAX_MARKETS * 3,
-        requiredKeywords: ['up or down'],
-        anyOfKeywords: ['bitcoin', 'ethereum', 'solana', 'xrp'],
-      },
-    },
-  );
-  const coordinator = new MarketCollectionCoordinator(
-    { discovery, source: pmSource, recorder, clock, logger },
-    { maxMarkets: MAX_MARKETS, minTimeToStartMs: 30_000 },
-  );
-  const finalizer = new MarketFinalizer(
-    { coordinator, recorder, gamma: client, clock, logger },
-    { enrichmentRetryMs: 30_000, enrichmentMaxWaitMs: 60 * 60_000 },
-  );
-
-  // ── CEX sources (по одной на биржу) на ТОМ ЖЕ bus ─────────────────────
-  const cexSources = CEX_PLAN.map(
-    (config) => new CexSource({ config, bus, metadataGenerator, logger }),
-  );
 
   // ── Checkpoint-счётчики: независимые подписки на ТОМ ЖЕ bus ───────────
   const busTotals = new Map<string, number>();
@@ -625,15 +618,6 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     }),
   );
 
-  // ── Старт live-сбора ──────────────────────────────────────────────────
-  for (const source of cexSources) source.start();
-
-  const startedMs = Date.now();
-  const knownActive = new Set<string>();
-  let lastRefreshMs = 0;
-  let lastStatusMs = 0;
-  let pipelineError: unknown;
-
   /** Замораживает ring-снимки рынка, покинувшего ACTIVE (для exact-match валидации). */
   const freezeMarket = (marketId: string): void => {
     if (evidence.frozenMarketRings[marketId] !== undefined) return;
@@ -643,33 +627,82 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     evidence.frozenRtdsRings[marketId] = rtdsSnapshot;
   };
 
-  /** Список .jsonl.gz архивов Polymarket текущего прогона. */
-  const listPmArchives = (): string[] => {
-    const out: string[] = [];
-    const walk = (dir: string): void => {
-      if (!fs.existsSync(dir)) return;
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else if (entry.name.endsWith('.jsonl.gz')) out.push(full);
+  // ── Lifecycle-наблюдатель рантайма ────────────────────────────────────
+  // Момент выхода рынка из ACTIVE (seal → архив) сообщает сам рантайм —
+  // это же служит живым доказательством, что collection lifecycle
+  // наблюдаем снаружи (MR-A PART 18/19), а не выводится опросом.
+  const observedLifecycle: string[] = [];
+  collector.onMarketLifecycle((event) => {
+    observedLifecycle.push(`${event.kind}:${String(event.marketId)}`);
+    if (event.kind === 'FINALIZING' || event.kind === 'DROPPED') {
+      freezeMarket(String(event.marketId));
+    }
+  });
+
+  // ── Старт live-сбора (recorder-first обеспечивает сам рантайм) ─────────
+  await collector.start();
+
+  const startedMs = Date.now();
+  let lastStatusMs = 0;
+  let pipelineError: unknown;
+
+  /**
+   * Разбирает раскладку датасетов прогона.
+   *
+   * @returns Пути завершённых архивов Polymarket и партиций CEX по биржам
+   *
+   * @remarks
+   * Раскладка — production (обе политики пишут в ОДИН корень):
+   * ```text
+   * {runDir}/{YYYY-MM-DD}/polymarket/{question}___{marketId}.jsonl[.gz]
+   * {runDir}/{YYYY-MM-DD}/{exchangeId}/{exchange}_{symbol}_..._ET.jsonl[.gz]
+   * ```
+   * Классификация идёт по имени родительской директории — то же правило,
+   * по которому датасеты читает бэктест.
+   */
+  const scanDatasets = (): {
+    pmArchives: string[];
+    cexPartitionsByExchange: Map<string, string[]>;
+  } => {
+    const pmArchives: string[] = [];
+    const cexPartitionsByExchange = new Map<string, string[]>();
+    const exchangeIds = new Set(CEX_PLAN.map((spec) => spec.exchangeId));
+    if (!fs.existsSync(options.runDir)) {
+      return { pmArchives, cexPartitionsByExchange };
+    }
+    for (const dateEntry of fs.readdirSync(options.runDir, { withFileTypes: true })) {
+      if (!dateEntry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(dateEntry.name)) continue;
+      const dateDir = path.join(options.runDir, dateEntry.name);
+      for (const sourceEntry of fs.readdirSync(dateDir, { withFileTypes: true })) {
+        if (!sourceEntry.isDirectory()) continue;
+        const sourceDir = path.join(dateDir, sourceEntry.name);
+        const archives = fs
+          .readdirSync(sourceDir)
+          .filter((name) => name.endsWith('.jsonl.gz'))
+          .map((name) => path.join(sourceDir, name));
+        if (sourceEntry.name === 'polymarket') {
+          pmArchives.push(...archives);
+        } else if (exchangeIds.has(sourceEntry.name)) {
+          const existing = cexPartitionsByExchange.get(sourceEntry.name) ?? [];
+          existing.push(...archives);
+          cexPartitionsByExchange.set(sourceEntry.name, existing);
+        }
       }
-    };
-    walk(pmDir);
-    return out.sort();
+    }
+    pmArchives.sort();
+    return { pmArchives, cexPartitionsByExchange };
   };
 
+  /** Список .jsonl.gz архивов Polymarket текущего прогона. */
+  const listPmArchives = (): string[] => scanDatasets().pmArchives;
+
   /** Есть ли завершённая gzip-партиция у КАЖДОЙ биржи. */
-  const everyExchangeHasCompletedPartition = (): boolean =>
-    CEX_PLAN.every((spec) => {
-      const root = cexDir;
-      if (!fs.existsSync(root)) return false;
-      for (const dateDir of fs.readdirSync(root)) {
-        const exchangeDir = path.join(root, dateDir, spec.exchangeId);
-        if (!fs.existsSync(exchangeDir)) continue;
-        if (fs.readdirSync(exchangeDir).some((name) => name.endsWith('.jsonl.gz'))) return true;
-      }
-      return false;
-    });
+  const everyExchangeHasCompletedPartition = (): boolean => {
+    const { cexPartitionsByExchange } = scanDatasets();
+    return CEX_PLAN.every(
+      (spec) => (cexPartitionsByExchange.get(spec.exchangeId) ?? []).length > 0,
+    );
+  };
 
   /**
    * Статус финализации архива с кэшем разбора.
@@ -714,26 +747,11 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     return true;
   };
 
+  // ── Наблюдение (сбором управляет сам рантайм) ─────────────────────────
+  // Цикл координатора/финализатора живёт ВНУТРИ коллектора; runner только
+  // ждёт, пока накопится полный комплект свидетельств, и снимает статус.
   try {
     while (Date.now() - startedMs < options.maxMs && !stopRequested) {
-      if (Date.now() - lastRefreshMs >= 30_000) {
-        lastRefreshMs = Date.now();
-        await coordinator.refreshCandidates();
-      }
-      await coordinator.fillSlots();
-      await finalizer.runOnce();
-
-      // Freeze ring-снимков рынков, покинувших ACTIVE (seal → архив)
-      const nowActive = new Set<string>();
-      for (const session of coordinator.listSessions()) {
-        const key = String(session.marketId);
-        if (session.state === 'ACTIVE') nowActive.add(key);
-      }
-      for (const key of knownActive) {
-        if (!nowActive.has(key)) freezeMarket(key);
-      }
-      for (const key of nowActive) knownActive.add(key);
-
       // Окно захвата CEX-сэмплов: после ~60% MIN (full) / после 30s (short)
       const captureFromMs = options.requireFullLifecycle ? options.minMs * 0.6 : 30_000;
       capturingCexSamples = Date.now() - startedMs >= captureFromMs;
@@ -743,12 +761,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         logger.info('CHECKPOINT status', {
           minutes: Math.round((Date.now() - startedMs) / 6_000) / 10,
           busTotals: Object.fromEntries(busTotals),
-          coordinator: coordinator.getStats(),
-          finalizer: finalizer.getStats(),
-          recorder: recorder.getStats(),
-          recorderCex: recorder.getCexStats(),
-          windows: cexStorage.getStats(),
-          bus: bus.getStats(),
+          status: collector.status(),
         });
       }
 
@@ -764,32 +777,31 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     pipelineError = error;
   }
 
-  // Freeze всех оставшихся активных рынков ДО drain/shutdown (сэмплы колец —
-  // подмножество уже записанных строк, exact-match работает и для рынков,
-  // которые заархивируются во время drain)
-  for (const key of knownActive) freezeMarket(key);
+  // Freeze всех оставшихся отслеживаемых рынков ДО drain/shutdown (сэмплы
+  // колец — подмножество уже записанных строк, поэтому exact-match работает
+  // и для рынков, которые заархивируются во время drain)
+  for (const marketId of pmPerMarket.keys()) freezeMarket(marketId);
 
   // ── Drain: дождаться официальных резолюций уже начатых финализаций ────
   // (решение user 2026-08-25: остановка не срезает 60-мин окно ожидания;
   // опрос продолжается штатным 30s-cadence). SIGINT прерывает ожидание —
-  // finalizer.close() в shutdown-лестнице разбудит спящий drain.
+  // close() коллектора разбудит спящий drain.
   if (options.requireFullLifecycle && DRAIN_FINALIZATIONS && !stopRequested) {
     logger.info('CHECKPOINT draining pending finalizations before shutdown', {
-      finalizer: finalizer.getStats(),
-      coordinator: coordinator.getStats(),
+      status: collector.status(),
     });
     let drainSettled = false;
     // Отказ drain-а поглощается ЗДЕСЬ и попадает в evidence: если гонку
     // выигрывает polling-ветка (пришёл сигнал), непойманное отклонение
     // ушло бы в process-level unhandledRejection вместо отчёта
-    const drainPromise = finalizer.drain().then(
+    const drainPromise = collector.drain().then(
       () => {
         drainSettled = true;
       },
       (error: unknown) => {
         drainSettled = true;
         const message = error instanceof Error ? error.message : String(error);
-        evidence.shutdownStepFailures.push(`finalizer.drain: ${message}`);
+        evidence.shutdownStepFailures.push(`collector.drain: ${message}`);
         logger.error('CHECKPOINT finalization drain failed', { error: message });
       },
     );
@@ -804,59 +816,47 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
       })(),
     ]);
     logger.info('CHECKPOINT finalization drain finished', {
-      finalizer: finalizer.getStats(),
+      finalization: collector.status().finalization,
       interruptedBySignal: stopRequested,
     });
   }
 
-  // ── Финальный снимок stats ДО shutdown ────────────────────────────────
+  // ── Финальный снимок статуса ДО shutdown ──────────────────────────────
+  const finalStatus: DataCollectorStatus = collector.status();
   evidence.finalStats = {
-    coordinator: coordinator.getStats(),
-    finalizer: finalizer.getStats(),
-    recorder: recorder.getStats(),
-    recorderCex: recorder.getCexStats(),
-    windows: cexStorage.getStats(),
-    bus: bus.getStats(),
-    cexSources: cexSources.map((source, index) => ({
-      exchange: CEX_PLAN[index]!.exchangeId,
-      stats: source.getStats(),
+    coordinator: finalStatus.collection,
+    finalizer: finalStatus.finalization,
+    recorder: finalStatus.recorder,
+    recorderCex: finalStatus.recorderCex,
+    windows: finalStatus.cexWindows,
+    bus: finalStatus.bus,
+    lifecycle: finalStatus.lifecycle,
+    cexSources: finalStatus.sources.cex.map((source) => ({
+      exchange: source.exchangeId,
+      stats: source.stats,
       hasFailed: source.hasFailed,
     })),
+    lifecycleEvents: observedLifecycle,
   };
 
-  // ── Controlled shutdown в порядке контура ─────────────────────────────
-  const cleanupStep = async (step: string, run: () => Promise<void>): Promise<void> => {
-    try {
-      await run();
-    } catch (error) {
-      evidence.shutdownStepFailures.push(
-        `${step}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      logger.error('CHECKPOINT cleanup step failed', {
-        step,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-  await cleanupStep('finalizer.close', async () => finalizer.close());
-  await cleanupStep('coordinator.close', async () => coordinator.close());
-  await cleanupStep('pmSource.close', async () => pmSource.close());
-  await cleanupStep('cexSources.close', async () => {
-    await Promise.all(cexSources.map(async (source) => source.close()));
-  });
-  await cleanupStep('bus.drain', async () => {
-    const drained = await bus.drain();
-    if (!drained.ok) throw new Error(`bus.drain rejected: ${drained.error.message}`);
-  });
-  await cleanupStep('recorder.close', async () => recorder.close());
-  await cleanupStep('bus.close', async () => {
-    const closed = await bus.close();
-    if (!closed.ok) throw new Error(`bus.close rejected: ${closed.error.message}`);
-  });
+  // ── Controlled shutdown (лестница принадлежит рантайму) ───────────────
+  try {
+    await collector.close();
+  } catch (error) {
+    evidence.shutdownStepFailures.push(
+      `collector.close: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   for (const dispose of disposers) dispose();
 
-  for (const [index, source] of cexSources.entries()) {
-    if (source.hasFailed) evidence.cexSourcesFailed.push(CEX_PLAN[index]!.exchangeId);
+  // Отказы отдельных шагов рантайм логирует и продолжает закрытие — снимаем
+  // их из счётного logger-wrapper, чтобы вердикт учитывал каждый.
+  for (const line of logCounters.errorSamples) {
+    if (line.startsWith('Shutdown step failed')) evidence.shutdownStepFailures.push(line);
+  }
+
+  for (const source of finalStatus.sources.cex) {
+    if (source.hasFailed) evidence.cexSourcesFailed.push(source.exchangeId);
   }
 
   evidence.finishedAtIso = new Date().toISOString();
@@ -1028,25 +1028,56 @@ function validateArtifacts(
       samplesTotal: 0,
     },
   };
-  const pmRoot = path.join(runDir, 'polymarket');
-  const cexRoot = path.join(runDir, 'cex');
+  // Раскладка — production: обе политики пишут в ОДИН корень датасетов, а
+  // источник определяется именем директории внутри date-папки
+  // (`polymarket` против `{exchangeId}`) — то же правило, по которому
+  // датасеты читает бэктест.
+  const cexExchangeIds = new Set(CEX_PLAN.map((spec) => spec.exchangeId));
 
-  // ── Polymarket ────────────────────────────────────────────────────────
-  const walk = (dir: string, onFile: (file: string) => void): void => {
-    if (!fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full, onFile);
-      else onFile(full);
+  /**
+   * Обходит все файлы датасетов прогона, разделяя их по источнику.
+   *
+   * @param onPolymarket - Обработчик файла market-сессии
+   * @param onCex - Обработчик файла CEX-партиции (вместе с биржей)
+   */
+  const walkDatasets = (
+    onPolymarket: (file: string) => void,
+    onCex: (file: string, exchangeId: string) => void,
+  ): void => {
+    if (!fs.existsSync(runDir)) return;
+    for (const dateEntry of fs.readdirSync(runDir, { withFileTypes: true })) {
+      if (!dateEntry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(dateEntry.name)) continue;
+      const dateDir = path.join(runDir, dateEntry.name);
+      for (const sourceEntry of fs.readdirSync(dateDir, { withFileTypes: true })) {
+        if (!sourceEntry.isDirectory()) continue;
+        const sourceDir = path.join(dateDir, sourceEntry.name);
+        const isPolymarket = sourceEntry.name === 'polymarket';
+        const isCex = cexExchangeIds.has(sourceEntry.name);
+        if (!isPolymarket && !isCex) continue;
+        for (const fileEntry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+          if (!fileEntry.isFile()) continue;
+          const full = path.join(sourceDir, fileEntry.name);
+          if (isPolymarket) onPolymarket(full);
+          else onCex(full, sourceEntry.name);
+        }
+      }
     }
   };
 
-  walk(pmRoot, (file) => {
+  const pmFiles: string[] = [];
+  const cexFiles: Array<{ readonly file: string; readonly exchangeId: string }> = [];
+  walkDatasets(
+    (file) => pmFiles.push(file),
+    (file, exchangeId) => cexFiles.push({ file, exchangeId }),
+  );
+
+  // ── Polymarket ────────────────────────────────────────────────────────
+  for (const file of pmFiles) {
     if (file.endsWith('.jsonl') && !file.endsWith('.jsonl.gz')) {
       report.pmIncompleteFiles.push(file);
-      return;
+      continue;
     }
-    if (!file.endsWith('.jsonl.gz')) return;
+    if (!file.endsWith('.jsonl.gz')) continue;
     let header: PmArchiveHeader;
     let lines: string[];
     try {
@@ -1057,7 +1088,7 @@ function validateArtifacts(
       report.violations.push(
         `PM archive unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return;
+      continue;
     }
     if (header.marketId !== header.conditionId) {
       report.violations.push(
@@ -1146,7 +1177,7 @@ function validateArtifacts(
       exactRtdsSampleMatched,
       sizeBytes: fs.statSync(file).size,
     });
-  });
+  }
 
   if (report.pmIncompleteFiles.length > 0) {
     report.violations.push(
@@ -1231,15 +1262,15 @@ function validateArtifacts(
     report.cex.samplesTotal += samples.length;
   }
 
-  walk(cexRoot, (file) => {
+  for (const { file, exchangeId } of cexFiles) {
     const name = path.basename(file);
     if (name.endsWith('.jsonl') && !name.endsWith('.jsonl.gz')) {
       report.cex.incompleteFiles.push(file);
-      return;
+      continue;
     }
-    if (!name.endsWith('.jsonl.gz')) return;
+    if (!name.endsWith('.jsonl.gz')) continue;
     report.cex.gzFiles++;
-    const dirExchange = path.basename(path.dirname(file));
+    const dirExchange = exchangeId;
     report.cex.perExchangeFiles[dirExchange] = (report.cex.perExchangeFiles[dirExchange] ?? 0) + 1;
     // {exchange}_{symbol}_{marketType}_{stream}_{dateET}_{startET}-{endET}_ET.jsonl.gz
     const parts = name.replace(/\.jsonl\.gz$/, '').split('_');
@@ -1258,12 +1289,12 @@ function validateArtifacts(
       report.violations.push(
         `CEX gzip unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return;
+      continue;
     }
     const lines = text.trimEnd().split('\n').filter((line) => line.length > 0);
     if (lines.length === 0) {
       report.violations.push(`empty completed CEX partition: ${file}`);
-      return;
+      continue;
     }
     for (const line of lines) {
       report.cex.totalLines++;
@@ -1307,7 +1338,7 @@ function validateArtifacts(
         sampleFound.set(sampleKey, (sampleFound.get(sampleKey) ?? 0) + 1);
       }
     }
-  });
+  }
 
   for (const found of sampleFound.values()) report.cex.samplesMatched += found;
   if (report.cex.parseErrors > 0) {
@@ -1521,11 +1552,54 @@ async function main(): Promise<number> {
  */
 function armExitWatchdog(): void {
   const watchdog = setTimeout(() => {
-    console.error('CHECKPOINT: process did not exit naturally within 60s after main()');
-    console.error('Active resources:', process.getActiveResourcesInfo());
+    // fs.writeSync, а НЕ console.error: запись в stderr асинхронна, когда он
+    // подключён к pipe (CI, `| tee`), и следующий за ней process.exit() обрывает
+    // её на полуслове. Потерять здесь можно ровно ту диагностику, ради которой
+    // watchdog и существует.
+    const lines = [
+      'CHECKPOINT: process did not exit naturally within 60s after main()',
+      `Active resources: ${JSON.stringify(process.getActiveResourcesInfo())}`,
+      `Active handles: ${JSON.stringify(describeActiveHandles(), null, 2)}`,
+      '',
+    ];
+    fs.writeSync(2, lines.join('\n'));
     process.exit(3);
   }, 60_000);
   watchdog.unref();
+}
+
+/**
+ * Описывает удерживающие процесс handle-ы с деталями сокетов.
+ *
+ * @returns Человекочитаемые строки по каждому активному handle
+ *
+ * @remarks
+ * `getActiveResourcesInfo()` отдаёт только типы (`'TCPSocketWrap'`), по которым
+ * невозможно понять ВЛАДЕЛЬЦА утечки. Для сокетов решает `servername`: он прямо
+ * называет хост (`ws-subscriptions-clob`, `gamma-api`, `stream.binance.com`), а
+ * значит и подсистему, чей ресурс не закрыт. Используются недокументированные
+ * `process._getActiveHandles/_getActiveRequests` — это диагностика runner-а, не
+ * production-код, и их отсутствие не ломает вердикт.
+ */
+function describeActiveHandles(): readonly string[] {
+  const handles =
+    (process as unknown as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ?? [];
+  const described = handles.map((handle) => {
+    const entry = handle as Record<string, unknown>;
+    const kind = (entry['constructor'] as { name?: string } | undefined)?.name ?? 'unknown';
+    if (kind !== 'Socket' && kind !== 'TLSSocket') {
+      return kind;
+    }
+    const servername = entry['servername'];
+    return (
+      `${kind} servername=${String(servername)} ` +
+      `remote=${String(entry['remoteAddress'])}:${String(entry['remotePort'])} ` +
+      `destroyed=${String(entry['destroyed'])}`
+    );
+  });
+  const requests =
+    (process as unknown as { _getActiveRequests?: () => unknown[] })._getActiveRequests?.() ?? [];
+  return [...described, `activeRequests=${String(requests.length)}`];
 }
 
 void main().then(

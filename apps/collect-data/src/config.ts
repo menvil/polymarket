@@ -82,6 +82,18 @@ export interface CollectorConfig {
    * @example `'{"binance":{"type":"spot","symbols":["BTC/USDT"],"orderbook":true,"trades":true}}'`
    */
   readonly cexConfig: string | null;
+
+  /**
+   * Размер окна CEX-партиции (минуты).
+   * Не задан — дефолт `CexWindowRecorder` (5 минут).
+   */
+  readonly cexWindowMinutes: number | undefined;
+
+  /** Записей в буфере CEX-окна до сброса на диск. */
+  readonly cexBufferSize: number;
+
+  /** Интервал периодического сброса буферов CEX-окон (мс). */
+  readonly cexFlushIntervalMs: number;
 }
 
 /**
@@ -104,6 +116,22 @@ export function loadConfig(): CollectorConfig {
   function optionalNumber(name: string, fallback: number): number {
     const val = process.env[name];
     if (!val) return fallback;
+    const n = Number(val);
+    if (isNaN(n)) throw new Error(`Env var ${name} must be a number, got: ${val}`);
+    return n;
+  }
+
+  /**
+   * Читает необязательное число без значения по умолчанию.
+   *
+   * @remarks
+   * Отличается от `optionalNumber` тем, что «не задано» остаётся `undefined`
+   * и дефолт применяет сам компонент — конфигурация приложения не обязана
+   * дублировать его константы.
+   */
+  function optionalNumberOrUndefined(name: string): number | undefined {
+    const val = process.env[name];
+    if (!val) return undefined;
     const n = Number(val);
     if (isNaN(n)) throw new Error(`Env var ${name} must be a number, got: ${val}`);
     return n;
@@ -158,5 +186,10 @@ export function loadConfig(): CollectorConfig {
     compression:          parseCompression('DATA_COLLECTION_COMPRESSION'),
     bufferSize:           optionalNumber('DATA_COLLECTION_BUFFER_SIZE', 100),
     flushIntervalMs:      optionalNumber('DATA_COLLECTION_FLUSH_INTERVAL_MS', 10_000),
+    // Дефолты CEX-окон совпадают с дефолтами CexWindowRecorder: legacy-коллектор
+    // не передавал эти параметры вовсе, и поведение записи не меняется.
+    cexWindowMinutes:     optionalNumberOrUndefined('CEX_WINDOW_MINUTES'),
+    cexBufferSize:        optionalNumber('CEX_BUFFER_SIZE', 200),
+    cexFlushIntervalMs:   optionalNumber('CEX_FLUSH_INTERVAL_MS', 5_000),
   };
 }

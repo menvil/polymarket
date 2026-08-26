@@ -53,6 +53,28 @@ function listFiles(root: string): string[] {
   return out.sort();
 }
 
+/**
+ * Ждёт ЗАВЕРШЁННЫХ партиций: `.jsonl.gz` появился И исходный `.jsonl` удалён.
+ *
+ * @remarks
+ * Это ДВА разных события: `GzipCompressor` сначала переименовывает временный
+ * файл в `.gz` и только потом удаляет исходник. Ожидание одного лишь `.gz`
+ * ловит середину ротации, и в листинге оказываются оба файла сразу — под
+ * параллельной нагрузкой (полный прогон монорепы) это давало флейк.
+ */
+async function waitForCompletedPartitions(
+  root: string,
+  count: number,
+  timeoutMs = 3_000,
+): Promise<void> {
+  await waitFor(() => {
+    const files = listFiles(root);
+    const archives = files.filter((file) => file.endsWith('.jsonl.gz'));
+    if (archives.length !== count) return false;
+    return archives.every((archive) => !files.includes(archive.replace(/\.gz$/, '')));
+  }, timeoutMs);
+}
+
 function gunzipLines(filePath: string): string[] {
   const raw = zlib.gunzipSync(fs.readFileSync(filePath)).toString('utf8');
   return raw.split('\n').filter((line) => line.length > 0);
@@ -148,7 +170,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 2 })).toBe('recorded');
 
     // Старая партиция завершена: .jsonl.gz появился, .jsonl удалён
-    await waitFor(() => listFiles(dir).some((file) => file.endsWith('.jsonl.gz')));
+    await waitForCompletedPartitions(dir, 1);
     const files = listFiles(dir);
     const gz = files.find((file) => file.endsWith('.jsonl.gz'))!;
     const open = files.filter((file) => file.endsWith('.jsonl') && !file.endsWith('.jsonl.gz'));
@@ -230,7 +252,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 1 });
     now = firstWindow + windowMs + 1_000;
     recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 2 });
-    await waitFor(() => listFiles(dir).filter((f) => f.endsWith('.jsonl.gz')).length === 1);
+    await waitForCompletedPartitions(dir, 1);
     await recorder.flush();
 
     const files = listFiles(dir);
