@@ -1103,12 +1103,13 @@ export class MarketCollectionCoordinator {
 
   /**
    * Явное закрытие одной сессии (control-plane request: rollback внешнего
-   * уровня, app shutdown, будущий N-004 finalizer).
+   * уровня, app shutdown, реконсиляция отказа source).
    *
    * @param marketId - ID рынка сессии
-   * @param reason - Причина для recorder-а: N-003 контур использует ТОЛЬКО
-   *   `'SHUTDOWN'` (incomplete dataset, файл удаляется storage);
-   *   `'EXPIRED'` зарезервирован за будущим finalizer N-004
+   * @param reason - Причина для recorder-а. Координатор закрывает сессии
+   *   ТОЛЬКО как `'SHUTDOWN'` (incomplete dataset, файл удаляется storage):
+   *   `'EXPIRED'` принадлежит `MarketFinalizer` — архив создаётся лишь
+   *   тогда, когда итог рынка известен, и решает это он
    * @returns Promise завершения teardown
    *
    * @remarks

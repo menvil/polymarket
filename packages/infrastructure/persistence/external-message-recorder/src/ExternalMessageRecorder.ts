@@ -94,7 +94,8 @@ export type PolymarketRtdsFeedKey = PolymarketRtdsFeed;
  *
  * @remarks
  * Recorder НЕ решает, какие символы нужны рынку — готовую routing-регистрацию
- * ему передаёт вызывающий (будущий Market Discovery/Coordinator N-003).
+ * ему передаёт вызывающий (`MarketCollectionCoordinator`, который берёт
+ * фиды из settlement-метаданных выбранного рынка).
  * `marketMeta` — существующий storage-контракт (`registerMarket`): recorder
  * не добавляет собственного дубликата source market id, потому что
  * `String(marketMeta.marketId)` УЖЕ равен conditionId — routing identity
