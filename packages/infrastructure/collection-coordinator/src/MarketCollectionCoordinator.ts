@@ -952,9 +952,17 @@ export class MarketCollectionCoordinator {
    *
    * @remarks
    * Ожидание заканчивается по ПЕРВОМУ из событий: наблюдатель подтвердил
-   * наблюдение с `vendorTs >= expiresAtMs`; истёк `settlementGraceMs`;
-   * координатор закрывается. Без наблюдателя выдерживается полный grace.
-   * Никогда не reject-ится: seal обязан состояться при любом исходе.
+   * наблюдение с `vendorTs >= expiresAtMs`; исчерпан бюджет
+   * `settlementGraceMs`; координатор закрывается. Без наблюдателя
+   * выдерживается полный grace. Никогда не reject-ится: seal обязан
+   * состояться при любом исходе.
+   *
+   * Бюджет отсчитывается КОЛИЧЕСТВОМ интервалов ожидания, а не разницей
+   * показаний `IClock`. Это не стилистика: часы здесь инъецируемые, а спит
+   * цикл на реальном таймере — при остановленных (тестовых) либо просто
+   * отставших часах сравнение «прошло ли столько-то по часам» никогда не
+   * стало бы истинным, и grace превратился бы в бесконечный опрос.
+   * Отсчёт по интервалам ограничен сверху при ЛЮБОМ поведении часов.
    */
   private async _captureSettlementBoundary(
     session: CollectionSession,
@@ -963,31 +971,31 @@ export class MarketCollectionCoordinator {
     expiresAtMs: number,
     narrowed: boolean,
   ): Promise<void> {
-    const startedMs = this._clock.now().getTime();
     const observer = this._settlementObserver;
-    if (narrowed && observer !== undefined) {
-      while (this._clock.now().getTime() - startedMs < this._settlementGraceMs) {
-        if (this._closed || observer.hasObservationAtOrAfter(feed, expiresAtMs)) {
+    let waitedMs = 0;
+    if (narrowed) {
+      const sliceMs =
+        observer === undefined
+          ? this._settlementGraceMs
+          : Math.min(SETTLEMENT_POLL_MS, this._settlementGraceMs);
+      const slices = Math.max(1, Math.ceil(this._settlementGraceMs / sliceMs));
+      for (let slice = 0; slice < slices; slice++) {
+        if (this._closed || observer?.hasObservationAtOrAfter(feed, expiresAtMs) === true) {
           break;
         }
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, SETTLEMENT_POLL_MS);
+          const timer = setTimeout(resolve, sliceMs);
           timer.unref?.();
         });
+        waitedMs += sliceMs;
       }
-    } else if (narrowed) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, this._settlementGraceMs);
-        timer.unref?.();
-      });
     }
 
-    const captured = observer?.hasObservationAtOrAfter(feed, expiresAtMs);
     this._logger.info('Settlement boundary grace finished', {
       marketId: marketKey,
       feed: rtdsFeedLabel(feed),
-      waitedMs: this._clock.now().getTime() - startedMs,
-      boundaryObserved: captured,
+      waitedMs,
+      boundaryObserved: observer?.hasObservationAtOrAfter(feed, expiresAtMs),
     });
     await this._sealAndReleaseSettlement(session, marketKey);
   }

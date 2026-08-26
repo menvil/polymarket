@@ -31,6 +31,8 @@ import {
 } from '../../../collection-coordinator/__tests__/helpers/fakes.js';
 
 export {
+  BTC_TWAP_FEEDS,
+  BTC_TWAP_SETTLEMENT,
   CID_A,
   CID_B,
   NOW_MS,
@@ -261,7 +263,10 @@ export function createFinalizerHarness(config: MarketFinalizerConfig = {}): Fina
   const logger = new CapturingLogger();
   const coordinator = new MarketCollectionCoordinator(
     { discovery, source, recorder, clock, logger },
-    { maxMarkets: 5 },
+    // Boundary grace выключен: его собственное поведение проверяется
+    // тестами координатора, а здесь он лишь добавил бы секунды ожидания
+    // в каждый тест резолюции (сам seal при этом происходит синхронно).
+    { maxMarkets: 5, settlementGraceMs: 0 },
   );
   const finalizer = new MarketFinalizer(
     { coordinator, recorder, gamma, clock, logger },

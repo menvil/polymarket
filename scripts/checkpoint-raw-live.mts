@@ -576,6 +576,20 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
       }
       ring.push(JSON.stringify(message.payload));
     }),
+    bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK_TWAP', (message) => {
+      bump(busTotals, 'POLYMARKET_CRYPTO_CHAINLINK_TWAP');
+      observeSequence(message);
+      // Ключ фида несёт ОКНО: `btc/usd` TWAP 30 и TWAP 60 — разные потоки
+      const payload = message.payload.payload;
+      const key = `${message.payload.topic}\n${payload.symbol}\n${String(payload.windowSeconds)}`;
+      bump(rtdsPerFeed, key);
+      let ring = rtdsRings.get(key);
+      if (!ring) {
+        ring = new Ring(RING_CAP);
+        rtdsRings.set(key, ring);
+      }
+      ring.push(JSON.stringify(message.payload));
+    }),
     bus.subscribe('CEX_ORDERBOOK', (message) => {
       bump(busTotals, 'CEX_ORDERBOOK');
       observeSequence(message);
@@ -743,6 +757,11 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     if (!topics.has('prices.crypto.binance') || !topics.has('prices.crypto.chainlink')) {
       return false;
     }
+    // Settlement-поток обязан наблюдаться: без него архив крипто-рынка не
+    // содержит источника, по которому этот рынок в действительности резолвится
+    if (!topics.has('prices.crypto.chainlink.twap')) {
+      return false;
+    }
     if (cexSampleStore.size === 0) return false;
     return true;
   };
@@ -901,6 +920,17 @@ interface PmArchiveHeader {
   readonly winningSource: string | undefined;
   /** Точный результат (официальные источники) или приблизительный. */
   readonly winningExact: boolean | undefined;
+  /** Machine-usable identity победителя. */
+  readonly winningInstrumentId: string | undefined;
+  readonly winningOutcomeIndex: number | undefined;
+  /** Происхождение итога: official | fallback-chainlink-twap. */
+  readonly resolutionProvenance: string | undefined;
+  /** Что заставило перейти к fallback (таймаут/остановка). */
+  readonly fallbackTrigger: string | undefined;
+  /** Нормализованное правило расчёта рынка (для TWAP-рынков). */
+  readonly settlement:
+    | { readonly symbol: string; readonly windowSeconds: number; readonly resolutionSource: string }
+    | undefined;
   /** UMA-резолюция дошла до архива. */
   readonly umaResolved: boolean;
   readonly expiresAtMs: number | null;
@@ -927,6 +957,9 @@ function parsePmArchiveHeader(file: string): PmArchiveHeader {
   const crypto = (finalization['crypto'] ?? {}) as Record<string, unknown>;
   const winning = finalization['winning'] as Record<string, unknown> | undefined;
   const resolution = (finalization['resolution'] ?? {}) as Record<string, unknown>;
+  const provenance = (finalization['provenance'] ?? {}) as Record<string, unknown>;
+  const marketCrypto = (m['crypto'] ?? {}) as Record<string, unknown>;
+  const settlement = (marketCrypto['settlement'] ?? {}) as Record<string, unknown>;
   return {
     marketId: String(header['marketId'] ?? ''),
     conditionId: String(m['conditionId'] ?? ''),
@@ -942,6 +975,28 @@ function parsePmArchiveHeader(file: string): PmArchiveHeader {
         ? String(winning['source'])
         : undefined,
     winningExact: winning !== undefined ? winning['exact'] === true : undefined,
+    winningInstrumentId:
+      winning !== undefined && winning['instrumentId'] !== undefined
+        ? String(winning['instrumentId'])
+        : undefined,
+    winningOutcomeIndex:
+      winning !== undefined && typeof winning['outcomeIndex'] === 'number'
+        ? winning['outcomeIndex']
+        : undefined,
+    resolutionProvenance:
+      provenance['resolution'] !== undefined ? String(provenance['resolution']) : undefined,
+    fallbackTrigger:
+      provenance['fallbackTrigger'] !== undefined
+        ? String(provenance['fallbackTrigger'])
+        : undefined,
+    settlement:
+      typeof settlement['symbol'] === 'string' && typeof settlement['windowSeconds'] === 'number'
+        ? {
+            symbol: settlement['symbol'],
+            windowSeconds: settlement['windowSeconds'],
+            resolutionSource: String(settlement['resolutionSource'] ?? ''),
+          }
+        : undefined,
     umaResolved: resolution['umaResolutionStatus'] === 'resolved',
     expiresAtMs: typeof timing['expiresAt'] === 'number' ? timing['expiresAt'] : null,
     finalizedAtMs:

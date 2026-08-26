@@ -18,6 +18,7 @@
 import type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
+  CryptoPricesChainlinkTwapEvent,
   StandardMarketEvent,
 } from '@polymarket/polymarket-v2';
 
@@ -202,4 +203,42 @@ export function createChainlinkEvent(
       value: overrides.value ?? '64251.02',
     },
   } as CryptoPricesChainlinkEvent;
+}
+
+/**
+ * Событие официального settlement-потока Chainlink TWAP.
+ *
+ * @param overrides - Символ/значение/окно/vendor-timestamp наблюдения
+ * @returns SDK-событие в форме, характеризованной live 2026-08-26
+ *
+ * @remarks
+ * Отличие от spot-события — `payload.windowSeconds`: окно приходит В САМОМ
+ * событии, поэтому и routing записи, и последующий replay различают
+ * `btc/usd` TWAP 30 и `btc/usd` TWAP 60 без внешнего контекста.
+ *
+ * @example
+ * ```typescript
+ * createChainlinkTwapEvent({ windowSeconds: 30 });
+ * ```
+ */
+export function createChainlinkTwapEvent(
+  overrides: Partial<{
+    symbol: string;
+    value: string;
+    windowSeconds: 30 | 60;
+    timestamp: number;
+  }> = {},
+): CryptoPricesChainlinkTwapEvent {
+  const timestamp = overrides.timestamp ?? 1786668087000;
+  return {
+    topic: 'prices.crypto.chainlink.twap',
+    type: 'update',
+    timestamp: timestamp + 1_895,
+    payload: {
+      symbol: overrides.symbol ?? 'btc/usd',
+      timestamp,
+      value: overrides.value ?? '78400.701754893592952832',
+      windowSeconds: overrides.windowSeconds ?? 60,
+    },
+  } as CryptoPricesChainlinkTwapEvent;
 }
