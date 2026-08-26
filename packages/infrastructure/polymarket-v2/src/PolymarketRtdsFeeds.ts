@@ -158,6 +158,28 @@ export interface PolymarketCryptoMeta {
    * (спот-цена — не источник расчёта).
    */
   readonly settlement?: PolymarketChainlinkTwapSettlement;
+  /**
+   * `resolution.source` рынка, чьё правило расчёта — TWAP, но локально НЕ
+   * поддержано (окно вне vendor-домена либо незнакомая форма URL).
+   *
+   * @remarks
+   * Взаимоисключающе с {@link PolymarketCryptoMeta.settlement}. Разделять
+   * эти два случая обязательно, потому что политика у них ПРОТИВОПОЛОЖНАЯ:
+   *
+   * - обычный spot-рынок Chainlink (`…/btc-usd`) — правило расчёта нам не
+   *   объявлено вовсе, и прежние приблизительные ступени по споту для него
+   *   остаются допустимыми (verified-поведение до MR-B);
+   * - рынок с TWAP-правилом, которое мы не умеем считать
+   *   (`…/btc-usd-twap-45s-streams`) — источник расчёта ИЗВЕСТЕН и это НЕ
+   *   спот. Вывести победителя по споту здесь означало бы присудить итог
+   *   по потоку, которым рынок не рассчитывается. Такой рынок обязан быть
+   *   отброшен, а не «посчитан приблизительно».
+   *
+   * Поле нужно ровно затем, чтобы расширение vendor-домена (TWAP 45/120 или
+   * новая форма URL) РАНЬШЕ нашего кода не превратилось в молчаливую
+   * подмену источника расчёта.
+   */
+  readonly unsupportedSettlementSource?: string;
 }
 
 /**
@@ -215,6 +237,45 @@ const CHAINLINK_TWAP_URL = /\/([a-z0-9]+)-([a-z0-9]+)-twap-(\d{1,4})s(?:-streams
 
 /** Vendor-домен окон TWAP официального SDK (`CryptoPricesChainlinkTwapWindowSeconds`). */
 const SUPPORTED_TWAP_WINDOWS: readonly number[] = [30, 60];
+
+/**
+ * Грубый признак «правило расчёта рынка — TWAP-стрим Chainlink».
+ *
+ * @remarks
+ * Сознательно ШИРЕ строгого парсера: он ловит и те формы, которые парсер
+ * разобрать НЕ смог (`-twap-45s`, `-twap-120s`, будущие расширения vendor).
+ * Именно это различие критично — см.
+ * {@link PolymarketCryptoMeta.unsupportedSettlementSource}.
+ */
+const CHAINLINK_TWAP_RULE = /-twap(?:-|$)/i;
+
+/**
+ * Указывает ли `resolution.source` на расчёт по TWAP-стриму Chainlink.
+ *
+ * @param resolutionSource - Значение `market.resolution.source`
+ * @returns `true`, если рынок резолвится TWAP-потоком (независимо от того,
+ *   поддержано ли его окно локально)
+ *
+ * @remarks
+ * Отвечает на вопрос «каким ПРАВИЛОМ считается рынок», а не «умеем ли мы
+ * его посчитать». Второе — задача {@link parseChainlinkTwapSettlement}.
+ *
+ * @example
+ * ```typescript
+ * isChainlinkTwapResolutionSource('…/btc-usd-twap-45s-streams'); // true (окно не поддержано)
+ * isChainlinkTwapResolutionSource('…/btc-usd');                  // false (обычный spot)
+ * ```
+ */
+export function isChainlinkTwapResolutionSource(
+  resolutionSource: string | null | undefined,
+): boolean {
+  return (
+    resolutionSource !== null &&
+    resolutionSource !== undefined &&
+    resolutionSource.includes('chain.link') &&
+    CHAINLINK_TWAP_RULE.test(resolutionSource)
+  );
+}
 
 /**
  * Разбирает `resolution.source` в официальный settlement-дескриптор.
@@ -389,6 +450,11 @@ export function derivePolymarketCryptoMeta(
     // фидов не меняется, TWAP добавляется последним — только для рынков, чей
     // resolution.source разобрался в поддержанное окно.
     const settlement = parseChainlinkTwapSettlement(resolutionSource);
+    // Правило TWAP есть, но разобрать его мы не смогли — рынок продолжает
+    // собираться по spot-фидам, но НИКАКАЯ деривация итога для него не
+    // разрешена (см. `unsupportedSettlementSource`)
+    const unsupportedSettlement =
+      settlement === undefined && isChainlinkTwapResolutionSource(resolutionSource);
     return {
       source: 'chainlink',
       asset,
@@ -407,6 +473,7 @@ export function derivePolymarketCryptoMeta(
           : []),
       ],
       ...(settlement !== undefined ? { settlement } : {}),
+      ...(unsupportedSettlement ? { unsupportedSettlementSource: resolutionSource } : {}),
     };
   }
 

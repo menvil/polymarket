@@ -152,7 +152,10 @@ export type FinalizationRecorder = Pick<
  *   будет повторён; ничего не удалено и не заархивировано;
  * - `'archive-failed'` — итог известен, но записать архив не удалось
  *   (header/gzip). Датасет НЕ удаляется: незавершённый `.jsonl` заберёт
- *   cleanup storage, а `.gz` сознательно не создаётся.
+ *   cleanup storage, а `.gz` сознательно не создаётся;
+ * - `'discard-failed'` — итог вывести нельзя И удалить датасет не удалось.
+ *   Файл, скорее всего, остался на диске: сессия НЕ снимается и в счётчик
+ *   удалённых НЕ попадает.
  *
  * Различие между тремя последними — не косметика: `'discarded'` означает
  * «данные стёрты», и путать с ним отказ записи значило бы приписывать
@@ -164,7 +167,8 @@ export type FinalizationOutcome =
   | 'discarded'
   | 'best-effort'
   | 'deferred'
-  | 'archive-failed';
+  | 'archive-failed'
+  | 'discard-failed';
 
 /**
  * Зависимости {@link MarketFinalizer}.
@@ -777,10 +781,9 @@ export class MarketFinalizer {
 
     const resolution = await this._resolveArchive(entry, fallbackTrigger);
     if (resolution === undefined) {
-      await this._discardEntry(entry, fallbackTrigger);
-      // Удаление происходит ТОЛЬКО на терминальном пути; без триггера рынок
-      // просто остаётся ждать следующей попытки
-      return fallbackTrigger === undefined ? 'deferred' : 'discarded';
+      // Исход сообщает САМ discard: удаление могло не состояться, и тогда
+      // объявлять датасет удалённым нельзя
+      return await this._discardEntry(entry, fallbackTrigger);
     }
 
     const headerOk = await this._writeHeader(entry, resolution, nowMs);
@@ -901,6 +904,20 @@ export class MarketFinalizer {
       return derived === undefined
         ? undefined // deterministic-деривация невозможна → discard (PART 4)
         : this._fallbackResolution(entry, derived.winning, derived.derivation, fallbackTrigger);
+    }
+
+    // Правило расчёта — TWAP, но локально не поддержано. Источник расчёта
+    // ИЗВЕСТЕН и это НЕ спот, поэтому приблизительные ступени по споту
+    // запрещены (PART 8): вывести победителя по чужому потоку хуже, чем не
+    // вывести вовсе. Единственный исход — discard.
+    const unsupported = entry.session.selected.crypto?.unsupportedSettlementSource;
+    if (unsupported !== undefined) {
+      this._logger.warn('Settlement rule is TWAP but unsupported locally; dataset discarded', {
+        marketId: String(entry.session.marketId),
+        resolutionSource: unsupported,
+        trigger: fallbackTrigger,
+      });
+      return undefined;
     }
 
     // Вне поддержанного scope: прежнее best-known поведение (PART 90)
@@ -1222,18 +1239,26 @@ export class MarketFinalizer {
   private async _discardEntry(
     entry: PendingFinalization,
     trigger: CollectionFallbackTrigger | undefined,
-  ): Promise<void> {
+  ): Promise<FinalizationOutcome> {
     if (trigger === undefined) {
-      return; // не терминальный путь: рынок остаётся pending до таймаута
+      return 'deferred'; // не терминальный путь: рынок остаётся pending до таймаута
     }
     const key = String(entry.session.marketId);
     try {
       await this._recorder.finalizeMarket(entry.session.marketId, 'SHUTDOWN');
     } catch (error) {
-      this._logger.error('Failed to discard unresolvable dataset', {
+      // Удаление НЕ состоялось — файл, скорее всего, остался на диске.
+      // Объявлять его удалённым (снимать сессию, растить счётчик, писать
+      // «discarded») значило бы приписать системе действие, которого не
+      // было. Тот же терминальный контур, что у отказа архива: повторов
+      // нет, остаток наблюдаем через pendingFinalizations.
+      entry.archiveFailed = true;
+      this._logger.error('Failed to discard unresolvable dataset; file may remain on disk', {
         marketId: key,
+        trigger,
         error: error instanceof Error ? error.message : String(error),
       });
+      return 'discard-failed';
     }
     this._coordinator.completeFinalization(entry.session.marketId);
     this._pending.delete(key);
@@ -1244,6 +1269,7 @@ export class MarketFinalizer {
       trigger,
       attempts: entry.attempts,
     });
+    return 'discarded';
   }
 
   /**

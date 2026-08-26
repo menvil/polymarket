@@ -13,6 +13,7 @@
 import { describe, it, expect } from '@jest/globals';
 import type { CollectionHeaderFinalization } from '@polymarket/collection-coordinator';
 import {
+  BTC_FEEDS,
   BTC_TWAP_FEEDS,
   BTC_TWAP_SETTLEMENT,
   CID_A,
@@ -65,6 +66,16 @@ function upSeries(): string[] {
     twapLine(MARKET_END_MS, '78501.123456789012345678'),
     twapLine(MARKET_END_MS + 1_000, '78501.123456789012345678'),
   ];
+}
+
+/** Строка записанного СПОТ-наблюдения Chainlink (не settlement-поток). */
+function chainlinkSpotLine(timestampMs: number, value: string): string {
+  return JSON.stringify({
+    topic: 'prices.crypto.chainlink',
+    type: 'update',
+    timestamp: timestampMs,
+    payload: { symbol: 'btc/usd', timestamp: timestampMs, value },
+  });
 }
 
 /** Ряд, где закрытие НИЖЕ открытия → Down. */
@@ -445,6 +456,75 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
   });
 
+  it('BLOCKER-регрессия: НЕподдержанное окно TWAP не резолвится по СПОТУ', async () => {
+    // Правило расчёта — TWAP (URL это объявляет), но окно вне vendor-домена.
+    // Источник расчёта ИЗВЕСТЕН и это не спот, поэтому приблизительная
+    // ступень recorded-rtds для такого рынка запрещена: иначе расширение
+    // vendor-домена раньше нашего кода молча дало бы архив с победителем,
+    // посчитанным по чужому потоку.
+    const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent(),
+    );
+    // Спот-ряд ПОЛОН и по нему recorded-rtds выдал бы победителя
+    recorder.sealedPayloadLines = [
+      chainlinkSpotLine(MARKET_START_MS, '78000.0'),
+      chainlinkSpotLine(MARKET_END_MS - 30_000, '78500.0'),
+      chainlinkSpotLine(MARKET_END_MS - 1_000, '78600.0'),
+    ];
+    await coordinator.openMarket(
+      discovery.addMarket({
+        rtdsFeeds: BTC_FEEDS, // только spot: settlement-фида нет
+        unsupportedSettlementSource:
+          'https://data.chain.link/streams/btc-usd-twap-45s-streams',
+      }),
+    );
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce();
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
+
+    // Никакого архива и никакого победителя по споту
+    expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
+    expect(recorder.finalizations).not.toContain(`${CID_A}:EXPIRED`);
+    expect(finalizer.getStats()).toMatchObject({
+      discardedUnresolvable: 1,
+      archivedTotal: 0,
+    });
+    expect(coordinator.listSessions()).toEqual([]);
+  });
+
+  it('обычный spot-рынок Chainlink сохраняет прежнюю ступень recorded-rtds', async () => {
+    // Контраст к предыдущему тесту: у рынка БЕЗ TWAP-правила источник
+    // расчёта нам не объявлен, и verified-поведение до MR-B сохраняется.
+    const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
+    const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent(),
+    );
+    recorder.sealedPayloadLines = [
+      chainlinkSpotLine(MARKET_START_MS, '78000.0'),
+      chainlinkSpotLine(MARKET_END_MS - 30_000, '78500.0'),
+      chainlinkSpotLine(MARKET_END_MS - 1_000, '78600.0'),
+    ];
+    await coordinator.openMarket(discovery.addMarket({ rtdsFeeds: BTC_FEEDS }));
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await finalizer.runOnce();
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
+
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(lastFinalization(recorder).winning).toMatchObject({
+      source: 'recorded-rtds',
+      exact: false,
+    });
+  });
+
   it('рынок без официального времени старта не резолвится по ряду (PART 32)', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
     const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
@@ -467,6 +547,60 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
     await finalizer.runOnce();
 
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
+  });
+});
+
+describe('отказ УДАЛЕНИЯ не выдаётся за успешное удаление', () => {
+  it('finalizeMarket(SHUTDOWN) бросил → НЕ discarded, счётчик не растёт', async () => {
+    // Файл, скорее всего, остался на диске. Снять сессию, увеличить счётчик
+    // удалённых и написать «dataset discarded» значило бы приписать системе
+    // действие, которого не было.
+    const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
+    const { recorder, gamma, clock, coordinator, finalizer, logger } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent(),
+    );
+    recorder.sealedPayloadLines = undefined; // деривация недоступна → discard
+
+    await openExpiredTwapMarket(harness);
+    recorder.finalizeError = new Error('unlink failed');
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
+
+    expect(finalizer.getStats()).toMatchObject({
+      discardedUnresolvable: 0, // удаление НЕ состоялось
+      archivedTotal: 0,
+    });
+    expect(
+      logger.byLevel('error').some((e) => e.message.includes('file may remain on disk')),
+    ).toBe(true);
+    // Успешного «discarded» в логе быть не должно
+    expect(
+      logger.byLevel('warn').some((e) => e.message.includes('incomplete dataset discarded')),
+    ).toBe(false);
+    // Сессия НЕ снята: система не считает рынок завершённым
+    expect(coordinator.listSessions()).toHaveLength(1);
+  });
+
+  it('успешное удаление снимает сессию и растит счётчик', async () => {
+    const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
+    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent(),
+    );
+    recorder.sealedPayloadLines = undefined;
+
+    await openExpiredTwapMarket(harness);
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
+
+    expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
+    expect(finalizer.getStats()).toMatchObject({ discardedUnresolvable: 1 });
+    expect(coordinator.listSessions()).toEqual([]);
   });
 });
 

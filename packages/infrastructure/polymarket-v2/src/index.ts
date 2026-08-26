@@ -43,6 +43,7 @@ export type {
 export {
   CHAINLINK_TWAP_TOPIC,
   derivePolymarketCryptoMeta,
+  isChainlinkTwapResolutionSource,
   isTwapRtdsFeed,
   parseChainlinkTwapSettlement,
   rtdsFeedKey,

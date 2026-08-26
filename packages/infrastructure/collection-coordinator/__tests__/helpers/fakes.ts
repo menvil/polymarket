@@ -159,6 +159,8 @@ export interface SelectedFixtureOptions {
   readonly rtdsFeeds?: readonly PolymarketRtdsFeed[];
   /** Settlement-дескриптор рынка (без него fallback-деривация недоступна). */
   readonly settlement?: PolymarketChainlinkTwapSettlement;
+  /** `resolution.source` с TWAP-правилом, которое локально не поддержано. */
+  readonly unsupportedSettlementSource?: string;
   /** Байты паддинга gammaMarket (тесты бюджета header). */
   readonly gammaMarketPadding?: number;
   /** Включить gammaEvent; число — байты его паддинга (тесты бюджета header). */
@@ -180,6 +182,7 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     eventStartsAtMs = NOW_MS + 10 * 60_000,
     rtdsFeeds = BTC_FEEDS,
     settlement,
+    unsupportedSettlementSource,
     gammaMarketPadding,
     gammaEventPadding,
   } = options;
@@ -237,6 +240,9 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
             binanceSymbol: 'BTCUSDT',
             feeds: rtdsFeeds,
             ...(settlement !== undefined ? { settlement } : {}),
+            ...(unsupportedSettlementSource !== undefined
+              ? { unsupportedSettlementSource }
+              : {}),
           },
         }
       : {}),

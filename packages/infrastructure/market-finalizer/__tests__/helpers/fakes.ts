@@ -31,6 +31,7 @@ import {
 } from '../../../collection-coordinator/__tests__/helpers/fakes.js';
 
 export {
+  BTC_FEEDS,
   BTC_TWAP_FEEDS,
   BTC_TWAP_SETTLEMENT,
   CID_A,

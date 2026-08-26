@@ -12,6 +12,7 @@ import type { Market } from '@polymarket/bindings/gamma';
 import {
   CHAINLINK_TWAP_TOPIC,
   derivePolymarketCryptoMeta,
+  isChainlinkTwapResolutionSource,
   isTwapRtdsFeed,
   parseChainlinkTwapSettlement,
   rtdsFeedKey,
@@ -105,16 +106,46 @@ describe('derivePolymarketCryptoMeta: settlement ДОПОЛНЯЕТ spot-фид�
     expect(meta?.feeds.some(isTwapRtdsFeed)).toBe(false);
   });
 
-  it('неподдержанное окно: рынок собирается по spot-фидам, но БЕЗ settlement', () => {
-    // Рынок не выпадает из сбора целиком — теряется только возможность
-    // deterministic-деривации (её отсутствие честнее подмены окна).
-    const meta = derivePolymarketCryptoMeta(
-      marketWithSource('https://data.chain.link/streams/btc-usd-twap-45s-streams'),
-    );
+  it('неподдержанное окно: spot-фиды есть, settlement нет, правило ПОМЕЧЕНО', () => {
+    // Рынок не выпадает из сбора целиком, но обязан нести признак «правило
+    // расчёта — TWAP, локально не поддержано»: без него finalizer принял бы
+    // его за обычный spot-рынок и вывел бы победителя по СПОТУ.
+    const source = 'https://data.chain.link/streams/btc-usd-twap-45s-streams';
+    const meta = derivePolymarketCryptoMeta(marketWithSource(source));
 
     expect(meta?.source).toBe('chainlink');
     expect(meta?.settlement).toBeUndefined();
     expect(meta?.feeds.some(isTwapRtdsFeed)).toBe(false);
+    expect(meta?.unsupportedSettlementSource).toBe(source);
+  });
+
+  it('обычный spot-рынок НЕ помечается как неподдержанный TWAP', () => {
+    const meta = derivePolymarketCryptoMeta(
+      marketWithSource('https://data.chain.link/streams/btc-usd'),
+    );
+
+    expect(meta?.unsupportedSettlementSource).toBeUndefined();
+  });
+
+  it('поддержанное окно не помечается как неподдержанное', () => {
+    const meta = derivePolymarketCryptoMeta(
+      marketWithSource('https://data.chain.link/streams/btc-usd-twap-60s-streams'),
+    );
+
+    expect(meta?.settlement).toBeDefined();
+    expect(meta?.unsupportedSettlementSource).toBeUndefined();
+  });
+
+  it.each([
+    ['https://data.chain.link/streams/btc-usd-twap-45s-streams', true],
+    ['https://data.chain.link/streams/btc-usd-twap-120s-streams', true],
+    ['https://data.chain.link/streams/btc-usd-twap', true],
+    ['https://data.chain.link/streams/btc-usd-twap-60s-streams', true],
+    ['https://data.chain.link/streams/btc-usd', false],
+    ['https://www.binance.com/en/trade/BTC_USDT', false],
+    ['', false],
+  ])('isChainlinkTwapResolutionSource(%s) → %s', (source, expected) => {
+    expect(isChainlinkTwapResolutionSource(source)).toBe(expected);
   });
 
   it('Binance-источник не получает settlement-потока (PART 90)', () => {
