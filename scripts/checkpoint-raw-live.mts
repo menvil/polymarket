@@ -1552,9 +1552,17 @@ async function main(): Promise<number> {
  */
 function armExitWatchdog(): void {
   const watchdog = setTimeout(() => {
-    console.error('CHECKPOINT: process did not exit naturally within 60s after main()');
-    console.error('Active resources:', process.getActiveResourcesInfo());
-    console.error('Active handles:', describeActiveHandles());
+    // fs.writeSync, а НЕ console.error: запись в stderr асинхронна, когда он
+    // подключён к pipe (CI, `| tee`), и следующий за ней process.exit() обрывает
+    // её на полуслове. Потерять здесь можно ровно ту диагностику, ради которой
+    // watchdog и существует.
+    const lines = [
+      'CHECKPOINT: process did not exit naturally within 60s after main()',
+      `Active resources: ${JSON.stringify(process.getActiveResourcesInfo())}`,
+      `Active handles: ${JSON.stringify(describeActiveHandles(), null, 2)}`,
+      '',
+    ];
+    fs.writeSync(2, lines.join('\n'));
     process.exit(3);
   }, 60_000);
   watchdog.unref();

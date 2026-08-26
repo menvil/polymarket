@@ -293,8 +293,17 @@ export class DataCollector {
   private _state: DataCollectorState = 'idle';
   private _startedAtMs: number | null = null;
   private _tickTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Текущий тик цикла — остановка дожидается его завершения. */
-  private _tickInFlight: Promise<void> | null = null;
+  /**
+   * ВСЕ идущие сейчас тики — остановка дожидается каждого.
+   *
+   * @remarks
+   * Именно множество, а не «текущий тик»: планировщик запускает следующий проход
+   * только после завершения предыдущего, но `tick()` публичен, и прямой вызов
+   * может перекрыться с проходом цикла. При хранении одной ссылки второй тик
+   * затирал бы первый, и остановка закрывала бы координатор с финализатором
+   * прямо под работающим тиком.
+   */
+  private readonly _activeTicks = new Set<Promise<void>>();
   private _lastRefreshMs = 0;
   private _closePromise: Promise<void> | null = null;
   /** Незавершённый запуск (остановка ждёт его, чтобы не гасить контур на подъёме). */
@@ -552,13 +561,11 @@ export class DataCollector {
     // Тик регистрирует себя САМ, а не планировщик: остановка обязана дожидаться
     // любого идущего тика — и запущенного циклом, и вызванного напрямую.
     const running = this._tick();
-    this._tickInFlight = running;
+    this._activeTicks.add(running);
     try {
       await running;
     } finally {
-      if (this._tickInFlight === running) {
-        this._tickInFlight = null;
-      }
+      this._activeTicks.delete(running);
     }
   }
 
@@ -590,11 +597,12 @@ export class DataCollector {
       clearTimeout(this._tickTimer);
       this._tickTimer = null;
     }
-    // Тик мог быть в полёте: его шаги трогают те же координатор/финализатор,
-    // что и лестница закрытия, поэтому дожидаемся завершения.
-    if (this._tickInFlight !== null) {
-      await this._tickInFlight.catch(() => undefined);
-      this._tickInFlight = null;
+    // Тики могли остаться в полёте: их шаги трогают те же координатор и
+    // финализатор, что и лестница закрытия. Цикл — на случай, если тик успел
+    // стартовать, пока мы дожидались предыдущих; новых проходов планировщик уже
+    // не создаёт (состояние больше не `running`), поэтому ожидание конечно.
+    while (this._activeTicks.size > 0) {
+      await Promise.allSettled([...this._activeTicks]);
     }
 
     const cexSources = this._components.cexSources;

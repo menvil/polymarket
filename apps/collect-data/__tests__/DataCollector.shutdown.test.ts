@@ -305,4 +305,36 @@ describe('DataCollector.close() — таймеры и тики', () => {
     );
     expect(contour.log.countOf('bus.close')).toBe(1);
   });
+
+  it('дожидается ВСЕХ перекрывающихся тиков, а не только последнего', async () => {
+    const { collector, contour } = makeCollector();
+    await collector.start();
+
+    // Первый тик подвисает в fillSlots.
+    contour.coordinator.block();
+    const firstTick = collector.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(contour.log.indexOf('coordinator.fillSlots.start')).toBeGreaterThanOrEqual(0);
+
+    // Второй тик перекрывает первый и УСПЕВАЕТ завершиться раньше него.
+    contour.coordinator.unblockFuture();
+    await collector.tick();
+
+    const closing = collector.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Первый тик всё ещё работает с координатором/финализатором — закрывать их
+    // нельзя. Хранение одной ссылки на «текущий тик» здесь давало bus.close.
+    expect(contour.log.indexOf('bus.close')).toBe(-1);
+
+    contour.coordinator.release();
+    await Promise.all([closing, firstTick]);
+
+    expect(contour.log.countOf('coordinator.fillSlots')).toBe(2);
+    // Оба тика завершились до закрытия контура.
+    expect(contour.log.calls.lastIndexOf('coordinator.fillSlots')).toBeLessThan(
+      contour.log.orderOf('bus.close'),
+    );
+  });
 });

@@ -376,6 +376,17 @@ export class FakeCoordinator implements CollectorCoordinator {
     });
   }
 
+  /**
+   * Снимает блокировку для БУДУЩИХ вызовов, не отпуская уже подвешенный.
+   *
+   * @remarks
+   * Нужно для проверки ПЕРЕКРЫВАЮЩИХСЯ тиков: первый остаётся в полёте, а
+   * второй проходит насквозь и завершается раньше него.
+   */
+  public unblockFuture(): void {
+    this._gate = undefined;
+  }
+
   /** Отпускает подвешенный `fillSlots()`. */
   public release(): void {
     this._openGate?.();
