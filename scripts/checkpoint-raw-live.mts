@@ -1015,6 +1015,15 @@ interface ValidationReport {
     payloadLines: number;
     marketLines: number;
     rtdsLines: number;
+    /** Строки официального settlement-потока (доказательство состава архива). */
+    twapLines: number;
+    settlement:
+      | { readonly symbol: string; readonly windowSeconds: number; readonly resolutionSource: string }
+      | undefined;
+    winningInstrumentId: string | undefined;
+    winningOutcomeIndex: number | undefined;
+    resolutionProvenance: string | undefined;
+    fallbackTrigger: string | undefined;
     priceToBeat: unknown;
     finalPrice: unknown;
     winningLabel: string | undefined;
@@ -1152,6 +1161,7 @@ function validateArtifacts(
     }
     let marketLines = 0;
     let rtdsLines = 0;
+    let twapLines = 0;
     // Повторяющиеся нарушения агрегируются per-archive (без флуда отчёта)
     let parseErrors = 0;
     let envelopeLeaks = 0;
@@ -1181,6 +1191,18 @@ function validateArtifacts(
       const topic = parsed['topic'];
       if (typeof topic === 'string' && topic.startsWith('prices.crypto.')) {
         rtdsLines++;
+        if (topic === 'prices.crypto.chainlink.twap') {
+          twapLines++;
+          // Окно обязано присутствовать В САМОЙ строке: без него replay не
+          // отличит поток расчёта одного рынка от потока другого
+          const inner = parsed['payload'] as Record<string, unknown> | undefined;
+          const window = inner?.['windowSeconds'];
+          if (window !== 30 && window !== 60) {
+            report.violations.push(
+              `TWAP line without vendor window in ${file}: ${String(window)}`,
+            );
+          }
+        }
       } else if (topic === 'market') {
         marketLines++;
         const inner = parsed['payload'] as Record<string, unknown> | undefined;
@@ -1218,6 +1240,12 @@ function validateArtifacts(
       payloadLines: lines.length - 1,
       marketLines,
       rtdsLines,
+      twapLines,
+      settlement: header.settlement,
+      winningInstrumentId: header.winningInstrumentId,
+      winningOutcomeIndex: header.winningOutcomeIndex,
+      resolutionProvenance: header.resolutionProvenance,
+      fallbackTrigger: header.fallbackTrigger,
       priceToBeat: header.priceToBeat,
       finalPrice: header.finalPrice,
       winningLabel: header.winningLabel,
@@ -1239,6 +1267,21 @@ function validateArtifacts(
       `stale incomplete PM .jsonl after shutdown: ${report.pmIncompleteFiles.join(', ')}`,
     );
   }
+  // MR-B hard-инвариант: `timeout` — это триггер fallback, а не итог. Для
+  // рынка с распознанным settlement-дескриптором завершённый архив со
+  // статусом `timeout` (и тем более без победителя) означает, что система
+  // выдала непригодный к replay датасет за пригодный.
+  for (const archive of report.pmArchives) {
+    if (archive.settlement === undefined) continue;
+    if (archive.status === 'timeout') {
+      report.violations.push(
+        `TWAP market archived with timeout status instead of resolved/discarded: ${archive.file}`,
+      );
+    }
+    if (archive.winningLabel === undefined) {
+      report.violations.push(`TWAP market archived without a known winner: ${archive.file}`);
+    }
+  }
   if (requireFullLifecycle) {
     const complete = report.pmArchives.filter((archive) => archive.status === 'complete');
     if (complete.length === 0) {
@@ -1251,18 +1294,24 @@ function validateArtifacts(
       if (archive.rtdsLines === 0) {
         report.violations.push(`complete PM archive has zero RTDS lines: ${archive.file}`);
       }
-      if (archive.priceToBeat === undefined || archive.finalPrice === undefined) {
-        report.violations.push(`complete PM archive missing crypto finalization: ${archive.file}`);
+      // MR-B: наличие ОБОИХ крипто-чисел больше НЕ является критерием
+      // завершённости. Gamma публикует `finalPrice` не всегда и не раньше
+      // резолюции (live 2026-08-26), а ждать его при уже известном
+      // официальном итоге значит держать рынок весь бюджет. Критерий теперь
+      // один и он строже: у завершённого архива ИЗВЕСТЕН ПОБЕДИТЕЛЬ.
+      if (archive.priceToBeat === undefined) {
+        report.violations.push(`complete PM archive has no price to beat: ${archive.file}`);
       }
-      // Winner-ladder (решение user 2026-08-25): у complete-архива победитель
-      // ОБЯЗАН присутствовать и быть точным — либо из UMA-резолюции
-      // (`resolution`), либо по формуле рынка на официальных ценах
-      // (`official-prices`); приблизительные источники здесь недопустимы
+      // Winner-ladder: у complete-архива победитель ОБЯЗАН присутствовать и
+      // быть точным — официальная UMA-резолюция, формула рынка на официальных
+      // ценах либо deterministic-деривация из записанного settlement-потока;
+      // приблизительные источники здесь недопустимы
       if (archive.winningLabel === undefined) {
         report.violations.push(`complete PM archive missing winning outcome: ${archive.file}`);
       } else if (
         archive.winningSource !== 'resolution' &&
-        archive.winningSource !== 'official-prices'
+        archive.winningSource !== 'official-prices' &&
+        archive.winningSource !== 'recorded-twap'
       ) {
         report.violations.push(
           `complete PM archive has non-official winner source ` +
@@ -1276,6 +1325,36 @@ function validateArtifacts(
           `resolved PM archive should use resolution source, got ` +
             `'${String(archive.winningSource)}': ${archive.file}`,
         );
+      }
+      // MR-B: рынок, чьё правило расчёта распознано, обязан нести в архиве
+      // и сам settlement-поток, и полную machine-usable identity итога —
+      // иначе датасет невозможно ни проверить, ни воспроизвести
+      if (archive.settlement !== undefined) {
+        if (archive.twapLines === 0) {
+          report.violations.push(
+            `TWAP market archive contains no settlement observations: ${archive.file}`,
+          );
+        }
+        if (archive.winningInstrumentId === undefined || archive.winningOutcomeIndex === undefined) {
+          report.violations.push(
+            `TWAP market archive winner lacks machine-usable identity: ${archive.file}`,
+          );
+        }
+        if (
+          archive.resolutionProvenance !== 'official' &&
+          archive.resolutionProvenance !== 'fallback-chainlink-twap'
+        ) {
+          report.violations.push(
+            `TWAP market archive has unknown resolution provenance ` +
+              `'${String(archive.resolutionProvenance)}': ${archive.file}`,
+          );
+        }
+        if (archive.settlement.windowSeconds !== 30 && archive.settlement.windowSeconds !== 60) {
+          report.violations.push(
+            `TWAP market archive has out-of-domain window ` +
+              `${String(archive.settlement.windowSeconds)}: ${archive.file}`,
+          );
+        }
       }
       if (!archive.exactMarketSampleMatched) {
         report.violations.push(
