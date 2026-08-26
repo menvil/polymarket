@@ -23,9 +23,11 @@ import type {
   PolymarketGammaEvent,
   PolymarketGammaMarket,
   PolymarketOpenSubscription,
+  PolymarketChainlinkTwapSettlement,
   PolymarketRtdsFeed,
   SelectedPolymarketMarket,
 } from '@polymarket/polymarket-v2';
+import { rtdsFeedKey } from '@polymarket/polymarket-v2';
 import type { PolymarketRecordingRegistration } from '@polymarket/external-message-recorder';
 import type {
   CollectionDiscovery,
@@ -42,10 +44,24 @@ export const CID_B = `0x${'b'.repeat(64)}`;
 export const TOKEN_UP = '111';
 export const TOKEN_DOWN = '222';
 
-/** RTDS-фиды BTC (оба vendor topic). */
+/** RTDS-фиды BTC (оба spot vendor topic). */
 export const BTC_FEEDS: readonly PolymarketRtdsFeed[] = [
   { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
   { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
+];
+
+/** Settlement-дескриптор BTC TWAP-60 (рынок текущих 5m/15m-серий). */
+export const BTC_TWAP_SETTLEMENT: PolymarketChainlinkTwapSettlement = {
+  kind: 'chainlink-twap',
+  symbol: 'btc/usd',
+  windowSeconds: 60,
+  resolutionSource: 'https://data.chain.link/streams/btc-usd-twap-60s-streams',
+};
+
+/** RTDS-фиды BTC TWAP-рынка: spot-пара + официальный settlement-поток. */
+export const BTC_TWAP_FEEDS: readonly PolymarketRtdsFeed[] = [
+  ...BTC_FEEDS,
+  { topic: 'prices.crypto.chainlink.twap', symbol: 'btc/usd', windowSeconds: 60 },
 ];
 
 /** Управляемые часы. */
@@ -141,6 +157,8 @@ export interface SelectedFixtureOptions {
   /** ms точного начала события; `null` — события/startTime нет. */
   readonly eventStartsAtMs?: number | null;
   readonly rtdsFeeds?: readonly PolymarketRtdsFeed[];
+  /** Settlement-дескриптор рынка (без него fallback-деривация недоступна). */
+  readonly settlement?: PolymarketChainlinkTwapSettlement;
   /** Байты паддинга gammaMarket (тесты бюджета header). */
   readonly gammaMarketPadding?: number;
   /** Включить gammaEvent; число — байты его паддинга (тесты бюджета header). */
@@ -161,6 +179,7 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
     expiresAtMs = NOW_MS + 70 * 60_000,
     eventStartsAtMs = NOW_MS + 10 * 60_000,
     rtdsFeeds = BTC_FEEDS,
+    settlement,
     gammaMarketPadding,
     gammaEventPadding,
   } = options;
@@ -217,6 +236,7 @@ export function createSelected(options: SelectedFixtureOptions = {}): SelectedPo
             asset: asCryptoAssetId('btc')!,
             binanceSymbol: 'BTCUSDT',
             feeds: rtdsFeeds,
+            ...(settlement !== undefined ? { settlement } : {}),
           },
         }
       : {}),
@@ -357,6 +377,8 @@ export class FakeCollectionSource implements CollectionSource {
   public readonly subscribeMarketCalls: Array<readonly string[]> = [];
   /** Вызовы subscribeCryptoPrices (`topic:symbol`). */
   public readonly subscribeCryptoCalls: string[] = [];
+  /** Вызовы subscribeChainlinkTwap (`topic:symbol@windowSeconds`). */
+  public readonly subscribeTwapCalls: string[] = [];
   /** Если задано — subscribeMarket бросает. */
   public subscribeMarketError: unknown;
   /** Если задано — subscribeCryptoPrices для этого `topic:symbol` бросает. */
@@ -413,6 +435,29 @@ export class FakeCollectionSource implements CollectionSource {
     this.rtdsSubscriptions.set(key, subscription);
     return subscription;
   };
+
+  public readonly subscribeChainlinkTwap = async (
+    windowSeconds: 30 | 60,
+    symbols: readonly string[],
+  ): Promise<PolymarketOpenSubscription> => {
+    if (symbols.length !== 1) {
+      throw new Error(`FakeCollectionSource expects exactly one symbol, got: ${symbols.join(',')}`);
+    }
+    // Ключ несёт ОКНО: два окна одного символа — разные физические подписки
+    const key = `prices.crypto.chainlink.twap:${symbols.join(',')}@${String(windowSeconds)}`;
+    this.subscribeTwapCalls.push(key);
+    this._log?.push(`source.subscribeChainlinkTwap:${key}`);
+    if (this.subscribeCryptoHold !== undefined) {
+      await this.subscribeCryptoHold;
+    }
+    const error = this.cryptoErrors.get(key);
+    if (error !== undefined) {
+      throw error;
+    }
+    const subscription = new FakeOpenSubscription(`rtds:${key}`, this._log);
+    this.rtdsSubscriptions.set(key, subscription);
+    return subscription;
+  };
 }
 
 /**
@@ -425,10 +470,14 @@ export class FakeCollectionRecorder implements CollectionRecorder {
   public readonly finalizations: string[] = [];
   /** Заморозки датасетов в порядке вызовов. */
   public readonly seals: string[] = [];
+  /** Сужения routing: `marketId:feedKey,...`. */
+  public readonly narrowings: string[] = [];
   /** Возвращаемое значение registerMarket. */
   public registerResult = true;
   /** Возвращаемое значение sealMarket. */
   public sealResult = true;
+  /** Возвращаемое значение narrowRtdsFeeds. */
+  public narrowResult = true;
   /** Если задано — finalizeMarket бросает. */
   public finalizeError: unknown;
 
@@ -438,6 +487,16 @@ export class FakeCollectionRecorder implements CollectionRecorder {
     this.registrations.push(registration);
     this._log?.push(`recorder.registerMarket:${String(registration.marketMeta.marketId)}`);
     return this.registerResult;
+  };
+
+  public readonly narrowRtdsFeeds = (
+    marketId: MarketId,
+    feeds: readonly PolymarketRtdsFeed[],
+  ): boolean => {
+    const label = feeds.map((feed) => rtdsFeedKey(feed)).join(',');
+    this.narrowings.push(`${String(marketId)}:${label}`);
+    this._log?.push(`recorder.narrowRtdsFeeds:${String(marketId)}:${label}`);
+    return this.narrowResult;
   };
 
   public readonly sealMarket = async (marketId: MarketId): Promise<boolean> => {

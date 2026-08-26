@@ -61,14 +61,17 @@ import type { MarketId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import type {
+  CryptoPricesChainlinkTwapWindowSeconds,
   CryptoPricesTopic,
   PolymarketDiscoveredMarket,
   PolymarketMarketDiscovery,
   PolymarketOpenSubscription,
   PolymarketRtdsFeed,
   PolymarketSource,
+  PolymarketTwapRtdsFeed,
   SelectedPolymarketMarket,
 } from '@polymarket/polymarket-v2';
+import { isTwapRtdsFeed, rtdsFeedKey } from '@polymarket/polymarket-v2';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import { buildCollectionHeader } from './collectionHeader.js';
 
@@ -99,7 +102,7 @@ export type CollectionDiscovery = Pick<
  */
 export type CollectionSource = Pick<
   PolymarketSource,
-  'subscribeMarket' | 'subscribeCryptoPrices' | 'hasFailed'
+  'subscribeMarket' | 'subscribeCryptoPrices' | 'subscribeChainlinkTwap' | 'hasFailed'
 >;
 
 /**
@@ -111,8 +114,28 @@ export type CollectionSource = Pick<
  */
 export type CollectionRecorder = Pick<
   ExternalMessageRecorder,
-  'registerMarket' | 'sealMarket' | 'finalizeMarket'
+  'registerMarket' | 'narrowRtdsFeeds' | 'sealMarket' | 'finalizeMarket'
 >;
+
+/**
+ * Порт наблюдателя settlement-потока, используемый координатором.
+ *
+ * @remarks
+ * Единственный вопрос, который координатор ему задаёт: «пересечена ли
+ * граница рынка в vendor-времени фида?». По нему решается, можно ли уже
+ * замораживать датасет, или граничное наблюдение ещё в пути
+ * (измеренная задержка доставки — 1.1–2.2 с, см. boundary grace).
+ */
+export interface CollectionSettlementObserver {
+  /**
+   * Пришло ли наблюдение фида с vendor-timestamp не раньше границы.
+   *
+   * @param feed - Settlement-фид рынка
+   * @param atMs - Граница рынка (epoch ms)
+   * @returns `true`, если граничное наблюдение уже получено
+   */
+  hasObservationAtOrAfter(feed: PolymarketTwapRtdsFeed, atMs: number): boolean;
+}
 
 /**
  * Зависимости {@link MarketCollectionCoordinator}.
@@ -124,6 +147,15 @@ export interface MarketCollectionCoordinatorDependencies {
   readonly source: CollectionSource;
   /** Recording-подписчик общего bus (регистрация/снятие сессий). */
   readonly recorder: CollectionRecorder;
+  /**
+   * Наблюдатель settlement-потока (ранний выход из boundary grace).
+   *
+   * @remarks
+   * Опционален: без него граница выдерживается полным `settlementGraceMs`,
+   * с ним — ровно до фактического прихода граничного наблюдения. Рынки без
+   * settlement-фида не затрагиваются в обоих случаях.
+   */
+  readonly settlementObserver?: CollectionSettlementObserver;
   /** Источник времени (DI — детерминизм в тестах). */
   readonly clock: IClock;
   /** Логгер (будет обёрнут в child с component-контекстом). */
@@ -150,11 +182,34 @@ export interface MarketCollectionCoordinatorConfig {
    * @defaultValue 900_000 (15 минут — parity с legacy fallback durationMs)
    */
   readonly fallbackMarketDurationMs?: number;
+  /**
+   * Boundary grace settlement-потока: сколько ждать граничное наблюдение
+   * TWAP ПОСЛЕ истечения рынка, прежде чем заморозить датасет.
+   *
+   * @defaultValue 5_000
+   *
+   * @remarks
+   * Число измерено, а не выбрано: live-характеризация RTDS 2026-08-26
+   * (`prices.crypto.chainlink.twap`, 1 Гц, btc/usd + eth/usd, n≈90) дала
+   * задержку доставки `recv − payload.timestamp` в диапазоне 1116–2155 мс
+   * (p50 ≈ 1.5 с). Grace — это измеренный максимум с запасом ×2, а не
+   * догадка. Ожидание завершается ДОСРОЧНО, как только граничное
+   * наблюдение получено (см. {@link CollectionSettlementObserver}).
+   *
+   * Затрагивает ТОЛЬКО settlement-фид: CLOB-подписка и spot-фиды рынка
+   * закрываются ровно в момент истечения (PART 25 — trading lifecycle не
+   * продлевается), routing записи на это время сужается до одного фида.
+   */
+  readonly settlementGraceMs?: number;
 }
 
 /** Дефолты конфигурации (см. {@link MarketCollectionCoordinatorConfig}). */
 const DEFAULT_MIN_TIME_TO_START_MS = 2 * 60_000;
 const DEFAULT_FALLBACK_MARKET_DURATION_MS = 15 * 60_000;
+const DEFAULT_SETTLEMENT_GRACE_MS = 5_000;
+
+/** Шаг опроса наблюдателя внутри boundary grace. */
+const SETTLEMENT_POLL_MS = 250;
 
 /**
  * Исход попытки открытия collection session.
@@ -184,10 +239,18 @@ export interface CollectionSessionSnapshot {
  * Снимок одного shared RTDS-фида (диагностика/тесты/смоук).
  */
 export interface CollectionRtdsFeedStat {
-  /** Vendor topic фида (typed union SDK). */
-  readonly topic: CryptoPricesTopic;
+  /** Vendor topic фида (typed union SDK, включая settlement TWAP). */
+  readonly topic: CryptoPricesTopic | PolymarketTwapRtdsFeed['topic'];
   /** Точный символ фида в нативном формате источника. */
   readonly symbol: string;
+  /**
+   * Окно усреднения settlement-потока (только для TWAP-фидов).
+   *
+   * @remarks
+   * Присутствие поля — то, чем `btc/usd` TWAP 30 отличается от `btc/usd`
+   * TWAP 60 в диагностике: это ДВА разных фида с двумя ref-count-ами.
+   */
+  readonly windowSeconds?: CryptoPricesChainlinkTwapWindowSeconds;
   /** Количество рынков, держащих ref на фид. */
   readonly refCount: number;
 }
@@ -241,6 +304,18 @@ interface CollectionSession {
   readonly settled: Promise<void>;
   /** Резолвер settled (вызывается транзакцией на любом исходе). */
   readonly settle: () => void;
+  /**
+   * Идущий boundary grace settlement-фида (см.
+   * {@link MarketCollectionCoordinator.beginFinalization}).
+   *
+   * @remarks
+   * Пока promise не разрешён, датасет ЕЩЁ НЕ заморожен: settlement-фид
+   * дописывает граничные наблюдения. Всякий, кому нужен замороженный
+   * датасет (архив, чтение записанных строк, shutdown), обязан сперва его
+   * дождаться — для этого существует
+   * {@link MarketCollectionCoordinator.awaitSettlementCapture}.
+   */
+  settlementCapture?: Promise<void>;
 }
 
 /**
@@ -255,10 +330,20 @@ interface RtdsFeedEntry {
 }
 
 /**
- * Точный ключ RTDS-фида (vendor topic + символ).
+ * Читаемая метка фида для логов/диагностики.
+ *
+ * @param feed - Фид рынка
+ * @returns Компактное описание, различающее окно settlement-потока
+ *
+ * @remarks
+ * Идентичность фида даёт `rtdsFeedKey` из `@polymarket/polymarket-v2` —
+ * ЕДИНОЕ правило на весь контур. Эта функция существует только ради
+ * человекочитаемых логов и не участвует в сопоставлении.
  */
-function rtdsFeedKey(feed: PolymarketRtdsFeed): string {
-  return `${feed.topic}:${feed.symbol}`;
+function rtdsFeedLabel(feed: PolymarketRtdsFeed): string {
+  return isTwapRtdsFeed(feed)
+    ? `${feed.topic}:${feed.symbol}@${String(feed.windowSeconds)}s`
+    : `${feed.topic}:${feed.symbol}`;
 }
 
 /**
@@ -281,11 +366,13 @@ export class MarketCollectionCoordinator {
   private readonly _discovery: CollectionDiscovery;
   private readonly _source: CollectionSource;
   private readonly _recorder: CollectionRecorder;
+  private readonly _settlementObserver: CollectionSettlementObserver | undefined;
   private readonly _clock: IClock;
   private readonly _logger: ILogger;
   private readonly _maxMarkets: number;
   private readonly _minTimeToStartMs: number;
   private readonly _fallbackMarketDurationMs: number;
+  private readonly _settlementGraceMs: number;
 
   /** Сессии по `String(marketId)`; OPENING и ACTIVE занимают slot (PART 21). */
   private readonly _sessions = new Map<string, CollectionSession>();
@@ -315,12 +402,14 @@ export class MarketCollectionCoordinator {
     this._discovery = deps.discovery;
     this._source = deps.source;
     this._recorder = deps.recorder;
+    this._settlementObserver = deps.settlementObserver;
     this._clock = deps.clock;
     this._logger = deps.logger.child({ component: 'MarketCollectionCoordinator' });
     this._maxMarkets = config.maxMarkets;
     this._minTimeToStartMs = config.minTimeToStartMs ?? DEFAULT_MIN_TIME_TO_START_MS;
     this._fallbackMarketDurationMs =
       config.fallbackMarketDurationMs ?? DEFAULT_FALLBACK_MARKET_DURATION_MS;
+    this._settlementGraceMs = config.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_MS;
   }
 
   /** true после {@link MarketCollectionCoordinator.close}. */
@@ -680,7 +769,7 @@ export class MarketCollectionCoordinator {
       marketId: key,
       question: selected.question,
       instruments: instrumentIds.length,
-      rtdsFeeds: selected.rtdsFeeds.map(rtdsFeedKey),
+      rtdsFeeds: selected.rtdsFeeds.map(rtdsFeedLabel),
       expiresAt: new Date(selected.expiresAt.toNumber()).toISOString(),
       isCrypto: selected.crypto !== undefined,
     });
@@ -721,10 +810,29 @@ export class MarketCollectionCoordinator {
    *
    * 1. identity-safe пометка FINALIZING ДО первого await (двойной переход
    *    и конкурентный duplicate невозможны); слот capacity освобождён;
-   * 2. `recorder.sealMarket` — routing снят, payload-датасет заморожен
+   * 2. закрытие market-подписки Source — trading lifecycle кончается ровно
+   *    на истечении (PART 25) и НЕ продлевается;
+   * 3. освобождение refs всех фидов, КРОМЕ settlement-потока рынка;
+   * 4. сужение routing записи до одного settlement-фида
+   *    (`recorder.narrowRtdsFeeds`) — с этого момента в датасет попадают
+   *    только граничные наблюдения TWAP, а не «хвост» чужих spot-фидов;
+   * 5. boundary grace: ожидание граничного наблюдения (или таймаут);
+   * 6. `recorder.sealMarket` — routing снят, payload-датасет заморожен
    *    (буфер flushed, append-stream закрыт), header остаётся writable;
-   * 3. закрытие market-подписки Source;
-   * 4. освобождение RTDS-refs (общие фиды других рынков живут).
+   * 7. освобождение ref settlement-фида.
+   *
+   * ### Почему шаги 4-5 существуют (гонка, найденная замером)
+   *
+   * RTDS доставляет наблюдение с vendor-timestamp `T` через 1.1–2.2 с
+   * реального времени (характеризация 2026-08-26). Если заморозить датасет
+   * ровно на `expiresAt`, ГРАНИЧНОЕ наблюдение — то самое, по которому
+   * рынок и рассчитывается, — придёт уже после seal и будет потеряно. Тогда
+   * deterministic fallback пришлось бы строить на предпоследнем значении,
+   * то есть на другом числе, чем у оракула.
+   *
+   * Шаги 5-7 выполняются АСИНХРОННО: метод возвращает снимок сразу, не
+   * задерживая проход finalizer-а. Всякий, кому нужен замороженный датасет,
+   * дожидается {@link MarketCollectionCoordinator.awaitSettlementCapture}.
    *
    * `finalizeMarket(EXPIRED)` здесь НЕ вызывается — архивом владеет
    * finalizer после enrichment/timeout. Ошибки teardown-шагов логируются и
@@ -746,25 +854,162 @@ export class MarketCollectionCoordinator {
     const selected = session.selected!;
     const recordingStartedAt = session.openedAt!;
 
-    const sealed = await this._recorder.sealMarket(session.marketId);
-    if (!sealed) {
-      this._logger.warn('Recorder seal reported no writer during expiry transition', {
-        marketId: key,
-      });
-    }
+    // Trading lifecycle кончается на истечении — CLOB-подписка закрывается
+    // ПЕРВОЙ и не продлевается никаким grace
     if (session.marketSubscription !== undefined) {
       await this._closeMarketSubscription(session.marketSubscription, key);
       session.marketSubscription = undefined;
     }
-    await this._releaseRtdsFeeds(key, session.rtdsFeedKeys);
-    session.rtdsFeedKeys = [];
+
+    const settlementFeed = selected.rtdsFeeds.find(isTwapRtdsFeed);
+    const settlementKey = settlementFeed !== undefined ? rtdsFeedKey(settlementFeed) : undefined;
+    const spotKeys = session.rtdsFeedKeys.filter((feedKey) => feedKey !== settlementKey);
+    await this._releaseRtdsFeeds(key, spotKeys);
+    session.rtdsFeedKeys = settlementKey !== undefined ? [settlementKey] : [];
+
+    if (settlementFeed === undefined || this._settlementGraceMs <= 0) {
+      await this._sealAndReleaseSettlement(session, key);
+    } else {
+      // Routing сужается СИНХРОННО с переходом: «хвост» spot-фидов, живых
+      // ради других рынков, в датасет этого рынка больше не попадает
+      const narrowed = await this._narrowToSettlementFeed(session.marketId, settlementFeed, key);
+      session.settlementCapture = this._captureSettlementBoundary(
+        session,
+        key,
+        settlementFeed,
+        selected.expiresAt.toNumber(),
+        narrowed,
+      );
+    }
 
     this._logger.info('Collection session entered finalization', {
       marketId: key,
       question: selected.question,
       expiresAt: new Date(selected.expiresAt.toNumber()).toISOString(),
+      settlementFeed: settlementFeed !== undefined ? rtdsFeedLabel(settlementFeed) : undefined,
     });
     return { marketId: session.marketId, recordingStartedAt, selected };
+  }
+
+  /**
+   * Дожидается заморозки датасета рынка после boundary grace.
+   *
+   * @param marketId - ID рынка в состоянии FINALIZING
+   * @returns Promise, разрешающийся когда датасет гарантированно заморожен
+   *
+   * @remarks
+   * No-op для рынков без settlement-фида и для уже завершённого grace —
+   * вызывать можно сколько угодно раз. Это ОБЯЗАТЕЛЬНАЯ преамбула любого
+   * чтения записанных строк и любого архивирования: без неё архив мог бы
+   * поймать датасет в момент дописывания граничного наблюдения.
+   *
+   * @example
+   * ```typescript
+   * await coordinator.awaitSettlementCapture(marketId); // датасет заморожен
+   * const lines = await recorder.readSealedPayloadLines(marketId, filter);
+   * ```
+   */
+  public async awaitSettlementCapture(marketId: MarketId): Promise<void> {
+    const capture = this._sessions.get(String(marketId))?.settlementCapture;
+    if (capture !== undefined) {
+      await capture;
+    }
+  }
+
+  /**
+   * Сужает routing записи рынка до одного settlement-фида.
+   *
+   * @param marketId - ID рынка
+   * @param feed - Settlement-фид, который продолжает писаться
+   * @param marketKey - Ключ рынка (для логов)
+   * @returns `true`, если сужение фактически применено recorder-ом
+   */
+  private async _narrowToSettlementFeed(
+    marketId: MarketId,
+    feed: PolymarketTwapRtdsFeed,
+    marketKey: string,
+  ): Promise<boolean> {
+    try {
+      return this._recorder.narrowRtdsFeeds(marketId, [feed]);
+    } catch (error) {
+      this._logger.warn('Failed to narrow recording feeds to settlement stream', {
+        marketId: marketKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Boundary grace: ждёт граничное наблюдение settlement-фида, затем
+   * замораживает датасет и освобождает ref фида.
+   *
+   * @param session - Сессия в состоянии FINALIZING
+   * @param marketKey - Ключ рынка
+   * @param feed - Settlement-фид рынка
+   * @param expiresAtMs - Граница рынка (epoch ms)
+   * @param narrowed - Удалось ли сузить routing (иначе ждать бессмысленно)
+   *
+   * @remarks
+   * Ожидание заканчивается по ПЕРВОМУ из событий: наблюдатель подтвердил
+   * наблюдение с `vendorTs >= expiresAtMs`; истёк `settlementGraceMs`;
+   * координатор закрывается. Без наблюдателя выдерживается полный grace.
+   * Никогда не reject-ится: seal обязан состояться при любом исходе.
+   */
+  private async _captureSettlementBoundary(
+    session: CollectionSession,
+    marketKey: string,
+    feed: PolymarketTwapRtdsFeed,
+    expiresAtMs: number,
+    narrowed: boolean,
+  ): Promise<void> {
+    const startedMs = this._clock.now().getTime();
+    const observer = this._settlementObserver;
+    if (narrowed && observer !== undefined) {
+      while (this._clock.now().getTime() - startedMs < this._settlementGraceMs) {
+        if (this._closed || observer.hasObservationAtOrAfter(feed, expiresAtMs)) {
+          break;
+        }
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, SETTLEMENT_POLL_MS);
+          timer.unref?.();
+        });
+      }
+    } else if (narrowed) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, this._settlementGraceMs);
+        timer.unref?.();
+      });
+    }
+
+    const captured = observer?.hasObservationAtOrAfter(feed, expiresAtMs);
+    this._logger.info('Settlement boundary grace finished', {
+      marketId: marketKey,
+      feed: rtdsFeedLabel(feed),
+      waitedMs: this._clock.now().getTime() - startedMs,
+      boundaryObserved: captured,
+    });
+    await this._sealAndReleaseSettlement(session, marketKey);
+  }
+
+  /**
+   * Замораживает датасет и освобождает оставшиеся refs фидов сессии.
+   *
+   * @param session - Сессия в состоянии FINALIZING
+   * @param marketKey - Ключ рынка (для логов)
+   */
+  private async _sealAndReleaseSettlement(
+    session: CollectionSession,
+    marketKey: string,
+  ): Promise<void> {
+    const sealed = await this._recorder.sealMarket(session.marketId);
+    if (!sealed) {
+      this._logger.warn('Recorder seal reported no writer during expiry transition', {
+        marketId: marketKey,
+      });
+    }
+    await this._releaseRtdsFeeds(marketKey, session.rtdsFeedKeys);
+    session.rtdsFeedKeys = [];
   }
 
   /**
@@ -880,8 +1125,12 @@ export class MarketCollectionCoordinator {
       // координатора (порядок shutdown N-004). Оставшиеся здесь — признак
       // нарушенного порядка: realtime у них уже снят, файл заберёт
       // cleanup-policy storage при recorder.close(); ждать нечего.
+      // Идущий boundary grace всё же дожидается: он владеет seal-ом, и
+      // бросить его означало бы закрыть координатор поверх незамороженного
+      // датасета (флаг _closed уже прервал его ожидание).
       for (const session of [...this._sessions.values()]) {
         if (session.state === 'FINALIZING') {
+          await session.settlementCapture?.catch(() => undefined);
           this._sessions.delete(String(session.marketId));
           this._logger.warn(
             'Finalizing session dropped at coordinator close (finalizer should archive first)',
@@ -915,6 +1164,7 @@ export class MarketCollectionCoordinator {
     const rtdsFeeds: CollectionRtdsFeedStat[] = [...this._rtdsFeeds.values()].map((entry) => ({
       topic: entry.feed.topic,
       symbol: entry.feed.symbol,
+      ...(isTwapRtdsFeed(entry.feed) ? { windowSeconds: entry.feed.windowSeconds } : {}),
       refCount: entry.refs.size,
     }));
     let active = 0;
@@ -983,10 +1233,14 @@ export class MarketCollectionCoordinator {
         entry = {
           feed,
           refs: new Set(),
-          pending: this._source.subscribeCryptoPrices(feed.topic, [feed.symbol]),
+          // Vendor boundary: у settlement-потока СВОЙ spec подписки SDK
+          // (обязательное окно усреднения), поэтому и метод Source отдельный
+          pending: isTwapRtdsFeed(feed)
+            ? this._source.subscribeChainlinkTwap(feed.windowSeconds, [feed.symbol])
+            : this._source.subscribeCryptoPrices(feed.topic, [feed.symbol]),
         };
         this._rtdsFeeds.set(key, entry);
-        this._logger.info('RTDS feed subscription opening', { feed: key });
+        this._logger.info('RTDS feed subscription opening', { feed: rtdsFeedLabel(feed) });
       }
       entry.refs.add(marketKey);
       acquired.push(key);
@@ -1018,7 +1272,9 @@ export class MarketCollectionCoordinator {
       }
       this._rtdsFeeds.delete(key);
       await this._closeFeedSubscription(entry);
-      this._logger.info('RTDS feed subscription closed (no more refs)', { feed: key });
+      this._logger.info('RTDS feed subscription closed (no more refs)', {
+        feed: rtdsFeedLabel(entry.feed),
+      });
     }
   }
 

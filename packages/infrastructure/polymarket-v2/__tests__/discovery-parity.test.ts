@@ -416,10 +416,19 @@ describe('LEGACY vs V2: RTDS-маппинг крипто-рынков (PART 33/P
     // Canonical базовый актив выводится на той же границе (вход N-004)
     expect(v2Meta!.asset).toBe('btc');
     expect(v2Meta!.binanceSymbol).toBe('BTCUSDT');
+    // Spot-фиды сохраняются БЕЗ изменений, settlement-поток ДОБАВЛЯЕТСЯ (MR-B)
     expect([...v2Meta!.feeds]).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
       { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
+      { topic: 'prices.crypto.chainlink.twap', symbol: 'btc/usd', windowSeconds: 60 },
     ]);
+    // Правило расчёта разобрано один раз здесь — downstream URL не парсит
+    expect(v2Meta!.settlement).toEqual({
+      kind: 'chainlink-twap',
+      symbol: 'btc/usd',
+      windowSeconds: 60,
+      resolutionSource: 'https://data.chain.link/streams/btc-usd-twap-60s-streams',
+    });
   });
 
   it('ДОКУМЕНТИРОВАННОЕ отличие: V2 выводит фиды без eventStartTime', () => {

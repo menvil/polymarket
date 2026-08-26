@@ -29,6 +29,7 @@ import type {
   CollectorPolymarketSource,
   CollectorPolymarketStorage,
   CollectorRecorder,
+  CollectorTwapObservations,
   DataCollectorComponents,
 } from '../../src/runtime/DataCollector.js';
 
@@ -450,17 +451,51 @@ export class FakeFinalizer implements CollectorFinalizer {
     this._log.record('finalizer.drain');
   }
 
+  public officialFinalizations = 0;
+  public fallbackFinalizations = 0;
+  public fallbackByTimeout = 0;
+  public fallbackByShutdown = 0;
+  public discardedUnresolvable = 0;
+
   public getStats(): ReturnType<CollectorFinalizer['getStats']> {
     return {
       pendingFinalizations: this.pendingFinalizations,
       archivedTotal: this.archivedTotal,
       archiveFailures: this.archiveFailures,
+      officialFinalizations: this.officialFinalizations,
+      fallbackFinalizations: this.fallbackFinalizations,
+      fallbackByTimeout: this.fallbackByTimeout,
+      fallbackByShutdown: this.fallbackByShutdown,
+      discardedUnresolvable: this.discardedUnresolvable,
     };
   }
 
   public async close(): Promise<void> {
     this._log.record('finalizer.close');
     if (this.closeRejection !== undefined) throw this.closeRejection;
+  }
+}
+
+/** Fake наблюдателя settlement-потока: журналирует свой lifecycle. */
+export class FakeTwapObservations implements CollectorTwapObservations {
+  public startCalls = 0;
+  public closeCalls = 0;
+  public accepted = 0;
+
+  constructor(private readonly _log: CallLog) {}
+
+  public start(): void {
+    this.startCalls++;
+    this._log.record('twapObservations.start');
+  }
+
+  public close(): void {
+    this.closeCalls++;
+    this._log.record('twapObservations.close');
+  }
+
+  public getStats(): ReturnType<CollectorTwapObservations['getStats']> {
+    return { feeds: 0, buffered: 0, accepted: this.accepted, rejected: 0 };
   }
 }
 
@@ -479,6 +514,7 @@ export interface FakeContour {
   readonly discovery: FakeDiscovery;
   readonly coordinator: FakeCoordinator;
   readonly finalizer: FakeFinalizer;
+  readonly twapObservations: FakeTwapObservations;
   readonly components: DataCollectorComponents;
 }
 
@@ -502,6 +538,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
   const discovery = new FakeDiscovery();
   const coordinator = new FakeCoordinator(log);
   const finalizer = new FakeFinalizer(log);
+  const twapObservations = new FakeTwapObservations(log);
 
   const entries: CollectorCexSourceEntry[] = cexSources.map((source) => ({
     exchangeId: source.exchangeId,
@@ -522,6 +559,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
     discovery,
     coordinator,
     finalizer,
+    twapObservations,
     components: {
       bus,
       recorder,
@@ -533,6 +571,7 @@ export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'ok
       discovery,
       coordinator,
       finalizer,
+      twapObservations,
     },
   };
 }

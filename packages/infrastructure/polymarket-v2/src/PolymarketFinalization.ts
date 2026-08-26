@@ -269,6 +269,29 @@ export function deriveWinnerFromCryptoPrices(
 }
 
 /**
+ * Проверяет, что строка — КОНЕЧНОЕ десятичное значение.
+ *
+ * @param value - Строка vendor-происхождения
+ * @returns `true`, если значение парсится и финитно
+ *
+ * @remarks
+ * Тот же фильтр, что и у арифметики модуля ({@link toFiniteDecimal}),
+ * вынесенный наружу для потребителей, которым нужно ПРОВЕРИТЬ пригодность
+ * значения, не сравнивая его ни с чем (например, решить, годится ли
+ * официальный `priceToBeat` в качестве эталона). Без него проверка
+ * вырождается в трюк вида `compareDecimalStrings(v, v) !== undefined`.
+ *
+ * @example
+ * ```typescript
+ * isFiniteDecimalString('78449.058'); // true
+ * isFiniteDecimalString('NaN');       // false
+ * ```
+ */
+export function isFiniteDecimalString(value: string): boolean {
+  return toFiniteDecimal(value) !== undefined;
+}
+
+/**
  * Сравнивает два точных десятичных строковых значения.
  *
  * @param left - Левое значение (десятичная строка)

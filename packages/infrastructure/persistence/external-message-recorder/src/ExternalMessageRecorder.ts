@@ -27,8 +27,9 @@
  * - маршрутизирует market-события по source market id (`payload.market` ==
  *   conditionId == `String(marketMeta.marketId)` — доказано аудитом
  *   PolymarketMarketDiscoveryAdapter);
- * - маршрутизирует RTDS-события по точному ключу `(topic, symbol)` —
- *   БЕЗ эвристик формата символа;
+ * - маршрутизирует RTDS-события по точному ключу фида (`topic` + `symbol`,
+ *   а для settlement-потока TWAP — ещё и окно усреднения) — БЕЗ эвристик
+ *   формата символа;
  * - передаёт в storage НЕИЗМЕНЁННЫЙ `message.payload`.
  *
  * Buffering/flush/gzip/header/cleanup — ответственность storage
@@ -56,12 +57,14 @@ import type { MarketMeta } from '@polymarket/ports';
 import type { IExternalMessageBus } from '@polymarket/external-message-bus';
 import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
 import type {
-  CryptoPricesTopic,
   PolymarketCryptoBinanceExternalMessage,
   PolymarketCryptoChainlinkExternalMessage,
+  PolymarketCryptoChainlinkTwapExternalMessage,
   PolymarketExternalMessage,
   PolymarketMarketExternalMessage,
+  PolymarketRtdsFeed,
 } from '@polymarket/polymarket-v2';
+import { CHAINLINK_TWAP_TOPIC, rtdsFeedKey } from '@polymarket/polymarket-v2';
 import type {
   CexExternalMessage,
   CexOrderbookExternalMessage,
@@ -72,18 +75,19 @@ import type {
  * Точный ключ маршрутизации одного RTDS-фида в файл рынка.
  *
  * @remarks
- * Источник определяется по vendor `topic`-дискриминатору SDK
- * (`prices.crypto.binance` / `prices.crypto.chainlink`), а НЕ по формату
- * символа: эвристика `symbol.includes('/')` из legacy-коллектора сюда
- * сознательно не переносится. `symbol` сравнивается точно (Binance —
- * `btcusdt`, Chainlink — `btc/usd`, как в подписке Source).
+ * Это ТОТ ЖЕ тип, которым discovery описывает фиды рынка
+ * (`PolymarketRtdsFeed`), а не его структурный двойник: правило
+ * идентичности фида обязано быть ОДНО на весь контур, иначе координатор
+ * (ref-count подписок) и recorder (routing записи) разошлись бы в том,
+ * что считается «тем же фидом».
+ *
+ * Источник определяется по vendor `topic`-дискриминатору SDK, а НЕ по
+ * формату символа: эвристика `symbol.includes('/')` из legacy-коллектора
+ * сюда сознательно не переносится. `symbol` сравнивается точно (Binance —
+ * `btcusdt`, Chainlink — `btc/usd`, как в подписке Source), а у
+ * settlement-потока TWAP в идентичность входит ещё и окно усреднения.
  */
-export interface PolymarketRtdsFeedKey {
-  /** Vendor topic RTDS-фида (дискриминатор источника). */
-  readonly topic: CryptoPricesTopic;
-  /** Точный символ фида в нативном формате источника. */
-  readonly symbol: string;
-}
+export type PolymarketRtdsFeedKey = PolymarketRtdsFeed;
 
 /**
  * Регистрация recording-сессии одного Polymarket-рынка.
@@ -265,20 +269,40 @@ export interface ExternalMessageRecorderCexStats {
 interface RecordingSession {
   /** ID рынка — ключ writer-а в storage. */
   readonly marketId: MarketId;
-  /** RTDS-фиды сессии (для снятия routing при finalize). */
-  readonly rtdsFeeds: readonly PolymarketRtdsFeedKey[];
+  /**
+   * RTDS-фиды сессии (для снятия routing при finalize).
+   *
+   * @remarks
+   * Mutable: {@link ExternalMessageRecorder.narrowRtdsFeeds} сужает набор
+   * на boundary grace истёкшего рынка. Сам ОБЪЕКТ сессии при этом не
+   * заменяется — его identity стережёт hook отложенной активации storage.
+   */
+  rtdsFeeds: readonly PolymarketRtdsFeedKey[];
+  /**
+   * Маршрутизируются ли ещё market-события рынка.
+   *
+   * @remarks
+   * Становится `false` на истечении рынка: торговый lifecycle закончен, а
+   * сессия продолжает существовать исключительно ради граничных наблюдений
+   * settlement-потока.
+   */
+  marketEventsRouted: boolean;
 }
 
 /**
- * Собирает точный routing-ключ RTDS-фида.
+ * Собирает точный routing-ключ RTDS-фида (canonical правило контура).
  *
- * @param topic - Vendor topic (typed union SDK — narrowing вызывающих
- *   не расширяется до plain string)
- * @param symbol - Точный символ фида
- * @returns Составной ключ `(topic, symbol)` для Map
+ * @param feed - Фид рынка (spot либо settlement TWAP с окном)
+ * @returns Составной ключ для Map, различающий topic, символ и окно
+ *
+ * @remarks
+ * Тонкая обёртка над `rtdsFeedKey` из `@polymarket/polymarket-v2` —
+ * собственного правила идентичности recorder больше не держит (иначе
+ * добавление окна в один слой и забвение в другом молча смешало бы
+ * TWAP 30 и TWAP 60 в одном файле).
  */
-function rtdsRoutingKey(topic: CryptoPricesTopic, symbol: string): string {
-  return `${topic}\n${symbol}`;
+function rtdsRoutingKey(feed: PolymarketRtdsFeedKey): string {
+  return rtdsFeedKey(feed);
 }
 
 /**
@@ -410,6 +434,9 @@ export class ExternalMessageRecorder {
       this._bus.subscribe('POLYMARKET_MARKET', (message) => this._onMarketMessage(message)),
       this._bus.subscribe('POLYMARKET_CRYPTO_BINANCE', (message) => this._onRtdsMessage(message)),
       this._bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK', (message) => this._onRtdsMessage(message)),
+      this._bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK_TWAP', (message) =>
+        this._onTwapMessage(message),
+      ),
     );
     if (this._cex) {
       // CEX-политика: оконный storage стартует (выравнивание по границе),
@@ -465,6 +492,7 @@ export class ExternalMessageRecorder {
     const session: RecordingSession = {
       marketId: registration.marketMeta.marketId,
       rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
+      marketEventsRouted: true,
     };
     const installed = this._storage.registerMarket(registration.marketMeta, () => {
       this._invalidateSessionAfterDelayedActivationFailure(key, session);
@@ -480,7 +508,7 @@ export class ExternalMessageRecorder {
 
     this._sessions.set(key, session);
     for (const feed of session.rtdsFeeds) {
-      const routingKey = rtdsRoutingKey(feed.topic, feed.symbol);
+      const routingKey = rtdsRoutingKey(feed);
       let sessions = this._rtdsRouting.get(routingKey);
       if (!sessions) {
         sessions = new Set();
@@ -530,6 +558,78 @@ export class ExternalMessageRecorder {
     this._logger.error('Recording session invalidated: delayed storage activation failed', {
       marketId: key,
     });
+  }
+
+  /**
+   * Сужает RTDS-routing рынка до указанного подмножества фидов.
+   *
+   * @param marketId - ID рынка
+   * @param feeds - Фиды, которые ПРОДОЛЖАЮТ писаться в файл рынка; все
+   *   остальные фиды сессии перестают в него маршрутизироваться
+   * @returns `true` — сужение применено; `false` — recorder закрыт либо
+   *   активной сессии рынка нет (сужать нечего)
+   *
+   * @remarks
+   * Нужно ровно для boundary grace истёкшего рынка (MR-B PART 25): CLOB и
+   * spot-фиды обязаны прекратиться на `expiresAt`, а официальный
+   * settlement-поток — дописать граничное наблюдение, которое RTDS
+   * доставляет на 1-2 секунды позже. Без этого сужения «хвост» spot-фидов,
+   * оставшихся живыми ради ДРУГИХ рынков, продолжал бы попадать в датасет
+   * этого рынка — граница датасета зависела бы от того, кто ещё подписан.
+   *
+   * Это НЕ seal: writer остаётся ACTIVE и принимает записи оставленных
+   * фидов. Market-события рынка тоже перестают маршрутизироваться —
+   * торговый lifecycle на истечении закончен. Идемпотентен; фид, которого у
+   * сессии не было, просто не появляется.
+   *
+   * @example
+   * ```typescript
+   * // рынок истёк: оставить только официальный settlement-поток
+   * recorder.narrowRtdsFeeds(marketId, [
+   *   { topic: 'prices.crypto.chainlink.twap', symbol: 'btc/usd', windowSeconds: 60 },
+   * ]);
+   * ```
+   */
+  public narrowRtdsFeeds(marketId: MarketId, feeds: readonly PolymarketRtdsFeedKey[]): boolean {
+    const key = String(marketId);
+    if (this._closed) {
+      this._logger.warn('Feed narrowing ignored: recorder is closed', { marketId: key });
+      return false;
+    }
+    const session = this._sessions.get(key);
+    if (!session) {
+      this._logger.debug('narrowRtdsFeeds: no recording session for market', { marketId: key });
+      return false;
+    }
+
+    const retainedKeys = new Set(feeds.map((feed) => rtdsRoutingKey(feed)));
+    const retained = session.rtdsFeeds.filter((feed) => retainedKeys.has(rtdsRoutingKey(feed)));
+    const dropped = session.rtdsFeeds.filter((feed) => !retainedKeys.has(rtdsRoutingKey(feed)));
+
+    // Снимается routing ТОЛЬКО отброшенных фидов — общие фиды других рынков
+    // не затрагиваются (per-feed removal, как при finalize)
+    for (const feed of dropped) {
+      const routingKey = rtdsRoutingKey(feed);
+      const sessions = this._rtdsRouting.get(routingKey);
+      if (!sessions) {
+        continue;
+      }
+      sessions.delete(session);
+      if (sessions.size === 0) {
+        this._rtdsRouting.delete(routingKey);
+      }
+    }
+    // Сам ОБЪЕКТ сессии сохраняется (identity-guard отложенной активации) —
+    // меняется только её состав фидов и признак market-routing
+    session.rtdsFeeds = retained;
+    session.marketEventsRouted = false;
+
+    this._logger.info('Recording session narrowed to settlement feeds', {
+      marketId: key,
+      retained: retained.map((feed) => rtdsRoutingKey(feed)),
+      dropped: dropped.length,
+    });
+    return true;
   }
 
   /**
@@ -771,7 +871,9 @@ export class ExternalMessageRecorder {
     try {
       const sourceMarketId = message.payload.payload.market;
       const session = this._sessions.get(sourceMarketId);
-      if (!session) {
+      // Сессия, сужённая до settlement-фида (рынок истёк), market-события
+      // больше не принимает: торговый lifecycle закончен на expiresAt
+      if (!session || !session.marketEventsRouted) {
         this._unroutedMarketMessages++;
         return;
       }
@@ -786,21 +888,14 @@ export class ExternalMessageRecorder {
   }
 
   /**
-   * Handler RTDS-сообщений: маршрутизация по точному `(topic, symbol)`.
+   * Handler spot-RTDS сообщений: маршрутизация по точному `(topic, symbol)`.
    *
    * @param message - Typed сообщение `POLYMARKET_CRYPTO_BINANCE` или
    *   `POLYMARKET_CRYPTO_CHAINLINK`
    *
    * @remarks
-   * Один RTDS-фид может использоваться несколькими активными рынками —
-   * payload записывается в файл КАЖДОЙ подписанной сессии (ровно одна
-   * строка на файл на входное сообщение). Источник различается vendor
-   * `topic`-дискриминатором, эвристика формата символа не используется.
-   * Никогда не бросает.
-   *
-   * Ошибки storage изолируются НА КАЖДОЕ направление fan-out независимо:
-   * отказ записи для одного рынка не лишает события остальные подписанные
-   * рынки (storage failure — non-fatal, но наблюдаем: лог + `handlerErrors`).
+   * Источник различается vendor `topic`-дискриминатором, эвристика формата
+   * символа не используется. Никогда не бросает.
    */
   private _onRtdsMessage(
     message: PolymarketCryptoBinanceExternalMessage | PolymarketCryptoChainlinkExternalMessage,
@@ -809,29 +904,86 @@ export class ExternalMessageRecorder {
       return;
     }
     try {
-      const routingKey = rtdsRoutingKey(message.payload.topic, message.payload.payload.symbol);
-      const sessions = this._rtdsRouting.get(routingKey);
-      if (!sessions || sessions.size === 0) {
-        this._unroutedRtdsMessages++;
-        return;
-      }
-      this._rtdsMessagesRouted++;
-      for (const session of sessions) {
-        try {
-          this._recordPayload(session, message.payload);
-        } catch (error) {
-          this._handlerErrors++;
-          this._logger.error('RTDS recording failed for market, continuing fan-out', {
-            marketId: String(session.marketId),
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      this._routeRtdsPayload(
+        rtdsRoutingKey({ topic: message.payload.topic, symbol: message.payload.payload.symbol }),
+        message.payload,
+      );
     } catch (error) {
       this._handlerErrors++;
       this._logger.error('RTDS message recording handler failed', {
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  /**
+   * Handler settlement-потока Chainlink TWAP: маршрутизация с УЧЁТОМ окна.
+   *
+   * @param message - Typed сообщение `POLYMARKET_CRYPTO_CHAINLINK_TWAP`
+   *
+   * @remarks
+   * Окно берётся из САМОГО события (`payload.windowSeconds`), а не из
+   * внешнего контекста подписки — поэтому рынок, которому нужен `btc/usd`
+   * TWAP 60, физически не может получить строку `btc/usd` TWAP 30: у них
+   * разные routing-ключи. Никогда не бросает.
+   */
+  private _onTwapMessage(message: PolymarketCryptoChainlinkTwapExternalMessage): void {
+    if (this._closed) {
+      return;
+    }
+    try {
+      const payload = message.payload.payload;
+      this._routeRtdsPayload(
+        rtdsRoutingKey({
+          topic: CHAINLINK_TWAP_TOPIC,
+          symbol: payload.symbol,
+          windowSeconds: payload.windowSeconds,
+        }),
+        message.payload,
+      );
+    } catch (error) {
+      this._handlerErrors++;
+      this._logger.error('Chainlink TWAP message recording handler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Общий fan-out RTDS-наблюдения по всем сессиям, подписанным на фид.
+   *
+   * @param routingKey - Точный ключ фида ({@link rtdsRoutingKey})
+   * @param payload - НЕИЗМЕНЁННЫЙ source-native payload сообщения
+   *
+   * @remarks
+   * Один RTDS-фид может использоваться несколькими активными рынками —
+   * payload записывается в файл КАЖДОЙ подписанной сессии (ровно одна
+   * строка на файл на входное сообщение).
+   *
+   * Ошибки storage изолируются НА КАЖДОЕ направление fan-out независимо:
+   * отказ записи для одного рынка не лишает события остальные подписанные
+   * рынки (storage failure — non-fatal, но наблюдаем: лог + `handlerErrors`).
+   */
+  private _routeRtdsPayload(
+    routingKey: string,
+    payload: PolymarketExternalMessage['payload'],
+  ): void {
+    const sessions = this._rtdsRouting.get(routingKey);
+    if (!sessions || sessions.size === 0) {
+      this._unroutedRtdsMessages++;
+      return;
+    }
+    this._rtdsMessagesRouted++;
+    for (const session of sessions) {
+      try {
+        this._recordPayload(session, payload);
+      } catch (error) {
+        this._handlerErrors++;
+        this._logger.error('RTDS recording failed for market, continuing fan-out', {
+          marketId: String(session.marketId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
@@ -963,7 +1115,7 @@ export class ExternalMessageRecorder {
    */
   private _removeRtdsRouting(session: RecordingSession): void {
     for (const feed of session.rtdsFeeds) {
-      const routingKey = rtdsRoutingKey(feed.topic, feed.symbol);
+      const routingKey = rtdsRoutingKey(feed);
       const sessions = this._rtdsRouting.get(routingKey);
       if (!sessions) {
         continue;

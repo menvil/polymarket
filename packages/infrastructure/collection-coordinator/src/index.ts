@@ -24,6 +24,7 @@ export type {
   CollectionRecorder,
   CollectionRtdsFeedStat,
   CollectionSessionSnapshot,
+  CollectionSettlementObserver,
   CollectionSource,
   FinalizingMarketSession,
   MarketCollectionCoordinatorConfig,
@@ -31,7 +32,12 @@ export type {
 } from './MarketCollectionCoordinator.js';
 export { buildCollectionHeader } from './collectionHeader.js';
 export type {
+  CollectionFallbackEvidence,
+  CollectionFallbackTrigger,
   CollectionFinalOutcome,
   CollectionHeaderFinalization,
   CollectionHeaderInput,
+  CollectionPriceProvenance,
+  CollectionResolutionProvenance,
+  CollectionSettlementDescriptor,
 } from './collectionHeader.js';

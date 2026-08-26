@@ -643,7 +643,7 @@ describe('бюджет header meta-блока (PART 8)', () => {
 });
 
 describe('FINALIZING lifecycle (N-004 PART 2/3/8/36/49/52)', () => {
-  it('beginFinalization: seal ПЕРВЫМ, затем закрытие подписки и release RTDS; снимок immutable', async () => {
+  it('beginFinalization без settlement-фида: закрытие подписки → release RTDS → seal; снимок immutable', async () => {
     const { log, discovery, source, recorder, coordinator } = createHarness();
     await coordinator.openMarket(discovery.addMarket());
     log.entries.length = 0;
@@ -656,10 +656,14 @@ describe('FINALIZING lifecycle (N-004 PART 2/3/8/36/49/52)', () => {
     expect(snapshot!.selected.question).toBe('Bitcoin Up or Down - fixture');
     expect(snapshot!.selected.outcomes).toHaveLength(2);
 
-    // Порядок cutoff (PART 9): seal → close market subscription → release RTDS
-    expect(log.indexOf('recorder.sealMarket')).toBeLessThan(log.indexOf('close:market'));
+    // Порядок cutoff (MR-B): торговый lifecycle кончается ПЕРВЫМ, затем
+    // освобождаются фиды, и только потом замораживается датасет. Рынок без
+    // settlement-фида ждать нечего — seal происходит в том же вызове.
     expect(log.indexOf('close:market')).toBeLessThan(log.indexOf('close:rtds'));
+    expect(log.indexOf('close:rtds')).toBeLessThan(log.indexOf('recorder.sealMarket'));
     expect(recorder.seals).toEqual([CID_A]);
+    // Сужения routing не было: удерживать нечего
+    expect(recorder.narrowings).toEqual([]);
     // Архив на этом шаге НЕ выполняется
     expect(recorder.finalizations).toEqual([]);
 

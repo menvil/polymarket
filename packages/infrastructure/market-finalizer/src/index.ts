@@ -15,9 +15,15 @@
  * synthetic Gamma ExternalMessages.
  */
 export { MarketFinalizer } from './MarketFinalizer.js';
+export { deriveWinnerFromRecordedTwap } from './recordedTwapSettlement.js';
+export type {
+  RecordedTwapDerivation,
+  TwapSettlementObservation,
+} from './recordedTwapSettlement.js';
 export type {
   FinalizationCoordinator,
   FinalizationGammaClient,
+  FinalizationOutcome,
   FinalizationRecorder,
   MarketFinalizerConfig,
   MarketFinalizerDependencies,
