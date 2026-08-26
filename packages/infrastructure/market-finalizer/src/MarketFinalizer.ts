@@ -23,12 +23,17 @@
  * ### Resolution policy (MR-B)
  *
  * ```text
- * рынок истёк → FINALIZING → Gamma polling
+ * рынок истёк → FINALIZING → Gamma polling каждые 30 с
  *      │
- *      ├── официальный итог достаточен ──────► OFFICIAL COMPLETE  → .jsonl.gz
+ *      ├── пришло ВСЁ: победитель + priceToBeat + finalPrice
+ *      │                              ──────► OFFICIAL COMPLETE  → .jsonl.gz
  *      │
- *      ├── бюджет 60 мин исчерпан ЛИБО shutdown
- *      │        └── deterministic TWAP fallback возможен ─► FALLBACK COMPLETE → .jsonl.gz
+ *      ├── пришло частично ──────────────────► ждём дальше (бюджет 60 мин)
+ *      │
+ *      ├── бюджет исчерпан ЛИБО shutdown
+ *      │     ├── есть официальный победитель ─► OFFICIAL COMPLETE  → .jsonl.gz
+ *      │     │      (недостающие числа — из записанного ряда, помечены derived)
+ *      │     └── иначе deterministic TWAP ────► FALLBACK COMPLETE  → .jsonl.gz
  *      │
  *      └── итог вывести нельзя ──────────────► DISCARD (файл удаляется)
  * ```
@@ -41,18 +46,18 @@
  *
  * ### Completion condition (PART 27/32/44)
  *
- * - crypto-рынок: COMPLETE, как только официальные данные ДАЮТ ПОБЕДИТЕЛЯ —
- *   через resolved settlement-цены UMA либо через формулу рынка на
- *   официальных `priceToBeat`/`finalPrice`. Ждать «оба числа» нельзя:
- *   live-замер 2026-08-26 показал рынок, где `uma=resolved` и цены `1/0`
- *   пришли на 4.5-й минуте, а `finalPrice` не публиковался ещё долго —
- *   прежнее условие держало бы такой рынок все 60 минут и архивировало его
- *   как `timeout` при уже известном официальном итоге;
+ * - crypto-рынок: COMPLETE при ПОЛНОМ комплекте официальных данных —
+ *   победитель (resolved settlement-цены UMA либо формула рынка на
+ *   официальных числах) И `priceToBeat` И `finalPrice`. Частичный комплект
+ *   рынок не закрывает: решение user — дожидаться максимума информации,
+ *   раз бюджет всё равно есть. Ожидание дёшево: датасет заморожен, слот
+ *   свободен, стоимость — один Gamma-poll раз в `enrichmentRetryMs`;
  * - non-crypto: best-effort свежий Gamma-снапшот и НЕМЕДЛЕННЫЙ EXPIRED
  *   (без многочасовых resolution-watcher-ов);
- * - недостающие `priceToBeat`/`finalPrice` при этом НЕ теряются: они
- *   восполняются из записанного settlement-ряда и помечаются
- *   `provenance.priceToBeat`/`finalPrice = 'derived'`.
+ * - по исчерпании бюджета рынок закрывается тем, что есть: недостающие
+ *   `priceToBeat`/`finalPrice` восполняются из записанного settlement-ряда
+ *   и помечаются `provenance.priceToBeat`/`finalPrice = 'derived'`.
+ *   Официальное число НИКОГДА не подменяется выведенным.
  *
  * ### Scope fallback-деривации (PART 30/89/90)
  *
@@ -692,19 +697,26 @@ export class MarketFinalizer {
    * @returns `true`, если официальных данных уже достаточно
    *
    * @remarks
-   * Условие — именно «победитель известен», а НЕ «оба крипто-числа
-   * получены» (PART 44): Gamma публикует `finalPrice` не всегда и не
-   * раньше резолюции, и ожидание его появления держало бы рынок весь
-   * бюджет при уже известном официальном итоге (наблюдение live
-   * 2026-08-26). Недостающие числа восполняются derived-значениями с
-   * явной пометкой происхождения.
+   * Досрочный архив — только при ПОЛНОМ комплекте официальных данных:
+   * победитель И `priceToBeat` И `finalPrice` (решение user). Частичный
+   * комплект не закрывает рынок: бюджет всё равно есть, датасет заморожен,
+   * слот свободен, и стоимость ожидания — один Gamma-poll раз в
+   * `enrichmentRetryMs`. Взамен архив получает максимум ОФИЦИАЛЬНЫХ чисел
+   * вместо выведенных.
+   *
+   * Ожидание ограничено сверху `enrichmentMaxWaitMs`: по его исчерпании
+   * рынок закрывается тем, что есть (недостающие числа восполняются из
+   * записанного settlement-ряда и помечаются `derived`).
    */
   private _isReadyToArchive(entry: PendingFinalization): boolean {
     if (entry.session.selected.crypto === undefined) {
       return true; // non-crypto: немедленный EXPIRED после best-effort снапшота
     }
     const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
-    return this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus) !== undefined;
+    if (this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus) === undefined) {
+      return false;
+    }
+    return entry.crypto.priceToBeat !== undefined && entry.crypto.finalPrice !== undefined;
   }
 
   /**
@@ -853,7 +865,7 @@ export class MarketFinalizer {
     const { outcomes, umaResolutionStatus } = this._gammaContext(entry);
     const official = this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus);
     if (official !== undefined) {
-      return this._officialResolution(entry, official);
+      return await this._officialResolution(entry, official);
     }
     if (entry.session.selected.crypto === undefined) {
       // Не-крипто рынок: прежнее поведение (PART 32) — немедленный архив
@@ -978,20 +990,78 @@ export class MarketFinalizer {
    * `provenance = 'derived'` (PART 41). Победитель при этом остаётся
    * официальным — derived-числа его НЕ пересматривают.
    */
-  private _officialResolution(
+  private async _officialResolution(
     entry: PendingFinalization,
     winning: ArchiveWinning,
-  ): ArchiveDecision {
+  ): Promise<ArchiveDecision> {
+    if (entry.session.selected.crypto === undefined) {
+      return { status: 'complete', winning, provenance: { resolution: 'official' } };
+    }
+    const officialPriceToBeat = entry.crypto.priceToBeat;
+    const officialFinalPrice = entry.crypto.finalPrice;
+    // Читаем ряд ТОЛЬКО когда чего-то не хватает: на полном комплекте
+    // (обычный путь досрочного архива) лишнего чтения датасета не будет
+    const derivation =
+      officialPriceToBeat === undefined || officialFinalPrice === undefined
+        ? await this._readTwapDerivation(entry)
+        : undefined;
+    const priceToBeat = officialPriceToBeat ?? derivation?.priceToBeat.value;
+    const finalPrice = officialFinalPrice ?? derivation?.finalPrice.value;
+
     return {
       status: 'complete',
       winning,
       provenance: {
         resolution: 'official',
-        ...(entry.crypto.priceToBeat !== undefined ? { priceToBeat: 'official' as const } : {}),
-        ...(entry.crypto.finalPrice !== undefined ? { finalPrice: 'official' as const } : {}),
+        ...(priceToBeat !== undefined
+          ? { priceToBeat: officialPriceToBeat !== undefined ? ('official' as const) : ('derived' as const) }
+          : {}),
+        ...(finalPrice !== undefined
+          ? { finalPrice: officialFinalPrice !== undefined ? ('official' as const) : ('derived' as const) }
+          : {}),
       },
-      ...(entry.session.selected.crypto !== undefined ? { crypto: entry.crypto } : {}),
+      crypto: {
+        ...(priceToBeat !== undefined ? { priceToBeat } : {}),
+        ...(finalPrice !== undefined ? { finalPrice } : {}),
+      },
     };
+  }
+
+  /**
+   * Читает граничные наблюдения settlement-ряда рынка (без решения об итоге).
+   *
+   * @param entry - Pending-финализация
+   * @returns Деривация с обоими граничными наблюдениями либо `undefined`
+   *
+   * @remarks
+   * Общий read-путь двух сценариев: восполнение недостающих ОФИЦИАЛЬНЫХ
+   * чисел в официальном архиве и полноценная fallback-деривация. Оба
+   * читают ОДИН И ТОТ ЖЕ замороженный датасет — второго источника
+   * наблюдений не существует.
+   */
+  private async _readTwapDerivation(
+    entry: PendingFinalization,
+  ): Promise<RecordedTwapDerivation | undefined> {
+    const feed = this._settlementFeed(entry);
+    const startMs = entry.session.selected.eventStartsAt?.toNumber();
+    if (feed === undefined || startMs === undefined) {
+      return undefined;
+    }
+    const symbolNeedle = `"symbol":"${feed.symbol}"`;
+    const lines = await this._recorder.readSealedPayloadLines(
+      entry.session.marketId,
+      (line) => line.includes(`"${feed.topic}"`) && line.includes(symbolNeedle),
+    );
+    if (lines === undefined || lines.length === 0) {
+      return undefined;
+    }
+    return deriveWinnerFromRecordedTwap(
+      lines,
+      feed,
+      startMs,
+      entry.session.selected.expiresAt.toNumber(),
+      entry.crypto.priceToBeat,
+    );
   }
 
   /**
@@ -1087,38 +1157,11 @@ export class MarketFinalizer {
     feed: PolymarketTwapRtdsFeed,
   ): Promise<{ winning: ArchiveWinning; derivation: RecordedTwapDerivation } | undefined> {
     const key = String(entry.session.marketId);
-    const selected = entry.session.selected;
-    const startMs = selected.eventStartsAt?.toNumber();
-    if (startMs === undefined) {
-      this._logger.warn('TWAP fallback unavailable: market has no official start time', {
-        marketId: key,
-      });
-      return undefined;
-    }
-    const symbolNeedle = `"symbol":"${feed.symbol}"`;
-    const lines = await this._recorder.readSealedPayloadLines(
-      entry.session.marketId,
-      (line) => line.includes(`"${feed.topic}"`) && line.includes(symbolNeedle),
-    );
-    if (lines === undefined || lines.length === 0) {
-      this._logger.warn('TWAP fallback unavailable: no recorded settlement observations', {
-        marketId: key,
-        feed: `${feed.symbol}@${String(feed.windowSeconds)}s`,
-      });
-      return undefined;
-    }
-    const derivation = deriveWinnerFromRecordedTwap(
-      lines,
-      feed,
-      startMs,
-      selected.expiresAt.toNumber(),
-      entry.crypto.priceToBeat,
-    );
+    const derivation = await this._readTwapDerivation(entry);
     if (derivation === undefined) {
       this._logger.warn('TWAP fallback unavailable: market boundaries not covered by series', {
         marketId: key,
         feed: `${feed.symbol}@${String(feed.windowSeconds)}s`,
-        candidateLines: lines.length,
       });
       return undefined;
     }

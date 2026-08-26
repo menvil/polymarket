@@ -93,19 +93,25 @@ async function openExpiredTwapMarket(
 }
 
 describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () => {
-  it('официальная резолюция архивирует НЕМЕДЛЕННО, не дожидаясь finalPrice', async () => {
-    // Live-наблюдение 2026-08-26: uma=resolved и цены 1/0 приходят раньше
-    // finalPrice. Прежнее условие «оба числа» держало бы рынок весь бюджет.
+  it('ПОЛНЫЙ комплект (резолюция + обе цены) архивирует досрочно', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
     const { recorder, gamma, coordinator, finalizer } = harness;
-    armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent({ priceToBeat: 78449.05 }));
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78449.05, finalPrice: 78500.1 }),
+    );
 
     await openExpiredTwapMarket(harness);
 
     const finalization = lastFinalization(recorder);
     expect(finalization.status).toBe('complete');
     expect(finalization.winning).toMatchObject({ label: 'Up', source: 'resolution', exact: true });
-    expect(finalization.provenance?.resolution).toBe('official');
+    expect(finalization.provenance).toMatchObject({
+      resolution: 'official',
+      priceToBeat: 'official',
+      finalPrice: 'official',
+    });
     expect(finalization.provenance?.fallbackTrigger).toBeUndefined();
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
     expect(coordinator.listSessions()).toEqual([]);
@@ -116,11 +122,49 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
     });
   });
 
+  it('резолюция БЕЗ finalPrice держит рынок: ждём максимума информации', async () => {
+    // Решение user: частичный комплект рынок не закрывает — бюджет всё равно
+    // есть, а официальное число ценнее выведенного. Раньше такой рынок
+    // архивировался немедленно и терял шанс получить официальный finalPrice.
+    const harness = createFinalizerHarness({
+      enrichmentRetryMs: 30_000,
+      enrichmentMaxWaitMs: MAX_WAIT_MS,
+    });
+    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent({ priceToBeat: 78449.05 }));
+
+    await openExpiredTwapMarket(harness);
+
+    expect(recorder.finalizations).toEqual([]); // архива НЕТ
+    expect(lastFinalization(recorder).status).toBe('pending');
+    expect(coordinator.listSessions()).toHaveLength(1);
+
+    // finalPrice приходит позже — вот теперь комплект полон
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78449.05, finalPrice: 78500.1 }),
+    );
+    clock.advance(30_000);
+    await finalizer.runOnce();
+
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(lastFinalization(recorder).provenance).toMatchObject({
+      resolution: 'official',
+      priceToBeat: 'official',
+      finalPrice: 'official',
+    });
+  });
+
   it('официальный итог НЕ перезаписывается fallback-ом, даже когда ряд записан', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
     const { recorder, gamma } = harness;
     // Gamma говорит Up (resolved 1/0), а записанный ряд дал бы Down
-    armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent());
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78449.05, finalPrice: 78500.1 }),
+    );
     recorder.sealedPayloadLines = downSeries();
 
     await openExpiredTwapMarket(harness);
@@ -128,7 +172,8 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
     const finalization = lastFinalization(recorder);
     expect(finalization.winning).toMatchObject({ label: 'Up', source: 'resolution' });
     expect(finalization.provenance?.resolution).toBe('official');
-    expect(recorder.sealedReads).toEqual([]); // датасет даже не читался
+    // Комплект официальных чисел полон — записанный ряд даже не читался
+    expect(recorder.sealedReads).toEqual([]);
   });
 
   it('официальные priceToBeat/finalPrice дают победителя без UMA-резолюции', async () => {
@@ -151,17 +196,33 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
     });
   });
 
-  it('официальный архив без finalPrice помечает происхождение чисел честно', async () => {
+  it('по таймауту недостающий finalPrice восполняется из ряда и помечается derived', async () => {
+    // Gamma так и не дал finalPrice за весь бюджет. Победитель официальный,
+    // но число — выведенное, и архив обязан это различать.
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma } = harness;
+    const { recorder, gamma, clock, finalizer } = harness;
     armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent({ priceToBeat: 78449.05 }));
+    recorder.sealedPayloadLines = upSeries();
 
     await openExpiredTwapMarket(harness);
+    expect(recorder.finalizations).toEqual([]); // ждём весь бюджет
+
+    clock.advance(MAX_WAIT_MS + 1_000);
+    await finalizer.runOnce();
 
     const finalization = lastFinalization(recorder);
-    expect(finalization.provenance?.priceToBeat).toBe('official');
-    expect(finalization.provenance?.finalPrice).toBeUndefined(); // числа нет — и вида нет
-    expect(finalization.crypto).toEqual({ priceToBeat: '78449.05' });
+    expect(finalization.status).toBe('complete');
+    expect(finalization.winning).toMatchObject({ label: 'Up', source: 'resolution' });
+    expect(finalization.provenance).toMatchObject({
+      resolution: 'official',
+      priceToBeat: 'official',
+      finalPrice: 'derived',
+    });
+    expect(finalization.crypto).toEqual({
+      priceToBeat: '78449.05',
+      finalPrice: '78501.123456789012345678', // граничное наблюдение ряда
+    });
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
   });
 });
 
@@ -482,7 +543,11 @@ describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
     expect(recorder.finalizations).toEqual([]);
 
     // Официальная резолюция приходит вовремя (Up) — она и должна победить
-    armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent());
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78449.05, finalPrice: 78500.1 }),
+    );
     clock.advance(30_000); // следующая попытка due
     await finalizer.runOnce();
 
