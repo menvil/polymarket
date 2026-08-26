@@ -23,6 +23,14 @@ export type { SupportedCurrency } from './money/index.js';
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
 
+// ReferencePrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
+export {
+  ReferencePrice,
+  ReferencePriceInvariantViolation,
+  ReferencePriceService,
+  ReferencePriceErrorReason
+} from './reference-price/index.js';
+
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
 
