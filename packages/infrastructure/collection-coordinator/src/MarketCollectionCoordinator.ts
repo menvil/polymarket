@@ -1033,10 +1033,10 @@ export class MarketCollectionCoordinator {
     const observer = this._settlementObserver;
     let waitedMs = 0;
     if (narrowed) {
-      const sliceMs =
-        observer === undefined
-          ? this._settlementGraceMs
-          : Math.min(SETTLEMENT_POLL_MS, this._settlementGraceMs);
+      // Интервал ограничен ВСЕГДА, в том числе без наблюдателя: иначе один
+      // сплошной сон на весь grace не давал бы перечитать `_closed`, и
+      // `close()` ждал бы полный бюджет вместо немедленного выхода.
+      const sliceMs = Math.min(SETTLEMENT_POLL_MS, this._settlementGraceMs);
       const slices = Math.max(1, Math.ceil(this._settlementGraceMs / sliceMs));
       for (let slice = 0; slice < slices; slice++) {
         if (this._closed || observer?.hasObservationAtOrAfter(feed, expiresAtMs) === true) {
@@ -1187,11 +1187,13 @@ export class MarketCollectionCoordinator {
         await this.closeSession(session.marketId, 'SHUTDOWN');
       }
 
-      // Идущие cutoff-задачи дожидаются ВСЕГДА и первыми: они владеют
-      // заморозкой датасета, и закрыть координатор поверх незамороженного
-      // файла означало бы отдать его cleanup-у storage вместе со всей
-      // записью рынка. Флаг `_closed` уже прервал их ожидание границы,
-      // поэтому ожидание конечно.
+      // Идущие cutoff-задачи дожидаются ПОСЛЕ снятия ACTIVE-сессий, но
+      // ОБЯЗАТЕЛЬНО до завершения shutdown: они владеют заморозкой датасета,
+      // и закрыть координатор поверх незамороженного файла означало бы
+      // отдать его cleanup-у storage вместе со всей записью рынка. Порядок
+      // относительно closeSession не важен — тот трогает только ACTIVE, а
+      // cutoff принадлежит FINALIZING. Флаг `_closed` уже прервал ожидание
+      // границы, поэтому ожидание конечно.
       await Promise.allSettled([...this._settlementCaptures.values()]);
 
       // FINALIZING-сессии архивирует MarketFinalizer.close() ДО закрытия

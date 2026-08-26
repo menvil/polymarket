@@ -46,9 +46,35 @@ import { LiveClock } from '@polymarket/time';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
 import type { DataCollectorConfig } from '@polymarket/collect-data/runtime';
 
+/**
+ * Читает числовую env-переменную с валидацией (паттерн checkpoint-runner-а).
+ *
+ * @param name - Имя переменной окружения
+ * @param fallback - Значение по умолчанию
+ * @param min - Минимально допустимое значение
+ * @returns Проверенное число
+ * @throws {Error} При нефинитном либо выходящем за диапазон значении
+ *
+ * @remarks
+ * Без проверки `SHUTDOWN_MAX_MINUTES=abc` давал бы `NaN`, сравнение
+ * `Date.now() < NaN` — сразу `false`, и прогон завершался бы «рынок не
+ * истёк» вместо честной ошибки конфигурации.
+ */
+function numericEnv(name: string, fallback: number, min: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`Invalid ${name}='${raw}': expected a finite number >= ${String(min)}`);
+  }
+  return parsed;
+}
+
 const OUTPUT_ROOT = process.env['SHUTDOWN_OUTPUT_ROOT'] ?? path.join('data', 'mrb-shutdown');
-const MAX_MINUTES = Number(process.env['SHUTDOWN_MAX_MINUTES'] ?? '20');
-const GRACE_SECONDS = Number(process.env['SHUTDOWN_GRACE_SECONDS'] ?? '12');
+const MAX_MINUTES = numericEnv('SHUTDOWN_MAX_MINUTES', 20, 1);
+const GRACE_SECONDS = numericEnv('SHUTDOWN_GRACE_SECONDS', 12, 0);
 
 const outputDir = path.join(OUTPUT_ROOT, new Date().toISOString().replace(/[:.]/g, '-'));
 fs.mkdirSync(outputDir, { recursive: true });
@@ -165,13 +191,17 @@ console.log(`finalizer: ${JSON.stringify(collector.status().finalization)}`);
 let ok = false;
 for (const file of archives) {
   const text = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8');
-  const header = JSON.parse(text.split('\n', 1)[0]!) as Record<string, unknown>;
+  const lines = text.split('\n');
+  const header = JSON.parse(lines[0]!) as Record<string, unknown>;
   const m = (header['m'] ?? {}) as Record<string, unknown>;
   const finalization = (m['finalization'] ?? {}) as Record<string, unknown>;
   const winning = finalization['winning'] as Record<string, unknown> | undefined;
   const provenance = (finalization['provenance'] ?? {}) as Record<string, unknown>;
-  const twapLines = text
-    .split('\n')
+  // LINE 1 — header, а он САМ содержит topic settlement-потока (в
+  // `crypto.settlement` и в `rtdsFeeds`), поэтому его нужно исключить:
+  // иначе счётчик наблюдений всегда завышен ровно на единицу
+  const twapLines = lines
+    .slice(1)
     .filter((line) => line.includes('"prices.crypto.chainlink.twap"')).length;
 
   console.log(`\n${path.basename(file)}`);
@@ -186,20 +216,24 @@ for (const file of archives) {
   console.log(`  evidence: ${JSON.stringify(provenance['evidence'])}`);
   console.log(`  recorded TWAP lines: ${String(twapLines)}`);
 
+  // Сценарий доказывает ИМЕННО shutdown-fallback: архив, закрывшийся по
+  // официальной резолюции, тоже «полон», но ничего про проверяемый путь не
+  // говорит — поэтому provenance и trigger входят в критерий успеха.
   if (
     finalization['status'] === 'complete' &&
     winning?.['label'] !== undefined &&
     winning['instrumentId'] !== undefined &&
     winning['outcomeIndex'] !== undefined &&
-    provenance['resolution'] !== undefined
+    provenance['resolution'] === 'fallback-chainlink-twap' &&
+    provenance['fallbackTrigger'] === 'shutdown'
   ) {
     ok = true;
   }
 }
 
 if (!ok) {
-  console.log('\n✗ no completed archive with a known winner was produced');
+  console.log('\n✗ no shutdown-derived archive with a known winner was produced');
   process.exit(1);
 }
-console.log('\n✓ shutdown produced a completed archive with a known winner');
+console.log('\n✓ shutdown produced a fallback-derived archive with a known winner');
 process.exit(0);

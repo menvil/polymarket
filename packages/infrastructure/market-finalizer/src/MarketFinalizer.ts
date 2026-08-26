@@ -144,12 +144,27 @@ export type FinalizationRecorder = Pick<
  *
  * - `'official'` — победитель получен из официальных данных Gamma/UMA;
  * - `'fallback'` — победитель выведен из записанного settlement-потока;
- * - `'discarded'` — итог вывести нельзя, датасет удалён (архива нет);
+ * - `'discarded'` — итог вывести нельзя, датасет УДАЛЁН (архива нет);
  * - `'best-effort'` — рынок ВНЕ поддержанного TWAP-scope (не-крипто либо
  *   Binance-источник) заархивирован best-known данными; победитель при этом
- *   может отсутствовать, и «официальной финализацией» это не считается.
+ *   может отсутствовать, и «официальной финализацией» это не считается;
+ * - `'deferred'` — решения на этом проходе нет, рынок остаётся pending и
+ *   будет повторён; ничего не удалено и не заархивировано;
+ * - `'archive-failed'` — итог известен, но записать архив не удалось
+ *   (header/gzip). Датасет НЕ удаляется: незавершённый `.jsonl` заберёт
+ *   cleanup storage, а `.gz` сознательно не создаётся.
+ *
+ * Различие между тремя последними — не косметика: `'discarded'` означает
+ * «данные стёрты», и путать с ним отказ записи значило бы приписывать
+ * системе удаление, которого не было.
  */
-export type FinalizationOutcome = 'official' | 'fallback' | 'discarded' | 'best-effort';
+export type FinalizationOutcome =
+  | 'official'
+  | 'fallback'
+  | 'discarded'
+  | 'best-effort'
+  | 'deferred'
+  | 'archive-failed';
 
 /**
  * Зависимости {@link MarketFinalizer}.
@@ -763,7 +778,9 @@ export class MarketFinalizer {
     const resolution = await this._resolveArchive(entry, fallbackTrigger);
     if (resolution === undefined) {
       await this._discardEntry(entry, fallbackTrigger);
-      return 'discarded';
+      // Удаление происходит ТОЛЬКО на терминальном пути; без триггера рынок
+      // просто остаётся ждать следующей попытки
+      return fallbackTrigger === undefined ? 'deferred' : 'discarded';
     }
 
     const headerOk = await this._writeHeader(entry, resolution, nowMs);
@@ -777,7 +794,7 @@ export class MarketFinalizer {
           marketId: key,
           attempt: entry.attempts,
         });
-        return 'discarded';
+        return 'deferred';
       }
       entry.archiveFailed = true;
       this._archiveFailures++;
@@ -785,7 +802,7 @@ export class MarketFinalizer {
         marketId: key,
         trigger: fallbackTrigger,
       });
-      return 'discarded';
+      return 'archive-failed';
     }
 
     try {
@@ -797,7 +814,7 @@ export class MarketFinalizer {
         marketId: key,
         error: error instanceof Error ? error.message : String(error),
       });
-      return 'discarded';
+      return 'archive-failed';
     }
 
     this._coordinator.completeFinalization(entry.session.marketId);
