@@ -41,7 +41,7 @@
  * Canonical envelope `{ type, payload, metadata }` (M-003).
  */
 import type { MessageEnvelope } from '@polymarket/messages';
-import type { CryptoAssetId, MarketDataSourceId } from '@polymarket/ids';
+import type { AssetSymbolId, MarketDataSourceId } from '@polymarket/ids';
 import type { ReferencePrice } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
@@ -82,7 +82,7 @@ export type ReferencePriceUpdatedEvent = MessageEnvelope<
      * (`StrategyScheduler.normalizeCryptoAsset` режет символы регулярками),
      * и повторять это нельзя.
      */
-    readonly baseAsset: CryptoAssetId;
+    readonly baseAsset: AssetSymbolId;
     /**
      * Котируемый актив пары в canonical-форме (`usdt`, `usd`, ...).
      *
@@ -94,7 +94,7 @@ export type ReferencePriceUpdatedEvent = MessageEnvelope<
      * quote целиком (`btcusdt` → `btc`), из-за чего эти пары там
      * неразличимы.
      */
-    readonly quoteAsset: CryptoAssetId;
+    readonly quoteAsset: AssetSymbolId;
     /**
      * Символ в НАТИВНОМ формате источника (`btcusdt`, `btc/usd`).
      *

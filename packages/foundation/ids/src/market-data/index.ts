@@ -25,3 +25,6 @@ export { asMarketId, unsafeMarketId } from './MarketId.js';
 
 export type { CryptoAssetId } from './CryptoAssetId.js';
 export { asCryptoAssetId, unsafeCryptoAssetId } from './CryptoAssetId.js';
+
+export type { AssetSymbolId } from './AssetSymbolId.js';
+export { asAssetSymbolId, unsafeAssetSymbolId } from './AssetSymbolId.js';

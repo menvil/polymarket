@@ -24,15 +24,15 @@
  * решение «считать ли их взаимозаменяемыми» принадлежит стратегии, а не
  * границе наблюдения: приняв его здесь, мы бы необратимо стёрли различие.
  */
-import { asCryptoAssetId } from '@polymarket/ids';
-import type { CryptoAssetId } from '@polymarket/ids';
+import { asAssetSymbolId } from '@polymarket/ids';
+import type { AssetSymbolId } from '@polymarket/ids';
 
 /** Canonical идентичность торговой пары наблюдения. */
 export interface AssetPairSymbols {
   /** Базовый актив (`btc`, `eth`, ...). */
-  readonly baseAsset: CryptoAssetId;
+  readonly baseAsset: AssetSymbolId;
   /** Котируемый актив (`usdt`, `usd`, ...). */
-  readonly quoteAsset: CryptoAssetId;
+  readonly quoteAsset: AssetSymbolId;
 }
 
 /**
@@ -108,8 +108,8 @@ export function parseAssetPair(nativeSymbol: string): AssetPairSymbols | undefin
  * @returns Пара либо `undefined`, если хоть одна часть непригодна
  */
 function build(base: string, quote: string): AssetPairSymbols | undefined {
-  const baseAsset = asCryptoAssetId(base);
-  const quoteAsset = asCryptoAssetId(quote);
+  const baseAsset = asAssetSymbolId(base);
+  const quoteAsset = asAssetSymbolId(quote);
   if (baseAsset === undefined || quoteAsset === undefined) {
     return undefined;
   }
