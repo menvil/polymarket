@@ -366,6 +366,9 @@ async function main(): Promise<void> {
 
   const finalStats = adapter.getStats();
   const durationSec = Math.round((Date.now() - startedAt) / 1000);
+  // Здоровье сырого контура снимается ДО остановки: semantic-адаптер не
+  // имеет права ухудшать надёжность сбора
+  const collectorStatus = collector.getStatus();
 
   // Свидетельство «запись сырых данных работает» снимается ДО остановки
   const archives = fs.existsSync(runDir)
@@ -445,6 +448,23 @@ async function main(): Promise<void> {
     );
   }
   console.log(`  matched ${String(tradeMatched)}/${String(tradeParity.length)}`);
+
+  console.log('\n— raw contour health (semantic adapter must not degrade it) —');
+  console.log(`  cex messages routed      ${String(collectorStatus.recorderCex.cexMessagesRouted)}`);
+  console.log(`  cex records accepted     ${String(collectorStatus.recorderCex.cexRecordsAccepted)}`);
+  console.log(`  cex write failures       ${String(collectorStatus.recorderCex.cexWriteFailures)}`);
+  console.log(`  cex handler errors       ${String(collectorStatus.recorderCex.cexHandlerErrors)}`);
+  console.log(`  cex records dropped      ${String(collectorStatus.recorderCex.cexRecordsDroppedInactive)}`);
+  console.log(`  cex partitions completed ${String(collectorStatus.cexWindows.partitionsCompleted)}`);
+  console.log(`  cex rotation failures    ${String(collectorStatus.cexWindows.rotationFailures)}`);
+  console.log(`  cex stream close fails   ${String(collectorStatus.cexWindows.streamCloseFailures)}`);
+  console.log(`  cex compression failures ${String(collectorStatus.cexWindows.compressionFailures)}`);
+  console.log(`  bus published/dispatched ${String(collectorStatus.bus.publishedTotal)} / ${String(collectorStatus.bus.dispatchedTotal)}`);
+  console.log(`  bus rejected publications ${String(collectorStatus.bus.rejectedPublicationsTotal)}`);
+  console.log(`  bus handler errors       ${String(collectorStatus.bus.handlerErrorsTotal)}`);
+  console.log(
+    `  cex sources failed       ${String(collectorStatus.sources.cex.filter((s) => s.hasFailed).length)}/${String(collectorStatus.sources.cex.length)}`,
+  );
 
   console.log(
     `\ncausality: ${String(causality.children)}/${String(causality.total)} semantic events are children of a raw observation`,
