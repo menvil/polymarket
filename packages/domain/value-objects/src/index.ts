@@ -20,6 +20,10 @@ export {
 } from './money/index.js';
 export type { SupportedCurrency } from './money/index.js';
 
+// Общий контракт «это цена» — то, что нужно структурам (стакан, спред)
+// от ЛЮБОГО ценового домена; см. shared/DecimalPrice.ts
+export type { DecimalPrice } from './shared/index.js';
+
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
 
