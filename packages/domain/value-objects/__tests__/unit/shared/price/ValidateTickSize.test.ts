@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { ValidateTickSize } from '../../../src/shared/ValidateTickSize.js';
-import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
+import { ValidateTickSize } from '../../../../src/shared/price/ValidateTickSize.js';
+import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 
 /** Предел шага рынка предсказаний — теперь передаётся явно. */
 const MAX_TICK = OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value());

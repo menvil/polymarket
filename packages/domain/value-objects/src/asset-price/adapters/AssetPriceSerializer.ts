@@ -2,7 +2,7 @@
  * JSON round-trip цены актива.
  *
  * @remarks
- * Реализация общая для всех ценовых доменов (`shared/priceCodec`): форма
+ * Реализация общая для всех ценовых доменов (`shared/price/priceCodec`): форма
  * `{ value: string }` одинакова, различается только фабрика, через которую
  * значение проверяется инвариантом домена.
  *
@@ -20,8 +20,8 @@
 import type { Result } from '@polymarket/result';
 import type { InvalidAssetPriceError } from '@polymarket/errors';
 import type { AssetPrice } from '../core/AssetPrice.js';
-import type { PriceJSON } from '../../shared/priceCodec.js';
-import { priceFromJSON, priceToJSON } from '../../shared/priceCodec.js';
+import type { PriceJSON } from '../../shared/price/priceCodec.js';
+import { priceFromJSON, priceToJSON } from '../../shared/price/priceCodec.js';
 import { ASSET_PRICE_DOMAIN } from '../facade/AssetPriceService.js';
 
 /** JSON-представление цены актива. */

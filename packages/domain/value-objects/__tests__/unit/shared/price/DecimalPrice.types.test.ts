@@ -14,7 +14,7 @@ import {
   AssetPrice,
   Spread,
   type DecimalPrice,
-} from '../../../src/index.js';
+} from '../../../../src/index.js';
 
 describe('оба ценовых домена удовлетворяют контракту', () => {
   it('OutcomePrice присваивается DecimalPrice структурно', () => {

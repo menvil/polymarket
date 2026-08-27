@@ -29,7 +29,9 @@ describe('OutcomePriceSerializer', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.kind).toBe('invalid_json');
-          expect(result.error.context?.type).toBe('object');
+          // 'null', а не 'object': typeof null === 'object' для диагностики
+          // бесполезен, и Quantity уже давно сообщал именно 'null'
+          expect(result.error.context?.type).toBe('null');
         }
       });
 
@@ -59,6 +61,17 @@ describe('OutcomePriceSerializer', () => {
         }
       });
 
+      it('должен вернуть Err для значения из цепочки прототипов', () => {
+        const inherited = Object.create({ value: '0.5' }) as unknown;
+
+        const result = OutcomePriceSerializer.fromJSON(inherited);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.type).toBe('missing_field');
+        }
+      });
+
       it('должен вернуть Err для объекта без поля value', () => {
         const result = OutcomePriceSerializer.fromJSON({});
         expect(result.ok).toBe(false);
@@ -82,7 +95,8 @@ describe('OutcomePriceSerializer', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.kind).toBe('invalid_json');
-          expect(result.error.context?.type).toBe('object');
+          // 'array', а не 'object' — массив в поле отличим от объекта
+          expect(result.error.context?.type).toBe('array');
         }
       });
 

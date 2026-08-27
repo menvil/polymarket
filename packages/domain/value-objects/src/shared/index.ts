@@ -1,28 +1,35 @@
 /**
- * Общие контракты и операции, разделяемые ценовыми доменами.
+ * Код, разделяемый между value objects.
  *
  * @remarks
- * Здесь живёт всё, что от домена НЕ зависит: контракт «это цена», описание
- * домена для операций и сами операции (арифметика, тик, разность). Домены
- * (`outcome-price`, `asset-price`) держат только свои инварианты, константы
- * и специфичные методы.
+ * Разложен НЕ по виду вещи (правила / операции / адаптеры), а по ШИРОТЕ
+ * разделения — потому что именно она определяет, кому позволено это
+ * импортировать:
+ *
+ * - `json/` — общее для ВСЕХ value objects: разбор внешнего JSON и
+ *   безопасная диагностика. Ни о каком домене не знает.
+ * - `price/` — общее только для ЦЕНОВЫХ доменов: контракт {@link DecimalPrice},
+ *   арифметика, ценовая сетка, правила. В `quantity` или `side` неприменимо.
+ *
+ * Плоская папка склеила бы эти две области: `quantity` начал бы тянуть
+ * ценовые правила просто потому, что они «в shared».
  */
-export type { DecimalPrice } from './DecimalPrice.js';
-export type { PriceDomain } from './priceDomain.js';
-export type { TickRoundingMode } from './priceOperations.js';
-export type { PriceJSON } from './priceCodec.js';
-export { formatPriceFixed, priceFromJSON, priceToJSON } from './priceCodec.js';
+export type { DecimalPrice, PriceDomain, TickRoundingMode, PriceJSON } from './price/index.js';
 export {
   applyRelativeChangeToPrice,
   averagePrices,
   dividePrice,
   ensurePriceAlignedToTick,
+  formatPriceFixed,
   multiplyPrice,
   priceDifference,
+  priceFromJSON,
+  priceToJSON,
   roundPriceToTick,
-} from './priceOperations.js';
-export { ValidateFactorForPriceMultiplication } from './ValidateFactorForPriceMultiplication.js';
-export { ValidateDivisorForPriceDivision } from './ValidateDivisorForPriceDivision.js';
-export { ValidateTickSize } from './ValidateTickSize.js';
-export { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
-export { ValidateAligned } from './ValidateAligned.js';
+  ValidateAligned,
+  ValidateDivisorForPriceDivision,
+  ValidateFactorForPriceMultiplication,
+  ValidateTickSize,
+  ValidateTickSizeMultipleOfBaseTick,
+} from './price/index.js';
+export { safeStringify } from './json/index.js';

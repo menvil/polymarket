@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { ValidateAligned } from '../../../src/shared/ValidateAligned.js';
-import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
+import { ValidateAligned } from '../../../../src/shared/price/ValidateAligned.js';
+import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import Decimal from 'decimal.js';
 import { InvalidOutcomePriceError } from '@polymarket/errors';
 

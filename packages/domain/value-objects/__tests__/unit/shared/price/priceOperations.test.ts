@@ -13,7 +13,7 @@ import {
   AssetPriceService,
   OutcomePrice,
   OutcomePriceService,
-} from '../../../src/index.js';
+} from '../../../../src/index.js';
 
 describe('арифметика работает в обоих доменах', () => {
   it('multiply', () => {

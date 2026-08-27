@@ -1,7 +1,7 @@
 import { OutcomePrice } from '../core/OutcomePrice.js';
 import { InvalidOutcomePriceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
-import { formatPriceFixed } from '../../shared/priceCodec.js';
+import { formatPriceFixed } from '../../shared/price/priceCodec.js';
 import { OUTCOME_PRICE_DOMAIN } from '../facade/OutcomePriceService.js';
 
 /**

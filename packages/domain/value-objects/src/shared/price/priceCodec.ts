@@ -17,6 +17,8 @@ import type { AnyTradingError } from '@polymarket/errors';
 import { ErrorSource } from '@polymarket/errors';
 import type { DecimalPrice } from './DecimalPrice.js';
 import type { PriceDomain } from './priceDomain.js';
+import type { JsonFailure } from '../json/index.js';
+import { readField, readJsonObject, safeStringify } from '../json/index.js';
 
 /**
  * JSON-представление цены.
@@ -28,36 +30,6 @@ import type { PriceDomain } from './priceDomain.js';
  */
 export interface PriceJSON {
   readonly value: string;
-}
-
-/**
- * Безопасно приводит произвольное значение к строке для диагностики.
- *
- * @param value - Значение любого типа
- * @returns Строковое представление; циклические ссылки заменяются на
- *   `[Circular]`, полностью несериализуемое значение — на `[Unstringifiable]`
- *
- * @remarks
- * Диагностика обязана пережить ЛЮБОЙ ввод: формирование сообщения об ошибке
- * не имеет права само бросить исключение. Циклы гасятся replacer-ом, а не
- * `try/catch`, чтобы остальная часть объекта всё же попала в контекст —
- * «[Circular] в одном поле» полезнее, чем «[Unstringifiable]» целиком.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val as unknown;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
 }
 
 /**
@@ -149,22 +121,34 @@ export function priceFromJSON<TPrice extends DecimalPrice, TError extends AnyTra
       }),
     );
 
-  if (typeof json !== 'object' || json === null) {
-    return fail(`Expected object, got ${typeof json}`, typeof json);
-  }
-  if (Array.isArray(json)) {
-    return fail('Expected object, got array', 'array');
-  }
-  if (!Object.hasOwn(json, 'value')) {
-    return fail("Missing required field 'value'", 'missing_field');
+  // Разбор ВСЕХ случаев отказа: компилятор не даст забыть новый
+  const failFrom = (failure: JsonFailure): Result<TPrice, TError> => {
+    switch (failure.kind) {
+      case 'not_object':
+        return fail(`Expected object, got ${failure.type}`, failure.type);
+      case 'array':
+        return fail('Expected object, got array', 'array');
+      case 'missing_field':
+        return fail(`Missing required field '${failure.field}'`, 'missing_field');
+      case 'bad_field_type':
+        return fail(
+          `Field '${failure.field}' must be number or string, got ${failure.type}`,
+          failure.type,
+        );
+    }
+  };
+
+  const obj = readJsonObject(json);
+  if (!obj.ok) {
+    return failFrom(obj.error);
   }
 
-  const value = (json as { value: unknown }).value;
-  if (typeof value !== 'number' && typeof value !== 'string') {
-    return fail(`Field 'value' must be number or string, got ${typeof value}`, typeof value);
+  const value = readField(obj.value, 'value', ['string', 'number']);
+  if (!value.ok) {
+    return failFrom(value.error);
   }
 
   // Создание делегируется домену: значение из JSON проходит те же
   // инварианты, что и созданное в коде
-  return domain.create(value);
+  return domain.create(value.value as number | string);
 }

@@ -15,7 +15,7 @@ import {
   OutcomePrice,
   OutcomePriceFormatter,
   OutcomePriceSerializer,
-} from '../../../src/index.js';
+} from '../../../../src/index.js';
 
 describe('форматирование работает в обоих доменах', () => {
   it('toFixed', () => {

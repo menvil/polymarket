@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { ValidateTickSizeMultipleOfBaseTick } from '../../../src/shared/ValidateTickSizeMultipleOfBaseTick.js';
-import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
+import { ValidateTickSizeMultipleOfBaseTick } from '../../../../src/shared/price/ValidateTickSizeMultipleOfBaseTick.js';
+import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import Decimal from 'decimal.js';
 
 /** Предел шага рынка предсказаний — теперь передаётся явно. */

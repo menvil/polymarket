@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { OutcomePriceService } from '../../../src/outcome-price/facade/OutcomePriceService.js';
-import { ValidateAligned } from '../../../src/shared/ValidateAligned.js';
+import { ValidateAligned } from '../../../src/shared/price/ValidateAligned.js';
 import { OutcomePriceSerializer } from '../../../src/outcome-price/adapters/OutcomePriceSerializer.js';
 import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { InvalidOutcomePriceError } from '@polymarket/errors';

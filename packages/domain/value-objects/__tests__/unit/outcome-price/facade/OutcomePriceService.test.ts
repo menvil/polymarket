@@ -4,7 +4,7 @@ import { OutcomePriceService } from '../../../../src/outcome-price/facade/Outcom
 import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import { InvalidOutcomePriceError } from '@polymarket/errors';
 import * as math from '@polymarket/math';
-import { ValidateAligned } from '../../../../src/shared/ValidateAligned.js';
+import { ValidateAligned } from '../../../../src/shared/price/ValidateAligned.js';
 import { RatioService } from '../../../../src/ratio/facade/RatioService.js';
 import { Result } from '@polymarket/result';
 import { OutcomePriceErrorReason } from '../../../../src/outcome-price/errors/OutcomePriceErrorReason.js';

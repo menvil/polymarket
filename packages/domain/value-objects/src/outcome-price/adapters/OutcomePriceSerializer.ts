@@ -1,7 +1,7 @@
 import type { Result } from '@polymarket/result';
 import type { InvalidOutcomePriceError } from '@polymarket/errors';
 import type { OutcomePrice } from '../core/OutcomePrice.js';
-import { priceFromJSON, priceToJSON } from '../../shared/priceCodec.js';
+import { priceFromJSON, priceToJSON } from '../../shared/price/priceCodec.js';
 import { OUTCOME_PRICE_DOMAIN } from '../facade/OutcomePriceService.js';
 
 /**

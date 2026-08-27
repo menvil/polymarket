@@ -2,7 +2,7 @@
  * Форматирование цены актива для отображения.
  *
  * @remarks
- * Реализация общая для всех ценовых доменов (`shared/priceCodec`) — форматом
+ * Реализация общая для всех ценовых доменов (`shared/price/priceCodec`) — форматом
  * занимается `Decimal`, а не домен. Здесь только связывание с доменом цены
  * актива и его типом ошибки.
  *
@@ -18,7 +18,7 @@
 import type { Result } from '@polymarket/result';
 import type { InvalidAssetPriceError } from '@polymarket/errors';
 import type { AssetPrice } from '../core/AssetPrice.js';
-import { formatPriceFixed } from '../../shared/priceCodec.js';
+import { formatPriceFixed } from '../../shared/price/priceCodec.js';
 import { ASSET_PRICE_DOMAIN } from '../facade/AssetPriceService.js';
 
 export class AssetPriceFormatter {

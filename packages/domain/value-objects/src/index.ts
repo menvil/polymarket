@@ -21,7 +21,7 @@ export {
 export type { SupportedCurrency } from './money/index.js';
 
 // Общий контракт «это цена» — то, что нужно структурам (стакан, спред)
-// от ЛЮБОГО ценового домена; см. shared/DecimalPrice.ts
+// от ЛЮБОГО ценового домена; см. shared/price/DecimalPrice.ts
 export type { DecimalPrice, PriceDomain, TickRoundingMode, PriceJSON } from './shared/index.js';
 export {
   applyRelativeChangeToPrice,

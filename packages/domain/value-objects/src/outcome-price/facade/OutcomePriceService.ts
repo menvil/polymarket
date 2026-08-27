@@ -2,7 +2,7 @@ import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidOutcomePriceError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { OutcomePrice } from '../core/OutcomePrice.js';
 import { OutcomePriceErrorReason } from '../errors/OutcomePriceErrorReason.js';
-import { ValidateAligned } from '../../shared/ValidateAligned.js';
+import { ValidateAligned } from '../../shared/price/ValidateAligned.js';
 import { subtractDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import type { Ratio } from '../../ratio/core/Ratio.js';
@@ -68,7 +68,7 @@ const BASE_TICK = '0.0001';
  * Домен цены рынка предсказаний для общих операций над ценами.
  *
  * @remarks
- * Арифметика, тик и форматирование живут в `shared/priceOperations` — они
+ * Арифметика, тик и форматирование живут в `shared/price/priceOperations` — они
  * одинаковы для всех ценовых доменов. Доменным их делает эта запись:
  * фабрика проверяет результат инвариантом `[0.0001, 0.9999]`, а ошибки
  * сообщаются типом этого домена.
