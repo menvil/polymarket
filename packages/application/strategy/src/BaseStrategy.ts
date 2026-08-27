@@ -21,8 +21,8 @@
  * @example
  * ```typescript
  * interface MakerData {
- *   bestBid: Price;
- *   bestAsk: Price;
+ *   bestBid: OutcomePrice;
+ *   bestAsk: OutcomePrice;
  *   position: IPosition | undefined;
  *   availableUSDC: Money;
  * }

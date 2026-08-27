@@ -58,7 +58,7 @@ import type { AccountId, AssetId, InstrumentId, MarketId, OrderId } from '@polym
 import { asFillId, KnownVenues } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
-import { Fee, Price, Quantity } from '@polymarket/value-objects';
+import { Fee, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import type { PaperConfig } from '../config/BotConfig.js';
@@ -79,7 +79,7 @@ export interface PendingPaperOrder {
   readonly instrumentId: InstrumentId;
   readonly marketId: MarketId;
   readonly side: Side;
-  readonly price: Price;
+  readonly price: OutcomePrice;
   readonly totalSize: Quantity;
   /** Оставшийся объём (уменьшается при partial fills) */
   remainingSize: Decimal;
@@ -226,7 +226,7 @@ export class PaperFillSimulator {
   public wouldCrossImmediately(
     instrumentId: InstrumentId,
     side: Side,
-    price: Price,
+    price: OutcomePrice,
   ): boolean {
     const top = this._topOfBook.get(String(instrumentId));
     if (!top) return false;
@@ -268,13 +268,13 @@ export class PaperFillSimulator {
 
       if (order.side === 'BUY' && bestAsk !== undefined && bestAsk.lte(orderPrice)) {
         // Кто-то готов продать по цене ≤ нашей лимитки → fill
-        // Price improvement: на реальной бирже BUY заполняется по min(orderPrice, bestAsk)
+        // OutcomePrice improvement: на реальной бирже BUY заполняется по min(orderPrice, bestAsk)
         fillPrice = this._deps.config.fillAtOrderPrice
           ? Decimal.min(orderPrice, bestAsk)
           : bestAsk;
       } else if (order.side === 'SELL' && bestBid !== undefined && bestBid.gte(orderPrice)) {
         // Кто-то готов купить по цене ≥ нашей лимитки → fill
-        // Price improvement: на реальной бирже SELL заполняется по max(orderPrice, bestBid)
+        // OutcomePrice improvement: на реальной бирже SELL заполняется по max(orderPrice, bestBid)
         fillPrice = this._deps.config.fillAtOrderPrice
           ? Decimal.max(orderPrice, bestBid)
           : bestBid;
@@ -324,7 +324,7 @@ export class PaperFillSimulator {
       if (matches) {
         // Исполняем min(tradeSize, remainingSize) — partial fill если нужно
         const fillSize = Decimal.min(tradeSize, order.remainingSize);
-        // Price improvement: BUY → min(order, trade), SELL → max(order, trade)
+        // OutcomePrice improvement: BUY → min(order, trade), SELL → max(order, trade)
         const fillPrice = this._deps.config.fillAtOrderPrice
           ? (order.side === 'BUY' ? Decimal.min(orderPrice, tradePrice) : Decimal.max(orderPrice, tradePrice))
           : tradePrice;
@@ -403,7 +403,7 @@ export class PaperFillSimulator {
     }
 
     // Комиссия: taker платит, maker — нет (Polymarket taker-only fee model)
-    const price = Price.of(fillPrice);
+    const price = OutcomePrice.of(fillPrice);
     const size = Quantity.of(fillSize);
     const fee = isTaker
       ? calculatePolymarketTakerFee(size, price)

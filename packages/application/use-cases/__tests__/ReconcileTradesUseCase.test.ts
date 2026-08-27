@@ -14,7 +14,7 @@ import type {
 } from '@polymarket/ports';
 import { ExchangeError } from '@polymarket/ports';
 import type { AccountId, AssetId, FillId, MarketId, OrderId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
@@ -52,7 +52,7 @@ function makeTradeSnapshot(fillId: string): VenueTradeSnapshot {
     marketId: MARKET_ID,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.57')) as never,
+    price: OutcomePrice.of(new Decimal('0.57')) as never,
     size: Quantity.of(new Decimal('10')) as never,
     fee: {
       amount: Quantity.of(new Decimal('0')) as never,

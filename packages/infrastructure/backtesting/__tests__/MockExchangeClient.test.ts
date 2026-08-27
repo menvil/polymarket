@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { MockExchangeClient } from '../src/MockExchangeClient.js';
 import type { SubmitOrderParams } from '@polymarket/ports';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { asPolymarketCtfToken, parseAccountId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
@@ -28,7 +28,7 @@ function makeOrderParams(): SubmitOrderParams {
   return {
     asset: TEST_ASSET,
     side: 'BUY' as const,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
   };
 }

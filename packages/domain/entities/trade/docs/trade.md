@@ -40,7 +40,7 @@ interface TradeParams {
   readonly venueId: VenueId;       // Биржа (POLYMARKET)
   readonly marketId: string;       // ID рынка
   readonly tokenId: AssetId;       // ID outcome токена
-  readonly price: Price;           // Цена сделки
+  readonly price: OutcomePrice;           // Цена сделки
   readonly size: Quantity;         // Объём сделки
   readonly aggressorSide?: Side;   // Инициатор (BUY/SELL) — опционально
   readonly timestamp: Timestamp;   // Время сделки
@@ -133,7 +133,7 @@ import { TradeMapper } from '@polymarket/trade';
 const result = TradeMapper.fromParsedTrade({
   instrumentId: event.instrumentId,   // InstrumentId (branded)
   marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
-  price: event.price,                 // Price VO
+  price: event.price,                 // OutcomePrice VO
   size: event.size,                   // Quantity VO
   side: event.side,                   // Side ('BUY' | 'SELL')
   timestamp: event.timestamp,         // Timestamp VO

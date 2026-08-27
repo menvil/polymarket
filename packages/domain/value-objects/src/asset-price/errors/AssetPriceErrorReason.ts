@@ -37,7 +37,7 @@ export enum AssetPriceErrorReason {
    * @remarks
    * Единственная доменная граница AssetPrice: цена актива существует
    * только как положительная величина. Верхней границы НЕТ — в отличие от
-   * `Price` рынка предсказаний.
+   * `OutcomePrice` рынка предсказаний.
    *
    * @example
    * AssetPriceService.create('0') // reason: NOT_POSITIVE

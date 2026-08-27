@@ -141,7 +141,7 @@ export class QuoteSerializer {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * const json = QuoteSerializer.toJSON(quote);
    * console.log(json.bid); // 0.48
    * ```
@@ -475,7 +475,7 @@ export class QuoteSerializer {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * const jsonString = QuoteSerializer.toJSONString(quote);
    * console.log(jsonString); // '{"bid":0.48,"ask":0.52,...}'
    * ```

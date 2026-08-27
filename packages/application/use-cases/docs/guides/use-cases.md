@@ -188,7 +188,7 @@ const result = await useCase.execute({
   asset,
   instrumentId,
   side: 'BUY',
-  price: Price.of(new Decimal('0.65')),
+  price: OutcomePrice.of(new Decimal('0.65')),
   size: Quantity.of(new Decimal('100')),
   portfolio: currentPortfolio,
   openOrdersCount: 3,
@@ -470,8 +470,8 @@ Portfolio не имеет поля `.version` — always pass `0`. In-memory р�
 (`@polymarket/portfolio`, Этап 3, сознательно НЕ тронута — её собственная
 Decimal/Money-асимметрия между USDC- и token-резервацией остаётся, см. план миграции
 Этап 7 п.4). `applyFill`/`applyFillAgainstHeldReservation`'s опциональный/обязательный
-`orderPrice` — теперь `Price` (было `Decimal`); единственный вызывающий с явным
-`orderPrice` (`ProcessFillUseCase`) уже имел `Price` в памяти и делал `.value()`
+`orderPrice` — теперь `OutcomePrice` (было `Decimal`); единственный вызывающий с явным
+`orderPrice` (`ProcessFillUseCase`) уже имел `OutcomePrice` в памяти и делал `.value()`
 только чтобы передать его сюда — конверсия убрала этот `.value()`, не добавила работы.
 
 ## OrderRepository CAS (optimistic concurrency)

@@ -20,7 +20,7 @@ import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-me
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { asPolymarketCtfToken, accountIdToString } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import { Order } from '@polymarket/order';
@@ -81,7 +81,7 @@ function makeOpenOrder(id: OrderId = ORDER_ID, side: 'BUY' | 'SELL' = 'BUY'): Or
     id,
     asset: ASSET_ID,
     side,
-    price: Price.of(new Decimal('0.65')) as never,
+    price: OutcomePrice.of(new Decimal('0.65')) as never,
     size: Quantity.of(new Decimal('100')) as never,
     timestamp: MOCK_TIMESTAMP,
   });
@@ -272,7 +272,7 @@ describe('UpdateOrderStatusUseCase', () => {
       id: ORDER_ID,
       asset: ASSET_ID,
       side: 'BUY',
-      price: Price.of(new Decimal('0.65')) as never,
+      price: OutcomePrice.of(new Decimal('0.65')) as never,
       size: Quantity.of(new Decimal('100')) as never,
       timestamp: MOCK_TIMESTAMP,
     });
@@ -340,7 +340,7 @@ describe('UpdateOrderStatusUseCase', () => {
       id: ORDER_ID,
       asset: ASSET_ID,
       side: 'BUY',
-      price: Price.of(new Decimal('0.65')) as never,
+      price: OutcomePrice.of(new Decimal('0.65')) as never,
       size: Quantity.of(new Decimal('100')) as never,
       timestamp: MOCK_TIMESTAMP,
     });

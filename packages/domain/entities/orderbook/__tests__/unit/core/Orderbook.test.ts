@@ -8,7 +8,7 @@ import { OrderbookLevel } from '../../../src/core/OrderbookLevel.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
@@ -16,11 +16,11 @@ import { bookPricing } from '../../../src/index.js';
 import { KnownVenues, MarketId } from '@polymarket/ids';
 
 /** Метрики prediction-домена: фабрика связывается один раз. */
-const pricing = bookPricing(PriceService.create);
+const pricing = bookPricing(OutcomePriceService.create);
 
 /** Создаёт OrderbookLevel из примитивов (для fromLevels() — минует нормализатор). */
 function testLevel(price: number, quantity: number): OrderbookLevel {
-  const p = PriceService.create(price);
+  const p = OutcomePriceService.create(price);
   const q = QuantityService.create(quantity);
   if (!p.ok) throw new Error(`Invalid price: ${price}`);
   if (!q.ok) throw new Error(`Invalid quantity: ${quantity}`);

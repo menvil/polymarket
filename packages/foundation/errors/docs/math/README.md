@@ -151,7 +151,7 @@ const rounded = roundToTickSize(
 **Value Objects Errors (средний уровень - Domain Layer):**
 
 - Бизнес-валидация (диапазоны, форматы)
-- Создание и валидация domain objects (Price, Quantity, Money)
+- Создание и валидация domain objects (OutcomePrice, Quantity, Money)
 - Используются в `@polymarket/value-objects` пакете
 - **Result pattern** (бизнес-правила)
 
@@ -171,10 +171,10 @@ function average(a: Decimal, b: Decimal): Decimal {
 }
 
 // 2️⃣ Domain Layer: Value Objects (Result для бизнес-валидации)
-import { Price } from '@polymarket/value-objects';
-import { InvalidPriceError } from '@polymarket/errors';
+import { OutcomePrice } from '@polymarket/value-objects';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-const priceResult = Price.fromNumber(0.65);
+const priceResult = OutcomePrice.fromNumber(0.65);
 // ✅ Result: цена не в бизнес-диапазоне [0.0001, 0.9999]
 
 priceResult.match({
@@ -295,18 +295,18 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
 Value objects используют math operations и обрабатывают их ошибки:
 
 ```typescript
-// packages/domain/value-objects/src/Price.ts
+// packages/domain/value-objects/src/OutcomePrice.ts
 import { divideDecimal, roundToTickSize } from '@polymarket/math';
 import { InvalidDivisorError, InvalidTickSizeError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-export class Price {
+export class OutcomePrice {
   // ...
 
-  divide(divisor: Price): Result<Price, InvalidDivisorError | InvalidPriceError> {
+  divide(divisor: OutcomePrice): Result<OutcomePrice, InvalidDivisorError | InvalidOutcomePriceError> {
     try {
       const result = divideDecimal(this.value, divisor.value);
-      return Price.fromDecimal(result);
+      return OutcomePrice.fromDecimal(result);
     } catch (error) {
       if (InvalidDivisorError.is(error)) {
         return Err(error);
@@ -315,10 +315,10 @@ export class Price {
     }
   }
 
-  roundToTickSize(tickSize: Decimal): Result<Price, InvalidTickSizeError | InvalidPriceError> {
+  roundToTickSize(tickSize: Decimal): Result<OutcomePrice, InvalidTickSizeError | InvalidOutcomePriceError> {
     try {
       const rounded = roundToTickSize(this.value, tickSize);
-      return Price.fromDecimal(rounded);
+      return OutcomePrice.fromDecimal(rounded);
     } catch (error) {
       if (InvalidTickSizeError.is(error)) {
         return Err(error);
@@ -339,7 +339,7 @@ export class Price {
 
 - [DivisionByZeroError](../value-objects/division-by-zero.md) - деление на ноль (конкретный случай InvalidDivisorError)
 - [ArithmeticOverflowError](../value-objects/arithmetic-overflow.md) - результат операции вышел за пределы
-- [InvalidPriceError](../value-objects/invalid-price.md) - бизнес-валидация цен
+- [InvalidOutcomePriceError](../value-objects/invalid-price.md) - бизнес-валидация цен
 - [InvalidQuantityError](../value-objects/invalid-quantity.md) - бизнес-валидация количества
 
 ---

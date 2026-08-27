@@ -38,7 +38,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import Decimal from 'decimal.js';
 import { LedgerService } from '@polymarket/use-cases';
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { Fill } from '@polymarket/fill';
 import {
@@ -250,7 +250,7 @@ function processFile(mf: MarketFills, accountId: AccountId, venueId: VenueId): F
       marketId,
       tokenId,
       settlementAssetId: AssetIdHelpers.USDC,
-      price: Price.of(price),
+      price: OutcomePrice.of(price),
       size: Quantity.of(size),
       side: record.side,
       timestamp: Timestamp.of(new Decimal(record.ts)),

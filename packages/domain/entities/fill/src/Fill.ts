@@ -47,7 +47,7 @@
  * ```typescript
  * import { Fill } from '@polymarket/fill';
  * import { asFillId, asOrderId, parseAccountId, asVenueId, parseAssetId, AssetIdHelpers } from '@polymarket/ids';
- * import { Price, Quantity, Fee } from '@polymarket/value-objects';
+ * import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
@@ -59,7 +59,7 @@ import { TimestampService } from '@polymarket/timestamp';
  *   marketId: 'market-abc',
  *   tokenId: parseAssetId('...'),
  *   settlementAssetId: AssetIdHelpers.USDC,
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('50')),
  *   side: 'BUY',
  *   timestamp: TimestampService.create(Date.now()).value,
@@ -82,7 +82,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, OrderId, AccountId, VenueId, AssetId, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
-import type { Price, Side, Fee } from '@polymarket/value-objects';
+import type { OutcomePrice, Side, Fee } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import { Quantity } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
@@ -94,7 +94,7 @@ import type { AssetDelta } from './AssetDelta.js';
  *
  * @remarks
  * Все ID-поля типизированы — branded types гарантируют корректность.
- * Все VO (Price, Quantity, Timestamp, Fee) валидируют себя при создании.
+ * Все VO (OutcomePrice, Quantity, Timestamp, Fee) валидируют себя при создании.
  * liquidity и venueTradeId вынесены в ExecutionMetadata (не доменные данные).
  */
 export interface FillParams {
@@ -112,8 +112,8 @@ export interface FillParams {
   readonly tokenId: AssetId;
   /** Расчётный актив (USDC для Polymarket) */
   readonly settlementAssetId: AssetId;
-  /** Цена исполнения (Price VO гарантирует > 0) */
-  readonly price: Price;
+  /** Цена исполнения (OutcomePrice VO гарантирует > 0) */
+  readonly price: OutcomePrice;
   /** Размер исполнения (должен быть > 0) */
   readonly size: Quantity;
   /** Сторона (BUY/SELL) */
@@ -139,7 +139,7 @@ export class Fill {
   public readonly marketId: MarketId;
   public readonly tokenId: AssetId;
   public readonly settlementAssetId: AssetId;
-  public readonly price: Price;
+  public readonly price: OutcomePrice;
   public readonly size: Quantity;
   public readonly side: Side;
   public readonly timestamp: Timestamp;
@@ -177,7 +177,7 @@ export class Fill {
    *
    * ### Что НЕ валидируется здесь (гарантируется типами и VO):
    * - id, orderId, accountId, venueId, marketId, tokenId — branded types
-   * - price > 0 — гарантируется Price VO при создании (бросает исключение)
+   * - price > 0 — гарантируется OutcomePrice VO при создании (бросает исключение)
    * - fee.amount >= 0 — гарантируется Fee VO
    * - timestamp корректный — гарантируется Timestamp VO
    *

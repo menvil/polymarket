@@ -271,7 +271,7 @@ if (sharesResult.ok) {
 ### Когда использовать
 
 - **Order normalization** (округление до минимального лота)
-- **Price-quantity alignment** (округление до tick size)
+- **OutcomePrice-quantity alignment** (округление до tick size)
 - **Partial close adjustments** (округление остатка позиции)
 
 ### Важно: Negative округление

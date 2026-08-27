@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import type { Price } from '../../price/index.js';
+import type { OutcomePrice } from '../../outcome-price/index.js';
 import type { DecimalPrice } from '../../shared/index.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 import { SpreadInvariantViolation } from './SpreadInvariantViolation.js';
@@ -10,11 +10,11 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  *
  * @remarks
  * Представляет bid-ask spread на рынках предсказаний.
- * Диапазон цен: каждая Price в [0.0001, 0.9999]
+ * Диапазон цен: каждая OutcomePrice в [0.0001, 0.9999]
  *
  * Содержит ТОЛЬКО инварианты существования:
  * - bid <= ask (основной инвариант спреда)
- * - bid и ask являются валидными Price объектами
+ * - bid и ask являются валидными OutcomePrice объектами
  *
  * НЕ проверяется в Core:
  * - Минимальная/максимальная ширина (проверяется в Rules)
@@ -26,7 +26,7 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * @internal ТОЛЬКО для внутреннего использования в Core и Facade
  * Для публичного API используйте SpreadService.create()
  */
-export class Spread<TPrice extends DecimalPrice = Price> {
+export class Spread<TPrice extends DecimalPrice = OutcomePrice> {
   /**
    * Private constructor - используйте static factory methods
    *
@@ -52,7 +52,7 @@ export class Spread<TPrice extends DecimalPrice = Price> {
   }
 
   /**
-   * Создаёт Spread из Price объектов (ТОЛЬКО для Core!)
+   * Создаёт Spread из OutcomePrice объектов (ТОЛЬКО для Core!)
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
@@ -134,8 +134,8 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    * @example
    * ```typescript
    * const spread = Spread.of(
-   *   Price.of(new Decimal(0.48)),
-   *   Price.of(new Decimal(0.52))
+   *   OutcomePrice.of(new Decimal(0.48)),
+   *   OutcomePrice.of(new Decimal(0.52))
    * );
    * spread.width(); // Decimal(0.04)
    * ```
@@ -153,15 +153,15 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    * Mid = (bid + ask) / 2
    * Представляет теоретическую справедливую цену.
    *
-   * Возвращает Decimal вместо Price для соблюдения контракта
+   * Возвращает Decimal вместо OutcomePrice для соблюдения контракта
    * "Core не бросает кроме инвариантов".
-   * Для получения Price используйте SpreadService.getMidPrice().
+   * Для получения OutcomePrice используйте SpreadService.getMidPrice().
    *
    * @example
    * ```typescript
    * const spread = Spread.of(
-   *   Price.of(new Decimal(0.48)),
-   *   Price.of(new Decimal(0.52))
+   *   OutcomePrice.of(new Decimal(0.48)),
+   *   OutcomePrice.of(new Decimal(0.52))
    * );
    * spread.mid(); // Decimal(0.50)
    * ```
@@ -198,8 +198,8 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    * @example
    * ```typescript
    * const spread = Spread.of(
-   *   Price.of(new Decimal(0.48)),
-   *   Price.of(new Decimal(0.52))
+   *   OutcomePrice.of(new Decimal(0.48)),
+   *   OutcomePrice.of(new Decimal(0.52))
    * );
    * spread.widthRatio(); // Ratio(0.08)
    * // Расчёт: 0.04 / 0.50 = 0.08 (8%)
@@ -225,8 +225,8 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    *
    * @example
    * ```typescript
-   * const s1 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
-   * const s2 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+   * const s1 = Spread.of(OutcomePrice.of(new Decimal(0.48)), OutcomePrice.of(new Decimal(0.52)));
+   * const s2 = Spread.of(OutcomePrice.of(new Decimal(0.48)), OutcomePrice.of(new Decimal(0.52)));
    * s1.equals(s2); // true
    * ```
    */
@@ -235,7 +235,7 @@ export class Spread<TPrice extends DecimalPrice = Price> {
     // `DecimalPrice` намеренно минимален и метода сравнения не содержит —
     // требовать его от всякого будущего типа цены значило бы сузить круг
     // типов, ради расширения которого generic и вводился. Результат тот же:
-    // `Price.equals`/`AssetPrice.equals` сами делегируют `Decimal.equals`.
+    // `OutcomePrice.equals`/`AssetPrice.equals` сами делегируют `Decimal.equals`.
     return (
       this._bid.value().equals(other._bid.value()) &&
       this._ask.value().equals(other._ask.value())
@@ -264,8 +264,8 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    * @example
    * ```typescript
    * const spread = Spread.of(bid, ask);
-   * spread.contains(Price.of(new Decimal(0.50))); // true
-   * spread.contains(Price.of(new Decimal(0.55))); // false
+   * spread.contains(OutcomePrice.of(new Decimal(0.50))); // true
+   * spread.contains(OutcomePrice.of(new Decimal(0.55))); // false
    * ```
    */
   public contains(price: TPrice): boolean {
@@ -285,8 +285,8 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    * @example
    * ```typescript
    * const spread = Spread.of(
-   *   Price.of(new Decimal(0.48)),
-   *   Price.of(new Decimal(0.52))
+   *   OutcomePrice.of(new Decimal(0.48)),
+   *   OutcomePrice.of(new Decimal(0.52))
    * );
    * spread.widthInBasisPoints(); // Decimal(400)
    * // 0.04 * 10000 = 400 bp
@@ -310,11 +310,11 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    *
    * @example
    * ```typescript
-   * const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
-   * const s2 = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+   * const s1 = Spread.of(OutcomePrice.of(new Decimal(0.40)), OutcomePrice.of(new Decimal(0.60)));
+   * const s2 = Spread.of(OutcomePrice.of(new Decimal(0.50)), OutcomePrice.of(new Decimal(0.70)));
    * s1.overlaps(s2); // true (пересечение [0.50, 0.60])
    *
-   * const s3 = Spread.of(Price.of(new Decimal(0.70)), Price.of(new Decimal(0.80)));
+   * const s3 = Spread.of(OutcomePrice.of(new Decimal(0.70)), OutcomePrice.of(new Decimal(0.80)));
    * s1.overlaps(s3); // false (нет пересечения)
    * ```
    */
@@ -336,11 +336,11 @@ export class Spread<TPrice extends DecimalPrice = Price> {
    *
    * @example
    * ```typescript
-   * const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
-   * const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.55)));
+   * const outer = Spread.of(OutcomePrice.of(new Decimal(0.40)), OutcomePrice.of(new Decimal(0.60)));
+   * const inner = Spread.of(OutcomePrice.of(new Decimal(0.45)), OutcomePrice.of(new Decimal(0.55)));
    * outer.containsSpread(inner); // true
    *
-   * const partial = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+   * const partial = Spread.of(OutcomePrice.of(new Decimal(0.50)), OutcomePrice.of(new Decimal(0.70)));
    * outer.containsSpread(partial); // false (выходит за границы)
    * ```
    */

@@ -39,7 +39,7 @@ import {
 import { BookUpdateHandler } from '@polymarket/handlers';
 import { SimpleBookRegistry } from '../SimpleBookRegistry.js';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import {
   parseAccountId,
@@ -342,7 +342,7 @@ async function runSingleMarketBacktest(
   const instrumentInfo: InstrumentInfo = {
     instrumentId,
     marketId,
-    tickSize: Price.of(new Decimal('0.001')),
+    tickSize: OutcomePrice.of(new Decimal('0.001')),
     minOrderSize: Quantity.of(new Decimal('1')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
@@ -501,7 +501,7 @@ async function runSingleMarketBacktest(
     const compInfo: InstrumentInfo = {
       instrumentId: complementaryInstrumentId,
       marketId,
-      tickSize: Price.of(new Decimal('0.001')),
+      tickSize: OutcomePrice.of(new Decimal('0.001')),
       minOrderSize: Quantity.of(new Decimal('1')),
       minOrderValue: Money.of(new Decimal('1'), 'USDC'),
       active: true,

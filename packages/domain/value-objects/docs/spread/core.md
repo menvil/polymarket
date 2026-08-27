@@ -28,7 +28,7 @@ Core слой содержит чистую доменную логику без
 - ✅ Иммутабельность
 - ✅ Throwing typed exceptions
 - ✅ Чистые функции
-- ✅ Нулевые зависимости (кроме Price и Decimal.js)
+- ✅ Нулевые зависимости (кроме OutcomePrice и Decimal.js)
 
 ---
 
@@ -39,8 +39,8 @@ Core слой содержит чистую доменную логику без
 ```typescript
 export class Spread {
   private constructor(
-    private readonly _bid: Price,
-    private readonly _ask: Price
+    private readonly _bid: OutcomePrice,
+    private readonly _ask: OutcomePrice
   ) {
     // Инвариант: bid <= ask
     if (_bid.value().greaterThan(_ask.value())) {
@@ -52,18 +52,18 @@ export class Spread {
   }
 
   /**
-   * Создаёт спред из Price объектов
+   * Создаёт спред из OutcomePrice объектов
    * 
    * @throws {SpreadInvariantViolation} если bid > ask
    */
-  static of(bid: Price, ask: Price): Spread {
+  static of(bid: OutcomePrice, ask: OutcomePrice): Spread {
     return new Spread(bid, ask);
   }
 
   /**
    * Создаёт спред нулевой ширины (bid === ask)
    */
-  static zero(price: Price): Spread {
+  static zero(price: OutcomePrice): Spread {
     return new Spread(price, price);
   }
 
@@ -75,8 +75,8 @@ export class Spread {
 
 | Свойство | Тип | Описание |
 | ---------- | ----- | ---------- |
-| `_bid` | `Price` | Цена покупки (private, readonly) |
-| `_ask` | `Price` | Цена продажи (private, readonly) |
+| `_bid` | `OutcomePrice` | Цена покупки (private, readonly) |
+| `_ask` | `OutcomePrice` | Цена продажи (private, readonly) |
 
 **Примечание:** Свойства приватные. Доступ только через геттеры.
 
@@ -94,27 +94,27 @@ export class Spread {
 
 ```typescript
 // ✅ Ok
-Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+Spread.of(OutcomePrice.of(new Decimal(0.48)), OutcomePrice.of(new Decimal(0.52)));
 
 // ✅ Ok (нулевая ширина)
-Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.50)));
+Spread.of(OutcomePrice.of(new Decimal(0.50)), OutcomePrice.of(new Decimal(0.50)));
 
 // ❌ Throws
-Spread.of(Price.of(new Decimal(0.60)), Price.of(new Decimal(0.50)));
+Spread.of(OutcomePrice.of(new Decimal(0.60)), OutcomePrice.of(new Decimal(0.50)));
 // SpreadInvariantViolation: bid 0.6 cannot be greater than ask 0.5
 ```
 
-### 2. Валидность Price объектов
+### 2. Валидность OutcomePrice объектов
 
-**Инвариант:** Bid и Ask должны быть валидными Price объектами [0.0001, 0.9999]
+**Инвариант:** Bid и Ask должны быть валидными OutcomePrice объектами [0.0001, 0.9999]
 
-**Гарантируется:** Делегировано Price классу
+**Гарантируется:** Делегировано OutcomePrice классу
 
 ```typescript
-// Price уже валидирует диапазон при создании
-const price = Price.of(new Decimal(1.5));  // Throws PriceInvariantViolation
+// OutcomePrice уже валидирует диапазон при создании
+const price = OutcomePrice.of(new Decimal(1.5));  // Throws OutcomePriceInvariantViolation
 
-// Поэтому Spread не может получить невалидный Price
+// Поэтому Spread не может получить невалидный OutcomePrice
 ```
 
 ---
@@ -126,18 +126,18 @@ const price = Price.of(new Decimal(1.5));  // Throws PriceInvariantViolation
 #### `of(bid, ask)`
 
 ```typescript
-static of(bid: Price, ask: Price): Spread
+static of(bid: OutcomePrice, ask: OutcomePrice): Spread
 ```
 
-Создаёт спред из Price объектов.
+Создаёт спред из OutcomePrice объектов.
 
 **Throws:** `SpreadInvariantViolation` если bid > ask
 
 **Пример:**
 
 ```typescript
-const bid = Price.of(new Decimal(0.48));
-const ask = Price.of(new Decimal(0.52));
+const bid = OutcomePrice.of(new Decimal(0.48));
+const ask = OutcomePrice.of(new Decimal(0.52));
 
 const spread = Spread.of(bid, ask);
 ```
@@ -145,7 +145,7 @@ const spread = Spread.of(bid, ask);
 #### `zero(price)`
 
 ```typescript
-static zero(price: Price): Spread
+static zero(price: OutcomePrice): Spread
 ```
 
 Создаёт спред нулевой ширины (bid === ask).
@@ -155,7 +155,7 @@ static zero(price: Price): Spread
 **Пример:**
 
 ```typescript
-const price = Price.of(new Decimal(0.50));
+const price = OutcomePrice.of(new Decimal(0.50));
 const spread = Spread.zero(price);
 
 console.log(spread.isZeroWidth());  // true
@@ -169,7 +169,7 @@ console.log(spread.width().toNumber());  // 0
 #### `bid()`
 
 ```typescript
-bid(): Price
+bid(): OutcomePrice
 ```
 
 Возвращает bid цену.
@@ -185,7 +185,7 @@ console.log(bidPrice.toNumber());  // 0.48
 #### `ask()`
 
 ```typescript
-ask(): Price
+ask(): OutcomePrice
 ```
 
 Возвращает ask цену.
@@ -216,8 +216,8 @@ width(): Decimal
 
 ```typescript
 const spread = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
 console.log(spread.width().toNumber());  // 0.04
@@ -237,8 +237,8 @@ midpoint(): Decimal
 
 ```typescript
 const spread = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
 console.log(spread.midpoint().toNumber());  // 0.50
@@ -258,8 +258,8 @@ widthRatio(): Ratio
 
 ```typescript
 const spread = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
 console.log(spread.widthRatio().toNumber());  // 0.08
@@ -294,13 +294,13 @@ equals(other: Spread): boolean
 
 ```typescript
 const spread1 = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
 const spread2 = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
 console.log(spread1.equals(spread2));  // true (точное совпадение)
@@ -308,8 +308,8 @@ console.log(spread1 === spread2);      // false (разные объекты)
 
 // Приближенное совпадение НЕ считается равенством
 const spread3 = Spread.of(
-  Price.of(new Decimal(0.48000001)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48000001)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 console.log(spread1.equals(spread3));  // false (не точное совпадение)
 ```
@@ -325,12 +325,12 @@ isZeroWidth(): boolean
 **Пример:**
 
 ```typescript
-const spread1 = Spread.zero(Price.of(new Decimal(0.50)));
+const spread1 = Spread.zero(OutcomePrice.of(new Decimal(0.50)));
 console.log(spread1.isZeroWidth());  // true
 
 const spread2 = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 console.log(spread2.isZeroWidth());  // false
 ```
@@ -338,7 +338,7 @@ console.log(spread2.isZeroWidth());  // false
 #### `contains(price)`
 
 ```typescript
-contains(price: Price): boolean
+contains(price: OutcomePrice): boolean
 ```
 
 Проверяет, находится ли цена внутри спреда (bid ≤ price ≤ ask).
@@ -347,14 +347,14 @@ contains(price: Price): boolean
 
 ```typescript
 const spread = Spread.of(
-  Price.of(new Decimal(0.48)),
-  Price.of(new Decimal(0.52))
+  OutcomePrice.of(new Decimal(0.48)),
+  OutcomePrice.of(new Decimal(0.52))
 );
 
-console.log(spread.contains(Price.of(new Decimal(0.50))));  // true
-console.log(spread.contains(Price.of(new Decimal(0.48))));  // true (граница)
-console.log(spread.contains(Price.of(new Decimal(0.45))));  // false
-console.log(spread.contains(Price.of(new Decimal(0.55))));  // false
+console.log(spread.contains(OutcomePrice.of(new Decimal(0.50))));  // true
+console.log(spread.contains(OutcomePrice.of(new Decimal(0.48))));  // true (граница)
+console.log(spread.contains(OutcomePrice.of(new Decimal(0.45))));  // false
+console.log(spread.contains(OutcomePrice.of(new Decimal(0.55))));  // false
 ```
 
 ---
@@ -386,8 +386,8 @@ export class SpreadInvariantViolation extends Error {
 ```typescript
 try {
   const spread = Spread.of(
-    Price.of(new Decimal(0.60)),
-    Price.of(new Decimal(0.50))
+    OutcomePrice.of(new Decimal(0.60)),
+    OutcomePrice.of(new Decimal(0.50))
   );
 } catch (error) {
   if (error instanceof SpreadInvariantViolation) {
@@ -485,18 +485,18 @@ if (!result.ok && result.error.context?.reason === SpreadErrorReason.BID_GREATER
 
 ## Архитектурные детали
 
-### Почему Price, а не Decimal?
+### Почему OutcomePrice, а не Decimal?
 
-**Решение:** `private readonly _bid: Price`
+**Решение:** `private readonly _bid: OutcomePrice`
 
 **Альтернатива:** `private readonly _bid: Decimal`
 
 **Обоснование:**
 
-1. **Type Safety** — Price уже гарантирует диапазон [0.0001, 0.9999]
-2. **Переиспользование** — не дублируем валидацию Price
+1. **Type Safety** — OutcomePrice уже гарантирует диапазон [0.0001, 0.9999]
+2. **Переиспользование** — не дублируем валидацию OutcomePrice
 3. **Семантика** — bid/ask — это цены, не просто числа
-4. **Интеграция** — естественно работает с PriceService
+4. **Интеграция** — естественно работает с OutcomePriceService
 
 ### Почему private конструктор?
 
@@ -515,7 +515,7 @@ if (!result.ok && result.error.context?.reason === SpreadErrorReason.BID_GREATER
 **Обоснование:**
 
 1. **Точность** — Decimal.js обеспечивает произвольную точность
-2. **Consistency** — Price.value() тоже Decimal
+2. **Consistency** — OutcomePrice.value() тоже Decimal
 3. **Math operations** — можно напрямую использовать для вычислений
 
 **Когда нужен number:**

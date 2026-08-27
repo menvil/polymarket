@@ -13,7 +13,7 @@
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import type { FillState } from './OrderState.js';
 import type { FillData } from '@polymarket/fill';
 import { TradingError } from '@polymarket/errors';
@@ -118,10 +118,10 @@ export function isFull(state: FillState, orderSize: Quantity): boolean {
  */
 function _vwap(
   currentSize: Quantity,
-  currentAvg: Price | undefined,
+  currentAvg: OutcomePrice | undefined,
   newSize: Quantity,
-  newPrice: Price,
-): Price {
+  newPrice: OutcomePrice,
+): OutcomePrice {
   if (currentSize.isZero() || !currentAvg) {
     return newPrice;
   }
@@ -130,5 +130,5 @@ function _vwap(
   const newNotional = newSize.value().times(newPrice.value());
   const totalSize = currentSize.value().plus(newSize.value());
 
-  return Price.of(currentNotional.plus(newNotional).dividedBy(totalSize));
+  return OutcomePrice.of(currentNotional.plus(newNotional).dividedBy(totalSize));
 }

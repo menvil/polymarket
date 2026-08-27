@@ -50,7 +50,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { OrderId, StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import type { ILogger } from '@polymarket/logger';
@@ -421,7 +421,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
           intents.push({
             type: 'PLACE',
             side: 'BUY',
-            price: Price.of(action.price),
+            price: OutcomePrice.of(action.price),
             size: Quantity.of(action.size),
           });
           break;
@@ -430,7 +430,7 @@ export class DumbStrategy extends BaseStrategy<DumbData, DumbAction> {
           intents.push({
             type: 'PLACE',
             side: 'SELL',
-            price: Price.of(action.price),
+            price: OutcomePrice.of(action.price),
             size: Quantity.of(action.size),
           });
           break;

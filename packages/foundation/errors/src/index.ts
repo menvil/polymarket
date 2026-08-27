@@ -14,7 +14,7 @@
  * ### Sub-path экспорты:
  * - `@polymarket/errors` — базовые классы + foundation ошибки (этот модуль)
  * - `@polymarket/errors/base` — только TradingError, ValidationError, ITradingError
- * - `@polymarket/errors/value-objects` — ошибки value objects (InvalidPriceError, etc.)
+ * - `@polymarket/errors/value-objects` — ошибки value objects (InvalidOutcomePriceError, etc.)
  * - `@polymarket/errors/market` — ошибки жизненного цикла Market entity
  * - `@polymarket/errors/orderbook` — ошибки валидации Orderbook (OrderbookValidationError, OrderbookInvalidError)
  * - `@polymarket/errors/portfolio` — ошибки Portfolio aggregate (InvalidBalanceError, etc.)

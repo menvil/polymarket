@@ -17,7 +17,7 @@ import { asCryptoAssetId, asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
-import { Money, Price, Quantity } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type {
   PolymarketDiscoveredMarket,
   PolymarketGammaEvent,
@@ -273,7 +273,7 @@ export function createCandidate(options: SelectedFixtureOptions = {}): Polymarke
     instrumentId,
     question,
     expiresAt: ts(expiresAtMs),
-    tickSize: Price.of(new Decimal('0.01')),
+    tickSize: OutcomePrice.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('5')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,

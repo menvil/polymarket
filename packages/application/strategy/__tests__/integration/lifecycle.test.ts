@@ -16,7 +16,7 @@ import { asInstrumentId, asPolymarketCtfToken, unsafeStrategyId } from '@polymar
 import type { AccountId, OrderId } from '@polymarket/ids';
 
 const S1 = unsafeStrategyId('s1');
-import { Money, Price, Quantity } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { ExecutionEngine } from '../../src/ExecutionEngine.js';
 import { StrategyScheduler } from '../../src/StrategyScheduler.js';
 import type { StrategySchedulerDeps, IMarketDataStore } from '../../src/StrategyScheduler.js';
@@ -105,7 +105,7 @@ function makeCatalogInfo() {
   return {
     minOrderSize: Quantity.of(new Decimal('1')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
-    tickSize: Price.of(new Decimal('0.01')),
+    tickSize: OutcomePrice.of(new Decimal('0.01')),
   } as any;
 }
 
@@ -210,7 +210,7 @@ function makeBuyStrategy(id: string): IStrategy {
     tick: fn().mockReturnValue([{
       type: 'PLACE',
       side: 'BUY',
-      price: Price.of(new Decimal('0.55')),
+      price: OutcomePrice.of(new Decimal('0.55')),
       size: Quantity.of(new Decimal('100')),
     }]),
     stop: fn().mockReturnValue([{ type: 'CANCEL_ALL' }]),

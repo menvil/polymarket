@@ -8,8 +8,8 @@
  * Все тексты причин — реальные/правдоподобные ответы Polymarket CLOB API.
  */
 import { describe, it, expect, jest } from '@jest/globals';
-// Тестовая фикстура строит Price/Quantity через VO-конструктор
-// (Price.of(new Decimal(...))), см. docs/architecture/boundary-contract.md, Решение 1.
+// Тестовая фикстура строит OutcomePrice/Quantity через VO-конструктор
+// (OutcomePrice.of(new Decimal(...))), см. docs/architecture/boundary-contract.md, Решение 1.
 // __tests__/ исключён из scan-conventions.mjs's decimal-import-files.txt по дизайну
 // скрипта, но само ESLint-правило такого исключения не имеет — этот сайт найден
 // repo-wide lint-прогоном Этапа 11, не сканером.
@@ -20,7 +20,7 @@ import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExec
 import type { CancelOrderExecutionResponse, OrderResponse } from '../ports/IExecutionAdapter.js';
 import type { ILogger } from '@polymarket/logger';
 import { asOrderId, asPolymarketCtfToken } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { SubmitOrderParams } from '@polymarket/ports';
 
 function makeLogger(): ILogger {
@@ -72,7 +72,7 @@ function makeSubmitParams(size = '100'): SubmitOrderParams {
   return {
     asset: TEST_ASSET,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal(size)),
   };
 }

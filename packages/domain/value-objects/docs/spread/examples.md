@@ -532,7 +532,7 @@ function validateUserSpread(bidInput: string, askInput: string) {
   if (!result.ok) {
     const ctx = result.error.context;
 
-    // Проверяем reason из вложенной ошибки (может быть из PriceService)
+    // Проверяем reason из вложенной ошибки (может быть из OutcomePriceService)
     switch (ctx?.reason) {
       case SpreadErrorReason.BID_GREATER_THAN_ASK:
         return {

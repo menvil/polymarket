@@ -676,7 +676,7 @@ if (configResult.ok) {
 
 ## Связанные ошибки
 
-- [InvalidPriceError](./invalid-price.md) - специфичная валидация цен
+- [InvalidOutcomePriceError](./invalid-price.md) - специфичная валидация цен
 - [InvalidQuantityError](./invalid-quantity.md) - специфичная валидация количества
 - [InvalidMoneyError](./invalid-money.md) - специфичная валидация денежных сумм
 - [InvalidPercentageError](./invalid-percentage.md) - специфичная валидация процентов

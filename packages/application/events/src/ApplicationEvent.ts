@@ -21,7 +21,7 @@
  * - TRADE_RECEIVED — публичный маркет-принт
  * - TICK_SIZE_CHANGED — venue сменил шаг цены (вход последующего execution)
  * - REFERENCE_PRICE_UPDATED — цена ВНЕШНЕГО актива (BTC/USD); отдельный
- *   канал, потому что `Price` рынка предсказаний ограничен `[0.0001, 0.9999]`
+ *   канал, потому что `OutcomePrice` рынка предсказаний ограничен `[0.0001, 0.9999]`
  *   и физически не может её представить
  */
 import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './fill/index.js';

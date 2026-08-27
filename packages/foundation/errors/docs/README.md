@@ -29,7 +29,7 @@ import { ValidationError } from '@polymarket/errors';
 throw new ValidationError('Invalid price');
 
 // С контекстом
-throw new ValidationError('Price must be positive', {
+throw new ValidationError('OutcomePrice must be positive', {
   context: { field: 'price', value: -10, min: 0 }
 });
 
@@ -196,7 +196,7 @@ throw new ValidationError('Invalid value');
 ### С контекстом
 
 ```typescript
-throw new ValidationError('Price must be positive', {
+throw new ValidationError('OutcomePrice must be positive', {
   context: { field: 'price', value: -10, min: 0 }
 });
 ```
@@ -402,7 +402,7 @@ npm run test:coverage
 │   │   ├── AccountIdValidationError.ts # Невалидный userId или имя субаккаунта
 │   │   └── index.ts
 │   ├── value-objects/
-│   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
+│   │   ├── InvalidOutcomePriceError.ts      # Ошибки валидации value objects
 │   │   ├── InvalidQuantityError.ts
 │   │   └── ... (14 классов)
 │   ├── utils/
@@ -496,7 +496,7 @@ npm run typecheck
 
 ```typescript
 // ✅ Хорошо
-'Price must be positive'
+'OutcomePrice must be positive'
 'Connection to API failed'
 'Insufficient funds for this order'
 

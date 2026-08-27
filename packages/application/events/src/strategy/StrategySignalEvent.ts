@@ -14,7 +14,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { InstrumentId, StrategyId } from '@polymarket/ids';
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { SignalDirection } from './SignalDirection.js';
 
 export type StrategySignalEvent = MessageEnvelope<
@@ -27,7 +27,7 @@ export type StrategySignalEvent = MessageEnvelope<
     /** ID инструмента */
     readonly instrumentId: InstrumentId;
     /** Рекомендуемая цена (VO, не string; опционально) */
-    readonly suggestedPrice?: Price;
+    readonly suggestedPrice?: OutcomePrice;
     /** Рекомендуемый объём (VO, не string; опционально) */
     readonly suggestedSize?: Quantity;
   }

@@ -1,6 +1,6 @@
 # @polymarket/orderbook
 
-Доменная entity стакана заявок для Polymarket. Иммутабельная, type-safe, с VO-валидацией через `PriceService` и `QuantityService`.
+Доменная entity стакана заявок для Polymarket. Иммутабельная, type-safe, с VO-валидацией через `OutcomePriceService` и `QuantityService`.
 
 ## Структура пакета
 
@@ -78,7 +78,7 @@ console.log(ob.venueTimestamp?.toNumber());         // 1767463213110
 
 Парсер делегирует всю валидацию в `OrderbookNormalizer`:
 
-- `PriceService.create()` — диапазон [0.0001, 0.9999]
+- `OutcomePriceService.create()` — диапазон [0.0001, 0.9999]
 - `QuantityService.create()` — quantity >= 0
 - Сортировка bids ↓, asks ↑
 - Crossed book detection
@@ -297,13 +297,13 @@ ob.venueTimestamp?: Timestamp   // время от биржи
 ob.receivedAt: Timestamp        // время получения
 
 // Best price
-ob.getBestBid(): Price | null
-ob.getBestAsk(): Price | null
+ob.getBestBid(): OutcomePrice | null
+ob.getBestAsk(): OutcomePrice | null
 
 // Цены
 ob.getSpread(): Result<Spread, OrderbookInvalidError>
-ob.getMidPrice(): Price | null       // (bid + ask) / 2
-ob.getMicroprice(): Price | null     // взвешенная по объёмам
+ob.getMidPrice(): OutcomePrice | null       // (bid + ask) / 2
+ob.getMicroprice(): OutcomePrice | null     // взвешенная по объёмам
 
 // Объём
 ob.getTotalBidVolume(levels?: number): Quantity
@@ -333,7 +333,7 @@ ob.toString(): string
 Value Object одного уровня стакана.
 
 ```typescript
-level.price: Price
+level.price: OutcomePrice
 level.quantity: Quantity
 level.isEmpty(): boolean             // quantity = 0
 level.withQuantity(q: Quantity): OrderbookLevel
@@ -361,7 +361,7 @@ PolymarketBookEventParser.parse(
 |---|---|---|
 | `market` | `marketId` | переименование |
 | `asset_id` | `tokenId` | переименование |
-| `bids[].price` | `bids[].price` | строка передаётся as-is → `PriceService.create(string)` |
+| `bids[].price` | `bids[].price` | строка передаётся as-is → `OutcomePriceService.create(string)` |
 | `bids[].size` | `bids[].quantity` | строка передаётся as-is + переименование → `QuantityService.create(string)` |
 | `timestamp` | `venueTimestamp` | строка передаётся as-is → `TimestampService.create(string)` |
 
@@ -414,4 +414,4 @@ const spread = spreadResult.value.width().toNumber(); // 0.01
 - `@polymarket/result` — Result pattern
 - `@polymarket/errors`, `@polymarket/errors/orderbook` — типы ошибок
 - `@polymarket/ids` — InstrumentId (branded type)
-- `@polymarket/value-objects` — Price, Quantity, Spread, Timestamp VO
+- `@polymarket/value-objects` — OutcomePrice, Quantity, Spread, Timestamp VO

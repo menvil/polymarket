@@ -32,7 +32,7 @@ import {
 import { ErrorSource } from '../../src/ErrorSource.js';
 import { TradingError } from '../../src/base/TradingError.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
-import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
+import { InvalidOutcomePriceError } from '../../src/value-objects/InvalidOutcomePriceError.js';
 import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityError.js';
 import { InvalidBalanceError } from '../../src/value-objects/InvalidBalanceError.js';
 import { CurrencyMismatchError } from '../../src/value-objects/CurrencyMismatchError.js';
@@ -48,7 +48,7 @@ describe('errorUtils', () => {
         'price',
         '123.45',
         'INVALID_FORMAT' as any,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(true);
@@ -91,12 +91,12 @@ describe('errorUtils', () => {
         'price',
         'invalid',
         'INVALID_FORMAT' as any,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         const raw = result.error.context?.raw as any;
         expect(raw?.field).toBe('price');
         expect(raw?.value).toBe('invalid');
@@ -125,7 +125,7 @@ describe('errorUtils', () => {
         'price',
         Infinity,
         'INVALID_FORMAT' as any,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
@@ -157,13 +157,13 @@ describe('errorUtils', () => {
         'price',
         undefined as any,
         'INVALID_FORMAT' as any,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       // toString() on undefined throws TypeError → catch block → Err
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error.message.length).toBeGreaterThan(0);
         expect(result.error.message).toMatch(/null|undefined|read|property/i);
       }
@@ -172,33 +172,33 @@ describe('errorUtils', () => {
 
   describe('rewrap', () => {
     it('should preserve message from original error', () => {
-      const original = new InvalidPriceError('Original price error', {
+      const original = new InvalidOutcomePriceError('Original price error', {
         context: { price: '100' },
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-1' },
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.message).toBe('Original price error');
     });
 
     it('should preserve code from original error', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         code: 'PRICE_TOO_HIGH',
         context: { price: '1000' },
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.code).toBe('PRICE_TOO_HIGH');
@@ -206,7 +206,7 @@ describe('errorUtils', () => {
 
     it('should preserve innerError from original error', () => {
       const innerErr = new Error('Inner validation error');
-      const original = new InvalidPriceError('Price validation failed', {
+      const original = new InvalidOutcomePriceError('OutcomePrice validation failed', {
         context: {},
       });
       // Simulate innerError set by constructor
@@ -217,35 +217,35 @@ describe('errorUtils', () => {
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.innerError).toBe(innerErr);
     });
 
     it('should add service and op to context', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         context: { price: '100' },
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
-      expect(rewrapped.context?.service).toBe('PriceService');
+      expect(rewrapped.context?.service).toBe('OutcomePriceService');
       expect(rewrapped.context?.op).toBe('validate');
     });
 
     it('should build opChain correctly', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         context: {
           service: 'QuoteService',
           op: 'calculateSpread',
@@ -254,21 +254,21 @@ describe('errorUtils', () => {
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.context?.opChain).toEqual([
         'QuoteService.calculateSpread',
-        'PriceService.validate',
+        'OutcomePriceService.validate',
       ]);
     });
 
     it('should preserve root service (not overwrite)', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         context: {
           service: 'QuoteService', // Root service
           op: 'calculate',
@@ -276,11 +276,11 @@ describe('errorUtils', () => {
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       // Root service should remain QuoteService
@@ -289,16 +289,16 @@ describe('errorUtils', () => {
     });
 
     it('should merge context from rewrap call', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         context: { price: '100' },
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-1', userId: 'user-1' },
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.context?.price).toBe('100');
@@ -307,7 +307,7 @@ describe('errorUtils', () => {
     });
 
     it('should preserve root fields (cause, reason, raw, source)', () => {
-      const original = new InvalidPriceError('Price error', {
+      const original = new InvalidOutcomePriceError('OutcomePrice error', {
         context: {
           cause: 'negative_value',
           reason: 'INVALID_RANGE',
@@ -317,11 +317,11 @@ describe('errorUtils', () => {
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.context?.cause).toBe('negative_value');
@@ -331,7 +331,7 @@ describe('errorUtils', () => {
     });
 
     it('сохраняет origin-данные первой ошибки (timestamp, stack, name, code)', () => {
-      const original = new InvalidPriceError('Original error', {
+      const original = new InvalidOutcomePriceError('Original error', {
         code: 'ORIGINAL_CODE',
         context: { value: -1 },
       });
@@ -344,11 +344,11 @@ describe('errorUtils', () => {
 
       // Первый rewrap
       const rewrapped1 = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'create',
         {},
         original,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       // Проверяем что origin-данные сохранены в context
@@ -369,7 +369,7 @@ describe('errorUtils', () => {
         'validate',
         {},
         rewrapped1,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       // Origin-данные должны остаться от ПЕРВОЙ ошибки (не перезаписаны)
@@ -388,11 +388,11 @@ describe('errorUtils', () => {
   describe('wrapOp', () => {
     it('should return Ok result unchanged', () => {
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         () => Ok(new Decimal('100')),
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(true);
@@ -402,23 +402,23 @@ describe('errorUtils', () => {
     });
 
     it('should rewrap Err result from function', () => {
-      const originalError = new InvalidPriceError('Invalid price', {
+      const originalError = new InvalidOutcomePriceError('Invalid price', {
         context: { price: '100' },
       });
 
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-1' },
         () => Err(originalError),
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error.message).toBe('Invalid price');
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('validate');
         expect(result.error.context?.orderId).toBe('order-1');
       }
@@ -426,30 +426,30 @@ describe('errorUtils', () => {
 
     it('should catch and rewrap thrown TradingError (whitelist type)', () => {
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-1' },
         () => {
-          throw new InvalidPriceError('Thrown error', {
+          throw new InvalidOutcomePriceError('Thrown error', {
             context: { price: '-10' },
           });
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('validate');
       }
     });
 
     it('should catch and convert foreign TradingError to expected type (strict contract)', () => {
-      // InvalidBalanceError является DomainError, но ErrorConstructor ожидает InvalidPriceError
+      // InvalidBalanceError является DomainError, но ErrorConstructor ожидает InvalidOutcomePriceError
       // Тест проверяет что wrapOp конвертирует в TError, сохраняя оригинальные данные
-      const result = wrapOp<Decimal, InvalidPriceError>(
-        'PriceService',
+      const result = wrapOp<Decimal, InvalidOutcomePriceError>(
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-1' },
         () => {
@@ -457,13 +457,13 @@ describe('errorUtils', () => {
             context: { balance: '0' },
           });
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // Должен конвертировать в InvalidPriceError (strict контракт)
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        // Должен конвертировать в InvalidOutcomePriceError (strict контракт)
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error).not.toBeInstanceOf(InvalidBalanceError);
 
         // Оригинальные данные сохранены в context
@@ -471,7 +471,7 @@ describe('errorUtils', () => {
         expect((result.error.context as any).originalErrorContext).toEqual({ balance: '0' });
 
         // Трассировка добавлена
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('validate');
         expect((result.error.context as any).orderId).toBe('order-1');
       }
@@ -479,19 +479,19 @@ describe('errorUtils', () => {
 
     it('should classify ArithmeticOverflowError as foreign TradingError expected math error', () => {
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'multiply',
         {},
         () => {
           throw new ArithmeticOverflowError('Overflow', { context: {} });
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('multiply');
         expect(result.error.context?.source).toBe('math_operation');
       }
@@ -499,10 +499,10 @@ describe('errorUtils', () => {
 
     it('классифицирует foreign TradingError из whitelist как math_operation', () => {
       // InvalidOperandError является expected math error из whitelist
-      // Бросаем его в функции которая ожидает InvalidPriceError
+      // Бросаем его в функции которая ожидает InvalidOutcomePriceError
       // Должен быть классифицирован как math_operation, а не unexpected
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'divide',
         { dividend: '10', divisor: 'NaN' },
         () => {
@@ -514,13 +514,13 @@ describe('errorUtils', () => {
             }
           );
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // Конвертирован в ожидаемый тип
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error).not.toBeInstanceOf(InvalidOperandError);
 
         // Классифицирован как math_operation, не unexpected
@@ -532,7 +532,7 @@ describe('errorUtils', () => {
         expect(result.error.context?.operation).toBe('divide');
 
         // Трассировка добавлена
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('divide');
         expect(result.error.context?.dividend).toBe('10');
         expect(result.error.context?.divisor).toBe('NaN');
@@ -543,7 +543,7 @@ describe('errorUtils', () => {
       // Тест для непокрытой ветки: строки 735-738 в errorUtils.ts
       // Создаем обычный Error (не TradingError), но с name из expected math whitelist
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'divide',
         { dividend: '10', divisor: '0' },
         () => {
@@ -552,13 +552,13 @@ describe('errorUtils', () => {
           error.name = 'DivisionByZeroError'; // Whitelist name
           throw error;
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // Конвертирован в ожидаемый тип
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
 
         // Классифицирован как math_operation (не unexpected!)
         expect(result.error.context?.source).toBe('math_operation');
@@ -570,7 +570,7 @@ describe('errorUtils', () => {
         expect(cause.name).toBe('DivisionByZeroError');
 
         // Трассировка добавлена
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('divide');
         expect(result.error.context?.dividend).toBe('10');
         expect(result.error.context?.divisor).toBe('0');
@@ -579,19 +579,19 @@ describe('errorUtils', () => {
 
     it('should handle unexpected errors', () => {
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         () => {
           throw new Error('Unexpected error');
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('validate');
         // Should have cause from unexpected error
         expect(result.error.context?.cause).toBeDefined();
@@ -601,21 +601,21 @@ describe('errorUtils', () => {
 
     it('различает TypeError (developer misuse) от обычных unexpected', () => {
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'calculate',
         {},
         () => {
           // TypeError indicates developer misuse (wrong API usage)
           throw new TypeError('Cannot read property "value" of undefined');
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error.message).toContain('Developer misuse');
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
         expect(result.error.context?.op).toBe('calculate');
         expect(result.error.context?.source).toBe('developer_misuse');
         expect(result.error.context?.reason).toBe('MISUSE');
@@ -624,17 +624,17 @@ describe('errorUtils', () => {
     });
 
     it('should preserve code and innerError through rewrap', () => {
-      const originalError = new InvalidPriceError('Price error', {
+      const originalError = new InvalidOutcomePriceError('OutcomePrice error', {
         code: 'PRICE_NEGATIVE',
         context: { price: '-10' },
       });
 
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         {},
         () => Err(originalError),
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(false);
@@ -670,8 +670,8 @@ describe('errorUtils', () => {
       expect(isExpectedMathError(error)).toBe(true);
     });
 
-    it('should return false for InvalidPriceError', () => {
-      const error = new InvalidPriceError('Invalid price', { context: {} });
+    it('should return false for InvalidOutcomePriceError', () => {
+      const error = new InvalidOutcomePriceError('Invalid price', { context: {} });
       expect(isExpectedMathError(error)).toBe(false);
     });
 
@@ -695,7 +695,7 @@ describe('errorUtils', () => {
 
   describe('Integration: rewrap + wrapOp', () => {
     it('should build opChain across multiple services', () => {
-      // Simulate QuoteService calling PriceService calling QuantityService
+      // Simulate QuoteService calling OutcomePriceService calling QuantityService
       const quantityError = new InvalidQuantityError('Invalid quantity', {
         context: {
           service: 'QuantityService',
@@ -704,13 +704,13 @@ describe('errorUtils', () => {
         },
       });
 
-      // PriceService rewraps
+      // OutcomePriceService rewraps
       const priceWrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'calculateTotal',
         { price: '100' },
         quantityError,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       // QuoteService rewraps
@@ -719,7 +719,7 @@ describe('errorUtils', () => {
         'generate',
         { quoteId: 'quote-1' },
         () => Err(priceWrapped),
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(quoteResult.ok).toBe(false);
@@ -728,7 +728,7 @@ describe('errorUtils', () => {
         expect(quoteResult.error.context?.op).toBe('generate'); // Current op
         expect(quoteResult.error.context?.opChain).toEqual([
           'QuantityService.validate',
-          'PriceService.calculateTotal',
+          'OutcomePriceService.calculateTotal',
           'QuoteService.generate',
         ]);
         expect(quoteResult.error.context?.quantity).toBe('0');
@@ -739,9 +739,9 @@ describe('errorUtils', () => {
   });
 
   describe('isCoreInvariantViolation', () => {
-    it('should return true for PriceInvariantViolation', () => {
-      const error = new Error('Price must be positive');
-      error.name = 'PriceInvariantViolation';
+    it('should return true for OutcomePriceInvariantViolation', () => {
+      const error = new Error('OutcomePrice must be positive');
+      error.name = 'OutcomePriceInvariantViolation';
       (error as any).reason = 'NEGATIVE_VALUE';
 
       expect(isCoreInvariantViolation(error)).toBe(true);
@@ -812,8 +812,8 @@ describe('errorUtils', () => {
     });
 
     it('should return false for Error without reason property', () => {
-      const error = new Error('Price must be positive');
-      error.name = 'PriceInvariantViolation';
+      const error = new Error('OutcomePrice must be positive');
+      error.name = 'OutcomePriceInvariantViolation';
       // No reason property
 
       expect(isCoreInvariantViolation(error)).toBe(false);
@@ -848,8 +848,8 @@ describe('errorUtils', () => {
     });
 
     it('fallback на name whitelist если kind отсутствует', () => {
-      const error = new Error('Price must be positive');
-      error.name = 'PriceInvariantViolation';
+      const error = new Error('OutcomePrice must be positive');
+      error.name = 'OutcomePriceInvariantViolation';
       (error as any).reason = 'NEGATIVE_VALUE';
       // kind НЕ установлен - используется fallback по name
 
@@ -1061,16 +1061,16 @@ describe('errorUtils', () => {
   describe('coreInvariantError', () => {
     it('создаёт ошибку из core invariant violation БЕЗ service/op', () => {
       const violation = {
-        name: 'PriceInvariantViolation',
-        message: 'Price out of range',
+        name: 'OutcomePriceInvariantViolation',
+        message: 'OutcomePrice out of range',
         reason: 'OUT_OF_RANGE_HIGH'
       } as any;
 
       // Фабрика больше НЕ принимает service/op/ctx
-      const error = coreInvariantError(violation, InvalidPriceError);
+      const error = coreInvariantError(violation, InvalidOutcomePriceError);
 
-      expect(error).toBeInstanceOf(InvalidPriceError);
-      expect(error.message).toBe('Price out of range');
+      expect(error).toBeInstanceOf(InvalidOutcomePriceError);
+      expect(error.message).toBe('OutcomePrice out of range');
       expect(error.context!.source).toBe('core_invariant');
       expect(error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
 
@@ -1099,9 +1099,9 @@ describe('errorUtils', () => {
   describe('expectedMathError', () => {
     it('создаёт ошибку для math operation с правильным source', () => {
       const mathError = new Error('Arithmetic overflow');
-      const error = expectedMathError(mathError, InvalidPriceError);
+      const error = expectedMathError(mathError, InvalidOutcomePriceError);
 
-      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error).toBeInstanceOf(InvalidOutcomePriceError);
       expect(error.message).toBe('Math operation failed: Arithmetic overflow');
       expect(error.context!.source).toBe('math_operation');
       expect(error.context!.cause).toBeDefined();
@@ -1117,9 +1117,9 @@ describe('errorUtils', () => {
         }
       );
 
-      const error = expectedMathError(tradingError, InvalidPriceError);
+      const error = expectedMathError(tradingError, InvalidOutcomePriceError);
 
-      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error).toBeInstanceOf(InvalidOutcomePriceError);
       expect(error.message).toContain('Math operation failed');
       expect(error.code).toBe('INVALID_QUANTITY');
       expect(error.context!.source).toBe('math_operation');
@@ -1158,9 +1158,9 @@ describe('errorUtils', () => {
     });
 
     it('обрабатывает non-Error exceptions', () => {
-      const error = unexpectedError('string error' as any, InvalidPriceError);
+      const error = unexpectedError('string error' as any, InvalidOutcomePriceError);
 
-      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error).toBeInstanceOf(InvalidOutcomePriceError);
       expect(error.message).toBe('Unexpected error: string error');
       expect(error.context!.source).toBe('unexpected');
       expect(error.context!.cause).toBeDefined();
@@ -1182,67 +1182,67 @@ describe('errorUtils', () => {
 
   describe('wrapOp with core invariant violations', () => {
     it('ловит и оборачивает core invariant violations', () => {
-      class PriceInvariantViolation extends Error {
+      class OutcomePriceInvariantViolation extends Error {
         reason = 'OUT_OF_RANGE_HIGH';
         constructor(message: string) {
           super(message);
-          this.name = 'PriceInvariantViolation';
+          this.name = 'OutcomePriceInvariantViolation';
         }
       }
 
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'create',
         { value: 1.5 },
         () => {
-          throw new PriceInvariantViolation('Price 1.5 exceeds maximum 0.9999');
+          throw new OutcomePriceInvariantViolation('OutcomePrice 1.5 exceeds maximum 0.9999');
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
-        expect(result.error.message).toBe('Price 1.5 exceeds maximum 0.9999');
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
+        expect(result.error.message).toBe('OutcomePrice 1.5 exceeds maximum 0.9999');
         expect(result.error.context!.source).toBe('core_invariant');
-        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.service).toBe('OutcomePriceService');
         expect(result.error.context!.op).toBe('create');
         expect(result.error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
-        expect((result.error.context as any).opChain).toEqual(['PriceService.create']);
+        expect((result.error.context as any).opChain).toEqual(['OutcomePriceService.create']);
       }
     });
 
     it('сохраняет исходный cause и stack из core invariant violation', () => {
-      class PriceInvariantViolation extends Error {
+      class OutcomePriceInvariantViolation extends Error {
         reason = 'OUT_OF_RANGE_HIGH';
         kind = 'INVARIANT_VIOLATION' as const;
         constructor(message: string) {
           super(message);
-          this.name = 'PriceInvariantViolation';
+          this.name = 'OutcomePriceInvariantViolation';
           // Симулируем реальный stack trace
-          Error.captureStackTrace(this, PriceInvariantViolation);
+          Error.captureStackTrace(this, OutcomePriceInvariantViolation);
         }
       }
 
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'create',
         { value: 1.5 },
         () => {
-          throw new PriceInvariantViolation('Price 1.5 exceeds maximum 0.9999');
+          throw new OutcomePriceInvariantViolation('OutcomePrice 1.5 exceeds maximum 0.9999');
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         // Проверяем что cause сохранён
         expect(result.error.context!.cause).toBeDefined();
-        expect((result.error.context!.cause as any).name).toBe('PriceInvariantViolation');
-        expect((result.error.context!.cause as any).message).toBe('Price 1.5 exceeds maximum 0.9999');
+        expect((result.error.context!.cause as any).name).toBe('OutcomePriceInvariantViolation');
+        expect((result.error.context!.cause as any).message).toBe('OutcomePrice 1.5 exceeds maximum 0.9999');
         // Проверяем что stack trace сохранён
         expect((result.error.context!.cause as any).stack).toBeDefined();
-        expect((result.error.context!.cause as any).stack).toContain('PriceInvariantViolation');
+        expect((result.error.context!.cause as any).stack).toContain('OutcomePriceInvariantViolation');
         // Проверяем что reason тоже сохранён
         expect(result.error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
       }
@@ -1308,21 +1308,21 @@ describe('errorUtils', () => {
         }
       });
 
-      // PriceService ловит эту ошибку в wrapOp с ErrorConstructor=InvalidPriceError
+      // OutcomePriceService ловит эту ошибку в wrapOp с ErrorConstructor=InvalidOutcomePriceError
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'calculateTotal',
         { price: 1.5, quantity: 10 },
         () => {
           throw originalError;
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
-        // ВАЖНО: тип должен конвертироваться в InvalidPriceError (strict контракт)
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        // ВАЖНО: тип должен конвертироваться в InvalidOutcomePriceError (strict контракт)
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error).not.toBeInstanceOf(InvalidMoneyError);
 
         // Оригинальные данные сохранены в context
@@ -1335,7 +1335,7 @@ describe('errorUtils', () => {
         });
 
         // Трассировка добавлена
-        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.service).toBe('OutcomePriceService');
         expect(result.error.context!.op).toBe('calculateTotal');
         expect((result.error.context as any).price).toBe(1.5);
         expect((result.error.context as any).quantity).toBe(10);
@@ -1395,11 +1395,11 @@ describe('errorUtils', () => {
     });
 
     it('rewrap для того же типа TradingError (не конвертирует)', () => {
-      // Создаем InvalidPriceError, который будет обработан wrapOp<InvalidPriceError>
-      const error1 = new InvalidPriceError('Price too low', {
+      // Создаем InvalidOutcomePriceError, который будет обработан wrapOp<InvalidOutcomePriceError>
+      const error1 = new InvalidOutcomePriceError('OutcomePrice too low', {
         code: 'PRICE_TOO_LOW',
         context: {
-          service: 'PriceService',
+          service: 'OutcomePriceService',
           op: 'validate',
           source: ErrorSource.RULE_VALIDATION,
           price: '0.001'
@@ -1414,21 +1414,21 @@ describe('errorUtils', () => {
         () => {
           throw error1;
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
-        // Тип должен остаться InvalidPriceError (instanceof ErrorConstructor)
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        // Тип должен остаться InvalidOutcomePriceError (instanceof ErrorConstructor)
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
 
         // Оригинальный код сохранен
         expect(result.error.code).toBe('PRICE_TOO_LOW');
 
-        // service остался PriceService (первоначальный)
-        expect(result.error.context!.service).toBe('PriceService');
+        // service остался OutcomePriceService (первоначальный)
+        expect(result.error.context!.service).toBe('OutcomePriceService');
         expect(result.error.context!.op).toBe('create');
-        expect((result.error.context as any).opChain).toContain('PriceService.validate');
+        expect((result.error.context as any).opChain).toContain('OutcomePriceService.validate');
         expect((result.error.context as any).opChain).toContain('OrderService.create');
 
         // Новый контекст добавлен
@@ -1451,25 +1451,25 @@ describe('errorUtils', () => {
       });
 
       const result = wrapOp(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { expectedCurrency: 'USD' },
         () => {
           // fn возвращает Err напрямую (не throw)
           return Err(foreignError);
         },
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         // Должен rewrap ошибку (добавить tracing)
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).toBeInstanceOf(InvalidOutcomePriceError);
         expect(result.error.message).toBe('Wrong currency');
         expect(result.error.code).toBe('WRONG_CURRENCY');
 
         // Tracing добавлен
-        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.service).toBe('OutcomePriceService');
         expect(result.error.context!.op).toBe('validate');
         expect((result.error.context as any).expectedCurrency).toBe('USD');
 
@@ -1482,38 +1482,38 @@ describe('errorUtils', () => {
 
   describe('rewrap edge cases', () => {
     it('обрабатывает ошибку с undefined context', () => {
-      const error = new InvalidPriceError('Test error');
+      const error = new InvalidOutcomePriceError('Test error');
       // Явно устанавливаем context в undefined через any cast
       (error as any).context = undefined;
 
-      const rewrapped = rewrap('PriceService', 'validate', { value: 1.5 }, error, InvalidPriceError);
+      const rewrapped = rewrap('OutcomePriceService', 'validate', { value: 1.5 }, error, InvalidOutcomePriceError);
 
       expect(rewrapped.context).toBeDefined();
-      expect(rewrapped.context!.service).toBe('PriceService');
+      expect(rewrapped.context!.service).toBe('OutcomePriceService');
       expect(rewrapped.context!.op).toBe('validate');
       expect((rewrapped.context as any).value).toBe(1.5);
     });
 
     it('не дублирует opChain когда lastOp === fullOp', () => {
-      const error1 = new InvalidPriceError('Error 1', {
+      const error1 = new InvalidOutcomePriceError('Error 1', {
         context: {
-          service: 'PriceService',
+          service: 'OutcomePriceService',
           op: 'create',
-          opChain: ['PriceService.create']
+          opChain: ['OutcomePriceService.create']
         }
       });
 
       // Повторный rewrap с теми же service/op
-      const error2 = rewrap('PriceService', 'create', {}, error1, InvalidPriceError);
+      const error2 = rewrap('OutcomePriceService', 'create', {}, error1, InvalidOutcomePriceError);
 
-      expect((error2.context as any).opChain).toEqual(['PriceService.create']);
-      // НЕ должно быть ['PriceService.create', 'PriceService.create']
+      expect((error2.context as any).opChain).toEqual(['OutcomePriceService.create']);
+      // НЕ должно быть ['OutcomePriceService.create', 'OutcomePriceService.create']
     });
 
     it('защищает trace-поля от подмены через ctx (anti-spoof)', () => {
       // Попытка подменить trace-поля через ctx
-      const error = new InvalidPriceError('Original error', {
-        code: InvalidPriceError.code,
+      const error = new InvalidOutcomePriceError('Original error', {
+        code: InvalidOutcomePriceError.code,
         context: {
           value: 100
         }
@@ -1531,13 +1531,13 @@ describe('errorUtils', () => {
         originalCode: 'FAKE_CODE'                            // Попытка спуфинга
       };
 
-      const rewrapped = rewrap('PriceService', 'validate', maliciousCtx, error, InvalidPriceError);
+      const rewrapped = rewrap('OutcomePriceService', 'validate', maliciousCtx, error, InvalidOutcomePriceError);
 
       // Trace-поля должны быть установлены из error, НЕ из ctx
       expect(rewrapped.context!.firstTradingErrorTimestamp).toBe('2024-01-01T10:00:00.000Z');
       expect(rewrapped.context!.firstTradingErrorStack).toBeDefined();
       expect(rewrapped.context!.firstTradingErrorStack).not.toBe('Fake stack trace');
-      expect(rewrapped.context!.originalName).toBe('InvalidPriceError');
+      expect(rewrapped.context!.originalName).toBe('InvalidOutcomePriceError');
       expect(rewrapped.context!.originalName).not.toBe('FakeError');
       expect(rewrapped.context!.originalCode).toBeDefined();
       expect(rewrapped.context!.originalCode).not.toBe('FAKE_CODE');
@@ -1548,8 +1548,8 @@ describe('errorUtils', () => {
 
     it('игнорирует originalError* поля в ctx даже при первом rewrap (anti-spoof)', () => {
       // ctx не может установить originalError* — они зарезервированы для systemCtx
-      const error = new InvalidPriceError('Original error', {
-        code: InvalidPriceError.code,
+      const error = new InvalidOutcomePriceError('Original error', {
+        code: InvalidOutcomePriceError.code,
         context: { value: 1.5 }
       });
 
@@ -1561,7 +1561,7 @@ describe('errorUtils', () => {
       };
 
       // БЕЗ systemCtx — ctx с originalError* должен быть проигнорирован
-      const wrapped = rewrap('PriceService', 'validate', maliciousCtx, error, InvalidPriceError);
+      const wrapped = rewrap('OutcomePriceService', 'validate', maliciousCtx, error, InvalidOutcomePriceError);
 
       // originalError* из ctx не должны попасть в контекст
       expect((wrapped.context as Record<string, unknown>).originalErrorName).toBeUndefined();
@@ -1588,7 +1588,7 @@ describe('errorUtils', () => {
       };
 
       // Создаём unexpectedError для rewrap (internalCtx передаётся как systemCtx - 6й параметр)
-      const wrapped = rewrap('PriceService', 'validate', {}, originalError, InvalidPriceError, internalCtx);
+      const wrapped = rewrap('OutcomePriceService', 'validate', {}, originalError, InvalidOutcomePriceError, internalCtx);
 
       // Проверяем что поля установлены из internalCtx (через wrapOp)
       expect((wrapped.context as any).originalErrorName).toBe('InvalidMoneyError');
@@ -1603,7 +1603,7 @@ describe('errorUtils', () => {
         originalErrorContext: { fake: true } // Spoof attempt
       };
 
-      const rewrapped = rewrap('OrderService', 'process', maliciousCtx, wrapped, InvalidPriceError);
+      const rewrapped = rewrap('OrderService', 'process', maliciousCtx, wrapped, InvalidOutcomePriceError);
 
       // originalError* поля НЕ должны быть переписаны из maliciousCtx
       expect((rewrapped.context as any).originalErrorName).toBe('InvalidMoneyError');

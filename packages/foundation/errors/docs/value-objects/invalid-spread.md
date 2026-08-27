@@ -46,8 +46,8 @@ import { InvalidSpreadError } from '@polymarket/errors';
 
 class Spread {
   constructor(
-    public readonly bid: Price,
-    public readonly ask: Price
+    public readonly bid: OutcomePrice,
+    public readonly ask: OutcomePrice
   ) {
     if (bid.value > ask.value) {
       throw new InvalidSpreadError(
@@ -64,8 +64,8 @@ class Spread {
 // Использование
 try {
   const spread = new Spread(
-    Price.fromValue(0.66), // bid
-    Price.fromValue(0.64)  // ask - crossed market!
+    OutcomePrice.fromValue(0.66), // bid
+    OutcomePrice.fromValue(0.64)  // ask - crossed market!
   );
 } catch (error) {
   if (InvalidSpreadError.is(error)) {
@@ -85,11 +85,11 @@ import { InvalidSpreadError } from '@polymarket/errors';
 
 class Spread {
   private constructor(
-    public readonly bid: Price,
-    public readonly ask: Price
+    public readonly bid: OutcomePrice,
+    public readonly ask: OutcomePrice
   ) {}
 
-  static create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError> {
+  static create(bid: OutcomePrice, ask: OutcomePrice): Result<Spread, InvalidSpreadError> {
     if (bid.value > ask.value) {
       return Err(
         new InvalidSpreadError(
@@ -112,8 +112,8 @@ class Spread {
 
 // Использование
 const result = Spread.create(
-  unwrap(Price.fromValue(0.64)),
-  unwrap(Price.fromValue(0.66))
+  unwrap(OutcomePrice.fromValue(0.64)),
+  unwrap(OutcomePrice.fromValue(0.66))
 );
 
 if (result.ok) {
@@ -197,8 +197,8 @@ class Spread {
 
 // Использование
 const spread = unwrap(Spread.create(
-  unwrap(Price.fromValue(0.64)),
-  unwrap(Price.fromValue(0.66))
+  unwrap(OutcomePrice.fromValue(0.64)),
+  unwrap(OutcomePrice.fromValue(0.66))
 ));
 
 console.log('Original spread:', spread.value); // 0.02
@@ -237,8 +237,8 @@ function parseOrderbook(
     return Ok(null);
   }
 
-  const bidResult = Price.fromValue(snapshot.bestBid);
-  const askResult = Price.fromValue(snapshot.bestAsk);
+  const bidResult = OutcomePrice.fromValue(snapshot.bestBid);
+  const askResult = OutcomePrice.fromValue(snapshot.bestAsk);
 
   if (!bidResult.ok || !askResult.ok) {
     return Err(
@@ -282,8 +282,8 @@ interface MarketMetrics {
 }
 
 function calculateMetrics(
-  bid: Price,
-  ask: Price
+  bid: OutcomePrice,
+  ask: OutcomePrice
 ): Result<MarketMetrics, InvalidSpreadError> {
   const spreadResult = Spread.create(bid, ask);
   if (!spreadResult.ok) {
@@ -304,8 +304,8 @@ function calculateMetrics(
 
 // Использование
 const metricsResult = calculateMetrics(
-  unwrap(Price.fromValue(0.64)),
-  unwrap(Price.fromValue(0.66))
+  unwrap(OutcomePrice.fromValue(0.64)),
+  unwrap(OutcomePrice.fromValue(0.66))
 );
 
 if (metricsResult.ok) {
@@ -328,7 +328,7 @@ if (metricsResult.ok) {
 
 ```typescript
 // Используйте Result<T,E> для всех операций со спредом
-static create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError> {
+static create(bid: OutcomePrice, ask: OutcomePrice): Result<Spread, InvalidSpreadError> {
   if (bid.value > ask.value) {
     return Err(new InvalidSpreadError(...));
   }
@@ -434,5 +434,5 @@ const shifted = unwrap(spread.shift(+0.02));
 ## См. также
 
 - [InvalidQuoteError](./invalid-quote.md) - Ошибка валидации котировки
-- [InvalidPriceError](./invalid-price.md) - Ошибка валидации цены
+- [InvalidOutcomePriceError](./invalid-price.md) - Ошибка валидации цены
 - [Value Objects Errors](./README.md) - Обзор всех ошибок value objects

@@ -48,7 +48,7 @@
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { OrderbookLevel } from '@polymarket/orderbook';
 import type { IMarketDataRecorder } from '@polymarket/ports';
@@ -188,7 +188,7 @@ export class MarketDataFeedAdapter {
 
     for (const level of levels) {
       try {
-        const price = Price.of(new Decimal(level.price));
+        const price = OutcomePrice.of(new Decimal(level.price));
         const quantity = Quantity.of(new Decimal(level.size));
         result.push(OrderbookLevel.create(price, quantity));
       } catch {

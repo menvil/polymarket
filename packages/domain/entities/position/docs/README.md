@@ -80,13 +80,13 @@ src/
 
 ```typescript
 import { Position, PositionLot } from '@polymarket/position';
-import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice, Timestamp } from '@polymarket/value-objects';
 import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 const lot = PositionLot.create({
   quantity: Quantity.of(new Decimal(100)),
-  entryPrice: Price.of(new Decimal(0.65)),
+  entryPrice: OutcomePrice.of(new Decimal(0.65)),
   timestamp: Timestamp.now(),
 });
 
@@ -118,7 +118,7 @@ if (result.ok) {
 // Через Position.close() напрямую
 const closeResult = position.close(
   Quantity.of(new Decimal(60)),
-  Price.of(new Decimal(0.75)),
+  OutcomePrice.of(new Decimal(0.75)),
   'FIFO',
   Timestamp.now(), // closedAt записывается в updatedAt
 );
@@ -143,7 +143,7 @@ if (result.ok) {
 const newLots = [
   PositionLot.create({
     quantity: Quantity.of(new Decimal(50)),
-    entryPrice: Price.of(new Decimal(0.70)),
+    entryPrice: OutcomePrice.of(new Decimal(0.70)),
     timestamp: Timestamp.now(),
   }),
 ];
@@ -162,7 +162,7 @@ if (result.ok) {
 
 ```typescript
 // Unrealized P&L
-const currentPrice = Price.of(new Decimal(0.75));
+const currentPrice = OutcomePrice.of(new Decimal(0.75));
 const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 // LONG: (0.75 - 0.65) * 100 = 10.0
 
@@ -196,9 +196,9 @@ const totalPnL = position.getTotalPnL(currentPrice);
 
 Вычисляет сумму quantity всех лотов. Возвращает `Quantity.ZERO` при `lots = []`.
 
-#### `get averageEntryPrice(): Price`
+#### `get averageEntryPrice(): OutcomePrice`
 
-Вычисляет средневзвешенную цену входа. Возвращает `Price.MIN` при `lots = []`.
+Вычисляет средневзвешенную цену входа. Возвращает `OutcomePrice.MIN` при `lots = []`.
 
 #### `getStatus(): PositionStatus`
 
@@ -260,7 +260,7 @@ interface CloseResult {
 ```typescript
 class PositionLot {
   readonly quantity: Quantity;
-  readonly entryPrice: Price;
+  readonly entryPrice: OutcomePrice;
   readonly timestamp: Timestamp;
   readonly fee?: Fee;   // комиссия лота (опционально, только для исторических данных — см. ниже)
 
@@ -282,7 +282,7 @@ class PositionLot {
 const result = closeFIFO(
   position,
   Quantity.of(new Decimal(60)),
-  Price.of(new Decimal(0.75)),
+  OutcomePrice.of(new Decimal(0.75)),
   Timestamp.now(),
 );
 
@@ -297,7 +297,7 @@ const result = closeFIFO(
 const result = closeLIFO(
   position,
   Quantity.of(new Decimal(60)),
-  Price.of(new Decimal(0.75)),
+  OutcomePrice.of(new Decimal(0.75)),
   Timestamp.now(),
 );
 

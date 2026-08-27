@@ -100,12 +100,12 @@ isNonNegativeDecimal(zero); // true  (>= 0)
 import Decimal from 'decimal.js';
 import { isPositiveDecimal } from '@polymarket/math/validation';
 
-class Price {
-  static fromDecimal(value: Decimal): Result<Price, ValidationError> {
+class OutcomePrice {
+  static fromDecimal(value: Decimal): Result<OutcomePrice, ValidationError> {
     if (!isPositiveDecimal(value)) {
-      return Err(new ValidationError('Price must be positive'));
+      return Err(new ValidationError('OutcomePrice must be positive'));
     }
-    return Ok(new Price(value));
+    return Ok(new OutcomePrice(value));
   }
 }
 ```
@@ -323,7 +323,7 @@ function calculateFee(amount: Decimal, feeRate: Decimal): Decimal {
 
 ```typescript
 // ❌ Плохо: isNonNegativeDecimal когда нужен isPositiveDecimal
-class Price {
+class OutcomePrice {
   constructor(value: Decimal) {
     if (!isNonNegativeDecimal(value)) {  // Разрешает 0!
       throw new Error('Invalid price');
@@ -332,10 +332,10 @@ class Price {
 }
 
 // ✅ Хорошо: isPositiveDecimal для цены
-class Price {
+class OutcomePrice {
   constructor(value: Decimal) {
     if (!isPositiveDecimal(value)) {  // Запрещает 0
-      throw new Error('Price must be positive');
+      throw new Error('OutcomePrice must be positive');
     }
   }
 }
@@ -388,12 +388,12 @@ import { isFiniteDecimal, isPositiveDecimal } from '@polymarket/math/validation'
 function validatePrice(value: Decimal): Result<void, ValidationError> {
   // Проверка 1: Конечность
   if (!isFiniteDecimal(value)) {
-    return Err(new ValidationError('Price must be finite'));
+    return Err(new ValidationError('OutcomePrice must be finite'));
   }
 
   // Проверка 2: Положительность
   if (!isPositiveDecimal(value)) {
-    return Err(new ValidationError('Price must be positive'));
+    return Err(new ValidationError('OutcomePrice must be positive'));
   }
 
   // Все проверки прошли

@@ -58,7 +58,7 @@ export interface QuoteFormatOptions {
  *
  * @example
  * ```typescript
- * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+ * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
  *
  * // Базовый формат
  * console.log(QuoteFormatter.toDisplay(quote));
@@ -87,12 +87,12 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
    * console.log(QuoteFormatter.toDisplay(quote));
    * // "0.4800 @ 100.00 / 0.5200 @ 150.00"
    *
    * // Bid-only котировка
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
+   * const bidOnly = Quote.of(OutcomePrice.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
    * console.log(QuoteFormatter.toDisplay(bidOnly));
    * // "0.5000 @ 100.00 / --"
    * ```
@@ -132,7 +132,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * console.log(QuoteFormatter.toShort(quote));
    * // "0.4800/0.5200"
    *
@@ -165,7 +165,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * console.log(QuoteFormatter.toDetailed(quote));
    * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
    *
@@ -239,9 +239,9 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * console.log(QuoteFormatter.toTable(quote));
-   * // Side   Price    Size
+   * // Side   OutcomePrice    Size
    * // ─────────────────────
    * // Bid    0.4800   100.00
    * // Ask    0.5200   150.00
@@ -257,7 +257,7 @@ export class QuoteFormatter {
     const lines: string[] = [];
     const separator = '─'.repeat(40);
 
-    lines.push('Side   Price    Size');
+    lines.push('Side   OutcomePrice    Size');
     lines.push(separator);
 
     if (quote.hasBid()) {
@@ -324,7 +324,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * console.log(QuoteFormatter.formatSpread(quote));
    * // "0.0400 (8.00%)"
    *
@@ -362,7 +362,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), ...);
    * console.log(QuoteFormatter.formatMid(quote));
    * // "0.5000"
    *
@@ -399,7 +399,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
    * console.log(QuoteFormatter.formatCompact(quote));
    * // "0.48/0.52 @100×150"
    *
@@ -408,7 +408,7 @@ export class QuoteFormatter {
    * // "0.4800/0.5200 @100.00×150.00"
    *
    * // Bid-only котировка
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
+   * const bidOnly = Quote.of(OutcomePrice.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
    * console.log(QuoteFormatter.formatCompact(bidOnly));
    * // "0.50/-- @100×0"
    * ```
@@ -451,7 +451,7 @@ export class QuoteFormatter {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
    * console.log(QuoteFormatter.formatWithSpread(quote));
    * // "0.48-0.52 (400bp, mid=0.50)"
    *
@@ -460,12 +460,12 @@ export class QuoteFormatter {
    * // "0.4800-0.5200 (400bp, mid=0.5000)"
    *
    * // Bid-only котировка
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
+   * const bidOnly = Quote.of(OutcomePrice.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
    * console.log(QuoteFormatter.formatWithSpread(bidOnly));
    * // "0.50 (bid only)"
    *
    * // Ask-only котировка
-   * const askOnly = Quote.of(null, Price.of(0.52), Quantity.of(0), Quantity.of(150), Date.now());
+   * const askOnly = Quote.of(null, OutcomePrice.of(0.52), Quantity.of(0), Quantity.of(150), Date.now());
    * console.log(QuoteFormatter.formatWithSpread(askOnly));
    * // "0.52 (ask only)"
    * ```

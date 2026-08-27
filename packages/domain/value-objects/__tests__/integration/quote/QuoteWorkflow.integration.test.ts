@@ -4,7 +4,7 @@ import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js'
 import { QuoteFormatter } from '../../../src/quote/adapters/QuoteFormatter.js';
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketCrossing.js';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 
@@ -114,24 +114,24 @@ describe('Quote Integration Tests', () => {
       // Нормальная ситуация - не пересекается
       const doesNotCross = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(new Decimal(0.47)), // orderbook bid
-        Price.of(new Decimal(0.53))  // orderbook ask
+        OutcomePrice.of(new Decimal(0.47)), // orderbook bid
+        OutcomePrice.of(new Decimal(0.53))  // orderbook ask
       );
       expect(doesNotCross).toBe(false);
 
       // Наш bid >= orderbook ask - пересечение!
       const crossesBid = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(new Decimal(0.47)),
-        Price.of(new Decimal(0.48))  // наш bid 0.48 >= orderbook ask 0.48
+        OutcomePrice.of(new Decimal(0.47)),
+        OutcomePrice.of(new Decimal(0.48))  // наш bid 0.48 >= orderbook ask 0.48
       );
       expect(crossesBid).toBe(true);
 
       // Наш ask <= orderbook bid - пересечение!
       const crossesAsk = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(new Decimal(0.52)),  // наш ask 0.52 <= orderbook bid 0.52
-        Price.of(new Decimal(0.53))
+        OutcomePrice.of(new Decimal(0.52)),  // наш ask 0.52 <= orderbook bid 0.52
+        OutcomePrice.of(new Decimal(0.53))
       );
       expect(crossesAsk).toBe(true);
     });
@@ -317,7 +317,7 @@ describe('Quote Integration Tests', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // reason содержит корневую причину из PriceService (NAN)
+        // reason содержит корневую причину из OutcomePriceService (NAN)
         // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('bid');
       }

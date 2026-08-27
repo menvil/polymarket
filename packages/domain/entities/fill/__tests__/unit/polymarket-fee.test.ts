@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import {
   calculatePolymarketTakerFee,
   calculatePolymarketTakerFeeWithRate,
@@ -21,8 +21,8 @@ function qty(n: number): Quantity {
   return Quantity.of(new Decimal(n));
 }
 
-function price(n: number): Price {
-  return Price.of(new Decimal(n));
+function price(n: number): OutcomePrice {
+  return OutcomePrice.of(new Decimal(n));
 }
 
 describe('calculatePolymarketTakerFee()', () => {
@@ -104,7 +104,7 @@ describe('calculatePolymarketTakerFeeNumber()', () => {
     expect(calculatePolymarketTakerFeeNumber(10, 0.5, 0.05)).toBeCloseTo(0.125, 5);
   });
 
-  // Граница с VO: Price/Quantity бросают на невалидном значении (NaN/Infinity/вне диапазона),
+  // Граница с VO: OutcomePrice/Quantity бросают на невалидном значении (NaN/Infinity/вне диапазона),
   // но calculatePolymarketTakerFeeNumber должна сохранять старый контракт "невалидный вход →
   // тихо 0" — guard проверяется на сырых значениях ДО конструирования VO (см. TSDoc функции).
   describe('graceful zero на невалидном входе (не throw)', () => {
@@ -116,15 +116,15 @@ describe('calculatePolymarketTakerFeeNumber()', () => {
       expect(calculatePolymarketTakerFeeNumber(10, NaN)).toBe(0);
     });
 
-    it('price = Infinity → 0 (вне диапазона Price VO)', () => {
+    it('price = Infinity → 0 (вне диапазона OutcomePrice VO)', () => {
       expect(calculatePolymarketTakerFeeNumber(10, Infinity)).toBe(0);
     });
 
-    it('price = 0 → 0 (вне диапазона Price VO)', () => {
+    it('price = 0 → 0 (вне диапазона OutcomePrice VO)', () => {
       expect(calculatePolymarketTakerFeeNumber(10, 0)).toBe(0);
     });
 
-    it('price = 1 → 0 (вне диапазона Price VO, границы исключены)', () => {
+    it('price = 1 → 0 (вне диапазона OutcomePrice VO, границы исключены)', () => {
       expect(calculatePolymarketTakerFeeNumber(10, 1)).toBe(0);
     });
 

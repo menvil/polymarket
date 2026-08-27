@@ -44,8 +44,8 @@ import type { InstrumentId, MarketId, MarketDataSourceId } from '@polymarket/ids
 import { asInstrumentId, asMarketId, asMarketDataSourceId, asVenueTradeId } from '@polymarket/ids';
 import type { Orderbook } from '@polymarket/orderbook';
 import { bookPricing } from '@polymarket/orderbook';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
-import { PriceService, QuantityService, AssetPriceService } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
+import { OutcomePriceService, QuantityService, AssetPriceService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import { TimestampService } from '@polymarket/timestamp';
 import type { ReferencePriceFeed, TopOfBook } from '@polymarket/application-events';
@@ -125,7 +125,7 @@ const SUPPORTED_TWAP_WINDOWS: ReadonlySet<number> = new Set([30, 60]);
  * Фабрика домена связывается ОДИН раз: `Orderbook` — структура и своего
  * ценового домена не знает.
  */
-const PREDICTION_PRICING = bookPricing(PriceService.create);
+const PREDICTION_PRICING = bookPricing(OutcomePriceService.create);
 
 /** Read-only диагностика адаптера. */
 export interface PolymarketSemanticAdapterStats {
@@ -892,10 +892,10 @@ export class PolymarketSemanticAdapter {
     );
     if (newTickSize === undefined) return;
 
-    let oldTickSize: Price | undefined;
+    let oldTickSize: OutcomePrice | undefined;
     const rawOld = payload.oldTickSize ?? undefined;
     if (rawOld !== undefined) {
-      const parsed = PriceService.create(String(rawOld));
+      const parsed = OutcomePriceService.create(String(rawOld));
       // Непарсящийся ПРЕЖНИЙ шаг не отменяет факта смены: публикуем без него
       oldTickSize = parsed.ok ? parsed.value : undefined;
     }
@@ -928,9 +928,9 @@ export class PolymarketSemanticAdapter {
    * @param parent - Metadata raw-наблюдения
    *
    * @remarks
-   * Значение идёт в `AssetPriceService`, а НЕ в `Price`: цена базового
+   * Значение идёт в `AssetPriceService`, а НЕ в `OutcomePrice`: цена базового
    * актива (`79341.36626633028`) не помещается в домен рынка предсказаний
-   * `[0.0001, 0.9999]` — конструктор `Price` обязан её отвергнуть.
+   * `[0.0001, 0.9999]` — конструктор `OutcomePrice` обязан её отвергнуть.
    *
    * Символ разбирается в canonical-пару ЗДЕСЬ: наружу уходят
    * `baseAsset`/`quoteAsset`, а нативная форма — только как provenance.
@@ -1032,14 +1032,14 @@ export class PolymarketSemanticAdapter {
    * @param raw - Десятичная строка vendor-а
    * @param field - Имя поля для structured-лога
    * @param instrumentId - Инструмент (для контекста лога)
-   * @returns `Price` VO либо `undefined` (счётчик `invalidPayloads` увеличен)
+   * @returns `OutcomePrice` VO либо `undefined` (счётчик `invalidPayloads` увеличен)
    */
   private _parsePrice(
     raw: string,
     field: string,
     instrumentId: InstrumentId,
-  ): Price | undefined {
-    const result = PriceService.create(String(raw));
+  ): OutcomePrice | undefined {
+    const result = OutcomePriceService.create(String(raw));
     if (result.ok) {
       return result.value;
     }
@@ -1169,10 +1169,10 @@ function toTradeSide(side: OrderSide): Side | undefined {
  * пустую/одностороннюю/скрещенную книгу.
  */
 function buildTopOfBook(book: Orderbook): TopOfBook {
-  let spread: Price | undefined;
+  let spread: OutcomePrice | undefined;
   const spreadResult = PREDICTION_PRICING.spread(book);
   if (spreadResult.ok) {
-    const priceResult = PriceService.create(spreadResult.value.width());
+    const priceResult = OutcomePriceService.create(spreadResult.value.width());
     if (priceResult.ok) spread = priceResult.value;
   }
   return {

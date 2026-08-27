@@ -28,7 +28,7 @@ import {
   KnownVenues,
 } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Fee, Price, Quantity } from '@polymarket/value-objects';
+import { Balance, Money, Fee, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { Order } from '@polymarket/order';
@@ -174,7 +174,7 @@ describe('buildOrderUseCases — wiring orderSubmissionRepo (submission guard)',
       asset: ASSET,
       instrumentId: INSTRUMENT_ID,
       side: 'BUY' as const,
-      price: Price.of(new Decimal('0.5')),
+      price: OutcomePrice.of(new Decimal('0.5')),
       size: Quantity.of(new Decimal('5')),
       portfolio,
       openOrdersCount: 0,
@@ -229,7 +229,7 @@ describe('buildOrderUseCases — wiring reconciliationIssues в PlaceOrderUseCas
       asset: ASSET,
       instrumentId: INSTRUMENT_ID,
       side: 'BUY',
-      price: Price.of(new Decimal('0.5')),
+      price: OutcomePrice.of(new Decimal('0.5')),
       size: Quantity.of(new Decimal('5')),
       portfolio,
       openOrdersCount: 0,
@@ -262,7 +262,7 @@ describe('buildOrderUseCases — wiring reconciliationIssues в CancelOrderUseCa
       id: venueOrderId,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.5')),
+      price: OutcomePrice.of(new Decimal('0.5')),
       size: Quantity.of(new Decimal('5')),
       timestamp: makeTimestamp(),
     });
@@ -329,7 +329,7 @@ describe('buildProcessFillUseCase — wiring reconciliationIssues в ProcessFill
       id: venueOrderId,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.5')),
+      price: OutcomePrice.of(new Decimal('0.5')),
       size: Quantity.of(new Decimal('5')),
       timestamp: makeTimestamp(),
     });
@@ -348,7 +348,7 @@ describe('buildProcessFillUseCase — wiring reconciliationIssues в ProcessFill
       marketId: MARKET_ID,
       tokenId: ASSET,
       settlementAssetId: AssetIdHelpers.USDC,
-      price: Price.of(new Decimal('0.5')),
+      price: OutcomePrice.of(new Decimal('0.5')),
       size: Quantity.of(new Decimal('5')),
       side: 'BUY',
       timestamp: makeTimestamp(),

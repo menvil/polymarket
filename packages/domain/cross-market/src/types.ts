@@ -120,8 +120,8 @@ export interface MarketInfo {
    * Два рынка одной пары (5m + 15m) имеют **разные** strike'ы из-за разного startTime.
    * Safe-комбинация: lowerStrike_Up + higherStrike_Down.
    *
-   * Остаётся `number`, не `Price`: это спот-цена базового крипто-актива в долларах
-   * (например ~78237 для BTC), а не вероятностная цена prediction market — `Price` VO
+   * Остаётся `number`, не `OutcomePrice`: это спот-цена базового крипто-актива в долларах
+   * (например ~78237 для BTC), а не вероятностная цена prediction market — `OutcomePrice` VO
    * ограничен диапазоном `[0.0001, 0.9999]` и не подходит. Готового VO для произвольной
    * USD-цены крипто-актива в кодовой базе пока нет (тот же открытый вопрос — у аналогичных
    * полей `CryptoMarketDataStore`/`CryptoSignalRegistry`, форма решается согласованно там).

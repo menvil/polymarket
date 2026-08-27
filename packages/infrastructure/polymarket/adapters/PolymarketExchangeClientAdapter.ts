@@ -30,7 +30,7 @@
  * const result = await exchangeClient.submitOrder({
  *   asset: polymarketToken,
  *   side: 'BUY',
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  * });
  * if (result.ok) console.log('Order placed:', result.value);
@@ -43,7 +43,7 @@ import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
 import type { OrderId, AccountId, AssetId } from '@polymarket/ids';
 import { asOrderId, assetIdToString, isPolymarketCtfToken } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult, CancelOrderResult, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
@@ -141,7 +141,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
    * @remarks
    * Конвертирует:
    * - `params.asset: AssetId` → raw tokenId string
-   * - `params.price: Price` → number (через `.value().toNumber()`)
+   * - `params.price: OutcomePrice` → number (через `.value().toNumber()`)
    * - `params.size: Quantity` → number (через `.value().toNumber()`)
    * - `params.side: Side` → lowercase 'buy' | 'sell'
    *
@@ -530,7 +530,7 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
             accountId,
             asset,
             side: o.side.toUpperCase() as 'BUY' | 'SELL',
-            price: Price.of(new Decimal(o.price)),
+            price: OutcomePrice.of(new Decimal(o.price)),
             size: Quantity.of(new Decimal(o.size)),
             filledSize: Quantity.of(new Decimal(filledSizeNum)),
             status: filledSizeNum > 0 ? 'PARTIALLY_FILLED' : 'OPEN',

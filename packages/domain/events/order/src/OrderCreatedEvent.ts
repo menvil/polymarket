@@ -9,7 +9,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { AccountId, AssetId, OrderId, StrategyId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /** Payload события создания заявки. */
@@ -17,7 +17,7 @@ export interface OrderCreatedPayload {
   readonly orderId: OrderId;
   readonly asset: AssetId;
   readonly side: Side;
-  readonly price: Price;
+  readonly price: OutcomePrice;
   readonly size: Quantity;
   readonly timestamp: Timestamp;
   readonly strategyId?: StrategyId;

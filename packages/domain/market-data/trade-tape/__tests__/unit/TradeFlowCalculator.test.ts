@@ -8,13 +8,13 @@
  * - Один SELL трейд — sellVolume, OFI=-1, VWAP
  * - Несколько трейдов — VWAP, OFI
  * - Записи с side=undefined — учитываются в VWAP, не в OFI
- * - VO-типы в результате (Quantity/Ratio/Price/Money)
+ * - VO-типы в результате (Quantity/Ratio/OutcomePrice/Money)
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { TradeFlowCalculator } from '../../src/TradeFlowCalculator.js';
 import type { TapeRecord } from '../../src/TapeRecord.js';
-import { Price, Quantity, Ratio, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Ratio, Money } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 
 // ==================== Вспомогательные функции ====================
@@ -28,7 +28,7 @@ function makeRecord(params: {
   timestampMs?: number;
 }): TapeRecord {
   return {
-    price: Price.of(new Decimal(params.price)),
+    price: OutcomePrice.of(new Decimal(params.price)),
     size: Quantity.of(new Decimal(params.size)),
     side: params.side,
     timestamp: Timestamp.of(new Decimal(params.timestampMs ?? BASE_TIME)),
@@ -51,7 +51,7 @@ describe('TradeFlowCalculator', () => {
       expect(metrics.tradeCount).toBe(0);
     });
 
-    it('возвращает VO-типы (Этап 2: Quantity/Ratio/Price/Money вместо Decimal)', () => {
+    it('возвращает VO-типы (Этап 2: Quantity/Ratio/OutcomePrice/Money вместо Decimal)', () => {
       const metrics = TradeFlowCalculator.compute([]);
       expect(metrics.buyVolume).toBeInstanceOf(Quantity);
       expect(metrics.sellVolume).toBeInstanceOf(Quantity);

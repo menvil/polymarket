@@ -177,7 +177,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
     // Получаем priceTick из ограничений для построителя API
     const constraints = await this.constraintsPolicy.getConstraints(tokenId);
 
-    this.logger.debug('Price normalized', {
+    this.logger.debug('OutcomePrice normalized', {
       original: price,
       normalized: normalizedPrice,
       priceTick: constraints.priceTick,

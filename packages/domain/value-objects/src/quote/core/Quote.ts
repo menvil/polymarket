@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
-import { Price } from '../../price/core/Price.js';
+import { OutcomePrice } from '../../outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
@@ -32,15 +32,15 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * - Валидацию spread границ (используй Rules)
  * - Market crossing detection бизнес-логику (используй Rules)
  *
- * Внутреннее представление: композиция Price + Quantity + Timestamp.
+ * Внутреннее представление: композиция OutcomePrice + Quantity + Timestamp.
  *
  * @example
  * ```typescript
  * // ✅ В Core и Facade (throws)
  * const ts = Timestamp.now();
  * const quote = Quote.of(
- *   Price.of(0.48),
- *   Price.of(0.52),
+ *   OutcomePrice.of(0.48),
+ *   OutcomePrice.of(0.52),
  *   Quantity.of(100),
  *   Quantity.of(150),
  *   ts,
@@ -50,7 +50,7 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *
  * // One-sided quote
  * const bidOnly = Quote.of(
- *   Price.of(0.50),
+ *   OutcomePrice.of(0.50),
  *   null,
  *   Quantity.of(100),
  *   Quantity.ZERO,
@@ -73,8 +73,8 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  */
 export class Quote {
   private constructor(
-    private readonly _bid: Price | null,
-    private readonly _ask: Price | null,
+    private readonly _bid: OutcomePrice | null,
+    private readonly _ask: OutcomePrice | null,
     private readonly _bidSize: Quantity,
     private readonly _askSize: Quantity,
     private readonly _timestamp: Timestamp,
@@ -158,8 +158,8 @@ export class Quote {
    * ```
    */
   public static of(
-    bid: Price | null,
-    ask: Price | null,
+    bid: OutcomePrice | null,
+    ask: OutcomePrice | null,
     bidSize: Quantity,
     askSize: Quantity,
     timestamp: Timestamp,
@@ -172,7 +172,7 @@ export class Quote {
   /**
    * Возвращает bid цену
    *
-   * @returns Price или null
+   * @returns OutcomePrice или null
    *
    * @example
    * ```typescript
@@ -183,14 +183,14 @@ export class Quote {
    * }
    * ```
    */
-  public bid(): Price | null {
+  public bid(): OutcomePrice | null {
     return this._bid;
   }
 
   /**
    * Возвращает ask цену
    *
-   * @returns Price или null
+   * @returns OutcomePrice или null
    *
    * @example
    * ```typescript
@@ -201,7 +201,7 @@ export class Quote {
    * }
    * ```
    */
-  public ask(): Price | null {
+  public ask(): OutcomePrice | null {
     return this._ask;
   }
 
@@ -465,7 +465,7 @@ export class Quote {
    * - Семантически важно "одинаковые рыночные условия", а не "один снимок"
    *
    * Для строгого сравнения включая timestamp используйте equalsWithTimestamp().
-   * Консистентно с Price.equals() и Spread.equals() которые не сравнивают метаданные.
+   * Консистентно с OutcomePrice.equals() и Spread.equals() которые не сравнивают метаданные.
    *
    * @param other - Другая котировка
    * @returns true если котировки имеют одинаковые рыночные данные
@@ -561,11 +561,11 @@ export class Quote {
    * ```typescript
    * // Two-sided quote
    * const ts = Timestamp.now();
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(quote.spreadWidthOrZero().toNumber()); // 0.04
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
+   * const bidOnly = Quote.of(OutcomePrice.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.spreadWidthOrZero().toNumber()); // 0
    * ```
    */
@@ -580,13 +580,13 @@ export class Quote {
    *
    * @remarks
    * Mid price - это метрика, не рыночная сущность.
-   * Возвращает Decimal, а не Price, чтобы избежать ложной типизации.
+   * Возвращает Decimal, а не OutcomePrice, чтобы избежать ложной типизации.
    *
-   * Если нужен Price объект, вызывающий должен явно создать его:
+   * Если нужен OutcomePrice объект, вызывающий должен явно создать его:
    * ```typescript
    * const mid = quote.midOrNull();
    * if (mid !== null) {
-   *   const priceResult = PriceService.create(mid);
+   *   const priceResult = OutcomePriceService.create(mid);
    * }
    * ```
    *
@@ -596,12 +596,12 @@ export class Quote {
    * ```typescript
    * // Two-sided quote
    * const ts = Timestamp.now();
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
+   * const quote = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * const mid = quote.midOrNull();
    * console.log(mid?.toNumber()); // 0.50
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
+   * const bidOnly = Quote.of(OutcomePrice.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.midOrNull()); // null
    * ```
    */
@@ -637,15 +637,15 @@ export class Quote {
    * ```typescript
    * const ts = Timestamp.now();
    * // Сбалансированная котировка
-   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), ts, sourceId, instrumentId);
+   * const balanced = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(100), Quantity.of(100), ts, sourceId, instrumentId);
    * console.log(balanced.imbalance().toNumber()); // 0
    *
    * // Больше bid ликвидности
-   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), ts, sourceId, instrumentId);
+   * const bidHeavy = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(150), Quantity.of(50), ts, sourceId, instrumentId);
    * console.log(bidHeavy.imbalance().toNumber()); // 0.5 (50% дисбаланс в сторону bid)
    *
    * // Больше ask ликвидности
-   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), ts, sourceId, instrumentId);
+   * const askHeavy = Quote.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52), Quantity.of(50), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(askHeavy.imbalance().toNumber()); // -0.5 (50% дисбаланс в сторону ask)
    * ```
    */
@@ -682,8 +682,8 @@ export class Quote {
    * @example
    * ```typescript
    * const quote = Quote.of(
-   *   Price.of(new Decimal(0.48)),
-   *   Price.of(new Decimal(0.52)),
+   *   OutcomePrice.of(new Decimal(0.48)),
+   *   OutcomePrice.of(new Decimal(0.52)),
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(150)),
    *   Timestamp.now(),

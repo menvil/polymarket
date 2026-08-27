@@ -326,25 +326,25 @@ console.log(diff2.equals(a)); // true
 
 ## Использование в Value Objects
 
-### Price
+### OutcomePrice
 
 ```typescript
 import Decimal from 'decimal.js';
 import { subtractDecimal } from '@polymarket/math';
 
-class Price {
+class OutcomePrice {
   private constructor(private readonly value: Decimal) {}
 
-  subtract(other: Price): Result<Price, ValidationError> {
+  subtract(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     // Чистая математика
     const diff = subtractDecimal(this.value, other.value);
 
     // Бизнес-валидация
-    return Price.fromDecimal(diff);
+    return OutcomePrice.fromDecimal(diff);
   }
 
   // Вычисление спреда
-  spreadTo(other: Price): Decimal {
+  spreadTo(other: OutcomePrice): Decimal {
     // Спред всегда положительный (abs)
     const diff = subtractDecimal(this.value, other.value);
     return diff.abs();

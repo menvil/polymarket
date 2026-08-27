@@ -95,7 +95,7 @@
  * ## Стратегия маппинга
  *
  * При реализации потребуется маппинг между:
- * - Нашими доменными типами (Order, Price, Quantity, Side) ↔ типами SDK
+ * - Нашими доменными типами (Order, OutcomePrice, Quantity, Side) ↔ типами SDK
  * - Нашими типами ошибок (ValidationError, ApiError) ↔ ошибками SDK
  * - Нашими ответами (OrderResponse, PositionResponse) ↔ ответами SDK
  *

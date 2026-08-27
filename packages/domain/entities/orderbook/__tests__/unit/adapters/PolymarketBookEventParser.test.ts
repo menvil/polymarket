@@ -13,10 +13,10 @@ import {
 } from '../../../src/adapters/PolymarketBookEventParser.js';
 import { DEFAULT_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { bookPricing } from '../../../src/index.js';
-import { PriceService } from '@polymarket/value-objects';
+import { OutcomePriceService } from '@polymarket/value-objects';
 
 /** Метрики prediction-домена: фабрика связывается один раз. */
-const pricing = bookPricing(PriceService.create);
+const pricing = bookPricing(OutcomePriceService.create);
 
 // ==================== Реальное событие с Polymarket ====================
 
@@ -89,20 +89,20 @@ describe('PolymarketBookEventParser.parse() — реальный "book" ивен
     expect(result.value.instrumentId).toBe(REAL_BOOK_EVENT.asset_id);
   });
 
-  it('best bid = 0.43 (строка "0.43" → Price VO)', () => {
+  it('best bid = 0.43 (строка "0.43" → OutcomePrice VO)', () => {
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const bestBid = result.value.getBestBid(); // возвращает Price | null
+    const bestBid = result.value.getBestBid(); // возвращает OutcomePrice | null
     expect(bestBid).not.toBeNull();
     expect(bestBid!.value().toNumber()).toBe(0.43);
   });
 
-  it('best ask = 0.44 (строка "0.44" → Price VO)', () => {
+  it('best ask = 0.44 (строка "0.44" → OutcomePrice VO)', () => {
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const bestAsk = result.value.getBestAsk(); // возвращает Price | null
+    const bestAsk = result.value.getBestAsk(); // возвращает OutcomePrice | null
     expect(bestAsk).not.toBeNull();
     expect(bestAsk!.value().toNumber()).toBe(0.44);
   });
@@ -142,7 +142,7 @@ describe('PolymarketBookEventParser.parse() — реальный "book" ивен
     const result = PolymarketBookEventParser.parse(event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // bids[0] — это OrderbookLevel с полями price (Price) и quantity (Quantity)
+    // bids[0] — это OrderbookLevel с полями price (OutcomePrice) и quantity (Quantity)
     const bestBidLevel = result.value.bids[0];
     expect(bestBidLevel.quantity.value().toNumber()).toBeCloseTo(3073.25, 2);
   });

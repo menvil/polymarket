@@ -36,7 +36,7 @@
  * ```
  */
 
-import type { DecimalPrice, Price } from '@polymarket/value-objects';
+import type { DecimalPrice, OutcomePrice } from '@polymarket/value-objects';
 import { Quantity, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId, MarketId, VenueId } from '@polymarket/ids';
@@ -50,7 +50,7 @@ import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
 /**
  * Параметры для создания Orderbook
  */
-export interface OrderbookParams<TPrice extends DecimalPrice = Price> {
+export interface OrderbookParams<TPrice extends DecimalPrice = OutcomePrice> {
   /** Площадка, где живёт этот стакан. */
   readonly venueId: VenueId;
   /**
@@ -82,7 +82,7 @@ export interface OrderbookParams<TPrice extends DecimalPrice = Price> {
  * Неизменяемая сущность, представляющая стакан заявок рынка.
  * Каждый asset имеет свой orderbook.
  */
-export class Orderbook<TPrice extends DecimalPrice = Price> {
+export class Orderbook<TPrice extends DecimalPrice = OutcomePrice> {
   private constructor(
     /**
      * Площадка, где живёт этот стакан.
@@ -168,7 +168,7 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
     normalized: NormalizedOrderbook,
     venueId: VenueId,
     clock?: IClock,
-  ): Orderbook<Price> {
+  ): Orderbook<OutcomePrice> {
     return new Orderbook(
       venueId,
       asMarketId(normalized.marketId),
@@ -198,7 +198,7 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty<T extends DecimalPrice = Price>(
+  public static empty<T extends DecimalPrice = OutcomePrice>(
     venueId: VenueId,
     instrumentId: InstrumentId,
     marketId?: MarketId,
@@ -247,7 +247,7 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
    * );
    * ```
    */
-  public static fromLevels<T extends DecimalPrice = Price>(
+  public static fromLevels<T extends DecimalPrice = OutcomePrice>(
     params: OrderbookParams<T>,
   ): Orderbook<T> {
     // Сортировка выполняется ЗДЕСЬ: класс нигде не сортирует уровни сам

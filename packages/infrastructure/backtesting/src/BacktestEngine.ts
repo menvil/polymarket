@@ -37,7 +37,7 @@
  * ### Обработка ошибок:
  * - Невалидный JSON → лог warn, счётчик ошибок++, продолжаем.
  * - Невалидный asset_id → лог warn, пропускаем строку.
- * - Ошибка Price/Quantity → лог warn, пропускаем уровень.
+ * - Ошибка OutcomePrice/Quantity → лог warn, пропускаем уровень.
  * - Ошибка в BookUpdateHandler → лог error, счётчик ошибок++, продолжаем.
  *
  * @example
@@ -65,7 +65,7 @@ import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { OrderbookLevel } from '@polymarket/orderbook';
 import type { Side } from '@polymarket/value-objects';
@@ -1058,10 +1058,10 @@ export class BacktestEngine {
     const tsResult = TimestampService.create(Number(event.timestamp));
     if (!tsResult.ok) return false;
 
-    let price: Price;
+    let price: OutcomePrice;
     let size: Quantity;
     try {
-      price = Price.of(new Decimal(event.price));
+      price = OutcomePrice.of(new Decimal(event.price));
       size = Quantity.of(new Decimal(event.size));
     } catch {
       this._logger.warn('Invalid price/size in trade event', { filePath, price: event.price, size: event.size });
@@ -1166,7 +1166,7 @@ export class BacktestEngine {
     for (const level of levels) {
       try {
         result.push(OrderbookLevel.create(
-          Price.of(new Decimal(level.price)),
+          OutcomePrice.of(new Decimal(level.price)),
           Quantity.of(new Decimal(level.size)),
         ));
       } catch {

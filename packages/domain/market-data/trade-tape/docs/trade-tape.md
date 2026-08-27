@@ -48,20 +48,20 @@ microstructure — не accounting (не знает о `Fill`/`Order`/`Portfolio
 ### `TradeFlowMetrics` — VO-поля вместо `Decimal` (Этап 2)
 
 Публичная граница `TradeFlowCalculator.compute()` типизирована через VO
-(`Quantity`/`Ratio`/`Price`/`Money`) — по ADR (Решение 1) `Decimal` легитимен только
+(`Quantity`/`Ratio`/`OutcomePrice`/`Money`) — по ADR (Решение 1) `Decimal` легитимен только
 внутри `value-objects`/`math`, не на публичных сигнатурах остальных пакетов.
 
 | Поле | Было | Стало |
 |---|---|---|
 | `buyVolume`/`sellVolume`/`totalVolume` | `Decimal` | `Quantity` |
 | `orderFlowImbalance` | `Decimal` | `Ratio` (допускает отрицательные значения без нижней границы — подходит без изменений) |
-| `vwap` | `Decimal \| undefined` | `Price \| undefined` |
+| `vwap` | `Decimal \| undefined` | `OutcomePrice \| undefined` |
 | `totalNotional` | `Decimal` | `Money` (валюта `'USDC'` — все рынки Polymarket USDC-settled) |
 | `tradeCount` | `number` | `number` (не менялось — целый счётчик, VO не нужен) |
 
 Единственный внешний потребитель — `apps/bot/src/strategies/PairedCexCrowdStrategy.ts` —
 потребовал одной правки: `metrics.vwap.mul(100).toNumber()` → `metrics.vwap.value().mul(100).toNumber()`
-(у `Price` нет `.mul()`, нужно сначала распаковать `.value(): Decimal`). Остальные поля не
+(у `OutcomePrice` нет `.mul()`, нужно сначала распаковать `.value(): Decimal`). Остальные поля не
 потребовали правок на вызывающей стороне — `Quantity`/`Ratio`/`Money` core-классы
 зеркалируют `.toNumber()`/`.isZero()` API самого `Decimal` напрямую.
 
@@ -108,7 +108,7 @@ metrics.buyVolume.toNumber();          // Quantity
 metrics.sellVolume.toNumber();         // Quantity
 metrics.totalVolume.toNumber();        // Quantity
 metrics.orderFlowImbalance.toNumber(); // Ratio, [-1, +1]
-metrics.vwap?.toNumber();              // Price | undefined
+metrics.vwap?.toNumber();              // OutcomePrice | undefined
 metrics.totalNotional.toNumber();      // Money (USDC)
 metrics.tradeCount;                    // number
 ```
@@ -146,7 +146,7 @@ if (metrics.orderFlowImbalance.toNumber() > 0.3) {
 
 - `@polymarket/rolling-window` — retention buffer, на котором построен `TradeTape`
 - `@polymarket/result`, `@polymarket/errors` — `Result`/`ValidationError` для `create()`
-- `@polymarket/value-objects` — `Price`/`Quantity`/`Ratio`/`Money`/`Timestamp`/`Side`
+- `@polymarket/value-objects` — `OutcomePrice`/`Quantity`/`Ratio`/`Money`/`Timestamp`/`Side`
 - `@polymarket/time` — `IClock`
 - `@polymarket/math` — `addDecimal`/`subtractDecimal`/`divideDecimal`/`isZeroDecimal`
   (внутренняя реализация `TradeFlowCalculator.compute()`)

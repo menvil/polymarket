@@ -17,13 +17,13 @@
  * // Стратегия возвращает из tick():
  * const intents: StrategyIntent[] = [
  *   { type: 'CANCEL_ALL' },
- *   { type: 'PLACE', side: 'BUY', price: Price.of(new Decimal('0.55')), size: Quantity.of(new Decimal('100')) },
- *   { type: 'PLACE', side: 'SELL', price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')) },
+ *   { type: 'PLACE', side: 'BUY', price: OutcomePrice.of(new Decimal('0.55')), size: Quantity.of(new Decimal('100')) },
+ *   { type: 'PLACE', side: 'SELL', price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')) },
  * ];
  * ```
  */
 import type { OrderId, InstrumentId, AssetId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 
 /**
  * Декларативное намерение стратегии — PLACE, CANCEL или CANCEL_ALL.
@@ -48,7 +48,7 @@ export type StrategyIntent =
 export interface BasePlaceIntent {
   readonly type: 'PLACE';
   readonly side: Side;
-  readonly price: Price;
+  readonly price: OutcomePrice;
   readonly size: Quantity;
   /** true = post-only order; exchange must reject if order would execute immediately */
   readonly postOnly?: boolean;

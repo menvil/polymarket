@@ -64,10 +64,10 @@ public static create(
    const bidResult = toDecimal('bidValue', bidValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
    ```
 
-2. Создание Price через `PriceService.create()`:
+2. Создание OutcomePrice через `OutcomePriceService.create()`:
 
    ```typescript
-   const bidResult = PriceService.create(bidDecimal);
+   const bidResult = OutcomePriceService.create(bidDecimal);
    if (!bidResult.ok) {
      return Err(rewrap('create', { component: 'bid' }, bidResult.error, InvalidQuoteError));
    }
@@ -375,7 +375,7 @@ const updated = QuoteService.updateSizesWithRefresh(quote, 200, 300, clock);
 Вычисляет midpoint quote.
 
 ```typescript
-public static getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
+public static getMidPrice(quote: Quote): Result<OutcomePrice, InvalidQuoteError>
 ```
 
 **Параметры:**
@@ -384,7 +384,7 @@ public static getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
 
 **Возвращает:**
 
-- `Ok(Price)` — midpoint price
+- `Ok(OutcomePrice)` — midpoint price
 - `Err(InvalidQuoteError)` — если quote не two-sided
 
 **Пример:**
@@ -489,7 +489,7 @@ if (result.ok) {
 
 **Ошибки:**
 
-- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -536,7 +536,7 @@ if (result.ok) {
 
 **Ошибки:**
 
-- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -634,7 +634,7 @@ if (result.ok) {
 
 **Ошибки:**
 
-- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -784,17 +784,17 @@ rewrap<E extends DomainError>(
 ): E
 ```
 
-**Использование при создании Price (два паттерна):**
+**Использование при создании OutcomePrice (два паттерна):**
 
 ```typescript
 // Паттерн 1: rewrap существующей ошибки сервиса — передаём bidResult.error напрямую
-const bidResult = PriceService.create(bidDecimal);
+const bidResult = OutcomePriceService.create(bidDecimal);
 if (!bidResult.ok) {
   return Err(
     rewrap(
       'create',              // текущая операция
       { component: 'bid' }, // доп. контекст
-      bidResult.error,       // оригинальная ошибка PriceService (сохраняет reason и cause)
+      bidResult.error,       // оригинальная ошибка OutcomePriceService (сохраняет reason и cause)
       InvalidQuoteError
     )
   );
@@ -804,7 +804,7 @@ if (!bidResult.ok) {
 // Создаём новую InvalidQuoteError с собственным reason, сохраняя root cause через `cause`.
 // ВАЖНО: используйте rewrap() (Паттерн 1) когда хотите сохранить reason и opChain из source error.
 // Паттерн 2 применяйте только когда нужен ДРУГОЙ reason (например INVALID_BID вместо OUT_OF_RANGE).
-const bidResult2 = PriceService.create(bidDecimal);
+const bidResult2 = OutcomePriceService.create(bidDecimal);
 if (!bidResult2.ok) {
   return Err(
     rewrap(
@@ -813,7 +813,7 @@ if (!bidResult2.ok) {
       new InvalidQuoteError('Invalid bid price', {
         context: {
           reason: QuoteErrorReason.INVALID_BID,  // явный reason для QuoteError
-          cause: bidResult2.error                 // сохраняем root cause из PriceService
+          cause: bidResult2.error                 // сохраняем root cause из OutcomePriceService
         }
       }),
       InvalidQuoteError
@@ -833,7 +833,7 @@ if (!bidResult2.ok) {
     "opChain": ["create", "create"],
     "op": "create",
     "cause": {
-      "message": "Price out of range",
+      "message": "OutcomePrice out of range",
       "context": {
         "reason": "OUT_OF_RANGE",
         "value": 1.5
@@ -899,8 +899,8 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
       ↓
       wrapOp('create', ...)
         ↓
-        PriceService.create(0.48) → Ok(Price(0.48))
-        PriceService.create(0.52) → Ok(Price(0.52))
+        OutcomePriceService.create(0.48) → Ok(OutcomePrice(0.48))
+        OutcomePriceService.create(0.52) → Ok(OutcomePrice(0.52))
         QuantityService.create(100) → Ok(Quantity(100))
         QuantityService.create(150) → Ok(Quantity(150))
         ↓
@@ -944,7 +944,7 @@ QuoteService.create('invalid', 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
       })
 ```
 
-### Ошибка в Price
+### Ошибка в OutcomePrice
 
 ```typescript
 QuoteService.create(1.5, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // 1.5 > MAX_PRICE
@@ -957,10 +957,10 @@ QuoteService.create(1.5, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // 1.5
       ↓
       wrapOp('create', ...)
         ↓
-        PriceService.create(Decimal(1.5))
+        OutcomePriceService.create(Decimal(1.5))
           ↓
-          Err(InvalidPriceError {
-            message: 'Price out of range',
+          Err(InvalidOutcomePriceError {
+            message: 'OutcomePrice out of range',
             context: {
               reason: 'OUT_OF_RANGE',
               value: 1.5
@@ -971,7 +971,7 @@ QuoteService.create(1.5, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // 1.5
           new InvalidQuoteError('Invalid bid price', {
             context: {
               reason: 'INVALID_BID',
-              cause: InvalidPriceError
+              cause: InvalidOutcomePriceError
             }
           })
         )
@@ -983,7 +983,7 @@ QuoteService.create(1.5, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // 1.5
             component: 'bid',
             opChain: ['create', 'create'],
             op: 'create',
-            cause: InvalidPriceError { ... }
+            cause: InvalidOutcomePriceError { ... }
           }
         })
 ```
@@ -1002,12 +1002,12 @@ QuoteService.create(0.60, 0.40, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // bi
       ↓
       wrapOp('create', ...)
         ↓
-        PriceService.create(0.60) → Ok(Price(0.60))
-        PriceService.create(0.40) → Ok(Price(0.40))
+        OutcomePriceService.create(0.60) → Ok(OutcomePrice(0.60))
+        OutcomePriceService.create(0.40) → Ok(OutcomePrice(0.40))
         ↓
         ValidateQuoteSizes.check(...) → Ok(undefined)
         ↓
-        Quote.of(Price(0.60), Price(0.40), ...)
+        Quote.of(OutcomePrice(0.60), OutcomePrice(0.40), ...)
           ↓
           throw QuoteInvariantViolation {
             message: 'Bid 0.60 cannot be greater than ask 0.40',

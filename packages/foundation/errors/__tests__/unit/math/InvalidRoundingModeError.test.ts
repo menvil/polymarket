@@ -24,16 +24,16 @@ describe('InvalidRoundingModeError', () => {
         {
           context: {
             roundingMode: 'NaN',
-            operation: 'Price.round',
+            operation: 'OutcomePrice.round',
             value: '10.567',
             precision: 2,
           },
         }
       );
-      expect(error2.message).toBe('Invalid rounding mode NaN for Price.round');
+      expect(error2.message).toBe('Invalid rounding mode NaN for OutcomePrice.round');
       expect(error2.context).toMatchObject({
         roundingMode: 'NaN',
-        operation: 'Price.round',
+        operation: 'OutcomePrice.round',
         value: '10.567',
         precision: 2,
       });

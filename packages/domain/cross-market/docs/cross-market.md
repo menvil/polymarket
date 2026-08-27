@@ -77,7 +77,7 @@ const best = detector.detectBest(easyBook, hardBook, pair, Date.now()); // лу�
 ## Почему хот-путь остаётся `number`, а не VO
 
 `NumericLevel`/`SimpleBook`/`DepthLevel` и `ArbitrageSignal.hardUpBestBid`/`easyUpBestAsk` —
-сознательно **не** переведены на `Price`/`Quantity`/`Money`, в отличие от остальной
+сознательно **не** переведены на `OutcomePrice`/`Quantity`/`Money`, в отличие от остальной
 кодовой базы, где примитивы на публичной границе — долг, который убирается.
 
 Причина — не лень, а измеренная стоимость: `CrossMarketBacktestEngine` в реальном
@@ -110,7 +110,7 @@ topOfBookToSimpleBook()`) добавляется решение НЕ плати�
 | `SimpleBook.bids/asks/timestampMs` | `number` | Хот-путь целиком, включая timestamp — согласованность с bids/asks |
 | `DepthLevel` (8 полей) | `number` | Хот-путь, per-level результат VWAP-петли |
 | `ArbitrageSignal.hardUpBestBid/easyUpBestAsk` | `number` | Та же хот-путная группа, что `depthLevels` |
-| `MarketInfo.priceToBeat/finalPrice` | `number` | Крипто-спот-цена (например ~78237 для BTC) — `Price` VO ограничен `[0.0001, 0.9999]`, не подходит. Открытый вопрос, решается согласованно с `CryptoMarketDataStore` (Этап 8) |
+| `MarketInfo.priceToBeat/finalPrice` | `number` | Крипто-спот-цена (например ~78237 для BTC) — `OutcomePrice` VO ограничен `[0.0001, 0.9999]`, не подходит. Открытый вопрос, решается согласованно с `CryptoMarketDataStore` (Этап 8) |
 | `MarketInfo.asset` | `string` | Отложено в Этап 8 (согласованно с `market-state`) |
 | `MarketInfo.endDate/startDate` | `string` | Ключ группировки по равенству, дуальное представление рядом с `endEpochMs`/`startEpochMs` |
 | `FeeModel.exponent`, `DetectorConfig.maxDepth` | `number` | Показатель степени / счётчик, не "величина" |

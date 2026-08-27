@@ -297,16 +297,16 @@ const result2 = sum.dividedBy(MATH_CONSTANTS.TWO);
 ```typescript
 import Decimal from 'decimal.js';
 import { averageDecimal } from '@polymarket/math';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 
 // Вычисление средней цены внутри Value Object
 class MarketData {
   private constructor(
-    private readonly bidPrice: Price,
-    private readonly askPrice: Price
+    private readonly bidPrice: OutcomePrice,
+    private readonly askPrice: OutcomePrice
   ) {}
 
-  calculateMidPrice(): Result<Price, ValidationError> {
+  calculateMidPrice(): Result<OutcomePrice, ValidationError> {
     // 1. Чистая математика (core layer)
     const midPriceValue = averageDecimal(
       this.bidPrice.value,
@@ -314,7 +314,7 @@ class MarketData {
     );
 
     // 2. Бизнес-валидация (domain layer)
-    return Price.fromDecimal(midPriceValue);
+    return OutcomePrice.fromDecimal(midPriceValue);
   }
 }
 ```

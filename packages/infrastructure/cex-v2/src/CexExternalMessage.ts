@@ -13,7 +13,7 @@
  * ```
  *
  * Никакого semantic-remapping нет: vendor-поля не переименовываются,
- * значения не конвертируются в наши VO (`Price`/`Quantity`/`Timestamp`),
+ * значения не конвертируются в наши VO (`OutcomePrice`/`Quantity`/`Timestamp`),
  * Entity не строятся — это работа будущего CEX Semantic Adapter ПОСЛЕ bus.
  * Единственные допущенные транспортные операции над vendor-объектом:
  *

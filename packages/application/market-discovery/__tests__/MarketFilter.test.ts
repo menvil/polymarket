@@ -3,11 +3,11 @@
  *
  * @remarks
  * Покрывают каждый фильтр в отдельности и их комбинации.
- * Используют реальные domain VO (Timestamp, Price, Quantity) без mock'ов.
+ * Используют реальные domain VO (Timestamp, OutcomePrice, Quantity) без mock'ов.
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Money, Price, Quantity, Ratio } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity, Ratio } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
@@ -59,7 +59,7 @@ function makeMarket(overrides: Partial<{
     instrumentId,
     question,
     expiresAt: expiresAtResult.value,
-    tickSize: Price.of(new Decimal('0.01')),
+    tickSize: OutcomePrice.of(new Decimal('0.01')),
     minOrderSize: Quantity.of(new Decimal('1')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,

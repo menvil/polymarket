@@ -137,7 +137,7 @@ undefined` — иначе гвард компилировался бы чист�
 
 `StrategySnapshot.cryptoPrice`-блок (`targetPrice`/`resolutionPrice`/`currentPrice`/
 `chainlink.price`/`binance.price`) остаётся `number` НАВСЕГДА, не отложено — та же
-крипто-спот-цена, несовместимая с `Price` VO, что уже дважды подтверждена в этой миграции
+крипто-спот-цена, несовместимая с `OutcomePrice` VO, что уже дважды подтверждена в этой миграции
 (`cross-market`, Этап 4; `CryptoMarketDataStore`, Этап 8). `.tsMs` на `CryptoSignalResult`
 (соседнее поле, всегда сравнивается с `nowMs`, который тоже остаётся `number`) — той же
 причиной остаётся `number`. `apps/bot/src/strategyRouter.ts`'s собственное отдельное поле

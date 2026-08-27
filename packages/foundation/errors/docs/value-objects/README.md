@@ -6,7 +6,7 @@
 
 Value Objects представляют неизменяемые бизнес-концепции в domain model:
 
-- **Price** - цена на рынке [0.0001, 0.9999]
+- **OutcomePrice** - цена на рынке [0.0001, 0.9999]
 - **Quantity** - количество акций
 - **Money** - денежная сумма с валютой
 - **Spread** - спред между bid и ask
@@ -26,7 +26,7 @@ Value Objects представляют неизменяемые бизнес-к�
 
 | Код | Класс | Когда использовать | Документация |
 |-----|-------|-------------------|--------------|
-| `INVALID_PRICE` | InvalidPriceError | Цена вне [0.0001, 0.9999] | [→](./invalid-price.md) |
+| `INVALID_PRICE` | InvalidOutcomePriceError | Цена вне [0.0001, 0.9999] | [→](./invalid-price.md) |
 | `INVALID_QUANTITY` | InvalidQuantityError | Отрицательное/нулевое количество | [→](./invalid-quantity.md) |
 | `INVALID_PERCENTAGE` | InvalidPercentageError | Процент вне [0, 100] или [0, 1] | [→](./invalid-percentage.md) |
 | `INVALID_AMOUNT` | InvalidAmountError | Универсальная валидация чисел | [→](./invalid-amount.md) |
@@ -68,12 +68,12 @@ Value Objects представляют неизменяемые бизнес-к�
 ### 1. Базовое использование (throw)
 
 ```typescript
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-class Price {
+class OutcomePrice {
   constructor(private readonly value: number) {
     if (value < 0.0001 || value > 0.9999) {
-      throw new InvalidPriceError(
+      throw new InvalidOutcomePriceError(
         (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
         {
           context: { value, min: 0.0001, max: 0.9999 }
@@ -88,15 +88,15 @@ class Price {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-class Price {
+class OutcomePrice {
   private constructor(private readonly value: number) {}
 
-  static fromNumber(value: number): Result<Price, InvalidPriceError> {
+  static fromNumber(value: number): Result<OutcomePrice, InvalidOutcomePriceError> {
     if (value < 0.0001 || value > 0.9999) {
       return Err(
-        new InvalidPriceError(
+        new InvalidOutcomePriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
             
@@ -105,12 +105,12 @@ class Price {
         )
       );
     }
-    return Ok(new Price(value));
+    return Ok(new OutcomePrice(value));
   }
 }
 
 // Использование
-const priceResult = Price.fromNumber(userInput);
+const priceResult = OutcomePrice.fromNumber(userInput);
 
 if (priceResult.ok) {
   console.log('Valid price:', priceResult.value);
@@ -123,7 +123,7 @@ if (priceResult.ok) {
 
 ```typescript
 import {
-  InvalidPriceError,
+  InvalidOutcomePriceError,
   InvalidQuantityError,
   InvalidMoneyError
 } from '@polymarket/errors';
@@ -135,8 +135,8 @@ if (result.ok) {
 } else {
   const error = result.error;
   // Обработка по типу
-  if (InvalidPriceError.is(error)) {
-    showFieldError('price', `Price must be between ${error.context?.min} and ${error.context?.max}`);
+  if (InvalidOutcomePriceError.is(error)) {
+    showFieldError('price', `OutcomePrice must be between ${error.context?.min} and ${error.context?.max}`);
   } else if (InvalidQuantityError.is(error)) {
     showFieldError('quantity', 'Quantity must be positive');
   } else if (InvalidMoneyError.is(error)) {
@@ -156,7 +156,7 @@ if (result.ok) {
 ```typescript
 import { toChain } from '@polymarket/result';
 import {
-  InvalidPriceError,
+  InvalidOutcomePriceError,
   InvalidQuantityError,
   CurrencyMismatchError
 } from '@polymarket/errors';
@@ -166,8 +166,8 @@ function createOrder(
   qtyInput: number,
   money1: Money,
   money2: Money
-): Result<Order, InvalidPriceError | InvalidQuantityError | CurrencyMismatchError> {
-  return toChain(Price.fromNumber(priceInput))
+): Result<Order, InvalidOutcomePriceError | InvalidQuantityError | CurrencyMismatchError> {
+  return toChain(OutcomePrice.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
@@ -185,7 +185,7 @@ if (orderResult.ok) {
   console.log('Order created:', orderResult.value);
 } else {
   // Все типы ошибок обрабатываются в одном месте
-  if (orderResult.error.code === InvalidPriceError.code) {
+  if (orderResult.error.code === InvalidOutcomePriceError.code) {
     showError('Invalid price');
   } else if (orderResult.error.code === InvalidQuantityError.code) {
     showError('Invalid quantity');
@@ -210,7 +210,7 @@ function validateOrderForm(
 ): Result<ValidatedOrder, ValidationErrors> {
   const errors: TradingError[] = [];
 
-  const priceResult = Price.fromNumber(priceInput);
+  const priceResult = OutcomePrice.fromNumber(priceInput);
   if (!priceResult.ok) {
     errors.push(priceResult.error);
   }
@@ -367,13 +367,13 @@ class Money {
 1. **Используйте Result<T,E> вместо throw**
 
    ```typescript
-   static fromNumber(value: number): Result<Price, InvalidPriceError>
+   static fromNumber(value: number): Result<OutcomePrice, InvalidOutcomePriceError>
    ```
 
 2. **Используйте статические коды**
 
    ```typescript
-   code: InvalidPriceError.code // ✅ 'INVALID_PRICE'
+   code: InvalidOutcomePriceError.code // ✅ 'INVALID_PRICE'
    ```
 
 3. **Включайте полезный context**
@@ -391,9 +391,9 @@ class Money {
 5. **Обрабатывайте ошибки по типу или коду**
 
    ```typescript
-   if (InvalidPriceError.is(error)) { ... }
+   if (InvalidOutcomePriceError.is(error)) { ... }
    // или
-   if (error.code === InvalidPriceError.code) { ... }
+   if (error.code === InvalidOutcomePriceError.code) { ... }
    ```
 
 ### ❌ DON'T
@@ -402,21 +402,21 @@ class Money {
 
    ```typescript
    throw new Error('Invalid price') // ❌
-   throw new InvalidPriceError(...) // ✅
+   throw new InvalidOutcomePriceError(...) // ✅
    ```
 
 2. **Не опускайте код ошибки**
 
    ```typescript
-   new InvalidPriceError('message', {}) // ❌ нет code
-   new InvalidPriceError('message', { code: InvalidPriceError.code }) // ✅
+   new InvalidOutcomePriceError('message', {}) // ❌ нет code
+   new InvalidOutcomePriceError('message', { code: InvalidOutcomePriceError.code }) // ✅
    ```
 
 3. **Не игнорируйте валидацию**
 
    ```typescript
-   new Price(userInput) // ❌ без проверки
-   Price.fromNumber(userInput) // ✅ с Result<T,E>
+   new OutcomePrice(userInput) // ❌ без проверки
+   OutcomePrice.fromNumber(userInput) // ✅ с Result<T,E>
    ```
 
 4. **Не используйте native number для денег**
@@ -440,7 +440,7 @@ class Money {
 
 ### Базовые value objects
 
-- [InvalidPriceError](./invalid-price.md)
+- [InvalidOutcomePriceError](./invalid-price.md)
 - [InvalidQuantityError](./invalid-quantity.md)
 - [InvalidMoneyError](./invalid-money.md)
 - [InvalidPercentageError](./invalid-percentage.md)

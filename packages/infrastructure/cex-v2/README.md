@@ -139,7 +139,7 @@ source.start();
 
 - private streams (orders/fills/balances/positions), execution, funding,
   OHLCV, ticker;
-- semantic-нормализация (Price/Quantity/Timestamp VO, Orderbook/Trade
+- semantic-нормализация (OutcomePrice/Quantity/Timestamp VO, Orderbook/Trade
   Entity) — CEX Semantic Adapter, после CHECKPOINT #1;
 - собственный recorder/бас/очередь — ONE bus, ONE recorder;
 - миграция Application/Risk/Strategies и legacy cutover

@@ -22,7 +22,7 @@
  * - `conditionId` → `asMarketId()` → `MarketId`
  * - `clobTokenIds[0]` (UP token) → `asInstrumentId()` → `InstrumentId`
  * - `endDate` (ISO строка) → `Date.parse()` → `TimestampService.create()` → `Timestamp`
- * - `orderPriceMinTickSize` → `Price.of(new Decimal(value))` → `Price` (дефолт: 0.01)
+ * - `orderPriceMinTickSize` → `OutcomePrice.of(new Decimal(value))` → `OutcomePrice` (дефолт: 0.01)
  * - `orderMinSize` → `Quantity.of(new Decimal(value))` → `Quantity` (дефолт: 1)
  * - `liquidity` (строка) → `MoneyService.create()` → `Money` (деградация до 0 при ошибке)
  * - `spread` (number) → `RatioService.fromDecimal()` → `Ratio` (деградация до `undefined`)
@@ -47,7 +47,7 @@
 import Decimal from 'decimal.js';
 import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
-import { Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
+import { Money, MoneyService, OutcomePrice, Quantity, RatioService } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Ratio } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -255,7 +255,7 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
    * - `endDate` → `Date.parse()` → `TimestampService.create()` (может быть невалидным)
    * - `orderPriceMinTickSize` — дефолт 0.01 если не задан
    * - `orderMinSize` — дефолт 1 если не задан
-   * - `Price.of()` и `Quantity.of()` могут бросать — обёрнуты в try/catch
+   * - `OutcomePrice.of()` и `Quantity.of()` могут бросать — обёрнуты в try/catch
    * - `liquidity` — строка из API → `MoneyService.create()` (деградация до `Money.of(0, 'USDC')`)
    * - `spread` — number или `undefined` → `RatioService.fromDecimal()` (деградация до `undefined`)
    * - `eventStartTime` — ISO-строка → `TimestampService.create()` (деградация до `undefined`)
@@ -340,21 +340,21 @@ export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService
       return null;
     }
 
-    // 5. Парсинг Price (tickSize) с дефолтом 0.01
+    // 5. Парсинг OutcomePrice (tickSize) с дефолтом 0.01
     const tickSizeValue = raw.orderPriceMinTickSize ?? 0.01;
-    let tickSize: Price;
+    let tickSize: OutcomePrice;
     try {
-      tickSize = Price.of(new Decimal(tickSizeValue));
+      tickSize = OutcomePrice.of(new Decimal(tickSizeValue));
     } catch (priceError) {
-      this._logger.warn('Cannot create Price from orderPriceMinTickSize, using default 0.01', {
+      this._logger.warn('Cannot create OutcomePrice from orderPriceMinTickSize, using default 0.01', {
         conditionId: raw.conditionId,
         orderPriceMinTickSize: tickSizeValue,
         error: priceError instanceof Error ? priceError.message : String(priceError),
       });
       try {
-        tickSize = Price.of(new Decimal('0.01'));
+        tickSize = OutcomePrice.of(new Decimal('0.01'));
       } catch {
-        this._logger.warn('Even default Price 0.01 failed, skipping market', {
+        this._logger.warn('Even default OutcomePrice 0.01 failed, skipping market', {
           conditionId: raw.conditionId,
         });
         return null;

@@ -59,14 +59,14 @@ entity) по ключу `(marketId, tokenId)`, которым владеет `Bo
 - `BookUpdateHandler.handleSnapshot()` не читает реестр перед записью (ни `get`, ни
   `getOrCreate`) — Polymarket шлёт только полные снапшоты, поэтому каждый вызов безусловно
   строит новый `Orderbook.fromLevels(...)` и сразу вызывает `this._books.set(...)`.
-- `getBestBid()`/`getBestAsk()` возвращают `Price | null` (не `PriceLevel | undefined`) —
+- `getBestBid()`/`getBestAsk()` возвращают `OutcomePrice | null` (не `PriceLevel | undefined`) —
   размер лучшего уровня читается отдельно через `book.bids[0]?.quantity`/
   `book.asks[0]?.quantity`.
 - `getSpread()` возвращает `Result<Spread, OrderbookInvalidError>` — заменяет отдельную
   проверку `rawSpread.gt(0)`, которая была нужна старому API (`getSpread()` уже сам
   отсеивает `EMPTY_BOOK`/`ONE_SIDED`/`CROSSED_BOOK` через `Err`).
 - `MarketDataFeedAdapter._convertLevels()`/`BacktestEngine._convertLevels()` сохранили
-  прежнюю throw-and-skip форму (`Price.of()`/`Quantity.of()` в try/catch, невалидный
+  прежнюю throw-and-skip форму (`OutcomePrice.of()`/`Quantity.of()` в try/catch, невалидный
   уровень пропускается с debug-логом, а не роняет весь снапшот) — просто строят
   `OrderbookLevel.create(price, quantity)` вместо старого `{price, size}`-литерала.
 - Полная схема (нейминговый нюанс `instrumentId`-параметра, реальный код

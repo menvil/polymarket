@@ -13,7 +13,7 @@
  * - `ReconcileOrdersUseCase` — сверка локальных ордеров с биржевыми
  */
 import type { OrderId, AssetId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountId } from '@polymarket/ids';
 
@@ -27,7 +27,7 @@ import type { AccountId } from '@polymarket/ids';
  *   accountId: parseAccountId('venue:POLYMARKET:0x...'),
  *   asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: 'abc' },
  *   side: 'BUY',
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  *   filledSize: Quantity.of(new Decimal('30')),
  *   status: 'PARTIALLY_FILLED',
@@ -45,7 +45,7 @@ export interface OpenOrderSnapshot {
   /** Сторона ордера */
   readonly side: Side;
   /** Цена ордера */
-  readonly price: Price;
+  readonly price: OutcomePrice;
   /** Полный объём ордера */
   readonly size: Quantity;
   /** Исполненный объём */

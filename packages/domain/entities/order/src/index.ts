@@ -29,7 +29,7 @@
  * @example
  * ```typescript
  * import { Order } from '@polymarket/order';
- * import { Price, Quantity } from '@polymarket/value-objects';
+ * import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
  * import { asOrderId } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
@@ -39,7 +39,7 @@ import { Timestamp } from '@polymarket/timestamp';
  *   id: asOrderId('order-1')!,
  *   asset: myAsset,
  *   side: 'BUY',
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  *   timestamp: Timestamp.now(),
  * });

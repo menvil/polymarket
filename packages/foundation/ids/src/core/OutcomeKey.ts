@@ -152,7 +152,7 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
  * ```typescript
  * import { AssetIdHelpers, BinaryOutcome } from '@polymarket/ids';
  *
- * // Price movement market: "BTC > $100k?"
+ * // OutcomePrice movement market: "BTC > $100k?"
  * // fromOutcomeToken — safe-контракт: Result, не throw
  * const upResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
  * const downResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);

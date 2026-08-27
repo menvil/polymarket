@@ -26,7 +26,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -435,7 +435,7 @@ export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
         intents.push({
           type: 'PLACE',
           side: 'BUY',
-          price: Price.of(new Decimal(action.bid).div(100)),
+          price: OutcomePrice.of(new Decimal(action.bid).div(100)),
           size: Quantity.of(action.bidSize),
         });
       }
@@ -444,7 +444,7 @@ export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
         intents.push({
           type: 'PLACE',
           side: 'SELL',
-          price: Price.of(new Decimal(action.ask).div(100)),
+          price: OutcomePrice.of(new Decimal(action.ask).div(100)),
           size: Quantity.of(action.askSize),
         });
       }

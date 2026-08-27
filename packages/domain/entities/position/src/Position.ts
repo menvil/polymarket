@@ -53,14 +53,14 @@
  * @example
  * ```typescript
  * import { Position, PositionLot } from '@polymarket/position';
- * import { Quantity, Price } from '@polymarket/value-objects';
+ * import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
  * import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
  *
  * const lot = PositionLot.create({
  *   quantity: Quantity.of(new Decimal(100)),
- *   entryPrice: Price.of(new Decimal(0.65)),
+ *   entryPrice: OutcomePrice.of(new Decimal(0.65)),
  *   timestamp: Timestamp.of(new Decimal(1705318200000)),
  * });
  *
@@ -79,7 +79,7 @@ import { Timestamp } from '@polymarket/timestamp';
  *   const position = result.value;
  *   const closeResult = position.close(
  *     Quantity.of(new Decimal(50)),
- *     Price.of(new Decimal(0.75)),
+ *     OutcomePrice.of(new Decimal(0.75)),
  *     'FIFO',
  *     Timestamp.now(),
  *   );
@@ -88,7 +88,7 @@ import { Timestamp } from '@polymarket/timestamp';
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { ValidationError } from '@polymarket/errors';
@@ -228,7 +228,7 @@ export class Position {
   /**
    * Derived getter: средневзвешенная цена входа по лотам
    *
-   * @returns Price.MIN если лотов нет
+   * @returns OutcomePrice.MIN если лотов нет
    *
    * @remarks
    * Формула: sum(lot.price * lot.qty) / sum(lot.qty)
@@ -239,7 +239,7 @@ export class Position {
    * console.log(position.averageEntryPrice.value().toNumber()); // 0.65
    * ```
    */
-  public get averageEntryPrice(): Price {
+  public get averageEntryPrice(): OutcomePrice {
     return calculateWeightedAveragePrice(this.lots);
   }
 
@@ -444,7 +444,7 @@ export class Position {
    * ```typescript
    * const result = position.close(
    *   Quantity.of(new Decimal(50)),
-   *   Price.of(new Decimal(0.75)),
+   *   OutcomePrice.of(new Decimal(0.75)),
    *   'FIFO',
    *   Timestamp.now(),
    * );
@@ -457,7 +457,7 @@ export class Position {
    */
   public close(
     closeQuantity: Quantity,
-    closePrice: Price,
+    closePrice: OutcomePrice,
     strategy: 'FIFO' | 'LIFO',
     closedAt: Timestamp,
   ): Result<CloseResult, ValidationError> {
@@ -673,11 +673,11 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const pnl = position.getUnrealizedPnL(Price.of(new Decimal(0.75)));
+   * const pnl = position.getUnrealizedPnL(OutcomePrice.of(new Decimal(0.75)));
    * // 100 * (0.75 - 0.65) = 10
    * ```
    */
-  public getUnrealizedPnL(currentPrice: Price): SignedQuantity {
+  public getUnrealizedPnL(currentPrice: OutcomePrice): SignedQuantity {
     if (this.quantity.isZero()) {
       return SignedQuantity.ZERO;
     }
@@ -696,11 +696,11 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const total = position.getTotalPnL(Price.of(new Decimal(0.75)));
+   * const total = position.getTotalPnL(OutcomePrice.of(new Decimal(0.75)));
    * // 15 realized + 10 unrealized = 25
    * ```
    */
-  public getTotalPnL(currentPrice: Price): SignedQuantity {
+  public getTotalPnL(currentPrice: OutcomePrice): SignedQuantity {
     const unrealized = this.getUnrealizedPnL(currentPrice);
     const total = this.realizedPnL.value().plus(unrealized.value());
     return SignedQuantity.of(total);

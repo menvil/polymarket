@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
-import { Price } from '../../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 import { Spread } from '../../../../src/spread/core/Spread.js';
@@ -9,7 +9,7 @@ import { Spread } from '../../../../src/spread/core/Spread.js';
 describe('SpreadService Ratio Operations', () => {
   // Helper: создать Spread из чисел
   const createSpread = (bid: number, ask: number): Spread => {
-    return Spread.of(Price.of(new Decimal(bid)), Price.of(new Decimal(ask)));
+    return Spread.of(OutcomePrice.of(new Decimal(bid)), OutcomePrice.of(new Decimal(ask)));
   };
 
   describe('getSpreadWidth()', () => {
@@ -103,8 +103,8 @@ describe('SpreadService Ratio Operations', () => {
   });
 
   describe('fromMidAndWidthRatio()', () => {
-    it('создаёт spread от mid и widthRatio (Price и Ratio)', () => {
-      const mid = Price.of(new Decimal(0.50));
+    it('создаёт spread от mid и widthRatio (OutcomePrice и Ratio)', () => {
+      const mid = OutcomePrice.of(new Decimal(0.50));
       const widthRatio = Ratio.of(new Decimal(0.08)); // 8% width
 
       const result = SpreadService.fromMidAndWidthRatio(mid, widthRatio);
@@ -280,7 +280,7 @@ describe('SpreadService Ratio Operations', () => {
       }
     });
 
-    it('фэйлится при выходе за границы Price (слишком большой сдвиг вверх)', () => {
+    it('фэйлится при выходе за границы OutcomePrice (слишком большой сдвиг вверх)', () => {
       const spread = createSpread(0.8, 0.9);
       const shiftRatio = Ratio.of(new Decimal(0.5)); // 50% от mid = 0.85
 
@@ -293,7 +293,7 @@ describe('SpreadService Ratio Operations', () => {
       }
     });
 
-    it('фэйлится при выходе за границы Price (слишком большой сдвиг вниз)', () => {
+    it('фэйлится при выходе за границы OutcomePrice (слишком большой сдвиг вниз)', () => {
       const spread = createSpread(0.1, 0.2);
       const shiftRatio = Ratio.of(new Decimal(-0.8)); // -80% от mid = 0.15
 
@@ -524,7 +524,7 @@ describe('SpreadService Ratio Operations', () => {
       }
     });
 
-    it('succeeds when result stays within Price boundaries', () => {
+    it('succeeds when result stays within OutcomePrice boundaries', () => {
       const spread = createSpread(0.1, 0.2);
       const bidRatio = Ratio.of(new Decimal(-0.5)); // -50% от mid
       const askRatio = Ratio.of(new Decimal(0));

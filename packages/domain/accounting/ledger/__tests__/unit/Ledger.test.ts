@@ -19,7 +19,7 @@ import {
   assetIdToString,
   accountIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
@@ -69,7 +69,7 @@ function makeFill(overrides?: Partial<FillParams>): Fill {
     marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
-    price: Price.of(new Decimal('0.62')),
+    price: OutcomePrice.of(new Decimal('0.62')),
     size: Quantity.of(new Decimal('10')),
     side: 'BUY',
     timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
@@ -171,7 +171,7 @@ describe('Ledger', () => {
     it('BUY: баланс USDC уменьшается', () => {
       const ledger = new Ledger();
       // BUY 10 @ 0.62 = USDC -6.20
-      const fill = makeFill({ side: 'BUY', price: Price.of(new Decimal('0.62')), size: Quantity.of(new Decimal('10')) });
+      const fill = makeFill({ side: 'BUY', price: OutcomePrice.of(new Decimal('0.62')), size: Quantity.of(new Decimal('10')) });
       ledger.append(FillLedgerAdapter.toLedgerEntries(fill));
 
       const usdcBalance = ledger.getBalance(fill.accountId, AssetIdHelpers.USDC);
@@ -189,7 +189,7 @@ describe('Ledger', () => {
 
     it('SELL: баланс USDC увеличивается', () => {
       const ledger = new Ledger();
-      const fill = makeFill({ side: 'SELL', price: Price.of(new Decimal('0.62')), size: Quantity.of(new Decimal('10')) });
+      const fill = makeFill({ side: 'SELL', price: OutcomePrice.of(new Decimal('0.62')), size: Quantity.of(new Decimal('10')) });
       ledger.append(FillLedgerAdapter.toLedgerEntries(fill));
 
       const usdcBalance = ledger.getBalance(fill.accountId, AssetIdHelpers.USDC);
@@ -206,7 +206,7 @@ describe('Ledger', () => {
         id: asFillId('fill-001')!,
         accountId,
         side: 'BUY',
-        price: Price.of(new Decimal('0.62')),
+        price: OutcomePrice.of(new Decimal('0.62')),
         size: Quantity.of(new Decimal('10')),
         tokenId,
       });
@@ -216,7 +216,7 @@ describe('Ledger', () => {
         id: asFillId('fill-002')!,
         accountId,
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('5')),
         tokenId,
       });

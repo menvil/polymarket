@@ -223,7 +223,7 @@ export interface StrategySnapshot {
   readonly portfolio: Portfolio | undefined;
 
   // ── Timing ───────────────────────────────────────────────
-  // ── Crypto Price ────────────────────────────────────────────
+  // ── Crypto OutcomePrice ────────────────────────────────────────────
   /**
    * Цена крипто-актива для крипто-рынков (Bitcoin Up or Down и т.п.).
    *

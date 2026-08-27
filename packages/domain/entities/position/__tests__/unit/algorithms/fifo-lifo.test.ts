@@ -19,7 +19,7 @@ import {
 import { Position } from '../../../src/Position.js';
 import type { PositionParams } from '../../../src/Position.js';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
@@ -43,7 +43,7 @@ describe('FIFO/LIFO Algorithms', () => {
     timestampMs: number
   ): PositionLot => PositionLot.create({
     quantity: Quantity.of(new Decimal(quantity)),
-    entryPrice: Price.of(new Decimal(price)),
+    entryPrice: OutcomePrice.of(new Decimal(price)),
     timestamp: Timestamp.of(new Decimal(timestampMs)),
   });
 
@@ -76,7 +76,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем 60 @ 0.75
       const closeQty = Quantity.of(new Decimal(60));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -109,7 +109,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем полностью
       const closeQty = Quantity.of(new Decimal(100));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -135,7 +135,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем 60 @ 0.60
       const closeQty = Quantity.of(new Decimal(60));
-      const closePrice = Price.of(new Decimal(0.60));
+      const closePrice = OutcomePrice.of(new Decimal(0.60));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -156,7 +156,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot]);
 
       const closeQty = Quantity.ZERO;
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -171,7 +171,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot]);
 
       const closeQty = Quantity.of(new Decimal(150)); // > 100
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -194,7 +194,7 @@ describe('FIFO/LIFO Algorithms', () => {
       }));
 
       const closeQty = Quantity.of(new Decimal(10));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -221,7 +221,7 @@ describe('FIFO/LIFO Algorithms', () => {
       }));
 
       const closeQty = Quantity.of(new Decimal(50));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(positionWithPnL, closeQty, closePrice, CLOSE_AT);
 
@@ -239,7 +239,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot]);
 
       const closeQty = Quantity.of(new Decimal(30));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -265,7 +265,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const result = closeFIFO(
         position,
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         closedAt,
       );
 
@@ -287,7 +287,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем 60 @ 0.75
       const closeQty = Quantity.of(new Decimal(60));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -325,7 +325,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const result = closeLIFO(
         position,
         Quantity.of(new Decimal(25)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         CLOSE_AT,
       );
 
@@ -347,7 +347,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем полностью
       const closeQty = Quantity.of(new Decimal(100));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -372,7 +372,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем 60 @ 0.60
       const closeQty = Quantity.of(new Decimal(60));
-      const closePrice = Price.of(new Decimal(0.60));
+      const closePrice = OutcomePrice.of(new Decimal(0.60));
 
       const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -396,7 +396,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot1, lot2]);
 
       const closeQty = Quantity.of(new Decimal(50));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       // FIFO закроет дешевый лот первым
       const fifoResult = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
@@ -443,7 +443,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
     it('should return minimum price for empty lots', () => {
       const avgPrice = calculateWeightedAveragePrice([]);
-      expect(avgPrice).toBe(Price.MIN);
+      expect(avgPrice).toBe(OutcomePrice.MIN);
     });
 
     it('should return minimum price when all lots have zero quantity (defensive guard)', () => {
@@ -451,11 +451,11 @@ describe('FIFO/LIFO Algorithms', () => {
       // calculateWeightedAveragePrice имеет defensive guard для этого случая.
       const zeroLot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
       const avgPrice = calculateWeightedAveragePrice([zeroLot]);
-      expect(avgPrice).toBe(Price.MIN);
+      expect(avgPrice).toBe(OutcomePrice.MIN);
     });
 
     it('should return single lot price', () => {
@@ -483,7 +483,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot]);
 
       const closeQty = Quantity.of(new Decimal(0.0000005));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -500,7 +500,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       // Закрываем с убытком
       const closeQty = Quantity.of(new Decimal(50));
-      const closePrice = Price.of(new Decimal(0.65));
+      const closePrice = OutcomePrice.of(new Decimal(0.65));
 
       const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
@@ -518,7 +518,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const originalQuantity = originalPosition.quantity.value().toNumber();
 
       const closeQty = Quantity.of(new Decimal(50));
-      const closePrice = Price.of(new Decimal(0.75));
+      const closePrice = OutcomePrice.of(new Decimal(0.75));
 
       closeFIFO(originalPosition, closeQty, closePrice, CLOSE_AT);
 

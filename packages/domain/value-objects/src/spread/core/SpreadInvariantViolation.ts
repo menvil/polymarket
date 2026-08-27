@@ -7,7 +7,7 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * Ограничивает reason поле SpreadInvariantViolation только инвариантными причинами.
  * В текущей архитектуре существует только один инвариант: bid <= ask.
  *
- * Price объекты уже валидированы при создании, поэтому проверка
+ * OutcomePrice объекты уже валидированы при создании, поэтому проверка
  * "валидности" bid/ask невозможна и не нужна в Spread конструкторе.
  */
 export type SpreadInvariantReason = typeof SpreadErrorReason.BID_GREATER_THAN_ASK;
@@ -27,9 +27,9 @@ export type SpreadInvariantReason = typeof SpreadErrorReason.BID_GREATER_THAN_AS
  *
  * @remarks
  * INVALID_BID и INVALID_ASK НЕ являются инвариантами Spread, потому что:
- * - Price объекты уже валидированы при создании
+ * - OutcomePrice объекты уже валидированы при создании
  * - TypeScript гарантирует корректность типов параметров
- * - Невалидный Price не может существовать в runtime
+ * - Невалидный OutcomePrice не может существовать в runtime
  *
  * Архитектура error handling:
  * - Core бросает только SpreadInvariantViolation с BID_GREATER_THAN_ASK

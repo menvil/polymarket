@@ -12,7 +12,7 @@
 import { DumbStrategy } from '../../src/strategies/DumbStrategy.js';
 import type { DumbStrategyConfig } from '../../src/strategies/DumbStrategy.js';
 import type { StrategySnapshot, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { unsafeStrategyId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
@@ -30,7 +30,7 @@ function makeOrder(side: 'BUY' | 'SELL', price: Decimal, id = `order-${side.toLo
   return {
     id: id as any,
     side,
-    price: Price.of(price),
+    price: OutcomePrice.of(price),
   };
 }
 
@@ -64,16 +64,16 @@ function makeSnapshot(overrides: Partial<{
     },
   };
 
-  // Защита от инварианта Price (>= 0.0001)
+  // Защита от инварианта OutcomePrice (>= 0.0001)
   const bestBidValue = Decimal.max(bestAsk.minus('0.02'), new Decimal('0.0001'));
 
   return {
     instrumentId: 'test-instrument' as any,
     market: { expirationMs: Date.now() + 3_600_000 } as any,
     topOfBook: {
-      bestBid: Price.of(bestBidValue),
-      bestAsk: Price.of(bestAsk),
-      spread: Price.of(new Decimal('0.02')),
+      bestBid: OutcomePrice.of(bestBidValue),
+      bestAsk: OutcomePrice.of(bestAsk),
+      spread: OutcomePrice.of(new Decimal('0.02')),
       bestBidSize: undefined,
       bestAskSize: undefined,
     },
@@ -142,7 +142,7 @@ describe('DumbStrategy', () => {
       expect(intents).toHaveLength(1);
       expect(intents[0]).toMatchObject({ type: 'PLACE', side: 'BUY' });
 
-      const intent = intents[0] as { price: Price; size: Quantity };
+      const intent = intents[0] as { price: OutcomePrice; size: Quantity };
       // targetBuyPrice = 0.50 * (1 - 10/100) = 0.50 * 0.9 = 0.45
       expect(intent.price.value().toNumber()).toBe(0.45);
       expect(intent.size.value().toNumber()).toBe(5);
@@ -282,7 +282,7 @@ describe('DumbStrategy', () => {
       expect(intents[0]).toMatchObject({ type: 'PLACE', side: 'SELL' });
 
       // sellPrice = 0.48 * 1.05 = 0.504
-      const intent = intents[0] as { price: Price; size: Quantity };
+      const intent = intents[0] as { price: OutcomePrice; size: Quantity };
       expect(intent.price.value().toNumber()).toBeCloseTo(0.504, 8);
     });
 
@@ -340,7 +340,7 @@ describe('DumbStrategy', () => {
       const snap1 = makeSnapshot({ bestAsk: new Decimal('0.50') });
       const intents1 = strategy.tick(snap1, REASONS);
       expect(intents1).toMatchObject([{ type: 'PLACE', side: 'BUY' }]);
-      expect((intents1[0] as { price: Price }).price.value().toNumber()).toBe(0.45);
+      expect((intents1[0] as { price: OutcomePrice }).price.value().toNumber()).toBe(0.45);
 
       // Шаг 2: ордер в рынке, цена без движения → HOLD
       const snap2 = makeSnapshot({
@@ -361,7 +361,7 @@ describe('DumbStrategy', () => {
       const snap3b = makeSnapshot({ bestAsk: new Decimal('0.60') });
       const intents3b = strategy.tick(snap3b, REASONS);
       expect(intents3b).toMatchObject([{ type: 'PLACE', side: 'BUY' }]);
-      const newBuyPrice = (intents3b[0] as { price: Price }).price.value().toNumber();
+      const newBuyPrice = (intents3b[0] as { price: OutcomePrice }).price.value().toNumber();
       expect(newBuyPrice).toBeCloseTo(0.54, 5); // 0.60 * 0.9
 
       // Шаг 4: BUY исполнился @ 0.54 → позиция открыта, ставим SELL @ 0.54 * 1.05 = 0.567
@@ -372,7 +372,7 @@ describe('DumbStrategy', () => {
       });
       const intents4 = strategy.tick(snap4, REASONS);
       expect(intents4).toMatchObject([{ type: 'PLACE', side: 'SELL' }]);
-      const sellPrice = (intents4[0] as { price: Price }).price.value().toNumber();
+      const sellPrice = (intents4[0] as { price: OutcomePrice }).price.value().toNumber();
       expect(sellPrice).toBeCloseTo(0.567, 5); // 0.54 * 1.05
     });
   });

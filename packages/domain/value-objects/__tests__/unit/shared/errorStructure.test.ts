@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { ErrorSource } from '@polymarket/errors';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
-import { PriceService } from '../../../src/price/facade/PriceService.js';
+import { OutcomePriceService } from '../../../src/outcome-price/facade/OutcomePriceService.js';
 import { QuantityService } from '../../../src/quantity/facade/QuantityService.js';
 import { MoneyService } from '../../../src/money/facade/MoneyService.js';
 import Decimal from 'decimal.js';
@@ -28,8 +28,8 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
       }
     });
 
-    it('помечает ошибки парсинга в PriceService', () => {
-      const result = PriceService.create('invalid' as any);
+    it('помечает ошибки парсинга в OutcomePriceService', () => {
+      const result = OutcomePriceService.create('invalid' as any);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -63,8 +63,8 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
       }
     });
 
-    it('помечает нарушения инвариантов Price (отрицательная цена)', () => {
-      const result = PriceService.create(new Decimal(-1));
+    it('помечает нарушения инвариантов OutcomePrice (отрицательная цена)', () => {
+      const result = OutcomePriceService.create(new Decimal(-1));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -96,13 +96,13 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
   describe('ErrorSource.SERVICE_CALL', () => {
     it('сохраняет source из вложенного сервиса (SERVICE_CALL wrapper)', () => {
-      // QuoteService.create вызывает PriceService.create
-      // Если Price вернёт ошибку с source=core_invariant, она должна сохраниться
+      // QuoteService.create вызывает OutcomePriceService.create
+      // Если OutcomePrice вернёт ошибку с source=core_invariant, она должна сохраниться
       const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // bid=0 - invalid price
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // source должен быть core_invariant (от PriceService), а не service_call
+        // source должен быть core_invariant (от OutcomePriceService), а не service_call
         expect(result.error.context?.source).toBe(ErrorSource.CORE_INVARIANT);
         expect(result.error.context?.component).toBe('bid');
       }
@@ -121,19 +121,19 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
   describe('opChain tracking', () => {
     it('создаёт opChain для single service call', () => {
-      const result = PriceService.create(new Decimal(0));
+      const result = OutcomePriceService.create(new Decimal(0));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         const ctx = result.error.context as ErrorContext;
         const opChain = ctx?.opChain as string[] | undefined;
         expect(opChain).toBeDefined();
-        expect(opChain).toContain('PriceService.create');
+        expect(opChain).toContain('OutcomePriceService.create');
         expect(opChain?.length).toBe(1);
       }
     });
 
-    it('создаёт opChain для nested service calls (QuoteService -> PriceService)', () => {
+    it('создаёт opChain для nested service calls (QuoteService -> OutcomePriceService)', () => {
       const result = QuoteService.create(1.5, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // bid > MAX_PRICE
 
       expect(result.ok).toBe(false);
@@ -144,9 +144,9 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
         expect(opChain).toBeDefined();
         expect(opChain?.length).toBeGreaterThanOrEqual(2);
 
-        // opChain показывает путь [origin -> caller]: ['PriceService.create', 'QuoteService.create']
+        // opChain показывает путь [origin -> caller]: ['OutcomePriceService.create', 'QuoteService.create']
         // Первая операция - где произошла ошибка (origin)
-        expect(opChain?.[0]).toBe('PriceService.create');
+        expect(opChain?.[0]).toBe('OutcomePriceService.create');
 
         // Последняя операция - точка входа (entry point)
         const lastOp = opChain?.[opChain.length - 1];
@@ -164,9 +164,9 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
         expect(opChain).toBeDefined();
 
         // Helpers (createPrice) не добавляются в opChain - они используют op родителя
-        // Но мы видим путь через services: PriceService -> QuoteService
+        // Но мы видим путь через services: OutcomePriceService -> QuoteService
         expect(opChain?.length).toBeGreaterThanOrEqual(2);
-        expect(opChain?.[0]).toBe('PriceService.create');
+        expect(opChain?.[0]).toBe('OutcomePriceService.create');
         expect(opChain).toContain('QuoteService.create');
       }
     });
@@ -193,22 +193,22 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
   describe('service tracking', () => {
     it('устанавливает service для single service call', () => {
-      const result = PriceService.create(new Decimal(0));
+      const result = OutcomePriceService.create(new Decimal(0));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
       }
     });
 
     it('сохраняет service из nested call (root service protection)', () => {
-      // QuoteService вызывает PriceService
-      // service должен остаться "PriceService" (где произошла первичная ошибка)
+      // QuoteService вызывает OutcomePriceService
+      // service должен остаться "OutcomePriceService" (где произошла первичная ошибка)
       const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.service).toBe('OutcomePriceService');
       }
     });
 
@@ -257,7 +257,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // source=core_invariant от PriceService должен сохраниться
+        // source=core_invariant от OutcomePriceService должен сохраниться
         expect(result.error.context?.source).toBe(ErrorSource.CORE_INVARIANT);
         // Но добавляется новый контекст (component)
         expect(result.error.context?.component).toBe('bid');
@@ -269,7 +269,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // reason от PriceService должен сохраниться
+        // reason от OutcomePriceService должен сохраниться
         expect(result.error.context?.reason).toBeDefined();
         // Но добавляется component от QuoteService
         expect(result.error.context?.component).toBe('ask');
@@ -292,7 +292,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
   describe('integration: complex nested calls', () => {
     it('трассирует полный путь через multiple services', () => {
-      // QuoteService.create -> createPrice -> PriceService.create
+      // QuoteService.create -> createPrice -> OutcomePriceService.create
       const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
@@ -302,13 +302,13 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
         // Проверяем все компоненты error structure
         expect(ctx?.source).toBe(ErrorSource.CORE_INVARIANT);
-        expect(ctx?.service).toBe('PriceService');
+        expect(ctx?.service).toBe('OutcomePriceService');
         expect(opChain).toBeDefined();
         expect(opChain?.length).toBeGreaterThan(1);
 
-        // opChain показывает путь [origin -> entry]: ['PriceService.create', 'QuoteService.create']
+        // opChain показывает путь [origin -> entry]: ['OutcomePriceService.create', 'QuoteService.create']
         // Первая операция - где произошла ошибка
-        expect(opChain?.[0]).toBe('PriceService.create');
+        expect(opChain?.[0]).toBe('OutcomePriceService.create');
 
         // Последняя операция - точка входа
         const lastOp = opChain?.[opChain.length - 1];
@@ -329,12 +329,12 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
         expect(parseResult.error.context?.service).toBe('QuoteService');
       }
 
-      // Core invariant error в PriceService (через QuoteService)
+      // Core invariant error в OutcomePriceService (через QuoteService)
       const invariantResult = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(invariantResult.ok).toBe(false);
       if (!invariantResult.ok) {
         expect(invariantResult.error.context?.source).toBe(ErrorSource.CORE_INVARIANT);
-        expect(invariantResult.error.context?.service).toBe('PriceService');
+        expect(invariantResult.error.context?.service).toBe('OutcomePriceService');
       }
     });
   });

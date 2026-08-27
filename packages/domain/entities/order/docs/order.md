@@ -66,7 +66,7 @@ const result = Order.create({
   id: asOrderId('order-1')!,
   asset: myAsset,
   side: 'BUY',
-  price: Price.of(new Decimal('0.65')),
+  price: OutcomePrice.of(new Decimal('0.65')),
   size: Quantity.of(new Decimal('100')),
   timestamp: Timestamp.now(),
 });
@@ -86,7 +86,7 @@ if (result.ok) {
   const fillResult = open.applyFill({
     id: fillId, orderId: pending.id, asset: myAsset, side: 'BUY',
     size: Quantity.of(new Decimal('100')),
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
   });
   if (!fillResult.ok) throw new Error(fillResult.error.message);
   const fillEvents = fillResult.value.pullEvents(); // [OrderFilledEvent]
@@ -138,7 +138,7 @@ const result = OrderDeserializer.fromSnapshot({
 | `id`         | `OrderId`        | ID заявки              |
 | `asset`      | `AssetId`        | Торгуемый актив        |
 | `side`       | `'BUY' \| 'SELL'`| Сторона                |
-| `price`      | `Price`          | Лимитная цена          |
+| `price`      | `OutcomePrice`          | Лимитная цена          |
 | `size`       | `Quantity`       | Полный размер          |
 | `status`     | `OrderStatus`    | Текущий статус         |
 | `timestamp`  | `Timestamp`      | Время создания         |
@@ -150,7 +150,7 @@ const result = OrderDeserializer.fromSnapshot({
 | Геттер         | Тип                | Описание                  |
 |----------------|--------------------|---------------------------|
 | `filledSize`   | `Quantity`         | Исполненный объём         |
-| `averagePrice` | `Price \| undefined`| VWAP, undefined если нет fills |
+| `averagePrice` | `OutcomePrice \| undefined`| VWAP, undefined если нет fills |
 | `fillIds`      | `readonly FillId[]`| Список ID fills           |
 | `tradeCount`   | `number`           | Количество fills          |
 

@@ -494,13 +494,13 @@ function validateAndLogQuantity(
 
 ```typescript
 import { toChain } from '@polymarket/result';
-import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
+import { InvalidOutcomePriceError, InvalidQuantityError } from '@polymarket/errors';
 
 function createOrder(
   priceInput: number,
   qtyInput: number
-): Result<Order, InvalidPriceError | InvalidQuantityError> {
-  return toChain(Price.fromNumber(priceInput))
+): Result<Order, InvalidOutcomePriceError | InvalidQuantityError> {
+  return toChain(OutcomePrice.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
@@ -515,7 +515,7 @@ if (orderResult.ok) {
   console.log('Order created:', orderResult.value);
 } else {
   // Обработка обоих типов ошибок
-  if (orderResult.error.code === InvalidPriceError.code) {
+  if (orderResult.error.code === InvalidOutcomePriceError.code) {
     showError('Invalid price');
   } else if (orderResult.error.code === InvalidQuantityError.code) {
     showError('Invalid quantity');
@@ -528,7 +528,7 @@ if (orderResult.ok) {
 ## Связанные ошибки
 
 - [InvalidAmountError](./invalid-amount.md) - универсальная валидация чисел
-- [InvalidPriceError](./invalid-price.md) - валидация цен
+- [InvalidOutcomePriceError](./invalid-price.md) - валидация цен
 
 ## См. также
 

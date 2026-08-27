@@ -45,7 +45,7 @@ import {
   asInstrumentId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, FillId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Fee, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee, Money } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Order } from '@polymarket/order';
@@ -122,7 +122,7 @@ const TOKEN_INSTRUMENT_ID = asInstrumentId('token-abc-integration')!;
 const MARKET_ID = asMarketId('market-integration-001')!;
 const ORDER_ID = asOrderId('order-integration-001')!;
 const FILL_ID = asFillId('fill-integration-001')!;
-const FILL_PRICE = Price.of(new Decimal('0.65'));
+const FILL_PRICE = OutcomePrice.of(new Decimal('0.65'));
 const ORDER_SIZE = Quantity.of(new Decimal('50'));
 const FILL_SIZE = Quantity.of(new Decimal('50'));
 
@@ -186,7 +186,7 @@ function makeFill(overrides: {
   id?: FillId;
   orderId?: OrderId;
   size?: Quantity;
-  price?: Price;
+  price?: OutcomePrice;
 } = {}): Fill {
   return unwrap(Fill.create({
     id: overrides.id ?? FILL_ID,
@@ -405,7 +405,7 @@ describe('ProcessFillUseCase (integration)', () => {
       id: asFillId('fill-partial-001')!,
       orderId,
       size: Quantity.of(new Decimal('30')),
-      price: Price.of(new Decimal('0.65')),
+      price: OutcomePrice.of(new Decimal('0.65')),
     });
 
     const result1 = await useCase.execute(fill1);
@@ -420,7 +420,7 @@ describe('ProcessFillUseCase (integration)', () => {
       id: asFillId('fill-partial-002')!,
       orderId,
       size: Quantity.of(new Decimal('70')),
-      price: Price.of(new Decimal('0.70')),
+      price: OutcomePrice.of(new Decimal('0.70')),
     });
 
     const result2 = await useCase.execute(fill2);

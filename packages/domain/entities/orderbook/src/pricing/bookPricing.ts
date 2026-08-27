@@ -13,7 +13,7 @@
  * ```
  *
  * Чтобы собрать `(bid + ask) / 2` обратно в цену, нужно знать, какой
- * фабрикой это делать — `PriceService.create` для рынка предсказаний или
+ * фабрикой это делать — `OutcomePriceService.create` для рынка предсказаний или
  * `AssetPriceService.create` для внешнего актива. Пока такие методы
  * жили внутри `Orderbook`, сущность была обязана знать ровно один домен, и
  * именно это делало её непригодной для стакана биржи.
@@ -22,7 +22,7 @@
  * вызывающий, он же и связывает фабрику один раз:
  *
  * ```typescript
- * const pricing = bookPricing(PriceService.create);
+ * const pricing = bookPricing(OutcomePriceService.create);
  * pricing.midPrice(book);
  * ```
  *
@@ -37,7 +37,7 @@
  * или цена актива. Поэтому реализация ОДНА, а не по классу на домен —
  * иначе мы бы размножили одну формулу под разными именами.
  */
-import type { Price, Spread, DecimalPrice } from '@polymarket/value-objects';
+import type { OutcomePrice, Spread, DecimalPrice } from '@polymarket/value-objects';
 import { Spread as SpreadCore } from '@polymarket/value-objects';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
@@ -50,7 +50,7 @@ import type { Orderbook } from '../core/Orderbook.js';
  * Фабрика цены конкретного домена.
  *
  * @remarks
- * Совместима с `PriceService.create` / `AssetPriceService.create` как
+ * Совместима с `OutcomePriceService.create` / `AssetPriceService.create` как
  * есть — специально писать адаптер не нужно.
  */
 export type PriceFactory<TPrice extends DecimalPrice> = (
@@ -102,15 +102,15 @@ export interface BookPricing<TPrice extends DecimalPrice> {
 /**
  * Связывает ценовые метрики стакана с фабрикой конкретного домена.
  *
- * @param create - Фабрика цены (`PriceService.create` и подобные)
+ * @param create - Фабрика цены (`OutcomePriceService.create` и подобные)
  * @returns Набор метрик, работающий в этом домене
  *
  * @example
  * ```typescript
- * import { PriceService } from '@polymarket/value-objects';
+ * import { OutcomePriceService } from '@polymarket/value-objects';
  * import { bookPricing } from '@polymarket/orderbook';
  *
- * const pricing = bookPricing(PriceService.create);
+ * const pricing = bookPricing(OutcomePriceService.create);
  *
  * const mid = pricing.midPrice(book);
  * const spread = pricing.spread(book);
@@ -119,7 +119,7 @@ export interface BookPricing<TPrice extends DecimalPrice> {
  * }
  * ```
  */
-export function bookPricing<TPrice extends DecimalPrice = Price>(
+export function bookPricing<TPrice extends DecimalPrice = OutcomePrice>(
   create: PriceFactory<TPrice>,
 ): BookPricing<TPrice> {
   const spread = (book: Orderbook<TPrice>): Result<Spread<TPrice>, OrderbookInvalidError> => {

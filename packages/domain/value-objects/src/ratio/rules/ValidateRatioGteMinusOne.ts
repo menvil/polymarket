@@ -5,7 +5,7 @@
  * Проверяет, что ratio >= -1, что гарантирует (1 + ratio) >= 0
  * Используется для операций:
  * - Money.addRate(ratio): amount * (1 + ratio)
- * - Price.applyMarkup(ratio): price * (1 + ratio)
+ * - OutcomePrice.applyMarkup(ratio): price * (1 + ratio)
  *
  * @example
  * ```typescript

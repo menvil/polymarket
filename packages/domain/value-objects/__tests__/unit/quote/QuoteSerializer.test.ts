@@ -3,7 +3,7 @@ import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { describe, it, expect } from '@jest/globals';
 import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js';
 import { Quote } from '../../../src/quote/core/index.js';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { TimestampService } from '@polymarket/timestamp';
 
@@ -23,8 +23,8 @@ describe('QuoteSerializer', () => {
   describe('toJSON()', () => {
     it('сериализует двустороннюю котировку в JSON', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1234567890000)
@@ -43,7 +43,7 @@ describe('QuoteSerializer', () => {
 
     it('сериализует bid-only котировку', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
@@ -61,7 +61,7 @@ describe('QuoteSerializer', () => {
     it('сериализует ask-only котировку', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.51)),
+        OutcomePrice.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         createTestTimestamp(1234567890000)
@@ -520,8 +520,8 @@ describe('QuoteSerializer', () => {
   describe('toJSONString()', () => {
     it('сериализует Quote в JSON-строку', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1234567890000)
@@ -539,8 +539,8 @@ describe('QuoteSerializer', () => {
 
     it('правильно форматирует JSON', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1234567890000)
@@ -610,8 +610,8 @@ describe('QuoteSerializer', () => {
 
     it('roundtrip: toJSONString() -> fromJSONString() сохраняет данные', () => {
       const original = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1234567890000)
@@ -631,8 +631,8 @@ describe('QuoteSerializer', () => {
   describe('roundtrip', () => {
     it('toJSON() -> fromJSON() сохраняет данные', () => {
       const original = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1234567890000)

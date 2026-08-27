@@ -8,7 +8,7 @@ import {
   wrapOp
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { Price, PriceService } from '../../price/index.js';
+import { OutcomePrice, OutcomePriceService } from '../../outcome-price/index.js';
 import { Spread } from '../core/index.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
@@ -38,15 +38,15 @@ import { Ratio, RatioService } from '../../ratio/index.js';
  * **Правило возвращаемых типов:**
  * ВСЕ операции возвращают Result<T, InvalidSpreadError>
  * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
- * Все внутренние ошибки (InvalidPriceError, InvalidRatioError) преобразуются в InvalidSpreadError через rewrap
+ * Все внутренние ошибки (InvalidOutcomePriceError, InvalidRatioError) преобразуются в InvalidSpreadError через rewrap
  *
  * @example
  * ```typescript
  * import { SpreadService } from '@polymarket/value-objects/spread';
- * import { PriceService } from '@polymarket/value-objects/price';
+ * import { OutcomePriceService } from '@polymarket/value-objects/outcome-price';
  *
- * const bidResult = PriceService.create(0.48);
- * const askResult = PriceService.create(0.52);
+ * const bidResult = OutcomePriceService.create(0.48);
+ * const askResult = OutcomePriceService.create(0.52);
  * if (isErr(bidResult) || isErr(askResult)) {
  *   // handle error
  * }
@@ -67,7 +67,7 @@ export class SpreadService {
   // ============================================================================
 
   /**
-   * Создать Spread из Price объектов
+   * Создать Spread из OutcomePrice объектов
    *
    * @param bid - Bid price
    * @param ask - Ask price
@@ -79,8 +79,8 @@ export class SpreadService {
    *
    * @example
    * ```typescript
-   * const bidResult = PriceService.create(0.48);
-   * const askResult = PriceService.create(0.52);
+   * const bidResult = OutcomePriceService.create(0.48);
+   * const askResult = OutcomePriceService.create(0.52);
    * if (isErr(bidResult) || isErr(askResult)) return;
    *
    * const result = SpreadService.create(bidResult.value, askResult.value);
@@ -91,7 +91,7 @@ export class SpreadService {
    * }
    * ```
    */
-  public static create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError> {
+  public static create(bid: OutcomePrice, ask: OutcomePrice): Result<Spread, InvalidSpreadError> {
     // Валидация через Rule (опционально, можно положиться на Core инвариант)
     const validationResult = ValidateBidAsk.check(bid, ask);
     if (isErr(validationResult)) {
@@ -181,8 +181,8 @@ export class SpreadService {
           );
         }
 
-        // Создаём Price объекты через PriceService
-        const bidResult = PriceService.create(bidDecimalResult.value);
+        // Создаём OutcomePrice объекты через OutcomePriceService
+        const bidResult = OutcomePriceService.create(bidDecimalResult.value);
         if (isErr(bidResult)) {
           throw rewrap(
             SpreadService.SERVICE_NAME,
@@ -196,7 +196,7 @@ export class SpreadService {
           );
         }
 
-        const askResult = PriceService.create(askDecimalResult.value);
+        const askResult = OutcomePriceService.create(askDecimalResult.value);
         if (isErr(askResult)) {
           throw rewrap(
             SpreadService.SERVICE_NAME,
@@ -230,32 +230,32 @@ export class SpreadService {
    *
    * @remarks
    * **Исключение из контракта "Never Throw"**: этот метод возвращает Spread напрямую
-   * (не Result), поскольку нулевой spread из валидного Price гарантированно валиден.
+   * (не Result), поскольку нулевой spread из валидного OutcomePrice гарантированно валиден.
    * Все остальные методы SpreadService возвращают Result.
    *
    * @example
    * ```typescript
-   * const priceResult = PriceService.create(0.50);
+   * const priceResult = OutcomePriceService.create(0.50);
    * if (priceResult.ok) {
    *   const spread = SpreadService.zero(priceResult.value);
    *   console.log(spread.width().toNumber()); // 0
    * }
    * ```
    */
-  public static zero(price: Price): Spread {
+  public static zero(price: OutcomePrice): Spread {
     return Spread.zero(price);
   }
 
   /**
    * Создать Spread от midpoint и относительной ширины
    *
-   * @param mid - Midpoint цена (Price | Decimal | number | string)
+   * @param mid - Midpoint цена (OutcomePrice | Decimal | number | string)
    * @param widthRatio - Относительная ширина как Ratio (Ratio | Decimal | number | string)
    * @returns Result со Spread или InvalidSpreadError
    *
    * @remarks
    * **Алгоритм:**
-   * 1. Parse mid to Price
+   * 1. Parse mid to OutcomePrice
    * 2. Parse widthRatio to Ratio
    * 3. Validate widthRatio >= 0
    * 4. widthAbs = mid * widthRatio
@@ -291,24 +291,24 @@ export class SpreadService {
    * ```
    */
   public static fromMidAndWidthRatio(
-    mid: Price | Decimal | number | string,
+    mid: OutcomePrice | Decimal | number | string,
     widthRatio: Ratio | Decimal | number | string
   ): Result<Spread, InvalidSpreadError> {
     return wrapOp(
       SpreadService.SERVICE_NAME,
       'fromMidAndWidthRatio',
       {
-        mid: mid instanceof Price ? mid.value().toString() : String(mid),
+        mid: mid instanceof OutcomePrice ? mid.value().toString() : String(mid),
         widthRatio: widthRatio instanceof Ratio ? widthRatio.toDecimal().toString() : String(widthRatio)
       },
       () => {
-        // 1. Parse mid to Price
-        let midPrice: Price;
-        if (mid instanceof Price) {
+        // 1. Parse mid to OutcomePrice
+        let midPrice: OutcomePrice;
+        if (mid instanceof OutcomePrice) {
           midPrice = mid;
         } else {
           const midDecimal = mid instanceof Decimal ? mid : new Decimal(mid);
-          const midResult = PriceService.create(midDecimal);
+          const midResult = OutcomePriceService.create(midDecimal);
           if (isErr(midResult)) {
             throw new InvalidSpreadError(
               (ctx) => `Invalid mid price: ${ctx.midError}`,
@@ -374,8 +374,8 @@ export class SpreadService {
         // 7. ask = mid + half
         const askValue = midPrice.value().plus(half);
 
-        // 8. Create Price objects
-        const bidResult = PriceService.create(bidValue);
+        // 8. Create OutcomePrice objects
+        const bidResult = OutcomePriceService.create(bidValue);
         if (isErr(bidResult)) {
           throw new InvalidSpreadError(
             (ctx) => `Cannot create bid price from mid and widthRatio: ${ctx.bidError}`,
@@ -392,7 +392,7 @@ export class SpreadService {
           );
         }
 
-        const askResult = PriceService.create(askValue);
+        const askResult = OutcomePriceService.create(askValue);
         if (isErr(askResult)) {
           throw new InvalidSpreadError(
             (ctx) => `Cannot create ask price from mid and widthRatio: ${ctx.askError}`,
@@ -938,17 +938,17 @@ export class SpreadService {
    * Получает mid price для spread
    *
    * @remarks
-   * Создаёт Price из spread.mid() Decimal значения через PriceService.
+   * Создаёт OutcomePrice из spread.mid() Decimal значения через OutcomePriceService.
    * Математически mid всегда в границах если bid/ask валидны, но метод возвращает
    * Result для соблюдения контракта "Never Throw".
    *
    * Алгоритм:
    * 1. Вычисляет mid через spread.mid() - (bid + ask) / 2
-   * 2. Создаёт Price объект через PriceService.create()
+   * 2. Создаёт OutcomePrice объект через OutcomePriceService.create()
    * 3. Если создание не удалось (не должно случиться), возвращает Err
    *
    * @param spread - Spread для вычисления mid
-   * @returns Result с Price mid или InvalidSpreadError
+   * @returns Result с OutcomePrice mid или InvalidSpreadError
    *
    * @throws {InvalidSpreadError} Никогда не бросает - возвращает Result
    *
@@ -963,7 +963,7 @@ export class SpreadService {
    * }
    * ```
    */
-  public static getMidPrice(spread: Spread): Result<Price, InvalidSpreadError> {
+  public static getMidPrice(spread: Spread): Result<OutcomePrice, InvalidSpreadError> {
     const op = 'getMidPrice';
     const midDecimal = spread.mid();
 
@@ -975,7 +975,7 @@ export class SpreadService {
       // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
       // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
       // Но мы всё равно обрабатываем через Result для безопасности
-      const priceResult = PriceService.create(midDecimal);
+      const priceResult = OutcomePriceService.create(midDecimal);
       if (isErr(priceResult)) {
         // Это не должно случиться, но если случилось - обрабатываем корректно
         return Err(rewrap(
@@ -1007,7 +1007,7 @@ export class SpreadService {
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const widthResult = SpreadService.getSpreadWidth(spread);
    *
    * if (widthResult.ok) {
@@ -1050,13 +1050,13 @@ export class SpreadService {
    * 3. Создаем Ratio.of(result)
    *
    * **Возможные ошибки:**
-   * - MID_UNAVAILABLE — если midpoint = 0 (теоретически невозможно для Price, но защита)
+   * - MID_UNAVAILABLE — если midpoint = 0 (теоретически невозможно для OutcomePrice, но защита)
    *
    * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const ratioResult = SpreadService.getSpreadRatio(spread);
    *
    * if (ratioResult.ok) {
@@ -1091,7 +1091,7 @@ export class SpreadService {
 
         const mid = midResult.value.value();
 
-        // 2. Check for zero midpoint (теоретически невозможно для Price, но защита)
+        // 2. Check for zero midpoint (теоретически невозможно для OutcomePrice, но защита)
         if (mid.isZero()) {
           throw new InvalidSpreadError(
             () => 'Cannot compute spread ratio: midpoint is zero',
@@ -1138,7 +1138,7 @@ export class SpreadService {
    * **Валидация:**
    * - mid и width должны быть finite
    * - width должен быть неотрицательным
-   * - Результирующие bid и ask должны быть валидными Price
+   * - Результирующие bid и ask должны быть валидными OutcomePrice
    *
    * @example
    * ```typescript
@@ -1189,12 +1189,12 @@ export class SpreadService {
       const askDecimal = addDecimal(midDecimal, halfWidth);
 
       // 5. Create prices
-      const bidResult = PriceService.create(bidDecimal);
+      const bidResult = OutcomePriceService.create(bidDecimal);
       if (isErr(bidResult)) {
         return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, bidResult.error, InvalidSpreadError));
       }
 
-      const askResult = PriceService.create(askDecimal);
+      const askResult = OutcomePriceService.create(askDecimal);
       if (isErr(askResult)) {
         return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, askResult.error, InvalidSpreadError));
       }
@@ -1221,7 +1221,7 @@ export class SpreadService {
    * **Валидация:**
    * - mid должен быть finite
    * - widthPercentage должен быть валидным процентом (через RatioService)
-   * - Результирующие bid и ask должны быть валидными Price
+   * - Результирующие bid и ask должны быть валидными OutcomePrice
    *
    * **Опции:**
    * - ensureLteOne: гарантировать что ratio <= 1 (для ширины <= 100%)
@@ -1662,13 +1662,13 @@ export class SpreadService {
    *
    * **Возможные ошибки:**
    * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
-   * - RATIO_OUT_OF_BOUNDS — если после сдвига bid/ask выходят за границы Price [0.0001, 0.9999]
+   * - RATIO_OUT_OF_BOUNDS — если после сдвига bid/ask выходят за границы OutcomePrice [0.0001, 0.9999]
    *
    * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const shiftRatio = Ratio.of(new Decimal(0.05)); // 5% вверх
    *
    * const result = SpreadService.shiftByRatio(spread, shiftRatio);
@@ -1773,13 +1773,13 @@ export class SpreadService {
    * **Возможные ошибки:**
    * - NEGATIVE_RATIO_NOT_ALLOWED — если deltaWidthRatio < 0
    * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
-   * - RATIO_OUT_OF_BOUNDS — если после расширения bid/ask выходят за границы Price
+   * - RATIO_OUT_OF_BOUNDS — если после расширения bid/ask выходят за границы OutcomePrice
    *
    * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
    *
    * const result = SpreadService.widenByRatio(spread, deltaRatio);
@@ -1901,13 +1901,13 @@ export class SpreadService {
    * **Возможные ошибки:**
    * - NEGATIVE_RATIO_NOT_ALLOWED — если deltaWidthRatio < 0
    * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
-   * - RATIO_OUT_OF_BOUNDS — если после сужения bid/ask выходят за границы Price
+   * - RATIO_OUT_OF_BOUNDS — если после сужения bid/ask выходят за границы OutcomePrice
    *
    * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
    *
    * const result = SpreadService.tightenByRatio(spread, deltaRatio);
@@ -2027,13 +2027,13 @@ export class SpreadService {
    *
    * **Возможные ошибки:**
    * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
-   * - RATIO_OUT_OF_BOUNDS — если после skew bid/ask выходят за границы Price или bid > ask
+   * - RATIO_OUT_OF_BOUNDS — если после skew bid/ask выходят за границы OutcomePrice или bid > ask
    *
    * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
    *
    * @example
    * ```typescript
-   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const spread = Spread.of(OutcomePrice.of(0.48), OutcomePrice.of(0.52));
    * const bidRatio = Ratio.of(new Decimal(0.02));  // +2% от mid
    * const askRatio = Ratio.of(new Decimal(-0.01)); // -1% от mid
    *
@@ -2115,18 +2115,18 @@ export class SpreadService {
   // ============================================================================
 
   /**
-   * Создать Price с полным error context
+   * Создать OutcomePrice с полным error context
    *
    * @remarks
-   * Централизует логику создания Price объектов в операциях (tighten/widen/shift).
+   * Централизует логику создания OutcomePrice объектов в операциях (tighten/widen/shift).
    * Добавляет полный error context включая source, raw, reason fields.
    *
    * @param op - Название операции (tighten/widen/shift)
    * @param field - Название поля ('bid' или 'ask')
-   * @param value - Decimal значение для Price
+   * @param value - Decimal значение для OutcomePrice
    * @param spread - Исходный spread для контекста
    * @param operationDesc - Описание операции для контекста
-   * @returns Result с Price или InvalidSpreadError
+   * @returns Result с OutcomePrice или InvalidSpreadError
    *
    * @example
    * ```typescript
@@ -2145,8 +2145,8 @@ export class SpreadService {
     value: Decimal,
     spread: Spread,
     operationDesc: string
-  ): Result<Price, InvalidSpreadError> {
-    const priceResult = PriceService.create(value);
+  ): Result<OutcomePrice, InvalidSpreadError> {
+    const priceResult = OutcomePriceService.create(value);
     if (isErr(priceResult)) {
       return Err(
         rewrap(

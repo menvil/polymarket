@@ -166,7 +166,7 @@ export class PolymarketOrderBuilder {
       this.getRoundConfig(priceTick).price,
     );
 
-    this.logger.debug('Price calculation', {
+    this.logger.debug('OutcomePrice calculation', {
       inputPrice: params.price,
       priceTick,
       priceRounded,

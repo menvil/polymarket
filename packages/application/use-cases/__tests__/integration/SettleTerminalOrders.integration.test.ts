@@ -28,7 +28,7 @@ import type { IPosition } from '@polymarket/portfolio';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import type { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
-import { Price, Quantity, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Money } from '@polymarket/value-objects';
 import { Balance } from '@polymarket/value-objects/balance';
 import { UpdateOrderStatusUseCase } from '../../src/UpdateOrderStatusUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
@@ -124,7 +124,7 @@ function makeOpenOrder(): Order {
     id: ORDER_ID,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')) as never,
+    price: OutcomePrice.of(new Decimal('0.65')) as never,
     size: Quantity.of(new Decimal('100')) as never,
     timestamp: { value: () => new Decimal(1000), toNumber: () => 1000, toISO: () => '2024-01-01T00:00:00.000Z' } as never,
   });
@@ -142,7 +142,7 @@ function makeFill(id: string, size = '50'): Fill {
     accountId: ACCOUNT_ID,
     tokenId: ASSET_ID,
     settlementAssetId: 'USDC' as unknown as AssetId,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal(size)),
     side: 'BUY',
     timestamp: { value: () => new Decimal(1000), toNumber: () => 1000 } as never,
@@ -159,7 +159,7 @@ function makeTradeSnapshot(size = '50', status: VenueTradeSnapshot['status'] = '
     marketId: 'market-1' as unknown as MarketId,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal(size)),
     fee: { amount: Quantity.of(new Decimal('0')), asset: 'USDC' } as never,
     executedAt: { toNumber: () => Date.now() } as never,

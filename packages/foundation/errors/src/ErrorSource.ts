@@ -5,7 +5,7 @@
  * Enum для явного указания этапа, на котором произошла ошибка.
  * Упрощает отладку и мониторинг, позволяя быстро определить:
  * - Parsing: ошибка парсинга входных данных (toDecimal)
- * - Core Invariant: нарушение инварианта домена (Price.of, Quote.of и т.д.)
+ * - Core Invariant: нарушение инварианта домена (OutcomePrice.of, Quote.of и т.д.)
  * - Rule Validation: нарушение бизнес-правила (Rules.check)
  * - Math Operation: ошибка математической операции (@polymarket/math)
  * - Service Call: ошибка из вложенного service вызова
@@ -23,7 +23,7 @@
  * // result.error.context.source === ErrorSource.PARSING
  *
  * // Core invariant violation
- * const price = PriceService.create(Decimal(-1));
+ * const price = OutcomePriceService.create(Decimal(-1));
  * // price.error.context.source === ErrorSource.CORE_INVARIANT
  *
  * // Rule validation
@@ -36,7 +36,7 @@
  *
  * // Service call error
  * const quote = QuoteService.create(timestamp, bid, bidSize, askSize);
- * // Если bid невалиден через PriceService.create:
+ * // Если bid невалиден через OutcomePriceService.create:
  * // quote.error.context.source === ErrorSource.SERVICE_CALL
  * ```
  *
@@ -56,7 +56,7 @@ export enum ErrorSource {
    * Нарушение инварианта Core класса
    *
    * @remarks
-   * Возникает при вызове Price.of(), Quote.of(), Balance.of() и т.д.
+   * Возникает при вызове OutcomePrice.of(), Quote.of(), Balance.of() и т.д.
    * Содержит context.reason с типизированной причиной нарушения.
    */
   CORE_INVARIANT = 'core_invariant',
@@ -84,7 +84,7 @@ export enum ErrorSource {
    *
    * @remarks
    * Возникает когда один Service вызывает другой и получает Err.
-   * Например, QuoteService.create вызывает PriceService.create.
+   * Например, QuoteService.create вызывает OutcomePriceService.create.
    * Содержит context.cause с оригинальной ошибкой.
    */
   SERVICE_CALL = 'service_call',

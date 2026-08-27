@@ -36,7 +36,7 @@
 import { readFileSync } from 'fs';
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import type { StrategyId } from '@polymarket/ids';
@@ -731,14 +731,14 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
       if (action.type === 'BUY') {
         intents.push({
           type: 'PLACE', side: 'BUY',
-          price: Price.of(new Decimal(action.price).div(100)),
+          price: OutcomePrice.of(new Decimal(action.price).div(100)),
           size:  Quantity.of(action.size),
           postOnly: this._postOnly,
         });
       } else if (action.type === 'SELL') {
         intents.push({
           type: 'PLACE', side: 'SELL',
-          price: Price.of(new Decimal(action.price).div(100)),
+          price: OutcomePrice.of(new Decimal(action.price).div(100)),
           size:  Quantity.of(action.size),
           postOnly: false,
         });

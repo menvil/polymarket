@@ -13,7 +13,7 @@ import { ExecutionLinker } from '../src/services/ExecutionLinker.js';
 import { TradeIndexCollector } from '@polymarket/market-state';
 import { Trade } from '@polymarket/trade';
 import { PaperClock } from '@polymarket/time';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import { asVenueTradeId, asVenueId } from '@polymarket/ids';
@@ -56,7 +56,7 @@ function makeFill(overrides: { id: string; price: string; size: string; timestam
     venueId: 'POLYMARKET' as unknown as VenueId,
     marketId: MARKET_ID,
     tokenId: TOKEN_ID,
-    price: Price.of(new Decimal(overrides.price)),
+    price: OutcomePrice.of(new Decimal(overrides.price)),
     size: Quantity.of(new Decimal(overrides.size)),
     side: 'BUY',
     timestamp: ts(overrides.timestampMs),
@@ -69,7 +69,7 @@ function makeTrade(overrides: { idSuffix: string; price: string; size: string; m
     venueId: VENUE_ID_TYPED,
     marketId: MARKET_ID,
     tokenId: TOKEN_ID,
-    price: Price.of(new Decimal(overrides.price)),
+    price: OutcomePrice.of(new Decimal(overrides.price)),
     size: Quantity.of(new Decimal(overrides.size)),
     aggressorSide: 'BUY',
     timestamp: ts(overrides.ms),

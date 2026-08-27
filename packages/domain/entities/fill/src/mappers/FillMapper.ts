@@ -87,7 +87,7 @@ import {
   accountIdToString,
   assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
@@ -532,7 +532,7 @@ export class FillMapper {
         if (!matchedAmountResult.ok) return Err(matchedAmountResult.error);
         const makerSizeDecimal = matchedAmountResult.value;
 
-        const makerPrice = Price.of(makerPriceDecimal);
+        const makerPrice = OutcomePrice.of(makerPriceDecimal);
         const makerSize = Quantity.of(makerSizeDecimal);
 
         // MAKER fee = 0 на Polymarket. Комиссию платит только TAKER.
@@ -578,7 +578,7 @@ export class FillMapper {
       return Ok(results);
     }
 
-    const price = Price.of(priceDecimal);
+    const price = OutcomePrice.of(priceDecimal);
     const size = Quantity.of(sizeDecimal);
 
     // TAKER fee по формуле Polymarket. MAKER fee = 0 (обработан выше, isMaker=true → return).
@@ -783,9 +783,9 @@ export class FillMapper {
       );
     }
 
-    let price: Price;
+    let price: OutcomePrice;
     try {
-      price = Price.of(priceDecimal);
+      price = OutcomePrice.of(priceDecimal);
     } catch {
       return Err(
         new ValidationError('Invalid snapshot: price must be positive', {

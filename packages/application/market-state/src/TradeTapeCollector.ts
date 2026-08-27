@@ -207,7 +207,7 @@ export class TradeTapeCollector {
    */
   public recordDirect(
     instrumentId: InstrumentId,
-    price: import('@polymarket/value-objects').Price,
+    price: import('@polymarket/value-objects').OutcomePrice,
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
     timestamp: import('@polymarket/timestamp').Timestamp,
@@ -255,7 +255,7 @@ export class TradeTapeCollector {
    */
   private _record(
     instrumentId: InstrumentId,
-    price: import('@polymarket/value-objects').Price,
+    price: import('@polymarket/value-objects').OutcomePrice,
     size: import('@polymarket/value-objects').Quantity,
     side: Side,
     timestamp: import('@polymarket/timestamp').Timestamp,

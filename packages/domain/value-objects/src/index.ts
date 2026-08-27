@@ -24,8 +24,8 @@ export type { SupportedCurrency } from './money/index.js';
 // от ЛЮБОГО ценового домена; см. shared/DecimalPrice.ts
 export type { DecimalPrice } from './shared/index.js';
 
-// Price модуль (только публичный API)
-export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
+// OutcomePrice модуль (только публичный API)
+export { OutcomePrice, OutcomePriceService, OutcomePriceSerializer, OutcomePriceFormatter, OutcomePriceErrorReason } from './outcome-price/index.js';
 
 // AssetPrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
 export {

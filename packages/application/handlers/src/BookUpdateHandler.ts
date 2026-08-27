@@ -38,9 +38,9 @@ import type { ILogger } from '@polymarket/logger';
 import { Orderbook, bookPricing, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { KnownVenues } from '@polymarket/ids';
-import type { Price } from '@polymarket/value-objects';
+import type { OutcomePrice } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
-import { PriceService } from '@polymarket/value-objects';
+import { OutcomePriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/application-events';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
@@ -55,7 +55,7 @@ import type { IBookRegistry } from './IBookRegistry.js';
  * ценового домена не знает, поэтому создание производных цен (ширина
  * спреда) выполняется здесь, где домен известен.
  */
-const PREDICTION_PRICING = bookPricing(PriceService.create);
+const PREDICTION_PRICING = bookPricing(OutcomePriceService.create);
 
 /**
  * Обработчик снапшотов стакана — применяет к реестру, публикует BOOK_UPDATED/BOOK_DEPTH.
@@ -164,10 +164,10 @@ export class BookUpdateHandler {
     // логики. spread() уже само отсеивает crossed/empty/one-sided книги через
     // Err — отдельная проверка "spread > 0" (как в старом mutable OrderBook)
     // не нужна.
-    let spread: Price | undefined;
+    let spread: OutcomePrice | undefined;
     const spreadResult = PREDICTION_PRICING.spread(book);
     if (spreadResult.ok) {
-      const priceResult = PriceService.create(spreadResult.value.width());
+      const priceResult = OutcomePriceService.create(spreadResult.value.width());
       if (priceResult.ok) spread = priceResult.value;
     }
 

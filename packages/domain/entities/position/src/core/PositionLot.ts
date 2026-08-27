@@ -12,20 +12,20 @@
  *
  * Инварианты:
  * - quantity должен быть валидным Quantity VO
- * - entryPrice должен быть валидным Price VO
+ * - entryPrice должен быть валидным OutcomePrice VO
  * - timestamp должен быть валидным Timestamp VO
  * - fee опциональный Fee VO
  *
  * @example
  * ```typescript
  * import { PositionLot } from '@polymarket/position';
- * import { Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
+ * import { OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
  * const lot = PositionLot.create({
  *   quantity: Quantity.of(new Decimal(100)),
- *   entryPrice: Price.of(new Decimal(0.65)),
+ *   entryPrice: OutcomePrice.of(new Decimal(0.65)),
  *   timestamp: Timestamp.now(),
  *   fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
  * });
@@ -35,7 +35,7 @@ import { Timestamp } from '@polymarket/timestamp';
  * ```
  */
 
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -45,7 +45,7 @@ import Decimal from 'decimal.js';
  */
 export interface PositionLotParams {
   readonly quantity: Quantity;
-  readonly entryPrice: Price;
+  readonly entryPrice: OutcomePrice;
   readonly timestamp: Timestamp;
   readonly fee?: Fee;
 }
@@ -60,7 +60,7 @@ export interface PositionLotParams {
 export class PositionLot {
   private constructor(
     public readonly quantity: Quantity,
-    public readonly entryPrice: Price,
+    public readonly entryPrice: OutcomePrice,
     public readonly timestamp: Timestamp,
     public readonly fee?: Fee
   ) {
@@ -80,7 +80,7 @@ export class PositionLot {
    * ```typescript
    * const lot = PositionLot.create({
    *   quantity: Quantity.of(new Decimal(100)),
-   *   entryPrice: Price.of(new Decimal(0.65)),
+   *   entryPrice: OutcomePrice.of(new Decimal(0.65)),
    *   timestamp: Timestamp.now(),
    * });
    * ```
@@ -128,7 +128,7 @@ export class PositionLot {
    * ```typescript
    * const originalLot = PositionLot.create({
    *   quantity: Quantity.of(new Decimal(100)),
-   *   entryPrice: Price.of(new Decimal(0.65)),
+   *   entryPrice: OutcomePrice.of(new Decimal(0.65)),
    *   timestamp: Timestamp.now(),
    * });
    *
@@ -211,7 +211,7 @@ export class PositionLot {
    * ```typescript
    * const lot = PositionLot.create({
    *   quantity: Quantity.of(new Decimal(100)),
-   *   entryPrice: Price.of(new Decimal(0.65)),
+   *   entryPrice: OutcomePrice.of(new Decimal(0.65)),
    *   timestamp: Timestamp.now(),
    * });
    *

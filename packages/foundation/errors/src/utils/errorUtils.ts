@@ -1,6 +1,6 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 // toDecimal() здесь централизует ~390 строк парсинга, общих для facade create()-методов
-// MoneyService/PriceService/QuantityService/etc. (см. докблок ниже). Не может жить в
+// MoneyService/OutcomePriceService/QuantityService/etc. (см. докблок ниже). Не может жить в
 // packages/domain/value-objects — value-objects сам зависит от errors за классами ошибок,
 // обратная зависимость создала бы цикл. Точечное исключение для ОДНОГО файла пакета
 // (не пакетное off, как у value-objects/math — остальной foundation/errors к Decimal
@@ -12,7 +12,7 @@ import { InvalidAssetQuantityError } from '../value-objects/InvalidAssetQuantity
 import { InvalidMoneyError } from '../value-objects/InvalidMoneyError.js';
 import { InvalidOutcomeTokenError } from '../value-objects/InvalidOutcomeTokenError.js';
 import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.js';
-import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
+import { InvalidOutcomePriceError } from '../value-objects/InvalidOutcomePriceError.js';
 import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
 import { InvalidQuoteError } from '../value-objects/InvalidQuoteError.js';
 import { InvalidRatioError } from '../value-objects/InvalidRatioError.js';
@@ -34,7 +34,7 @@ import { ErrorSource } from '../ErrorSource.js';
  * Utility functions для обработки ошибок в Facade сервисах
  *
  * @remarks
- * Устраняет дублирование ~390 строк кода между MoneyService, PriceService, QuantityService, BalanceService, QuoteService.
+ * Устраняет дублирование ~390 строк кода между MoneyService, OutcomePriceService, QuantityService, BalanceService, QuoteService.
  *
  * Этот модуль содержит pure functions для:
  * - Извлечения cause из ошибок
@@ -65,7 +65,7 @@ import { ErrorSource } from '../ErrorSource.js';
  * для конкретных Service методов.
  *
  * Категории ошибок:
- * - Валидация диапазонов: Price, Quantity, Percentage, Ratio, Amount
+ * - Валидация диапазонов: OutcomePrice, Quantity, Percentage, Ratio, Amount
  * - Денежные значения: Money, Balance, CurrencyMismatch
  * - Торговые объекты: AssetQuantity, Fee, Side, SignedQuantity, Spread, Quote, OutcomeToken
  * - Временные значения: Timestamp
@@ -81,7 +81,7 @@ import { ErrorSource } from '../ErrorSource.js';
  */
 export type AnyTradingError =
   // Валидация диапазонов
-  | InvalidPriceError
+  | InvalidOutcomePriceError
   | InvalidQuantityError
   | InvalidPercentageError
   | InvalidRatioError
@@ -187,7 +187,7 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  * @param field - Имя поля (для структурированного raw)
  * @param input - Входное значение
  * @param reasonEnum - Enum значение для INVALID_FORMAT (напр. MoneyErrorReason.INVALID_FORMAT)
- * @param ErrorConstructor - Конструктор ошибки (InvalidMoneyError / InvalidPriceError / InvalidQuantityError)
+ * @param ErrorConstructor - Конструктор ошибки (InvalidMoneyError / InvalidOutcomePriceError / InvalidQuantityError)
  * @param options - Опциональные причины для NaN и Infinity (если не указаны — используется reasonEnum)
  * @param options.nanReason - Reason для NaN значений (напр. RatioErrorReason.NAN)
  * @param options.nonFiniteReason - Reason для Infinity/-Infinity значений (напр. RatioErrorReason.NON_FINITE)
@@ -449,7 +449,7 @@ export function developerMisuseError<TError extends AnyTradingError>(
  * @returns TError с source, reason и cause (без service/op - добавятся через rewrap)
  *
  * @remarks
- * Используется для обработки нарушений инвариантов Core (PriceInvariantViolation, etc).
+ * Используется для обработки нарушений инвариантов Core (OutcomePriceInvariantViolation, etc).
  * Сохраняет reason из исключения Core и полный cause с stack trace.
  *
  * Фабрика ТОЛЬКО добавляет семантику (source, reason, cause).
@@ -521,7 +521,7 @@ export function isExpectedMathError(e: unknown): e is Error {
  * Это устойчивее к переименованию классов.
  *
  * Поддерживаемые типы (по name):
- * - PriceInvariantViolation
+ * - OutcomePriceInvariantViolation
  * - QuantityInvariantViolation
  * - MoneyInvariantViolation
  * - BalanceInvariantViolation
@@ -533,7 +533,7 @@ export function isExpectedMathError(e: unknown): e is Error {
  * @example
  * ```typescript
  * // Новый подход (стабильный):
- * class PriceInvariantViolation extends Error {
+ * class OutcomePriceInvariantViolation extends Error {
  *   kind = 'INVARIANT_VIOLATION' as const;
  *   reason: string;
  *   constructor(message: string, reason: string) {
@@ -560,7 +560,7 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
 
   // Fallback: проверяем по name (для обратной совместимости)
   return (
-    e.name === 'PriceInvariantViolation' ||
+    e.name === 'OutcomePriceInvariantViolation' ||
     e.name === 'QuantityInvariantViolation' ||
     e.name === 'MoneyInvariantViolation' ||
     e.name === 'BalanceInvariantViolation' ||
@@ -756,7 +756,7 @@ export function rewrap<TError extends AnyTradingError>(
 /**
  * Оборачивает facade операцию в try/catch с централизованной обработкой ошибок
  *
- * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
+ * @param serviceName - Название сервиса ('QuoteService', 'OutcomePriceService', и т.д.)
  * @param op - Название операции
  * @param ctx - Контекст операции
  * @param fn - Функция выполняющая операцию (может включать math, create, rules)
@@ -770,7 +770,7 @@ export function rewrap<TError extends AnyTradingError>(
  *
  * **Строгий типовой контракт:**
  * Гарантирует `Result<T, TError>` - всегда возвращается ошибка типа TError.
- * "Чужие" TradingError (например InvalidMoneyError в контексте InvalidPriceError)
+ * "Чужие" TradingError (например InvalidMoneyError в контексте InvalidOutcomePriceError)
  * конвертируются в TError через unexpectedError, с сохранением оригинальных данных
  * в полях originalErrorName, originalErrorCode, originalErrorContext.
  *
@@ -813,7 +813,7 @@ export function wrapOp<T, TError extends AnyTradingError>(
     }
     return result;
   } catch (e) {
-    // Core invariant violations (PriceInvariantViolation, etc) - обрабатываем ПЕРВЫМИ
+    // Core invariant violations (OutcomePriceInvariantViolation, etc) - обрабатываем ПЕРВЫМИ
     if (isCoreInvariantViolation(e)) {
       // Фабрика добавляет source+reason, rewrap добавляет service+op+opChain
       const factoryError = coreInvariantError(e, ErrorConstructor);
@@ -827,7 +827,7 @@ export function wrapOp<T, TError extends AnyTradingError>(
         // Тот же тип - rewrap с добавлением service+op+opChain
         return Err(rewrap(serviceName, op, ctx, e, ErrorConstructor));
       } else if (isExpectedMathError(e)) {
-        // Чужой TradingError НО это expected math error (например InvalidRoundingModeError при ErrorConstructor=InvalidPriceError)
+        // Чужой TradingError НО это expected math error (например InvalidRoundingModeError при ErrorConstructor=InvalidOutcomePriceError)
         // Классифицируем как math_operation, НЕ unexpected
         const factoryError = expectedMathError(e, ErrorConstructor);
         return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));

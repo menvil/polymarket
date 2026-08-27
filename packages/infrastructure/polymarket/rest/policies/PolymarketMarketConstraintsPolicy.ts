@@ -100,7 +100,7 @@ export class PolymarketMarketConstraintsPolicy {
 
       // КРИТИЧНО: API иногда возвращает priceTick < 0.01, но ОТКЛОНЯЕТ ордера с таким шагом!
       // Пример: API возвращает minimum_price_tick=0.0001, но отклоняет ордер с ошибкой:
-      // "Price (0.518990099009901) breaks minimum tick size rule: 0.01"
+      // "OutcomePrice (0.518990099009901) breaks minimum tick size rule: 0.01"
       //
       // Причина: API вычисляет цену как makerAmount/takerAmount и проверяет против шага 0.01.
       // Решение: Используем max(0.01, minimum_price_tick) как безопасный минимум.

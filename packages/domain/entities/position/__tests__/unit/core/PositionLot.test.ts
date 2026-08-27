@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
@@ -12,7 +12,7 @@ describe('PositionLot', () => {
   const createTestLot = () => {
     return PositionLot.create({
       quantity: Quantity.of(new Decimal(100)),
-      entryPrice: Price.of(new Decimal(0.65)),
+      entryPrice: OutcomePrice.of(new Decimal(0.65)),
       timestamp: Timestamp.of(new Decimal(1705318200000)),
       fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
     });
@@ -31,7 +31,7 @@ describe('PositionLot', () => {
     it('создает PositionLot без fee', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -51,7 +51,7 @@ describe('PositionLot', () => {
     it('возвращает true для нулевого quantity', () => {
       const lot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -128,13 +128,13 @@ describe('PositionLot', () => {
     it('возвращает true для лотов с одинаковыми параметрами', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -152,7 +152,7 @@ describe('PositionLot', () => {
       const lot1 = createTestLot();
       const lot2 = PositionLot.create({
         quantity: lot1.quantity,
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: lot1.timestamp,
       });
 
@@ -173,14 +173,14 @@ describe('PositionLot', () => {
     it('не учитывает fee при сравнении', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
         fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
       });
 
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
         fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0)))),
       });
@@ -193,7 +193,7 @@ describe('PositionLot', () => {
     it('вычисляет notional value (quantity * entryPrice)', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -206,7 +206,7 @@ describe('PositionLot', () => {
     it('вычисляет notional для дробных значений', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(75.5)),
-        entryPrice: Price.of(new Decimal(0.48)),
+        entryPrice: OutcomePrice.of(new Decimal(0.48)),
         timestamp: Timestamp.now(),
       });
 
@@ -218,7 +218,7 @@ describe('PositionLot', () => {
     it('возвращает 0 для пустого лота', () => {
       const lot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -232,7 +232,7 @@ describe('PositionLot', () => {
     it('возвращает строковое представление', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -246,7 +246,7 @@ describe('PositionLot', () => {
     it('форматирует quantity с 2 знаками', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(123.456)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -258,7 +258,7 @@ describe('PositionLot', () => {
     it('форматирует price с 4 знаками', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.654321)),
+        entryPrice: OutcomePrice.of(new Decimal(0.654321)),
         timestamp: Timestamp.now(),
       });
 
@@ -286,7 +286,7 @@ describe('PositionLot', () => {
     it('работает без fee', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -333,7 +333,7 @@ describe('PositionLot', () => {
     it('работает с очень маленьким quantity', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(0.00001)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -344,7 +344,7 @@ describe('PositionLot', () => {
     it('работает с очень большим quantity', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(1000000)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 

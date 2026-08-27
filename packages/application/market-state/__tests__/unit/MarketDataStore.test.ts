@@ -4,7 +4,7 @@ import { unsafeRunId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
 import { asInstrumentId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { MarketDataStore } from '../../src/MarketDataStore.js';
 import type { MarketDataStoreDeps, MarketDataReason } from '../../src/MarketDataStore.js';
@@ -101,7 +101,7 @@ function makeRealTradeEvent(overrides?: { instrumentId?: InstrumentId; timestamp
   return {
     type: 'TRADE_RECEIVED' as const,
     instrumentId: overrides?.instrumentId ?? REAL_INSTRUMENT_1,
-    price: Price.of(new Decimal(0.6)),
+    price: OutcomePrice.of(new Decimal(0.6)),
     size: Quantity.of(new Decimal(50)),
     side: 'BUY' as const,
     timestamp: Timestamp.of(new Decimal(overrides?.timestampMs ?? 1_700_000_000_000)),

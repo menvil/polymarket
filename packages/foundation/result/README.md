@@ -225,11 +225,11 @@ import { unwrap, expectOk, unwrapErr, expectErr } from '@polymarket/result/unsaf
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-function createPrice(value: number): Result<number, InvalidPriceError> {
+function createPrice(value: number): Result<number, InvalidOutcomePriceError> {
   if (value < 0.01 || value > 0.99) {
-    return Err(new InvalidPriceError(value));
+    return Err(new InvalidOutcomePriceError(value));
   }
   return Ok(value);
 }
@@ -1127,7 +1127,7 @@ if (result.ok) {
 // Для композиции нескольких операций используйте вложенные вызовы или chaining
 
 // Вариант 1: Функциональный подход с явными шагами
-const step1 = validatePrice(price); // Result<Price, InvalidPriceError>
+const step1 = validatePrice(price); // Result<OutcomePrice, InvalidOutcomePriceError>
 const step2 = flatMap(
   step1,
   validatedPrice => validateQuantity(qty, validatedPrice) // Result<Quantity, InvalidQuantityError>
@@ -1167,7 +1167,7 @@ if (orderResult1.ok) {
   // TypeScript знает все возможные типы ошибок
   const error = orderResult1.error;
 
-  if (error instanceof InvalidPriceError) {
+  if (error instanceof InvalidOutcomePriceError) {
     console.log('Некорректная цена:', error.context);
   } else if (error instanceof MarketError) {
     console.log('Ошибка рынка:', error.message);
@@ -1285,7 +1285,7 @@ Application Layer                      # Layer 3
 
 ```typescript
 // ✅ Хорошо - валидация может упасть (ожидаемо)
-function validatePrice(price: number): Result<Price, ValidationError> {
+function validatePrice(price: number): Result<OutcomePrice, ValidationError> {
   // ...
 }
 

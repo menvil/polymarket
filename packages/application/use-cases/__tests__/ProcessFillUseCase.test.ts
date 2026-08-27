@@ -26,7 +26,7 @@ import { InMemoryProcessedFillRepository } from '../../../infrastructure/in-memo
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import { Order } from '@polymarket/order';
@@ -77,8 +77,8 @@ function makeOutbox(
   });
 }
 
-function makePrice(val: string): Price {
-  return Price.of(new Decimal(val));
+function makePrice(val: string): OutcomePrice {
+  return OutcomePrice.of(new Decimal(val));
 }
 
 function makeQty(val: string): Quantity {
@@ -1363,7 +1363,7 @@ describe('ProcessFillUseCase', () => {
       const service = new PortfolioService(store, logger);
       const r = service.applyFillAgainstHeldReservation({
         fill: makeFill(), // BUY
-        orderPrice: Price.of(new Decimal('0.65')),
+        orderPrice: OutcomePrice.of(new Decimal('0.65')),
         reservationKind: 'TOKENS', // BUY обязан быть USDC
       });
       expect(r.ok).toBe(false);

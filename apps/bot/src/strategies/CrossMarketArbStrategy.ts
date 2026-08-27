@@ -46,7 +46,7 @@ import type { Result } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { IStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot } from '@polymarket/strategy';
@@ -130,8 +130,8 @@ export interface ITopOfBookReader {
 export interface ArbTradePlan {
   readonly easyInstrumentId: InstrumentId;
   readonly hardInstrumentId: InstrumentId;
-  readonly easyPrice: Price;
-  readonly hardPrice: Price;
+  readonly easyPrice: OutcomePrice;
+  readonly hardPrice: OutcomePrice;
   readonly size: Quantity;
   readonly direction: ArbDirection;
   readonly estimatedCostPerUnit: number;
@@ -627,7 +627,7 @@ export class CrossMarketArbStrategy implements IStrategy {
    * Обрабатывает ArbitrageSignal от DivergenceDetector.
    *
    * @param signal - Сигнал расхождения (с оптимальной глубиной и PnL)
-   * @param easyTopOfBook - TopOfBook easy рынка (для получения Price VO)
+   * @param easyTopOfBook - TopOfBook easy рынка (для получения OutcomePrice VO)
    * @param nowMs - Текущее время
    * @param snapshot - Для portfolio/balance
    */
@@ -696,8 +696,8 @@ export class CrossMarketArbStrategy implements IStrategy {
     const easyUpAsk = optimal.easyUpVwap;
     const hardDownAsk = 1 - optimal.hardUpVwap;
 
-    const cbEasyPrice = Price.of(new Decimal(easyUpAsk.toFixed(4)));
-    const cbHardPrice = Price.of(new Decimal(hardDownAsk.toFixed(4)));
+    const cbEasyPrice = OutcomePrice.of(new Decimal(easyUpAsk.toFixed(4)));
+    const cbHardPrice = OutcomePrice.of(new Decimal(hardDownAsk.toFixed(4)));
 
     this._logger?.info('Arbitrage opportunity', {
       hardUpBid: optimal.hardUpVwap.toFixed(4),

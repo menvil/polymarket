@@ -191,7 +191,7 @@ enum ErrorSource {
   opChain: [
     "QuoteService.create",        // 1. Точка входа
     "QuoteService.createPrice",   // 2. Helper внутри сервиса
-    "PriceService.create"         // 3. Вложенный сервис (место ошибки)
+    "OutcomePriceService.create"         // 3. Вложенный сервис (место ошибки)
   ]
 }
 ```
@@ -477,7 +477,7 @@ function isCoreInvariantViolation(e: unknown): e is Error & { reason: string }
 
 **Поддерживаемые типы**:
 
-- PriceInvariantViolation
+- OutcomePriceInvariantViolation
 - QuantityInvariantViolation
 - MoneyInvariantViolation
 - BalanceInvariantViolation
@@ -520,18 +520,18 @@ function toCause(e: unknown): { name: string; message: string; stack?: string }
 
 ```typescript
 // Фабрика создаёт ошибку с service/op
-const err = coreInvariantError('PriceService', 'create', ctx, e, InvalidPriceError);
+const err = coreInvariantError('OutcomePriceService', 'create', ctx, e, InvalidOutcomePriceError);
 // rewrap добавляет service/op снова
-return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
+return Err(rewrap('OutcomePriceService', 'create', ctx, err, InvalidOutcomePriceError));
 ```
 
 ✅ **Правильно** (один проход):
 
 ```typescript
 // Фабрика создаёт ошибку только с reason/source/cause
-const err = coreInvariantError(e, InvalidPriceError);
+const err = coreInvariantError(e, InvalidOutcomePriceError);
 // rewrap добавляет service/op один раз
-return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
+return Err(rewrap('OutcomePriceService', 'create', ctx, err, InvalidOutcomePriceError));
 ```
 
 ### Поток обработки ошибок
@@ -541,13 +541,13 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
      ↓
 [toDecimal()] → source=PARSING, reason=INVALID_FORMAT
      ↓
-[Price.of()] → бросает PriceInvariantViolation
+[OutcomePrice.of()] → бросает OutcomePriceInvariantViolation
      ↓
 [coreInvariantError()] → source=CORE_INVARIANT, reason=OUT_OF_RANGE_HIGH
      ↓
-[rewrap()] → добавляет service="PriceService", op="create", opChain=["PriceService.create"]
+[rewrap()] → добавляет service="OutcomePriceService", op="create", opChain=["OutcomePriceService.create"]
      ↓
-[Result<Price, InvalidPriceError>]
+[Result<OutcomePrice, InvalidOutcomePriceError>]
 ```
 
 ### Сохранение root-данных

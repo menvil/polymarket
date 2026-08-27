@@ -4,13 +4,13 @@
  * @remarks
  * Это и есть цель foundation-изменения: одна структура данных и одна
  * арифметика для рынка предсказаний и для биржевого стакана. До него
- * `Orderbook` был жёстко типизирован `Price [0.0001, 0.9999]`, и стакан
+ * `Orderbook` был жёстко типизирован `OutcomePrice [0.0001, 0.9999]`, и стакан
  * BTC/USDT на 78 468 был непредставим В ПРИНЦИПЕ.
  */
 import { describe, expect, it } from '@jest/globals';
 import {
-  Price,
-  PriceService,
+  OutcomePrice,
+  OutcomePriceService,
   AssetPrice,
   AssetPriceService,
   QuantityService,
@@ -33,7 +33,7 @@ const qty = (raw: string) => {
   return q.value;
 };
 
-const predictionPricing = bookPricing(PriceService.create);
+const predictionPricing = bookPricing(OutcomePriceService.create);
 const assetPricing = bookPricing(AssetPriceService.create);
 
 describe('рынок предсказаний (домен [0.0001, 0.9999])', () => {
@@ -41,8 +41,8 @@ describe('рынок предсказаний (домен [0.0001, 0.9999])', ()
     venueId: KnownVenues.POLYMARKET,
     marketId: MARKET,
     instrumentId: TOKEN,
-    bids: [OrderbookLevel.create(Price.of(new Decimal('0.50')), qty('10'))],
-    asks: [OrderbookLevel.create(Price.of(new Decimal('0.52')), qty('30'))],
+    bids: [OrderbookLevel.create(OutcomePrice.of(new Decimal('0.50')), qty('10'))],
+    asks: [OrderbookLevel.create(OutcomePrice.of(new Decimal('0.52')), qty('30'))],
     receivedAt: AT.value,
   });
 
@@ -72,7 +72,7 @@ describe('биржевой стакан (домен (0, ∞))', () => {
 
   it('стакан на 78 468 вообще СУЩЕСТВУЕТ — раньше был непредставим', () => {
     // Доказательство «в лоб»: prediction-цена такое значение принять не может
-    expect(PriceService.create('78468.50').ok).toBe(false);
+    expect(OutcomePriceService.create('78468.50').ok).toBe(false);
     expect(book.getBestBid()?.value().toString()).toBe('78468.5');
   });
 
@@ -112,8 +112,8 @@ describe('структурные операции домена не знают',
       marketId: MARKET,
       instrumentId: TOKEN,
       bids: [
-        OrderbookLevel.create(Price.of(new Decimal('0.50')), qty('10')),
-        OrderbookLevel.create(Price.of(new Decimal('0.49')), qty('20')),
+        OrderbookLevel.create(OutcomePrice.of(new Decimal('0.50')), qty('10')),
+        OrderbookLevel.create(OutcomePrice.of(new Decimal('0.49')), qty('20')),
       ],
       asks: [],
       receivedAt: AT.value,

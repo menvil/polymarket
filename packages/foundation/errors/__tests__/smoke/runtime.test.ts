@@ -19,7 +19,7 @@ import { execSync } from 'node:child_process';
 
 // Импорты из исходного кода (для проверки API)
 import { TradingError } from '../../src/base/TradingError.js';
-import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
+import { InvalidOutcomePriceError } from '../../src/value-objects/InvalidOutcomePriceError.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
 import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityError.js';
 import { InvalidBalanceError } from '../../src/value-objects/InvalidBalanceError.js';
@@ -75,7 +75,7 @@ describe('Runtime Publication Smoke Tests', () => {
 import('@polymarket/errors')
   .then((mod) => {
     if (!mod.TradingError) throw new Error('TradingError not exported');
-    if (!mod.InvalidPriceError) throw new Error('InvalidPriceError not exported');
+    if (!mod.InvalidOutcomePriceError) throw new Error('InvalidOutcomePriceError not exported');
     if (!mod.ErrorSource) throw new Error('ErrorSource not exported');
     console.log('SUCCESS: @polymarket/errors imports correctly');
     process.exit(0);
@@ -148,7 +148,7 @@ import('@polymarket/errors/base')
       const script = `
 import('@polymarket/errors/value-objects')
   .then((mod) => {
-    if (!mod.InvalidPriceError) throw new Error('InvalidPriceError not exported from /value-objects');
+    if (!mod.InvalidOutcomePriceError) throw new Error('InvalidOutcomePriceError not exported from /value-objects');
     if (!mod.InvalidMoneyError) throw new Error('InvalidMoneyError not exported from /value-objects');
     console.log('SUCCESS: @polymarket/errors/value-objects imports correctly');
     process.exit(0);
@@ -182,7 +182,7 @@ import('@polymarket/errors/value-objects')
 
     it('should have correct ESM imports with .js extensions in dist/', () => {
       // Проверяем что в dist/ все относительные импорты имеют .js расширения
-      const indexPath = resolve(distPath, 'value-objects/InvalidPriceError.js');
+      const indexPath = resolve(distPath, 'value-objects/InvalidOutcomePriceError.js');
       const content = readFileSync(indexPath, 'utf-8');
 
       // Проверяем что нет импортов вида "from '../base'" (без .js)
@@ -202,7 +202,7 @@ import('@polymarket/errors/value-objects')
 
     it('should export all value object errors', () => {
       expect(InvalidMoneyError).toBeDefined();
-      expect(InvalidPriceError).toBeDefined();
+      expect(InvalidOutcomePriceError).toBeDefined();
       expect(InvalidQuantityError).toBeDefined();
       expect(InvalidBalanceError).toBeDefined();
       expect(ArithmeticOverflowError).toBeDefined();
@@ -226,8 +226,8 @@ import('@polymarket/errors/value-objects')
   });
 
   describe('Runtime behavior', () => {
-    it('should create InvalidPriceError with correct properties', () => {
-      const error = new InvalidPriceError('Price must be positive', {
+    it('should create InvalidOutcomePriceError with correct properties', () => {
+      const error = new InvalidOutcomePriceError('OutcomePrice must be positive', {
         code: 'PRICE_NEGATIVE',
         context: {
           source: ErrorSource.CORE_INVARIANT,
@@ -237,7 +237,7 @@ import('@polymarket/errors/value-objects')
 
       expect(error).toBeInstanceOf(Error);
       expect(error).toBeInstanceOf(TradingError);
-      expect(error.message).toBe('Price must be positive');
+      expect(error.message).toBe('OutcomePrice must be positive');
       expect(error.code).toBe('PRICE_NEGATIVE');
       expect(error.context?.source).toBe(ErrorSource.CORE_INVARIANT);
       expect(error.context?.price).toBe('-10');
@@ -248,7 +248,7 @@ import('@polymarket/errors/value-objects')
         'price',
         '123.45',
         'INVALID_FORMAT',
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(result.ok).toBe(true);
@@ -258,22 +258,22 @@ import('@polymarket/errors/value-objects')
     });
 
     it('should use rewrap to preserve error metadata', () => {
-      const originalError = new InvalidPriceError('Original error', {
+      const originalError = new InvalidOutcomePriceError('Original error', {
         code: 'PRICE_TOO_HIGH',
         context: { price: '1000' },
       });
 
       const rewrapped = rewrap(
-        'PriceService',
+        'OutcomePriceService',
         'validate',
         { orderId: 'order-123' },
         originalError,
-        InvalidPriceError
+        InvalidOutcomePriceError
       );
 
       expect(rewrapped.message).toBe('Original error');
       expect(rewrapped.code).toBe('PRICE_TOO_HIGH');
-      expect(rewrapped.context?.service).toBe('PriceService');
+      expect(rewrapped.context?.service).toBe('OutcomePriceService');
       expect(rewrapped.context?.op).toBe('validate');
       expect(rewrapped.context?.orderId).toBe('order-123');
       expect(rewrapped.context?.price).toBe('1000');
@@ -286,7 +286,7 @@ import('@polymarket/errors/value-objects')
       const divZeroErr = new DivisionByZeroError('Division by zero', {
         context: {},
       });
-      const priceErr = new InvalidPriceError('Invalid price', {
+      const priceErr = new InvalidOutcomePriceError('Invalid price', {
         context: {},
       });
 
@@ -303,7 +303,7 @@ import('@polymarket/errors/value-objects')
         'ErrorSource.d.ts',
         'base/TradingError.d.ts',
         'value-objects/InvalidMoneyError.d.ts',
-        'value-objects/InvalidPriceError.d.ts',
+        'value-objects/InvalidOutcomePriceError.d.ts',
         'value-objects/InvalidQuantityError.d.ts',
         'utils/errorUtils.d.ts',
       ];

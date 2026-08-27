@@ -3,12 +3,12 @@
  *
  * @remarks
  * Отдельно фиксируется главное различие доменов: значение, которое
- * `PriceService` обязан ОТВЕРГНУТЬ, `AssetPriceService` обязан принять.
+ * `OutcomePriceService` обязан ОТВЕРГНУТЬ, `AssetPriceService` обязан принять.
  */
 import { describe, expect, it } from '@jest/globals';
 import Decimal from 'decimal.js';
 import {
-  PriceService,
+  OutcomePriceService,
   AssetPriceErrorReason,
   AssetPriceService,
 } from '../../../../src/index.js';
@@ -72,14 +72,14 @@ describe('AssetPriceService.create', () => {
   });
 });
 
-describe('разделение доменов с Price', () => {
-  it('цена актива отвергается Price и принимается AssetPrice', () => {
-    expect(PriceService.create('79341.36').ok).toBe(false);
+describe('разделение доменов с OutcomePrice', () => {
+  it('цена актива отвергается OutcomePrice и принимается AssetPrice', () => {
+    expect(OutcomePriceService.create('79341.36').ok).toBe(false);
     expect(AssetPriceService.create('79341.36').ok).toBe(true);
   });
 
   it('вероятностная цена валидна в обоих доменах — они пересекаются, но не совпадают', () => {
-    expect(PriceService.create('0.42').ok).toBe(true);
+    expect(OutcomePriceService.create('0.42').ok).toBe(true);
     expect(AssetPriceService.create('0.42').ok).toBe(true);
   });
 });

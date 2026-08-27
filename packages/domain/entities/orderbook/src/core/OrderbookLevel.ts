@@ -6,15 +6,15 @@
  * Неизменяемый value object.
  *
  * Инварианты:
- * - price должен быть валидным Price VO
+ * - price должен быть валидным OutcomePrice VO
  * - quantity должен быть валидным Quantity VO (может быть 0)
  *
  * @example
  * ```typescript
- * import { PriceService, QuantityService } from '@polymarket/value-objects';
+ * import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
  * import { OrderbookLevel } from './OrderbookLevel';
  *
- * const priceResult = PriceService.create(0.52);
+ * const priceResult = OutcomePriceService.create(0.52);
  * const quantityResult = QuantityService.create(100);
  *
  * if (priceResult.ok && quantityResult.ok) {
@@ -24,7 +24,7 @@
  * ```
  */
 
-import type { DecimalPrice, Price, Quantity } from '@polymarket/value-objects';
+import type { DecimalPrice, OutcomePrice, Quantity } from '@polymarket/value-objects';
 
 /**
  * Уровень в стакане заявок
@@ -33,7 +33,7 @@ import type { DecimalPrice, Price, Quantity } from '@polymarket/value-objects';
  * Immutable value object для одного price level.
  * Используется как в bids, так и в asks.
  */
-export class OrderbookLevel<TPrice extends DecimalPrice = Price> {
+export class OrderbookLevel<TPrice extends DecimalPrice = OutcomePrice> {
   private constructor(
     public readonly price: TPrice,
     public readonly quantity: Quantity
@@ -49,11 +49,11 @@ export class OrderbookLevel<TPrice extends DecimalPrice = Price> {
    * @returns OrderbookLevel
    *
    * @remarks
-   * Простой конструктор без валидации - Price и Quantity уже валидированы.
+   * Простой конструктор без валидации - OutcomePrice и Quantity уже валидированы.
    *
    * @example
    * ```typescript
-   * const priceResult = PriceService.create(0.52);
+   * const priceResult = OutcomePriceService.create(0.52);
    * const quantityResult = QuantityService.create(100);
    * if (priceResult.ok && quantityResult.ok) {
    *   const level = OrderbookLevel.create(priceResult.value, quantityResult.value);

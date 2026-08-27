@@ -11,7 +11,7 @@
 
 import { PaperFillSimulator } from '../../src/paper/PaperFillSimulator.js';
 import type { PendingPaperOrder } from '../../src/paper/PaperFillSimulator.js';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 // ── Хелперы и моки ──────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ function makeOrder(overrides: Partial<PendingPaperOrder> = {}): PendingPaperOrde
     instrumentId: 'instr-abc' as any,
     marketId: 'market-abc' as any,
     side: 'BUY',
-    price: Price.of(new Decimal('0.48')),
+    price: OutcomePrice.of(new Decimal('0.48')),
     totalSize: Quantity.of(new Decimal('10')),
     remainingSize: new Decimal('10'),
     accountId: 'venue:POLYMARKET:test' as any,
@@ -108,8 +108,8 @@ function makeBookEvent(instrumentId: string, bestBid?: number, bestAsk?: number)
     payload: {
       instrumentId,
       topOfBook: {
-        bestBid: bestBid !== undefined ? Price.of(new Decimal(bestBid)) : undefined,
-        bestAsk: bestAsk !== undefined ? Price.of(new Decimal(bestAsk)) : undefined,
+        bestBid: bestBid !== undefined ? OutcomePrice.of(new Decimal(bestBid)) : undefined,
+        bestAsk: bestAsk !== undefined ? OutcomePrice.of(new Decimal(bestAsk)) : undefined,
       },
     },
   };
@@ -121,7 +121,7 @@ function makeTradeEvent(instrumentId: string, price: number, size: number) {
     type: 'TRADE_RECEIVED',
     payload: {
       instrumentId,
-      price: Price.of(new Decimal(price)),
+      price: OutcomePrice.of(new Decimal(price)),
       size: Quantity.of(new Decimal(size)),
     },
   };
@@ -191,7 +191,7 @@ describe('PaperFillSimulator', () => {
 
   describe('Book crossing — BUY ордера', () => {
     it('full fill когда bestAsk ≤ orderPrice', async () => {
-      simulator.trackOrder(makeOrder({ side: 'BUY', price: Price.of(new Decimal('0.48')) }));
+      simulator.trackOrder(makeOrder({ side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')) }));
 
       // bestAsk = 0.47 ≤ 0.48 → fill
       eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.45, 0.47));
@@ -202,7 +202,7 @@ describe('PaperFillSimulator', () => {
     });
 
     it('full fill когда bestAsk = orderPrice (граничное значение)', async () => {
-      simulator.trackOrder(makeOrder({ side: 'BUY', price: Price.of(new Decimal('0.48')) }));
+      simulator.trackOrder(makeOrder({ side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')) }));
 
       eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.46, 0.48));
       await tick();
@@ -211,7 +211,7 @@ describe('PaperFillSimulator', () => {
     });
 
     it('нет fill когда bestAsk > orderPrice', async () => {
-      simulator.trackOrder(makeOrder({ side: 'BUY', price: Price.of(new Decimal('0.48')) }));
+      simulator.trackOrder(makeOrder({ side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')) }));
 
       // bestAsk = 0.50 > 0.48 → нет fill
       eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.47, 0.50));
@@ -237,7 +237,7 @@ describe('PaperFillSimulator', () => {
     it('full fill когда bestBid ≥ orderPrice', async () => {
       simulator.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
       }));
 
       // bestBid = 0.56 ≥ 0.55 → fill
@@ -251,7 +251,7 @@ describe('PaperFillSimulator', () => {
     it('нет fill когда bestBid < orderPrice', async () => {
       simulator.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
       }));
 
       eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.53, 0.55));
@@ -274,7 +274,7 @@ describe('PaperFillSimulator', () => {
       sim.start();
       sim.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
         totalSize: Quantity.of(new Decimal('10')),
       }));
 
@@ -303,7 +303,7 @@ describe('PaperFillSimulator', () => {
       sim.start();
       sim.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
         totalSize: Quantity.of(new Decimal('10')),
       }));
 
@@ -322,7 +322,7 @@ describe('PaperFillSimulator', () => {
     it('full fill когда trade.size >= remainingSize', async () => {
       simulator.trackOrder(makeOrder({
         side: 'BUY',
-        price: Price.of(new Decimal('0.48')),
+        price: OutcomePrice.of(new Decimal('0.48')),
         totalSize: Quantity.of(new Decimal('10')),
         remainingSize: new Decimal('10'),
       }));
@@ -338,7 +338,7 @@ describe('PaperFillSimulator', () => {
     it('partial fill когда trade.size < remainingSize', async () => {
       simulator.trackOrder(makeOrder({
         side: 'BUY',
-        price: Price.of(new Decimal('0.48')),
+        price: OutcomePrice.of(new Decimal('0.48')),
         totalSize: Quantity.of(new Decimal('10')),
         remainingSize: new Decimal('10'),
       }));
@@ -354,7 +354,7 @@ describe('PaperFillSimulator', () => {
     it('несколько tape событий накапливаются до full fill', async () => {
       simulator.trackOrder(makeOrder({
         side: 'BUY',
-        price: Price.of(new Decimal('0.48')),
+        price: OutcomePrice.of(new Decimal('0.48')),
         totalSize: Quantity.of(new Decimal('10')),
         remainingSize: new Decimal('10'),
       }));
@@ -378,7 +378,7 @@ describe('PaperFillSimulator', () => {
     it('нет fill когда trade.price > orderPrice (BUY)', async () => {
       simulator.trackOrder(makeOrder({
         side: 'BUY',
-        price: Price.of(new Decimal('0.48')),
+        price: OutcomePrice.of(new Decimal('0.48')),
       }));
 
       // trade @ 0.50 > 0.48 → не матчится
@@ -395,7 +395,7 @@ describe('PaperFillSimulator', () => {
     it('full fill когда trade.price >= orderPrice', async () => {
       simulator.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
         totalSize: Quantity.of(new Decimal('5')),
         remainingSize: new Decimal('5'),
       }));
@@ -411,7 +411,7 @@ describe('PaperFillSimulator', () => {
     it('partial fill для SELL', async () => {
       simulator.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
         totalSize: Quantity.of(new Decimal('10')),
         remainingSize: new Decimal('10'),
       }));
@@ -437,7 +437,7 @@ describe('PaperFillSimulator', () => {
       sim.start();
       sim.trackOrder(makeOrder({
         side: 'SELL',
-        price: Price.of(new Decimal('0.55')),
+        price: OutcomePrice.of(new Decimal('0.55')),
         totalSize: Quantity.of(new Decimal('10')),
         remainingSize: new Decimal('10'),
       }));
@@ -501,8 +501,8 @@ describe('PaperFillSimulator', () => {
 
   describe('несколько pending ордеров', () => {
     it('book crossing обрабатывает все matching ордера', async () => {
-      simulator.trackOrder(makeOrder({ orderId: 'o-1' as any, side: 'BUY', price: Price.of(new Decimal('0.48')) }));
-      simulator.trackOrder(makeOrder({ orderId: 'o-2' as any, side: 'BUY', price: Price.of(new Decimal('0.50')) }));
+      simulator.trackOrder(makeOrder({ orderId: 'o-1' as any, side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')) }));
+      simulator.trackOrder(makeOrder({ orderId: 'o-2' as any, side: 'BUY', price: OutcomePrice.of(new Decimal('0.50')) }));
 
       // bestAsk = 0.47 ≤ 0.48 и ≤ 0.50 → оба fill
       eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.45, 0.47));
@@ -513,8 +513,8 @@ describe('PaperFillSimulator', () => {
     });
 
     it('tape matching обрабатывает все matching ордера', async () => {
-      simulator.trackOrder(makeOrder({ orderId: 'o-1' as any, side: 'BUY', price: Price.of(new Decimal('0.48')), totalSize: Quantity.of(new Decimal('5')), remainingSize: new Decimal('5') }));
-      simulator.trackOrder(makeOrder({ orderId: 'o-2' as any, side: 'BUY', price: Price.of(new Decimal('0.50')), totalSize: Quantity.of(new Decimal('5')), remainingSize: new Decimal('5') }));
+      simulator.trackOrder(makeOrder({ orderId: 'o-1' as any, side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')), totalSize: Quantity.of(new Decimal('5')), remainingSize: new Decimal('5') }));
+      simulator.trackOrder(makeOrder({ orderId: 'o-2' as any, side: 'BUY', price: OutcomePrice.of(new Decimal('0.50')), totalSize: Quantity.of(new Decimal('5')), remainingSize: new Decimal('5') }));
 
       // trade size=10: покрывает оба ордера по 5
       eventBus.emit('TRADE_RECEIVED', makeTradeEvent('instr-abc', 0.47, 10));
@@ -540,7 +540,7 @@ describe('PaperFillSimulator', () => {
       config: { fillOnBookCrossing: true, fillOnTape: true, fillAtOrderPrice: true },
     });
     sim.start();
-    sim.trackOrder(makeOrder({ side: 'BUY', price: Price.of(new Decimal('0.48')) }));
+    sim.trackOrder(makeOrder({ side: 'BUY', price: OutcomePrice.of(new Decimal('0.48')) }));
 
     eventBus.emit('BOOK_UPDATED', makeBookEvent('instr-abc', 0.45, 0.47));
     await tick();

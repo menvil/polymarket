@@ -23,7 +23,7 @@
  * const result = await client.submitOrder({
  *   asset: tokenId,
  *   side: Side.BUY,
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  * });
  *

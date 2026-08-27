@@ -17,7 +17,7 @@ import {
   AssetIdHelpers,
   assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
@@ -60,7 +60,7 @@ function makeFill(overrides?: Partial<FillParams>): Fill {
     marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
-    price: Price.of(new Decimal('0.62')),
+    price: OutcomePrice.of(new Decimal('0.62')),
     size: Quantity.of(new Decimal('10')),
     side: 'BUY',
     timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
@@ -96,7 +96,7 @@ describe('FillLedgerAdapter', () => {
       // BUY 10 @ 0.62 = -6.20
       const fill = makeFill({
         side: 'BUY',
-        price: Price.of(new Decimal('0.62')),
+        price: OutcomePrice.of(new Decimal('0.62')),
         size: Quantity.of(new Decimal('10')),
         fee: makeZeroFee(),
       });
@@ -123,7 +123,7 @@ describe('FillLedgerAdapter', () => {
       // SELL 10 @ 0.62 = +6.20
       const fill = makeFill({
         side: 'SELL',
-        price: Price.of(new Decimal('0.62')),
+        price: OutcomePrice.of(new Decimal('0.62')),
         size: Quantity.of(new Decimal('10')),
         fee: makeZeroFee(),
       });
@@ -169,7 +169,7 @@ describe('FillLedgerAdapter', () => {
       // BUY 10 @ 0.62, fee 0.02 → net = -6.22
       const fill = makeFill({
         side: 'BUY',
-        price: Price.of(new Decimal('0.62')),
+        price: OutcomePrice.of(new Decimal('0.62')),
         size: Quantity.of(new Decimal('10')),
         fee: makeNonZeroFee('0.02'),
       });

@@ -57,7 +57,7 @@ import type { DiscoveredMarket, IMarketFilterConfig, IMarketDiscoveryService } f
 import type { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
-import { Money, MoneyService, Price, Quantity, RatioService } from '@polymarket/value-objects';
+import { Money, MoneyService, OutcomePrice, Quantity, RatioService } from '@polymarket/value-objects';
 import type { Ratio } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -738,15 +738,15 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
 
     // Второстепенные поля: деградация до дефолтов, не отбрасываем рынок.
-    let tickSize: Price;
+    let tickSize: OutcomePrice;
     try {
-      tickSize = Price.of(new Decimal(market.trading.minimumTickSize ?? 0.01));
+      tickSize = OutcomePrice.of(new Decimal(market.trading.minimumTickSize ?? 0.01));
     } catch {
-      this._logger.warn('Cannot create Price from minimumTickSize, using default 0.01', {
+      this._logger.warn('Cannot create OutcomePrice from minimumTickSize, using default 0.01', {
         conditionId: String(conditionId),
         minimumTickSize: market.trading.minimumTickSize,
       });
-      tickSize = Price.of(new Decimal('0.01'));
+      tickSize = OutcomePrice.of(new Decimal('0.01'));
     }
 
     let minOrderSize: Quantity;

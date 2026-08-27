@@ -33,7 +33,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -433,7 +433,7 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
         intents.push({
           type: 'PLACE',
           side: 'SELL',
-          price: Price.of(new Decimal(action.price).div(100)),
+          price: OutcomePrice.of(new Decimal(action.price).div(100)),
           size: Quantity.of(action.size),
         });
         continue;
@@ -444,7 +444,7 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
         intents.push({
           type: 'PLACE',
           side: 'BUY',
-          price: Price.of(new Decimal(action.bid).div(100)),
+          price: OutcomePrice.of(new Decimal(action.bid).div(100)),
           size: Quantity.of(action.bidSize),
         });
       }
@@ -452,7 +452,7 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
         intents.push({
           type: 'PLACE',
           side: 'SELL',
-          price: Price.of(new Decimal(action.ask).div(100)),
+          price: OutcomePrice.of(new Decimal(action.ask).div(100)),
           size: Quantity.of(action.askSize),
         });
       }

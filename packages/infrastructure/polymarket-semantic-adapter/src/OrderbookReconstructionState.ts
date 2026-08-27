@@ -33,8 +33,8 @@
  * выход из desync — следующий authoritative `book`.
  */
 import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
-import type { Price, Quantity } from '@polymarket/value-objects';
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity } from '@polymarket/value-objects';
+import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { KnownVenues } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -506,15 +506,15 @@ export class OrderbookReconstructionState {
    * Парсит цену уровня из десятичной строки источника.
    *
    * @param raw - Десятичная строка vendor-а
-   * @returns `Price` VO либо `undefined`, если цена вне домена рынка
+   * @returns `OutcomePrice` VO либо `undefined`, если цена вне домена рынка
    *   предсказаний / не парсится
    *
    * @remarks
-   * Строка идёт в `PriceService.create` НАПРЯМУЮ: `Number()`/`parseFloat()`
+   * Строка идёт в `OutcomePriceService.create` НАПРЯМУЮ: `Number()`/`parseFloat()`
    * потеряли бы точность ещё до валидации.
    */
-  private _parsePrice(raw: string): Price | undefined {
-    const result = PriceService.create(raw);
+  private _parsePrice(raw: string): OutcomePrice | undefined {
+    const result = OutcomePriceService.create(raw);
     return result.ok ? result.value : undefined;
   }
 
@@ -541,16 +541,16 @@ export class OrderbookReconstructionState {
    * @remarks
    * Правила сверки:
    * - поле источника отсутствует → он ничего не утверждал, сверки нет;
-   * - поле парсится в валидную `Price` → наша верхушка обязана существовать
+   * - поле парсится в валидную `OutcomePrice` → наша верхушка обязана существовать
    *   и быть РАВНОЙ ей;
    * - поле — явный десятичный ноль (`"0"`, `"0.00"`) → источник утверждает,
    *   что уровней на стороне НЕТ, и наша сторона обязана быть пустой;
    * - поле присутствует, но ни ценой, ни нулём не является (`"1"` вне
-   *   домена `Price`, мусор) → истолковать его НЕЛЬЗЯ. Сверка стороны
+   *   домена `OutcomePrice`, мусор) → истолковать его НЕЛЬЗЯ. Сверка стороны
    *   пропускается: считать `"1"` пустотой значило бы уводить в DESYNC
    *   исправную книгу.
    *
-   * Сравнение идёт по `Price.equals` (Decimal), а не по строкам: `"0.50"` и
+   * Сравнение идёт по `OutcomePrice.equals` (Decimal), а не по строкам: `"0.50"` и
    * `"0.5"` — одна и та же цена.
    */
   private _detectBestMismatch(
@@ -586,7 +586,7 @@ export class OrderbookReconstructionState {
     side: 'bid' | 'ask',
     levels: Map<string, OrderbookLevel>,
     vendorBest: string | undefined,
-    isBetter: (a: Price, b: Price) => boolean,
+    isBetter: (a: OutcomePrice, b: OutcomePrice) => boolean,
   ): SideCheck {
     if (vendorBest === undefined) {
       return { kind: 'match' };
@@ -637,9 +637,9 @@ export class OrderbookReconstructionState {
    */
   private _bestOf(
     levels: Map<string, OrderbookLevel>,
-    isBetter: (a: Price, b: Price) => boolean,
-  ): Price | undefined {
-    let best: Price | undefined;
+    isBetter: (a: OutcomePrice, b: OutcomePrice) => boolean,
+  ): OutcomePrice | undefined {
+    let best: OutcomePrice | undefined;
     for (const level of levels.values()) {
       if (best === undefined || isBetter(level.price, best)) {
         best = level.price;

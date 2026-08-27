@@ -393,7 +393,7 @@ const result2 = divideDecimal(value, new Decimal(2));
 ```typescript
 import Decimal from 'decimal.js';
 import { divideDecimal } from '@polymarket/math';
-import { Price, Quantity, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Money } from '@polymarket/value-objects';
 
 // Деление внутри Value Object
 class Position {
@@ -402,7 +402,7 @@ class Position {
     private readonly quantity: Quantity
   ) {}
 
-  calculateAveragePrice(): Result<Price, ValidationError> {
+  calculateAveragePrice(): Result<OutcomePrice, ValidationError> {
     // 1. Чистая математика (core layer)
     const avgPrice = divideDecimal(
       this.totalCost.amount,
@@ -410,7 +410,7 @@ class Position {
     );
 
     // 2. Бизнес-валидация (domain layer)
-    return Price.fromDecimal(avgPrice);
+    return OutcomePrice.fromDecimal(avgPrice);
   }
 }
 ```

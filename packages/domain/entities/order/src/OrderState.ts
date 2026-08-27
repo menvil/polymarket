@@ -8,7 +8,7 @@
  * FillData (входной параметр applyFill) — общий контракт из `@polymarket/fill`.
  */
 
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, OrderId, StrategyId } from '@polymarket/ids';
 
@@ -37,7 +37,7 @@ export const FILLABLE_STATUSES = new Set<OrderStatus>([
 /** Внутреннее состояние исполнений заявки */
 export interface FillState {
   readonly filledSize: Quantity;
-  readonly averagePrice: Price | undefined;
+  readonly averagePrice: OutcomePrice | undefined;
   readonly fillIds: readonly FillId[];
 }
 
@@ -48,7 +48,7 @@ export interface OrderState {
   readonly id: OrderId;
   readonly asset: AssetId;
   readonly side: Side;
-  readonly price: Price;
+  readonly price: OutcomePrice;
   readonly size: Quantity;
   readonly status: OrderStatus;
   readonly timestamp: Timestamp;
@@ -76,7 +76,7 @@ export interface CreateOrderParams {
   readonly id: OrderId;
   readonly asset: AssetId;
   readonly side: Side;
-  readonly price: Price;
+  readonly price: OutcomePrice;
   readonly size: Quantity;
   readonly timestamp: Timestamp;
   readonly strategyId?: StrategyId;

@@ -217,7 +217,7 @@ async function main() {
 
   // ── Phase 2: Scan test data for edge opportunities ──────────────────────
   console.error('\n=== PHASE 2: Scanning test data for edge ===');
-  console.error(`Price mode: ${config.priceMode}`);
+  console.error(`OutcomePrice mode: ${config.priceMode}`);
   const testFiles: string[] = [];
   for (const dir of config.testDirs) {
     for (const f of readdirSync(dir).filter(f => f.endsWith('.jsonl.gz'))) {

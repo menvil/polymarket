@@ -16,7 +16,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Position } from '../../src/Position.js';
 import type { PositionParams } from '../../src/Position.js';
 import { PositionLot } from '../../src/core/PositionLot.js';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
@@ -28,7 +28,7 @@ const TEST_ASSET_ID = AssetIdHelpers.USDC;
 // Лот по умолчанию: 100 @ 0.65
 const DEFAULT_LOT = PositionLot.create({
   quantity: Quantity.of(new Decimal(100)),
-  entryPrice: Price.of(new Decimal(0.65)),
+  entryPrice: OutcomePrice.of(new Decimal(0.65)),
   timestamp: Timestamp.of(new Decimal(1705318200000)),
 });
 
@@ -213,12 +213,12 @@ describe('Position Entity', () => {
     it('should sort lots by timestamp ASC (guaranteed by constructor)', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(100)), // старше, но передан вторым
       });
 
@@ -297,7 +297,7 @@ describe('Position Entity', () => {
 
       const closeResult = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         closedAt,
       );
@@ -320,7 +320,7 @@ describe('Position Entity', () => {
 
       const newLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(3000)),
       });
 
@@ -338,12 +338,12 @@ describe('Position Entity', () => {
     it('quantity derived from lots sum', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(60)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(40)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.now(),
       });
 
@@ -367,12 +367,12 @@ describe('Position Entity', () => {
     it('averageEntryPrice derived as weighted average', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.now(),
       });
 
@@ -385,12 +385,12 @@ describe('Position Entity', () => {
       }
     });
 
-    it('averageEntryPrice is Price.MIN for empty lots', () => {
+    it('averageEntryPrice is OutcomePrice.MIN for empty lots', () => {
       const result = Position.create(createValidParams({ lots: [] }));
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.averageEntryPrice).toBe(Price.MIN);
+        expect(result.value.averageEntryPrice).toBe(OutcomePrice.MIN);
       }
     });
   });
@@ -424,7 +424,7 @@ describe('Position Entity', () => {
       // Позиция с 50 лотами, но изначально было 100 → PARTIALLY_CLOSED
       const halfLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -443,7 +443,7 @@ describe('Position Entity', () => {
       // Контрпример из ревью: закрытие по цене входа → realizedPnL=0, но PARTIALLY_CLOSED
       const halfLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -479,7 +479,7 @@ describe('Position Entity', () => {
     it('should return OPEN for position with lots', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -496,7 +496,7 @@ describe('Position Entity', () => {
     it('should reject lots with zero quantity', () => {
       const emptyLot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -511,7 +511,7 @@ describe('Position Entity', () => {
     it('should accept lots with positive quantity and set correct state', () => {
       const validLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(0.000001)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -528,12 +528,12 @@ describe('Position Entity', () => {
     it('should reject mix of valid and empty lots', () => {
       const validLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
       const emptyLot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
 
@@ -559,7 +559,7 @@ describe('Position Entity', () => {
     it('should accept explicit openedQuantity', () => {
       const halfLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -582,7 +582,7 @@ describe('Position Entity', () => {
 
       const closeResult = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -599,7 +599,7 @@ describe('Position Entity', () => {
     it('should preserve openedQuantity after multiple close() calls', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
       const posResult = Position.create(createValidParams({ lots: [lot] }));
@@ -609,7 +609,7 @@ describe('Position Entity', () => {
       // Первое частичное закрытие
       const r1 = posResult.value.close(
         Quantity.of(new Decimal(30)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         Timestamp.of(new Decimal(2000)),
       );
@@ -619,7 +619,7 @@ describe('Position Entity', () => {
       // Второе частичное закрытие
       const r2 = r1.value.position.close(
         Quantity.of(new Decimal(30)),
-        Price.of(new Decimal(0.80)),
+        OutcomePrice.of(new Decimal(0.80)),
         'FIFO',
         Timestamp.of(new Decimal(3000)),
       );
@@ -639,7 +639,7 @@ describe('Position Entity', () => {
 
       const newLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(2000)),
       });
 
@@ -658,7 +658,7 @@ describe('Position Entity', () => {
     it('should add new lots and merge sorted', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1000)),
       });
       const posResult = Position.create(createValidParams({ lots: [lot1] }));
@@ -668,7 +668,7 @@ describe('Position Entity', () => {
       // Новый лот с timestamp между lot1 и lot3
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(500)), // старше lot1
       });
 
@@ -705,7 +705,7 @@ describe('Position Entity', () => {
 
       const emptyLot = PositionLot.create({
         quantity: Quantity.ZERO,
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
 
@@ -726,7 +726,7 @@ describe('Position Entity', () => {
 
       const newLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(2000)),
       });
 
@@ -745,12 +745,12 @@ describe('Position Entity', () => {
 
       const newLot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(30)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(2000)),
       });
       const newLot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(20)),
-        entryPrice: Price.of(new Decimal(0.72)),
+        entryPrice: OutcomePrice.of(new Decimal(0.72)),
         timestamp: Timestamp.of(new Decimal(3000)),
       });
 
@@ -771,7 +771,7 @@ describe('Position Entity', () => {
 
       const newLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(6000)),
       });
       const addedAt = Timestamp.of(new Decimal(1000)); // раньше openedAt
@@ -793,7 +793,7 @@ describe('Position Entity', () => {
       if (result.ok) {
         const position = result.value;
         // DEFAULT_LOT: 100 @ 0.65
-        const currentPrice = Price.of(new Decimal(0.75)); // +0.10
+        const currentPrice = OutcomePrice.of(new Decimal(0.75)); // +0.10
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
         // (0.75 - 0.65) * 100 = 10
@@ -807,7 +807,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.55)); // -0.10
+        const currentPrice = OutcomePrice.of(new Decimal(0.55)); // -0.10
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
         // (0.55 - 0.65) * 100 = -10
@@ -821,7 +821,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.55)); // -0.10 (profit for SHORT)
+        const currentPrice = OutcomePrice.of(new Decimal(0.55)); // -0.10 (profit for SHORT)
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
         // -(0.55 - 0.65) * 100 = 10
@@ -835,7 +835,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.75)); // +0.10 (loss for SHORT)
+        const currentPrice = OutcomePrice.of(new Decimal(0.75)); // +0.10 (loss for SHORT)
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
         // -(0.75 - 0.65) * 100 = -10
@@ -849,7 +849,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.75));
+        const currentPrice = OutcomePrice.of(new Decimal(0.75));
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
         expect(unrealizedPnL.isZero()).toBe(true);
@@ -865,7 +865,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.75)); // unrealized = 10
+        const currentPrice = OutcomePrice.of(new Decimal(0.75)); // unrealized = 10
         const totalPnL = position.getTotalPnL(currentPrice);
 
         // 15 (realized) + 10 (unrealized) = 25
@@ -882,7 +882,7 @@ describe('Position Entity', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        const currentPrice = Price.of(new Decimal(0.75)); // unrealized = 10
+        const currentPrice = OutcomePrice.of(new Decimal(0.75)); // unrealized = 10
         const totalPnL = position.getTotalPnL(currentPrice);
 
         // -5 (realized) + 10 (unrealized) = 5
@@ -906,7 +906,7 @@ describe('Position Entity', () => {
     it('should handle single lot', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
       });
 
@@ -923,13 +923,13 @@ describe('Position Entity', () => {
     it('should handle multiple lots', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
 
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
 
@@ -947,12 +947,12 @@ describe('Position Entity', () => {
     it('should close position using FIFO strategy', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
 
@@ -962,7 +962,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -981,12 +981,12 @@ describe('Position Entity', () => {
     it('should close position using LIFO strategy', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
 
@@ -996,7 +996,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'LIFO',
         CLOSE_AT,
       );
@@ -1020,7 +1020,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -1039,7 +1039,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.ZERO,
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -1057,7 +1057,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(150)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -1075,7 +1075,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -1093,7 +1093,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(100)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         CLOSE_AT,
       );
@@ -1112,7 +1112,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'RANDOM' as any,
         CLOSE_AT,
       );
@@ -1127,17 +1127,17 @@ describe('Position Entity', () => {
     it('should maintain sorted lots after LIFO close', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.60)),
+        entryPrice: OutcomePrice.of(new Decimal(0.60)),
         timestamp: Timestamp.of(new Decimal(100)),
       });
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(30)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(200)),
       });
       const lot3 = PositionLot.create({
         quantity: Quantity.of(new Decimal(20)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.of(new Decimal(300)),
       });
 
@@ -1148,7 +1148,7 @@ describe('Position Entity', () => {
       // LIFO закрывает lot3 (20) полностью + 15 из lot2
       const result = posResult.value.close(
         Quantity.of(new Decimal(35)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'LIFO',
         CLOSE_AT,
       );
@@ -1174,7 +1174,7 @@ describe('Position Entity', () => {
 
       const result = posResult.value.close(
         Quantity.of(new Decimal(100)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         closedAt,
       );
@@ -1216,7 +1216,7 @@ describe('Position Entity', () => {
     it('should serialize PARTIALLY_CLOSED status when quantity < openedQuantity', () => {
       const halfLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
@@ -1245,7 +1245,7 @@ describe('Position Entity', () => {
 
       const closeResult = posResult.value.close(
         Quantity.of(new Decimal(50)),
-        Price.of(new Decimal(0.75)),
+        OutcomePrice.of(new Decimal(0.75)),
         'FIFO',
         closedAt,
       );
@@ -1309,7 +1309,7 @@ describe('Position Entity', () => {
       const originalQty = original.quantity.value().toNumber();
       const originalLots = original.lots.length;
 
-      original.close(Quantity.of(new Decimal(50)), Price.of(new Decimal(0.75)), 'FIFO', CLOSE_AT);
+      original.close(Quantity.of(new Decimal(50)), OutcomePrice.of(new Decimal(0.75)), 'FIFO', CLOSE_AT);
 
       // Оригинальная позиция не изменилась
       expect(original.quantity.value().toNumber()).toBe(originalQty);
@@ -1326,7 +1326,7 @@ describe('Position Entity', () => {
 
       const newLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
-        entryPrice: Price.of(new Decimal(0.70)),
+        entryPrice: OutcomePrice.of(new Decimal(0.70)),
         timestamp: Timestamp.now(),
       });
 
@@ -1342,7 +1342,7 @@ describe('Position Entity', () => {
     it('should handle very small quantities', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal('0.000001')),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
       const result = Position.create(createValidParams({ lots: [lot] }));
@@ -1357,7 +1357,7 @@ describe('Position Entity', () => {
     it('should handle very large quantities', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal('1000000')),
-        entryPrice: Price.of(new Decimal(0.65)),
+        entryPrice: OutcomePrice.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
       const result = Position.create(createValidParams({ lots: [lot] }));
@@ -1372,7 +1372,7 @@ describe('Position Entity', () => {
     it('should handle price at extremes (near 0)', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal('0.01')),
+        entryPrice: OutcomePrice.of(new Decimal('0.01')),
         timestamp: Timestamp.now(),
       });
       const result = Position.create(createValidParams({ lots: [lot] }));
@@ -1387,7 +1387,7 @@ describe('Position Entity', () => {
     it('should handle price at extremes (near 1)', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal('0.99')),
+        entryPrice: OutcomePrice.of(new Decimal('0.99')),
         timestamp: Timestamp.now(),
       });
       const result = Position.create(createValidParams({ lots: [lot] }));

@@ -28,7 +28,7 @@
 
 import { Result } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { Position, type CloseResult } from '../Position.js';
 
@@ -68,7 +68,7 @@ export type { CloseResult };
  * const result = closeFIFO(
  *   position,
  *   Quantity.of(new Decimal(60)),
- *   Price.of(new Decimal(0.75)),
+ *   OutcomePrice.of(new Decimal(0.75)),
  *   Timestamp.now(),
  * );
  * if (result.ok) {
@@ -81,7 +81,7 @@ export type { CloseResult };
 export function closeFIFO(
   position: Position,
   closeQuantity: Quantity,
-  closePrice: Price,
+  closePrice: OutcomePrice,
   closedAt: Timestamp,
 ): Result<CloseResult, ValidationError> {
   return position.close(closeQuantity, closePrice, 'FIFO', closedAt);
@@ -116,7 +116,7 @@ export function closeFIFO(
  * const result = closeLIFO(
  *   position,
  *   Quantity.of(new Decimal(60)),
- *   Price.of(new Decimal(0.75)),
+ *   OutcomePrice.of(new Decimal(0.75)),
  *   Timestamp.now(),
  * );
  * if (result.ok) {
@@ -129,7 +129,7 @@ export function closeFIFO(
 export function closeLIFO(
   position: Position,
   closeQuantity: Quantity,
-  closePrice: Price,
+  closePrice: OutcomePrice,
   closedAt: Timestamp,
 ): Result<CloseResult, ValidationError> {
   return position.close(closeQuantity, closePrice, 'LIFO', closedAt);

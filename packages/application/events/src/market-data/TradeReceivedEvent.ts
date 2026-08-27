@@ -2,7 +2,7 @@
  * Публичный трейд с ленты — маркет-принт.
  *
  * @remarks
- * Price и Quantity VOs: это application-layer событие, не wire DTO.
+ * OutcomePrice и Quantity VOs: это application-layer событие, не wire DTO.
  *
  * ### Идентичность трейда
  *
@@ -24,7 +24,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 export type TradeReceivedEvent = MessageEnvelope<
@@ -52,7 +52,7 @@ export type TradeReceivedEvent = MessageEnvelope<
      */
     readonly venueTradeId?: VenueTradeId;
     /** Цена трейда (VO, не string) */
-    readonly price: Price;
+    readonly price: OutcomePrice;
     /** Объём трейда (VO, не string) */
     readonly size: Quantity;
     /** Сторона агрессора */

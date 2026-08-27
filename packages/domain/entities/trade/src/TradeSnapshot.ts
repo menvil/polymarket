@@ -10,7 +10,7 @@
  * - Восстановления через TradeMapper.fromSnapshot()
  *
  * ### Отличие от Trade:
- * Trade использует value objects (Price, Quantity, Timestamp).
+ * Trade использует value objects (OutcomePrice, Quantity, Timestamp).
  * TradeSnapshot использует только примитивы (string, number).
  * Числовые поля (price, size) сериализуются через Decimal.toString() — строковое
  * представление сохраняет полную точность Decimal без потерь IEEE 754.

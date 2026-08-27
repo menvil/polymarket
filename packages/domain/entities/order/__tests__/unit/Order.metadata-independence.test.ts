@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId, FillId } from '@polymarket/ids';
 import { unsafeRunId } from '@polymarket/ids';
@@ -26,7 +26,7 @@ function buildLog(generator: MessageMetadataGenerator): readonly OrderEvent[] {
     asset: TEST_ASSET,
     side: 'BUY',
     size: Quantity.of(new Decimal('100')),
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
   };
   return [
     {
@@ -35,7 +35,7 @@ function buildLog(generator: MessageMetadataGenerator): readonly OrderEvent[] {
         orderId: ORDER_ID,
         asset: TEST_ASSET,
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('100')),
         timestamp: ts,
       },
@@ -44,7 +44,7 @@ function buildLog(generator: MessageMetadataGenerator): readonly OrderEvent[] {
     { type: 'ORDER_ACCEPTED', payload: { orderId: ORDER_ID }, metadata: generator.nextRoot() },
     {
       type: 'ORDER_FILLED',
-      payload: { orderId: ORDER_ID, fill, averagePrice: Price.of(new Decimal('0.65')) },
+      payload: { orderId: ORDER_ID, fill, averagePrice: OutcomePrice.of(new Decimal('0.65')) },
       metadata: generator.nextChild(generator.nextRoot()),
     },
   ];

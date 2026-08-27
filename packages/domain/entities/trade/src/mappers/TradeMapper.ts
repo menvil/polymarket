@@ -55,7 +55,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { asVenueTradeId, asVenueId, parseAssetId, asTxHash, asMarketId } from '@polymarket/ids';
 import type { InstrumentId, VenueId, VenueTradeId, TxHash, MarketId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -190,9 +190,9 @@ export class TradeMapper {
       );
     }
 
-    let price: Price;
+    let price: OutcomePrice;
     try {
-      price = Price.of(priceDecimal);
+      price = OutcomePrice.of(priceDecimal);
     } catch {
       return Err(
         new ValidationError('Invalid lastTradeEvent: price must be positive', {
@@ -384,7 +384,7 @@ export class TradeMapper {
   public static fromParsedTrade(params: {
     readonly instrumentId: InstrumentId;
     readonly marketId: MarketId;
-    readonly price: Price;
+    readonly price: OutcomePrice;
     readonly size: Quantity;
     readonly side: Side;
     readonly timestamp: Timestamp;
@@ -541,9 +541,9 @@ export class TradeMapper {
       );
     }
 
-    let price: Price;
+    let price: OutcomePrice;
     try {
-      price = Price.of(priceDecimal);
+      price = OutcomePrice.of(priceDecimal);
     } catch {
       return Err(
         new ValidationError('Invalid snapshot: price must be positive', {

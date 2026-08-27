@@ -7,7 +7,7 @@
  * semantic-событии, а не в самой цене — поэтому этот VO переиспользуется
  * любым source adapter, включая будущий CEX.
  *
- * Почему не `Price` — см. докблок `core/AssetPrice.ts`.
+ * Почему не `OutcomePrice` — см. докблок `core/AssetPrice.ts`.
  */
 
 // Core (публичный API)

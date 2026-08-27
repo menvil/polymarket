@@ -1,6 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
-import { Price } from '../../price/core/Price.js';
+import { OutcomePrice } from '../../outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 
@@ -34,9 +34,9 @@ export class ValidateQuoteSizes {
    *
    * @example
    * ```typescript
-   * const bid = Price.of(0.50);
+   * const bid = OutcomePrice.of(0.50);
    * const bidSize = Quantity.ZERO; // ❌ invalid
-   * const ask = Price.of(0.51);
+   * const ask = OutcomePrice.of(0.51);
    * const askSize = Quantity.of(100);
    *
    * const result = ValidateQuoteSizes.check(bid, bidSize, ask, askSize);
@@ -45,9 +45,9 @@ export class ValidateQuoteSizes {
    * ```
    */
   public static check(
-    bid: Price | null,
+    bid: OutcomePrice | null,
     bidSize: Quantity,
-    ask: Price | null,
+    ask: OutcomePrice | null,
     askSize: Quantity
   ): Result<void, InvalidQuoteError> {
     // Если bid определён, bidSize должен быть положительным

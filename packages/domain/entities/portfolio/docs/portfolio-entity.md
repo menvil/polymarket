@@ -47,7 +47,7 @@ public readonly balance: Balance;
 
 ```typescript
 // В Portfolio (НЕТ):
-getTotalValue(prices: Map<InstrumentId, Price>): Money
+getTotalValue(prices: Map<InstrumentId, OutcomePrice>): Money
 
 // Функции из @polymarket/portfolio (ЕСТЬ):
 getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
@@ -77,7 +77,7 @@ tokenReservations.get(id)           // токены под открытые SELL
 VO — по ADR (`docs/architecture/boundary-contract.md`, Решение 1) `Decimal` легитимен
 только внутри `value-objects`/`math`. `Quantity.of()` не имеет инварианта на минимальное
 значение (только NaN/finite/non-negative — прежняя формулировка "требует >= 0.0001" была
-неточной, путала с диапазоном `Price`), поэтому оборачивание безопасно для любого
+неточной, путала с диапазоном `OutcomePrice`), поэтому оборачивание безопасно для любого
 неотрицательного остатка резервации. **Публичные сигнатуры** `availableTokenQuantity()`/
 `reserveTokensForOrder()`/`releaseTokenReservation()` осознанно остались на `Decimal` —
 у них 30+ реальных вызывающих в `apps/bot/strategies/*` и `application/use-cases`; смена
@@ -94,9 +94,9 @@ export interface IPosition {
   readonly instrumentId: InstrumentId;
   readonly quantity: Pick<Quantity, 'value'>;
   readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: Pick<Price, 'value'>;
+  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
+  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
 }
 ```
 
@@ -283,11 +283,11 @@ if (available.gte(orderSize)) {
 ```typescript
 import { getTotalValue, getTotalUnrealizedPnL } from '@polymarket/portfolio';
 
-const prices = new Map<InstrumentId, Price>([
+const prices = new Map<InstrumentId, OutcomePrice>([
   [instrumentId, currentPrice],
 ]);
 
-const getPrice = (id: InstrumentId): Price | undefined => prices.get(id);
+const getPrice = (id: InstrumentId): OutcomePrice | undefined => prices.get(id);
 
 // getPrice может вернуть undefined — getTotalValue и getTotalUnrealizedPnL
 // пропускают позиции без котировки
@@ -306,9 +306,9 @@ export interface IPosition {
   readonly instrumentId: InstrumentId;
   readonly quantity: Pick<Quantity, 'value'>;
   readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: Pick<Price, 'value'>;
+  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
+  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
 }
 ```
 
@@ -317,7 +317,7 @@ export interface IPosition {
 `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` напрямую — без промежуточных интерфейсов.
 
 Реальный `Position` entity структурно совместим с `IPosition`. `Pick<Quantity, 'value'>`/
-`Pick<Price, 'value'>`/`Pick<SignedQuantity, 'value'>` (Этап 3 плана миграции, было
+`Pick<OutcomePrice, 'value'>`/`Pick<SignedQuantity, 'value'>` (Этап 3 плана миграции, было
 `{ value(): Decimal }`) — явные структурные типы, привязанные к реальным VO-классам, без
 номинативной зависимости от них (см. раздел 6 выше).
 
@@ -335,7 +335,7 @@ export interface IPosition {
 `packages/application/use-cases/src/services/PortfolioService.ts`.
 
 Проверка перед реализацией показала: `Position` **уже** удовлетворяет `IPosition`
-поле-в-поле (`quantity`/`averageEntryPrice` — геттеры на `Quantity`/`Price`, `side`,
+поле-в-поле (`quantity`/`averageEntryPrice` — геттеры на `Quantity`/`OutcomePrice`, `side`,
 `isClosed()`, `getUnrealizedPnL()` — все той же формы, что и `SimplePosition`). Значит вся
 работа по подключению локализуется в `PortfolioService`, единственном реальном писателе
 позиций в live fill-пути — сам `Portfolio`/`IPosition` не нуждаются в изменении.

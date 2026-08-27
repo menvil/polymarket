@@ -2,13 +2,13 @@
  * Semantic-выход референсных цен внешних активов (RTDS).
  *
  * @remarks
- * Главный инвариант файла: цена базового актива НЕ проходит через `Price`
- * рынка предсказаний. `Price` ограничен `[0.0001, 0.9999]` и обязан
+ * Главный инвариант файла: цена базового актива НЕ проходит через `OutcomePrice`
+ * рынка предсказаний. `OutcomePrice` ограничен `[0.0001, 0.9999]` и обязан
  * отвергнуть `79341.36`, поэтому «случайно заработавший» маппинг здесь
  * невозможен — он бы просто не публиковал события.
  */
 import { describe, expect, it, beforeEach, afterEach } from '@jest/globals';
-import { PriceService } from '@polymarket/value-objects';
+import { OutcomePriceService } from '@polymarket/value-objects';
 import {
   POLYMARKET_RTDS_BINANCE_SOURCE,
   POLYMARKET_RTDS_CHAINLINK_SOURCE,
@@ -144,11 +144,11 @@ describe('Chainlink TWAP', () => {
   });
 });
 
-describe('референсная цена НЕ использует Price рынка предсказаний', () => {
-  it('79341.36 отвергается Price, но успешно проходит через AssetPrice', () => {
-    // Доказательство «в лоб»: canonical prediction Price такое значение
+describe('референсная цена НЕ использует OutcomePrice рынка предсказаний', () => {
+  it('79341.36 отвергается OutcomePrice, но успешно проходит через AssetPrice', () => {
+    // Доказательство «в лоб»: canonical prediction OutcomePrice такое значение
     // принять НЕ МОЖЕТ, поэтому маппинг через него был бы невозможен
-    expect(PriceService.create('79341.36').ok).toBe(false);
+    expect(OutcomePriceService.create('79341.36').ok).toBe(false);
   });
 
   it('крупные цены активов публикуются без ошибок диапазона', async () => {

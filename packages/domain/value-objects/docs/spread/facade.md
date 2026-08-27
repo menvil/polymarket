@@ -16,7 +16,7 @@
 
 **SpreadService** — это единственный публичный API для работы со спредами. Все методы:
 
-- ✅ Возвращают `Result<T, InvalidSpreadError>` (где T может быть Spread, Price, Decimal или Ratio)
+- ✅ Возвращают `Result<T, InvalidSpreadError>` (где T может быть Spread, OutcomePrice, Decimal или Ratio)
 - ✅ Никогда не бросают исключений (Never Throw Contract)
 - ✅ Перехватывают ошибки из Core и Rules слоёв
 - ✅ Предоставляют rich error context
@@ -35,16 +35,16 @@ import { SpreadService } from '@polymarket/value-objects/spread';
 
 ### `create(bid, ask)`
 
-Создаёт спред из Price объектов.
+Создаёт спред из OutcomePrice объектов.
 
 ```typescript
-create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError>
+create(bid: OutcomePrice, ask: OutcomePrice): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `bid: Price` — цена покупки
-- `ask: Price` — цена продажи
+- `bid: OutcomePrice` — цена покупки
+- `ask: OutcomePrice` — цена продажи
 
 **Возвращает:**
 
@@ -54,10 +54,10 @@ create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError>
 **Пример:**
 
 ```typescript
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { OutcomePriceService, SpreadService } from '@polymarket/value-objects';
 
-const bidResult = PriceService.create(0.48);
-const askResult = PriceService.create(0.52);
+const bidResult = OutcomePriceService.create(0.48);
+const askResult = OutcomePriceService.create(0.52);
 
 if (bidResult.ok && askResult.ok) {
   const spreadResult = SpreadService.create(bidResult.value, askResult.value);
@@ -119,7 +119,7 @@ if (result1.ok) {
 
 **Ошибки:**
 
-- Ошибки валидации Price (из PriceService) — невалидные значения bid или ask
+- Ошибки валидации OutcomePrice (из OutcomePriceService) — невалидные значения bid или ask
 - `SpreadErrorReason.BID_GREATER_THAN_ASK` — bid > ask
 
 ---
@@ -129,12 +129,12 @@ if (result1.ok) {
 Создаёт спред нулевой ширины (bid === ask).
 
 ```typescript
-zero(price: Price): Spread
+zero(price: OutcomePrice): Spread
 ```
 
 **Параметры:**
 
-- `price: Price` — цена для bid и ask
+- `price: OutcomePrice` — цена для bid и ask
 
 **Возвращает:**
 
@@ -143,9 +143,9 @@ zero(price: Price): Spread
 **Пример:**
 
 ```typescript
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { OutcomePriceService, SpreadService } from '@polymarket/value-objects';
 
-const priceResult = PriceService.create(0.50);
+const priceResult = OutcomePriceService.create(0.50);
 if (priceResult.ok) {
   const spread = SpreadService.zero(priceResult.value);
   
@@ -155,7 +155,7 @@ if (priceResult.ok) {
 }
 ```
 
-**Примечание:** Этот метод не возвращает Result, т.к. принимает валидный Price и инвариант bid ≤ ask автоматически выполнен.
+**Примечание:** Этот метод не возвращает Result, т.к. принимает валидный OutcomePrice и инвариант bid ≤ ask автоматически выполнен.
 
 ---
 
@@ -165,14 +165,14 @@ if (priceResult.ok) {
 
 ```typescript
 fromMidAndWidthRatio(
-  mid: Price | Decimal | number | string,
+  mid: OutcomePrice | Decimal | number | string,
   widthRatio: Ratio | Decimal | number | string
 ): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `mid: Price | Decimal | number | string` — midpoint цена
+- `mid: OutcomePrice | Decimal | number | string` — midpoint цена
 - `widthRatio: Ratio | Decimal | number | string` — относительная ширина (должна быть ≥ 0)
 
 **Возвращает:**
@@ -182,7 +182,7 @@ fromMidAndWidthRatio(
 
 **Алгоритм:**
 
-1. Parse mid to Price
+1. Parse mid to OutcomePrice
 2. Parse widthRatio to Ratio
 3. Validate widthRatio ≥ 0
 4. `widthAbs = mid * widthRatio`
@@ -194,11 +194,11 @@ fromMidAndWidthRatio(
 **Пример:**
 
 ```typescript
-// Из объектов Price и Ratio
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+// Из объектов OutcomePrice и Ratio
+import { OutcomePriceService, SpreadService } from '@polymarket/value-objects';
 import { Ratio } from '@polymarket/value-objects/ratio';
 
-const mid = PriceService.create(0.50).value;
+const mid = OutcomePriceService.create(0.50).value;
 const widthRatio = Ratio.of(new Decimal(0.08)); // 8% ширина
 
 const result = SpreadService.fromMidAndWidthRatio(mid, widthRatio);
@@ -253,7 +253,7 @@ if (spreadResult.ok) {
 - `SpreadErrorReason.INVALID_FORMAT` — невалидный mid
 - `SpreadErrorReason.INVALID_RATIO` — невалидный widthRatio (NaN, Infinity)
 - `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — widthRatio < 0
-- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — результат выходит за пределы Price
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — результат выходит за пределы OutcomePrice
 
 ---
 
@@ -314,7 +314,7 @@ if (spreadResult.ok) {
 **Ошибки:**
 
 - `SpreadErrorReason.INVALID_AMOUNT` — amount < 0, Infinity, NaN
-- `SpreadErrorReason.OPERATION_OUT_OF_BOUNDS` — результат выходит за пределы Price
+- `SpreadErrorReason.OPERATION_OUT_OF_BOUNDS` — результат выходит за пределы OutcomePrice
 
 ---
 
@@ -560,7 +560,7 @@ if (result.ok) {
 **Ошибки:**
 
 - `SpreadErrorReason.MID_UNAVAILABLE` — если не удаётся вычислить midpoint
-- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -613,7 +613,7 @@ if (result.ok) {
 **Ошибки:**
 
 - `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — если deltaWidthRatio < 0
-- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -726,7 +726,7 @@ if (result.ok) {
 **Ошибки:**
 
 - `SpreadErrorReason.BID_GREATER_THAN_ASK` — если новый bid > новый ask
-- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы OutcomePrice
 
 ---
 
@@ -872,19 +872,19 @@ if (result.ok) {
 
 ## Интеграция с другими сервисами
 
-### Использование с PriceService
+### Использование с OutcomePriceService
 
 ```typescript
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { OutcomePriceService, SpreadService } from '@polymarket/value-objects';
 
 // Создание цен с округлением к market tick
-const bidResult = PriceService.create(0.4823);
-const askResult = PriceService.create(0.5177);
+const bidResult = OutcomePriceService.create(0.4823);
+const askResult = OutcomePriceService.create(0.5177);
 
 if (bidResult.ok && askResult.ok) {
   // Округление к тику 0.01
-  const roundedBidResult = PriceService.roundToMarketTick(bidResult.value, 0.01);
-  const roundedAskResult = PriceService.roundToMarketTick(askResult.value, 0.01);
+  const roundedBidResult = OutcomePriceService.roundToMarketTick(bidResult.value, 0.01);
+  const roundedAskResult = OutcomePriceService.roundToMarketTick(askResult.value, 0.01);
   
   if (roundedBidResult.ok && roundedAskResult.ok) {
     // Создание спреда из округлённых цен

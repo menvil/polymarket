@@ -2,14 +2,14 @@ import { describe, it, expect } from '@jest/globals';
 import { SpreadService } from '../../../src/spread/facade/SpreadService.js';
 import { SpreadSerializer } from '../../../src/spread/adapters/SpreadSerializer.js';
 import { SpreadFormatter } from '../../../src/spread/adapters/SpreadFormatter.js';
-import { PriceService } from '../../../src/price/index.js';
+import { OutcomePriceService } from '../../../src/outcome-price/index.js';
 
 describe('Spread Integration Workflow', () => {
   describe('Scenario 1: Create → Query → Operations', () => {
     it('должен создать spread и выполнить базовые операции', () => {
       // Создание через SpreadService
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
 
       expect(bidResult.ok).toBe(true);
       expect(askResult.ok).toBe(true);
@@ -31,8 +31,8 @@ describe('Spread Integration Workflow', () => {
     });
 
     it('должен выполнить tighten операцию', () => {
-      const bidResult = PriceService.create(0.45);
-      const askResult = PriceService.create(0.55);
+      const bidResult = OutcomePriceService.create(0.45);
+      const askResult = OutcomePriceService.create(0.55);
 
       expect(bidResult.ok).toBe(true);
       expect(askResult.ok).toBe(true);
@@ -54,8 +54,8 @@ describe('Spread Integration Workflow', () => {
     });
 
     it('должен выполнить widen операцию', () => {
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -74,8 +74,8 @@ describe('Spread Integration Workflow', () => {
     });
 
     it('должен выполнить shift операцию', () => {
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -97,8 +97,8 @@ describe('Spread Integration Workflow', () => {
 
   describe('Scenario 2: Serialization round-trip', () => {
     it('должен сохранять значение при serialize → deserialize', () => {
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -144,8 +144,8 @@ describe('Spread Integration Workflow', () => {
 
   describe('Scenario 3: Formatting', () => {
     it('должен форматировать spread для отображения', () => {
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -203,7 +203,7 @@ describe('Spread Integration Workflow', () => {
 
   describe('Scenario 5: fromMidAndWidth workflow', () => {
     it('должен создать spread из mid price и width', () => {
-      // fromMidAndWidth принимает number/string/Decimal, а не Price
+      // fromMidAndWidth принимает number/string/Decimal, а не OutcomePrice
       const spreadResult = SpreadService.fromMidAndWidth(0.5, 0.04);
       expect(spreadResult.ok).toBe(true);
 
@@ -232,8 +232,8 @@ describe('Spread Integration Workflow', () => {
 
   describe('Scenario 6: Edge cases', () => {
     it('должен обработать минимальный spread', () => {
-      const bidResult = PriceService.create(0.4999);
-      const askResult = PriceService.create(0.5001);
+      const bidResult = OutcomePriceService.create(0.4999);
+      const askResult = OutcomePriceService.create(0.5001);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -246,8 +246,8 @@ describe('Spread Integration Workflow', () => {
     });
 
     it('должен обработать максимальный spread', () => {
-      const bidResult = PriceService.create(0.0001);
-      const askResult = PriceService.create(0.9999);
+      const bidResult = OutcomePriceService.create(0.0001);
+      const askResult = OutcomePriceService.create(0.9999);
 
       if (!bidResult.ok || !askResult.ok) return;
 
@@ -260,8 +260,8 @@ describe('Spread Integration Workflow', () => {
     });
 
     it('должен отклонить spread где bid >= ask', () => {
-      const bidResult = PriceService.create(0.52);
-      const askResult = PriceService.create(0.48);
+      const bidResult = OutcomePriceService.create(0.52);
+      const askResult = OutcomePriceService.create(0.48);
 
       if (!bidResult.ok || !askResult.ok) return;
 

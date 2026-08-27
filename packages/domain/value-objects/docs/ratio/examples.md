@@ -520,10 +520,10 @@ class DynamicPricing {
     const isOffPeak = hour < 6 || hour >= 22;
 
     if (isPeakHour) {
-      // Price * (1 + markup)
+      // OutcomePrice * (1 + markup)
       return this.basePrice.mul(this.peakHourMarkup.onePlus());
     } else if (isOffPeak) {
-      // Price * (1 - discount) = Price * (1 + negative_discount)
+      // OutcomePrice * (1 - discount) = OutcomePrice * (1 + negative_discount)
       return this.basePrice.mul(this.offPeakDiscount.onePlus());
     } else {
       // Regular price
@@ -919,7 +919,7 @@ async function placeOrder() {
 
 ## Complex Workflows
 
-### Пример 12: Multi-step Price Calculation
+### Пример 12: Multi-step OutcomePrice Calculation
 
 ```typescript
 import { RatioService } from '@polymarket/value-objects';
@@ -995,13 +995,13 @@ const result = ComplexPricingCalculator.calculate(
 );
 
 if (result) {
-  console.log('Price calculation breakdown:');
+  console.log('OutcomePrice calculation breakdown:');
   for (const { step, amount } of result.steps) {
     console.log(`  ${step.padEnd(25)} $${amount.toFixed(2)}`);
   }
   console.log(`\nFinal price: $${result.final.toFixed(2)}`);
 }
-// Price calculation breakdown:
+// OutcomePrice calculation breakdown:
 //   Base price                $100.00
 //   + Markup (10%)            $110.00
 //   - Discount (15%)          $93.50

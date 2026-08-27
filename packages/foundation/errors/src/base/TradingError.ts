@@ -44,7 +44,7 @@
  * throw new ValidationError('Invalid price');
  *
  * // С контекстом (для логирования)
- * throw new ValidationError('Price must be positive', {
+ * throw new ValidationError('OutcomePrice must be positive', {
  *   context: { field: 'price', value: -10 }
  * });
  *

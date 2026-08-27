@@ -57,7 +57,7 @@ Repair ставит FAK по текущему `marketDataStore.getTopOfBook(miss
 
 ```typescript
 const missingLegTob = marketDataStore.getTopOfBook(rebalanceLeg.instrumentId);
-const rebalancePrice: Price = missingLegTob?.bestAsk ?? plan.fallbackPrice;
+const rebalancePrice: OutcomePrice = missingLegTob?.bestAsk ?? plan.fallbackPrice;
 ```
 
 ### 4. Инкрементальный подсчёт fills в repair-фазе

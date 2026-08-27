@@ -69,7 +69,7 @@
  *    ```typescript
  *    function mapSDKOrderbookToDomain(sdkData: any): Orderbook {
  *      const bids = sdkData.bids.map(b => ({
- *        price: Price.fromNumber(parseFloat(b.price)),
+ *        price: OutcomePrice.fromNumber(parseFloat(b.price)),
  *        quantity: Quantity.fromNumber(parseFloat(b.size)),
  *      }));
  *      // ... map asks similarly

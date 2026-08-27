@@ -10,15 +10,15 @@
 import { describe, expect, it } from '@jest/globals';
 import Decimal from 'decimal.js';
 import {
-  Price,
+  OutcomePrice,
   AssetPrice,
   Spread,
   type DecimalPrice,
 } from '../../../src/index.js';
 
 describe('оба ценовых домена удовлетворяют контракту', () => {
-  it('Price присваивается DecimalPrice структурно', () => {
-    const price: DecimalPrice = Price.of(new Decimal('0.52'));
+  it('OutcomePrice присваивается DecimalPrice структурно', () => {
+    const price: DecimalPrice = OutcomePrice.of(new Decimal('0.52'));
     expect(price.value().toString()).toBe('0.52');
   });
 
@@ -37,7 +37,7 @@ describe('оба ценовых домена удовлетворяют конт
         undefined,
       );
 
-    const outcome = bestOf([Price.of(new Decimal('0.48')), Price.of(new Decimal('0.52'))]);
+    const outcome = bestOf([OutcomePrice.of(new Decimal('0.48')), OutcomePrice.of(new Decimal('0.52'))]);
     const asset = bestOf([
       AssetPrice.of(new Decimal('78468.5')),
       AssetPrice.of(new Decimal('78470.1')),
@@ -58,9 +58,9 @@ describe('оба ценовых домена удовлетворяют конт
 
 describe('Spread работает с обоими доменами', () => {
   it('Spread по умолчанию остаётся prediction-спредом', () => {
-    const spread = Spread.of(Price.of(new Decimal('0.48')), Price.of(new Decimal('0.52')));
+    const spread = Spread.of(OutcomePrice.of(new Decimal('0.48')), OutcomePrice.of(new Decimal('0.52')));
     // Тип сохранён: default-параметр не меняет существующие сигнатуры
-    const bid: Price = spread.bid();
+    const bid: OutcomePrice = spread.bid();
     expect(bid.value().toString()).toBe('0.48');
     expect(spread.width().toString()).toBe('0.04');
   });
