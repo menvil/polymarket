@@ -3,7 +3,7 @@ import Decimal from 'decimal.js';
 import { Ok, Err } from '@polymarket/result';
 import { asOrderId, asInstrumentId, asPolymarketCtfToken, unsafeStrategyId } from '@polymarket/ids';
 import type { OrderId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
-import { Money, Price, Quantity } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import { TradingError } from '@polymarket/errors';
 import { PlaceOrderFailureError } from '@polymarket/use-cases';
@@ -39,8 +39,8 @@ const ORDER_3 = asOrderId('order-3')!;
 const BUY: Side = 'BUY';
 const SELL: Side = 'SELL';
 
-const PRICE_55 = Price.of(new Decimal('0.55'));
-const PRICE_65 = Price.of(new Decimal('0.65'));
+const PRICE_55 = OutcomePrice.of(new Decimal('0.55'));
+const PRICE_65 = OutcomePrice.of(new Decimal('0.65'));
 const SIZE_100 = Quantity.of(new Decimal('100'));
 
 // ── Helpers ────────────────────────────────────────────────
@@ -86,12 +86,12 @@ function makeOrder(id: OrderId, overrides: Partial<{
 function makeInstrumentInfo(opts: Partial<{
   minOrderSize: Quantity;
   minOrderValue: Money;
-  tickSize: Price;
+  tickSize: OutcomePrice;
 }> = {}) {
   return {
     minOrderSize: opts.minOrderSize ?? Quantity.of(new Decimal('1')),
     minOrderValue: opts.minOrderValue ?? Money.of(new Decimal('1'), 'USDC'),
-    tickSize: opts.tickSize ?? Price.of(new Decimal('0.01')),
+    tickSize: opts.tickSize ?? OutcomePrice.of(new Decimal('0.01')),
   } as any;
 }
 
@@ -152,7 +152,7 @@ function makeCtx(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
 
 function place(overrides: Partial<{
   side: Side;
-  price: Price;
+  price: OutcomePrice;
   size: Quantity;
   postOnly: boolean;
 }> = {}): PlaceIntent {
@@ -1034,7 +1034,7 @@ describe('ExecutionEngine', () => {
     it('price не кратна tickSize → local rejection, use case не вызывается', async () => {
       deps = makeDeps({
         catalog: makeCatalog({
-          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: Price.of(new Decimal('0.1')) }),
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: OutcomePrice.of(new Decimal('0.1')) }),
         }),
       });
       engine = new ExecutionEngine(deps);
@@ -1052,7 +1052,7 @@ describe('ExecutionEngine', () => {
       deps = makeDeps({
         catalog: makeCatalog({
           // 0.55 / 0.05 = 11 — кратно; float (0.55 % 0.05) дал бы погрешность.
-          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: Price.of(new Decimal('0.05')) }),
+          [PRIMARY_TOKEN]: makeInstrumentInfo({ tickSize: OutcomePrice.of(new Decimal('0.05')) }),
         }),
       });
       engine = new ExecutionEngine(deps);
@@ -1085,7 +1085,7 @@ describe('ExecutionEngine', () => {
       engine = new ExecutionEngine(deps);
 
       const report = await engine.execute(ctx, [
-        place({ side: BUY, price: Price.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
+        place({ side: BUY, price: OutcomePrice.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
       ]);
 
       expect(report.skipped).toBe(1);
@@ -1095,7 +1095,7 @@ describe('ExecutionEngine', () => {
 
     it('should not apply minOrderValue check to SELL orders', async () => {
       const report = await engine.execute(ctx, [
-        place({ side: SELL, price: Price.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
+        place({ side: SELL, price: OutcomePrice.of(new Decimal('0.01')), size: Quantity.of(new Decimal('5')) }),
       ]);
 
       expect(report.placed).toBe(1);

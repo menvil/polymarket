@@ -256,11 +256,16 @@ export class BookDepthCollector {
     tokenId: InstrumentId,
     book: Orderbook,
   ): void {
-    // #U4: регистрируем marketId на каждом снапшоте (book всегда несёт marketId
-    // в поле instrumentId); обрабатывает смену рынка инструментом и держит
+    // #U4: регистрируем marketId на каждом снапшоте; обрабатывает смену рынка
+    // инструментом и держит
     // индекс консистентным.
-    const marketId = String(book.instrumentId);
-    this._registerMarket(tokenId, marketId);
+    // Рынок берётся из СВОЕГО поля. До foundation-изменения `instrumentId`
+    // сущности нёс marketId, и здесь читалось именно оно; теперь у стакана
+    // есть честный `marketId`, а у биржевых книг его может не быть вовсе.
+    const marketId = book.marketId === undefined ? undefined : String(book.marketId);
+    if (marketId !== undefined) {
+      this._registerMarket(tokenId, marketId);
+    }
 
     let entry = this._entries.get(tokenId);
     if (entry === undefined) {
@@ -282,7 +287,7 @@ export class BookDepthCollector {
       this._entries.set(tokenId, entry);
       this._deps.logger.debug('BookDepthCollector: new history created', {
         tokenId: String(tokenId),
-        marketId,
+        marketId: marketId ?? '',
       });
     }
 

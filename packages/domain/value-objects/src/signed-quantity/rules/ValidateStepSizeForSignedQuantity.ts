@@ -1,65 +1,61 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidSignedQuantityError, ErrorSource } from '@polymarket/errors';
-import Decimal from 'decimal.js';
+import type { Result } from '@polymarket/result';
+import { InvalidSignedQuantityError } from '@polymarket/errors';
+import type Decimal from 'decimal.js';
+import type { GridStepPolicy } from '../../shared/numeric/ValidateGridStep.js';
+import { validateGridStep } from '../../shared/numeric/ValidateGridStep.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
 
 /**
- * Правило: StepSize для округления SignedQuantity должен быть положительным и finite
+ * Описание шага знакового количества как шага дискретной сетки.
  *
  * @remarks
- * Правило для операции roundToStep SignedQuantity.
+ * Верхнего предела нет: количество не ограничено сверху, в отличие от
+ * тика цены, который не может превышать ширину диапазона `[MIN, MAX]`.
+ */
+const SIGNED_QUANTITY_STEP_POLICY: GridStepPolicy<InvalidSignedQuantityError> = {
+  ErrorConstructor: InvalidSignedQuantityError,
+  field: 'stepSize',
+  label: 'Step size',
+  reasonNaN: SignedQuantityErrorReason.NAN,
+  reasonNotFinite: SignedQuantityErrorReason.NON_FINITE,
+  reasonNotPositive: SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE
+};
+
+/**
+ * Правило: шаг округления знакового количества должен быть пригодным числом.
  *
- * Проверяет:
- * - stepSize > 0 (stepSize <= 0 не имеет смысла для округления)
- * - stepSize isFinite
+ * @remarks
+ * Проверка совпадает с тиком цены и с шагом обычного количества — это одно
+ * понятие «шаг дискретной сетки», поэтому реализация общая и живёт в
+ * `shared/numeric`. Здесь остаётся привязка к домену: тип ошибки и словарь
+ * причин, которые закреплены тестами потребителей.
  *
- * Возвращает InvalidSignedQuantityError с reason для дифференциации ошибок.
- *
- * @param stepSize - StepSize для проверки (ТОЛЬКО Decimal)
- * @returns Result<void, InvalidSignedQuantityError>
+ * Знак шага не имеет отношения к знаку самого количества: шаг всегда
+ * строго положителен, даже когда округляемая величина отрицательна.
  *
  * @example
  * ```typescript
- * const validateResult = ValidateStepSizeForSignedQuantity.check(new Decimal(0.01));
- * if (!validateResult.ok) {
- *   console.error(validateResult.error.context); // { stepSize, reason }
- * }
+ * ValidateStepSizeForSignedQuantity.check(new Decimal(0.5));  // Ok
+ * ValidateStepSizeForSignedQuantity.check(new Decimal(-1));   // Err: NON_POSITIVE_STEP_SIZE
  * ```
  */
 export class ValidateStepSizeForSignedQuantity {
-  public static check(stepSize: Decimal): Result<void, InvalidSignedQuantityError> {
-    // Проверка 1: stepSize должен быть finite (проверяем первым)
-    if (!stepSize.isFinite()) {
-      return Err(
-        new InvalidSignedQuantityError(
-          (ctx) => `Step size for SignedQuantity must be finite, got ${ctx.stepSize}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: SignedQuantityErrorReason.NON_FINITE,
-              stepSize: stepSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка 2: stepSize должен быть positive
-    if (stepSize.lessThanOrEqualTo(0)) {
-      return Err(
-        new InvalidSignedQuantityError(
-          (ctx) => `Step size for SignedQuantity must be positive, got ${ctx.stepSize}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE,
-              stepSize: stepSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
+  /**
+   * Проверяет шаг округления знакового количества.
+   *
+   * @param stepSize - Шаг округления (уже Decimal — парсинг делается в Facade)
+   * @returns `Ok(stepSize)` либо `InvalidSignedQuantityError` с причиной отказа
+   * @throws Никогда — все ошибки в `Result`
+   *
+   * @example
+   * ```typescript
+   * const result = ValidateStepSizeForSignedQuantity.check(new Decimal(0));
+   * if (!result.ok) {
+   *   console.error(result.error.context.reason); // 'NON_POSITIVE_STEP_SIZE'
+   * }
+   * ```
+   */
+  public static check(stepSize: Decimal): Result<Decimal, InvalidSignedQuantityError> {
+    return validateGridStep(stepSize, SIGNED_QUANTITY_STEP_POLICY);
   }
 }

@@ -22,8 +22,9 @@
  * ```
  */
 
-import { Result, Ok } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidFeeError, wrapOp } from '@polymarket/errors';
+import { describeType, readField, readJsonObject, safeStringify } from '../../shared/json/index.js';
 import type { AssetId } from '@polymarket/ids';
 import { validateFeeAsset } from '../facade/validateFeeAsset.js';
 import { Fee } from '../core/Fee.js';
@@ -83,6 +84,11 @@ export class FeeSerializer {
    * валидацию asset через validateFeeAsset() чтобы гарантировать
    * INVALID_ASSET reason при невалидных данных (в т.ч. при вызове с `as any`).
    *
+   * Форма проверяется ДО `wrapOp`, а не внутри него: аргументы вызова
+   * вычисляются раньше, чем управление попадает в защищённый колбэк,
+   * поэтому `json.asset` на `null` бросал бы TypeError МИМО обёртки — и
+   * метод, объявленный как возвращающий `Result`, падал бы исключением.
+   *
    * @example
    * ```typescript
    * const json = { asset: AssetIdHelpers.USDC, amount: "0.10" };
@@ -90,9 +96,25 @@ export class FeeSerializer {
    * if (result.ok) {
    *   console.log(result.value.quantity.amount().toNumber()); // 0.1
    * }
+   *
+   * FeeSerializer.fromJSON(null as unknown as FeeJSON); // Err, не throw
    * ```
    */
   public static fromJSON(json: FeeJSON): Result<Fee, InvalidFeeError> {
+    const shape = readJsonObject(json);
+    if (!shape.ok) {
+      return Err(
+        new InvalidFeeError('Fee must be object', {
+          context: {
+            field: 'fee',
+            value: safeStringify(json),
+            type: describeType(json),
+            reason: FeeErrorReason.INVALID_STRUCTURE,
+          },
+        }),
+      );
+    }
+
     return wrapOp(
       'FeeSerializer',
       'fromJSON',
@@ -143,41 +165,42 @@ export class FeeSerializer {
       { value: json, type: typeof json },
       () => {
         // 1. Проверяем что json это объект
-        if (typeof json !== 'object' || json === null) {
+        const shape = readJsonObject(json);
+        if (!shape.ok) {
           throw new InvalidFeeError('Fee must be object', {
             context: {
               field: 'fee',
               value: json,
-              type: typeof json,
+              type: describeType(json),
               reason: FeeErrorReason.INVALID_STRUCTURE,
             },
           });
         }
+        const obj = shape.value;
 
-        const obj = json as Record<string, unknown>;
-
-        // 2. Проверяем наличие полей
-        if (!('asset' in obj) || !('amount' in obj)) {
+        // 2. Проверяем наличие полей — по СОБСТВЕННЫМ, не по прототипу
+        const missingFields = (['asset', 'amount'] as const).filter(
+          (field) => !Object.hasOwn(obj, field),
+        );
+        if (missingFields.length > 0) {
           throw new InvalidFeeError('Fee must have asset and amount fields', {
             context: {
               field: 'fee',
               value: json,
               reason: FeeErrorReason.INVALID_STRUCTURE,
-              missingFields: [
-                !('asset' in obj) ? 'asset' : null,
-                !('amount' in obj) ? 'amount' : null,
-              ].filter(Boolean),
+              missingFields,
             },
           });
         }
 
         // 3. Проверяем тип amount (принимаем string или number для обратной совместимости)
-        if (typeof obj.amount !== 'string' && typeof obj.amount !== 'number') {
+        const amount = readField(obj, 'amount', ['string', 'number']);
+        if (!amount.ok) {
           throw new InvalidFeeError('Fee amount must be string or number', {
             context: {
               field: 'amount',
               value: obj.amount,
-              type: typeof obj.amount,
+              type: describeType(obj.amount),
               reason: FeeErrorReason.INVALID_QUANTITY,
             },
           });

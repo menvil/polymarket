@@ -12,7 +12,7 @@
  * - `ReconcileTradesUseCase` — сверка исполнений с локальными записями
  */
 import type { FillId, OrderId, AssetId, AccountId, MarketId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -49,7 +49,7 @@ export type VenueTradeStatus = 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 
  *   accountId: parseAccountId('venue:POLYMARKET:0x...'),
  *   asset: { type: 'POLYMARKET_CTF_TOKEN', tokenId: 'abc' },
  *   side: 'BUY',
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('30')),
  *   fee: { amount: Quantity.of(new Decimal('0.1')), asset: usdcAssetId },
  *   executedAt: timestamp,
@@ -70,7 +70,7 @@ export interface VenueTradeSnapshot {
   /** Сторона сделки */
   readonly side: Side;
   /** Цена исполнения */
-  readonly price: Price;
+  readonly price: OutcomePrice;
   /** Объём исполнения */
   readonly size: Quantity;
   /** Комиссия сделки */

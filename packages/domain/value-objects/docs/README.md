@@ -105,14 +105,14 @@ console.log(newBalance.toString()); // "1200 USDC"
 
 ---
 
-### 💹 Price
+### 💹 OutcomePrice
 
 Цена на рынке предсказаний Polymarket.
 
 ```typescript
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 
-const price = Price.fromValue(0.55); // 55% вероятность
+const price = OutcomePrice.fromValue(0.55); // 55% вероятность
 price.match({
   ok: (p) => {
     console.log(p.value);             // 0.55
@@ -126,14 +126,14 @@ price.match({
 
 ---
 
-### 🌐 [ReferencePrice](./reference-price/README.md)
+### 🌐 [AssetPrice](./asset-price/README.md)
 
 Цена ВНЕШНЕГО актива (`BTC/USD`, `ETH/USD`) — без ограничения `0..1`.
 
 ```typescript
-import { ReferencePriceService } from '@polymarket/value-objects';
+import { AssetPriceService } from '@polymarket/value-objects';
 
-const result = ReferencePriceService.create('79341.36626633028');
+const result = AssetPriceService.create('79341.36626633028');
 if (result.ok) {
   console.log(result.value.value().toString()); // "79341.36626633028"
 }
@@ -141,12 +141,12 @@ if (result.ok) {
 
 **Особенности:**
 
-- Положительный `Decimal` без верхней границы — `Price` такое значение обязан
+- Положительный `Decimal` без верхней границы — `OutcomePrice` такое значение обязан
   отвергнуть по инварианту
 - Source-agnostic: провенанс наблюдения живёт в событии, а не в числе
 - Десятичная строка источника парсится напрямую, без промежуточного `number`
 
-**[→ Подробная документация](./reference-price/README.md)**
+**[→ Подробная документация](./asset-price/README.md)**
 
 ---
 
@@ -269,11 +269,11 @@ if (fee1Result.ok && fee2Result.ok) {
 Котировка с ценой покупки (bid) и продажи (ask).
 
 ```typescript
-import { Quote, Price } from '@polymarket/value-objects';
+import { Quote, OutcomePrice } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const bid = unwrap(Price.fromValue(0.54));
-const ask = unwrap(Price.fromValue(0.56));
+const bid = unwrap(OutcomePrice.fromValue(0.54));
+const ask = unwrap(OutcomePrice.fromValue(0.56));
 
 const quote = Quote.create(bid, ask);
 quote.match({
@@ -321,7 +321,7 @@ const shifted = SpreadService.shift(spread, 0.10);
 - Railway-Oriented Programming через `Result<T, E>`
 - Инвариант: bid ≤ ask (гарантирован на уровне типов)
 - Операции: tighten (сужение), widen (расширение), shift (сдвиг)
-- Интеграция с Price для Polymarket [0.0001, 0.9999]
+- Интеграция с OutcomePrice для Polymarket [0.0001, 0.9999]
 - Сериализация/форматирование для API и UI
 
 **[→ Подробная документация](./spread/README.md)**
@@ -551,7 +551,7 @@ packages/domain/value-objects/
 │   ├── fee/               # Fee value object
 │   ├── money/             # Money value object
 │   ├── outcome-token/     # OutcomeToken value object
-│   ├── price/             # Price value object
+│   ├── price/             # OutcomePrice value object
 │   ├── quantity/          # Quantity value object
 │   ├── quote/             # Quote value object
 │   ├── ratio/             # Ratio value object
@@ -606,11 +606,11 @@ npm run test:watch
 ### Торговые операции
 
 ```typescript
-import { Money, Percentage, Price, Quantity } from '@polymarket/value-objects';
+import { Money, Percentage, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 // Параметры ордера
-const price = unwrap(Price.fromValue(0.55));
+const price = unwrap(OutcomePrice.fromValue(0.55));
 const quantity = unwrap(Quantity.fromValue(100));
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
 

@@ -24,7 +24,7 @@ import { InMemoryPortfolioStore } from '../../../infrastructure/in-memory/src/In
 import { Portfolio, SimplePosition } from '@polymarket/portfolio';
 import { Position } from '@polymarket/position';
 import { Balance } from '@polymarket/value-objects/balance';
-import { Money, Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
@@ -73,7 +73,7 @@ function makeFill(overrides: {
     marketId: MARKET_ID,
     tokenId: TOKEN_ID,
     settlementAssetId: AssetIdHelpers.USDC,
-    price: Price.of(new Decimal(overrides.price)),
+    price: OutcomePrice.of(new Decimal(overrides.price)),
     size: Quantity.of(new Decimal(overrides.size)),
     side: overrides.side,
     timestamp: ts(overrides.timestampMs),

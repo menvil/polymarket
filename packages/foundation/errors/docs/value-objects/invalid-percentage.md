@@ -589,7 +589,7 @@ function validateAndLogPercentage(
 ## Связанные ошибки
 
 - [InvalidAmountError](./invalid-amount.md) - универсальная валидация чисел
-- [InvalidPriceError](./invalid-price.md) - валидация цен (похожая логика диапазона)
+- [InvalidOutcomePriceError](./invalid-price.md) - валидация цен (похожая логика диапазона)
 
 ## См. также
 

@@ -6,15 +6,15 @@
  * Неизменяемый value object.
  *
  * Инварианты:
- * - price должен быть валидным Price VO
+ * - price должен быть валидным OutcomePrice VO
  * - quantity должен быть валидным Quantity VO (может быть 0)
  *
  * @example
  * ```typescript
- * import { PriceService, QuantityService } from '@polymarket/value-objects';
+ * import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
  * import { OrderbookLevel } from './OrderbookLevel';
  *
- * const priceResult = PriceService.create(0.52);
+ * const priceResult = OutcomePriceService.create(0.52);
  * const quantityResult = QuantityService.create(100);
  *
  * if (priceResult.ok && quantityResult.ok) {
@@ -24,7 +24,7 @@
  * ```
  */
 
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { DecimalPrice, OutcomePrice, Quantity } from '@polymarket/value-objects';
 
 /**
  * Уровень в стакане заявок
@@ -33,9 +33,9 @@ import type { Price, Quantity } from '@polymarket/value-objects';
  * Immutable value object для одного price level.
  * Используется как в bids, так и в asks.
  */
-export class OrderbookLevel {
+export class OrderbookLevel<TPrice extends DecimalPrice = OutcomePrice> {
   private constructor(
-    public readonly price: Price,
+    public readonly price: TPrice,
     public readonly quantity: Quantity
   ) {
     Object.freeze(this);
@@ -49,18 +49,18 @@ export class OrderbookLevel {
    * @returns OrderbookLevel
    *
    * @remarks
-   * Простой конструктор без валидации - Price и Quantity уже валидированы.
+   * Простой конструктор без валидации - OutcomePrice и Quantity уже валидированы.
    *
    * @example
    * ```typescript
-   * const priceResult = PriceService.create(0.52);
+   * const priceResult = OutcomePriceService.create(0.52);
    * const quantityResult = QuantityService.create(100);
    * if (priceResult.ok && quantityResult.ok) {
    *   const level = OrderbookLevel.create(priceResult.value, quantityResult.value);
    * }
    * ```
    */
-  public static create(price: Price, quantity: Quantity): OrderbookLevel {
+  public static create<T extends DecimalPrice>(price: T, quantity: Quantity): OrderbookLevel<T> {
     return new OrderbookLevel(price, quantity);
   }
 
@@ -103,7 +103,7 @@ export class OrderbookLevel {
    * }
    * ```
    */
-  public withQuantity(newQuantity: Quantity): OrderbookLevel {
+  public withQuantity(newQuantity: Quantity): OrderbookLevel<TPrice> {
     return OrderbookLevel.create(this.price, newQuantity);
   }
 
@@ -120,10 +120,12 @@ export class OrderbookLevel {
    * console.log(level1.equals(level2)); // true
    * ```
    */
-  public equals(other: OrderbookLevel): boolean {
+  public equals(other: OrderbookLevel<TPrice>): boolean {
     if (other == null) return false;
+    // Сравнение цены через Decimal: контракт `DecimalPrice` намеренно
+    // минимален и метода сравнения не содержит (см. shared/DecimalPrice.ts)
     return (
-      this.price.equals(other.price) &&
+      this.price.value().equals(other.price.value()) &&
       this.quantity.equals(other.quantity)
     );
   }

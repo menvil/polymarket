@@ -27,7 +27,7 @@
  */
 import type { Portfolio } from '@polymarket/portfolio';
 import type { InstrumentId, StrategyId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 
 /**
  * Входные данные пре-трейд риск-проверки.
@@ -59,7 +59,7 @@ export interface PreOrderCheckInput {
   /** Сторона ордера */
   readonly side: Side;
   /** Цена ордера */
-  readonly price: Price;
+  readonly price: OutcomePrice;
   /** Объём ордера */
   readonly size: Quantity;
   /** ID торгового инструмента */

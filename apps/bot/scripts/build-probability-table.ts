@@ -269,7 +269,7 @@ async function main() {
 
   // Выводим красивую таблицу в stderr
   console.error('\n=== PROBABILITY TABLE ===');
-  console.error(`Price bucket: ${config.bucketPriceCents}¢, Tau bucket: ${config.bucketTauSec}s\n`);
+  console.error(`OutcomePrice bucket: ${config.bucketPriceCents}¢, Tau bucket: ${config.bucketTauSec}s\n`);
 
   // Собираем уникальные tau бакеты для header
   const tauBuckets = [...new Set(table.map(r => r.tauBucket))].sort((a, b) => b - a);

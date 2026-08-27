@@ -28,7 +28,7 @@
  * ```typescript
  * import { Trade } from '@polymarket/trade';
  * import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
- * import { Price, Quantity } from '@polymarket/value-objects';
+ * import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
  * import Decimal from 'decimal.js';
  *
@@ -37,7 +37,7 @@ import { Timestamp } from '@polymarket/timestamp';
  *   venueId: asVenueId('POLYMARKET')!,
  *   marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
  *   tokenId: parseAssetId('62305814799875783974460176688386847666394972778903073967664089920408777315323')!,
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  *   aggressorSide: 'BUY',
  *   timestamp: Timestamp.now(),
@@ -55,7 +55,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { VenueTradeId, VenueId, AssetId, TxHash, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -77,7 +77,7 @@ export interface TradeParams {
   /** ID токена (актива) */
   readonly tokenId: AssetId;
   /** Цена трейда */
-  readonly price: Price;
+  readonly price: OutcomePrice;
   /** Размер трейда */
   readonly size: Quantity;
   /** Сторона агрессора — опционально, не всегда известно */
@@ -109,7 +109,7 @@ export class Trade {
   public readonly venueId: VenueId;
   public readonly marketId: MarketId;
   public readonly tokenId: AssetId;
-  public readonly price: Price;
+  public readonly price: OutcomePrice;
   public readonly size: Quantity;
   public readonly aggressorSide: Side | undefined;
   public readonly timestamp: Timestamp;
@@ -153,7 +153,7 @@ export class Trade {
    *   venueId: asVenueId('POLYMARKET')!,
    *   marketId: 'market-abc',
    *   tokenId: parseAssetId('...'),
-   *   price: Price.of(new Decimal('0.65')),
+   *   price: OutcomePrice.of(new Decimal('0.65')),
    *   size: Quantity.of(new Decimal('100')),
    *   timestamp: Timestamp.now(),
    * });
@@ -199,7 +199,7 @@ export class Trade {
     // Инвариант 5: price > 0
     if (!params.price) {
       return Err(
-        new ValidationError('Price is required', {
+        new ValidationError('OutcomePrice is required', {
           context: { field: 'price', tradeId: params.id },
         })
       );
@@ -254,7 +254,7 @@ export class Trade {
    *
    * @example
    * ```typescript
-   * const trade = Trade.create({ price: Price.of(0.65), size: Quantity.of(100), ... });
+   * const trade = Trade.create({ price: OutcomePrice.of(0.65), size: Quantity.of(100), ... });
    * console.log(trade.getNotional().toNumber()); // 65
    * ```
    */

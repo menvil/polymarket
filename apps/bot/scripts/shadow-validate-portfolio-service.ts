@@ -43,7 +43,7 @@ import { PortfolioService } from '@polymarket/use-cases';
 import { InMemoryPortfolioStore } from '@polymarket/in-memory';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance } from '@polymarket/value-objects/balance';
-import { Money, Price, Quantity, Fee } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import { Fill } from '@polymarket/fill';
 import {
@@ -315,7 +315,7 @@ function processFile(mf: MarketFills, accountId: AccountId, venueId: VenueId): F
       marketId,
       tokenId,
       settlementAssetId: AssetIdHelpers.USDC,
-      price: Price.of(price),
+      price: OutcomePrice.of(price),
       size: Quantity.of(size),
       side: record.side,
       timestamp: Timestamp.of(new Decimal(record.ts)),

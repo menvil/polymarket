@@ -37,9 +37,8 @@
 import type { ILogger } from '@polymarket/logger';
 import { Orderbook, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price } from '@polymarket/value-objects';
+import { KnownVenues } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
-import { PriceService } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { TopOfBook } from '@polymarket/application-events';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
@@ -120,17 +119,14 @@ export class BookUpdateHandler {
       return;
     }
 
-    // `Orderbook.fromLevels`'s первый параметр называется `instrumentId`, но по
-    // установленному в Этапе 2 контракту сущности (см. `Orderbook.fromNormalized`)
-    // несёт то, что везде в остальном коде называется marketId — тот же неймингный
-    // артефакт entity, не вводится здесь заново, а следует уже принятому паттерну.
-    const book = Orderbook.fromLevels(
-      instrument.marketId as unknown as InstrumentId,
-      tokenId,
+    const book = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrument.marketId,
+      instrumentId: tokenId,
       bids,
       asks,
-      timestamp,
-    );
+      receivedAt: timestamp,
+    });
     this._books.set(instrument.marketId, tokenId, book);
 
     // Индексируем tokenId → marketId для последующей очистки в onMarketClosed
@@ -152,20 +148,13 @@ export class BookUpdateHandler {
     const bestBid = book.getBestBid();
     const bestAsk = book.getBestAsk();
 
-    // Spread = bestAsk - bestBid — делегируем Orderbook для переиспользования логики.
-    // getSpread() уже само отсеивает crossed/empty/one-sided книги через Err —
-    // отдельная проверка "spread > 0" (как в старом mutable OrderBook) не нужна.
-    let spread: Price | undefined;
-    const spreadResult = book.getSpread();
-    if (spreadResult.ok) {
-      const priceResult = PriceService.create(spreadResult.value.width());
-      if (priceResult.ok) spread = priceResult.value;
-    }
-
+    // Ширина спреда в TopOfBook больше не хранится: она разность, а не цена
+    // (нулевой спред — валидный рынок, но ни один ценовой VO нуля не
+    // допускает). Потребителю доступен `bookPricing.spread(book)`,
+    // возвращающий canonical `Spread`, который нулевую ширину представляет.
     const topOfBook: TopOfBook = {
       bestBid: bestBid ?? undefined,
       bestAsk: bestAsk ?? undefined,
-      spread,
       bestBidSize: book.bids[0]?.quantity,
       bestAskSize: book.asks[0]?.quantity,
     };
@@ -174,6 +163,7 @@ export class BookUpdateHandler {
       type: 'BOOK_UPDATED',
       payload: {
         topOfBook,
+        venueId: KnownVenues.POLYMARKET,
         instrumentId: tokenId,
         marketId: instrument.marketId,
         sequenceNumber: timestamp.toNumber(), // proxy: Polymarket не шлёт sequence number
@@ -191,6 +181,8 @@ export class BookUpdateHandler {
     const bookDepthResult = await this._eventBus.publish({
       type: 'BOOK_DEPTH',
       payload: {
+        venueId: KnownVenues.POLYMARKET,
+        marketId: instrument.marketId,
         instrumentId: tokenId,
         snapshot: book,
         timestamp,

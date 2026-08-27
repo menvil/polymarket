@@ -4,7 +4,20 @@
  * @remarks
  * Price и Quantity VOs: это application-layer событие, не wire DTO.
  *
- * ### Идентичность трейда
+ * ### Идентичность повторяет Domain
+ *
+ * `venueId` / `marketId?` / `instrumentId` — те же три поля, что у стакана.
+ * Без `venueId` сделка по `BTC/USDT` на binance была неотличима от сделки
+ * на coinbase.
+ *
+ * ### Параметризация ценовым доменом
+ *
+ * Лента биржи состоит из цен актива (`78468.50`), лента рынка предсказаний —
+ * из долей исхода (`0.51`). Без `TPrice` CEX-адаптеру пришлось бы заводить
+ * второй тип события. Default `OutcomePrice` сохраняет существующие
+ * сигнатуры.
+ *
+ * ### Идентичность сделки
  *
  * `venueTradeId` несёт ФАКТИЧЕСКИЙ идентификатор сделки на venue и никогда
  * не конструируется из других полей. Для Polymarket это `transactionHash`
@@ -23,14 +36,16 @@
  * первичная реакция на внешнее WS-наблюдение.
  */
 import type { MessageEnvelope } from '@polymarket/messages';
-import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { InstrumentId, MarketId, VenueId, VenueTradeId } from '@polymarket/ids';
+import type { DecimalPrice, OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
-export type TradeReceivedEvent = MessageEnvelope<
+export type TradeReceivedEvent<TPrice extends DecimalPrice = OutcomePrice> = MessageEnvelope<
   'TRADE_RECEIVED',
   {
-    /** ID токена (UP/DOWN outcome token) */
+    /** Площадка, на которой прошла сделка. */
+    readonly venueId: VenueId;
+    /** Торгуемый инструмент: outcome-токен либо символ пары. */
     readonly instrumentId: InstrumentId;
     /**
      * ID рынка (condition_id), если источник его сообщает.
@@ -52,7 +67,7 @@ export type TradeReceivedEvent = MessageEnvelope<
      */
     readonly venueTradeId?: VenueTradeId;
     /** Цена трейда (VO, не string) */
-    readonly price: Price;
+    readonly price: TPrice;
     /** Объём трейда (VO, не string) */
     readonly size: Quantity;
     /** Сторона агрессора */

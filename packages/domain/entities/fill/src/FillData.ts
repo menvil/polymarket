@@ -20,7 +20,7 @@
  * полей одного исполнения в терминах Order-агрегата.
  */
 import type { AssetId, FillId, OrderId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 
 export interface FillData {
   readonly id: FillId;
@@ -28,5 +28,5 @@ export interface FillData {
   readonly asset: AssetId;
   readonly side: Side;
   readonly size: Quantity;
-  readonly price: Price;
+  readonly price: OutcomePrice;
 }

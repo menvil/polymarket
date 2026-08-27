@@ -20,11 +20,16 @@
  * - BOOK_UPDATED / BOOK_DEPTH — верхушка и полный стакан инструмента
  * - TRADE_RECEIVED — публичный маркет-принт
  * - TICK_SIZE_CHANGED — venue сменил шаг цены (вход последующего execution)
+ *
+ * Market-data события несут `venueId`/`marketId?`/`instrumentId` — ту же
+ * идентичность, что и Domain-сущность стакана, — и параметризованы ценовым
+ * доменом, поэтому одинаково пригодны для рынка предсказаний и для биржи.
  * - REFERENCE_PRICE_UPDATED — цена ВНЕШНЕГО актива (BTC/USD); отдельный
- *   канал, потому что `Price` рынка предсказаний ограничен `[0.0001, 0.9999]`
+ *   канал, потому что `OutcomePrice` рынка предсказаний ограничен `[0.0001, 0.9999]`
  *   и физически не может её представить
  */
 import type { FillReceivedEvent, FillConfirmedEvent, FillFailedEvent, DirectFillAppliedEvent } from './fill/index.js';
+import type { DecimalPrice } from '@polymarket/value-objects';
 import type {
   BookUpdatedEvent,
   BookDepthEvent,
@@ -41,9 +46,15 @@ export type ApplicationEvent =
   | FillConfirmedEvent
   | FillFailedEvent
   | DirectFillAppliedEvent
-  | BookUpdatedEvent
-  | BookDepthEvent
-  | TradeReceivedEvent
+  // Market-data события параметризованы САМЫМ ШИРОКИМ ценовым доменом:
+  // `BookDepthEvent<OutcomePrice>` и `BookDepthEvent<AssetPrice>` в него
+  // присваиваются оба (поля readonly → ковариантность). Зафиксировать здесь
+  // `OutcomePrice` значило бы сделать канонический union prediction-only и
+  // заставить CEX-адаптер заводить ВТОРОЙ тип события — ту же типовую стену,
+  // только слоем выше.
+  | BookUpdatedEvent<DecimalPrice>
+  | BookDepthEvent<DecimalPrice>
+  | TradeReceivedEvent<DecimalPrice>
   | TickSizeChangedEvent
   | ReferencePriceUpdatedEvent
   | StrategySignalEvent

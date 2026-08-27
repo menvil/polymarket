@@ -25,7 +25,7 @@
 
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategyIntent, StrategySnapshot, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренний Decimal-конвент apps/bot/strategies/*, см. docs/architecture/boundary-contract.md, Решение 11
@@ -391,7 +391,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
           intents.push({
             type: 'PLACE',
             side: 'BUY',
-            price: Price.of(priceDecimal),
+            price: OutcomePrice.of(priceDecimal),
             size: Quantity.of(sizeDecimal),
           });
           break;
@@ -402,7 +402,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
           intents.push({
             type: 'PLACE',
             side: 'SELL',
-            price: Price.of(priceDecimal),
+            price: OutcomePrice.of(priceDecimal),
             size: Quantity.of(sizeDecimal),
           });
           break;

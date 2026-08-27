@@ -56,7 +56,7 @@
  *
  * Арифметика с другими VO живет в целевых классах:
  * - Money.addRate(ratio: Ratio): добавить процент к сумме
- * - Price.take(ratio: Ratio): взять процент от цены
+ * - OutcomePrice.take(ratio: Ratio): взять процент от цены
  * - Quantity.applyDiscount(ratio: Ratio): применить скидку
  *
  * @see {@link RatioService} для безопасного создания через Result

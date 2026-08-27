@@ -12,7 +12,7 @@ import { PaperClock } from '@polymarket/time';
 import { TradeIndexCollector } from '../src/TradeIndexCollector.js';
 import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
 import type { AssetId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { Trade } from '@polymarket/trade';
@@ -23,7 +23,7 @@ function makeTs(ms: number): Timestamp {
   if (!r.ok) throw new Error(`bad ts ${ms}`);
   return r.value;
 }
-const px = (v: string): Price => Price.of(new Decimal(v));
+const px = (v: string): OutcomePrice => OutcomePrice.of(new Decimal(v));
 const qty = (v: string): Quantity => Quantity.of(new Decimal(v));
 
 const T0 = 1_700_000_000_000;

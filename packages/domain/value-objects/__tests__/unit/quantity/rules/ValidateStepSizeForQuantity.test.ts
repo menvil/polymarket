@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { ValidateStepSizeForQuantity } from '../../../../src/quantity/rules/ValidateStepSizeForQuantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { QuantityErrorReason } from '../../../../src/quantity/errors/QuantityErrorReason.js';
 
 describe('ValidateStepSizeForQuantity', () => {
   describe('check()', () => {
@@ -50,12 +51,16 @@ describe('ValidateStepSizeForQuantity', () => {
       }
     });
 
-    it('должен вернуть Err для NaN', () => {
+    it('должен вернуть Err для NaN с ОТДЕЛЬНОЙ причиной', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
-        expect(result.error.message).toContain('must be finite');
+        // Раньше NaN проваливался в ветку isFinite и приходил как
+        // «must be finite» — отличить его от Infinity было нельзя.
+        // Общее правило проверяет NaN первым и даёт ему свою причину
+        expect(result.error.message).toContain('must not be NaN');
+        expect(result.error.context?.reason).toBe(QuantityErrorReason.NAN);
         expect(result.error.context?.stepSize).toBe('NaN');
         expect(result.error.context).not.toHaveProperty('op');
       }

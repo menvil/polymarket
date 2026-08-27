@@ -1,6 +1,6 @@
 import { type Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError, ErrorSource } from '@polymarket/errors';
-import { Price } from '../../price/index.js';
+import { OutcomePrice } from '../../outcome-price/index.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
 /**
@@ -16,12 +16,12 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  *
  * @example
  * ```typescript
- * const bid = Price.of(new Decimal(0.48));
- * const ask = Price.of(new Decimal(0.52));
+ * const bid = OutcomePrice.of(new Decimal(0.48));
+ * const ask = OutcomePrice.of(new Decimal(0.52));
  * const result = ValidateBidAsk.check(bid, ask);
  * // result.ok === true
  *
- * const invalidBid = Price.of(new Decimal(0.60));
+ * const invalidBid = OutcomePrice.of(new Decimal(0.60));
  * const invalidResult = ValidateBidAsk.check(invalidBid, ask);
  * // invalidResult.ok === false
  * ```
@@ -34,7 +34,7 @@ export class ValidateBidAsk {
    * @param ask - Ask price
    * @returns Ok если валидны, Err если bid > ask
    */
-  public static check(bid: Price, ask: Price): Result<void, InvalidSpreadError> {
+  public static check(bid: OutcomePrice, ask: OutcomePrice): Result<void, InvalidSpreadError> {
     if (bid.value().greaterThan(ask.value())) {
       return Err(
         new InvalidSpreadError(

@@ -30,7 +30,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import { asOrderId, asFillId, asStrategyId, parseAccountId, parseAssetId } from '@polymarket/ids';
@@ -132,7 +132,7 @@ export abstract class OrderDeserializer {
       const filledSize = Quantity.of(new Decimal(snap.filledSize));
       const averagePrice = snap.averagePrice == null
         ? undefined
-        : Price.of(new Decimal(snap.averagePrice));
+        : OutcomePrice.of(new Decimal(snap.averagePrice));
 
       // Persistence-boundary: снапшот несёт raw string, домен — branded StrategyId.
       // Невалидное значение — ошибка восстановления (паттерн asFillId выше).
@@ -150,7 +150,7 @@ export abstract class OrderDeserializer {
         id,
         asset,
         side: snap.side as Side,
-        price: Price.of(new Decimal(snap.price)),
+        price: OutcomePrice.of(new Decimal(snap.price)),
         size: Quantity.of(new Decimal(snap.size)),
         status: snap.status as OrderStatus,
         timestamp: tsResult.value,

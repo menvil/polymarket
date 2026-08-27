@@ -31,7 +31,7 @@ import {
   assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { AssetId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Money } from '@polymarket/value-objects';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import type { IExchangeClient, SubmitOrderParams, SubmitOrderResult } from '@polymarket/ports';
@@ -152,7 +152,7 @@ describe('PlaceOrder concurrency (integration) — risk projection под keyed 
       asset: overrides.asset,
       instrumentId: overrides.instrumentId,
       side: 'BUY',
-      price: Price.of(new Decimal(overrides.price)),
+      price: OutcomePrice.of(new Decimal(overrides.price)),
       size: Quantity.of(new Decimal(overrides.size)),
       portfolio: overrides.portfolio,
       openOrdersCount: 0,

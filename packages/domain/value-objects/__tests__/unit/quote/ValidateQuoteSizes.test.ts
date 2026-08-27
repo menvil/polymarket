@@ -1,16 +1,16 @@
 import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateQuoteSizes } from '../../../src/quote/rules/ValidateQuoteSizes.js';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('ValidateQuoteSizes', () => {
   describe('check()', () => {
     it('проходит для валидной двусторонней котировки', () => {
-      const bid = Price.of(new Decimal(0.48));
+      const bid = OutcomePrice.of(new Decimal(0.48));
       const bidSize = Quantity.of(new Decimal(100));
-      const ask = Price.of(new Decimal(0.52));
+      const ask = OutcomePrice.of(new Decimal(0.52));
       const askSize = Quantity.of(new Decimal(150));
 
       const result = ValidateQuoteSizes.check(bid, bidSize, ask, askSize);
@@ -19,7 +19,7 @@ describe('ValidateQuoteSizes', () => {
     });
 
     it('проходит для bid-only котировки с positive size', () => {
-      const bid = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.50));
       const bidSize = Quantity.of(new Decimal(100));
 
       const result = ValidateQuoteSizes.check(bid, bidSize, null, Quantity.ZERO);
@@ -28,7 +28,7 @@ describe('ValidateQuoteSizes', () => {
     });
 
     it('проходит для ask-only котировки с positive size', () => {
-      const ask = Price.of(new Decimal(0.51));
+      const ask = OutcomePrice.of(new Decimal(0.51));
       const askSize = Quantity.of(new Decimal(200));
 
       const result = ValidateQuoteSizes.check(null, Quantity.ZERO, ask, askSize);
@@ -37,9 +37,9 @@ describe('ValidateQuoteSizes', () => {
     });
 
     it('фэйлится когда bid определён но bidSize zero', () => {
-      const bid = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.50));
       const bidSize = Quantity.ZERO; // ❌
-      const ask = Price.of(new Decimal(0.51));
+      const ask = OutcomePrice.of(new Decimal(0.51));
       const askSize = Quantity.of(new Decimal(200));
 
       const result = ValidateQuoteSizes.check(bid, bidSize, ask, askSize);
@@ -53,9 +53,9 @@ describe('ValidateQuoteSizes', () => {
     });
 
     it('фэйлится когда ask определён но askSize zero', () => {
-      const bid = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.50));
       const bidSize = Quantity.of(new Decimal(100));
-      const ask = Price.of(new Decimal(0.51));
+      const ask = OutcomePrice.of(new Decimal(0.51));
       const askSize = Quantity.ZERO; // ❌
 
       const result = ValidateQuoteSizes.check(bid, bidSize, ask, askSize);

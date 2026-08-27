@@ -33,7 +33,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -591,7 +591,7 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
    * Market sell: ставит sell значительно ниже bestBid для гарантированного fill.
    *
    * @remarks
-   * Price improvement в PaperFillSimulator: fill по max(orderPrice, bestBid).
+   * OutcomePrice improvement в PaperFillSimulator: fill по max(orderPrice, bestBid).
    * Ставим цену ниже bestBid на 10¢ чтобы заполнилось даже если bestBid
    * упадёт на следующем тике. Минимум 20¢ (minOrderValue $1 / 5 токенов).
    */
@@ -621,7 +621,7 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
           intents.push({
             type: 'PLACE',
             side: 'BUY',
-            price: Price.of(new Decimal(action.price).div(100)),
+            price: OutcomePrice.of(new Decimal(action.price).div(100)),
             size: Quantity.of(action.size),
           });
           break;
@@ -630,7 +630,7 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
           intents.push({
             type: 'PLACE',
             side: 'SELL',
-            price: Price.of(new Decimal(action.price).div(100)),
+            price: OutcomePrice.of(new Decimal(action.price).div(100)),
             size: Quantity.of(action.size),
           });
           break;

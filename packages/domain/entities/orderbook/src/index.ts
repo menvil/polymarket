@@ -40,6 +40,11 @@
 export { Orderbook, type OrderbookParams } from './core/Orderbook.js';
 export { OrderbookLevel } from './core/OrderbookLevel.js';
 
+// Pricing — производные ЦЕНЫ стакана; вынесены из сущности, потому что их
+// вычисление требует фабрики конкретного ценового домена (см. bookPricing.ts)
+export { bookPricing } from './pricing/bookPricing.js';
+export type { BookPricing, PriceFactory } from './pricing/bookPricing.js';
+
 // Normalizer
 export {
   OrderbookNormalizer,

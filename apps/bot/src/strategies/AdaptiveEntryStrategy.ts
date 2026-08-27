@@ -50,7 +50,7 @@
 import { BaseStrategy } from '@polymarket/strategy';
 import { placeTarget } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -470,7 +470,7 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
       const base = {
         type: 'PLACE' as const,
         side: 'BUY' as const,
-        price: Price.of(new Decimal(action.price).div(100)),
+        price: OutcomePrice.of(new Decimal(action.price).div(100)),
         size: Quantity.of(action.size),
       };
       intents.push(target ? { ...base, ...target } : base);

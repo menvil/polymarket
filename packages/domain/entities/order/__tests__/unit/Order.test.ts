@@ -2,7 +2,7 @@
  * Тесты для Order aggregate
  */
 
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -55,7 +55,7 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
     id: ORDER_ID,
     asset: TEST_ASSET,
     side: 'BUY' as const,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     timestamp: Timestamp.now(),
   };
@@ -71,7 +71,7 @@ function createFill(overrides?: Partial<FillData>): FillData {
     asset: TEST_ASSET,
     side: 'BUY' as const,
     size: Quantity.of(new Decimal('30')),
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
   };
 
   return { ...defaults, ...overrides };
@@ -151,10 +151,10 @@ describe('Order', () => {
     });
 
     it('должен вернуть Err если price null', () => {
-      const result = createValidOrder({ price: null as unknown as Price });
+      const result = createValidOrder({ price: null as unknown as OutcomePrice });
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Price is required');
+        expect(result.error.message).toContain('OutcomePrice is required');
       }
     });
 
@@ -173,7 +173,7 @@ describe('Order', () => {
         id: ORDER_ID,
         asset: TEST_ASSET,
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('100')),
         status: 'OPEN',
         timestamp: Timestamp.now(),
@@ -202,7 +202,7 @@ describe('Order', () => {
       const state = makeState({
         fill: {
           filledSize: Quantity.of(new Decimal('150')),
-          averagePrice: Price.of(new Decimal('0.65')),
+          averagePrice: OutcomePrice.of(new Decimal('0.65')),
           fillIds: [FILL_ID_1],
         },
       });
@@ -216,7 +216,7 @@ describe('Order', () => {
         status: 'PENDING',
         fill: {
           filledSize: Quantity.of(new Decimal('10')),
-          averagePrice: Price.of(new Decimal('0.65')),
+          averagePrice: OutcomePrice.of(new Decimal('0.65')),
           fillIds: [FILL_ID_1],
         },
       });
@@ -230,7 +230,7 @@ describe('Order', () => {
         status: 'FILLED',
         fill: {
           filledSize: Quantity.of(new Decimal('50')), // не равно size=100
-          averagePrice: Price.of(new Decimal('0.65')),
+          averagePrice: OutcomePrice.of(new Decimal('0.65')),
           fillIds: [FILL_ID_1],
         },
       });
@@ -244,7 +244,7 @@ describe('Order', () => {
         status: 'FILLED',
         fill: {
           filledSize: Quantity.of(new Decimal('100')),
-          averagePrice: Price.of(new Decimal('0.65')),
+          averagePrice: OutcomePrice.of(new Decimal('0.65')),
           fillIds: [FILL_ID_1],
         },
       });
@@ -271,7 +271,7 @@ describe('Order', () => {
         status: 'PARTIALLY_FILLED',
         fill: {
           filledSize: Quantity.of(new Decimal('100')), // равно size=100 — уже FILLED
-          averagePrice: Price.of(new Decimal('0.65')),
+          averagePrice: OutcomePrice.of(new Decimal('0.65')),
           fillIds: [FILL_ID_1],
         },
       });
@@ -329,7 +329,7 @@ describe('Order', () => {
             orderId: ORDER_ID,
             asset: TEST_ASSET,
             side: 'BUY',
-            price: Price.of(new Decimal('0.65')),
+            price: OutcomePrice.of(new Decimal('0.65')),
             size: Quantity.of(new Decimal('100')),
             timestamp: ts,
           },
@@ -377,7 +377,7 @@ describe('Order', () => {
         asset: TEST_ASSET,
         side: 'BUY',
         size: Quantity.of(new Decimal('100')),
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       };
 
       const order = replay([
@@ -385,7 +385,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -417,7 +417,7 @@ describe('Order', () => {
         asset: TEST_ASSET,
         side: 'BUY',
         size: Quantity.of(new Decimal('30')),
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       };
       const remainingSize = Quantity.of(new Decimal('70'));
 
@@ -426,7 +426,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -458,7 +458,7 @@ describe('Order', () => {
         asset: TEST_ASSET,
         side: 'BUY',
         size: Quantity.of(new Decimal('30')),
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       };
 
       const order = replay([
@@ -466,7 +466,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -516,7 +516,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -545,7 +545,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -574,7 +574,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -597,7 +597,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -627,7 +627,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -648,14 +648,14 @@ describe('Order', () => {
       const fillData: FillData = {
         id: FILL_ID_1, orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
         size: Quantity.of(new Decimal('50')), // только половина заявки
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       };
       const order = replay([
         {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -670,7 +670,7 @@ describe('Order', () => {
           type: 'ORDER_FILLED',
           payload: {
             orderId: ORDER_ID, fill: fillData,
-            averagePrice: Price.of(new Decimal('0.65'))
+            averagePrice: OutcomePrice.of(new Decimal('0.65'))
           },
           metadata: nextTestMetadata(),
         },
@@ -687,7 +687,7 @@ describe('Order', () => {
         asset: TEST_ASSET,
         side: 'BUY',
         size: Quantity.of(new Decimal('30')),
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       };
       const partialEvent = {
         type: 'ORDER_PARTIALLY_FILLED' as const,
@@ -704,7 +704,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -729,7 +729,7 @@ describe('Order', () => {
           type: 'ORDER_CREATED',
           payload: {
             orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
+            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
           },
           metadata: nextTestMetadata(),
         },
@@ -939,7 +939,7 @@ describe('Order', () => {
   describe('computed getters', () => {
     it('notional должен вычислять price * size', () => {
       const order = unwrap(createValidOrder({
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('100')),
       }));
 
@@ -980,7 +980,7 @@ describe('Order', () => {
         id: ORDER_ID,
         asset: TEST_ASSET,
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.ZERO,
         status: 'PENDING',
         timestamp: Timestamp.now(),
@@ -1317,7 +1317,7 @@ describe('Order', () => {
         id: ORDER_ID,
         side: 'BUY',
         size: Quantity.of(new Decimal('100')),
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
       })).accept());
 
       const str = order.toString();

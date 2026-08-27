@@ -8,7 +8,7 @@
  *
  * Сигнал REJECTION генерируется когда **одновременно** выполнены три условия:
  * 1. **Wall intact** (стенка цела): absorptionRatio < rejectionMaxAbsorption
- * 2. **Price tested** (цена протестировала уровень): tradeVolumeInWindow >= minWallTestVolume
+ * 2. **OutcomePrice tested** (цена протестировала уровень): tradeVolumeInWindow >= minWallTestVolume
  * 3. **Flow decelerated** (поток замедлился): recentRate < historicRate × flowDecelerationFactor
  *
  * ```

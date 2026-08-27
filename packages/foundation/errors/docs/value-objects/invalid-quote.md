@@ -50,8 +50,8 @@ import { InvalidQuoteError } from '@polymarket/errors';
 
 class Quote {
   constructor(
-    public readonly bid: Price | null,
-    public readonly ask: Price | null,
+    public readonly bid: OutcomePrice | null,
+    public readonly ask: OutcomePrice | null,
     public readonly bidSize: Quantity,
     public readonly askSize: Quantity
   ) {
@@ -78,8 +78,8 @@ class Quote {
 // Использование
 try {
   const quote = new Quote(
-    Price.fromValue(0.66),
-    Price.fromValue(0.64), // ask < bid - невалидно!
+    OutcomePrice.fromValue(0.66),
+    OutcomePrice.fromValue(0.64), // ask < bid - невалидно!
     Quantity.fromValue(100),
     Quantity.fromValue(100)
   );
@@ -101,16 +101,16 @@ import { InvalidQuoteError } from '@polymarket/errors';
 
 class Quote {
   private constructor(
-    public readonly bid: Price | null,
-    public readonly ask: Price | null,
+    public readonly bid: OutcomePrice | null,
+    public readonly ask: OutcomePrice | null,
     public readonly bidSize: Quantity,
     public readonly askSize: Quantity,
     public readonly timestamp: Date
   ) {}
 
   static create(
-    bid: Price | null,
-    ask: Price | null,
+    bid: OutcomePrice | null,
+    ask: OutcomePrice | null,
     bidSize: Quantity,
     askSize: Quantity,
     timestamp: Date = new Date()
@@ -162,8 +162,8 @@ class Quote {
 
 // Использование
 const result = Quote.create(
-  unwrap(Price.fromValue(0.66)),
-  unwrap(Price.fromValue(0.64)),
+  unwrap(OutcomePrice.fromValue(0.66)),
+  unwrap(OutcomePrice.fromValue(0.64)),
   unwrap(Quantity.fromValue(100)),
   unwrap(Quantity.fromValue(100))
 );
@@ -193,10 +193,10 @@ class Quote {
     askAdjustment: number
   ): Result<Quote, InvalidQuoteError> {
     const adjustPrice = (
-      price: Price,
+      price: OutcomePrice,
       adjustment: number,
       priceType: 'bid' | 'ask'
-    ): Result<Price, InvalidQuoteError> => {
+    ): Result<OutcomePrice, InvalidQuoteError> => {
       const result = adjustment >= 0
         ? price.add(adjustment)
         : price.subtract(Math.abs(adjustment));
@@ -221,14 +221,14 @@ class Quote {
       return Ok(result.value);
     };
 
-    let newBid: Price | null = null;
+    let newBid: OutcomePrice | null = null;
     if (this.bid) {
       const bidResult = adjustPrice(this.bid, bidAdjustment, 'bid');
       if (!bidResult.ok) return Err(bidResult.error);
       newBid = bidResult.value;
     }
 
-    let newAsk: Price | null = null;
+    let newAsk: OutcomePrice | null = null;
     if (this.ask) {
       const askResult = adjustPrice(this.ask, askAdjustment, 'ask');
       if (!askResult.ok) return Err(askResult.error);
@@ -241,8 +241,8 @@ class Quote {
 
 // Использование
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromValue(0.64)),
-  unwrap(Price.fromValue(0.66)),
+  unwrap(OutcomePrice.fromValue(0.64)),
+  unwrap(OutcomePrice.fromValue(0.66)),
   unwrap(Quantity.fromValue(100)),
   unwrap(Quantity.fromValue(100))
 ));
@@ -272,9 +272,9 @@ class Quote {
     timestamp: string;
   }): Result<Quote, InvalidQuoteError> {
     // Парсинг цен
-    let bid: Price | null = null;
+    let bid: OutcomePrice | null = null;
     if (json.bid !== null) {
-      const bidResult = Price.fromValue(json.bid);
+      const bidResult = OutcomePrice.fromValue(json.bid);
       if (!bidResult.ok) {
         return Err(
           new InvalidQuoteError(
@@ -289,9 +289,9 @@ class Quote {
       bid = bidResult.value;
     }
 
-    let ask: Price | null = null;
+    let ask: OutcomePrice | null = null;
     if (json.ask !== null) {
-      const askResult = Price.fromValue(json.ask);
+      const askResult = OutcomePrice.fromValue(json.ask);
       if (!askResult.ok) {
         return Err(
           new InvalidQuoteError(
@@ -389,6 +389,6 @@ if (!result.ok) {
 ## См. также
 
 - [InvalidSpreadError](./invalid-spread.md) - Ошибка валидации спреда
-- [InvalidPriceError](./invalid-price.md) - Ошибка валидации цены
+- [InvalidOutcomePriceError](./invalid-price.md) - Ошибка валидации цены
 - [InvalidQuantityError](./invalid-quantity.md) - Ошибка валидации количества
 - [Value Objects Errors](./README.md) - Обзор всех ошибок value objects

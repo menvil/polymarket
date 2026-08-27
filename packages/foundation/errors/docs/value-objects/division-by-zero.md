@@ -44,21 +44,21 @@ import { Result, Ok, Err } from '@polymarket/result';
 ```typescript
 import { DivisionByZeroError } from '@polymarket/errors';
 
-class Price {
+class OutcomePrice {
   constructor(private readonly value: number) {}
 
-  divide(divisor: number): Price {
+  divide(divisor: number): OutcomePrice {
     if (divisor === 0) {
       throw new DivisionByZeroError(
         (ctx) => `Cannot divide ${ctx.dividend} by zero`,
         {
           code: DivisionByZeroError.code,
-          context: { dividend: this.value, divisor: 0, operation: 'Price.divide' }
+          context: { dividend: this.value, divisor: 0, operation: 'OutcomePrice.divide' }
         }
       );
     }
 
-    return new Price(this.value / divisor);
+    return new OutcomePrice(this.value / divisor);
   }
 
   getValue(): number {
@@ -68,12 +68,12 @@ class Price {
 
 // Использование
 try {
-  const price = new Price(100);
+  const price = new OutcomePrice(100);
   const result = price.divide(0);
 } catch (error) {
   if (DivisionByZeroError.is(error)) {
     console.error('Division by zero:', error.context);
-    // { dividend: 100, divisor: 0, operation: 'Price.divide' }
+    // { dividend: 100, divisor: 0, operation: 'OutcomePrice.divide' }
   }
 }
 ```

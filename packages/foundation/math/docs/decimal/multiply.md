@@ -318,12 +318,12 @@ const result2 = multiplyDecimal(value, new Decimal(2));
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 
 // Умножение внутри Value Object
 class Position {
   private constructor(
-    private readonly price: Price,
+    private readonly price: OutcomePrice,
     private readonly quantity: Quantity
   ) {}
 

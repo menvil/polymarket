@@ -10,7 +10,7 @@
  * - Восстановления через FillMapper.fromSnapshot()
  *
  * ### Отличие от Fill:
- * Fill использует value objects (Price, Quantity, Fee, Timestamp).
+ * Fill использует value objects (OutcomePrice, Quantity, Fee, Timestamp).
  * FillSnapshot использует только примитивы (number, string).
  * Это обеспечивает совместимость с JSON.stringify(). `price`/`size`/`feeAmount`
  * сериализуются как **строки** (Этап 3 плана миграции — было `number`, что могло

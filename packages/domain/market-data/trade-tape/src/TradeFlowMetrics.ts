@@ -3,7 +3,7 @@
  *
  * @remarks
  * Агрегированные метрики, вычисляемые из набора трейдов:
- * - VWAP (Volume Weighted Average Price)
+ * - VWAP (Volume Weighted Average OutcomePrice)
  * - OFI (Order Flow Imbalance)
  * - Buy/Sell volume breakdown
  *
@@ -15,7 +15,7 @@
  * - totalNotional: сумма всех price×size
  *
  * ### Почему VO, а не Decimal (Этап 2 плана миграции):
- * Публичная граница типизирована через VO (`Quantity`/`Ratio`/`Price`/`Money`) —
+ * Публичная граница типизирована через VO (`Quantity`/`Ratio`/`OutcomePrice`/`Money`) —
  * по ADR (`docs/architecture/boundary-contract.md`, Решение 1) `Decimal` легитимен
  * только внутри `value-objects`/`math`. Внутри `TradeFlowCalculator.compute()`
  * промежуточные вычисления остаются на голом `Decimal` — правило касается того, что
@@ -25,7 +25,7 @@
  * Только `tradeCount` — это целый счётчик, ему `number` достаточен.
  */
 
-import type { Quantity, Ratio, Price, Money } from '@polymarket/value-objects';
+import type { Quantity, Ratio, OutcomePrice, Money } from '@polymarket/value-objects';
 
 /**
  * Агрегированные метрики потока ордеров
@@ -51,11 +51,11 @@ export interface TradeFlowMetrics {
    */
   readonly orderFlowImbalance: Ratio;
   /**
-   * Volume Weighted Average Price
+   * Volume Weighted Average OutcomePrice
    * Формула: сумма(price×size) / сумма(size)
    * undefined если нет трейдов
    */
-  readonly vwap: Price | undefined;
+  readonly vwap: OutcomePrice | undefined;
   /** Суммарная номинальная стоимость всех трейдов (сумма price×size), валюта USDC */
   readonly totalNotional: Money;
   /** Количество трейдов (целый счётчик, number достаточен) */

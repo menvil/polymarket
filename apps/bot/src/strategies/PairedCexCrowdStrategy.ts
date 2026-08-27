@@ -40,7 +40,7 @@ import type {
   StrategySnapshot,
   StrategyIntent,
 } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { IDecisionJournal } from '@polymarket/ports';
 import type { OrderId, InstrumentId, AssetId, StrategyId } from '@polymarket/ids';
@@ -1742,7 +1742,7 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         const base = {
           type: 'PLACE' as const,
           side: 'BUY' as const,
-          price: Price.of(new Decimal(a.bidCents).div(100)),
+          price: OutcomePrice.of(new Decimal(a.bidCents).div(100)),
           size: Quantity.of(a.size),
           postOnly: a.postOnly,
         };
@@ -1751,7 +1751,7 @@ export class PairedCexCrowdStrategy extends BaseStrategy<CCData, CCAction> {
         const base = {
           type: 'PLACE' as const,
           side: 'SELL' as const,
-          price: Price.of(new Decimal(a.askCents).div(100)),
+          price: OutcomePrice.of(new Decimal(a.askCents).div(100)),
           size: Quantity.of(a.size),
           postOnly: !a.taker,
         };

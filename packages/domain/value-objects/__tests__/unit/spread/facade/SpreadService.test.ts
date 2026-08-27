@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
-import { PriceService } from '../../../../src/price/index.js';
+import { OutcomePriceService } from '../../../../src/outcome-price/index.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 
 describe('SpreadService', () => {
@@ -10,8 +10,8 @@ describe('SpreadService', () => {
 
   describe('create()', () => {
     it('should create spread when bid < ask', () => {
-      const bidResult = PriceService.create(0.48);
-      const askResult = PriceService.create(0.52);
+      const bidResult = OutcomePriceService.create(0.48);
+      const askResult = OutcomePriceService.create(0.52);
       expect(bidResult.ok && askResult.ok).toBe(true);
 
       if (bidResult.ok && askResult.ok) {
@@ -26,7 +26,7 @@ describe('SpreadService', () => {
     });
 
     it('should create spread when bid = ask (zero width)', () => {
-      const priceResult = PriceService.create(0.50);
+      const priceResult = OutcomePriceService.create(0.50);
       expect(priceResult.ok).toBe(true);
 
       if (priceResult.ok) {
@@ -40,8 +40,8 @@ describe('SpreadService', () => {
     });
 
     it('should return Err when bid > ask', () => {
-      const bidResult = PriceService.create(0.60);
-      const askResult = PriceService.create(0.50);
+      const bidResult = OutcomePriceService.create(0.60);
+      const askResult = OutcomePriceService.create(0.50);
       expect(bidResult.ok && askResult.ok).toBe(true);
 
       if (bidResult.ok && askResult.ok) {
@@ -141,7 +141,7 @@ describe('SpreadService', () => {
         expect(ctx?.source).toBeDefined();
         expect(['RULE_VALIDATION', 'SERVICE_CALL', 'core_invariant']).toContain(ctx?.source);
 
-        // reason should be a specific value from PriceErrorReason
+        // reason should be a specific value from OutcomePriceErrorReason
         // (1.5 > MAX_PRICE = 0.9999, therefore OUT_OF_RANGE_HIGH)
         expect(ctx?.reason).toBe('OUT_OF_RANGE_HIGH');
 
@@ -151,7 +151,7 @@ describe('SpreadService', () => {
           askValue: '0.52'
         });
 
-        // Error should be InvalidSpreadError (not InvalidPriceError)
+        // Error should be InvalidSpreadError (not InvalidOutcomePriceError)
         expect(result.error.constructor.name).toBe('InvalidSpreadError');
       }
     });
@@ -170,7 +170,7 @@ describe('SpreadService', () => {
         expect(ctx?.source).toBeDefined();
         expect(['RULE_VALIDATION', 'SERVICE_CALL', 'core_invariant']).toContain(ctx?.source);
 
-        // reason should be a specific value from PriceErrorReason
+        // reason should be a specific value from OutcomePriceErrorReason
         // (1.5 > MAX_PRICE = 0.9999, therefore OUT_OF_RANGE_HIGH)
         expect(ctx?.reason).toBe('OUT_OF_RANGE_HIGH');
 
@@ -180,7 +180,7 @@ describe('SpreadService', () => {
           askValue: '1.5'
         });
 
-        // Error should be InvalidSpreadError (not InvalidPriceError)
+        // Error should be InvalidSpreadError (not InvalidOutcomePriceError)
         expect(result.error.constructor.name).toBe('InvalidSpreadError');
       }
     });
@@ -197,7 +197,7 @@ describe('SpreadService', () => {
 
   describe('zero()', () => {
     it('should create spread with zero width', () => {
-      const priceResult = PriceService.create(0.50);
+      const priceResult = OutcomePriceService.create(0.50);
       expect(priceResult.ok).toBe(true);
 
       if (priceResult.ok) {
@@ -454,8 +454,8 @@ describe('SpreadService', () => {
   describe('Error Contract', () => {
     it('should include op in context for all errors', () => {
       // Test create with invalid bid > ask
-      const bidResult = PriceService.create(0.60);
-      const askResult = PriceService.create(0.50);
+      const bidResult = OutcomePriceService.create(0.60);
+      const askResult = OutcomePriceService.create(0.50);
       if (bidResult.ok && askResult.ok) {
         const result = SpreadService.create(bidResult.value, askResult.value);
         expect(result.ok).toBe(false);
@@ -473,8 +473,8 @@ describe('SpreadService', () => {
     });
 
     it('should include reason for Core invariant violations', () => {
-      const bidResult = PriceService.create(0.60);
-      const askResult = PriceService.create(0.50);
+      const bidResult = OutcomePriceService.create(0.60);
+      const askResult = OutcomePriceService.create(0.50);
       if (bidResult.ok && askResult.ok) {
         const result = SpreadService.create(bidResult.value, askResult.value);
         expect(result.ok).toBe(false);
@@ -921,7 +921,7 @@ describe('SpreadService', () => {
       // Error from wrapOp - reason may not be preserved
     });
 
-    it('should handle boundary case: width pushes beyond Price limits', () => {
+    it('should handle boundary case: width pushes beyond OutcomePrice limits', () => {
       // mid = 0.50, width = 1.00 → bid = 0, ask = 1.00
       const result = SpreadService.fromMidAndWidth(0.50, 1.00);
 
@@ -996,10 +996,10 @@ describe('SpreadService', () => {
     });
 
     it('should handle large percentages without ensureLteOne', () => {
-      // 200% width of 0.50 = 1.00, which pushes beyond Price bounds
+      // 200% width of 0.50 = 1.00, which pushes beyond OutcomePrice bounds
       const result = SpreadService.fromMidAndWidthPercentage(0.50, 200);
 
-      // Should fail due to Price bounds, not Ratio validation
+      // Should fail due to OutcomePrice bounds, not Ratio validation
       expect(result.ok).toBe(false);
     });
   });

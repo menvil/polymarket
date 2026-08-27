@@ -138,7 +138,7 @@ export interface MarketConstraintsResponse {
  *
  * @remarks
  * Возвращает сырые DTO из Gamma API без преобразования в domain-объекты.
- * Маппинг в domain VO (InstrumentId, Price и т.д.) выполняется в адаптере.
+ * Маппинг в domain VO (InstrumentId, OutcomePrice и т.д.) выполняется в адаптере.
  */
 export class PolymarketMarketDataRestClient {
   private readonly config: Required<MarketDataClientConfig>;

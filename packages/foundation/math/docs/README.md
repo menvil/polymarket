@@ -94,23 +94,23 @@ function addDecimal(a: Decimal, b: Decimal): Decimal {
 }
 
 // Бизнес-правила - в Value Objects (Domain Layer)
-class Price {
+class OutcomePrice {
   private constructor(private readonly value: Decimal) {}
 
-  static fromDecimal(value: Decimal): Result<Price, ValidationError> {
+  static fromDecimal(value: Decimal): Result<OutcomePrice, ValidationError> {
     // Бизнес-валидация: цена должна быть в [0.0001, 0.9999]
     if (value.lessThan(0.0001) || value.greaterThan(0.9999)) {
-      return Err(new InvalidPriceError('Price out of range'));
+      return Err(new InvalidOutcomePriceError('OutcomePrice out of range'));
     }
-    return Ok(new Price(value));
+    return Ok(new OutcomePrice(value));
   }
 
-  add(other: Price): Result<Price, ValidationError> {
+  add(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     // Используем чистую математику из Core Layer
     const sum = addDecimal(this.value, other.value);
 
     // Применяем бизнес-правила в Domain Layer
-    return Price.fromDecimal(sum);
+    return OutcomePrice.fromDecimal(sum);
   }
 }
 ```
@@ -138,11 +138,11 @@ function divideDecimal(a: Decimal, b: Decimal): Decimal {
 
 ```typescript
 // Бизнес-правило = Result
-class Price {
-  divide(divisor: Price): Result<Price, ValidationError> {
+class OutcomePrice {
+  divide(divisor: OutcomePrice): Result<OutcomePrice, ValidationError> {
     try {
       const result = divideDecimal(this.value, divisor.value);
-      return Price.fromDecimal(result); // Может вернуть Err
+      return OutcomePrice.fromDecimal(result); // Может вернуть Err
     } catch (error) {
       if (InvalidDivisorError.is(error)) {
         return Err(new ValidationError('Division failed'));
@@ -280,15 +280,15 @@ Value Objects используют math функции для вычислени
 
 ```typescript
 import { addDecimal } from '@polymarket/math';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 
-class Price {
-  add(other: Price): Result<Price, ValidationError> {
+class OutcomePrice {
+  add(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     // 1. Чистая математика (Core Layer)
     const sum = addDecimal(this.value, other.value);
 
     // 2. Бизнес-валидация (Domain Layer)
-    return Price.fromDecimal(sum);
+    return OutcomePrice.fromDecimal(sum);
   }
 }
 ```

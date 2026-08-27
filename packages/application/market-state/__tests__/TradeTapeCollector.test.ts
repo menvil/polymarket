@@ -13,7 +13,7 @@ import type { TradeTapeCollectorDeps, TradeTapeCollectorConfig } from '../src/Tr
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketCatalog } from '@polymarket/ports';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -32,7 +32,7 @@ function makeTs(ms: number): Timestamp {
   if (!r.ok) throw new Error(`bad ts ${ms}`);
   return r.value;
 }
-const px = (v: string): Price => Price.of(new Decimal(v));
+const px = (v: string): OutcomePrice => OutcomePrice.of(new Decimal(v));
 const qty = (v: string): Quantity => Quantity.of(new Decimal(v));
 
 const T0 = 1_700_000_000_000;

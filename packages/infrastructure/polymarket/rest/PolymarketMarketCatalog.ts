@@ -37,7 +37,7 @@
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
 import { asInstrumentId } from '@polymarket/ids';
@@ -58,7 +58,7 @@ export interface InstrumentInfo {
   /** ID условия рынка (condition_id) */
   readonly conditionId: string;
   /** Минимальный шаг цены */
-  readonly tickSize: Price;
+  readonly tickSize: OutcomePrice;
   /** Минимальный размер ордера */
   readonly minOrderSize: Quantity;
   /** Активен ли рынок */
@@ -101,7 +101,7 @@ interface RawMarketResponse {
  *
  * @remarks
  * Загружает метаданные при старте (метод `load()`).
- * Строки REST-ответа парсятся в `Price` / `Quantity` VOs на границе инфраструктуры.
+ * Строки REST-ответа парсятся в `OutcomePrice` / `Quantity` VOs на границе инфраструктуры.
  * Application layer работает исключительно с типизированными объектами.
  */
 export class PolymarketMarketCatalog implements IMarketCatalog {
@@ -164,7 +164,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * ```typescript
    * const info = catalog.get(tokenId);
    * if (info) {
-   *   // info.tickSize уже Price — не нужно парсить строку
+   *   // info.tickSize уже OutcomePrice — не нужно парсить строку
    *   validatePrice(price, info.tickSize);
    * }
    * ```
@@ -190,7 +190,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * @returns InstrumentInfo или null если парсинг не удался
    *
    * @remarks
-   * Строки → Price / Quantity происходит здесь — на границе инфраструктуры.
+   * Строки → OutcomePrice / Quantity происходит здесь — на границе инфраструктуры.
    * Невалидные данные логируются и пропускаются (не бросают исключений).
    */
   private _parse(raw: RawMarketResponse, tokenId: string): InstrumentInfo | null {
@@ -201,7 +201,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
         return null;
       }
 
-      const tickSize = Price.of(new Decimal(raw.minimum_tick_size));
+      const tickSize = OutcomePrice.of(new Decimal(raw.minimum_tick_size));
       const minOrderSize = Quantity.of(new Decimal(raw.minimum_order_size));
 
       return {

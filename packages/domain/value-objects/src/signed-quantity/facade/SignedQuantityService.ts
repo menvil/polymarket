@@ -1,7 +1,16 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
+import type { ScalarDomain } from '../../shared/numeric/index.js';
+import {
+  addScalars,
+  divideScalar,
+  multiplyScalar,
+  portionOfScalar,
+  roundScalarToStep,
+  subtractScalars,
+} from '../../shared/numeric/index.js';
 import { SignedQuantity } from '../core/SignedQuantity.js';
 import { InvalidSignedQuantityError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
-import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
+import { multiplyDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
@@ -85,6 +94,26 @@ export interface AdjustByOptions {
  */
 export class SignedQuantityService {
   private static readonly SERVICE_NAME = 'SignedQuantityService';
+
+  /**
+   * Описание `SignedQuantity` как скалярного домена для общих операций.
+   *
+   * @remarks
+   * Отличие от `Quantity` — только в строгости: инвариант допускает любой
+   * знак, поэтому и правило множителя мягче (отрицательный множитель здесь
+   * законен). Всё остальное совпадает, и потому вынесено в `shared/numeric`.
+   */
+  private static readonly SCALAR_DOMAIN: ScalarDomain<SignedQuantity, InvalidSignedQuantityError> = {
+    serviceName: 'SignedQuantityService',
+    ErrorConstructor: InvalidSignedQuantityError,
+    invalidFormatReason: SignedQuantityErrorReason.INVALID_FORMAT,
+    nanReason: SignedQuantityErrorReason.NAN,
+    nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    create: (value) => SignedQuantityService.createFromDecimal(value),
+    validateFactor: (factor) => ValidateFactorForSignedQuantityMultiplication.check(factor),
+    validateDivisor: (divisor) => ValidateDivisorForSignedQuantityDivision.check(divisor),
+    validateStep: (step) => ValidateStepSizeForSignedQuantity.check(step)
+  };
 
   /**
    * Приватный helper для парсинга значений в Decimal с единообразным error handling
@@ -213,11 +242,7 @@ export class SignedQuantityService {
    * ```
    */
   public static add(qty1: SignedQuantity, qty2: SignedQuantity): Result<SignedQuantity, InvalidSignedQuantityError> {
-    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'add', ctx, () => {
-      const sum = addDecimal(qty1.value(), qty2.value());
-      return this.createFromDecimal(sum);
-    }, InvalidSignedQuantityError);
+    return addScalars(SignedQuantityService.SCALAR_DOMAIN, qty1, qty2);
   }
 
   /**
@@ -251,11 +276,9 @@ export class SignedQuantityService {
     qty1: SignedQuantity,
     qty2: SignedQuantity
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'subtract', ctx, () => {
-      const diff = subtractDecimal(qty1.value(), qty2.value());
-      return this.createFromDecimal(diff);
-    }, InvalidSignedQuantityError);
+    // Проверка результата НЕ передаётся: отрицательная разность здесь
+    // допустима — этим знаковая величина и отличается от Quantity
+    return subtractScalars(SignedQuantityService.SCALAR_DOMAIN, qty1, qty2);
   }
 
   /**
@@ -288,32 +311,7 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     factor: number | string | Decimal
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Безопасный парсинг factor через parseDecimal
-    const factorResult = this.parseDecimal('factor', factor, 'multiply', {
-      quantity: quantity.value().toString(),
-      factor: String(factor)
-    });
-    if (isErr(factorResult)) {
-      return factorResult;
-    }
-
-    const factorDecimal = factorResult.value;
-
-    const ctx = {
-      quantity: quantity.value().toString(),
-      factor: factorDecimal.toString()
-    };
-
-    // Валидация factor: допускаем любое finite значение (включая отрицательные)
-    const validateResult = ValidateFactorForSignedQuantityMultiplication.check(factorDecimal);
-    if (isErr(validateResult)) {
-      return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'multiply', ctx, validateResult.error, InvalidSignedQuantityError));
-    }
-
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'multiply', ctx, () => {
-      const result = multiplyDecimal(quantity.value(), factorDecimal);
-      return this.createFromDecimal(result);
-    }, InvalidSignedQuantityError);
+    return multiplyScalar(SignedQuantityService.SCALAR_DOMAIN, quantity, factor);
   }
 
   /**
@@ -354,32 +352,7 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     divisor: number | string | Decimal
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Безопасный парсинг divisor через parseDecimal
-    const divisorResult = this.parseDecimal('divisor', divisor, 'divide', {
-      quantity: quantity.value().toString(),
-      divisor: String(divisor)
-    });
-    if (isErr(divisorResult)) {
-      return divisorResult;
-    }
-
-    const divisorDecimal = divisorResult.value;
-
-    const ctx = {
-      quantity: quantity.value().toString(),
-      divisor: divisorDecimal.toString()
-    };
-
-    // Валидация: делитель должен быть finite и ненулевым (отрицательные допускаются)
-    const validateResult = ValidateDivisorForSignedQuantityDivision.check(divisorDecimal);
-    if (isErr(validateResult)) {
-      return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'divide', ctx, validateResult.error, InvalidSignedQuantityError));
-    }
-
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'divide', ctx, () => {
-      const result = divideDecimal(quantity.value(), divisorDecimal);
-      return this.createFromDecimal(result);
-    }, InvalidSignedQuantityError);
+    return divideScalar(SignedQuantityService.SCALAR_DOMAIN, quantity, divisor);
   }
 
   /**
@@ -532,17 +505,7 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     rate: Ratio
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    const rateDec = rate.toDecimal();
-
-    const ctx = {
-      quantity: quantity.value().toString(),
-      rate: rateDec.toString()
-    };
-
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'portion', ctx, () => {
-      const result = multiplyDecimal(quantity.value(), rateDec);
-      return this.createFromDecimal(result);
-    }, InvalidSignedQuantityError);
+    return portionOfScalar(SignedQuantityService.SCALAR_DOMAIN, quantity, rate.toDecimal());
   }
 
   /**
@@ -593,40 +556,7 @@ export class SignedQuantityService {
     stepSize: number | string | Decimal,
     roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Парсинг stepSize
-    const stepSizeResult = toDecimal('stepSize', stepSize, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
-      nanReason: SignedQuantityErrorReason.NAN,
-      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
-    });
-    if (isErr(stepSizeResult)) {
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', {
-          quantity: quantity.value().toString(),
-          stepSize: String(stepSize)
-        }, stepSizeResult.error, InvalidSignedQuantityError)
-      );
-    }
-
-    const stepSizeDec = stepSizeResult.value;
-
-    const ctx = {
-      quantity: quantity.value().toString(),
-      stepSize: stepSizeDec.toString(),
-      roundingMode: String(roundingMode)
-    };
-
-    // Валидация stepSize через правило SignedQuantity (stepSize > 0 и finite)
-    const validateResult = ValidateStepSizeForSignedQuantity.check(stepSizeDec);
-    if (isErr(validateResult)) {
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', ctx, validateResult.error, InvalidSignedQuantityError)
-      );
-    }
-
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
-      const rounded = roundToTick(quantity.value(), stepSizeDec, roundingMode);
-      return this.createFromDecimal(rounded);
-    }, InvalidSignedQuantityError);
+    return roundScalarToStep(SignedQuantityService.SCALAR_DOMAIN, quantity, stepSize, roundingMode);
   }
 
   /**

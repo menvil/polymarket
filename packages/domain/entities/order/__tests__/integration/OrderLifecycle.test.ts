@@ -13,7 +13,7 @@
  * - Replay через fromEvents
  */
 
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import {
   asOrderId,
@@ -66,7 +66,7 @@ function makePendingOrder() {
     id: ORDER_ID,
     asset: ASSET,
     side: 'BUY',
-    price: Price.of(new Decimal('0.60')),
+    price: OutcomePrice.of(new Decimal('0.60')),
     size: Quantity.of(new Decimal('100')),
     timestamp: Timestamp.now(),
   }), 'makePendingOrder');
@@ -79,7 +79,7 @@ function makeFill(idx: number, size: number, price: number): FillData {
     asset: ASSET,
     side: 'BUY',
     size: Quantity.of(new Decimal(String(size))),
-    price: Price.of(new Decimal(String(price))),
+    price: OutcomePrice.of(new Decimal(String(price))),
   };
 }
 
@@ -125,7 +125,7 @@ describe('Сценарий: несколько fills с weighted average price',
       id: ORDER_ID,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.60')),
+      price: OutcomePrice.of(new Decimal('0.60')),
       size: Quantity.of(new Decimal('100')),
       timestamp: Timestamp.now(),
     }));
@@ -308,7 +308,7 @@ describe('Сценарий: round-trip сериализации через вс�
       id: ORDER_ID,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.60')),
+      price: OutcomePrice.of(new Decimal('0.60')),
       size: Quantity.of(new Decimal('100')),
       timestamp: Timestamp.now(),
     }));
@@ -344,7 +344,7 @@ describe('Сценарий: вычисления в разных состоян�
       id: ORDER_ID,
       asset: ASSET,
       side: 'SELL',
-      price: Price.of(new Decimal('0.75')),
+      price: OutcomePrice.of(new Decimal('0.75')),
       size: Quantity.of(new Decimal('200')),
       timestamp: Timestamp.now(),
     }));
@@ -357,7 +357,7 @@ describe('Сценарий: вычисления в разных состоян�
       id: ORDER_ID,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.60')),
+      price: OutcomePrice.of(new Decimal('0.60')),
       size: Quantity.of(new Decimal('100')),
       timestamp: Timestamp.now(),
     })).accept());
@@ -374,7 +374,7 @@ describe('Сценарий: вычисления в разных состоян�
       id: ORDER_ID,
       asset: ASSET,
       side: 'BUY',
-      price: Price.of(new Decimal('0.60')),
+      price: OutcomePrice.of(new Decimal('0.60')),
       size: Quantity.of(new Decimal('100')),
       timestamp: Timestamp.now(),
     })).accept());
@@ -398,7 +398,7 @@ describe('Сценарий: fromEvents replay', () => {
       asset: ASSET,
       side: 'BUY',
       size: Quantity.of(new Decimal('100')),
-      price: Price.of(new Decimal('0.60')),
+      price: OutcomePrice.of(new Decimal('0.60')),
     };
 
     const order = replay([
@@ -408,7 +408,7 @@ describe('Сценарий: fromEvents replay', () => {
           orderId: ORDER_ID,
           asset: ASSET,
           side: 'BUY',
-          price: Price.of(new Decimal('0.60')),
+          price: OutcomePrice.of(new Decimal('0.60')),
           size: Quantity.of(new Decimal('100')),
           timestamp: ts,
         },
@@ -445,7 +445,7 @@ describe('Сценарий: fromEvents replay', () => {
           orderId: ORDER_ID,
           asset: ASSET,
           side: 'BUY',
-          price: Price.of(new Decimal('0.60')),
+          price: OutcomePrice.of(new Decimal('0.60')),
           size: Quantity.of(new Decimal('100')),
           timestamp: ts,
         },

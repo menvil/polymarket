@@ -39,10 +39,10 @@ function addDecimal(a: Decimal, b: Decimal): Decimal {
 }
 
 // Бизнес-правила - в Value Objects
-class Price {
-  add(other: Price): Result<Price, ValidationError> {
+class OutcomePrice {
+  add(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     const sum = addDecimal(this.value, other.value); // Математика
-    return Price.fromDecimal(sum); // Бизнес-валидация
+    return OutcomePrice.fromDecimal(sum); // Бизнес-валидация
   }
 }
 ```
@@ -244,10 +244,10 @@ export function addDecimal(a: Decimal, b: Decimal): Decimal {
 }
 
 // Domain Layer: @polymarket/value-objects
-export class Price {
-  add(other: Price): Result<Price, ValidationError> {
+export class OutcomePrice {
+  add(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     const sum = addDecimal(this.value, other.value); // Используем math
-    return Price.fromDecimal(sum); // Применяем бизнес-правила
+    return OutcomePrice.fromDecimal(sum); // Применяем бизнес-правила
   }
 }
 ```

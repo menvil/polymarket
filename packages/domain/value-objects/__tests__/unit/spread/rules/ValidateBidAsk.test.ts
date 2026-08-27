@@ -1,13 +1,13 @@
 import Decimal from 'decimal.js';
 import { ValidateBidAsk } from '../../../../src/spread/rules/ValidateBidAsk.js';
-import { Price } from '../../../../src/price/index.js';
+import { OutcomePrice } from '../../../../src/outcome-price/index.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 
 describe('ValidateBidAsk', () => {
   describe('check()', () => {
     it('should return Ok when bid < ask', () => {
-      const bid = Price.of(new Decimal(0.48));
-      const ask = Price.of(new Decimal(0.52));
+      const bid = OutcomePrice.of(new Decimal(0.48));
+      const ask = OutcomePrice.of(new Decimal(0.52));
 
       const result = ValidateBidAsk.check(bid, ask);
 
@@ -15,7 +15,7 @@ describe('ValidateBidAsk', () => {
     });
 
     it('should return Ok when bid = ask (zero width spread)', () => {
-      const price = Price.of(new Decimal(0.50));
+      const price = OutcomePrice.of(new Decimal(0.50));
 
       const result = ValidateBidAsk.check(price, price);
 
@@ -23,8 +23,8 @@ describe('ValidateBidAsk', () => {
     });
 
     it('should return Err when bid > ask', () => {
-      const bid = Price.of(new Decimal(0.60));
-      const ask = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.60));
+      const ask = OutcomePrice.of(new Decimal(0.50));
 
       const result = ValidateBidAsk.check(bid, ask);
 
@@ -37,8 +37,8 @@ describe('ValidateBidAsk', () => {
     });
 
     it('should return Err with correct error message when bid > ask', () => {
-      const bid = Price.of(new Decimal(0.65));
-      const ask = Price.of(new Decimal(0.55));
+      const bid = OutcomePrice.of(new Decimal(0.65));
+      const ask = OutcomePrice.of(new Decimal(0.55));
 
       const result = ValidateBidAsk.check(bid, ask);
 
@@ -51,8 +51,8 @@ describe('ValidateBidAsk', () => {
     });
 
     it('should handle edge case: bid at MIN_PRICE and ask at MAX_PRICE', () => {
-      const bid = Price.of(new Decimal(0.0001));
-      const ask = Price.of(new Decimal(0.9999));
+      const bid = OutcomePrice.of(new Decimal(0.0001));
+      const ask = OutcomePrice.of(new Decimal(0.9999));
 
       const result = ValidateBidAsk.check(bid, ask);
 
@@ -60,8 +60,8 @@ describe('ValidateBidAsk', () => {
     });
 
     it('should handle edge case: very small difference between bid and ask', () => {
-      const bid = Price.of(new Decimal(0.5000));
-      const ask = Price.of(new Decimal(0.5001));
+      const bid = OutcomePrice.of(new Decimal(0.5000));
+      const ask = OutcomePrice.of(new Decimal(0.5001));
 
       const result = ValidateBidAsk.check(bid, ask);
 

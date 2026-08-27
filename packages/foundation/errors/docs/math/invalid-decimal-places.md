@@ -566,7 +566,7 @@ if (configResult.ok) {
 
 - [InvalidOperandError](./invalid-operand.md) - невалидное значение для округления
 - [InvalidTickSizeError](./invalid-tick-size.md) - невалидный tick size для округления к сетке
-- [InvalidPriceError](../value-objects/invalid-price.md) - бизнес-валидация цен
+- [InvalidOutcomePriceError](../value-objects/invalid-price.md) - бизнес-валидация цен
 - [InvalidQuantityError](../value-objects/invalid-quantity.md) - бизнес-валидация количества
 
 ## См. также

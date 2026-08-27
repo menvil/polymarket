@@ -50,7 +50,7 @@ b.liquidity.value().comparedTo(a.liquidity.value());                      // Mon
 VO на публичной границе, `Decimal`-арифметика внутри реализации.
 
 `MarketFilter.test.ts`/`MarketScorer.test.ts`'s `makeMarket()`-фикстуры используют
-`Ratio.of(...)`/`Money.of(...)` напрямую (тот же паттерн, что уже применялся к `Price`/
+`Ratio.of(...)`/`Money.of(...)` напрямую (тот же паттерн, что уже применялся к `OutcomePrice`/
 `Quantity` в этих же фикстурах) — не `RatioService`/`MoneyService`, поскольку значения
 компайл-тайм известны и валидны. `_passesDurationFilter()` получил недостающее тестовое
 покрытие (Этап 10c) — до этого не тестировался вообще.

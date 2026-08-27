@@ -1,0 +1,186 @@
+/**
+ * AssetPrice — цена ВНЕШНЕГО актива (BTC/USD, ETH/USD, ...).
+ *
+ * @remarks
+ * ## Зачем отдельный VO, а не `OutcomePrice`
+ *
+ * `OutcomePrice` — цена outcome-токена рынка предсказаний, и её инвариант —
+ * жёсткий диапазон `[0.0001, 0.9999]`. Референсная цена базового актива
+ * живёт в совершенно другом домене:
+ *
+ * ```text
+ * OutcomePrice            0.42, 0.73, 0.995            (доля вероятности)
+ * AssetPrice   79341.36626633028, 3021.5    (цена актива)
+ * ```
+ *
+ * Попытка представить `79341.36` через `OutcomePrice` — не «неудобство», а
+ * нарушение инварианта: конструктор `OutcomePrice` обязан её отвергнуть. Поэтому
+ * референсные цены получают собственный canonical VO.
+ *
+ * ## Source-agnostic
+ *
+ * VO НЕ знает, откуда пришло значение: Binance, Chainlink, TWAP-окно, CEX
+ * ticker — всё это provenance наблюдения, а не свойство самой цены.
+ * Провенанс живёт в semantic-событии наблюдения, а не здесь; поэтому этот
+ * же тип переиспользует будущий CEX Semantic Adapter.
+ *
+ * ## Инварианты
+ * - Значение не NaN
+ * - Значение конечно (finite)
+ * - Значение строго положительно (`> 0`)
+ *
+ * Верхней границы НЕТ — это принципиальное отличие от `OutcomePrice`.
+ *
+ * ## НЕ-инварианты
+ * - Единица измерения (USD/USDT/...) — не моделируется: RTDS/CEX-фиды
+ *   котируют пару в своём символе, символ хранится в наблюдении.
+ * - Точность/тик — вопрос источника, а не VO.
+ *
+ * ## Точность
+ * Внутреннее представление — `Decimal`. Значение НИКОГДА не проходит через
+ * JS `number` при создании из десятичной строки: `AssetPriceService`
+ * парсит строку напрямую в `Decimal`.
+ *
+ * ## Архитектура (та же, что у остальных VO пакета)
+ * - Core (`AssetPrice.of`) БРОСАЕТ `AssetPriceInvariantViolation`
+ * - Facade (`AssetPriceService`) возвращает `Result` и НИКОГДА не бросает
+ *
+ * @example
+ * ```typescript
+ * import { AssetPriceService } from '@polymarket/value-objects';
+ *
+ * const result = AssetPriceService.create('79341.36626633028');
+ * if (result.ok) {
+ *   console.log(result.value.value().toString()); // "79341.36626633028"
+ * }
+ * ```
+ */
+import Decimal from 'decimal.js';
+import { AssetPriceErrorReason } from '../errors/AssetPriceErrorReason.js';
+import { AssetPriceInvariantViolation } from './AssetPriceInvariantViolation.js';
+
+/**
+ * Цена внешнего актива — immutable value object.
+ *
+ * @remarks
+ * Полное описание домена, инвариантов и причин существования отдельно от
+ * `OutcomePrice` — см. докблок модуля выше.
+ */
+export class AssetPrice {
+  /**
+   * Единственный приватный конструктор.
+   *
+   * @param _value - Значение цены (`Decimal`)
+   * @throws {AssetPriceInvariantViolation} При нарушении инвариантов
+   */
+  private constructor(private readonly _value: Decimal) {
+    // Инвариант 1: не NaN
+    if (_value.isNaN()) {
+      throw new AssetPriceInvariantViolation(
+        'Reference price cannot be NaN',
+        AssetPriceErrorReason.NAN,
+      );
+    }
+
+    // Инвариант 2: конечное значение
+    if (!_value.isFinite()) {
+      throw new AssetPriceInvariantViolation(
+        'Reference price must be finite',
+        AssetPriceErrorReason.NON_FINITE,
+      );
+    }
+
+    // Инвариант 3: строго положительное (отрицательные и ноль отсекаются здесь)
+    if (!_value.greaterThan(0)) {
+      throw new AssetPriceInvariantViolation(
+        `Reference price ${_value.toString()} must be positive`,
+        AssetPriceErrorReason.NOT_POSITIVE,
+      );
+    }
+
+    Object.freeze(this);
+  }
+
+  /**
+   * Создаёт AssetPrice из готового `Decimal` (Core API).
+   *
+   * @param value - Значение цены (`Decimal`, уже распарсенный)
+   * @returns Новый `AssetPrice`
+   * @throws {AssetPriceInvariantViolation} Если значение NaN, не конечно
+   *   либо не положительно
+   *
+   * @remarks
+   * НЕ парсит вход: конверсия `string`/`number` → `Decimal` делается в
+   * `AssetPriceService` (Facade). Для публичного кода рекомендуется
+   * именно Facade — он возвращает `Result` и не бросает.
+   *
+   * @example
+   * ```typescript
+   * const price = AssetPrice.of(new Decimal('79341.36626633028'));
+   * ```
+   */
+  public static of(value: Decimal): AssetPrice {
+    return new AssetPrice(value);
+  }
+
+  /**
+   * Возвращает точное значение цены.
+   *
+   * @returns `Decimal` значение (без потери точности)
+   *
+   * @example
+   * ```typescript
+   * price.value().toString(); // "79341.36626633028"
+   * ```
+   */
+  public value(): Decimal {
+    return this._value;
+  }
+
+  /**
+   * Возвращает значение как `number` (lossy!).
+   *
+   * @returns `number` значение цены
+   *
+   * @remarks
+   * ⚠️ Конверсия может потерять точность. Только для отображения/метрик,
+   * НЕ для расчётов и НЕ для сравнения значений.
+   *
+   * @example
+   * ```typescript
+   * price.toNumber(); // 79341.36626633028 (может быть округлено)
+   * ```
+   */
+  public toNumber(): number {
+    return this._value.toNumber();
+  }
+
+  /**
+   * Строгое сравнение двух референсных цен.
+   *
+   * @param other - Другая цена
+   * @returns `true`, если значения строго равны по `Decimal`
+   *
+   * @example
+   * ```typescript
+   * AssetPrice.of(new Decimal('1.10')).equals(AssetPrice.of(new Decimal('1.1'))); // true
+   * ```
+   */
+  public equals(other: AssetPrice): boolean {
+    return this._value.equals(other._value);
+  }
+
+  /**
+   * Строковое представление БЕЗ потери точности.
+   *
+   * @returns Точная десятичная строка значения
+   *
+   * @example
+   * ```typescript
+   * String(price); // "79341.36626633028"
+   * ```
+   */
+  public toString(): string {
+    return this._value.toString();
+  }
+}

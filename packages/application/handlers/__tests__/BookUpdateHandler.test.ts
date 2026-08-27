@@ -6,7 +6,7 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { ILogger } from '@polymarket/logger';
 import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
-import { Price, Quantity, PriceService } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, OutcomePriceService } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Money } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -15,6 +15,8 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { unsafeRunId } from '@polymarket/ids';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { InstrumentInfo } from '@polymarket/ports';
+import { KnownVenues } from '@polymarket/ids';
+import type { TopOfBook } from '@polymarket/application-events';
 
 /** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
 function makeTimestamp(ms: number): Timestamp {
@@ -25,7 +27,7 @@ function makeTimestamp(ms: number): Timestamp {
 
 /** Создаёт OrderbookLevel из строковых price/quantity (реальные VO, не моки). */
 function level(price: string, qty: string): OrderbookLevel {
-  return OrderbookLevel.create(Price.of(new Decimal(price)), Quantity.of(new Decimal(qty)));
+  return OrderbookLevel.create(OutcomePrice.of(new Decimal(price)), Quantity.of(new Decimal(qty)));
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ function makeInstrumentInfo(): InstrumentInfo {
   return {
     instrumentId: TOKEN_ID,
     marketId:     MARKET_ID,
-    tickSize:     {} as Price,
+    tickSize:     {} as OutcomePrice,
     minOrderSize:  {} as Quantity,
     minOrderValue: {} as Money,
     active:        true,
@@ -71,7 +73,7 @@ describe('BookUpdateHandler', () => {
     books = {
       get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
       getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(
-        Orderbook.empty(MARKET_ID as unknown as InstrumentId, TOKEN_ID),
+        Orderbook.empty(KnownVenues.POLYMARKET, TOKEN_ID, MARKET_ID as unknown as MarketId),
       ),
       set: jest.fn<IBookRegistry['set']>(),
       delete: jest.fn<IBookRegistry['delete']>(),
@@ -193,7 +195,7 @@ describe('BookUpdateHandler', () => {
     await handler.handleSnapshot(TOKEN_ID, [bestBid], [bestAsk], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as {
-      payload: { topOfBook: { bestBid: Price | undefined; bestAsk: Price | undefined } };
+      payload: { topOfBook: { bestBid: OutcomePrice | undefined; bestAsk: OutcomePrice | undefined } };
     };
     expect(event.payload.topOfBook.bestBid?.equals(bestBid.price)).toBe(true);
     expect(event.payload.topOfBook.bestAsk?.equals(bestAsk.price)).toBe(true);
@@ -215,41 +217,49 @@ describe('BookUpdateHandler', () => {
     );
   });
 
-  // ── Spread calculation ─────────────────────────────────────────────────────
+  // ── Top of book ────────────────────────────────────────────────────────────
 
-  it('topOfBook.spread содержит Price если спред положительный и PriceService.create успешен', async () => {
+  it('topOfBook несёт стороны, из которых спред выводится потребителем', async () => {
     const bid = level('0.40', '10');
     const ask = level('0.60', '20');
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { payload: { topOfBook: { spread: Price | undefined } } };
-    expect(event.payload.topOfBook.spread).toBeDefined();
+      { payload: { topOfBook: TopOfBook } };
+    const top = event.payload.topOfBook;
+    expect(top.bestBid?.value().toString()).toBe('0.4');
+    expect(top.bestAsk?.value().toString()).toBe('0.6');
+    // Ширина спреда в TopOfBook НЕ хранится: она разность, а не цена, и
+    // нулевой спред (валидный рынок) ни один ценовой VO не представляет.
+    // Потребителю доступен `bookPricing.spread(book)` → canonical `Spread`.
+    expect('spread' in top).toBe(false);
   });
 
-  it('topOfBook.spread undefined если книга однобокая (getSpread() возвращает Err)', async () => {
+  it('односторонняя книга честно показывает отсутствующую сторону', async () => {
     const bid = level('0.40', '10');
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { payload: { topOfBook: { spread: Price | undefined } } };
-    expect(event.payload.topOfBook.spread).toBeUndefined();
+      { payload: { topOfBook: TopOfBook } };
+    expect(event.payload.topOfBook.bestBid).toBeDefined();
+    expect(event.payload.topOfBook.bestAsk).toBeUndefined();
+    expect(event.payload.topOfBook.bestAskSize).toBeUndefined();
   });
 
-  it('topOfBook.spread undefined если PriceService.create() возвращает Err', async () => {
+  it('topOfBook.spread undefined если OutcomePriceService.create() возвращает Err', async () => {
     const bid = level('0.40', '10');
     const ask = level('0.60', '20');
 
-    const spy = jest.spyOn(PriceService, 'create').mockReturnValueOnce(
-      { ok: false, error: new Error('mock price error') } as ReturnType<typeof PriceService.create>,
+    const spy = jest.spyOn(OutcomePriceService, 'create').mockReturnValueOnce(
+      { ok: false, error: new Error('mock price error') } as ReturnType<typeof OutcomePriceService.create>,
     );
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { payload: { topOfBook: { spread: Price | undefined } } };
+      { payload: { topOfBook: { spread: OutcomePrice | undefined } } };
     expect(event.payload.topOfBook.spread).toBeUndefined();
     spy.mockRestore();
   });

@@ -345,7 +345,7 @@ clock.tick(5000); // +5 секунд
 Возвращает midpoint цену.
 
 ```typescript
-const result = QuoteService.getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
+const result = QuoteService.getMidPrice(quote: Quote): Result<OutcomePrice, InvalidQuoteError>
 ```
 
 **Требует:** Two-sided quote (bid и ask определены)
@@ -417,8 +417,8 @@ const result = QuoteService.scaleSizesByRatio(quote: Quote, sizeFactor: Ratio): 
 ```typescript
 // ⚠️ Может бросать QuoteInvariantViolation!
 const quote = Quote.of(
-  bid: Price | null,
-  ask: Price | null,
+  bid: OutcomePrice | null,
+  ask: OutcomePrice | null,
   bidSize: Quantity,
   askSize: Quantity,
   timestamp: Timestamp,              // Timestamp VO (не Decimal!)
@@ -443,8 +443,8 @@ if (tsResult.ok) {
 #### Геттеры
 
 ```typescript
-quote.bid(): Price | null
-quote.ask(): Price | null
+quote.bid(): OutcomePrice | null
+quote.ask(): OutcomePrice | null
 quote.bidSize(): Quantity
 quote.askSize(): Quantity
 quote.timestamp(): Timestamp          // Timestamp VO
@@ -598,7 +598,7 @@ QuoteFormatter.toDetailed(quote, {
 
 ```typescript
 console.log(QuoteFormatter.toTable(quote));
-// Side   Price    Size
+// Side   OutcomePrice    Size
 // ────────────────────────────────────────
 // Bid    0.4800   100.00
 // Ask    0.5200   150.00
@@ -900,8 +900,8 @@ import { ValidateMarketCrossing } from '@polymarket/value-objects/quote';
 
 const crosses = ValidateMarketCrossing.crossesMarket(
   quote,
-  Price.of(0.50),  // orderbook bid
-  Price.of(0.51)   // orderbook ask
+  OutcomePrice.of(0.50),  // orderbook bid
+  OutcomePrice.of(0.51)   // orderbook ask
 );
 console.log(crosses);  // false
 ```
@@ -922,7 +922,7 @@ console.log(QuoteFormatter.toDetailed(quote));
 // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
 
 console.log(QuoteFormatter.toTable(quote));
-// Side   Price    Size
+// Side   OutcomePrice    Size
 // ────────────────────────────────────────
 // Bid    0.4800   100.00
 // Ask    0.5200   150.00
@@ -1001,8 +1001,8 @@ const maxSpreadResult = ValidateMaxSpread.check(
 const crossingResult = ValidateMarketCrossing.check(
   quote.bid(),
   quote.ask(),
-  Price.of(0.50),  // orderbook bid
-  Price.of(0.51)   // orderbook ask
+  OutcomePrice.of(0.50),  // orderbook bid
+  OutcomePrice.of(0.51)   // orderbook ask
 );
 
 if (!crossingResult.ok) {

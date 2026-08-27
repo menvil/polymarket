@@ -99,7 +99,7 @@ import type { IClock } from '@polymarket/time';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
 import { Money, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
-import type { Price, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, InstrumentId, OrderId, StrategyId } from '@polymarket/ids';
 import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type {
@@ -156,7 +156,7 @@ export interface PlaceOrderInput {
   /** Сторона (BUY/SELL) */
   readonly side: Side;
   /** Лимитная цена */
-  readonly price: Price;
+  readonly price: OutcomePrice;
   /** Размер ордера */
   readonly size: Quantity;
   /** true = post-only order; exchange must reject if order would execute immediately */

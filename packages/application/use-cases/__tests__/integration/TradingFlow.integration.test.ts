@@ -54,7 +54,7 @@ import {
   assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { AccountId, AssetId, OrderId } from '@polymarket/ids';
-import { Price, Quantity, Fee, Money } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee, Money } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Fill } from '@polymarket/fill';
@@ -129,7 +129,7 @@ const TOKEN_ASSET_ID = {
 const INSTRUMENT_ID = assetIdToInstrumentId(TOKEN_ASSET_ID)!;
 const MARKET_ID = asMarketId('market-trading-flow-001')!;
 const ORDER_ID = asOrderId('order-trading-flow-001')!;
-const ORDER_PRICE = Price.of(new Decimal('0.65'));
+const ORDER_PRICE = OutcomePrice.of(new Decimal('0.65'));
 const ORDER_SIZE = Quantity.of(new Decimal('50'));
 
 // Notional: 50 * 0.65 = 32.5 USDC

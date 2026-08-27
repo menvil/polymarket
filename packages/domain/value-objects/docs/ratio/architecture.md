@@ -369,7 +369,7 @@ sequenceDiagram
 
    ```typescript
    Money.addRate(ratio)    // amount * (1 + ratio) - ясный смысл
-   Price.take(ratio)       // price * ratio - взять процент
+   OutcomePrice.take(ratio)       // price * ratio - взять процент
    ```
 
 3. **Single Responsibility**: Ratio - минимальная абстракция
@@ -446,9 +446,9 @@ graph TD
 
 ## Сравнение с другими Value Objects
 
-Ratio использует ту же архитектуру что Money, Price, Quantity:
+Ratio использует ту же архитектуру что Money, OutcomePrice, Quantity:
 
-| Аспект | Money | Price | Ratio |
+| Аспект | Money | OutcomePrice | Ratio |
 | -------- | ------- | ------- | ------- |
 | Core throws | ✅ | ✅ | ✅ |
 | Facade Result | ✅ | ✅ | ✅ |

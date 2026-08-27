@@ -24,7 +24,7 @@
 ✅ **Иммутабельный** — все операции создают новые экземпляры
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Строгие сравнения** — только точные сравнения через `equals()`, без epsilon
-✅ **Polymarket-aligned** — работает с Price объектами в диапазоне [0.0001, 0.9999]
+✅ **Polymarket-aligned** — работает с OutcomePrice объектами в диапазоне [0.0001, 0.9999]
 ✅ **Layered Architecture** — чёткое разделение ответственности
 ✅ **100% Test Coverage** — все слои покрыты тестами (86 тестов)
 
@@ -184,7 +184,7 @@ if (!result.ok) {
 
 **Ответственность:**
 
-- Хранение bid/ask цен как Price объектов
+- Хранение bid/ask цен как OutcomePrice объектов
 - Инварианты (bid ≤ ask)
 - Чистые вычисления (width, midpoint, widthRatio)
 - Бросает `SpreadInvariantViolation` при нарушении инвариантов
@@ -194,11 +194,11 @@ if (!result.ok) {
 ```typescript
 // ⚠️ Только для внутреннего использования — публичный код должен использовать SpreadService (Facade)
 import { Spread } from '@polymarket/value-objects';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
-const bid = Price.of(new Decimal(0.48));
-const ask = Price.of(new Decimal(0.52));
+const bid = OutcomePrice.of(new Decimal(0.48));
+const ask = OutcomePrice.of(new Decimal(0.52));
 
 const spread = Spread.of(bid, ask);  // может бросить исключение — используйте Facade для безопасного создания
 console.log(spread.width().toNumber());  // 0.04
@@ -239,7 +239,7 @@ console.log(spread.width().toNumber());  // 0.04
 
 **Основные методы:**
 
-- `create(bid, ask)` — создание из Price объектов
+- `create(bid, ask)` — создание из OutcomePrice объектов
 - `fromValues(bid, ask)` — создание из чисел/строк/Decimal
 - `zero(price)` — спред нулевой ширины
 - `tighten(spread, amount)` — сужение спреда
@@ -272,8 +272,8 @@ console.log(spread.width().toNumber());  // 0.04
 #### Фабричные методы
 
 ```typescript
-// Создание из Price объектов
-SpreadService.create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError>
+// Создание из OutcomePrice объектов
+SpreadService.create(bid: OutcomePrice, ask: OutcomePrice): Result<Spread, InvalidSpreadError>
 
 // Создание из чисел/строк/Decimal
 SpreadService.fromValues(
@@ -282,7 +282,7 @@ SpreadService.fromValues(
 ): Result<Spread, InvalidSpreadError>
 
 // Спред нулевой ширины (bid = ask)
-SpreadService.zero(price: Price): Spread
+SpreadService.zero(price: OutcomePrice): Spread
 ```
 
 #### Операции
@@ -312,8 +312,8 @@ SpreadService.shift(
 #### Геттеры
 
 ```typescript
-spread.bid(): Price              // Цена покупки
-spread.ask(): Price              // Цена продажи
+spread.bid(): OutcomePrice              // Цена покупки
+spread.ask(): OutcomePrice              // Цена продажи
 spread.width(): Decimal          // Ширина спреда (ask - bid)
 spread.midpoint(): Decimal       // Середина (bid + ask) / 2
 spread.widthRatio(): Ratio        // Ширина как дробь от mid price (0.08 = 8%)
@@ -324,7 +324,7 @@ spread.widthRatio(): Ratio        // Ширина как дробь от mid pri
 ```typescript
 spread.equals(other: Spread): boolean     // Сравнение
 spread.isZeroWidth(): boolean             // Проверка на нулевую ширину
-spread.contains(price: Price): boolean    // Проверка вхождения цены
+spread.contains(price: OutcomePrice): boolean    // Проверка вхождения цены
 ```
 
 ### SpreadSerializer
@@ -420,7 +420,7 @@ function applyMarketMakingStrategy(
 
 ### Работа с вероятностными ценами
 
-Spread работает с Price объектами, которые представляют вероятности:
+Spread работает с OutcomePrice объектами, которые представляют вероятности:
 
 - Диапазон: [0.0001, 0.9999] (0.01% — 99.99%)
 - Базовый тик: 0.0001 (1 basis point)
@@ -446,14 +446,14 @@ SpreadService.fromValues(0.50, 1.5);      // Err (ask > MAX_PRICE)
 SpreadService.fromValues(0.50, 0.50);  // Ok
 ```
 
-### Интеграция с Price
+### Интеграция с OutcomePrice
 
 ```typescript
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { OutcomePriceService, SpreadService } from '@polymarket/value-objects';
 
-// Из отдельных Price объектов
-const bidResult = PriceService.create(0.48);
-const askResult = PriceService.create(0.52);
+// Из отдельных OutcomePrice объектов
+const bidResult = OutcomePriceService.create(0.48);
+const askResult = OutcomePriceService.create(0.52);
 
 if (bidResult.ok && askResult.ok) {
   const spread = SpreadService.create(bidResult.value, askResult.value);

@@ -25,7 +25,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -40,7 +40,7 @@ import { PositionLot } from '../core/PositionLot.js';
 export interface ClosedLotInfo {
   readonly lot: PositionLot;
   readonly closedQuantity: Quantity;
-  readonly closePrice: Price;
+  readonly closePrice: OutcomePrice;
   readonly pnl: SignedQuantity;
 }
 
@@ -94,7 +94,7 @@ export function computeClose(
   orderedLots: readonly PositionLot[],
   side: 'LONG' | 'SHORT',
   closeQuantity: Quantity,
-  closePrice: Price
+  closePrice: OutcomePrice
 ): Result<LotCloseComputation, ValidationError> {
   // Валидация 1: closeQuantity > 0
   if (closeQuantity.isZero() || closeQuantity.value().isNegative()) {
@@ -186,7 +186,7 @@ export function computeClose(
  * Вычисляет weighted average entry price для массива лотов
  *
  * @param lots - Массив лотов
- * @returns Weighted average price или Price.MIN для пустого массива
+ * @returns Weighted average price или OutcomePrice.MIN для пустого массива
  *
  * @remarks
  * Формула: sum(lot.entryPrice * lot.quantity) / sum(lot.quantity)
@@ -197,17 +197,17 @@ export function computeClose(
  * import Decimal from 'decimal.js';
  *
  * const lots = [
- *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: Price.of(new Decimal(0.60)), timestamp }),
- *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: Price.of(new Decimal(0.70)), timestamp }),
+ *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: OutcomePrice.of(new Decimal(0.60)), timestamp }),
+ *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: OutcomePrice.of(new Decimal(0.70)), timestamp }),
  * ];
  *
  * const avgPrice = calculateWeightedAveragePrice(lots);
  * console.log(avgPrice.value().toNumber()); // 0.65
  * ```
  */
-export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): Price {
+export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): OutcomePrice {
   if (lots.length === 0) {
-    return Price.MIN;
+    return OutcomePrice.MIN;
   }
 
   let totalNotional = new Decimal(0);
@@ -219,10 +219,10 @@ export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): Pri
   }
 
   if (totalQuantity.isZero()) {
-    return Price.MIN;
+    return OutcomePrice.MIN;
   }
 
-  return Price.of(totalNotional.dividedBy(totalQuantity));
+  return OutcomePrice.of(totalNotional.dividedBy(totalQuantity));
 }
 
 /**
@@ -244,7 +244,7 @@ export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): Pri
 function calculateLotPnL(
   lot: PositionLot,
   closedQuantity: Quantity,
-  closePrice: Price,
+  closePrice: OutcomePrice,
   side: 'LONG' | 'SHORT'
 ): Decimal {
   const priceDiff = closePrice.value().minus(lot.entryPrice.value());

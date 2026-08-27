@@ -13,7 +13,7 @@
  *
  * ### VO на публичной границе (Этап 3 плана миграции):
  * `calculatePolymarketTakerFee`/`calculatePolymarketTakerFeeWithRate` принимают
- * `Quantity`/`Price` и возвращают `Fee` — по ADR (`docs/architecture/boundary-contract.md`,
+ * `Quantity`/`OutcomePrice` и возвращают `Fee` — по ADR (`docs/architecture/boundary-contract.md`,
  * Решение 1) голый `Decimal` на публичной сигнатуре легитимен только внутри
  * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` **не переводится** —
  * её сигнатура уже полностью на примитивах (`number`, не `Decimal`), уже ADR-совместима,
@@ -22,7 +22,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import { Price, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { AssetIdHelpers } from '@polymarket/ids';
 
 export const POLYMARKET_CRYPTO_TAKER_FEE_RATE = 0.072;
@@ -34,7 +34,7 @@ const MIN_FEE_USDC = new Decimal(POLYMARKET_MIN_FEE_USDC);
  * Рассчитывает taker fee на Polymarket для crypto-рынков.
  *
  * @param size - Размер ордера (Quantity VO)
- * @param price - Цена исполнения (Price VO, диапазон [0.0001, 0.9999])
+ * @param price - Цена исполнения (OutcomePrice VO, диапазон [0.0001, 0.9999])
  * @returns Комиссия как `Fee` VO (валюта USDC). Всегда >= 0.
  *
  * @remarks
@@ -44,11 +44,11 @@ const MIN_FEE_USDC = new Decimal(POLYMARKET_MIN_FEE_USDC);
  * @example
  * ```typescript
  * // TAKER fill: BUY 10 @ 0.50
- * const fee = calculatePolymarketTakerFee(Quantity.of(new Decimal('10')), Price.of(new Decimal('0.50')));
+ * const fee = calculatePolymarketTakerFee(Quantity.of(new Decimal('10')), OutcomePrice.of(new Decimal('0.50')));
  * // fee.quantity.amount().value() = 0.18000 (10 × 0.072 × 0.50 × 0.50)
  * ```
  */
-export function calculatePolymarketTakerFee(size: Quantity, price: Price): Fee {
+export function calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice): Fee {
   return calculatePolymarketTakerFeeWithRate(size, price, POLYMARKET_CRYPTO_TAKER_FEE_RATE);
 }
 
@@ -56,7 +56,7 @@ export function calculatePolymarketTakerFee(size: Quantity, price: Price): Fee {
  * Рассчитывает taker fee с явно заданным feeRate.
  *
  * @param size - Размер ордера (Quantity VO)
- * @param price - Цена исполнения (Price VO)
+ * @param price - Цена исполнения (OutcomePrice VO)
  * @param feeRate - Ставка комиссии (доля, например 0.072); допускает голый `number`/`Decimal` —
  *   ставка не является отдельным VO в текущем коде, приходит из market metadata как примитив
  * @returns Комиссия как `Fee` VO (валюта USDC). Всегда >= 0.
@@ -72,7 +72,7 @@ export function calculatePolymarketTakerFee(size: Quantity, price: Price): Fee {
  */
 export function calculatePolymarketTakerFeeWithRate(
   size: Quantity,
-  price: Price,
+  price: OutcomePrice,
   feeRate: number | Decimal,
 ): Fee {
   const feeRateDecimal = new Decimal(feeRate);
@@ -108,8 +108,8 @@ export function calculatePolymarketTakerFeeWithRate(
  * весь остальной расчёт уже ведётся на `number`.
  *
  * Guard-проверки на невалидный вход (size/price вне диапазона, feeRate <= 0) выполняются
- * ЗДЕСЬ, на сырых значениях, ДО конструирования `Quantity`/`Price` VO — эти VO бросают
- * исключение при значении вне инварианта (`Price` — диапазон [0.0001, 0.9999]), а эта
+ * ЗДЕСЬ, на сырых значениях, ДО конструирования `Quantity`/`OutcomePrice` VO — эти VO бросают
+ * исключение при значении вне инварианта (`OutcomePrice` — диапазон [0.0001, 0.9999]), а эта
  * функция должна сохранить прежний контракт "невалидный вход → тихо 0", не throw
  * (вызывающий код в `apps/bot`/`apps/pnl` полагается на graceful zero, не try/catch).
  *
@@ -133,7 +133,7 @@ export function calculatePolymarketTakerFeeNumber(
   }
   return calculatePolymarketTakerFeeWithRate(
     Quantity.of(new Decimal(size)),
-    Price.of(new Decimal(price)),
+    OutcomePrice.of(new Decimal(price)),
     feeRate,
   ).quantity.amount().value().toNumber();
 }

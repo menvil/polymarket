@@ -247,7 +247,7 @@ Ratio заменяет удаленный Percentage value object. Ключев�
 | **Семантика** | Неясная (value object для процента?) | Четкая (relative value, дробь) |
 | **Операции** | add/subtract (бессмысленно) | Минимум (только вспомогательные) |
 | **Использование** | Standalone | В контексте целевого value object |
-| **Арифметика** | В Percentage классе | В Money/Price/Quantity |
+| **Арифметика** | В Percentage классе | В Money/OutcomePrice/Quantity |
 
 **Почему Percentage был удален:**
 
@@ -267,9 +267,9 @@ ratio.add(other)      // нет
 ratio.subtract(other) // нет
 ratio.multiply(value) // нет
 
-// ✅ Операции живут в Money/Price/Quantity
+// ✅ Операции живут в Money/OutcomePrice/Quantity
 Money.addRate(ratio: Ratio)          // добавить процент к сумме
-Price.take(ratio: Ratio)             // взять процент от цены
+OutcomePrice.take(ratio: Ratio)             // взять процент от цены
 Quantity.applyDiscount(ratio: Ratio) // применить скидку
 ```
 

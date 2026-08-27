@@ -41,7 +41,7 @@ await service.stop(); // останавливает все watcher'ы, закр�
 `CexNormalizedBookEvent.bids/asks: readonly (readonly [number, number])[]`,
 `CexNormalizedTradeEvent.price/size: number` — сырые примитивы, не VO. В отличие от
 аналогичного решения для `CryptoMarketDataStore` (Этап 8 плана миграции, обоснованное
-одновременно частотой per-tick вызовов И диапазон-конфликтом с `Price` VO), это **не** та же
+одновременно частотой per-tick вызовов И диапазон-конфликтом с `OutcomePrice` VO), это **не** та же
 осознанная hot-path-находка — этот пакет просто не был затронут ни одним этапом миграции
 1-10 (найдено при расследовании Этапа 10 как "новая территория вне периметра черновика").
 Единственный реальный потребитель (`apps/bot/src/main.ts`'s `routeCexEventToCryptoStore`)

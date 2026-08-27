@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -32,8 +32,8 @@ describe('ValidateAge', () => {
   });
 
   const createQuote = (timestampMs: number): Quote => {
-    const bid = Price.of(new Decimal('0.48'));
-    const ask = Price.of(new Decimal('0.52'));
+    const bid = OutcomePrice.of(new Decimal('0.48'));
+    const ask = OutcomePrice.of(new Decimal('0.52'));
     const bidSize = Quantity.of(new Decimal(100));
     const askSize = Quantity.of(new Decimal(150));
     return Quote.of(bid, ask, bidSize, askSize, createTestTimestamp(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);

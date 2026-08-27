@@ -61,13 +61,16 @@ describe('ValidateStepSizeForSignedQuantity', () => {
       }
     });
 
-    it('должен вернуть Err с NON_FINITE для NaN', () => {
+    it('должен вернуть Err с NAN для NaN', () => {
       const result = ValidateStepSizeForSignedQuantity.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidSignedQuantityError);
-        expect(result.error.message).toContain('must be finite');
-        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_FINITE);
+        // Раньше NaN проваливался в ветку isFinite и приходил как
+        // NON_FINITE — отличить его от Infinity было нельзя. Общее
+        // правило проверяет NaN первым и даёт ему свою причину
+        expect(result.error.message).toContain('must not be NaN');
+        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NAN);
       }
     });
 

@@ -1,14 +1,23 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
+import { multiplyDecimal, roundToTick } from '@polymarket/math';
 import { Quantity } from '../core/Quantity.js';
 import { InvalidQuantityError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
 import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantity.js';
-import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { QuantityErrorReason } from '../errors/QuantityErrorReason.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
+import type { ScalarDomain } from '../../shared/numeric/index.js';
+import {
+  addScalars,
+  divideScalar,
+  multiplyScalar,
+  portionOfScalar,
+  roundScalarToStep,
+  subtractScalars,
+} from '../../shared/numeric/index.js';
 
 /**
  * Фасад для работы с Quantity
@@ -43,6 +52,30 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  */
 export class QuantityService {
   private static readonly SERVICE_NAME = 'QuantityService';
+
+  /**
+   * Описание `Quantity` как скалярного домена для общих операций.
+   *
+   * @remarks
+   * Через дескриптор общие операции (`shared/numeric`) узнают всё, чем
+   * `Quantity` отличается от `SignedQuantity`: инвариант неотрицательности
+   * (внутри `create`), тип ошибки, словарь причин и более строгое правило
+   * множителя — отрицательный множитель увёл бы результат за инвариант.
+   *
+   * Живёт внутри класса, потому что `createFromDecimal` приватен: доступ к
+   * нему извне закрыт намеренно, чтобы никто не обошёл проверку инвариантов.
+   */
+  private static readonly SCALAR_DOMAIN: ScalarDomain<Quantity, InvalidQuantityError> = {
+    serviceName: 'QuantityService',
+    ErrorConstructor: InvalidQuantityError,
+    invalidFormatReason: QuantityErrorReason.INVALID_FORMAT,
+    nanReason: QuantityErrorReason.NAN,
+    nonFiniteReason: QuantityErrorReason.NON_FINITE,
+    create: (value) => QuantityService.createFromDecimal(value),
+    validateFactor: (factor) => ValidateFactorForQuantityMultiplication.check(factor),
+    validateDivisor: (divisor) => ValidateDivisorForQuantityDivision.check(divisor),
+    validateStep: (step) => ValidateStepSizeForQuantity.check(step)
+  };
 
   /**
    * Создаёт Quantity из значения
@@ -144,11 +177,7 @@ export class QuantityService {
    * ```
    */
   public static add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError> {
-    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp(QuantityService.SERVICE_NAME, 'add', ctx, () => {
-      const sum = addDecimal(qty1.value(), qty2.value());
-      return this.createFromDecimal(sum);
-    }, InvalidQuantityError);
+    return addScalars(QuantityService.SCALAR_DOMAIN, qty1, qty2);
   }
 
   /**
@@ -181,18 +210,14 @@ export class QuantityService {
     qty1: Quantity,
     qty2: Quantity
   ): Result<Quantity, InvalidQuantityError> {
-    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp(QuantityService.SERVICE_NAME, 'subtract', ctx, () => {
-      const diff = subtractDecimal(qty1.value(), qty2.value());
-
-      const validateResult = ValidateResultNonNegative.check(diff);
-      if (isErr(validateResult)) {
-        // wrapOp автоматически сделает rewrap для любого Err результата
-        return validateResult;
-      }
-
-      return this.createFromDecimal(diff);
-    }, InvalidQuantityError);
+    // Единственное расхождение с SignedQuantity: разность не имеет права
+    // уйти в отрицательные, поэтому проверка результата передаётся явно
+    return subtractScalars(
+      QuantityService.SCALAR_DOMAIN,
+      qty1,
+      qty2,
+      (diff) => ValidateResultNonNegative.check(diff)
+    );
   }
 
   /**
@@ -219,43 +244,7 @@ export class QuantityService {
     quantity: Quantity,
     factor: number | string | Decimal
   ): Result<Quantity, InvalidQuantityError> {
-    // Безопасный парсинг factor через toDecimal
-    const factorResult = toDecimal('factor', factor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError, {
-      nanReason: QuantityErrorReason.NAN,
-      nonFiniteReason: QuantityErrorReason.NON_FINITE,
-    });
-    if (isErr(factorResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'multiply', {
-          quantity: quantity.value().toString(),
-          factor: String(factor)
-        }, factorResult.error, InvalidQuantityError)
-      );
-    }
-
-    const factorDecimal = factorResult.value;
-
-    // Валидация: множитель должен быть неотрицательным
-    const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
-    if (isErr(validateResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'multiply', {
-          quantity: quantity.value().toString(),
-          factor: factorDecimal.toString()
-        }, validateResult.error, InvalidQuantityError)
-      );
-    }
-
-    // Умножение с обработкой ожидаемых арифметических исключений
-    const ctx = {
-      quantity: quantity.value().toString(),
-      factor: factorDecimal.toString()
-    };
-
-    return wrapOp(QuantityService.SERVICE_NAME, 'multiply', ctx, () => {
-      const result = multiplyDecimal(quantity.value(), factorDecimal);
-      return this.createFromDecimal(result);
-    }, InvalidQuantityError);
+    return multiplyScalar(QuantityService.SCALAR_DOMAIN, quantity, factor);
   }
 
   /**
@@ -296,43 +285,7 @@ export class QuantityService {
     quantity: Quantity,
     divisor: number | string | Decimal
   ): Result<Quantity, InvalidQuantityError> {
-    // Безопасный парсинг divisor через toDecimal
-    const divisorResult = toDecimal('divisor', divisor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError, {
-      nanReason: QuantityErrorReason.NAN,
-      nonFiniteReason: QuantityErrorReason.NON_FINITE,
-    });
-    if (isErr(divisorResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'divide', {
-          quantity: quantity.value().toString(),
-          divisor: String(divisor)
-        }, divisorResult.error, InvalidQuantityError)
-      );
-    }
-
-    const divisorDecimal = divisorResult.value;
-
-    // Валидация: делитель должен быть положительным
-    const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
-    if (isErr(validateResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'divide', {
-          quantity: quantity.value().toString(),
-          divisor: divisorDecimal.toString()
-        }, validateResult.error, InvalidQuantityError)
-      );
-    }
-
-    // Делим с обработкой ожидаемых арифметических исключений
-    const ctx = {
-      quantity: quantity.value().toString(),
-      divisor: divisorDecimal.toString()
-    };
-
-    return wrapOp(QuantityService.SERVICE_NAME, 'divide', ctx, () => {
-      const result = divideDecimal(quantity.value(), divisorDecimal);
-      return this.createFromDecimal(result);
-    }, InvalidQuantityError);
+    return divideScalar(QuantityService.SCALAR_DOMAIN, quantity, divisor);
   }
 
   /**
@@ -368,44 +321,7 @@ export class QuantityService {
     stepSize: number | string | Decimal,
     roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
   ): Result<Quantity, InvalidQuantityError> {
-    // Безопасный парсинг stepSize через toDecimal
-    const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError, {
-      nanReason: QuantityErrorReason.NAN,
-      nonFiniteReason: QuantityErrorReason.NON_FINITE,
-    });
-    if (isErr(stepSizeResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'roundToStep', {
-          quantity: quantity.value().toString(),
-          stepSize: String(stepSize)
-        }, stepSizeResult.error, InvalidQuantityError)
-      );
-    }
-
-    const stepSizeDecimal = stepSizeResult.value;
-
-    // Валидация через rule
-    const validateResult = ValidateStepSizeForQuantity.check(stepSizeDecimal);
-    if (isErr(validateResult)) {
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'roundToStep', {
-          quantity: quantity.value().toString(),
-          stepSize: stepSizeDecimal.toString()
-        }, validateResult.error, InvalidQuantityError)
-      );
-    }
-
-    // Округление через math layer
-    const ctx = {
-      quantity: quantity.value().toString(),
-      stepSize: stepSizeDecimal.toString(),
-      roundingMode: String(roundingMode)
-    };
-
-    return wrapOp(QuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
-      const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
-      return this.createFromDecimal(rounded);
-    }, InvalidQuantityError);
+    return roundScalarToStep(QuantityService.SCALAR_DOMAIN, quantity, stepSize, roundingMode);
   }
 
   /**
@@ -458,16 +374,7 @@ export class QuantityService {
     quantity: Quantity,
     rate: Ratio
   ): Result<Quantity, InvalidQuantityError> {
-    const rateDec = rate.toDecimal();
-    const ctx = {
-      quantity: quantity.value().toString(),
-      rate: rateDec.toString()
-    };
-
-    return wrapOp(QuantityService.SERVICE_NAME, 'portion', ctx, () => {
-      const result = multiplyDecimal(quantity.value(), rateDec);
-      return this.createFromDecimal(result);
-    }, InvalidQuantityError);
+    return portionOfScalar(QuantityService.SCALAR_DOMAIN, quantity, rate.toDecimal());
   }
 
   /**

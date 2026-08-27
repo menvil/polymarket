@@ -40,7 +40,7 @@ export type CryptoMarketDataReason = 'CRYPTO_PRICE' | 'CRYPTO_MARKET_DATA';
  * это per-tick горячий путь (реплей бэктеста и живой сбор CEX-данных
  * вызывают апдейт на каждое WS-событие), а `price` — крипто-спот-цена
  * произвольного масштаба (например, ~78000 для BTC), несовместимая с
- * диапазоном `Price` VO (`[0.0001, 0.9999]`, вероятностная цена
+ * диапазоном `OutcomePrice` VO (`[0.0001, 0.9999]`, вероятностная цена
  * prediction-market). См. `docs/market-state.md` за полным обоснованием.
  */
 export interface CryptoPricePoint {
@@ -362,10 +362,10 @@ const MIN_PLAUSIBLE_EPOCH_MS = 1_000_000_000_000;
  * ротацию 5-минутных Polymarket-рынков (см. TSDoc модуля вверху файла).
  *
  * Числовые поля всех входов/представлений (`price`, `exchangeTsMs`,
- * `receivedTsMs`, `bids`/`asks`) — намеренно `number`, не VO (`Price`/
+ * `receivedTsMs`, `bids`/`asks`) — намеренно `number`, не VO (`OutcomePrice`/
  * `Timestamp`): это per-tick hot-path (реплей бэктеста и живой сбор
  * CEX-данных пишут на каждое WS-событие через `updatePrice`/`updateCexBook`/
- * `updateCexTrade`), а крипто-спот-цена несовместима с диапазоном `Price` VO.
+ * `updateCexTrade`), а крипто-спот-цена несовместима с диапазоном `OutcomePrice` VO.
  * Полное обоснование — `docs/market-state.md`.
  *
  * @example

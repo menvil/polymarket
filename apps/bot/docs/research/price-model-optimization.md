@@ -10,7 +10,7 @@ SelectiveEntry использует эвристические фильтры (z
 
 ---
 
-## 1. Собственный Price Oracle
+## 1. Собственный OutcomePrice Oracle
 
 ### Зачем
 

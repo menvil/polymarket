@@ -457,7 +457,7 @@ if (!ratioResult.ok) {
 // Markup/Discount применяемый к amount
 const markupResult = RatioService.fromPercent(10, { ensureGteMinusOne: true });
 
-// Price adjustment
+// OutcomePrice adjustment
 const adjustmentResult = RatioService.fromDecimal(-0.2, { ensureGteMinusOne: true });
 
 // Fee/Tax (обычно положительные, но может быть refund)

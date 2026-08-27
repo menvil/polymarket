@@ -15,7 +15,7 @@ import type { ILogger } from '@polymarket/logger';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
-import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 function makeLogger(): ILogger {
@@ -40,7 +40,7 @@ function makeInstrument(instrumentId: InstrumentId, marketId: MarketId): Instrum
   return {
     instrumentId,
     marketId,
-    tickSize: {} as Price,
+    tickSize: {} as OutcomePrice,
     minOrderSize: {} as Quantity,
     minOrderValue: {} as Money,
     active: true,

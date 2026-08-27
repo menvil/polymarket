@@ -36,7 +36,7 @@ import type { AccountId, AssetId, FillId, InstrumentId, OrderId } from '@polymar
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { CancelOrderUseCase } from '../../src/CancelOrderUseCase.js';
 import { UpdateOrderStatusUseCase } from '../../src/UpdateOrderStatusUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
@@ -167,7 +167,7 @@ function makeOpenOrder(orderId: OrderId = ORDER_ID): Order {
     id: orderId,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')) as never,
+    price: OutcomePrice.of(new Decimal('0.65')) as never,
     size: Quantity.of(new Decimal('100')) as never,
     timestamp: { value: () => new Decimal(1000), toNumber: () => 1000, toISO: () => '2024-01-01T00:00:00.000Z' } as never,
   });
@@ -185,7 +185,7 @@ function makeFill(id: string, size = '50', orderId: OrderId = ORDER_ID): Fill {
     accountId: ACCOUNT_ID,
     tokenId: ASSET_ID,
     settlementAssetId: 'USDC' as unknown as AssetId,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal(size)),
     side: 'BUY',
     timestamp: { value: () => new Decimal(1000), toNumber: () => 1000 } as never,

@@ -21,6 +21,7 @@ import type { Result } from '@polymarket/result';
 import { QueueOverflowError, CriticalHandlerError } from '@polymarket/errors/event-bus';
 import { EventBus } from '../src/EventBus.js';
 import type { BookUpdatedEvent, TradeReceivedEvent } from '@polymarket/application-events';
+import { KnownVenues } from '@polymarket/ids';
 
 /** Минимальный mock logger (child возвращает себя же — как в EventBus.test.ts). */
 function makeLogger(): ILogger {
@@ -47,10 +48,10 @@ function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
     payload: {
+      venueId: KnownVenues.POLYMARKET,
       topOfBook: {
         bestBid: undefined,
         bestAsk: undefined,
-        spread: undefined,
         bestBidSize: undefined,
         bestAskSize: undefined,
       },
@@ -68,6 +69,7 @@ function makeTradeEvent(): TradeReceivedEvent {
   return {
     type: 'TRADE_RECEIVED',
     payload: {
+      venueId: KnownVenues.POLYMARKET,
       instrumentId: 'token-123' as TradeReceivedEvent['payload']['instrumentId'],
       price: {} as unknown as TradeReceivedEvent['payload']['price'],
       size: {} as unknown as TradeReceivedEvent['payload']['size'],

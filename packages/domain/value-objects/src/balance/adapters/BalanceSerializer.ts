@@ -5,33 +5,7 @@ import { Balance } from '../core/Balance.js';
 import { BalanceService } from '../facade/BalanceService.js';
 import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для Balance сериализации
@@ -205,7 +179,7 @@ export class BalanceSerializer {
     const obj = json as Record<string, unknown>;
 
     // 2. Проверка наличия поля available
-    if (!('available' in obj)) {
+    if (!Object.hasOwn(obj, 'available')) {
       return Err(
         new InvalidBalanceError(`Missing required field 'available'`, {
           context: {
@@ -220,7 +194,7 @@ export class BalanceSerializer {
     }
 
     // 3. Проверка наличия поля reserved
-    if (!('reserved' in obj)) {
+    if (!Object.hasOwn(obj, 'reserved')) {
       return Err(
         new InvalidBalanceError(`Missing required field 'reserved'`, {
           context: {
@@ -329,7 +303,7 @@ export class BalanceSerializer {
     }
 
     // 8. Проверка наличия поля accountId
-    if (!('accountId' in obj)) {
+    if (!Object.hasOwn(obj, 'accountId')) {
       return Err(
         new InvalidBalanceError(`Missing required field 'accountId'`, {
           context: {
@@ -344,7 +318,7 @@ export class BalanceSerializer {
     }
 
     // 9. Проверка наличия поля venueId
-    if (!('venueId' in obj)) {
+    if (!Object.hasOwn(obj, 'venueId')) {
       return Err(
         new InvalidBalanceError(`Missing required field 'venueId'`, {
           context: {

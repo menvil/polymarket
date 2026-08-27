@@ -9,7 +9,7 @@
  * - Некорректном или отсутствующем marketId/tokenId
  * - Некорректных price/quantity в уровнях (не число, NaN)
  * - Невалидном формате массивов bids/asks
- * - Ошибках создания Price/Quantity Value Objects из сырых данных
+ * - Ошибках создания OutcomePrice/Quantity Value Objects из сырых данных
  *
  * @example
  * ```typescript

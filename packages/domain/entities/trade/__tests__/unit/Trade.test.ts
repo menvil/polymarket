@@ -5,7 +5,7 @@
 import { Trade } from '../../src/Trade';
 import type { TradeParams } from '../../src/Trade';
 import { asVenueTradeId, asVenueId, parseAssetId, unsafeMarketId } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
@@ -38,7 +38,7 @@ function makeValidParams(overrides?: Partial<TradeParams>): TradeParams {
     venueId: asVenueId('POLYMARKET')!,
     marketId: unsafeMarketId('market-abc'),
     tokenId,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     aggressorSide: 'BUY',
     timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
@@ -129,8 +129,8 @@ describe('Trade', () => {
     });
 
     it('возвращает Err если price нулевая', () => {
-      // Обходим Price.of() через type cast — тестируем инвариант Trade.create() напрямую
-      const fakePrice = { value: () => new Decimal('0') } as unknown as Price;
+      // Обходим OutcomePrice.of() через type cast — тестируем инвариант Trade.create() напрямую
+      const fakePrice = { value: () => new Decimal('0') } as unknown as OutcomePrice;
       const result = Trade.create(makeValidParams({ price: fakePrice }));
 
       expect(result.ok).toBe(false);
@@ -140,7 +140,7 @@ describe('Trade', () => {
     });
 
     it('возвращает Err если price отрицательная', () => {
-      const fakePrice = { value: () => new Decimal('-0.1') } as unknown as Price;
+      const fakePrice = { value: () => new Decimal('-0.1') } as unknown as OutcomePrice;
       const result = Trade.create(makeValidParams({ price: fakePrice }));
 
       expect(result.ok).toBe(false);
@@ -171,12 +171,12 @@ describe('Trade', () => {
     });
 
     it('возвращает Err если price null', () => {
-      const params = makeValidParams({ price: null as unknown as Price });
+      const params = makeValidParams({ price: null as unknown as OutcomePrice });
       const result = Trade.create(params);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Price is required');
+        expect(result.error.message).toContain('OutcomePrice is required');
       }
     });
 
@@ -204,7 +204,7 @@ describe('Trade', () => {
   describe('getNotional()', () => {
     it('вычисляет notional как price × size', () => {
       const params = makeValidParams({
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('100')),
       });
       const result = Trade.create(params);
@@ -217,7 +217,7 @@ describe('Trade', () => {
 
     it('вычисляет нотионал для дробных значений', () => {
       const params = makeValidParams({
-        price: Price.of(new Decimal('0.333')),
+        price: OutcomePrice.of(new Decimal('0.333')),
         size: Quantity.of(new Decimal('30')),
       });
       const result = Trade.create(params);

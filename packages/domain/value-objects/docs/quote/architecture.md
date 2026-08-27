@@ -109,8 +109,8 @@ Quote value object построен по паттерну **Throws+Facade** с �
 class Quote {
   // Private constructor - нельзя создать напрямую
   private constructor(
-    bid: Price | null,
-    ask: Price | null,
+    bid: OutcomePrice | null,
+    ask: OutcomePrice | null,
     bidSize: Quantity,
     askSize: Quantity,
     timestamp: Timestamp  // Timestamp VO вместо Decimal
@@ -118,8 +118,8 @@ class Quote {
 
   // Factory method - может бросать QuoteInvariantViolation
   public static of(
-    bid: Price | null,
-    ask: Price | null,
+    bid: OutcomePrice | null,
+    ask: OutcomePrice | null,
     bidSize: Quantity,
     askSize: Quantity,
     timestamp: Timestamp,  // Timestamp VO
@@ -128,8 +128,8 @@ class Quote {
   ): Quote
 
   // Геттеры
-  public bid(): Price | null
-  public ask(): Price | null
+  public bid(): OutcomePrice | null
+  public ask(): OutcomePrice | null
   public bidSize(): Quantity
   public askSize(): Quantity
   public timestamp(): Timestamp     // Возвращает Timestamp VO
@@ -186,7 +186,7 @@ class QuoteInvariantViolation extends Error {
 
 **Внутреннее представление:**
 
-- `_bid`, `_ask`: `Price | null`
+- `_bid`, `_ask`: `OutcomePrice | null`
 - `_bidSize`, `_askSize`: `Quantity`
 - `_timestamp`: `Timestamp` (Timestamp VO для строгой типизации и валидации)
 
@@ -266,7 +266,7 @@ return wrapOp('create', ctx, () => {
 Сохраняет root cause при перебрасывании:
 
 ```typescript
-const bidResult = PriceService.create(bidDecimal);
+const bidResult = OutcomePriceService.create(bidDecimal);
 if (!bidResult.ok) {
   return Err(
     rewrap(
@@ -309,11 +309,11 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
       ↓
       wrapOp('create', ..., () => {
         ↓
-        PriceService.create(Decimal(0.48))
+        OutcomePriceService.create(Decimal(0.48))
           ↓ (если ошибка)
           rewrap('create', { component: 'bid' }, error, ...)
         ↓
-        Quote.of(Price, Price, Quantity, Quantity, timestamp, sourceId, instrumentId)
+        Quote.of(OutcomePrice, OutcomePrice, Quantity, Quantity, timestamp, sourceId, instrumentId)
           ↓ (если QuoteInvariantViolation — перехватывается явно)
           rewrap('create', { reason: mapInvariantReason(e.reason) }, e, InvalidQuoteError)
           ↓ (если неизвестная ошибка — только тогда)
@@ -589,8 +589,8 @@ public static create(...) {
 
 ```text
 Quote
-├── Price (value object)
-│   └── PriceService (facade)
+├── OutcomePrice (value object)
+│   └── OutcomePriceService (facade)
 ├── Quantity (value object)
 │   └── QuantityService (facade)
 ├── Timestamp (value object)

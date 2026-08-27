@@ -4,7 +4,7 @@ import { asOrderId, asFillId, unsafeStrategyId } from '@polymarket/ids';
 import { pendingMatchFillId } from '@polymarket/ports';
 import type { InstrumentId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { Order } from '@polymarket/order';
 import { InMemoryOrderRepository } from '../../src/InMemoryOrderRepository.js';
@@ -26,7 +26,7 @@ function createOrder(opts: {
     id: asOrderId(opts.id)!,
     asset: opts.asset ?? ASSET_1,
     side: 'BUY',
-    price: Price.of(new Decimal('0.55')),
+    price: OutcomePrice.of(new Decimal('0.55')),
     size: Quantity.of(new Decimal('100')),
     timestamp: timestamp.value,
     strategyId: opts.strategyId !== undefined ? unsafeStrategyId(opts.strategyId) : undefined,

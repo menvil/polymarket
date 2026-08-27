@@ -7,7 +7,7 @@
  *
  * Аналогично:
  * - MoneyErrorReason (8 значений)
- * - PriceErrorReason (10 значений)
+ * - OutcomePriceErrorReason (10 значений)
  * - QuantityErrorReason (8 значений)
  */
 export enum SpreadErrorReason {
@@ -25,12 +25,12 @@ export enum SpreadErrorReason {
   BID_GREATER_THAN_ASK = 'BID_GREATER_THAN_ASK',
 
   /**
-   * Bid не является валидным Price объектом
+   * Bid не является валидным OutcomePrice объектом
    */
   INVALID_BID = 'INVALID_BID',
 
   /**
-   * Ask не является валидным Price объектом
+   * Ask не является валидным OutcomePrice объектом
    */
   INVALID_ASK = 'INVALID_ASK',
 
@@ -117,7 +117,7 @@ export enum SpreadErrorReason {
    *
    * @remarks
    * Используется в getSpreadRatio когда midpoint = 0
-   * (теоретически невозможно для Price, но защита).
+   * (теоретически невозможно для OutcomePrice, но защита).
    */
   MID_UNAVAILABLE = 'MID_UNAVAILABLE',
 
@@ -141,7 +141,7 @@ export enum SpreadErrorReason {
    * Результат Ratio операции выходит за границы валидных значений
    *
    * @remarks
-   * После применения Ratio операции результат выходит за границы Price [0.0001, 0.9999]
+   * После применения Ratio операции результат выходит за границы OutcomePrice [0.0001, 0.9999]
    * или нарушает bid <= ask инвариант.
    */
   RATIO_OUT_OF_BOUNDS = 'RATIO_OUT_OF_BOUNDS',

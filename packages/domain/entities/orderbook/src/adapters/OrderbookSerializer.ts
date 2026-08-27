@@ -28,6 +28,7 @@
 
 import type { Result } from '@polymarket/result';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
+import { asVenueId } from '@polymarket/ids';
 import { Orderbook } from '../core/Orderbook.js';
 import { OrderbookNormalizer } from '../normalizer/OrderbookNormalizer.js';
 import { OrderbookInvalidError } from '@polymarket/errors/orderbook';
@@ -42,7 +43,9 @@ import { DEFAULT_NORMALIZATION_POLICY } from '../normalizer/NormalizationPolicy.
  * Full view с всеми уровнями для полной сериализации.
  */
 export interface OrderbookJSON {
-  readonly marketId: string;
+  /** Площадка стакана — без неё книги одного символа на разных биржах неразличимы. */
+  readonly venueId: string;
+  readonly marketId?: string;
   readonly tokenId: string;
   readonly venueTimestamp?: number;
   readonly receivedAt: number;
@@ -107,7 +110,17 @@ export class OrderbookSerializer {
     }
 
     // Создание Orderbook
-    const orderbook = Orderbook.fromNormalized(normalizedResult.value);
+    const rawVenueId = json['venueId'];
+    const venueId = typeof rawVenueId === 'string' ? asVenueId(rawVenueId) : undefined;
+    if (venueId === undefined) {
+      return {
+        ok: false,
+        error: new OrderbookValidationError('Missing or invalid venueId', {
+          context: { field: 'venueId', value: String(rawVenueId) },
+        }),
+      };
+    }
+    const orderbook = Orderbook.fromNormalized(normalizedResult.value, venueId);
     return { ok: true, value: orderbook };
   }
 
@@ -131,8 +144,9 @@ export class OrderbookSerializer {
    */
   public static toJSON(orderbook: Orderbook): OrderbookJSON {
     return {
-      marketId: orderbook.instrumentId,
-      tokenId: orderbook.asset,
+      venueId: orderbook.venueId,
+      marketId: orderbook.marketId,
+      tokenId: orderbook.instrumentId,
       venueTimestamp: orderbook.venueTimestamp?.toNumber(),
       receivedAt: orderbook.receivedAt.toNumber(),
       bids: orderbook.bids.map(level => level.toObject()),

@@ -4,13 +4,13 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { OrderbookLevel } from '../../../src/core/OrderbookLevel.js';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 describe('OrderbookLevel', () => {
   describe('create()', () => {
     it('создаёт level с валидными price и quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
 
       const level = OrderbookLevel.create(price, quantity);
@@ -20,7 +20,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('возвращает frozen объект', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
 
       const level = OrderbookLevel.create(price, quantity);
@@ -29,7 +29,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('создаёт level с нулевым quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.ZERO;
 
       const level = OrderbookLevel.create(price, quantity);
@@ -40,7 +40,7 @@ describe('OrderbookLevel', () => {
 
   describe('isEmpty()', () => {
     it('возвращает true для нулевого quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.ZERO;
       const level = OrderbookLevel.create(price, quantity);
 
@@ -48,7 +48,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('возвращает false для ненулевого quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 
@@ -58,7 +58,7 @@ describe('OrderbookLevel', () => {
 
   describe('withQuantity()', () => {
     it('возвращает новый level с обновлённым quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 
@@ -71,7 +71,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('сохраняет immutability', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 
@@ -85,7 +85,7 @@ describe('OrderbookLevel', () => {
 
   describe('equals()', () => {
     it('возвращает true для одинаковых levels', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level1 = OrderbookLevel.create(price, quantity);
       const level2 = OrderbookLevel.create(price, quantity);
@@ -94,8 +94,8 @@ describe('OrderbookLevel', () => {
     });
 
     it('возвращает false для разных price', () => {
-      const price1 = Price.of(new Decimal(0.52));
-      const price2 = Price.of(new Decimal(0.53));
+      const price1 = OutcomePrice.of(new Decimal(0.52));
+      const price2 = OutcomePrice.of(new Decimal(0.53));
       const quantity = Quantity.of(new Decimal(100));
       const level1 = OrderbookLevel.create(price1, quantity);
       const level2 = OrderbookLevel.create(price2, quantity);
@@ -104,7 +104,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('возвращает false для разных quantity', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity1 = Quantity.of(new Decimal(100));
       const quantity2 = Quantity.of(new Decimal(200));
       const level1 = OrderbookLevel.create(price, quantity1);
@@ -116,7 +116,7 @@ describe('OrderbookLevel', () => {
 
   describe('toString()', () => {
     it('возвращает строковое представление', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 
@@ -130,7 +130,7 @@ describe('OrderbookLevel', () => {
 
   describe('toObject()', () => {
     it('возвращает объектное представление', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 
@@ -141,7 +141,7 @@ describe('OrderbookLevel', () => {
     });
 
     it('возвращает сериализуемый объект', () => {
-      const price = Price.of(new Decimal(0.52));
+      const price = OutcomePrice.of(new Decimal(0.52));
       const quantity = Quantity.of(new Decimal(100));
       const level = OrderbookLevel.create(price, quantity);
 

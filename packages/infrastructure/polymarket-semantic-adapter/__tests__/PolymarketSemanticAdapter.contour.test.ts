@@ -94,7 +94,7 @@ describe('causality metadata', () => {
     }
   });
 
-  it('reference-price событие тоже сохраняет causality', async () => {
+  it('asset-price событие тоже сохраняет causality', async () => {
     const raw = await publishReferencePrice(h, {
       channel: 'POLYMARKET_CRYPTO_BINANCE',
       symbol: 'btcusdt',

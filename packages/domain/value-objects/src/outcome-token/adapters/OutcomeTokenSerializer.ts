@@ -9,33 +9,7 @@ import {
 } from '@polymarket/ids';
 import { OutcomeToken } from '../core/OutcomeToken.js';
 import { OutcomeTokenService } from '../facade/OutcomeTokenService.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для OutcomeToken сериализации
@@ -185,7 +159,7 @@ export class OutcomeTokenSerializer {
     const obj = json as Record<string, unknown>;
 
     // Проверка наличия conditionRef
-    if (!('conditionRef' in obj)) {
+    if (!Object.hasOwn(obj, 'conditionRef')) {
       return Err(
         new InvalidOutcomeTokenError(
           () => "Missing required field 'conditionRef'",
@@ -204,7 +178,7 @@ export class OutcomeTokenSerializer {
     }
 
     // Проверка наличия outcomeKey
-    if (!('outcomeKey' in obj)) {
+    if (!Object.hasOwn(obj, 'outcomeKey')) {
       return Err(
         new InvalidOutcomeTokenError(
           () => "Missing required field 'outcomeKey'",
@@ -246,10 +220,10 @@ export class OutcomeTokenSerializer {
 
     // Проверка полей conditionRef
     if (
-      !('kind' in refObj) ||
-      !('protocolId' in refObj) ||
-      !('chainId' in refObj) ||
-      !('conditionId' in refObj)
+      !Object.hasOwn(refObj, 'kind') ||
+      !Object.hasOwn(refObj, 'protocolId') ||
+      !Object.hasOwn(refObj, 'chainId') ||
+      !Object.hasOwn(refObj, 'conditionId')
     ) {
       return Err(
         new InvalidOutcomeTokenError(

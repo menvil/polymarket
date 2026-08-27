@@ -1,6 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
-import { Price } from '../../price/core/Price.js';
+import { OutcomePrice } from '../../outcome-price/core/OutcomePrice.js';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 
@@ -19,10 +19,10 @@ import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
  *
  * @example
  * ```typescript
- * const myBid = Price.of(0.51);
- * const myAsk = Price.of(0.52);
- * const orderbookBid = Price.of(0.50);
- * const orderbookAsk = Price.of(0.51);
+ * const myBid = OutcomePrice.of(0.51);
+ * const myAsk = OutcomePrice.of(0.52);
+ * const orderbookBid = OutcomePrice.of(0.50);
+ * const orderbookAsk = OutcomePrice.of(0.51);
  *
  * const result = ValidateMarketCrossing.check(
  *   myBid, myAsk, orderbookBid, orderbookAsk
@@ -59,10 +59,10 @@ export class ValidateMarketCrossing {
    * ```
    */
   public static check(
-    quoteBid: Price | null,
-    quoteAsk: Price | null,
-    orderbookBid: Price | null,
-    orderbookAsk: Price | null
+    quoteBid: OutcomePrice | null,
+    quoteAsk: OutcomePrice | null,
+    orderbookBid: OutcomePrice | null,
+    orderbookAsk: OutcomePrice | null
   ): Result<void, InvalidQuoteError> {
     // Проверяем пересечение bid стороны
     if (quoteBid !== null && orderbookAsk !== null) {
@@ -125,8 +125,8 @@ export class ValidateMarketCrossing {
    *
    * const result = ValidateMarketCrossing.checkQuote(
    *   quote,
-   *   Price.of(0.50), // orderbook bid
-   *   Price.of(0.51)  // orderbook ask
+   *   OutcomePrice.of(0.50), // orderbook bid
+   *   OutcomePrice.of(0.51)  // orderbook ask
    * );
    *
    * if (!result.ok) {
@@ -136,8 +136,8 @@ export class ValidateMarketCrossing {
    */
   public static checkQuote(
     quote: Quote,
-    orderbookBid: Price | null,
-    orderbookAsk: Price | null
+    orderbookBid: OutcomePrice | null,
+    orderbookAsk: OutcomePrice | null
   ): Result<void, InvalidQuoteError> {
     return this.check(quote.bid(), quote.ask(), orderbookBid, orderbookAsk);
   }
@@ -159,8 +159,8 @@ export class ValidateMarketCrossing {
    * const quote = Quote.of(...);
    * const crosses = ValidateMarketCrossing.crossesMarket(
    *   quote,
-   *   Price.of(0.50),
-   *   Price.of(0.51)
+   *   OutcomePrice.of(0.50),
+   *   OutcomePrice.of(0.51)
    * );
    * if (crosses) {
    *   console.log('Quote would cross the market!');
@@ -169,8 +169,8 @@ export class ValidateMarketCrossing {
    */
   public static crossesMarket(
     quote: Quote,
-    orderbookBid: Price | null,
-    orderbookAsk: Price | null
+    orderbookBid: OutcomePrice | null,
+    orderbookAsk: OutcomePrice | null
   ): boolean {
     const result = this.checkQuote(quote, orderbookBid, orderbookAsk);
     return !result.ok;

@@ -14,7 +14,7 @@
  * Категории ошибок:
  *
  * **Валидация диапазонов:**
- * - InvalidPriceError - цена вне диапазона [0.0001, 0.9999]
+ * - InvalidOutcomePriceError - цена вне диапазона [0.0001, 0.9999]
  * - InvalidQuantityError - некорректное количество акций
  * - InvalidSignedQuantityError - некорректное знаковое количество (может быть отрицательным)
  * - InvalidPercentageError - процент вне допустимого диапазона
@@ -39,18 +39,18 @@
  * @example
  * ```typescript
  * import {
- *   InvalidPriceError,
+ *   InvalidOutcomePriceError,
  *   InvalidMoneyError,
  *   CurrencyMismatchError,
  *   DivisionByZeroError
  * } from '@polymarket/errors';
  *
  * // Валидация цены
- * if (!Price.isValid(value)) {
- *   throw new InvalidPriceError(
+ * if (!OutcomePrice.isValid(value)) {
+ *   throw new InvalidOutcomePriceError(
  *     `Invalid price: ${value}`,
  *     {
- *       code: InvalidPriceError.code,
+ *       code: InvalidOutcomePriceError.code,
  *       context: { value }
  *     }
  *   );
@@ -98,8 +98,8 @@
  */
 
 // Валидация диапазонов
-export * from './InvalidPriceError.js';
-export * from './InvalidReferencePriceError.js';
+export * from './InvalidOutcomePriceError.js';
+export * from './InvalidAssetPriceError.js';
 export * from './InvalidQuantityError.js';
 export * from './InvalidSignedQuantityError.js';
 export * from './InvalidPercentageError.js';

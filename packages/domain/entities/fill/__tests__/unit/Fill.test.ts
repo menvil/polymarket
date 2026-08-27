@@ -16,7 +16,7 @@ import {
   AssetIdHelpers,
   assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, Fee } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
@@ -62,7 +62,7 @@ function makeValidParams(overrides?: Partial<FillParams>): FillParams {
     marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('50')),
     side: 'BUY',
     timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
@@ -109,10 +109,10 @@ describe('Fill', () => {
       }
     });
 
-    it('Price.of бросает исключение для нулевой цены — до вызова Fill.create', () => {
-      // Price VO сам валидирует себя (PriceInvariantViolation)
+    it('OutcomePrice.of бросает исключение для нулевой цены — до вызова Fill.create', () => {
+      // OutcomePrice VO сам валидирует себя (OutcomePriceInvariantViolation)
       expect(() => {
-        Fill.create(makeValidParams({ price: Price.of(new Decimal('0')) }));
+        Fill.create(makeValidParams({ price: OutcomePrice.of(new Decimal('0')) }));
       }).toThrow();
     });
 
@@ -166,7 +166,7 @@ describe('Fill', () => {
     it('BUY: asset=settlementAssetId, amount отрицательный (деньги ушли)', () => {
       const fill = unwrap(Fill.create(makeValidParams({
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('50')),
       })));
       const delta = fill.getCashFlow();
@@ -178,7 +178,7 @@ describe('Fill', () => {
     it('SELL: asset=settlementAssetId, amount положительный (деньги пришли)', () => {
       const fill = unwrap(Fill.create(makeValidParams({
         side: 'SELL',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('50')),
       })));
       const delta = fill.getCashFlow();
@@ -210,7 +210,7 @@ describe('Fill', () => {
       // BUY 50 @ 0.65 = -32.5, fee 0.02 → net = -32.52
       const fill = unwrap(Fill.create(makeValidParams({
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('50')),
         fee: makeNonZeroFee('0.02'),
       })));
@@ -224,7 +224,7 @@ describe('Fill', () => {
       // SELL 50 @ 0.65 = +32.5, fee 0.02 → net = +32.48
       const fill = unwrap(Fill.create(makeValidParams({
         side: 'SELL',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('50')),
         fee: makeNonZeroFee('0.02'),
       })));
@@ -236,7 +236,7 @@ describe('Fill', () => {
     it('без комиссии: net.amount равен cashFlow.amount', () => {
       const fill = unwrap(Fill.create(makeValidParams({
         side: 'BUY',
-        price: Price.of(new Decimal('0.65')),
+        price: OutcomePrice.of(new Decimal('0.65')),
         size: Quantity.of(new Decimal('50')),
         fee: makeZeroFee(),
       })));
@@ -250,7 +250,7 @@ describe('Fill', () => {
     it('вычисляет notional как AssetQuantity с asset=settlementAssetId', () => {
       const fill = unwrap(Fill.create(
         makeValidParams({
-          price: Price.of(new Decimal('0.65')),
+          price: OutcomePrice.of(new Decimal('0.65')),
           size: Quantity.of(new Decimal('50')),
         })
       ));
@@ -262,7 +262,7 @@ describe('Fill', () => {
 
     it('для SELL notional тоже положительный', () => {
       const fill = unwrap(Fill.create(
-        makeValidParams({ side: 'SELL', price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('50')) })
+        makeValidParams({ side: 'SELL', price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('50')) })
       ));
       const notional = fill.getNotional();
 

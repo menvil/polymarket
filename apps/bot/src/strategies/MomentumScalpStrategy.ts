@@ -25,7 +25,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -129,7 +129,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
   private _losses = 0;
   private _totalPnlCents = 0;
 
-  // ── Price history для velocity ────────────────────────────────────────────
+  // ── OutcomePrice history для velocity ────────────────────────────────────────────
   private _priceHistory: { ms: number; cents: number }[] = [];
 
   constructor(config: MomentumScalpConfig, strategyId: StrategyId = unsafeStrategyId('mom-scalp-1'), logger?: ILogger) {
@@ -365,7 +365,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
       return [{ type: 'CANCEL_ALL' }];
     }
 
-    // Price zone
+    // OutcomePrice zone
     if (data.midCents < this._priceMin || data.midCents > this._priceMax) {
       return [{ type: 'CANCEL_ALL' }];
     }
@@ -417,7 +417,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
           intents.push({
             type: 'PLACE',
             side: 'BUY',
-            price: Price.of(new Decimal(action.price).div(100)),
+            price: OutcomePrice.of(new Decimal(action.price).div(100)),
             size: Quantity.of(action.size),
           });
           break;
@@ -425,7 +425,7 @@ export class MomentumScalpStrategy extends BaseStrategy<MSData, MSAction> {
           intents.push({
             type: 'PLACE',
             side: 'SELL',
-            price: Price.of(new Decimal(action.price).div(100)),
+            price: OutcomePrice.of(new Decimal(action.price).div(100)),
             size: Quantity.of(action.size),
           });
           break;

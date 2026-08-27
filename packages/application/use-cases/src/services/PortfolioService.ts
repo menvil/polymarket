@@ -52,7 +52,7 @@ import { TradingError, ValidationError } from '@polymarket/errors';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, InstrumentId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString, AssetIdHelpers, asPositionId } from '@polymarket/ids';
-import { Money, Quantity, Price } from '@polymarket/value-objects';
+import { Money, Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { type Timestamp } from '@polymarket/timestamp';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import { SimplePosition } from '@polymarket/portfolio';
@@ -353,7 +353,7 @@ export class PortfolioService {
    *
    * tokenId используется как instrumentId для поиска/обновления позиции.
    */
-  public applyFill(fill: Fill, orderPrice?: Price): Result<void, PortfolioSaveError> {
+  public applyFill(fill: Fill, orderPrice?: OutcomePrice): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
     if (!portfolio) {
@@ -498,7 +498,7 @@ export class PortfolioService {
    */
   public applyFillAgainstHeldReservation(params: {
     readonly fill: Fill;
-    readonly orderPrice: Price;
+    readonly orderPrice: OutcomePrice;
     readonly reservationKind: 'USDC' | 'TOKENS';
   }): Result<void, PortfolioSaveError> {
     // Defensive: kind резервации обязан соответствовать стороне fill.
@@ -989,7 +989,7 @@ export class PortfolioService {
 
     const reconstructedLot = PositionLot.create({
       quantity: Quantity.of(qty),
-      entryPrice: Price.of(existing.averageEntryPrice.value()),
+      entryPrice: OutcomePrice.of(existing.averageEntryPrice.value()),
       timestamp: asOfTimestamp,
     });
 

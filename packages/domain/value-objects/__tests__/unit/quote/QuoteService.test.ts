@@ -101,7 +101,7 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_HIGH)
         // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('bid');
       }
@@ -112,7 +112,7 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_LOW)
         // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('ask');
       }
@@ -352,7 +352,7 @@ describe('QuoteService', () => {
       expect(shiftResult.ok).toBe(false);
       if (!shiftResult.ok) {
         // bid становится 1.08, что превышает MAX_PRICE (0.9999)
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_HIGH)
         // component показывает какое поле не прошло валидацию
         expect(shiftResult.error.context?.component).toBe('bid');
         expect(shiftResult.error.context?.op).toBe('shift');
@@ -369,7 +369,7 @@ describe('QuoteService', () => {
       expect(shiftResult.ok).toBe(false);
       if (!shiftResult.ok) {
         // bid становится 0, что ниже MIN_PRICE (0.0001)
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_LOW)
         // component показывает какое поле не прошло валидацию
         expect(shiftResult.error.context?.component).toBe('bid');
         expect(shiftResult.error.context?.op).toBe('shift');
@@ -495,7 +495,7 @@ describe('QuoteService', () => {
       expect(skewResult.ok).toBe(false);
       if (!skewResult.ok) {
         // bid становится -0.0005, что ниже MIN_PRICE (0.0001)
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_LOW)
         // component показывает какое поле не прошло валидацию
         expect(skewResult.error.context?.component).toBe('bid');
         expect(skewResult.error.context?.op).toBe('skew');
@@ -516,7 +516,7 @@ describe('QuoteService', () => {
       expect(skewResult.ok).toBe(false);
       if (!skewResult.ok) {
         // ask становится 1.09, что выше MAX_PRICE (0.9999)
-        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // reason содержит корневую причину из OutcomePriceService (OUT_OF_RANGE_HIGH)
         // component показывает какое поле не прошло валидацию
         expect(skewResult.error.context?.component).toBe('ask');
         expect(skewResult.error.context?.op).toBe('skew');

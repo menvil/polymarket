@@ -13,7 +13,7 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { getTotalValue, getTotalUnrealizedPnL } from '../../../src/services/PortfolioValuationService.js';
 import type { IPosition } from '../../../src/Portfolio.js';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
 
 // ==================== Хелперы ====================
@@ -22,9 +22,9 @@ function makeInstrumentId(raw: string): InstrumentId {
   return raw as InstrumentId;
 }
 
-/** Создаёт Price VO. n должен быть в диапазоне [0.0001, 0.9999]. */
-function makePrice(n: number): Price {
-  return Price.of(new Decimal(n));
+/** Создаёт OutcomePrice VO. n должен быть в диапазоне [0.0001, 0.9999]. */
+function makePrice(n: number): OutcomePrice {
+  return OutcomePrice.of(new Decimal(n));
 }
 
 function makePosition(
@@ -46,7 +46,7 @@ function makePosition(
   };
 }
 
-const NO_PRICE = (_id: InstrumentId): Price | undefined => undefined;
+const NO_PRICE = (_id: InstrumentId): OutcomePrice | undefined => undefined;
 
 // ==================== getTotalValue ====================
 

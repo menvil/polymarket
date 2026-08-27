@@ -36,29 +36,29 @@
 ### ❌ Старый подход: Try/Catch
 
 ```typescript
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-class Price {
-  static fromNumber(value: number): Price {
+class OutcomePrice {
+  static fromNumber(value: number): OutcomePrice {
     if (value < 0.0001 || value > 0.9999) {
-      throw new InvalidPriceError(
+      throw new InvalidOutcomePriceError(
         (ctx) => `Invalid price ${ctx.value}`,
         {
-          code: InvalidPriceError.code,
+          code: InvalidOutcomePriceError.code,
           context: { value, min: 0.0001, max: 0.9999 }
         }
       );
     }
-    return new Price(value);
+    return new OutcomePrice(value);
   }
 }
 
 // Использование
 try {
-  const price = Price.fromNumber(userInput);
+  const price = OutcomePrice.fromNumber(userInput);
   console.log('Valid price:', price);
 } catch (error) {
-  if (InvalidPriceError.is(error)) {
+  if (InvalidOutcomePriceError.is(error)) {
     console.error('Invalid price:', error.context?.value);
   }
 }
@@ -74,27 +74,27 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-class Price {
-  static fromNumber(value: number): Result<Price, InvalidPriceError> {
+class OutcomePrice {
+  static fromNumber(value: number): Result<OutcomePrice, InvalidOutcomePriceError> {
     if (value < 0.0001 || value > 0.9999) {
       return Err(
-        new InvalidPriceError(
+        new InvalidOutcomePriceError(
           (ctx) => `Invalid price ${ctx.value}`,
           {
-            code: InvalidPriceError.code,
+            code: InvalidOutcomePriceError.code,
             context: { value, min: 0.0001, max: 0.9999 }
           }
         )
       );
     }
-    return Ok(new Price(value));
+    return Ok(new OutcomePrice(value));
   }
 }
 
 // Использование
-const result = Price.fromNumber(userInput);
+const result = OutcomePrice.fromNumber(userInput);
 
 if (result.ok) {
   console.log('Valid price:', result.value);
@@ -127,10 +127,10 @@ if (result.ok) {
 
 ```typescript
 import { Result, toChain } from '@polymarket/result';
-import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
+import { InvalidOutcomePriceError, InvalidQuantityError } from '@polymarket/errors';
 
 // Каждая функция возвращает Result
-function validatePrice(value: number): Result<Price, InvalidPriceError> {
+function validatePrice(value: number): Result<OutcomePrice, InvalidOutcomePriceError> {
   // ...
 }
 
@@ -159,7 +159,7 @@ if (orderResult.ok) {
 ```typescript
 import { toChain, Ok, Err } from '@polymarket/result';
 import {
-  InvalidPriceError,
+  InvalidOutcomePriceError,
   InvalidQuantityError,
   InvalidMoneyError
 } from '@polymarket/errors';
@@ -194,7 +194,7 @@ const orderResult = toChain(validatePrice(priceInput))
 if (orderResult.ok) {
   placeOrder(orderResult.value);
 } else {
-  if (InvalidPriceError.is(orderResult.error)) {
+  if (InvalidOutcomePriceError.is(orderResult.error)) {
     showError('Invalid price', orderResult.error.context);
   } else if (InvalidQuantityError.is(orderResult.error)) {
     showError('Invalid quantity', orderResult.error.context);
@@ -212,7 +212,7 @@ if (orderResult.ok) {
 
 ```typescript
 import {
-  InvalidPriceError,
+  InvalidOutcomePriceError,
   InvalidQuantityError,
   TradingError
 } from '@polymarket/errors';
@@ -221,8 +221,8 @@ try {
   const order = createOrder(price, quantity);
 } catch (error) {
   // Обработка по конкретному типу
-  if (InvalidPriceError.is(error)) {
-    console.error('Price validation failed:', error.context);
+  if (InvalidOutcomePriceError.is(error)) {
+    console.error('OutcomePrice validation failed:', error.context);
     showUserError('Please enter a valid price between 0.0001 and 0.9999');
     return;
   }
@@ -293,7 +293,7 @@ try {
 ### 3. Обработка по коду ошибки
 
 ```typescript
-import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
+import { InvalidOutcomePriceError, InvalidQuantityError } from '@polymarket/errors';
 
 const result = validateOrder(orderData);
 
@@ -303,8 +303,8 @@ if (result.ok) {
   const error = result.error;
   // Обработка по коду
   switch (error.code) {
-    case InvalidPriceError.code: // 'INVALID_PRICE'
-      showFieldError('price', 'Price must be between 0.0001 and 0.9999');
+    case InvalidOutcomePriceError.code: // 'INVALID_PRICE'
+      showFieldError('price', 'OutcomePrice must be between 0.0001 and 0.9999');
       break;
 
     case InvalidQuantityError.code: // 'INVALID_QUANTITY'
@@ -328,10 +328,10 @@ if (result.ok) {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-function getPriceOrDefault(input: number, defaultPrice: Price): Price {
-  const result = Price.fromNumber(input);
+function getPriceOrDefault(input: number, defaultPrice: OutcomePrice): OutcomePrice {
+  const result = OutcomePrice.fromNumber(input);
   if (result.ok) {
     return result.value;
   } else {
@@ -341,7 +341,7 @@ function getPriceOrDefault(input: number, defaultPrice: Price): Price {
 }
 
 // Использование
-const defaultPriceResult = Price.fromNumber(0.5);
+const defaultPriceResult = OutcomePrice.fromNumber(0.5);
 if (!defaultPriceResult.ok) throw new Error('Invalid default price');
 const price = getPriceOrDefault(userInput, defaultPriceResult.value);
 ```
@@ -441,18 +441,18 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 
-function validateAndLogPrice(value: number, orderId: string): Result<Price, InvalidPriceError> {
-  const result = Price.fromNumber(value);
+function validateAndLogPrice(value: number, orderId: string): Result<OutcomePrice, InvalidOutcomePriceError> {
+  const result = OutcomePrice.fromNumber(value);
 
   if (result.ok) {
-    logger.info('Price validated', {
+    logger.info('OutcomePrice validated', {
       orderId,
       price: result.value.value
     });
   } else {
-    logger.error('Price validation failed', {
+    logger.error('OutcomePrice validation failed', {
       orderId,
       error: result.error.toJSON(),
       userInput: value
@@ -548,13 +548,13 @@ class AlertManager {
 1. **Используйте Result<T,E> для ожидаемых ошибок**
 
    ```typescript
-   function validatePrice(value: number): Result<Price, InvalidPriceError>
+   function validatePrice(value: number): Result<OutcomePrice, InvalidOutcomePriceError>
    ```
 
 2. **Используйте специфичные типы ошибок**
 
    ```typescript
-   throw new InvalidPriceError(...) // ✅
+   throw new InvalidOutcomePriceError(...) // ✅
    throw new Error('Invalid price') // ❌
    ```
 
@@ -567,7 +567,7 @@ class AlertManager {
 4. **Используйте коды ошибок**
 
    ```typescript
-   { code: InvalidPriceError.code }
+   { code: InvalidOutcomePriceError.code }
    ```
 
 5. **Логируйте все ошибки**
@@ -608,7 +608,7 @@ class AlertManager {
 
    ```typescript
    // Два разных класса с одним кодом - ❌
-   InvalidPriceError.code === InvalidQuantityError.code
+   InvalidOutcomePriceError.code === InvalidQuantityError.code
    ```
 
 ---

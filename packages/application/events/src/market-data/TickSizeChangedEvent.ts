@@ -7,11 +7,11 @@
  * последующего execution: ордер, выставленный по старому шагу, будет
  * отвергнут. Поэтому событие canonical, а не лог.
  *
- * ### Почему `Price`, а не отдельный `TickSize` VO
+ * ### Почему `OutcomePrice`, а не отдельный `TickSize` VO
  *
  * Шаг цены — величина ТОГО ЖЕ домена, что и цена outcome-токена
  * (`0.01`/`0.001`/`0.0001`), и он обязан быть кратен базовому тику
- * `Price.MIN`. Правила проверки шага уже живут в модуле `Price`
+ * `OutcomePrice.MIN`. Правила проверки шага уже живут в модуле `OutcomePrice`
  * (`ValidateTickSize`, `ValidateTickSizeMultipleOfBaseTick`), поэтому
  * заводить второй тип для того же домена значило бы раздвоить инвариант.
  * Lifecycle/бизнес-логики у tick size нет — сущностью он не является.
@@ -26,7 +26,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Price } from '@polymarket/value-objects';
+import type { OutcomePrice } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 export type TickSizeChangedEvent = MessageEnvelope<
@@ -37,9 +37,9 @@ export type TickSizeChangedEvent = MessageEnvelope<
     /** ID токена (UP/DOWN outcome token) */
     readonly instrumentId: InstrumentId;
     /** Прежний шаг цены — `undefined`, если venue его не сообщил */
-    readonly oldTickSize: Price | undefined;
+    readonly oldTickSize: OutcomePrice | undefined;
     /** Новый шаг цены */
-    readonly newTickSize: Price;
+    readonly newTickSize: OutcomePrice;
     /** Timestamp изменения */
     readonly timestamp: Timestamp;
   }

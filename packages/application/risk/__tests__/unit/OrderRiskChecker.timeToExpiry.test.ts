@@ -20,7 +20,7 @@ import type { PreOrderCheckInput } from '../../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import { jest } from '@jest/globals';
 
@@ -46,9 +46,9 @@ function makeChecker(params: RiskParams, logger: ILogger): OrderRiskChecker {
   return new OrderRiskChecker(r.value, logger);
 }
 
-/** Создаёт mock Price с заданным Decimal-значением */
-function makePrice(val: string): Price {
-  return { value: () => new Decimal(val) } as unknown as Price;
+/** Создаёт mock OutcomePrice с заданным Decimal-значением */
+function makePrice(val: string): OutcomePrice {
+  return { value: () => new Decimal(val) } as unknown as OutcomePrice;
 }
 
 /** Создаёт mock Quantity с заданным Decimal-значением */

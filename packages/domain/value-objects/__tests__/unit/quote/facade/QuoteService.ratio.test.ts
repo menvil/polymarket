@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { QuoteService } from '../../../../src/quote/facade/QuoteService.js';
 import { Quote } from '../../../../src/quote/core/Quote.js';
-import { Price } from '../../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 import { QuoteErrorReason } from '../../../../src/quote/errors/QuoteErrorReason.js';
@@ -17,8 +17,8 @@ describe('QuoteService Ratio Operations', () => {
     if (!timestampResult.ok) throw new Error('Failed to create timestamp');
 
     return Quote.of(
-      Price.of(new Decimal(bidPrice)),
-      Price.of(new Decimal(askPrice)),
+      OutcomePrice.of(new Decimal(bidPrice)),
+      OutcomePrice.of(new Decimal(askPrice)),
       Quantity.of(new Decimal(bidSize)),
       Quantity.of(new Decimal(askSize)),
       timestampResult.value,

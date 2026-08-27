@@ -26,7 +26,7 @@
  * catalog.register({
  *   instrumentId,
  *   marketId,
- *   tickSize: Price.of(new Decimal('0.01')),
+ *   tickSize: OutcomePrice.of(new Decimal('0.01')),
  *   minOrderSize: Quantity.of(new Decimal('1')),
  *   active: true,
  * });
@@ -185,7 +185,7 @@ export class PolymarketMarketCatalog implements IMarketCatalog {
    * catalog.register({
    *   instrumentId,
    *   marketId,
-   *   tickSize: Price.of(new Decimal('0.01')),
+   *   tickSize: OutcomePrice.of(new Decimal('0.01')),
    *   minOrderSize: Quantity.of(new Decimal('1')),
    *   active: true,
    * });

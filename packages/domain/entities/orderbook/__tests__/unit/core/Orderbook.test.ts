@@ -8,14 +8,19 @@ import { OrderbookLevel } from '../../../src/core/OrderbookLevel.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
+import { bookPricing } from '../../../src/index.js';
+import { KnownVenues, MarketId } from '@polymarket/ids';
+
+/** Метрики prediction-домена: фабрика связывается один раз. */
+const pricing = bookPricing(OutcomePriceService.create);
 
 /** Создаёт OrderbookLevel из примитивов (для fromLevels() — минует нормализатор). */
 function testLevel(price: number, quantity: number): OrderbookLevel {
-  const p = PriceService.create(price);
+  const p = OutcomePriceService.create(price);
   const q = QuantityService.create(quantity);
   if (!p.ok) throw new Error(`Invalid price: ${price}`);
   if (!q.ok) throw new Error(`Invalid quantity: ${quantity}`);
@@ -42,15 +47,15 @@ describe('Orderbook', () => {
     if (!normalized.ok) {
       throw new Error('Failed to normalize test orderbook');
     }
-    return Orderbook.fromNormalized(normalized.value);
+    return Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
   };
 
   describe('fromNormalized()', () => {
     it('создаёт Orderbook из нормализованных данных', () => {
       const orderbook = createTestOrderbook();
 
-      expect(orderbook.instrumentId).toBe('market-123');
-      expect(orderbook.asset).toBe('token-yes');
+      expect(orderbook.marketId).toBe('market-123');
+      expect(orderbook.instrumentId).toBe('token-yes');
       expect(orderbook.bids.length).toBe(2);
       expect(orderbook.asks.length).toBe(2);
     });
@@ -76,7 +81,7 @@ describe('Orderbook', () => {
 
       const normalized = OrderbookNormalizer.normalize(raw);
       if (!normalized.ok) throw new Error('Failed to normalize');
-      const orderbook = Orderbook.fromNormalized(normalized.value);
+      const orderbook = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
 
       expect(orderbook.venueTimestamp?.toNumber()).toBe(venueTimestamp);
       expect(orderbook.receivedAt.toNumber()).toBe(receivedAt);
@@ -85,7 +90,7 @@ describe('Orderbook', () => {
 
   describe('empty()', () => {
     it('создаёт пустой orderbook', () => {
-      const orderbook = Orderbook.empty('market-123' as InstrumentId, 'token-yes' as InstrumentId);
+      const orderbook = Orderbook.empty(KnownVenues.POLYMARKET, 'token-yes' as InstrumentId, 'market-123' as unknown as MarketId);
 
       expect(orderbook.isEmpty()).toBe(true);
       expect(orderbook.bids.length).toBe(0);
@@ -98,57 +103,70 @@ describe('Orderbook', () => {
     const asset = 'token-yes' as InstrumentId;
 
     it('создаёт Orderbook напрямую из уровней, минуя нормализатор', () => {
-      const orderbook = Orderbook.fromLevels(
-        instrumentId,
-        asset,
-        [testLevel(0.52, 100)],
-        [testLevel(0.53, 150)],
-        Timestamp.now(),
-      );
+      const orderbook = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [testLevel(0.52, 100)],
+      asks: [testLevel(0.53, 150)],
+      receivedAt: Timestamp.now(),
+    });
 
-      expect(orderbook.instrumentId).toBe('market-123');
-      expect(orderbook.asset).toBe('token-yes');
+      expect(orderbook.marketId).toBe('market-123');
+      expect(orderbook.instrumentId).toBe('token-yes');
       expect(orderbook.bids.length).toBe(1);
       expect(orderbook.asks.length).toBe(1);
     });
 
     it('возвращает frozen объект', () => {
-      const orderbook = Orderbook.fromLevels(instrumentId, asset, [], [], Timestamp.now());
+      const orderbook = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [],
+      asks: [],
+      receivedAt: Timestamp.now(),
+    });
       expect(Object.isFrozen(orderbook)).toBe(true);
     });
 
     it('сортирует bids по убыванию цены, даже если переданы не по порядку', () => {
-      const orderbook = Orderbook.fromLevels(
-        instrumentId,
-        asset,
-        [testLevel(0.51, 100), testLevel(0.53, 50), testLevel(0.52, 200)], // намеренно не отсортированы
+      const orderbook = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [testLevel(0.51, 100), testLevel(0.53, 50), testLevel(0.52, 200)],
+      asks: // намеренно не отсортированы
         [],
-        Timestamp.now(),
-      );
+      receivedAt: Timestamp.now(),
+    });
 
       expect(orderbook.bids.map((l) => l.price.value().toNumber())).toEqual([0.53, 0.52, 0.51]);
     });
 
     it('сортирует asks по возрастанию цены, даже если переданы не по порядку', () => {
-      const orderbook = Orderbook.fromLevels(
-        instrumentId,
-        asset,
-        [],
-        [testLevel(0.55, 100), testLevel(0.53, 50), testLevel(0.54, 200)], // намеренно не отсортированы
+      const orderbook = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [],
+      asks: [testLevel(0.55, 100), testLevel(0.53, 50), testLevel(0.54, 200)],
+      receivedAt: // намеренно не отсортированы
         Timestamp.now(),
-      );
+    });
 
       expect(orderbook.asks.map((l) => l.price.value().toNumber())).toEqual([0.53, 0.54, 0.55]);
     });
 
     it('неотсортированный вход не ломает getBestBid()/getBestAsk() (защитная сортировка)', () => {
-      const orderbook = Orderbook.fromLevels(
-        instrumentId,
-        asset,
-        [testLevel(0.51, 100), testLevel(0.53, 50)],
-        [testLevel(0.56, 100), testLevel(0.54, 50)],
-        Timestamp.now(),
-      );
+      const orderbook = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [testLevel(0.51, 100), testLevel(0.53, 50)],
+      asks: [testLevel(0.56, 100), testLevel(0.54, 50)],
+      receivedAt: Timestamp.now(),
+    });
 
       expect(orderbook.getBestBid()?.value().toNumber()).toBe(0.53);
       expect(orderbook.getBestAsk()?.value().toNumber()).toBe(0.54);
@@ -156,8 +174,23 @@ describe('Orderbook', () => {
 
     it('сохраняет receivedAt (обязателен) и venueTimestamp (опционален)', () => {
       const receivedAt = Timestamp.now();
-      const withVenue = Orderbook.fromLevels(instrumentId, asset, [], [], receivedAt, receivedAt);
-      const withoutVenue = Orderbook.fromLevels(instrumentId, asset, [], [], receivedAt);
+      const withVenue = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [],
+      asks: [],
+      receivedAt: receivedAt,
+      venueTimestamp: receivedAt,
+    });
+      const withoutVenue = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrumentId as unknown as MarketId,
+      instrumentId: asset,
+      bids: [],
+      asks: [],
+      receivedAt: receivedAt,
+    });
 
       expect(withVenue.receivedAt).toBe(receivedAt);
       expect(withVenue.venueTimestamp).toBe(receivedAt);
@@ -208,7 +241,7 @@ describe('Orderbook', () => {
     it('возвращает Ok(Spread) для валидного orderbook', () => {
       const orderbook = createTestOrderbook();
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(true);
       if (spreadResult.ok) {
@@ -219,7 +252,7 @@ describe('Orderbook', () => {
     it('возвращает Err(EMPTY_BOOK) для пустого orderbook', () => {
       const orderbook = createTestOrderbook({ bids: [], asks: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -230,7 +263,7 @@ describe('Orderbook', () => {
     it('возвращает Err(ONE_SIDED) если есть только bids', () => {
       const orderbook = createTestOrderbook({ asks: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -241,7 +274,7 @@ describe('Orderbook', () => {
     it('возвращает Err(ONE_SIDED) если есть только asks', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -254,7 +287,7 @@ describe('Orderbook', () => {
     it('возвращает mid price', () => {
       const orderbook = createTestOrderbook();
 
-      const midPrice = orderbook.getMidPrice();
+      const midPrice = pricing.midPrice(orderbook);
 
       expect(midPrice).not.toBeNull();
       expect(midPrice!.value().toNumber()).toBe(0.525); // (0.52 + 0.53) / 2
@@ -263,7 +296,7 @@ describe('Orderbook', () => {
     it('возвращает null если нет spread', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const midPrice = orderbook.getMidPrice();
+      const midPrice = pricing.midPrice(orderbook);
 
       expect(midPrice).toBeNull();
     });
@@ -276,7 +309,7 @@ describe('Orderbook', () => {
         asks: [{ price: 0.52, quantity: 200 }],
       });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).not.toBeNull();
       // microprice = (0.52 * 100 + 0.50 * 200) / (100 + 200)
@@ -287,7 +320,7 @@ describe('Orderbook', () => {
     it('возвращает null если нет bid или ask', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).toBeNull();
     });
@@ -298,7 +331,7 @@ describe('Orderbook', () => {
         asks: [{ price: 0.53, quantity: 0 }],
       });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).toBeNull();
     });
@@ -473,7 +506,7 @@ describe('Orderbook', () => {
 
       const normalized = OrderbookNormalizer.normalize(raw);
       if (!normalized.ok) throw new Error('Failed to normalize');
-      const orderbook = Orderbook.fromNormalized(normalized.value);
+      const orderbook = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
 
       const ageMs = orderbook.getAgeMs(BASE); // передаём nowMs явно
 
@@ -496,7 +529,7 @@ describe('Orderbook', () => {
 
       const normalized = OrderbookNormalizer.normalize(raw);
       if (!normalized.ok) throw new Error('Failed to normalize');
-      const orderbook = Orderbook.fromNormalized(normalized.value);
+      const orderbook = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
 
       const latencyMs = orderbook.getLatencyMs();
 
@@ -527,7 +560,7 @@ describe('Orderbook', () => {
 
       const normalized = OrderbookNormalizer.normalize(raw);
       if (!normalized.ok) throw new Error('Failed to normalize');
-      const orderbook = Orderbook.fromNormalized(normalized.value);
+      const orderbook = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
 
       expect(orderbook.isStale(5000, BASE)).toBe(true); // 6000 > 5000
     });
@@ -545,7 +578,7 @@ describe('Orderbook', () => {
 
       const normalized = OrderbookNormalizer.normalize(raw);
       if (!normalized.ok) throw new Error('Failed to normalize');
-      const orderbook = Orderbook.fromNormalized(normalized.value);
+      const orderbook = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
 
       expect(orderbook.isStale(5000, BASE)).toBe(false); // 100ms < 5000ms
     });
@@ -561,7 +594,9 @@ describe('Orderbook', () => {
       expect(str).toContain('token-yes');
       expect(str).toContain('2 bids');
       expect(str).toContain('2 asks');
-      expect(str).toContain('spread');
+      // Ширина спреда — производная ЦЕНА и в структурном представлении её
+      // больше нет; вместо неё показываются выбранные лучшие уровни
+      expect(str).toContain('top 0.5200/0.5300');
     });
   });
 
@@ -571,30 +606,36 @@ describe('Orderbook', () => {
 
       const obj = orderbook.toObject();
 
-      expect(obj.instrumentId).toBe('market-123');
-      expect(obj.asset).toBe('token-yes');
+      expect(obj.venueId).toBe('POLYMARKET');
+      expect(obj.marketId).toBe('market-123');
+      expect(obj.instrumentId).toBe('token-yes');
       expect(obj.bestBid).toBe(0.52);
       expect(obj.bestAsk).toBe(0.53);
-      expect(obj.midPrice).toBe(0.525);
-      expect(obj.spreadWidth).toBe(0.01);
-      expect(obj.spreadStatus).toBe('ok');
+      // Производные цены (mid/микроцена/спред) в структурную сводку больше
+      // не входят — их вычисление требует фабрики домена, см. bookPricing
+      expect('midPrice' in obj).toBe(false);
+      expect('spreadWidth' in obj).toBe(false);
       expect(obj.bidDepth).toBe(2);
       expect(obj.askDepth).toBe(2);
       expect(obj.totalBidVolume).toBe(300);
       expect(obj.totalAskVolume).toBe(400);
     });
 
-    it('включает spreadStatus при ошибке', () => {
+    it('односторонний стакан отражается отсутствующей стороной, а не статусом', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
       const obj = orderbook.toObject();
 
-      expect(obj.spreadStatus).toBe(OrderbookInvalidReason.ONE_SIDED);
+      // Статус спреда — это уже ЦЕНОВАЯ метрика; структурная сводка честно
+      // показывает, что стороны bid нет
+      expect(obj.bestBid).toBeUndefined();
+      expect(obj.bidDepth).toBe(0);
+      expect(pricing.spread(orderbook).ok).toBe(false);
     });
   });
 
-  describe('getSpread() — crossed book через permissive normalizer', () => {
-    it('getSpread() возвращает CROSSED_BOOK error для crossed стакана (из permissive normalizer)', () => {
+  describe('spread() — crossed book через permissive normalizer', () => {
+    it('возвращает CROSSED_BOOK error для crossed стакана (из permissive normalizer)', () => {
       const raw: RawOrderbook = {
         marketId: 'market-123',
         tokenId: 'token-yes',
@@ -605,8 +646,8 @@ describe('Orderbook', () => {
       const normalized = OrderbookNormalizer.normalize(raw, PERMISSIVE_NORMALIZATION_POLICY);
       expect(normalized.ok).toBe(true);
       if (!normalized.ok) return;
-      const ob = Orderbook.fromNormalized(normalized.value);
-      const spreadResult = ob.getSpread();
+      const ob = Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
+      const spreadResult = pricing.spread(ob);
       expect(spreadResult.ok).toBe(false);
       if (spreadResult.ok) return;
       expect(spreadResult.error.isCrossedBook()).toBe(true);

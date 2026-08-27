@@ -653,9 +653,9 @@ ratio.subtract(other) // нет
 ratio.multiply(value) // нет
 ratio.divide(value)   // нет
 
-// ✅ Операции живут в Money/Price/Quantity
+// ✅ Операции живут в Money/OutcomePrice/Quantity
 Money.addRate(ratio: Ratio)          // добавить процент к сумме
-Price.take(ratio: Ratio)             // взять процент от цены
+OutcomePrice.take(ratio: Ratio)             // взять процент от цены
 Quantity.applyDiscount(ratio: Ratio) // применить скидку
 ```
 

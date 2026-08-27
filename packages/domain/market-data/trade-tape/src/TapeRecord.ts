@@ -11,7 +11,7 @@
  * - `TradeFlowCalculator` — вычисление VWAP, OFI, объёмов
  */
 
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -29,8 +29,8 @@ import type { Timestamp } from '@polymarket/timestamp';
  * ```
  */
 export interface TapeRecord {
-  /** Цена исполнения (Price VO) */
-  readonly price: Price;
+  /** Цена исполнения (OutcomePrice VO) */
+  readonly price: OutcomePrice;
   /** Объём трейда (Quantity VO) */
   readonly size: Quantity;
   /**

@@ -36,7 +36,7 @@
  *   id: asOrderId('order-1')!,
  *   asset: myAsset,
  *   side: 'BUY',
- *   price: Price.of(new Decimal('0.65')),
+ *   price: OutcomePrice.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  *   timestamp: Timestamp.now(),
  * });
@@ -52,7 +52,7 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { Side } from '@polymarket/value-objects';
 import type { AccountId, AssetId, FillId, OrderId, StrategyId } from '@polymarket/ids';
 import { AssetIdHelpers, accountIdToString, assetIdToString } from '@polymarket/ids';
@@ -131,7 +131,7 @@ export class Order {
   get side(): Side { return this._s.side; }
 
   /** Лимитная цена заявки */
-  get price(): Price { return this._s.price; }
+  get price(): OutcomePrice { return this._s.price; }
 
   /** Полный размер заявки */
   get size(): Quantity { return this._s.size; }
@@ -160,7 +160,7 @@ export class Order {
   get filledSize(): Quantity { return this._s.fill.filledSize; }
 
   /** Средневзвешенная цена исполнения (VWAP), undefined если нет fills */
-  get averagePrice(): Price | undefined { return this._s.fill.averagePrice; }
+  get averagePrice(): OutcomePrice | undefined { return this._s.fill.averagePrice; }
 
   /** Список ID всех применённых fills */
   get fillIds(): readonly FillId[] { return this._s.fill.fillIds; }
@@ -287,7 +287,7 @@ export class Order {
    *   id: asOrderId('order-1')!,
    *   asset: myAsset,
    *   side: 'BUY',
-   *   price: Price.of(new Decimal('0.65')),
+   *   price: OutcomePrice.of(new Decimal('0.65')),
    *   size: Quantity.of(new Decimal('100')),
    *   timestamp: Timestamp.now(),
    * });
@@ -304,7 +304,7 @@ export class Order {
       return Err(new TradingError('Asset is required', { context: { field: 'asset', orderId: params.id } }));
     }
     if (!params.price) {
-      return Err(new TradingError('Price is required', { context: { field: 'price', orderId: params.id } }));
+      return Err(new TradingError('OutcomePrice is required', { context: { field: 'price', orderId: params.id } }));
     }
     if (!VALID_SIDES.has(params.side)) {
       return Err(new TradingError(`Invalid side: ${params.side}. Must be BUY or SELL`, {

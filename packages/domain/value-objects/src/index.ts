@@ -20,16 +20,38 @@ export {
 } from './money/index.js';
 export type { SupportedCurrency } from './money/index.js';
 
-// Price модуль (только публичный API)
-export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
-
-// ReferencePrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
+// Общий контракт «это цена» — то, что нужно структурам (стакан, спред)
+// от ЛЮБОГО ценового домена; см. shared/price/DecimalPrice.ts
+export type { DecimalPrice, PriceDomain, TickRoundingMode, PriceJSON } from './shared/index.js';
 export {
-  ReferencePrice,
-  ReferencePriceInvariantViolation,
-  ReferencePriceService,
-  ReferencePriceErrorReason
-} from './reference-price/index.js';
+  applyRelativeChangeToPrice,
+  averagePrices,
+  dividePrice,
+  ensurePriceAlignedToTick,
+  multiplyPrice,
+  priceDifference,
+  roundPriceToTick,
+  PriceRuleReason,
+  ValidateAligned,
+  ValidateFactorForPriceMultiplication,
+  ValidateDivisorForPriceDivision,
+  ValidateTickSize,
+  ValidateTickSizeMultipleOfBaseTick
+} from './shared/index.js';
+
+// OutcomePrice модуль (только публичный API)
+export { OutcomePrice, OutcomePriceService, OutcomePriceSerializer, OutcomePriceFormatter, OutcomePriceErrorReason } from './outcome-price/index.js';
+
+// AssetPrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
+export {
+  AssetPrice,
+  AssetPriceInvariantViolation,
+  AssetPriceService,
+  AssetPriceFormatter,
+  AssetPriceSerializer,
+  AssetPriceErrorReason,
+  type AssetPriceJSON
+} from './asset-price/index.js';
 
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';

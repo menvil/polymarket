@@ -21,7 +21,7 @@ interface MarketSlot {
   readonly asset: AssetId;
   readonly tokenIdStr: string;
   readonly expiresAtMs: number;
-  readonly tickSize?: Price;           // live only, optional
+  readonly tickSize?: OutcomePrice;           // live only, optional
   readonly minOrderSize?: Quantity;    // live only, optional
   readonly candidate: DiscoveredMarket | null;
   readonly strategy: IStrategy;

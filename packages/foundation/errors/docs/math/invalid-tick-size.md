@@ -139,14 +139,14 @@ roundToTickSizeWithMode(value, tickSize, 'floor'); // ✅ 10.56
 roundToTickSizeWithMode(value, tickSize, 'ceil');  // ✅ 10.57
 ```
 
-### 3. Создание Price с tick size
+### 3. Создание OutcomePrice с tick size
 
 ```typescript
 import Decimal from 'decimal.js';
-import { InvalidTickSizeError, InvalidPriceError } from '@polymarket/errors';
+import { InvalidTickSizeError, InvalidOutcomePriceError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-class Price {
+class OutcomePrice {
   private constructor(
     private readonly value: Decimal,
     private readonly tickSize: Decimal
@@ -155,7 +155,7 @@ class Price {
   static create(
     value: Decimal,
     tickSize: Decimal
-  ): Result<Price, InvalidTickSizeError | InvalidPriceError> {
+  ): Result<OutcomePrice, InvalidTickSizeError | InvalidOutcomePriceError> {
     // Валидация tick size
     if (!tickSize.isFinite() || tickSize.isNegative() || tickSize.isZero()) {
       return Err(
@@ -173,8 +173,8 @@ class Price {
     const divided = value.dividedBy(tickSize);
     if (!divided.equals(divided.round())) {
       return Err(
-        new InvalidPriceError(
-          (ctx) => `Price ${ctx.value} is not a multiple of tick size ${ctx.tickSize}`,
+        new InvalidOutcomePriceError(
+          (ctx) => `OutcomePrice ${ctx.value} is not a multiple of tick size ${ctx.tickSize}`,
           {
             
             context: {
@@ -186,7 +186,7 @@ class Price {
       );
     }
 
-    return Ok(new Price(value, tickSize));
+    return Ok(new OutcomePrice(value, tickSize));
   }
 
   getValue(): Decimal {
@@ -199,7 +199,7 @@ class Price {
 }
 
 // Использование
-const result = Price.create(
+const result = OutcomePrice.create(
   new Decimal('10.57'),
   new Decimal('0.01')
 );
@@ -211,7 +211,7 @@ if (result.ok) {
 }
 ```
 
-### 4. Price grid для order book
+### 4. OutcomePrice grid для order book
 
 ```typescript
 import Decimal from 'decimal.js';
@@ -261,13 +261,13 @@ const grid = generatePriceGrid(
 
 ```typescript
 import Decimal from 'decimal.js';
-import { InvalidTickSizeError, InvalidPriceError } from '@polymarket/errors';
+import { InvalidTickSizeError, InvalidOutcomePriceError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 function normalizeUserPrice(
   userInput: string,
   tickSize: Decimal
-): Result<Decimal, InvalidTickSizeError | InvalidPriceError> {
+): Result<Decimal, InvalidTickSizeError | InvalidOutcomePriceError> {
   // Валидация tick size
   if (!tickSize.isFinite() || tickSize.isNegative() || tickSize.isZero()) {
     return Err(
@@ -290,7 +290,7 @@ function normalizeUserPrice(
     return Ok(normalized);
   } catch (error) {
     return Err(
-      new InvalidPriceError(
+      new InvalidOutcomePriceError(
         (ctx) => `Invalid price input: ${ctx.input}`,
         {
           
@@ -526,7 +526,7 @@ if (configResult.ok) {
 ## Связанные ошибки
 
 - [InvalidDivisorError](./invalid-divisor.md) - невалидный делитель (используется внутри операций с tick size)
-- [InvalidPriceError](../value-objects/invalid-price.md) - цена не кратна tick size
+- [InvalidOutcomePriceError](../value-objects/invalid-price.md) - цена не кратна tick size
 - [ArithmeticOverflowError](../value-objects/arithmetic-overflow.md) - результат округления вышел за пределы
 
 ## См. также

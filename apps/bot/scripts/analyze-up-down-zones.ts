@@ -13,7 +13,7 @@ interface MarketAnalysis {
   resolution: 'UP' | 'DOWN' | '?';
   strike: number;
   finalCryptoPrice: number;
-  // Price stats (from trade EWMA)
+  // OutcomePrice stats (from trade EWMA)
   firstPrice: number;
   avgPrice: number;
   maxPrice: number;
@@ -34,7 +34,7 @@ interface MarketAnalysis {
   buyTrades: number;
   sellTrades: number;
   avgTradeSize: number;
-  // Price movement
+  // OutcomePrice movement
   maxDrawdownFromPeak: number;
   maxRallyFromBottom: number;
   // Crypto price

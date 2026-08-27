@@ -7,7 +7,7 @@ import type { PreOrderCheckInput } from '../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Price, Side } from '@polymarket/value-objects';
+import type { OutcomePrice, Side } from '@polymarket/value-objects';
 import { Money, Quantity } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import { jest } from '@jest/globals';
@@ -37,9 +37,9 @@ function makeChecker(params: RiskParams, logger: ILogger): OrderRiskChecker {
   return new OrderRiskChecker(r.value, logger);
 }
 
-/** Создаёт mock Price с заданным Decimal-значением */
-function makePrice(val: string): Price {
-  return { value: () => new Decimal(val) } as unknown as Price;
+/** Создаёт mock OutcomePrice с заданным Decimal-значением */
+function makePrice(val: string): OutcomePrice {
+  return { value: () => new Decimal(val) } as unknown as OutcomePrice;
 }
 
 /** Создаёт mock Quantity с заданным Decimal-значением */
@@ -413,7 +413,7 @@ describe('OrderRiskChecker', () => {
 
   it('Err RISK_INPUT_INCOMPLETE если price.value() бросает (повреждённый VO)', () => {
     const checker = makeChecker({}, logger);
-    const throwingPrice = { value: () => { throw new Error('bad price VO'); } } as unknown as Price;
+    const throwingPrice = { value: () => { throw new Error('bad price VO'); } } as unknown as OutcomePrice;
     const result = checker.checkBeforeOrder(makeInput({ price: throwingPrice }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.riskCode).toBe('RISK_INPUT_INCOMPLETE');

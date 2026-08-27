@@ -45,7 +45,7 @@
 import { InvalidRoundingModeError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E> также понадобятся:
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 ```
 
@@ -58,10 +58,10 @@ import { Result, Ok, Err } from '@polymarket/result';
 ```typescript
 import { InvalidRoundingModeError } from '@polymarket/errors';
 
-class Price {
+class OutcomePrice {
   constructor(private readonly value: number) {}
 
-  round(precision: number, roundingMode: number): Price {
+  round(precision: number, roundingMode: number): OutcomePrice {
     if (!Number.isInteger(roundingMode) || roundingMode < 0 || roundingMode > 8) {
       throw new InvalidRoundingModeError(
         (ctx) => `Rounding mode must be an integer between 0 and 8, got ${ctx.roundingMode}`,
@@ -71,7 +71,7 @@ class Price {
             roundingMode,
             value: this.value,
             precision,
-            operation: 'Price.round'
+            operation: 'OutcomePrice.round'
           }
         }
       );
@@ -80,7 +80,7 @@ class Price {
     const multiplier = Math.pow(10, precision);
     // Применяем roundingMode (упрощённо, в реальности используется Decimal.js)
     const rounded = Math.round(this.value * multiplier) / multiplier;
-    return new Price(rounded);
+    return new OutcomePrice(rounded);
   }
 
   getValue(): number {
@@ -90,12 +90,12 @@ class Price {
 
 // Использование
 try {
-  const price = new Price(10.567);
+  const price = new OutcomePrice(10.567);
   const result = price.round(2, 9); // ❌ 9 вне диапазона 0-8
 } catch (error) {
   if (InvalidRoundingModeError.is(error)) {
     console.error('Invalid rounding mode:', error.context);
-    // { roundingMode: 9, value: 10.567, precision: 2, operation: 'Price.round' }
+    // { roundingMode: 9, value: 10.567, precision: 2, operation: 'OutcomePrice.round' }
   }
 }
 ```
@@ -104,15 +104,15 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidRoundingModeError, InvalidPriceError } from '@polymarket/errors';
+import { InvalidRoundingModeError, InvalidOutcomePriceError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
-class Price {
+class OutcomePrice {
   private constructor(private readonly value: Decimal) {}
 
-  static fromDecimal(value: Decimal): Result<Price, InvalidPriceError> {
+  static fromDecimal(value: Decimal): Result<OutcomePrice, InvalidOutcomePriceError> {
     // ... валидация
-    return Ok(new Price(value));
+    return Ok(new OutcomePrice(value));
   }
 
   /**
@@ -121,7 +121,7 @@ class Price {
   round(
     precision: number,
     roundingMode: number
-  ): Result<Price, InvalidRoundingModeError> {
+  ): Result<OutcomePrice, InvalidRoundingModeError> {
     // Валидация roundingMode
     if (!Number.isInteger(roundingMode)) {
       return Err(
@@ -160,7 +160,7 @@ class Price {
 
     // Применяем округление через Decimal.js
     const rounded = this.value.toDecimalPlaces(precision, roundingMode);
-    return Ok(new Price(rounded));
+    return Ok(new OutcomePrice(rounded));
   }
 
   toDecimal(): Decimal {
@@ -169,7 +169,7 @@ class Price {
 }
 
 // Использование
-const priceResult = Price.fromDecimal(new Decimal('10.567'));
+const priceResult = OutcomePrice.fromDecimal(new Decimal('10.567'));
 if (!priceResult.ok) {
   console.error('Failed to create price');
   return;
@@ -299,7 +299,7 @@ if (result.ok) {
   console.log('Valid rounding mode:', mode);
 
   // Можно использовать для округления
-  const priceResult = Price.fromDecimal(new Decimal('10.567'));
+  const priceResult = OutcomePrice.fromDecimal(new Decimal('10.567'));
   if (priceResult.ok) {
     const rounded = priceResult.value.round(2, mode);
   }
@@ -526,7 +526,7 @@ validateRoundingMode(Decimal.ROUND_HALF_CEIL); // ✅ Ok(7)
 validateRoundingMode(Decimal.ROUND_HALF_FLOOR); // ✅ Ok(8)
 
 // Это гарантирует использование правильных значений
-const priceResult = Price.fromDecimal(new Decimal('10.567'));
+const priceResult = OutcomePrice.fromDecimal(new Decimal('10.567'));
 if (priceResult.ok) {
   const rounded = priceResult.value.round(2, Decimal.ROUND_HALF_UP); // ✅ Безопасно
 }
@@ -539,7 +539,7 @@ import { toChain } from '@polymarket/result';
 
 const result = toChain(validateRoundingMode(userInput))
   .flatMap(mode =>
-    toChain(Price.fromDecimal(new Decimal('10.567')))
+    toChain(OutcomePrice.fromDecimal(new Decimal('10.567')))
       .flatMap(price => price.round(2, mode))
   )
   .toResult();
@@ -616,11 +616,11 @@ if (result.ok) {
 import { InvalidRoundingModeError } from '@polymarket/errors';
 
 function roundOrDefault(
-  price: Price,
+  price: OutcomePrice,
   precision: number,
   roundingMode: number,
   defaultMode: number = Decimal.ROUND_HALF_UP
-): Price {
+): OutcomePrice {
   const result = price.round(precision, roundingMode);
 
   if (result.ok) {
@@ -658,11 +658,11 @@ const rounded = roundOrDefault(
 import { InvalidRoundingModeError } from '@polymarket/errors';
 
 function roundWithLogging(
-  price: Price,
+  price: OutcomePrice,
   precision: number,
   roundingMode: number,
   operationName: string
-): Result<Price, InvalidRoundingModeError> {
+): Result<OutcomePrice, InvalidRoundingModeError> {
   const result = price.round(precision, roundingMode);
 
   if (result.ok) {

@@ -71,8 +71,8 @@ const result = SpreadService.fromValues(0.60, 0.50);
 // Что происходит внутри:
 
 // 1. Facade: SpreadService.fromValues()
-const bidResult = PriceService.create(0.60);
-const askResult = PriceService.create(0.50);
+const bidResult = OutcomePriceService.create(0.60);
+const askResult = OutcomePriceService.create(0.50);
 
 if (bidResult.ok && askResult.ok) {
   try {
@@ -139,7 +139,7 @@ if (bidResult.ok && askResult.ok) {
 
 **Ответственность:**
 
-- Хранение bid/ask как Price объектов
+- Хранение bid/ask как OutcomePrice объектов
 - Инвариант: `bid ≤ ask`
 - Чистые вычисления (width, midpoint, widthRatio)
 - Throwing typed exceptions
@@ -149,8 +149,8 @@ if (bidResult.ok && askResult.ok) {
 ```typescript
 class Spread {
   private constructor(
-    private readonly _bid: Price,
-    private readonly _ask: Price
+    private readonly _bid: OutcomePrice,
+    private readonly _ask: OutcomePrice
   ) {
     // Инвариант: bid <= ask
     if (_bid.value().greaterThan(_ask.value())) {
@@ -161,7 +161,7 @@ class Spread {
     }
   }
 
-  static of(bid: Price, ask: Price): Spread {
+  static of(bid: OutcomePrice, ask: OutcomePrice): Spread {
     return new Spread(bid, ask);
   }
 
@@ -189,7 +189,7 @@ class Spread {
 
 ```typescript
 export class ValidateBidAsk {
-  static check(bid: Price, ask: Price): Result<void, InvalidSpreadError> {
+  static check(bid: OutcomePrice, ask: OutcomePrice): Result<void, InvalidSpreadError> {
     if (bid.value().greaterThan(ask.value())) {
       return Err(
         new InvalidSpreadError(
@@ -271,8 +271,8 @@ if (!validationResult.ok) {
 
 | Слой | Знает о | Не знает о | Пример |
 | ------ | --------- | ------------ | -------- |
-| **Core** | Price, Decimal, инварианты | Result, errors, валидации | `Spread.of()` throws |
-| **Rules** | Price, валидации | Core создание | `ValidateBidAsk.check()` |
+| **Core** | OutcomePrice, Decimal, инварианты | Result, errors, валидации | `Spread.of()` throws |
+| **Rules** | OutcomePrice, валидации | Core создание | `ValidateBidAsk.check()` |
 | **Facade** | Core, Rules, errorUtils | UI, сериализация | `SpreadService.create()` |
 | **Adapters** | Facade, форматы данных | Core, Rules | `SpreadSerializer.toJSON()` |
 
@@ -295,9 +295,9 @@ Adapters → Facade → Rules → Core
 ```text
 User: SpreadService.fromValues(0.48, 0.52)
   ↓
-Facade: toDecimal(0.48) → Price.create()
+Facade: toDecimal(0.48) → OutcomePrice.create()
   ↓
-Facade: toDecimal(0.52) → Price.create()
+Facade: toDecimal(0.52) → OutcomePrice.create()
   ↓
 Facade: ValidateBidAsk.check(bid, ask)
   ↓ (если Ok)
@@ -321,9 +321,9 @@ Facade: calculate new bid = spread.bid() + amount
   ↓
 Facade: calculate new ask = spread.ask() - amount
   ↓
-Facade: PriceService.create(newBid)
+Facade: OutcomePriceService.create(newBid)
   ↓
-Facade: PriceService.create(newAsk)
+Facade: OutcomePriceService.create(newAsk)
   ↓
 Core: Spread.of(newBid, newAsk)
   ↓
@@ -337,7 +337,7 @@ User: result.value (tighter Spread)
 ```text
 User: SpreadService.fromValues(0.60, 0.50)  // bid > ask
   ↓
-Facade: создаёт Price объекты
+Facade: создаёт OutcomePrice объекты
   ↓
 Facade: ValidateBidAsk.check(0.60, 0.50)
   ↓
@@ -354,16 +354,16 @@ User: result.error.context.reason === BID_GREATER_THAN_ASK
 
 ## Архитектурные решения
 
-### 1. Почему Spread хранит Price, а не Decimal?
+### 1. Почему Spread хранит OutcomePrice, а не Decimal?
 
-**Решение:** `private readonly _bid: Price, _ask: Price`
+**Решение:** `private readonly _bid: OutcomePrice, _ask: OutcomePrice`
 
 **Альтернатива:** `private readonly _bid: Decimal, _ask: Decimal`
 
 **Обоснование:**
 
-- ✅ Price уже гарантирует диапазон [0.0001, 0.9999]
-- ✅ Переиспользование валидации Price
+- ✅ OutcomePrice уже гарантирует диапазон [0.0001, 0.9999]
+- ✅ Переиспользование валидации OutcomePrice
 - ✅ Семантическая корректность (bid/ask — это цены, не числа)
 - ✅ Type safety на уровне системы типов
 
@@ -427,11 +427,11 @@ const newSpreadResult = SpreadService.create(newBid, spread.ask());
 
 ### 5. Почему zero(price) возвращает Spread, а не Result?
 
-**Решение:** `zero(price: Price): Spread` — не возвращает Result
+**Решение:** `zero(price: OutcomePrice): Spread` — не возвращает Result
 
 **Обоснование:**
 
-- ✅ Принимает валидный Price → не может провалиться
+- ✅ Принимает валидный OutcomePrice → не может провалиться
 - ✅ Инвариант bid ≤ ask автоматически выполнен (bid === ask)
 - ✅ Упрощает использование в сценариях, где нужен zero-width spread
 
@@ -439,31 +439,31 @@ const newSpreadResult = SpreadService.create(newBid, spread.ask());
 
 ## Polymarket-специфичные решения
 
-### 1. Интеграция с Price
+### 1. Интеграция с OutcomePrice
 
-Spread **зависит** от Price:
+Spread **зависит** от OutcomePrice:
 
-- Bid и Ask — это Price объекты
-- Валидация диапазона делегирована Price
-- Операции используют PriceService для создания новых Price
+- Bid и Ask — это OutcomePrice объекты
+- Валидация диапазона делегирована OutcomePrice
+- Операции используют OutcomePriceService для создания новых OutcomePrice
 
 **Почему не наоборот?**
 
-- Price — более базовый концепт (одна цена)
+- OutcomePrice — более базовый концепт (одна цена)
 - Spread — композитный концепт (пара цен)
-- Price используется самостоятельно, Spread зависит от Price
+- OutcomePrice используется самостоятельно, Spread зависит от OutcomePrice
 
 ### 2. Работа с базовым тиком
 
 Spread не форсирует alignment к базовому тику (0.0001):
 
-- Bid и Ask могут быть любыми валидными Price
-- Если нужен alignment, используйте PriceService.roundToMarketTick()
+- Bid и Ask могут быть любыми валидными OutcomePrice
+- Если нужен alignment, используйте OutcomePriceService.roundToMarketTick()
 
 **Обоснование:**
 
 - Разделение ответственности
-- Spread не знает про тики, это знает Price
+- Spread не знает про тики, это знает OutcomePrice
 - Flexibility для разных контекстов
 
 ### 3. Width как Ratio
@@ -606,8 +606,8 @@ export class ValidateMinimumLiquidity {
 ```typescript
 export class SpreadService {
   static createWithMinLiquidity(
-    bid: Price,
-    ask: Price,
+    bid: OutcomePrice,
+    ask: OutcomePrice,
     minWidthBps: number
   ): Result<Spread, InvalidSpreadError> {
     const spreadResult = this.create(bid, ask);
@@ -639,8 +639,8 @@ export class SpreadService {
   static invert(spread: Spread): Result<Spread, InvalidSpreadError> {
     try {
       // Вычисляем комплементы
-      const newBidResult = PriceService.complement(spread.ask());
-      const newAskResult = PriceService.complement(spread.bid());
+      const newBidResult = OutcomePriceService.complement(spread.ask());
+      const newAskResult = OutcomePriceService.complement(spread.bid());
       
       if (!newBidResult.ok) {
         return Err(rewrap('invert', { spread: ... }, newBidResult.error, InvalidSpreadError));

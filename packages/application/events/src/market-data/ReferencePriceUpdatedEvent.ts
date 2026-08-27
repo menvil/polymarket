@@ -5,10 +5,10 @@
  * ### Зачем отдельное событие
  *
  * Рынок предсказаний и базовый актив живут в разных ценовых доменах:
- * `BOOK_UPDATED`/`TRADE_RECEIVED` несут `Price` outcome-токена
+ * `BOOK_UPDATED`/`TRADE_RECEIVED` несут `OutcomePrice` outcome-токена
  * (`[0.0001, 0.9999]`), а `79341.36626633028` в этот домен не помещается
  * ПО ИНВАРИАНТУ. Поэтому референсные цены получают собственный канал с
- * собственным VO — {@link ReferencePrice}.
+ * собственным VO — {@link AssetPrice}.
  *
  * ### Source-agnostic и canonical
  *
@@ -42,7 +42,7 @@
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { AssetSymbolId, MarketDataSourceId } from '@polymarket/ids';
-import type { ReferencePrice } from '@polymarket/value-objects';
+import type { AssetPrice } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -107,7 +107,7 @@ export type ReferencePriceUpdatedEvent = MessageEnvelope<
     /** Спот либо TWAP с окном — см. {@link ReferencePriceFeed}. */
     readonly feed: ReferencePriceFeed;
     /** Значение цены актива (произвольная положительная точность). */
-    readonly value: ReferencePrice;
+    readonly value: AssetPrice;
     /** Момент, которым источник датировал значение. */
     readonly venueTimestamp: Timestamp;
     /** Момент получения наблюдения нами. */

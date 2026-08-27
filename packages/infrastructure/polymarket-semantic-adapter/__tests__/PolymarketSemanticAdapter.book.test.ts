@@ -7,7 +7,7 @@
  * момент публикация ПРЕКРАЩАЕТСЯ.
  */
 import { describe, expect, it, beforeEach, afterEach } from '@jest/globals';
-import { asInstrumentId, asMarketId } from '@polymarket/ids';
+import { KnownVenues, asInstrumentId, asMarketId } from '@polymarket/ids';
 import {
   MARKET_ID,
   TOKEN_A,
@@ -44,12 +44,14 @@ describe('book → canonical Orderbook', () => {
     expect(depth).toHaveLength(1);
 
     const snapshot = depth[0]!.payload.snapshot;
-    expect(snapshot.asset).toBe(asInstrumentId(TOKEN_A));
-    expect(String(snapshot.instrumentId)).toBe(MARKET_ID);
+    expect(snapshot.instrumentId).toBe(asInstrumentId(TOKEN_A));
+    expect(String(snapshot.marketId)).toBe(MARKET_ID);
+    expect(snapshot.venueId).toBe(KnownVenues.POLYMARKET);
     expect(snapshot.bids.map((level) => level.price.value().toString())).toEqual(['0.5', '0.48']);
     expect(snapshot.asks.map((level) => level.price.value().toString())).toEqual(['0.52']);
     // Сущность, а не сериализованная копия — у DTO не было бы методов домена
-    expect(snapshot.getSpread().ok).toBe(true);
+    expect(snapshot.getBestBid()).not.toBeNull();
+    expect(snapshot.getTotalBidVolume().value().toString()).toBe('40');
     expect(snapshot.venueTimestamp?.toNumber()).toBe(1_787_751_722_763);
   });
 
@@ -69,7 +71,9 @@ describe('book → canonical Orderbook', () => {
     expect(payload.topOfBook.bestBid?.value().toString()).toBe('0.5');
     expect(payload.topOfBook.bestAsk?.value().toString()).toBe('0.52');
     expect(payload.topOfBook.bestBidSize?.value().toString()).toBe('10');
-    expect(payload.topOfBook.spread?.value().toString()).toBe('0.02');
+    // Ширина спреда в TopOfBook больше не хранится — она разность, а не
+    // цена; проверяем стороны, из которых она выводится
+    expect(payload.topOfBook.bestAskSize?.value().toString()).toBe('7');
     expect(payload.sequenceNumber).toBe(1);
   });
 
@@ -358,8 +362,8 @@ describe('односторонняя и пустая книга', () => {
     expect(top.bestBid?.value().toString()).toBe('0.5');
     expect(top.bestAsk).toBeUndefined();
     expect(top.bestAskSize).toBeUndefined();
-    // Спред без второй стороны не существует и не подделывается
-    expect(top.spread).toBeUndefined();
+    // Второй стороны нет — и уровни для неё не выдумываются
+    expect(top.bestAskSize).toBeUndefined();
   });
 
   it('пустая книга допустима и не порождает фиктивных уровней', async () => {

@@ -39,7 +39,7 @@
  * ```
  */
 
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
@@ -178,7 +178,7 @@ export class OrderbookNormalizer {
    * Устраняет дублирование кода из оригинального fromJSON.
    *
    * Алгоритм:
-   * 1. Парсинг string|number → Price/Quantity VO через safe factory методы
+   * 1. Парсинг string|number → OutcomePrice/Quantity VO через safe factory методы
    * 2. Фильтрация нулевых quantity (если policy.dropZeroQty)
    * 3. Агрегация дубликатов price (если policy.aggregateSamePrice)
    * 4. Сортировка (bids desc, asks asc)
@@ -204,8 +204,8 @@ export class OrderbookNormalizer {
     for (let i = 0; i < rawLevels.length; i++) {
       const rawLevel = rawLevels[i];
 
-      // Создание Price VO через PriceService.create (принимает string | number | Decimal)
-      const priceResult = PriceService.create(rawLevel.price);
+      // Создание OutcomePrice VO через OutcomePriceService.create (принимает string | number | Decimal)
+      const priceResult = OutcomePriceService.create(rawLevel.price);
       if (!priceResult.ok) {
         return Err(
           new OrderbookValidationError(`Invalid price in ${side}[${i}]: ${priceResult.error.message}`, {

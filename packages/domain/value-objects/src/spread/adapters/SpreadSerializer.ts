@@ -3,6 +3,7 @@ import { InvalidSpreadError, ErrorSource } from '@polymarket/errors';
 import { Spread } from '../core/Spread.js';
 import { SpreadService } from '../facade/SpreadService.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для Spread сериализации
@@ -124,7 +125,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op,
-              raw: { json: String(json) },
+              raw: { json: safeStringify(json) },
               reason: SpreadErrorReason.INVALID_DTO
             }
           }
@@ -133,7 +134,7 @@ export class SpreadSerializer {
     }
 
     // Шаг 2: Проверка наличия поля bid
-    if (!('bid' in json)) {
+    if (!Object.hasOwn(json, 'bid')) {
       return Err(
         new InvalidSpreadError(
           'Missing required field: bid',
@@ -142,7 +143,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op,
-              raw: { json: JSON.stringify(json) },
+              raw: { json: safeStringify(json) },
               reason: SpreadErrorReason.INVALID_DTO
             }
           }
@@ -151,7 +152,7 @@ export class SpreadSerializer {
     }
 
     // Шаг 3: Проверка наличия поля ask
-    if (!('ask' in json)) {
+    if (!Object.hasOwn(json, 'ask')) {
       return Err(
         new InvalidSpreadError(
           'Missing required field: ask',
@@ -160,7 +161,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op,
-              raw: { json: JSON.stringify(json) },
+              raw: { json: safeStringify(json) },
               reason: SpreadErrorReason.INVALID_DTO
             }
           }

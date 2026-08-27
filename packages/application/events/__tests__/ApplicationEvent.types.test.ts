@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import type { TypedMessage } from '@polymarket/messages';
+import type { DecimalPrice } from '@polymarket/value-objects';
 import type {
   ApplicationEvent,
   FillReceivedEvent,
@@ -83,7 +84,8 @@ describe('ApplicationEvent union contract', () => {
     const narrow = (event: ApplicationEvent): string => {
       switch (event.type) {
         case 'BOOK_UPDATED': {
-          const top: TopOfBook = event.payload.topOfBook;
+          // Домен САМЫЙ ШИРОКИЙ: union принимает и prediction-книги, и биржевые
+          const top: TopOfBook<DecimalPrice> = event.payload.topOfBook;
           void top;
           return event.type;
         }

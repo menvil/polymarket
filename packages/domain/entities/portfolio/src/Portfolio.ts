@@ -91,7 +91,7 @@
 
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import type { Price } from '@polymarket/value-objects';
+import type { OutcomePrice } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import type { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { Result, Ok, Err } from '@polymarket/result';
@@ -120,7 +120,7 @@ import { PortfolioValidationError } from '@polymarket/errors/portfolio';
  * ### Почему `Pick<Quantity, 'value'>`, а не голый `{ value(): Decimal }`:
  * По ADR (`docs/architecture/boundary-contract.md`, Решение 1) голый `Decimal`
  * легитимен только внутри `value-objects`/`math`. `Pick<Quantity, 'value'>`/
- * `Pick<Price, 'value'>`/`Pick<SignedQuantity, 'value'>` — явные структурные типы,
+ * `Pick<OutcomePrice, 'value'>`/`Pick<SignedQuantity, 'value'>` — явные структурные типы,
  * привязанные к реальным VO-классам (а не анонимный inline-тип), но **не требуют
  * прямой зависимости от конкретного класса** — `Pick` берёт только сигнатуру метода
  * `value()`, поэтому любой объект со совместимым `.value(): Decimal` (включая
@@ -134,16 +134,16 @@ export interface IPosition {
   /** Сторона позиции */
   readonly side: 'LONG' | 'SHORT';
   /** Средневзвешенная цена входа */
-  readonly averageEntryPrice: Pick<Price, 'value'>;
+  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
   /** Проверяет, закрыта ли позиция (quantity = 0) */
   isClosed(): boolean;
   /**
    * Вычисляет unrealized P&L для заданной текущей цены
    *
-   * @param currentPrice - Текущая цена инструмента (Price VO)
+   * @param currentPrice - Текущая цена инструмента (OutcomePrice VO)
    * @returns Объект с методом value(): Decimal (структурно совместим с SignedQuantity)
    */
-  getUnrealizedPnL(currentPrice: Price): Pick<SignedQuantity, 'value'>;
+  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
 }
 
 /**

@@ -58,7 +58,7 @@ string-keyed в обоих классах — конвертация `String(mar
 ## Почему числовой пул `CryptoMarketDataStore` остаётся `number`
 
 Черновой план миграции предполагал перевод `price`/`exchangeTsMs`/`receivedTsMs` на
-`Price`/`Timestamp` и `bids`/`asks` на `PriceLevel`/`OrderbookLevel`. При расследовании
+`OutcomePrice`/`Timestamp` и `bids`/`asks` на `PriceLevel`/`OrderbookLevel`. При расследовании
 Этапа 8 это решение пересмотрено — оба независимых основания уже применялись раньше в
 этой миграции (Этап 4, `cross-market`'s `NumericLevel`), здесь они впервые встретились в
 одном пакете вместе с генуинно холодными полями (см. `docs/architecture/boundary-
@@ -70,9 +70,9 @@ contract.md`, Решение 10):
    VO на этой частоте — измеримая деградация ради типобезопасности, не нужной внутри уже
    строго типизированного внутреннего API.
 2. **Диапазон.** `price` здесь — крипто-спот-цена произвольного масштаба (например,
-   ~78 000 для BTC), а не вероятностная цена prediction-market. `Price` VO жёстко
-   ограничен `[0.0001, 0.9999]` — `Price.of(new Decimal(78237))` бросит
-   `PriceInvariantViolation`. Готового VO для «произвольная USD-цена крипто-актива» в
+   ~78 000 для BTC), а не вероятностная цена prediction-market. `OutcomePrice` VO жёстко
+   ограничен `[0.0001, 0.9999]` — `OutcomePrice.of(new Decimal(78237))` бросит
+   `OutcomePriceInvariantViolation`. Готового VO для «произвольная USD-цена крипто-актива» в
    кодовой базе нет. Это тот же вопрос, что `MarketInfo.priceToBeat`/`finalPrice` в
    `@polymarket/cross-market` (Этап 4) — там уже было решено оставить `number` и явно
    отложить форму до Этапа 8; здесь вывод расширяется, а не пересматривается: подходящего

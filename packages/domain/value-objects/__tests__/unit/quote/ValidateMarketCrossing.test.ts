@@ -3,7 +3,7 @@ import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketCrossing.js';
 import { Quote } from '../../../src/quote/core/Quote.js';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { TimestampService } from '@polymarket/timestamp';
 
@@ -23,15 +23,15 @@ describe('ValidateMarketCrossing', () => {
   describe('checkQuote()', () => {
     it('returns Ok для нормальной котировки (не пересекает)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)), // bid
-        Price.of(new Decimal(0.52)), // ask
+        OutcomePrice.of(new Decimal(0.48)), // bid
+        OutcomePrice.of(new Decimal(0.52)), // ask
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, orderbookAsk);
 
@@ -40,15 +40,15 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Err когда bid >= orderbook ask (пересекает)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.51)), // наш bid
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.51)), // наш bid
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51)); // наш bid >= orderbook ask
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51)); // наш bid >= orderbook ask
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, orderbookAsk);
 
@@ -63,15 +63,15 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Err когда ask <= orderbook bid (пересекает)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.50)), // наш ask
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.50)), // наш ask
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50)); // наш ask <= orderbook bid
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50)); // наш ask <= orderbook bid
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, orderbookAsk);
 
@@ -87,14 +87,14 @@ describe('ValidateMarketCrossing', () => {
     it('returns Ok когда наш bid null (bid-only check пропускается)', () => {
       const quote = Quote.of(
         null, // bid null
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.ZERO,
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, orderbookAsk);
 
@@ -103,14 +103,14 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Ok когда orderbook ask null (bid-only check пропускается)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.51)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.51)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, null);
 
@@ -119,15 +119,15 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Ok когда наш ask null (ask-only check пропускается)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.48)),
         null, // ask null
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.checkQuote(quote, orderbookBid, orderbookAsk);
 
@@ -136,14 +136,14 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Ok когда orderbook bid null (ask-only check пропускается)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.50)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.checkQuote(quote, null, orderbookAsk);
 
@@ -154,15 +154,15 @@ describe('ValidateMarketCrossing', () => {
   describe('crossesMarket()', () => {
     it('returns true когда пересекает', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.51)), // наш bid
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.51)), // наш bid
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51)); // наш bid >= orderbook ask
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51)); // наш bid >= orderbook ask
 
       const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
 
@@ -171,15 +171,15 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns false когда не пересекает', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51));
 
       const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
 
@@ -189,10 +189,10 @@ describe('ValidateMarketCrossing', () => {
 
   describe('check() - low-level API', () => {
     it('works с отдельными bid/ask вместо Quote', () => {
-      const quoteBid = Price.of(new Decimal(0.51));
-      const quoteAsk = Price.of(new Decimal(0.52));
-      const orderbookBid = Price.of(new Decimal(0.50));
-      const orderbookAsk = Price.of(new Decimal(0.51)); // quoteBid >= orderbookAsk
+      const quoteBid = OutcomePrice.of(new Decimal(0.51));
+      const quoteAsk = OutcomePrice.of(new Decimal(0.52));
+      const orderbookBid = OutcomePrice.of(new Decimal(0.50));
+      const orderbookAsk = OutcomePrice.of(new Decimal(0.51)); // quoteBid >= orderbookAsk
 
       const result = ValidateMarketCrossing.check(quoteBid, quoteAsk, orderbookBid, orderbookAsk);
 

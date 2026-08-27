@@ -17,8 +17,8 @@
 
 ```typescript
 Quote.of(
-  bid: Price | null,
-  ask: Price | null,
+  bid: OutcomePrice | null,
+  ask: OutcomePrice | null,
   bidSize: Quantity,
   askSize: Quantity,
   timestampMs: Decimal,  // ❌
@@ -31,8 +31,8 @@ Quote.of(
 
 ```typescript
 Quote.of(
-  bid: Price | null,
-  ask: Price | null,
+  bid: OutcomePrice | null,
+  ask: OutcomePrice | null,
   bidSize: Quantity,
   askSize: Quantity,
   timestamp: Timestamp,  // ✅
@@ -187,8 +187,8 @@ const date = new Date(tsMs.toNumber());
 import Decimal from 'decimal.js';
 
 const quote = Quote.of(
-  Price.of(0.48),
-  Price.of(0.52),
+  OutcomePrice.of(0.48),
+  OutcomePrice.of(0.52),
   Quantity.of(100),
   Quantity.of(150),
   new Decimal(1234567890000),
@@ -212,8 +212,8 @@ function createTestTimestamp(ms?: number): Timestamp {
 }
 
 const quote = Quote.of(
-  Price.of(0.48),
-  Price.of(0.52),
+  OutcomePrice.of(0.48),
+  OutcomePrice.of(0.52),
   Quantity.of(100),
   Quantity.of(150),
   createTestTimestamp(1234567890000),
@@ -284,16 +284,16 @@ const diffSec = ts.diffSeconds(other); // Разница в секундах
 
 ### 3. Единообразие
 
-Все Value Objects (Price, Quantity, Timestamp) теперь следуют одному паттерну:
+Все Value Objects (OutcomePrice, Quantity, Timestamp) теперь следуют одному паттерну:
 
 ```typescript
 // Создание через Service
-const priceResult = PriceService.create(0.48);
+const priceResult = OutcomePriceService.create(0.48);
 const qtyResult = QuantityService.create(100);
 const tsResult = TimestampService.create(Date.now());
 
 // Core объект с методами
-const price: Price = priceResult.value;
+const price: OutcomePrice = priceResult.value;
 const qty: Quantity = qtyResult.value;
 const ts: Timestamp = tsResult.value;
 ```

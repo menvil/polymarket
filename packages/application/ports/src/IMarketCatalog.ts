@@ -11,11 +11,11 @@
  *
  * Используется:
  * - BookUpdateHandler — `catalog.get(tokenId)` → `InstrumentInfo.instrumentId`
- * - OrderRiskChecker — `catalog.get(tokenId)?.tickSize` (уже Price, не string)
+ * - OrderRiskChecker — `catalog.get(tokenId)?.tickSize` (уже OutcomePrice, не string)
  * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -31,7 +31,7 @@ export interface InstrumentInfo {
   /** ID рынка (condition_id в Polymarket API) */
   readonly marketId: MarketId;
   /** Минимальный шаг цены */
-  readonly tickSize: Price;
+  readonly tickSize: OutcomePrice;
   /** Минимальный размер ордера в токенах */
   readonly minOrderSize: Quantity;
   /**
@@ -63,7 +63,7 @@ export interface InstrumentInfo {
  * if (!info) {
  *   throw new Error(`Unknown instrument: ${tokenId}`);
  * }
- * // info.tickSize уже Price — не нужно парсить строку
+ * // info.tickSize уже OutcomePrice — не нужно парсить строку
  * riskChecker.validatePrice(price, info.tickSize);
  *
  * // Атомарная регистрация рынка (оба outcome-токена сразу):
@@ -152,7 +152,7 @@ export interface IMarketCatalog {
    * catalog.register({
    *   instrumentId,
    *   marketId,
-   *   tickSize: Price.of(new Decimal('0.01')),
+   *   tickSize: OutcomePrice.of(new Decimal('0.01')),
    *   minOrderSize: Quantity.of(new Decimal('1')),
    *   active: true,
    * });

@@ -8,7 +8,7 @@
  * - Round-trip: Order → toSnapshot → fromSnapshot → Order
  */
 
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import {
   asOrderId,
@@ -59,7 +59,7 @@ function createOpenOrder(overrides?: Partial<Parameters<typeof Order.create>[0]>
     id: ORDER_ID,
     asset: TEST_ASSET,
     side: 'BUY' as const,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     timestamp: Timestamp.now(),
     ...overrides,
@@ -89,7 +89,7 @@ const FILL_1: FillData = {
   asset: TEST_ASSET,
   side: 'BUY',
   size: Quantity.of(new Decimal('30')),
-  price: Price.of(new Decimal('0.65')),
+  price: OutcomePrice.of(new Decimal('0.65')),
 };
 
 // ==================== OrderViewModel ====================
@@ -283,7 +283,7 @@ describe('OrderDeserializer', () => {
     });
 
     it('должен вернуть Err если VO конструктор бросает (price = -1)', () => {
-      // Price.of(-1) бросает — catch блок преобразует в ValidationError
+      // OutcomePrice.of(-1) бросает — catch блок преобразует в ValidationError
       const result = OrderDeserializer.fromSnapshot(makeOrderSnap({ price: -1 }));
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.message).toContain('Failed to restore');
@@ -431,7 +431,7 @@ describe('Round-trip: Order → toSnapshot → fromSnapshot', () => {
       asset: TEST_ASSET,
       side: 'BUY',
       size: Quantity.of(new Decimal('50')),
-      price: Price.of(new Decimal('0.65')),
+      price: OutcomePrice.of(new Decimal('0.65')),
     }), 'applyFill');
 
     const snap = withFill.toSnapshot();

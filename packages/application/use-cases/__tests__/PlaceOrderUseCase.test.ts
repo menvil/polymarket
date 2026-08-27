@@ -26,7 +26,7 @@ import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import { RiskViolationError as RiskViolationErrorClass } from '@polymarket/risk';
@@ -84,8 +84,8 @@ function makeOutbox(
   });
 }
 
-function makePrice(val: string): Price {
-  return Price.of(new Decimal(val));
+function makePrice(val: string): OutcomePrice {
+  return OutcomePrice.of(new Decimal(val));
 }
 
 function makeQty(val: string): Quantity {

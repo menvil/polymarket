@@ -49,7 +49,7 @@ interface FillParams {
   readonly marketId: string;            // ID рынка
   readonly tokenId: AssetId;            // ID outcome токена
   readonly settlementAssetId: AssetId;  // Расчётная валюта (USDC для Polymarket)
-  readonly price: Price;                // Цена исполнения
+  readonly price: OutcomePrice;                // Цена исполнения
   readonly size: Quantity;              // Объём исполнения
   readonly side: Side;                  // BUY | SELL
   readonly timestamp: Timestamp;        // Время исполнения
@@ -129,9 +129,9 @@ export function isValidLiquidity(v: unknown): v is Liquidity;
 
 ```typescript
 // VO-based (Этап 3 плана миграции) — по ADR Decimal легитимен только внутри
-// value-objects/math, публичная граница здесь типизирована через Quantity/Price/Fee
-calculatePolymarketTakerFee(size: Quantity, price: Price): Fee
-calculatePolymarketTakerFeeWithRate(size: Quantity, price: Price, feeRate: number | Decimal): Fee
+// value-objects/math, публичная граница здесь типизирована через Quantity/OutcomePrice/Fee
+calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice): Fee
+calculatePolymarketTakerFeeWithRate(size: Quantity, price: OutcomePrice, feeRate: number | Decimal): Fee
 
 // Примитивы (не переводится на VO — сигнатура уже полностью на number,
 // 11+ реальных потребителей в apps/bot/strategies/*, apps/pnl, domain/cross-market)
@@ -140,7 +140,7 @@ calculatePolymarketTakerFeeNumber(size: number, price: number, feeRate?: number)
 
 `calculatePolymarketTakerFeeNumber` сохраняет старый контракт "невалидный вход (NaN,
 Infinity, price вне [0.0001, 0.9999], size/feeRate <= 0) → тихо `0`, не throw" —
-guard-проверки выполняются на сырых `number` до конструирования `Quantity`/`Price` VO
+guard-проверки выполняются на сырых `number` до конструирования `Quantity`/`OutcomePrice` VO
 (которые бросают исключение при значении вне инварианта).
 
 ## FillMapper

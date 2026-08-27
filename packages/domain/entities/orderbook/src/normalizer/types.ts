@@ -22,7 +22,7 @@
  * - quantity = 0 или отрицательное
  * - дубликаты price
  *
- * Валидация происходит в OrderbookNormalizer через PriceService/QuantityService.
+ * Валидация происходит в OrderbookNormalizer через OutcomePriceService/QuantityService.
  */
 export interface RawLevel {
   readonly price: string | number;

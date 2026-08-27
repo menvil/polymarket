@@ -4,7 +4,7 @@ import { Ok, Err } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import type { AccountId, InstrumentId } from '@polymarket/ids';
 import { asInstrumentId, asPolymarketCtfToken, unsafeStrategyId } from '@polymarket/ids';
-import { Quantity, Price, Money } from '@polymarket/value-objects';
+import { Quantity, OutcomePrice, Money } from '@polymarket/value-objects';
 import type { IStrategy } from '../../src/IStrategy.js';
 import type { StrategySnapshot } from '../../src/types/StrategySnapshot.js';
 import type { StrategyIntent } from '../../src/types/StrategyIntent.js';
@@ -178,12 +178,12 @@ function makeRegistration(strategy: IStrategy, overrides: Partial<StrategyRegist
 function makeInstrumentInfo(opts: Partial<{
   minOrderSize: Quantity;
   minOrderValue: Money;
-  tickSize: Price;
+  tickSize: OutcomePrice;
 }> = {}) {
   return {
     minOrderSize: opts.minOrderSize ?? Quantity.of(new Decimal('1')),
     minOrderValue: opts.minOrderValue ?? Money.of(new Decimal('1'), 'USDC'),
-    tickSize: opts.tickSize ?? Price.of(new Decimal('0.01')),
+    tickSize: opts.tickSize ?? OutcomePrice.of(new Decimal('0.01')),
   } as any;
 }
 
@@ -1554,7 +1554,7 @@ describe('StrategyScheduler', () => {
     it('should populate constraints from catalog when available', async () => {
       const minOrderSize = Quantity.of(new Decimal('5'));
       const minOrderValue = Money.of(new Decimal('1'), 'USDC');
-      const tickSize = Price.of(new Decimal('0.01'));
+      const tickSize = OutcomePrice.of(new Decimal('0.01'));
       const catalog = makeCatalog();
       (catalog.get as any).mockReturnValue({ minOrderSize, minOrderValue, tickSize });
 

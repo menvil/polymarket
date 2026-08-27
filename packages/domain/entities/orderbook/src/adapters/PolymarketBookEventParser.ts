@@ -3,7 +3,7 @@
  *
  * @remarks
  * Конвертирует raw Polymarket CLOB WebSocket событие в доменную Orderbook entity.
- * Делегирует всю валидацию в `OrderbookNormalizer` (PriceService, QuantityService, VO).
+ * Делегирует всю валидацию в `OrderbookNormalizer` (OutcomePriceService, QuantityService, VO).
  *
  * ### Polymarket "book" событие (полный снапшот стакана):
  * ```json
@@ -28,7 +28,7 @@
  * | `timestamp`     | `venueTimestamp`  | переименование (строка передаётся напрямую) |
  *
  * После конвертации в `RawOrderbook` — `OrderbookNormalizer` применяет:
- * - `PriceService.create()` — валидация через Price VO [0.0001, 0.9999]
+ * - `OutcomePriceService.create()` — валидация через OutcomePrice VO [0.0001, 0.9999]
  * - `QuantityService.create()` — валидация через Quantity VO (>= 0)
  * - Фильтрацию нулевых уровней, агрегацию, сортировку
  * - Crossed book detection
@@ -67,6 +67,7 @@ import type { NormalizationPolicy } from '../normalizer/NormalizationPolicy.js';
 import type { RawOrderbook } from '../normalizer/types.js';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import { OrderbookInvalidError } from '@polymarket/errors/orderbook';
+import { KnownVenues } from '@polymarket/ids';
 
 /**
  * Уровень стакана в формате Polymarket WebSocket
@@ -144,10 +145,10 @@ export class PolymarketBookEventParser {
    * @remarks
    * Алгоритм:
    * 1. Маппинг полей события в RawOrderbook (поля переименовываются, строки передаются as-is)
-   * 2. Делегирование в OrderbookNormalizer (VO валидация через PriceService/QuantityService, сортировка, crossed book)
+   * 2. Делегирование в OrderbookNormalizer (VO валидация через OutcomePriceService/QuantityService, сортировка, crossed book)
    * 3. Создание Orderbook через Orderbook.fromNormalized()
    *
-   * Строки передаются напрямую в RawOrderbook — PriceService/QuantityService/TimestampService
+   * Строки передаются напрямую в RawOrderbook — OutcomePriceService/QuantityService/TimestampService
    * принимают string | number и корректно их парсят.
    * Все валидации (диапазон цены, quantity >= 0, crossed book) — в нормализаторе.
    *
@@ -183,7 +184,7 @@ export class PolymarketBookEventParser {
       );
     }
 
-    // Строки передаются напрямую — PriceService/QuantityService/TimestampService принимают string
+    // Строки передаются напрямую — OutcomePriceService/QuantityService/TimestampService принимают string
     const raw: RawOrderbook = {
       marketId: event.market,
       tokenId: event.asset_id,
@@ -197,6 +198,10 @@ export class PolymarketBookEventParser {
       return normalizedResult;
     }
 
-    return { ok: true, value: Orderbook.fromNormalized(normalizedResult.value) };
+    // Парсер по определению разбирает события Polymarket — площадка известна
+    return {
+      ok: true,
+      value: Orderbook.fromNormalized(normalizedResult.value, KnownVenues.POLYMARKET),
+    };
   }
 }

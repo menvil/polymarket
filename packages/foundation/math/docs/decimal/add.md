@@ -240,18 +240,18 @@ const result2 = addDecimal(value, new Decimal(1));
 ```typescript
 import Decimal from 'decimal.js';
 import { addDecimal } from '@polymarket/math';
-import { Price } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 
-// Сложение внутри Price
-class Price {
+// Сложение внутри OutcomePrice
+class OutcomePrice {
   private constructor(private readonly value: Decimal) {}
 
-  add(other: Price): Result<Price, ValidationError> {
+  add(other: OutcomePrice): Result<OutcomePrice, ValidationError> {
     // 1. Чистая математика (core layer)
     const sum = addDecimal(this.value, other.value);
 
     // 2. Бизнес-валидация (domain layer)
-    return Price.fromDecimal(sum);
+    return OutcomePrice.fromDecimal(sum);
   }
 }
 ```

@@ -58,7 +58,7 @@ import {
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId } from '@polymarket/ids';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp, TimestampService } from '@polymarket/timestamp';
 import { ReplayClock } from '@polymarket/time';
 import { BacktestEngine } from '@polymarket/backtesting';
@@ -572,8 +572,9 @@ async function runPaper(): Promise<void> {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         payload: {
+          venueId: KnownVenues.POLYMARKET,
           instrumentId: tradeInstrumentId,
-          price: Price.of(new Decimal(dto.price)),
+          price: OutcomePrice.of(new Decimal(dto.price)),
           size: Quantity.of(new Decimal(dto.size)),
           side: dto.side,
           timestamp: tsResult.value,
@@ -1056,7 +1057,7 @@ async function runPaper(): Promise<void> {
               asset: unwindLegAst,
               instrumentId: unwindLegIId,
               side: 'SELL',
-              price: Price.of(new Decimal('0.01')),
+              price: OutcomePrice.of(new Decimal('0.01')),
               size: Quantity.of(new Decimal(report.unhedgedSize)),
               orderType,
               strategyId,
@@ -1122,7 +1123,7 @@ async function runPaper(): Promise<void> {
       marketCatalog.register({
         instrumentId: easyIId,
         marketId: easyCandidate.marketId,
-        tickSize: Price.of(new Decimal('0.001')),
+        tickSize: OutcomePrice.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
         minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
@@ -1161,7 +1162,7 @@ async function runPaper(): Promise<void> {
       marketCatalog.register({
         instrumentId: hardDownIId,
         marketId: hardCandidate.marketId,
-        tickSize: Price.of(new Decimal('0.001')),
+        tickSize: OutcomePrice.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
         minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
@@ -1176,7 +1177,7 @@ async function runPaper(): Promise<void> {
         marketCatalog.register({
           instrumentId: easyDownIId,
           marketId: easyCandidate.marketId,
-          tickSize: Price.of(new Decimal('0.001')),
+          tickSize: OutcomePrice.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
           minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
@@ -1849,7 +1850,7 @@ async function runPaper(): Promise<void> {
               asset: unwindLegAst,
               instrumentId: unwindLegIId,
               side: 'SELL',
-              price: Price.of(new Decimal('0.01')),
+              price: OutcomePrice.of(new Decimal('0.01')),
               size: Quantity.of(new Decimal(report.unhedgedSize)),
               orderType,
               strategyId,
@@ -2111,7 +2112,7 @@ async function runPaper(): Promise<void> {
         marketCatalog.register({
           instrumentId: easyIId,
           marketId: easyCand.marketId,
-          tickSize: Price.of(new Decimal('0.001')),
+          tickSize: OutcomePrice.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
           minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
@@ -2123,7 +2124,7 @@ async function runPaper(): Promise<void> {
         marketCatalog.register({
           instrumentId: hardUpIId,
           marketId: hardCand.marketId,
-          tickSize: Price.of(new Decimal('0.001')),
+          tickSize: OutcomePrice.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
           minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
@@ -2135,7 +2136,7 @@ async function runPaper(): Promise<void> {
         marketCatalog.register({
           instrumentId: hardDownIId,
           marketId: hardCand.marketId,
-          tickSize: Price.of(new Decimal('0.001')),
+          tickSize: OutcomePrice.of(new Decimal('0.001')),
           minOrderSize: Quantity.of(new Decimal('1')),
           minOrderValue: Money.of(new Decimal('1'), 'USDC'),
           active: true,
@@ -2148,7 +2149,7 @@ async function runPaper(): Promise<void> {
           marketCatalog.register({
             instrumentId: easyDownIId,
             marketId: easyCand.marketId,
-            tickSize: Price.of(new Decimal('0.001')),
+            tickSize: OutcomePrice.of(new Decimal('0.001')),
             minOrderSize: Quantity.of(new Decimal('1')),
             minOrderValue: Money.of(new Decimal('1'), 'USDC'),
             active: true,
@@ -2864,7 +2865,7 @@ async function runBacktest(): Promise<void> {
   const instrumentInfo: InstrumentInfo = {
     instrumentId,
     marketId,
-    tickSize: Price.of(new Decimal('0.001')),
+    tickSize: OutcomePrice.of(new Decimal('0.001')),
     minOrderSize: Quantity.of(new Decimal('1')),
     minOrderValue: Money.of(new Decimal('1'), 'USDC'),
     active: true,
@@ -3510,7 +3511,7 @@ async function runLive(): Promise<void> {
       asset: ast,
       tokenIdStr: tStr,
       expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
-      tickSize: Price.of(new Decimal('0.001')),
+      tickSize: OutcomePrice.of(new Decimal('0.001')),
       minOrderSize: Quantity.of(new Decimal('1')),
       candidate: null,
       strategy: fixedStrategy,
@@ -3960,7 +3961,7 @@ async function runLive(): Promise<void> {
           if (!hedgeOrderId) return emptyReport('REJECTED');
           const hedgePortfolio = portfolioStore.get(accountId!);
           if (!hedgePortfolio) return emptyReport('REJECTED');
-          const hedgePriceVO = Price.of(new Decimal(hedgePriceNum.toFixed(4)));
+          const hedgePriceVO = OutcomePrice.of(new Decimal(hedgePriceNum.toFixed(4)));
           const hedgeSizeVO = Quantity.of(new Decimal(hedgeSizeNum));
           const hedgeResult = await orderUseCases.placeOrderUseCase.execute({
             orderId: hedgeOrderId,
@@ -4071,7 +4072,7 @@ async function runLive(): Promise<void> {
       const missingEasy = report.easyFilledSize < report.hardFilledSize;
       const rebalanceLeg = missingEasy ? easyLeg : hardLeg;
       const missingLegTob = marketDataStore.getTopOfBook(rebalanceLeg.instrumentId);
-      const rebalancePrice: Price = missingLegTob?.bestAsk ?? (missingEasy ? plan.easyPrice : plan.hardPrice);
+      const rebalancePrice: OutcomePrice = missingLegTob?.bestAsk ?? (missingEasy ? plan.easyPrice : plan.hardPrice);
       const rebalancePriceNum = rebalancePrice.value().toNumber();
 
       // Проверяем прибыльность repair по ТЕКУЩЕЙ книге: читаем обе ноги из marketDataStore.
@@ -4177,7 +4178,7 @@ async function runLive(): Promise<void> {
             asset: unwindLeg.asset,
             instrumentId: unwindLeg.instrumentId,
             side: 'SELL',
-            price: Price.of(new Decimal('0.01')),
+            price: OutcomePrice.of(new Decimal('0.01')),
             size: Quantity.of(new Decimal(report.unhedgedSize)),
             orderType: 'FAK',
             strategyId,
@@ -4206,7 +4207,7 @@ async function runLive(): Promise<void> {
       marketCatalog.register({
         instrumentId: item.instrumentId,
         marketId: item.marketId,
-        tickSize: Price.of(new Decimal('0.001')),
+        tickSize: OutcomePrice.of(new Decimal('0.001')),
         minOrderSize: Quantity.of(new Decimal('1')),
         minOrderValue: Money.of(new Decimal('1'), 'USDC'),
         active: true,
@@ -4499,8 +4500,9 @@ async function runLive(): Promise<void> {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         payload: {
+          venueId: KnownVenues.POLYMARKET,
           instrumentId: tradeInstrumentId,
-          price: Price.of(new Decimal(dto.price)),
+          price: OutcomePrice.of(new Decimal(dto.price)),
           size: Quantity.of(new Decimal(dto.size)),
           side: dto.side,
           timestamp: tsResult.value,

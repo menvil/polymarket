@@ -34,6 +34,8 @@ import type {
   StrategySignalEvent,
 } from '@polymarket/application-events';
 import type { OrderEvent, OrderFilledEvent } from '@polymarket/order-events';
+import { KnownVenues } from '@polymarket/ids';
+import type { DecimalPrice } from '@polymarket/value-objects';
 
 /** Минимальный mock logger. */
 function makeLogger(): ILogger {
@@ -59,9 +61,13 @@ describe('EventBus type-level contract', () => {
     const bus: IEventBus = new EventBus(makeLogger());
 
     const unsubBook = bus.subscribe('BOOK_UPDATED', (event) => {
-      // Если бы event был общим ApplicationEvent — это присваивание не скомпилировалось бы
-      const narrowed: BookUpdatedEvent = event;
-      const top: TopOfBook = event.payload.topOfBook;
+      // Если бы event был общим ApplicationEvent — это присваивание не скомпилировалось бы.
+      // Ценовой домен здесь САМЫЙ ШИРОКИЙ (`DecimalPrice`): по шине ходят и
+      // prediction-книги, и биржевые, и union их обе принимает. Потребитель,
+      // которому нужен конкретный домен, сужает его сам — см. guard-ы в
+      // `MarketDataStore`.
+      const narrowed: BookUpdatedEvent<DecimalPrice> = event;
+      const top: TopOfBook<DecimalPrice> = event.payload.topOfBook;
       const seq: number = event.payload.sequenceNumber;
       void narrowed; void top; void seq;
       // @ts-expect-error — у payload BookUpdatedEvent нет поля fill (это поле FillReceivedEvent)
@@ -102,8 +108,8 @@ describe('EventBus type-level contract', () => {
   it('EventHandler допускает и sync-, и async-handlers (compile-time)', () => {
     const bus: IEventBus = new EventBus(makeLogger());
 
-    const syncHandler: EventHandler<BookUpdatedEvent> = () => {};
-    const asyncHandler: EventHandler<BookUpdatedEvent> = async () => {};
+    const syncHandler: EventHandler<BookUpdatedEvent<DecimalPrice>> = () => {};
+    const asyncHandler: EventHandler<BookUpdatedEvent<DecimalPrice>> = async () => {};
     const unsubSync = bus.subscribe('BOOK_UPDATED', syncHandler);
     const unsubAsync = bus.subscribe('BOOK_UPDATED', asyncHandler);
 
@@ -216,10 +222,10 @@ describe('EventBus type-level contract', () => {
     const event: ApplicationEvent = {
       type: 'BOOK_UPDATED',
       payload: {
+        venueId: KnownVenues.POLYMARKET,
         topOfBook: {
           bestBid: undefined,
           bestAsk: undefined,
-          spread: undefined,
           bestBidSize: undefined,
           bestAskSize: undefined,
         },

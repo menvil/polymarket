@@ -132,7 +132,7 @@ function createSubaccount(
 **Value Objects Errors (domain layer):**
 
 - Бизнес-валидация (диапазоны, форматы)
-- Создание domain objects (Price, Quantity, Money)
+- Создание domain objects (OutcomePrice, Quantity, Money)
 - **Result pattern** (бизнес-правила)
 
 ---

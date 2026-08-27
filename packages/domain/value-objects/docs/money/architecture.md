@@ -103,7 +103,7 @@ try {
 
 ## 4-слойная архитектура
 
-Money имеет **4 слоя** по аналогии с Price и Quantity.
+Money имеет **4 слоя** по аналогии с OutcomePrice и Quantity.
 
 ### Диаграмма слоёв
 
@@ -411,9 +411,9 @@ Result.Ok(Money)
 - MAX_AMOUNT — инвариант (всегда проверяется для результата)
 - Неотрицательность — НЕ инвариант (можно иметь отрицательный баланс)
 
-**Price/Quantity имеют более развитый Rules Layer:**
+**OutcomePrice/Quantity имеют более развитый Rules Layer:**
 
-- Price: tick size alignment, tick size multiple of base tick — контекстные правила рынка
+- OutcomePrice: tick size alignment, tick size multiple of base tick — контекстные правила рынка
 - Quantity: minSize, stepSize — контекстные правила обмена
 
 **Итого:** Money использует все четыре слоя (Core, Rules, Facade, Adapters), но Rules Layer минимален — только для валидации входных операндов.

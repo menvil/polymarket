@@ -72,7 +72,7 @@ import type { IClock } from '@polymarket/time';
 import type { AssetId, VenueTradeId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import { RollingWindow, type RetentionPolicy } from '@polymarket/rolling-window';
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { Trade } from '@polymarket/trade';
 
@@ -170,7 +170,7 @@ export class TradeIndexCollector {
    * @remarks
    * "Fuzzy" — про ОТСУТСТВИЕ точного ID-сопоставления (см. известное ограничение
    * класса), не про допуски в price/size: они сравниваются ТОЧНО
-   * (`Price.equals`/`Quantity.equals`) — один и тот же реальный трейд имеет
+   * (`OutcomePrice.equals`/`Quantity.equals`) — один и тот же реальный трейд имеет
    * одинаковые price/size независимо от канала наблюдения (public tape vs user
    * fill feed). Допуск — только по времени (`windowMs`), т.к. два канала могут
    * доставить событие с небольшим relative delay. Линейный скан по тем же причинам,
@@ -186,7 +186,7 @@ export class TradeIndexCollector {
    */
   public findMatch(
     tokenId: AssetId,
-    price: Price,
+    price: OutcomePrice,
     size: Quantity,
     atOrBefore: Timestamp,
     windowMs: number,

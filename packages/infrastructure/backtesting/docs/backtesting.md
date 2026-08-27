@@ -40,7 +40,7 @@ filePaths → JsonlSnapshotReader (построчно, @polymarket/snapshot-read
 Поддерживает два формата файлов: актуальный (`@polymarket/data-collection`'s
 `{"event_type": "book"/"last_trade_price", ...}`) и legacy (`{"_type": "META"/"EVENT", ...}`).
 Обработка ошибок — fail-open на уровне отдельной строки/события (невалидный JSON/asset_id/
-Price/Quantity — лог + счётчик ошибок + продолжение), не fail-closed на весь прогон.
+OutcomePrice/Quantity — лог + счётчик ошибок + продолжение), не fail-closed на весь прогон.
 
 ## Почему в пакете свои копии `InMemory*`-классов, а не только re-export
 

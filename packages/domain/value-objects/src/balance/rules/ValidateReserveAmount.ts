@@ -1,117 +1,54 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
-import { Money } from '../../money/core/Money.js';
+import type { Result } from '@polymarket/result';
+import { InvalidBalanceError } from '@polymarket/errors';
+import type { Money } from '../../money/core/Money.js';
+import type { ReservablePolicy } from '../../shared/reservable/index.js';
+import { validateReservableAmount } from '../../shared/reservable/index.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
- * Правило: Резервируемая сумма должна быть <= доступным средствам
+ * Описание домена для этого правила.
  *
  * @remarks
- * Policy для операции reserve() баланса.
+ * Имена полей и слова сообщений сохранены ДОСЛОВНО от прежней копии:
+ * контекст ошибки закреплён тестами потребителей.
+ */
+const POLICY: ReservablePolicy<InvalidBalanceError> = {
+  ErrorConstructor: InvalidBalanceError,
+  amountField: 'reserveAmount',
+  limitField: 'available',
+  label: 'Reserve amount',
+  verb: 'reserve',
+  limitLabel: 'available',
+  invalidFormatReason: BalanceErrorReason.INVALID_FORMAT,
+  insufficientReason: BalanceErrorReason.INSUFFICIENT_FUNDS
+};
+
+/**
+ * Правило: reserve amount должна быть пригодной и не превышать пул `available`.
  *
- * Проверяет:
- * - reserveAmount <= available (достаточно средств для резервирования)
- * - reserveAmount > 0 (нельзя резервировать нулевую или отрицательную сумму)
- * - reserveAmount isFinite (защита от Infinity/NaN)
- *
- * Возвращает InvalidBalanceError — стандарт домена Polymarket для валидации Balance.
- *
- * **ВАЖНО:** Не проверяет валюту — это делает отдельное правило ValidateCurrencyMatch.
- *
- * @param reserveAmount - Сумма для резервирования
- * @param available - Доступные средства
- * @returns Result<void, InvalidBalanceError>
+ * @remarks
+ * Проверка общая для всех резервируемых остатков и живёт в
+ * `shared/reservable` — раньше этот алгоритм существовал в четырёх
+ * построчно совпадавших копиях. Здесь остаётся привязка к домену.
  *
  * @example
  * ```typescript
- * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
- * import { Money } from '@polymarket/value-objects/money';
- *
- * const available = Money.fromUSDC(10000);
- * const reserveAmount = Money.fromUSDC(5000);
- *
- * // ✅ Достаточно средств
- * const result1 = ValidateReserveAmount.check(reserveAmount, available);
- * // result1.ok === true
- *
- * // ❌ Недостаточно средств
- * const result2 = ValidateReserveAmount.check(
- *   Money.fromUSDC(15000),
- *   available
- * );
- * if (!result2.ok) {
- *   console.error(result2.error.context?.reason);
- *   // BalanceErrorReason.INSUFFICIENT_FUNDS
- * }
- *
- * // ❌ Попытка резервировать 0 или отрицательную сумму
- * const result3 = ValidateReserveAmount.check(
- *   Money.fromUSDC(0),
- *   available
- * );
- * if (!result3.ok) {
- *   console.error(result3.error.context?.reason);
- *   // BalanceErrorReason.INVALID_FORMAT
- * }
+ * ValidateReserveAmount.check(amount, balance.available());
  * ```
  */
 export class ValidateReserveAmount {
+  /**
+   * Проверяет величину относительно пула.
+   *
+   * @param reserveAmount - Переносимая величина
+   * @param available - Пул, из которого она изымается
+   * @returns `Ok(void)` либо `InvalidBalanceError` с причиной отказа
+   * @throws Никогда — все ошибки в `Result`
+   */
   public static check(
     reserveAmount: Money,
     available: Money
   ): Result<void, InvalidBalanceError> {
-    const amount = reserveAmount.value();
-    const availableAmount = available.value();
-
-    // Проверка 1: reserveAmount должен быть finite
-    if (!amount.isFinite()) {
-      return Err(
-        new InvalidBalanceError('Reserve amount must be finite', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            reason: BalanceErrorReason.INVALID_FORMAT,
-            reserveAmount: amount.toString(),
-            available: availableAmount.toString()
-          }
-        })
-      );
-    }
-
-    // Проверка 2: reserveAmount должен быть > 0
-    if (amount.lessThanOrEqualTo(0)) {
-      return Err(
-        new InvalidBalanceError(
-          (ctx) => `Reserve amount must be positive, got ${ctx.reserveAmount}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: BalanceErrorReason.INVALID_FORMAT,
-              reserveAmount: amount.toString(),
-              available: availableAmount.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка 3: reserveAmount <= available (основная проверка)
-    if (amount.greaterThan(availableAmount)) {
-      return Err(
-        new InvalidBalanceError(
-          (ctx) =>
-            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: BalanceErrorReason.INSUFFICIENT_FUNDS,
-              requested: amount.toString(),
-              available: availableAmount.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
+    return validateReservableAmount(reserveAmount, available, POLICY);
   }
 }

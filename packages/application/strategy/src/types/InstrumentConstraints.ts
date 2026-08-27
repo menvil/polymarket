@@ -23,7 +23,7 @@
  * }
  * ```
  */
-import type { Money, Price, Quantity } from '@polymarket/value-objects';
+import type { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 
 /**
  * Ограничения инструмента, передаваемые стратегии в `StrategySnapshot`.
@@ -44,5 +44,5 @@ export interface InstrumentConstraints {
    */
   readonly minOrderValue: Money;
   /** Минимальный шаг цены */
-  readonly tickSize: Price;
+  readonly tickSize: OutcomePrice;
 }

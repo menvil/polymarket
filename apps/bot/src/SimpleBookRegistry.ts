@@ -14,6 +14,7 @@
  */
 import { Orderbook } from '@polymarket/orderbook';
 import type { MarketId, InstrumentId } from '@polymarket/ids';
+import { KnownVenues } from '@polymarket/ids';
 import type { IBookRegistry } from '@polymarket/handlers';
 
 /**
@@ -44,9 +45,7 @@ export class SimpleBookRegistry implements IBookRegistry {
     const key = this._key(marketId, tokenId);
     const existing = this._books.get(key);
     if (existing) return existing;
-    // См. TSDoc BookUpdateHandler про неймингный артефакт entity: `instrumentId`
-    // здесь — по контракту Orderbook.empty() — несёт marketId, не tokenId.
-    const empty = Orderbook.empty(marketId as unknown as InstrumentId, tokenId);
+    const empty = Orderbook.empty(KnownVenues.POLYMARKET, tokenId, marketId);
     this._books.set(key, empty);
     return empty;
   }

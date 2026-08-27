@@ -39,7 +39,7 @@ import {
   assetIdToInstrumentId,
 } from '@polymarket/ids';
 import type { InstrumentId, MarketId, AssetId, AccountId } from '@polymarket/ids';
-import { Money, Price, Quantity } from '@polymarket/value-objects';
+import { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { DiscoveredMarket } from '@polymarket/ports';
 import { parseCryptoMeta, computeInterval } from '@polymarket/exchange/adapters';
@@ -124,7 +124,7 @@ export interface MarketSlot {
   readonly asset: AssetId;
   readonly tokenIdStr: string;
   readonly expiresAtMs: number;
-  readonly tickSize?: Price;
+  readonly tickSize?: OutcomePrice;
   readonly minOrderSize?: Quantity;
   readonly candidate: DiscoveredMarket | null;
   readonly strategy: IStrategy;
@@ -371,7 +371,7 @@ export class MarketRotation {
       return false;
     }
 
-    const tickSize = slot.tickSize ?? Price.of(new Decimal('0.001'));
+    const tickSize = slot.tickSize ?? OutcomePrice.of(new Decimal('0.001'));
     const minOrderSize = slot.minOrderSize ?? Quantity.of(new Decimal('1'));
 
     // Атомарная регистрация рынка: primary + комплементарный (для ExecutionEngine

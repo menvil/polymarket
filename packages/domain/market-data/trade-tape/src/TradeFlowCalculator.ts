@@ -14,7 +14,7 @@
  * 4. OFI = (buy - sell) / (buy + sell): `subtractDecimal`, `divideDecimal`
  * 5. VWAP = totalNotional / totalVolume: `divideDecimal`, `isZeroDecimal`
  * 6. Промежуточные суммы — на голом `Decimal` (внутренняя реализация, не публичная
- *    граница); в VO (`Quantity`/`Ratio`/`Price`/`Money`) оборачиваются только перед `return`.
+ *    граница); в VO (`Quantity`/`Ratio`/`OutcomePrice`/`Money`) оборачиваются только перед `return`.
  *
  * ### Обработка записей без side:
  * Записи с `side === undefined` не учитываются в buy/sell volume,
@@ -24,7 +24,7 @@
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { addDecimal, subtractDecimal, divideDecimal, isZeroDecimal } from '@polymarket/math';
-import { Quantity, Ratio, Price, Money } from '@polymarket/value-objects';
+import { Quantity, Ratio, OutcomePrice, Money } from '@polymarket/value-objects';
 import type { TapeRecord } from './TapeRecord.js';
 import type { TradeFlowMetrics } from './TradeFlowMetrics.js';
 
@@ -112,7 +112,7 @@ export class TradeFlowCalculator {
       sellVolume: Quantity.of(sellVolume),
       totalVolume: Quantity.of(totalVolume),
       orderFlowImbalance: Ratio.of(orderFlowImbalance),
-      vwap: vwapDecimal !== undefined ? Price.of(vwapDecimal) : undefined,
+      vwap: vwapDecimal !== undefined ? OutcomePrice.of(vwapDecimal) : undefined,
       totalNotional: Money.of(totalNotional, 'USDC'),
       tradeCount: records.length,
     };

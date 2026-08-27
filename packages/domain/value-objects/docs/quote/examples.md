@@ -236,12 +236,12 @@ const updated2 = QuoteService.updateSizes(
 
 ```typescript
 import { ValidateQuoteSizes, QuoteErrorReason } from '@polymarket/value-objects/quote';
-import { Price } from '@polymarket/value-objects/price';
+import { OutcomePrice } from '@polymarket/value-objects/outcome-price';
 import { Quantity } from '@polymarket/value-objects/quantity';
 
-const bid = Price.of(0.48);
+const bid = OutcomePrice.of(0.48);
 const bidSize = Quantity.of(100);
-const ask = Price.of(0.52);
+const ask = OutcomePrice.of(0.52);
 const askSize = Quantity.of(0);  // Невалидный размер!
 
 const result = ValidateQuoteSizes.check(bid, bidSize, ask, askSize);
@@ -296,7 +296,7 @@ import {
   ValidateMarketCrossing,
   QuoteErrorReason
 } from '@polymarket/value-objects/quote';
-import { Price } from '@polymarket/value-objects/price';
+import { OutcomePrice } from '@polymarket/value-objects/outcome-price';
 
 const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!quoteResult.ok) return;
@@ -304,8 +304,8 @@ if (!quoteResult.ok) return;
 const quote = quoteResult.value;
 
 // Orderbook: bid=0.50, ask=0.51
-const orderbookBid = Price.of(0.50);
-const orderbookAsk = Price.of(0.51);
+const orderbookBid = OutcomePrice.of(0.50);
+const orderbookAsk = OutcomePrice.of(0.51);
 
 const result = ValidateMarketCrossing.check(
   quote.bid(),
@@ -397,7 +397,7 @@ console.log(QuoteFormatter.toDetailed(quote, {
 
 ```typescript
 console.log(QuoteFormatter.toTable(quote));
-// Side   Price    Size
+// Side   OutcomePrice    Size
 // ────────────────────────────────────────
 // Bid    0.4800   100.00
 // Ask    0.5200   150.00
@@ -588,7 +588,7 @@ import {
   ValidateMarketCrossing,
   ValidateMaxSpread
 } from '@polymarket/value-objects/quote';
-import { Price } from '@polymarket/value-objects/price';
+import { OutcomePrice } from '@polymarket/value-objects/outcome-price';
 import Decimal from 'decimal.js';
 
 class MarketMaker {
@@ -647,8 +647,8 @@ class MarketMaker {
     const crossingCheck = ValidateMarketCrossing.check(
       quote.bid(),
       quote.ask(),
-      Price.of(orderbookBid),
-      Price.of(orderbookAsk)
+      OutcomePrice.of(orderbookBid),
+      OutcomePrice.of(orderbookAsk)
     );
 
     if (!crossingCheck.ok) {

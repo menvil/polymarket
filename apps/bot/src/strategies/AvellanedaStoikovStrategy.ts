@@ -51,7 +51,7 @@
  */
 import { BaseStrategy } from '@polymarket/strategy';
 import type { StrategySnapshot, StrategyIntent, TriggerReason } from '@polymarket/strategy';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
@@ -644,7 +644,7 @@ interface ASData {
   readonly nowMs: number;
   /** Средняя цена входа в центах (0 если нет позиции) */
   readonly avgEntryPriceCents: number;
-  /** Price range последних N трейдов в центах (max - min). Для regime detection. */
+  /** OutcomePrice range последних N трейдов в центах (max - min). Для regime detection. */
   readonly priceRangeCents: number;
   /** Jump widen активен (скачок цены → спред расширен). */
   readonly jumpWidenActive: boolean;
@@ -1929,7 +1929,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
         intents.push({
           type: 'PLACE',
           side: 'BUY',
-          price: Price.of(bidPrice),
+          price: OutcomePrice.of(bidPrice),
           size: Quantity.of(action.bidSize),
         });
       }
@@ -1940,7 +1940,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
         intents.push({
           type: 'PLACE',
           side: 'SELL',
-          price: Price.of(askPrice),
+          price: OutcomePrice.of(askPrice),
           size: Quantity.of(action.askSize),
         });
       }
@@ -2081,7 +2081,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
    * Непрерывная проверка условий рынка (каждый тик).
    *
    * @param snapshot - Текущий snapshot
-   * @param priceRangeCents - Price range последних N трейдов (уже рассчитан в gather)
+   * @param priceRangeCents - OutcomePrice range последних N трейдов (уже рассчитан в gather)
    * @param topDepth - Глубина стакана top-3 (уже рассчитана в gather)
    * @returns true если условия нарушены (пауза), false если всё ОК (торгуем)
    *

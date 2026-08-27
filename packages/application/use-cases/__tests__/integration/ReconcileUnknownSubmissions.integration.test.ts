@@ -32,7 +32,7 @@ import type { AccountId, AssetId, FillId, InstrumentId, MarketId, OrderId } from
 import type { Portfolio, IPosition } from '@polymarket/portfolio';
 import type { IOrderRiskChecker } from '@polymarket/risk';
 import type { Fill } from '@polymarket/fill';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { PlaceOrderUseCase } from '../../src/PlaceOrderUseCase.js';
 import { ProcessFillUseCase } from '../../src/ProcessFillUseCase.js';
 import { ReconcileUnknownSubmissionsUseCase } from '../../src/ReconcileUnknownSubmissionsUseCase.js';
@@ -171,7 +171,7 @@ function makeOpenOrderSnapshot(orderId: OrderId, overrides: Partial<OpenOrderSna
     accountId: ACCOUNT_ID,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     filledSize: Quantity.of(new Decimal('0.01')),
     status: 'OPEN',
@@ -188,7 +188,7 @@ function makeTradeSnapshot(orderId: OrderId, overrides: Partial<VenueTradeSnapsh
     marketId: 'market-1' as unknown as MarketId,
     asset: ASSET_ID,
     side: 'BUY',
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('50')),
     fee: { amount: Quantity.of(new Decimal('0')), asset: 'USDC' } as never,
     executedAt: { toNumber: () => NOW.getTime() + 2_000 } as never,
@@ -204,7 +204,7 @@ function makeFill(id: string, size = '50'): Fill {
     accountId: ACCOUNT_ID,
     tokenId: ASSET_ID,
     settlementAssetId: 'USDC' as unknown as AssetId,
-    price: Price.of(new Decimal('0.65')),
+    price: OutcomePrice.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal(size)),
     side: 'BUY',
     timestamp: { value: () => new Decimal(1000), toNumber: () => 1000 } as never,
@@ -337,7 +337,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
       asset: ASSET_ID,
       instrumentId: INSTRUMENT_ID,
       side: 'BUY',
-      price: Price.of(new Decimal('0.65')),
+      price: OutcomePrice.of(new Decimal('0.65')),
       size: Quantity.of(new Decimal('100')),
       portfolio,
       openOrdersCount: 0,
@@ -545,7 +545,7 @@ describe('Unknown submissions: discovery-only + operator resolution (safety-firs
 
   it('bind отклоняется при несовпадении экономических параметров кандидата', async () => {
     await placeAmbiguous();
-    const wrongPrice = makeOpenOrderSnapshot(VENUE_ID, { price: Price.of(new Decimal('0.99')) });
+    const wrongPrice = makeOpenOrderSnapshot(VENUE_ID, { price: OutcomePrice.of(new Decimal('0.99')) });
     const resolver = makeResolver(makeExchange([wrongPrice], []));
 
     const r = await resolver.execute({

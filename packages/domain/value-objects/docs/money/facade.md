@@ -293,7 +293,7 @@ public static increaseBy(
 
 **Use cases:**
 
-- Price increase: `increaseBy(price, RatioService.fromPercent(10))` → +10% наценка
+- OutcomePrice increase: `increaseBy(price, RatioService.fromPercent(10))` → +10% наценка
 - Interest: `increaseBy(principal, RatioService.fromPercent(5))` → +5% проценты
 - Growth: `increaseBy(value, RatioService.fromPercent(15))` → +15% рост
 

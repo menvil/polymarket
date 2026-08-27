@@ -105,7 +105,7 @@ import type { FillData } from '@polymarket/fill';
 import Decimal from 'decimal.js';
 import { assetIdToInstrumentId, accountIdToString } from '@polymarket/ids';
 import { pendingMatchFillId, canConsumeHeldReservation } from '@polymarket/ports';
-import { Money, PriceService } from '@polymarket/value-objects';
+import { Money, OutcomePriceService } from '@polymarket/value-objects';
 import type { PortfolioService } from './services/PortfolioService.js';
 import type { LedgerService } from './services/LedgerService.js';
 import { enqueueCommittedEvents } from './services/enqueueCommittedEvents.js';
@@ -1190,10 +1190,10 @@ export class ProcessFillUseCase {
     });
 
     // Fail-closed парсинг: execution.orderPrice — decimal-строка из execution
-    // journal (persisted-DTO, Этап 5). PriceService.create() валидирует диапазон
+    // journal (persisted-DTO, Этап 5). OutcomePriceService.create() валидирует диапазон
     // (не только "парсится как Decimal") — повреждённая/невалидная запись
     // блокируется здесь, а не падает необработанным исключением ниже.
-    const orderPriceResult = PriceService.create(execution.orderPrice);
+    const orderPriceResult = OutcomePriceService.create(execution.orderPrice);
     if (!orderPriceResult.ok) {
       return this._blockFillOnReconciliation(fill, {
         idSuffix: 'held-fill-invalid-order-price',

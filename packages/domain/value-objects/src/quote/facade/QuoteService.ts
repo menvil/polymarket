@@ -11,11 +11,11 @@ import {
 import Decimal from 'decimal.js';
 import type { IClock } from '@polymarket/time';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
-import { Price } from '../../price/core/Price.js';
+import { OutcomePrice } from '../../outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Quote, QuoteInvariantViolation } from '../core/index.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
-import { PriceService } from '../../price/facade/PriceService.js';
+import { OutcomePriceService } from '../../outcome-price/facade/OutcomePriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 import { SpreadService } from '../../spread/facade/SpreadService.js';
@@ -247,7 +247,7 @@ export class QuoteService {
         timestampDecimal = new Decimal(Date.now());
       }
 
-      // Создаём Price объекты через helper
+      // Создаём OutcomePrice объекты через helper
       const bidPriceResult = this.createPrice(bidDecimal, 'bid', op);
       if (isErr(bidPriceResult)) return bidPriceResult;
       const bid = bidPriceResult.value;
@@ -1003,7 +1003,7 @@ export class QuoteService {
    * Вычисляет midpoint quote
    *
    * @param quote - Quote для анализа
-   * @returns Result с Price (midpoint) или InvalidQuoteError
+   * @returns Result с OutcomePrice (midpoint) или InvalidQuoteError
    *
    * @remarks
    * Делегирует в SpreadService.getMidPrice(quote.spread()).
@@ -1026,7 +1026,7 @@ export class QuoteService {
    */
   public static getMidPrice(
     quote: Quote
-  ): Result<Price, InvalidQuoteError> {
+  ): Result<OutcomePrice, InvalidQuoteError> {
     return wrapOp(
       QuoteService.SERVICE_NAME,
       'getMidPrice',
@@ -1654,24 +1654,24 @@ export class QuoteService {
   // ============================================================================
 
   /**
-   * Helper: создаёт Price из Decimal (с обработкой null)
+   * Helper: создаёт OutcomePrice из Decimal (с обработкой null)
    *
    * @internal
    * @param value - Decimal значение или null
    * @param field - Название поля ('bid' или 'ask')
    * @param op - Название операции для error context
-   * @returns Result с Price или InvalidQuoteError
+   * @returns Result с OutcomePrice или InvalidQuoteError
    */
   private static createPrice(
     value: Decimal | null,
     field: 'bid' | 'ask',
     op: string
-  ): Result<Price | null, InvalidQuoteError> {
+  ): Result<OutcomePrice | null, InvalidQuoteError> {
     if (value === null) {
       return Ok(null);
     }
 
-    const result = PriceService.create(value);
+    const result = OutcomePriceService.create(value);
     if (isErr(result)) {
       const reason = field === 'bid'
         ? QuoteErrorReason.INVALID_BID
@@ -1684,7 +1684,7 @@ export class QuoteService {
           QuoteService.SERVICE_NAME,
           op,
           {
-            component: field, // Добавляем component т.к. PriceService.create возвращает field: 'value', а не 'bid'/'ask'
+            component: field, // Добавляем component т.к. OutcomePriceService.create возвращает field: 'value', а не 'bid'/'ask'
             reason, // Override reason с Quote-специфичной причиной
             cause: toCause(result.error) // Add cause для trace
           },

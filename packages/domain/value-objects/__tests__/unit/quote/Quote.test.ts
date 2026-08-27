@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Quote, QuoteInvariantViolation } from '../../../src/quote/core/index.js';
-import { Price } from '../../../src/price/core/Price.js';
+import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -23,8 +23,8 @@ function createTestTimestamp(ms?: number): Timestamp {
 describe('Quote Core', () => {
   describe('of()', () => {
     it('создаёт двустороннюю котировку', () => {
-      const bid = Price.of(new Decimal(0.48));
-      const ask = Price.of(new Decimal(0.52));
+      const bid = OutcomePrice.of(new Decimal(0.48));
+      const ask = OutcomePrice.of(new Decimal(0.52));
       const bidSize = Quantity.of(new Decimal(100));
       const askSize = Quantity.of(new Decimal(150));
       const timestamp = createTestTimestamp();
@@ -41,7 +41,7 @@ describe('Quote Core', () => {
     });
 
     it('создаёт одностороннюю bid котировку', () => {
-      const bid = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.50));
       const bidSize = Quantity.of(new Decimal(100));
       const askSize = Quantity.ZERO;
       const timestamp = createTestTimestamp();
@@ -55,7 +55,7 @@ describe('Quote Core', () => {
     });
 
     it('создаёт одностороннюю ask котировку', () => {
-      const ask = Price.of(new Decimal(0.51));
+      const ask = OutcomePrice.of(new Decimal(0.51));
       const bidSize = Quantity.ZERO;
       const askSize = Quantity.of(new Decimal(200));
       const timestamp = createTestTimestamp();
@@ -69,8 +69,8 @@ describe('Quote Core', () => {
     });
 
     it('принимает Date объект как timestamp', () => {
-      const bid = Price.of(new Decimal(0.48));
-      const ask = Price.of(new Decimal(0.52));
+      const bid = OutcomePrice.of(new Decimal(0.48));
+      const ask = OutcomePrice.of(new Decimal(0.52));
       const bidSize = Quantity.of(new Decimal(100));
       const askSize = Quantity.of(new Decimal(150));
       const date = new Date('2024-01-28T12:00:00.000Z');
@@ -98,8 +98,8 @@ describe('Quote Core', () => {
     });
 
     it('бросает QuoteInvariantViolation когда bid > ask', () => {
-      const bid = Price.of(new Decimal(0.60));
-      const ask = Price.of(new Decimal(0.40)); // bid > ask
+      const bid = OutcomePrice.of(new Decimal(0.60));
+      const ask = OutcomePrice.of(new Decimal(0.40)); // bid > ask
       const bidSize = Quantity.of(new Decimal(100));
       const askSize = Quantity.of(new Decimal(150));
       const timestamp = createTestTimestamp();
@@ -117,8 +117,8 @@ describe('Quote Core', () => {
     });
 
     it('разрешает bid === ask', () => {
-      const bid = Price.of(new Decimal(0.50));
-      const ask = Price.of(new Decimal(0.50));
+      const bid = OutcomePrice.of(new Decimal(0.50));
+      const ask = OutcomePrice.of(new Decimal(0.50));
       const bidSize = Quantity.of(new Decimal(100));
       const askSize = Quantity.of(new Decimal(150));
       const timestamp = createTestTimestamp();
@@ -130,8 +130,8 @@ describe('Quote Core', () => {
   });
 
   describe('timestamp validation', () => {
-    const bid = Price.of(new Decimal(0.48));
-    const ask = Price.of(new Decimal(0.52));
+    const bid = OutcomePrice.of(new Decimal(0.48));
+    const ask = OutcomePrice.of(new Decimal(0.52));
     const bidSize = Quantity.of(new Decimal(100));
     const askSize = Quantity.of(new Decimal(150));
 
@@ -205,7 +205,7 @@ describe('Quote Core', () => {
       expect(() => {
         Quote.of(
           null,  // bid отсутствует
-          Price.of(new Decimal(0.52)),
+          OutcomePrice.of(new Decimal(0.52)),
           Quantity.of(new Decimal(100)),  // но bidSize = 100 - АБСУРД!
           Quantity.of(new Decimal(150)),
           createTestTimestamp()
@@ -215,7 +215,7 @@ describe('Quote Core', () => {
       try {
         Quote.of(
           null,
-          Price.of(new Decimal(0.52)),
+          OutcomePrice.of(new Decimal(0.52)),
           Quantity.of(new Decimal(100)),
           Quantity.of(new Decimal(150)),
           createTestTimestamp()
@@ -229,7 +229,7 @@ describe('Quote Core', () => {
     it('бросает INCONSISTENT_ASK_SIZE когда ask=null но askSize>0', () => {
       expect(() => {
         Quote.of(
-          Price.of(new Decimal(0.48)),
+          OutcomePrice.of(new Decimal(0.48)),
           null,  // ask отсутствует
           Quantity.of(new Decimal(100)),
           Quantity.of(new Decimal(150)),  // но askSize = 150 - АБСУРД!
@@ -239,7 +239,7 @@ describe('Quote Core', () => {
 
       try {
         Quote.of(
-          Price.of(new Decimal(0.48)),
+          OutcomePrice.of(new Decimal(0.48)),
           null,
           Quantity.of(new Decimal(100)),
           Quantity.of(new Decimal(150)),
@@ -254,7 +254,7 @@ describe('Quote Core', () => {
     it('разрешает bid=null с bidSize=0', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.ZERO,  // ✅ OK: bid=null → bidSize=0
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -266,7 +266,7 @@ describe('Quote Core', () => {
 
     it('разрешает ask=null с askSize=0', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.48)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,  // ✅ OK: ask=null → askSize=0
@@ -281,8 +281,8 @@ describe('Quote Core', () => {
   describe('getTimestamp()', () => {
     it('возвращает новый Date объект', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -298,8 +298,8 @@ describe('Quote Core', () => {
     it('изменение Date не влияет на Quote (immutability)', () => {
       const timestamp = createTestTimestamp();
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -318,8 +318,8 @@ describe('Quote Core', () => {
       const timestampMs = Date.now() - 5000; // 5 секунд назад
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -337,8 +337,8 @@ describe('Quote Core', () => {
       const nowMs = Date.now();
       const now = createTestTimestamp(nowMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         now
@@ -352,8 +352,8 @@ describe('Quote Core', () => {
       const futureTimestampMs = Date.now() + 10000; // 10 секунд в будущем
       const futureTimestamp = createTestTimestamp(futureTimestampMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         futureTimestamp
@@ -371,8 +371,8 @@ describe('Quote Core', () => {
       const oldTimestampMs = Date.now() - 15000;
       const oldTimestamp = createTestTimestamp(oldTimestampMs); // 15 секунд назад
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         oldTimestamp
@@ -388,8 +388,8 @@ describe('Quote Core', () => {
       const timestampMs = Date.now() - 5000;
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -407,8 +407,8 @@ describe('Quote Core', () => {
       const timestampMs = Date.now() - 5000;
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -425,8 +425,8 @@ describe('Quote Core', () => {
       const timestampMs = Date.now() - 5000;
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -444,8 +444,8 @@ describe('Quote Core', () => {
     /*
     it('бросает Error для NaN nowMs', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -462,8 +462,8 @@ describe('Quote Core', () => {
     /*
     it('бросает Error для Infinity nowMs', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -476,8 +476,8 @@ describe('Quote Core', () => {
 
     it('бросает Error для fractional nowMs', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -490,8 +490,8 @@ describe('Quote Core', () => {
 
     it('бросает Error для negative nowMs', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -504,8 +504,8 @@ describe('Quote Core', () => {
 
     it('бросает Error для nowMs превышающего MAX_TIMESTAMP', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -523,8 +523,8 @@ describe('Quote Core', () => {
   describe('isTwoSided()', () => {
     it('возвращает true для двусторонней котировки', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -535,7 +535,7 @@ describe('Quote Core', () => {
 
     it('возвращает false для bid-only котировки', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -548,7 +548,7 @@ describe('Quote Core', () => {
     it('возвращает false для ask-only котировки', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.51)),
+        OutcomePrice.of(new Decimal(0.51)),
         Quantity.ZERO,
         Quantity.of(new Decimal(200)),
         createTestTimestamp()
@@ -561,8 +561,8 @@ describe('Quote Core', () => {
   describe('hasBid() и hasAsk()', () => {
     it('hasBid() возвращает true когда bid определён', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -574,7 +574,7 @@ describe('Quote Core', () => {
     it('hasBid() возвращает false когда bid null', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.51)),
+        OutcomePrice.of(new Decimal(0.51)),
         Quantity.ZERO,
         Quantity.of(new Decimal(200)),
         createTestTimestamp()
@@ -585,8 +585,8 @@ describe('Quote Core', () => {
 
     it('hasAsk() возвращает true когда ask определён', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -597,7 +597,7 @@ describe('Quote Core', () => {
 
     it('hasAsk() возвращает false когда ask null', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -611,8 +611,8 @@ describe('Quote Core', () => {
   describe('spread()', () => {
     it('создает Spread объект для двусторонней котировки', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -628,7 +628,7 @@ describe('Quote Core', () => {
 
     it('возвращает null для bid-only котировки', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -641,7 +641,7 @@ describe('Quote Core', () => {
     it('возвращает null для ask-only котировки', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.51)),
+        OutcomePrice.of(new Decimal(0.51)),
         Quantity.ZERO,
         Quantity.of(new Decimal(200)),
         createTestTimestamp()
@@ -652,8 +652,8 @@ describe('Quote Core', () => {
 
     it('возвращает Spread с нулевой шириной когда bid === ask', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp()
@@ -671,15 +671,15 @@ describe('Quote Core', () => {
     it('сравнивает идентичные котировки', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -691,15 +691,15 @@ describe('Quote Core', () => {
     it('различает котировки с разным bid', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.49)), // другой bid
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.49)), // другой bid
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -711,15 +711,15 @@ describe('Quote Core', () => {
     it('различает котировки с разным ask', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.53)), // другой ask
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.53)), // другой ask
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -731,15 +731,15 @@ describe('Quote Core', () => {
     it('различает котировки с разными sizes', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(200)), // другой bidSize
         Quantity.of(new Decimal(150)),
         timestamp
@@ -750,14 +750,14 @@ describe('Quote Core', () => {
 
     it('НЕ различает котировки с разными timestamp (только рыночные данные)', () => {
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(2000) // другой timestamp
@@ -770,14 +770,14 @@ describe('Quote Core', () => {
     it('различает one-sided и two-sided котировки', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.48)),
         null, // ask null
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -792,15 +792,15 @@ describe('Quote Core', () => {
     it('сравнивает полностью идентичные котировки включая timestamp', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -811,14 +811,14 @@ describe('Quote Core', () => {
 
     it('различает котировки с одинаковыми данными но разным timestamp', () => {
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(2000) // другой timestamp
@@ -834,15 +834,15 @@ describe('Quote Core', () => {
     it('различает котировки с разным bid', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.49)), // другой bid
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.49)), // другой bid
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
@@ -854,15 +854,15 @@ describe('Quote Core', () => {
     it('различает котировки с разными sizes', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(200)), // другой bidSize
         Quantity.of(new Decimal(150)),
         timestamp
@@ -874,7 +874,7 @@ describe('Quote Core', () => {
     it('различает one-sided котировки с одинаковым timestamp', () => {
       const timestamp = createTestTimestamp();
       const quote1 = Quote.of(
-        Price.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.48)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -882,7 +882,7 @@ describe('Quote Core', () => {
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
         null,
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.ZERO,
         Quantity.of(new Decimal(150)),
         timestamp
@@ -895,8 +895,8 @@ describe('Quote Core', () => {
   describe('imbalance()', () => {
     it('возвращает 0 для сбалансированной котировки', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(100)),
         createTestTimestamp(),
@@ -908,8 +908,8 @@ describe('Quote Core', () => {
 
     it('возвращает положительный imbalance для bid-heavy', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(150)),
         Quantity.of(new Decimal(100)),
         createTestTimestamp(),
@@ -923,8 +923,8 @@ describe('Quote Core', () => {
 
     it('возвращает отрицательный imbalance для ask-heavy', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(200)),
         createTestTimestamp(),
@@ -938,7 +938,7 @@ describe('Quote Core', () => {
 
     it('возвращает 1 для bid-only (askSize = 0)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.48)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -954,7 +954,7 @@ describe('Quote Core', () => {
     it('возвращает -1 для ask-only (bidSize = 0)', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.ZERO,
         Quantity.of(new Decimal(100)),
         createTestTimestamp(),
@@ -968,8 +968,8 @@ describe('Quote Core', () => {
 
     it('возвращает 0 когда оба размера равны 0', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.ZERO,
         Quantity.ZERO,
         createTestTimestamp(),
@@ -986,8 +986,8 @@ describe('Quote Core', () => {
       // bid=0.48, ask=0.52, mid=0.50, spread=0.04
       // Ratio хранит ДРОБЬ: (0.04 / 0.50) = 0.08 (8% как дробь)
       const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
+        OutcomePrice.of(new Decimal(0.48)),
+        OutcomePrice.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -1003,8 +1003,8 @@ describe('Quote Core', () => {
       // bid=0.48, ask=0.52, mid=0.50, spread=0.04
       // Ratio хранит ДРОБЬ: (0.04 / 0.50) = 0.08 (8% как дробь)
       const quote = Quote.of(
-        Price.of(new Decimal('0.48')),
-        Price.of(new Decimal('0.52')),
+        OutcomePrice.of(new Decimal('0.48')),
+        OutcomePrice.of(new Decimal('0.52')),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         createTestTimestamp(),
@@ -1019,8 +1019,8 @@ describe('Quote Core', () => {
       // bid=0.6400, ask=0.6600, mid=0.65, spread=0.02
       // Ratio хранит ДРОБЬ: (0.02 / 0.65) ≈ 0.03077 (примерно 3.077% как дробь)
       const quote = Quote.of(
-        Price.of(new Decimal('0.6400')),
-        Price.of(new Decimal('0.6600')),
+        OutcomePrice.of(new Decimal('0.6400')),
+        OutcomePrice.of(new Decimal('0.6600')),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(100)),
         createTestTimestamp(),
@@ -1034,7 +1034,7 @@ describe('Quote Core', () => {
 
     it('возвращает null для one-sided quote (bid only)', () => {
       const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
@@ -1048,7 +1048,7 @@ describe('Quote Core', () => {
     it('возвращает null для one-sided quote (ask only)', () => {
       const quote = Quote.of(
         null,
-        Price.of(new Decimal(0.50)),
+        OutcomePrice.of(new Decimal(0.50)),
         Quantity.ZERO,
         Quantity.of(new Decimal(100)),
         createTestTimestamp(),

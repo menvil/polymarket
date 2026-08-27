@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import { TradeTape } from '../../src/TradeTape.js';
 import type { TapeRecord } from '../../src/TapeRecord.js';
-import { Price, Quantity } from '@polymarket/value-objects';
+import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
@@ -36,7 +36,7 @@ function makeRecord(params: {
   timestampMs?: number;
 }): TapeRecord {
   return {
-    price: Price.of(new Decimal(params.price ?? 0.65)),
+    price: OutcomePrice.of(new Decimal(params.price ?? 0.65)),
     size: Quantity.of(new Decimal(params.size ?? 100)),
     side: params.side ?? 'BUY',
     timestamp: Timestamp.of(new Decimal(params.timestampMs ?? BASE_TIME)),

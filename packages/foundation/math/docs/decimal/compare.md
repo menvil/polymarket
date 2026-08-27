@@ -570,27 +570,27 @@ if (equalsDecimal(value, MATH_CONSTANTS.ZERO)) {
 ```typescript
 import { equalsDecimal, compareDecimal, lessThanDecimal } from '@polymarket/math';
 
-class Price {
+class OutcomePrice {
   private constructor(private readonly _value: Decimal) {}
 
   /**
    * Строгое равенство цен
    */
-  equals(other: Price): boolean {
+  equals(other: OutcomePrice): boolean {
     return equalsDecimal(this._value, other._value);
   }
 
   /**
    * Сравнение для сортировки
    */
-  compare(other: Price): -1 | 0 | 1 {
+  compare(other: OutcomePrice): -1 | 0 | 1 {
     return compareDecimal(this._value, other._value);
   }
 
   /**
    * Проверка что цена меньше другой
    */
-  isLessThan(other: Price): boolean {
+  isLessThan(other: OutcomePrice): boolean {
     return lessThanDecimal(this._value, other._value);
   }
 }

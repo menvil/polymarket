@@ -77,9 +77,9 @@ describe('полный снапшот', () => {
     if (!outcome.ok) return;
 
     const book = outcome.book;
-    expect(book.asset).toBe(TOKEN);
+    expect(book.instrumentId).toBe(TOKEN);
     // Унаследованный контракт сущности: первое поле несёт marketId
-    expect(String(book.instrumentId)).toBe(MARKET_ID);
+    expect(String(book.marketId)).toBe(MARKET_ID);
 
     // bids по убыванию, asks по возрастанию — сортирует сама сущность
     expect(book.bids.map((level) => level.price.value().toString())).toEqual(['0.5', '0.48']);
@@ -269,7 +269,7 @@ describe('desync', () => {
   });
 
   it('НЕпригодное значение best (не цена и не ноль) НЕ уводит в DESYNC', () => {
-    // "1" вне домена Price [0.0001, 0.9999], но это НЕ утверждение о пустоте:
+    // "1" вне домена OutcomePrice [0.0001, 0.9999], но это НЕ утверждение о пустоте:
     // трактовать его как пустоту значило бы останавливать исправную книгу
     const outcome = deltas([{ side: 'BID', price: '0.50', size: '10' }], {
       bestBid: '1',

@@ -352,7 +352,7 @@ export class Balance {
    *
    * @remarks
    * Баланс считается нулевым только если ОБА значения равны нулю.
-   * Консистентно с Money.isZero(), Price.isZero(), Quantity.isZero().
+   * Консистентно с Money.isZero(), OutcomePrice.isZero(), Quantity.isZero().
    *
    * @example
    * ```typescript

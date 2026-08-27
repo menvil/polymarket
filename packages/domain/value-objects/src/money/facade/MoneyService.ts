@@ -584,7 +584,7 @@ export class MoneyService {
    * **Формула:** result = m * (1 + delta)
    *
    * **Use cases:**
-   * - Price markup: `increaseBy(cost, RatioService.fromPercent(5))` → +5% markup
+   * - OutcomePrice markup: `increaseBy(cost, RatioService.fromPercent(5))` → +5% markup
    * - Interest: `increaseBy(principal, RatioService.fromPercent(3))` → +3% interest
    * - Discount: `increaseBy(price, RatioService.fromPercent(-10))` → -10% discount
    *

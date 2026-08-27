@@ -29,7 +29,7 @@ import { asInstrumentId, asMarketId, parseAccountId, KnownVenues, asPolymarketCt
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
-import { Balance, Money, Price, Quantity } from '@polymarket/value-objects';
+import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import { BacktestEngine } from '@polymarket/backtesting';
 import { JsonlSnapshotReader } from '@polymarket/snapshot-readers';
@@ -119,7 +119,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     const instrumentInfo: InstrumentInfo = {
       instrumentId,
       marketId,
-      tickSize: Price.of(new Decimal('0.001')),
+      tickSize: OutcomePrice.of(new Decimal('0.001')),
       minOrderSize: Quantity.of(new Decimal('1')),
       minOrderValue: Money.of(new Decimal('1'), 'USDC'),
       active: true,

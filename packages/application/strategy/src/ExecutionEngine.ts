@@ -471,7 +471,7 @@ export class ExecutionEngine {
     // ── 1. Нормализация PLACE: dedupe по effective instrument + side +
     //       точному Decimal-представлению цены + postOnly (последний побеждает).
     // Exception isolation: генерация ключа читает price.value() — сбой на
-    // ОДНОМ intent (повреждённый Price/Decimal) не должен прервать dedupe
+    // ОДНОМ intent (повреждённый OutcomePrice/Decimal) не должен прервать dedupe
     // для остальных и, тем более, не должен помешать CANCEL_ALL/CANCEL ниже.
     const placeMap = new Map<string, ResolvedPlace>();
     for (const place of resolvedPlaces) {
@@ -1087,7 +1087,7 @@ export class ExecutionEngine {
     if (tickSize.gt(0) && !effectivePrice.value().mod(tickSize).isZero()) {
       const error = new LocalIntentRejectionError(
         'TICK_SIZE_VIOLATION',
-        `Price ${effectivePrice.value().toString()} is not a multiple of tickSize ${tickSize.toString()}`,
+        `OutcomePrice ${effectivePrice.value().toString()} is not a multiple of tickSize ${tickSize.toString()}`,
       );
       this._logger.warn('ExecutionEngine: reject — price violates tickSize (no silent rounding)', {
         strategyId: ctx.strategyId,
