@@ -70,6 +70,11 @@ function project(events: readonly EventBusEvent[]): unknown[] {
         return {
           type: event.type,
           instrumentId: String(event.payload.instrumentId),
+          marketId: String(event.payload.marketId),
+          venueTradeId:
+            event.payload.venueTradeId === undefined
+              ? undefined
+              : String(event.payload.venueTradeId),
           price: event.payload.price.value().toString(),
           size: event.payload.size.value().toString(),
           side: event.payload.side,

@@ -41,7 +41,7 @@ import type { MessageMetadata, MessageMetadataGenerator } from '@polymarket/mess
 import type { IExternalMessageBus } from '@polymarket/external-message-bus';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { InstrumentId, MarketId, MarketDataSourceId } from '@polymarket/ids';
-import { asInstrumentId, asMarketId, asMarketDataSourceId } from '@polymarket/ids';
+import { asInstrumentId, asMarketId, asMarketDataSourceId, asVenueTradeId } from '@polymarket/ids';
 import type { Orderbook } from '@polymarket/orderbook';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import { PriceService, QuantityService, ReferencePriceService } from '@polymarket/value-objects';
@@ -697,14 +697,22 @@ export class PolymarketSemanticAdapter {
    * @param parent - Metadata raw-наблюдения
    *
    * @remarks
+   * ### Идентичность сделки
+   *
+   * `transactionHash` источника переносится в `venueTradeId` КАК ЕСТЬ.
+   * Замер на записанном архиве (37 407 трейдов, 51 рынок, 29 часов,
+   * 2026-08-25/26) дал 37 407 различных хешей: хеш уникален на сделку даже
+   * когда в одну миллисекунду проходит до 8 сделок. Поэтому синтетический
+   * ключ не нужен — и не строится: vendor не прислал хеш → поле остаётся
+   * `undefined`, потому что фальшивый id молча склеил бы разные сделки.
+   *
    * ### Почему НЕ `Trade` entity
    *
-   * Canonical `Trade` требует `VenueTradeId` — стабильный уникальный
-   * идентификатор сделки на venue. В этом событии его НЕТ: `transactionHash`
-   * опционален и не уникален на сделку (одна транзакция способна закрыть
-   * несколько мэтчей). Сконструировать id из `tokenId + timestamp` означало
-   * бы выдумать идентичность и получить коллизии в ленте. Поэтому границей
-   * остаётся `TRADE_RECEIVED` с canonical VO.
+   * `Trade` — Domain-сущность с обязательными `VenueTradeId`/`VenueId`; её
+   * место в ленте (`TradeTape`), а не на границе наблюдения. Адаптер
+   * публикует НАБЛЮДЕНИЕ со всеми полями, нужными для построения `Trade`
+   * (включая настоящий id и marketId), а собирает сущность потребитель,
+   * которому она нужна. Так граница не тянет за собой сборку агрегатов.
    *
    * ### Отсутствующий размер
    *
@@ -719,12 +727,11 @@ export class PolymarketSemanticAdapter {
   ): Promise<void> {
     this._tradesReceived++;
 
-    const instrumentId = asInstrumentId(String(payload.tokenId));
-    if (instrumentId === undefined) {
-      this._invalidPayloads++;
-      this._logger.warn('Rejected Polymarket trade with invalid token id');
+    const identity = this._resolveIdentity(payload.market, payload.tokenId);
+    if (identity === undefined) {
       return;
     }
+    const { instrumentId, marketId } = identity;
 
     const rawSize = payload.size ?? undefined;
     if (rawSize === undefined) {
@@ -760,9 +767,20 @@ export class PolymarketSemanticAdapter {
     const timestamp =
       this._toVenueTimestamp(payload.timestamp, instrumentId) ?? parent.createdAt;
 
+    // Идентификатор берётся у источника КАК ЕСТЬ; отсутствие остаётся
+    // отсутствием — синтезировать id из других полей запрещено
+    const rawTradeId = payload.transactionHash ?? undefined;
+    const venueTradeId = rawTradeId === undefined ? undefined : asVenueTradeId(rawTradeId);
+    if (rawTradeId !== undefined && venueTradeId === undefined) {
+      this._invalidPayloads++;
+      this._logger.warn('Polymarket trade carries unusable transaction hash, publishing without id', {
+        instrumentId: String(instrumentId),
+      });
+    }
+
     const published = await this._publish({
       type: 'TRADE_RECEIVED',
-      payload: { instrumentId, price, size, side, timestamp },
+      payload: { instrumentId, marketId, venueTradeId, price, size, side, timestamp },
       metadata: this._metadata.nextChild(parent),
     });
     if (published) {

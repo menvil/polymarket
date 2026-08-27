@@ -7,7 +7,7 @@
  * изменение книги со сделкой.
  */
 import { describe, expect, it, beforeEach, afterEach } from '@jest/globals';
-import { asInstrumentId, asMarketId } from '@polymarket/ids';
+import { asInstrumentId, asMarketId, asVenueTradeId } from '@polymarket/ids';
 import {
   MARKET_ID,
   TOKEN_A,
@@ -95,39 +95,76 @@ describe('трейд без объёма', () => {
 });
 
 describe('идентичность сделки', () => {
-  it('не выдумывает id: два одинаковых трейда остаются двумя наблюдениями без id', async () => {
+  it('переносит transactionHash источника в venueTradeId КАК ЕСТЬ', async () => {
+    const hash = '0x0af8a6508a9d67893c61fe0b71f6d56ffe693e0d2ccd8cfb57b89b0ef26dd70f';
     await publishLastTradePrice(h, {
       tokenId: TOKEN_A,
-      price: '0.5',
+      price: '0.51',
       side: 'BUY',
-      size: '1',
-      timestamp: 1_787_751_724_000,
-      transactionHash: '0xdeadbeef',
+      size: '23',
+      transactionHash: hash,
     });
+
+    const payload = h.eventsOfType('TRADE_RECEIVED')[0]!.payload;
+    expect(payload.venueTradeId).toBe(asVenueTradeId(hash));
+    // Именно исходный хеш, без постфиксов вида `_${timestamp}`
+    expect(String(payload.venueTradeId)).toBe(hash);
+  });
+
+  it('несёт marketId источника — потребителю не нужен обратный индекс', async () => {
+    await publishLastTradePrice(h, { tokenId: TOKEN_A, price: '0.5', side: 'BUY', size: '1' });
+
+    expect(h.eventsOfType('TRADE_RECEIVED')[0]!.payload.marketId).toBe(asMarketId(MARKET_ID));
+  });
+
+  it('НЕ синтезирует id, когда источник его не прислал', async () => {
     await publishLastTradePrice(h, {
       tokenId: TOKEN_A,
       price: '0.5',
       side: 'BUY',
       size: '1',
       timestamp: 1_787_751_724_000,
-      transactionHash: '0xdeadbeef',
+      transactionHash: null,
+    });
+
+    const payload = h.eventsOfType('TRADE_RECEIVED')[0]!.payload;
+    // Ни timestamp, ни tokenId+timestamp, ни composite-ключ
+    expect(payload.venueTradeId).toBeUndefined();
+  });
+
+  it('две идентичные сделки с РАЗНЫМИ хешами не склеиваются', async () => {
+    const hashA = '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const hashB = '0x2222222222222222222222222222222222222222222222222222222222222222';
+    for (const transactionHash of [hashA, hashB]) {
+      await publishLastTradePrice(h, {
+        tokenId: TOKEN_A,
+        price: '0.5',
+        side: 'BUY',
+        size: '1',
+        // Одна миллисекунда: живой поток такое даёт (до 8 сделок в мс)
+        timestamp: 1_787_751_724_000,
+        transactionHash,
+      });
+    }
+
+    const ids = h.eventsOfType('TRADE_RECEIVED').map((event) => String(event.payload.venueTradeId));
+    expect(ids).toEqual([hashA, hashB]);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('непригодный хеш не публикуется как id и не роняет трейд', async () => {
+    await publishLastTradePrice(h, {
+      tokenId: TOKEN_A,
+      price: '0.5',
+      side: 'BUY',
+      size: '1',
+      transactionHash: '   ',
     });
 
     const trades = h.eventsOfType('TRADE_RECEIVED');
-    expect(trades).toHaveLength(2);
-
-    for (const trade of trades) {
-      const payload = trade.payload as Record<string, unknown>;
-      // Ни одного поля идентичности сделки в payload быть не должно —
-      // источник её не даёт, а придумать её значит получить коллизии
-      expect(payload['id']).toBeUndefined();
-      expect(payload['tradeId']).toBeUndefined();
-      expect(payload['venueTradeId']).toBeUndefined();
-      expect(payload['txHash']).toBeUndefined();
-      expect(payload['transactionHash']).toBeUndefined();
-    }
-    // Различает наблюдения canonical identity СООБЩЕНИЯ, а не выдуманный trade id
-    expect(trades[0]!.metadata.messageId).not.toBe(trades[1]!.metadata.messageId);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]!.payload.venueTradeId).toBeUndefined();
+    expect(h.adapter.getStats().invalidPayloads).toBe(1);
   });
 });
 

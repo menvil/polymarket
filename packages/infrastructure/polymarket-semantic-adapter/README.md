@@ -44,7 +44,7 @@ adapter.close(); // снимает ТОЛЬКО свои подписки, ши�
 | --- | --- |
 | `POLYMARKET_MARKET` / `book` | `Orderbook` → `BOOK_DEPTH` (+ `BOOK_UPDATED` при смене верхушки) |
 | `POLYMARKET_MARKET` / `price_change` | реконструированный `Orderbook` → `BOOK_DEPTH` (+ `BOOK_UPDATED` при смене верхушки) |
-| `POLYMARKET_MARKET` / `last_trade_price` | `TRADE_RECEIVED` (только при наличии объёма) |
+| `POLYMARKET_MARKET` / `last_trade_price` | `TRADE_RECEIVED` с `venueTradeId` = `transactionHash` и `marketId` (только при наличии объёма) |
 | `POLYMARKET_MARKET` / `tick_size_change` | `TICK_SIZE_CHANGED` |
 | `POLYMARKET_CRYPTO_BINANCE` | `REFERENCE_PRICE_UPDATED`, `feed = SPOT` |
 | `POLYMARKET_CRYPTO_CHAINLINK` | `REFERENCE_PRICE_UPDATED`, `feed = SPOT` |
@@ -70,6 +70,9 @@ adapter.close(); // снимает ТОЛЬКО свои подписки, ши�
   `receivedAt` из metadata наблюдения. `Date.now()` не вызывается.
 - **Ничего не выдумывается**: ни объём сделки, ни её идентификатор, ни
   отсутствующий шаг цены, ни уровни ради «полноты» `TopOfBook`.
+- **Идентичность сделки берётся у источника**: `transactionHash` → `venueTradeId`
+  как есть (замер: 37 407 трейдов — 37 407 различных хешей). Нет хеша —
+  `undefined`, а не синтетический ключ.
 
 Подробное обоснование каждого решения —
 [`docs/semantic-adapter.md`](./docs/semantic-adapter.md).
