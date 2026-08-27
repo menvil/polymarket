@@ -4,6 +4,26 @@ import { ValidateTickSize } from './ValidateTickSize.js';
 import type { TickSizeMultipleReason } from './priceRuleTypes.js';
 import type Decimal from 'decimal.js';
 import { PriceRuleReason } from './priceRuleTypes.js';
+import type { GridStepPolicy } from '../numeric/ValidateGridStep.js';
+import { validateGridStep } from '../numeric/ValidateGridStep.js';
+
+/**
+ * Описание базового тика как шага дискретной сетки.
+ *
+ * @remarks
+ * Отдельная политика от `TICK_STEP_POLICY`, потому что диагностика должна
+ * указывать на `baseTick`, а не на `tickSize`: при разборе отказа важно,
+ * какой из двух шагов оказался негодным. Верхнего предела у базового тика
+ * нет — его задаёт площадка или биржа, а не мы.
+ */
+const BASE_TICK_POLICY: GridStepPolicy<InvalidTickSizeError> = {
+  ErrorConstructor: InvalidTickSizeError,
+  field: 'baseTick',
+  label: 'Base tick',
+  reasonNaN: PriceRuleReason.IS_NAN,
+  reasonNotFinite: PriceRuleReason.NOT_FINITE,
+  reasonNotPositive: PriceRuleReason.NOT_POSITIVE
+};
 
 /**
  * Правило: TickSize должен быть кратен базовому тику Polymarket
@@ -63,14 +83,25 @@ export class ValidateTickSizeMultipleOfBaseTick {
     baseTick: Decimal,
     maxAllowed?: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
-    // Шаг 1: Базовая валидация
+    // Шаг 1: Базовая валидация тика
     const tickResult = ValidateTickSize.check(tickSize, maxAllowed);
     if (!tickResult.ok) {
       return tickResult;
     }
     const tickDecimal = tickResult.value;
 
-    // Шаг 2: Проверка кратности
+    // Шаг 2: базовый тик — ТОЖЕ шаг сетки и обязан быть валидным.
+    // Раньше он принимался на веру, и отрицательное значение проходило
+    // насквозь: 0.01 / -0.00000001 = -1000000, целое → Ok. Ноль ловился
+    // лишь ПОБОЧНО (деление даёт Infinity, оно не целое) и с обманчивой
+    // причиной not_multiple_of_base_tick — потребитель искал бы «подходящий
+    // кратный тик», которого не существует.
+    const baseResult = validateGridStep(baseTick, BASE_TICK_POLICY);
+    if (!baseResult.ok) {
+      return baseResult;
+    }
+
+    // Шаг 3: Проверка кратности
     const BASE_TICK = baseTick;
     const quotient = tickDecimal.div(BASE_TICK);
 
