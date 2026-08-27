@@ -1,7 +1,9 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
+import type { Result } from '@polymarket/result';
+import { InvalidTickSizeError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { PriceRuleReason } from './priceRuleTypes.js';
+import type { GridStepPolicy } from '../numeric/ValidateGridStep.js';
+import { validateGridStep } from '../numeric/ValidateGridStep.js';
 
 /**
  * Правило: TickSize должен быть валидным шагом сетки цен.
@@ -60,75 +62,25 @@ export class ValidateTickSize {
     tickSize: Decimal,
     maxAllowed?: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
-    // Проверка NaN
-    if (tickSize.isNaN()) {
-      return Err(
-        new InvalidTickSizeError(
-          () => `Tick size must not be NaN`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              field: 'tickSize',
-              reason: PriceRuleReason.IS_NAN,
-              tickSize: tickSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка Finite
-    if (!tickSize.isFinite()) {
-      return Err(
-        new InvalidTickSizeError(
-          (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              field: 'tickSize',
-              reason: PriceRuleReason.NOT_FINITE,
-              tickSize: tickSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка Positive
-    if (tickSize.lessThanOrEqualTo(0)) {
-      return Err(
-        new InvalidTickSizeError(
-          (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              field: 'tickSize',
-              reason: PriceRuleReason.NOT_POSITIVE,
-              tickSize: tickSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Верхняя граница проверяется только если домен её имеет
-    if (maxAllowed !== undefined && tickSize.greaterThan(maxAllowed)) {
-      return Err(
-        new InvalidTickSizeError(
-          (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              field: 'tickSize',
-              reason: PriceRuleReason.EXCEEDS_RANGE,
-              tickSize: tickSize.toString(),
-              maxAllowed: maxAllowed.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(tickSize);
+    // Тик — частный случай шага дискретной сетки; проверка общая
+    // с количествами и живёт в shared/numeric
+    return validateGridStep(tickSize, TICK_STEP_POLICY, maxAllowed);
   }
 }
+
+/**
+ * Описание тика как шага сетки.
+ *
+ * @remarks
+ * Ценовой словарь причин отдаётся общему правилу, поэтому контекст ошибки
+ * остаётся прежним: `field: 'tickSize'`, `reason` из {@link PriceRuleReason}.
+ */
+const TICK_STEP_POLICY: GridStepPolicy<InvalidTickSizeError> = {
+  ErrorConstructor: InvalidTickSizeError,
+  field: 'tickSize',
+  label: 'Tick size',
+  reasonNaN: PriceRuleReason.IS_NAN,
+  reasonNotFinite: PriceRuleReason.NOT_FINITE,
+  reasonNotPositive: PriceRuleReason.NOT_POSITIVE,
+  reasonExceedsMax: PriceRuleReason.EXCEEDS_RANGE
+};
