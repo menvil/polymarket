@@ -29,6 +29,7 @@ import { InvalidRatioError, ErrorSource } from '@polymarket/errors';
 import { Ratio } from '../core/Ratio.js';
 import { RatioService } from '../facade/RatioService.js';
 import { RatioErrorReason } from '../errors/RatioErrorReason.js';
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON структура для Ratio
@@ -80,7 +81,7 @@ export class RatioSerializer {
           context: {
             source: ErrorSource.PARSING,
             op: 'fromJSON',
-            json: String(json),
+            json: safeStringify(json),
             reason: RatioErrorReason.INVALID_JSON_STRUCTURE
           }
         })

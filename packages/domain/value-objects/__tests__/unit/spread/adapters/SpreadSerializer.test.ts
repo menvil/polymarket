@@ -30,6 +30,32 @@ describe('SpreadSerializer', () => {
   });
 
   describe('fromJSON()', () => {
+    // Диагностика строилась голым JSON.stringify внутри Err(...) без
+    // защиты: циклический объект без обязательного поля ронял метод,
+    // объявленный возвращающим Result
+    it('should return Err, not throw, for cyclic input', () => {
+      const cyclic: Record<string, unknown> = { ask: 0.52 };
+      cyclic.self = cyclic;
+
+      expect(() => SpreadSerializer.fromJSON(cyclic)).not.toThrow();
+
+      const result = SpreadSerializer.fromJSON(cyclic);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_DTO);
+      }
+    });
+
+    it('should not report [object Object] as diagnostics', () => {
+      const result = SpreadSerializer.fromJSON('not-an-object');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const raw = result.error.context?.raw as { json: string } | undefined;
+        expect(raw?.json).not.toContain('[object Object]');
+      }
+    });
+
     it('should deserialize valid JSON object to spread', () => {
       const json = { bid: 0.48, ask: 0.52 };
 

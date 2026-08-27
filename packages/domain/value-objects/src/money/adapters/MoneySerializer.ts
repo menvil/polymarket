@@ -3,33 +3,7 @@ import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Money, type SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для Money сериализации
@@ -138,7 +112,7 @@ export class MoneySerializer {
     const obj = json as Record<string, unknown>;
 
     // 2. Проверка наличия поля amount
-    if (!('amount' in obj)) {
+    if (!Object.hasOwn(obj, 'amount')) {
       return Err(
         new InvalidMoneyError(`Missing required field 'amount'`, {
           context: {
@@ -153,7 +127,7 @@ export class MoneySerializer {
     }
 
     // 3. Проверка наличия поля currency
-    if (!('currency' in obj)) {
+    if (!Object.hasOwn(obj, 'currency')) {
       return Err(
         new InvalidMoneyError(`Missing required field 'currency'`, {
           context: {

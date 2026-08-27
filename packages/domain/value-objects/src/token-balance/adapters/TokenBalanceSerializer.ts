@@ -7,33 +7,7 @@ import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalance } from '../core/TokenBalance.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
 import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/index.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для TokenBalance сериализации
@@ -205,7 +179,7 @@ export class TokenBalanceSerializer {
     const obj = json as Record<string, unknown>;
 
     // Проверка наличия token
-    if (!('token' in obj)) {
+    if (!Object.hasOwn(obj, 'token')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'token'",
@@ -219,7 +193,7 @@ export class TokenBalanceSerializer {
     }
 
     // Проверка наличия available
-    if (!('available' in obj)) {
+    if (!Object.hasOwn(obj, 'available')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'available'",
@@ -233,7 +207,7 @@ export class TokenBalanceSerializer {
     }
 
     // Проверка наличия reserved
-    if (!('reserved' in obj)) {
+    if (!Object.hasOwn(obj, 'reserved')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'reserved'",
@@ -360,7 +334,7 @@ export class TokenBalanceSerializer {
     }
 
     // Проверка наличия accountId
-    if (!('accountId' in obj)) {
+    if (!Object.hasOwn(obj, 'accountId')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'accountId'",
@@ -404,7 +378,7 @@ export class TokenBalanceSerializer {
     }
 
     // Проверка наличия venueId
-    if (!('venueId' in obj)) {
+    if (!Object.hasOwn(obj, 'venueId')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'venueId'",

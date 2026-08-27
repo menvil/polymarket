@@ -6,33 +6,7 @@ import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantity } from '../core/AssetQuantity.js';
 import { AssetQuantityService } from '../facade/AssetQuantityService.js';
 import { AssetQuantityErrorReason } from '../errors/index.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для AssetQuantity сериализации
@@ -182,7 +156,7 @@ export class AssetQuantitySerializer {
     const obj = json as Record<string, unknown>;
 
     // Проверка наличия asset
-    if (!('asset' in obj)) {
+    if (!Object.hasOwn(obj, 'asset')) {
       return Err(
         new InvalidAssetQuantityError(
           () => "Missing required field 'asset'",
@@ -200,7 +174,7 @@ export class AssetQuantitySerializer {
     }
 
     // Проверка наличия amount
-    if (!('amount' in obj)) {
+    if (!Object.hasOwn(obj, 'amount')) {
       return Err(
         new InvalidAssetQuantityError(
           () => "Missing required field 'amount'",

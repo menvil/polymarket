@@ -4,33 +4,7 @@ import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { QuoteService } from '../facade/QuoteService.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import { safeStringify } from '../../shared/json/index.js';
 
 /**
  * JSON контракт для Quote сериализации
@@ -214,7 +188,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 2: Проверка наличия поля bid
-    if (!('bid' in json)) {
+    if (!Object.hasOwn(json, 'bid')) {
       return Err(
         new InvalidQuoteError('Missing required field: bid', {
           context: {
@@ -229,7 +203,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 3: Проверка наличия поля ask
-    if (!('ask' in json)) {
+    if (!Object.hasOwn(json, 'ask')) {
       return Err(
         new InvalidQuoteError('Missing required field: ask', {
           context: {
@@ -244,7 +218,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 4: Проверка наличия поля bidSize
-    if (!('bidSize' in json)) {
+    if (!Object.hasOwn(json, 'bidSize')) {
       return Err(
         new InvalidQuoteError('Missing required field: bidSize', {
           context: {
@@ -259,7 +233,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 5: Проверка наличия поля askSize
-    if (!('askSize' in json)) {
+    if (!Object.hasOwn(json, 'askSize')) {
       return Err(
         new InvalidQuoteError('Missing required field: askSize', {
           context: {
@@ -274,7 +248,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 6: Проверка наличия поля timestamp
-    if (!('timestamp' in json)) {
+    if (!Object.hasOwn(json, 'timestamp')) {
       return Err(
         new InvalidQuoteError('Missing required field: timestamp', {
           context: {
@@ -289,7 +263,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 7: Проверка наличия поля sourceId
-    if (!('sourceId' in json)) {
+    if (!Object.hasOwn(json, 'sourceId')) {
       return Err(
         new InvalidQuoteError('Missing required field: sourceId', {
           context: {
@@ -304,7 +278,7 @@ export class QuoteSerializer {
     }
 
     // Шаг 8: Проверка наличия поля instrumentId
-    if (!('instrumentId' in json)) {
+    if (!Object.hasOwn(json, 'instrumentId')) {
       return Err(
         new InvalidQuoteError('Missing required field: instrumentId', {
           context: {
