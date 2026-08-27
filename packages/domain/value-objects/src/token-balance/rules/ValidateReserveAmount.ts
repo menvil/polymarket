@@ -1,117 +1,54 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
-import { Quantity } from '../../quantity/core/Quantity.js';
+import type { Result } from '@polymarket/result';
 import { InvalidTokenBalanceError } from '../errors/InvalidTokenBalanceError.js';
+import type { Quantity } from '../../quantity/core/Quantity.js';
+import type { ReservablePolicy } from '../../shared/reservable/index.js';
+import { validateReservableAmount } from '../../shared/reservable/index.js';
 import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
 
 /**
- * Правило: Резервируемое количество должно быть <= доступным токенам
+ * Описание домена для этого правила.
  *
  * @remarks
- * Policy для операции reserve() баланса токенов.
+ * Имена полей и слова сообщений сохранены ДОСЛОВНО от прежней копии:
+ * контекст ошибки закреплён тестами потребителей.
+ */
+const POLICY: ReservablePolicy<InvalidTokenBalanceError> = {
+  ErrorConstructor: InvalidTokenBalanceError,
+  amountField: 'reserveQty',
+  limitField: 'available',
+  label: 'Reserve quantity',
+  verb: 'reserve',
+  limitLabel: 'available',
+  invalidFormatReason: TokenBalanceErrorReason.INVALID_FORMAT,
+  insufficientReason: TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE
+};
+
+/**
+ * Правило: reserve quantity должна быть пригодной и не превышать пул `available`.
  *
- * Проверяет:
- * - reserveQty <= available (достаточно токенов для резервирования)
- * - reserveQty > 0 (нельзя резервировать нулевое или отрицательное количество)
- * - reserveQty isFinite (защита от Infinity/NaN)
- *
- * Возвращает InvalidTokenBalanceError — стандарт домена Polymarket для валидации TokenBalance.
- *
- * @param reserveQty - Количество для резервирования
- * @param available - Доступные токены
- * @returns Result<void, InvalidTokenBalanceError>
+ * @remarks
+ * Проверка общая для всех резервируемых остатков и живёт в
+ * `shared/reservable` — раньше этот алгоритм существовал в четырёх
+ * построчно совпадавших копиях. Здесь остаётся привязка к домену.
  *
  * @example
  * ```typescript
- * import { ValidateReserveAmount } from '@polymarket/value-objects/token-balance';
- * import { Quantity } from '@polymarket/value-objects/quantity';
- * import Decimal from 'decimal.js';
- *
- * const available = Quantity.of(new Decimal(100));
- * const reserveQty = Quantity.of(new Decimal(50));
- *
- * // ✅ Достаточно токенов
- * const result1 = ValidateReserveAmount.check(reserveQty, available);
- * // result1.ok === true
- *
- * // ❌ Недостаточно токенов
- * const result2 = ValidateReserveAmount.check(
- *   Quantity.of(new Decimal(150)),
- *   available
- * );
- * if (!result2.ok) {
- *   console.error(result2.error.context?.reason);
- *   // TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE
- * }
- *
- * // ❌ Попытка резервировать 0 или отрицательное количество
- * const result3 = ValidateReserveAmount.check(
- *   Quantity.ZERO,
- *   available
- * );
- * if (!result3.ok) {
- *   console.error(result3.error.context?.reason);
- *   // TokenBalanceErrorReason.INVALID_FORMAT
- * }
+ * ValidateReserveAmount.check(amount, balance.available());
  * ```
  */
 export class ValidateReserveAmount {
+  /**
+   * Проверяет величину относительно пула.
+   *
+   * @param reserveQty - Переносимая величина
+   * @param available - Пул, из которого она изымается
+   * @returns `Ok(void)` либо `InvalidTokenBalanceError` с причиной отказа
+   * @throws Никогда — все ошибки в `Result`
+   */
   public static check(
     reserveQty: Quantity,
     available: Quantity
   ): Result<void, InvalidTokenBalanceError> {
-    const amount = reserveQty.value();
-    const availableAmount = available.value();
-
-    // Проверка 1: reserveQty должен быть finite
-    if (!amount.isFinite()) {
-      return Err(
-        new InvalidTokenBalanceError('Reserve quantity must be finite', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            reserveQty: amount.toString(),
-            available: availableAmount.toString()
-          }
-        })
-      );
-    }
-
-    // Проверка 2: reserveQty должен быть > 0
-    if (amount.lessThanOrEqualTo(0)) {
-      return Err(
-        new InvalidTokenBalanceError(
-          (ctx: Record<string, unknown>) => `Reserve quantity must be positive, got ${ctx.reserveQty}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: TokenBalanceErrorReason.INVALID_FORMAT,
-              reserveQty: amount.toString(),
-              available: availableAmount.toString()
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка 3: reserveQty <= available (основная проверка)
-    if (amount.greaterThan(availableAmount)) {
-      return Err(
-        new InvalidTokenBalanceError(
-          (ctx: Record<string, unknown>) =>
-            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE,
-              requested: amount.toString(),
-              available: availableAmount.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
+    return validateReservableAmount(reserveQty, available, POLICY);
   }
 }
