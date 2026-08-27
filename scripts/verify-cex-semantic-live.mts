@@ -368,7 +368,7 @@ async function main(): Promise<void> {
   const durationSec = Math.round((Date.now() - startedAt) / 1000);
   // Здоровье сырого контура снимается ДО остановки: semantic-адаптер не
   // имеет права ухудшать надёжность сбора
-  const collectorStatus = collector.getStatus();
+  const collectorStatus = collector.status();
 
   // Свидетельство «запись сырых данных работает» снимается ДО остановки
   const archives = fs.existsSync(runDir)
