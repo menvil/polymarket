@@ -2,7 +2,7 @@ import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidOutcomePriceError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { OutcomePrice } from '../core/OutcomePrice.js';
 import { OutcomePriceErrorReason } from '../errors/OutcomePriceErrorReason.js';
-import { ValidateAligned } from '../rules/ValidateAligned.js';
+import { ValidateAligned } from '../../shared/ValidateAligned.js';
 import { subtractDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import type { Ratio } from '../../ratio/core/Ratio.js';
@@ -360,7 +360,13 @@ export class OutcomePriceService {
         ),
       );
     }
-    const aligned = ValidateAligned.check(price, tickDecimalResult.value);
+    const aligned = ValidateAligned.check(
+      price,
+      tickDecimalResult.value,
+      InvalidOutcomePriceError,
+      OutcomePrice.MIN.value(),
+      OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value()),
+    );
     if (isErr(aligned)) {
       return Err(
         rewrap(

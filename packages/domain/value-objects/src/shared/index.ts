@@ -25,3 +25,4 @@ export { ValidateFactorForPriceMultiplication } from './ValidateFactorForPriceMu
 export { ValidateDivisorForPriceDivision } from './ValidateDivisorForPriceDivision.js';
 export { ValidateTickSize } from './ValidateTickSize.js';
 export { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
+export { ValidateAligned } from './ValidateAligned.js';

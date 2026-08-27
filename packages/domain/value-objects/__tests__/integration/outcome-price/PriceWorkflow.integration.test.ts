@@ -1,9 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { OutcomePriceService } from '../../../src/outcome-price/facade/OutcomePriceService.js';
-import { ValidateAligned } from '../../../src/outcome-price/rules/ValidateAligned.js';
+import { ValidateAligned } from '../../../src/shared/ValidateAligned.js';
 import { OutcomePriceSerializer } from '../../../src/outcome-price/adapters/OutcomePriceSerializer.js';
 import { OutcomePrice } from '../../../src/outcome-price/core/OutcomePrice.js';
+import { InvalidOutcomePriceError } from '@polymarket/errors';
+
+/** Границы площадки Polymarket — общее правило принимает их явно. */
+const PM_BASE_TICK = OutcomePrice.MIN.value();
+const PM_MAX_TICK = OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value());
 
 describe('OutcomePrice Integration Tests', () => {
   describe('roundToMarketTick → ValidateAligned контракт', () => {
@@ -29,7 +34,7 @@ describe('OutcomePrice Integration Tests', () => {
         expect(roundResult.ok).toBe(true);
 
         if (roundResult.ok) {
-          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize));
+          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize), InvalidOutcomePriceError, PM_BASE_TICK, PM_MAX_TICK);
           expect(alignResult.ok).toBe(true);
         }
       }
@@ -44,7 +49,7 @@ describe('OutcomePrice Integration Tests', () => {
         expect(roundResult.ok).toBe(true);
 
         if (roundResult.ok) {
-          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize));
+          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize), InvalidOutcomePriceError, PM_BASE_TICK, PM_MAX_TICK);
           expect(alignResult.ok).toBe(true);
         }
       }

@@ -4,7 +4,7 @@ import { OutcomePriceService } from '../../../../src/outcome-price/facade/Outcom
 import { OutcomePrice } from '../../../../src/outcome-price/core/OutcomePrice.js';
 import { InvalidOutcomePriceError } from '@polymarket/errors';
 import * as math from '@polymarket/math';
-import { ValidateAligned } from '../../../../src/outcome-price/rules/ValidateAligned.js';
+import { ValidateAligned } from '../../../../src/shared/ValidateAligned.js';
 import { RatioService } from '../../../../src/ratio/facade/RatioService.js';
 import { Result } from '@polymarket/result';
 import { OutcomePriceErrorReason } from '../../../../src/outcome-price/errors/OutcomePriceErrorReason.js';
@@ -638,7 +638,14 @@ describe('OutcomePriceService', () => {
       const price = OutcomePrice.of(new Decimal(0.1235));
       const result = OutcomePriceService.ensureAlignedToMarketTick(price, 0.01);
       expect(result.ok).toBe(false);
-      expect(spy).toHaveBeenCalledWith(price, expect.any(Decimal));
+      // Правило стало общим: домен ошибки и границы площадки передаются явно
+      expect(spy).toHaveBeenCalledWith(
+        price,
+        expect.any(Decimal),
+        expect.any(Function),
+        expect.any(Decimal),
+        expect.any(Decimal),
+      );
       spy.mockRestore();
     });
   });

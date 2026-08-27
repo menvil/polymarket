@@ -9,14 +9,3 @@ export { OutcomePriceSerializer, OutcomePriceFormatter, type OutcomePriceJSON } 
 
 // Errors (публичный API)
 export { OutcomePriceErrorReason } from './errors/index.js';
-
-// Rules (публичный API для внешней валидации)
-export {
-  ValidateAligned,
-  type TickSizeField,
-  type AlignedField,
-  type ErrorContext,
-  type TickSizeErrorReason,
-  type TickSizeMultipleReason,
-  type AlignedErrorReason
-} from './rules/index.js';

@@ -21,7 +21,7 @@
 import Decimal from 'decimal.js';
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import type { AnyTradingError } from '@polymarket/errors';
-import { toDecimal, wrapOp, rewrap, ErrorSource } from '@polymarket/errors';
+import { toDecimal, wrapOp, rewrap } from '@polymarket/errors';
 import {
   addDecimal,
   subtractDecimal,
@@ -36,6 +36,7 @@ import type { PriceDomain } from './priceDomain.js';
 import { ValidateFactorForPriceMultiplication } from './ValidateFactorForPriceMultiplication.js';
 import { ValidateDivisorForPriceDivision } from './ValidateDivisorForPriceDivision.js';
 import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
+import { ValidateAligned } from './ValidateAligned.js';
 
 /** Режим округления цены к тику. */
 export type TickRoundingMode = 'nearest' | 'floor' | 'ceil';
@@ -348,30 +349,20 @@ export function ensurePriceAlignedToTick<
   const tick = parseOperand(domain, 'tickSize', opName, tickSize, context);
   if (isErr(tick)) return tick;
 
-  const validated = validateTickAgainstBase(domain, opName, tick.value, baseTick, context);
-  if (isErr(validated)) return validated;
+  const parsedBase = parseOperand(domain, 'baseTick', opName, baseTick, context);
+  if (isErr(parsedBase)) return parsedBase;
 
-  const remainder = price.value().modulo(tick.value);
-  if (!remainder.isZero()) {
-    // Контракт ошибки совпадает с правилом выравнивания: `field: 'price'`
-    // и `reason: 'not_aligned'` — потребители опираются именно на них,
-    // и общая реализация не имеет права их менять
-    return Err(
-      new domain.ErrorConstructor(
-        `Price ${price.value().toString()} is not aligned to tick ${tick.value.toString()}`,
-        {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            field: 'price',
-            reason: 'not_aligned',
-            price: price.value().toString(),
-            tickSize: tick.value.toString(),
-            service: domain.serviceName,
-            op: opName,
-          },
-        },
-      ),
-    );
+  // Само выравнивание проверяет ОБЩЕЕ правило: своя копия здесь была бы
+  // вторым источником истины о том, что значит «цена на сетке»
+  const aligned = ValidateAligned.check(
+    price,
+    tick.value,
+    domain.ErrorConstructor,
+    parsedBase.value,
+    domain.maxTickSize,
+  );
+  if (isErr(aligned)) {
+    return Err(ruleErrorToDomain(domain, opName, context, aligned.error));
   }
   return Ok(undefined);
 }
