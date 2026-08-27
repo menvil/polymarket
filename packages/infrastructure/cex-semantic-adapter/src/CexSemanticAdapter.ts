@@ -35,7 +35,8 @@
  * наблюдения (усечённый до глубины подписки), а не дельту. Поэтому здесь
  * НЕТ реконструкции состояния книги, аналогичной Polymarket: каждое
  * наблюдение отображается независимо и целиком. Второй кэш книги адаптер
- * не держит — только отпечаток верхушки и semantic-версию.
+ * не держит — только отпечаток верхушки и номер последнего опубликованного
+ * события верхушки.
  *
  * ### Границы точности
  *
@@ -172,8 +173,18 @@ interface PublishedTop {
 interface InstrumentState {
   /** Идентичность (хранится, чтобы `getStats`/cleanup не разбирали ключ). */
   readonly identity: CexInstrumentIdentity;
-  /** Semantic-версия книги: растёт после КАЖДОГО принятого наблюдения. */
-  version: number;
+  /**
+   * Номер последнего УСПЕШНО опубликованного `BOOK_UPDATED`.
+   *
+   * @remarks
+   * Считаются именно опубликованные события верхушки, а НЕ принятые
+   * наблюдения стакана: контракт `BOOK_UPDATED.sequenceNumber` существует
+   * ради gap detection, и подписчик обязан видеть непрерывный ряд. Если бы
+   * счётчик рос на каждое наблюдение, глубинные правки (когда `BOOK_UPDATED`
+   * не публикуется вовсе) оставляли бы в ряду дыры — ровно ту беду, из-за
+   * которой контракт и запрещает брать номер из последовательности шины.
+   */
+  publishedTopSequence: number;
   /** Отпечаток последней опубликованной верхушки. */
   publishedTop: PublishedTop | undefined;
   /** Окно недавних venue-id сделок (создаётся при первой сделке). */
@@ -197,13 +208,24 @@ const ASSET_BOOK_PRICING = bookPricing<AssetPrice>((value) => AssetPriceService.
  * @remarks
  * ### Semantic-нумерация книги
  *
- * `BOOK_UPDATED.sequenceNumber` — счётчик, локальный для пары
- * `venueId + instrumentId` и увеличиваемый ТОЛЬКО после успешно принятого
- * наблюдения стакана. Глобальная последовательность raw-шины для этого
- * непригодна: в ней перемешаны другие биржи, другие символы, сделки и
- * сообщения Polymarket, поэтому у одного инструмента она имеет
- * естественные «дыры», неотличимые от потерь. `orderBook.nonce` биржи тоже
- * не используется — см. докблок модуля.
+ * `BOOK_UPDATED.sequenceNumber` — счётчик САМИХ СОБЫТИЙ верхушки, локальный
+ * для пары `venueId + instrumentId`: `1, 2, 3, …` без пропусков. Контракт
+ * события заводит это поле ради gap detection, поэтому ряд обязан быть
+ * непрерывным для подписчика.
+ *
+ * Отсюда два правила:
+ *
+ * - наблюдение, изменившее только ГЛУБИНУ, номер не тратит (`BOOK_UPDATED`
+ *   на него не публикуется вовсе) — иначе подписчик видел бы `1, 3, 7` и
+ *   считал бы пропущенные номера потерянными событиями;
+ * - отказ шины номер тоже не тратит: следующая попытка получит ТОТ ЖЕ
+ *   номер, а не следующий.
+ *
+ * Глобальная последовательность raw-шины для этой роли непригодна: в ней
+ * перемешаны другие биржи, другие символы, сделки и сообщения Polymarket,
+ * поэтому у одного инструмента она имеет естественные «дыры», неотличимые
+ * от потерь — ровно то, чего контракт и велит избегать. `orderBook.nonce`
+ * биржи тоже не используется, см. докблок модуля.
  *
  * ### Один адаптер на все биржи
  *
@@ -481,8 +503,6 @@ export class CexSemanticAdapter {
     }
 
     const state = this._stateFor(identity);
-    state.version++;
-
     await this._publishBook(identity, state, book, venueTimestamp ?? receivedAt, parent);
   }
 
@@ -532,23 +552,28 @@ export class CexSemanticAdapter {
       return;
     }
 
+    // Номер СЛЕДУЮЩЕГО события верхушки; фиксируется в состоянии только
+    // после успешной публикации (см. ниже)
+    const nextSequence = state.publishedTopSequence + 1;
     const topPublished = await this._publish({
       type: 'BOOK_UPDATED',
       payload: {
         topOfBook,
         venueId: identity.venueId,
         instrumentId: identity.instrumentId,
-        sequenceNumber: state.version,
+        sequenceNumber: nextSequence,
         timestamp,
       },
       metadata: this._metadata.nextChild(parent),
     });
-    // Отпечаток запоминается ТОЛЬКО после успешной публикации: иначе
-    // отвергнутое шиной событие «зачлось» бы как опубликованное, и
-    // следующее наблюдение с той же верхушкой подписчики не увидели бы
-    // никогда — гашение дубликатов превратилось бы в потерю данных
+    // Отпечаток И номер продвигаются ТОЛЬКО после успешной публикации.
+    // Отпечаток — иначе отвергнутое шиной событие «зачлось» бы как
+    // опубликованное, и следующее наблюдение с той же верхушкой подписчики
+    // не увидели бы никогда. Номер — иначе отказ на N съел бы этот номер, и
+    // в ряду подписчика осталась бы дыра, неотличимая от потери события.
     if (topPublished) {
       state.publishedTop = fingerprint;
+      state.publishedTopSequence = nextSequence;
       this._bookUpdatedPublished++;
     }
   }
@@ -852,7 +877,12 @@ export class CexSemanticAdapter {
     const key = instrumentStateKey(identity);
     let state = this._states.get(key);
     if (state === undefined) {
-      state = { identity, version: 0, publishedTop: undefined, recentTradeIds: undefined };
+      state = {
+        identity,
+        publishedTopSequence: 0,
+        publishedTop: undefined,
+        recentTradeIds: undefined,
+      };
       this._states.set(key, state);
     }
     return state;

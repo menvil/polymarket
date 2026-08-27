@@ -293,6 +293,37 @@ describe('CexSemanticAdapter — семантика публикации', () =>
     expect(updates[1]!.payload.topOfBook.bestBid?.value().toString()).toBe('100.5');
   });
 
+  it('глубинные правки не тратят номера событий верхушки', async () => {
+    const h = createHarness();
+
+    // top меняется
+    await h.publishBook({ bids: [[100, 1]], asks: [[101, 1]] });
+    // только глубина — BOOK_UPDATED не публикуется
+    await h.publishBook({
+      bids: [
+        [100, 1],
+        [99, 5],
+      ],
+      asks: [[101, 1]],
+    });
+    // снова только глубина
+    await h.publishBook({
+      bids: [
+        [100, 1],
+        [99, 7],
+      ],
+      asks: [[101, 1]],
+    });
+    // top меняется
+    await h.publishBook({ bids: [[100.5, 1]], asks: [[101, 1]] });
+
+    const updates = h.eventsOfType('BOOK_UPDATED') as BookUpdatedEvent<AssetPrice>[];
+    // Ряд обязан быть НЕПРЕРЫВНЫМ: контракт заводит sequenceNumber ради gap
+    // detection, и `1, 4` подписчик прочитал бы как потерю двух событий
+    expect(updates.map((e) => e.payload.sequenceNumber)).toEqual([1, 2]);
+    expect(h.eventsOfType('BOOK_DEPTH')).toHaveLength(4);
+  });
+
   it('изменение размера на лучшем уровне — это смена верхушки', async () => {
     const h = createHarness();
     await h.publishBook({ bids: [[100, 1]], asks: [[101, 1]] });

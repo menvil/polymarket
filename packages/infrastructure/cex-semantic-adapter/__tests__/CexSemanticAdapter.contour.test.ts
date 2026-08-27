@@ -13,6 +13,8 @@ import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
 import type { EventBusEvent } from '@polymarket/event-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
+import type { BookUpdatedEvent } from '@polymarket/application-events';
+import type { AssetPrice } from '@polymarket/value-objects';
 import { LiveClock } from '@polymarket/time';
 import type { CexExternalMessage } from '@polymarket/cex-v2';
 import { CexSemanticAdapter } from '../src/index.js';
@@ -354,6 +356,54 @@ describe('изоляция отказов semantic-слоя', () => {
     expect(published).toHaveLength(1);
     expect(adapter.getStats().duplicateTrades).toBe(0);
     expect(adapter.getStats().tradesPublished).toBe(1);
+    adapter.close();
+  });
+
+  it('отказ публикации не съедает номер события верхушки', async () => {
+    const bus = new ExternalMessageBus<CexExternalMessage>();
+    const eventBus = new EventBus(silentLogger());
+    const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
+    const updates: BookUpdatedEvent<AssetPrice>[] = [];
+    eventBus.subscribe('BOOK_UPDATED', (event) => {
+      updates.push(event as BookUpdatedEvent<AssetPrice>);
+    });
+
+    const adapter = new CexSemanticAdapter({
+      bus,
+      eventBus,
+      metadataGenerator,
+      logger: silentLogger(),
+    });
+    adapter.start();
+
+    const publishBook = async (bid: number): Promise<void> => {
+      await bus.publish({
+        type: 'CEX_ORDERBOOK',
+        payload: orderbookPayload({ bids: [[bid, 1]], asks: [[200, 1]] }),
+        metadata: metadataGenerator.nextRoot(),
+      });
+    };
+
+    // seq 1 — успешно
+    await publishBook(100);
+    expect(updates.map((e) => e.payload.sequenceNumber)).toEqual([1]);
+
+    // seq 2 — шина отказала
+    const failure = new Error('rejected');
+    const publish = jest
+      .spyOn(eventBus, 'publish')
+      .mockResolvedValue({ ok: false, error: failure } as Awaited<
+        ReturnType<EventBus['publish']>
+      >);
+    await publishBook(101);
+    publish.mockRestore();
+
+    // Повторная попытка обязана получить ТОТ ЖЕ номер 2: отказ номер не
+    // тратит, иначе в ряду подписчика осталась бы дыра
+    await publishBook(102);
+
+    expect(updates.map((e) => e.payload.sequenceNumber)).toEqual([1, 2]);
+    expect(updates[1]!.payload.topOfBook.bestBid?.value().toString()).toBe('102');
     adapter.close();
   });
 
