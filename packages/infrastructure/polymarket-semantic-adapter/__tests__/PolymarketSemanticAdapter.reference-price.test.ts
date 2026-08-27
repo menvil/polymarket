@@ -163,6 +163,47 @@ describe('референсная цена НЕ использует Price рын
   });
 });
 
+describe('окно TWAP вне vendor-домена', () => {
+  it('наблюдение с неподдержанным окном НЕ публикуется', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
+      symbol: 'btc/usd',
+      value: '78376.35',
+      // Тип обещает 30|60, но окно приходит по проводу — расширение домена
+      // vendor-ом не должно молча смешать ряды разных окон
+      windowSeconds: 45 as unknown as 30,
+    });
+
+    expect(h.eventsOfType('REFERENCE_PRICE_UPDATED')).toHaveLength(0);
+    expect(h.adapter.getStats().referenceTwap).toBe(0);
+    expect(h.adapter.getStats().invalidPayloads).toBe(1);
+  });
+
+  it('отсутствующее окно тоже отвергается', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
+      symbol: 'btc/usd',
+      value: '78376.35',
+      // windowSeconds не передан вовсе
+    });
+
+    expect(h.eventsOfType('REFERENCE_PRICE_UPDATED')).toHaveLength(0);
+    expect(h.adapter.getStats().invalidPayloads).toBe(1);
+  });
+
+  it('поддержанные окна проходят', async () => {
+    for (const windowSeconds of [30, 60] as const) {
+      await publishReferencePrice(h, {
+        channel: 'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
+        symbol: 'btc/usd',
+        value: '78376.35',
+        windowSeconds,
+      });
+    }
+    expect(h.adapter.getStats().referenceTwap).toBe(2);
+  });
+});
+
 describe('невалидные наблюдения', () => {
   it('неположительное значение отвергается', async () => {
     await publishReferencePrice(h, {

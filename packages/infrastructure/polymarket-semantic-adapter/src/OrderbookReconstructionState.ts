@@ -95,6 +95,16 @@ export type ApplyOutcome =
       readonly book: Orderbook;
       /** Semantic-версия книги инструмента после применения. */
       readonly version: number;
+      /**
+       * Заполнено, если источник прислал best-значение, которое НЕЛЬЗЯ
+       * истолковать (не цена и не ноль), и сверка верхушки не состоялась.
+       *
+       * @remarks
+       * Книга при этом применена корректно и публикуется — непригодное
+       * утверждение источника не делает нашу дельту неверной. Поле нужно,
+       * чтобы «не проверили» не выглядело в диагностике как «проверили».
+       */
+      readonly unverifiedBest?: string;
     }
   | {
       readonly ok: false;
@@ -102,6 +112,37 @@ export type ApplyOutcome =
       /** Человекочитаемая деталь для structured-лога (без PII/объёмов). */
       readonly detail?: string;
     };
+
+/**
+ * Исход сверки верхушки с утверждением источника.
+ *
+ * @remarks
+ * Три состояния, а не булево: «сошлось», «разошлось» и «истолковать
+ * утверждение источника нельзя» — принципиально разные исходы. Последний
+ * НЕ является расхождением: он означает, что проверка не состоялась, и
+ * путать его с провалом проверки значит останавливать публикацию по
+ * исправной книге.
+ */
+type SideCheck =
+  | { readonly kind: 'match' }
+  | { readonly kind: 'mismatch'; readonly detail: string }
+  | { readonly kind: 'unusable'; readonly detail: string };
+
+/**
+ * Является ли строка источника явным десятичным нулём.
+ *
+ * @param raw - Значение поля vendor-а
+ * @returns `true` для `"0"`, `"0.0"`, `"0.000"`, `"00"` и подобных
+ *
+ * @remarks
+ * Чисто ЛЕКСИЧЕСКАЯ проверка: никакого `Number()`/`parseFloat()` над
+ * финансовым значением здесь не происходит. Нужна ровно затем, чтобы
+ * отличить «источник сообщил, что стороны нет» от «источник прислал
+ * значение, которое мы не смогли разобрать».
+ */
+function isDecimalZero(raw: string): boolean {
+  return /^\s*[+-]?0*(?:\.0*)?\s*$/u.test(raw) && /\d/u.test(raw);
+}
 
 /** Снимок диагностики состояния (для stats адаптера). */
 export interface ReconstructionStats {
@@ -291,11 +332,11 @@ export class OrderbookReconstructionState {
       }
     }
 
-    const mismatch = this._detectBestMismatch(bids, asks, vendorBest);
-    if (mismatch !== undefined) {
+    const check = this._detectBestMismatch(bids, asks, vendorBest);
+    if (check.kind === 'mismatch') {
       // Состояние могло разойтись с venue — публиковать его нельзя
       current.desynced = true;
-      return { ok: false, reason: 'DESYNC_DETECTED', detail: mismatch };
+      return { ok: false, reason: 'DESYNC_DETECTED', detail: check.detail };
     }
 
     // Коммит
@@ -307,6 +348,9 @@ export class OrderbookReconstructionState {
       ok: true,
       book: this._toOrderbook(instrumentId, current, receivedAt, venueTimestamp),
       version: current.version,
+      // Дельта применена корректно, но утверждение источника о верхушке
+      // истолковать не удалось — вызывающий обязан это учесть в диагностике
+      ...(check.kind === 'unusable' ? { unverifiedBest: check.detail } : {}),
     };
   }
 
@@ -498,10 +542,12 @@ export class OrderbookReconstructionState {
    * - поле источника отсутствует → он ничего не утверждал, сверки нет;
    * - поле парсится в валидную `Price` → наша верхушка обязана существовать
    *   и быть РАВНОЙ ей;
-   * - поле присутствует, но валидной ценой не является (практически это
-   *   `"0"` — SDK валидирует формат десятичной строки схемой) → источник
-   *   утверждает, что уровней на стороне НЕТ, и наша сторона обязана быть
-   *   пустой.
+   * - поле — явный десятичный ноль (`"0"`, `"0.00"`) → источник утверждает,
+   *   что уровней на стороне НЕТ, и наша сторона обязана быть пустой;
+   * - поле присутствует, но ни ценой, ни нулём не является (`"1"` вне
+   *   домена `Price`, мусор) → истолковать его НЕЛЬЗЯ. Сверка стороны
+   *   пропускается: считать `"1"` пустотой значило бы уводить в DESYNC
+   *   исправную книгу.
    *
    * Сравнение идёт по `Price.equals` (Decimal), а не по строкам: `"0.50"` и
    * `"0.5"` — одна и та же цена.
@@ -510,15 +556,20 @@ export class OrderbookReconstructionState {
     bids: Map<string, OrderbookLevel>,
     asks: Map<string, OrderbookLevel>,
     vendorBest: VendorBestPrices,
-  ): string | undefined {
-    const bidMismatch = this._sideMismatch('bid', bids, vendorBest.bestBid, (a, b) =>
+  ): SideCheck {
+    const bidCheck = this._sideMismatch('bid', bids, vendorBest.bestBid, (a, b) =>
       a.value().greaterThan(b.value()),
     );
-    if (bidMismatch !== undefined) return bidMismatch;
+    // Расхождение важнее непригодного значения: если хотя бы одна сторона
+    // РАЗОШЛАСЬ, книга публикации не подлежит независимо от второй
+    if (bidCheck.kind === 'mismatch') return bidCheck;
 
-    return this._sideMismatch('ask', asks, vendorBest.bestAsk, (a, b) =>
+    const askCheck = this._sideMismatch('ask', asks, vendorBest.bestAsk, (a, b) =>
       a.value().lessThan(b.value()),
     );
+    if (askCheck.kind === 'mismatch') return askCheck;
+
+    return bidCheck.kind === 'unusable' ? bidCheck : askCheck;
   }
 
   /**
@@ -535,23 +586,45 @@ export class OrderbookReconstructionState {
     levels: Map<string, OrderbookLevel>,
     vendorBest: string | undefined,
     isBetter: (a: Price, b: Price) => boolean,
-  ): string | undefined {
+  ): SideCheck {
     if (vendorBest === undefined) {
-      return undefined;
+      return { kind: 'match' };
     }
     const ours = this._bestOf(levels, isBetter);
     const claimed = this._parsePrice(vendorBest);
 
     if (claimed === undefined) {
-      // Источник утверждает «уровней нет»
-      return ours === undefined ? undefined : `${side}: source reports empty side, reconstructed ${ours.value().toString()}`;
+      // Значение есть, но ценой не является. Различаем ДВА разных случая.
+      if (isDecimalZero(vendorBest)) {
+        // Явный ноль — источник утверждает «уровней на стороне нет»
+        return ours === undefined
+          ? { kind: 'match' }
+          : {
+              kind: 'mismatch',
+              detail: `${side}: source reports empty side, reconstructed ${ours.value().toString()}`,
+            };
+      }
+      // Всё остальное («1», «abc», «») — НЕ утверждение о пустоте. Такое
+      // значение нельзя ни сравнить, ни истолковать как «стороны нет»:
+      // трактовать `1` как пустоту значило бы уводить в DESYNC книгу,
+      // с которой всё в порядке. Сверку пропускаем, факт фиксируем.
+      return {
+        kind: 'unusable',
+        detail: `${side}: source best "${vendorBest}" is not a usable price`,
+      };
     }
     if (ours === undefined) {
-      return `${side}: source reports ${claimed.value().toString()}, reconstructed side is empty`;
+      return {
+        kind: 'mismatch',
+        detail: `${side}: source reports ${claimed.value().toString()}, reconstructed side is empty`,
+      };
     }
     return ours.equals(claimed)
-      ? undefined
-      : `${side}: source reports ${claimed.value().toString()}, reconstructed ${ours.value().toString()}`;
+      ? { kind: 'match' }
+      : {
+          kind: 'mismatch',
+          detail: `${side}: source reports ${claimed.value().toString()}, reconstructed ${ours.value().toString()}`,
+        };
   }
 
   /**

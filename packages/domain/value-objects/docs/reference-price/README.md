@@ -87,8 +87,11 @@ if (result.ok) {
 ```typescript
 const raw = '78376.356031481042173952';
 
-ReferencePriceService.create(raw).value.value().toString(); // ровно raw
-String(Number(raw));                                        // уже НЕ raw
+const result = ReferencePriceService.create(raw);
+if (result.ok) {
+  result.value.value().toString(); // ровно raw
+}
+String(Number(raw));               // уже НЕ raw
 ```
 
 Поэтому semantic-адаптеры обязаны передавать сюда исходную строку vendor-а, а

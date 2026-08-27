@@ -106,6 +106,16 @@ export const POLYMARKET_RTDS_CHAINLINK_SOURCE: MarketDataSourceId =
 export const POLYMARKET_RTDS_CHAINLINK_TWAP_SOURCE: MarketDataSourceId =
   asMarketDataSourceId('POLYMARKET_RTDS_CHAINLINK_TWAP')!;
 
+/**
+ * Vendor-домен окон усреднения TWAP официального SDK.
+ *
+ * @remarks
+ * Дублирует `CryptoPricesChainlinkTwapWindowSeconds` в рантайме: тип
+ * действует на компиляции, а окно приходит по проводу. Расширение домена
+ * vendor-ом раньше нашего кода не должно молча смешивать ряды разных окон.
+ */
+const SUPPORTED_TWAP_WINDOWS: ReadonlySet<number> = new Set([30, 60]);
+
 /** Read-only диагностика адаптера. */
 export interface PolymarketSemanticAdapterStats {
   /** Всего raw-сообщений, доставленных адаптеру. */
@@ -146,6 +156,8 @@ export interface PolymarketSemanticAdapterStats {
   readonly semanticPublishFailures: number;
   /** Наблюдений с vendor-временем «назад» относительно предыдущего. */
   readonly backwardVendorTimestamps: number;
+  /** Публикаций, где утверждение источника о верхушке истолковать не удалось. */
+  readonly unverifiedBestClaims: number;
   /** Инструментов в реконструкции сейчас. */
   readonly activeBookStates: number;
   /** Из них в состоянии DESYNCED сейчас. */
@@ -198,6 +210,16 @@ export class PolymarketSemanticAdapter {
   private readonly _publishedTops = new Map<InstrumentId, PublishedTop>();
   /** Максимальное vendor-время, замеченное по инструменту (диагностика). */
   private readonly _lastVendorTimestampMs = new Map<InstrumentId, number>();
+  /**
+   * Рынок каждого ВИДЕННОГО инструмента.
+   *
+   * @remarks
+   * Отдельно от индекса реконструкции: тот знает только инструменты со
+   * стаканом, а диагностика копится и по тем, у кого были ТОЛЬКО трейды
+   * или смена шага цены. Без этой связи `forgetMarket` не смог бы вычистить
+   * их записи, и они жили бы до конца процесса.
+   */
+  private readonly _instrumentMarket = new Map<InstrumentId, MarketId>();
 
   private _disposers: (() => void)[] = [];
   private _started = false;
@@ -221,6 +243,7 @@ export class PolymarketSemanticAdapter {
   private _unknownMarketEvents = 0;
   private _semanticPublishFailures = 0;
   private _backwardVendorTimestamps = 0;
+  private _unverifiedBestClaims = 0;
 
   /**
    * Создаёт адаптер поверх общего raw-bus и Application EventBus.
@@ -281,10 +304,23 @@ export class PolymarketSemanticAdapter {
       }),
       this._bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK_TWAP', async (message) => {
         this._rawMessagesSeen++;
+        // Окно — часть ИДЕНТИЧНОСТИ потока, а не атрибут значения: наблюдение
+        // с неизвестным окном нельзя опубликовать «как TWAP вообще», иначе
+        // ряды разных окон смешаются в один. Тип обещает 30|60, но приходит
+        // это по проводу — проверяем в рантайме.
+        const windowSeconds = message.payload.payload.windowSeconds;
+        if (!SUPPORTED_TWAP_WINDOWS.has(windowSeconds)) {
+          this._invalidPayloads++;
+          this._logger.warn('Rejected Chainlink TWAP observation with unsupported window', {
+            symbol: message.payload.payload.symbol,
+            windowSeconds: String(windowSeconds),
+          });
+          return;
+        }
         await this._onReferencePrice(
           POLYMARKET_RTDS_CHAINLINK_TWAP_SOURCE,
           message.payload.payload,
-          { kind: 'TWAP', windowSeconds: message.payload.payload.windowSeconds },
+          { kind: 'TWAP', windowSeconds },
           message.metadata,
         );
       }),
@@ -315,6 +351,7 @@ export class PolymarketSemanticAdapter {
     this._state.clear();
     this._publishedTops.clear();
     this._lastVendorTimestampMs.clear();
+    this._instrumentMarket.clear();
     this._logger.info('Polymarket semantic adapter closed');
   }
 
@@ -339,6 +376,7 @@ export class PolymarketSemanticAdapter {
   public forgetInstrument(instrumentId: InstrumentId): boolean {
     this._publishedTops.delete(instrumentId);
     this._lastVendorTimestampMs.delete(instrumentId);
+    this._instrumentMarket.delete(instrumentId);
     return this._state.forgetInstrument(instrumentId);
   }
 
@@ -358,6 +396,16 @@ export class PolymarketSemanticAdapter {
     for (const instrumentId of forgotten) {
       this._publishedTops.delete(instrumentId);
       this._lastVendorTimestampMs.delete(instrumentId);
+      this._instrumentMarket.delete(instrumentId);
+    }
+    // Инструменты рынка, у которых стакана не было вовсе (только трейды или
+    // смена шага цены), в реконструкции не числятся — их диагностику надо
+    // вычистить отдельно, иначе она переживёт рынок
+    for (const [instrumentId, market] of this._instrumentMarket) {
+      if (market !== marketId) continue;
+      this._publishedTops.delete(instrumentId);
+      this._lastVendorTimestampMs.delete(instrumentId);
+      this._instrumentMarket.delete(instrumentId);
     }
     return forgotten.length;
   }
@@ -395,6 +443,7 @@ export class PolymarketSemanticAdapter {
       unknownMarketEvents: this._unknownMarketEvents,
       semanticPublishFailures: this._semanticPublishFailures,
       backwardVendorTimestamps: this._backwardVendorTimestamps,
+      unverifiedBestClaims: this._unverifiedBestClaims,
       activeBookStates: reconstruction.activeInstruments,
       desyncedBookStates: reconstruction.desyncedInstruments,
     };
@@ -568,6 +617,16 @@ export class PolymarketSemanticAdapter {
         continue;
       }
       this._priceChangesApplied++;
+      if (outcome.unverifiedBest !== undefined) {
+        // Дельта применена, но утверждение источника о верхушке истолковать
+        // не удалось — публикуем, однако «не проверили» не должно выглядеть
+        // в диагностике как «проверили»
+        this._unverifiedBestClaims++;
+        this._logger.debug('Book published without top-of-book verification', {
+          instrumentId: String(instrumentId),
+          detail: outcome.unverifiedBest,
+        });
+      }
       await this._publishBook(
         { marketId, instrumentId },
         outcome.book,
@@ -672,9 +731,8 @@ export class PolymarketSemanticAdapter {
     if (previous !== undefined && sameTop(previous, fingerprint)) {
       return;
     }
-    this._publishedTops.set(identity.instrumentId, fingerprint);
 
-    await this._publish({
+    const topPublished = await this._publish({
       type: 'BOOK_UPDATED',
       payload: {
         topOfBook,
@@ -688,6 +746,13 @@ export class PolymarketSemanticAdapter {
       },
       metadata: this._metadata.nextChild(parent),
     });
+    // Отпечаток запоминается ТОЛЬКО после успешной публикации: иначе
+    // отвергнутое шиной событие «зачлось» бы как опубликованное, и
+    // следующее обновление с той же верхушкой подписчики не увидели бы
+    // никогда — гашение дубликатов превратилось бы в потерю данных
+    if (topPublished) {
+      this._publishedTops.set(identity.instrumentId, fingerprint);
+    }
   }
 
   /**
@@ -927,6 +992,7 @@ export class PolymarketSemanticAdapter {
       this._logger.warn('Rejected Polymarket market event with invalid identifiers');
       return undefined;
     }
+    this._instrumentMarket.set(instrumentId, marketId);
     return { marketId, instrumentId };
   }
 

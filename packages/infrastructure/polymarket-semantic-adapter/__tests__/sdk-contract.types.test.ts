@@ -23,18 +23,25 @@ type TickSizePayload = Extract<MarketEvent, { type: 'tick_size_change' }>['paylo
 /** Утверждение «тип X присваиваем типу Y» без рантайм-эффекта. */
 type Assignable<TFrom, TTo> = TFrom extends TTo ? true : false;
 
+/**
+ * Строгое равенство типов в ОБЕ стороны.
+ *
+ * @remarks
+ * `extends` ловит только сужение. Двусторонняя проверка ловит и добавленный
+ * vendor-ом член union (наш код о нём не знает), и убранный (наш код
+ * обрабатывает несуществующее) — а это ровно те два способа разъехаться
+ * с контрактом источника.
+ */
+type Equal<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
+
 describe('контракт CLOB market channel', () => {
-  it('union несёт ровно четыре обрабатываемых event-типа', () => {
-    const types: MarketEvent['type'][] = [
-      'book',
-      'price_change',
-      'last_trade_price',
-      'tick_size_change',
-    ];
-    // Если vendor добавит/уберёт член union — присваивание ниже не соберётся
-    const exhaustive: MarketEvent['type'] =
-      types[0] as 'book' | 'price_change' | 'last_trade_price' | 'tick_size_change';
-    expect(exhaustive).toBe('book');
+  it('union несёт РОВНО четыре обрабатываемых event-типа', () => {
+    const exact: Equal<
+      MarketEvent['type'],
+      'book' | 'price_change' | 'last_trade_price' | 'tick_size_change'
+    > = true;
+    expect(exact).toBe(true);
   });
 
   it('book: уровни — десятичные СТРОКИ, время опционально', () => {

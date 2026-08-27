@@ -20,6 +20,7 @@ import {
   TOKEN_B,
   createHarness,
   publishBook,
+  publishLastTradePrice,
   publishPriceChange,
   publishReferencePrice,
   silentLogger,
@@ -184,6 +185,62 @@ describe('изоляция от recorder', () => {
     adapter.close();
   });
 
+  it('отвергнутый BOOK_UPDATED можно повторить — отпечаток не «зачёлся»', async () => {
+    const bus = new ExternalMessageBus<PolymarketExternalMessage>();
+    const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
+    const eventBus = new EventBus(silentLogger());
+    const seen: string[] = [];
+    eventBus.subscribe('BOOK_UPDATED', (event) => {
+      seen.push(event.payload.topOfBook.bestBid?.value().toString() ?? '—');
+    });
+
+    // Первая публикация BOOK_UPDATED отвергается шиной
+    const realPublish = eventBus.publish.bind(eventBus);
+    let rejectNext = true;
+    jest.spyOn(eventBus, 'publish').mockImplementation(async (event) => {
+      if (event.type === 'BOOK_UPDATED' && rejectNext) {
+        rejectNext = false;
+        return { ok: false, error: new Error('bus rejected') as never } as never;
+      }
+      return realPublish(event);
+    });
+
+    const adapter = new PolymarketSemanticAdapter({
+      bus,
+      eventBus,
+      metadataGenerator,
+      logger: silentLogger(),
+    });
+    adapter.start();
+
+    const book = (bid: string): unknown => ({
+      type: 'POLYMARKET_MARKET',
+      payload: {
+        topic: 'market',
+        type: 'book',
+        payload: {
+          tokenId: TOKEN_A,
+          market: MARKET_ID,
+          bids: [{ price: bid, size: '10' }],
+          asks: [],
+          timestamp: 1_787_751_722_763,
+        },
+      },
+      metadata: metadataGenerator.nextRoot(),
+    });
+
+    await bus.publish(book('0.50') as never); // отвергнут
+    await bus.publish(book('0.50') as never); // ТА ЖЕ верхушка — обязана уйти
+
+    expect(adapter.getStats().semanticPublishFailures).toBe(1);
+    // Если бы отпечаток записался до публикации, второй раз событие
+    // погасилось бы как дубликат и подписчик не увидел бы верхушку НИКОГДА
+    expect(seen).toEqual(['0.5']);
+
+    adapter.close();
+    jest.restoreAllMocks();
+  });
+
   it('отказ Application-шины считается счётчиком, а не исключением наружу', async () => {
     const bus = new ExternalMessageBus<PolymarketExternalMessage>();
     const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
@@ -309,6 +366,30 @@ describe('границы памяти', () => {
 
     expect(h.adapter.forgetMarket(asMarketId(MARKET_ID)!)).toBe(2);
     expect(h.adapter.getStats().activeBookStates).toBe(0);
+  });
+
+  it('forgetMarket чистит диагностику инструментов БЕЗ стакана (только трейды)', async () => {
+    // Инструмент виден только через трейд — в реконструкции его нет вовсе
+    await publishLastTradePrice(h, {
+      tokenId: TOKEN_A,
+      price: '0.5',
+      side: 'BUY',
+      size: '1',
+      timestamp: 1_787_751_724_000,
+    });
+    expect(h.adapter.getStats().activeBookStates).toBe(0);
+
+    h.adapter.forgetMarket(asMarketId(MARKET_ID)!);
+
+    // Диагностика забыта: повторное «время назад» больше не с чем сравнивать
+    await publishLastTradePrice(h, {
+      tokenId: TOKEN_A,
+      price: '0.5',
+      side: 'BUY',
+      size: '1',
+      timestamp: 1_787_751_720_000,
+    });
+    expect(h.adapter.getStats().backwardVendorTimestamps).toBe(0);
   });
 
   it('после forget дельта снова считается пришедшей до снапшота', async () => {

@@ -255,6 +255,56 @@ describe('desync', () => {
     expect(state.isDesynced(TOKEN)).toBe(false);
   });
 
+  it('любая запись нуля ("0.00", "0.0") трактуется как пустая сторона', () => {
+    for (const zero of ['0', '0.0', '0.00', '00']) {
+      state = new OrderbookReconstructionState();
+      snapshot([{ price: '0.50', size: '10' }], []);
+      const outcome = deltas([{ side: 'BID', price: '0.50', size: '0' }], {
+        bestBid: zero,
+        bestAsk: undefined,
+      });
+      expect(outcome.ok).toBe(true);
+      expect(state.isDesynced(TOKEN)).toBe(false);
+    }
+  });
+
+  it('НЕпригодное значение best (не цена и не ноль) НЕ уводит в DESYNC', () => {
+    // "1" вне домена Price [0.0001, 0.9999], но это НЕ утверждение о пустоте:
+    // трактовать его как пустоту значило бы останавливать исправную книгу
+    const outcome = deltas([{ side: 'BID', price: '0.50', size: '10' }], {
+      bestBid: '1',
+      bestAsk: undefined,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(state.isDesynced(TOKEN)).toBe(false);
+    // Но и «проверено» это не значит — факт фиксируется отдельно
+    expect(outcome.unverifiedBest).toContain('not a usable price');
+  });
+
+  it('расхождение на ОДНОЙ стороне важнее непригодного значения на другой', () => {
+    const outcome = deltas([{ side: 'BID', price: '0.49', size: '5' }], {
+      bestBid: '1', // непригодно
+      bestAsk: '0.99', // а вот здесь реальное расхождение
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.reason).toBe('DESYNC_DETECTED');
+    expect(state.isDesynced(TOKEN)).toBe(true);
+  });
+
+  it('успешная сверка не помечает результат как непроверенный', () => {
+    const outcome = deltas([{ side: 'BID', price: '0.51', size: '5' }], {
+      bestBid: '0.51',
+      bestAsk: '0.52',
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.unverifiedBest).toBeUndefined();
+  });
+
   it('в состоянии DESYNC дельты не применяются', () => {
     deltas([{ side: 'BID', price: '0.49', size: '5' }], { bestBid: '0.51', bestAsk: '0.52' });
     const next = deltas([{ side: 'BID', price: '0.45', size: '1' }]);
