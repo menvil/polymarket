@@ -51,6 +51,7 @@ import type { ReferencePriceFeed, TopOfBook } from '@polymarket/application-even
 import type { OrderSide } from '@polymarket/bindings';
 import type { BookSide, LevelDeltaInput, VendorBestPrices } from './OrderbookReconstructionState.js';
 import { OrderbookReconstructionState } from './OrderbookReconstructionState.js';
+import { parseAssetPair } from './symbols.js';
 
 /**
  * Порт подписки адаптера на общий bus.
@@ -919,9 +920,16 @@ export class PolymarketSemanticAdapter {
    * @remarks
    * Значение идёт в `ReferencePriceService`, а НЕ в `Price`: цена базового
    * актива (`79341.36626633028`) не помещается в домен рынка предсказаний
-   * `[0.0001, 0.9999]` — конструктор `Price` обязан её отвергнуть. Символ
-   * сохраняется в НАТИВНОМ формате источника (`btcusdt` / `btc/usd`), чтобы
-   * наблюдение сопоставлялось с записанным raw-архивом.
+   * `[0.0001, 0.9999]` — конструктор `Price` обязан её отвергнуть.
+   *
+   * Символ разбирается в canonical-пару ЗДЕСЬ: наружу уходят
+   * `baseAsset`/`quoteAsset`, а нативная форма — только как provenance.
+   * Пропустив наружу один лишь vendor-символ, мы бы заставили Application
+   * разбирать `btcusdt` и `btc/usd` самостоятельно, то есть просто
+   * перенесли бы нормализацию за границу адаптера.
+   *
+   * Неразобранный символ — отказ, а не догадка: наблюдение без canonical
+   * идентичности пары бесполезно downstream.
    */
   private async _onReferencePrice(
     sourceId: MarketDataSourceId,
@@ -929,6 +937,16 @@ export class PolymarketSemanticAdapter {
     feed: ReferencePriceFeed,
     parent: MessageMetadata,
   ): Promise<void> {
+    const pair = parseAssetPair(payload.symbol);
+    if (pair === undefined) {
+      this._invalidPayloads++;
+      this._logger.warn('Rejected reference price observation with unparseable symbol', {
+        sourceId: String(sourceId),
+        symbol: payload.symbol,
+      });
+      return;
+    }
+
     const valueResult = ReferencePriceService.create(String(payload.value));
     if (!valueResult.ok) {
       this._invalidPayloads++;
@@ -953,7 +971,9 @@ export class PolymarketSemanticAdapter {
       type: 'REFERENCE_PRICE_UPDATED',
       payload: {
         sourceId,
-        symbol: payload.symbol,
+        baseAsset: pair.baseAsset,
+        quoteAsset: pair.quoteAsset,
+        nativeSymbol: payload.symbol,
         feed,
         value: valueResult.value,
         venueTimestamp: venueTimestampResult.value,

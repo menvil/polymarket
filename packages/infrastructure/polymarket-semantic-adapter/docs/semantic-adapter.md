@@ -263,10 +263,40 @@ Chainlink TWAP в один момент дают РАЗНЫЕ числа, а п�
 Up/Down-рынки. Наблюдение всегда несёт:
 
 ```text
-sourceId  POLYMARKET_RTDS_BINANCE | POLYMARKET_RTDS_CHAINLINK | POLYMARKET_RTDS_CHAINLINK_TWAP
-symbol    нативный формат источника (btcusdt / btc/usd)
-feed      { kind: 'SPOT' } | { kind: 'TWAP', windowSeconds }
+sourceId      POLYMARKET_RTDS_BINANCE | POLYMARKET_RTDS_CHAINLINK | POLYMARKET_RTDS_CHAINLINK_TWAP
+baseAsset     btc          ← canonical
+quoteAsset    usdt | usd   ← canonical
+nativeSymbol  btcusdt | btc/usd   ← только provenance
+feed          { kind: 'SPOT' } | { kind: 'TWAP', windowSeconds }
 ```
+
+### Где заканчиваются vendor-форматы
+
+Идентичность пары **каноническая**, и это принципиально. Источники пишут
+символ по-разному:
+
+```text
+Binance     btcusdt      слитно
+Chainlink   btc/usd      через слэш
+```
+
+Пропусти адаптер наружу один лишь нативный символ — разбирать эти формы
+пришлось бы Application, то есть нормализация просто переехала бы за
+границу. Так уже произошло в legacy: `StrategyScheduler.normalizeCryptoAsset`
+режет символы регулярками (`replace(/usd[tc]?$/i, '')`) и **теряет
+котировку целиком** — `btcusdt` и `btc/usd` схлопываются в один `btc`.
+
+Поэтому разбор живёт в `symbols.ts` адаптера, а наружу уходит пара.
+Неразобранный символ — **отказ**, а не догадка: наблюдение без canonical
+идентичности downstream бесполезно, и лучше отбросить его явно, чем
+опубликовать с неверной парой.
+
+### `USDT` не приводится к `USD`
+
+`BTC/USDT` и `BTC/USD` — разные пары с разными ценами. Считать ли их
+взаимозаменяемыми — решение стратегии, а не границы наблюдения: приняв его
+здесь, мы бы необратимо стёрли различие ещё до того, как кто-либо о нём
+узнал. Котировка сохраняется как есть.
 
 `feed` — дискриминированный union, а не опциональное поле: окно есть часть
 идентичности усреднённого потока (`btc/usd` TWAP 30 и TWAP 60 — разные ряды),

@@ -46,9 +46,9 @@ adapter.close(); // снимает ТОЛЬКО свои подписки, ши�
 | `POLYMARKET_MARKET` / `price_change` | реконструированный `Orderbook` → `BOOK_DEPTH` (+ `BOOK_UPDATED` при смене верхушки) |
 | `POLYMARKET_MARKET` / `last_trade_price` | `TRADE_RECEIVED` с `venueTradeId` = `transactionHash` и `marketId` (только при наличии объёма) |
 | `POLYMARKET_MARKET` / `tick_size_change` | `TICK_SIZE_CHANGED` |
-| `POLYMARKET_CRYPTO_BINANCE` | `REFERENCE_PRICE_UPDATED`, `feed = SPOT` |
-| `POLYMARKET_CRYPTO_CHAINLINK` | `REFERENCE_PRICE_UPDATED`, `feed = SPOT` |
-| `POLYMARKET_CRYPTO_CHAINLINK_TWAP` | `REFERENCE_PRICE_UPDATED`, `feed = TWAP(windowSeconds)` |
+| `POLYMARKET_CRYPTO_BINANCE` | `REFERENCE_PRICE_UPDATED`, `btc`/`usdt`, `feed = SPOT` |
+| `POLYMARKET_CRYPTO_CHAINLINK` | `REFERENCE_PRICE_UPDATED`, `btc`/`usd`, `feed = SPOT` |
+| `POLYMARKET_CRYPTO_CHAINLINK_TWAP` | `REFERENCE_PRICE_UPDATED`, `btc`/`usd`, `feed = TWAP(windowSeconds)` |
 
 ## Ключевые инварианты
 
@@ -73,6 +73,9 @@ adapter.close(); // снимает ТОЛЬКО свои подписки, ши�
 - **Идентичность сделки берётся у источника**: `transactionHash` → `venueTradeId`
   как есть (замер: 37 407 трейдов — 37 407 различных хешей). Нет хеша —
   `undefined`, а не синтетический ключ.
+- **Vendor-форматы заканчиваются здесь**: `btcusdt`/`btc/usd` разбираются в
+  canonical `baseAsset`/`quoteAsset`, нативная форма остаётся только как
+  provenance. `USDT` НЕ приводится к `USD` — это разные пары.
 
 Подробное обоснование каждого решения —
 [`docs/semantic-adapter.md`](./docs/semantic-adapter.md).

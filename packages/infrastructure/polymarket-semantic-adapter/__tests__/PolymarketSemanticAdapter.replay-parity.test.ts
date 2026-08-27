@@ -91,7 +91,9 @@ function project(events: readonly EventBusEvent[]): unknown[] {
         return {
           type: event.type,
           sourceId: String(event.payload.sourceId),
-          symbol: event.payload.symbol,
+          baseAsset: String(event.payload.baseAsset),
+          quoteAsset: String(event.payload.quoteAsset),
+          nativeSymbol: event.payload.nativeSymbol,
           feed: event.payload.feed,
           value: event.payload.value.value().toString(),
           venueTimestamp: event.payload.venueTimestamp.toNumber(),

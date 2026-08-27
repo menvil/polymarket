@@ -40,7 +40,9 @@ describe('Binance spot', () => {
 
     const payload = events[0]!.payload;
     expect(payload.sourceId).toBe(POLYMARKET_RTDS_BINANCE_SOURCE);
-    expect(payload.symbol).toBe('btcusdt');
+    expect(payload.baseAsset).toBe('btc');
+    expect(payload.quoteAsset).toBe('usdt');
+    expect(payload.nativeSymbol).toBe('btcusdt');
     expect(payload.feed).toEqual({ kind: 'SPOT' });
     expect(payload.value.value().toString()).toBe('79341.36626633028');
     expect(payload.venueTimestamp.toNumber()).toBe(1_787_751_721_000);
@@ -59,8 +61,11 @@ describe('Chainlink spot', () => {
     const payload = h.eventsOfType('REFERENCE_PRICE_UPDATED')[0]!.payload;
     expect(payload.sourceId).toBe(POLYMARKET_RTDS_CHAINLINK_SOURCE);
     expect(payload.sourceId).not.toBe(POLYMARKET_RTDS_BINANCE_SOURCE);
-    // Символ НЕ нормализуется — иначе наблюдение не сопоставить с raw-архивом
-    expect(payload.symbol).toBe('btc/usd');
+    // Пара канонична: Application НЕ обязан знать про формат 'btc/usd'
+    expect(payload.baseAsset).toBe('btc');
+    expect(payload.quoteAsset).toBe('usd');
+    // Нативная форма сохранена только как provenance для raw-архива
+    expect(payload.nativeSymbol).toBe('btc/usd');
     expect(h.adapter.getStats().referenceChainlink).toBe(1);
   });
 
@@ -201,6 +206,68 @@ describe('окно TWAP вне vendor-домена', () => {
       });
     }
     expect(h.adapter.getStats().referenceTwap).toBe(2);
+  });
+});
+
+describe('граница vendor-форматов заканчивается в адаптере', () => {
+  it('Application получает canonical-пару, а не vendor-символ', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_BINANCE',
+      symbol: 'btcusdt',
+      value: '79341.36',
+    });
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_CHAINLINK',
+      symbol: 'btc/usd',
+      value: '79338.5',
+    });
+
+    const pairs = h
+      .eventsOfType('REFERENCE_PRICE_UPDATED')
+      .map((e) => `${String(e.payload.baseAsset)}/${String(e.payload.quoteAsset)}`);
+
+    // Downstream не обязан знать ни про слитную форму, ни про слэш
+    expect(pairs).toEqual(['btc/usdt', 'btc/usd']);
+  });
+
+  it('BTC/USDT и BTC/USD остаются РАЗНЫМИ парами', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_BINANCE',
+      symbol: 'btcusdt',
+      value: '79341.36',
+    });
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_CHAINLINK',
+      symbol: 'btc/usd',
+      value: '79338.5',
+    });
+
+    const [binance, chainlink] = h.eventsOfType('REFERENCE_PRICE_UPDATED');
+    expect(binance!.payload.baseAsset).toBe(chainlink!.payload.baseAsset);
+    // Эквивалентность USDT≈USD — решение стратегии, а не границы наблюдения
+    expect(binance!.payload.quoteAsset).not.toBe(chainlink!.payload.quoteAsset);
+  });
+
+  it('нативная форма сохранена для сопоставления с raw-архивом', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_BINANCE',
+      symbol: 'btcusdt',
+      value: '79341.36',
+    });
+
+    expect(h.eventsOfType('REFERENCE_PRICE_UPDATED')[0]!.payload.nativeSymbol).toBe('btcusdt');
+  });
+
+  it('неразобранный символ отвергается, а не публикуется с догадкой', async () => {
+    await publishReferencePrice(h, {
+      channel: 'POLYMARKET_CRYPTO_BINANCE',
+      symbol: 'weirdpair',
+      value: '79341.36',
+    });
+
+    expect(h.eventsOfType('REFERENCE_PRICE_UPDATED')).toHaveLength(0);
+    expect(h.adapter.getStats().invalidPayloads).toBe(1);
+    expect(h.adapter.getStats().referenceBinance).toBe(0);
   });
 });
 

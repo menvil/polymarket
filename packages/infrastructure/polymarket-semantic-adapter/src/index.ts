@@ -30,6 +30,9 @@ export {
   POLYMARKET_RTDS_CHAINLINK_TWAP_SOURCE,
 } from './PolymarketSemanticAdapter.js';
 
+export { parseAssetPair } from './symbols.js';
+export type { AssetPairSymbols } from './symbols.js';
+
 export { OrderbookReconstructionState } from './OrderbookReconstructionState.js';
 export type {
   ApplyFailureReason,
