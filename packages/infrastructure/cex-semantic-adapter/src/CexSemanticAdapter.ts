@@ -785,6 +785,12 @@ export class CexSemanticAdapter {
     });
     if (published) {
       this._tradesPublished++;
+    } else if (venueTradeId !== undefined) {
+      // Регистрация снимается: НЕопубликованная сделка не имеет права
+      // остаться помеченной виденной — повторную выдачу биржей мы бы тогда
+      // отбросили как дубликат, и гашение повторов стало бы потерей данных
+      // (то же правило, что и у отпечатка верхушки в `_publishBook`)
+      this._stateFor(identity).recentTradeIds?.forget(venueTradeId);
     }
   }
 

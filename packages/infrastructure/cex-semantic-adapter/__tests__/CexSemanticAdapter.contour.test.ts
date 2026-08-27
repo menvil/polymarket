@@ -312,6 +312,51 @@ describe('изоляция отказов semantic-слоя', () => {
     adapter.close();
   });
 
+  it('отвергнутая шиной сделка не остаётся помеченной виденной', async () => {
+    const bus = new ExternalMessageBus<CexExternalMessage>();
+    const eventBus = new EventBus(silentLogger());
+    const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
+    const published: EventBusEvent[] = [];
+    eventBus.subscribe('TRADE_RECEIVED', (event) => {
+      published.push(event);
+    });
+
+    const adapter = new CexSemanticAdapter({
+      bus,
+      eventBus,
+      metadataGenerator,
+      logger: silentLogger(),
+    });
+    adapter.start();
+
+    const failure = new Error('rejected');
+    const publish = jest
+      .spyOn(eventBus, 'publish')
+      .mockResolvedValue({ ok: false, error: failure } as Awaited<
+        ReturnType<EventBus['publish']>
+      >);
+    await bus.publish({
+      type: 'CEX_TRADE',
+      payload: tradePayload({ id: '6617804453' }),
+      metadata: metadataGenerator.nextRoot(),
+    });
+    publish.mockRestore();
+
+    // Повторная выдача той же сделки биржей ОБЯЗАНА дойти: неопубликованная
+    // сделка не должна навсегда числиться виденной, иначе гашение повторов
+    // превращается в потерю данных
+    await bus.publish({
+      type: 'CEX_TRADE',
+      payload: tradePayload({ id: '6617804453' }),
+      metadata: metadataGenerator.nextRoot(),
+    });
+
+    expect(published).toHaveLength(1);
+    expect(adapter.getStats().duplicateTrades).toBe(0);
+    expect(adapter.getStats().tradesPublished).toBe(1);
+    adapter.close();
+  });
+
   it('битое наблюдение не мешает следующим и не роняет шину', async () => {
     const h = createHarness();
     const recorded: CexExternalMessage[] = [];

@@ -52,6 +52,30 @@ describe('RecentVenueTradeIds', () => {
     expect(DEFAULT_RECENT_TRADE_IDS_CAPACITY).toBeGreaterThanOrEqual(74 * 5);
   });
 
+  it('forget снимает регистрацию, и идентификатор снова считается новым', () => {
+    const seen = new RecentVenueTradeIds(8);
+    seen.registerIfNew('a');
+    expect(seen.registerIfNew('a')).toBe(false);
+
+    expect(seen.forget('a')).toBe(true);
+    expect(seen.registerIfNew('a')).toBe(true);
+  });
+
+  it('forget неизвестного идентификатора — no-op', () => {
+    const seen = new RecentVenueTradeIds(8);
+    expect(seen.forget('never-seen')).toBe(false);
+    expect(seen.size).toBe(0);
+  });
+
+  it('forget не ломает ограниченность окна', () => {
+    const seen = new RecentVenueTradeIds(4);
+    for (let i = 0; i < 1_000; i++) {
+      seen.registerIfNew(`t-${i}`);
+      if (i % 3 === 0) seen.forget(`t-${i}`);
+    }
+    expect(seen.size).toBeLessThanOrEqual(4);
+  });
+
   it('отвергает бессмысленную ёмкость', () => {
     expect(() => new RecentVenueTradeIds(0)).toThrow(RangeError);
     expect(() => new RecentVenueTradeIds(-1)).toThrow(RangeError);
