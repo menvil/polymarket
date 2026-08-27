@@ -58,7 +58,7 @@ import { AssetPriceErrorReason } from '../errors/AssetPriceErrorReason.js';
  * Базовый тик здесь НЕ константа: у каждого инструмента биржи он свой и
  * приходит из market info, поэтому операции принимают его параметром.
  */
-const ASSET_PRICE_DOMAIN: PriceDomain<AssetPrice, InvalidAssetPriceError> = {
+export const ASSET_PRICE_DOMAIN: PriceDomain<AssetPrice, InvalidAssetPriceError> = {
   serviceName: 'AssetPriceService',
   ErrorConstructor: InvalidAssetPriceError,
   invalidFormatReason: AssetPriceErrorReason.INVALID_FORMAT,

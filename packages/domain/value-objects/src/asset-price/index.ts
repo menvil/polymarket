@@ -16,5 +16,8 @@ export { AssetPrice, AssetPriceInvariantViolation } from './core/index.js';
 // Facade (главный публичный API)
 export { AssetPriceService } from './facade/index.js';
 
+// Adapters (публичный API)
+export { AssetPriceFormatter, AssetPriceSerializer, type AssetPriceJSON } from './adapters/index.js';
+
 // Errors (публичный API)
 export { AssetPriceErrorReason } from './errors/index.js';

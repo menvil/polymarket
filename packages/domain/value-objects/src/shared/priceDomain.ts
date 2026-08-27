@@ -61,8 +61,12 @@ export interface PriceDomain<TPrice extends DecimalPrice, TError extends AnyTrad
    * Именно она делает операцию доменной: результат арифметики проверяется
    * инвариантами конкретного домена (диапазон `[0.0001, 0.9999]` либо
    * «строго положительно»), и выход за них становится `Err`.
+   *
+   * Принимает `number | string | Decimal` — ровно то, что умеют фабрики
+   * доменов. Строка нужна десериализации: значение из JSON хранится строкой
+   * ради точности и парсится без промежуточного `number`.
    */
-  readonly create: (value: Decimal) => Result<TPrice, TError>;
+  readonly create: (value: number | string | Decimal) => Result<TPrice, TError>;
   /**
    * Верхняя граница шага сетки, если домен её имеет.
    *

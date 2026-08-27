@@ -1,34 +1,8 @@
-import { Result, Err } from '@polymarket/result';
-import { InvalidOutcomePriceError, ErrorSource } from '@polymarket/errors';
-import { OutcomePrice } from '../core/OutcomePrice.js';
-import { OutcomePriceService } from '../facade/OutcomePriceService.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import type { Result } from '@polymarket/result';
+import type { InvalidOutcomePriceError } from '@polymarket/errors';
+import type { OutcomePrice } from '../core/OutcomePrice.js';
+import { priceFromJSON, priceToJSON } from '../../shared/priceCodec.js';
+import { OUTCOME_PRICE_DOMAIN } from '../facade/OutcomePriceService.js';
 
 /**
  * JSON контракт для OutcomePrice сериализации
@@ -115,86 +89,7 @@ export class OutcomePriceSerializer {
    * ```
    */
   public static fromJSON(json: unknown): Result<OutcomePrice, InvalidOutcomePriceError> {
-    // Проверка что это объект
-    if (typeof json !== 'object' || json === null) {
-      return Err(
-        new InvalidOutcomePriceError(
-          (ctx) => `Expected object, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: OutcomePriceSerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: typeof json,
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка что это не массив
-    if (Array.isArray(json)) {
-      return Err(
-        new InvalidOutcomePriceError(
-          () => `Expected object, got array`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: OutcomePriceSerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'array',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка наличия поля value (own-property check — исключает prototype chain)
-    if (!Object.hasOwn(json, 'value')) {
-      return Err(
-        new InvalidOutcomePriceError(
-          () => `Missing required field 'value'`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: OutcomePriceSerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'missing_field',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    const value = (json as { value: unknown }).value;
-
-    // Проверка типа value
-    if (typeof value !== 'number' && typeof value !== 'string') {
-      return Err(
-        new InvalidOutcomePriceError(
-          (ctx) => `Field 'value' must be number or string, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: OutcomePriceSerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: typeof value,
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    // Делегируем создание OutcomePriceService
-    return OutcomePriceService.create(value);
+    return priceFromJSON(OUTCOME_PRICE_DOMAIN, json, OutcomePriceSerializer.SERVICE_NAME);
   }
 
   /**
@@ -216,8 +111,6 @@ export class OutcomePriceSerializer {
    * ```
    */
   public static toJSON(price: OutcomePrice): OutcomePriceJSON {
-    return {
-      value: price.value().toString()
-    };
+    return priceToJSON(price);
   }
 }

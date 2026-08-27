@@ -10,6 +10,8 @@
 export type { DecimalPrice } from './DecimalPrice.js';
 export type { PriceDomain } from './priceDomain.js';
 export type { TickRoundingMode } from './priceOperations.js';
+export type { PriceJSON } from './priceCodec.js';
+export { formatPriceFixed, priceFromJSON, priceToJSON } from './priceCodec.js';
 export {
   applyRelativeChangeToPrice,
   averagePrices,

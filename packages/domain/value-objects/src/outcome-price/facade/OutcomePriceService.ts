@@ -73,11 +73,12 @@ const BASE_TICK = '0.0001';
  * фабрика проверяет результат инвариантом `[0.0001, 0.9999]`, а ошибки
  * сообщаются типом этого домена.
  */
-const OUTCOME_PRICE_DOMAIN: PriceDomain<OutcomePrice, InvalidOutcomePriceError> = {
+export const OUTCOME_PRICE_DOMAIN: PriceDomain<OutcomePrice, InvalidOutcomePriceError> = {
   serviceName: 'OutcomePriceService',
   ErrorConstructor: InvalidOutcomePriceError,
   invalidFormatReason: OutcomePriceErrorReason.INVALID_FORMAT,
   create: (value) => OutcomePriceService.create(value),
+  maxTickSize: OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value()),
 };
 
 export class OutcomePriceService {

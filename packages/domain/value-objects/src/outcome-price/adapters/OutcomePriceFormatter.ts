@@ -1,6 +1,8 @@
 import { OutcomePrice } from '../core/OutcomePrice.js';
 import { InvalidOutcomePriceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
+import { formatPriceFixed } from '../../shared/priceCodec.js';
+import { OUTCOME_PRICE_DOMAIN } from '../facade/OutcomePriceService.js';
 
 /**
  * Форматтер для OutcomePrice
@@ -109,20 +111,10 @@ export class OutcomePriceFormatter {
    * }
    * ```
    */
-  public static toFixed(price: OutcomePrice, decimals: number = 4): Result<string, InvalidOutcomePriceError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidOutcomePriceError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'OutcomePriceFormatter',
-            op: 'toFixed',
-            decimals: String(decimals),
-            priceValue: price.value().toString()
-          }
-        })
-      );
-    }
-    return Ok(price.value().toFixed(decimals));
+  public static toFixed(
+    price: OutcomePrice,
+    decimals: number = 4
+  ): Result<OutcomePrice extends never ? never : string, InvalidOutcomePriceError> {
+    return formatPriceFixed(OUTCOME_PRICE_DOMAIN, price, decimals, 'OutcomePriceFormatter');
   }
 }

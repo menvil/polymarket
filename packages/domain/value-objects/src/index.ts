@@ -22,7 +22,7 @@ export type { SupportedCurrency } from './money/index.js';
 
 // Общий контракт «это цена» — то, что нужно структурам (стакан, спред)
 // от ЛЮБОГО ценового домена; см. shared/DecimalPrice.ts
-export type { DecimalPrice, PriceDomain, TickRoundingMode } from './shared/index.js';
+export type { DecimalPrice, PriceDomain, TickRoundingMode, PriceJSON } from './shared/index.js';
 export {
   applyRelativeChangeToPrice,
   averagePrices,
@@ -45,7 +45,10 @@ export {
   AssetPrice,
   AssetPriceInvariantViolation,
   AssetPriceService,
-  AssetPriceErrorReason
+  AssetPriceFormatter,
+  AssetPriceSerializer,
+  AssetPriceErrorReason,
+  type AssetPriceJSON
 } from './asset-price/index.js';
 
 // Quantity модуль (только публичный API)
