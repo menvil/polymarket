@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { ValidateDivisorForPriceDivision } from '../../../../src/outcome-price/rules/ValidateDivisorForPriceDivision';
+import { ValidateDivisorForPriceDivision } from '../../../src/shared/ValidateDivisorForPriceDivision.js';
 
 describe('ValidateDivisorForPriceDivision', () => {
   describe('валидные делители', () => {

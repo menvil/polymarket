@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
-import { OutcomePrice } from '../core/OutcomePrice.js';
 import { ValidateTickSize } from './ValidateTickSize.js';
-import type { TickSizeMultipleReason } from './types.js';
+import type { TickSizeMultipleReason } from './priceRuleTypes.js';
 import type Decimal from 'decimal.js';
 
 /**
@@ -10,7 +9,10 @@ import type Decimal from 'decimal.js';
  *
  * @remarks
  * POLYMARKET-СПЕЦИФИЧНОЕ правило.
- * Базовый тик = MIN_PRICE (0.0001).
+ * Базовый тик передаётся ПАРАМЕТРОМ: у рынка предсказаний он один на всю
+ * площадку (`OutcomePrice.MIN` = 0.0001), у биржи — свой на каждый
+ * инструмент и приходит из market info. Захардкоженное значение было
+ * причиной, по которой правило не переносилось на второй ценовой домен.
  *
  * Сначала выполняет базовую валидацию через ValidateTickSize,
  * затем проверяет кратность базовому тику.
@@ -29,7 +31,7 @@ import type Decimal from 'decimal.js';
  */
 export class ValidateTickSizeMultipleOfBaseTick {
   /**
-   * Проверяет что tickSize кратен базовому тику (0.0001)
+   * Проверяет что tickSize кратен базовому тику площадки
    *
    * @param tickSize - Размер тика (уже Decimal - парсинг делается в Facade)
    * @returns Result с валидированным Decimal или InvalidTickSizeError
@@ -56,17 +58,19 @@ export class ValidateTickSizeMultipleOfBaseTick {
    * ```
    */
   public static check(
-    tickSize: Decimal
+    tickSize: Decimal,
+    baseTick: Decimal,
+    maxAllowed?: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
     // Шаг 1: Базовая валидация
-    const tickResult = ValidateTickSize.check(tickSize);
+    const tickResult = ValidateTickSize.check(tickSize, maxAllowed);
     if (!tickResult.ok) {
       return tickResult;
     }
     const tickDecimal = tickResult.value;
 
     // Шаг 2: Проверка кратности
-    const BASE_TICK = OutcomePrice.MIN.value();
+    const BASE_TICK = baseTick;
     const quotient = tickDecimal.div(BASE_TICK);
 
     if (!quotient.isInteger()) {

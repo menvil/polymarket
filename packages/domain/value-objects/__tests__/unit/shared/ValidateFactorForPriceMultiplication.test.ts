@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { ValidateFactorForPriceMultiplication } from '../../../../src/outcome-price/rules/ValidateFactorForPriceMultiplication';
+import { ValidateFactorForPriceMultiplication } from '../../../src/shared/ValidateFactorForPriceMultiplication.js';
 
 describe('ValidateFactorForPriceMultiplication', () => {
   describe('валидные множители', () => {

@@ -12,11 +12,7 @@ export { OutcomePriceErrorReason } from './errors/index.js';
 
 // Rules (публичный API для внешней валидации)
 export {
-  ValidateTickSize,
-  ValidateTickSizeMultipleOfBaseTick,
   ValidateAligned,
-  ValidateFactorForPriceMultiplication,
-  ValidateDivisorForPriceDivision,
   type TickSizeField,
   type AlignedField,
   type ErrorContext,

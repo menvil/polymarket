@@ -1,8 +1,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidOutcomePriceError, InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { OutcomePrice } from '../core/OutcomePrice.js';
-import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
-import type { AlignedErrorReason } from './types.js';
+import { ValidateTickSizeMultipleOfBaseTick } from '../../shared/ValidateTickSizeMultipleOfBaseTick.js';
+import type { AlignedErrorReason } from '../../shared/priceRuleTypes.js';
 import type Decimal from 'decimal.js';
 
 /**
@@ -68,7 +68,7 @@ export class ValidateAligned {
     tickSize: Decimal
   ): Result<void, InvalidOutcomePriceError | InvalidTickSizeError> {
     // Валидация tickSize (проверяет что кратен базовому тику 0.0001)
-    const tickResult = ValidateTickSizeMultipleOfBaseTick.check(tickSize);
+    const tickResult = ValidateTickSizeMultipleOfBaseTick.check(tickSize, OutcomePrice.MIN.value(), OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value()));
     if (!tickResult.ok) {
       return Err(tickResult.error);
     }

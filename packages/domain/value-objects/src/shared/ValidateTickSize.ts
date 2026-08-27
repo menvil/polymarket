@@ -1,10 +1,14 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
-import { OutcomePrice } from '../core/OutcomePrice.js';
 import Decimal from 'decimal.js';
 
 /**
- * Правило: TickSize должен быть валидным для OutcomePrice
+ * Правило: TickSize должен быть валидным шагом сетки цен.
+ *
+ * Проверки NaN/finite/positive универсальны для любого ценового домена.
+ * Верхняя граница передаётся ПАРАМЕТРОМ и проверяется только когда домен
+ * её имеет: у рынка предсказаний тик не может превышать ширину диапазона
+ * `[MIN, MAX]`, а у цены актива верхней границы нет вовсе.
  *
  * @remarks
  * Проверяет базовые свойства tickSize:
@@ -52,7 +56,8 @@ export class ValidateTickSize {
    * ```
    */
   public static check(
-    tickSize: Decimal
+    tickSize: Decimal,
+    maxAllowed?: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
     // Проверка NaN
     if (tickSize.isNaN()) {
@@ -105,9 +110,8 @@ export class ValidateTickSize {
       );
     }
 
-    // Проверка максимального размера (арифметическая, не доменная)
-    const maxAllowed = OutcomePrice.MAX.value().minus(OutcomePrice.MIN.value());
-    if (tickSize.greaterThan(maxAllowed)) {
+    // Верхняя граница проверяется только если домен её имеет
+    if (maxAllowed !== undefined && tickSize.greaterThan(maxAllowed)) {
       return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
@@ -117,9 +121,7 @@ export class ValidateTickSize {
               field: 'tickSize',
               reason: 'exceeds_range',
               tickSize: tickSize.toString(),
-              maxAllowed: maxAllowed.toString(),
-              minPrice: OutcomePrice.MIN.value().toString(),
-              maxPrice: OutcomePrice.MAX.value().toString()
+              maxAllowed: maxAllowed.toString()
             }
           }
         )
