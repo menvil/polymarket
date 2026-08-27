@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["jest", "@jest/globals", "node"],
+    "paths": {
+      "@polymarket/cex-semantic-adapter": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

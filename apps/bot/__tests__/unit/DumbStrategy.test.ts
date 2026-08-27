@@ -73,7 +73,9 @@ function makeSnapshot(overrides: Partial<{
     topOfBook: {
       bestBid: OutcomePrice.of(bestBidValue),
       bestAsk: OutcomePrice.of(bestAsk),
-      spread: OutcomePrice.of(new Decimal('0.02')),
+      // Поля `spread` у `TopOfBook` больше нет: ширина спреда — разность, а
+      // не цена (нулевой спред — валидный рынок, а ценовой VO строго
+      // положителен). Фикстура его и не читала — см. TopOfBook.ts
       bestBidSize: undefined,
       bestAskSize: undefined,
     },
