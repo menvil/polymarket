@@ -341,138 +341,194 @@ async function main(): Promise<void> {
   });
 
   // ── Прогон ────────────────────────────────────────────────────────────
+  // Всё, что следует за успешным стартом, обёрнуто в try/finally: любой
+  // отказ (в петле, в сборе свидетельств, в самом отчёте) обязан всё равно
+  // закрыть CCXT-инстансы, WS-соединения и файловые дескрипторы. Без этого
+  // упавший прогон оставляет контур висеть.
   adapter.start();
   await collector.start();
 
-  const startedAt = Date.now();
-  const deadline = startedAt + RUN_MINUTES * 60_000;
-  console.log(`\nCEX SEMANTIC LIVE: running ${String(RUN_MINUTES)} min, output ${runDir}\n`);
+  try {
+    const startedAt = Date.now();
+    const deadline = startedAt + RUN_MINUTES * 60_000;
+    console.log(`\nCEX SEMANTIC LIVE: running ${String(RUN_MINUTES)} min, output ${runDir}\n`);
 
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 15_000));
-    const stats = adapter.getStats();
-    maxActiveStates = Math.max(maxActiveStates, stats.activeInstrumentStates);
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+      const stats = adapter.getStats();
+      maxActiveStates = Math.max(maxActiveStates, stats.activeInstrumentStates);
+      console.log(
+        `  [${String(Math.round((Date.now() - startedAt) / 1000))}s] ` +
+          `raw=${String(stats.rawMessagesSeen)} ` +
+          `books=${String(stats.orderBooksReceived)}/${String(stats.orderBooksPublished)} ` +
+          `top=${String(stats.bookUpdatedPublished)} ` +
+          `bad=${String(stats.invalidOrderBooks)} ` +
+          `trades=${String(stats.tradesReceived)}/${String(stats.tradesPublished)} ` +
+          `dup=${String(stats.duplicateTrades)} ` +
+          `states=${String(stats.activeInstrumentStates)}`,
+      );
+    }
+
+    const finalStats = adapter.getStats();
+    const durationSec = Math.round((Date.now() - startedAt) / 1000);
+    // Здоровье сырого контура снимается ДО остановки: semantic-адаптер не
+    // имеет права ухудшать надёжность сбора
+    const collectorStatus = collector.status();
+
+    // Свидетельство «запись сырых данных работает» снимается ДО остановки
+    const archives = fs.existsSync(runDir)
+      ? fs
+          .readdirSync(runDir, { recursive: true, encoding: 'utf8' })
+          .filter((file) => file.endsWith('.jsonl') || file.endsWith('.jsonl.gz'))
+      : [];
+    const archiveBytes = archives.reduce((total, file) => {
+      const full = path.join(runDir, file);
+      return total + (fs.existsSync(full) ? fs.statSync(full).size : 0);
+    }, 0);
+
+    // ── Демонстрация явного cleanup ───────────────────────────────────────
+    const statesBeforeCleanup = finalStats.activeInstrumentStates;
+    let forgotten = 0;
+    for (const venue of evidence.keys()) {
+      forgotten += adapter.forgetVenue(venue as VenueId);
+    }
+    const statesAfterCleanup = adapter.getStats().activeInstrumentStates;
+
+    // ── Отчёт ─────────────────────────────────────────────────────────────
+    console.log('\n══════════ CEX SEMANTIC LIVE EVIDENCE ══════════');
+    console.log(`duration                  ${String(durationSec)}s`);
+    console.log(`raw messages seen         ${String(finalStats.rawMessagesSeen)}`);
+    console.log(`raw recorder deliveries   ${String(rawRecorderDeliveries)} (independent subscriber)`);
+    console.log(`books received/published  ${String(finalStats.orderBooksReceived)} / ${String(finalStats.orderBooksPublished)}`);
+    console.log(`invalid / crossed books   ${String(finalStats.invalidOrderBooks)} / ${String(finalStats.crossedOrderBooks)}`);
+    console.log(`BOOK_UPDATED published    ${String(finalStats.bookUpdatedPublished)}`);
+    console.log(`trades received/published ${String(finalStats.tradesReceived)} / ${String(finalStats.tradesPublished)}`);
+    console.log(`trades invalid            ${String(finalStats.invalidTrades)}`);
+    console.log(`trades missing id/amt/side ${String(finalStats.tradesMissingId)} / ${String(finalStats.tradesMissingAmount)} / ${String(finalStats.tradesMissingSide)}`);
+    console.log(`trades missing venue ts   ${String(finalStats.tradesMissingVenueTimestamp)}`);
+    console.log(`duplicate trades skipped  ${String(finalStats.duplicateTrades)}`);
+    console.log(`invalid identities        ${String(finalStats.invalidIdentities)}`);
+    console.log(`publish failures          ${String(finalStats.semanticPublishFailures)}`);
+    console.log(`active states max/final   ${String(maxActiveStates)} / ${String(statesBeforeCleanup)}`);
+    console.log(`after explicit cleanup    ${String(statesAfterCleanup)} (forgot ${String(forgotten)})`);
+
+    console.log('\n— per venue —');
     console.log(
-      `  [${String(Math.round((Date.now() - startedAt) / 1000))}s] ` +
-        `raw=${String(stats.rawMessagesSeen)} ` +
-        `books=${String(stats.orderBooksReceived)}/${String(stats.orderBooksPublished)} ` +
-        `top=${String(stats.bookUpdatedPublished)} ` +
-        `bad=${String(stats.invalidOrderBooks)} ` +
-        `trades=${String(stats.tradesReceived)}/${String(stats.tradesPublished)} ` +
-        `dup=${String(stats.duplicateTrades)} ` +
-        `states=${String(stats.activeInstrumentStates)}`,
+      `  ${'venue'.padEnd(11)}${'rawOB'.padStart(7)}${'semOB'.padStart(7)}${'top'.padStart(7)}` +
+        `${'rawTr'.padStart(7)}${'semTr'.padStart(7)}${'seq'.padStart(6)}  instruments`,
     );
-  }
+    for (const [venue, e] of [...evidence].sort()) {
+      console.log(
+        `  ${venue.padEnd(11)}${String(e.rawBooks).padStart(7)}${String(e.semanticDepth).padStart(7)}` +
+          `${String(e.semanticUpdated).padStart(7)}${String(e.rawTrades).padStart(7)}` +
+          `${String(e.semanticTrades).padStart(7)}${String(e.maxSequence).padStart(6)}` +
+          `  ${[...e.instruments].join(', ')}`,
+      );
+    }
 
-  const finalStats = adapter.getStats();
-  const durationSec = Math.round((Date.now() - startedAt) / 1000);
-  // Здоровье сырого контура снимается ДО остановки: semantic-адаптер не
-  // имеет права ухудшать надёжность сбора
-  const collectorStatus = collector.status();
+    console.log('\n— orderbook parity (raw best vs canonical best) —');
+    let bookMatched = 0;
+    for (const p of bookParity) {
+      if (p.match) bookMatched++;
+      console.log(
+        `  ${p.venueId.padEnd(11)}${p.instrumentId.padEnd(18)}` +
+          `raw ${p.rawBestBid}/${p.rawBestAsk}  canonical ${p.canonicalBestBid}/${p.canonicalBestAsk}` +
+          `  ${p.match ? 'MATCH' : 'MISMATCH'}`,
+      );
+    }
+    console.log(`  matched ${String(bookMatched)}/${String(bookParity.length)}`);
 
-  // Свидетельство «запись сырых данных работает» снимается ДО остановки
-  const archives = fs.existsSync(runDir)
-    ? fs
-        .readdirSync(runDir, { recursive: true, encoding: 'utf8' })
-        .filter((file) => file.endsWith('.jsonl') || file.endsWith('.jsonl.gz'))
-    : [];
-  const archiveBytes = archives.reduce((total, file) => {
-    const full = path.join(runDir, file);
-    return total + (fs.existsSync(full) ? fs.statSync(full).size : 0);
-  }, 0);
+    console.log('\n— trade parity (raw vs canonical) —');
+    let tradeMatched = 0;
+    for (const p of tradeParity) {
+      if (p.match) tradeMatched++;
+      console.log(
+        `  ${p.venueId.padEnd(11)}id ${p.rawId}→${p.canonicalId}  ` +
+          `px ${p.rawPrice}→${p.canonicalPrice}  amt ${p.rawAmount}→${p.canonicalAmount}  ` +
+          `side ${p.rawSide}→${p.canonicalSide}  ts ${p.rawTs}→${p.canonicalTs}  ` +
+          `${p.match ? 'MATCH' : 'MISMATCH'}`,
+      );
+    }
+    console.log(`  matched ${String(tradeMatched)}/${String(tradeParity.length)}`);
 
-  // ── Демонстрация явного cleanup ───────────────────────────────────────
-  const statesBeforeCleanup = finalStats.activeInstrumentStates;
-  let forgotten = 0;
-  for (const venue of evidence.keys()) {
-    forgotten += adapter.forgetVenue(venue as VenueId);
-  }
-  const statesAfterCleanup = adapter.getStats().activeInstrumentStates;
-
-  await collector.close();
-  adapter.close();
-
-  // ── Отчёт ─────────────────────────────────────────────────────────────
-  console.log('\n══════════ CEX SEMANTIC LIVE EVIDENCE ══════════');
-  console.log(`duration                  ${String(durationSec)}s`);
-  console.log(`raw messages seen         ${String(finalStats.rawMessagesSeen)}`);
-  console.log(`raw recorder deliveries   ${String(rawRecorderDeliveries)} (independent subscriber)`);
-  console.log(`books received/published  ${String(finalStats.orderBooksReceived)} / ${String(finalStats.orderBooksPublished)}`);
-  console.log(`invalid / crossed books   ${String(finalStats.invalidOrderBooks)} / ${String(finalStats.crossedOrderBooks)}`);
-  console.log(`BOOK_UPDATED published    ${String(finalStats.bookUpdatedPublished)}`);
-  console.log(`trades received/published ${String(finalStats.tradesReceived)} / ${String(finalStats.tradesPublished)}`);
-  console.log(`trades invalid            ${String(finalStats.invalidTrades)}`);
-  console.log(`trades missing id/amt/side ${String(finalStats.tradesMissingId)} / ${String(finalStats.tradesMissingAmount)} / ${String(finalStats.tradesMissingSide)}`);
-  console.log(`trades missing venue ts   ${String(finalStats.tradesMissingVenueTimestamp)}`);
-  console.log(`duplicate trades skipped  ${String(finalStats.duplicateTrades)}`);
-  console.log(`invalid identities        ${String(finalStats.invalidIdentities)}`);
-  console.log(`publish failures          ${String(finalStats.semanticPublishFailures)}`);
-  console.log(`active states max/final   ${String(maxActiveStates)} / ${String(statesBeforeCleanup)}`);
-  console.log(`after explicit cleanup    ${String(statesAfterCleanup)} (forgot ${String(forgotten)})`);
-
-  console.log('\n— per venue —');
-  console.log(
-    `  ${'venue'.padEnd(11)}${'rawOB'.padStart(7)}${'semOB'.padStart(7)}${'top'.padStart(7)}` +
-      `${'rawTr'.padStart(7)}${'semTr'.padStart(7)}${'seq'.padStart(6)}  instruments`,
-  );
-  for (const [venue, e] of [...evidence].sort()) {
+    console.log('\n— raw contour health (semantic adapter must not degrade it) —');
+    console.log(`  cex messages routed      ${String(collectorStatus.recorderCex.cexMessagesRouted)}`);
+    console.log(`  cex records accepted     ${String(collectorStatus.recorderCex.cexRecordsAccepted)}`);
+    console.log(`  cex write failures       ${String(collectorStatus.recorderCex.cexWriteFailures)}`);
+    console.log(`  cex handler errors       ${String(collectorStatus.recorderCex.cexHandlerErrors)}`);
+    console.log(`  cex records dropped      ${String(collectorStatus.recorderCex.cexRecordsDroppedInactive)}`);
+    console.log(`  cex partitions completed ${String(collectorStatus.cexWindows.partitionsCompleted)}`);
+    console.log(`  cex rotation failures    ${String(collectorStatus.cexWindows.rotationFailures)}`);
+    console.log(`  cex stream close fails   ${String(collectorStatus.cexWindows.streamCloseFailures)}`);
+    console.log(`  cex compression failures ${String(collectorStatus.cexWindows.compressionFailures)}`);
+    console.log(`  bus published/dispatched ${String(collectorStatus.bus.publishedTotal)} / ${String(collectorStatus.bus.dispatchedTotal)}`);
+    console.log(`  bus rejected publications ${String(collectorStatus.bus.rejectedPublicationsTotal)}`);
+    console.log(`  bus handler errors       ${String(collectorStatus.bus.handlerErrorsTotal)}`);
     console.log(
-      `  ${venue.padEnd(11)}${String(e.rawBooks).padStart(7)}${String(e.semanticDepth).padStart(7)}` +
-        `${String(e.semanticUpdated).padStart(7)}${String(e.rawTrades).padStart(7)}` +
-        `${String(e.semanticTrades).padStart(7)}${String(e.maxSequence).padStart(6)}` +
-        `  ${[...e.instruments].join(', ')}`,
+      `  cex sources failed       ${String(collectorStatus.sources.cex.filter((s) => s.hasFailed).length)}/${String(collectorStatus.sources.cex.length)}`,
     );
-  }
 
-  console.log('\n— orderbook parity (raw best vs canonical best) —');
-  let bookMatched = 0;
-  for (const p of bookParity) {
-    if (p.match) bookMatched++;
     console.log(
-      `  ${p.venueId.padEnd(11)}${p.instrumentId.padEnd(18)}` +
-        `raw ${p.rawBestBid}/${p.rawBestAsk}  canonical ${p.canonicalBestBid}/${p.canonicalBestAsk}` +
-        `  ${p.match ? 'MATCH' : 'MISMATCH'}`,
+      `\ncausality: ${String(causality.children)}/${String(causality.total)} semantic events are children of a raw observation`,
     );
-  }
-  console.log(`  matched ${String(bookMatched)}/${String(bookParity.length)}`);
-
-  console.log('\n— trade parity (raw vs canonical) —');
-  let tradeMatched = 0;
-  for (const p of tradeParity) {
-    if (p.match) tradeMatched++;
     console.log(
-      `  ${p.venueId.padEnd(11)}id ${p.rawId}→${p.canonicalId}  ` +
-        `px ${p.rawPrice}→${p.canonicalPrice}  amt ${p.rawAmount}→${p.canonicalAmount}  ` +
-        `side ${p.rawSide}→${p.canonicalSide}  ts ${p.rawTs}→${p.canonicalTs}  ` +
-        `${p.match ? 'MATCH' : 'MISMATCH'}`,
+      `raw archive files (before shutdown): ${String(archives.length)}, ${String(archiveBytes)} bytes`,
     );
+
+    // ── Вердикт ───────────────────────────────────────────────────────────
+    // Прогон, напечатавший MISMATCH или ненулевой отказ, обязан завершаться
+    // НЕнулевым кодом: иначе «свидетельство» неотличимо от успеха, и сломанный
+    // адаптер прошёл бы проверку молча. Пустая сверка — тоже отказ: доказывать
+    // нечем, а не «всё хорошо».
+    const failures: string[] = [];
+    if (bookParity.length === 0) failures.push('no orderbook parity samples collected');
+    if (tradeParity.length === 0) failures.push('no trade parity samples collected');
+    if (bookMatched !== bookParity.length) {
+      failures.push(`orderbook parity mismatched (${String(bookMatched)}/${String(bookParity.length)})`);
+    }
+    if (tradeMatched !== tradeParity.length) {
+      failures.push(`trade parity mismatched (${String(tradeMatched)}/${String(tradeParity.length)})`);
+    }
+
+    // Счётчики, которые ОБЯЗАНЫ быть нулевыми: отказы публикации, отказы
+    // записи сырых данных и отказы шины. `invalidOrderBooks`/`invalidTrades`
+    // сюда НЕ входят намеренно — это внешние условия, которые адаптер обязан
+    // пережить, и валить прогон на них значило бы записать проблему биржи в
+    // дефект адаптера.
+    const mustBeZero: readonly (readonly [string, number])[] = [
+      ['semantic publish failures', finalStats.semanticPublishFailures],
+      ['invalid identities', finalStats.invalidIdentities],
+      ['cex write failures', collectorStatus.recorderCex.cexWriteFailures],
+      ['cex handler errors', collectorStatus.recorderCex.cexHandlerErrors],
+      ['cex rotation failures', collectorStatus.cexWindows.rotationFailures],
+      ['cex stream close failures', collectorStatus.cexWindows.streamCloseFailures],
+      ['cex compression failures', collectorStatus.cexWindows.compressionFailures],
+      ['bus rejected publications', collectorStatus.bus.rejectedPublicationsTotal],
+      ['bus handler errors', collectorStatus.bus.handlerErrorsTotal],
+      ['failed cex sources', collectorStatus.sources.cex.filter((s) => s.hasFailed).length],
+    ];
+    for (const [name, value] of mustBeZero) {
+      if (value !== 0) failures.push(`${name} = ${String(value)}`);
+    }
+    if (causality.children !== causality.total) {
+      failures.push(
+        `semantic events without causal parent (${String(causality.total - causality.children)})`,
+      );
+    }
+
+    if (failures.length > 0) {
+      process.exitCode = 1;
+      console.log(`\nVERDICT: FAILED — ${String(failures.length)} problem(s)`);
+      for (const failure of failures) console.log(`  ✗ ${failure}`);
+    } else {
+      console.log('\nVERDICT: PASSED — parity exact, no publish/recording failures');
+    }
+    console.log('════════════════════════════════════════════════\n');
+  } finally {
+    // Ресурсы освобождаются при ЛЮБОМ исходе, включая отказ отчёта
+    await collector.close();
+    adapter.close();
   }
-  console.log(`  matched ${String(tradeMatched)}/${String(tradeParity.length)}`);
-
-  console.log('\n— raw contour health (semantic adapter must not degrade it) —');
-  console.log(`  cex messages routed      ${String(collectorStatus.recorderCex.cexMessagesRouted)}`);
-  console.log(`  cex records accepted     ${String(collectorStatus.recorderCex.cexRecordsAccepted)}`);
-  console.log(`  cex write failures       ${String(collectorStatus.recorderCex.cexWriteFailures)}`);
-  console.log(`  cex handler errors       ${String(collectorStatus.recorderCex.cexHandlerErrors)}`);
-  console.log(`  cex records dropped      ${String(collectorStatus.recorderCex.cexRecordsDroppedInactive)}`);
-  console.log(`  cex partitions completed ${String(collectorStatus.cexWindows.partitionsCompleted)}`);
-  console.log(`  cex rotation failures    ${String(collectorStatus.cexWindows.rotationFailures)}`);
-  console.log(`  cex stream close fails   ${String(collectorStatus.cexWindows.streamCloseFailures)}`);
-  console.log(`  cex compression failures ${String(collectorStatus.cexWindows.compressionFailures)}`);
-  console.log(`  bus published/dispatched ${String(collectorStatus.bus.publishedTotal)} / ${String(collectorStatus.bus.dispatchedTotal)}`);
-  console.log(`  bus rejected publications ${String(collectorStatus.bus.rejectedPublicationsTotal)}`);
-  console.log(`  bus handler errors       ${String(collectorStatus.bus.handlerErrorsTotal)}`);
-  console.log(
-    `  cex sources failed       ${String(collectorStatus.sources.cex.filter((s) => s.hasFailed).length)}/${String(collectorStatus.sources.cex.length)}`,
-  );
-
-  console.log(
-    `\ncausality: ${String(causality.children)}/${String(causality.total)} semantic events are children of a raw observation`,
-  );
-  console.log(
-    `raw archive files (before shutdown): ${String(archives.length)}, ${String(archiveBytes)} bytes`,
-  );
-  console.log('════════════════════════════════════════════════\n');
 }
 
 await main();
