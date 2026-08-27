@@ -235,7 +235,7 @@ export class Spread<TPrice extends DecimalPrice = Price> {
     // `DecimalPrice` намеренно минимален и метода сравнения не содержит —
     // требовать его от всякого будущего типа цены значило бы сузить круг
     // типов, ради расширения которого generic и вводился. Результат тот же:
-    // `Price.equals`/`ReferencePrice.equals` сами делегируют `Decimal.equals`.
+    // `Price.equals`/`AssetPrice.equals` сами делегируют `Decimal.equals`.
     return (
       this._bid.value().equals(other._bid.value()) &&
       this._ask.value().equals(other._ask.value())

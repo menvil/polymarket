@@ -1,6 +1,6 @@
-# ReferencePrice Value Object
+# AssetPrice Value Object
 
-**ReferencePrice** — цена ВНЕШНЕГО актива (`BTC/USD`, `ETH/USD`, ...) с
+**AssetPrice** — цена ВНЕШНЕГО актива (`BTC/USD`, `ETH/USD`, ...) с
 произвольной положительной точностью.
 
 ## Почему это сделано так
@@ -58,20 +58,20 @@ eth/usd    3021.5
 Та же двухслойная схема, что у остальных VO пакета:
 
 ```text
-Core    ReferencePrice.of(Decimal)      → БРОСАЕТ ReferencePriceInvariantViolation
-Facade  ReferencePriceService.create()  → возвращает Result, НИКОГДА не бросает
+Core    AssetPrice.of(Decimal)      → БРОСАЕТ AssetPriceInvariantViolation
+Facade  AssetPriceService.create()  → возвращает Result, НИКОГДА не бросает
 ```
 
 Класс нарушения инвариантов несёт стабильный маркер
 `kind = 'INVARIANT_VIOLATION'` — по нему `wrapOp` распознаёт его и сохраняет
-типизированную `reason` в `InvalidReferencePriceError.context.reason`.
+типизированную `reason` в `InvalidAssetPriceError.context.reason`.
 
 ## Использование
 
 ```typescript
-import { ReferencePriceService } from '@polymarket/value-objects';
+import { AssetPriceService } from '@polymarket/value-objects';
 
-const result = ReferencePriceService.create('79341.36626633028');
+const result = AssetPriceService.create('79341.36626633028');
 
 if (result.ok) {
   console.log(result.value.value().toString()); // "79341.36626633028"
@@ -87,7 +87,7 @@ if (result.ok) {
 ```typescript
 const raw = '78376.356031481042173952';
 
-const result = ReferencePriceService.create(raw);
+const result = AssetPriceService.create(raw);
 if (result.ok) {
   result.value.value().toString(); // ровно raw
 }
@@ -100,7 +100,7 @@ String(Number(raw));               // уже НЕ raw
 ## Причины ошибок
 
 ```typescript
-enum ReferencePriceErrorReason {
+enum AssetPriceErrorReason {
   NAN,            // значение NaN
   NON_FINITE,     // Infinity / -Infinity
   NOT_POSITIVE,   // <= 0

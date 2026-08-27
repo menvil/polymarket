@@ -145,7 +145,7 @@ describe('Chainlink TWAP', () => {
 });
 
 describe('референсная цена НЕ использует Price рынка предсказаний', () => {
-  it('79341.36 отвергается Price, но успешно проходит через ReferencePrice', () => {
+  it('79341.36 отвергается Price, но успешно проходит через AssetPrice', () => {
     // Доказательство «в лоб»: canonical prediction Price такое значение
     // принять НЕ МОЖЕТ, поэтому маппинг через него был бы невозможен
     expect(PriceService.create('79341.36').ok).toBe(false);

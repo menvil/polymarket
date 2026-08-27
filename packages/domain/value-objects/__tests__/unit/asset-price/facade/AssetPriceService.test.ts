@@ -1,21 +1,21 @@
 /**
- * Never-throw контракт фасада ReferencePrice и сохранение точности.
+ * Never-throw контракт фасада AssetPrice и сохранение точности.
  *
  * @remarks
  * Отдельно фиксируется главное различие доменов: значение, которое
- * `PriceService` обязан ОТВЕРГНУТЬ, `ReferencePriceService` обязан принять.
+ * `PriceService` обязан ОТВЕРГНУТЬ, `AssetPriceService` обязан принять.
  */
 import { describe, expect, it } from '@jest/globals';
 import Decimal from 'decimal.js';
 import {
   PriceService,
-  ReferencePriceErrorReason,
-  ReferencePriceService,
+  AssetPriceErrorReason,
+  AssetPriceService,
 } from '../../../../src/index.js';
 
-describe('ReferencePriceService.create', () => {
+describe('AssetPriceService.create', () => {
   it('парсит десятичную строку без промежуточного number', () => {
-    const result = ReferencePriceService.create('79341.36626633028');
+    const result = AssetPriceService.create('79341.36626633028');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.value().toString()).toBe('79341.36626633028');
@@ -24,7 +24,7 @@ describe('ReferencePriceService.create', () => {
   it('сохраняет точность, которую потерял бы JS number', () => {
     // 20 значащих цифр: round-trip через double исказил бы значение
     const raw = '78376.356031481042173952';
-    const result = ReferencePriceService.create(raw);
+    const result = AssetPriceService.create(raw);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.value().toString()).toBe(raw);
@@ -32,54 +32,54 @@ describe('ReferencePriceService.create', () => {
   });
 
   it('принимает Decimal и number', () => {
-    expect(ReferencePriceService.create(new Decimal('42.5')).ok).toBe(true);
-    expect(ReferencePriceService.create(3021.5).ok).toBe(true);
+    expect(AssetPriceService.create(new Decimal('42.5')).ok).toBe(true);
+    expect(AssetPriceService.create(3021.5).ok).toBe(true);
   });
 
   it('возвращает Err, а не бросает, на неположительном значении', () => {
-    const result = ReferencePriceService.create('0');
+    const result = AssetPriceService.create('0');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.context?.['reason']).toBe(ReferencePriceErrorReason.NOT_POSITIVE);
+    expect(result.error.context?.['reason']).toBe(AssetPriceErrorReason.NOT_POSITIVE);
   });
 
   it('возвращает Err на отрицательном значении', () => {
-    expect(ReferencePriceService.create('-1').ok).toBe(false);
+    expect(AssetPriceService.create('-1').ok).toBe(false);
   });
 
   it('возвращает Err на непарсящейся строке', () => {
-    const result = ReferencePriceService.create('not-a-number');
+    const result = AssetPriceService.create('not-a-number');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.context?.['reason']).toBe(ReferencePriceErrorReason.INVALID_FORMAT);
+    expect(result.error.context?.['reason']).toBe(AssetPriceErrorReason.INVALID_FORMAT);
   });
 
   it('возвращает Err на NaN и Infinity с разными причинами', () => {
-    const nan = ReferencePriceService.create(NaN);
-    const inf = ReferencePriceService.create(Infinity);
+    const nan = AssetPriceService.create(NaN);
+    const inf = AssetPriceService.create(Infinity);
 
     expect(nan.ok).toBe(false);
     expect(inf.ok).toBe(false);
     if (nan.ok || inf.ok) return;
-    expect(nan.error.context?.['reason']).toBe(ReferencePriceErrorReason.NAN);
-    expect(inf.error.context?.['reason']).toBe(ReferencePriceErrorReason.NON_FINITE);
+    expect(nan.error.context?.['reason']).toBe(AssetPriceErrorReason.NAN);
+    expect(inf.error.context?.['reason']).toBe(AssetPriceErrorReason.NON_FINITE);
   });
 
   it('никогда не бросает — даже на явно мусорном вводе', () => {
     for (const raw of ['', '  ', 'NaN', '1.2.3', '0x10']) {
-      expect(() => ReferencePriceService.create(raw)).not.toThrow();
+      expect(() => AssetPriceService.create(raw)).not.toThrow();
     }
   });
 });
 
 describe('разделение доменов с Price', () => {
-  it('цена актива отвергается Price и принимается ReferencePrice', () => {
+  it('цена актива отвергается Price и принимается AssetPrice', () => {
     expect(PriceService.create('79341.36').ok).toBe(false);
-    expect(ReferencePriceService.create('79341.36').ok).toBe(true);
+    expect(AssetPriceService.create('79341.36').ok).toBe(true);
   });
 
   it('вероятностная цена валидна в обоих доменах — они пересекаются, но не совпадают', () => {
     expect(PriceService.create('0.42').ok).toBe(true);
-    expect(ReferencePriceService.create('0.42').ok).toBe(true);
+    expect(AssetPriceService.create('0.42').ok).toBe(true);
   });
 });

@@ -99,7 +99,7 @@
 
 // Валидация диапазонов
 export * from './InvalidPriceError.js';
-export * from './InvalidReferencePriceError.js';
+export * from './InvalidAssetPriceError.js';
 export * from './InvalidQuantityError.js';
 export * from './InvalidSignedQuantityError.js';
 export * from './InvalidPercentageError.js';

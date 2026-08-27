@@ -126,14 +126,14 @@ price.match({
 
 ---
 
-### 🌐 [ReferencePrice](./reference-price/README.md)
+### 🌐 [AssetPrice](./asset-price/README.md)
 
 Цена ВНЕШНЕГО актива (`BTC/USD`, `ETH/USD`) — без ограничения `0..1`.
 
 ```typescript
-import { ReferencePriceService } from '@polymarket/value-objects';
+import { AssetPriceService } from '@polymarket/value-objects';
 
-const result = ReferencePriceService.create('79341.36626633028');
+const result = AssetPriceService.create('79341.36626633028');
 if (result.ok) {
   console.log(result.value.value().toString()); // "79341.36626633028"
 }
@@ -146,7 +146,7 @@ if (result.ok) {
 - Source-agnostic: провенанс наблюдения живёт в событии, а не в числе
 - Десятичная строка источника парсится напрямую, без промежуточного `number`
 
-**[→ Подробная документация](./reference-price/README.md)**
+**[→ Подробная документация](./asset-price/README.md)**
 
 ---
 

@@ -11,8 +11,8 @@ import { describe, expect, it } from '@jest/globals';
 import {
   Price,
   PriceService,
-  ReferencePrice,
-  ReferencePriceService,
+  AssetPrice,
+  AssetPriceService,
   QuantityService,
 } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
@@ -34,7 +34,7 @@ const qty = (raw: string) => {
 };
 
 const predictionPricing = bookPricing(PriceService.create);
-const assetPricing = bookPricing(ReferencePriceService.create);
+const assetPricing = bookPricing(AssetPriceService.create);
 
 describe('рынок предсказаний (домен [0.0001, 0.9999])', () => {
   const book = Orderbook.fromLevels({
@@ -65,8 +65,8 @@ describe('биржевой стакан (домен (0, ∞))', () => {
   const book = Orderbook.fromLevels({
     venueId: BINANCE,
     instrumentId: unsafeInstrumentId('BTC/USDT'),
-    bids: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78468.50')), qty('0.5'))],
-    asks: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470.50')), qty('1.5'))],
+    bids: [OrderbookLevel.create(AssetPrice.of(new Decimal('78468.50')), qty('0.5'))],
+    asks: [OrderbookLevel.create(AssetPrice.of(new Decimal('78470.50')), qty('1.5'))],
     receivedAt: AT.value,
   });
 
@@ -94,8 +94,8 @@ describe('биржевой стакан (домен (0, ∞))', () => {
     const crossed = Orderbook.fromLevels({
       venueId: BINANCE,
       instrumentId: unsafeInstrumentId('BTC/USDT'),
-      bids: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78475')), qty('1'))],
-      asks: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470')), qty('1'))],
+      bids: [OrderbookLevel.create(AssetPrice.of(new Decimal('78475')), qty('1'))],
+      asks: [OrderbookLevel.create(AssetPrice.of(new Decimal('78470')), qty('1'))],
       receivedAt: AT.value,
     });
     const spread = assetPricing.spread(crossed);
@@ -122,8 +122,8 @@ describe('структурные операции домена не знают',
       venueId: BINANCE,
       instrumentId: unsafeInstrumentId('BTC/USDT'),
       bids: [
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78468')), qty('10')),
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78467')), qty('20')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78468')), qty('10')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78467')), qty('20')),
       ],
       asks: [],
       receivedAt: AT.value,
@@ -141,12 +141,12 @@ describe('структурные операции домена не знают',
       venueId: BINANCE,
       instrumentId: unsafeInstrumentId('BTC/USDT'),
       bids: [
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78460')), qty('1')),
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78468')), qty('1')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78460')), qty('1')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78468')), qty('1')),
       ],
       asks: [
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78480')), qty('1')),
-        OrderbookLevel.create(ReferencePrice.of(new Decimal('78470')), qty('1')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78480')), qty('1')),
+        OrderbookLevel.create(AssetPrice.of(new Decimal('78470')), qty('1')),
       ],
       receivedAt: AT.value,
     });

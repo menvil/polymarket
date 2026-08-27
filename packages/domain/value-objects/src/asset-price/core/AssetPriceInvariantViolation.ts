@@ -1,10 +1,10 @@
 /**
- * Исключение при нарушении инвариантов ReferencePrice.
+ * Исключение при нарушении инвариантов AssetPrice.
  *
  * @remarks
- * Бросается только Core-слоем (`ReferencePrice.of()`).
- * Facade-слой (`ReferencePriceService`) ловит и оборачивает в
- * `InvalidReferencePriceError`, сохраняя типизированную `reason`.
+ * Бросается только Core-слоем (`AssetPrice.of()`).
+ * Facade-слой (`AssetPriceService`) ловит и оборачивает в
+ * `InvalidAssetPriceError`, сохраняя типизированную `reason`.
  *
  * ### Маркер `kind`
  *
@@ -16,18 +16,18 @@
  * legacy-список означало бы расширять механизм, который сам себя объявил
  * устаревшим, и заставлять foundation знать про каждый новый доменный тип.
  */
-import { ReferencePriceErrorReason } from '../errors/ReferencePriceErrorReason.js';
+import { AssetPriceErrorReason } from '../errors/AssetPriceErrorReason.js';
 
-export class ReferencePriceInvariantViolation extends Error {
+export class AssetPriceInvariantViolation extends Error {
   /** Стабильный маркер для `isCoreInvariantViolation` (см. докблок модуля). */
   public readonly kind = 'INVARIANT_VIOLATION';
 
-  public readonly reason: ReferencePriceErrorReason;
+  public readonly reason: AssetPriceErrorReason;
 
-  constructor(message: string, reason: ReferencePriceErrorReason) {
+  constructor(message: string, reason: AssetPriceErrorReason) {
     super(message);
-    this.name = 'ReferencePriceInvariantViolation';
+    this.name = 'AssetPriceInvariantViolation';
     this.reason = reason;
-    Object.setPrototypeOf(this, ReferencePriceInvariantViolation.prototype);
+    Object.setPrototypeOf(this, AssetPriceInvariantViolation.prototype);
   }
 }

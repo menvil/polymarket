@@ -32,7 +32,7 @@ import type { MessageEnvelope, MessageMetadata } from '@polymarket/messages';
  *
  * ### Чем ExternalMessage НЕ является
  *
- * Не `OrderBook`, не `Trade`, не `ReferencePrice`, не `VenueOrderUpdate`,
+ * Не `OrderBook`, не `Trade`, не `AssetPrice`, не `VenueOrderUpdate`,
  * не `ApplicationEvent` и не Domain-событие. Всё перечисленное — уже
  * ИНТЕРПРЕТИРОВАННЫЕ concepts, которые появляются ПОСЛЕ semantic adapter;
  * `ExternalMessage` живёт строго до него.

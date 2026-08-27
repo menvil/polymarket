@@ -11,7 +11,7 @@ import { describe, expect, it } from '@jest/globals';
 import Decimal from 'decimal.js';
 import {
   Price,
-  ReferencePrice,
+  AssetPrice,
   Spread,
   type DecimalPrice,
 } from '../../../src/index.js';
@@ -22,8 +22,8 @@ describe('оба ценовых домена удовлетворяют конт
     expect(price.value().toString()).toBe('0.52');
   });
 
-  it('ReferencePrice присваивается DecimalPrice структурно', () => {
-    const price: DecimalPrice = ReferencePrice.of(new Decimal('78468.5'));
+  it('AssetPrice присваивается DecimalPrice структурно', () => {
+    const price: DecimalPrice = AssetPrice.of(new Decimal('78468.5'));
     expect(price.value().toString()).toBe('78468.5');
   });
 
@@ -39,8 +39,8 @@ describe('оба ценовых домена удовлетворяют конт
 
     const outcome = bestOf([Price.of(new Decimal('0.48')), Price.of(new Decimal('0.52'))]);
     const asset = bestOf([
-      ReferencePrice.of(new Decimal('78468.5')),
-      ReferencePrice.of(new Decimal('78470.1')),
+      AssetPrice.of(new Decimal('78468.5')),
+      AssetPrice.of(new Decimal('78470.1')),
     ]);
 
     expect(outcome?.value().toString()).toBe('0.52');
@@ -67,10 +67,10 @@ describe('Spread работает с обоими доменами', () => {
 
   it('Spread строится и по ценам внешнего актива', () => {
     const spread = Spread.of(
-      ReferencePrice.of(new Decimal('78468.5')),
-      ReferencePrice.of(new Decimal('78470.1')),
+      AssetPrice.of(new Decimal('78468.5')),
+      AssetPrice.of(new Decimal('78470.1')),
     );
-    const bid: ReferencePrice = spread.bid();
+    const bid: AssetPrice = spread.bid();
     expect(bid.value().toString()).toBe('78468.5');
     // Та же арифметика, другой домен — 1.6 USDT ширины вместо 0.04 вероятности
     expect(spread.width().toString()).toBe('1.6');
@@ -78,7 +78,7 @@ describe('Spread работает с обоими доменами', () => {
 
   it('инвариант bid <= ask действует в любом домене', () => {
     expect(() =>
-      Spread.of(ReferencePrice.of(new Decimal('78470.1')), ReferencePrice.of(new Decimal('78468.5'))),
+      Spread.of(AssetPrice.of(new Decimal('78470.1')), AssetPrice.of(new Decimal('78468.5'))),
     ).toThrow();
   });
 });

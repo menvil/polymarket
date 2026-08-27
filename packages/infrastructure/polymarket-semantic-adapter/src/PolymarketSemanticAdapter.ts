@@ -45,7 +45,7 @@ import { asInstrumentId, asMarketId, asMarketDataSourceId, asVenueTradeId } from
 import type { Orderbook } from '@polymarket/orderbook';
 import { bookPricing } from '@polymarket/orderbook';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
-import { PriceService, QuantityService, ReferencePriceService } from '@polymarket/value-objects';
+import { PriceService, QuantityService, AssetPriceService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import { TimestampService } from '@polymarket/timestamp';
 import type { ReferencePriceFeed, TopOfBook } from '@polymarket/application-events';
@@ -928,7 +928,7 @@ export class PolymarketSemanticAdapter {
    * @param parent - Metadata raw-наблюдения
    *
    * @remarks
-   * Значение идёт в `ReferencePriceService`, а НЕ в `Price`: цена базового
+   * Значение идёт в `AssetPriceService`, а НЕ в `Price`: цена базового
    * актива (`79341.36626633028`) не помещается в домен рынка предсказаний
    * `[0.0001, 0.9999]` — конструктор `Price` обязан её отвергнуть.
    *
@@ -957,7 +957,7 @@ export class PolymarketSemanticAdapter {
       return;
     }
 
-    const valueResult = ReferencePriceService.create(String(payload.value));
+    const valueResult = AssetPriceService.create(String(payload.value));
     if (!valueResult.ok) {
       this._invalidPayloads++;
       this._logger.warn('Rejected reference price observation with invalid value', {

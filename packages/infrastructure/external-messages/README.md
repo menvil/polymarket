@@ -65,7 +65,7 @@ Polymarket semantic adapter
 Orderbook
 ```
 
-`Orderbook`, `Trade`, `ReferencePrice`, `VenueOrderUpdate`, `ApplicationEvent`,
+`Orderbook`, `Trade`, `AssetPrice`, `VenueOrderUpdate`, `ApplicationEvent`,
 Domain-события — всё это появляется **после** semantic adapter.
 `ExternalMessage` живёт строго до него.
 

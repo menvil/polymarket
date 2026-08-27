@@ -14,7 +14,7 @@
  *
  * Чтобы собрать `(bid + ask) / 2` обратно в цену, нужно знать, какой
  * фабрикой это делать — `PriceService.create` для рынка предсказаний или
- * `ReferencePriceService.create` для внешнего актива. Пока такие методы
+ * `AssetPriceService.create` для внешнего актива. Пока такие методы
  * жили внутри `Orderbook`, сущность была обязана знать ровно один домен, и
  * именно это делало её непригодной для стакана биржи.
  *
@@ -50,7 +50,7 @@ import type { Orderbook } from '../core/Orderbook.js';
  * Фабрика цены конкретного домена.
  *
  * @remarks
- * Совместима с `PriceService.create` / `ReferencePriceService.create` как
+ * Совместима с `PriceService.create` / `AssetPriceService.create` как
  * есть — специально писать адаптер не нужно.
  */
 export type PriceFactory<TPrice extends DecimalPrice> = (

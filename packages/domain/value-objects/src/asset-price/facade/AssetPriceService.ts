@@ -1,5 +1,5 @@
 /**
- * Service facade для безопасного создания {@link ReferencePrice}.
+ * Service facade для безопасного создания {@link AssetPrice}.
  *
  * @remarks
  * ## Never Throw Contract
@@ -8,7 +8,7 @@
  *
  * ## Facade Error Contract
  * Каждый `Err` содержит context с полями:
- * - `context.reason`: {@link ReferencePriceErrorReason} (typed enum)
+ * - `context.reason`: {@link AssetPriceErrorReason} (typed enum)
  * - `context.op`: string (название операции)
  * - `context.raw`: `{ field, value }` (значение, вызвавшее ошибку)
  * - `context.source`: ErrorSource
@@ -21,9 +21,9 @@
  *
  * @example
  * ```typescript
- * import { ReferencePriceService } from '@polymarket/value-objects';
+ * import { AssetPriceService } from '@polymarket/value-objects';
  *
- * const result = ReferencePriceService.create('79341.36626633028');
+ * const result = AssetPriceService.create('79341.36626633028');
  * if (result.ok) {
  *   console.log(result.value.value().toString()); // "79341.36626633028"
  * } else {
@@ -33,19 +33,19 @@
  */
 import Decimal from 'decimal.js';
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidReferencePriceError, toDecimal, wrapOp, rewrap } from '@polymarket/errors';
-import { ReferencePrice } from '../core/ReferencePrice.js';
-import { ReferencePriceErrorReason } from '../errors/ReferencePriceErrorReason.js';
+import { InvalidAssetPriceError, toDecimal, wrapOp, rewrap } from '@polymarket/errors';
+import { AssetPrice } from '../core/AssetPrice.js';
+import { AssetPriceErrorReason } from '../errors/AssetPriceErrorReason.js';
 
-export class ReferencePriceService {
-  private static readonly SERVICE_NAME = 'ReferencePriceService';
+export class AssetPriceService {
+  private static readonly SERVICE_NAME = 'AssetPriceService';
 
   /**
-   * Создаёт {@link ReferencePrice} из десятичной строки, числа либо `Decimal`.
+   * Создаёт {@link AssetPrice} из десятичной строки, числа либо `Decimal`.
    *
    * @param value - Значение цены актива. Для vendor-данных ВСЕГДА передавай
    *   исходную десятичную строку — только так сохраняется точность источника
-   * @returns `Ok(ReferencePrice)` либо `Err(InvalidReferencePriceError)` с
+   * @returns `Ok(AssetPrice)` либо `Err(InvalidAssetPriceError)` с
    *   типизированной причиной в `context.reason`
    * @throws Никогда — все ошибки оборачиваются в `Result`
    *
@@ -53,50 +53,50 @@ export class ReferencePriceService {
    * Алгоритм:
    * 1. Парсинг входа в `Decimal` через `toDecimal()` (NaN → `NAN`,
    *    Infinity → `NON_FINITE`, мусор → `INVALID_FORMAT`).
-   * 2. Создание VO через `ReferencePrice.of()` — Core проверяет инварианты
-   *    и бросает `ReferencePriceInvariantViolation` при `<= 0`; `wrapOp`
+   * 2. Создание VO через `AssetPrice.of()` — Core проверяет инварианты
+   *    и бросает `AssetPriceInvariantViolation` при `<= 0`; `wrapOp`
    *    ловит его и превращает в `Err` с `reason: NOT_POSITIVE`.
    *
    * @example
    * ```typescript
-   * ReferencePriceService.create('79341.36626633028'); // Ok
-   * ReferencePriceService.create('0');                 // Err, reason NOT_POSITIVE
-   * ReferencePriceService.create('-1');                // Err, reason NOT_POSITIVE
-   * ReferencePriceService.create('nonsense');          // Err, reason INVALID_FORMAT
+   * AssetPriceService.create('79341.36626633028'); // Ok
+   * AssetPriceService.create('0');                 // Err, reason NOT_POSITIVE
+   * AssetPriceService.create('-1');                // Err, reason NOT_POSITIVE
+   * AssetPriceService.create('nonsense');          // Err, reason INVALID_FORMAT
    * ```
    */
   public static create(
     value: number | string | Decimal,
-  ): Result<ReferencePrice, InvalidReferencePriceError> {
+  ): Result<AssetPrice, InvalidAssetPriceError> {
     const decimalResult = toDecimal(
       'value',
       value,
-      ReferencePriceErrorReason.INVALID_FORMAT,
-      InvalidReferencePriceError,
+      AssetPriceErrorReason.INVALID_FORMAT,
+      InvalidAssetPriceError,
       {
-        nanReason: ReferencePriceErrorReason.NAN,
-        nonFiniteReason: ReferencePriceErrorReason.NON_FINITE,
+        nanReason: AssetPriceErrorReason.NAN,
+        nonFiniteReason: AssetPriceErrorReason.NON_FINITE,
       },
     );
     if (isErr(decimalResult)) {
       return Err(
         rewrap(
-          ReferencePriceService.SERVICE_NAME,
+          AssetPriceService.SERVICE_NAME,
           'create',
           {},
           decimalResult.error,
-          InvalidReferencePriceError,
+          InvalidAssetPriceError,
         ),
       );
     }
 
     return wrapOp(
-      ReferencePriceService.SERVICE_NAME,
+      AssetPriceService.SERVICE_NAME,
       'create',
       { raw: { field: 'value', value: String(value) } },
       // Core получает уже готовый Decimal — только проверка инвариантов
-      () => Ok(ReferencePrice.of(decimalResult.value)),
-      InvalidReferencePriceError,
+      () => Ok(AssetPrice.of(decimalResult.value)),
+      InvalidAssetPriceError,
     );
   }
 }

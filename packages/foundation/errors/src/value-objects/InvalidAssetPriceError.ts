@@ -1,5 +1,5 @@
 /**
- * InvalidReferencePriceError - ошибка валидации референсной цены актива.
+ * InvalidAssetPriceError - ошибка валидации референсной цены актива.
  *
  * @remarks
  * Выбрасывается когда референсная цена (BTC/USD, ETH/USD, ...) имеет
@@ -11,7 +11,7 @@
  *
  * Отличается от {@link InvalidPriceError} доменом значения: `Price` —
  * цена outcome-токена рынка предсказаний в диапазоне `[0.0001, 0.9999]`,
- * `ReferencePrice` — цена внешнего актива без верхней границы
+ * `AssetPrice` — цена внешнего актива без верхней границы
  * (`79341.36626633028`). Смешение этих ошибок скрыло бы ровно то различие,
  * ради которого заведён отдельный VO.
  *
@@ -19,13 +19,13 @@
  *
  * @example
  * ```typescript
- * import { InvalidReferencePriceError } from '@polymarket/errors';
+ * import { InvalidAssetPriceError } from '@polymarket/errors';
  *
  * // Статическое сообщение
- * throw new InvalidReferencePriceError('Reference price must be positive');
+ * throw new InvalidAssetPriceError('Reference price must be positive');
  *
  * // С типизированной причиной ошибки
- * throw new InvalidReferencePriceError('Reference price must be positive', {
+ * throw new InvalidAssetPriceError('Reference price must be positive', {
  *   context: {
  *     reason: 'NOT_POSITIVE',
  *     op: 'create',
@@ -37,13 +37,13 @@
 import { TradingError, ErrorSeverity } from '../base/index.js';
 
 /**
- * InvalidReferencePriceError - ошибка валидации референсной цены актива.
+ * InvalidAssetPriceError - ошибка валидации референсной цены актива.
  *
  * @remarks
  * Уровень серьезности: low (незначительная)
  * Рекомендуемый код ошибки: INVALID_REFERENCE_PRICE
  */
-export class InvalidReferencePriceError extends TradingError {
+export class InvalidAssetPriceError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';
 
   /**

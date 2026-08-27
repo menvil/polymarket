@@ -27,13 +27,13 @@ export type { DecimalPrice } from './shared/index.js';
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
 
-// ReferencePrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
+// AssetPrice модуль — цена ВНЕШНЕГО актива (BTC/USD), без ограничения [0..1]
 export {
-  ReferencePrice,
-  ReferencePriceInvariantViolation,
-  ReferencePriceService,
-  ReferencePriceErrorReason
-} from './reference-price/index.js';
+  AssetPrice,
+  AssetPriceInvariantViolation,
+  AssetPriceService,
+  AssetPriceErrorReason
+} from './asset-price/index.js';
 
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
