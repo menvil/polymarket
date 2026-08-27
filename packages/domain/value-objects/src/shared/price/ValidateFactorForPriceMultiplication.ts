@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidOperandError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { PriceRuleReason } from './priceRuleTypes.js';
 
 /**
  * Правило: Factor для операции умножения OutcomePrice должен быть finite и не NaN
@@ -39,7 +40,7 @@ export class ValidateFactorForPriceMultiplication {
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),
-              reason: 'is_nan'
+              reason: PriceRuleReason.IS_NAN
             }
           }
         )
@@ -58,7 +59,7 @@ export class ValidateFactorForPriceMultiplication {
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),
-              reason: 'not_finite'
+              reason: PriceRuleReason.NOT_FINITE
             }
           }
         )
@@ -76,7 +77,7 @@ export class ValidateFactorForPriceMultiplication {
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),
-              reason: 'is_negative'
+              reason: PriceRuleReason.IS_NEGATIVE
             }
           }
         )

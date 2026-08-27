@@ -3,6 +3,7 @@ import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { ValidateTickSize } from './ValidateTickSize.js';
 import type { TickSizeMultipleReason } from './priceRuleTypes.js';
 import type Decimal from 'decimal.js';
+import { PriceRuleReason } from './priceRuleTypes.js';
 
 /**
  * Правило: TickSize должен быть кратен базовому тику Polymarket
@@ -82,7 +83,7 @@ export class ValidateTickSizeMultipleOfBaseTick {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
-              reason: 'not_multiple_of_base_tick' as TickSizeMultipleReason,
+              reason: PriceRuleReason.NOT_MULTIPLE_OF_BASE_TICK as TickSizeMultipleReason,
               tickSize: tickDecimal.toString(),
               baseTick: BASE_TICK.toString(),
               quotient: quotient.toString()

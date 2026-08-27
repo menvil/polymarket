@@ -26,6 +26,7 @@ export {
   priceFromJSON,
   priceToJSON,
   roundPriceToTick,
+  PriceRuleReason,
   ValidateAligned,
   ValidateDivisorForPriceDivision,
   ValidateFactorForPriceMultiplication,

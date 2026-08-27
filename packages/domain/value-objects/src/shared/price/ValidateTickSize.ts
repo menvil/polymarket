@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { PriceRuleReason } from './priceRuleTypes.js';
 
 /**
  * Правило: TickSize должен быть валидным шагом сетки цен.
@@ -68,7 +69,7 @@ export class ValidateTickSize {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
-              reason: 'is_nan',
+              reason: PriceRuleReason.IS_NAN,
               tickSize: tickSize.toString()
             }
           }
@@ -85,7 +86,7 @@ export class ValidateTickSize {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
-              reason: 'not_finite',
+              reason: PriceRuleReason.NOT_FINITE,
               tickSize: tickSize.toString()
             }
           }
@@ -102,7 +103,7 @@ export class ValidateTickSize {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
-              reason: 'not_positive',
+              reason: PriceRuleReason.NOT_POSITIVE,
               tickSize: tickSize.toString()
             }
           }
@@ -119,7 +120,7 @@ export class ValidateTickSize {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
-              reason: 'exceeds_range',
+              reason: PriceRuleReason.EXCEEDS_RANGE,
               tickSize: tickSize.toString(),
               maxAllowed: maxAllowed.toString()
             }

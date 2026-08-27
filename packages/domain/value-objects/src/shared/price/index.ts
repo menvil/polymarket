@@ -13,6 +13,7 @@
  * Домены (`outcome-price`, `asset-price`) держат только свои инварианты,
  * константы и специфичные методы вроде `complement`.
  */
+export { PriceRuleReason } from './priceRuleTypes.js';
 export type { DecimalPrice } from './DecimalPrice.js';
 export type { PriceDomain } from './priceDomain.js';
 export type { TickRoundingMode } from './priceOperations.js';

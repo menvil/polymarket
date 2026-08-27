@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidDivisorError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { PriceRuleReason } from './priceRuleTypes.js';
 
 /**
  * Правило: Делитель для операции деления OutcomePrice должен быть валидным
@@ -49,7 +50,7 @@ export class ValidateDivisorForPriceDivision {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
-              reason: 'is_nan'
+              reason: PriceRuleReason.IS_NAN
             }
           }
         )
@@ -65,7 +66,7 @@ export class ValidateDivisorForPriceDivision {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
-              reason: 'not_finite'
+              reason: PriceRuleReason.NOT_FINITE
             }
           }
         )
@@ -81,7 +82,7 @@ export class ValidateDivisorForPriceDivision {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
-              reason: 'is_negative'
+              reason: PriceRuleReason.IS_NEGATIVE
             }
           }
         )
@@ -97,7 +98,7 @@ export class ValidateDivisorForPriceDivision {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
-              reason: 'is_zero'
+              reason: PriceRuleReason.IS_ZERO
             }
           }
         )

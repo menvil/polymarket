@@ -31,6 +31,7 @@ export {
   multiplyPrice,
   priceDifference,
   roundPriceToTick,
+  PriceRuleReason,
   ValidateAligned,
   ValidateFactorForPriceMultiplication,
   ValidateDivisorForPriceDivision,

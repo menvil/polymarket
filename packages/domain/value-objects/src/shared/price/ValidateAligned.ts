@@ -5,13 +5,14 @@ import type { DecimalPrice } from './DecimalPrice.js';
 import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
 import type { AlignedErrorReason } from './priceRuleTypes.js';
 import type Decimal from 'decimal.js';
+import { PriceRuleReason } from './priceRuleTypes.js';
 
 /**
  * Правило: цена должна лежать точно на сетке тика.
  *
  * Работает в ЛЮБОМ ценовом домене: сама проверка — это `price % tick === 0`,
  * и о диапазоне цены она не знает. Доменным правило делает конструктор
- * ошибки, который передаётся вызывающим — так `reason: 'not_aligned'`
+ * ошибки, который передаётся вызывающим — так `reason: PriceRuleReason.NOT_ALIGNED`
  * приходит потребителю в типе ЕГО домена.
  *
  * @remarks
@@ -100,7 +101,7 @@ export class ValidateAligned {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               field: 'price',
-              reason: 'not_aligned' as AlignedErrorReason,
+              reason: PriceRuleReason.NOT_ALIGNED as AlignedErrorReason,
               price: price.value().toString(),
               tickSize: tickDecimal.toString()
             }
