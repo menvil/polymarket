@@ -73,6 +73,7 @@ import type { BookUpdateHandler } from '@polymarket/handlers';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
 import { ReplayClock } from '@polymarket/time';
+import { KnownVenues } from '@polymarket/ids';
 import {
   SnapshotReaderFactory,
   SnapshotScanner,
@@ -1085,6 +1086,7 @@ export class BacktestEngine {
     const result = await this._deps.eventBus.publish({
       type: 'TRADE_RECEIVED',
       payload: {
+        venueId: KnownVenues.POLYMARKET,
         instrumentId,
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         price: price!,

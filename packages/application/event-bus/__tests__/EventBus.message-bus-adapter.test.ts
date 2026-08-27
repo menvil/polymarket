@@ -25,6 +25,7 @@ import { EventBus } from '../src/EventBus.js';
 // MessageBusStats — из корня пакета: фиксирует публичный type re-export
 import type { MessageBusStats } from '../src/index.js';
 import type { BookUpdatedEvent } from '@polymarket/application-events';
+import { KnownVenues } from '@polymarket/ids';
 
 function makeLogger(): ILogger {
   return {
@@ -49,10 +50,10 @@ function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
     payload: {
+      venueId: KnownVenues.POLYMARKET,
       topOfBook: {
         bestBid: undefined,
         bestAsk: undefined,
-        spread: undefined,
         bestBidSize: undefined,
         bestAskSize: undefined,
       },

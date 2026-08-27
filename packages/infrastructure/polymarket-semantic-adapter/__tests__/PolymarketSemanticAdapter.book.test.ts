@@ -71,7 +71,9 @@ describe('book → canonical Orderbook', () => {
     expect(payload.topOfBook.bestBid?.value().toString()).toBe('0.5');
     expect(payload.topOfBook.bestAsk?.value().toString()).toBe('0.52');
     expect(payload.topOfBook.bestBidSize?.value().toString()).toBe('10');
-    expect(payload.topOfBook.spread?.value().toString()).toBe('0.02');
+    // Ширина спреда в TopOfBook больше не хранится — она разность, а не
+    // цена; проверяем стороны, из которых она выводится
+    expect(payload.topOfBook.bestAskSize?.value().toString()).toBe('7');
     expect(payload.sequenceNumber).toBe(1);
   });
 
@@ -360,8 +362,8 @@ describe('односторонняя и пустая книга', () => {
     expect(top.bestBid?.value().toString()).toBe('0.5');
     expect(top.bestAsk).toBeUndefined();
     expect(top.bestAskSize).toBeUndefined();
-    // Спред без второй стороны не существует и не подделывается
-    expect(top.spread).toBeUndefined();
+    // Второй стороны нет — и уровни для неё не выдумываются
+    expect(top.bestAskSize).toBeUndefined();
   });
 
   it('пустая книга допустима и не порождает фиктивных уровней', async () => {

@@ -41,9 +41,14 @@ import type { MessageMetadata, MessageMetadataGenerator } from '@polymarket/mess
 import type { IExternalMessageBus } from '@polymarket/external-message-bus';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { InstrumentId, MarketId, MarketDataSourceId } from '@polymarket/ids';
-import { asInstrumentId, asMarketId, asMarketDataSourceId, asVenueTradeId } from '@polymarket/ids';
+import {
+  KnownVenues,
+  asInstrumentId,
+  asMarketDataSourceId,
+  asMarketId,
+  asVenueTradeId,
+} from '@polymarket/ids';
 import type { Orderbook } from '@polymarket/orderbook';
-import { bookPricing } from '@polymarket/orderbook';
 import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import { OutcomePriceService, QuantityService, AssetPriceService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -117,15 +122,6 @@ export const POLYMARKET_RTDS_CHAINLINK_TWAP_SOURCE: MarketDataSourceId =
  * vendor-ом раньше нашего кода не должно молча смешивать ряды разных окон.
  */
 const SUPPORTED_TWAP_WINDOWS: ReadonlySet<number> = new Set([30, 60]);
-
-/**
- * Ценовые метрики стакана рынка предсказаний.
- *
- * @remarks
- * Фабрика домена связывается ОДИН раз: `Orderbook` — структура и своего
- * ценового домена не знает.
- */
-const PREDICTION_PRICING = bookPricing(OutcomePriceService.create);
 
 /** Read-only диагностика адаптера. */
 export interface PolymarketSemanticAdapterStats {
@@ -729,7 +725,13 @@ export class PolymarketSemanticAdapter {
 
     const depthPublished = await this._publish({
       type: 'BOOK_DEPTH',
-      payload: { instrumentId: identity.instrumentId, snapshot: book, timestamp },
+      payload: {
+        venueId: KnownVenues.POLYMARKET,
+        marketId: identity.marketId,
+        instrumentId: identity.instrumentId,
+        snapshot: book,
+        timestamp,
+      },
       metadata: this._metadata.nextChild(parent),
     });
     if (depthPublished) {
@@ -747,6 +749,7 @@ export class PolymarketSemanticAdapter {
       type: 'BOOK_UPDATED',
       payload: {
         topOfBook,
+        venueId: KnownVenues.POLYMARKET,
         instrumentId: identity.instrumentId,
         marketId: identity.marketId,
         // Per-instrument semantic-версия, а не sequence шины: глобальная
@@ -856,7 +859,16 @@ export class PolymarketSemanticAdapter {
 
     const published = await this._publish({
       type: 'TRADE_RECEIVED',
-      payload: { instrumentId, marketId, venueTradeId, price, size, side, timestamp },
+      payload: {
+        venueId: KnownVenues.POLYMARKET,
+        marketId,
+        instrumentId,
+        venueTradeId,
+        price,
+        size,
+        side,
+        timestamp,
+      },
       metadata: this._metadata.nextChild(parent),
     });
     if (published) {
@@ -1165,20 +1177,14 @@ function toTradeSide(side: OrderSide): Side | undefined {
  * @remarks
  * Уровни НЕ выдумываются: односторонняя и пустая книга — валидные состояния
  * полной глубины, и подставлять `0`/`1` ради «полноты» `TopOfBook`
- * запрещено. Спред считается через `bookPricing`, который сам отсеивает
- * пустую/одностороннюю/скрещенную книгу.
+ * запрещено. Ширина спреда в `TopOfBook` не хранится: она разность, а не
+ * цена, и нулевой спред (валидный рынок) ни один ценовой VO представить не
+ * может — потребителю доступен `bookPricing.spread(book)`.
  */
 function buildTopOfBook(book: Orderbook): TopOfBook {
-  let spread: OutcomePrice | undefined;
-  const spreadResult = PREDICTION_PRICING.spread(book);
-  if (spreadResult.ok) {
-    const priceResult = OutcomePriceService.create(spreadResult.value.width());
-    if (priceResult.ok) spread = priceResult.value;
-  }
   return {
     bestBid: book.getBestBid() ?? undefined,
     bestAsk: book.getBestAsk() ?? undefined,
-    spread,
     bestBidSize: book.bids[0]?.quantity,
     bestAskSize: book.asks[0]?.quantity,
   };

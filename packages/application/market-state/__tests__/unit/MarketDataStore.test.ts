@@ -112,7 +112,6 @@ function makeTopOfBook(): TopOfBook {
   return {
     bestBid: undefined,
     bestAsk: undefined,
-    spread: undefined,
     bestBidSize: undefined,
     bestAskSize: undefined,
   };
@@ -219,7 +218,10 @@ describe('MarketDataStore', () => {
 
       const eventBus = deps.eventBus as any;
       const topOfBook1 = makeTopOfBook();
-      const topOfBook2 = { ...makeTopOfBook(), bestBid: 'updated' as any };
+      const topOfBook2 = {
+        ...makeTopOfBook(),
+        bestBid: OutcomePrice.of(new Decimal('0.52')),
+      };
 
       eventBus._emit('BOOK_UPDATED', {
         type: 'BOOK_UPDATED',
@@ -249,7 +251,8 @@ describe('MarketDataStore', () => {
     it('should delegate to bookCollector.recordDirect', () => {
       store.start();
 
-      const snapshot = { instrumentId: 'market-1' } as any;
+      // Store сужает домен по уровням книги — заглушка обязана их иметь
+      const snapshot = { instrumentId: 'market-1', bids: [], asks: [] } as any;
       const eventBus = deps.eventBus as any;
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
@@ -273,7 +276,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { instrumentId: 'market-1' },
+        snapshot: { instrumentId: 'market-1', bids: [], asks: [] },
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -291,7 +294,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { instrumentId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1', bids: [], asks: [] } as any,
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -306,7 +309,8 @@ describe('MarketDataStore', () => {
     it('should delegate to tapeCollector.recordDirect', () => {
       store.start();
 
-      const price = { toNumber: () => 0.55 } as any;
+      // Store сужает домен на входе — цена обязана быть настоящим VO
+      const price = OutcomePrice.of(new Decimal('0.55'));
       const size = { toNumber: () => 100 } as any;
       const timestamp = { toNumber: () => 1000 } as any;
 
@@ -339,7 +343,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('TRADE_RECEIVED', {
         type: 'TRADE_RECEIVED',
         instrumentId: INSTRUMENT_1,
-        price: {} as any,
+        price: OutcomePrice.of(new Decimal('0.5')),
         size: {} as any,
         side: 'BUY',
         timestamp: {} as any,
@@ -355,7 +359,7 @@ describe('MarketDataStore', () => {
     function depth(eventBus: any, id: InstrumentId, marketId: string): void {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH', instrumentId: id,
-        snapshot: { instrumentId: marketId } as any, timestamp: { toNumber: () => 1000 },
+        snapshot: { instrumentId: marketId, bids: [], asks: [] } as any, timestamp: { toNumber: () => 1000 },
       });
     }
 
@@ -483,7 +487,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { instrumentId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1', bids: [], asks: [] } as any,
         timestamp: { toNumber: () => 1000 },
       });
 
@@ -498,7 +502,7 @@ describe('MarketDataStore', () => {
       eventBus._emit('TRADE_RECEIVED', {
         type: 'TRADE_RECEIVED',
         instrumentId: INSTRUMENT_1,
-        price: {} as any,
+        price: OutcomePrice.of(new Decimal('0.5')),
         size: {} as any,
         side: 'BUY',
         timestamp: {} as any,
@@ -527,13 +531,13 @@ describe('MarketDataStore', () => {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH',
         instrumentId: INSTRUMENT_1,
-        snapshot: { instrumentId: 'market-1' } as any,
+        snapshot: { instrumentId: 'market-1', bids: [], asks: [] } as any,
         timestamp: { toNumber: () => 1000 },
       });
       eventBus._emit('TRADE_RECEIVED', {
         type: 'TRADE_RECEIVED',
         instrumentId: INSTRUMENT_1,
-        price: {} as any, size: {} as any, side: 'BUY', timestamp: {} as any,
+        price: OutcomePrice.of(new Decimal('0.5')), size: {} as any, side: 'BUY', timestamp: {} as any,
       });
 
       const call = (deps.tapeCollector as any).recordDirect.mock.calls.at(-1);
@@ -547,13 +551,13 @@ describe('MarketDataStore', () => {
     function trade(eventBus: any, id: InstrumentId): void {
       eventBus._emit('TRADE_RECEIVED', {
         type: 'TRADE_RECEIVED', instrumentId: id,
-        price: {} as any, size: {} as any, side: 'BUY', timestamp: {} as any,
+        price: OutcomePrice.of(new Decimal('0.5')), size: {} as any, side: 'BUY', timestamp: {} as any,
       });
     }
     function depth(eventBus: any, id: InstrumentId, marketId: string): void {
       eventBus._emit('BOOK_DEPTH', {
         type: 'BOOK_DEPTH', instrumentId: id,
-        snapshot: { instrumentId: marketId } as any, timestamp: { toNumber: () => 1000 },
+        snapshot: { instrumentId: marketId, bids: [], asks: [] } as any, timestamp: { toNumber: () => 1000 },
       });
     }
     function bookUpdated(eventBus: any, id: InstrumentId, marketId: string): void {
@@ -768,7 +772,10 @@ describe('MarketDataStore', () => {
       store.start();
 
       const topOfBook1 = makeTopOfBook();
-      const topOfBook2 = { ...makeTopOfBook(), bestBid: 'bid2' as any };
+      const topOfBook2 = {
+        ...makeTopOfBook(),
+        bestBid: OutcomePrice.of(new Decimal('0.42')),
+      };
 
       const eventBus = deps.eventBus as any;
       eventBus._emit('BOOK_UPDATED', {

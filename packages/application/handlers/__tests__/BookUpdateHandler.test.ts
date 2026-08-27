@@ -16,6 +16,7 @@ import { unsafeRunId } from '@polymarket/ids';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { KnownVenues } from '@polymarket/ids';
+import type { TopOfBook } from '@polymarket/application-events';
 
 /** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
 function makeTimestamp(ms: number): Timestamp {
@@ -216,27 +217,35 @@ describe('BookUpdateHandler', () => {
     );
   });
 
-  // ── Spread calculation ─────────────────────────────────────────────────────
+  // ── Top of book ────────────────────────────────────────────────────────────
 
-  it('topOfBook.spread содержит OutcomePrice если спред положительный и OutcomePriceService.create успешен', async () => {
+  it('topOfBook несёт стороны, из которых спред выводится потребителем', async () => {
     const bid = level('0.40', '10');
     const ask = level('0.60', '20');
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [ask], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { payload: { topOfBook: { spread: OutcomePrice | undefined } } };
-    expect(event.payload.topOfBook.spread).toBeDefined();
+      { payload: { topOfBook: TopOfBook } };
+    const top = event.payload.topOfBook;
+    expect(top.bestBid?.value().toString()).toBe('0.4');
+    expect(top.bestAsk?.value().toString()).toBe('0.6');
+    // Ширина спреда в TopOfBook НЕ хранится: она разность, а не цена, и
+    // нулевой спред (валидный рынок) ни один ценовой VO не представляет.
+    // Потребителю доступен `bookPricing.spread(book)` → canonical `Spread`.
+    expect('spread' in top).toBe(false);
   });
 
-  it('topOfBook.spread undefined если книга однобокая (getSpread() возвращает Err)', async () => {
+  it('односторонняя книга честно показывает отсутствующую сторону', async () => {
     const bid = level('0.40', '10');
 
     await handler.handleSnapshot(TOKEN_ID, [bid], [], makeTimestamp(1000));
 
     const event = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls[0]?.[0] as
-      { payload: { topOfBook: { spread: OutcomePrice | undefined } } };
-    expect(event.payload.topOfBook.spread).toBeUndefined();
+      { payload: { topOfBook: TopOfBook } };
+    expect(event.payload.topOfBook.bestBid).toBeDefined();
+    expect(event.payload.topOfBook.bestAsk).toBeUndefined();
+    expect(event.payload.topOfBook.bestAskSize).toBeUndefined();
   });
 
   it('topOfBook.spread undefined если OutcomePriceService.create() возвращает Err', async () => {

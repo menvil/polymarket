@@ -56,6 +56,8 @@
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId, VenueTradeId } from '@polymarket/ids';
 import type { TopOfBook } from '@polymarket/application-events';
+import type { DecimalPrice } from '@polymarket/value-objects';
+import { OutcomePrice } from '@polymarket/value-objects';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { RollingWindow } from '@polymarket/rolling-window';
 import type { Orderbook } from '@polymarket/orderbook';
@@ -84,6 +86,49 @@ export type MarketDataReason = 'BOOK' | 'TRADE';
  * Единый формат проверки актуальности данных — чтобы стратегии не изобретали
  * собственные stale-правила (#3). `ageMs` считается от переданного `nowMs`.
  */
+/**
+ * Принадлежит ли верхушка домену рынка предсказаний.
+ *
+ * @param top - Верхушка любого ценового домена
+ * @returns `true`, если цены — `OutcomePrice` (либо сторон нет вовсе)
+ *
+ * @remarks
+ * После того как market-data события стали source-agnostic, по шине ходят и
+ * биржевые книги (`AssetPrice`). `MarketDataStore` — store рынков
+ * ПРЕДСКАЗАНИЙ: он строит `Trade`, работает с `MarketId` и отдаёт
+ * `OutcomePrice` стратегиям. Поэтому домен сужается на входе, а чужие
+ * события игнорируются — это честнее, чем расширять хранилище до
+ * `DecimalPrice` и терять типизацию у всех его потребителей.
+ *
+ * Пустая верхушка домена не имеет и проходит проверку: хранить «нет
+ * ликвидности» store обязан независимо от площадки.
+ */
+function isOutcomeTopOfBook(top: TopOfBook<DecimalPrice>): top is TopOfBook<OutcomePrice> {
+  return (
+    (top.bestBid === undefined || top.bestBid instanceof OutcomePrice) &&
+    (top.bestAsk === undefined || top.bestAsk instanceof OutcomePrice)
+  );
+}
+
+/**
+ * Принадлежит ли стакан домену рынка предсказаний.
+ *
+ * @param book - Стакан любого ценового домена
+ * @returns `true`, если уровни несут `OutcomePrice` (либо книга пуста)
+ *
+ * @remarks
+ * Проверяется первый уровень каждой стороны: домен книги однороден по
+ * построению — уровни создаёт один адаптер одной фабрикой.
+ */
+function isOutcomeBook(book: Orderbook<DecimalPrice>): book is Orderbook<OutcomePrice> {
+  const bid = book.bids[0]?.price;
+  const ask = book.asks[0]?.price;
+  return (
+    (bid === undefined || bid instanceof OutcomePrice) &&
+    (ask === undefined || ask instanceof OutcomePrice)
+  );
+}
+
 export interface TopOfBookState {
   /** Последний TopOfBook. */
   readonly topOfBook: TopOfBook;
@@ -178,9 +223,14 @@ export class MarketDataStore {
       'BOOK_UPDATED',
       (event) => {
         const { instrumentId, topOfBook, timestamp, marketId } = event.payload;
+        if (!isOutcomeTopOfBook(topOfBook)) return;
         this._topOfBooks.set(instrumentId, topOfBook);
         this._topOfBookTimestampsMs.set(instrumentId, timestamp.toNumber());
-        this._registerInstrument(marketId, instrumentId);
+        // Рынок опционален (у биржи его нет отдельно от инструмента) —
+        // reverse index регистрируется только когда он реально известен
+        if (marketId !== undefined) {
+          this._registerInstrument(marketId, instrumentId);
+        }
         this._onChange?.(instrumentId, 'BOOK');
       },
     );
@@ -189,6 +239,7 @@ export class MarketDataStore {
       'BOOK_DEPTH',
       (event) => {
         const { instrumentId, snapshot } = event.payload;
+        if (!isOutcomeBook(snapshot)) return;
         this._deps.bookCollector.recordDirect(
           instrumentId,
           snapshot,
@@ -214,6 +265,7 @@ export class MarketDataStore {
       'TRADE_RECEIVED',
       (event) => {
         const { instrumentId, price, size, side, timestamp } = event.payload;
+        if (!(price instanceof OutcomePrice)) return;
         const marketId = this._instrumentToMarket.get(instrumentId);
 
         this._deps.tapeCollector.recordDirect(

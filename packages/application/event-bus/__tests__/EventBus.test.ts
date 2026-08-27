@@ -11,6 +11,7 @@ import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application
 // Compile-time check: если FillFailedEvent не экспортируется из @polymarket/application-events —
 // typecheck падает (canonical источник event contracts после M-002.5).
 import type { FillFailedEvent } from '@polymarket/application-events';
+import { KnownVenues } from '@polymarket/ids';
 
 // Минимальный mock logger
 function makeLogger(): ILogger {
@@ -37,10 +38,10 @@ function makeBookEvent(sequenceNumber = 1): BookUpdatedEvent {
   return {
     type: 'BOOK_UPDATED',
     payload: {
+      venueId: KnownVenues.POLYMARKET,
       topOfBook: {
         bestBid: undefined,
         bestAsk: undefined,
-        spread: undefined,
         bestBidSize: undefined,
         bestAskSize: undefined,
       },

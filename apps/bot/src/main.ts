@@ -572,6 +572,7 @@ async function runPaper(): Promise<void> {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         payload: {
+          venueId: KnownVenues.POLYMARKET,
           instrumentId: tradeInstrumentId,
           price: OutcomePrice.of(new Decimal(dto.price)),
           size: Quantity.of(new Decimal(dto.size)),
@@ -4499,6 +4500,7 @@ async function runLive(): Promise<void> {
       const result = await eventBus.publish({
         type: 'TRADE_RECEIVED',
         payload: {
+          venueId: KnownVenues.POLYMARKET,
           instrumentId: tradeInstrumentId,
           price: OutcomePrice.of(new Decimal(dto.price)),
           size: Quantity.of(new Decimal(dto.size)),
