@@ -126,6 +126,30 @@ price.match({
 
 ---
 
+### 🌐 [ReferencePrice](./reference-price/README.md)
+
+Цена ВНЕШНЕГО актива (`BTC/USD`, `ETH/USD`) — без ограничения `0..1`.
+
+```typescript
+import { ReferencePriceService } from '@polymarket/value-objects';
+
+const result = ReferencePriceService.create('79341.36626633028');
+if (result.ok) {
+  console.log(result.value.value().toString()); // "79341.36626633028"
+}
+```
+
+**Особенности:**
+
+- Положительный `Decimal` без верхней границы — `Price` такое значение обязан
+  отвергнуть по инварианту
+- Source-agnostic: провенанс наблюдения живёт в событии, а не в числе
+- Десятичная строка источника парсится напрямую, без промежуточного `number`
+
+**[→ Подробная документация](./reference-price/README.md)**
+
+---
+
 ### 🔢 Quantity
 
 Количество акций на рынке.

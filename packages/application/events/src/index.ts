@@ -32,12 +32,15 @@ export type {
   FillFailedEvent,
   DirectFillAppliedEvent,
 } from './fill/index.js';
-/** Рыночные события стакана/тейпа (см. market-data/). */
+/** Рыночные события стакана/тейпа/референсных цен (см. market-data/). */
 export type {
   TopOfBook,
   BookUpdatedEvent,
   BookDepthEvent,
   TradeReceivedEvent,
+  TickSizeChangedEvent,
+  ReferencePriceFeed,
+  ReferencePriceUpdatedEvent,
 } from './market-data/index.js';
 /** Сигналы стратегий (см. strategy/). */
 export type { SignalDirection, StrategySignalEvent } from './strategy/index.js';

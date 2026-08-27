@@ -9,6 +9,7 @@ import {
   isReplaySource,
   asInstrumentId,
   asCryptoAssetId,
+  asAssetSymbolId,
 } from '../src/index.js';
 
 describe('Market Data IDs', () => {
@@ -207,6 +208,40 @@ describe('Market Data IDs', () => {
       expect(asInstrumentId(undefined as any)).toBeUndefined();
       expect(asInstrumentId(0 as any)).toBeUndefined();
       expect(asInstrumentId({} as any)).toBeUndefined();
+    });
+  });
+
+  describe('AssetSymbolId', () => {
+    it('should parse tickers of ANY asset kind, crypto and fiat alike', () => {
+      expect(asAssetSymbolId('btc')).toBe('btc');
+      expect(asAssetSymbolId('eth')).toBe('eth');
+      // Именно ради этих значений тип и заведён: `usd` не криптоактив,
+      // и описывать его через CryptoAssetId было бы семантически неверно
+      expect(asAssetSymbolId('usd')).toBe('usd');
+      expect(asAssetSymbolId('usdt')).toBe('usdt');
+      expect(asAssetSymbolId('usdc')).toBe('usdc');
+    });
+
+    it('should normalize case — символ является ключом сопоставления потоков', () => {
+      expect(asAssetSymbolId('BTC')).toBe('btc');
+      expect(asAssetSymbolId('UsDt')).toBe('usdt');
+      // Без нормализации 'BTC' и 'btc' стали бы двумя разными активами
+      expect(asAssetSymbolId('BTC')).toBe(asAssetSymbolId('btc'));
+    });
+
+    it('should trim surrounding whitespace', () => {
+      expect(asAssetSymbolId('  usd  ')).toBe('usd');
+    });
+
+    it('should keep USDT and USD distinct', () => {
+      expect(asAssetSymbolId('usdt')).not.toBe(asAssetSymbolId('usd'));
+    });
+
+    it('should reject malformed input', () => {
+      expect(asAssetSymbolId('')).toBeUndefined();
+      expect(asAssetSymbolId('   ')).toBeUndefined();
+      expect(asAssetSymbolId('a\u0000b')).toBeUndefined();
+      expect(asAssetSymbolId('x'.repeat(40))).toBeUndefined();
     });
   });
 
