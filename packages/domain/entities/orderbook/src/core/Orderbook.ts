@@ -8,7 +8,7 @@
  * ИСПРАВЛЕНИЯ от оригинала:
  * 1. Branded types: InstrumentId вместо string (и для marketId, и для tokenId)
  * 2. Timestamp VO вместо number для venueTimestamp и receivedAt
- * 3. getSpread() возвращает Result вместо null (явный сигнал о crossed book)
+ * 3. Ценовые метрики (mid/микроцена/спред) вынесены в `bookPricing`
  * 4. getTotalVolume убрал require() и использует Decimal-арифметику
  * 5. isStale() использует receivedAt вместо Date.now()
  * 6. Использует нормализованные данные из OrderbookNormalizer
@@ -36,17 +36,14 @@
  * ```
  */
 
-import type { Price, Spread } from '@polymarket/value-objects';
-import { PriceService, Quantity, QuantityService, SpreadService } from '@polymarket/value-objects';
+import type { Price } from '@polymarket/value-objects';
+import { Quantity, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
-import type { Result } from '@polymarket/result';
-import { Ok, Err } from '@polymarket/result';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { OrderbookLevel } from './OrderbookLevel.js';
-import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
 
 /**
@@ -229,14 +226,14 @@ export class Orderbook {
    *
    * `fromLevels` — plain return, как `fromNormalized`/`empty` (симметрично: приватный
    * конструктор класса вообще не валидирует, вся валидация либо предшествует вызову
-   * факторики (`OrderbookNormalizer`), либо доступна post-hoc через `getSpread()`).
+   * факторики (`OrderbookNormalizer`), либо доступна post-hoc через `bookPricing`).
    * Единственная защита здесь — **сортировка** `bids`/`asks` внутри метода (bids по
    * убыванию цены, asks по возрастанию — тем же компаратором, что и
    * `OrderbookNormalizer.sortLevels()`): класс нигде не сортирует уровни сам
    * (`getBestBid()`/`getBestAsk()` берут `bids[0]`/`asks[0]` на веру), поэтому без
    * сортировки здесь вызывающий код с неупорядоченным входом получил бы молча неверные
-   * `getBestBid()`/`getMicroprice()`/`toObject()` без единого сигнала об ошибке — хуже,
-   * чем crossed book (тот хотя бы ловится `getSpread()`).
+   * `getBestBid()`/`toObject()` без единого сигнала об ошибке — хуже,
+   * чем crossed book (тот хотя бы ловится `bookPricing.spread()`).
    *
    * @example
    * ```typescript
@@ -298,154 +295,6 @@ export class Orderbook {
    */
   public getBestAsk(): Price | null {
     return this.asks.length > 0 ? this.asks[0].price : null;
-  }
-
-  // ==================== SPREAD ====================
-
-  /**
-   * Получает спред (bid-ask spread)
-   *
-   * @returns Result<Spread, OrderbookInvalidError>
-   *
-   * @remarks
-   * ИСПРАВЛЕНИЕ: Возвращает Result вместо null.
-   *
-   * Спред = ask - bid
-   * Узкий спред указывает на высокую ликвидность.
-   * Широкий спред указывает на низкую ликвидность.
-   *
-   * Возвращает ошибку если:
-   * - Нет bid или ask (EMPTY_BOOK / ONE_SIDED)
-   * - Crossed book: bid > ask (CROSSED_BOOK)
-   *
-   * Явный сигнал о проблемах вместо silent null.
-   * Критично для trading систем.
-   *
-   * ### Асимметрия правил crossed book:
-   * `getSpread()` допускает `bid == ask` (нулевой спред) — это валидный нормальный случай.
-   * `OrderbookNormalizer` с `allowCrossed: false` строже: отвергает `bid >= ask`,
-   * т.е. нулевой спред уже отфильтрован на входе перед созданием `Orderbook`.
-   *
-   * @example
-   * ```typescript
-   * const spreadResult = orderbook.getSpread();
-   * if (spreadResult.ok) {
-   *   console.log(`Spread: ${spreadResult.value.width().toFixed(4)}`);
-   * } else {
-   *   if (spreadResult.error.isCrossedBook()) {
-   *     console.error('CRITICAL: Crossed book!');
-   *   } else {
-   *     console.warn('No liquidity');
-   *   }
-   * }
-   * ```
-   */
-  public getSpread(): Result<Spread, OrderbookInvalidError> {
-    const bid = this.getBestBid();
-    const ask = this.getBestAsk();
-
-    // Empty book
-    if (!bid && !ask) {
-      return Err(
-        new OrderbookInvalidError('Empty orderbook', {
-          context: {
-            reason: OrderbookInvalidReason.EMPTY_BOOK,
-            marketId: this.instrumentId,
-            tokenId: this.asset,
-          },
-        })
-      );
-    }
-
-    // One-sided book
-    if (!bid || !ask) {
-      return Err(
-        new OrderbookInvalidError('One-sided orderbook', {
-          context: {
-            reason: OrderbookInvalidReason.ONE_SIDED,
-            marketId: this.instrumentId,
-            tokenId: this.asset,
-            bestBid: bid?.value().toNumber(),
-            bestAsk: ask?.value().toNumber(),
-          },
-        })
-      );
-    }
-
-    // SpreadService.create() возвращает Result<Spread, InvalidSpreadError>
-    const spreadResult = SpreadService.create(bid, ask);
-
-    if (!spreadResult.ok) {
-      // Spread.create не ok означает crossed book
-      return Err(
-        new OrderbookInvalidError('Crossed book detected in getSpread', {
-          context: {
-            reason: OrderbookInvalidReason.CROSSED_BOOK,
-            marketId: this.instrumentId,
-            tokenId: this.asset,
-            bestBid: bid.value().toNumber(),
-            bestAsk: ask.value().toNumber(),
-          },
-        })
-      );
-    }
-
-    return Ok(spreadResult.value);
-  }
-
-  /**
-   * Получает mid price (средняя цена)
-   *
-   * @returns Mid price или null если нет bid/ask
-   *
-   * @remarks
-   * Mid price = (best bid + best ask) / 2
-   * Не учитывает объёмы (в отличие от microprice).
-   */
-  public getMidPrice(): Price | null {
-    const spreadResult = this.getSpread();
-    if (!spreadResult.ok) return null;
-    const midDecimal = spreadResult.value.midpoint();
-    const priceResult = PriceService.create(midDecimal);
-    return priceResult.ok ? priceResult.value : null;
-  }
-
-  /**
-   * Получает microprice (взвешенная цена)
-   *
-   * @returns Microprice или null если нет bid/ask
-   *
-   * @remarks
-   * Microprice учитывает объёмы на лучших bid/ask уровнях:
-   *
-   * microprice = (bestAsk * bidQty + bestBid * askQty) / (bidQty + askQty)
-   *
-   * Microprice точнее отражает истинную рыночную цену,
-   * так как учитывает дисбаланс ликвидности.
-   */
-  public getMicroprice(): Price | null {
-    if (this.bids.length === 0 || this.asks.length === 0) {
-      return null;
-    }
-
-    const bestBid = this.bids[0];
-    const bestAsk = this.asks[0];
-
-    const bidQty = bestBid.quantity.value();
-    const askQty = bestAsk.quantity.value();
-    const totalQty = bidQty.plus(askQty);
-
-    if (totalQty.isZero()) {
-      return null;
-    }
-
-    // microprice = (ask * bidQty + bid * askQty) / (bidQty + askQty)
-    const micropriceDecimal = bestAsk.price.value().times(bidQty)
-      .plus(bestBid.price.value().times(askQty))
-      .dividedBy(totalQty);
-
-    const priceResult = PriceService.create(micropriceDecimal);
-    return priceResult.ok ? priceResult.value : null;
   }
 
   // ==================== VOLUME ====================
@@ -623,28 +472,33 @@ export class Orderbook {
    * @returns Строковое представление стакана
    */
   public toString(): string {
-    const spreadResult = this.getSpread();
-    const spreadStr = spreadResult.ok
-      ? spreadResult.value.width().toFixed(4)
-      : 'N/A';
-    return `Orderbook[${this.instrumentId}:${this.asset}]: ${this.bids.length} bids, ${this.asks.length} asks, spread ${spreadStr}`;
+    const bestBid = this.getBestBid();
+    const bestAsk = this.getBestAsk();
+    // Ширина спреда здесь НЕ считается: это создание нового значения, для
+    // которого нужна фабрика домена (см. `bookPricing`). Строковое
+    // представление структуры обходится выбранными уровнями.
+    const top =
+      bestBid !== null && bestAsk !== null
+        ? `${bestBid.value().toFixed(4)}/${bestAsk.value().toFixed(4)}`
+        : 'N/A';
+    return `Orderbook[${this.instrumentId}:${this.asset}]: ${this.bids.length} bids, ${this.asks.length} asks, top ${top}`;
   }
 
   /**
    * Конвертирует в объект (summary view)
    *
-   * @returns Объектное представление стакана с метриками
+   * @returns Объектное представление структуры стакана
    *
    * @remarks
-   * Возвращает сводные метрики без полных данных уровней.
-   * Для полного представления используйте OrderbookSerializer.toJSON().
+   * Только СТРУКТУРНАЯ сводка: идентичность, времена, выбранные лучшие
+   * уровни, глубина и объёмы. Производные ЦЕНЫ (mid, микроцена, ширина
+   * спреда) сюда не входят — их вычисление требует знания ценового домена
+   * и живёт в `bookPricing`. Для полного представления уровней используйте
+   * `OrderbookSerializer.toJSON()`.
    */
   public toObject() {
     const bestBid = this.getBestBid();
     const bestAsk = this.getBestAsk();
-    const midPrice = this.getMidPrice();
-    const microprice = this.getMicroprice();
-    const spreadResult = this.getSpread();
 
     return {
       instrumentId: this.instrumentId,
@@ -653,10 +507,6 @@ export class Orderbook {
       receivedAt: this.receivedAt.toNumber(),
       bestBid: bestBid?.value().toNumber(),
       bestAsk: bestAsk?.value().toNumber(),
-      midPrice: midPrice?.value().toNumber(),
-      microprice: microprice?.value().toNumber(),
-      spreadWidth: spreadResult.ok ? spreadResult.value.width().toNumber() : undefined,
-      spreadStatus: spreadResult.ok ? 'ok' : spreadResult.error.getReason(),
       bidDepth: this.bids.length,
       askDepth: this.asks.length,
       totalBidVolume: this.getTotalBidVolume().value().toNumber(),

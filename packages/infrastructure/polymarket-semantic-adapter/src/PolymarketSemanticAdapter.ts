@@ -43,6 +43,7 @@ import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { InstrumentId, MarketId, MarketDataSourceId } from '@polymarket/ids';
 import { asInstrumentId, asMarketId, asMarketDataSourceId, asVenueTradeId } from '@polymarket/ids';
 import type { Orderbook } from '@polymarket/orderbook';
+import { bookPricing } from '@polymarket/orderbook';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import { PriceService, QuantityService, ReferencePriceService } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -116,6 +117,15 @@ export const POLYMARKET_RTDS_CHAINLINK_TWAP_SOURCE: MarketDataSourceId =
  * vendor-ом раньше нашего кода не должно молча смешивать ряды разных окон.
  */
 const SUPPORTED_TWAP_WINDOWS: ReadonlySet<number> = new Set([30, 60]);
+
+/**
+ * Ценовые метрики стакана рынка предсказаний.
+ *
+ * @remarks
+ * Фабрика домена связывается ОДИН раз: `Orderbook` — структура и своего
+ * ценового домена не знает.
+ */
+const PREDICTION_PRICING = bookPricing(PriceService.create);
 
 /** Read-only диагностика адаптера. */
 export interface PolymarketSemanticAdapterStats {
@@ -1155,12 +1165,12 @@ function toTradeSide(side: OrderSide): Side | undefined {
  * @remarks
  * Уровни НЕ выдумываются: односторонняя и пустая книга — валидные состояния
  * полной глубины, и подставлять `0`/`1` ради «полноты» `TopOfBook`
- * запрещено. Спред считается через `Orderbook.getSpread()`, который сам
- * отсеивает пустую/одностороннюю/скрещенную книгу.
+ * запрещено. Спред считается через `bookPricing`, который сам отсеивает
+ * пустую/одностороннюю/скрещенную книгу.
  */
 function buildTopOfBook(book: Orderbook): TopOfBook {
   let spread: Price | undefined;
-  const spreadResult = book.getSpread();
+  const spreadResult = PREDICTION_PRICING.spread(book);
   if (spreadResult.ok) {
     const priceResult = PriceService.create(spreadResult.value.width());
     if (priceResult.ok) spread = priceResult.value;

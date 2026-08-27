@@ -35,7 +35,7 @@
  * ```
  */
 import type { ILogger } from '@polymarket/logger';
-import { Orderbook, type OrderbookLevel } from '@polymarket/orderbook';
+import { Orderbook, bookPricing, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Price } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -45,6 +45,16 @@ import type { TopOfBook } from '@polymarket/application-events';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
 import type { IMarketCatalog } from '@polymarket/ports';
 import type { IBookRegistry } from './IBookRegistry.js';
+
+/**
+ * Ценовые метрики стакана рынка предсказаний.
+ *
+ * @remarks
+ * Фабрика домена связывается ОДИН раз: `Orderbook` — структура и своего
+ * ценового домена не знает, поэтому создание производных цен (ширина
+ * спреда) выполняется здесь, где домен известен.
+ */
+const PREDICTION_PRICING = bookPricing(PriceService.create);
 
 /**
  * Обработчик снапшотов стакана — применяет к реестру, публикует BOOK_UPDATED/BOOK_DEPTH.
@@ -152,11 +162,12 @@ export class BookUpdateHandler {
     const bestBid = book.getBestBid();
     const bestAsk = book.getBestAsk();
 
-    // Spread = bestAsk - bestBid — делегируем Orderbook для переиспользования логики.
-    // getSpread() уже само отсеивает crossed/empty/one-sided книги через Err —
-    // отдельная проверка "spread > 0" (как в старом mutable OrderBook) не нужна.
+    // Spread = bestAsk - bestBid — делегируем bookPricing для переиспользования
+    // логики. spread() уже само отсеивает crossed/empty/one-sided книги через
+    // Err — отдельная проверка "spread > 0" (как в старом mutable OrderBook)
+    // не нужна.
     let spread: Price | undefined;
-    const spreadResult = book.getSpread();
+    const spreadResult = PREDICTION_PRICING.spread(book);
     if (spreadResult.ok) {
       const priceResult = PriceService.create(spreadResult.value.width());
       if (priceResult.ok) spread = priceResult.value;

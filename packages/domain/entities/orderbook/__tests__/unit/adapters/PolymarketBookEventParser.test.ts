@@ -12,6 +12,11 @@ import {
   type PolymarketBookEvent,
 } from '../../../src/adapters/PolymarketBookEventParser.js';
 import { DEFAULT_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
+import { bookPricing } from '../../../src/index.js';
+import { PriceService } from '@polymarket/value-objects';
+
+/** Метрики prediction-домена: фабрика связывается один раз. */
+const pricing = bookPricing(PriceService.create);
 
 // ==================== Реальное событие с Polymarket ====================
 
@@ -106,7 +111,7 @@ describe('PolymarketBookEventParser.parse() — реальный "book" ивен
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const spreadResult = result.value.getSpread(); // возвращает Result<Spread, ...>
+    const spreadResult = pricing.spread(result.value);
     expect(spreadResult.ok).toBe(true);
     if (!spreadResult.ok) return;
     expect(spreadResult.value.width().toNumber()).toBeCloseTo(0.01, 10);
@@ -116,7 +121,7 @@ describe('PolymarketBookEventParser.parse() — реальный "book" ивен
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const mid = result.value.getMidPrice(); // возвращает Price | null
+    const mid = pricing.midPrice(result.value);
     expect(mid).not.toBeNull();
     expect(mid!.value().toNumber()).toBeCloseTo(0.435, 10);
   });

@@ -49,7 +49,8 @@ describe('book → canonical Orderbook', () => {
     expect(snapshot.bids.map((level) => level.price.value().toString())).toEqual(['0.5', '0.48']);
     expect(snapshot.asks.map((level) => level.price.value().toString())).toEqual(['0.52']);
     // Сущность, а не сериализованная копия — у DTO не было бы методов домена
-    expect(snapshot.getSpread().ok).toBe(true);
+    expect(snapshot.getBestBid()).not.toBeNull();
+    expect(snapshot.getTotalBidVolume().value().toString()).toBe('40');
     expect(snapshot.venueTimestamp?.toNumber()).toBe(1_787_751_722_763);
   });
 

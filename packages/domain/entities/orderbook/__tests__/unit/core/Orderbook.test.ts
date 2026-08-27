@@ -12,6 +12,10 @@ import { PriceService, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
+import { bookPricing } from '../../../src/index.js';
+
+/** Метрики prediction-домена: фабрика связывается один раз. */
+const pricing = bookPricing(PriceService.create);
 
 /** Создаёт OrderbookLevel из примитивов (для fromLevels() — минует нормализатор). */
 function testLevel(price: number, quantity: number): OrderbookLevel {
@@ -208,7 +212,7 @@ describe('Orderbook', () => {
     it('возвращает Ok(Spread) для валидного orderbook', () => {
       const orderbook = createTestOrderbook();
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(true);
       if (spreadResult.ok) {
@@ -219,7 +223,7 @@ describe('Orderbook', () => {
     it('возвращает Err(EMPTY_BOOK) для пустого orderbook', () => {
       const orderbook = createTestOrderbook({ bids: [], asks: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -230,7 +234,7 @@ describe('Orderbook', () => {
     it('возвращает Err(ONE_SIDED) если есть только bids', () => {
       const orderbook = createTestOrderbook({ asks: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -241,7 +245,7 @@ describe('Orderbook', () => {
     it('возвращает Err(ONE_SIDED) если есть только asks', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const spreadResult = orderbook.getSpread();
+      const spreadResult = pricing.spread(orderbook);
 
       expect(spreadResult.ok).toBe(false);
       if (!spreadResult.ok) {
@@ -254,7 +258,7 @@ describe('Orderbook', () => {
     it('возвращает mid price', () => {
       const orderbook = createTestOrderbook();
 
-      const midPrice = orderbook.getMidPrice();
+      const midPrice = pricing.midPrice(orderbook);
 
       expect(midPrice).not.toBeNull();
       expect(midPrice!.value().toNumber()).toBe(0.525); // (0.52 + 0.53) / 2
@@ -263,7 +267,7 @@ describe('Orderbook', () => {
     it('возвращает null если нет spread', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const midPrice = orderbook.getMidPrice();
+      const midPrice = pricing.midPrice(orderbook);
 
       expect(midPrice).toBeNull();
     });
@@ -276,7 +280,7 @@ describe('Orderbook', () => {
         asks: [{ price: 0.52, quantity: 200 }],
       });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).not.toBeNull();
       // microprice = (0.52 * 100 + 0.50 * 200) / (100 + 200)
@@ -287,7 +291,7 @@ describe('Orderbook', () => {
     it('возвращает null если нет bid или ask', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).toBeNull();
     });
@@ -298,7 +302,7 @@ describe('Orderbook', () => {
         asks: [{ price: 0.53, quantity: 0 }],
       });
 
-      const microprice = orderbook.getMicroprice();
+      const microprice = pricing.microprice(orderbook);
 
       expect(microprice).toBeNull();
     });
@@ -561,7 +565,9 @@ describe('Orderbook', () => {
       expect(str).toContain('token-yes');
       expect(str).toContain('2 bids');
       expect(str).toContain('2 asks');
-      expect(str).toContain('spread');
+      // Ширина спреда — производная ЦЕНА и в структурном представлении её
+      // больше нет; вместо неё показываются выбранные лучшие уровни
+      expect(str).toContain('top 0.5200/0.5300');
     });
   });
 
@@ -575,26 +581,31 @@ describe('Orderbook', () => {
       expect(obj.asset).toBe('token-yes');
       expect(obj.bestBid).toBe(0.52);
       expect(obj.bestAsk).toBe(0.53);
-      expect(obj.midPrice).toBe(0.525);
-      expect(obj.spreadWidth).toBe(0.01);
-      expect(obj.spreadStatus).toBe('ok');
+      // Производные цены (mid/микроцена/спред) в структурную сводку больше
+      // не входят — их вычисление требует фабрики домена, см. bookPricing
+      expect('midPrice' in obj).toBe(false);
+      expect('spreadWidth' in obj).toBe(false);
       expect(obj.bidDepth).toBe(2);
       expect(obj.askDepth).toBe(2);
       expect(obj.totalBidVolume).toBe(300);
       expect(obj.totalAskVolume).toBe(400);
     });
 
-    it('включает spreadStatus при ошибке', () => {
+    it('односторонний стакан отражается отсутствующей стороной, а не статусом', () => {
       const orderbook = createTestOrderbook({ bids: [] });
 
       const obj = orderbook.toObject();
 
-      expect(obj.spreadStatus).toBe(OrderbookInvalidReason.ONE_SIDED);
+      // Статус спреда — это уже ЦЕНОВАЯ метрика; структурная сводка честно
+      // показывает, что стороны bid нет
+      expect(obj.bestBid).toBeUndefined();
+      expect(obj.bidDepth).toBe(0);
+      expect(pricing.spread(orderbook).ok).toBe(false);
     });
   });
 
-  describe('getSpread() — crossed book через permissive normalizer', () => {
-    it('getSpread() возвращает CROSSED_BOOK error для crossed стакана (из permissive normalizer)', () => {
+  describe('spread() — crossed book через permissive normalizer', () => {
+    it('возвращает CROSSED_BOOK error для crossed стакана (из permissive normalizer)', () => {
       const raw: RawOrderbook = {
         marketId: 'market-123',
         tokenId: 'token-yes',
@@ -606,7 +617,7 @@ describe('Orderbook', () => {
       expect(normalized.ok).toBe(true);
       if (!normalized.ok) return;
       const ob = Orderbook.fromNormalized(normalized.value);
-      const spreadResult = ob.getSpread();
+      const spreadResult = pricing.spread(ob);
       expect(spreadResult.ok).toBe(false);
       if (spreadResult.ok) return;
       expect(spreadResult.error.isCrossedBook()).toBe(true);
