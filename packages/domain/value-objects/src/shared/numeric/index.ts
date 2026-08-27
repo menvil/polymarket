@@ -9,3 +9,13 @@
  */
 export type { GridStepPolicy } from './ValidateGridStep.js';
 export { validateGridStep } from './ValidateGridStep.js';
+export type { DecimalValue } from './DecimalValue.js';
+export type { ScalarDomain } from './scalarDomain.js';
+export {
+  addScalars,
+  divideScalar,
+  multiplyScalar,
+  portionOfScalar,
+  roundScalarToStep,
+  subtractScalars,
+} from './scalarOperations.js';
