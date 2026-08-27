@@ -131,8 +131,8 @@ export function bookPricing<TPrice extends DecimalPrice = Price>(
         new OrderbookInvalidError('Empty orderbook', {
           context: {
             reason: OrderbookInvalidReason.EMPTY_BOOK,
-            marketId: book.instrumentId,
-            tokenId: book.asset,
+            marketId: book.marketId,
+            tokenId: book.instrumentId,
           },
         }),
       );
@@ -142,8 +142,8 @@ export function bookPricing<TPrice extends DecimalPrice = Price>(
         new OrderbookInvalidError('One-sided orderbook', {
           context: {
             reason: OrderbookInvalidReason.ONE_SIDED,
-            marketId: book.instrumentId,
-            tokenId: book.asset,
+            marketId: book.marketId,
+            tokenId: book.instrumentId,
             bestBid: bid?.value().toNumber(),
             bestAsk: ask?.value().toNumber(),
           },
@@ -161,8 +161,8 @@ export function bookPricing<TPrice extends DecimalPrice = Price>(
         new OrderbookInvalidError('Crossed book detected', {
           context: {
             reason: OrderbookInvalidReason.CROSSED_BOOK,
-            marketId: book.instrumentId,
-            tokenId: book.asset,
+            marketId: book.marketId,
+            tokenId: book.instrumentId,
             bestBid: bid.value().toNumber(),
             bestAsk: ask.value().toNumber(),
           },

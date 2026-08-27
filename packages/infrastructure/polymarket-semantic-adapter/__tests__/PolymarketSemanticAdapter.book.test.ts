@@ -7,7 +7,7 @@
  * момент публикация ПРЕКРАЩАЕТСЯ.
  */
 import { describe, expect, it, beforeEach, afterEach } from '@jest/globals';
-import { asInstrumentId, asMarketId } from '@polymarket/ids';
+import { KnownVenues, asInstrumentId, asMarketId } from '@polymarket/ids';
 import {
   MARKET_ID,
   TOKEN_A,
@@ -44,8 +44,9 @@ describe('book → canonical Orderbook', () => {
     expect(depth).toHaveLength(1);
 
     const snapshot = depth[0]!.payload.snapshot;
-    expect(snapshot.asset).toBe(asInstrumentId(TOKEN_A));
-    expect(String(snapshot.instrumentId)).toBe(MARKET_ID);
+    expect(snapshot.instrumentId).toBe(asInstrumentId(TOKEN_A));
+    expect(String(snapshot.marketId)).toBe(MARKET_ID);
+    expect(snapshot.venueId).toBe(KnownVenues.POLYMARKET);
     expect(snapshot.bids.map((level) => level.price.value().toString())).toEqual(['0.5', '0.48']);
     expect(snapshot.asks.map((level) => level.price.value().toString())).toEqual(['0.52']);
     // Сущность, а не сериализованная копия — у DTO не было бы методов домена

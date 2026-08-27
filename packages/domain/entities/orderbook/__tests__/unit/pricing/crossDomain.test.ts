@@ -16,11 +16,13 @@ import {
   QuantityService,
 } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
-import { unsafeInstrumentId } from '@polymarket/ids';
+import { KnownVenues, asVenueId, unsafeInstrumentId, unsafeMarketId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Orderbook, OrderbookLevel, bookPricing } from '../../../src/index.js';
 
-const MARKET = unsafeInstrumentId('market-1');
+const MARKET = unsafeMarketId('market-1');
+// Биржи появятся в KnownVenues вместе с CEX-адаптером; foundation их не заводит
+const BINANCE = asVenueId('BINANCE')!;
 const TOKEN = unsafeInstrumentId('token-1');
 const AT = TimestampService.create(1_787_751_722_763);
 if (!AT.ok) throw new Error('fixture timestamp');
@@ -35,13 +37,14 @@ const predictionPricing = bookPricing(PriceService.create);
 const assetPricing = bookPricing(ReferencePriceService.create);
 
 describe('рынок предсказаний (домен [0.0001, 0.9999])', () => {
-  const book = Orderbook.fromLevels(
-    MARKET,
-    TOKEN,
-    [OrderbookLevel.create(Price.of(new Decimal('0.50')), qty('10'))],
-    [OrderbookLevel.create(Price.of(new Decimal('0.52')), qty('30'))],
-    AT.value,
-  );
+  const book = Orderbook.fromLevels({
+    venueId: KnownVenues.POLYMARKET,
+    marketId: MARKET,
+    instrumentId: TOKEN,
+    bids: [OrderbookLevel.create(Price.of(new Decimal('0.50')), qty('10'))],
+    asks: [OrderbookLevel.create(Price.of(new Decimal('0.52')), qty('30'))],
+    receivedAt: AT.value,
+  });
 
   it('mid и спред считаются в prediction-домене', () => {
     expect(predictionPricing.midPrice(book)?.value().toString()).toBe('0.51');
@@ -58,13 +61,14 @@ describe('рынок предсказаний (домен [0.0001, 0.9999])', ()
 });
 
 describe('биржевой стакан (домен (0, ∞))', () => {
-  const book = Orderbook.fromLevels(
-    unsafeInstrumentId('BINANCE'),
-    unsafeInstrumentId('BTC/USDT'),
-    [OrderbookLevel.create(ReferencePrice.of(new Decimal('78468.50')), qty('0.5'))],
-    [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470.50')), qty('1.5'))],
-    AT.value,
-  );
+  // У биржи рынка отдельно от инструмента НЕТ — marketId не задаётся
+  const book = Orderbook.fromLevels({
+    venueId: BINANCE,
+    instrumentId: unsafeInstrumentId('BTC/USDT'),
+    bids: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78468.50')), qty('0.5'))],
+    asks: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470.50')), qty('1.5'))],
+    receivedAt: AT.value,
+  });
 
   it('стакан на 78 468 вообще СУЩЕСТВУЕТ — раньше был непредставим', () => {
     // Доказательство «в лоб»: prediction-цена такое значение принять не может
@@ -87,13 +91,13 @@ describe('биржевой стакан (домен (0, ∞))', () => {
   });
 
   it('скрещенная книга ловится в любом домене', () => {
-    const crossed = Orderbook.fromLevels(
-      unsafeInstrumentId('BINANCE'),
-      unsafeInstrumentId('BTC/USDT'),
-      [OrderbookLevel.create(ReferencePrice.of(new Decimal('78475')), qty('1'))],
-      [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470')), qty('1'))],
-      AT.value,
-    );
+    const crossed = Orderbook.fromLevels({
+      venueId: BINANCE,
+      instrumentId: unsafeInstrumentId('BTC/USDT'),
+      bids: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78475')), qty('1'))],
+      asks: [OrderbookLevel.create(ReferencePrice.of(new Decimal('78470')), qty('1'))],
+      receivedAt: AT.value,
+    });
     const spread = assetPricing.spread(crossed);
     expect(spread.ok).toBe(false);
     if (spread.ok) return;
@@ -103,26 +107,27 @@ describe('биржевой стакан (домен (0, ∞))', () => {
 
 describe('структурные операции домена не знают', () => {
   it('глубина и объёмы считаются одинаково в обоих доменах', () => {
-    const prediction = Orderbook.fromLevels(
-      MARKET,
-      TOKEN,
-      [
+    const prediction = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: MARKET,
+      instrumentId: TOKEN,
+      bids: [
         OrderbookLevel.create(Price.of(new Decimal('0.50')), qty('10')),
         OrderbookLevel.create(Price.of(new Decimal('0.49')), qty('20')),
       ],
-      [],
-      AT.value,
-    );
-    const asset = Orderbook.fromLevels(
-      unsafeInstrumentId('BINANCE'),
-      unsafeInstrumentId('BTC/USDT'),
-      [
+      asks: [],
+      receivedAt: AT.value,
+    });
+    const asset = Orderbook.fromLevels({
+      venueId: BINANCE,
+      instrumentId: unsafeInstrumentId('BTC/USDT'),
+      bids: [
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78468')), qty('10')),
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78467')), qty('20')),
       ],
-      [],
-      AT.value,
-    );
+      asks: [],
+      receivedAt: AT.value,
+    });
 
     expect(prediction.getBidDepth()).toBe(asset.getBidDepth());
     expect(prediction.getTotalBidVolume().value().toString()).toBe(
@@ -132,19 +137,19 @@ describe('структурные операции домена не знают',
   });
 
   it('сортировка уровней одинакова в обоих доменах', () => {
-    const asset = Orderbook.fromLevels(
-      unsafeInstrumentId('BINANCE'),
-      unsafeInstrumentId('BTC/USDT'),
-      [
+    const asset = Orderbook.fromLevels({
+      venueId: BINANCE,
+      instrumentId: unsafeInstrumentId('BTC/USDT'),
+      bids: [
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78460')), qty('1')),
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78468')), qty('1')),
       ],
-      [
+      asks: [
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78480')), qty('1')),
         OrderbookLevel.create(ReferencePrice.of(new Decimal('78470')), qty('1')),
       ],
-      AT.value,
-    );
+      receivedAt: AT.value,
+    });
 
     expect(asset.bids.map((l) => l.price.value().toString())).toEqual(['78468', '78460']);
     expect(asset.asks.map((l) => l.price.value().toString())).toEqual(['78470', '78480']);

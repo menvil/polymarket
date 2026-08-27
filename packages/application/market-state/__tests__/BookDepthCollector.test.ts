@@ -19,6 +19,7 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { Orderbook } from '@polymarket/orderbook';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
+import { KnownVenues } from '@polymarket/ids';
 
 /** Разворачивает `Result` для тестов, где конфиг заведомо валиден. */
 function makeCollector(
@@ -47,13 +48,14 @@ function makeTimestamp(ms: number): Timestamp {
 
 /** Создаёт пустой (без уровней) Orderbook — content самих bids/asks не важен для этих тестов. */
 function makeBook(marketId: string, tokenId: InstrumentId, receivedAtMs: number): Orderbook {
-  return Orderbook.fromLevels(
-    marketId as unknown as InstrumentId,
-    tokenId,
-    [],
-    [],
-    makeTimestamp(receivedAtMs),
-  );
+  return Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: marketId as unknown as MarketId,
+      instrumentId: tokenId,
+      bids: [],
+      asks: [],
+      receivedAt: makeTimestamp(receivedAtMs),
+    });
 }
 
 const T0 = 1_700_000_000_000;

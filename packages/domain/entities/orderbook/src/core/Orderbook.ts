@@ -39,7 +39,8 @@
 import type { DecimalPrice, Price } from '@polymarket/value-objects';
 import { Quantity, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
-import type { InstrumentId } from '@polymarket/ids';
+import type { InstrumentId, MarketId, VenueId } from '@polymarket/ids';
+import { asMarketId } from '@polymarket/ids';
 import type { IClock } from '@polymarket/time';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -50,12 +51,28 @@ import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
  * Параметры для создания Orderbook
  */
 export interface OrderbookParams<TPrice extends DecimalPrice = Price> {
+  /** Площадка, где живёт этот стакан. */
+  readonly venueId: VenueId;
+  /**
+   * Рынок, если у площадки он существует отдельно от инструмента.
+   *
+   * @remarks
+   * Есть у рынков предсказаний (`condition_id`) и отсутствует у бирж: на
+   * Binance «рынок BTC/USDT» и «инструмент BTC/USDT» — одно и то же, и
+   * дублировать символ ради заполненности поля значило бы выдумывать
+   * сущность, которой на площадке нет.
+   */
+  readonly marketId?: MarketId;
+  /** Торгуемый инструмент: outcome-токен либо символ пары (`BTC/USDT`). */
   readonly instrumentId: InstrumentId;
-  readonly asset: InstrumentId;
   readonly bids: readonly OrderbookLevel<TPrice>[];
   readonly asks: readonly OrderbookLevel<TPrice>[];
-  readonly venueTimestamp?: Timestamp; // Timestamp VO (от exchange)
-  readonly receivedAt: Timestamp; // Timestamp VO (локально)
+  /** Timestamp от venue/exchange (если есть). */
+  readonly venueTimestamp?: Timestamp;
+  /** Timestamp получения данных (локально). */
+  readonly receivedAt: Timestamp;
+  /** Источник времени для `getAgeMs()`/`isStale()` без явного `nowMs`. */
+  readonly clock?: IClock;
 }
 
 /**
@@ -68,40 +85,41 @@ export interface OrderbookParams<TPrice extends DecimalPrice = Price> {
 export class Orderbook<TPrice extends DecimalPrice = Price> {
   private constructor(
     /**
-     * Идентификатор инструмента/рынка
+     * Площадка, где живёт этот стакан.
      *
      * @remarks
-     * Branded type вместо string для type safety.
+     * Без неё книги `BTC/USDT` на binance и на coinbase неразличимы —
+     * а это разные книги с разными ценами.
+     */
+    public readonly venueId: VenueId,
+
+    /**
+     * Рынок, если у площадки он существует отдельно от инструмента.
+     *
+     * @remarks
+     * `condition_id` у рынка предсказаний; `undefined` у биржи, где рынок
+     * и инструмент — одно и то же.
+     */
+    public readonly marketId: MarketId | undefined,
+
+    /**
+     * Торгуемый инструмент.
+     *
+     * @remarks
+     * Outcome-токен у рынка предсказаний, символ пары (`BTC/USDT`) у биржи.
+     * Поле называется так же, как то, что несёт: до foundation-изменения
+     * `instrumentId` содержал marketId, из-за чего по коду жили приведения
+     * `marketId as unknown as InstrumentId`.
      */
     public readonly instrumentId: InstrumentId,
 
     /**
-     * Идентификатор asset/outcome token
-     *
-     * @remarks
-     * Branded type вместо string для type safety.
-     */
-    public readonly asset: InstrumentId,
-
-    /**
      * Массив bid уровней (отсортирован по убыванию цены)
-     *
-     * @remarks
-     * Уже нормализован OrderbookNormalizer:
-     * - Отсортирован descending
-     * - Агрегирован (если policy)
-     * - Без нулевых qty (если policy)
      */
     public readonly bids: readonly OrderbookLevel<TPrice>[],
 
     /**
      * Массив ask уровней (отсортирован по возрастанию цены)
-     *
-     * @remarks
-     * Уже нормализован OrderbookNormalizer:
-     * - Отсортирован ascending
-     * - Агрегирован (если policy)
-     * - Без нулевых qty (если policy)
      */
     public readonly asks: readonly OrderbookLevel<TPrice>[],
 
@@ -109,13 +127,8 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
      * Timestamp от venue/exchange (если есть)
      *
      * @remarks
-     * Timestamp VO (миллисекунды).
-     * Когда exchange сгенерировал этот snapshot.
-     * Может отсутствовать если venue не присылает timestamp.
-     *
-     * Используется для:
-     * - Анализа latency (receivedAt - venueTimestamp)
-     * - Определения skew часов
+     * Когда exchange сгенерировал этот snapshot. Используется для анализа
+     * latency (`receivedAt - venueTimestamp`) и определения skew часов.
      */
     public readonly venueTimestamp: Timestamp | undefined,
 
@@ -123,23 +136,10 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
      * Timestamp получения данных (локально)
      *
      * @remarks
-     * Timestamp VO (миллисекунды).
-     * Когда мы получили/создали этот orderbook.
-     *
-     * Используется для:
-     * - Stale detection (receivedAt.toNumber() vs nowMs)
-     * - Age calculation
-     * - TTL проверок
+     * Используется для stale detection, age calculation и TTL-проверок.
      */
     public readonly receivedAt: Timestamp,
 
-    /**
-     * Опциональный источник времени для детерминированной работы getAgeMs() и isStale().
-     *
-     * @remarks
-     * Если задан — getAgeMs()/isStale() без явного nowMs используют clock.now().getTime()
-     * вместо Date.now(). Обратная совместимость сохраняется через явный nowMs.
-     */
     private readonly _clock?: IClock
   ) {
     Object.freeze(this);
@@ -164,16 +164,20 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
    * }
    * ```
    */
-  public static fromNormalized(normalized: NormalizedOrderbook, clock?: IClock): Orderbook<Price> {
-    // NormalizedOrderbook уже содержит Timestamp VO — конвертация не нужна
+  public static fromNormalized(
+    normalized: NormalizedOrderbook,
+    venueId: VenueId,
+    clock?: IClock,
+  ): Orderbook<Price> {
     return new Orderbook(
-      normalized.marketId as InstrumentId,
+      venueId,
+      asMarketId(normalized.marketId),
       normalized.tokenId as InstrumentId,
       normalized.bids,
       normalized.asks,
       normalized.venueTimestamp,
       normalized.receivedAt,
-      clock
+      clock,
     );
   }
 
@@ -195,19 +199,12 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
    * ```
    */
   public static empty<T extends DecimalPrice = Price>(
+    venueId: VenueId,
     instrumentId: InstrumentId,
-    asset: InstrumentId,
+    marketId?: MarketId,
     clock?: IClock,
   ): Orderbook<T> {
-    return new Orderbook(
-      instrumentId,
-      asset,
-      [],
-      [],
-      undefined,
-      Timestamp.now(),
-      clock
-    );
+    return new Orderbook(venueId, marketId, instrumentId, [], [], undefined, Timestamp.now(), clock);
   }
 
   /**
@@ -251,25 +248,27 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
    * ```
    */
   public static fromLevels<T extends DecimalPrice = Price>(
-    instrumentId: InstrumentId,
-    asset: InstrumentId,
-    bids: readonly OrderbookLevel<T>[],
-    asks: readonly OrderbookLevel<T>[],
-    receivedAt: Timestamp,
-    venueTimestamp?: Timestamp,
-    clock?: IClock,
+    params: OrderbookParams<T>,
   ): Orderbook<T> {
-    const sortedBids = [...bids].sort((a, b) => b.price.value().comparedTo(a.price.value()));
-    const sortedAsks = [...asks].sort((a, b) => a.price.value().comparedTo(b.price.value()));
+    // Сортировка выполняется ЗДЕСЬ: класс нигде не сортирует уровни сам
+    // (`getBestBid()` берёт `bids[0]` на веру), поэтому неупорядоченный вход
+    // дал бы молча неверную верхушку без единого сигнала об ошибке
+    const sortedBids = [...params.bids].sort((a, b) =>
+      b.price.value().comparedTo(a.price.value()),
+    );
+    const sortedAsks = [...params.asks].sort((a, b) =>
+      a.price.value().comparedTo(b.price.value()),
+    );
 
     return new Orderbook(
-      instrumentId,
-      asset,
+      params.venueId,
+      params.marketId,
+      params.instrumentId,
       sortedBids,
       sortedAsks,
-      venueTimestamp,
-      receivedAt,
-      clock
+      params.venueTimestamp,
+      params.receivedAt,
+      params.clock,
     );
   }
 
@@ -485,7 +484,7 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
       bestBid !== null && bestAsk !== null
         ? `${bestBid.value().toFixed(4)}/${bestAsk.value().toFixed(4)}`
         : 'N/A';
-    return `Orderbook[${this.instrumentId}:${this.asset}]: ${this.bids.length} bids, ${this.asks.length} asks, top ${top}`;
+    return `Orderbook[${this.venueId}:${this.marketId ?? '-'}:${this.instrumentId}]: ${this.bids.length} bids, ${this.asks.length} asks, top ${top}`;
   }
 
   /**
@@ -505,8 +504,9 @@ export class Orderbook<TPrice extends DecimalPrice = Price> {
     const bestAsk = this.getBestAsk();
 
     return {
+      venueId: this.venueId,
+      marketId: this.marketId,
       instrumentId: this.instrumentId,
-      asset: this.asset,
       venueTimestamp: this.venueTimestamp?.toNumber(),
       receivedAt: this.receivedAt.toNumber(),
       bestBid: bestBid?.value().toNumber(),

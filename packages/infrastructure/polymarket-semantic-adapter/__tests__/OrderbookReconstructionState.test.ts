@@ -77,9 +77,9 @@ describe('полный снапшот', () => {
     if (!outcome.ok) return;
 
     const book = outcome.book;
-    expect(book.asset).toBe(TOKEN);
+    expect(book.instrumentId).toBe(TOKEN);
     // Унаследованный контракт сущности: первое поле несёт marketId
-    expect(String(book.instrumentId)).toBe(MARKET_ID);
+    expect(String(book.marketId)).toBe(MARKET_ID);
 
     // bids по убыванию, asks по возрастанию — сортирует сама сущность
     expect(book.bids.map((level) => level.price.value().toString())).toEqual(['0.5', '0.48']);

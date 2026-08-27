@@ -79,14 +79,14 @@ describe('PolymarketBookEventParser.parse() — реальный "book" ивен
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.instrumentId).toBe(REAL_BOOK_EVENT.market);
+    expect(result.value.marketId).toBe(REAL_BOOK_EVENT.market);
   });
 
   it('корректно маппит asset_id → asset', () => {
     const result = PolymarketBookEventParser.parse(REAL_BOOK_EVENT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.asset).toBe(REAL_BOOK_EVENT.asset_id);
+    expect(result.value.instrumentId).toBe(REAL_BOOK_EVENT.asset_id);
   });
 
   it('best bid = 0.43 (строка "0.43" → Price VO)', () => {

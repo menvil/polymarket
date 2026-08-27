@@ -67,6 +67,7 @@ import type { NormalizationPolicy } from '../normalizer/NormalizationPolicy.js';
 import type { RawOrderbook } from '../normalizer/types.js';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import { OrderbookInvalidError } from '@polymarket/errors/orderbook';
+import { KnownVenues } from '@polymarket/ids';
 
 /**
  * Уровень стакана в формате Polymarket WebSocket
@@ -197,6 +198,10 @@ export class PolymarketBookEventParser {
       return normalizedResult;
     }
 
-    return { ok: true, value: Orderbook.fromNormalized(normalizedResult.value) };
+    // Парсер по определению разбирает события Polymarket — площадка известна
+    return {
+      ok: true,
+      value: Orderbook.fromNormalized(normalizedResult.value, KnownVenues.POLYMARKET),
+    };
   }
 }

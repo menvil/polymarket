@@ -15,6 +15,7 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { unsafeRunId } from '@polymarket/ids';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { InstrumentInfo } from '@polymarket/ports';
+import { KnownVenues } from '@polymarket/ids';
 
 /** Создаёт Timestamp VO из миллисекунд (бросает если невалидный) */
 function makeTimestamp(ms: number): Timestamp {
@@ -71,7 +72,7 @@ describe('BookUpdateHandler', () => {
     books = {
       get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
       getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockReturnValue(
-        Orderbook.empty(MARKET_ID as unknown as InstrumentId, TOKEN_ID),
+        Orderbook.empty(KnownVenues.POLYMARKET, TOKEN_ID, MARKET_ID as unknown as MarketId),
       ),
       set: jest.fn<IBookRegistry['set']>(),
       delete: jest.fn<IBookRegistry['delete']>(),

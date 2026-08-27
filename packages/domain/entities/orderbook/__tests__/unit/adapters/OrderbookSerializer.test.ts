@@ -7,6 +7,7 @@ import { OrderbookSerializer } from '../../../src/adapters/OrderbookSerializer.j
 import { Orderbook } from '../../../src/core/Orderbook.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
+import { KnownVenues } from '@polymarket/ids';
 
 describe('OrderbookSerializer', () => {
   const createTestOrderbook = () => {
@@ -27,12 +28,13 @@ describe('OrderbookSerializer', () => {
 
     const normalized = OrderbookNormalizer.normalize(raw);
     if (!normalized.ok) throw new Error('Failed to normalize');
-    return Orderbook.fromNormalized(normalized.value);
+    return Orderbook.fromNormalized(normalized.value, KnownVenues.POLYMARKET);
   };
 
   describe('fromJSON()', () => {
     it('deserializes валидный JSON', () => {
       const json = {
+        venueId: 'POLYMARKET',
         marketId: 'market-123',
         tokenId: 'token-yes',
         bids: [
@@ -49,8 +51,8 @@ describe('OrderbookSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.instrumentId).toBe('market-123');
-        expect(result.value.asset).toBe('token-yes');
+        expect(result.value.marketId).toBe('market-123');
+        expect(result.value.instrumentId).toBe('token-yes');
         expect(result.value.bids.length).toBe(2);
         expect(result.value.asks.length).toBe(1);
       }
@@ -74,6 +76,7 @@ describe('OrderbookSerializer', () => {
 
     it('fromJSON без поля bids использует пустой массив', () => {
       const json = {
+        venueId: 'POLYMARKET',
         marketId: 'market-123',
         tokenId: 'token-yes',
         // bids отсутствует
@@ -89,6 +92,7 @@ describe('OrderbookSerializer', () => {
 
     it('fromJSON без поля asks использует пустой массив', () => {
       const json = {
+        venueId: 'POLYMARKET',
         marketId: 'market-123',
         tokenId: 'token-yes',
         bids: [{ price: 0.51, quantity: 100 }],
@@ -104,6 +108,7 @@ describe('OrderbookSerializer', () => {
 
     it('применяет normalization policy', () => {
       const json = {
+        venueId: 'POLYMARKET',
         marketId: 'market-123',
         tokenId: 'token-yes',
         bids: [
@@ -172,6 +177,7 @@ describe('OrderbookSerializer', () => {
   describe('parse()', () => {
     it('парсит JSON string', () => {
       const jsonString = JSON.stringify({
+        venueId: 'POLYMARKET',
         marketId: 'market-123',
         tokenId: 'token-yes',
         bids: [{ price: 0.52, quantity: 100 }],
@@ -182,7 +188,7 @@ describe('OrderbookSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.instrumentId).toBe('market-123');
+        expect(result.value.marketId).toBe('market-123');
       }
     });
 
@@ -208,8 +214,9 @@ describe('OrderbookSerializer', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const restored = result.value;
+        expect(restored.venueId).toBe(orderbook.venueId);
+        expect(restored.marketId).toBe(orderbook.marketId);
         expect(restored.instrumentId).toBe(orderbook.instrumentId);
-        expect(restored.asset).toBe(orderbook.asset);
         expect(restored.bids.length).toBe(orderbook.bids.length);
         expect(restored.asks.length).toBe(orderbook.asks.length);
         expect(restored.receivedAt.toNumber()).toBe(orderbook.receivedAt.toNumber());
@@ -230,7 +237,7 @@ describe('OrderbookSerializer', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const restored = result.value;
-        expect(restored.instrumentId).toBe(orderbook.instrumentId);
+        expect(restored.marketId).toBe(orderbook.marketId);
         expect(restored.bids.length).toBe(orderbook.bids.length);
       }
     });

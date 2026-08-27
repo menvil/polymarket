@@ -29,6 +29,7 @@ import type { Money, Price, Quantity } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
+import { KnownVenues } from '@polymarket/ids';
 
 // ── Вспомогательные фабрики ───────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ function makeDeps(logger: ILogger): {
   const books: IBookRegistry = {
     get: jest.fn<IBookRegistry['get']>().mockReturnValue(undefined),
     getOrCreate: jest.fn<IBookRegistry['getOrCreate']>().mockImplementation(
-      (marketId, tokenId) => Orderbook.empty(marketId as unknown as InstrumentId, tokenId),
+      (marketId, tokenId) => Orderbook.empty(KnownVenues.POLYMARKET, tokenId, marketId as unknown as MarketId),
     ),
     set: jest.fn<IBookRegistry['set']>(),
     delete: jest.fn<IBookRegistry['delete']>(),

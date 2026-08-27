@@ -36,6 +36,7 @@ import { Orderbook, OrderbookLevel } from '@polymarket/orderbook';
 import type { Price, Quantity } from '@polymarket/value-objects';
 import { PriceService, QuantityService } from '@polymarket/value-objects';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import { KnownVenues } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -672,14 +673,15 @@ export class OrderbookReconstructionState {
     receivedAt: Timestamp,
     venueTimestamp: Timestamp | undefined,
   ): Orderbook {
-    return Orderbook.fromLevels(
-      book.marketId as unknown as InstrumentId,
+    return Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: book.marketId,
       instrumentId,
-      [...book.bids.values()],
-      [...book.asks.values()],
+      bids: [...book.bids.values()],
+      asks: [...book.asks.values()],
       receivedAt,
       venueTimestamp,
-    );
+    });
   }
 
   /**

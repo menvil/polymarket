@@ -37,6 +37,7 @@
 import type { ILogger } from '@polymarket/logger';
 import { Orderbook, bookPricing, type OrderbookLevel } from '@polymarket/orderbook';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
+import { KnownVenues } from '@polymarket/ids';
 import type { Price } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 import { PriceService } from '@polymarket/value-objects';
@@ -130,17 +131,14 @@ export class BookUpdateHandler {
       return;
     }
 
-    // `Orderbook.fromLevels`'s первый параметр называется `instrumentId`, но по
-    // установленному в Этапе 2 контракту сущности (см. `Orderbook.fromNormalized`)
-    // несёт то, что везде в остальном коде называется marketId — тот же неймингный
-    // артефакт entity, не вводится здесь заново, а следует уже принятому паттерну.
-    const book = Orderbook.fromLevels(
-      instrument.marketId as unknown as InstrumentId,
-      tokenId,
+    const book = Orderbook.fromLevels({
+      venueId: KnownVenues.POLYMARKET,
+      marketId: instrument.marketId,
+      instrumentId: tokenId,
       bids,
       asks,
-      timestamp,
-    );
+      receivedAt: timestamp,
+    });
     this._books.set(instrument.marketId, tokenId, book);
 
     // Индексируем tokenId → marketId для последующей очистки в onMarketClosed
