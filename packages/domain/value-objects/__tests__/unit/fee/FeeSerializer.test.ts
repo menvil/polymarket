@@ -42,6 +42,26 @@ describe('FeeSerializer', () => {
   });
 
   describe('fromJSON()', () => {
+    // Метод объявлен возвращающим Result, но на null бросал TypeError:
+    // аргументы wrapOp вычисляются ДО входа в защищённый колбэк, поэтому
+    // обращение к json.asset летело мимо обёртки
+    it.each([
+      ['null', null],
+      ['undefined', undefined],
+      ['number', 42],
+      ['array', []],
+    ])('should return Err, not throw, for %s', (_label, hostile) => {
+      const call = (): unknown => FeeSerializer.fromJSON(hostile as never);
+
+      expect(call).not.toThrow();
+
+      const result = FeeSerializer.fromJSON(hostile as never);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_STRUCTURE);
+      }
+    });
+
     it('should deserialize Fee from JSON with string amount', () => {
       const json = {
         asset: AssetIdHelpers.USDC,

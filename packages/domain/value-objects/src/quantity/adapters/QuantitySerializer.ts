@@ -2,33 +2,14 @@ import { Result, Err } from '@polymarket/result';
 import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import type { JsonFailure } from '../../shared/json/index.js';
+import {
+  jsonFailureMessage,
+  jsonFailureType,
+  readField,
+  readJsonObject,
+  safeStringify,
+} from '../../shared/json/index.js';
 
 /**
  * JSON контракт для Quantity сериализации
@@ -137,86 +118,34 @@ export class QuantitySerializer {
    * ```
    */
   public static fromJSON(json: unknown): Result<Quantity, InvalidQuantityError> {
-    // Проверка что это объект
-    if (typeof json !== 'object' || json === null) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Expected object, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: QuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: json === null ? 'null' : typeof json,
-              json: safeStringify(json)
-            }
+    // Форма разбирается общими гардами (shared/json), доменной остаётся
+    // только ошибка: её тип и форма context закреплены потребителями
+    const fail = (failure: JsonFailure): Result<Quantity, InvalidQuantityError> =>
+      Err(
+        new InvalidQuantityError(jsonFailureMessage(failure, 'string'), {
+          context: {
+            source: ErrorSource.PARSING,
+            service: QuantitySerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            kind: 'invalid_json',
+            type: jsonFailureType(failure),
+            json: safeStringify(json)
           }
-        )
+        })
       );
+
+    const obj = readJsonObject(json);
+    if (!obj.ok) {
+      return fail(obj.error);
     }
 
-    // Проверка что это не массив
-    if (Array.isArray(json)) {
-      return Err(
-        new InvalidQuantityError(
-          () => `Expected object, got array`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: QuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'array',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка наличия поля value
-    if (!('value' in json)) {
-      return Err(
-        new InvalidQuantityError(
-          () => `Missing required field 'value'`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: QuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'missing_field',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    const value = (json as { value: unknown }).value;
-
-    // Проверка типа value (только string, не number!)
-    // Явная проверка null отдельно, так как typeof null === 'object'
-    if (typeof value !== 'string') {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Field 'value' must be string, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: QuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: value === null ? 'null' : typeof value,
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
+    // Только string, не number: у количества точность важнее удобства
+    const value = readField(obj.value, 'value', ['string']);
+    if (!value.ok) {
+      return fail(value.error);
     }
 
     // Делегируем создание QuantityService
-    return QuantityService.create(value);
+    return QuantityService.create(value.value as string);
   }
 }

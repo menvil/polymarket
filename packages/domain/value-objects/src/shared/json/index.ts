@@ -8,5 +8,11 @@
  * `jsonGuards.ts`.
  */
 export { safeStringify } from './safeStringify.js';
-export { describeType, readField, readJsonObject } from './jsonGuards.js';
+export {
+  describeType,
+  jsonFailureMessage,
+  jsonFailureType,
+  readField,
+  readJsonObject,
+} from './jsonGuards.js';
 export type { FieldType, JsonFailure } from './jsonGuards.js';

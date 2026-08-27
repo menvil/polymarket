@@ -18,7 +18,13 @@ import { ErrorSource } from '@polymarket/errors';
 import type { DecimalPrice } from './DecimalPrice.js';
 import type { PriceDomain } from './priceDomain.js';
 import type { JsonFailure } from '../json/index.js';
-import { readField, readJsonObject, safeStringify } from '../json/index.js';
+import {
+  jsonFailureMessage,
+  jsonFailureType,
+  readField,
+  readJsonObject,
+  safeStringify,
+} from '../json/index.js';
 
 /**
  * JSON-представление цены.
@@ -121,22 +127,8 @@ export function priceFromJSON<TPrice extends DecimalPrice, TError extends AnyTra
       }),
     );
 
-  // Разбор ВСЕХ случаев отказа: компилятор не даст забыть новый
-  const failFrom = (failure: JsonFailure): Result<TPrice, TError> => {
-    switch (failure.kind) {
-      case 'not_object':
-        return fail(`Expected object, got ${failure.type}`, failure.type);
-      case 'array':
-        return fail('Expected object, got array', 'array');
-      case 'missing_field':
-        return fail(`Missing required field '${failure.field}'`, 'missing_field');
-      case 'bad_field_type':
-        return fail(
-          `Field '${failure.field}' must be number or string, got ${failure.type}`,
-          failure.type,
-        );
-    }
-  };
+  const failFrom = (failure: JsonFailure): Result<TPrice, TError> =>
+    fail(jsonFailureMessage(failure, 'number or string'), jsonFailureType(failure));
 
   const obj = readJsonObject(json);
   if (!obj.ok) {

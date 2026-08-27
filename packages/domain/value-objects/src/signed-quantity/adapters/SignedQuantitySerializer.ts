@@ -2,36 +2,14 @@ import { Result, Err } from '@polymarket/result';
 import { InvalidSignedQuantityError, ErrorSource } from '@polymarket/errors';
 import { SignedQuantity } from '../core/SignedQuantity.js';
 import { SignedQuantityService } from '../facade/SignedQuantityService.js';
-
-/**
- * Безопасная сериализация в JSON с обработкой циклических ссылок и undefined
- *
- * @param value - Значение для сериализации
- * @returns JSON строка
- *
- * @remarks
- * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
- * Обрабатывает undefined → "[Undefined]" (т.к. JSON.stringify(undefined) возвращает undefined).
- * Используется для читаемой диагностики ошибок.
- */
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    const result = JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) {
-          return '[Circular]';
-        }
-        seen.add(val);
-      }
-      return val;
-    });
-    // JSON.stringify(undefined) возвращает undefined, а не строку
-    return result ?? '[Undefined]';
-  } catch {
-    return '[Unstringifiable]';
-  }
-}
+import type { JsonFailure } from '../../shared/json/index.js';
+import {
+  jsonFailureMessage,
+  jsonFailureType,
+  readField,
+  readJsonObject,
+  safeStringify,
+} from '../../shared/json/index.js';
 
 /**
  * JSON контракт для SignedQuantity сериализации
@@ -156,86 +134,36 @@ export class SignedQuantitySerializer {
    * ```
    */
   public static fromJSON(json: unknown): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Проверка что это объект
-    if (typeof json !== 'object' || json === null) {
-      return Err(
-        new InvalidSignedQuantityError(
-          (ctx) => `Expected object, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: SignedQuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: json === null ? 'null' : typeof json,
-              json: safeStringify(json)
-            }
+    // Форма разбирается общими гардами (shared/json), доменной остаётся
+    // только ошибка: её тип и форма context закреплены потребителями
+    const fail = (
+      failure: JsonFailure,
+    ): Result<SignedQuantity, InvalidSignedQuantityError> =>
+      Err(
+        new InvalidSignedQuantityError(jsonFailureMessage(failure, 'string'), {
+          context: {
+            source: ErrorSource.PARSING,
+            service: SignedQuantitySerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            kind: 'invalid_json',
+            type: jsonFailureType(failure),
+            json: safeStringify(json)
           }
-        )
+        })
       );
+
+    const obj = readJsonObject(json);
+    if (!obj.ok) {
+      return fail(obj.error);
     }
 
-    // Проверка что это не массив
-    if (Array.isArray(json)) {
-      return Err(
-        new InvalidSignedQuantityError(
-          () => `Expected object, got array`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: SignedQuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'array',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка наличия поля value
-    if (!('value' in json)) {
-      return Err(
-        new InvalidSignedQuantityError(
-          () => `Missing required field 'value'`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: SignedQuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: 'missing_field',
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
-    }
-
-    const value = (json as { value: unknown }).value;
-
-    // Проверка типа value (только string, не number!)
-    // Явная проверка null отдельно, так как typeof null === 'object'
-    if (typeof value !== 'string') {
-      return Err(
-        new InvalidSignedQuantityError(
-          (ctx) => `Field 'value' must be string, got ${ctx.type}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: SignedQuantitySerializer.SERVICE_NAME,
-              op: 'fromJSON',
-              kind: 'invalid_json',
-              type: value === null ? 'null' : typeof value,
-              json: safeStringify(json)
-            }
-          }
-        )
-      );
+    // Только string, не number: знаковое количество хранится строкой ради точности
+    const value = readField(obj.value, 'value', ['string']);
+    if (!value.ok) {
+      return fail(value.error);
     }
 
     // Делегируем создание SignedQuantityService
-    return SignedQuantityService.create(value);
+    return SignedQuantityService.create(value.value as string);
   }
 }
