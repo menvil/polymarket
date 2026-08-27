@@ -36,7 +36,7 @@
  * ```
  */
 
-import type { Price } from '@polymarket/value-objects';
+import type { DecimalPrice, Price } from '@polymarket/value-objects';
 import { Quantity, QuantityService } from '@polymarket/value-objects';
 import { Timestamp } from '@polymarket/timestamp';
 import type { InstrumentId } from '@polymarket/ids';
@@ -49,11 +49,11 @@ import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
 /**
  * Параметры для создания Orderbook
  */
-export interface OrderbookParams {
+export interface OrderbookParams<TPrice extends DecimalPrice = Price> {
   readonly instrumentId: InstrumentId;
   readonly asset: InstrumentId;
-  readonly bids: readonly OrderbookLevel[];
-  readonly asks: readonly OrderbookLevel[];
+  readonly bids: readonly OrderbookLevel<TPrice>[];
+  readonly asks: readonly OrderbookLevel<TPrice>[];
   readonly venueTimestamp?: Timestamp; // Timestamp VO (от exchange)
   readonly receivedAt: Timestamp; // Timestamp VO (локально)
 }
@@ -65,7 +65,7 @@ export interface OrderbookParams {
  * Неизменяемая сущность, представляющая стакан заявок рынка.
  * Каждый asset имеет свой orderbook.
  */
-export class Orderbook {
+export class Orderbook<TPrice extends DecimalPrice = Price> {
   private constructor(
     /**
      * Идентификатор инструмента/рынка
@@ -92,7 +92,7 @@ export class Orderbook {
      * - Агрегирован (если policy)
      * - Без нулевых qty (если policy)
      */
-    public readonly bids: readonly OrderbookLevel[],
+    public readonly bids: readonly OrderbookLevel<TPrice>[],
 
     /**
      * Массив ask уровней (отсортирован по возрастанию цены)
@@ -103,7 +103,7 @@ export class Orderbook {
      * - Агрегирован (если policy)
      * - Без нулевых qty (если policy)
      */
-    public readonly asks: readonly OrderbookLevel[],
+    public readonly asks: readonly OrderbookLevel<TPrice>[],
 
     /**
      * Timestamp от venue/exchange (если есть)
@@ -164,7 +164,7 @@ export class Orderbook {
    * }
    * ```
    */
-  public static fromNormalized(normalized: NormalizedOrderbook, clock?: IClock): Orderbook {
+  public static fromNormalized(normalized: NormalizedOrderbook, clock?: IClock): Orderbook<Price> {
     // NormalizedOrderbook уже содержит Timestamp VO — конвертация не нужна
     return new Orderbook(
       normalized.marketId as InstrumentId,
@@ -194,7 +194,11 @@ export class Orderbook {
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty(instrumentId: InstrumentId, asset: InstrumentId, clock?: IClock): Orderbook {
+  public static empty<T extends DecimalPrice = Price>(
+    instrumentId: InstrumentId,
+    asset: InstrumentId,
+    clock?: IClock,
+  ): Orderbook<T> {
     return new Orderbook(
       instrumentId,
       asset,
@@ -246,15 +250,15 @@ export class Orderbook {
    * );
    * ```
    */
-  public static fromLevels(
+  public static fromLevels<T extends DecimalPrice = Price>(
     instrumentId: InstrumentId,
     asset: InstrumentId,
-    bids: readonly OrderbookLevel[],
-    asks: readonly OrderbookLevel[],
+    bids: readonly OrderbookLevel<T>[],
+    asks: readonly OrderbookLevel<T>[],
     receivedAt: Timestamp,
     venueTimestamp?: Timestamp,
     clock?: IClock,
-  ): Orderbook {
+  ): Orderbook<T> {
     const sortedBids = [...bids].sort((a, b) => b.price.value().comparedTo(a.price.value()));
     const sortedAsks = [...asks].sort((a, b) => a.price.value().comparedTo(b.price.value()));
 
@@ -280,7 +284,7 @@ export class Orderbook {
    * Возвращает первый элемент отсортированного массива bids.
    * Это максимальная цена, которую покупатели готовы заплатить.
    */
-  public getBestBid(): Price | null {
+  public getBestBid(): TPrice | null {
     return this.bids.length > 0 ? this.bids[0].price : null;
   }
 
@@ -293,7 +297,7 @@ export class Orderbook {
    * Возвращает первый элемент отсортированного массива asks.
    * Это минимальная цена, по которой продавцы готовы продать.
    */
-  public getBestAsk(): Price | null {
+  public getBestAsk(): TPrice | null {
     return this.asks.length > 0 ? this.asks[0].price : null;
   }
 

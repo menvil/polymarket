@@ -24,7 +24,7 @@
  * ```
  */
 
-import type { Price, Quantity } from '@polymarket/value-objects';
+import type { DecimalPrice, Price, Quantity } from '@polymarket/value-objects';
 
 /**
  * Уровень в стакане заявок
@@ -33,9 +33,9 @@ import type { Price, Quantity } from '@polymarket/value-objects';
  * Immutable value object для одного price level.
  * Используется как в bids, так и в asks.
  */
-export class OrderbookLevel {
+export class OrderbookLevel<TPrice extends DecimalPrice = Price> {
   private constructor(
-    public readonly price: Price,
+    public readonly price: TPrice,
     public readonly quantity: Quantity
   ) {
     Object.freeze(this);
@@ -60,7 +60,7 @@ export class OrderbookLevel {
    * }
    * ```
    */
-  public static create(price: Price, quantity: Quantity): OrderbookLevel {
+  public static create<T extends DecimalPrice>(price: T, quantity: Quantity): OrderbookLevel<T> {
     return new OrderbookLevel(price, quantity);
   }
 
@@ -103,7 +103,7 @@ export class OrderbookLevel {
    * }
    * ```
    */
-  public withQuantity(newQuantity: Quantity): OrderbookLevel {
+  public withQuantity(newQuantity: Quantity): OrderbookLevel<TPrice> {
     return OrderbookLevel.create(this.price, newQuantity);
   }
 
@@ -120,10 +120,12 @@ export class OrderbookLevel {
    * console.log(level1.equals(level2)); // true
    * ```
    */
-  public equals(other: OrderbookLevel): boolean {
+  public equals(other: OrderbookLevel<TPrice>): boolean {
     if (other == null) return false;
+    // Сравнение цены через Decimal: контракт `DecimalPrice` намеренно
+    // минимален и метода сравнения не содержит (см. shared/DecimalPrice.ts)
     return (
-      this.price.equals(other.price) &&
+      this.price.value().equals(other.price.value()) &&
       this.quantity.equals(other.quantity)
     );
   }

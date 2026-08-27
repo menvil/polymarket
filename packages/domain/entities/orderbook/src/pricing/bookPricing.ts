@@ -38,7 +38,7 @@
  * иначе мы бы размножили одну формулу под разными именами.
  */
 import type { Price, Spread, DecimalPrice } from '@polymarket/value-objects';
-import { SpreadService } from '@polymarket/value-objects';
+import { Spread as SpreadCore } from '@polymarket/value-objects';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
@@ -69,7 +69,7 @@ export interface BookPricing<TPrice extends DecimalPrice> {
    * @remarks
    * Объёмы НЕ учитываются — для этого есть {@link BookPricing.microprice}.
    */
-  midPrice(book: Orderbook): TPrice | null;
+  midPrice(book: Orderbook<TPrice>): TPrice | null;
 
   /**
    * Цена, взвешенная по объёмам на лучших уровнях.
@@ -82,7 +82,7 @@ export interface BookPricing<TPrice extends DecimalPrice> {
    * `microprice = (ask·bidQty + bid·askQty) / (bidQty + askQty)` — точнее
    * отражает давление, чем mid, потому что учитывает дисбаланс ликвидности.
    */
-  microprice(book: Orderbook): TPrice | null;
+  microprice(book: Orderbook<TPrice>): TPrice | null;
 
   /**
    * Спред между лучшими bid и ask.
@@ -96,7 +96,7 @@ export interface BookPricing<TPrice extends DecimalPrice> {
    * книга» — принципиально разные состояния, и для торговой системы второе
    * является сигналом тревоги, который нельзя терять в `null`.
    */
-  spread(book: Orderbook): Result<Spread, OrderbookInvalidError>;
+  spread(book: Orderbook<TPrice>): Result<Spread<TPrice>, OrderbookInvalidError>;
 }
 
 /**
@@ -122,7 +122,7 @@ export interface BookPricing<TPrice extends DecimalPrice> {
 export function bookPricing<TPrice extends DecimalPrice = Price>(
   create: PriceFactory<TPrice>,
 ): BookPricing<TPrice> {
-  const spread = (book: Orderbook): Result<Spread, OrderbookInvalidError> => {
+  const spread = (book: Orderbook<TPrice>): Result<Spread<TPrice>, OrderbookInvalidError> => {
     const bid = book.getBestBid();
     const ask = book.getBestAsk();
 
@@ -151,9 +151,12 @@ export function bookPricing<TPrice extends DecimalPrice = Price>(
       );
     }
 
-    const spreadResult = SpreadService.create(bid, ask);
-    if (!spreadResult.ok) {
-      // Единственная причина отказа SpreadService при валидных ценах
+    // Core-фабрика, а не `SpreadService`: фасад типизирован prediction-ценой
+    // и generic-книгу не принял бы. Core бросает ровно один инвариант —
+    // `bid > ask`, — который здесь и означает скрещенную книгу.
+    try {
+      return Ok(SpreadCore.of(bid, ask));
+    } catch {
       return Err(
         new OrderbookInvalidError('Crossed book detected', {
           context: {
@@ -166,20 +169,19 @@ export function bookPricing<TPrice extends DecimalPrice = Price>(
         }),
       );
     }
-    return Ok(spreadResult.value);
   };
 
   return {
     spread,
 
-    midPrice(book: Orderbook): TPrice | null {
+    midPrice(book: Orderbook<TPrice>): TPrice | null {
       const spreadResult = spread(book);
       if (!spreadResult.ok) return null;
       const result = create(spreadResult.value.midpoint());
       return result.ok ? result.value : null;
     },
 
-    microprice(book: Orderbook): TPrice | null {
+    microprice(book: Orderbook<TPrice>): TPrice | null {
       if (book.bids.length === 0 || book.asks.length === 0) {
         return null;
       }
