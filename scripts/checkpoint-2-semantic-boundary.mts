@@ -255,6 +255,11 @@ async function main(): Promise<void> {
   // содержит значение ИЗ ТОГО ЖЕ сообщения.
   const rawTop = new Map<string, { bid: string; ask: string }>();
   const rawTrades = new Map<string, Record<string, unknown>>();
+  // Сколько сырых сделок перезаписано ДО сверки. Показывает плотность
+  // сопоставления: пара «последнее сырое ↔ текущее semantic» честна
+  // ровно настолько, насколько редко наблюдение вытесняется неиспользованным.
+  const rawTradeConsumed = new Set<string>();
+  let rawTradesSuperseded = 0;
 
   bus.subscribe('CEX_ORDERBOOK', (message) => {
     const payload = message.payload as {
@@ -275,8 +280,19 @@ async function main(): Promise<void> {
   });
 
   bus.subscribe('CEX_TRADE', (message) => {
-    const payload = message.payload as { exchangeId: string; trade: Record<string, unknown> };
-    rawTrades.set(payload.exchangeId, payload.trade);
+    const payload = message.payload as {
+      exchangeId: string;
+      marketType: string;
+      symbol: string;
+      trade: Record<string, unknown>;
+    };
+    // Ключ ОБЯЗАН включать инструмент: BTC/USDT и ETH/USDT идут
+    // одновременно, и ключ по одной бирже сопоставил бы semantic-сделку
+    // с последней сырой сделкой ДРУГОГО инструмента
+    const key = `${payload.exchangeId.toUpperCase()}|${payload.marketType}:${payload.symbol}`;
+    if (rawTrades.has(key) && !rawTradeConsumed.has(key)) rawTradesSuperseded += 1;
+    rawTradeConsumed.delete(key);
+    rawTrades.set(key, payload.trade);
   });
 
   bus.subscribe('POLYMARKET_MARKET', (message) => {
@@ -329,7 +345,10 @@ async function main(): Promise<void> {
       return;
     }
     if (kind === 'last_trade_price' && token !== '') {
-      rawTrades.set(`POLYMARKET|${token}`, inner as Record<string, unknown>);
+      const key = `POLYMARKET|${token}`;
+      if (rawTrades.has(key) && !rawTradeConsumed.has(key)) rawTradesSuperseded += 1;
+      rawTradeConsumed.delete(key);
+      rawTrades.set(key, inner as Record<string, unknown>);
     }
   });
 
@@ -576,43 +595,59 @@ async function main(): Promise<void> {
     }
 
     // Раздел 10: сверка с сырой сделкой ИЗ ТОГО ЖЕ сообщения
-    const rawTradeKey = venue === 'POLYMARKET' ? `POLYMARKET|${instrument}` : venue.toLowerCase();
+    const rawTradeKey = `${venue}|${instrument}`;
     const rawTrade = rawTrades.get(rawTradeKey);
     const tradeScope = venue === 'POLYMARKET' ? 'POLYMARKET' : 'CEX';
     if (rawTrade !== undefined) {
+      // Сверяется КАЖДАЯ сделка. Квота ниже ограничивает только печать
+      // образцов: раньше сравнение стояло ВНУТРИ квоты, и счётчик
+      // «сверок» показывал сотни тысяч при шести реальных сравнениях.
       tradeCompared.set(tradeScope, (tradeCompared.get(tradeScope) ?? 0) + 1);
-    }
-    const tradeScopeSamples = tradeParity.filter(
-      (x) => (x.scope === 'POLYMARKET') === (tradeScope === 'POLYMARKET'),
-    );
-    if (rawTrade !== undefined && tradeScopeSamples.length < PARITY_SAMPLES) {
+      rawTradeConsumed.add(rawTradeKey);
+
       const rawPrice = String(rawTrade.price ?? '—');
       const rawSize = String(rawTrade.amount ?? rawTrade.size ?? '—');
-      const rawId = String(rawTrade.id ?? rawTrade.transactionHash ?? '(absent)');
+      const rawIdValue = rawTrade.id ?? rawTrade.transactionHash;
+      const rawId = rawIdValue === undefined || rawIdValue === null ? undefined : String(rawIdValue);
       const canonicalPrice = asText(payload.price);
       const canonicalSize = asText(payload.size);
-      const same =
+      const canonicalId = tradeId === undefined ? undefined : String(tradeId);
+
+      // Идентификатор входит в условие PASS, а не только в печать:
+      // есть у источника — обязан совпасть ПОБАЙТОВО; нет у источника —
+      // обязан отсутствовать и в canonical, а не быть придуманным
+      const idSame = rawId === undefined ? canonicalId === undefined : canonicalId === rawId;
+      const valuesSame =
         Number(rawPrice) === Number(canonicalPrice) && Number(rawSize) === Number(canonicalSize);
+      const same = idSame && valuesSame;
+
       if (!same) {
         tradeMismatches += 1;
         if (tradeMismatches <= 5) {
           violations.push(
             `trade parity mismatch ${venue}/${instrument}: ` +
-              `raw ${rawPrice}x${rawSize} vs canonical ${canonicalPrice}x${canonicalSize}`,
+              `raw ${rawId ?? '(absent)'} ${rawPrice}x${rawSize} vs ` +
+              `canonical ${canonicalId ?? '(absent)'} ${canonicalPrice}x${canonicalSize}`,
           );
         }
       }
-      tradeParity.push({
-        scope: venue,
-        instrument,
-        rawId,
-        canonicalId: tradeId === undefined ? '(absent)' : String(tradeId),
-        rawPrice,
-        canonicalPrice,
-        rawSize,
-        canonicalSize,
-        match: same,
-      });
+
+      const tradeScopeSamples = tradeParity.filter(
+        (x) => (x.scope === 'POLYMARKET') === (tradeScope === 'POLYMARKET'),
+      );
+      if (tradeScopeSamples.length < PARITY_SAMPLES) {
+        tradeParity.push({
+          scope: venue,
+          instrument,
+          rawId: rawId ?? '(absent)',
+          canonicalId: canonicalId ?? '(absent)',
+          rawPrice,
+          canonicalPrice,
+          rawSize,
+          canonicalSize,
+          match: same,
+        });
+      }
     }
   });
 
@@ -694,22 +729,33 @@ async function main(): Promise<void> {
   let contiguousInstruments = 0;
   let brokenInstruments = 0;
   for (const [key, track] of [...sequences.entries()].sort()) {
-    const sorted = [...track.seen].sort((a, b) => a - b);
-    const contiguous =
-      sorted.length > 0 && sorted[0] === 1 && sorted.every((value, index) => value === index + 1);
+    // Проверяется ПОРЯДОК ПРИХОДА, а не отсортированный ряд: сортировка
+    // признала бы корректным поток 1, 3, 2 — то есть непоследовательную
+    // публикацию, которую контракт как раз запрещает.
+    const seen = track.seen;
+    const problems: string[] = [];
+    if (seen.length === 0) {
+      problems.push('no observations');
+    } else {
+      if (seen[0] !== 1) problems.push(`starts at ${String(seen[0])}, expected 1`);
+      for (let i = 1; i < seen.length; i += 1) {
+        if (seen[i] !== seen[i - 1] + 1) {
+          problems.push(`${String(seen[i - 1])} → ${String(seen[i])}`);
+          if (problems.length >= 5) break;
+        }
+      }
+    }
+    const contiguous = problems.length === 0;
     if (contiguous) contiguousInstruments += 1;
     else {
       brokenInstruments += 1;
-      const gaps: number[] = [];
-      for (let i = 1; i < sorted.length; i += 1) {
-        if (sorted[i] !== sorted[i - 1] + 1) gaps.push(sorted[i - 1]);
-      }
       violations.push(
-        `BOOK_UPDATED sequence not contiguous for ${key}: ` +
-          `first=${String(sorted[0])} last=${String(sorted[sorted.length - 1])} ` +
-          `count=${String(sorted.length)} gapsAfter=[${gaps.slice(0, 5).join(',')}]`,
+        `BOOK_UPDATED sequence not strictly increasing by 1 for ${key}: ` +
+          `count=${String(seen.length)} last=${String(seen[seen.length - 1] ?? 0)} ` +
+          `problems=[${problems.join(', ')}]`,
       );
     }
+    const sorted = seen;
     if (sequenceReport.length < 12) {
       sequenceReport.push(
         `  ${key.padEnd(46)} n=${String(track.seen.length).padStart(5)} ` +
@@ -718,13 +764,105 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Разбор ненулевых счётчиков отказов ────────────────────────────────
-  const unexplained: string[] = [];
-  const explain = (label: string, value: number, reason: string | null): void => {
+  // ── Обязательная классификация счётчиков ──────────────────────────────
+  // Каждый счётчик отказа должен быть ЯВНО объявлен либо фатальным, либо
+  // объяснённым. Раньше здесь была функция, которая ни разу не
+  // вызывалась, а объяснения жили только в прозе отчёта — то есть
+  // чекпоинт мог пройти с необъяснённым ненулевым счётчиком.
+  const fatal: string[] = [];
+  const explained: string[] = [];
+
+  /** Счётчик, любое ненулевое значение которого валит чекпоинт. */
+  const mustBeZero = (label: string, value: number): void => {
     if (value === 0) return;
-    if (reason === null) unexplained.push(`${label}=${String(value)}`);
-    else console.log(`  ${label.padEnd(38)} ${String(value).padStart(7)}  ${reason}`);
+    fatal.push(`${label}=${String(value)}`);
   };
+
+  /** Счётчик, ненулевое значение которого объяснимо и допустимо. */
+  const benign = (label: string, value: number, reason: string): void => {
+    if (value === 0) return;
+    explained.push(`${label}=${String(value)} — ${reason}`);
+  };
+
+  /** Порог минимального покрытия: ноль означает, что проверка не шла. */
+  const evidence: string[] = [];
+  const requireEvidence = (label: string, value: number): void => {
+    if (value > 0) return;
+    evidence.push(`${label} produced NO observations — check did not actually run`);
+  };
+
+  // Фатальные: любое ненулевое значение — дефект контура
+  mustBeZero('bus.rejected', finalStatus.bus.rejectedPublicationsTotal);
+  mustBeZero('recorder.serializationFailures', finalStatus.recorder.serializationFailures);
+  mustBeZero('recorder.registrationFailures', finalStatus.recorder.registrationFailures);
+  mustBeZero('recorderCex.writeFailures', finalStatus.recorderCex.cexWriteFailures);
+  mustBeZero('pm.invalidPayloads', pmStats.invalidPayloads);
+  mustBeZero('pm.semanticPublishFailures', pmStats.semanticPublishFailures);
+  mustBeZero('cex.invalidOrderBooks', cexStats.invalidOrderBooks);
+  mustBeZero('cex.invalidTrades', cexStats.invalidTrades);
+  mustBeZero('cex.invalidIdentities', cexStats.invalidIdentities);
+  mustBeZero('cex.semanticPublishFailures', cexStats.semanticPublishFailures);
+  mustBeZero('raw.mutationsDetected', immutabilityViolations);
+  mustBeZero('cex.outcomePriceLeaks', outcomePriceLeaks.length);
+  mustBeZero('cex.fabricatedMarketId', cexMarketIdFabrications);
+  mustBeZero('trade.fabricatedIds', fabricatedTradeIds);
+  mustBeZero('bookParity.mismatches', bookMismatches);
+  mustBeZero('tradeParity.mismatches', tradeMismatches);
+  // rawMessageIds НЕ ограничен и ничего не вытесняет, поэтому неизвестный
+  // causationId — настоящий разрыв причинности, а не артефакт измерения
+  mustBeZero('causality.orphans', causality.orphans);
+  mustBeZero('causality.unrelatedRoots', causality.roots);
+  mustBeZero('sequence.brokenInstruments', brokenInstruments);
+  mustBeZero('readback.malformedLines', readback.malformed);
+
+  // Объяснимые: ненулевые по природе наблюдаемого потока
+  benign(
+    'bus.handlerErrors',
+    finalStatus.bus.handlerErrorsTotal,
+    `intentional isolation probes (harness threw ${String(Math.floor(faultInjections / 50))} times); ` +
+      'recorder lost nothing',
+  );
+  benign(
+    'pm.desyncs',
+    pmStats.desyncs,
+    `reconstruction paused publication and resynced ${String(pmStats.resyncs)} times`,
+  );
+  benign(
+    'pm.unverifiedBestClaims',
+    pmStats.unverifiedBestClaims,
+    'source-declared best outside OutcomePrice range — side unverifiable, not absent',
+  );
+  benign(
+    'rawTrades.supersededBeforeCompare',
+    rawTradesSuperseded,
+    'raw trade overwritten before a semantic event paired with it (pairing density)',
+  );
+  benign('cex.duplicateTrades', cexStats.duplicateTrades, 'venue redelivered a trade id; deduped');
+  benign('cex.crossedOrderBooks', cexStats.crossedOrderBooks, 'venue published a crossed book');
+  benign('cex.tradesMissingId', cexStats.tradesMissingId, 'left ABSENT, never fabricated');
+  benign('cex.tradesMissingSide', cexStats.tradesMissingSide, 'side never guessed');
+  benign('readback.openPartitions', readback.incomplete, 'rotation cycle outlives the run window');
+
+  // Минимальное покрытие: без него сломанная подписка прошла бы часть
+  // проверок с нулевым объёмом наблюдений и всё равно дала PASS
+  requireEvidence('polymarket book comparisons', bookCompared.get('POLYMARKET') ?? 0);
+  requireEvidence('cex book comparisons', bookCompared.get('CEX') ?? 0);
+  requireEvidence('polymarket trade comparisons', tradeCompared.get('POLYMARKET') ?? 0);
+  requireEvidence('cex trade comparisons', tradeCompared.get('CEX') ?? 0);
+  requireEvidence('polymarket BOOK_DEPTH', pmEvidence.depth);
+  requireEvidence('polymarket BOOK_UPDATED', pmEvidence.updated);
+  requireEvidence('cex venues observed', cexVenues.size);
+  requireEvidence('sequence observations', sequences.size);
+  requireEvidence('causality checks', causality.checked);
+  requireEvidence('raw payload immutability checks', immutabilityChecked);
+  requireEvidence('readback lines', readback.lines);
+  requireEvidence('replay polymarket samples', replay.polymarketSamples);
+  requireEvidence('replay cex samples', replay.cexSamples);
+  requireEvidence('reference feeds observed', feeds.size);
+  for (const required of ['BINANCE', 'CHAINLINK', 'TWAP'] as const) {
+    const present = [...feeds.keys()].some((key) => key.toUpperCase().includes(required));
+    if (!present) evidence.push(`reference feed ${required} was never observed`);
+  }
 
   // ── ОТЧЁТ ─────────────────────────────────────────────────────────────
   const line = (title: string): void => console.log(`\n${'─'.repeat(72)}\n${title}\n`);
@@ -793,7 +931,8 @@ async function main(): Promise<void> {
   }
   console.log(
     `  comparisons: POLYMARKET=${String(tradeCompared.get('POLYMARKET') ?? 0)} ` +
-      `CEX=${String(tradeCompared.get('CEX') ?? 0)}   mismatches: ${String(tradeMismatches)}`,
+      `CEX=${String(tradeCompared.get('CEX') ?? 0)}   mismatches: ${String(tradeMismatches)}   ` +
+      `raw superseded before compare: ${String(rawTradesSuperseded)}`,
   );
 
   line('J. REFERENCE PRICE PARITY');
@@ -812,7 +951,7 @@ async function main(): Promise<void> {
   line('L. METADATA CAUSALITY');
   console.log(`  semantic events checked  ${String(causality.checked)}`);
   console.log(`  children of a raw msg    ${String(causality.linked)}`);
-  console.log(`  orphan causationId       ${String(causality.orphans)}  (raw id evicted from bounded set)`);
+  console.log(`  orphan causationId       ${String(causality.orphans)}  (unbounded id set — any orphan is a real break)`);
   console.log(`  unrelated roots          ${String(causality.roots)}`);
 
   line('M. REPLAY-SHAPED EQUIVALENCE');
@@ -837,11 +976,26 @@ async function main(): Promise<void> {
   if (violations.length === 0) console.log('  None');
   else for (const v of violations.slice(0, 40)) console.log(`  • ${v}`);
 
-  const pass = violations.length === 0;
+  line('COUNTER CLASSIFICATION');
+  if (explained.length === 0) console.log('  (no non-zero benign counters)');
+  else for (const row of explained) console.log(`  • ${row}`);
+  if (fatal.length > 0) {
+    console.log('\n  FATAL COUNTERS:');
+    for (const row of fatal) console.log(`  ✗ ${row}`);
+  }
+
+  line('MINIMUM EVIDENCE');
+  if (evidence.length === 0) console.log('  every check produced observations');
+  else for (const row of evidence) console.log(`  ✗ ${row}`);
+
+  // PASS требует ВСЕХ трёх условий. Раньше exit-код зависел только от
+  // violations, а необъяснённые счётчики лишь печатались — чекпоинт мог
+  // завершиться нулём при непустом списке.
+  const pass = violations.length === 0 && fatal.length === 0 && evidence.length === 0;
   line(`RESULT: CHECKPOINT #2 — ${pass ? 'PASS' : 'FAIL'}`);
   console.log(`  live duration ${String(Math.round(liveDurationMs / 1000))}s`);
+  console.log(`  violations ${String(violations.length)} · fatal counters ${String(fatal.length)} · evidence gaps ${String(evidence.length)}`);
   console.log(`  run dir ${runDir}`);
-  if (unexplained.length > 0) console.log(`  UNEXPLAINED: ${unexplained.join(', ')}`);
   process.exitCode = pass ? 0 : 1;
 }
 
@@ -849,6 +1003,8 @@ async function main(): Promise<void> {
 interface ReplayOutcome {
   readonly polymarket: string;
   readonly cex: string;
+  readonly polymarketSamples: number;
+  readonly cexSamples: number;
   readonly violations: readonly string[];
 }
 
@@ -901,6 +1057,10 @@ async function verifyReplayShape(options: {
   // следующим образцом. Порядок обработки внутри инструмента сохраняется,
   // поэтому N-е событие соответствует N-му архивному наблюдению.
   const replayTop = new Map<string, Array<{ bid: string; ask: string }>>();
+  const replayTrades = new Map<
+    string,
+    Array<{ price: string; size: string; id: string | undefined }>
+  >();
   let semanticMismatches = 0;
 
   replayEventBus.subscribe('BOOK_DEPTH', (event: EventBusEvent) => {
@@ -930,12 +1090,69 @@ async function verifyReplayShape(options: {
     seen.pmReference += 1;
   });
   replayEventBus.subscribe('TRADE_RECEIVED', (event: EventBusEvent) => {
-    const venue = String((event.payload as { venueId: unknown }).venueId);
+    const payload = event.payload as {
+      venueId: unknown;
+      instrumentId: unknown;
+      venueTradeId?: unknown;
+      price: unknown;
+      size: unknown;
+    };
+    const venue = String(payload.venueId);
     if (venue === 'POLYMARKET') seen.pmTrade += 1;
     else seen.cexTrade += 1;
+
+    const expected = replayTrades.get(`${venue}|${String(payload.instrumentId)}`)?.shift();
+    if (expected === undefined) return;
+    const canonicalId =
+      payload.venueTradeId === undefined ? undefined : String(payload.venueTradeId);
+    const idSame = expected.id === undefined ? canonicalId === undefined : canonicalId === expected.id;
+    const valuesSame =
+      Number(expected.price) === Number(asText(payload.price)) &&
+      Number(expected.size) === Number(asText(payload.size));
+    if (!idSame || !valuesSame) {
+      semanticMismatches += 1;
+      violations.push(
+        `replay trade semantics differ for ${venue}/${String(payload.instrumentId)}: ` +
+          `archived ${expected.id ?? '(absent)'} ${expected.price}x${expected.size} vs ` +
+          `canonical ${canonicalId ?? '(absent)'} ${asText(payload.price)}x${asText(payload.size)}`,
+      );
+    }
   });
 
   for (const sample of samples.polymarket) {
+    const envelope = sample.payload as {
+      type?: unknown;
+      payload?: {
+        tokenId?: unknown;
+        bids?: readonly { price?: unknown }[];
+        asks?: readonly { price?: unknown }[];
+        price?: unknown;
+        size?: unknown;
+        transactionHash?: unknown;
+      };
+    };
+    const inner = envelope.payload;
+    const token = String(inner?.tokenId ?? '');
+    if (inner !== undefined && token !== '') {
+      if (envelope.type === 'book') {
+        // Ожидание строится ИЗ АРХИВНОГО payload-а: лучшее как
+        // max(bid)/min(ask), независимо от порядка уровней у вендора
+        const bids = (inner.bids ?? []).map((l) => Number(l.price)).filter((n) => !Number.isNaN(n));
+        const asks = (inner.asks ?? []).map((l) => Number(l.price)).filter((n) => !Number.isNaN(n));
+        if (bids.length > 0 && asks.length > 0) {
+          ensure(replayTop, `POLYMARKET|${token}`, () => []).push({
+            bid: String(Math.max(...bids)),
+            ask: String(Math.min(...asks)),
+          });
+        }
+      } else if (envelope.type === 'last_trade_price') {
+        ensure(replayTrades, `POLYMARKET|${token}`, () => []).push({
+          price: String(inner.price ?? '—'),
+          size: String(inner.size ?? '—'),
+          id: inner.transactionHash === undefined ? undefined : String(inner.transactionHash),
+        });
+      }
+    }
     replayBus.publish({
       type: sample.type as 'POLYMARKET_MARKET',
       payload: sample.payload,
@@ -956,6 +1173,25 @@ async function verifyReplayShape(options: {
         const key = `${payload.exchangeId.toUpperCase()}|${String(payload.marketType)}:${String(payload.symbol)}`;
         ensure(replayTop, key, () => []).push({ bid: String(bid), ask: String(ask) });
       }
+    }
+    const tradePayload = sample.payload as {
+      exchangeId?: string;
+      marketType?: string;
+      symbol?: string;
+      trade?: Record<string, unknown>;
+    };
+    if (tradePayload.trade !== undefined && tradePayload.exchangeId !== undefined) {
+      const t = tradePayload.trade;
+      const rawId = t.id ?? t.transactionHash;
+      ensure(
+        replayTrades,
+        `${tradePayload.exchangeId.toUpperCase()}|${String(tradePayload.marketType)}:${String(tradePayload.symbol)}`,
+        () => [],
+      ).push({
+        price: String(t.price ?? '—'),
+        size: String(t.amount ?? t.size ?? '—'),
+        id: rawId === undefined || rawId === null ? undefined : String(rawId),
+      });
     }
     replayBus.publish({
       type: sample.type as 'CEX_ORDERBOOK',
@@ -994,7 +1230,13 @@ async function verifyReplayShape(options: {
     violations.push('replay-shaped cex messages produced no canonical events');
   }
 
-  return { polymarket: pmVerdict, cex: cexVerdict, violations };
+  return {
+    polymarket: pmVerdict,
+    cex: cexVerdict,
+    polymarketSamples: samples.polymarket.length,
+    cexSamples: samples.cex.length,
+    violations,
+  };
 }
 
 /** Образец payload-а, восстановленный из архива. */
