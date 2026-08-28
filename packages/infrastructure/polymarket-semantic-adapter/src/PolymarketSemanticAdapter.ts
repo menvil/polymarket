@@ -188,6 +188,21 @@ interface PublishedTop {
 }
 
 /**
+ * Состояние публикации верхушки одного инструмента.
+ *
+ * @remarks
+ * Отпечаток и номер живут ОДНОЙ записью, потому что продвигаются вместе и
+ * только после успешной публикации. Две параллельные мапы разъехались бы
+ * при первом же cleanup-е, забывшем одну из них.
+ */
+interface PublishedTopState {
+  /** Отпечаток последней опубликованной верхушки. */
+  readonly fingerprint: PublishedTop;
+  /** Номер последнего УСПЕШНО опубликованного `BOOK_UPDATED`. */
+  readonly sequence: number;
+}
+
+/**
  * Адаптер, превращающий raw-наблюдения Polymarket в canonical-события.
  *
  * @remarks
@@ -213,8 +228,8 @@ export class PolymarketSemanticAdapter {
   private readonly _logger: ILogger;
 
   private readonly _state = new OrderbookReconstructionState();
-  /** Последняя опубликованная верхушка по инструменту. */
-  private readonly _publishedTops = new Map<InstrumentId, PublishedTop>();
+  /** Отпечаток и номер последнего опубликованного события верхушки. */
+  private readonly _publishedTops = new Map<InstrumentId, PublishedTopState>();
   /** Максимальное vendor-время, замеченное по инструменту (диагностика). */
   private readonly _lastVendorTimestampMs = new Map<InstrumentId, number>();
   /**
@@ -542,7 +557,7 @@ export class PolymarketSemanticAdapter {
       });
     }
 
-    await this._publishBook(identity, outcome.book, outcome.version, venueTimestamp, receivedAt, parent);
+    await this._publishBook(identity, outcome.book, venueTimestamp, receivedAt, parent);
   }
 
   /**
@@ -637,7 +652,6 @@ export class PolymarketSemanticAdapter {
       await this._publishBook(
         { marketId, instrumentId },
         outcome.book,
-        outcome.version,
         venueTimestamp,
         receivedAt,
         parent,
@@ -694,7 +708,6 @@ export class PolymarketSemanticAdapter {
    *
    * @param identity - Рынок и инструмент
    * @param book - Новый иммутабельный стакан
-   * @param version - Semantic-версия книги инструмента
    * @param venueTimestamp - Время venue (если известно)
    * @param receivedAt - Время получения наблюдения
    * @param parent - Metadata raw-наблюдения
@@ -716,7 +729,6 @@ export class PolymarketSemanticAdapter {
   private async _publishBook(
     identity: { readonly marketId: MarketId; readonly instrumentId: InstrumentId },
     book: Orderbook,
-    version: number,
     venueTimestamp: Timestamp | undefined,
     receivedAt: Timestamp,
     parent: MessageMetadata,
@@ -741,10 +753,13 @@ export class PolymarketSemanticAdapter {
     const topOfBook = buildTopOfBook(book);
     const fingerprint = fingerprintTop(topOfBook);
     const previous = this._publishedTops.get(identity.instrumentId);
-    if (previous !== undefined && sameTop(previous, fingerprint)) {
+    if (previous !== undefined && sameTop(previous.fingerprint, fingerprint)) {
       return;
     }
 
+    // Номер СЛЕДУЮЩЕГО события верхушки; фиксируется только после успешной
+    // публикации (см. ниже)
+    const nextSequence = (previous?.sequence ?? 0) + 1;
     const topPublished = await this._publish({
       type: 'BOOK_UPDATED',
       payload: {
@@ -752,20 +767,25 @@ export class PolymarketSemanticAdapter {
         venueId: KnownVenues.POLYMARKET,
         instrumentId: identity.instrumentId,
         marketId: identity.marketId,
-        // Per-instrument semantic-версия, а не sequence шины: глобальная
-        // последовательность содержит чужие токены/RTDS/CEX и у одного
-        // инструмента имеет естественные «дыры», неотличимые от потерь
-        sequenceNumber: version,
+        // Счётчик САМИХ СОБЫТИЙ верхушки, а не применённых обновлений книги:
+        // контракт поля существует ради gap detection, поэтому ряд обязан
+        // быть непрерывным. Sequence шины для этого тем более непригоден —
+        // в нём чужие токены/RTDS/CEX
+        sequenceNumber: nextSequence,
         timestamp,
       },
       metadata: this._metadata.nextChild(parent),
     });
-    // Отпечаток запоминается ТОЛЬКО после успешной публикации: иначе
-    // отвергнутое шиной событие «зачлось» бы как опубликованное, и
-    // следующее обновление с той же верхушкой подписчики не увидели бы
-    // никогда — гашение дубликатов превратилось бы в потерю данных
+    // Отпечаток И номер продвигаются ТОЛЬКО после успешной публикации.
+    // Отпечаток — иначе отвергнутое шиной событие «зачлось» бы как
+    // опубликованное, и следующее обновление с той же верхушкой подписчики
+    // не увидели бы никогда. Номер — иначе отказ на N съел бы этот номер, и
+    // в ряду подписчика осталась бы дыра, неотличимая от потери события.
     if (topPublished) {
-      this._publishedTops.set(identity.instrumentId, fingerprint);
+      this._publishedTops.set(identity.instrumentId, {
+        fingerprint,
+        sequence: nextSequence,
+      });
     }
   }
 

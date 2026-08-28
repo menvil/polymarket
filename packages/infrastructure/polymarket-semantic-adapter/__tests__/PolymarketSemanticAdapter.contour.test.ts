@@ -278,6 +278,39 @@ describe('изоляция от recorder', () => {
     adapter.close();
     jest.restoreAllMocks();
   });
+
+  it('отказ публикации не съедает номер события верхушки', async () => {
+    const local = createHarness();
+
+    // seq 1 — успешно
+    await publishBook(local, {
+      tokenId: TOKEN_A,
+      bids: [{ price: '0.50', size: '1' }],
+      asks: [],
+    });
+    expect(local.eventsOfType('BOOK_UPDATED').map((e) => e.payload.sequenceNumber)).toEqual([1]);
+
+    // seq 2 — шина отказала
+    const publish = jest
+      .spyOn(local.eventBus, 'publish')
+      .mockResolvedValue({ ok: false, error: new Error('bus rejected') as never } as never);
+    await publishPriceChange(local, {
+      changes: [{ tokenId: TOKEN_A, price: '0.51', size: '2', side: 'BUY' }],
+    });
+    publish.mockRestore();
+
+    // Следующая смена верхушки обязана получить ТОТ ЖЕ номер 2: отказ номер
+    // не тратит, иначе в ряду подписчика осталась бы дыра
+    await publishPriceChange(local, {
+      changes: [{ tokenId: TOKEN_A, price: '0.52', size: '3', side: 'BUY' }],
+    });
+
+    const updates = local.eventsOfType('BOOK_UPDATED');
+    expect(updates.map((e) => e.payload.sequenceNumber)).toEqual([1, 2]);
+    expect(updates[1]!.payload.topOfBook.bestBid?.value().toString()).toBe('0.52');
+
+    local.adapter.close();
+  });
 });
 
 describe('lifecycle', () => {

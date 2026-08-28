@@ -111,6 +111,47 @@ describe('book → canonical Orderbook', () => {
 
     expect(h.eventsOfType('BOOK_UPDATED').map((e) => e.payload.sequenceNumber)).toEqual([1, 2, 3]);
   });
+
+  it('глубинные правки не тратят номера событий верхушки', async () => {
+    // Верхушка 0.50 / —
+    await publishBook(h, { tokenId: TOKEN_A, bids: [{ price: '0.50', size: '1' }], asks: [] });
+    // Уровень НИЖЕ верхушки: книга изменилась, верхушка — нет
+    await publishPriceChange(h, {
+      changes: [{ tokenId: TOKEN_A, price: '0.48', size: '5', side: 'BUY' }],
+    });
+    // Ещё одна чисто глубинная правка
+    await publishPriceChange(h, {
+      changes: [{ tokenId: TOKEN_A, price: '0.47', size: '9', side: 'BUY' }],
+    });
+    // Верхушка меняется
+    await publishPriceChange(h, {
+      changes: [{ tokenId: TOKEN_A, price: '0.51', size: '2', side: 'BUY' }],
+    });
+
+    // BOOK_DEPTH выходит на каждое применённое обновление...
+    expect(h.eventsOfType('BOOK_DEPTH')).toHaveLength(4);
+    // ...а ряд номеров событий верхушки обязан быть НЕПРЕРЫВНЫМ: контракт
+    // заводит sequenceNumber ради gap detection, и `1, 4` подписчик
+    // прочитал бы как потерю двух событий
+    expect(h.eventsOfType('BOOK_UPDATED').map((e) => e.payload.sequenceNumber)).toEqual([1, 2]);
+  });
+
+  it('нумерация независима по инструментам', async () => {
+    await publishBook(h, { tokenId: TOKEN_A, bids: [{ price: '0.50', size: '1' }], asks: [] });
+    await publishBook(h, { tokenId: TOKEN_B, bids: [{ price: '0.30', size: '1' }], asks: [] });
+    await publishPriceChange(h, {
+      changes: [{ tokenId: TOKEN_A, price: '0.51', size: '2', side: 'BUY' }],
+    });
+
+    const byToken = (token: string): number[] =>
+      h
+        .eventsOfType('BOOK_UPDATED')
+        .filter((e) => String(e.payload.instrumentId) === token)
+        .map((e) => e.payload.sequenceNumber);
+
+    expect(byToken(TOKEN_A)).toEqual([1, 2]);
+    expect(byToken(TOKEN_B)).toEqual([1]);
+  });
 });
 
 describe('price_change → реконструкция', () => {
