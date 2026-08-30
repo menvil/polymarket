@@ -391,9 +391,14 @@ async function main(): Promise<void> {
   // Подписчик, который БРОСАЕТ. Если изоляция обработчиков сломана, это
   // повалит Recorder и остальных — и счётчики это покажут.
   let faultInjections = 0;
-  bus.subscribe('CEX_TRADE', () => {
+  let injectedFailures = 0;
+  const stopFaultInjector = bus.subscribe('CEX_TRADE', () => {
     faultInjections += 1;
     if (faultInjections % 50 === 0) {
+      // Считаем ФАКТИЧЕСКИ брошенные исключения, а не выводим их из
+      // делимости: иначе реальная ошибка обработчика пряталась бы внутри
+      // «объяснённого» числа проб
+      injectedFailures += 1;
       throw new Error('checkpoint: intentional handler failure (isolation probe)');
     }
   });
@@ -701,6 +706,13 @@ async function main(): Promise<void> {
   }
 
   const liveDurationMs = Date.now() - startedAt;
+
+  // Инжектор снимается и поток сливается ДО снимка статуса, иначе
+  // handlerErrorsTotal и injectedFailures считались бы в разные моменты,
+  // и разница между ними была бы шумом измерения, а не сигналом
+  stopFaultInjector();
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+
   const finalStatus = collector.status();
   const pmStats = pmAdapter.getStats();
   const cexStats = cexAdapter.getStats();
@@ -771,17 +783,29 @@ async function main(): Promise<void> {
   // чекпоинт мог пройти с необъяснённым ненулевым счётчиком.
   const fatal: string[] = [];
   const explained: string[] = [];
+  // Каждое поле статистики обязано попасть СЮДА одним из трёх способов.
+  // Финальный обход сверяет покрытие: новый счётчик, добавленный в
+  // адаптер и здесь не классифицированный, валит чекпоинт — иначе
+  // «все счётчики классифицированы» держалось бы на честном слове.
+  const covered = new Set<string>();
 
   /** Счётчик, любое ненулевое значение которого валит чекпоинт. */
   const mustBeZero = (label: string, value: number): void => {
+    covered.add(label);
     if (value === 0) return;
     fatal.push(`${label}=${String(value)}`);
   };
 
   /** Счётчик, ненулевое значение которого объяснимо и допустимо. */
   const benign = (label: string, value: number, reason: string): void => {
+    covered.add(label);
     if (value === 0) return;
     explained.push(`${label}=${String(value)} — ${reason}`);
+  };
+
+  /** Метрика объёма или состояния — не счётчик отказов. */
+  const gauge = (...labels: readonly string[]): void => {
+    for (const label of labels) covered.add(label);
   };
 
   /** Порог минимального покрытия: ноль означает, что проверка не шла. */
@@ -795,7 +819,7 @@ async function main(): Promise<void> {
   mustBeZero('bus.rejected', finalStatus.bus.rejectedPublicationsTotal);
   mustBeZero('recorder.serializationFailures', finalStatus.recorder.serializationFailures);
   mustBeZero('recorder.registrationFailures', finalStatus.recorder.registrationFailures);
-  mustBeZero('recorderCex.writeFailures', finalStatus.recorderCex.cexWriteFailures);
+  mustBeZero('recorderCex.cexWriteFailures', finalStatus.recorderCex.cexWriteFailures);
   mustBeZero('pm.invalidPayloads', pmStats.invalidPayloads);
   mustBeZero('pm.semanticPublishFailures', pmStats.semanticPublishFailures);
   mustBeZero('cex.invalidOrderBooks', cexStats.invalidOrderBooks);
@@ -817,10 +841,9 @@ async function main(): Promise<void> {
 
   // Объяснимые: ненулевые по природе наблюдаемого потока
   benign(
-    'bus.handlerErrors',
-    finalStatus.bus.handlerErrorsTotal,
-    `intentional isolation probes (harness threw ${String(Math.floor(faultInjections / 50))} times); ` +
-      'recorder lost nothing',
+    'bus.injectedIsolationProbes',
+    injectedFailures,
+    'harness threw on purpose to prove handler isolation; recorder lost nothing',
   );
   benign(
     'pm.desyncs',
@@ -843,6 +866,120 @@ async function main(): Promise<void> {
   benign('cex.tradesMissingSide', cexStats.tradesMissingSide, 'side never guessed');
   benign('readback.openPartitions', readback.incomplete, 'rotation cycle outlives the run window');
 
+  // ── Полный обход поверхностей статистики ────────────────────────────
+  // Фатальные: потеря данных либо отказ записи
+  mustBeZero('finalization.archiveFailures', finalStatus.finalization.archiveFailures);
+  mustBeZero('recorderCex.cexHandlerErrors', finalStatus.recorderCex.cexHandlerErrors);
+  mustBeZero('recorder.unroutedMarketMessages', finalStatus.recorder.unroutedMarketMessages);
+  mustBeZero('cexWindows.rotationFailures', finalStatus.cexWindows.rotationFailures);
+  mustBeZero('cexWindows.streamCloseFailures', finalStatus.cexWindows.streamCloseFailures);
+  mustBeZero('cexWindows.compressionFailures', finalStatus.cexWindows.compressionFailures);
+  mustBeZero('twap.rejected', finalStatus.twap.rejected);
+  mustBeZero('pm.unknownMarketEvents', pmStats.unknownMarketEvents);
+  mustBeZero('recorder.handlerErrors', finalStatus.recorder.handlerErrors);
+  mustBeZero('recorder.unroutedRtdsMessages', finalStatus.recorder.unroutedRtdsMessages);
+
+  // Реальная ошибка обработчика, не объяснимая пробами изоляции
+  const unexpectedHandlerErrors = finalStatus.bus.handlerErrorsTotal - injectedFailures;
+  mustBeZero('bus.unexpectedHandlerErrors', unexpectedHandlerErrors);
+
+  // Пропуски, объяснимые контрактом источника
+  benign(
+    'pm.deltaBeforeSnapshot',
+    pmStats.deltaBeforeSnapshot,
+    'delta arrived before an authoritative book; skipped instead of guessing',
+  );
+  benign(
+    'pm.tradesMissingSize',
+    pmStats.tradesMissingSize,
+    'size optional in SDK contract; trade skipped, never fabricated',
+  );
+  benign(
+    'pm.backwardVendorTimestamps',
+    pmStats.backwardVendorTimestamps,
+    'vendor clock went backwards; observation kept, ordering not invented',
+  );
+  benign(
+    'pm.desyncedBookStates',
+    pmStats.desyncedBookStates,
+    'instruments paused awaiting a fresh authoritative book at snapshot time',
+  );
+  benign(
+    'cex.tradesMissingAmount',
+    cexStats.tradesMissingAmount,
+    'amount absent and NOT derived from cost; trade skipped',
+  );
+  benign(
+    'cex.tradesMissingVenueTimestamp',
+    cexStats.tradesMissingVenueTimestamp,
+    'venue timestamp absent; observation time used, venue time not invented',
+  );
+  benign(
+    'recorder.recordsSkippedInactive',
+    finalStatus.recorder.recordsSkippedInactive,
+    'message for a session no longer collecting',
+  );
+  benign(
+    'recorder.marketMessagesDroppedAfterExpiry',
+    finalStatus.recorder.marketMessagesDroppedAfterExpiry,
+    'market event after its session expired',
+  );
+  benign(
+    'recorderCex.cexRecordsDroppedInactive',
+    finalStatus.recorderCex.cexRecordsDroppedInactive,
+    'dropped by the 5-minute window policy before the first aligned boundary (and after close) — ' +
+      'by design, not a write failure; share shrinks as the run outgrows one window',
+  );
+  benign(
+    'finalization.fallbackFinalizations',
+    finalStatus.finalization.fallbackFinalizations,
+    `official resolution unavailable; ${String(finalStatus.finalization.fallbackByTimeout)} by timeout, ` +
+      `${String(finalStatus.finalization.fallbackByShutdown)} by shutdown`,
+  );
+  benign(
+    'finalization.discardedUnresolvable',
+    finalStatus.finalization.discardedUnresolvable,
+    'no winner derivable; archive without a winner is not produced',
+  );
+
+  // Метрики объёма и состояния — отказами не являются
+  gauge(
+    'bus.handlerErrorsTotal',
+    'pm.rawMessagesSeen', 'pm.booksReceived', 'pm.booksPublished',
+    'pm.priceChangesReceived', 'pm.priceChangesApplied', 'pm.tradesReceived',
+    'pm.tradesPublished', 'pm.tickSizeChanges', 'pm.referenceBinance',
+    'pm.referenceChainlink', 'pm.referenceTwap', 'pm.activeBookStates', 'pm.deltas',
+    'cex.rawMessagesSeen', 'cex.orderBooksReceived', 'cex.orderBooksPublished',
+    'cex.bookUpdatedPublished', 'cex.tradesReceived', 'cex.tradesPublished',
+    'cex.activeInstrumentStates', 'cex.bidPrice', 'cex.bidSize', 'cex.askPrice', 'cex.askSize',
+    'recorder.marketMessagesRouted', 'recorder.rtdsMessagesRouted', 'recorder.recordsWritten',
+    'recorderCex.cexMessagesRouted', 'recorderCex.cexRecordsAccepted',
+    'finalization.pendingFinalizations', 'finalization.archivedTotal',
+    'finalization.officialFinalizations', 'finalization.fallbackByTimeout',
+    'finalization.fallbackByShutdown',
+    'cexWindows.partitionsCompleted', 'cexWindows.routingKey', 'cexWindows.windowStart',
+    'cexWindows.filePath',
+    'twap.feeds', 'twap.accepted', 'twap.buffered',
+    'pm.resyncs',
+  );
+
+  // Сверка покрытия: поле есть в статистике, но нигде не объявлено
+  for (const [prefix, source] of [
+    ['pm', pmStats],
+    ['cex', cexStats],
+    ['recorder', finalStatus.recorder],
+    ['recorderCex', finalStatus.recorderCex],
+    ['finalization', finalStatus.finalization],
+    ['cexWindows', finalStatus.cexWindows],
+    ['twap', finalStatus.twap],
+  ] as const) {
+    for (const field of Object.keys(source)) {
+      if (!covered.has(`${prefix}.${field}`)) {
+        fatal.push(`UNCLASSIFIED counter ${prefix}.${field} — declare it mustBeZero, benign or gauge`);
+      }
+    }
+  }
+
   // Минимальное покрытие: без него сломанная подписка прошла бы часть
   // проверок с нулевым объёмом наблюдений и всё равно дала PASS
   requireEvidence('polymarket book comparisons', bookCompared.get('POLYMARKET') ?? 0);
@@ -858,6 +995,13 @@ async function main(): Promise<void> {
   requireEvidence('readback lines', readback.lines);
   requireEvidence('replay polymarket samples', replay.polymarketSamples);
   requireEvidence('replay cex samples', replay.cexSamples);
+  // Каждый ВИД события отдельно: иначе архив из одних RTDS-строк дал бы
+  // зелёный replay при непроверенных книгах и сделках
+  requireEvidence('replay polymarket BOOK_DEPTH', replay.pmBookDepth);
+  requireEvidence('replay polymarket TRADE_RECEIVED', replay.pmTrades);
+  requireEvidence('replay polymarket REFERENCE_PRICE_UPDATED', replay.pmReference);
+  requireEvidence('replay cex BOOK_DEPTH', replay.cexBookDepth);
+  requireEvidence('replay cex TRADE_RECEIVED', replay.cexTrades);
   requireEvidence('reference feeds observed', feeds.size);
   for (const required of ['BINANCE', 'CHAINLINK', 'TWAP'] as const) {
     const present = [...feeds.keys()].some((key) => key.toUpperCase().includes(required));
@@ -871,7 +1015,11 @@ async function main(): Promise<void> {
   console.log(`  bus published            ${String(finalStatus.bus.publishedTotal)}`);
   console.log(`  bus dispatched           ${String(finalStatus.bus.dispatchedTotal)}`);
   console.log(`  bus rejected             ${String(finalStatus.bus.rejectedPublicationsTotal)}`);
-  console.log(`  bus handler errors       ${String(finalStatus.bus.handlerErrorsTotal)}  (injected probes: ${String(Math.floor(faultInjections / 50))})`);
+  console.log(
+    `  bus handler errors       ${String(finalStatus.bus.handlerErrorsTotal)}` +
+      `  = injected probes ${String(injectedFailures)}` +
+      ` + unexpected ${String(finalStatus.bus.handlerErrorsTotal - injectedFailures)}`,
+  );
   console.log(`  recorder written         ${String(finalStatus.recorder.recordsWritten)}`);
   console.log(`  recorder failures        ${String(finalStatus.recorder.serializationFailures + finalStatus.recorder.registrationFailures)}`);
   console.log(`  recorder CEX written     ${String(finalStatus.recorderCex.cexRecordsAccepted)}`);
@@ -1005,6 +1153,19 @@ interface ReplayOutcome {
   readonly cex: string;
   readonly polymarketSamples: number;
   readonly cexSamples: number;
+  /**
+   * Опубликованные каноническими адаптерами события ПО ВИДАМ.
+   *
+   * @remarks
+   * Возвращаются раздельно, потому что «образцов > 0» ещё не значит, что
+   * проверен каждый вид: архив, состоящий из одних RTDS-строк, дал бы
+   * ненулевую выборку и нулевую проверку книг и сделок.
+   */
+  readonly pmBookDepth: number;
+  readonly pmTrades: number;
+  readonly pmReference: number;
+  readonly cexBookDepth: number;
+  readonly cexTrades: number;
   readonly violations: readonly string[];
 }
 
@@ -1235,6 +1396,11 @@ async function verifyReplayShape(options: {
     cex: cexVerdict,
     polymarketSamples: samples.polymarket.length,
     cexSamples: samples.cex.length,
+    pmBookDepth: seen.pmDepth,
+    pmTrades: seen.pmTrade,
+    pmReference: seen.pmReference,
+    cexBookDepth: seen.cexDepth,
+    cexTrades: seen.cexTrade,
     violations,
   };
 }
