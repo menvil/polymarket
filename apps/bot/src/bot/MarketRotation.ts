@@ -48,6 +48,7 @@ import type { BinanceKlinesClient } from '@polymarket/exchange/adapters';
 import type { CryptoResolutionStore, CryptoMarketDataStore } from '@polymarket/market-state';
 import { SimplePosition } from '@polymarket/portfolio';
 
+import { buildCanonicalMarket } from './buildCanonicalMarket.js';
 import type { BotConfig, DiscoveryMarketConfig } from '../config/BotConfig.js';
 import type { StrategyConfig } from '../strategyFactory.js';
 import { createStrategy } from '../strategyFactory.js';
@@ -348,6 +349,12 @@ export class MarketRotation {
    * @remarks
    * Paper: tickSize/minOrderSize = default (0.001 / 1).
    * Live: tickSize/minOrderSize из API (candidate).
+   *
+   * Планировщику передаётся настоящий канонический `Market`, собранный
+   * {@link buildCanonicalMarket} из полей слота. Если честно собрать рынок
+   * нельзя (нет комплементарного токена, неизвестен крипто-актив,
+   * противоречивое расписание) — регистрация отменяется как любая другая
+   * ошибка здесь: лог + `false`, без подстановки заглушки.
    */
   async registerMarketAndStrategy(slot: MarketSlot): Promise<boolean> {
     const { logger, wsAdapter, marketCatalog, engine, recording, accountId } = this._deps;
@@ -409,10 +416,30 @@ export class MarketRotation {
       }, mode);
     }
 
-    // Заглушка Market: бэктест/ротация знают только расписание рынка. Полный
-    // canonical Market собирается в Discovery — см. MR Canonical Market Entity.
-    const marketStub = { expiresAt: expiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
     const compId = slot.complementaryInstrumentId;
+
+    // Канонический Market: собирается из тех же полей слота, что уходят в
+    // планировщик (`cryptoSymbol` — тот же `rtdsFilter`, чтобы crypto-актив
+    // рынка и `StrategyEntry.cryptoAsset` не разошлись).
+    const marketResult = buildCanonicalMarket({
+      marketId: slot.marketId,
+      question: slot.candidate?.question,
+      instrumentId: slot.instrumentId,
+      complementaryInstrumentId: compId,
+      outcomeIndex: slot.outcomeIndex,
+      expiresAtMs: slot.expiresAtMs,
+      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
+      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
+    });
+    if (!marketResult.ok) {
+      logger.error('Failed to build canonical market', {
+        marketId: String(slot.marketId),
+        instrumentId: String(slot.instrumentId),
+        error: marketResult.error.message,
+      });
+      return false;
+    }
+
     const eventStartMsResult = slot.cryptoMeta?.eventStartTimeMs !== undefined
       ? TimestampService.create(slot.cryptoMeta.eventStartTimeMs)
       : undefined;
@@ -421,7 +448,7 @@ export class MarketRotation {
       instrumentId: slot.instrumentId,
       asset: slot.asset,
       accountId,
-      market: marketStub,
+      market: marketResult.value,
       cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
       eventStartMs: eventStartMsResult?.ok ? eventStartMsResult.value : undefined,
       additionalInstrumentIds: slot.additionalInstrumentIds ?? (compId ? [compId] : undefined),

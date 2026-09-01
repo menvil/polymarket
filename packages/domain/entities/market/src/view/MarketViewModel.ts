@@ -34,6 +34,7 @@
 
 import { TimestampSerializer } from '@polymarket/timestamp';
 import { Market } from '../Market.js';
+import { MarketState } from '../value-objects/index.js';
 import { type MarketSnapshot } from './MarketSnapshot.js';
 import type { MarketJSON, MarketOutcomeJSON, MarketStateJSON } from './MarketJSON.js';
 
@@ -67,6 +68,10 @@ export class MarketViewModel {
    * только когда они заданы — чтобы round-trip не подменял «нет значения»
    * на «значение undefined».
    *
+   * Состояние, исходы и crypto-спецификация **копируются**, а не разделяются
+   * по ссылке с entity: снапшот — отдельный объект, и мутация его полей не
+   * должна доставать до Market.
+   *
    * @example
    * ```typescript
    * const snapshot = MarketViewModel.toSnapshot(market);
@@ -81,7 +86,7 @@ export class MarketViewModel {
       question: market.question,
       startsAt: market.startsAt,
       expiresAt: market.expiresAt,
-      state: market.state,
+      state: MarketState.normalize(market.state),
       outcomes: [
         { ...market.outcomes[0] },
         { ...market.outcomes[1] },

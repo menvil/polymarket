@@ -117,9 +117,7 @@ export {
 export {
   MarketValidationError,
   MarketLifecycleError,
-  MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
 } from '@polymarket/errors/market';
 
 // View
@@ -129,6 +127,8 @@ export { type MarketSnapshot } from './view/MarketSnapshot.js';
 export {
   type MarketJSON,
   type MarketOutcomeJSON,
+  type MarketOutcomeIndexJSON,
   type MarketStateJSON,
+  type MarketFamilyJSON,
   type MarketCryptoSpecJSON,
 } from './view/MarketJSON.js';

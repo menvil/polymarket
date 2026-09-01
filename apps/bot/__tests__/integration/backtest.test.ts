@@ -30,7 +30,8 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
-import { TimestampService, type Timestamp } from '@polymarket/timestamp';
+import { TimestampService } from '@polymarket/timestamp';
+import { buildTestMarket } from '../helpers/markets.js';
 
 import { BacktestEngine } from '@polymarket/backtesting';
 import { JsonlSnapshotReader } from '@polymarket/snapshot-readers';
@@ -44,19 +45,6 @@ import type { StrategyConfig } from '../../src/strategyFactory.js';
 import { InMemoryMarketCatalog } from '../../src/InMemoryMarketCatalog.js';
 import type { RiskParams } from '@polymarket/risk';
 import type { DumbStrategyConfig } from '../../src/strategies/DumbStrategy.js';
-
-/**
- * Строит Timestamp из epoch ms, падая на невалидном значении.
- *
- * @param ms - Epoch milliseconds
- * @returns Timestamp
- * @throws {Error} Если значение не проходит инварианты Timestamp
- */
-function expectTimestamp(ms: number): Timestamp {
-  const result = TimestampService.create(ms);
-  if (!result.ok) throw new Error(`Invalid test timestamp: ${ms}`);
-  return result.value;
-}
 
 jest.setTimeout(120_000); // бектест может занять до 2 минут
 
@@ -89,6 +77,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     const metaReader = new JsonlSnapshotReader(SNAPSHOT_PATH);
     let snapshotMarketId: MarketId | undefined;
     let snapshotInstrumentId: InstrumentId | undefined;
+    let snapshotComplementaryId: InstrumentId | undefined;
 
     for await (const line of metaReader.readLines()) {
       const raw = JSON.parse(line) as Record<string, unknown>;
@@ -97,6 +86,10 @@ describe('Backtest — DumbStrategy on snapshot', () => {
         const tokenIds = raw['tokenIds'] as string[];
         const tokenId = tokenIds[OUTCOME_INDEX];
         if (tokenId) snapshotInstrumentId = asInstrumentId(tokenId) ?? undefined;
+        const complementaryTokenId = tokenIds[1 - OUTCOME_INDEX];
+        if (complementaryTokenId) {
+          snapshotComplementaryId = asInstrumentId(complementaryTokenId) ?? undefined;
+        }
         break;
       }
     }
@@ -104,6 +97,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
 
     expect(snapshotMarketId).toBeDefined();
     expect(snapshotInstrumentId).toBeDefined();
+    expect(snapshotComplementaryId).toBeDefined();
 
     const instrumentId = snapshotInstrumentId!;
     const marketId = snapshotMarketId!;
@@ -217,16 +211,19 @@ describe('Backtest — DumbStrategy on snapshot', () => {
       params: DUMB_CONFIG,
     } as StrategyConfig);
 
-    const marketStub = {
-      expiresAt: expectTimestamp(Date.now() + 24 * 60 * 60 * 1000),
-    } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const market = buildTestMarket({
+      marketId,
+      instrumentId,
+      complementaryInstrumentId: snapshotComplementaryId!,
+      outcomeIndex: OUTCOME_INDEX,
+    });
 
     const regResult = await engine.scheduler.register({
       strategy,
       instrumentId,
       asset,
       accountId,
-      market: marketStub,
+      market,
     });
     expect(regResult.ok).toBe(true);
 

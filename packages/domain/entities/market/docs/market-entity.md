@@ -82,8 +82,8 @@ class Market {
   isResolved(): boolean;
 
   // Фиксация внешних наблюдений
-  markClosed(): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError>;
-  markResolved(index: OutcomeIndex): Result<Market, MarketValidationError | ...>;
+  markClosed(): Result<Market, MarketAlreadyResolvedError>;
+  markResolved(index: OutcomeIndex): Result<Market, MarketValidationError | MarketAlreadyResolvedError>;
 
   equals(other: Market): boolean;   // venueId + id
   toString(): string;
@@ -189,7 +189,32 @@ MarketTradingPolicy.getPhase(market, now);
 хода часов, без внешнего наблюдения. Храни мы их в entity — пришлось бы пересоздавать
 `Market` по таймеру, и любая копия мгновенно устаревала бы.
 
-### 7. FSM живёт в `MarketState`, не в entity
+### 7. FSM отражает наблюдение, а не внутреннюю дисциплину
+
+```text
+ACTIVE → CLOSED        ACTIVE → RESOLVED        CLOSED → RESOLVED
+CLOSED → CLOSED        RESOLVED(i) → RESOLVED(i)   — идемпотентно
+```
+
+**`ACTIVE → RESOLVED` разрешён.** Между двумя опросами источника рынок мог успеть и
+закрыться, и разрезолвиться. Наша система не имеет права ответить «не может быть RESOLVED,
+я лично CLOSED не видела»: площадка не обязана показывать каждое промежуточное состояние,
+а RESOLVED по смыслу уже влечёт окончание торгов. Требование «сначала покажи закрытие»
+отвергало бы корректное внешнее наблюдение из-за нашей собственной частоты опроса.
+
+**Повторное наблюдение того же состояния — не ошибка.** Внешние снапшоты повторяются;
+превращать каждый цикл опроса в `Err` значит заставлять вызывающего отличать «ничего не
+изменилось» от настоящей проблемы на каждом тике. Идемпотентный переход возвращает **тот
+же экземпляр**, поэтому no-op отличим по ссылке: `result.value === market`.
+
+**Отклоняются только противоречия уже зафиксированному факту:**
+
+```text
+RESOLVED    → CLOSED         регрессия: терминальное состояние необратимо
+RESOLVED(i) → RESOLVED(j≠i)  конфликт: источник объявил другой исход
+```
+
+Правила живут в `MarketState`, entity их не знает:
 
 ```typescript
 // В Market.markClosed():
@@ -203,13 +228,14 @@ const next = MarketState.markClosed(this.state, { marketId: this.id, venueId: th
 
 ```text
 MarketLifecycleError
-├── MarketAlreadyClosedError     markClosed() на CLOSED
-├── MarketAlreadyResolvedError   любой переход из RESOLVED
-└── MarketInvalidTransitionError markResolved() на ACTIVE — сначала фиксируется закрытие
+└── MarketAlreadyResolvedError   регрессия из RESOLVED или конфликт исхода
 ```
 
-Повторное наблюдение закрытия — это `Err`, а не no-op: «закрыт» второй раз означает
-рассинхрон источника, и вызывающий должен это увидеть.
+`MarketAlreadyClosedError` и `MarketInvalidTransitionError` **удалены** из
+`@polymarket/errors/market`: после перехода к наблюдательной семантике у них не осталось
+ни одного продюсера — «уже закрыт» стало идемпотентным `Ok`, а `markResolved()` из ACTIVE
+стало легальным. Оставлять их значило бы документировать как часть контракта Market
+ошибки, которые он никогда не вернёт.
 
 ### 8. Семейство рынка и его спецификация
 
@@ -233,7 +259,18 @@ interface CryptoUpDownSpec {
 секунды, оставив его в той же 5-минутной серии. `Market.create()` их на равенство **не**
 проверяет — иначе реальный рынок со сдвинутым окном стало бы невозможно описать.
 
-### 9. Notifications удалены
+### 9. Иммутабельность гарантирует entity, а не вызывающий
+
+`Market` не сохраняет `props.state` по ссылке: конструктор пересоздаёт состояние через
+`MarketState.normalize()` (канонические конструкторы уже возвращают `Object.freeze`).
+Исходы и crypto-спецификация замораживаются там же. Без этого изменяемый литерал,
+переданный в `Market.create()`, оставался бы общим с entity, и мутация у вызывающего
+незаметно меняла бы «иммутабельный» рынок.
+
+`MarketViewModel.toSnapshot()` по той же причине **копирует** состояние и исходы, а не
+отдаёт ссылки: снапшот — отдельный объект, и его мутация не должна доставать до Market.
+
+### 10. Notifications удалены
 
 Старый пакет держал notification outbox: `close()`/`resolve()` складывали
 `MarketClosedNotification`/`MarketResolvedNotification` в буфер, а `pullNotifications()`
@@ -255,7 +292,7 @@ interface CryptoUpDownSpec {
 Публикация событий жизненного цикла рынка — ответственность application-слоя, который
 знает и причину (`MarketCloseReason`), и реализованный PnL, и корректную metadata.
 
-### 10. Presentation: почему больше нет `getMarketUrl()`
+### 11. Presentation: почему больше нет `getMarketUrl()`
 
 Метод собирал `https://polymarket.com/event/{slug}` — зашивал в generic domain entity знание
 о конкретной площадке и о том, что слаг вообще есть. После перевода `Market` на `venueId` +
@@ -339,6 +376,9 @@ if (!closed.ok) {
   logger.warn('Close observation rejected', { code: closed.error.name });
   return;
 }
+if (closed.value === market) {
+  // Тот же экземпляр — рынок уже был закрыт, повторный снапшот источника
+}
 
 const resolved = closed.value.markResolved(0); // объявлен победивший исход
 if (resolved.ok) {
@@ -385,6 +425,10 @@ __tests__/unit/
 ACTIVE + 11:59 → PRE_OPEN   ACTIVE + 12:00 → OPEN   ACTIVE + 12:05 → ENDED
 CLOSED   → CLOSED   независимо от часов
 RESOLVED → RESOLVED независимо от часов
+
+ACTIVE → CLOSED / ACTIVE → RESOLVED / CLOSED → RESOLVED   принимаются
+CLOSED → CLOSED / RESOLVED(i) → RESOLVED(i)               идемпотентны, тот же экземпляр
+RESOLVED → CLOSED / RESOLVED(i) → RESOLVED(j≠i)           отвергаются
 ```
 
 ---
@@ -394,3 +438,32 @@ RESOLVED → RESOLVED независимо от часов
 `PolymarketMarketDiscovery`, `MarketFilter`, `MarketScorer`, `CollectionCoordinator`,
 subscription control, CEX, semantic-адаптеры и backtest runtime продолжают работать на
 своих текущих контрактах. Перевод V2 Discovery на canonical `Market` — следующий MR.
+
+---
+
+## Открытый вопрос для Discovery MR: обязательный `startsAt`
+
+Решить **до** начала Discovery MR — он упрётся в это сразу.
+
+`Market.create()` требует точный `startsAt`. Но V2 Discovery устроен так, что
+normalized list-market точного начала события не содержит: `eventStartTime` приходит
+только из `fetchEvent()` и только для уже выбранного рынка — специально, чтобы не делать
+N+1 запрос по всем кандидатам. Планируемый конвейер из-за этого замыкается в круг:
+
+```text
+V2 listMarkets → дешёвая crypto-вселенная → Domain Market[] → Policy/Filter/Scorer
+                                                ↑                      ↓
+                                     нужен точный startsAt  ←  выбранные рынки → enrichment
+```
+
+Три варианта, ни один пока не выбран:
+
+| Вариант | Суть | Цена |
+|---|---|---|
+| **A** | `startsAt` необязателен до enrichment | `getPhase()` должен уметь отвечать чем-то вроде `UNKNOWN_SCHEDULE` — размывает фазовую модель |
+| **B** | Выводить `startsAt` из lightweight V2 данных (slug/question/структурное поле) | Лучший вариант, **если** подтверждается на fixtures и live-данных |
+| **C** | Enrichment всех Crypto Up/Down после дешёвой классификации, `Market[]` строится уже после | Ослабляет запрет N+1, но только для маленькой supported-вселенной; приемлемо, если после отсева не-крипто остаются десятки, а не сотни рынков |
+
+Первый шаг Discovery MR — измерить: что реально есть в lightweight V2 ответе и сколько
+crypto-кандидатов остаётся после классификации. Выбор варианта — по этим данным, а не
+заранее.

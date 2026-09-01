@@ -378,3 +378,42 @@ describe('MarketParser — граница ответственности с Mark
     );
   });
 });
+
+describe('MarketParser — симметрия с Market.create()', () => {
+  // Роли разные и это намеренно: парсер — нормализующая граница с недоверенными
+  // данными, entity требует уже канонических значений. Единственное, что обязано
+  // выполняться: всё, что собралось в Market, читается обратно из своего же JSON.
+  it('любой Market читается обратно из собственного JSON', () => {
+    const market = makeMarket();
+    const reparsed = unwrap(MarketParser.from(MarketViewModel.toJSON(market)));
+
+    expect(unwrap(Market.fromSnapshot(reparsed)).equals(market)).toBe(true);
+  });
+
+  it.each([
+    ['id с пробелами по краям', 'id', ' btc-up-down-1200 ', 'btc-up-down-1200'],
+    ['question с пробелами по краям', 'question', '  Bitcoin Up?  ', 'Bitcoin Up?'],
+  ])('парсер нормализует %s до значения, которое принимает create()', (
+    _label, field, raw, normalized,
+  ) => {
+    const parsed = unwrap(MarketParser.from({ ...validJSON(), [field]: raw }));
+
+    expect((parsed as unknown as Record<string, unknown>)[field]).toBe(normalized);
+    expect(Market.fromSnapshot(parsed).ok).toBe(true);
+  });
+
+  it.each([
+    ['venueId в нижнем регистре', 'venueId', 'polymarket'],
+    ['slug в верхнем регистре', 'slug', 'BTC-UP-DOWN'],
+  ])('ненормализуемое значение (%s) отвергают и парсер, и create()', (_label, field, value) => {
+    expect(MarketParser.from({ ...validJSON(), [field]: value }).ok).toBe(false);
+
+    const created = Market.create({
+      ...MarketViewModel.toSnapshot(makeMarket()),
+      [field]: value,
+    } as Parameters<typeof Market.create>[0]);
+
+    expect(created.ok).toBe(false);
+    if (!created.ok) expect(created.error.context?.field).toBe(field);
+  });
+});

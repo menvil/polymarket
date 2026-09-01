@@ -8,39 +8,36 @@
  * TradingError
  * ├── ValidationError
  * │   └── MarketValidationError   — невалидные данные при Market.create()
- * └── MarketLifecycleError        — базовый класс для нарушений FSM
- *     ├── MarketAlreadyClosedError    — markClosed() на CLOSED рынке
- *     ├── MarketAlreadyResolvedError  — любой переход из RESOLVED
- *     └── MarketInvalidTransitionError — markResolved() на ACTIVE (нужно сначала markClosed())
+ * └── MarketLifecycleError        — базовый класс для конфликтов наблюдений
+ *     └── MarketAlreadyResolvedError — регрессия или конфликт после RESOLVED
  * ```
  *
  * ### Допустимые переходы Market FSM:
  * ```
- * ACTIVE → CLOSED → RESOLVED
+ * ACTIVE → CLOSED        ACTIVE → RESOLVED        CLOSED → RESOLVED
+ * CLOSED → CLOSED        RESOLVED(i) → RESOLVED(i)   — идемпотентно
  * ```
  *
  * Переходы отражают подтверждённое площадкой внешнее состояние — мы фиксируем
- * наблюдение, а не командуем внешнему рынку.
+ * наблюдение, а не командуем внешнему рынку. Поэтому повторное наблюдение того
+ * же состояния ошибкой не считается (внешние снапшоты повторяются), а из ACTIVE
+ * допустим прямой переход в RESOLVED: промежуточный CLOSED мог не попасть между
+ * двумя опросами источника.
+ *
+ * Ошибкой остаётся только противоречие уже зафиксированному факту:
+ * `RESOLVED → CLOSED` (регрессия) и `RESOLVED(i) → RESOLVED(j≠i)` (конфликт исхода).
  *
  * @example
  * ```typescript
  * import {
  *   MarketValidationError,
  *   MarketLifecycleError,
- *   MarketAlreadyClosedError,
  *   MarketAlreadyResolvedError,
- *   MarketInvalidTransitionError,
  * } from '@polymarket/errors/market';
  *
- * const result = closedMarket.markClosed();
- * if (!result.ok) {
- *   if (result.error instanceof MarketAlreadyClosedError) {
- *     // Рынок уже был закрыт — наблюдение повторное, источник рассинхронизирован
- *   } else if (result.error instanceof MarketAlreadyResolvedError) {
- *     // Рынок в терминальном состоянии — переход невозможен
- *   } else if (result.error instanceof MarketLifecycleError) {
- *     // Любое другое нарушение FSM
- *   }
+ * const result = resolvedMarket.markClosed();
+ * if (!result.ok && result.error instanceof MarketAlreadyResolvedError) {
+ *   // Источник противоречит уже зафиксированной резолюции
  * }
  * ```
  *
@@ -80,17 +77,17 @@ export class MarketValidationError extends ValidationError {}
  * MarketLifecycleError — базовый класс для нарушений FSM рынка
  *
  * @remarks
- * Возвращается как `Err` при попытке зафиксировать недопустимый переход состояния
- * (`Market.markClosed()`/`Market.markResolved()` — `Result`-based, см. `@polymarket/market`).
- * Используй конкретные подклассы для точной обработки ошибок.
+ * Возвращается как `Err`, когда наблюдение противоречит уже зафиксированному
+ * состоянию (`Market.markClosed()`/`Market.markResolved()` — `Result`-based,
+ * см. `@polymarket/market`). Используй конкретные подклассы для точной обработки.
  *
- * Уровень серьёзности: medium (нарушение бизнес-логики в коде).
+ * Уровень серьёзности: medium (рассинхрон с внешним источником).
  *
  * @example
  * ```typescript
  * const result = market.markClosed();
  * if (!result.ok && result.error instanceof MarketLifecycleError) {
- *   console.log('FSM violation:', result.error.context?.currentStatus);
+ *   console.log('Observation conflict:', result.error.context?.currentStatus);
  * }
  * ```
  */
@@ -99,65 +96,27 @@ export class MarketLifecycleError extends TradingError {
 }
 
 /**
- * MarketAlreadyClosedError — попытка закрыть уже закрытый рынок
+ * MarketAlreadyResolvedError — наблюдение противоречит уже зафиксированной резолюции
  *
  * @remarks
- * Возвращается как `Err` при вызове `markClosed()` на рынке в состоянии CLOSED.
+ * RESOLVED — терминальное состояние. Возвращается как `Err` при:
+ * - `markClosed()` на RESOLVED рынке — регрессия состояния;
+ * - `markResolved()` на RESOLVED рынке **другим** исходом — конфликт данных источника.
  *
- * @example
- * ```typescript
- * const result = closedMarket.markClosed();
- * if (!result.ok && result.error instanceof MarketAlreadyClosedError) {
- *   // Закрытие уже зафиксировано — повторное наблюдение того же факта
- * }
- * ```
- */
-export class MarketAlreadyClosedError extends MarketLifecycleError {
-  public static readonly code: string = 'MARKET_ALREADY_CLOSED';
-}
-
-/**
- * MarketAlreadyResolvedError — попытка перехода из терминального состояния RESOLVED
- *
- * @remarks
- * Возвращается как `Err` при:
- * - `markClosed()` на RESOLVED рынке
- * - `markResolved()` на RESOLVED рынке
- *
- * RESOLVED — терминальное состояние, переходы из него запрещены.
+ * Повторная резолюция тем же исходом ошибкой НЕ является: внешние снапшоты
+ * повторяются, и `markResolved()` в этом случае идемпотентен.
  *
  * @example
  * ```typescript
  * const result = resolvedMarket.markResolved(1);
  * if (!result.ok && result.error instanceof MarketAlreadyResolvedError) {
- *   // Рынок уже разрешён — результат финален
+ *   logger.error('Source contradicts recorded resolution', {
+ *     recorded: result.error.context?.resolvedOutcomeIndex,
+ *     observed: result.error.context?.observedOutcomeIndex,
+ *   });
  * }
  * ```
  */
 export class MarketAlreadyResolvedError extends MarketLifecycleError {
   public static readonly code: string = 'MARKET_ALREADY_RESOLVED';
-}
-
-/**
- * MarketInvalidTransitionError — недопустимый переход состояния
- *
- * @remarks
- * Возвращается как `Err` при `markResolved()` на ACTIVE рынке.
- * Правило: сначала фиксируется наблюдённое закрытие (`markClosed()`),
- * затем объявленный исход (`markResolved()`).
- *
- * @example
- * ```typescript
- * const result = activeMarket.markResolved(0);
- * if (!result.ok && result.error instanceof MarketInvalidTransitionError) {
- *   // Сначала нужно зафиксировать закрытие
- *   const closeResult = activeMarket.markClosed();
- *   if (closeResult.ok) {
- *     closeResult.value.markResolved(0);
- *   }
- * }
- * ```
- */
-export class MarketInvalidTransitionError extends MarketLifecycleError {
-  public static readonly code: string = 'MARKET_INVALID_TRANSITION';
 }

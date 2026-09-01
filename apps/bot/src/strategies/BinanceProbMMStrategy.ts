@@ -314,22 +314,22 @@ function inferBinanceSymbol(asset: string | undefined): string | undefined {
 /**
  * Проверяет, является ли исход «UP-like» (up или yes).
  *
- * @param name - Название исхода (регистронезависимо)
+ * @param label - Метка исхода (`MarketOutcome.label`, регистронезависимо)
  * @returns `true` если исход UP-like
  */
-function isUpLikeOutcome(name: string): boolean {
-  const normalized = name.trim().toLowerCase();
+function isUpLikeOutcome(label: string): boolean {
+  const normalized = label.trim().toLowerCase();
   return normalized === 'up' || normalized === 'yes';
 }
 
 /**
  * Проверяет, является ли исход «DOWN-like» (down или no).
  *
- * @param name - Название исхода (регистронезависимо)
+ * @param label - Метка исхода (`MarketOutcome.label`, регистронезависимо)
  * @returns `true` если исход DOWN-like
  */
-function isDownLikeOutcome(name: string): boolean {
-  const normalized = name.trim().toLowerCase();
+function isDownLikeOutcome(label: string): boolean {
+  const normalized = label.trim().toLowerCase();
   return normalized === 'down' || normalized === 'no';
 }
 
@@ -731,8 +731,24 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
    * Сбрасывает состояние при переходе к новому рынку.
    *
    * @remarks
-   * Определяет тип токена (UP/DOWN) по названию исхода из market.outcomes.
-   * Если совпадение не найдено, считает токен UP-like по умолчанию.
+   * Определяет сторону торгуемого токена (UP/DOWN) по каноническому
+   * `MarketOutcome`: исход ищется по `outcome.instrumentId === snapshot.instrumentId`,
+   * сторона читается из `outcome.label` (`isUpLikeOutcome`/`isDownLikeOutcome`).
+   *
+   * Цепочка fallback'ов:
+   * 1. Метка распознана как up-like/down-like → берём её.
+   * 2. Метка нераспознана (нестандартный текст исхода) → сторону задаёт позиция:
+   *    `index === 0` считается UP по конвенции репозитория (0 = Up, 1 = Down).
+   * 3. Исход не найден → UP по умолчанию. На полностью заполненном каноническом
+   *    `Market` эта ветка недостижима: `Market.create()` требует ровно два исхода
+   *    с различными `instrumentId`, а планировщик регистрирует стратегию только
+   *    на инструмент этого же рынка. Ветка оставлена как защита от вырожденных
+   *    (тестовых/частично собранных) снапшотов.
+   *
+   * Историческая ловушка: раньше здесь стояла явная аннотация параметра колбэка
+   * (`{ token, name, index }`) — из-за бивариантности методов TypeScript её
+   * принимал, но по канону поля называются `instrumentId`/`label`, поэтому
+   * совпадение не находилось НИКОГДА и любой токен считался UP.
    *
    * @param snapshot - Снапшот нового рынка
    * @param marketKey - Ключ нового рынка для логирования
@@ -749,18 +765,14 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     this._modelLoading = false;
     this._modelError = null;
     this._modelLogSuppressed = false;
-    const outcomes = Array.isArray(snapshot.market.outcomes)
-      ? snapshot.market.outcomes
-      : [];
-    const matchedOutcome = outcomes.find(
-      (outcome: { token: unknown; name: string; index: number }) =>
-        String(outcome.token) === String(snapshot.instrumentId),
+    const matchedOutcome = snapshot.market.outcomes.find(
+      (outcome) => outcome.instrumentId === snapshot.instrumentId,
     );
 
     if (matchedOutcome) {
-      if (isUpLikeOutcome(matchedOutcome.name)) {
+      if (isUpLikeOutcome(matchedOutcome.label)) {
         this._isUpToken = true;
-      } else if (isDownLikeOutcome(matchedOutcome.name)) {
+      } else if (isDownLikeOutcome(matchedOutcome.label)) {
         this._isUpToken = false;
       } else {
         this._isUpToken = matchedOutcome.index === 0;

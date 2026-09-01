@@ -9,9 +9,7 @@
  * import {
  *   MarketValidationError,
  *   MarketLifecycleError,
- *   MarketAlreadyClosedError,
  *   MarketAlreadyResolvedError,
- *   MarketInvalidTransitionError,
  * } from '@polymarket/errors/market';
  * ```
  *
@@ -21,9 +19,7 @@
  * ├── ValidationError
  * │   └── MarketValidationError
  * └── MarketLifecycleError
- *     ├── MarketAlreadyClosedError
- *     ├── MarketAlreadyResolvedError
- *     └── MarketInvalidTransitionError
+ *     └── MarketAlreadyResolvedError
  * ```
  *
  * @packageDocumentation
@@ -32,7 +28,5 @@
 export {
   MarketValidationError,
   MarketLifecycleError,
-  MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
 } from './MarketErrors.js';

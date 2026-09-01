@@ -25,10 +25,25 @@
  *
  * ### Допустимые переходы
  * ```text
- * ACTIVE → CLOSED → RESOLVED
+ * ACTIVE → CLOSED        ACTIVE → RESOLVED        CLOSED → RESOLVED
+ * CLOSED → CLOSED        RESOLVED(i) → RESOLVED(i)   — идемпотентно
  * ```
- * Прямой переход ACTIVE → RESOLVED запрещён: рынок, о резолюции которого мы
- * узнали раньше, чем о закрытии, сначала фиксируется как CLOSED.
+ *
+ * `ACTIVE → RESOLVED` **разрешён**: между двумя опросами источника рынок мог
+ * успеть и закрыться, и разрезолвиться. Мы не имеем права ответить «не может
+ * быть RESOLVED, я лично CLOSED не видел» — площадка не обязана показывать нам
+ * каждое промежуточное состояние. RESOLVED по смыслу уже влечёт окончание торгов.
+ *
+ * Повторное наблюдение того же состояния — не ошибка: внешние снапшоты
+ * повторяются, и опрос не должен превращать каждый цикл в `Err`.
+ *
+ * ### Отклоняются только настоящие конфликты
+ * ```text
+ * RESOLVED    → CLOSED         — регрессия: терминальное состояние необратимо
+ * RESOLVED(i) → RESOLVED(j≠i)  — конфликт: источник объявил другой исход
+ * ```
+ * Оба случая означают, что источник противоречит уже зафиксированному факту, —
+ * это должен увидеть вызывающий, а не молча проглотить модель.
  *
  * @example
  * ```typescript
@@ -37,7 +52,7 @@
  * const closed = MarketState.closed();
  * const resolved = MarketState.resolved(0); // победил исход с индексом 0
  *
- * // Переходы (Result — нарушение FSM не throw, см. Этап 3 плана миграции)
+ * // Переходы (Result — конфликт наблюдений не throw, см. Этап 3 плана миграции)
  * const nextResult = MarketState.markClosed(active);
  * if (nextResult.ok) {
  *   const finalResult = MarketState.markResolved(nextResult.value, 1);
@@ -55,11 +70,7 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import {
-  MarketAlreadyClosedError,
-  MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
-} from '@polymarket/errors/market';
+import { MarketAlreadyResolvedError } from '@polymarket/errors/market';
 
 /**
  * OutcomeIndex — позиция исхода в наборе исходов рынка
@@ -92,7 +103,7 @@ export type MarketState =
  * - конструкторы состояний (`active`, `closed`, `resolved`);
  * - переходы-наблюдения (`markClosed`, `markResolved`).
  *
- * Переходы возвращают `Result` с конкретной ошибкой при нарушении инварианта,
+ * Переходы возвращают `Result` с конкретной ошибкой при конфликте наблюдений,
  * освобождая entity от знания о правилах FSM.
  *
  * @example
@@ -154,17 +165,22 @@ export const MarketState = {
    *
    * @param state - Текущее состояние
    * @param context - Контекст для ошибки (например, marketId)
-   * @returns `Result` с новым состоянием CLOSED либо ошибкой нарушения FSM
-   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
+   * @returns `Result` с состоянием CLOSED либо ошибкой конфликта наблюдений
+   * @throws Ничего не бросает — конфликт возвращается как `Err`
    *
    * @remarks
    * Единственный разрешённый источник нового CLOSED состояния.
    * Вызывается только тогда, когда площадка подтвердила закрытие: истечение
    * `expiresAt` само по себе основанием для перехода не является.
    *
-   * Повторный вызов на уже закрытом рынке — это `Err(MarketAlreadyClosedError)`,
-   * а не no-op: наблюдение «закрыт» второй раз означает рассинхрон источника,
-   * и вызывающий должен это увидеть.
+   * Повторное наблюдение на уже закрытом рынке **идемпотентно** — возвращается
+   * тот же самый объект состояния (`Ok`), а не ошибка. Источник опрашивается
+   * циклически и будет отдавать CLOSED снова и снова; превращать это в `Err`
+   * значит заставлять вызывающего отличать «ничего не изменилось» от настоящей
+   * проблемы на каждом тике.
+   *
+   * Отклоняется единственный случай — `RESOLVED → CLOSED`: терминальное
+   * состояние необратимо, и такое наблюдение означает регрессию источника.
    *
    * @example
    * ```typescript
@@ -177,33 +193,43 @@ export const MarketState = {
   markClosed(
     state: MarketState,
     context?: Record<string, unknown>,
-  ): Result<MarketState, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
-    if (state.status === 'CLOSED') {
-      return Err(new MarketAlreadyClosedError('Market is already closed', {
-        context: { ...context, currentStatus: state.status },
+  ): Result<MarketState, MarketAlreadyResolvedError> {
+    if (state.status === 'RESOLVED') {
+      return Err(new MarketAlreadyResolvedError('Cannot observe a close on a resolved market', {
+        context: {
+          ...context,
+          currentStatus: state.status,
+          resolvedOutcomeIndex: state.resolvedOutcomeIndex,
+        },
       }));
     }
-    if (state.status === 'RESOLVED') {
-      return Err(new MarketAlreadyResolvedError('Cannot close a resolved market', {
-        context: { ...context, currentStatus: state.status },
-      }));
+    // Идемпотентность: тот же объект наружу — вызывающий отличит no-op по ссылке
+    if (state.status === 'CLOSED') {
+      return Ok(state);
     }
     return Ok(MarketState.closed());
   },
 
   /**
-   * Фиксирует наблюдённую резолюцию рынка (CLOSED → RESOLVED)
+   * Фиксирует наблюдённую резолюцию рынка (ACTIVE | CLOSED → RESOLVED)
    *
    * @param state - Текущее состояние
    * @param index - Индекс победившего исхода
    * @param context - Контекст для ошибки (например, marketId)
-   * @returns `Result` с новым состоянием RESOLVED либо ошибкой нарушения FSM
-   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
+   * @returns `Result` с состоянием RESOLVED либо ошибкой конфликта наблюдений
+   * @throws Ничего не бросает — конфликт возвращается как `Err`
    *
    * @remarks
    * Единственный разрешённый источник нового RESOLVED состояния.
-   * Из ACTIVE напрямую перейти нельзя: сначала фиксируется факт закрытия
-   * торгов, затем — объявленный исход.
+   *
+   * Допустим переход **и из ACTIVE**, а не только из CLOSED: между двумя
+   * опросами источника рынок мог успеть закрыться и разрезолвиться, и мы просто
+   * не увидели промежуточного CLOSED. Требовать «сначала покажи закрытие» значит
+   * отвергать корректное внешнее наблюдение из-за собственной частоты опроса.
+   *
+   * Повторная резолюция **тем же** исходом идемпотентна — возвращается тот же
+   * объект состояния. Резолюция **другим** исходом отклоняется: это конфликт
+   * данных источника, а не рядовое повторное наблюдение.
    *
    * @example
    * ```typescript
@@ -217,23 +243,54 @@ export const MarketState = {
     state: MarketState,
     index: OutcomeIndex,
     context?: Record<string, unknown>,
-  ): Result<MarketState, MarketAlreadyResolvedError | MarketInvalidTransitionError> {
+  ): Result<MarketState, MarketAlreadyResolvedError> {
     if (state.status === 'RESOLVED') {
-      return Err(new MarketAlreadyResolvedError('Market is already resolved', {
-        context: {
-          ...context,
-          currentStatus: state.status,
-          resolvedOutcomeIndex: state.resolvedOutcomeIndex,
-        },
-      }));
-    }
-    if (state.status === 'ACTIVE') {
-      return Err(new MarketInvalidTransitionError(
-        'Cannot resolve an active market. Observe the close first.',
-        { context: { ...context, currentStatus: state.status } }
+      // Идемпотентность: тот же объект наружу — вызывающий отличит no-op по ссылке
+      if (state.resolvedOutcomeIndex === index) {
+        return Ok(state);
+      }
+      return Err(new MarketAlreadyResolvedError(
+        'Market is already resolved with a different outcome',
+        {
+          context: {
+            ...context,
+            currentStatus: state.status,
+            resolvedOutcomeIndex: state.resolvedOutcomeIndex,
+            observedOutcomeIndex: index,
+          },
+        }
       ));
     }
     return Ok(MarketState.resolved(index));
+  },
+
+  /**
+   * Возвращает нормализованную замороженную копию состояния
+   *
+   * @param state - Состояние произвольного происхождения (в т.ч. изменяемый литерал)
+   * @returns Эквивалентное состояние, созданное каноническими конструкторами
+   *
+   * @remarks
+   * Нужен там, где состояние приходит извне и его нельзя хранить по ссылке:
+   * `Market` нормализует `props.state` в конструкторе, а `MarketViewModel.toSnapshot()`
+   * копирует состояние в снапшот. Без этого изменяемый объект, переданный в
+   * `Market.create()`, оставался бы общим для entity и снапшота, и мутация одного
+   * незаметно меняла бы «иммутабельный» другой.
+   *
+   * Конструкторы состояний уже возвращают `Object.freeze`, поэтому копия
+   * дополнительной заморозки не требует.
+   *
+   * @example
+   * ```typescript
+   * const mutable = { status: 'CLOSED' as const };
+   * const safe = MarketState.normalize(mutable);
+   * Object.isFrozen(safe); // → true
+   * ```
+   */
+  normalize(state: MarketState): MarketState {
+    if (state.status === 'RESOLVED') return MarketState.resolved(state.resolvedOutcomeIndex);
+    if (state.status === 'CLOSED') return MarketState.closed();
+    return MarketState.active();
   },
 } as const;
 

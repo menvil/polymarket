@@ -316,7 +316,7 @@ export interface StrategySnapshot {
    * ```typescript
    * const marketDurationMs = snapshot.market.duration().toNumber();
    * const sinceEventStartMs = snapshot.eventStartMs !== undefined
-   *   ? snapshot.market.expiresAt.diffMs(snapshot.eventStartMs).toNumber()
+   *   ? snapshot.nowMs - snapshot.eventStartMs.toNumber()
    *   : undefined;
    * ```
    */

@@ -51,6 +51,7 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig } from '../config/BotConfig.js';
+import { buildCanonicalMarket } from './buildCanonicalMarket.js';
 import { buildCoreInfra } from './buildCoreInfra.js';
 import { subscribeToOrderEvents } from './buildEventLogger.js';
 import { buildRepositories } from './buildRepositories.js';
@@ -234,11 +235,16 @@ async function sortSnapshotPathsForContinuousReplay(
  * @param config - Конфигурация бота (strategy, paper, resources, account)
  * @param outcomeIndex - Индекс outcome (0 = YES, 1 = NO)
  * @param parentLogger - Корневой логгер (создаётся child с контекстом рынка)
- * @returns Результат бэктеста или null если meta не найдена
+ * @returns Результат бэктеста или null если meta не найдена, снапшот отфильтрован
+ *          либо по его метаданным нельзя честно собрать канонический `Market`
  *
  * @remarks
  * Пересоздаёт всю инфраструктуру с нуля для полной изоляции:
  * ReplayClock, EventBus, Repositories, PaperSimulator, Strategy, Portfolio.
+ *
+ * Планировщику передаётся настоящий `Market` из {@link buildCanonicalMarket}:
+ * стратегии читают `snapshot.market.outcomes`, поэтому у бэктеста должны быть
+ * оба outcome-токена, а не только расписание.
  */
 async function runSingleMarketBacktest(
   filePath: string,
@@ -478,18 +484,33 @@ async function runSingleMarketBacktest(
   const parsedEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : NaN;
 
   const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
-  const marketExpiresAtResult = TimestampService.create(expirationMs);
-  if (!marketExpiresAtResult.ok) {
-    throw new Error(`Invalid market expiration: ${expirationMs}`);
-  }
-  // Заглушка Market: бэктест знает только расписание рынка. Полный canonical
-  // Market собирается в Discovery — см. MR Canonical Market Entity.
-  const marketStub = { expiresAt: marketExpiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
   const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
   // eventStartMs (raw number) остаётся для journal.startSession() ниже — IDecisionJournal
   // хранит его как персистентное NDJSON-поле, не типизируется этим этапом миграции.
   const eventStartMsResult = eventStartMs !== undefined ? TimestampService.create(eventStartMs) : undefined;
   const eventStartTimestamp = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
+
+  // Канонический Market из meta снапшота: оба outcome-токена, расписание и
+  // crypto-спецификация — стратегии читают `snapshot.market.outcomes`, поэтому
+  // заглушка здесь молча ломала определение стороны токена.
+  const canonicalMarketResult = buildCanonicalMarket({
+    marketId,
+    question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] : undefined,
+    instrumentId,
+    complementaryInstrumentId,
+    outcomeIndex,
+    expiresAtMs: expirationMs,
+    eventStartMs,
+    cryptoSymbol: cryptoMeta?.rtdsFilter,
+  });
+  if (!canonicalMarketResult.ok) {
+    logger.error('Failed to build canonical market', {
+      file: fileName,
+      marketId: String(marketId),
+      error: canonicalMarketResult.error.message,
+    });
+    return null;
+  }
 
   // Определяем нужен ли dual-token режим (стратегии, которые могут выбирать UP/DOWN).
   const needsComplementary = config.strategy === 'adaptive-entry'
@@ -517,7 +538,7 @@ async function runSingleMarketBacktest(
   }
 
   const regResult = await engine.scheduler.register({
-    strategy, instrumentId, asset, accountId, market: marketStub,
+    strategy, instrumentId, asset, accountId, market: canonicalMarketResult.value,
     cryptoSymbol: cryptoMeta?.rtdsFilter,
     eventStartMs: eventStartTimestamp,
     complementaryInstrumentId: needsComplementary ? complementaryInstrumentId : undefined,

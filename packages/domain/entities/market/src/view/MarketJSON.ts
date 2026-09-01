@@ -28,11 +28,23 @@
  */
 
 /**
+ * MarketOutcomeIndexJSON — сериализованная позиция исхода
+ *
+ * @remarks
+ * Литералы объявлены здесь, а не импортированы из `value-objects`, — намеренно.
+ * `MarketJSON` фиксирует **формат хранения**, который переживает переименования
+ * в домене: если доменный литерал когда-нибудь изменится, несовпадение вылезет
+ * ошибкой компиляции в `MarketViewModel.toJSON()`, а не молча поменяет формат
+ * уже записанных данных. Ровно за этим wire-тип и отделён от доменного.
+ */
+export type MarketOutcomeIndexJSON = 0 | 1;
+
+/**
  * MarketOutcomeJSON — сериализованный исход рынка
  */
 export interface MarketOutcomeJSON {
-  /** Позиция в наборе исходов (0 или 1) */
-  readonly index: number;
+  /** Позиция в наборе исходов */
+  readonly index: MarketOutcomeIndexJSON;
   /** Человекочитаемая метка исхода */
   readonly label: string;
   /** Canonical identity инструмента этого исхода */
@@ -43,15 +55,28 @@ export interface MarketOutcomeJSON {
  * MarketStateJSON — сериализованное состояние рынка
  *
  * @remarks
- * `resolvedOutcomeIndex` присутствует только при `status === 'RESOLVED'`;
- * в остальных случаях поле отсутствует, а не равно `null`.
+ * Discriminated union, а не «`status: string` + необязательный индекс»:
+ * `resolvedOutcomeIndex` физически существует только в варианте RESOLVED.
+ * Плоская форма позволяла бы записать `{status: 'ACTIVE', resolvedOutcomeIndex: 1}`
+ * — состояние, которого в домене не бывает, — и такой мусор дошёл бы до парсера
+ * вместо того, чтобы не собраться.
  */
-export interface MarketStateJSON {
-  /** `'ACTIVE' | 'CLOSED' | 'RESOLVED'` */
-  readonly status: string;
-  /** Индекс победившего исхода — только для RESOLVED */
-  readonly resolvedOutcomeIndex?: number;
-}
+export type MarketStateJSON =
+  | { readonly status: 'ACTIVE' }
+  | { readonly status: 'CLOSED' }
+  | {
+    readonly status: 'RESOLVED';
+    /** Индекс победившего исхода */
+    readonly resolvedOutcomeIndex: MarketOutcomeIndexJSON;
+  };
+
+/**
+ * MarketFamilyJSON — сериализованное семейство рынка
+ *
+ * @remarks
+ * Литерал продублирован из домена сознательно — см. {@link MarketOutcomeIndexJSON}.
+ */
+export type MarketFamilyJSON = 'CRYPTO_UP_DOWN';
 
 /**
  * MarketCryptoSpecJSON — сериализованная спецификация семейства `CRYPTO_UP_DOWN`
@@ -89,7 +114,7 @@ export interface MarketJSON {
   /** Исходы рынка: ровно два */
   readonly outcomes: readonly [MarketOutcomeJSON, MarketOutcomeJSON];
   /** Семейство рынка */
-  readonly family: string;
+  readonly family: MarketFamilyJSON;
   /** Спецификация семейства `CRYPTO_UP_DOWN` */
   readonly crypto?: MarketCryptoSpecJSON;
 }

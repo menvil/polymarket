@@ -25,6 +25,10 @@ import Decimal from 'decimal.js';
  * @param ms - Epoch milliseconds
  * @returns Timestamp
  * @throws {Error} Если значение не проходит инварианты Timestamp
+ *
+ * @remarks
+ * Бросает, а не возвращает `undefined`: невалидное время в фикстуре — ошибка
+ * самого теста, и падать она должна на месте создания, а не позже в ассерте.
  */
 function expectTimestamp(ms: number): Timestamp {
   const result = TimestampService.create(ms);

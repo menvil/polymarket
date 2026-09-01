@@ -68,6 +68,7 @@ import { SimpleBookRegistry } from './SimpleBookRegistry.js';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
 import type { BotConfig } from './config/BotConfig.js';
+import { buildCanonicalMarket } from './bot/buildCanonicalMarket.js';
 import { buildCoreInfra } from './bot/buildCoreInfra.js';
 import { subscribeToOrderEvents } from './bot/buildEventLogger.js';
 import { buildRepositories } from './bot/buildRepositories.js';
@@ -2771,7 +2772,7 @@ async function runBacktest(): Promise<void> {
     process.exit(1);
   }
 
-  const { marketId, instrumentId, asset, rawMarket: snapshotRawMarket } = metaResult;
+  const { marketId, instrumentId, asset, rawMarket: snapshotRawMarket, complementaryInstrumentId } = metaResult;
 
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.INFO });
@@ -3007,21 +3008,37 @@ async function runBacktest(): Promise<void> {
   const expirationMs = snapshotEndDateMs && !Number.isNaN(snapshotEndDateMs)
     ? snapshotEndDateMs
     : Date.now() + 24 * 60 * 60 * 1000;
-  const marketExpiresAtResult = TimestampService.create(expirationMs);
-  if (!marketExpiresAtResult.ok) {
-    throw new Error(`Invalid market expiration: ${expirationMs}`);
-  }
-  // Заглушка Market: бэктест знает только расписание рынка. Полный canonical
-  // Market собирается в Discovery — см. MR Canonical Market Entity.
-  const marketStub = { expiresAt: marketExpiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
   const eventStartMsResult = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
     ? TimestampService.create(snapshotEventStartMs)
     : undefined;
   const eventStartMs = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
 
+  // Канонический Market из meta снапшота: оба outcome-токена, расписание и
+  // crypto-спецификация. Стратегии читают `snapshot.market.outcomes`, поэтому
+  // заглушка здесь молча ломала определение стороны токена.
+  const canonicalMarketResult = buildCanonicalMarket({
+    marketId,
+    question: typeof snapshotRawMarket?.['question'] === 'string' ? snapshotRawMarket['question'] : undefined,
+    instrumentId,
+    complementaryInstrumentId,
+    outcomeIndex,
+    expiresAtMs: expirationMs,
+    eventStartMs: snapshotEventStartMs !== undefined && !Number.isNaN(snapshotEventStartMs)
+      ? snapshotEventStartMs
+      : undefined,
+    cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
+  });
+  if (!canonicalMarketResult.ok) {
+    logger.fatal('Failed to build canonical market', {
+      marketId: String(marketId),
+      error: canonicalMarketResult.error.message,
+    });
+    process.exit(1);
+  }
+
   const regResult = await engine.scheduler.register({
-    strategy, instrumentId, asset, accountId, market: marketStub,
+    strategy, instrumentId, asset, accountId, market: canonicalMarketResult.value,
     cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
     eventStartMs,
   });

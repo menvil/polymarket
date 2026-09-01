@@ -55,6 +55,15 @@ describe('MarketViewModel.toSnapshot()', () => {
 
     expect(market.outcomes[0].label).toBe('Up');
   });
+
+  it('копирует состояние — снапшот не делит ссылку с entity', () => {
+    const market = makeMarket({ state: MarketState.resolved(1) });
+    const snapshot = MarketViewModel.toSnapshot(market);
+
+    expect(snapshot.state).toEqual(market.state);
+    expect(snapshot.state).not.toBe(market.state);
+    expect(Object.isFrozen(snapshot.state)).toBe(true);
+  });
 });
 
 describe('MarketViewModel.toJSON()', () => {

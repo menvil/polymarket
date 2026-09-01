@@ -50,8 +50,13 @@
  *
  * ### Жизненный цикл
  * ```text
- * ACTIVE → CLOSED → RESOLVED
+ * ACTIVE → CLOSED        ACTIVE → RESOLVED        CLOSED → RESOLVED
  * ```
+ * `ACTIVE → RESOLVED` разрешён: между опросами источника рынок мог успеть и
+ * закрыться, и разрезолвиться. Повторное наблюдение того же состояния
+ * идемпотентно; отклоняются только регрессия `RESOLVED → CLOSED` и конфликт
+ * `RESOLVED(i) → RESOLVED(j≠i)`. Подробности — в TSDoc `MarketState`.
+ *
  * Истечение `expiresAt` **не** переводит рынок в CLOSED: площадка может продолжать
  * публиковать его как ACTIVE ещё какое-то время. Производную фазу
  * (`PRE_OPEN`/`OPEN`/`ENDED`/`CLOSED`/`RESOLVED`) вычисляет
@@ -94,11 +99,7 @@
 
 import type Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import type {
-  MarketAlreadyClosedError,
-  MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
-} from '@polymarket/errors/market';
+import type { MarketAlreadyResolvedError } from '@polymarket/errors/market';
 import { MarketValidationError } from '@polymarket/errors/market';
 import { Timestamp } from '@polymarket/timestamp';
 import {
@@ -115,6 +116,11 @@ import {
   isResolved,
   isValidMarketFamily,
   asMarketDuration,
+  asMarketId,
+  asVenueId,
+  asInstrumentId,
+  asCryptoAssetId,
+  parseMarketSlug,
 } from './value-objects/index.js';
 import { type MarketSnapshot } from './view/MarketSnapshot.js';
 
@@ -197,6 +203,11 @@ export class Market {
    * @remarks
    * Нормализует метки исходов (`trim`) — так хранимое значение совпадает с тем,
    * которое сравнивалось на различимость в `create()`.
+   *
+   * Состояние пересоздаётся через `MarketState.normalize()`, а не сохраняется по
+   * ссылке: `props.state` мог прийти изменяемым литералом, и тогда мутация у
+   * вызывающего меняла бы «иммутабельную» entity. Исходы и crypto-спецификация
+   * замораживаются здесь же и по той же причине.
    */
   private constructor(props: MarketProps) {
     this.id = props.id;
@@ -204,7 +215,7 @@ export class Market {
     this.question = props.question.trim();
     this.startsAt = props.startsAt;
     this.expiresAt = props.expiresAt;
-    this.state = props.state;
+    this.state = MarketState.normalize(props.state);
     this.family = props.family;
     this.outcomes = Object.freeze([
       Object.freeze({ ...props.outcomes[0], label: props.outcomes[0].label.trim() }),
@@ -229,14 +240,20 @@ export class Market {
    *
    * @remarks
    * Проверяемые инварианты:
-   * 1. `id` и `venueId` — непустые строки (branded-конструкторы `unsafe*` валидацию обходят);
+   * 1. `id`, `venueId` и (если задан) `slug` — уже канонические значения своих VO:
+   *    `unsafe*`-конструкторы валидацию обходят, поэтому она повторяется здесь;
    * 2. `question` — непустая строка;
    * 3. ровно два исхода, позиции 0 и 1 на своих местах;
    * 4. метки исходов непустые и различные;
-   * 5. instrument identity исходов различны (один outcome → одна identity);
+   * 5. instrument identity исходов канонические и различные (один outcome → одна identity);
    * 6. расписание: оба конца — `Timestamp`, `startsAt < expiresAt`;
    * 7. `state` — валидный `MarketState`; для RESOLVED индекс победителя указывает на существующий исход;
    * 8. `family` — известное семейство; для `CRYPTO_UP_DOWN` обязательна валидная `crypto`-спецификация.
+   *
+   * Проверки идентификаторов строгие: значение должно совпадать с результатом
+   * своего парсера VO. Благодаря этому `Market.create()` и `MarketParser.from()`
+   * принимают ровно одно и то же множество значений, и round-trip
+   * `Market → JSON → Market` замыкается без исключений.
    *
    * Часть проверок дублирует то, что уже гарантирует система типов — это
    * runtime-защита на границе с внешними данными (JSON, БД, `as`-касты).
@@ -299,20 +316,35 @@ export class Market {
    *
    * @param props - Параметры создания рынка
    * @returns `MarketValidationError` при нарушении, иначе `undefined`
+   *
+   * @remarks
+   * Проверка строгая: значение должно быть **уже каноническим**, то есть
+   * совпадать с тем, что вернул бы соответствующий парсер VO
+   * (`asMarketId`/`asVenueId`/`parseMarketSlug`). Не «почти валидное»
+   * значение не нормализуется молча, а отклоняется.
+   *
+   * Почему так, а не «принять и обрезать»: `unsafe*`-конструкторы обходят
+   * валидацию, поэтому `unsafeMarketId(' x ')` дал бы entity с id `' x '`,
+   * тогда как `asMarketId(' x ')` дал бы `'x'`. Два объекта одного и того же
+   * рынка перестали бы быть равны в `equals()`, а `Market → JSON → MarketParser`
+   * ломался бы уже на парсере — round-trip канонической сущности обязан
+   * замыкаться. Единственный способ этого добиться — не пускать
+   * неканоническое значение внутрь.
    */
   private static _validateIdentity(props: MarketProps): MarketValidationError | undefined {
-    if (typeof props.id !== 'string' || props.id.trim().length === 0) {
-      return new MarketValidationError('Market id must be a non-empty string', {
+    if (typeof props.id !== 'string' || asMarketId(props.id) !== props.id) {
+      return new MarketValidationError('Market id must be a canonical MarketId', {
         context: { field: 'id', value: props.id },
       });
     }
-    if (typeof props.venueId !== 'string' || props.venueId.trim().length === 0) {
-      return new MarketValidationError('Market venueId must be a non-empty string', {
+    if (typeof props.venueId !== 'string' || asVenueId(props.venueId) !== props.venueId) {
+      return new MarketValidationError('Market venueId must be a canonical VenueId', {
         context: { field: 'venueId', value: props.venueId },
       });
     }
-    if (props.slug !== undefined && (typeof props.slug !== 'string' || props.slug.length === 0)) {
-      return new MarketValidationError('Market slug must be a non-empty string when present', {
+    if (props.slug !== undefined
+      && (typeof props.slug !== 'string' || parseMarketSlug(props.slug) !== props.slug)) {
+      return new MarketValidationError('Market slug must be a canonical MarketSlug', {
         context: { field: 'slug', value: props.slug },
       });
     }
@@ -364,9 +396,10 @@ export class Market {
           { context: { field: `outcomes[${position}].label`, value: outcome.label } }
         );
       }
-      if (typeof outcome.instrumentId !== 'string' || outcome.instrumentId.trim().length === 0) {
+      if (typeof outcome.instrumentId !== 'string'
+        || asInstrumentId(outcome.instrumentId) !== outcome.instrumentId) {
         return new MarketValidationError(
-          `Outcome instrumentId at index ${position} must be a non-empty string`,
+          `Outcome instrumentId at index ${position} must be a canonical InstrumentId`,
           { context: { field: `outcomes[${position}].instrumentId`, value: outcome.instrumentId } }
         );
       }
@@ -483,8 +516,8 @@ export class Market {
           { context: { field: 'crypto', value: crypto } }
         );
       }
-      if (typeof crypto.asset !== 'string' || crypto.asset.trim().length === 0) {
-        return new MarketValidationError('Crypto spec asset must be a non-empty string', {
+      if (typeof crypto.asset !== 'string' || asCryptoAssetId(crypto.asset) !== crypto.asset) {
+        return new MarketValidationError('Crypto spec asset must be a canonical CryptoAssetId', {
           context: { field: 'crypto.asset', value: crypto.asset },
         });
       }
@@ -723,13 +756,17 @@ export class Market {
   /**
    * Фиксирует наблюдённое закрытие торгов (ACTIVE → CLOSED)
    *
-   * @returns `Result` с новым Market в состоянии CLOSED либо ошибкой нарушения FSM
-   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
+   * @returns `Result` с Market в состоянии CLOSED либо ошибкой конфликта наблюдений
+   * @throws Ничего не бросает — конфликт возвращается как `Err`
    *
    * @remarks
    * Название отражает семантику: мы **отмечаем** подтверждённое площадкой
    * закрытие, а не приказываем внешнему рынку закрыться. Вызывать только после
    * подтверждения от источника; истечение `expiresAt` подтверждением не является.
+   *
+   * Повторное наблюдение на уже закрытом рынке идемпотентно и возвращает
+   * **тот же экземпляр** — по `Ok(result.value === market)` вызывающий отличает
+   * «ничего не изменилось» от реального перехода, не сравнивая состояния.
    *
    * Правила перехода живут в `MarketState.markClosed()` — entity их не знает
    * и только пробрасывает `Result` наверх (по ADR `docs/architecture/
@@ -739,25 +776,32 @@ export class Market {
    * ```typescript
    * const result = market.markClosed();
    * if (!result.ok) logger.warn('Close observation rejected', { code: result.error.name });
+   * else if (result.value === market) logger.debug('Market was already closed');
    * ```
    */
-  public markClosed(): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
+  public markClosed(): Result<Market, MarketAlreadyResolvedError> {
     const next = MarketState.markClosed(this.state, { marketId: this.id, venueId: this.venueId });
     if (!next.ok) return Err(next.error);
-    return Ok(this._withState(next.value));
+    return Ok(next.value === this.state ? this : this._withState(next.value));
   }
 
   /**
    * Фиксирует объявленный площадкой исход (CLOSED → RESOLVED)
    *
    * @param outcomeIndex - Индекс победившего исхода в `outcomes`
-   * @returns `Result` с новым Market в состоянии RESOLVED либо ошибкой валидации/FSM
+   * @returns `Result` с Market в состоянии RESOLVED либо ошибкой валидации/конфликта
    * @throws Ничего не бросает — все нарушения возвращаются как `Err`
    *
    * @remarks
-   * Как и `markClosed()`, это фиксация внешнего наблюдения. Индекс проверяется
-   * против фактического набора исходов: резолюция по несуществующему исходу —
-   * это ошибка данных источника, а не нарушение FSM.
+   * Как и `markClosed()`, это фиксация внешнего наблюдения. Допустим переход и
+   * из ACTIVE: между опросами источника рынок мог успеть закрыться и
+   * разрезолвиться, и промежуточный CLOSED мы просто не увидели.
+   *
+   * Повторная резолюция тем же исходом идемпотентна и возвращает **тот же
+   * экземпляр**; резолюция другим исходом — конфликт данных источника и `Err`.
+   *
+   * Индекс проверяется против фактического набора исходов: резолюция по
+   * несуществующему исходу — это ошибка данных источника, а не переход FSM.
    *
    * @example
    * ```typescript
@@ -769,7 +813,7 @@ export class Market {
    */
   public markResolved(
     outcomeIndex: OutcomeIndex,
-  ): Result<Market, MarketValidationError | MarketAlreadyResolvedError | MarketInvalidTransitionError> {
+  ): Result<Market, MarketValidationError | MarketAlreadyResolvedError> {
     if (
       typeof outcomeIndex !== 'number' ||
       !Number.isInteger(outcomeIndex) ||
@@ -790,7 +834,7 @@ export class Market {
       venueId: this.venueId,
     });
     if (!next.ok) return Err(next.error);
-    return Ok(this._withState(next.value));
+    return Ok(next.value === this.state ? this : this._withState(next.value));
   }
 
   // ==================== String Representation ====================

@@ -113,7 +113,7 @@ export type {
   IntentOutcomeKind,
   ITokenBalanceChecker,
 } from './ExecutionEngine.js';
-export { StrategyScheduler } from './StrategyScheduler.js';
+export { StrategyScheduler, normalizeCryptoAsset } from './StrategyScheduler.js';
 /** Реэкспорт зависимостей/структурных портов StrategyScheduler (см. StrategyScheduler.ts). */
 export type {
   StrategySchedulerDeps,
