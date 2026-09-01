@@ -32,10 +32,10 @@
  *
  * ### Порядок проверок
  *
- * От дешёвых к дорогим: окно policy → семейство → актив → номинал серии →
- * ликвидность → спред → ключевые слова. Первые четыре — сравнения
- * примитивов, последняя — прогон регулярных выражений по тексту, и на
- * реальном universe она отсекает меньше всего.
+ * От дешёвых к дорогим: окно policy → семейство → спецификация семейства →
+ * актив → номинал серии → ликвидность → спред → ключевые слова. Первые пять
+ * — сравнения примитивов, последняя — прогон регулярных выражений по тексту,
+ * и на реальном universe она отсекает меньше всего.
  */
 import type { MarketDiscoveryEntry } from '@polymarket/ports';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -284,7 +284,7 @@ export class MarketFilter {
    * @param entry - Запись universe
    * @param policy - Owner policy
    * @param evaluationTime - Момент оценки policy
-   * @returns `true`, если запись прошла проверки 1–6
+   * @returns `true`, если запись прошла проверки 1–7
    *
    * @internal
    * @remarks
@@ -306,7 +306,12 @@ export class MarketFilter {
       return false;
     }
 
-    // 3–4. Предметная спецификация семейства CRYPTO_UP_DOWN.
+    // 3. Спецификация обязана присутствовать там, где её требует семейство.
+    if (!this._hasRequiredFamilySpec(entry)) {
+      return false;
+    }
+
+    // 4–5. Селекторы по предметной спецификации семейства CRYPTO_UP_DOWN.
     if (!this._passesAssetSelector(entry, policy)) {
       return false;
     }
@@ -314,11 +319,41 @@ export class MarketFilter {
       return false;
     }
 
-    // 5–6. Наблюдения площадки рядом с рынком.
+    // 6–7. Наблюдения площадки рядом с рынком.
     if (!this._passesLiquiditySelector(entry, policy)) {
       return false;
     }
     return this._passesSpreadSelector(entry, policy);
+  }
+
+  /**
+   * Несёт ли рынок спецификацию, обязательную для его семейства.
+   *
+   * @param entry - Запись universe
+   * @returns `false`, если рынок семейства `CRYPTO_UP_DOWN` пришёл без
+   *   crypto-спецификации; `true` во всех остальных случаях
+   *
+   * @internal
+   * @remarks
+   * Проверка стоит ЗДЕСЬ, а не внутри селекторов актива и номинала, чтобы
+   * ответ фильтра не зависел от того, ограничил ли потребитель эти селекторы:
+   * испорченность записи — свойство самой записи, а не заданной policy. Пока
+   * проверка жила в селекторах, один и тот же рынок отвергался policy со
+   * списком активов и принимался policy без него.
+   *
+   * Реального сценария она сегодня не ловит: `Market.create()` делает такую
+   * запись непредставимой (`_validateFamily` требует `crypto` у
+   * `CRYPTO_UP_DOWN` и запрещает её всем остальным семействам). Это защита в
+   * глубину — на случай записи, собранной в обход canonical-фабрики, — и
+   * ровно поэтому спецификация не требуется у не-crypto семейства: там
+   * инвариант домена её, наоборот, ЗАПРЕЩАЕТ.
+   *
+   * Семейство берётся у рынка, а не у policy: на этом шаге они уже совпали,
+   * и опора на рынок оставляет правило верным даже вне текущего порядка
+   * проверок.
+   */
+  private _hasRequiredFamilySpec(entry: MarketDiscoveryEntry): boolean {
+    return entry.market.family !== 'CRYPTO_UP_DOWN' || entry.market.crypto !== undefined;
   }
 
   /**
@@ -330,12 +365,13 @@ export class MarketFilter {
    *
    * @internal
    * @remarks
-   * Отсутствие `market.crypto` даёт `false`, а не пропуск: до этой проверки
-   * семейство уже совпало, и если policy спрашивает про актив, то рынок —
-   * `CRYPTO_UP_DOWN`, у которого спецификация обязательна по инварианту
-   * `Market.create()`. Её отсутствие означает структурно несогласованную
-   * запись, и «пропустить» такую значило бы отдать потребителю рынок с
-   * неизвестным активом под видом запрошенного.
+   * Структурное требование «у `CRYPTO_UP_DOWN` спецификация обязательна»
+   * здесь больше НЕ проверяется — оно вынесено в
+   * {@link MarketFilter._hasRequiredFamilySpec}, потому что от селектора не
+   * зависит. Остаётся только семантика самого селектора: рынка без актива в
+   * списке активов быть не может, поэтому отсутствие спецификации — это
+   * «не в списке», а не «пропустить». Так policy, спрашивающая про актив у
+   * семейства, где актива не существует, не отбирает ничего.
    */
   private _passesAssetSelector(entry: MarketDiscoveryEntry, policy: PolymarketPolicy): boolean {
     const assets = policy.assets;
@@ -343,10 +379,7 @@ export class MarketFilter {
       return true;
     }
     const asset = entry.market.crypto?.asset;
-    if (asset === undefined) {
-      return false;
-    }
-    return assets.includes(asset);
+    return asset !== undefined && assets.includes(asset);
   }
 
   /**
@@ -365,6 +398,10 @@ export class MarketFilter {
    * публикации, выравнивание по TWAP-окну). Селектор по фактическому окну
    * выбрасывал бы из своей же серии рынок, у которого окно оказалось
    * 4 минуты вместо 5, — и делал бы это молча и невоспроизводимо.
+   *
+   * Обязательность спецификации, как и у селектора актива, проверена выше в
+   * {@link MarketFilter._hasRequiredFamilySpec}: здесь отсутствие номинала
+   * означает ровно «номинала нет в списке».
    */
   private _passesDurationSelector(entry: MarketDiscoveryEntry, policy: PolymarketPolicy): boolean {
     const durations = policy.durations;
@@ -372,10 +409,7 @@ export class MarketFilter {
       return true;
     }
     const duration = entry.market.crypto?.duration;
-    if (duration === undefined) {
-      return false;
-    }
-    return durations.includes(duration);
+    return duration !== undefined && durations.includes(duration);
   }
 
   /**

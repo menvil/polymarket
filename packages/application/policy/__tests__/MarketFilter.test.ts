@@ -181,6 +181,39 @@ function makeEntry(overrides: EntryOverrides = {}): MarketDiscoveryEntry {
   };
 }
 
+/**
+ * Собирает запись, у которой семейство — `CRYPTO_UP_DOWN`, а обязательной
+ * crypto-спецификации НЕТ.
+ *
+ * @param overrides - Отклонения от базовой фикстуры (семейство игнорируется)
+ * @returns `MarketDiscoveryEntry` со структурно несогласованным рынком
+ * @throws {Error} Если параметры фикстуры нарушают инварианты `Market`
+ *
+ * @remarks
+ * Легального пути построить такой рынок нет: `Market.create()` требует
+ * спецификацию у `CRYPTO_UP_DOWN` и запрещает её остальным семействам
+ * (`_validateFamily`). Поэтому фикстура собирается настоящим
+ * `BINARY_OUTCOME` — семейством, у которого ключа `crypto` не существует
+ * вовсе, — а семейство подменяется точечно и только в тесте, как валюта в
+ * `foreignCurrency()`.
+ *
+ * Покрываемое правило от этого не становится выдуманным: фильтр обязан
+ * отвечать на такую запись одинаково независимо от того, задал ли
+ * потребитель селекторы, и обязан выдерживать запись, собранную в обход
+ * canonical-фабрики.
+ *
+ * @example
+ * ```typescript
+ * const broken = makeCryptoEntryWithoutSpec();
+ * expect(broken.market.crypto).toBeUndefined();
+ * ```
+ */
+function makeCryptoEntryWithoutSpec(overrides: EntryOverrides = {}): MarketDiscoveryEntry {
+  const entry = makeEntry({ id: 'crypto-no-spec', ...overrides, family: 'BINARY_OUTCOME' });
+  (entry.market as unknown as { family: MarketFamily }).family = 'CRYPTO_UP_DOWN';
+  return entry;
+}
+
 /** Policy без единого ограничения, кроме семейства. */
 const BASE_POLICY: PolymarketPolicy = {
   kind: 'POLYMARKET',
@@ -274,6 +307,50 @@ describe('MarketFilter', () => {
     it('семейство рынка НЕ совпадает с policy → не подходит', () => {
       const entry = makeEntry({ id: 'binary-01', family: 'BINARY_OUTCOME' });
       expect(filter.matches(entry, BASE_POLICY, AT)).toBe(false);
+    });
+  });
+
+  describe('обязательная спецификация семейства', () => {
+    it('фикстура действительно несогласованна: семейство есть, спецификации нет', () => {
+      const entry = makeCryptoEntryWithoutSpec();
+      expect(entry.market.family).toBe('CRYPTO_UP_DOWN');
+      expect(entry.market.crypto).toBeUndefined();
+    });
+
+    it('CRYPTO_UP_DOWN без спецификации не подходит policy БЕЗ селекторов', () => {
+      // Ядро правила: испорченность записи — свойство самой записи, поэтому
+      // ответ не имеет права зависеть от того, ограничил ли потребитель
+      // актив или номинал. Пока проверка жила в селекторах, эта же запись
+      // проходила policy без ограничений.
+      const entry = makeCryptoEntryWithoutSpec();
+      expect(() => filter.matches(entry, BASE_POLICY, AT)).not.toThrow();
+      expect(filter.matches(entry, BASE_POLICY, AT)).toBe(false);
+      expect(filter.filter([entry], BASE_POLICY, AT)).toEqual([]);
+    });
+
+    it('РЕГРЕССИЯ: он же не подходит policy с заданным assets', () => {
+      const entry = makeCryptoEntryWithoutSpec();
+      const policy: PolymarketPolicy = { ...BASE_POLICY, assets: [unsafeCryptoAssetId('btc')] };
+      expect(filter.matches(entry, policy, AT)).toBe(false);
+      expect(filter.filter([entry], policy, AT)).toEqual([]);
+    });
+
+    it('РЕГРЕССИЯ: он же не подходит policy с заданным durations', () => {
+      const entry = makeCryptoEntryWithoutSpec();
+      const policy: PolymarketPolicy = { ...BASE_POLICY, durations: [nominal(FIVE_MIN_MS)] };
+      expect(filter.matches(entry, policy, AT)).toBe(false);
+      expect(filter.filter([entry], policy, AT)).toEqual([]);
+    });
+
+    it('BINARY_OUTCOME без спецификации подходит своей policy без селекторов', () => {
+      // Обратная сторона правила: у не-crypto семейства спецификация
+      // ЗАПРЕЩЕНА инвариантом домена, поэтому требовать её здесь значило бы
+      // отбросить каждый исправный BINARY_OUTCOME.
+      const entry = makeEntry({ id: 'binary-03', family: 'BINARY_OUTCOME' });
+      const policy: PolymarketPolicy = { ...BASE_POLICY, family: 'BINARY_OUTCOME' };
+      expect(entry.market.crypto).toBeUndefined();
+      expect(filter.matches(entry, policy, AT)).toBe(true);
+      expect(filter.filter([entry], policy, AT)).toHaveLength(1);
     });
   });
 

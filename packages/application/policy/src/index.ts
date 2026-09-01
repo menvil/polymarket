@@ -50,6 +50,7 @@ export type { CexPolicy, CexPolicyMarketType } from './CexPolicy.js';
 export { isPolicyEffectiveAt } from './PolicyWindow.js';
 export type { PolicyWindow } from './PolicyWindow.js';
 export {
+  CEX_POLICY_MARKET_TYPE_VALUES,
   PolicyValidationError,
   createCexPolicy,
   createPolymarketPolicy,

@@ -7,6 +7,10 @@
  * результата от порядка входа, отсутствие мутации входа и отсутствие
  * материализованного `score` на записях.
  *
+ * Отдельным блоком закреплено, что порядок по `startsAt` — АБСОЛЮТНЫЙ:
+ * записи с началом торгов в прошлом идут впереди предстоящих. Это осознанное
+ * решение, а не побочный эффект сортировки, поэтому у него есть тест.
+ *
  * Фикстуры собираются из НАСТОЯЩИХ доменных объектов (`Market.create`,
  * `MoneyService.create`, `TimestampService.create`), а не из моков: тест
  * порядка на подделке сущности доказывал бы порядок на подделке. Заодно это
@@ -51,13 +55,19 @@ function venue(raw: string): VenueId {
 /**
  * Отметка времени со сдвигом от опорного момента.
  *
- * @param minutes - Сдвиг в минутах (может быть нулевым)
+ * @param minutes - Сдвиг в минутах: нулевой, положительный (будущее) или
+ *                  отрицательный (прошлое относительно опорного момента)
  * @returns `Timestamp` фикстуры
  * @throws {Error} Если сервис отверг значение
+ *
+ * @remarks
+ * Отрицательный сдвиг нужен для рынков, торги по которым уже идут: `Market`
+ * такое расписание принимает — единственный его инвариант по времени это
+ * `startsAt < expiresAt`, и с часами он не сверяется.
  */
 function at(minutes: number): Timestamp {
   const created = TimestampService.create(BASE_MS + minutes * MINUTE_MS);
-  if (!created.ok) throw new Error(`Invalid fixture timestamp: +${minutes}m`);
+  if (!created.ok) throw new Error(`Invalid fixture timestamp: ${minutes}m`);
   return created.value;
 }
 
@@ -170,6 +180,52 @@ describe('MarketScorer', () => {
       const b = makeEntry({ id: 'b', startsAtMin: 0, expiresAtMin: 60, liquidity: 10 });
 
       expect(orderOf(scorer.rank([a, b]))).toEqual(orderOf([b, a]));
+    });
+  });
+
+  describe('ranked[0] — самый ранний старт, а НЕ «ближайший предстоящий»', () => {
+    // Момент оценки — опорный. `running` уже торгуется: старт 30 минут назад,
+    // истечение впереди. Такие записи лежат в universe штатно — Polymarket V2
+    // Discovery набирает снимок по окну `endDate`
+    // [now - zombieGraceMs, now + endDateWindowMs] и по началу торгов не
+    // ограничивает его вообще, так что уже идущий рынок в снимок попадает,
+    // пока не истёк.
+    //
+    // Что вершиной оказывается ОН, а не ближайший предстоящий, — не дефект
+    // скорера. Скорер отвечает на вопрос «в каком порядке», и порядок по
+    // startsAt здесь абсолютный, без привязки к «сейчас». «Предстоящий»
+    // задаётся ОГРАНИЧЕНИЕМ НАБОРА по моменту оценки, а набор ограничивает
+    // вызывающий (subscription planner): право отбрасывать записи у скорера
+    // отнято намеренно — иначе отбор смешался бы с ранжированием.
+    //
+    // Поэтому тест закрепляет обе стороны контракта: что даёт rank() на сыром
+    // наборе и что даёт он же после ограничения набора вызывающим.
+    const now = at(0);
+    const running = makeEntry({
+      id: 'running', startsAtMin: -30, expiresAtMin: 30, liquidity: 10,
+    });
+    const soon = makeEntry({ id: 'soon', startsAtMin: 5, expiresAtMin: 65, liquidity: 10 });
+    const later = makeEntry({ id: 'later', startsAtMin: 60, expiresAtMin: 120, liquidity: 10 });
+
+    it('уже начавшийся рынок встаёт впереди всех предстоящих', () => {
+      const ranked = scorer.rank([later, soon, running]);
+
+      expect(ranked[0]).toBe(running);
+      expect(ranked[0].market.isStartedAt(now)).toBe(true);
+      expect(orderOf(ranked)).toEqual(orderOf([running, soon, later]));
+    });
+
+    it('после ограничения набора по моменту оценки первым идёт ближайший предстоящий', () => {
+      const universe = [later, soon, running];
+
+      // Ровно тот шаг, который делает вызывающий: отсечь уже начавшиеся ДО rank().
+      const upcoming = universe.filter((entry) => !entry.market.isStartedAt(now));
+      const ranked = scorer.rank(upcoming);
+
+      expect(ranked[0]).toBe(soon);
+      expect(orderOf(ranked)).toEqual(orderOf([soon, later]));
+      // Отбросил запись вызывающий, а не скорер: на полном наборе выхлоп полный.
+      expect(scorer.rank(universe)).toHaveLength(universe.length);
     });
   });
 

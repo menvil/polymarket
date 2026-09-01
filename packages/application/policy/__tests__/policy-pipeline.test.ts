@@ -172,21 +172,55 @@ describe('universe → policy → filter → scorer', () => {
     expect(new Set(ranked)).toEqual(new Set(universe.getAll()));
   });
 
-  it('контур не мутирует universe: source of truth остаётся прежним', () => {
+  it('контур не мутирует СОДЕРЖИМОЕ universe', () => {
+    // Сравнивать `getAll()` по ссылке бессмысленно: universe отдаёт один и
+    // тот же замороженный массив, поэтому такая проверка тавтологична и
+    // не падает никогда. Регрессию ловит только снимок СОДЕРЖИМОГО: и то,
+    // что записи не подменены, и то, что им ничего не дописали (например,
+    // численный `score`, от которого контур как раз отказался).
     const universe = mixedUniverse();
-    const before = universe.getAll();
     const policy = createPolymarketPolicy({
       kind: 'POLYMARKET',
       family: 'CRYPTO_UP_DOWN',
       assets: [BTC],
     });
 
+    /** Полный слепок записи: identity, расписание, спецификация, метрики, набор ключей. */
+    const describe_ = (entries: readonly MarketDiscoveryEntry[]): unknown =>
+      entries.map((e) => ({
+        entryKeys: Object.keys(e).sort(),
+        marketKeys: Object.keys(e.market).sort(),
+        metricsKeys: Object.keys(e.metrics).sort(),
+        id: String(e.market.id),
+        venueId: String(e.market.venueId),
+        startsAt: e.market.startsAt.toISO(),
+        expiresAt: e.market.expiresAt.toISO(),
+        nominal: e.market.crypto?.duration,
+        asset: String(e.market.crypto?.asset),
+        liquidity: e.metrics.liquidity.value().toString(),
+        spread: e.metrics.spread?.toDecimal().toString(),
+      }));
+
+    const before = describe_(universe.getAll());
+
     scorer.rank(filter.filter(universe.getAll(), policy, ts(BASE_MS)));
 
-    expect(universe.getAll()).toBe(before);
-    expect(universe.getAll().map((e) => String(e.market.id))).toEqual(
-      before.map((e) => String(e.market.id)),
-    );
+    expect(describe_(universe.getAll())).toEqual(before);
+  });
+
+  it('контур ничего не дописывает записям universe', () => {
+    const universe = mixedUniverse();
+    const policy = createPolymarketPolicy({ kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN' });
+
+    scorer.rank(filter.filter(universe.getAll(), policy, ts(BASE_MS)));
+
+    for (const item of universe.getAll()) {
+      // `in` покрывает и прототип: дописанное свойство не спрячется
+      expect('score' in item).toBe(false);
+      expect('score' in item.market).toBe(false);
+      expect('score' in item.metrics).toBe(false);
+      expect(Object.keys(item).sort()).toEqual(['market', 'metrics']);
+    }
   });
 
   it('будущая оценка: policy проверяется в момент старта КОНКРЕТНОГО рынка', () => {

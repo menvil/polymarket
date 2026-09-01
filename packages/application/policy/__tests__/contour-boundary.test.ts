@@ -139,6 +139,35 @@ describe('dependency graph boundary', () => {
     }
   });
 
+  it('каждый импорт src объявлен рантайм-зависимостью пакета', () => {
+    // Allow-list отвечает на вопрос «можно ли архитектурно», но не на вопрос
+    // «объявлено ли». Разойтись они могут в обе стороны: пакет тянет в
+    // рантайм то, чем не пользуется, либо src импортирует то, чего нет в
+    // зависимостях, и сборка потребителя падает уже у него. Проверяется
+    // именно связка «импортирую → объявляю».
+    const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    const declared = new Set(Object.keys(packageJson.dependencies ?? {}));
+
+    /** `@scope/pkg/sub` → `@scope/pkg`; `pkg/sub` → `pkg`. */
+    const packageNameOf = (specifier: string): string => {
+      const parts = specifier.split('/');
+      return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
+    };
+
+    const undeclared = new Set<string>();
+    for (const filePath of listSourceFiles(SRC_ROOT)) {
+      for (const specifier of collectImports(filePath)) {
+        if (specifier.startsWith('.') || specifier.startsWith('node:')) continue;
+        const name = packageNameOf(specifier);
+        if (!declared.has(name)) undeclared.add(name);
+      }
+    }
+
+    expect([...undeclared]).toEqual([]);
+  });
+
   it('новый контур не знает LEGACY-контрактов отбора', () => {
     // `DiscoveredMarket`/`IMarketFilterConfig` — прежний owner-контракт.
     // Новый Policy — не их переименование: он работает с canonical Market,

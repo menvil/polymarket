@@ -136,21 +136,38 @@ subscription controller превратит в физическую конфиг�
 ## Граница зависимостей
 
 ```text
-MAY:  @polymarket/market, @polymarket/ports, @polymarket/ids,
-      @polymarket/timestamp, @polymarket/value-objects, @polymarket/errors
+MAY:  @polymarket/market   @polymarket/ports    @polymarket/ids
+      @polymarket/errors   @polymarket/timestamp
+      @polymarket/value-objects
+      decimal.js           ← разрешён архитектурно, но src его НЕ использует
 
 MUST NOT: infrastructure/*, polymarket-v2, cex-v2, client, bindings,
           ccxt, реализации шин
 ```
 
-Проверяется тестом `__tests__/contour-boundary.test.ts` по реальным
-артефактам — `package.json` и import-ам исходников. Allow-list **закрытый**:
-открытый («всё, кроме запрещённого») пропустил бы новую
-infrastructure-зависимость, о которой тест ещё не знает.
+Про `decimal.js`: он разрешён так же, как в соседних контурах (арифметика
+за границей VO — обычная практика репозитория), но сегодня ни один файл
+`src/` его не импортирует, поэтому в `package.json` он лежит в
+`devDependencies` — его используют только тесты. Появится импорт в `src` —
+его придётся перевести в рантайм-зависимости, и это не вопрос дисциплины:
+проверка ниже упадёт.
+
+Всё это закреплено тестом `__tests__/contour-boundary.test.ts` по реальным
+артефактам — `package.json` и import-ам исходников:
+
+| Проверка | Что ловит |
+| --- | --- |
+| закрытый allow-list импортов `src` | новую зависимость, о которой тест не знает |
+| запрет infrastructure/transport в `package.json` | объявленную, но ещё не использованную связь |
+| «каждый импорт `src` объявлен рантайм-зависимостью» | расхождение «импортирую, но не объявляю» — у потребителя это ломает сборку |
+| отсутствие `DiscoveredMarket`/`IMarketFilterConfig` | незавершённую миграцию со старого контракта |
+
+Allow-list **закрытый**: открытый («всё, кроме запрещённого») пропустил бы
+новую infrastructure-зависимость, о которой тест ещё не знает.
 
 ## Ссылки
 
-- `docs/market-filter.md` — правила отбора и keyword-матчинг
-- `docs/market-scorer.md` — алгоритм ранжирования
+- [`market-filter.md`](./market-filter.md) — правила отбора и keyword-матчинг
+- [`market-scorer.md`](./market-scorer.md) — алгоритм ранжирования
 - `packages/application/market-discovery/docs/market-discovery.md` —
   `MarketUniverse`, откуда берутся записи
