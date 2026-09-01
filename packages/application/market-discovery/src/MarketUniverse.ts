@@ -148,12 +148,17 @@ export class MarketUniverse {
    *
    * @example
    * ```typescript
-   * const snapshot = discovery.getSnapshot();
-   * universe.replace(snapshot);
+   * // Снимок, собранный вызывающим (тест, будущий второй источник), —
+   * // обычные мутабельные объекты. Снимок из `discovery.getSnapshot()`
+   * // заморожен уже самим discovery, но universe на это НЕ полагается:
+   * // копию делает replace(), а не производитель снимка.
+   * const entries = [entry];
+   * universe.replace({ observedAt, entries, diagnostics });
    *
-   * // Ни один из этих путей на universe не влияет:
-   * (snapshot.entries as MarketDiscoveryEntry[]).pop();
-   * // а мутация того, что отдал universe, в strict mode бросает TypeError:
+   * entries.pop();              // мутируем источник после replace()
+   * universe.getAll().length;   // → 1: universe держит свою копию
+   *
+   * // а то, что отдал universe, заморожено — мутация бросает TypeError:
    * // universe.getAll()[0].metrics.liquidity = other;
    * ```
    */

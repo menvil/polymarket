@@ -200,6 +200,19 @@ describe('dependency graph boundary', () => {
     }
   });
 
+  it('README перечисляет ОБЕ границы полностью (документация не расходится с тестом)', () => {
+    // README называет свои списки полными и служит первым, что читает
+    // человек про границы пакета. Неполный список там хуже отсутствующего:
+    // на него полагаются как на границу. Раз тест — источник истины,
+    // расхождение обязан ловить он, а не следующий review.
+    const readme = readFileSync(join(PACKAGE_ROOT, 'README.md'), 'utf8');
+
+    const missing = [...ALLOWED_DISCOVERY_IMPORTS].filter(
+      (specifier) => !readme.includes(specifier),
+    );
+    expect(missing).toEqual([]);
+  });
+
   it('исходники не импортируют internal paths bindings (chunk-модули)', () => {
     for (const filePath of listSourceFiles(join(PACKAGE_ROOT, 'src'))) {
       for (const specifier of collectImports(filePath)) {

@@ -22,11 +22,16 @@
  * - любой из двух обходов вернул `false` — `refresh()` по контракту НЕ
  *   бросает, отказ площадки наблюдаем ТОЛЬКО по возвращённому значению
  *   (см. {@link collectFailures});
- * - в снимке есть рынок с невалидным расписанием.
+ * - свежий снимок пуст: ни одного canonical рынка (причина различается по
+ *   счётчикам снимка — см. {@link collectFailures});
+ * - тёплый проход не переиспользовал из кэша событий НИ ОДНОГО расписания.
  *
  * Smoke, который не умеет падать, бесполезен: недоступный Gamma обязан
  * отличаться от «сегодня нет подходящих серий» кодом возврата, а не только
- * глазами читающего отчёт.
+ * глазами читающего отчёт. И `true` от обоих обходов сам по себе ничего не
+ * доказывает: обход каталога удаётся и тогда, когда обогащение расписанием
+ * отказало целиком, — именно поэтому проверяется РЕЗУЛЬТАТ обхода, а не
+ * только его исход.
  *
  * Запуск из корня repo (нужен собранный dist зависимостей — `npm run build`
  * в пакете строит их через project references):
@@ -40,7 +45,7 @@
 import { createPublicClient } from '@polymarket/client';
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
-import type { MarketDiscoveryEntry } from '@polymarket/ports';
+import type { MarketDiscoveryDiagnostics, MarketDiscoveryEntry } from '@polymarket/ports';
 import { PolymarketMarketDiscovery } from '../src/index.js';
 
 /** Окно обзора `endDate` в часах по умолчанию (ближайшие серии, а не весь мир). */
@@ -112,48 +117,114 @@ function parseWindowHours(raw: string | undefined): number {
 /**
  * Собирает список нарушенных инвариантов прогона.
  *
- * @param input - Результаты обоих обходов и число рынков с невалидным расписанием
+ * @param input - Исходы обоих обходов и диагностика ИТОГОВОГО снимка
  * @returns Человекочитаемые причины провала; пустой массив — прогон успешен
  *
  * @remarks
- * Почему `refresh()` проверяется по возвращённому значению, а не через
- * `try/catch`: порт `IMarketDiscoveryService` гарантирует, что `refresh()`
- * НЕ бросает — отказ площадки он возвращает как `false`, оставляя доступным
- * ПРЕДЫДУЩИЙ снимок (last-good семантика). В первом прогоне предыдущий
- * снимок пуст, поэтому недоступный Gamma без этой проверки выглядит как
- * пустой отчёт с кодом 0.
+ * ### Почему исход обхода читается из возвращённого значения
  *
- * Почему тёплый проход проверяется так же строго, как холодный: именно он —
+ * Порт `IMarketDiscoveryService` гарантирует, что `refresh()` НЕ бросает:
+ * отказ площадки он возвращает как `false`, оставляя доступным ПРЕДЫДУЩИЙ
+ * снимок (last-good семантика). В первом прогоне предыдущий снимок пуст,
+ * поэтому недоступный Gamma без этой проверки выглядит как пустой отчёт с
+ * кодом 0. `try/catch` здесь не поймал бы ничего.
+ *
+ * Тёплый проход проверяется так же строго, как холодный: именно он —
  * предмет проверки «расписания переиспользуются кэшем». Провалившийся тёплый
  * проход не обновляет снимок, и печатаемые `eventCacheHits`/`eventFetches`
  * относятся тогда к холодному обходу, то есть отчёт о кэше становится
  * ложным.
  *
- * Почему ненулевой `markets with invalid schedule` — тоже ПРОВАЛ, а не
- * строка отчёта: это инвариант границы Infrastructure → Domain. `startsAt`
- * каждого рынка подтверждён `event.schedule.startTime`, а рынок без
- * подтверждённого расписания в universe не попадает вовсе — значит рынок с
- * `startsAt >= expiresAt` означает, что canonical-граница отдала рынок с
- * пустым/вывернутым окном. Всё, что ниже по потоку (`duration()`, фаза
- * рынка, окна записи), на таком рынке считает бессмыслицу. Инвариант, о
- * нарушении которого лишь сообщают в отчёте, инвариантом быть перестаёт.
+ * ### Почему ПУСТОЙ universe — провал, а не строка отчёта
+ *
+ * `true` от `refresh()` означает лишь «обход каталога состоялся», а не
+ * «контур работает». Показательный отказ: если падает КАЖДЫЙ `fetchEvent`,
+ * `PolymarketMarketDiscovery` ведёт себя штатно — пишет warn на каждое
+ * событие, помечает рынки непригодными (`invalidMarkets`) и всё равно
+ * возвращает `true`, потому что каталог обойти удалось. Оба прохода зелёные,
+ * universe пуст, код возврата 0 — ровно та ложная уверенность, ради которой
+ * smoke и существует.
+ *
+ * Пустота значима именно как ПРОВАЛ, потому что площадка непрерывно
+ * публикует 5-минутные серии: в осмысленном окне (дефолт — 6 часов) их
+ * истекает десятками, и «ноль canonical рынков» означает поломку контура, а
+ * не тишину площадки. Ложное срабатывание возможно на экстремально малом
+ * окне — `DISCOVERY_WINDOW_HOURS=0.001` даёт четыре секунды, в которые
+ * может не попасть ни одно истечение. Для dev-smoke это приемлемо: окно
+ * задаёт сам оператор осознанно, а «в моё окно не истекает ничего» — тоже
+ * повод прочитать отчёт (счётчики покажут `tradeableMarkets: 0` при живом
+ * `marketsScanned`), а не молча получить код 0. Тихая проверка, которую
+ * нельзя нарушить, уже стоила этому скрипту одного инварианта.
+ *
+ * ### Почему причина различается по счётчикам
+ *
+ * «Каталог не отдал ничего» и «каталог отдал, но ни один рынок не стал
+ * canonical» чинятся в разных местах, и smoke обязан сказать, в каком:
+ *
+ * - `tradeableMarkets === 0` — проблема каталога либо окна: пагинация,
+ *   `endDate`-cutoff или technical gate торгуемости. До классификации и
+ *   запросов события дело не дошло вовсе.
+ * - `tradeableMarkets > 0`, но canonical рынков нет — проблема классификации
+ *   либо обогащения расписанием. Полный отказ `fetchEvent` попадает именно
+ *   сюда, и его подпись — большой `invalidMarkets` при ненулевом
+ *   `eventFetches`; сплошной `unsupportedMarkets` вместо него означал бы
+ *   сломанный классификатор семейства.
+ *
+ * ### Почему пустота проверяется только у СВЕЖЕГО снимка
+ *
+ * Если оба обхода вернули `false`, снимок — предыдущий (в первом прогоне
+ * пустой), и его пустота есть следствие уже сообщённого отказа, а не
+ * самостоятельная находка. Описывать один дефект двумя строками с разными
+ * причинами — значит дезориентировать читателя отчёта.
+ *
+ * ### Почему кэш проверяется как `eventCacheHits > 0`
+ *
+ * Главное утверждение скрипта — «тёплый проход обслуживается кэшем
+ * событий» — до сих пор только печаталось. Строгое `eventFetches === 0`
+ * было бы флаки: между проходами площадка публикует новые серии (замер на
+ * 6-часовом окне: тёплый проход дал `eventFetches: 6` при полностью
+ * исправном кэше). Сломанный же кэш даёт РОВНО ноль попаданий, и новые
+ * рынки помешать этому не могут — поэтому порог стоит на попаданиях, а не
+ * на запросах.
+ *
+ * Проверка требует обоих успешных проходов и непустого universe: кэш
+ * наполняет холодный проход, поэтому после его отказа ноль попаданий в
+ * тёплом — норма, а не дефект; на пустом universe кэшировать было нечего.
  *
  * @example
  * ```typescript
- * collectFailures({ coldRefreshed: true, warmRefreshed: true, invalidScheduleCount: 0 }); // []
- * collectFailures({ coldRefreshed: false, warmRefreshed: false, invalidScheduleCount: 0 }).length; // 2
+ * // Здоровый прогон: оба обхода прошли, universe непуст, кэш сработал
+ * collectFailures({
+ *   coldRefreshed: true,
+ *   warmRefreshed: true,
+ *   universeSize: 588,
+ *   diagnostics, // tradeableMarkets: 588, eventCacheHits: 624
+ * }); // []
+ *
+ * // Полный отказ fetchEvent: обходы «удались», universe пуст
+ * collectFailures({
+ *   coldRefreshed: true,
+ *   warmRefreshed: true,
+ *   universeSize: 0,
+ *   diagnostics, // tradeableMarkets: 588, invalidMarkets: 588
+ * });
+ * // ['empty canonical universe: 588 tradeable market(s) produced no canonical one …']
  * ```
  */
 function collectFailures(input: {
   readonly coldRefreshed: boolean;
   readonly warmRefreshed: boolean;
-  readonly invalidScheduleCount: number;
+  readonly universeSize: number;
+  readonly diagnostics: MarketDiscoveryDiagnostics;
 }): readonly string[] {
   const failures: string[] = [];
+  const { diagnostics } = input;
+
   if (!input.coldRefreshed) {
     failures.push(
-      'cold refresh returned false: catalog traversal failed ' +
-        '(public Gamma endpoint unavailable?); the snapshot above is the previous, empty one',
+      'cold refresh returned false: the first catalog traversal failed ' +
+        '(public Gamma endpoint unavailable?) and produced no snapshot of its own; ' +
+        'the report above therefore describes the warm pass, or the initial empty snapshot if that one failed too',
     );
   }
   if (!input.warmRefreshed) {
@@ -162,10 +233,38 @@ function collectFailures(input: {
         'the event-cache figures above describe the cold pass, not a warm one',
     );
   }
-  if (input.invalidScheduleCount > 0) {
+
+  // Пустота ПРЕДЫДУЩЕГО снимка ничего не доказывает — она следствие уже
+  // сообщённого отказа обхода.
+  const snapshotIsFresh = input.coldRefreshed || input.warmRefreshed;
+  if (snapshotIsFresh && input.universeSize === 0) {
     failures.push(
-      `${String(input.invalidScheduleCount)} market(s) have an invalid schedule ` +
-        '(startsAt is not before expiresAt): the canonical boundary produced an empty or inverted window',
+      diagnostics.tradeableMarkets === 0
+        ? 'empty canonical universe: the catalog window yielded no tradeable market at all ' +
+            `(pagesFetched=${String(diagnostics.pagesFetched)}, ` +
+            `marketsScanned=${String(diagnostics.marketsScanned)}) — ` +
+            'catalog traversal or the endDate window is broken, classification never ran'
+        : `empty canonical universe: ${String(diagnostics.tradeableMarkets)} tradeable market(s) ` +
+            'produced no canonical one ' +
+            `(unsupported=${String(diagnostics.unsupportedMarkets)}, ` +
+            `invalid=${String(diagnostics.invalidMarkets)}, ` +
+            `duplicates=${String(diagnostics.duplicateMarkets)}, ` +
+            `eventFetches=${String(diagnostics.eventFetches)}) — ` +
+            'classification or schedule enrichment is broken; ' +
+            'a total fetchEvent outage lands here, with invalid matching the supported-family count',
+    );
+  }
+
+  if (
+    input.coldRefreshed &&
+    input.warmRefreshed &&
+    input.universeSize > 0 &&
+    diagnostics.eventCacheHits === 0
+  ) {
+    failures.push(
+      'warm pass served 0 event(s) from the event cache ' +
+        `(eventFetches=${String(diagnostics.eventFetches)}): the second pass re-fetched every schedule, ` +
+        'so event caching — the very claim this smoke exists to check — does not work',
     );
   }
   return failures;
@@ -212,6 +311,10 @@ function groupBy(
  *
  * Отчёт печатается ВСЕГДА, даже когда обход провалился: диагностика нужна,
  * чтобы понять причину. Код возврата выставляется после отчёта.
+ *
+ * Инварианты считаются по ИТОГОВОМУ снимку — тому же, что напечатан выше,
+ * — чтобы отчёт и код возврата не расходились: объясняющие провал счётчики
+ * читатель видит в отчёте, а не восстанавливает по памяти.
  *
  * @example
  * ```typescript
@@ -283,12 +386,7 @@ async function main(): Promise<void> {
     lines.push(`  ${duration}: ${String(group.length)}`);
   }
 
-  // Инвариант MR: ни одного рынка с угаданным расписанием — все startsAt
-  // подтверждены событием, иначе рынок в universe не попал бы вовсе.
-  const withoutSchedule = snapshot.entries.filter(
-    (entry) => !entry.market.startsAt.isBefore(entry.market.expiresAt),
-  );
-  lines.push('', `markets with invalid schedule: ${String(withoutSchedule.length)}`);
+  lines.push('', `canonical markets in universe: ${String(snapshot.entries.length)}`);
 
   // eslint-disable-next-line no-console -- отчёт smoke-скрипта, а не логи сервиса
   console.log(lines.join('\n'));
@@ -296,7 +394,8 @@ async function main(): Promise<void> {
   const failures = collectFailures({
     coldRefreshed,
     warmRefreshed,
-    invalidScheduleCount: withoutSchedule.length,
+    universeSize: snapshot.entries.length,
+    diagnostics: snapshot.diagnostics,
   });
   if (failures.length > 0) {
     console.error(

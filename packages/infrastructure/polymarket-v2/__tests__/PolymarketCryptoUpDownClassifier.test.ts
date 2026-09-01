@@ -165,6 +165,23 @@ describe('неподдержанные семейства (TEST 2)', () => {
     expect(result).toEqual({ kind: 'UNSUPPORTED', reason: 'not-up-down' });
   });
 
+  it('комбинирующий знак в разложенной форме — часть слова, а не пунктуация', () => {
+    // NFD: «Бой» = ... + 'и' + U+0306. Последний символ перед `up` —
+    // комбинирующий знак; без \p{M} в границе он читался бы как пунктуация
+    const decomposed = 'Бой'.normalize('NFD');
+    expect(decomposed).not.toBe('Бой'); // фикстура действительно разложена
+
+    const result = classifyPolymarketMarket(
+      createSdkMarket({
+        yesLabel: 'Yes',
+        noLabel: 'No',
+        question: `${decomposed}up or down?`,
+      }),
+    );
+
+    expect(result).toEqual({ kind: 'UNSUPPORTED', reason: 'not-up-down' });
+  });
+
   it('нет fuzzy-матчинга: «Groupon or Downtown» не считается Up/Down', () => {
     const result = classifyPolymarketMarket(
       createSdkMarket({

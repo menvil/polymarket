@@ -42,10 +42,36 @@ Payload каждого сообщения — БУКВАЛЬНО объект, �
 Границы зависимостей у двух плоскостей пакета РАЗНЫЕ, и обе закреплены
 тестом `__tests__/contour-boundary.test.ts`:
 
-| Плоскость | Файлы | Что разрешено сверх Foundation |
-| --- | --- | --- |
-| **data plane** | `PolymarketSource`, `PolymarketExternalMessage` | ничего: ни Domain, ни Application |
-| **control plane** | `PolymarketMarketDiscovery`, `PolymarketCryptoUpDownClassifier`, `PolymarketRtdsFeeds`, `PolymarketFinalization` | `@polymarket/market` (canonical Domain Market), `@polymarket/ports` (контракт снимка), `@polymarket/value-objects` |
+**Data plane** (`PolymarketSource`, `PolymarketExternalMessage`) — ровно
+восемь разрешённых импортов, ни Domain, ни Application среди них нет:
+
+```text
+@polymarket/bindings/subscriptions   @polymarket/message-bus
+@polymarket/client                   @polymarket/messages
+@polymarket/external-message-bus     @polymarket/logger
+@polymarket/external-messages        @polymarket/result
+```
+
+**Control plane** (`PolymarketMarketDiscovery`,
+`PolymarketCryptoUpDownClassifier`, `PolymarketRtdsFeeds`,
+`PolymarketFinalization`) — те же восемь ПЛЮС ровно восемь своих:
+
+```text
+@polymarket/bindings/gamma     typed vendor-модели каталога
+@polymarket/market             canonical Domain Market — результат работы
+@polymarket/ports              контракт снимка (MarketDiscoverySnapshot)
+@polymarket/value-objects      Money/Ratio наблюдений
+@polymarket/ids                MarketId/InstrumentId/VenueId/CryptoAssetId
+@polymarket/time               IClock (детерминизм обхода в тестах)
+@polymarket/timestamp          Timestamp расписания
+decimal.js                     Decimal-арифметика внутри границы VO
+```
+
+Списки ПОЛНЫЕ и защищены от расхождения тестом
+`README перечисляет ОБЕ границы полностью`: он читает этот файл и требует,
+чтобы каждый разрешённый специфаер здесь присутствовал. Неполный список
+здесь был бы хуже отсутствующего — читатель полагался бы на него как на
+границу.
 
 Исключение для control plane — не послабление, а его прямая работа: задача
 Discovery в том и состоит, чтобы превратить vendor-запись в canonical
